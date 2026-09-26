@@ -10,7 +10,7 @@
 # Recognised keys (the owner's .env names; only non-empty ones are set; anything else, e.g. CFTOKEN, is
 # ignored). Certificates/keys are given as base64 content, not paths:
 #   S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY S3_PUBLIC_URL
-#   APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY_BASE64
+#   APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY_BASE64 APPLE_TEAM_ID
 #   WIN_CERT_P12_BASE64 WIN_CERT_PASSWORD
 #   STAND_SSH_KEY STAND_HOST STAND_KNOWN_HOSTS   (optional stand fallback)
 # GITHUB_TOKEN in .env (or the environment) is only used to authenticate gh — it is never stored as a secret.
@@ -33,7 +33,7 @@ if (( ! dry )); then
 fi
 
 KEYS=(S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY S3_PUBLIC_URL
-      APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY_BASE64
+      APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY_BASE64 APPLE_TEAM_ID
       WIN_CERT_P12_BASE64 WIN_CERT_PASSWORD
       STAND_SSH_KEY STAND_HOST STAND_KNOWN_HOSTS)
 
@@ -75,7 +75,7 @@ for k in "${KEYS[@]}"; do
   if (( dry )); then
     echo "would set $k ($kind, ${#v} chars)"
   else
-    printf '%s' "$v" | gh secret set "$k" --repo "$REPO" --body - >/dev/null
+    printf '%s' "$v" | gh secret set "$k" --repo "$REPO" >/dev/null   # no --body: gh reads stdin (--body - would store a literal "-")
     echo "set $k ($kind)"
   fi
   set_n=$((set_n + 1))
