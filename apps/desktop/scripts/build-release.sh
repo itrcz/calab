@@ -8,7 +8,8 @@
 #                       SRC_REF=WORKTREE builds the working tree as is (local checks only, never publish)
 #   VERSION=1.2.3       override apps/desktop/package.json version (applied to the export only)
 #   UPDATE_URL=…        electron-updater generic feed baked into app-update.yml / latest*.yml
-#                       (default https://app.calab.ru/download/ — docs/10-branding.md)
+#                       (default https://releases.calab.ru/ — docs/10-branding.md); also baked into the app
+#                       as MAIN_VITE_UPDATE_FEED; MAIN_VITE_UPDATES_SIGNED=1 only for a signed macOS build
 #   HOMEPAGE=…          package homepage (deb metadata; default https://calab.ru, the landing)
 #   OUT_DIR=…           artifacts dir (default apps/desktop/dist-release)
 #   WORK_DIR=…          scratch dir (default $TMPDIR/calaba-release; removed on exit unless KEEP_WORK=1)
@@ -39,7 +40,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 OUT="${OUT_DIR:-$ROOT/apps/desktop/dist-release}"
 SRC_REF="${SRC_REF:-HEAD}"
-UPDATE_URL="${UPDATE_URL:-https://app.calab.ru/download/}"
+UPDATE_URL="${UPDATE_URL:-https://releases.calab.ru/}"
 HOMEPAGE="${HOMEPAGE:-https://calab.ru}"
 WORK="${WORK_DIR:-${TMPDIR:-/tmp}/calaba-release}"
 SRC="$WORK/src"
@@ -91,7 +92,8 @@ build_mac() {
   local t0=$SECONDS
   log "macOS: pnpm install (compiles patched uiohook-napi for the host arch)"
   (cd "$SRC" && pnpm install --frozen-lockfile)
-  (cd "$SRC/apps/desktop" && pnpm build:app)   # + build/.gen/THIRD-PARTY-NOTICES.txt (extraResources)
+  # MAIN_VITE_* are baked in by electron-vite: the feed, and "updates may auto-install" only when signed
+  (cd "$SRC/apps/desktop" && MAIN_VITE_UPDATE_FEED="$UPDATE_URL" MAIN_VITE_UPDATES_SIGNED="${SIGN:+1}" pnpm build:app)   # + build/.gen/THIRD-PARTY-NOTICES.txt (extraResources)
   [[ -s "$SRC/apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt" ]] || { echo "THIRD-PARTY-NOTICES.txt not generated" >&2; exit 1; }
   # The patched module is compiled per arch into build/Release by electron-builder (node-gyp-build loads
   # that first). Drop the postinstall copy in bin/ (host arch only — it would land in the x64 app too)
@@ -240,7 +242,7 @@ build_docker() { # $1 = linux | win
   write_container_script
   # env-file values are taken literally; EB_ARGS is re-parsed by `eval` inside the container
   printf '%s\n' "PNPM_VERSION=$PNPM_VERSION" CI=true "PLATFORM=$platform" "SMOKE=${SMOKE:-1}" \
-    "EB_ARGS=$args $(printf '%q ' "${EB_COMMON[@]}")" > "$WORK/container.env"
+    "EB_ARGS=$args $(printf '%q ' "${EB_COMMON[@]}")" "MAIN_VITE_UPDATE_FEED=$UPDATE_URL" > "$WORK/container.env"
   local run=(docker run --rm -i --platform linux/amd64 --env-file ENVFILE
     -v SRC:/src:ro -v OUT:/out
     -v calaba-release-pnpm-store:/root/.local/share/pnpm/store -v calaba-release-electron-cache:/root/.cache)

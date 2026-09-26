@@ -43,7 +43,7 @@ concurrency:
 
 env:
   RELEASE_REPO: itrcz/calab                      # git@github.com:itrcz/calab.git
-  UPDATE_URL: https://app.calab.ru/download/     # docs/10-branding.md
+  UPDATE_URL: https://releases.calab.ru/         # update feed (docs/10-branding.md; proxies the S3 bucket)
   HOMEPAGE: https://calab.ru
 
 jobs:
@@ -94,11 +94,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: uiohook patch applied
         run: grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h
-      # build:app = electron-vite build + build/.gen/THIRD-PARTY-NOTICES.txt (packaged as extraResources)
-      - run: pnpm -F @calaba/desktop run build:app
-      - name: third-party notices generated
-        run: test -s apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt
-
       # Signing only with VALID material: the base64 must decode into a PKCS#12 that opens with its password
       # (and, for notarization, a private key .p8). Anything else — absent, stub, wrong password — is an
       # unsigned build with a notice, never a failure. Secrets can't be used in `if:`, hence one bash step.
@@ -159,6 +154,17 @@ jobs:
             [[ "$t" == linux ]] || echo "::notice::$t: no valid signing certificate (absent, stub or wrong password) — unsigned build"
           fi
           echo "sign=$sign" >> "$GITHUB_OUTPUT"; echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      # build:app = electron-vite build + build/.gen/THIRD-PARTY-NOTICES.txt (packaged as extraResources)
+      # MAIN_VITE_* are baked in at build time (main process): the update feed, and whether auto-install
+      # may be offered — only when THIS platform's build is really signed (client, electron-vite env).
+      - name: build:app (electron-vite + third-party notices)
+        env:
+          MAIN_VITE_UPDATE_FEED: ${{ env.UPDATE_URL }}
+          MAIN_VITE_UPDATES_SIGNED: ${{ steps.sign.outputs.sign == '1' && '1' || '' }}
+        run: pnpm -F @calaba/desktop run build:app
+      - name: third-party notices generated
+        run: test -s apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt
 
       - name: electron-builder   # CSC_* / APPLE_API_* come from the signing step via GITHUB_ENV
         working-directory: apps/desktop

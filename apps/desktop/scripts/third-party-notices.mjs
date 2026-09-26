@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
@@ -116,7 +117,8 @@ for (const p of sorted) {
 }
 // Full texts required by the LGPL (it incorporates the GPL) for the embedded libuiohook.
 if (sorted.some((p) => EMBEDDED[p.name])) {
-  const here = dirname(new URL(import.meta.url).pathname);
+  // fileURLToPath, not URL.pathname: on Windows the pathname is /D:/… and path.join makes D:\\D:\\…
+  const here = dirname(fileURLToPath(import.meta.url));
   for (const f of ['lgpl-3.0.txt', 'gpl-3.0.txt']) {
     text += `\n${bar}\n${f === 'lgpl-3.0.txt' ? 'GNU Lesser General Public License v3.0' : 'GNU General Public License v3.0 (incorporated by the LGPL)'}\n${bar}\n\n`;
     text += readFileSync(join(here, '..', 'build', 'licenses', f), 'utf8');
