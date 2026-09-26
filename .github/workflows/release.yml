@@ -109,7 +109,7 @@ jobs:
           WIN_CERT_P12_BASE64: ${{ secrets.WIN_CERT_P12_BASE64 }}
           WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
         run: |
-          t="${{ matrix.target }}"; sign=0 args=""
+          t="${{ matrix.target }}"; sign=0 args="" notarized=0
           # Secrets pasted from a .env may keep their surrounding quotes / trailing newline: normalise
           # (base64 material also loses inner whitespace). Diagnostics below never print values.
           unq() { local v="$1"; v="${v%$'\n'}"; v="${v%$'\r'}"; v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"; printf '%s' "$v"; }
@@ -139,7 +139,22 @@ jobs:
             sign=1
             # electron-builder.yml keeps local builds unsigned (identity: null); drop it for this CI build only
             sed -i.bak '/^  identity: null/d' apps/desktop/electron-builder.yml
-            envset CSC_LINK "$cert"; envset CSC_KEY_PASSWORD "$APPLE_CERT_PASSWORD"
+            # Own keychain instead of CSC_LINK: electron-builder's temp keychain fails on current macOS
+            # runners (set-key-partition-list → "SecKeychainUnlock: passphrase not correct").
+            kc="$RUNNER_TEMP/signing.keychain-db"; kcpw="$(openssl rand -hex 24)"
+            security create-keychain -p "$kcpw" "$kc"
+            security set-keychain-settings -lut 21600 "$kc"
+            security unlock-keychain -p "$kcpw" "$kc"
+            security import "$cert" -k "$kc" -P "$APPLE_CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productsign >/dev/null
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" >/dev/null
+            security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+            rm -f "$cert"
+            ident="$(security find-identity -v -p codesigning "$kc" | sed -nE 's/.*"Developer ID Application: (.*)"$/\1/p' | head -1)"
+            if [[ -z "$ident" ]]; then
+              echo "::error::macOS: no 'Developer ID Application' identity in the imported certificate"; exit 1
+            fi
+            echo "::notice::mac: identity imported into a job keychain"
+            envset CSC_NAME "$ident"; envset CSC_KEYCHAIN "$kc"
             # Team ID for notarytool (optional with an API key; required by the Apple ID flow)
             [[ -n "$APPLE_TEAM_ID" ]] && envset APPLE_TEAM_ID "$APPLE_TEAM_ID"
             # notarization needs the App Store Connect API key AND its Issuer ID; without the issuer: sign only
@@ -147,7 +162,7 @@ jobs:
             if [[ -n "$APPLE_API_KEY_BASE64" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER" ]] \
                && printf '%s' "$APPLE_API_KEY_BASE64" | base64 -d > "$key" 2>/dev/null && openssl pkey -in "$key" -noout 2>/dev/null; then
               envset APPLE_API_KEY "$key"; envset APPLE_API_KEY_ID "$APPLE_API_KEY_ID"; envset APPLE_API_ISSUER "$APPLE_API_ISSUER"
-              args="-c.mac.notarize=true"
+              args="-c.mac.notarize=true"; notarized=1
             else
               echo "::warning::macOS: signed, but NOT notarized (APPLE_API_KEY_BASE64/ID/ISSUER absent or invalid)"
             fi
@@ -159,11 +174,14 @@ jobs:
             envset CSC_IDENTITY_AUTO_DISCOVERY true
             echo "::notice::$t: signing enabled"
           else
-            rm -f "$cert"
             envset CSC_IDENTITY_AUTO_DISCOVERY false
             [[ "$t" == linux ]] || echo "::notice::$t: no valid signing certificate (absent, stub or wrong password) — unsigned build"
           fi
-          echo "sign=$sign" >> "$GITHUB_OUTPUT"; echo "args=$args" >> "$GITHUB_OUTPUT"
+          [[ $sign == 1 ]] || rm -f "$cert"   # win keeps it: electron-builder reads CSC_LINK at build time
+          # Auto-install may be offered only for a trusted build: mac needs signature AND notarization
+          # (Gatekeeper), win/linux just a valid signature.
+          trusted=$sign; [[ "$t" == mac && $notarized != 1 ]] && trusted=0
+          echo "sign=$sign" >> "$GITHUB_OUTPUT"; echo "args=$args" >> "$GITHUB_OUTPUT"; echo "trusted=$trusted" >> "$GITHUB_OUTPUT"
 
       # build:app = electron-vite build + build/.gen/THIRD-PARTY-NOTICES.txt (packaged as extraResources)
       # MAIN_VITE_* are baked in at build time (main process): the update feed, and whether auto-install
@@ -171,7 +189,7 @@ jobs:
       - name: build:app (electron-vite + third-party notices)
         env:
           MAIN_VITE_UPDATE_FEED: ${{ env.UPDATE_URL }}
-          MAIN_VITE_UPDATES_SIGNED: ${{ steps.sign.outputs.sign == '1' && '1' || '' }}
+          MAIN_VITE_UPDATES_SIGNED: ${{ steps.sign.outputs.trusted == '1' && '1' || '' }}
         run: pnpm -F @calaba/desktop run build:app
       - name: third-party notices generated
         run: test -s apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt

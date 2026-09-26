@@ -9,7 +9,7 @@
 #   VERSION=1.2.3       override apps/desktop/package.json version (applied to the export only)
 #   UPDATE_URL=…        electron-updater generic feed baked into app-update.yml / latest*.yml
 #                       (default https://releases.calab.ru/ — docs/10-branding.md); also baked into the app
-#                       as MAIN_VITE_UPDATE_FEED; MAIN_VITE_UPDATES_SIGNED=1 only for a signed macOS build
+#                       as MAIN_VITE_UPDATE_FEED; MAIN_VITE_UPDATES_SIGNED=1 only for a signed AND notarized macOS build
 #   HOMEPAGE=…          package homepage (deb metadata; default https://calab.ru, the landing)
 #   OUT_DIR=…           artifacts dir (default apps/desktop/dist-release)
 #   WORK_DIR=…          scratch dir (default $TMPDIR/calaba-release; removed on exit unless KEEP_WORK=1)
@@ -93,7 +93,7 @@ build_mac() {
   log "macOS: pnpm install (compiles patched uiohook-napi for the host arch)"
   (cd "$SRC" && pnpm install --frozen-lockfile)
   # MAIN_VITE_* are baked in by electron-vite: the feed, and "updates may auto-install" only when signed
-  (cd "$SRC/apps/desktop" && MAIN_VITE_UPDATE_FEED="$UPDATE_URL" MAIN_VITE_UPDATES_SIGNED="${SIGN:+1}" pnpm build:app)   # + build/.gen/THIRD-PARTY-NOTICES.txt (extraResources)
+  (cd "$SRC/apps/desktop" && MAIN_VITE_UPDATE_FEED="$UPDATE_URL" MAIN_VITE_UPDATES_SIGNED="$([[ -n "${SIGN:-}" && -n "${NOTARIZE:-}" ]] && echo 1)" pnpm build:app)   # + build/.gen/THIRD-PARTY-NOTICES.txt (extraResources)
   [[ -s "$SRC/apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt" ]] || { echo "THIRD-PARTY-NOTICES.txt not generated" >&2; exit 1; }
   # The patched module is compiled per arch into build/Release by electron-builder (node-gyp-build loads
   # that first). Drop the postinstall copy in bin/ (host arch only — it would land in the x64 app too)
