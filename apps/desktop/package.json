@@ -1,6 +1,6 @@
 {
   "name": "@calaba/desktop",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "Calab desktop client",
   "author": "GPTunneL <it@gptunnel.ai>",

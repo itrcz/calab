@@ -4,15 +4,23 @@ import type { UpdateStatus } from '../shared/ipc';
  * Update state machine, free of Electron imports so it is unit-tested with a fake updater
  * (updateFlow.test.ts). main/updater.ts wires it to electron-updater, notifications and IPC.
  *
- * Modes, decided per check (settings can change at runtime):
+ * Modes, decided per check (settings and the server can change at runtime):
  * - auto   — autoDownload + autoInstallOnAppQuit: background download with progress, then
  *            «Обновление X готово — Перезапустить»; installs on restart or on quit.
- *            Windows; Linux AppImage (electron-updater installs nothing else); macOS only when
- *            signed (Squirrel.Mac refuses unsigned updates).
+ *            ONLY from the build-time feed (review pass 3 B1: an unsigned Windows / AppImage
+ *            update is verified by nothing but the sha512 in latest*.yml, served by the same
+ *            host — so the host must be the one pinned at build time, never one derived from
+ *            the server or set at runtime), and only where the update can be applied: Windows;
+ *            Linux AppImage (electron-updater installs nothing else); macOS only when signed
+ *            (Squirrel.Mac refuses unsigned updates).
  * - notify — nothing is downloaded: status 'available' + one notification per version that
- *            opens the download page. Unsigned macOS, Linux deb/other, or «Автоматически
- *            обновлять» off.
+ *            opens the human download page. Everything else: no build-time feed (dev /
+ *            self-built), a runtime feed override, unsigned macOS, Linux deb/other, or
+ *            «Автоматически обновлять» off.
  * Errors are logged and end in status 'error' (shown only in «О программе»); never thrown.
+ *
+ * Checks: 10 s after start, every 6 h, «Проверить», and (debounced) after wake from sleep or
+ * when the network comes back after a failed check.
  */
 
 /** The part of electron-updater's AppUpdater the flow uses. */
@@ -36,8 +44,17 @@ export interface UpdateFlowEnv {
   appImage: boolean;
   /** The «Автоматически обновлять» setting, read live. */
   autoUpdate: () => boolean;
-  /** Current feed URL; null → updates off (dev build, no server, not https). */
-  feedUrl: () => string | null;
+  /**
+   * The feed pinned at build time (validated https) — the only one auto mode uses. null → no
+   * auto-install at all (dev build, self-built without MAIN_VITE_UPDATE_FEED, runtime override).
+   */
+  buildFeed: string | null;
+  /** Notify-only feed used when there is no build feed (runtime override / server-derived); null → none. */
+  notifyFeed: () => string | null;
+  /** Human download page for the notification / «Скачать» (https); null → the checked feed. */
+  downloadPage: () => string | null;
+  /** Network state (Electron `net.isOnline()`); enables the re-check when it comes back. */
+  isOnline?: () => boolean;
   publish: (s: UpdateStatus) => void;
   /** Notify-only: «Доступна версия X — Скачать» opening `page`. Called once per version. */
   notify: (version: string, page: string) => void;
@@ -46,20 +63,39 @@ export interface UpdateFlowEnv {
 
 export const FIRST_CHECK_MS = 10_000;
 export const RECHECK_MS = 6 * 60 * 60 * 1000;
+/** Debounce of the wake / back-online re-check (the network needs a moment after resume). */
+export const NUDGE_MS = 5_000;
+/** How often the network state is polled after a failed check (main has no online event). */
+export const ONLINE_POLL_MS = 30_000;
 
-/** Whether this platform/build can download and install updates by itself. */
-export function canAutoInstall(platform: string, signed: boolean, appImage: boolean): boolean {
-  if (platform === 'win32') return true;
-  if (platform === 'darwin') return signed;
-  if (platform === 'linux') return appImage;
-  return false;
+export interface AutoInstallInput {
+  platform: string;
+  signed: boolean;
+  appImage: boolean;
+  /** The feed about to be checked is the build-time feed. */
+  pinnedFeed: boolean;
+  /** «Автоматически обновлять». */
+  autoUpdate: boolean;
+}
+
+/**
+ * Whether an update may be downloaded and installed without the user: the setting is on, the
+ * feed is the build-time one, and the platform can apply it (signed, or Windows / AppImage,
+ * whose unsigned updates are trusted only because the https host is pinned at build time).
+ */
+export function canAutoInstall(i: AutoInstallInput): boolean {
+  if (!i.autoUpdate || !i.pinnedFeed) return false;
+  if (i.signed) return i.platform === 'win32' || i.platform === 'darwin' || (i.platform === 'linux' && i.appImage);
+  return i.platform === 'win32' || (i.platform === 'linux' && i.appImage);
 }
 
 export interface UpdateFlow {
   /** Schedules the first check (+10 s) and the periodic one (every 6 h). Idempotent. */
   start(): void;
-  /** Stops the timers (tests / shutdown). */
+  /** Stops all timers (tests / shutdown). */
   stop(): void;
+  /** Woke from sleep: a debounced check (once started; not while downloading / downloaded). */
+  resume(): void;
   /** A check now (startup timer, periodic timer, «Проверить»). Concurrent calls share one check. */
   check(): Promise<UpdateStatus>;
   /** «Перезапустить»: quit and install the downloaded update. false when nothing is downloaded. */
@@ -84,16 +120,62 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let inFlight: Promise<UpdateStatus> | null = null;
   let first: ReturnType<typeof setTimeout> | null = null;
   let periodic: ReturnType<typeof setInterval> | null = null;
+  let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  let onlineWatch: ReturnType<typeof setInterval> | null = null;
+  /** The feed last handed to the updater ('' before the first check). */
+  let feed = '';
 
-  const auto = (): boolean => canAutoInstall(env.platform, env.signed, env.appImage) && env.autoUpdate();
+  const autoFor = (url: string): boolean =>
+    canAutoInstall({
+      platform: env.platform,
+      signed: env.signed,
+      appImage: env.appImage,
+      pinnedFeed: env.buildFeed !== null && url === env.buildFeed,
+      autoUpdate: env.autoUpdate(),
+    });
+
+  /** Feed for the next check: the build feed when there is one, else the notify-only feed. */
+  const nextFeed = (): string | null => env.buildFeed ?? env.notifyFeed();
+
+  const busy = (): boolean => status.state === 'downloading' || status.state === 'downloaded';
+
+  const nudge = (): void => {
+    if (!periodic || nudgeTimer || busy()) return;
+    nudgeTimer = setTimeout(() => {
+      nudgeTimer = null;
+      void check();
+    }, NUDGE_MS);
+  };
+
+  const stopOnlineWatch = (): void => {
+    if (onlineWatch) clearInterval(onlineWatch);
+    onlineWatch = null;
+  };
+
+  /** After a failure: re-check once the network goes offline → online (e.g. Wi-Fi back). */
+  const startOnlineWatch = (): void => {
+    const isOnline = env.isOnline;
+    if (!isOnline || onlineWatch || !periodic) return;
+    let wasOffline = !isOnline();
+    onlineWatch = setInterval(() => {
+      const online = isOnline();
+      if (online && wasOffline) {
+        stopOnlineWatch();
+        nudge();
+      }
+      wasOffline = !online;
+    }, ONLINE_POLL_MS);
+  };
 
   const publish = (s: UpdateStatus): void => {
     status = s;
     env.publish(s);
+    if (s.state === 'error') startOnlineWatch();
+    else if (s.state !== 'checking') stopOnlineWatch();
   };
 
   const applyFlags = (): void => {
-    const on = auto();
+    const on = feed !== '' && autoFor(feed);
     updater.autoDownload = on;
     updater.autoInstallOnAppQuit = on;
   };
@@ -149,13 +231,14 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
 
   const run = async (): Promise<UpdateStatus> => {
     // Downloading / ready: nothing new to learn, and a new check would reset the banner.
-    if (status.state === 'downloading' || status.state === 'downloaded') return status;
-    const url = env.feedUrl();
+    if (busy()) return status;
+    const url = nextFeed();
     if (!url) {
       publish({ state: 'disabled' });
       return status;
     }
-    page = url;
+    page = env.downloadPage() ?? url;
+    feed = url;
     applyFlags();
     updater.setFeedURL({ provider: 'generic', url });
     try {
@@ -163,9 +246,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       if (r === null || r === undefined) publish({ state: 'disabled' });
     } catch (e) {
       // electron-updater already emitted 'error' (→ status); keep it logged and non-fatal.
-      // (`status` is mutated by the listeners meanwhile, hence the widening.)
-      const now = status as UpdateStatus;
-      if (now.state !== 'error' && now.state !== 'downloaded') {
+      if (status.state !== 'error' && status.state !== 'downloaded') {
         env.log.warn('[update] check failed', e);
         publish({ state: 'error', message: 'update check failed' });
       }
@@ -188,9 +269,13 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     stop() {
       if (first) clearTimeout(first);
       if (periodic) clearInterval(periodic);
+      if (nudgeTimer) clearTimeout(nudgeTimer);
+      stopOnlineWatch();
       first = null;
       periodic = null;
+      nudgeTimer = null;
     },
+    resume: nudge,
     check,
     install() {
       if (status.state !== 'downloaded') return false;

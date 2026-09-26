@@ -11,6 +11,11 @@ describe('mute / deafen', () => {
     expect(toggleDeafen({ muted: false, deafened: false })).toEqual({ muted: true, deafened: true });
     expect(toggleDeafen({ muted: true, deafened: true })).toEqual({ muted: false, deafened: false });
   });
+  it('undeafen under a moderator mute keeps the mic muted (review pass 3 M1)', () => {
+    expect(toggleDeafen({ muted: true, deafened: true, serverMuted: true })).toEqual({ muted: true, deafened: false });
+    expect(toggleDeafen({ muted: true, deafened: true, serverMuted: false })).toEqual({ muted: false, deafened: false });
+    expect(toggleDeafen({ muted: true, deafened: false, serverMuted: true })).toEqual({ muted: true, deafened: true });
+  });
 });
 
 describe('transmitDecision', () => {

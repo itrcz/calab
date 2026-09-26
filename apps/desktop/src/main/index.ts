@@ -22,6 +22,9 @@ const PRODUCT_NAME = app.name;
 app.setName('Calaba');
 app.setPath('userData', join(app.getPath('appData'), 'Calaba'));
 app.once('ready', () => app.setName(PRODUCT_NAME));
+// Windows: the AUMID must equal the NSIS shortcuts' appId (electron-builder.yml, permanent) or
+// toasts are attributed to another app / dropped. Electron's default derives it from the name.
+if (process.platform === 'win32') app.setAppUserModelId('app.calaba.desktop');
 // Tests/automation may run several isolated instances side by side.
 if (process.env['CALABA_USER_DATA']) app.setPath('userData', process.env['CALABA_USER_DATA']);
 

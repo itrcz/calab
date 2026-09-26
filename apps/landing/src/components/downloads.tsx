@@ -1,11 +1,34 @@
 import { Download, Laptop, Monitor, Terminal, type LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { APP_URL, DOWNLOAD_URL } from '@/lib/site';
 import { Button, Section, SectionHeading } from './ui';
 
-const platforms: { icon: LucideIcon; name: string; variants: string; format: string }[] = [
-  { icon: Laptop, name: 'macOS', variants: 'Apple Silicon · Intel', format: 'DMG, macOS 12 и новее' },
-  { icon: Monitor, name: 'Windows', variants: 'x64', format: 'Установщик .exe, Windows 10 и 11' },
-  { icon: Terminal, name: 'Linux', variants: 'AppImage · deb', format: 'x64' },
+const platforms: { icon: LucideIcon; name: string; variants: string; format: string; note: ReactNode }[] = [
+  {
+    icon: Laptop,
+    name: 'macOS',
+    variants: 'Apple Silicon · Intel',
+    format: 'DMG, macOS 12 и новее',
+    note: 'Подписано Developer ID и нотаризовано Apple — открывается без предупреждений.',
+  },
+  {
+    icon: Monitor,
+    name: 'Windows',
+    variants: 'x64',
+    format: 'Установщик .exe, Windows 10 и 11',
+    note: 'Сборка пока без подписи: при первом запуске SmartScreen покажет «Неизвестный издатель» → «Подробнее» → «Выполнить в любом случае».',
+  },
+  {
+    icon: Terminal,
+    name: 'Linux',
+    variants: 'AppImage · deb',
+    format: 'x64',
+    note: (
+      <>
+        AppImage перед запуском сделайте исполняемым: <code className="font-mono text-[13px]">chmod +x</code>.
+      </>
+    ),
+  },
 ];
 
 export function Downloads() {
@@ -24,10 +47,13 @@ export function Downloads() {
             <h3 className="mt-4 text-[21px] leading-7 font-semibold tracking-tight">{p.name}</h3>
             <p className="mt-1 text-[15px] leading-6 text-fg">{p.variants}</p>
             <p className="text-[14px] leading-5 text-fg-2">{p.format}</p>
-            <Button href={DOWNLOAD_URL} className="mt-6 w-full">
-              <Download aria-hidden="true" className="size-4" strokeWidth={2} />
-              Скачать<span className="sr-only"> для {p.name}</span>
-            </Button>
+            <p className="mt-4 text-[13px] leading-5 text-pretty text-fg-2">{p.note}</p>
+            <div className="mt-auto w-full pt-6">
+              <Button href={DOWNLOAD_URL} className="w-full">
+                <Download aria-hidden="true" className="size-4" strokeWidth={2} />
+                Скачать<span className="sr-only"> для {p.name}</span>
+              </Button>
+            </div>
           </li>
         ))}
       </ul>
@@ -38,13 +64,6 @@ export function Downloads() {
         </a>{' '}
         — в Chrome, Edge, Safari или Firefox.
       </p>
-      <div className="mx-auto mt-6 max-w-[720px] rounded-xl border border-line bg-card px-4 py-3 text-[14px] leading-5 text-fg-2 sm:px-6 sm:py-4">
-        <p>
-          <strong className="font-semibold text-fg">Сборки пока не подписаны.</strong> macOS: Системные настройки →
-          Конфиденциальность и безопасность → «Всё равно открыть». Windows: в окне SmartScreen — «Подробнее» → «Выполнить в
-          любом случае».
-        </p>
-      </div>
     </Section>
   );
 }

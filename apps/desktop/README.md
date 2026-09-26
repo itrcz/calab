@@ -25,9 +25,10 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | Variable | Purpose |
 |---|---|
 | `CALABA_SERVER_URL` | API address (overrides the value saved in settings). There are no hosts in the code: when the variable is unset, the user enters the address on the login screen |
-| `MAIN_VITE_DEFAULT_SERVER_URL`, `MAIN_VITE_UPDATE_URL` | Build-time defaults for installers (for example, the staging stand and the update feed) |
-| `CALABA_UPDATE_URL` | Overrides the electron-updater generic feed (https only). Not settable from the UI |
-| `CALABA_UPDATES_SIGNED=1` / `MAIN_VITE_UPDATES_SIGNED=1` | The macOS build is signed: auto-download and install on macOS too (Squirrel.Mac refuses unsigned updates) |
+| `MAIN_VITE_DEFAULT_SERVER_URL` | Build-time default server for installers (`.env.production`: `https://app.calab.ru`) |
+| `MAIN_VITE_UPDATE_FEED` | Build time. The pinned update feed, the only one updates are auto-installed from (https only). `.env.production` sets `https://releases.calab.ru/` for `build`; `build-release.sh` passes `UPDATE_FEED`. Empty (dev, `electron-vite dev`) → notify-only |
+| `MAIN_VITE_UPDATES_SIGNED=1` | Build time, only for signed + notarized macOS builds (`build-release.sh`: `SIGN=1 NOTARIZE=1`; CI: when signing is real). Enables macOS auto-install (Squirrel.Mac refuses unsigned updates) |
+| `CALABA_UPDATE_URL` | Runtime, **notify-only** feed override for testing (https only): replaces the feed and disables auto-install. Not settable from the UI |
 | `CALABA_USER_DATA` | Separate profile directory (tests, two instances on one machine) |
 | `CALABA_MULTI_INSTANCE=1` | Disable the single-instance lock (a second instance for local testing) |
 | `CALABA_FAKE_MEDIA=1` | Fake Chromium devices: the mic beeps, the screen is a test pattern, no OS permission prompts. Automation only |
@@ -39,10 +40,13 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 
 electron-updater, generic provider; the logic is a pure state machine in `src/main/updateFlow.ts` (unit-tested with a fake updater), wired to Electron in `src/main/updater.ts`.
 
-- **Feed** (`src/shared/updateFeed.ts`): server `https://app.X` → `https://releases.X/` (`app.calab.ru` → `https://releases.calab.ru/`); any other host → `https://<host>/download/`. `CALABA_UPDATE_URL` / `MAIN_VITE_UPDATE_URL` override it; https only; the renderer cannot change it. Dev (unpackaged) builds never check.
-- **Checks:** 10 s after start, then every 6 h, plus «Проверить» in Settings → «О программе».
-- **Windows, Linux AppImage, signed macOS:** the update downloads in the background (progress in «О программе»), then a banner above the self panel says «Обновление X готово» with «Перезапустить»; quitting without it installs the update too.
-- **Notify only** — unsigned macOS, Linux deb/other, or Settings → «Приложение» → «Автоматически обновлять» off (default on): a system notification «Доступна версия X — Скачать» opens the download page.
+- **Feed trust** (`src/shared/updateFeed.ts`). Unsigned Windows and AppImage updates are checked only by the sha512 in `latest*.yml`, which comes from the same host. So automatic download and install happen **only** from the build-time feed `MAIN_VITE_UPDATE_FEED` (https). The server, the renderer and runtime env cannot change that feed.
+  - Without a build feed, the feed is derived from the server (`https://app.X` → `https://releases.X/`, any other host → `https://<host>/download/`) and used for notify-only.
+  - `CALABA_UPDATE_URL` is a notify-only override.
+  - Dev (unpackaged) builds never check.
+- **Checks:** 10 s after start, then every 6 h, plus «Проверить» in Settings → «О программе». There is also a debounced re-check after wake from sleep, and after a failed check once the network goes offline → online.
+- **Auto** needs the build feed, «Автоматически обновлять» on, and one of: Windows, Linux AppImage, or macOS built with `MAIN_VITE_UPDATES_SIGNED=1`. The update downloads in the background (progress in «О программе»). A banner above the self panel then says «Обновление X готово» with «Перезапустить». Quitting without pressing it installs the update too.
+- **Notify only** covers everything else: no build feed, the runtime override, unsigned macOS, Linux deb/other, or the setting off (default on). A system notification «Доступна версия X — Скачать» opens the human download page: `https://<server>/download/`, or the build feed when there is no server.
 - **Errors** go to the log only (`logs/main.log`, `[update]`); «О программе» shows «Не удалось проверить обновления». No toasts.
 
 ## Web client (ADR-0015)

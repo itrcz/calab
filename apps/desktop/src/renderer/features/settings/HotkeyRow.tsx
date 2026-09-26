@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Row } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
-import { comboFromEvent, comboLabel, comboProblem, effectiveHotkeys, type HotkeyAction } from '../../lib/shortcuts';
-import { IS_MAC, setHotkeyCapture } from '../../services/hotkeys';
+import { comboFromEvent, comboLabel, comboProblem, effectiveHotkeys, validHotkeys, type HotkeyAction } from '../../lib/shortcuts';
+import { beginHotkeyCapture, IS_MAC } from '../../services/hotkeys';
 import { usePrefs } from '../../stores/prefs';
 
 const ACTION_LABEL: Record<HotkeyAction, MessageKey> = {
@@ -13,18 +13,19 @@ const ACTION_LABEL: Record<HotkeyAction, MessageKey> = {
 
 /**
  * One rebindable in-window shortcut (docs/09 #18): «Изменить» records the next combo with
- * ⌘/Ctrl (Esc cancels); reserved system combos and duplicates are refused with a reason.
+ * ⌘/Ctrl (Esc cancels); reserved system combos, Alt off macOS (AltGr) and duplicates are refused
+ * with a reason.
  */
 export function HotkeyRow({ action, kbd }: { action: HotkeyAction; kbd: (label: string) => ReactNode }): ReactNode {
   const custom = usePrefs((s) => s.hotkeys);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const all = effectiveHotkeys(custom);
+  const all = effectiveHotkeys(custom, IS_MAC);
 
   useEffect(() => {
     if (!capturing) return;
-    setHotkeyCapture(true);
+    const endCapture = beginHotkeyCapture();
     const onKey = (e: KeyboardEvent): void => {
       e.preventDefault();
       e.stopPropagation();
@@ -37,16 +38,22 @@ export function HotkeyRow({ action, kbd }: { action: HotkeyAction; kbd: (label: 
         setError(t('hotkeys.needMod', { mod: IS_MAC ? '⌘' : 'Ctrl' }));
         return;
       }
-      const problem = comboProblem(action, combo, effectiveHotkeys(usePrefs.getState().hotkeys));
+      const stored = usePrefs.getState().hotkeys;
+      const problem = comboProblem(action, combo, effectiveHotkeys(stored, IS_MAC), IS_MAC);
       if (problem === 'reserved') {
         setError(t('hotkeys.reserved', { keys: comboLabel(combo, IS_MAC) }));
+        return;
+      }
+      if (problem === 'altgr') {
+        setError(t('hotkeys.altgr', { keys: comboLabel(combo, IS_MAC) }));
         return;
       }
       if (problem) {
         setError(t('hotkeys.conflict', { keys: comboLabel(combo, IS_MAC), action: t(ACTION_LABEL[problem.conflict]) }));
         return;
       }
-      setPrefs({ hotkeys: { ...usePrefs.getState().hotkeys, [action]: combo } });
+      // Invalid stored entries are dropped on the way (validHotkeys).
+      setPrefs({ hotkeys: { ...validHotkeys(stored, IS_MAC), [action]: combo } });
       setError(null);
       setCapturing(false);
     };
@@ -54,13 +61,14 @@ export function HotkeyRow({ action, kbd }: { action: HotkeyAction; kbd: (label: 
     window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('keydown', onKey, true);
-      setHotkeyCapture(false);
+      endCapture();
     };
   }, [capturing, action, setPrefs]);
 
-  const isCustom = !!custom[action];
+  const valid = validHotkeys(custom, IS_MAC);
+  const isCustom = !!valid[action];
   const reset = (): void => {
-    const next = { ...custom };
+    const next = { ...valid };
     delete next[action];
     setPrefs({ hotkeys: next });
     setError(null);

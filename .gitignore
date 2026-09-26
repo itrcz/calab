@@ -4,6 +4,8 @@ dist/
 out/
 .env
 .env.*
+!apps/desktop/.env.production
+!apps/desktop/.env.web
 !.env.example
 *.log
 .DS_Store

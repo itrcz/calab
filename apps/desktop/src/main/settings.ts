@@ -19,7 +19,7 @@ export function normalizeServerUrl(url: string): string {
 
 const DEFAULTS = (): AppSettings => ({
   serverUrl: defaultServerUrl(),
-  updateUrl: process.env['CALABA_UPDATE_URL'] ?? import.meta.env.MAIN_VITE_UPDATE_URL ?? '',
+  updateUrl: process.env['CALABA_UPDATE_URL'] ?? import.meta.env.MAIN_VITE_UPDATE_FEED ?? '',
   autostart: false,
   autoUpdate: true,
 });

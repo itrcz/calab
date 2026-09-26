@@ -26,5 +26,6 @@
     }
   },
   "license": "BUSL-1.1",
-  "author": "GPTunneL (https://gptunnel.ai)"
+  "author": "GPTunneL (https://gptunnel.ai)",
+  "version": "0.1.0"
 }

@@ -13,9 +13,13 @@ export function toggleMute(s: SelfState): SelfState {
   return { muted: true, deafened: false };
 }
 
-/** Deafen = mute + silence all remote audio. */
-export function toggleDeafen(s: SelfState): SelfState {
-  return s.deafened ? { muted: false, deafened: false } : { muted: true, deafened: true };
+/**
+ * Deafen = mute + silence all remote audio. Undeafen restores the mic — except under a moderator
+ * mute (VoiceState.server_muted), which only the server lifts: the mic stays muted (review pass 3 M1).
+ */
+export function toggleDeafen(s: SelfState & { serverMuted?: boolean }): SelfState {
+  if (!s.deafened) return { muted: true, deafened: true };
+  return { muted: s.serverMuted === true, deafened: false };
 }
 
 export interface TransmitInput extends SelfState {

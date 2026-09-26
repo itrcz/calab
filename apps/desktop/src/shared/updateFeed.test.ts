@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { feedUrl } from './updateFeed';
+import { downloadPage, feedUrl, httpsFeed } from './updateFeed';
 
 describe('update feed (review M3)', () => {
   it('app.X → https://releases.X/', () => {
@@ -38,5 +38,31 @@ describe('update feed (review M3)', () => {
   it('no server and no override → off', () => {
     expect(feedUrl('', '')).toBeNull();
     expect(feedUrl('', '  ')).toBeNull();
+  });
+});
+
+describe('build-time feed (review pass 3 B1)', () => {
+  it('https only, trailing slash; anything else is treated as empty', () => {
+    expect(httpsFeed('https://releases.calab.ru/')).toBe('https://releases.calab.ru/');
+    expect(httpsFeed(' https://releases.calab.ru ')).toBe('https://releases.calab.ru/');
+    expect(httpsFeed('https://updates.example/calab')).toBe('https://updates.example/calab/');
+    expect(httpsFeed('http://releases.calab.ru/')).toBeNull();
+    expect(httpsFeed('file:///tmp/feed')).toBeNull();
+    expect(httpsFeed('not a url')).toBeNull();
+    expect(httpsFeed('')).toBeNull();
+  });
+});
+
+describe('download page (review pass 3 L)', () => {
+  it('https server → <server origin>/download/, never the feed root', () => {
+    expect(downloadPage('https://app.calab.ru', 'https://releases.calab.ru/')).toBe('https://app.calab.ru/download/');
+    expect(downloadPage('https://app.calab.ru/', null)).toBe('https://app.calab.ru/download/');
+    expect(downloadPage('https://chat.example.com:8443/x', null)).toBe('https://chat.example.com:8443/download/');
+  });
+  it('no server / not https → the build-time feed (or none)', () => {
+    expect(downloadPage('', 'https://releases.calab.ru/')).toBe('https://releases.calab.ru/');
+    expect(downloadPage('http://localhost:3000', 'https://releases.calab.ru/')).toBe('https://releases.calab.ru/');
+    expect(downloadPage('not a url', null)).toBeNull();
+    expect(downloadPage('', null)).toBeNull();
   });
 });

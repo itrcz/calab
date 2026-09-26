@@ -101,6 +101,45 @@ describe('mention counters', () => {
     expect(isUnread('a', r())).toBe(false);
   });
 
+  it('a deleted message that was never counted does not decrement (review pass 3 L)', () => {
+    const r = useRooms.getState;
+    r().reset();
+    r().setLastMessage('a', '05');
+    r().setRead('a', '02');
+    r().setCounts('a', 2, 1); // server counted 03..05
+    // 06 arrives while the room is on screen (not counted), then is deleted before markRead.
+    r().setLastMessage('a', '06');
+    r().removeUnread('a', '06', true);
+    expect(r().unread['a']).toBe(2);
+    expect(r().mentions['a']).toBe(1);
+    // A counted one (server-covered) does.
+    r().removeUnread('a', '04', true);
+    expect(r().unread['a']).toBe(1);
+    expect(r().mentions['a']).toBeUndefined();
+    // Live-counted: −1 once, a repeated delete / a repeated add changes nothing more.
+    r().setLastMessage('a', '07');
+    r().addUnread('a', '07', false);
+    r().addUnread('a', '07', false);
+    expect(r().unread['a']).toBe(2);
+    r().removeUnread('a', '07', false);
+    r().removeUnread('a', '07', false);
+    expect(r().unread['a']).toBe(1);
+    // Clamped at 0.
+    r().removeUnread('a', '03', false);
+    r().removeUnread('a', '05', false);
+    expect(r().unread['a']).toBe(0);
+  });
+
+  it('no server counts (room without a read state): only live-counted deletions decrement', () => {
+    const r = useRooms.getState;
+    r().reset();
+    r().addUnread('b', '03', false);
+    r().removeUnread('b', '02', false);
+    expect(r().unread['b']).toBe(1);
+    r().removeUnread('b', '03', false);
+    expect(r().unread['b']).toBe(0);
+  });
+
   it('a partial read keeps the counters; unknown counters fall back to ids', () => {
     const r = useRooms.getState;
     r().reset();

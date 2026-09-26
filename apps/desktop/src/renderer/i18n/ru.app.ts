@@ -23,6 +23,7 @@ export const ruApp = {
   'hotkeys.needMod': 'Сочетание должно включать {mod}',
   'hotkeys.reserved': '{keys} занято системой. Выберите другое сочетание',
   'hotkeys.conflict': '{keys} уже используется: «{action}»',
+  'hotkeys.altgr': '{keys} срабатывает как AltGr при наборе текста. Выберите сочетание без Alt',
   // human error texts (lib/api/errors.ts)
   'err.network': 'Нет связи с сервером. Проверьте интернет',
   'err.unavailable': 'Сервер временно недоступен. Попробуйте позже',

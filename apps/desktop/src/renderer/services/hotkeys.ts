@@ -14,13 +14,13 @@ export const IS_MAC = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.t
 
 /** Current label of a rebindable shortcut («⌘⇧M» / «Ctrl+Shift+M»). */
 export function hotkeyLabel(action: HotkeyAction): string {
-  return comboLabel(effectiveHotkeys(usePrefs.getState().hotkeys)[action], IS_MAC);
+  return comboLabel(effectiveHotkeys(usePrefs.getState().hotkeys, IS_MAC)[action], IS_MAC);
 }
 
 /** Reactive variant for tooltips / kbd hints. */
 export function useHotkeyLabel(action: HotkeyAction): string {
   const custom = usePrefs((s) => s.hotkeys);
-  return comboLabel(effectiveHotkeys(custom)[action], IS_MAC);
+  return comboLabel(effectiveHotkeys(custom, IS_MAC)[action], IS_MAC);
 }
 
 /** Room history: ⌘[ / ⌘] on macOS (Finder, Safari), Alt+← / Alt+→ on Windows/Linux. */
@@ -54,10 +54,21 @@ export function shortcutLetter(e: Pick<KeyboardEvent, 'key' | 'code'>): string {
   return /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : '';
 }
 
-/** While the settings page records a new combo, shortcuts must not fire. */
-let capturing = false;
-export function setHotkeyCapture(on: boolean): void {
-  capturing = on;
+/**
+ * While the settings page records a new combo, shortcuts must not fire. Per-owner tokens: one
+ * row's cleanup must not end another row's capture.
+ */
+const captures = new Set<symbol>();
+/** Starts a capture; call the returned function to end exactly that one. */
+export function beginHotkeyCapture(): () => void {
+  const token = Symbol('hotkey-capture');
+  captures.add(token);
+  return () => {
+    captures.delete(token);
+  };
+}
+export function hotkeyCaptureActive(): boolean {
+  return captures.size > 0;
 }
 
 export function installHotkeys(): () => void {
@@ -79,8 +90,8 @@ export function installHotkeys(): () => void {
       useUi.getState().goForward();
       return;
     }
-    if (!mod || capturing) return;
-    const keys = effectiveHotkeys(usePrefs.getState().hotkeys);
+    if (!mod || hotkeyCaptureActive()) return;
+    const keys = effectiveHotkeys(usePrefs.getState().hotkeys, IS_MAC);
     if (matchesCombo(e, keys.search, IS_MAC)) {
       e.preventDefault();
       const ui = useUi.getState();

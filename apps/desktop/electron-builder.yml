@@ -90,3 +90,6 @@ linux:
   maintainer: GPTunneL <it@gptunnel.ai>
 deb:
   packageName: calab
+  # The package was «calaba» before the rename (docs/10): replace it on upgrade instead of
+  # installing side by side (both would claim calaba:// and the same binary name space).
+  fpm: ['--replaces=calaba', '--conflicts=calaba']

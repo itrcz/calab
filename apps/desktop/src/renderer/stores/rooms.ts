@@ -16,6 +16,14 @@ interface RoomsState {
   unread: Record<string, number>;
   /** Mentions of me since the read marker (READY read_states.mention_count, then kept locally). */
   mentions: Record<string, number>;
+  /**
+   * What the counters include, so a deletion never decrements a message that was not counted
+   * (e.g. deleted in the visible room before the read marker moved — review pass 3 L):
+   * `countedUpTo` — the newest message the server counts cover (lastMessage at READY);
+   * `liveCounted` — ids added by addUnread since.
+   */
+  countedUpTo: Record<string, string>;
+  liveCounted: Record<string, string[]>;
   reset: () => void;
   upsert: (r: Room) => void;
   upsertMany: (rs: Room[]) => void;
@@ -50,9 +58,12 @@ export const useRooms = create<RoomsState>()((set) => ({
   lastMessage: {},
   unread: {},
   mentions: {},
+  countedUpTo: {},
+  liveCounted: {},
   categories: {},
   notify: {},
-  reset: () => set({ byId: {}, readState: {}, lastMessage: {}, unread: {}, mentions: {}, categories: {}, notify: {} }),
+  reset: () =>
+    set({ byId: {}, readState: {}, lastMessage: {}, unread: {}, mentions: {}, countedUpTo: {}, liveCounted: {}, categories: {}, notify: {} }),
   upsert: (r) => set((s) => ({ byId: { ...s.byId, [r.id]: r } })),
   upsertMany: (rs) =>
     set((s) => {
@@ -80,12 +91,16 @@ export const useRooms = create<RoomsState>()((set) => ({
     set((s) => {
       if (!idAfter(messageId, s.readState[roomId]) && s.readState[roomId]) return {};
       const readState = { ...s.readState, [roomId]: messageId };
+      // Ids at or before the marker can no longer be decremented (removeUnread checks the marker).
+      const live = (s.liveCounted[roomId] ?? []).filter((id) => idAfter(id, messageId));
+      const liveCounted = { ...s.liveCounted, [roomId]: live };
+      if (live.length === 0) delete liveCounted[roomId];
       // Read up to the newest known message → nothing unread (READ_STATE_UPDATE carries 0/0).
       // Read only partly (newer messages arrived meanwhile): the counters stay as they are.
-      if (idAfter(s.lastMessage[roomId], messageId)) return { readState };
+      if (idAfter(s.lastMessage[roomId], messageId)) return { readState, liveCounted };
       const mentions = { ...s.mentions };
       delete mentions[roomId];
-      return { readState, unread: { ...s.unread, [roomId]: 0 }, mentions };
+      return { readState, liveCounted, unread: { ...s.unread, [roomId]: 0 }, mentions };
     }),
   setLastMessage: (roomId, messageId) =>
     set((s) => (idAfter(messageId, s.lastMessage[roomId]) ? { lastMessage: { ...s.lastMessage, [roomId]: messageId } } : {})),
@@ -94,12 +109,20 @@ export const useRooms = create<RoomsState>()((set) => ({
       const m = { ...s.mentions };
       if (mentions > 0) m[roomId] = mentions;
       else delete m[roomId];
-      return { unread: { ...s.unread, [roomId]: unread }, mentions: m };
+      // The server counted everything up to the newest message it knew of (set just before).
+      const countedUpTo = { ...s.countedUpTo };
+      const last = s.lastMessage[roomId];
+      if (last) countedUpTo[roomId] = last;
+      else delete countedUpTo[roomId];
+      return { unread: { ...s.unread, [roomId]: unread }, mentions: m, countedUpTo };
     }),
   addUnread: (roomId, messageId, mention) =>
     set((s) => {
       if (!idAfter(messageId, s.readState[roomId])) return {}; // already read (another device)
+      const live = s.liveCounted[roomId] ?? [];
+      if (live.includes(messageId)) return {}; // counted once
       return {
+        liveCounted: { ...s.liveCounted, [roomId]: [...live, messageId] },
         unread: { ...s.unread, [roomId]: (s.unread[roomId] ?? 0) + 1 },
         ...(mention ? { mentions: { ...s.mentions, [roomId]: (s.mentions[roomId] ?? 0) + 1 } } : {}),
       };
@@ -107,7 +130,18 @@ export const useRooms = create<RoomsState>()((set) => ({
   removeUnread: (roomId, messageId, mention) =>
     set((s) => {
       if (!idAfter(messageId, s.readState[roomId])) return {};
+      const live = s.liveCounted[roomId] ?? [];
+      const liveHit = live.includes(messageId);
+      // Counted = added live, or covered by the server counts (READY). Anything else (seen on
+      // screen, own) was never counted: nothing to take back.
+      if (!liveHit && idAfter(messageId, s.countedUpTo[roomId])) return {};
       const patch: Partial<RoomsState> = {};
+      if (liveHit) {
+        const rest = live.filter((id) => id !== messageId);
+        const liveCounted = { ...s.liveCounted, [roomId]: rest };
+        if (rest.length === 0) delete liveCounted[roomId];
+        patch.liveCounted = liveCounted;
+      }
       const u = s.unread[roomId];
       if (u !== undefined && u > 0) patch.unread = { ...s.unread, [roomId]: u - 1 };
       const m = s.mentions[roomId] ?? 0;
