@@ -139,7 +139,7 @@ build_mac() {
       # SIGN_TIMESTAMP=1 keeps the secure timestamp.
       [[ -n "${SIGN_TIMESTAMP:-}" ]] || mac_args+=(-c.mac.timestamp=none)
     fi
-    log "macOS: SIGNED with cert/developerID_full.p12 (no notarization)"
+    log "macOS: SIGNED with Developer ID$([[ -n "${NOTARIZE:-}" ]] && echo " + notarization" || echo " (no notarization)")"
   fi
   log "macOS: electron-builder ${mac_args[*]} (uiohook compiled from source per arch)"
   (cd "$SRC/apps/desktop" && env "${sign_env[@]}" pnpm exec electron-builder "${mac_args[@]}" \

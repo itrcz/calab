@@ -110,8 +110,18 @@ jobs:
           WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
         run: |
           t="${{ matrix.target }}"; sign=0 args=""
+          # Secrets pasted from a .env may keep their surrounding quotes / trailing newline: normalise
+          # (base64 material also loses inner whitespace). Diagnostics below never print values.
+          unq() { local v="$1"; v="${v%$'\n'}"; v="${v%$'\r'}"; v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"; printf '%s' "$v"; }
+          for k in APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID WIN_CERT_P12_BASE64 WIN_CERT_PASSWORD; do
+            raw="${!k}"; [[ -n "$raw" ]] || continue
+            v="$(unq "$raw")"; [[ "$k" == *_BASE64 ]] && v="$(printf '%s' "$v" | tr -d ' \t\r\n')"
+            [[ "$v" != "$raw" ]] && echo "::notice::$k normalised (quotes/whitespace stripped; ${#raw} → ${#v} chars)"
+            printf -v "$k" '%s' "$v"
+          done
           p12_ok() { # base64 password outfile
-            [[ -n "$1" ]] && printf '%s' "$1" | base64 -d > "$3" 2>/dev/null && [[ -s "$3" ]] || return 1
+            [[ -n "$1" ]] || { echo "p12: secret is empty"; return 1; }
+            printf '%s' "$1" | base64 -d > "$3" 2>/dev/null && [[ -s "$3" ]] || { echo "p12: base64 decode failed (${#1} chars)"; return 1; }
             # Apple/Windows exports use legacy RC2-40 encryption: OpenSSL 3 needs -legacy (and its legacy
             # provider), macOS's LibreSSL reads it as is but has no -legacy flag — try each validator.
             local o
