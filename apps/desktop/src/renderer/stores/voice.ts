@@ -114,6 +114,8 @@ export interface VoiceStore {
   videoPip: boolean;
   muted: boolean;
   deafened: boolean;
+  /** Local mic choice to restore on undeafen; kept with mute/deafen across room changes. */
+  mutedBeforeDeafen: boolean;
   transmitting: boolean;
   levelDb: number;
   vad: number | null;
@@ -173,6 +175,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   videoPip: true,
   muted: false,
   deafened: false,
+  mutedBeforeDeafen: false,
   transmitting: false,
   levelDb: -80,
   vad: null,

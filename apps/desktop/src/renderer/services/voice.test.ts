@@ -268,6 +268,8 @@ beforeEach(async () => {
   ({ voice } = await import('./voice'));
   ({ useVoice } = await import('../stores/voice'));
   ({ usePrefs } = await import('../stores/prefs'));
+  const { toast } = await import('../stores/toasts');
+  vi.mocked(toast.info).mockClear();
   voice.init();
 });
 afterEach(() => {
@@ -647,6 +649,78 @@ describe('VoiceEngine', () => {
     expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
   });
 
+  it.each([true, false])('undeafen restores the prior mic mute (%s) on the track and server', async (muted) => {
+    await voice.join('A', 'ws');
+    if (muted) voice.toggleMute();
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: true });
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
+
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(muted);
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false });
+  });
+
+  it.each([true, false])('rapid deafen cycles preserve the prior mic mute (%s)', async (muted) => {
+    await voice.join('A', 'ws');
+    FakeLocalAudioTrack.lockMs = 50;
+    if (muted) voice.toggleMute();
+    for (let i = 0; i < 4; i++) voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(muted);
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false });
+  });
+
+  it('undeafen cannot lift a moderator mute applied while deafened', async () => {
+    await voice.join('A', 'ws');
+    voice.toggleDeafen();
+    voice.reconcileSelfState({ roomId: 'A', muted: true, deafened: true, serverMuted: true });
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false, serverMuted: true });
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false });
+  });
+
+  it('explicit mic unmute while deafened enables both and replaces the remembered mute', async () => {
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    voice.toggleDeafen();
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+
+    voice.toggleDeafen();
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+  });
+
+  it.each([true, false])('rejoin while deafened preserves the prior mic mute (%s)', async (muted) => {
+    await voice.join('A', 'ws');
+    if (muted) voice.toggleMute();
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(100);
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState().phase).toBe('connected');
+    expect(FakeRoom.all).toHaveLength(2);
+
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
+    expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(muted);
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false });
+  });
+
   it('the chosen mic unplugged mid-call → default device, published in place (review M3)', async () => {
     usePrefs.getState().setPrefs({ micDeviceId: 'usb' });
     await voice.join('A', 'ws');
@@ -893,6 +967,11 @@ describe('VOICE_MOVED (ADR-0019)', () => {
     expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(true); // re-published, explicitly muted
     const { toast } = await import('../stores/toasts');
     expect(toast.info).toHaveBeenCalledWith('Вас переместили в «Кухня»; стрим остановлен');
+    voice.toggleDeafen();
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
+    expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(true);
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false });
   });
 
   it('with a token, not streaming: short toast, the server mute survives the reconnect', async () => {

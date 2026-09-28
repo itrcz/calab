@@ -7,14 +7,31 @@ describe('mute / deafen', () => {
     expect(toggleMute({ muted: true, deafened: false })).toEqual({ muted: false, deafened: false });
     expect(toggleMute({ muted: true, deafened: true })).toEqual({ muted: false, deafened: false });
   });
-  it('deafen implies mute and restores both', () => {
-    expect(toggleDeafen({ muted: false, deafened: false })).toEqual({ muted: true, deafened: true });
-    expect(toggleDeafen({ muted: true, deafened: true })).toEqual({ muted: false, deafened: false });
+  it.each([true, false])('undeafen restores the prior mic mute (%s)', (muted) => {
+    const before = { muted, deafened: false, mutedBeforeDeafen: false };
+    const deafened = toggleDeafen(before);
+    expect(deafened).toMatchObject({ muted: true, deafened: true });
+    expect(toggleDeafen(deafened)).toMatchObject({ muted, deafened: false });
+  });
+  it('each deafen cycle remembers the latest mic choice', () => {
+    const before = { muted: true, deafened: false, mutedBeforeDeafen: false };
+    const restored = toggleDeafen(toggleDeafen(before));
+    expect(restored).toMatchObject({ muted: true, deafened: false });
+    const unmuted = { ...restored, ...toggleMute(restored) };
+    expect(toggleDeafen(toggleDeafen(unmuted))).toMatchObject({ muted: false, deafened: false });
+  });
+  it('explicit mic unmute while deafened clears both, including on the next deafen cycle', () => {
+    const before = { muted: true, deafened: false, mutedBeforeDeafen: false };
+    const deafened = toggleDeafen(before);
+    const unmuted = { ...deafened, ...toggleMute(deafened) };
+    expect(unmuted).toMatchObject({ muted: false, deafened: false });
+    expect(toggleDeafen(toggleDeafen(unmuted))).toMatchObject({ muted: false, deafened: false });
   });
   it('undeafen under a moderator mute keeps the mic muted (review pass 3 M1)', () => {
-    expect(toggleDeafen({ muted: true, deafened: true, serverMuted: true })).toEqual({ muted: true, deafened: false });
-    expect(toggleDeafen({ muted: true, deafened: true, serverMuted: false })).toEqual({ muted: false, deafened: false });
-    expect(toggleDeafen({ muted: true, deafened: false, serverMuted: true })).toEqual({ muted: true, deafened: true });
+    const before = { muted: true, deafened: true, mutedBeforeDeafen: false };
+    expect(toggleDeafen({ ...before, serverMuted: true })).toMatchObject({ muted: true, deafened: false });
+    expect(toggleDeafen({ ...before, serverMuted: false })).toMatchObject({ muted: false, deafened: false });
+    expect(toggleDeafen({ ...before, deafened: false, serverMuted: true })).toMatchObject({ muted: true, deafened: true });
   });
 });
 
