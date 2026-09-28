@@ -71,6 +71,7 @@ function useToastPlacement(active: boolean): ToastPlacement | null {
 export function Toasts(): ReactNode {
   const items = useToasts((s) => s.items);
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
+  const stack = useRef<HTMLElement>(null);
   const [hover, setHover] = useState(false);
   const [focus, setFocus] = useState(false);
   const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
@@ -91,10 +92,20 @@ export function Toasts(): ReactNode {
     };
   }, [visualTest]);
 
+  useLayoutEffect(() => {
+    // Removing a focused toast (dismiss, dedupe or queue eviction) does not emit blur.
+    // Reconcile with the surviving DOM so the stack cannot stay paused indefinitely.
+    const syncInteraction = (): void => {
+      setFocus(stack.current?.contains(document.activeElement) ?? false);
+    };
+    syncInteraction();
+  }, [items]);
+
   const paused = hover || focus || hidden || visualTest;
   const place = useToastPlacement(items.length > 0);
   return (
     <section
+      ref={stack}
       aria-label={t('toast.region')}
       // Phones: under the top bar (at the bottom it would cover the composer and the voice strip),
       // and under the drawers and sheets, which the user is working in.
