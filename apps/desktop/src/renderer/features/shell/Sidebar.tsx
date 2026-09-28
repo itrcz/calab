@@ -75,7 +75,7 @@ import { VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { useMobile } from '../../lib/mobile';
 import { categoryDropAt, roomDropAt, stepTarget, type RoomTarget, type Slot } from '../../lib/roomOrder';
 import { moveCategoryTo, moveRoomTo, workspaceCategories, workspaceLayout } from '../../services/roomOrder';
-import { useTimeZoneLabel } from '../../services/timezone';
+import { useLocalTimeTag } from '../../services/timezone';
 import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
@@ -1240,8 +1240,8 @@ function VoiceMember({
   // anyone, admins and the owner included; others only members below admins.
   const myRole = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const draggable = canMove && mayMoveVoice(myRole, role, isMe);
-  // «+5 UTC» tag when their time zone differs from mine (User.timezone).
-  const tz = useTimeZoneLabel(state.userId);
+  // Their local time «16:50» as a tag when their time zone differs from mine (User.timezone).
+  const tz = useLocalTimeTag(state.userId);
   // Pending (optimistic join, docs/05) for more than 3 s: the «connecting» ring.
   const connectingRing = useConnectingRing(workspaceId, state.userId, state.pending);
   const talking = speaking && !state.muted && !connectingRing;

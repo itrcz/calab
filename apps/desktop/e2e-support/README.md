@@ -134,6 +134,8 @@ content: `@${IDS.users.anna} …` })` or `POST /__mock/message` with the same JS
 | `POST /__mock/message` | `{ roomId, authorId, content, replyToId? }` |
 | `POST /__mock/dispatch` | protojson `DispatchEvent`, sent to every session unfiltered |
 | `POST /__mock/voice` | `{ userId, roomId ("" = leave), muted?, deafened?, streaming? }` |
+| `GET /__mock/voice` | — → `{ [userId]: { roomId, pending } }`: the voice states as the server holds them |
+| `POST /__mock/gateway/drop` | `{ downMs? }` — a gateway outage (`dropGateway`): sockets cut, new ones refused for `downMs`, sessions not resumable → clients re-IDENTIFY (fresh READY) |
 | `POST /__mock/presence` | `{ userId, status: "ONLINE" \| "IDLE" \| "DND" \| "OFFLINE" }` |
 | `POST /__mock/typing` | `{ roomId, userId }` |
 

@@ -38,27 +38,47 @@ export async function startPublisher(args: {
   userId: string;
   name: string;
   roomId: string;
-  /** 'none': joins without publishing (a data-only participant: a viewer who annotates). */
-  source?: 'screen' | 'camera' | 'none';
+  /**
+   * 'none': joins without publishing (a data-only participant: a viewer who annotates).
+   * 'microphone': a voice — a steady 440 Hz tone as the Microphone source (deafen e2e).
+   */
+  source?: 'screen' | 'camera' | 'none' | 'microphone';
   image?: Buffer;
   /** Receive data packets (annotations): needs canSubscribe; nothing is subscribed automatically. */
   data?: boolean;
 }): Promise<Publisher> {
   const camera = args.source === 'camera';
   const none = args.source === 'none';
-  const at = new AccessToken(LK_KEY, LK_SECRET, { identity: `${args.userId}:${camera ? 'camera' : none ? 'viewer' : 'publisher'}`, name: args.name, ttl: '10m' });
+  const mic = args.source === 'microphone';
+  const at = new AccessToken(LK_KEY, LK_SECRET, { identity: `${args.userId}:${camera ? 'camera' : none ? 'viewer' : mic ? 'mic' : 'publisher'}`, name: args.name, ttl: '10m' });
   // A viewer who annotates has SPEAK (the microphone source) like any member (ADR-0028).
   at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${args.roomId}`, canPublish: true, canSubscribe: args.data === true, canPublishData: true });
   const token = await at.toJwt();
-  const browser: Browser = await chromium.launch();
+  const browser: Browser = await chromium.launch({ args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage();
   const umd = createRequire(import.meta.url).resolve('livekit-client');
   await page.addScriptTag({ path: umd.replace(/[^/]+$/, 'livekit-client.umd.js') });
   await page.evaluate(
-    async ({ url, token, camera, none, image }) => {
+    async ({ url, token, camera, none, mic, image }) => {
       const LK = (window as unknown as { LivekitClient: typeof import('livekit-client') }).LivekitClient;
       const got: Array<{ topic: string; from: string; data: number[] }> = [];
       (window as unknown as { __data: typeof got }).__data = got;
+      if (mic) {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const dest = ctx.createMediaStreamDestination();
+        osc.frequency.value = 440;
+        osc.connect(dest);
+        osc.start();
+        await ctx.resume();
+        const tone = dest.stream.getAudioTracks()[0];
+        if (!tone) throw new Error('no tone track');
+        const room = new LK.Room();
+        (window as unknown as { __room: unknown }).__room = room;
+        await room.connect(url, token, { autoSubscribe: false });
+        await room.localParticipant.publishTrack(tone, { source: LK.Track.Source.Microphone });
+        return;
+      }
       if (none) {
         const room = new LK.Room();
         (window as unknown as { __room: unknown }).__room = room;
@@ -102,7 +122,7 @@ export async function startPublisher(args: {
       await room.connect(url, token, { autoSubscribe: false });
       await room.localParticipant.publishTrack(track, { source: camera ? LK.Track.Source.Camera : LK.Track.Source.ScreenShare, simulcast: false, videoCodec: 'vp8' });
     },
-    { url: LK_URL, token, camera, none, image: args.image ? `data:image/png;base64,${args.image.toString('base64')}` : '' },
+    { url: LK_URL, token, camera, none, mic, image: args.image ? `data:image/png;base64,${args.image.toString('base64')}` : '' },
   );
   type Win = { __room: import('livekit-client').Room; __data: ReceivedData[] };
   return {

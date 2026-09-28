@@ -5,7 +5,8 @@ import { Check, ChevronRight, Pencil, Smile, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Avatar, StatusGlyph } from '../../components/Avatar';
 import { cx } from '../../components/ui';
-import { getLocale, t, type MessageKey } from '../../i18n';
+import { t, type MessageKey } from '../../i18n';
+import { fmt } from '../../lib/format';
 import { AFTER_SHORT, STATUS_PRESETS, applyCustomStatus, saveCustomStatus, type StatusChoice } from '../../services/customStatus';
 import { PRESENCE_DURATIONS, choosePresence } from '../../services/presenceTimer';
 import { usePrefs } from '../../stores/prefs';
@@ -43,10 +44,7 @@ export function useMyStatus(): PresenceStatus {
 
 /** «до 18:30» today, «до 30 сент., 18:30» later. */
 function untilLabel(until: number): string {
-  const d = new Date(until);
-  const today = new Date().toDateString() === d.toDateString();
-  const fmt = new Intl.DateTimeFormat(getLocale(), today ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  return t('presence.until', { time: fmt.format(d) });
+  return t('presence.until', { time: fmt.until(new Date(until)) });
 }
 
 /** «Свой статус» one-click rows: the presets, then my recent statuses — minus the one I have now. */

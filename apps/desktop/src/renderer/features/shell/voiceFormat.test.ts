@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { formatDuration, inviteRowUntil, inviteRowVisible, pad2, parseUserLimit, recordingTime } from './voiceFormat';
+import { describe, expect, it, vi } from 'vitest';
+import { formatDuration, inviteRowUntil, inviteRowVisible, pad2, parseUserLimit, recordingTime, clockFor } from './voiceFormat';
 
 describe('formatDuration', () => {
   it('formats minutes and hours', () => {
@@ -59,5 +59,17 @@ describe('recordingTime', () => {
     expect(recordingTime(since, since + 3_600_000)).toBe('1:00:00');
     // A clock behind the server's `since` never shows a negative time.
     expect(recordingTime(since, since - 5_000)).toBe('0:00');
+  });
+});
+
+describe('useNow(0)', () => {
+  it('subscribes to no timer (a zero period must not spin)', () => {
+    vi.useFakeTimers();
+    const before = vi.getTimerCount();
+    const unsubscribe = clockFor(0).subscribe(() => undefined);
+    expect(vi.getTimerCount()).toBe(before);
+    expect(typeof clockFor(0).now).toBe('number');
+    unsubscribe();
+    vi.useRealTimers();
   });
 });

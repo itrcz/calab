@@ -71,6 +71,60 @@ func (WorkspaceVisibility) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{0}
 }
 
+// Clock format for every time shown in a workspace (docs/09 #73). The server always sends
+// AUTO, H24 or H12; UNSPECIFIED (an older server) reads as AUTO.
+type TimeFormat int32
+
+const (
+	TimeFormat_TIME_FORMAT_UNSPECIFIED TimeFormat = 0
+	TimeFormat_TIME_FORMAT_AUTO        TimeFormat = 1 // the viewer's system locale
+	TimeFormat_TIME_FORMAT_H24         TimeFormat = 2 // 16:50
+	TimeFormat_TIME_FORMAT_H12         TimeFormat = 3 // 4:50 PM
+)
+
+// Enum value maps for TimeFormat.
+var (
+	TimeFormat_name = map[int32]string{
+		0: "TIME_FORMAT_UNSPECIFIED",
+		1: "TIME_FORMAT_AUTO",
+		2: "TIME_FORMAT_H24",
+		3: "TIME_FORMAT_H12",
+	}
+	TimeFormat_value = map[string]int32{
+		"TIME_FORMAT_UNSPECIFIED": 0,
+		"TIME_FORMAT_AUTO":        1,
+		"TIME_FORMAT_H24":         2,
+		"TIME_FORMAT_H12":         3,
+	}
+)
+
+func (x TimeFormat) Enum() *TimeFormat {
+	p := new(TimeFormat)
+	*p = x
+	return p
+}
+
+func (x TimeFormat) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TimeFormat) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_workspace_proto_enumTypes[1].Descriptor()
+}
+
+func (TimeFormat) Type() protoreflect.EnumType {
+	return &file_calaba_v1_workspace_proto_enumTypes[1]
+}
+
+func (x TimeFormat) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TimeFormat.Descriptor instead.
+func (TimeFormat) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{1}
+}
+
 type Workspace struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -92,6 +146,7 @@ type Workspace struct {
 	// Set while a superadmin has suspended the workspace (read-only: writes get 403
 	// WORKSPACE_SUSPENDED). Unset = active.
 	Suspension    *WorkspaceSuspension `protobuf:"bytes,13,opt,name=suspension,proto3" json:"suspension,omitempty"`
+	TimeFormat    TimeFormat           `protobuf:"varint,14,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat" json:"time_format,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -215,6 +270,13 @@ func (x *Workspace) GetSuspension() *WorkspaceSuspension {
 		return x.Suspension
 	}
 	return nil
+}
+
+func (x *Workspace) GetTimeFormat() TimeFormat {
+	if x != nil {
+		return x.TimeFormat
+	}
+	return TimeFormat_TIME_FORMAT_UNSPECIFIED
 }
 
 type WorkspaceSuspension struct {
@@ -801,7 +863,8 @@ type UpdateWorkspaceRequest struct {
 	DefaultMaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,6,opt,name=default_max_stream_preset,json=defaultMaxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"default_max_stream_preset,omitempty"`
 	DefaultMaxStreams       *uint32                `protobuf:"varint,7,opt,name=default_max_streams,json=defaultMaxStreams,proto3,oneof" json:"default_max_streams,omitempty"` // 0..10
 	AllowSelfNickname       *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`
-	DefaultCameraLimit      *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"` // 0..25 (0 = cameras off)
+	DefaultCameraLimit      *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"`  // 0..25 (0 = cameras off)
+	TimeFormat              *TimeFormat            `protobuf:"varint,10,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat,oneof" json:"time_format,omitempty"` // AUTO|H24|H12 (UNSPECIFIED is 422)
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -897,6 +960,13 @@ func (x *UpdateWorkspaceRequest) GetDefaultCameraLimit() uint32 {
 		return *x.DefaultCameraLimit
 	}
 	return 0
+}
+
+func (x *UpdateWorkspaceRequest) GetTimeFormat() TimeFormat {
+	if x != nil && x.TimeFormat != nil {
+		return *x.TimeFormat
+	}
+	return TimeFormat_TIME_FORMAT_UNSPECIFIED
 }
 
 type UpdateWorkspaceResponse struct {
@@ -2414,7 +2484,7 @@ var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xbc\x04\n" +
+	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xf4\x04\n" +
 	"\tWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x12\n" +
@@ -2435,7 +2505,9 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x04plan\x18\f \x01(\v2\x18.calaba.v1.WorkspacePlanR\x04plan\x12>\n" +
 	"\n" +
 	"suspension\x18\r \x01(\v2\x1e.calaba.v1.WorkspaceSuspensionR\n" +
-	"suspension\"Y\n" +
+	"suspension\x126\n" +
+	"\vtime_format\x18\x0e \x01(\x0e2\x15.calaba.v1.TimeFormatR\n" +
+	"timeFormat\"Y\n" +
 	"\x13WorkspaceSuspension\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xdc\x01\n" +
@@ -2484,7 +2556,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"workspaces\"x\n" +
 	"\x14GetWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12,\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xaf\x05\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xfc\x05\n" +
 	"\x16UpdateWorkspaceRequest\x12\x17\n" +
 	"\x04slug\x18\x01 \x01(\tH\x00R\x04slug\x88\x01\x01\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x01R\x04name\x88\x01\x01\x12C\n" +
@@ -2497,7 +2569,10 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x19default_max_stream_preset\x18\x06 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetH\x05R\x16defaultMaxStreamPreset\x88\x01\x01\x123\n" +
 	"\x13default_max_streams\x18\a \x01(\rH\x06R\x11defaultMaxStreams\x88\x01\x01\x123\n" +
 	"\x13allow_self_nickname\x18\b \x01(\bH\aR\x11allowSelfNickname\x88\x01\x01\x125\n" +
-	"\x14default_camera_limit\x18\t \x01(\rH\bR\x12defaultCameraLimit\x88\x01\x01B\a\n" +
+	"\x14default_camera_limit\x18\t \x01(\rH\bR\x12defaultCameraLimit\x88\x01\x01\x12;\n" +
+	"\vtime_format\x18\n" +
+	" \x01(\x0e2\x15.calaba.v1.TimeFormatH\tR\n" +
+	"timeFormat\x88\x01\x01B\a\n" +
 	"\x05_slugB\a\n" +
 	"\x05_nameB\r\n" +
 	"\v_visibilityB\x0f\n" +
@@ -2506,7 +2581,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x1a_default_max_stream_presetB\x16\n" +
 	"\x14_default_max_streamsB\x16\n" +
 	"\x14_allow_self_nicknameB\x17\n" +
-	"\x15_default_camera_limit\"M\n" +
+	"\x15_default_camera_limitB\x0e\n" +
+	"\f_time_format\"M\n" +
 	"\x17UpdateWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\"\x7f\n" +
 	"\x15JoinWorkspaceResponse\x122\n" +
@@ -2602,7 +2678,13 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x13WorkspaceVisibility\x12$\n" +
 	" WORKSPACE_VISIBILITY_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cWORKSPACE_VISIBILITY_PRIVATE\x10\x01\x12\x1d\n" +
-	"\x19WORKSPACE_VISIBILITY_OPEN\x10\x02B\x9c\x01\n" +
+	"\x19WORKSPACE_VISIBILITY_OPEN\x10\x02*i\n" +
+	"\n" +
+	"TimeFormat\x12\x1b\n" +
+	"\x17TIME_FORMAT_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10TIME_FORMAT_AUTO\x10\x01\x12\x13\n" +
+	"\x0fTIME_FORMAT_H24\x10\x02\x12\x13\n" +
+	"\x0fTIME_FORMAT_H12\x10\x03B\x9c\x01\n" +
 	"\rcom.calaba.v1B\x0eWorkspaceProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -2618,111 +2700,114 @@ func file_calaba_v1_workspace_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_workspace_proto_rawDescData
 }
 
-var file_calaba_v1_workspace_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_calaba_v1_workspace_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_calaba_v1_workspace_proto_goTypes = []any{
 	(WorkspaceVisibility)(0),           // 0: calaba.v1.WorkspaceVisibility
-	(*Workspace)(nil),                  // 1: calaba.v1.Workspace
-	(*WorkspaceSuspension)(nil),        // 2: calaba.v1.WorkspaceSuspension
-	(*WorkspaceBan)(nil),               // 3: calaba.v1.WorkspaceBan
-	(*WorkspaceMember)(nil),            // 4: calaba.v1.WorkspaceMember
-	(*Invite)(nil),                     // 5: calaba.v1.Invite
-	(*CreateWorkspaceRequest)(nil),     // 6: calaba.v1.CreateWorkspaceRequest
-	(*CreateWorkspaceResponse)(nil),    // 7: calaba.v1.CreateWorkspaceResponse
-	(*ListWorkspacesResponse)(nil),     // 8: calaba.v1.ListWorkspacesResponse
-	(*DiscoverWorkspacesResponse)(nil), // 9: calaba.v1.DiscoverWorkspacesResponse
-	(*GetWorkspaceResponse)(nil),       // 10: calaba.v1.GetWorkspaceResponse
-	(*UpdateWorkspaceRequest)(nil),     // 11: calaba.v1.UpdateWorkspaceRequest
-	(*UpdateWorkspaceResponse)(nil),    // 12: calaba.v1.UpdateWorkspaceResponse
-	(*JoinWorkspaceResponse)(nil),      // 13: calaba.v1.JoinWorkspaceResponse
-	(*CreateInviteRequest)(nil),        // 14: calaba.v1.CreateInviteRequest
-	(*CreateInviteResponse)(nil),       // 15: calaba.v1.CreateInviteResponse
-	(*ListInvitesResponse)(nil),        // 16: calaba.v1.ListInvitesResponse
-	(*ListMembersResponse)(nil),        // 17: calaba.v1.ListMembersResponse
-	(*UpdateMemberRequest)(nil),        // 18: calaba.v1.UpdateMemberRequest
-	(*UpdateMemberResponse)(nil),       // 19: calaba.v1.UpdateMemberResponse
-	(*GetInviteResponse)(nil),          // 20: calaba.v1.GetInviteResponse
-	(*InviteLookupRequest)(nil),        // 21: calaba.v1.InviteLookupRequest
-	(*InviteLookupResponse)(nil),       // 22: calaba.v1.InviteLookupResponse
-	(*AddMemberRequest)(nil),           // 23: calaba.v1.AddMemberRequest
-	(*AddMemberResponse)(nil),          // 24: calaba.v1.AddMemberResponse
-	(*EmailInvite)(nil),                // 25: calaba.v1.EmailInvite
-	(*CreateEmailInviteRequest)(nil),   // 26: calaba.v1.CreateEmailInviteRequest
-	(*CreateEmailInviteResponse)(nil),  // 27: calaba.v1.CreateEmailInviteResponse
-	(*ListEmailInvitesResponse)(nil),   // 28: calaba.v1.ListEmailInvitesResponse
-	(*CreateBanRequest)(nil),           // 29: calaba.v1.CreateBanRequest
-	(*CreateBanResponse)(nil),          // 30: calaba.v1.CreateBanResponse
-	(*ListBansResponse)(nil),           // 31: calaba.v1.ListBansResponse
-	(*ListRolesResponse)(nil),          // 32: calaba.v1.ListRolesResponse
-	(*CreateRoleRequest)(nil),          // 33: calaba.v1.CreateRoleRequest
-	(*CreateRoleResponse)(nil),         // 34: calaba.v1.CreateRoleResponse
-	(*UpdateRoleRequest)(nil),          // 35: calaba.v1.UpdateRoleRequest
-	(*UpdateRoleResponse)(nil),         // 36: calaba.v1.UpdateRoleResponse
-	(*SetRoleOrderRequest)(nil),        // 37: calaba.v1.SetRoleOrderRequest
-	(*SetRoleOrderResponse)(nil),       // 38: calaba.v1.SetRoleOrderResponse
-	(*SetMemberRolesRequest)(nil),      // 39: calaba.v1.SetMemberRolesRequest
-	(*SetMemberRolesResponse)(nil),     // 40: calaba.v1.SetMemberRolesResponse
-	(*timestamppb.Timestamp)(nil),      // 41: google.protobuf.Timestamp
-	(*RoomMediaSettings)(nil),          // 42: calaba.v1.RoomMediaSettings
-	(*WorkspacePlan)(nil),              // 43: calaba.v1.WorkspacePlan
-	(*User)(nil),                       // 44: calaba.v1.User
-	(WorkspaceRole)(0),                 // 45: calaba.v1.WorkspaceRole
-	(ScreenSharePreset)(0),             // 46: calaba.v1.ScreenSharePreset
-	(*Role)(nil),                       // 47: calaba.v1.Role
+	(TimeFormat)(0),                    // 1: calaba.v1.TimeFormat
+	(*Workspace)(nil),                  // 2: calaba.v1.Workspace
+	(*WorkspaceSuspension)(nil),        // 3: calaba.v1.WorkspaceSuspension
+	(*WorkspaceBan)(nil),               // 4: calaba.v1.WorkspaceBan
+	(*WorkspaceMember)(nil),            // 5: calaba.v1.WorkspaceMember
+	(*Invite)(nil),                     // 6: calaba.v1.Invite
+	(*CreateWorkspaceRequest)(nil),     // 7: calaba.v1.CreateWorkspaceRequest
+	(*CreateWorkspaceResponse)(nil),    // 8: calaba.v1.CreateWorkspaceResponse
+	(*ListWorkspacesResponse)(nil),     // 9: calaba.v1.ListWorkspacesResponse
+	(*DiscoverWorkspacesResponse)(nil), // 10: calaba.v1.DiscoverWorkspacesResponse
+	(*GetWorkspaceResponse)(nil),       // 11: calaba.v1.GetWorkspaceResponse
+	(*UpdateWorkspaceRequest)(nil),     // 12: calaba.v1.UpdateWorkspaceRequest
+	(*UpdateWorkspaceResponse)(nil),    // 13: calaba.v1.UpdateWorkspaceResponse
+	(*JoinWorkspaceResponse)(nil),      // 14: calaba.v1.JoinWorkspaceResponse
+	(*CreateInviteRequest)(nil),        // 15: calaba.v1.CreateInviteRequest
+	(*CreateInviteResponse)(nil),       // 16: calaba.v1.CreateInviteResponse
+	(*ListInvitesResponse)(nil),        // 17: calaba.v1.ListInvitesResponse
+	(*ListMembersResponse)(nil),        // 18: calaba.v1.ListMembersResponse
+	(*UpdateMemberRequest)(nil),        // 19: calaba.v1.UpdateMemberRequest
+	(*UpdateMemberResponse)(nil),       // 20: calaba.v1.UpdateMemberResponse
+	(*GetInviteResponse)(nil),          // 21: calaba.v1.GetInviteResponse
+	(*InviteLookupRequest)(nil),        // 22: calaba.v1.InviteLookupRequest
+	(*InviteLookupResponse)(nil),       // 23: calaba.v1.InviteLookupResponse
+	(*AddMemberRequest)(nil),           // 24: calaba.v1.AddMemberRequest
+	(*AddMemberResponse)(nil),          // 25: calaba.v1.AddMemberResponse
+	(*EmailInvite)(nil),                // 26: calaba.v1.EmailInvite
+	(*CreateEmailInviteRequest)(nil),   // 27: calaba.v1.CreateEmailInviteRequest
+	(*CreateEmailInviteResponse)(nil),  // 28: calaba.v1.CreateEmailInviteResponse
+	(*ListEmailInvitesResponse)(nil),   // 29: calaba.v1.ListEmailInvitesResponse
+	(*CreateBanRequest)(nil),           // 30: calaba.v1.CreateBanRequest
+	(*CreateBanResponse)(nil),          // 31: calaba.v1.CreateBanResponse
+	(*ListBansResponse)(nil),           // 32: calaba.v1.ListBansResponse
+	(*ListRolesResponse)(nil),          // 33: calaba.v1.ListRolesResponse
+	(*CreateRoleRequest)(nil),          // 34: calaba.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),         // 35: calaba.v1.CreateRoleResponse
+	(*UpdateRoleRequest)(nil),          // 36: calaba.v1.UpdateRoleRequest
+	(*UpdateRoleResponse)(nil),         // 37: calaba.v1.UpdateRoleResponse
+	(*SetRoleOrderRequest)(nil),        // 38: calaba.v1.SetRoleOrderRequest
+	(*SetRoleOrderResponse)(nil),       // 39: calaba.v1.SetRoleOrderResponse
+	(*SetMemberRolesRequest)(nil),      // 40: calaba.v1.SetMemberRolesRequest
+	(*SetMemberRolesResponse)(nil),     // 41: calaba.v1.SetMemberRolesResponse
+	(*timestamppb.Timestamp)(nil),      // 42: google.protobuf.Timestamp
+	(*RoomMediaSettings)(nil),          // 43: calaba.v1.RoomMediaSettings
+	(*WorkspacePlan)(nil),              // 44: calaba.v1.WorkspacePlan
+	(*User)(nil),                       // 45: calaba.v1.User
+	(WorkspaceRole)(0),                 // 46: calaba.v1.WorkspaceRole
+	(ScreenSharePreset)(0),             // 47: calaba.v1.ScreenSharePreset
+	(*Role)(nil),                       // 48: calaba.v1.Role
 }
 var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.Workspace.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	41, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
-	42, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
-	43, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
-	2,  // 4: calaba.v1.Workspace.suspension:type_name -> calaba.v1.WorkspaceSuspension
-	41, // 5: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
-	44, // 6: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
-	41, // 7: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
-	44, // 8: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
-	45, // 9: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
-	41, // 10: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
-	41, // 11: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
-	41, // 12: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 13: calaba.v1.CreateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	1,  // 14: calaba.v1.CreateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	1,  // 15: calaba.v1.ListWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
-	1,  // 16: calaba.v1.DiscoverWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
-	1,  // 17: calaba.v1.GetWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	45, // 18: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
-	0,  // 19: calaba.v1.UpdateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	46, // 20: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
-	1,  // 21: calaba.v1.UpdateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	1,  // 22: calaba.v1.JoinWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	4,  // 23: calaba.v1.JoinWorkspaceResponse.member:type_name -> calaba.v1.WorkspaceMember
-	5,  // 24: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
-	5,  // 25: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
-	4,  // 26: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
-	45, // 27: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
-	4,  // 28: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	1,  // 29: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
-	41, // 30: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	44, // 31: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
-	4,  // 32: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	45, // 33: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
-	41, // 34: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
-	41, // 35: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
-	41, // 36: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
-	45, // 37: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
-	25, // 38: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
-	25, // 39: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
-	3,  // 40: calaba.v1.CreateBanResponse.ban:type_name -> calaba.v1.WorkspaceBan
-	3,  // 41: calaba.v1.ListBansResponse.bans:type_name -> calaba.v1.WorkspaceBan
-	47, // 42: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
-	47, // 43: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
-	47, // 44: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
-	47, // 45: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
-	4,  // 46: calaba.v1.SetMemberRolesResponse.member:type_name -> calaba.v1.WorkspaceMember
-	47, // [47:47] is the sub-list for method output_type
-	47, // [47:47] is the sub-list for method input_type
-	47, // [47:47] is the sub-list for extension type_name
-	47, // [47:47] is the sub-list for extension extendee
-	0,  // [0:47] is the sub-list for field type_name
+	42, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
+	43, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
+	44, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
+	3,  // 4: calaba.v1.Workspace.suspension:type_name -> calaba.v1.WorkspaceSuspension
+	1,  // 5: calaba.v1.Workspace.time_format:type_name -> calaba.v1.TimeFormat
+	42, // 6: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
+	45, // 7: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
+	42, // 8: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
+	45, // 9: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
+	46, // 10: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
+	42, // 11: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
+	42, // 12: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
+	42, // 13: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
+	0,  // 14: calaba.v1.CreateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
+	2,  // 15: calaba.v1.CreateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
+	2,  // 16: calaba.v1.ListWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
+	2,  // 17: calaba.v1.DiscoverWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
+	2,  // 18: calaba.v1.GetWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
+	46, // 19: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
+	0,  // 20: calaba.v1.UpdateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
+	47, // 21: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	1,  // 22: calaba.v1.UpdateWorkspaceRequest.time_format:type_name -> calaba.v1.TimeFormat
+	2,  // 23: calaba.v1.UpdateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
+	2,  // 24: calaba.v1.JoinWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
+	5,  // 25: calaba.v1.JoinWorkspaceResponse.member:type_name -> calaba.v1.WorkspaceMember
+	6,  // 26: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
+	6,  // 27: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
+	5,  // 28: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
+	46, // 29: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
+	5,  // 30: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
+	2,  // 31: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
+	42, // 32: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	45, // 33: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
+	5,  // 34: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
+	46, // 35: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
+	42, // 36: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
+	42, // 37: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
+	42, // 38: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
+	46, // 39: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
+	26, // 40: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
+	26, // 41: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
+	4,  // 42: calaba.v1.CreateBanResponse.ban:type_name -> calaba.v1.WorkspaceBan
+	4,  // 43: calaba.v1.ListBansResponse.bans:type_name -> calaba.v1.WorkspaceBan
+	48, // 44: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
+	48, // 45: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
+	48, // 46: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
+	48, // 47: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
+	5,  // 48: calaba.v1.SetMemberRolesResponse.member:type_name -> calaba.v1.WorkspaceMember
+	49, // [49:49] is the sub-list for method output_type
+	49, // [49:49] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_workspace_proto_init() }
@@ -2743,7 +2828,7 @@ func file_calaba_v1_workspace_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_workspace_proto_rawDesc), len(file_calaba_v1_workspace_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   0,

@@ -246,7 +246,8 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     <div className="relative min-h-0 flex-1 bg-feed">
       <Virtuoso
         ref={virtuoso}
-        className="h-full"
+        // Never a horizontal scroll in the feed (docs/09 #74): rows clip, the action bar is clamped.
+        className="h-full overflow-x-hidden"
         data={items}
         firstItemIndex={firstIndex}
         initialTopMostItemIndex={initialIndex}

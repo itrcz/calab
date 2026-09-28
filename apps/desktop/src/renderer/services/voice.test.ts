@@ -93,6 +93,8 @@ class FakeRoom {
   published: FakeLocalAudioTrack[] = [];
   remoteParticipants = new Map();
   name = '';
+  /** ConnectionState (names proxy: the enum key). */
+  state = 'Connected';
   engine = {};
   localParticipant = {
     identity: 'u1:mine',
@@ -221,7 +223,8 @@ vi.mock('../lib/media/screenShare', () => ({
 /** ADR-0032: the codec comes from pickPublishCodec(kind, «Кодек стрима»). */
 const pickPublishCodec = vi.fn((_kind: string, pref: string) => Promise.resolve({ codec: pref === 'auto' ? 'h264' : pref, hw: false }));
 vi.mock('../lib/media/codecSelect', () => ({ pickPublishCodec: (k: string, p: string) => pickPublishCodec(k, p) }));
-vi.mock('../lib/sounds', () => ({ playSound: () => undefined }));
+const playSound = vi.fn((_name: string) => undefined);
+vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
 const announce = vi.fn();
 vi.mock('./deviceToast', () => ({ announceDeviceSwitch: (...a: unknown[]) => void announce(...a) }));
@@ -264,6 +267,7 @@ beforeEach(async () => {
   deviceChange.length = 0;
   deviceList = [];
   announce.mockClear();
+  playSound.mockClear();
   docListeners.clear();
   ({ voice } = await import('./voice'));
   ({ useVoice } = await import('../stores/voice'));
@@ -374,6 +378,77 @@ describe('VoiceEngine', () => {
     await settle();
     await voice.join('B', 'ws');
     expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+  });
+
+  // docs/09 #71 (issue #15): the server's record of this device follows the LiveKit connection.
+  describe('seat check', () => {
+    const res = { url: 'wss://lk', token: 't', canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } };
+
+    it('a superseded /join that lands late: the seat is re-asserted with a /join of the room I am in', async () => {
+      let answerA!: (v: unknown) => void;
+      joinVoice.mockImplementationOnce(() => new Promise((r) => (answerA = r)) as never);
+      const a = voice.join('A', 'ws');
+      await settle();
+      const b = voice.join('B', 'ws');
+      await vi.advanceTimersByTimeAsync(3000); // B waits (bounded) for the /join still in flight
+      await b;
+      expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+      expect(joinVoice.mock.calls).toEqual([['A'], ['B']]);
+      answerA({ ...res, pending: true }); // the server now holds me in A
+      await a;
+      await settle();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(leaveVoice.mock.calls).toEqual([['A']]);
+      expect(joinVoice.mock.calls).toEqual([['A'], ['B'], ['B']]);
+      expect(FakeRoom.all.filter((r) => r.disconnects.length === 0)).toHaveLength(1);
+    });
+
+    it('after a reconnect: the server lost me (pending /join) → re-seated with my mute state', async () => {
+      await voice.join('A', 'ws');
+      useVoice.setState({ muted: true });
+      updateSelf.mockClear();
+      joinVoice.mockResolvedValueOnce({ ...res, pending: true } as never);
+      voice.checkSeat();
+      await settle();
+      expect(joinVoice.mock.calls.at(-1)).toEqual(['A']);
+      expect(updateSelf).toHaveBeenCalledWith({ muted: true, deafened: false });
+      expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    });
+
+    it('after a reconnect: the server refuses the seat → out of voice with a toast', async () => {
+      const { ApiError } = await import('../lib/api/client');
+      const { toast } = await import('../stores/toasts');
+      await voice.join('A', 'ws');
+      joinVoice.mockRejectedValueOnce(new ApiError('ERROR_CODE_FORBIDDEN', 'no', 403));
+      voice.checkSeat();
+      await settle();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(useVoice.getState()).toMatchObject({ roomId: null, phase: 'idle' });
+      expect(leaveVoice).toHaveBeenCalledWith('A');
+      expect(toast.error).toHaveBeenCalledWith('Соединение с голосом потеряно');
+    });
+
+    it('a network error keeps the call (retried on the next reconnect)', async () => {
+      await voice.join('A', 'ws');
+      joinVoice.mockRejectedValueOnce(new Error('offline'));
+      voice.checkSeat();
+      await settle();
+      expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    });
+
+    it('a /voice/leave lost in the network is sent again by the next seat check', async () => {
+      await voice.join('A', 'ws');
+      leaveVoice.mockRejectedValueOnce(new Error('offline'));
+      await voice.leave();
+      await settle();
+      expect(leaveVoice).toHaveBeenCalledTimes(1);
+      voice.checkSeat();
+      await settle();
+      expect(leaveVoice.mock.calls).toEqual([['A'], ['A']]);
+      voice.checkSeat(); // delivered: nothing left to send
+      await settle();
+      expect(leaveVoice).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('a pending /join sends my mute / deafen before LiveKit connects', async () => {
@@ -649,21 +724,6 @@ describe('VoiceEngine', () => {
     expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
   });
 
-  it.each([true, false])('undeafen restores the prior mic mute (%s) on the track and server', async (muted) => {
-    await voice.join('A', 'ws');
-    if (muted) voice.toggleMute();
-    voice.toggleDeafen();
-    await vi.advanceTimersByTimeAsync(100);
-    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: true });
-    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
-
-    voice.toggleDeafen();
-    await vi.advanceTimersByTimeAsync(100);
-    expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
-    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(muted);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false });
-  });
-
   it.each([true, false])('rapid deafen cycles preserve the prior mic mute (%s)', async (muted) => {
     await voice.join('A', 'ws');
     FakeLocalAudioTrack.lockMs = 50;
@@ -684,23 +744,6 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false, serverMuted: true });
     expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
     expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false });
-  });
-
-  it('explicit mic unmute while deafened enables both and replaces the remembered mute', async () => {
-    await voice.join('A', 'ws');
-    voice.toggleMute();
-    voice.toggleDeafen();
-    voice.toggleMute();
-    await vi.advanceTimersByTimeAsync(100);
-    expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
-    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
-
-    voice.toggleDeafen();
-    voice.toggleDeafen();
-    await vi.advanceTimersByTimeAsync(100);
-    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
   });
 
   it.each([true, false])('rejoin while deafened preserves the prior mic mute (%s)', async (muted) => {
@@ -874,19 +917,143 @@ describe('VoiceEngine', () => {
 });
 
 describe('per-user volume and local mute (docs/09 #20)', () => {
-  interface FakeAudioEl {
-    volume: number;
-    muted: boolean;
-    setSinkId: () => Promise<void>;
-    remove: () => void;
+  /**
+   * A fake remote <audio>: muted / volume, `volumechange` listeners, `setSinkId` — which can
+   * drop the element back to audible like a renderer rebuilt on a device switch (`resetOnSink`).
+   */
+  class FakeAudioEl {
+    volume = 1;
+    muted = false;
+    sinkId = '';
+    resetOnSink = false;
+    setSinkId(id: string): Promise<void> {
+      this.sinkId = id;
+      if (this.resetOnSink) {
+        this.muted = false;
+        this.volume = 1;
+      }
+      return Promise.resolve();
+    }
+    addEventListener(): void {}
+    removeEventListener(): void {}
+    remove(): void {}
   }
-  /** A remote audio track of `identity`; attach() returns a fake <audio>, recorded in `els`. */
+  /** A remote audio track of `identity`; attach() returns a fake <audio>. */
   const subscribe = (room: FakeRoom | undefined, identity: string, sid: string, source = 'microphone'): FakeAudioEl => {
-    const el: FakeAudioEl = { volume: 1, muted: false, setSinkId: () => Promise.resolve(), remove: () => undefined };
+    const el = new FakeAudioEl();
     const track = { kind: 'audio', sid, attach: () => el, detach: () => [el] };
     room?.emit('TrackSubscribed', track, { source }, { identity });
     return el;
   };
+
+  describe('deafen holds on every path (docs/09 #70)', () => {
+    it('deafen → output device switch (prefs, OS devicechange, LiveKit) → every element muted', async () => {
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const a = subscribe(room, 'u2:phone', 'TR_a');
+      const b = subscribe(room, 'u3:desk', 'TR_b', 'screen_share_audio');
+      voice.toggleDeafen();
+      expect([a.muted, b.muted]).toEqual([true, true]);
+      a.resetOnSink = true;
+      b.resetOnSink = true;
+      // The chosen output changes in Settings.
+      usePrefs.getState().setPrefs({ outputDeviceId: 'usb' });
+      await settle();
+      expect([a.sinkId, b.sinkId, a.muted, b.muted]).toEqual(['usb', 'usb', true, true]);
+      // macOS moves the default output (charger / dock): devicechange.
+      a.muted = false;
+      for (const fn of deviceChange) fn();
+      await settle();
+      expect([a.muted, b.muted]).toEqual([true, true]);
+      // LiveKit re-selected the output itself and hit our elements.
+      b.muted = false;
+      room?.emit('ActiveDeviceChanged', 'audiooutput', 'default');
+      await settle();
+      expect([a.sinkId, b.sinkId, a.muted, b.muted]).toEqual(['usb', 'usb', true, true]);
+      usePrefs.getState().setPrefs({ outputDeviceId: null });
+    });
+
+    it('deafen → a new participant joins → muted from the start', async () => {
+      await voice.join('A', 'ws');
+      voice.toggleDeafen();
+      const late = subscribe(FakeRoom.all.at(-1), 'u4:laptop', 'TR_late');
+      expect(late.muted).toBe(true);
+      await settle();
+      expect(late.muted).toBe(true);
+    });
+
+    it('undeafen brings the per-user volumes and «mute for me» back', async () => {
+      usePrefs.getState().setPrefs({ userVolumes: { u2: 0.5 }, mutedUsers: { u3: true }, outputVolume: 1 });
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const a = subscribe(room, 'u2:phone', 'TR_a');
+      const b = subscribe(room, 'u3:desk', 'TR_b');
+      voice.toggleDeafen();
+      expect([a.muted, b.muted]).toEqual([true, true]);
+      voice.toggleDeafen();
+      expect([a.muted, a.volume, b.muted]).toEqual([false, 0.5, true]);
+      usePrefs.getState().setPrefs({ userVolumes: {}, mutedUsers: {} });
+    });
+
+    it('a mic muted before deafen stays muted after it (#11); the mic button lifts both', async () => {
+      await voice.join('A', 'ws');
+      voice.toggleMute();
+      voice.toggleDeafen();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
+      voice.toggleDeafen();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
+      expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false });
+      voice.toggleMute(); // mic on
+      voice.toggleDeafen();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
+      voice.toggleDeafen();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
+      expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+      voice.toggleMute(); // remember a manual mute for this deafen cycle
+      voice.toggleDeafen();
+      voice.toggleMute(); // the mic button while deafened: both off (Discord)
+      await vi.advanceTimersByTimeAsync(100);
+      expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
+      expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+      voice.toggleDeafen();
+      voice.toggleDeafen();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
+      expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+    });
+
+    it('PTT while deafened: nothing on air, no activation sound (#12)', async () => {
+      usePrefs.getState().setPrefs({ micMode: 'ptt', pttReleaseMs: 0, pttBinding: { kind: 'key', code: 66, label: 'F8', mode: 'hold' } });
+      await voice.join('A', 'ws');
+      await settle();
+      const hold = (down: boolean): void => (voice as unknown as { onPtt(ev: { down: boolean }): void }).onPtt({ down });
+      voice.toggleDeafen();
+      playSound.mockClear();
+      hold(true);
+      await settle();
+      expect(useVoice.getState()).toMatchObject({ pttDown: false, transmitting: false });
+      expect(FakeRoom.all.at(-1)?.published[0]?.mediaStreamTrack.enabled).toBe(false);
+      hold(false);
+      expect(playSound).not.toHaveBeenCalled();
+      // Held when deafen goes on: off at once, without the «mic off» cue.
+      voice.toggleDeafen();
+      hold(true);
+      expect(playSound).toHaveBeenLastCalledWith('pttOn');
+      playSound.mockClear();
+      voice.toggleDeafen();
+      expect(useVoice.getState().pttDown).toBe(false);
+      expect(playSound.mock.calls.map((c) => c[0])).toEqual(['deafen']);
+      usePrefs.getState().setPrefs({ micMode: 'voice' });
+    });
+  });
 
   it('applies to every audio element of the person: on subscribe, on change, after a reconnect', async () => {
     usePrefs.getState().setPrefs({ userVolumes: { u2: 0.5 }, outputVolume: 1 });

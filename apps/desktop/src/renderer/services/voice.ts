@@ -16,6 +16,7 @@ import {
 } from 'livekit-client';
 import type { PttEvent } from '../../shared/ipc';
 import { t } from '../i18n';
+import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { roomPerms, voiceCaps } from '../lib/permissions';
@@ -40,7 +41,8 @@ import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, meterUpdate, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, meterUpdate, pttAllowed, pttCue, qualityOf, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
@@ -53,6 +55,7 @@ import { cameraWanted } from '../lib/media/cameraLogic';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
+import { seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
 import { annot } from './annot';
 import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
@@ -81,6 +84,13 @@ const LEVEL_FRESH_MS = 500;
 const WATCH_TOPIC = 'calaba.watch';
 /** A /join waits at most this long for a /voice/leave still in flight. */
 const LEAVE_WAIT_MS = 3000;
+/** Seat check (docs/09 #71): a join / leave in progress is waited out this often, this many times. */
+const SEAT_BUSY_POLL_MS = 500;
+const SEAT_BUSY_POLLS = 40;
+/** LiveKit still resuming by itself this long after the gateway is back → rejoin with a fresh token. */
+const SEAT_RECONNECT_GRACE_MS = 5000;
+/** A VOICE_STATE_UPDATE that does not show me where I am: checked after this (a move settles). */
+const SEAT_SELF_GRACE_MS = 3000;
 
 /** LiveKit identity is `<user_id>:<session_id>` (rtc.proto). */
 export const userIdOf = (identity: string): string => identity.split(':')[0] ?? identity;
@@ -147,8 +157,15 @@ class VoiceEngine {
   private lastMeterPush = 0;
   private audioBitrateKbps = 32;
   private screen: ActiveScreenShare | null = null;
-  /** Remote audio: one <audio> per track (echo rule 1); `stream` = a screen share's system audio. */
-  private readonly audioEls = new Map<string, { el: HTMLMediaElement; userId: string; stream: boolean }>();
+  /**
+   * Remote audio: one <audio> per track (echo rule 1), the only writer of their muted / volume /
+   * sink (deafen, per-user volumes survive device switches and LiveKit's own writes; docs/02 «Deafen»).
+   */
+  private readonly audioOut = new RemoteAudioOut(() => {
+    const v = useVoice.getState();
+    const p = prefs();
+    return { deafened: v.deafened, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume };
+  });
   /** Stream subscriptions we requested (setSubscribed signals on every call, so dedupe). */
   private readonly wanted = new Map<string, boolean>();
   /** Whose stream we told «I'm watching» (calaba.watch), to send the matching «stopped». */
@@ -224,8 +241,12 @@ class VoiceEngine {
     (navigator.mediaDevices as MediaDevices | undefined)?.addEventListener('devicechange', () => {
       this.snapshotDevices(true);
       void this.onDevicesChanged();
+      // macOS moves the default output (charger, dock, headphones): re-assert our sink and the
+      // playback state (deafen!) on every remote element once the switch has settled.
+      void this.applyOutputDevice();
     });
     this.snapshotDevices(false);
+    void this.applyOutputDevice(); // the chosen output for every remote element from the first one on
     // Our CSP refusing the LiveKit host (docs/09 P0 #1): retries cannot help — say so.
     document.addEventListener('securitypolicyviolation', (ev) => this.onCspViolation(ev));
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
@@ -400,6 +421,8 @@ class VoiceEngine {
         dynacast: true,
         webAudioMix: false, // echo rule 1
         disconnectOnPageLeave: true,
+        // LiveKit re-selects the output on `devicechange` unless it knows ours (RoomEvent.ActiveDeviceChanged below).
+        ...(prefs().outputDeviceId ? { audioOutput: { deviceId: prefs().outputDeviceId ?? '' } } : {}),
       });
       this.room = room;
       // H.264 «Авто» = High on the wire (hardware on macOS): codec preferences set between
@@ -535,7 +558,15 @@ class VoiceEngine {
       for (let attempt = 0; attempt < 5; attempt++) {
         if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
         setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting', serverMuted });
-        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+        // The backoff ends early when the gateway is back (the network is): checkSeat wakes it.
+        await new Promise<void>((r) => {
+          const timer = setTimeout(r, 1000 * 2 ** attempt);
+          this.rejoinWake = () => {
+            clearTimeout(timer);
+            r();
+          };
+        });
+        this.rejoinWake = null;
         if (gen !== this.rejoinGen) return;
         await this.connect(roomId, wsId, true, undefined, serverMuted);
         if (gen !== this.rejoinGen) return;
@@ -555,6 +586,156 @@ class VoiceEngine {
 
   /** The room a running rejoin loop is trying to get back into (a move may redirect it). */
   private rejoinRoomId: string | null = null;
+  /** Ends the rejoin loop's current backoff wait (set only while it waits). */
+  private rejoinWake: (() => void) | null = null;
+
+  // ------------------------------------------------------------ seat check (docs/09 #71)
+
+  /**
+   * Rooms the server may still hold this device in although it sits elsewhere or nowhere: a
+   * superseded /join that reached the server late, a /voice/leave lost in the network.
+   */
+  private readonly strayRooms = new Set<string>();
+  /** Rooms with a /voice/leave queued or in flight (sendLeave): not strays. */
+  private readonly leavingRooms = new Set<string>();
+  private seatRun: Promise<void> | null = null;
+  private seatAgain = false;
+  private selfCheckTimer: number | null = null;
+
+  /**
+   * Make the server's record of this device agree with the LiveKit connection (docs/05
+   * «Восстановление голоса после разрыва»): after the gateway's READY / RESUMED, a superseded
+   * /join landing late, or a VOICE_STATE_UPDATE that does not show me where I am. Single
+   * flight; a request during a run runs it once more.
+   */
+  checkSeat(): void {
+    if (this.seatRun) {
+      this.seatAgain = true;
+      return;
+    }
+    const run = (async (): Promise<void> => {
+      do {
+        this.seatAgain = false;
+        await this.checkSeatOnce();
+      } while (this.seatRerun());
+    })()
+      .catch((e: unknown) => log.warn('voice: seat check failed', e))
+      .finally(() => {
+        if (this.seatRun === run) this.seatRun = null;
+      });
+    this.seatRun = run;
+  }
+
+  /** Asked again while the check ran (read through a call: the flag changes across awaits). */
+  private seatRerun(): boolean {
+    return this.seatAgain;
+  }
+
+  private seatView(): SeatView {
+    const v = useVoice.getState();
+    const room = this.room;
+    const st = room && this.roomId === v.roomId ? room.state : null;
+    return {
+      seatRoom: v.roomId,
+      // A join / switch / leave / move in progress settles the server by itself.
+      busy: v.joining !== null || v.phase === 'connecting' || this.teardownRun !== null || this.moveTimer !== null,
+      livekit: st === ConnectionState.Connected ? 'connected' : st === ConnectionState.Reconnecting || st === ConnectionState.SignalReconnecting ? 'reconnecting' : 'none',
+      rejoining: this.rejoinWake !== null,
+      strays: [...this.strayRooms],
+    };
+  }
+
+  private async checkSeatOnce(): Promise<void> {
+    let action = seatAction(this.seatView());
+    for (let i = 0; action.kind === 'wait'; i++) {
+      if (i >= SEAT_BUSY_POLLS) return; // still busy: that join / leave settles the server itself
+      await new Promise((r) => setTimeout(r, SEAT_BUSY_POLL_MS));
+      action = seatAction(this.seatView());
+    }
+    switch (action.kind) {
+      case 'none':
+        return;
+      case 'rejoin':
+        log.info('voice: connection back, rejoining without the backoff');
+        this.rejoinWake?.();
+        return;
+      case 'watch': {
+        // LiveKit is resuming by itself: a moment for it, then a fresh token instead.
+        const room = this.room;
+        await new Promise((r) => setTimeout(r, SEAT_RECONNECT_GRACE_MS));
+        if (room && this.room === room && room.state !== ConnectionState.Connected && !this.rejoinRoomId) {
+          log.info('voice: LiveKit still reconnecting after the gateway is back, rejoining');
+          void this.rejoin();
+          return;
+        }
+        this.seatAgain = true; // reconnected: re-assert the seat
+        return;
+      }
+      case 'leave':
+        for (const roomId of action.strays) await this.leaveStray(roomId);
+        return;
+      case 'reassert':
+        await this.reassertSeat(action.roomId, action.strays);
+        return;
+    }
+  }
+
+  private async leaveStray(roomId: string): Promise<void> {
+    try {
+      await api.voice.leave(roomId);
+      this.strayRooms.delete(roomId);
+    } catch (err) {
+      log.warn('voice: stray /voice/leave failed', err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500) this.strayRooms.delete(roomId);
+    }
+  }
+
+  /**
+   * In the room in LiveKit: /join it again — idempotent for a device the server has there, and
+   * records it again if the server lost it (it is confirmed pending → connected against
+   * LiveKit). Refused (no access, the room is gone or full): out of voice with a toast.
+   */
+  private async reassertSeat(roomId: string, strays: string[]): Promise<void> {
+    for (const r of strays) await this.leaveStray(r);
+    const room = this.room;
+    const same = (): boolean => this.room === room && this.roomId === roomId;
+    await this.settleSeatRequests();
+    if (!same()) return;
+    let res: Awaited<ReturnType<typeof api.voice.join>>;
+    try {
+      res = await this.sendJoin(roomId);
+    } catch (err) {
+      if (!same()) return;
+      if (err instanceof ApiError && seatRefused(err.status)) {
+        log.warn('voice: the server refuses the seat after a reconnect, leaving', err.code);
+        toast.error(t('mediaErr.voice.desync'));
+        await this.leave(false);
+        return;
+      }
+      log.warn('voice: seat re-assert failed (retried on the next reconnect)', err);
+      return;
+    }
+    if (!same() || !res.pending) return;
+    // The server had lost this device: recorded again with default flags — my mute / deafen.
+    log.info('voice: the server had lost this device, seat restored');
+    const { muted, deafened } = useVoice.getState();
+    if (muted || deafened) void api.voice.updateSelf({ muted, deafened }).catch((e: unknown) => log.warn('voice/self failed', e));
+  }
+
+  /**
+   * My VOICE_STATE_UPDATE does not show me in the room I am connected to: after a short grace
+   * (a move / switch in flight settles), the seat check.
+   */
+  private scheduleSelfCheck(): void {
+    if (this.selfCheckTimer !== null) return;
+    this.selfCheckTimer = window.setTimeout(() => {
+      this.selfCheckTimer = null;
+      const v = useVoice.getState();
+      const me = useSession.getState().me?.user?.id ?? '';
+      const shown = v.workspaceId ? useWorkspaces.getState().byId[v.workspaceId]?.voice[me]?.roomId : undefined;
+      if (v.roomId && shown !== v.roomId && this.room?.state === ConnectionState.Connected) this.checkSeat();
+    }, SEAT_SELF_GRACE_MS);
+  }
 
   /** User intent: leave voice (also stops a pending rejoin). */
   async leave(sound = true): Promise<void> {
@@ -580,8 +761,35 @@ class VoiceEngine {
    * the server). Null when a newer intent took over meanwhile.
    */
   private async requestJoin(roomId: string, seq: number): Promise<Awaited<ReturnType<typeof api.voice.join>> | null> {
-    if (this.leaveReq) await Promise.race([this.leaveReq, new Promise((r) => setTimeout(r, LEAVE_WAIT_MS))]);
+    await this.settleSeatRequests();
     if (seq !== this.joinSeq) return null;
+    const req = this.sendJoin(roomId);
+    // Superseded while in flight (a newer join or a leave took over, docs/09 #71): the server
+    // may have recorded the device in `roomId` *after* the newer request — the seat check puts
+    // it back where this device really is.
+    void req.then(
+      () => {
+        if (seq === this.joinSeq || useVoice.getState().roomId === roomId || this.leavingRooms.has(roomId)) return;
+        this.strayRooms.add(roomId);
+        this.checkSeat();
+      },
+      () => undefined,
+    );
+    return req;
+  }
+
+  /**
+   * Seat requests reach the server in order: a /join waits (bounded) for a /voice/leave and an
+   * earlier /join still in flight — an overtaken request would undo the newer one there.
+   */
+  private async settleSeatRequests(): Promise<void> {
+    const bounded = (p: Promise<void>): Promise<unknown> => Promise.race([p, new Promise((r) => setTimeout(r, LEAVE_WAIT_MS))]);
+    if (this.leaveReq) await bounded(this.leaveReq);
+    if (this.joinReq) await bounded(this.joinReq);
+  }
+
+  /** POST /join, remembered as the /join in flight. */
+  private sendJoin(roomId: string): ReturnType<typeof api.voice.join> {
     const req = api.voice.join(roomId);
     const settled = req.then(
       () => undefined,
@@ -597,16 +805,22 @@ class VoiceEngine {
   /** POST /voice/leave in the background, after a /join still in flight (never rejects). */
   private sendLeave(roomId: string): void {
     const joining = this.joinReq;
+    this.leavingRooms.add(roomId);
     const run = (async (): Promise<void> => {
       try {
         if (joining) await joining;
         await api.voice.leave(roomId);
+        this.strayRooms.delete(roomId);
       } catch (err) {
         log.warn('voice/leave failed', err);
+        // Lost in the network: the others would keep seeing me there. Retried by the seat
+        // check after the gateway reconnects (docs/09 #71).
+        if (!(err instanceof ApiError && err.status >= 400 && err.status < 500)) this.strayRooms.add(roomId);
       }
     })();
     this.leaveReq = run;
     void run.then(() => {
+      this.leavingRooms.delete(roomId);
       if (this.leaveReq === run) this.leaveReq = null;
     });
   }
@@ -648,8 +862,7 @@ class VoiceEngine {
       micTrack?.stop();
       this.stopMicPipeline();
     }
-    for (const { el } of this.audioEls.values()) el.remove();
-    this.audioEls.clear();
+    for (const el of this.audioOut.clear()) el.remove();
     this.viewers.clear();
     this.wanted.clear();
     this.announced = null;
@@ -721,6 +934,11 @@ class VoiceEngine {
       // Full reconnect (a new LiveKit session): bring the camera back (services/camera.ts restore).
       .on(RoomEvent.Reconnected, () => {
         if (this.room === room) void this.camera.restore();
+      })
+      // LiveKit switched the remote audio output itself (a device appeared / went away): its
+      // setSinkId hit our elements — put our sink and the playback state (deafen) back.
+      .on(RoomEvent.ActiveDeviceChanged, (kind) => {
+        if (this.room === room && kind === 'audiooutput') void this.applyOutputDevice();
       })
       .on(RoomEvent.TrackUnmuted, (pub, p) => {
         if (p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
@@ -1127,39 +1345,25 @@ class VoiceEngine {
 
   private attachAudio(track: RemoteTrack, p: Participant, stream: boolean): void {
     const sid = track.sid;
-    if (!sid || this.audioEls.has(sid)) return;
+    if (!sid || this.audioOut.has(sid)) return;
     const el = track.attach(); // plain <audio>, WebRTC renders it (AEC reference)
-    const userId = userIdOf(p.identity);
     this.audioSink.appendChild(el);
-    this.audioEls.set(sid, { el, userId, stream });
-    this.applyElement(el, userId, stream);
-    const sink = prefs().outputDeviceId;
-    if (sink) void el.setSinkId(sink).catch(() => undefined);
+    // Deafen / volumes / sink applied here, before the first sample plays (lib/media/remoteAudioOut).
+    this.audioOut.add(sid, el, userIdOf(p.identity), stream);
   }
 
   private detachAudio(track: RemoteTrack): void {
+    if (track.sid) this.audioOut.remove(track.sid);
     for (const el of track.detach()) el.remove();
-    if (track.sid) this.audioEls.delete(track.sid);
-  }
-
-  private applyElement(el: HTMLMediaElement, userId: string, stream: boolean): void {
-    // Local mute («Заглушить для меня») silences the voice, not their stream audio; element.volume
-    // caps at 1.0 — boosting would need WebAudio, which breaks AEC (lib/voiceLogic remoteAudio).
-    const v = useVoice.getState();
-    const p = prefs();
-    const a = remoteAudio({ deafened: v.deafened, stream, userId, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume });
-    el.muted = a.muted;
-    el.volume = a.volume;
   }
 
   private applyVolumes(): void {
-    for (const { el, userId, stream } of this.audioEls.values()) this.applyElement(el, userId, stream);
+    this.audioOut.applyAll();
   }
 
-  /** Echo rule 2: switch output with setSinkId on the same <audio> elements. */
+  /** Echo rule 2: switch output with setSinkId on the same <audio> elements (and re-apply deafen). */
   private async applyOutputDevice(): Promise<void> {
-    const id = prefs().outputDeviceId ?? '';
-    await Promise.all([...this.audioEls.values()].map(({ el }) => el.setSinkId(id).catch(() => undefined)));
+    await this.audioOut.setSink(prefs().outputDeviceId ?? '');
   }
 
   /** Mute someone for me only (CHAT-SHELL, member menu); persisted per device like volumes. */
@@ -1522,6 +1726,8 @@ class VoiceEngine {
   }
 
   private onPtt(ev: PttEvent): void {
+    // Muted / deafened: the key does nothing — no gate, no activation cue (#12).
+    if (ev.down && !pttAllowed(useVoice.getState())) return;
     if (ev.down) {
       this.pttUp = null;
       this.ptt.press();
@@ -1540,7 +1746,8 @@ class VoiceEngine {
     const inCall = this.room !== null && useVoice.getState().phase === 'connected';
     setVoice({ pttDown: on });
     this.applyTransmit();
-    if (inCall) playSound(on ? 'pttOn' : 'pttOff');
+    const cue = pttCue(on, useVoice.getState(), inCall);
+    if (cue) playSound(cue);
     const up = this.pttUp;
     if (!on && up) {
       this.pttUp = null;
@@ -1664,10 +1871,12 @@ class VoiceEngine {
     // the microphone from our grant and PATCH /api/voice/self {muted:false} would be 403.
     if (v.serverMuted && v.muted) {
       toast.info(t('voiceUi.serverMuted'));
+      // Deafened on top: the click still lifts deafen (Discord), the mic stays with the moderator.
+      if (v.deafened) this.toggleDeafen();
       return;
     }
     setVoice(toggleMute(v));
-    playSound(useVoice.getState().muted ? 'mute' : 'unmute');
+    playSound(useVoice.getState().muted ? 'mute' : v.deafened ? 'undeafen' : 'unmute');
     this.afterSelfChange();
   }
 
@@ -1679,7 +1888,8 @@ class VoiceEngine {
 
   private afterSelfChange(): void {
     const v = useVoice.getState();
-    if (v.muted || v.deafened) this.endPttTail();
+    // Muted / deafened: PTT off now, held key included (no cue — pttCue); a new press is ignored.
+    if (v.muted || v.deafened) this.ptt.stop();
     this.applyVolumes();
     this.applyTransmit();
     this.pushSelfState();
@@ -1696,7 +1906,11 @@ class VoiceEngine {
   /** Server view of our voice state differs from local (e.g. PATCH raced the join) → push again. */
   reconcileSelfState(s: { roomId: string; muted: boolean; deafened: boolean; serverMuted?: boolean }): void {
     const v = useVoice.getState();
-    if (!this.room || s.roomId !== this.roomId) return;
+    if (!this.room || s.roomId !== this.roomId) {
+      // Not where I am connected (docs/09 #71): the server may have lost this device.
+      if (this.room && this.roomId) this.scheduleSelfCheck();
+      return;
+    }
     // The server's moderator-mute flag is the source of truth (VoiceState.server_muted).
     if (s.serverMuted !== undefined && s.serverMuted !== v.serverMuted) {
       if (s.serverMuted) {
@@ -1711,6 +1925,17 @@ class VoiceEngine {
       return;
     }
     if (s.muted !== v.muted || s.deafened !== v.deafened) this.pushSelfState();
+  }
+
+  /** e2e / visual tests (docs/09 #71): what LiveKit is really connected to, to compare with the stores. */
+  linkTruth(): { state: string | null; room: string | null; identity: string | null } {
+    const r = this.room;
+    return { state: r ? r.state : null, room: r ? r.name : null, identity: r ? r.localParticipant.identity : null };
+  }
+
+  /** e2e tests: an unexpected LiveKit loss — the network branch of RoomEvent.Disconnected. */
+  simulateLinkLoss(): void {
+    if (this.room) void this.rejoin();
   }
 
   syncTray(): void {
@@ -1934,7 +2159,7 @@ class VoiceEngine {
     for (const rp of room.remoteParticipants.values()) {
       const track = rp.getTrackPublication(Track.Source.Microphone)?.track;
       const rx = track?.receiver;
-      const el = track?.sid ? this.audioEls.get(track.sid)?.el : undefined;
+      const el = track?.sid ? this.audioOut.element(track.sid) : undefined;
       if (!rx || !el || el.muted || el.volume === 0) continue;
       for (const src of rx.getSynchronizationSources()) {
         if (Math.min(Math.abs(epoch - src.timestamp), Math.abs(mono - src.timestamp)) > LEVEL_FRESH_MS) continue;

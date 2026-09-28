@@ -100,7 +100,15 @@ function ticker(period: number): Ticker {
 }
 
 /** Current time, re-rendering every `period` ms (default 1 s) while mounted; one timer per period. */
+/** No clock: `useNow(0)` for components that only need the time when a condition holds. */
+const idle: Pick<Ticker, 'subscribe' | 'now'> = { subscribe: () => () => undefined, now: Date.now() };
+
+/** The clock store for a period; period ≤ 0 = no timer at all (exported for tests). */
+export function clockFor(period: number): Pick<Ticker, 'subscribe' | 'now'> {
+  return period > 0 ? ticker(period) : idle;
+}
+
 export function useNow(period = 1000): number {
-  const tk = ticker(period);
+  const tk = clockFor(period);
   return useSyncExternalStore(tk.subscribe, () => tk.now);
 }

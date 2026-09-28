@@ -56,7 +56,7 @@ export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void
           {card.title}
         </a>
       ) : null}
-      {card.description ? <span className="line-clamp-3 text-body leading-[18px] text-fg">{card.description}</span> : null}
+      {card.description ? <span className="selectable line-clamp-3 text-body leading-[18px] text-fg">{card.description}</span> : null}
       {image ? (
         // The picture opens the page too (mouse convenience; the title is the keyboard stop).
         <a href={href} onClick={open} tabIndex={-1} aria-hidden className="mt-1.5 block">

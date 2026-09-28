@@ -21,7 +21,8 @@ workspaces          id, slug (unique), name, icon_file_id, visibility ('private'
                     owner_id, created_at,
                     default_audio_bitrate_kbps (32), default_max_stream_preset ('h1080'),
                     default_max_streams (3),
-                    storage_quota_bytes (10 GB), storage_used_bytes (0)
+                    storage_quota_bytes (10 GB), storage_used_bytes (0),
+                    time_format ('auto'|'h24'|'h12', 'auto') — формат часов для всех времён в пространстве (docs/09 #73; PATCH — MANAGE_WORKSPACE)
 workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest' — старшая встроенная роль),
                     nickname, joined_at            PK (workspace_id, user_id)
 workspace_roles     id, workspace_id, name (1..32), color (0xRRGGBB, 0 = нет), position (UNIQUE в пространстве),

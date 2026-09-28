@@ -101,10 +101,13 @@ export function applyDispatch(ev: DispatchEvent): void {
       syncTimeZone(r.me);
       ensureActiveWorkspace();
       openAdminRoute(r.me?.isSuperadmin === true);
+      // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
+      voice.checkSeat();
       return;
     }
     case 'resumed':
       log.info(`gateway resumed, replayed ${e.value.replayed}`);
+      voice.checkSeat();
       return;
     case 'workspaceCreate': {
       const snap = e.value.snapshot;

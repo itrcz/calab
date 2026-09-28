@@ -212,6 +212,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'mediaErr.voice.unsupportedWeb': '你的浏览器不支持语音通话',
   'mediaErr.voice.generic': '语音加入失败',
   'mediaErr.voice.lost': '重新加入语音房间失败',
+  'mediaErr.voice.desync': '语音连接已断开',
   'mediaErr.voice.kicked': '版主已将你断开语音房间',
   'mediaErr.voice.duplicate': '你已在此设备的另一个窗口加入语音',
   'mediaErr.voice.closed': '语音房间已关闭',

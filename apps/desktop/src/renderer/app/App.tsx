@@ -9,6 +9,7 @@ import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
 import { Toasts } from '../features/shell/Toasts';
 import { useLocale } from '../i18n';
+import { useTimeFormat } from '../lib/format';
 import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
@@ -59,6 +60,8 @@ export function App(): ReactNode {
   useTheme();
   // A language switch re-renders the tree from here (memo rows subscribe themselves); no reload.
   useLocale();
+  // The workspace's clock format (docs/09 #73) likewise.
+  useTimeFormat();
   const status = useSession((s) => s.status);
   const tooMany = useSession((s) => s.tooManySessions);
   const landing = useLinkLanding((s) => s.link);

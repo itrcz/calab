@@ -48,6 +48,7 @@ const KEY = new Set([
   'main-chat',
   'sidebar-drag',
   'chat-hover-actions',
+  'chat-hover-actions-bounds',
   'tooltip-lazy',
   'chat-context-menu',
   'room-notify-menu',
@@ -812,6 +813,72 @@ test('chat-hover-actions', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await focusDoneBubble(win);
   await checkpoint(shot, 'chat-hover-actions');
+});
+
+/**
+ * Action bar geometry and hover (docs/09 #74), no screenshot: at 960 px a long message of
+ * another member, a code block and a long message of mine keep the bar inside the feed and the
+ * feed never scrolls sideways; the pointer travels from a bubble to its bar through the gap and
+ * the bar stays; once the pointer is gone the bar goes ~200 ms later.
+ */
+test('chat-hover-actions-bounds', async ({ open, win, mock }) => {
+  await open();
+  await mainWindow(win, mock);
+  const long = 'Длинное сообщение без переносов, чтобы пузырь занял всю ширину ленты: '.repeat(6);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: CODE_FIXTURE.js });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: `${long}конец-чужого` });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: `${long}конец-моего` });
+  await expect(win.getByText('конец-моего')).toBeVisible();
+  await feedAtBottom(win);
+  const scroller = win.locator('[data-virtuoso-scroller]').first();
+  const actions = win.getByTestId('message-actions');
+  const noSideScroll = async (): Promise<void> => {
+    const s = await scroller.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, x: getComputedStyle(el).overflowX }));
+    expect(s.sw).toBe(s.cw);
+    expect(s.x).toBe('hidden');
+  };
+  await noSideScroll();
+  for (const text of ['Вот обработчик для поиска:', 'конец-чужого', 'конец-моего']) {
+    const bubble = win.getByTestId('message-bubble').filter({ hasText: text });
+    await win.mouse.move(0, 0);
+    await expect(actions).toHaveCount(0);
+    await bubble.hover({ position: { x: 40, y: 12 } });
+    await expect(actions).toHaveCount(1);
+    const [bar, feed] = await Promise.all([actions.boundingBox(), scroller.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.left + el.clientWidth };
+    })]);
+    if (!bar) throw new Error('no bar');
+    expect(bar.x, text).toBeGreaterThanOrEqual(feed.left + 8 - 0.5);
+    expect(bar.x + bar.width, text).toBeLessThanOrEqual(feed.right - 8 + 0.5);
+    await noSideScroll();
+    // A full-width bubble has no room beside it at 960: the bar sits over its top edge.
+    if (text !== 'Вот обработчик для поиска:') await expect(win.locator('[data-message-actions]')).toHaveAttribute('data-place', 'corner');
+  }
+  // A short message of another member: the bar is beside it; bubble → gap → bar keeps it.
+  await win.mouse.move(0, 0);
+  const done = win.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' });
+  await done.scrollIntoViewIfNeeded();
+  await settle(win);
+  const b = await done.boundingBox();
+  if (!b) throw new Error('no bubble');
+  await win.mouse.move(b.x + b.width - 6, b.y + b.height - 4);
+  await expect(actions).toHaveCount(1);
+  const bar = await actions.boundingBox();
+  if (!bar) throw new Error('no bar');
+  expect(bar.x).toBeGreaterThan(b.x + b.width);
+  await expect(win.locator('[data-message-actions]')).toHaveAttribute('data-place', 'beside');
+  await win.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2, { steps: 12 });
+  await win.waitForTimeout(400);
+  await expect(actions).toHaveCount(1);
+  await expect(actions.getByRole('button', { name: 'Ответить' })).toBeVisible();
+  // Gone ~200 ms after the pointer leaves (not at once, not never).
+  await win.mouse.move(0, 0);
+  const left = Date.now();
+  await win.waitForTimeout(100);
+  await expect(actions).toHaveCount(1, { timeout: 1 });
+  await expect(actions).toHaveCount(0, { timeout: 1000 });
+  expect(Date.now() - left).toBeGreaterThanOrEqual(190);
 });
 
 /**

@@ -1,6 +1,6 @@
 import { Clock } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { fmt } from '../../lib/format';
+import { fmt, useTimeFormat } from '../../lib/format';
 import { localClock, localTimeZone, zoneDiffHint } from '../../lib/timezone';
 import { t } from '../../i18n';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -22,6 +22,7 @@ export function LocalTime({ userId, variant }: { userId: string; variant: Varian
 
 function Clockline({ tz, variant }: { tz: string; variant: Variant }): ReactNode {
   const now = useNow(60_000);
+  useTimeFormat();
   const c = localClock(tz, localTimeZone(), new Date(now), fmt.timeIn);
   if (!c) return null;
   const hint = zoneDiffHint(c.diff);

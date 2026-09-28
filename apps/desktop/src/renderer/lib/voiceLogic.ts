@@ -5,25 +5,45 @@
 export interface SelfState {
   muted: boolean;
   deafened: boolean;
-}
-
-/** Mic button: unmuting while deafened also undeafens (Discord behaviour). */
-export function toggleMute(s: SelfState): SelfState {
-  if (s.muted || s.deafened) return { muted: false, deafened: false };
-  return { muted: true, deafened: false };
-}
-
-interface DeafenState extends SelfState {
-  mutedBeforeDeafen: boolean;
+  /**
+   * The mic as it was when deafen went on (issue #11): undeafen returns to it instead of turning
+   * the mic on. Meaningful only while `deafened`.
+   */
+  mutedBeforeDeafen?: boolean;
 }
 
 /**
- * Deafen = mute + silence all remote audio. Undeafen restores the prior mic state, unless a
- * moderator mute still applies. Each new deafen remembers the current mic choice.
+ * Mic button (Discord behaviour, docs/08 «Кнопки голоса»): toggles the mic; while deafened the
+ * mic cannot be turned on alone — the click lifts deafen AND turns the mic on (the user asked to
+ * talk, talking without hearing makes no sense).
  */
-export function toggleDeafen(s: DeafenState & { serverMuted?: boolean }): DeafenState {
+export function toggleMute(s: SelfState): Required<SelfState> {
+  if (s.deafened) return { muted: false, deafened: false, mutedBeforeDeafen: false };
+  return { muted: !s.muted, deafened: false, mutedBeforeDeafen: false };
+}
+
+/**
+ * Deafen = mute + silence all remote audio; the mic state before it is remembered. Undeafen
+ * restores that mic state (#11: a mic that was off stays off) — and under a moderator mute
+ * (VoiceState.server_muted), which only the server lifts, the mic stays muted (review pass 3 M1).
+ */
+export function toggleDeafen(s: SelfState & { serverMuted?: boolean }): Required<SelfState> {
   if (!s.deafened) return { muted: true, deafened: true, mutedBeforeDeafen: s.muted };
-  return { muted: s.mutedBeforeDeafen || s.serverMuted === true, deafened: false, mutedBeforeDeafen: false };
+  return { muted: s.mutedBeforeDeafen === true || s.serverMuted === true, deafened: false, mutedBeforeDeafen: false };
+}
+
+/**
+ * Push-to-talk key / button down (#12): only an unmuted, undeafened mic can go on air — muted or
+ * deafened, the press is ignored: no gate, no transmission, no activation cue.
+ */
+export function pttAllowed(s: SelfState): boolean {
+  return !s.muted && !s.deafened;
+}
+
+/** The PTT on / off cue: in a connected call, and only while the key really drives the mic. */
+export function pttCue(on: boolean, s: SelfState, inCall: boolean): 'pttOn' | 'pttOff' | null {
+  if (!inCall || !pttAllowed(s)) return null;
+  return on ? 'pttOn' : 'pttOff';
 }
 
 export interface TransmitInput extends SelfState {

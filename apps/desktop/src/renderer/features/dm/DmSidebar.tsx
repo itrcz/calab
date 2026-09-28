@@ -5,7 +5,7 @@ import { Avatar } from '../../components/Avatar';
 import { Button, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { fmt } from '../../lib/format';
+import { fmt, useTimeFormat } from '../../lib/format';
 import { useMobile } from '../../lib/mobile';
 import { openDm, setDmArchived } from '../../services/dms';
 import { shareOrigin } from '../../services/links';
@@ -111,8 +111,9 @@ function ArchiveSection({ list }: { list: DmEntry[] }): ReactNode {
 }
 
 const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
-  // Memo row: re-render on a language switch too (ADR-0022).
+  // Memo row: re-render on a language / clock format switch too (ADR-0022, docs/09 #73).
   useLocale();
+  useTimeFormat();
   const { roomId, peerId } = entry;
   const active = useUi((s) => s.activeWorkspaceId === HOME && s.lastRoom[HOME] === roomId);
   const name = useMemberName(null, peerId);

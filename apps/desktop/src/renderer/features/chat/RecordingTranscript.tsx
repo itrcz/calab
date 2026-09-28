@@ -5,6 +5,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Button, Input, Modal, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
+import { fmt } from '../../lib/format';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
 import { searchSegments, segmentAt, speakerNumber, stamp, transcriptFileName, transcriptText } from '../../lib/meetingResult';
 import { usePlayer, type Track } from '../../stores/player';
@@ -47,7 +48,7 @@ export default function RecordingTranscript({
   const playing = usePlayer((s) => (track && s.track?.fileId === track.fileId && s.track.messageId === track.messageId ? segmentAt(segments, s.position) : -1));
   const list = useRef<VirtuosoHandle>(null);
   const speaker = (n: number): string => t('rec.tr.speaker', { n });
-  const text = (): string => transcriptText(segments, speaker, `${title} — ${started.toLocaleString()}`);
+  const text = (): string => transcriptText(segments, speaker, `${title} — ${fmt.dateTime(started)}`);
 
   const copy = (): void => {
     navigator.clipboard.writeText(text()).then(

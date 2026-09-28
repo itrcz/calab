@@ -407,6 +407,13 @@ export interface MockServer {
   /** Full files (not thumbnails) wait until releaseFiles() or reset(): a slow download (the lightbox's loading state). */
   holdFiles(): void;
   releaseFiles(): void;
+  /**
+   * docs/09 #71: a gateway outage. Every socket is cut (no close frame, like a network drop) and
+   * new ones are refused for `downMs`; the sessions cannot be resumed (the mock keeps no event
+   * buffer — as when the server's buffer does not cover the gap), so clients re-IDENTIFY and get
+   * a fresh READY. State changed meanwhile (setVoiceState…) reaches them only through that READY.
+   */
+  dropGateway(downMs?: number): void;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -435,6 +442,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     seedBots: () => impl.seedBots(),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
+    dropGateway: (ms) => impl.dropGateway(ms ?? 0),
   };
 }
 
@@ -723,6 +731,9 @@ class MockImpl {
   /** Recording card transitions in flight (cleared on reset / close). */
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private fileGate: { done: Promise<void>; release: () => void } | null = null;
+  /** dropGateway(): gateway sessions that cannot be resumed, and the end of the outage (ms). */
+  private readonly droppedSessions = new Set<string>();
+  private gatewayDownUntil = 0;
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
@@ -736,7 +747,7 @@ class MockImpl {
     this.registerRoutes();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
-      if (path !== '/gateway') {
+      if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
         socket.destroy();
         return;
       }
@@ -776,6 +787,8 @@ class MockImpl {
     this.releaseFiles();
     this.state = buildState(scenario);
     this.voiceSessions.clear();
+    this.droppedSessions.clear();
+    this.gatewayDownUntil = 0;
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
   }
 
@@ -1315,7 +1328,7 @@ class MockImpl {
       conn.ws.close(GatewayCloseCode.AUTHENTICATION_FAILED, 'authentication failed');
       return;
     }
-        if (p.value.sessionId !== `mock-gw.${found.sessionId}`) {
+        if (p.value.sessionId !== `mock-gw.${found.sessionId}` || this.droppedSessions.delete(p.value.sessionId)) {
           this.sendFrame(conn, { op: GatewayOpcode.INVALID_SESSION, payload: { case: 'invalidSession', value: { resumable: false } } });
           return;
         }
@@ -3809,6 +3822,16 @@ class MockImpl {
       });
       noContent(c.res);
     });
+    // docs/09 #71: a gateway outage of `downMs` (dropGateway) and the voice states as the server holds them.
+    this.route('POST', '/__mock/gateway/drop', (c) => {
+      this.dropGateway(Number(ctl(c)['downMs'] ?? 0));
+      noContent(c.res);
+    });
+    this.route('GET', '/__mock/voice', (c) => {
+      const out: Record<string, { roomId: string; pending: boolean }> = {};
+      for (const [userId, v] of s().voiceStates) out[userId] = { roomId: v.roomId, pending: v.pending };
+      send(c.res, 200, JSON.stringify(out), 'application/json');
+    });
     this.route('POST', '/__mock/presence', (c) => {
       const b = ctl(c);
       const key = str(b['status']).replace(/^PRESENCE_STATUS_/, '');
@@ -3938,6 +3961,15 @@ class MockImpl {
    * Full files (GET /api/files/:id, not thumbnails) wait until releaseFiles() or reset(): the
    * lightbox's loading state (thumbnail + spinner) for a screenshot.
    */
+  dropGateway(downMs: number): void {
+    this.gatewayDownUntil = Date.now() + downMs;
+    for (const c of this.conns) {
+      if (c.gatewaySessionId) this.droppedSessions.add(c.gatewaySessionId);
+      c.ws.terminate();
+    }
+    this.conns.clear();
+  }
+
   holdFiles(): void {
     if (this.fileGate) return;
     let release = (): void => undefined;

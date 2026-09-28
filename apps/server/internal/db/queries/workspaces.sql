@@ -36,7 +36,8 @@ UPDATE workspaces SET
     default_max_stream_preset  = coalesce(sqlc.narg('default_max_stream_preset'), default_max_stream_preset),
     default_max_streams        = coalesce(sqlc.narg('default_max_streams'), default_max_streams),
     default_camera_limit       = coalesce(sqlc.narg('default_camera_limit'), default_camera_limit),
-    allow_self_nickname        = coalesce(sqlc.narg('allow_self_nickname'), allow_self_nickname)
+    allow_self_nickname        = coalesce(sqlc.narg('allow_self_nickname'), allow_self_nickname),
+    time_format                = coalesce(sqlc.narg('time_format'), time_format)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 

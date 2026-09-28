@@ -447,6 +447,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		p.DefaultCameraLimit, mediaChanged = &v, true
 	}
 	p.AllowSelfNickname = req.AllowSelfNickname
+	if req.TimeFormat != nil {
+		f, ok := pbconv.TimeFormatToDB(req.GetTimeFormat())
+		if !ok {
+			return httpx.Validation("timeFormat", "time format must be AUTO, H24 or H12")
+		}
+		p.TimeFormat = &f
+	}
 	ws, err := h.db.Q.UpdateWorkspace(r.Context(), p)
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("iconFileId", "file not found")

@@ -10,7 +10,9 @@ import {
   RoomSchema,
   TypingStartSchema,
   RoomType,
+  TimeFormat,
   WorkspaceSchema,
+  WorkspaceUpdateSchema,
   WorkspaceSnapshotSchema,
   type DispatchEvent,
 } from '@calaba/protocol';
@@ -28,7 +30,7 @@ vi.stubGlobal('window', globalThis);
 
 const onIncomingMessage = vi.fn<(...a: unknown[]) => void>();
 const loadMentions = vi.fn(() => Promise.resolve());
-vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn() } }));
+vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn() } }));
 vi.mock('./chat', () => ({ resyncLoadedRooms: vi.fn(() => Promise.resolve()), resyncPins: vi.fn(() => Promise.resolve()) }));
 vi.mock('./mentions', () => ({ loadMentions: () => loadMentions() }));
 vi.mock('./notify', () => ({ onIncomingMessage: (...a: unknown[]) => {
@@ -45,6 +47,9 @@ const { useTyping } = await import('../stores/typing');
 const { useInbox } = await import('../stores/inbox');
 const { useDms, HOME } = await import('../stores/dms');
 const { useUi } = await import('../stores/ui');
+const { useWorkspaces } = await import('../stores/workspaces');
+const { installTimeFormat } = await import('./timeFormat');
+const { getTimeFormat } = await import('../lib/format');
 
 const WS = 'ws-1';
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
@@ -138,6 +143,15 @@ describe('dispatch READY (re-IDENTIFY while the UI is up)', () => {
     applyDispatch(messageCreate('a', 101));
     expect(onIncomingMessage).toHaveBeenCalledTimes(2);
   });
+
+  it('READY and RESUMED run the voice seat check (docs/09 #71)', async () => {
+    const { voice } = await import('./voice');
+    const check = vi.spyOn(voice, 'checkSeat');
+    check.mockClear();
+    applyDispatch(ready([room('a')]));
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'resumed', value: { replayed: 3 } } }));
+    expect(check).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('dispatch TYPING_START', () => {
@@ -203,5 +217,46 @@ describe('DM_STATE_UPDATE (docs/09 #51)', () => {
     // A stale (older) mark never brings the hidden history back.
     applyDispatch(state(0, id(2)));
     expect(useDms.getState().byRoom['d']?.clearedBefore).toBe(id(4));
+  });
+});
+
+describe('WORKSPACE_UPDATE → clock format (docs/09 #73)', () => {
+  const update = (wsId: string, timeFormat: TimeFormat): DispatchEvent =>
+    create(DispatchEventSchema, {
+      event: { case: 'workspaceUpdate', value: create(WorkspaceUpdateSchema, { workspace: create(WorkspaceSchema, { id: wsId, name: 'W', timeFormat }) }) },
+    });
+
+  it('the current workspace format applies live; another one does not; DMs follow the last one opened', () => {
+    const off = installTimeFormat();
+    try {
+      applyDispatch(ready([room('a', id(1))]));
+      useUi.getState().setWorkspace(WS);
+      expect(getTimeFormat()).toBe('auto');
+
+      applyDispatch(update(WS, TimeFormat.H12));
+      expect(getTimeFormat()).toBe('h12');
+      applyDispatch(update(WS, TimeFormat.H24));
+      expect(getTimeFormat()).toBe('h24');
+
+      // Another workspace (not open) changing its format leaves ours alone.
+      useWorkspaces.getState().applySnapshot(create(WorkspaceSnapshotSchema, { workspace: create(WorkspaceSchema, { id: 'ws-2', name: 'Other' }) }));
+      applyDispatch(update('ws-2', TimeFormat.H12));
+      expect(getTimeFormat()).toBe('h24');
+
+      // «Личные» (DMs): the workspace opened last; opening the other one switches.
+      useUi.getState().setWorkspace(HOME);
+      expect(getTimeFormat()).toBe('h24');
+      useUi.getState().setWorkspace('ws-2');
+      expect(getTimeFormat()).toBe('h12');
+
+      // UNSPECIFIED (an older server) reads as auto; no workspace at all: auto.
+      applyDispatch(update('ws-2', TimeFormat.UNSPECIFIED));
+      expect(getTimeFormat()).toBe('auto');
+      applyDispatch(update(WS, TimeFormat.H12));
+      useWorkspaces.getState().reset();
+      expect(getTimeFormat()).toBe('auto');
+    } finally {
+      off();
+    }
   });
 });

@@ -377,6 +377,10 @@ declare global {
     __calabaSpeaking?: (userIds: string[]) => void;
     /** Visual tests only: back-date my room join (docs/09 #10 — the invite row's 30 s window). */
     __calabaJoinedAt?: (ms: number) => void;
+    /** e2e tests (docs/09 #71): the LiveKit connection as it really is (voice.linkTruth). */
+    __calabaVoiceLink?: () => { state: string | null; room: string | null; identity: string | null };
+    /** e2e tests: an unexpected LiveKit loss (the reconnect cycle starts). */
+    __calabaVoiceDrop?: () => void;
   }
 }
 
@@ -389,7 +393,11 @@ export function VoiceBar(): ReactNode {
     window.__calabaCameras = () => useVoice.getState().cameras.length;
     window.__calabaSpeaking = (ids) => setVoice({ speaking: Object.fromEntries(ids.map((id) => [id, true])) });
     window.__calabaJoinedAt = (ms) => setVoice({ joinedAt: ms });
+    window.__calabaVoiceLink = () => voice.linkTruth();
+    window.__calabaVoiceDrop = () => voice.simulateLinkLoss();
     return () => {
+      delete window.__calabaVoiceLink;
+      delete window.__calabaVoiceDrop;
       delete window.__calabaSpeaking;
       delete window.__calabaVoicePhase;
       delete window.__calabaCameras;

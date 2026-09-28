@@ -368,6 +368,7 @@ type Workspace struct {
 	SuspendedAt             *time.Time
 	SuspendedReason         string
 	SuspendedBy             *uuid.UUID
+	TimeFormat              string
 }
 
 type WorkspaceAdminLog struct {

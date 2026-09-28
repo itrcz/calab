@@ -1,17 +1,54 @@
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
+import { useSyncExternalStore } from 'react';
 import { getLocale, numberFormat, t } from '../i18n';
 
 export const toDate = (ts: Timestamp | undefined): Date => (ts ? timestampDate(ts) : new Date());
 
 /**
+ * Clock format of the current workspace (docs/09 #73, Workspace.time_format): `auto` — what the UI
+ * language's `Intl` gives (as before), `h24` — «16:50», `h12` — «4:50 PM». Set by
+ * services/timeFormat (from the workspace store); React re-renders through `useTimeFormat()`.
+ */
+export type TimeFormatPref = 'auto' | 'h24' | 'h12';
+
+let timeFormat: TimeFormatPref = 'auto';
+const timeFormatListeners = new Set<() => void>();
+
+export const getTimeFormat = (): TimeFormatPref => timeFormat;
+
+export function setTimeFormat(f: TimeFormatPref): void {
+  if (f === timeFormat) return;
+  timeFormat = f;
+  for (const l of timeFormatListeners) l();
+}
+
+function subscribeTimeFormat(cb: () => void): () => void {
+  timeFormatListeners.add(cb);
+  return () => timeFormatListeners.delete(cb);
+}
+
+/** Subscribes a component (memo rows, the app root) to the clock format; returns it. */
+export function useTimeFormat(): TimeFormatPref {
+  return useSyncExternalStore(subscribeTimeFormat, getTimeFormat, getTimeFormat);
+}
+
+/** Applies the clock format to options that show the hour (`hour` or `timeStyle`). */
+function withClock(opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormatOptions {
+  if (timeFormat === 'auto' || (!opts.hour && !opts.timeStyle)) return opts;
+  if (timeFormat === 'h24') return { ...opts, ...(opts.hour ? { hour: '2-digit' } : {}), hourCycle: 'h23' };
+  return { ...opts, ...(opts.hour ? { hour: 'numeric' } : {}), hour12: true };
+}
+
+/**
  * Dates, times, numbers and sizes in the current UI language (ADR-0022): one place, `Intl.*` only.
- * Formatters are cached per locale + options; everything reads the locale at call time, so a
- * language switch applies on the next render.
+ * Formatters are cached per locale + options (with the clock format); everything reads the locale
+ * and the clock format at call time, so a switch applies on the next render.
  */
 const dtfCache = new Map<string, Intl.DateTimeFormat>();
 
-function dtf(opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+function dtf(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
   const locale = getLocale();
+  const opts = withClock(options);
   const id = `${locale}|${JSON.stringify(opts)}`;
   let f = dtfCache.get(id);
   if (!f) {
@@ -54,7 +91,7 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 ];
 
 export const fmt = {
-  /** «14:05» / “2:05 PM”. */
+  /** «14:05» / “2:05 PM” (auto); «16:50» (h24); «4:50 PM» (h12). */
   time: (d: Date): string => dtf({ hour: '2-digit', minute: '2-digit' }).format(d),
   /** «14:05» on the wall clock of IANA zone `tz` (a member's local time, docs/09 #48). */
   timeIn: (d: Date, tz: string): string => dtf({ hour: '2-digit', minute: '2-digit', timeZone: tz }).format(d),

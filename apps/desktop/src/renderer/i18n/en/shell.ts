@@ -212,6 +212,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'mediaErr.voice.unsupportedWeb': 'Your browser doesn’t support voice calls',
   'mediaErr.voice.generic': 'Couldn’t join voice',
   'mediaErr.voice.lost': 'Couldn’t rejoin the voice room',
+  'mediaErr.voice.desync': 'Voice connection lost',
   'mediaErr.voice.kicked': 'A moderator disconnected you from the voice room',
   'mediaErr.voice.duplicate': 'You joined voice from this device in another window',
   'mediaErr.voice.closed': 'The voice room was closed',

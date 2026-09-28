@@ -1,37 +1,52 @@
 import { describe, expect, it } from 'vitest';
-import { meterUpdate, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
+import { meterUpdate, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
 
 describe('mute / deafen', () => {
-  it('mute toggles; unmute while deafened also undeafens', () => {
-    expect(toggleMute({ muted: false, deafened: false })).toEqual({ muted: true, deafened: false });
-    expect(toggleMute({ muted: true, deafened: false })).toEqual({ muted: false, deafened: false });
-    expect(toggleMute({ muted: true, deafened: true })).toEqual({ muted: false, deafened: false });
+  it('mute toggles; the mic button while deafened lifts deafen and turns the mic on (Discord)', () => {
+    expect(toggleMute({ muted: false, deafened: false })).toEqual({ muted: true, deafened: false, mutedBeforeDeafen: false });
+    expect(toggleMute({ muted: true, deafened: false })).toEqual({ muted: false, deafened: false, mutedBeforeDeafen: false });
+    expect(toggleMute({ muted: true, deafened: true, mutedBeforeDeafen: true })).toEqual({ muted: false, deafened: false, mutedBeforeDeafen: false });
   });
-  it.each([true, false])('undeafen restores the prior mic mute (%s)', (muted) => {
-    const before = { muted, deafened: false, mutedBeforeDeafen: false };
-    const deafened = toggleDeafen(before);
-    expect(deafened).toMatchObject({ muted: true, deafened: true });
-    expect(toggleDeafen(deafened)).toMatchObject({ muted, deafened: false });
+  it('deafen implies mute; undeafen returns the mic as it was (#11)', () => {
+    const on = toggleDeafen({ muted: false, deafened: false });
+    expect(on).toEqual({ muted: true, deafened: true, mutedBeforeDeafen: false });
+    expect(toggleDeafen(on)).toEqual({ muted: false, deafened: false, mutedBeforeDeafen: false });
   });
-  it('each deafen cycle remembers the latest mic choice', () => {
-    const before = { muted: true, deafened: false, mutedBeforeDeafen: false };
-    const restored = toggleDeafen(toggleDeafen(before));
-    expect(restored).toMatchObject({ muted: true, deafened: false });
-    const unmuted = { ...restored, ...toggleMute(restored) };
-    expect(toggleDeafen(toggleDeafen(unmuted))).toMatchObject({ muted: false, deafened: false });
-  });
-  it('explicit mic unmute while deafened clears both, including on the next deafen cycle', () => {
-    const before = { muted: true, deafened: false, mutedBeforeDeafen: false };
-    const deafened = toggleDeafen(before);
-    const unmuted = { ...deafened, ...toggleMute(deafened) };
-    expect(unmuted).toMatchObject({ muted: false, deafened: false });
-    expect(toggleDeafen(toggleDeafen(unmuted))).toMatchObject({ muted: false, deafened: false });
+  it('a mic muted before deafen stays muted after it (#11)', () => {
+    const on = toggleDeafen({ muted: true, deafened: false });
+    expect(on).toEqual({ muted: true, deafened: true, mutedBeforeDeafen: true });
+    expect(toggleDeafen(on)).toEqual({ muted: true, deafened: false, mutedBeforeDeafen: false });
   });
   it('undeafen under a moderator mute keeps the mic muted (review pass 3 M1)', () => {
-    const before = { muted: true, deafened: true, mutedBeforeDeafen: false };
-    expect(toggleDeafen({ ...before, serverMuted: true })).toMatchObject({ muted: true, deafened: false });
-    expect(toggleDeafen({ ...before, serverMuted: false })).toMatchObject({ muted: false, deafened: false });
-    expect(toggleDeafen({ ...before, deafened: false, serverMuted: true })).toMatchObject({ muted: true, deafened: true });
+    expect(toggleDeafen({ muted: true, deafened: true, mutedBeforeDeafen: false, serverMuted: true })).toEqual({ muted: true, deafened: false, mutedBeforeDeafen: false });
+    expect(toggleDeafen({ muted: true, deafened: true, mutedBeforeDeafen: false, serverMuted: false })).toEqual({ muted: false, deafened: false, mutedBeforeDeafen: false });
+    expect(toggleDeafen({ muted: true, deafened: false, serverMuted: true })).toEqual({ muted: true, deafened: true, mutedBeforeDeafen: true });
+  });
+});
+
+describe('push-to-talk while muted / deafened (#12)', () => {
+  const ptt = { canSpeak: true, mode: 'ptt' as const, gateOpen: false };
+  it('deafened: the press is ignored — nothing on air, no activation cue', () => {
+    const s = toggleDeafen({ muted: false, deafened: false });
+    expect(pttAllowed(s)).toBe(false);
+    // The press never reaches the gate (pttDown stays false); even a held key would not transmit.
+    expect(transmitDecision({ ...s, ...ptt, pttDown: false }).transmitting).toBe(false);
+    expect(transmitDecision({ ...s, ...ptt, pttDown: true }).transmitting).toBe(false);
+    expect(pttCue(true, s, true)).toBeNull();
+    expect(pttCue(false, s, true)).toBeNull();
+  });
+  it('muted: the same', () => {
+    const s = { muted: true, deafened: false };
+    expect(pttAllowed(s)).toBe(false);
+    expect(pttCue(true, s, true)).toBeNull();
+  });
+  it('mic on, in a call: the key opens the gate with its cues', () => {
+    const s = { muted: false, deafened: false };
+    expect(pttAllowed(s)).toBe(true);
+    expect(transmitDecision({ ...s, ...ptt, pttDown: true }).transmitting).toBe(true);
+    expect(pttCue(true, s, true)).toBe('pttOn');
+    expect(pttCue(false, s, true)).toBe('pttOff');
+    expect(pttCue(true, s, false)).toBeNull();
   });
 });
 

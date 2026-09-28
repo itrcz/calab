@@ -13,6 +13,15 @@ enum WorkspaceVisibility {
   WORKSPACE_VISIBILITY_OPEN = 2;    // any registered user may join as member
 }
 
+// Clock format for every time shown in a workspace (docs/09 #73). The server always sends
+// AUTO, H24 or H12; UNSPECIFIED (an older server) reads as AUTO.
+enum TimeFormat {
+  TIME_FORMAT_UNSPECIFIED = 0;
+  TIME_FORMAT_AUTO = 1; // the viewer's system locale
+  TIME_FORMAT_H24 = 2;  // 16:50
+  TIME_FORMAT_H12 = 3;  // 4:50 PM
+}
+
 message Workspace {
   string id = 1;
   string slug = 2; // 3..32 chars, [a-z0-9-], no leading/trailing/double '-'
@@ -33,6 +42,7 @@ message Workspace {
   // Set while a superadmin has suspended the workspace (read-only: writes get 403
   // WORKSPACE_SUSPENDED). Unset = active.
   WorkspaceSuspension suspension = 13;
+  TimeFormat time_format = 14;
 }
 
 message WorkspaceSuspension {
@@ -112,6 +122,7 @@ message UpdateWorkspaceRequest {
   optional uint32 default_max_streams = 7; // 0..10
   optional bool allow_self_nickname = 8;
   optional uint32 default_camera_limit = 9; // 0..25 (0 = cameras off)
+  optional TimeFormat time_format = 10; // AUTO|H24|H12 (UNSPECIFIED is 422)
 }
 
 message UpdateWorkspaceResponse {

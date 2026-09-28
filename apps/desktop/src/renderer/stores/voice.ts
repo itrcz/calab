@@ -114,7 +114,7 @@ export interface VoiceStore {
   videoPip: boolean;
   muted: boolean;
   deafened: boolean;
-  /** Local mic choice to restore on undeafen; kept with mute/deafen across room changes. */
+  /** The mic before deafen went on: undeafen returns to it (lib/voiceLogic toggleDeafen, #11). */
   mutedBeforeDeafen: boolean;
   transmitting: boolean;
   levelDb: number;

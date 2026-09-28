@@ -1,7 +1,9 @@
 import type { Me } from '@calaba/protocol';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
+import { fmt, useTimeFormat } from '../lib/format';
 import { localTimeZone, timeZoneLabel } from '../lib/timezone';
+import { useNow } from '../features/shell/voiceFormat';
 import { useSession } from '../stores/session';
 import { useWorkspaces } from '../stores/workspaces';
 
@@ -57,8 +59,27 @@ export function resetTimeZoneSync(): void {
   daily = null;
 }
 
-/** «(+5 UTC)» for a member whose zone differs from mine right now, else null. */
+/** «+5 UTC» for a member whose zone differs from mine right now, else null. */
 export function useTimeZoneLabel(userId: string): string | null {
   const theirs = useWorkspaces((s) => s.users[userId]?.timezone ?? '');
   return timeZoneLabel(theirs, localTimeZone());
+}
+
+/**
+ * The member's local time «16:50» (owner, 28.09: the tag next to a name shows the time; the
+ * profile keeps «UTC+5 · 16:50»). Only when their zone differs from mine; ticks once a minute
+ * on the shared clock (docs/14: one timer per period); 24 / 12 h per the workspace (docs/09 #73).
+ */
+export function useLocalTimeTag(userId: string): string | null {
+  const theirs = useWorkspaces((s) => s.users[userId]?.timezone ?? '');
+  const differs = timeZoneLabel(theirs, localTimeZone()) !== null;
+  const now = useNow(differs ? 60_000 : 0);
+  // The workspace clock format (docs/09 #73) re-renders the tag live.
+  useTimeFormat();
+  if (!differs) return null;
+  try {
+    return fmt.timeIn(new Date(now), theirs);
+  } catch {
+    return null;
+  }
 }

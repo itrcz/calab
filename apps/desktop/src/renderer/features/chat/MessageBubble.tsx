@@ -1,14 +1,14 @@
 import type { FileMeta, Message, PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { THUMB_LARGE, thumbWidthPath, wantsLargeThumb } from '../../lib/thumbs';
-import { fmt, toDate } from '../../lib/format';
+import { fmt, toDate, useTimeFormat } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
@@ -23,7 +23,7 @@ import { useChatView } from './chatView';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
 import { MessageActions, hasMessageActions } from './MessageActions';
-import { HOVER_DELAY_MS, createHoverIntent } from './hoverIntent';
+import { createHoverIntent, placeActionBar } from './hoverIntent';
 import { previewPartsOf, useMentionLabel } from './mentionText';
 import { PreviewRuns } from './PreviewRuns';
 import { MessageMenu } from './MessageMenu';
@@ -73,13 +73,16 @@ export interface RowProps {
 
 /** One feed row: optional date / «new» pills, avatar column (others), the bubble. */
 export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, roomId, perms, highlighted }: RowProps): ReactNode {
-  // Memo row: re-render on a language switch too (ADR-0022).
+  // Memo row: re-render on a language / clock format switch too (ADR-0022, docs/09 #73).
   useLocale();
+  useTimeFormat();
   const m = c.msg;
   const author = useWorkspaces((s) => s.users[m.authorId]);
   const name = memberName(workspaceId, m.authorId);
   return (
-    <div className={cx('pl-4', own ? 'pr-6' : 'pr-4', meta.first ? 'pt-2' : 'pt-0.5')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    // overflow-x-clip: nothing in a row widens the feed (no horizontal scroll, docs/09 #74); clip,
+    // not hidden, so the action bar over a bubble's top edge still shows above the row.
+    <div className={cx('overflow-x-clip pl-4', own ? 'pr-6' : 'pr-4', meta.first ? 'pt-2' : 'pt-0.5')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(m.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       <div
@@ -113,6 +116,7 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
  */
 export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, highlighted }: Pick<RowProps, 'c' | 'meta' | 'workspaceId' | 'perms' | 'highlighted'>): ReactNode {
   useLocale();
+  useTimeFormat();
   const card = recordingCardOf(c.msg);
   return (
     <div className={cx('px-4', meta.day || meta.isNew || card ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
@@ -351,7 +355,7 @@ function Bubble({
   );
 
   return (
-    <ContextMenu.Root modal={false}>
+    <ContextMenu.Root modal={false} onOpenChange={bar.setMenu}>
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
           className={cx(
@@ -369,15 +373,9 @@ function Bubble({
         >
           {body}
           {bar.visible ? (
-            // Beside the bubble, level with its top, on the free side of the row (a bubble is at
-            // most 70 % wide): never over this or a neighbouring message's text. The gap is the
-            // strip's own padding, so moving the pointer from the bubble to the bar keeps it open.
-            <div
-              data-message-actions
-              className={cx('absolute top-0 z-[var(--z-sticky)] flex w-max', own ? 'right-full pr-1.5' : 'left-full pl-1.5')}
-            >
+            <ActionBarSlot own={own}>
               <MessageActions c={c} roomId={roomId} perms={perms} onPickerOpenChange={bar.setPicker} />
-            </div>
+            </ActionBarSlot>
           ) : null}
         </div>
       </ContextMenu.Trigger>
@@ -413,22 +411,28 @@ function StickerTarget({ sticker }: { sticker: NonNullable<Message['sticker']> }
 }
 
 /**
- * Hover / keyboard-focus state of the action bar: shown 150 ms after the pointer settles, gone
- * on leave; hidden while the primary button is held (a text selection may be in progress);
- * kept while its emoji picker is open. Keyboard focus shows it at once (focus-visible only, so a
- * click on the text doesn't pin it).
+ * Hover / keyboard-focus state of the action bar (docs/09 #47, #74): shown 150 ms after the
+ * pointer settles, hidden 200 ms after it leaves (a return cancels that; the bar and the bridge
+ * to it are inside the bubble, so moving onto the bar is no leave at all); never hidden while its
+ * emoji picker or the «…» menu is open; hidden while the primary button is held (a text
+ * selection may be in progress) and while the feed scrolls (back 150 ms after it stops).
+ * Keyboard focus shows it at once (focus-visible only, so a click on the text doesn't pin it).
+ * The state is this bubble's own: hovering a message re-renders that bubble only.
  *
  * The bubble is a Tab stop (tabIndex 0) only for the keyboard: a mouse press would focus it as
  * the nearest focusable ancestor of the text, and a later key press (Ctrl+C after selecting) then
  * turns that into :focus-visible and draws the ring. So a focus that a press put on the bubble
- * itself is dropped at once (blur, as if the bubble weren't focusable). preventDefault on
- * mousedown would do the same but also kill text selection; blur leaves the selection alone.
+ * itself is dropped when the button is released (blur, as if the bubble weren't focusable).
+ * Not in the focus handler itself: Chromium cancels the mousedown's default action — the start
+ * of a text selection — when a focus handler moves the focus (issue #13); preventDefault on
+ * mousedown would kill it too. A blur after the release leaves the selection alone.
  * Presses on the controls inside (reactions, links, the action bar) focus those as usual.
  */
 function useActionBar(enabled: boolean): {
   enabled: boolean;
   visible: boolean;
   setPicker: (open: boolean) => void;
+  setMenu: (open: boolean) => void;
   handlers: {
     onPointerEnter?: (e: PointerEvent<HTMLDivElement>) => void;
     onPointerLeave?: (e: PointerEvent<HTMLDivElement>) => void;
@@ -440,12 +444,56 @@ function useActionBar(enabled: boolean): {
 } {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
-  const [picker, setPicker] = useState(false);
-  const [intent] = useState(() => createHoverIntent(HOVER_DELAY_MS, setHover));
+  // The picker also keeps a keyboard-opened bar (focus moves into its portal: a blur here).
+  const [picker, setPickerOpen] = useState(false);
+  const [hov] = useState(() => {
+    // Feed scrolls reach the intent only while it is active: one window capture listener per
+    // hovered message, not one per row.
+    let row: Element | null = null;
+    let watching = false;
+    const unwatch = (): void => {
+      if (!watching) return;
+      watching = false;
+      window.removeEventListener('scroll', onScroll, { capture: true });
+    };
+    const onScroll = (e: Event): void => {
+      if (row && e.target instanceof Node && e.target.contains(row)) intent.scroll();
+      if (!intent.active()) unwatch();
+    };
+    const intent = createHoverIntent((v) => {
+      setHover(v);
+      if (!intent.active()) unwatch();
+    });
+    return {
+      intent,
+      unwatch,
+      watch(el: Element): void {
+        row = el;
+        if (watching) return;
+        watching = true;
+        window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+      },
+    };
+  });
+  const intent = hov.intent;
+  const setPicker = useCallback(
+    (open: boolean) => {
+      setPickerOpen(open);
+      intent.hold('picker', open);
+    },
+    [intent],
+  );
+  const setMenu = useCallback((open: boolean) => intent.hold('menu', open), [intent]);
   // True from a mouse press until the end of its task: the focus it causes runs in between.
   const pressing = useRef(false);
-  useEffect(() => () => intent.dispose(), [intent]);
-  if (!enabled) return { enabled, visible: false, setPicker, handlers: {} };
+  useEffect(
+    () => () => {
+      intent.dispose();
+      hov.unwatch();
+    },
+    [intent, hov],
+  );
+  if (!enabled) return { enabled, visible: false, setPicker, setMenu, handlers: {} };
   const press = (): void => {
     intent.press();
     const up = (): void => {
@@ -460,6 +508,7 @@ function useActionBar(enabled: boolean): {
     enabled,
     visible: hover || focused || picker,
     setPicker,
+    setMenu,
     handlers: {
       // A mouse only: a tap on a phone (iOS emulates hover on touch) would open the bar beside
       // the bubble, past the screen's edge — touch has the long-press menu instead.
@@ -467,10 +516,13 @@ function useActionBar(enabled: boolean): {
         if (e.pointerType !== 'mouse') return;
         // A selection dragged in from another message: stay hidden until the button is released.
         if (e.buttons & 1) press();
+        hov.watch(e.currentTarget);
         intent.enter();
       },
       onPointerLeave: (e) => {
-        if (e.pointerType === 'mouse') intent.leave();
+        if (e.pointerType !== 'mouse') return;
+        intent.leave();
+        if (!intent.active()) hov.unwatch();
       },
       onMouseDown: () => {
         pressing.current = true;
@@ -485,7 +537,14 @@ function useActionBar(enabled: boolean): {
       onFocus: (e) => {
         const keyboard = (e.target as Element).matches(':focus-visible');
         if (pressing.current && !keyboard && e.target === e.currentTarget) {
-          e.currentTarget.blur();
+          const el = e.currentTarget;
+          const drop = (): void => {
+            window.removeEventListener('pointerup', drop);
+            window.removeEventListener('pointercancel', drop);
+            if (document.activeElement === el) el.blur();
+          };
+          window.addEventListener('pointerup', drop);
+          window.addEventListener('pointercancel', drop);
           return;
         }
         setFocused(keyboard);
@@ -495,6 +554,41 @@ function useActionBar(enabled: boolean): {
       },
     },
   };
+}
+
+/**
+ * The action bar's place (docs/09 #74), inside the bubble — the hover wrapper — so the pointer
+ * moving onto the bar never leaves the message. `beside` (the CSS default): next to the bubble
+ * on the free side of the row, level with its top; the slot is as tall as the bubble and its
+ * padding is the gap, so the whole strip between the bubble and the bar is an invisible bridge.
+ * When that doesn't fit in the feed (a wide bubble, a narrow window) the bar sits over the
+ * bubble's top edge instead, clamped into the feed (placeActionBar). Measured once per showing,
+ * before paint, and applied to the DOM directly: no second render.
+ */
+function ActionBarSlot({ own, children }: { own: boolean; children: ReactNode }): ReactNode {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const slot = ref.current;
+    const bubble = slot?.parentElement;
+    const lane = slot?.closest('[data-message-id]');
+    const bar = slot?.firstElementChild;
+    if (!slot || !bubble || !lane || !(bar instanceof HTMLElement)) return;
+    const b = bubble.getBoundingClientRect();
+    const p = placeActionBar(b, lane.getBoundingClientRect(), { width: bar.offsetWidth, height: bar.offsetHeight }, own);
+    if (p.mode === 'beside') return;
+    slot.dataset['place'] = 'corner';
+    Object.assign(slot.style, { left: `${p.left}px`, right: 'auto', top: `${p.top}px`, bottom: 'auto', padding: '0' });
+  }, [own]);
+  return (
+    <div
+      ref={ref}
+      data-message-actions
+      data-place="beside"
+      className={cx('absolute inset-y-0 z-[var(--z-sticky)] flex w-max items-start', own ? 'right-full pr-1.5' : 'left-full pl-1.5')}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** Bubble tail (Telegram): a curved corner piece in the bubble colour at the bottom. */

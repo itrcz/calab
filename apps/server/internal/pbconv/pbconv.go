@@ -77,6 +77,29 @@ func VisibilityToDB(v v1.WorkspaceVisibility) (string, bool) {
 	return "", false
 }
 
+// TimeFormatToDB maps the clock format (docs/09 #73); ok=false for UNSPECIFIED/unknown.
+func TimeFormatToDB(f v1.TimeFormat) (string, bool) {
+	switch f {
+	case v1.TimeFormat_TIME_FORMAT_AUTO:
+		return "auto", true
+	case v1.TimeFormat_TIME_FORMAT_H24:
+		return "h24", true
+	case v1.TimeFormat_TIME_FORMAT_H12:
+		return "h12", true
+	}
+	return "", false
+}
+
+func timeFormatFromDB(s string) v1.TimeFormat {
+	switch s {
+	case "h24":
+		return v1.TimeFormat_TIME_FORMAT_H24
+	case "h12":
+		return v1.TimeFormat_TIME_FORMAT_H12
+	}
+	return v1.TimeFormat_TIME_FORMAT_AUTO
+}
+
 func visibilityFromDB(s string) v1.WorkspaceVisibility {
 	if s == "open" {
 		return v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_OPEN
@@ -249,6 +272,7 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		StorageQuotaBytes: uint64(max(w.StorageQuotaBytes, 0)),
 		StorageUsedBytes:  uint64(max(w.StorageUsedBytes, 0)),
 		AllowSelfNickname: w.AllowSelfNickname,
+		TimeFormat:        timeFormatFromDB(w.TimeFormat),
 	}
 }
 

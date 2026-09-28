@@ -16,7 +16,7 @@ import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner
 import { getLocale, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
-import { fmt } from '../../lib/format';
+import { fmt, type TimeFormatPref } from '../../lib/format';
 import { workspaceInitials } from '../../lib/initials';
 import { can, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
 import { inviteUrl } from '../../services/links';
@@ -32,6 +32,7 @@ import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { PlanTab } from './PlanTab';
 import { GptunnelTab } from './GptunnelTab';
 import { reportPlanError } from '../../services/plan';
+import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
@@ -40,6 +41,9 @@ import { StickersTab } from './StickersTab';
 import { BotsTab } from './BotsTab';
 
 const err = (e: unknown): string => errorText(e);
+
+/** «Формат времени» (docs/09 #73): the segmented control's order. */
+const TIME_FORMATS: readonly TimeFormatPref[] = ['auto', 'h24', 'h12'];
 
 async function patchWorkspace(id: string, init: Parameters<typeof api.workspaces.update>[1]): Promise<void> {
   const r = await api.workspaces.update(id, init);
@@ -179,6 +183,14 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
             label={t('people.nick.allowSelf')}
             checked={ws.allowSelfNickname}
             onChange={(v) => void patchWorkspace(workspaceId, { allowSelfNickname: v }).catch((x: unknown) => toast.error(err(x)))}
+          />
+        </Row>
+        <Row label={t('ws.timeFormat')} hint={t('ws.timeFormatHint')}>
+          <Segmented<TimeFormatPref>
+            label={t('ws.timeFormat')}
+            value={toTimeFormatPref(ws.timeFormat)}
+            onChange={(v) => void patchWorkspace(workspaceId, { timeFormat: fromTimeFormatPref(v) }).catch((x: unknown) => toast.error(err(x)))}
+            options={TIME_FORMATS.map((f) => ({ value: f, label: t(`ws.timeFormat.${f}`) }))}
           />
         </Row>
       </Card>

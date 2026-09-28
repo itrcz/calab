@@ -7,6 +7,7 @@ import { isWeb, platform } from './platform';
 import { installWindowVisibility } from './lib/windowVisibility';
 import { startLocale } from './services/locale';
 import { installPlayer } from './services/player';
+import { installTimeFormat } from './services/timeFormat';
 import { bootstrap } from './services/session';
 import './app/styles.css';
 
@@ -22,6 +23,9 @@ void bootstrap();
 // or a transcript remark plays with no audio attachment mounted yet (docs/09 #57). The element
 // itself is created on the first play.
 installPlayer();
+
+// The clock format follows the current workspace (docs/09 #73): `fmt` reads it at call time.
+installTimeFormat();
 
 // Web client (ADR-0015/0021): `:root.web` scopes the phone layout (the `mobile:` CSS variant), the
 // shell follows the visual viewport (keyboard), and the PWA service worker makes it installable.
