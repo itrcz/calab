@@ -375,8 +375,20 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/boards/{id}/webhook":               botDeny,
 	"DELETE /api/boards/{id}/webhook":            botDeny,
 	"POST /api/boards/{id}/webhook/ping":         botDeny,
-	"GET /api/me/tasks":                          botAllow,
-	"GET /api/workspaces/{id}/tasks/search":      botAllow,
+	// Automations (ADR-0060): bots read rules; changing, testing them and the repository
+	// webhook setup are people only. The repository's own delivery is public (signed).
+	"GET /api/boards/{id}/rules":            botAllow,
+	"POST /api/boards/{id}/rules":           botDeny,
+	"PATCH /api/rules/{id}":                 botDeny,
+	"DELETE /api/rules/{id}":                botDeny,
+	"POST /api/rules/{id}/test":             botDeny,
+	"GET /api/rules/{id}/runs":              botAllow,
+	"GET /api/boards/{id}/git":              botDeny,
+	"PUT /api/boards/{id}/git":              botDeny,
+	"DELETE /api/boards/{id}/git":           botDeny,
+	"POST /api/git/boards/{id}/{provider}":  botPublic, // the repository hosting only (signed)
+	"GET /api/me/tasks":                     botAllow,
+	"GET /api/workspaces/{id}/tasks/search": botAllow,
 	// telephony (ADR-0046): settings, the connection test (MANAGE_INTEGRATIONS) and the journal
 	// (VIEW_JOURNALS, ADR-0048) are for people; bots
 	// with PLACE_CALLS place and end calls from a room whose call they are in

@@ -166,6 +166,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Calendar.Run(ctx, calendar.Tick)
 	go a.CalDAV.Run(ctx)
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
+	go a.Boards.RunRules(ctx, a.redis) // scheduled automation rules (ADR-0060)
 	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 	go a.SIP.Run(ctx)
 	if a.OAuth != nil {
@@ -419,6 +420,7 @@ func New(d Deps) *App {
 	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.TaskCommentHook = boardSvc.TaskCommentHook
 	boardHooks := boardSvc.EnableWebhooks(d.Redis, []byte(d.Config.JWTSecret), whOpts) // same delivery options as bots
+	boardSvc.EnableGit(d.Redis, []byte(d.Config.JWTSecret))                            // repository webhooks of boards (ADR-0060)
 	msgHandlers.Routes(mux, private)
 	boardSvc.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour

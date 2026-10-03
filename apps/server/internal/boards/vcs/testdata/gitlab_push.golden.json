@@ -1,0 +1,48 @@
+{
+  "Event": {
+    "Provider": "gitlab",
+    "Repo": "mike/diaspora",
+    "RepoURL": "https://gitlab.example.com/mike/diaspora",
+    "Author": "jsmith",
+    "Push": true,
+    "Branch": "FNG-5-search",
+    "BranchCreated": true,
+    "Commits": [
+      {
+        "SHA": "b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
+        "Message": "Update Catalan translation to e38cb41.\n\nFNG-5",
+        "URL": "https://gitlab.example.com/mike/diaspora/-/commit/b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
+        "Author": "Jordi Mallach"
+      },
+      {
+        "SHA": "da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
+        "Message": "fixed readme",
+        "URL": "https://gitlab.example.com/mike/diaspora/-/commit/da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
+        "Author": "GitLab dev user"
+      }
+    ],
+    "PR": null
+  },
+  "Links": [
+    {
+      "Number": 5,
+      "Kind": "branch",
+      "Ref": "FNG-5-search",
+      "Title": "FNG-5-search",
+      "URL": "https://gitlab.example.com/mike/diaspora/-/tree/FNG-5-search",
+      "State": "",
+      "Author": "jsmith",
+      "Event": "BRANCH_CREATED"
+    },
+    {
+      "Number": 5,
+      "Kind": "commit",
+      "Ref": "b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
+      "Title": "Update Catalan translation to e38cb41.",
+      "URL": "https://gitlab.example.com/mike/diaspora/-/commit/b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
+      "State": "",
+      "Author": "Jordi Mallach",
+      "Event": "COMMIT_PUSHED"
+    }
+  ]
+}

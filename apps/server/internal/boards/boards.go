@@ -21,6 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -42,7 +43,10 @@ type Service struct {
 	ev    events.Publisher
 	plans *plans.Service
 	files Uploader
-	hooks *Webhooks // board webhooks (EnableWebhooks); nil = off
+	hooks *Webhooks  // board webhooks (EnableWebhooks); nil = off
+	repo  *repoHooks // Git webhooks of boards (EnableGit, ADR-0060); nil = off
+	// system posts the automation cards of rules (ADR-0060).
+	system *messages.System
 	// PublicURL is PUBLIC_APP_URL: links to messages in «Создать задачу из сообщения».
 	PublicURL string
 	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
@@ -54,7 +58,7 @@ type Service struct {
 
 // New creates the service; p and f may be nil (no plan limit, no uploads).
 func New(d *db.DB, ev events.Publisher, p *plans.Service, f Uploader) *Service {
-	return &Service{db: d, ev: ev, plans: p, files: f, Now: time.Now}
+	return &Service{db: d, ev: ev, plans: p, files: f, system: messages.NewSystem(d, ev), Now: time.Now}
 }
 
 // Routes registers the routes; wrap applies auth + the permission resolver.
@@ -116,6 +120,8 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("DELETE /api/checklist-items/{id}", s.deleteChecklistItem)
 	h("POST /api/checklist-items/{id}/convert", s.convertChecklistItem)
 	s.webhookRoutes(mux, wrap)
+	s.ruleRoutes(mux, wrap)
+	s.repoRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }

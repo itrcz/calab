@@ -35,6 +35,12 @@ type change struct {
 	// task arrives on its new board as TASK_CREATE.
 	before []wsEvent
 	moved  bool
+	// rule: the entries are made by this automation rule (ADR-0060): actor_id NULL, rule_id set.
+	rule *ruleRef
+	// extra: rule triggers that are not journal entries (a comment was posted).
+	extra []ruleEvent
+	// auto: what automation rules did in the transaction, published after the commit (taskTx).
+	auto *autoEffects
 }
 
 type wsEvent struct {
@@ -42,8 +48,17 @@ type wsEvent struct {
 	ev *v1.DispatchEvent
 }
 
-// record writes a journal entry (ADR-0042 §1: every change, actor = user or bot).
+// record writes a journal entry (ADR-0042 §1: every change, actor = user or bot; a rule's
+// change has no actor and the rule's id).
 func (c *change) record(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, kind string, before, after map[string]any) error {
+	if c.rule != nil {
+		return c.recordAs(ctx, q, t, nil, kind, before, after)
+	}
+	return c.recordAs(ctx, q, t, &actor, kind, before, after)
+}
+
+// recordAs writes a journal entry with actor (nil: the server, e.g. a Git event, or the rule of c).
+func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID, kind string, before, after map[string]any) error {
 	enc := func(m map[string]any) []byte {
 		if m == nil {
 			return nil
@@ -54,8 +69,12 @@ func (c *change) record(ctx context.Context, q *sqlc.Queries, t taskRow, actor u
 		}
 		return b
 	}
+	var rule *uuid.UUID
+	if c.rule != nil {
+		rule = &c.rule.id
+	}
 	a, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
-		TaskID: t.ID, BoardID: t.BoardID, ActorID: &actor, Kind: kind, Before: enc(before), After: enc(after),
+		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: enc(before), After: enc(after), RuleID: rule,
 	})
 	if err != nil {
 		return err
@@ -412,7 +431,7 @@ func mayInvite(ctx context.Context, q *sqlc.Queries, res *perm.Resolver, boardID
 
 // writeAssignees replaces the list, keeping assigned_by / assigned_at of those who stay.
 // Returns the users newly assigned or newly made the lead.
-func writeAssignees(ctx context.Context, q *sqlc.Queries, taskID uuid.UUID, in []*v1.TaskAssigneeInput, me uuid.UUID, now time.Time) ([]uuid.UUID, []sqlc.TaskAssignee, error) {
+func writeAssignees(ctx context.Context, q *sqlc.Queries, taskID uuid.UUID, in []*v1.TaskAssigneeInput, me *uuid.UUID, now time.Time) ([]uuid.UUID, []sqlc.TaskAssignee, error) {
 	old, err := q.ListTaskAssignees(ctx, []uuid.UUID{taskID})
 	if err != nil {
 		return nil, nil, err
@@ -427,7 +446,7 @@ func writeAssignees(ctx context.Context, q *sqlc.Queries, taskID uuid.UUID, in [
 	var fresh []uuid.UUID
 	for _, a := range in {
 		u := uuid.MustParse(a.GetUserId())
-		by, at := &me, now
+		by, at := me, now
 		if p, ok := prev[u]; ok {
 			by, at = p.AssignedBy, p.AssignedAt
 			if a.GetIsLead() && !p.IsLead {
@@ -847,7 +866,7 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if err := attach(r.Context(), q, t, fileIDs, me); err != nil {
 			return err
 		}
-		fresh, _, err := writeAssignees(r.Context(), q, taskID, assignees, me, now)
+		fresh, _, err := writeAssignees(r.Context(), q, taskID, assignees, &me, now)
 		if err != nil {
 			return err
 		}
@@ -1088,6 +1107,11 @@ func (s *Service) taskResponse(r *http.Request, id uuid.UUID, full bool) (*v1.Ta
 	if out.Task.Checklists, err = taskChecklists(ctx, s.db.Q, t.ID); err != nil {
 		return nil, err
 	}
+	ls, err := s.db.Q.ListTaskGitLinks(ctx, t.ID)
+	if err != nil {
+		return nil, err
+	}
+	out.Task.GitLinks = gitLinks(ls)
 	subs, err := queryTasks(ctx, s.db.Pool, "WHERE t.parent_id = $1 AND t.archived_at IS NULL ORDER BY t.position, t.number", t.ID)
 	if err != nil {
 		return nil, err
@@ -1726,7 +1750,7 @@ func (s *Service) setAssignees(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		fresh, old, err := writeAssignees(r.Context(), q, t.ID, in, me, s.Now())
+		fresh, old, err := writeAssignees(r.Context(), q, t.ID, in, &me, s.Now())
 		if err != nil {
 			return err
 		}

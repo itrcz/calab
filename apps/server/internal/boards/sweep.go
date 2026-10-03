@@ -71,7 +71,7 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 				}
 				acts = append(acts, a)
 			}
-			_, err = s.webhookOutbox(ctx, q, tx, acts)
+			_, err = s.webhookOutbox(ctx, q, tx, acts, nil)
 			return err
 		})
 		if err != nil {

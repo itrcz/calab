@@ -40,6 +40,7 @@ const (
 	scopeBoardCategory
 	scopeChecklist
 	scopeChecklistItem
+	scopeRule
 )
 
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
@@ -381,6 +382,18 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/boards/{id}/webhook":               scopeBoard,
 	"DELETE /api/boards/{id}/webhook":            scopeBoard,
 	"POST /api/boards/{id}/webhook/ping":         scopeBoard,
+	// Automations (ADR-0060). The repository delivery is public like POST /api/rtc/webhook:
+	// no session, the hosting signs it with the board's secret.
+	"GET /api/boards/{id}/rules":           scopeBoard,
+	"POST /api/boards/{id}/rules":          scopeBoard,
+	"PATCH /api/rules/{id}":                scopeRule,
+	"DELETE /api/rules/{id}":               scopeRule,
+	"POST /api/rules/{id}/test":            scopeRule,
+	"GET /api/rules/{id}/runs":             scopeRule,
+	"GET /api/boards/{id}/git":             scopeBoard,
+	"PUT /api/boards/{id}/git":             scopeBoard,
+	"DELETE /api/boards/{id}/git":          scopeBoard,
+	"POST /api/git/boards/{id}/{provider}": scopePublic,
 }
 
 func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Handler {
@@ -547,6 +560,8 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		return q.GetChecklistWorkspace(ctx, id)
 	case scopeChecklistItem:
 		return q.GetChecklistItemWorkspace(ctx, id)
+	case scopeRule:
+		return q.GetBoardRuleWorkspace(ctx, id)
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -653,6 +668,8 @@ func IdentityRouteClass(pattern string) string {
 		return "checklist"
 	case scopeChecklistItem:
 		return "checklist_item"
+	case scopeRule:
+		return "rule"
 	case scopePack:
 		return "pack"
 	case scopeSticker:

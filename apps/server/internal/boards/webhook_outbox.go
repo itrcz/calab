@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,44 +39,73 @@ const (
 	evCommentPfx   = "task.comment."
 )
 
-// taskTx is s.tx for task mutations: after fn, in the same transaction, the journal entries
-// collected in c are queued for the board webhooks; the worker is woken after the commit.
+// taskTx is s.tx for task mutations: after fn, in the same transaction, the board's automation
+// rules run on the journal entries collected in c (ADR-0060), then every entry — the change's
+// and the rules' — is queued for the board webhooks; after the commit the worker is woken and
+// what the rules did is published.
 func (s *Service) taskTx(ctx context.Context, c *change, fn func(q *sqlc.Queries, tx pgx.Tx) error) error {
 	queued := 0
 	err := s.tx(ctx, func(q *sqlc.Queries, tx pgx.Tx) error {
+		c.auto = nil // a retried closure starts clean
 		if err := fn(q, tx); err != nil {
 			return err
 		}
+		if err := s.runRules(ctx, q, tx, c); err != nil {
+			return err
+		}
+		acts := c.acts
+		var rules map[uuid.UUID]string
+		if c.auto != nil {
+			acts = append(slices.Clip(acts), c.auto.acts...)
+			rules = c.auto.ruleNames
+		}
 		var err error
-		queued, err = s.webhookOutbox(ctx, q, tx, c.acts)
+		queued, err = s.webhookOutbox(ctx, q, tx, acts, rules)
 		return err
 	})
-	if err == nil && queued > 0 {
+	if err != nil {
+		return err
+	}
+	if queued > 0 {
 		s.hooks.wake()
 	}
-	return err
+	s.publishAuto(ctx, c.auto)
+	return nil
 }
 
-// webhookOutbox queues the journal entries of one transaction: one event per task (a move
-// between boards: moved_out to the old board and moved_in to the new one). Returns how many
-// deliveries were queued.
-func (s *Service) webhookOutbox(ctx context.Context, q *sqlc.Queries, tx sqlc.DBTX, acts []sqlc.TaskActivity) (int, error) {
+// webhookOutbox queues the journal entries of one transaction: one event per task and author —
+// the change itself, and each automation rule that acted (actor null, rule set; names: the rules
+// by id) — a move between boards making moved_out to the old board and moved_in to the new one.
+// Returns how many deliveries were queued.
+func (s *Service) webhookOutbox(ctx context.Context, q *sqlc.Queries, tx sqlc.DBTX, acts []sqlc.TaskActivity, names map[uuid.UUID]string) (int, error) {
 	if len(acts) == 0 {
 		return 0, nil
 	}
-	var order []uuid.UUID
-	byTask := map[uuid.UUID][]sqlc.TaskActivity{}
+	type group struct {
+		task uuid.UUID
+		rule uuid.UUID // Nil: not a rule
+	}
+	var order []group
+	by := map[group][]sqlc.TaskActivity{}
 	for _, a := range acts {
-		if _, ok := byTask[a.TaskID]; !ok {
-			order = append(order, a.TaskID)
+		g := group{task: a.TaskID}
+		if a.RuleID != nil {
+			g.rule = *a.RuleID
 		}
-		byTask[a.TaskID] = append(byTask[a.TaskID], a)
+		if _, ok := by[g]; !ok {
+			order = append(order, g)
+		}
+		by[g] = append(by[g], a)
 	}
 	n := 0
-	for _, id := range order {
-		as := byTask[id]
+	for _, g := range order {
+		as := by[g]
+		var rule *v1.BoardWebhookEvent_Rule
+		if g.rule != uuid.Nil {
+			rule = &v1.BoardWebhookEvent_Rule{Id: g.rule.String(), Name: names[g.rule]}
+		}
 		for _, e := range taskEvents(as) {
-			ok, err := s.enqueueWebhook(ctx, q, tx, e.board, e.typ, as[0].ActorID, id, as, nil)
+			ok, err := s.enqueueWebhook(ctx, q, tx, e.board, e.typ, as[0].ActorID, g.task, as, nil, rule)
 			if err != nil {
 				return n, err
 			}
@@ -121,7 +151,7 @@ func taskEvents(as []sqlc.TaskActivity) []boardEvent {
 // is not archived and its workspace's plan includes webhooks (else nothing: paused). q / tx
 // belong to the transaction of the change. true = queued.
 func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.DBTX, board uuid.UUID, typ string,
-	actor *uuid.UUID, taskID uuid.UUID, as []sqlc.TaskActivity, comment *v1.BoardWebhookEvent_Comment) (bool, error) {
+	actor *uuid.UUID, taskID uuid.UUID, as []sqlc.TaskActivity, comment *v1.BoardWebhookEvent_Comment, rule *v1.BoardWebhookEvent_Rule) (bool, error) {
 	wh, err := q.GetBoardWebhook(ctx, board)
 	if db.IsNotFound(err) {
 		return false, nil // the common case: one index lookup
@@ -147,6 +177,7 @@ func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.D
 	if err != nil {
 		return false, err
 	}
+	ev.Rule = rule
 	if typ == evTaskMovedOut {
 		movedOut(ev, board, taskID, as)
 		return s.insertWebhook(ctx, q, board, seq, typ, ev)
@@ -251,7 +282,7 @@ func (s *Service) TaskCommentHook(ctx context.Context, acc perm.RoomAccess, kind
 					Name: r.File.Name, Size: uint64(max(r.File.Size, 0)), Mime: r.File.Mime}) //nolint:gosec // a size
 			}
 		}
-		queued, err = s.enqueueWebhook(ctx, q, tx, t.BoardID, evCommentPfx+kind, &actor, t.ID, nil, c)
+		queued, err = s.enqueueWebhook(ctx, q, tx, t.BoardID, evCommentPfx+kind, &actor, t.ID, nil, c, nil)
 		return err
 	})
 	if err != nil {

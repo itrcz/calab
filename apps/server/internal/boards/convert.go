@@ -94,6 +94,7 @@ type boardParts struct {
 	overrides  map[uuid.UUID][]sqlc.BoardPermission
 	open       map[uuid.UUID]int64
 	mine       map[uuid.UUID]int64
+	rules      map[uuid.UUID]int64 // automation rules (ADR-0060)
 }
 
 // loadParts loads statuses, labels, milestones, views (shared, plus viewer's own with
@@ -101,7 +102,7 @@ type boardParts struct {
 func loadParts(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID, viewer uuid.UUID, personal bool) (boardParts, error) {
 	p := boardParts{statuses: map[uuid.UUID][]sqlc.BoardStatus{}, labels: map[uuid.UUID][]sqlc.BoardLabel{},
 		milestones: map[uuid.UUID][]sqlc.BoardMilestone{}, views: map[uuid.UUID][]sqlc.BoardView{},
-		overrides: map[uuid.UUID][]sqlc.BoardPermission{}, open: map[uuid.UUID]int64{}, mine: map[uuid.UUID]int64{}}
+		overrides: map[uuid.UUID][]sqlc.BoardPermission{}, open: map[uuid.UUID]int64{}, mine: map[uuid.UUID]int64{}, rules: map[uuid.UUID]int64{}}
 	if len(ids) == 0 {
 		return p, nil
 	}
@@ -151,6 +152,13 @@ func loadParts(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID, viewer uui
 	for _, c := range counts {
 		p.open[c.BoardID], p.mine[c.BoardID] = int64(c.Open), int64(c.Mine)
 	}
+	rc, err := q.BoardRuleCounts(ctx, ids)
+	if err != nil {
+		return p, err
+	}
+	for _, c := range rc {
+		p.rules[c.BoardID] = int64(c.Rules)
+	}
 	return p, nil
 }
 
@@ -165,6 +173,7 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Boa
 		CreatedBy: idp(b.CreatedBy), CreatedAt: timestamppb.New(b.CreatedAt), ArchivedAt: tsp(b.ArchivedAt),
 		KeyLocked: b.NextNumber > 1, DefaultViewId: idp(b.DefaultViewID),
 		CategoryId: idp(b.CategoryID), DisabledFeatures: FeaturesProto(b.DisabledFeatures), EstimateScale: EstimateScaleFromDB(b.EstimateScale),
+		RulesCount: uint32(max(p.rules[b.ID], 0)), //nolint:gosec // ≤ 20
 	}
 	for _, s := range p.statuses[b.ID] {
 		out.Statuses = append(out.Statuses, status(s))
@@ -429,6 +438,7 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 		t.SubtaskCount, t.SubtaskDone = uint32(max(c.Subtasks, 0)), uint32(max(c.SubtasksDone, 0))            //nolint:gosec // counts
 		t.CommentCount, t.AttachmentCount = uint32(max(c.Comments, 0)), uint32(max(c.Attachments, 0))         //nolint:gosec // counts
 		t.ChecklistTotal, t.ChecklistDone = uint32(max(c.ChecklistTotal, 0)), uint32(max(c.ChecklistDone, 0)) //nolint:gosec // counts
+		t.GitLinksCount = uint32(max(c.GitLinks, 0))                                                          //nolint:gosec // a count
 	}
 	if viewer != uuid.Nil {
 		subs, err := q.ListViewerSubscriptions(ctx, sqlc.ListViewerSubscriptionsParams{UserID: viewer, TaskIds: ids})
@@ -451,7 +461,7 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 func activity(a sqlc.TaskActivity) *v1.TaskActivity {
 	return &v1.TaskActivity{
 		Id: a.ID.String(), TaskId: a.TaskID.String(), BoardId: a.BoardID.String(), ActorId: idp(a.ActorID), Kind: a.Kind,
-		Before: jsonStruct(a.Before), After: jsonStruct(a.After), CreatedAt: timestamppb.New(a.CreatedAt),
+		Before: jsonStruct(a.Before), After: jsonStruct(a.After), CreatedAt: timestamppb.New(a.CreatedAt), RuleId: idp(a.RuleID),
 	}
 }
 
