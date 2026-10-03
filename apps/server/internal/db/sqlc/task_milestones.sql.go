@@ -207,6 +207,43 @@ func (q *Queries) ListTaskMilestones(ctx context.Context, taskIds []uuid.UUID) (
 	return items, nil
 }
 
+const lockTaskMilestones = `-- name: LockTaskMilestones :many
+SELECT id, task_id, name, due_on, position, completed_at, completed_by, created_by, created_at, updated_at FROM task_milestones WHERE task_id = ANY($1::uuid[]) ORDER BY id FOR NO KEY UPDATE
+`
+
+// The milestones of these tasks, locked in id order (syncMilestones): two subtasks completed at
+// once serialize here, so the second one counts the first one's status.
+func (q *Queries) LockTaskMilestones(ctx context.Context, taskIds []uuid.UUID) ([]TaskMilestone, error) {
+	rows, err := q.db.Query(ctx, lockTaskMilestones, taskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskMilestone{}
+	for rows.Next() {
+		var i TaskMilestone
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Name,
+			&i.DueOn,
+			&i.Position,
+			&i.CompletedAt,
+			&i.CompletedBy,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const parentsOfTasks = `-- name: ParentsOfTasks :many
 SELECT DISTINCT parent_id::uuid FROM tasks WHERE id = ANY($1::uuid[]) AND parent_id IS NOT NULL
 `

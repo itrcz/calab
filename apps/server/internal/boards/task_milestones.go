@@ -123,9 +123,10 @@ var milestoneTriggers = []string{"status", "parent", kindMilestones, "archived",
 // milestones of the parents the change touched get completed exactly when all their linked
 // subtasks are (ADR-0063 §2). A milestone that flips journals "auto_completed" /
 // "auto_reopened" on its task (actor: the author of the change) and the task gets TASK_UPDATE.
-// Lock order: only the milestone rows are written, never the parent's task row — a subtask's
-// transaction holds the subtask and must not wait for its parent, which a milestone write holds
-// (task → milestone → subtasks); updated_after sees the milestone's own updated_at.
+// Lock order: task rows (the parent only FOR NO KEY UPDATE, see taskByID) → subtasks →
+// milestone rows (id order); the parent's task row is never written here — a subtask's
+// transaction holds the subtask and must not wait for its parent; updated_after sees the
+// milestone's own updated_at.
 func (s *Service) syncMilestones(ctx context.Context, q *sqlc.Queries, tx pgx.Tx, c *change) error {
 	acts := c.acts
 	if c.auto != nil {
@@ -163,7 +164,9 @@ func (s *Service) syncMilestones(ctx context.Context, q *sqlc.Queries, tx pgx.Tx
 	cands = append(cands, parents...)
 	slices.SortFunc(cands, func(a, b uuid.UUID) int { return slices.Compare(a[:], b[:]) })
 	cands = slices.Compact(cands)
-	ms, err := q.ListTaskMilestones(ctx, cands)
+	// Locked before the links are counted: a concurrent transaction completing another linked
+	// subtask either commits first (and its status is counted here) or waits for this one.
+	ms, err := q.LockTaskMilestones(ctx, cands)
 	if err != nil || len(ms) == 0 {
 		return err
 	}

@@ -357,7 +357,11 @@ func queryTasks(ctx context.Context, dbtx sqlc.DBTX, tail string, args ...any) (
 func taskByID(ctx context.Context, dbtx sqlc.DBTX, id uuid.UUID, lock bool) (taskRow, bool, error) {
 	tail := "WHERE t.id = $1"
 	if lock {
-		tail += " FOR UPDATE OF t"
+		// NO KEY UPDATE: writers of the task serialize, yet another transaction may still take
+		// KEY SHARE (a journal entry or a milestone of this task, foreign keys) — a subtask's
+		// transaction does so on its parent while the parent's own write (move to another board,
+		// DetachSubtasks) waits for the subtask: FOR UPDATE would deadlock them (ADR-0063).
+		tail += " FOR NO KEY UPDATE OF t"
 	}
 	ts, err := queryTasks(ctx, dbtx, tail, id)
 	if err != nil || len(ts) == 0 {

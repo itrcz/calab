@@ -3,6 +3,11 @@
 -- name: ListTaskMilestones :many
 SELECT * FROM task_milestones WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[]) ORDER BY task_id, position, id;
 
+-- name: LockTaskMilestones :many
+-- The milestones of these tasks, locked in id order (syncMilestones): two subtasks completed at
+-- once serialize here, so the second one counts the first one's status.
+SELECT * FROM task_milestones WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[]) ORDER BY id FOR NO KEY UPDATE;
+
 -- name: ListMilestoneLinks :many
 -- Live subtasks of these tasks linked to one of their parent's milestones, with the status type
 -- (the milestones' progress is computed by internal/boards: MilestoneProgress).

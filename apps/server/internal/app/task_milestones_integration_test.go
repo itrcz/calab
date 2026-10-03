@@ -3,10 +3,16 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
+	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -45,6 +51,116 @@ func TestTaskMilestones(t *testing.T) {
 	t.Run("feature", testTaskMilestonesFeature)
 	t.Run("rights", testTaskMilestonesRights)
 	t.Run("events", testTaskMilestonesEvents)
+	t.Run("concurrent", testTaskMilestonesConcurrent)
+	t.Run("lock order", testTaskMilestonesLockOrder)
+}
+
+// patchRaw is PATCH /api/tasks/{id}, safe to call from a goroutine (no t.Fatal).
+func patchRaw(token, taskID string, req *v1.UpdateTaskRequest) int {
+	b, _ := protojson.Marshal(req)
+	r, _ := http.NewRequestWithContext(context.Background(), "PATCH", srv.URL+"/api/tasks/"+taskID, bytes.NewReader(b))
+	r.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return 0
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+// Linked subtasks completed at the same moment: each transaction counts the statuses the
+// others committed (the milestone rows are locked before the links are counted).
+func testTaskMilestonesConcurrent(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	b := createBoard(t, o, ws.GetId(), &v1.CreateBoardRequest{Name: "Гонка", Key: "TMC", Template: v1.BoardTemplate_BOARD_TEMPLATE_DEVELOPMENT}, 201)
+	completed := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_COMPLETED)
+	unstarted := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_UNSTARTED)
+	parent := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Родитель"}, 201)
+	mid := newTaskMilestone(t, o, parent.GetId(), "Вместе", "", 201).GetMilestone().GetId()
+	var subs []string
+	for _, title := range []string{"s1", "s2", "s3"} {
+		s := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: title, ParentId: parent.GetId()}, 201)
+		patchTask(t, o, s.GetId(), &v1.UpdateTaskRequest{TaskMilestoneId: &mid}, 200)
+		subs = append(subs, s.GetId())
+	}
+	for round := range 4 {
+		for _, id := range subs {
+			patchTask(t, o, id, &v1.UpdateTaskRequest{StatusId: &unstarted}, 200)
+		}
+		codes := make([]int, len(subs))
+		var wg sync.WaitGroup
+		for i, id := range subs {
+			wg.Go(func() { codes[i] = patchRaw(o.token, id, &v1.UpdateTaskRequest{StatusId: &completed}) })
+		}
+		wg.Wait()
+		for _, c := range codes {
+			if c != 200 {
+				t.Fatalf("round %d: statuses %v", round, codes)
+			}
+		}
+		if m := milestoneOf(t, getTask(t, o, parent.GetId()).GetTask(), mid); m.GetCompletedAt() == nil || m.GetDone() != 3 {
+			t.Fatalf("round %d: all subtasks done, milestone %v", round, m)
+		}
+	}
+}
+
+// The parent moves to another board (its row locked, then its subtasks detached) while a linked
+// subtask's transaction — holding the subtask — journals on the parent (KEY SHARE): the move's
+// lock must let that through, or the two deadlock (a 500 for one of them).
+func testTaskMilestonesLockOrder(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	b := createBoard(t, o, ws.GetId(), &v1.CreateBoardRequest{Name: "Замки", Key: "TML"}, 201)
+	dst := createBoard(t, o, ws.GetId(), &v1.CreateBoardRequest{Name: "Куда", Key: "TMD"}, 201)
+	parent := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Родитель"}, 201)
+	sub := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "подзадача", ParentId: parent.GetId()}, 201)
+	mid := newTaskMilestone(t, o, parent.GetId(), "Веха", "", 201).GetMilestone().GetId()
+	patchTask(t, o, sub.GetId(), &v1.UpdateTaskRequest{TaskMilestoneId: &mid}, 200)
+
+	ctx := context.Background()
+	tx, err := testDB.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+		t.Fatal(err)
+	}
+	// The subtask's transaction holds its own row…
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM tasks WHERE id = $1 FOR UPDATE`, sub.GetId()); err != nil {
+		t.Fatal(err)
+	}
+	dstID := dst.GetId()
+	moved := make(chan int, 1)
+	go func() { moved <- patchRaw(o.token, parent.GetId(), &v1.UpdateTaskRequest{BoardId: &dstID}) }()
+	// …the move holds the parent and waits for the subtask (DetachSubtasks)…
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var n int
+		if err := testDB.Pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
+			WHERE wait_event_type = 'Lock' AND query ILIKE '%SET parent_id = NULL%'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the move never waited for the subtask")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// …then the subtask's transaction journals on the parent (foreign key: KEY SHARE).
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM tasks WHERE id = $1 FOR KEY SHARE`, parent.GetId()); err != nil {
+		t.Fatalf("the subtask's transaction blocked on the parent: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if code := <-moved; code != 200 {
+		t.Fatalf("move: %d", code)
+	}
+	if getTask(t, o, sub.GetId()).GetTask().GetTaskMilestoneId() != "" {
+		t.Fatal("the subtask keeps the milestone of a parent on another board")
+	}
 }
 
 func testTaskMilestonesCRUD(t *testing.T) {

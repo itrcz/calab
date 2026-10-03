@@ -1645,6 +1645,17 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 	if err != nil {
 		return err
 	}
+	// The subtasks are detached before the task's own row changes: the move rewrites board_id and
+	// number (a unique key, so the row update takes FOR UPDATE), and a subtask's transaction holds
+	// the subtask while it journals on this task (KEY SHARE). Waiting for the subtasks under the
+	// row lock taken so far (FOR NO KEY UPDATE, taskByID) lets that transaction finish first.
+	kids, err := queryTasks(r.Context(), tx, "WHERE t.parent_id = $1", t.ID)
+	if err != nil {
+		return err
+	}
+	if err := q.DetachSubtasks(r.Context(), &t.ID); err != nil {
+		return err
+	}
 	oldKey, oldBoard := TaskKey(t.BoardKey, t.Number), t.BoardID
 	if err := q.MoveTaskToBoard(r.Context(), sqlc.MoveTaskToBoardParams{BoardID: dstID, Number: number, StatusID: to.ID, Position: pos, ID: t.ID}); err != nil {
 		return err
@@ -1656,13 +1667,6 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 		if err := q.InsertTaskLabels(r.Context(), sqlc.InsertTaskLabelsParams{TaskID: t.ID, LabelIds: labels}); err != nil {
 			return err
 		}
-	}
-	kids, err := queryTasks(r.Context(), tx, "WHERE t.parent_id = $1", t.ID)
-	if err != nil {
-		return err
-	}
-	if err := q.DetachSubtasks(r.Context(), &t.ID); err != nil {
-		return err
 	}
 	for _, k := range kids {
 		c.tasks = append(c.tasks, k.ID)
