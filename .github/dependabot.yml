@@ -52,5 +52,8 @@ updates:
     directory: /infra/docker
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
+    ignore:
+      # livekit/sip must be upgraded together with livekit-server (psrpc/protocol versions), see infra/docker/compose.yml
+      - dependency-name: livekit/sip
     groups:
       docker-compose: { patterns: ["*"] }
