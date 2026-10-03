@@ -27,7 +27,7 @@
     "eslint": "^9.39.0",
     "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3",
-    "typescript": "^5.9.0",
+    "typescript": "^7.0.2",
     "typescript-eslint": "~8.70.1"
   }
 }
