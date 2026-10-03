@@ -574,10 +574,11 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 }
 
 const listMessagesByIDs = `-- name: ListMessagesByIDs :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages WHERE id = ANY($1::uuid[]) ORDER BY id DESC
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id DESC
 `
 
-// The messages of ids (a search page, searchq.MessageIDs), newest first.
+// The live messages of ids (a search page, searchq.MessageIDs), newest first; one deleted
+// since the ids were found is left out.
 func (q *Queries) ListMessagesByIDs(ctx context.Context, ids []uuid.UUID) ([]Message, error) {
 	rows, err := q.db.Query(ctx, listMessagesByIDs, ids)
 	if err != nil {

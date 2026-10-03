@@ -62,8 +62,9 @@ func newer(col string, rel bool, req *request, a *boards.Args) string {
 
 // ranked is the page query of a section over capped candidates. cands is a complete SELECT
 // (with an id column) whose rows are taken in the order first, at most candidateCap; score is
-// computed over them as alias (relevance only); the result has the candidates' columns, score
-// and total (the number of candidates), keyset-paged.
+// computed over them as alias (relevance only: callers build score only then, so that no
+// parameter is left unused); the result has the candidates' columns, score and total (the
+// number of candidates), keyset-paged.
 func ranked(cands, first, alias, score string, rel bool, req *request, a *boards.Args) string {
 	if !rel {
 		score = "0::float8"
@@ -203,7 +204,7 @@ func (s *Service) messages(ctx context.Context, tx pgx.Tx, req *request, sc *sco
 	if rel {
 		score = "(ts_rank_cd(" + searchq.MessageVector + ", " + searchq.TSQuery(tsq) + ") * " + fresh("m.created_at", b.Add(req.now)) + ")::float8"
 	}
-	inner := "SELECT m.id, m.room_id, m.author_id, m.created_at, m.content, " + score + " AS score FROM messages m WHERE m.id = ANY(" + b.Add(ids) + "::uuid[])"
+	inner := "SELECT m.id, m.room_id, m.author_id, m.created_at, m.content, " + score + " AS score FROM messages m WHERE m.id = ANY(" + b.Add(ids) + "::uuid[]) AND m.deleted_at IS NULL" // deleted meanwhile (read committed)
 	task := "NULL::uuid, NULL::text, NULL::integer, NULL::text"
 	join := ""
 	if t == v1.SearchType_SEARCH_TYPE_TASK_COMMENTS {
@@ -270,7 +271,10 @@ func (s *Service) tasks(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 	if rel {
 		first = "key_match DESC, t.id DESC"
 	}
-	score := "(CASE WHEN t.key_match THEN 10 ELSE 0 END + " + rank() + " * " + fresh("t.updated_at", a.Add(req.now)) + ")::float8"
+	score := "" // relevance only: a parameter added but not used is an error
+	if rel {
+		score = "(CASE WHEN t.key_match THEN 10 ELSE 0 END + " + rank() + " * " + fresh("t.updated_at", a.Add(req.now)) + ")::float8"
+	}
 	tsq := a.Add(req.q.TS)
 	sql := "SELECT p.id, p.board_id, p.key, p.number, p.title, p.created_by, p.updated_at, p.workspace_id, st.type, p.key_match, p.score, p.total, " +
 		searchq.Headline("coalesce(nullif(p.description, ''), p.title)", tsq, a.Add(searchq.HeadlineOptions)) +
@@ -332,8 +336,11 @@ func (s *Service) events(ctx context.Context, tx pgx.Tx, req *request, sc *scope
 	tsq := a.Add(req.q.TS) + "::text"
 	cands := "SELECT e.id, e.workspace_id, e.title, e.description, e.updated_at FROM events e WHERE e.cancelled_at IS NULL AND " + orJoin(vis) +
 		" AND (" + eventVector + " @@ " + searchq.TSQuery(tsq) + " OR " + searchq.TitleMatch("e.title", req.q, a.Add) + ")" + newer("e.id", rel, req, &a)
-	score := "((greatest(ts_rank_cd(" + eventVector + ", " + searchq.TSQuery(tsq) + "), word_similarity(" + a.Add(req.q.Text) + "::text, e.title))) * " +
-		fresh("e.updated_at", a.Add(req.now)) + ")::float8"
+	score := ""
+	if rel {
+		score = "((greatest(ts_rank_cd(" + eventVector + ", " + searchq.TSQuery(tsq) + "), word_similarity(" + a.Add(req.q.Text) + "::text, e.title))) * " +
+			fresh("e.updated_at", a.Add(req.now)) + ")::float8"
+	}
 	sql := "SELECT p.id, p.workspace_id, p.score, p.total, " + searchq.Headline("coalesce(nullif(p.description, ''), p.title)", tsq, a.Add(searchq.HeadlineOptions)) +
 		" FROM (" + ranked(cands, "e.id DESC", "e", score, rel, req, &a) + ") p" + order(rel, "p")
 	type row struct {
@@ -421,8 +428,11 @@ func (s *Service) files(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 		" CROSS JOIN LATERAL (SELECT m.id, m.room_id, m.author_id FROM message_attachments ma JOIN messages m ON m.id = ma.message_id" +
 		" WHERE ma.file_id = f.id AND m.deleted_at IS NULL AND " + orJoin(parts) + " ORDER BY m.id DESC LIMIT 1) mm" +
 		" WHERE " + wsCond + " AND " + searchq.TitleMatch("f.name", req.q, a.Add) + newer("f.id", rel, req, &a)
-	score := "((CASE WHEN f.name ILIKE " + a.Add(searchq.Like(req.q.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.q.Text) +
-		"::text, f.name) END) * " + fresh("f.created_at", a.Add(req.now)) + ")::float8"
+	score := ""
+	if rel {
+		score = "((CASE WHEN f.name ILIKE " + a.Add(searchq.Like(req.q.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.q.Text) +
+			"::text, f.name) END) * " + fresh("f.created_at", a.Add(req.now)) + ")::float8"
+	}
 	sql := "SELECT p.id, p.name, p.mime, p.size, p.created_at, p.message_id, p.room_id, p.author_id, p.score, p.total, r.workspace_id FROM (" +
 		ranked(cands, "f.id DESC", "f", score, rel, req, &a) + ") p LEFT JOIN rooms r ON r.id = p.room_id" + order(rel, "p")
 	type row struct {

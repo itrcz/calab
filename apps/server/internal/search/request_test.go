@@ -106,6 +106,14 @@ func TestCursor(t *testing.T) {
 			t.Errorf("%s: %v", qs, err)
 		}
 	}
+	// The freshness reference stays near now: a forged or stale one is refused.
+	for _, d := range []time.Duration{time.Hour, -8 * 24 * time.Hour, 1e6 * time.Hour} {
+		f := *r
+		f.now = r.now.Add(d)
+		if _, err := parse(t, base+"&cursor="+f.encodeCursor(v1.SearchType_SEARCH_TYPE_TASKS, 0.1, id)); status(err) != 400 {
+			t.Errorf("reference %v: %v", d, err)
+		}
+	}
 	// Tampered or forged cursors.
 	for _, bad := range []string{
 		base64.RawURLEncoding.EncodeToString([]byte(`{"t":3,"s":1,"h":1,"n":1,"r":0,"i":"x"}`)),

@@ -76,14 +76,16 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	sc, err := s.buildScope(ctx, req, id.UserID, id.IsBot)
-	if err != nil {
-		return err
-	}
+	// The budget is taken before any database work: resolving the scope of scope=all reads every
+	// workspace of the caller, and a 404 for a foreign workspace must cost the same.
 	if s.Limit != nil {
 		if err := s.Limit.Take(ctx, id.UserID.String()); err != nil {
 			return err
 		}
+	}
+	sc, err := s.buildScope(ctx, req, id.UserID, id.IsBot)
+	if err != nil {
+		return err
 	}
 	out, err := s.run(ctx, req, sc)
 	if err != nil {

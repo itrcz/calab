@@ -138,8 +138,9 @@ CROSS JOIN LATERAL (
 ) lm;
 
 -- name: ListMessagesByIDs :many
--- The messages of ids (a search page, searchq.MessageIDs), newest first.
-SELECT * FROM messages WHERE id = ANY(sqlc.arg('ids')::uuid[]) ORDER BY id DESC;
+-- The live messages of ids (a search page, searchq.MessageIDs), newest first; one deleted
+-- since the ids were found is left out.
+SELECT * FROM messages WHERE id = ANY(sqlc.arg('ids')::uuid[]) AND deleted_at IS NULL ORDER BY id DESC;
 
 -- name: AddReaction :execrows
 INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)

@@ -188,6 +188,10 @@ type cursor struct {
 	I string  `json:"i"` // id of the last hit
 }
 
+// cursorMaxAge: a cursor older than this is refused (its freshness reference is bounded, so a
+// forged one cannot move the scores to an arbitrary time).
+const cursorMaxAge = 7 * 24 * time.Hour
+
 func (r *request) hash() uint64 {
 	scope := "all"
 	if !r.all {
@@ -216,7 +220,8 @@ func decodeCursor(s string, r *request) (*cursor, error) {
 		return nil, bad
 	}
 	if c.T != int32(r.types[0]) || c.S != int32(r.sort) || c.H != r.hash() ||
-		math.IsNaN(c.R) || math.IsInf(c.R, 0) || c.R < 0 || c.N <= 0 {
+		math.IsNaN(c.R) || math.IsInf(c.R, 0) || c.R < 0 ||
+		c.N < r.now.Add(-cursorMaxAge).UnixMilli() || c.N > r.now.Add(time.Minute).UnixMilli() {
 		return nil, bad
 	}
 	if _, err := uuid.Parse(c.I); err != nil {
