@@ -34,11 +34,17 @@ const MessageCap = 1000
 // absent from the room — while the GIN index finds rare words in milliseconds but has to visit
 // every match of a frequent one. So: first the GIN path (OFFSET 0 fence, no ORDER BY, at most
 // MessageCap+1 rows); when the cap is hit the word is frequent and the newest `need` matches
-// are read along the primary key instead (bitmap scans off), which stops early.
+// are read along the primary key instead (bitmap scans off), which stops early. Sequential
+// scans are off throughout.
 //
 // capped reports that there are more than MessageCap matches; the result then holds the newest
 // need (≤ MessageCap) matches only. tx must be a transaction (SET LOCAL).
 func MessageIDs(ctx context.Context, tx pgx.Tx, where string, args []any, need int) (ids []uuid.UUID, capped bool, err error) {
+	// A sequential scan would recompute the tsvector of every message (a planner misestimate
+	// cost 14.8 s on 1.2M rows, docs/14): never.
+	if _, err := tx.Exec(ctx, "SET LOCAL enable_seqscan = off"); err != nil {
+		return nil, false, err
+	}
 	ids, err = collectIDs(ctx, tx, "SELECT c.id FROM (SELECT m.id FROM messages m WHERE "+where+
 		" OFFSET 0) c LIMIT "+strconv.Itoa(MessageCap+1), args)
 	if err != nil {

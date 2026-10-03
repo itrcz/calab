@@ -17,11 +17,12 @@ import (
 	"github.com/calaba/calaba/server/internal/searchq"
 )
 
-// countCap bounds total_estimate of every section (the candidate cap of messages).
-const countCap = searchq.MessageCap
+// candidateCap bounds what a section considers: ranking happens among at most this many matches
+// (key matches first, then the newest), and total_estimate counts up to it.
+const candidateCap = searchq.MessageCap
 
 // transcriptCandidates: transcripts are ordered by recency (ranking long texts would mean
-// parsing each of them per query); the summary / a page looks at most this many matches.
+// parsing each of them per query).
 const transcriptCandidates = 200
 
 // fresh is the freshness factor 1 / (1 + days / 30) of timestamp column col at reference now.
@@ -29,8 +30,8 @@ func fresh(col, now string) string {
 	return "(1.0 / (1.0 + greatest(0, extract(epoch FROM (" + now + "::timestamptz - " + col + ")))::float8 / 2592000.0))"
 }
 
-// keyset adds the cursor condition and order of a page over the candidates c (columns id and
-// score) and returns the page SQL (limit+1 rows: one more tells there is a next page).
+// keyset adds the cursor condition and order of a page over inner (columns id and score) and
+// returns the page SQL (limit+1 rows: one more tells there is a next page).
 func keyset(inner string, rel bool, req *request, a *boards.Args) string {
 	sql := "SELECT * FROM (" + inner + ") c"
 	if req.cur != nil {
@@ -51,6 +52,27 @@ func order(rel bool, alias string) string {
 	return " ORDER BY " + alias + ".id DESC"
 }
 
+// newer is the "newest first" cursor condition on the id column col ("" otherwise).
+func newer(col string, rel bool, req *request, a *boards.Args) string {
+	if rel || req.cur == nil {
+		return ""
+	}
+	return " AND " + col + " < " + a.Add(req.cur.id()) + "::uuid"
+}
+
+// ranked is the page query of a section over capped candidates. cands is a complete SELECT
+// (with an id column) whose rows are taken in the order first, at most candidateCap; score is
+// computed over them as alias (relevance only); the result has the candidates' columns, score
+// and total (the number of candidates), keyset-paged.
+func ranked(cands, first, alias, score string, rel bool, req *request, a *boards.Args) string {
+	if !rel {
+		score = "0::float8"
+	}
+	return "WITH c AS MATERIALIZED (" + cands + " ORDER BY " + first + " LIMIT " + strconv.Itoa(candidateCap) + "), " +
+		"s AS (SELECT " + alias + ".*, " + score + " AS score, (SELECT count(*) FROM c) AS total FROM c AS " + alias + ") " +
+		keyset("SELECT * FROM s", rel, req, a)
+}
+
 // page trims rows to the limit and sets the section's next cursor (feeds only).
 func page[T any](req *request, sec *v1.SearchSection, rows []T, key func(T) (float64, uuid.UUID)) []T {
 	if len(rows) <= req.limit {
@@ -64,17 +86,11 @@ func page[T any](req *request, sec *v1.SearchSection, rows []T, key func(T) (flo
 	return rows
 }
 
-// count sets total_estimate (first page only) from the candidates inner (≤ countCap).
-func count(ctx context.Context, tx pgx.Tx, req *request, sec *v1.SearchSection, inner string, args []any) error {
-	if req.cur != nil {
-		return nil
+// total sets total_estimate on the first page.
+func total(req *request, sec *v1.SearchSection, n int64) {
+	if req.cur == nil {
+		sec.TotalEstimate = uint32(min(n, candidateCap)) //nolint:gosec // ≤ candidateCap
 	}
-	var n int64
-	if err := tx.QueryRow(ctx, "SELECT count(*) FROM ("+inner+" LIMIT "+strconv.Itoa(countCap)+") x", args...).Scan(&n); err != nil {
-		return err
-	}
-	sec.TotalEstimate = uint32(n) //nolint:gosec // ≤ countCap
-	return nil
 }
 
 func ts(t time.Time) *timestamppb.Timestamp { return timestamppb.New(t) }
@@ -89,59 +105,52 @@ func str(id *uuid.UUID) string {
 // ---- messages, task comments, notes ----
 
 // msgScope is the SQL condition over messages m of a messages-like section ("" = nothing to
-// search): the rooms the caller views, their DMs after a cleared mark, task rooms of the tasks
-// they see (TaskBits != 0), their own notes shelves.
-func (sc *scope) msgScope(t v1.SearchType, a *boards.Args) string {
+// search): the rooms the caller views and their DMs (after their «Удалить чат» mark), the task
+// rooms of the tasks they see (TaskBits != 0), their own notes shelves. Always a room_id = ANY
+// list, so that the room index can narrow the full-text index (BitmapAnd).
+func (sc *scope) msgScope(ctx context.Context, tx pgx.Tx, t v1.SearchType, a *boards.Args) (string, error) {
+	var rooms []uuid.UUID
+	extra := ""
 	switch t {
 	case v1.SearchType_SEARCH_TYPE_MESSAGES:
-		var plain []uuid.UUID
 		var cr, cs []uuid.UUID
 		for _, sp := range sc.wss {
-			plain = append(plain, sp.rooms...)
+			rooms = append(rooms, sp.rooms...)
 		}
 		for _, d := range sc.dms {
-			if d.since == nil {
-				plain = append(plain, d.id)
-			} else {
+			rooms = append(rooms, d.id)
+			if d.since != nil {
 				cr, cs = append(cr, d.id), append(cs, *d.since)
 			}
 		}
-		var parts []string
-		if len(plain) > 0 {
-			parts = append(parts, "m.room_id = ANY("+a.Add(plain)+"::uuid[])")
-		}
 		if len(cr) > 0 {
-			parts = append(parts, "EXISTS (SELECT 1 FROM unnest("+a.Add(cr)+"::uuid[], "+a.Add(cs)+"::uuid[]) AS x (r, s) WHERE x.r = m.room_id AND m.id > x.s)")
+			extra = " AND NOT EXISTS (SELECT 1 FROM unnest(" + a.Add(cr) + "::uuid[], " + a.Add(cs) + "::uuid[]) AS x (r, s) WHERE x.r = m.room_id AND m.id <= x.s)"
 		}
-		return orJoin(parts)
 	case v1.SearchType_SEARCH_TYPE_TASK_COMMENTS:
+		var b boards.Args
 		var vis []string
 		for _, sp := range sc.wss {
 			if !sp.boards.Empty() {
-				vis = append(vis, sp.boards.Cond(a))
+				vis = append(vis, sp.boards.Cond(&b))
 			}
 		}
 		if len(vis) == 0 {
-			return ""
+			return "", nil
 		}
-		return "m.room_id IN (SELECT t.room_id FROM tasks t WHERE " + strings.Join(vis, " OR ") + ")"
+		rows, err := tx.Query(ctx, "SELECT t.room_id FROM tasks t WHERE "+strings.Join(vis, " OR "), b.Values()...)
+		if err != nil {
+			return "", err
+		}
+		if rooms, err = pgx.CollectRows(rows, pgx.RowTo[uuid.UUID]); err != nil {
+			return "", err
+		}
 	case v1.SearchType_SEARCH_TYPE_NOTES:
-		if len(sc.notes) == 0 {
-			return ""
-		}
-		return "m.room_id = ANY(" + a.Add(sc.notes) + "::uuid[])"
+		rooms = sc.notes
 	}
-	return ""
-}
-
-func orJoin(parts []string) string {
-	switch len(parts) {
-	case 0:
-		return ""
-	case 1:
-		return parts[0]
+	if len(rooms) == 0 {
+		return "", nil
 	}
-	return "(" + strings.Join(parts, " OR ") + ")"
+	return "m.room_id = ANY(" + a.Add(rooms) + "::uuid[])" + extra, nil
 }
 
 type msgRow struct {
@@ -162,27 +171,25 @@ type msgRow struct {
 func (s *Service) messages(ctx context.Context, tx pgx.Tx, req *request, sc *scope, sec *v1.SearchSection) error {
 	t := sec.Type
 	var a boards.Args
-	cond := sc.msgScope(t, &a)
-	if cond == "" {
-		return nil
+	cond, err := sc.msgScope(ctx, tx, t, &a)
+	if err != nil || cond == "" {
+		return err
 	}
 	where := cond + " AND m.deleted_at IS NULL AND " + searchq.MessageMatch(a.Add(req.q.TS))
 	rel := req.relevance(t)
 	need := req.limit + 1
 	if rel {
 		need = searchq.MessageCap
-	} else if req.cur != nil {
-		where += " AND m.id < " + a.Add(req.cur.id()) + "::uuid"
 	}
+	where += newer("m.id", rel, req, &a)
 	ids, capped, err := searchq.MessageIDs(ctx, tx, where, a.Values(), need)
 	if err != nil {
 		return err
 	}
-	if req.cur == nil {
-		sec.TotalEstimate = uint32(len(ids)) //nolint:gosec // ≤ MessageCap
-		if capped {
-			sec.TotalEstimate = countCap
-		}
+	if capped {
+		total(req, sec, candidateCap)
+	} else {
+		total(req, sec, int64(len(ids)))
 	}
 	if len(ids) == 0 {
 		return nil
@@ -254,17 +261,20 @@ func (s *Service) tasks(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 	if len(vis) == 0 {
 		return nil
 	}
+	rel := req.relevance(sec.Type)
 	cond, key, rank := boards.SearchMatch(req.q, req.raw, &a)
-	from := " FROM tasks t JOIN boards b ON b.id = t.board_id WHERE (" + strings.Join(vis, " OR ") + ") AND t.archived_at IS NULL AND " + cond
-	if err := count(ctx, tx, req, sec, "SELECT 1"+from, a.Values()); err != nil {
-		return err
+	cands := "SELECT t.id, t.board_id, b.key, t.number, t.title, t.description, t.created_by, t.updated_at, b.workspace_id, t.status_id, " +
+		key + " AS key_match FROM tasks t JOIN boards b ON b.id = t.board_id WHERE (" + strings.Join(vis, " OR ") +
+		") AND t.archived_at IS NULL AND " + cond + newer("t.id", rel, req, &a)
+	first := "t.id DESC"
+	if rel {
+		first = "key_match DESC, t.id DESC"
 	}
-	inner := "SELECT t.id, t.board_id, b.key, t.number, t.title, t.description, t.created_by, t.updated_at, b.workspace_id, t.status_id, " +
-		key + " AS key_match, (CASE WHEN " + key + " THEN 10 ELSE 0 END + " + rank() + " * " + fresh("t.updated_at", a.Add(req.now)) + ")::float8 AS score" + from
+	score := "(CASE WHEN t.key_match THEN 10 ELSE 0 END + " + rank() + " * " + fresh("t.updated_at", a.Add(req.now)) + ")::float8"
 	tsq := a.Add(req.q.TS)
-	sql := "SELECT p.id, p.board_id, p.key, p.number, p.title, p.created_by, p.updated_at, p.workspace_id, st.type, p.key_match, p.score, " +
+	sql := "SELECT p.id, p.board_id, p.key, p.number, p.title, p.created_by, p.updated_at, p.workspace_id, st.type, p.key_match, p.score, p.total, " +
 		searchq.Headline("coalesce(nullif(p.description, ''), p.title)", tsq, a.Add(searchq.HeadlineOptions)) +
-		" FROM (" + keyset(inner, req.relevance(sec.Type), req, &a) + ") p JOIN board_statuses st ON st.id = p.status_id" + order(req.relevance(sec.Type), "p")
+		" FROM (" + ranked(cands, first, "t", score, rel, req, &a) + ") p JOIN board_statuses st ON st.id = p.status_id" + order(rel, "p")
 	type row struct {
 		id, board, ws uuid.UUID
 		key, title    string
@@ -274,6 +284,7 @@ func (s *Service) tasks(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 		status        string
 		keyMatch      bool
 		score         float64
+		total         int64
 		snippet       string
 	}
 	rows, err := tx.Query(ctx, sql, a.Values()...)
@@ -282,11 +293,14 @@ func (s *Service) tasks(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
 		var x row
-		err := r.Scan(&x.id, &x.board, &x.key, &x.number, &x.title, &x.creator, &x.at, &x.ws, &x.status, &x.keyMatch, &x.score, &x.snippet)
+		err := r.Scan(&x.id, &x.board, &x.key, &x.number, &x.title, &x.creator, &x.at, &x.ws, &x.status, &x.keyMatch, &x.score, &x.total, &x.snippet)
 		return x, err
 	})
 	if err != nil {
 		return err
+	}
+	if len(list) > 0 {
+		total(req, sec, list[0].total)
 	}
 	for _, x := range page(req, sec, list, func(x row) (float64, uuid.UUID) { return x.score, x.id }) {
 		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: x.snippet, Title: x.title, WorkspaceId: x.ws.String(), At: ts(x.at),
@@ -314,20 +328,18 @@ func (s *Service) events(ctx context.Context, tx pgx.Tx, req *request, sc *scope
 	if len(vis) == 0 {
 		return nil
 	}
-	tsq := a.Add(req.q.TS) + "::text"
-	from := " FROM events e WHERE e.cancelled_at IS NULL AND " + orJoin(vis) + " AND (" + eventVector + " @@ " + searchq.TSQuery(tsq) +
-		" OR " + searchq.TitleMatch("e.title", req.q, a.Add) + ")"
-	if err := count(ctx, tx, req, sec, "SELECT 1"+from, a.Values()); err != nil {
-		return err
-	}
-	inner := "SELECT e.id, e.workspace_id, e.title, e.description, ((greatest(ts_rank_cd(" + eventVector + ", " + searchq.TSQuery(tsq) +
-		"), word_similarity(" + a.Add(req.q.Text) + "::text, e.title))) * " + fresh("e.updated_at", a.Add(req.now)) + ")::float8 AS score" + from
 	rel := req.relevance(sec.Type)
-	sql := "SELECT p.id, p.workspace_id, p.score, " + searchq.Headline("coalesce(nullif(p.description, ''), p.title)", tsq, a.Add(searchq.HeadlineOptions)) +
-		" FROM (" + keyset(inner, rel, req, &a) + ") p" + order(rel, "p")
+	tsq := a.Add(req.q.TS) + "::text"
+	cands := "SELECT e.id, e.workspace_id, e.title, e.description, e.updated_at FROM events e WHERE e.cancelled_at IS NULL AND " + orJoin(vis) +
+		" AND (" + eventVector + " @@ " + searchq.TSQuery(tsq) + " OR " + searchq.TitleMatch("e.title", req.q, a.Add) + ")" + newer("e.id", rel, req, &a)
+	score := "((greatest(ts_rank_cd(" + eventVector + ", " + searchq.TSQuery(tsq) + "), word_similarity(" + a.Add(req.q.Text) + "::text, e.title))) * " +
+		fresh("e.updated_at", a.Add(req.now)) + ")::float8"
+	sql := "SELECT p.id, p.workspace_id, p.score, p.total, " + searchq.Headline("coalesce(nullif(p.description, ''), p.title)", tsq, a.Add(searchq.HeadlineOptions)) +
+		" FROM (" + ranked(cands, "e.id DESC", "e", score, rel, req, &a) + ") p" + order(rel, "p")
 	type row struct {
 		id, ws  uuid.UUID
 		score   float64
+		total   int64
 		snippet string
 	}
 	rows, err := tx.Query(ctx, sql, a.Values()...)
@@ -336,11 +348,14 @@ func (s *Service) events(ctx context.Context, tx pgx.Tx, req *request, sc *scope
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
 		var x row
-		err := r.Scan(&x.id, &x.ws, &x.score, &x.snippet)
+		err := r.Scan(&x.id, &x.ws, &x.score, &x.total, &x.snippet)
 		return x, err
 	})
 	if err != nil {
 		return err
+	}
+	if len(list) > 0 {
+		total(req, sec, list[0].total)
 	}
 	list = page(req, sec, list, func(x row) (float64, uuid.UUID) { return x.score, x.id })
 	// The SQL above is the calendar's rule; Hits applies the rule itself (viewer.sees) and finds
@@ -372,14 +387,25 @@ func (s *Service) events(ctx context.Context, tx pgx.Tx, req *request, sc *scope
 	return nil
 }
 
+func orJoin(parts []string) string {
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
 // ---- files ----
 
 func (s *Service) files(ctx context.Context, tx pgx.Tx, req *request, sc *scope, sec *v1.SearchSection) error {
 	var a boards.Args
 	var parts []string
 	for _, t := range []v1.SearchType{v1.SearchType_SEARCH_TYPE_MESSAGES, v1.SearchType_SEARCH_TYPE_TASK_COMMENTS, v1.SearchType_SEARCH_TYPE_NOTES} {
-		if c := sc.msgScope(t, &a); c != "" {
-			parts = append(parts, c)
+		c, err := sc.msgScope(ctx, tx, t, &a)
+		if err != nil {
+			return err
+		}
+		if c != "" {
+			parts = append(parts, "("+c+")")
 		}
 	}
 	if len(parts) == 0 {
@@ -389,24 +415,23 @@ func (s *Service) files(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 	if len(sc.dms) > 0 || len(sc.notes) > 0 {
 		wsCond = "(" + wsCond + " OR f.workspace_id IS NULL)"
 	}
-	// One hit per file: its newest live message among those the caller sees.
-	from := " FROM files f CROSS JOIN LATERAL (SELECT m.id, m.room_id, m.author_id FROM message_attachments ma JOIN messages m ON m.id = ma.message_id" +
-		" WHERE ma.file_id = f.id AND m.deleted_at IS NULL AND " + orJoin(parts) + " ORDER BY m.id DESC LIMIT 1) mm" +
-		" WHERE " + wsCond + " AND " + searchq.TitleMatch("f.name", req.q, a.Add)
-	if err := count(ctx, tx, req, sec, "SELECT 1"+from, a.Values()); err != nil {
-		return err
-	}
-	inner := "SELECT f.id, f.name, f.mime, f.size, f.created_at, mm.id AS message_id, mm.room_id, mm.author_id, ((CASE WHEN f.name ILIKE " +
-		a.Add(searchq.Like(req.q.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.q.Text) + "::text, f.name) END) * " + fresh("f.created_at", a.Add(req.now)) + ")::float8 AS score" + from
 	rel := req.relevance(sec.Type)
-	sql := "SELECT p.id, p.name, p.mime, p.size, p.created_at, p.message_id, p.room_id, p.author_id, p.score, r.workspace_id FROM (" +
-		keyset(inner, rel, req, &a) + ") p LEFT JOIN rooms r ON r.id = p.room_id" + order(rel, "p")
+	// One hit per file: its newest live message among those the caller sees.
+	cands := "SELECT f.id, f.name, f.mime, f.size, f.created_at, mm.id AS message_id, mm.room_id, mm.author_id FROM files f" +
+		" CROSS JOIN LATERAL (SELECT m.id, m.room_id, m.author_id FROM message_attachments ma JOIN messages m ON m.id = ma.message_id" +
+		" WHERE ma.file_id = f.id AND m.deleted_at IS NULL AND " + orJoin(parts) + " ORDER BY m.id DESC LIMIT 1) mm" +
+		" WHERE " + wsCond + " AND " + searchq.TitleMatch("f.name", req.q, a.Add) + newer("f.id", rel, req, &a)
+	score := "((CASE WHEN f.name ILIKE " + a.Add(searchq.Like(req.q.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.q.Text) +
+		"::text, f.name) END) * " + fresh("f.created_at", a.Add(req.now)) + ")::float8"
+	sql := "SELECT p.id, p.name, p.mime, p.size, p.created_at, p.message_id, p.room_id, p.author_id, p.score, p.total, r.workspace_id FROM (" +
+		ranked(cands, "f.id DESC", "f", score, rel, req, &a) + ") p LEFT JOIN rooms r ON r.id = p.room_id" + order(rel, "p")
 	type row struct {
 		id, msg, room, author uuid.UUID
 		name, mime            string
 		size                  int64
 		at                    time.Time
 		score                 float64
+		total                 int64
 		ws                    *uuid.UUID
 	}
 	rows, err := tx.Query(ctx, sql, a.Values()...)
@@ -415,11 +440,14 @@ func (s *Service) files(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
 		var x row
-		err := r.Scan(&x.id, &x.name, &x.mime, &x.size, &x.at, &x.msg, &x.room, &x.author, &x.score, &x.ws)
+		err := r.Scan(&x.id, &x.name, &x.mime, &x.size, &x.at, &x.msg, &x.room, &x.author, &x.score, &x.total, &x.ws)
 		return x, err
 	})
 	if err != nil {
 		return err
+	}
+	if len(list) > 0 {
+		total(req, sec, list[0].total)
 	}
 	for _, x := range page(req, sec, list, func(x row) (float64, uuid.UUID) { return x.score, x.id }) {
 		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: markWords(x.name, req.q.Words), Title: x.name, WorkspaceId: str(x.ws), At: ts(x.at),
@@ -488,12 +516,14 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 	p, tsq := a.Add(roomIDs), a.Add(req.q.TS)
 	from := " FROM room_recordings rr WHERE rr.result_state = 'ready' AND rr.transcript_text IS NOT NULL AND " +
 		transcriptVector + " @@ " + searchq.TSQuery(tsq) + " AND " + recording.VisibleSQL("rr", p)
-	if err := count(ctx, tx, req, sec, "SELECT 1"+from, a.Values()); err != nil {
-		return err
+	if req.cur == nil {
+		var n int64
+		if err := tx.QueryRow(ctx, "SELECT count(*) FROM (SELECT 1"+from+" LIMIT "+strconv.Itoa(candidateCap)+") x", a.Values()...).Scan(&n); err != nil {
+			return err
+		}
+		total(req, sec, n)
 	}
-	if req.cur != nil {
-		from += " AND rr.id < " + a.Add(req.cur.id()) + "::uuid"
-	}
+	from += newer("rr.id", false, req, &a)
 	opts := a.Add(searchq.HeadlineOptions)
 	// The first segment matching on its own gives the offset and the snippet (a phrase across
 	// segments: the start of the transcript).

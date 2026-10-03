@@ -142,7 +142,11 @@ func (s *Service) section(ctx context.Context, t v1.SearchType, req *request, sc
 		return &v1.SearchSection{Type: t, Items: []*v1.SearchHit{}, TimedOut: true}, nil
 	}
 	err := s.db.ReadTx(sctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(sctx, "SELECT set_config('statement_timeout', $1, true), set_config('pg_trgm.word_similarity_threshold', $2, true)",
+		// No sequential scans: every search query has an index path (full-text, trigram, room,
+		// board, workspace), and a planner misestimate on messages would recompute the tsvector
+		// of every row (seconds on a large table, docs/14).
+		if _, err := tx.Exec(sctx, "SELECT set_config('statement_timeout', $1, true), set_config('pg_trgm.word_similarity_threshold', $2, true), "+
+			"set_config('enable_seqscan', 'off', true)",
 			strconv.FormatInt(timeout.Milliseconds(), 10), wordSimilarity); err != nil {
 			return err
 		}

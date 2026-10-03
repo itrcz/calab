@@ -166,7 +166,8 @@ func mustRooms(ctx context.Context, t *testing.T, d *db.DB, ws uuid.UUID) []uuid
 	return ids
 }
 
-// seedPerf creates (once) the workspace "search-perf": its owner, 51 text rooms (one with big
+// seedPerf creates (once; an interrupted seed is left as "search-perf-seeding" — drop the
+// database to start over) the workspace "search-perf": its owner, 51 text rooms (one with big
 // messages), 1000 boards' worth of tasks (20000) with comments, 5000 events, 50000 files and
 // 300 transcripts. Words: a vocabulary of 2000 with a skewed distribution — "wfreq" is in
 // about half of the messages, "редкослово" in 5, "отсутствующееслово" in none.
@@ -179,14 +180,14 @@ func seedPerf(ctx context.Context, t *testing.T, d *db.DB, big int) (ws, user uu
 	start := time.Now()
 	steps := []string{
 		`INSERT INTO users (email, display_name) VALUES ('perf@example.com', 'Perf') ON CONFLICT DO NOTHING`,
-		`INSERT INTO workspaces (slug, name, owner_id) SELECT 'search-perf', 'Perf', id FROM users WHERE email = 'perf@example.com'`,
-		`INSERT INTO workspace_members (workspace_id, user_id, role) SELECT w.id, w.owner_id, 'owner' FROM workspaces w WHERE slug = 'search-perf'`,
-		`INSERT INTO rooms (workspace_id, type, name, position) SELECT w.id, 'text', 'room' || g, g FROM workspaces w, generate_series(0, 50) g WHERE slug = 'search-perf'`,
+		`INSERT INTO workspaces (slug, name, owner_id) SELECT 'search-perf-seeding', 'Perf', id FROM users WHERE email = 'perf@example.com'`,
+		`INSERT INTO workspace_members (workspace_id, user_id, role) SELECT w.id, w.owner_id, 'owner' FROM workspaces w WHERE slug = 'search-perf-seeding'`,
+		`INSERT INTO rooms (workspace_id, type, name, position) SELECT w.id, 'text', 'room' || g, g FROM workspaces w, generate_series(0, 50) g WHERE slug = 'search-perf-seeding'`,
 		`CREATE TEMP TABLE vocab AS SELECT array_agg(CASE WHEN g = 1 THEN 'wfreq' ELSE 'w' || to_hex(g * 7919) END ORDER BY g) AS w FROM generate_series(1, 2000) g`,
 		`CREATE TEMP TABLE perf AS SELECT w.id AS ws, w.owner_id AS u,
 			(SELECT r.id FROM rooms r WHERE r.workspace_id = w.id AND r.name = 'room0') AS big,
 			(SELECT array_agg(r.id) FROM rooms r WHERE r.workspace_id = w.id AND r.name <> 'room0') AS small
-		 FROM workspaces w WHERE slug = 'search-perf'`,
+		 FROM workspaces w WHERE slug = 'search-perf-seeding'`,
 		fmt.Sprintf(`INSERT INTO messages (room_id, author_id, content, created_at)
 		 SELECT p.big, p.u, (SELECT string_agg(v.w[1 + floor(power(random(), 3) * 2000)::int], ' ') FROM vocab v, generate_series(1, 8) k WHERE g > 0),
 		        now() - make_interval(secs => (%d - g) * 30)
@@ -210,9 +211,10 @@ func seedPerf(ctx context.Context, t *testing.T, d *db.DB, big int) (ws, user uu
 		        now() + make_interval(hours => g), now() + make_interval(hours => g + 1), 'UTC', p.u FROM perf p, generate_series(1, 5000) g`,
 		`INSERT INTO files (workspace_id, uploader_id, key, name, mime, size, sha256)
 		 SELECT p.ws, p.u, 'k/' || g, CASE WHEN g % 50 = 0 THEN 'Отчёт ' || g || '.pdf' ELSE 'file_' || g || '.png' END, 'application/pdf', 1000, '' FROM perf p, generate_series(1, 50000) g`,
-		`CREATE TEMP TABLE fmsg AS SELECT f.id AS file, (SELECT m.id FROM messages m WHERE m.room_id = p.small[1 + split_part(f.key, '/', 2)::int %% 50]
-		        ORDER BY m.id DESC OFFSET split_part(f.key, '/', 2)::int / 50 LIMIT 1) AS msg
-		 FROM files f, perf p WHERE f.workspace_id = p.ws`,
+		`CREATE TEMP TABLE fmsg AS
+		 WITH m AS (SELECT m.id, row_number() OVER () AS rn FROM messages m, perf p WHERE m.room_id = ANY(p.small) LIMIT 50000),
+		      f AS (SELECT f.id, row_number() OVER () AS rn FROM files f, perf p WHERE f.workspace_id = p.ws)
+		 SELECT f.id AS file, m.id AS msg FROM f JOIN m USING (rn)`,
 		`INSERT INTO message_attachments (message_id, file_id, position) SELECT msg, file, 0 FROM fmsg WHERE msg IS NOT NULL ON CONFLICT DO NOTHING`,
 		`INSERT INTO room_recordings (workspace_id, room_id, started_by, status, result_state, transcript_json)
 		 SELECT p.ws, p.small[1 + g % 50], p.u, 'done', 'ready',
@@ -220,6 +222,7 @@ func seedPerf(ctx context.Context, t *testing.T, d *db.DB, big int) (ws, user uu
 		                CASE WHEN k = 150 AND g % 3 = 0 THEN 'обсуждаем бюджет' ELSE 'реплика ' || k || ' о проекте и планах команды' END))
 		         FROM generate_series(1, 300) k WHERE g > 0)
 		 FROM perf p, generate_series(1, 300) g`,
+		`UPDATE workspaces SET slug = 'search-perf' WHERE slug = 'search-perf-seeding'`,
 		`ANALYZE`,
 	}
 	for i, sql := range steps {
