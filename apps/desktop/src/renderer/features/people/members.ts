@@ -111,6 +111,8 @@ export interface MenuActions {
    * target's roles I may not touch (shown checked, disabled); null = no submenu.
    */
   roles: RoleToggle[] | null;
+  /** «Вручить ачивку…» (ADR-0061): canGrantAchievement. */
+  grantAchievement: boolean;
   promote: boolean;
   removeGuest: boolean;
   kick: boolean;
@@ -194,6 +196,15 @@ export function canSetMemberBadge(myRoles: readonly Role[], targetRoles: readonl
   return self || actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
 }
 
+/**
+ * «Вручить ачивку…» (ADR-0061 §3, server achievements.grant): MANAGE_MEMBERS; the recipient is a
+ * member — not a guest, not a bot — and not me (422 SELF_GRANT).
+ */
+export function canGrantAchievement(myRoles: readonly RoleBits[] | undefined, target: Pick<WorkspaceMember, 'role' | 'user'>, self: boolean): boolean {
+  if (self || !mayManageMembers(myRoles)) return false;
+  return target.role !== WorkspaceRole.GUEST && !target.user?.isGuest && !target.user?.isBot;
+}
+
 export function memberActions(c: MenuContext): MenuActions {
   const userId = c.target.user?.id ?? '';
   const self = userId === c.meId;
@@ -238,6 +249,7 @@ export function memberActions(c: MenuContext): MenuActions {
     rename: canRenameMember(myRoles, self, c.allowSelfNickname),
     birthday: canEditMemberBirthday(myRoles, targetRoles, c.target, self),
     roles: roleToggles(all, myRoles, targetRoles, self, guest),
+    grantAchievement: canGrantAchievement(myRoles, c.target, self),
     promote: manage && guest && !self,
     removeGuest: removable && guest,
     kick: removable && !guest,
@@ -246,5 +258,5 @@ export function memberActions(c: MenuContext): MenuActions {
 }
 
 export function hasAnyAction(a: MenuActions): boolean {
-  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick || a.ban;
+  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.grantAchievement || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick || a.ban;
 }

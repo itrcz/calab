@@ -22,6 +22,7 @@ import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
 import { esStickers } from './stickers';
+import { esAchievements } from './achievements';
 import { esSounds } from './sounds';
 import { esBots } from './bots';
 import { esGuests } from './guests';
@@ -38,6 +39,7 @@ export const es: Dict = {
   ...esApp,
   ...esVideo,
   ...esStickers,
+  ...esAchievements,
   ...esSounds,
   ...esBots,
   ...esGuests,

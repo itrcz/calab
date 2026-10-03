@@ -22,6 +22,7 @@ import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
+import { enAchievements } from './achievements';
 import { enSounds } from './sounds';
 import { enBots } from './bots';
 import { enGuests } from './guests';
@@ -38,6 +39,7 @@ export const en: Dict = {
   ...enApp,
   ...enVideo,
   ...enStickers,
+  ...enAchievements,
   ...enSounds,
   ...enBots,
   ...enGuests,

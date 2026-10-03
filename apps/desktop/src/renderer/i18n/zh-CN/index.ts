@@ -22,6 +22,7 @@ import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 import { zhStickers } from './stickers';
+import { zhAchievements } from './achievements';
 import { zhSounds } from './sounds';
 import { zhBots } from './bots';
 import { zhGuests } from './guests';
@@ -38,6 +39,7 @@ export const zhCN: Dict = {
   ...zhApp,
   ...zhVideo,
   ...zhStickers,
+  ...zhAchievements,
   ...zhSounds,
   ...zhBots,
   ...zhGuests,

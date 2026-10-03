@@ -64,6 +64,9 @@
   /* warm second stop of the birthday card gradient (accent-strong → this; white text 8.9:1),
      same in both themes */
   --color-birthday-warm: #c2185b;
+  /* warm gold second stop of the achievement surface (ADR-0061: accent-strong → this; white
+     text 6.3:1 dark, 5.2:1 light) */
+  --color-achievement-warm: #8a5300;
   --color-green: #30d158;
   --color-yellow: #ffd60a;
   --color-presence-idle: #ffd60a;
@@ -220,6 +223,7 @@
   /* attention: white text 5.3:1 */
   --color-attention: #c93400;
   --color-on-attention: #ffffff;
+  --color-achievement-warm: #a15c00;
   --color-green: #1f7a34;
   --color-green-text: #145a26;
   --color-yellow: #a05a00;
@@ -753,6 +757,74 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   }
   .birthday-cake {
     animation: none;
+  }
+}
+
+/* Achievements (ADR-0061, docs/08 «Ачивки»): the same solid gradient material as the birthday
+   surface, warm gold instead of raspberry (white text ≥ 4.5:1 on both stops, both themes). The
+   chat card and the profile have no animation; the viewer alone has a one-shot shine (masked by
+   the picture itself, so only its opaque part glints, 900 ms, once) and the cursor tilt
+   (lib/tilt.ts: JS only on pointermove, the transform of `.achievement-tilt`). Both are off with
+   reduced motion and in the «Слабый компьютер» mode. */
+.achievement-surface {
+  background: linear-gradient(115deg, var(--color-accent-strong) 0%, var(--color-achievement-warm) 100%);
+  color: #fff;
+}
+.achievement-surface :focus-visible {
+  outline-color: #fff;
+}
+.achievement-img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+.achievement-tilt {
+  will-change: transform;
+  transform: perspective(600px) rotateX(0deg) rotateY(0deg);
+}
+.achievement-shine {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask: var(--ach-mask) center / contain no-repeat;
+  mask: var(--ach-mask) center / contain no-repeat;
+}
+.achievement-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgb(255 255 255 / 55%) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: calaba-ach-shine 900ms ease-out 200ms 1 both;
+}
+@keyframes calaba-ach-shine {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+/* The superadmin preview of a picture on both themes at once (ADR-0061 §5): fixed light and dark
+   content colours (= --color-bg of each theme), whatever the current theme is. */
+.achievement-preview-light {
+  background: #ffffff;
+}
+.achievement-preview-dark {
+  background: #1c1c1e;
+}
+:root[data-low-end='true'] .achievement-tilt {
+  will-change: auto;
+}
+:root[data-low-end='true'] .achievement-shine::after {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .achievement-tilt {
+    will-change: auto;
+  }
+  .achievement-shine::after {
+    display: none;
   }
 }
 

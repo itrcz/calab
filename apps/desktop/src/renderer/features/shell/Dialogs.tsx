@@ -10,6 +10,7 @@ import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileDialog } from '../people/ProfileDialog';
+import { AchievementLayers } from '../people/AchievementLayers';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
@@ -98,6 +99,7 @@ export function Dialogs(): ReactNode {
   return (
     <>
       {node}
+      <AchievementLayers />
       <ConfirmHost />
     </>
   );

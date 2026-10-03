@@ -21,6 +21,7 @@ import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
 import { ruStickers } from './stickers';
+import { ruAchievements } from './achievements';
 import { ruSounds } from './sounds';
 import { ruBots } from './bots';
 import { ruGuests } from './guests';
@@ -37,6 +38,7 @@ export const ru = {
   ...ruApp,
   ...ruVideo,
   ...ruStickers,
+  ...ruAchievements,
   ...ruSounds,
   ...ruBots,
   ...ruGuests,
