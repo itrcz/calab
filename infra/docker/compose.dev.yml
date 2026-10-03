@@ -26,7 +26,7 @@ services:
   # Mail catcher (ADR-0023): the API sends to SMTP localhost:1025 (SMTP_TLS=none),
   # letters are read at http://localhost:8025. Nothing leaves the machine.
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: axllent/mailpit:v1.30
     ports:
       - "1025:1025"
       - "8025:8025"
@@ -50,7 +50,7 @@ services:
   # --profile sip up -d sip`. В сетевом пространстве LiveKit; без провайдера звонки падают сразу,
   # но API транков и CreateSIPParticipant работают по-настоящему.
   sip:
-    image: livekit/sip:v1.14.0@sha256:1487f39ca985f64879cc74b045e1ddc22f7afdb02e8a4739d92d749b9c3c3ad2
+    image: livekit/sip:v1.17.0@sha256:d3c6441eb0918a81ab9e48ba7df6f02c1eebbeace42c963b2c6a6e5418675671
     profiles: [sip]
     network_mode: "service:livekit"
     environment:
