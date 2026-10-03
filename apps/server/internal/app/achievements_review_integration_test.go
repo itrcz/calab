@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"image/png"
 	"math/rand/v2"
 	"strings"
@@ -14,28 +15,17 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
-	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
-
-// newAchievement creates a catalog entry as the superadmin.
-func newAchievement(t *testing.T, title string) *v1.Achievement {
-	t.Helper()
-	sa := superadminUser(t)
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:admin:"+sa.id)).Build()).Error()
-	st, a, e := achievementForm(t, sa, "POST", "/api/admin/achievements", map[string]string{"title": title}, achievementPNG(t, false))
-	if st != 201 {
-		t.Fatalf("create %q: %d %v", title, st, e)
-	}
-	return a
-}
 
 // TestAchievementsCountConcurrent: parallel grants and revokes of one member never leave
 // workspace_members.achievement_count different from the live grants (ADR-0061 §3).
 func TestAchievementsCountConcurrent(t *testing.T) {
 	o, bob, ws, _ := setupTeam(t)
-	a1, a2 := newAchievement(t, "Параллельно 1"), newAchievement(t, "Параллельно 2")
+	a1, a2 := newAchievement(t, o, ws.GetId(), "Параллельно 1"), newAchievement(t, o, ws.GetId(), "Параллельно 2")
 	base := "/api/workspaces/" + ws.GetId() + "/members/" + bob.id + "/achievements"
 	for round := range 12 {
 		var wg sync.WaitGroup
@@ -90,7 +80,7 @@ func TestAchievementsCountConcurrent(t *testing.T) {
 func TestAchievementsWorkspaceScope(t *testing.T) {
 	o, bob, ws, _ := setupTeam(t)
 	wid := ws.GetId()
-	a := newAchievement(t, "Границы")
+	a := newAchievement(t, o, wid, "Границы")
 	// A second workspace (the same owner) with bob in it too, and carol only there.
 	ws2 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
 	bob.must(200, "POST", "/api/invites/"+invite(t, o, ws2.GetId())+"/join", nil, nil)
@@ -132,45 +122,25 @@ func TestAchievementsWorkspaceScope(t *testing.T) {
 	suspend(t, wid, false, "")
 }
 
-// TestAchievementsImageRoute: only canonical "<uuid>.webp" names, only authenticated callers.
-func TestAchievementsImageRoute(t *testing.T) {
-	o, _, _, _ := setupTeam(t)
-	a := newAchievement(t, "Маршрут")
-	anon := &client{t: t}
-	if st := anon.do("GET", a.GetImageUrl(), nil, nil); st != 401 {
-		t.Fatalf("anonymous picture: %d", st)
-	}
-	name := strings.TrimPrefix(a.GetImageUrl(), "/api/achievements/images/")
-	for _, bad := range []string{
-		strings.ToUpper(strings.TrimSuffix(name, ".webp")) + ".webp",
-		strings.TrimSuffix(name, ".webp"),
-		strings.TrimSuffix(name, ".webp") + ".png",
-		"..%2F" + name,
-		"%2e%2e%2fachievements%2f" + name,
-		uuid.NewString() + ".webp",
-	} {
-		if st := o.do("GET", "/api/achievements/images/"+bad, nil, nil); st != 404 {
-			t.Fatalf("picture name %q: %d", bad, st)
-		}
-	}
-}
-
-// TestAchievementsUploadRefusals: the decoder is the gate — not the file name or the part's
-// Content-Type; the header dimensions are checked before the decode; the body is bounded.
+// TestAchievementsUploadRefusals: the decoder is the gate — not the file name or its stored
+// MIME type; the header dimensions are checked before the decode; only PNG / WebP sources.
 func TestAchievementsUploadRefusals(t *testing.T) {
-	sa := superadminUser(t)
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:admin:"+sa.id)).Build()).Error()
-	post := func(img []byte) int {
-		st, _, _ := achievementForm(t, sa, "POST", "/api/admin/achievements", map[string]string{"title": "Отказ"}, img)
-		return st
+	o, _, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	post := func(name string, img []byte) int {
+		st, f, _ := upload(t, o, "/api/workspaces/"+wid+"/files", name, img)
+		if st != 201 {
+			return st // refused at upload already
+		}
+		return o.do("POST", "/api/workspaces/"+wid+"/achievements", &v1.CreateAchievementRequest{Title: "Отказ", FileId: f.GetId()}, nil)
 	}
-	// Not an image (named medal.png by achievementForm).
-	if st := post([]byte("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>")); st != 422 {
+	// Not an image.
+	if st := post("medal.png", []byte("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>")); st != 422 {
 		t.Fatalf("svg: %d", st)
 	}
 	// A PNG header followed by HTML: DecodeConfig passes, the decode fails.
 	pngHead := achievementPNG(t, false)[:33]
-	if st := post(append(append([]byte{}, pngHead...), []byte("<html><script>alert(1)</script></html>")...)); st != 422 {
+	if st := post("medal.png", append(append([]byte{}, pngHead...), []byte("<html><script>alert(1)</script></html>")...)); st != 422 {
 		t.Fatalf("polyglot: %d", st)
 	}
 	// Too large declared dimensions (a decompression bomb): refused from the header.
@@ -178,22 +148,52 @@ func TestAchievementsUploadRefusals(t *testing.T) {
 	if err := png.Encode(&bomb, image.NewNRGBA(image.Rect(0, 0, 8192, 8192))); err != nil {
 		t.Fatal(err)
 	}
-	if st := post(bomb.Bytes()); st != 422 {
+	if st := post("bomb.png", bomb.Bytes()); st != 422 && st != 413 {
 		t.Fatalf("8192 px: %d", st)
 	}
 	var small bytes.Buffer
 	_ = png.Encode(&small, image.NewNRGBA(image.Rect(0, 0, 64, 64)))
-	if st := post(small.Bytes()); st != 422 {
+	if st := post("small.png", small.Bytes()); st != 422 {
 		t.Fatalf("64 px: %d", st)
 	}
-	// Over 4 MB.
-	if st := post(bytes.Repeat([]byte{0x89}, 5<<20)); st != 413 && st != 422 {
-		t.Fatalf("5 MB: %d", st)
+	// A JPEG (no alpha by design) is not a source.
+	var jb bytes.Buffer
+	if err := jpeg.Encode(&jb, image.NewRGBA(image.Rect(0, 0, 256, 256)), nil); err != nil {
+		t.Fatal(err)
 	}
-	// Not multipart.
-	if st := sa.do("POST", "/api/admin/achievements", &v1.GrantAchievementRequest{}, nil); st != 400 {
-		t.Fatalf("json body: %d", st)
+	if st := post("medal.jpg", jb.Bytes()); st != 422 {
+		t.Fatalf("jpeg: %d", st)
 	}
+	// Not a JSON body.
+	if st := o.do("POST", "/api/workspaces/"+wid+"/achievements", &v1.GrantAchievementRequest{AchievementId: "x"}, nil); st != 400 && st != 422 {
+		t.Fatalf("wrong body: %d", st)
+	}
+}
+
+// TestAchievementsLimit: at most 100 entries per workspace (409 CONFLICT reason
+// ACHIEVEMENT_LIMIT with used / limit); another workspace is not affected.
+func TestAchievementsLimit(t *testing.T) {
+	ctx := context.Background()
+	o, _, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	first := newAchievement(t, o, wid, "Первая")
+	fid, wsID := uuid.MustParse(first.GetFileId()), uuid.MustParse(wid)
+	for i := range 98 {
+		if _, err := testDB.Q.InsertAchievement(ctx, sqlc.InsertAchievementParams{WorkspaceID: wsID, Title: fmt.Sprintf("n%d", i),
+			FileID: &fid, ImageSize: 1, Width: 512, Height: 512}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newAchievement(t, o, wid, "Сотая")
+	pic := achievementUpload(t, o, wid, "m.png", achievementPNG(t, false))
+	o.must(409, "POST", "/api/workspaces/"+wid+"/achievements", &v1.CreateAchievementRequest{Title: "Лишняя", FileId: pic}, nil)
+	var e v1.ApiError
+	_ = protojson.Unmarshal(o.lastBody, &e)
+	if e.GetReason() != "ACHIEVEMENT_LIMIT" || e.GetUsed() != 100 || e.GetLimit() != 100 || e.GetCode() != v1.ErrorCode_ERROR_CODE_CONFLICT {
+		t.Fatalf("limit error: %v", &e)
+	}
+	other := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	newAchievement(t, o, other.GetId(), "В другом")
 }
 
 // TestAchievementsCard: the recipient (the card's author) cannot edit it; deleting it removes
@@ -201,7 +201,7 @@ func TestAchievementsUploadRefusals(t *testing.T) {
 func TestAchievementsCard(t *testing.T) {
 	o, bob, ws, _ := setupTeam(t)
 	general := textRoom(t, o, ws.GetId(), "general", false)
-	a := newAchievement(t, "Открытка")
+	a := newAchievement(t, o, ws.GetId(), "Открытка")
 	var g v1.MemberAchievement
 	o.must(201, "POST", "/api/workspaces/"+ws.GetId()+"/members/"+bob.id+"/achievements",
 		&v1.GrantAchievementRequest{AchievementId: a.GetId(), Note: "за открытку", Announce: true}, &g)

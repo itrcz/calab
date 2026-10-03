@@ -12,37 +12,59 @@ import (
 	"github.com/google/uuid"
 )
 
-const adminAchievementStats = `-- name: AdminAchievementStats :many
-SELECT achievement_id, count(*)::bigint AS granted, count(DISTINCT workspace_id)::bigint AS workspaces
-FROM member_achievements WHERE revoked_at IS NULL
-GROUP BY achievement_id
+const achievementGrantStats = `-- name: AchievementGrantStats :one
+SELECT (SELECT count(*) FROM member_achievements m WHERE m.achievement_id = $1::uuid AND m.revoked_at IS NULL)::bigint AS granted,
+    EXISTS (SELECT 1 FROM member_achievements m WHERE m.achievement_id = $1::uuid)::boolean AS in_use
 `
 
-type AdminAchievementStatsRow struct {
-	AchievementID uuid.UUID
-	Granted       int64
-	Workspaces    int64
+type AchievementGrantStatsRow struct {
+	Granted int64
+	InUse   bool
 }
 
-// Live grants and the workspaces they are in, per catalog entry.
-func (q *Queries) AdminAchievementStats(ctx context.Context) ([]AdminAchievementStatsRow, error) {
-	rows, err := q.db.Query(ctx, adminAchievementStats)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AdminAchievementStatsRow{}
-	for rows.Next() {
-		var i AdminAchievementStatsRow
-		if err := rows.Scan(&i.AchievementID, &i.Granted, &i.Workspaces); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) AchievementGrantStats(ctx context.Context, id uuid.UUID) (AchievementGrantStatsRow, error) {
+	row := q.db.QueryRow(ctx, achievementGrantStats, id)
+	var i AchievementGrantStatsRow
+	err := row.Scan(&i.Granted, &i.InUse)
+	return i, err
+}
+
+const addWorkspaceUsage = `-- name: AddWorkspaceUsage :exec
+UPDATE workspaces SET storage_used_bytes = storage_used_bytes + $1::bigint WHERE id = $2
+`
+
+type AddWorkspaceUsageParams struct {
+	Size int64
+	ID   uuid.UUID
+}
+
+// Counts server-made bytes into the workspace usage without the quota check (a one-shot data
+// migration must not fail on a full workspace).
+func (q *Queries) AddWorkspaceUsage(ctx context.Context, arg AddWorkspaceUsageParams) error {
+	_, err := q.db.Exec(ctx, addWorkspaceUsage, arg.Size, arg.ID)
+	return err
+}
+
+const countLegacyAchievementBlobs = `-- name: CountLegacyAchievementBlobs :one
+SELECT count(*)::integer FROM achievement_legacy_blobs
+`
+
+func (q *Queries) CountLegacyAchievementBlobs(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countLegacyAchievementBlobs)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countWorkspaceAchievements = `-- name: CountWorkspaceAchievements :one
+SELECT count(*)::integer FROM achievements WHERE workspace_id = $1
+`
+
+func (q *Queries) CountWorkspaceAchievements(ctx context.Context, workspaceID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countWorkspaceAchievements, workspaceID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const deleteAchievement = `-- name: DeleteAchievement :execrows
@@ -59,8 +81,17 @@ func (q *Queries) DeleteAchievement(ctx context.Context, id uuid.UUID) (int64, e
 	return result.RowsAffected(), nil
 }
 
+const deleteLegacyAchievementBlob = `-- name: DeleteLegacyAchievementBlob :exec
+DELETE FROM achievement_legacy_blobs WHERE key = $1
+`
+
+func (q *Queries) DeleteLegacyAchievementBlob(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, deleteLegacyAchievementBlob, key)
+	return err
+}
+
 const getAchievement = `-- name: GetAchievement :one
-SELECT id, title, description, image_key, image_size, width, height, position, created_by, created_at, updated_at, archived_at FROM achievements WHERE id = $1
+SELECT id, title, description, image_size, width, height, position, created_by, created_at, updated_at, archived_at, workspace_id, file_id, legacy_image_key FROM achievements WHERE id = $1
 `
 
 func (q *Queries) GetAchievement(ctx context.Context, id uuid.UUID) (Achievement, error) {
@@ -70,7 +101,6 @@ func (q *Queries) GetAchievement(ctx context.Context, id uuid.UUID) (Achievement
 		&i.ID,
 		&i.Title,
 		&i.Description,
-		&i.ImageKey,
 		&i.ImageSize,
 		&i.Width,
 		&i.Height,
@@ -79,6 +109,9 @@ func (q *Queries) GetAchievement(ctx context.Context, id uuid.UUID) (Achievement
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.WorkspaceID,
+		&i.FileID,
+		&i.LegacyImageKey,
 	)
 	return i, err
 }
@@ -97,29 +130,31 @@ func (q *Queries) GetAnnouncementRoom(ctx context.Context, workspaceID uuid.UUID
 }
 
 const insertAchievement = `-- name: InsertAchievement :one
-INSERT INTO achievements (title, description, image_key, image_size, width, height, position, created_by)
-VALUES ($1, $2, $3, $4,
-    $5, $6,
-    (SELECT coalesce(max(position) + 1, 0) FROM achievements), $7)
-RETURNING id, title, description, image_key, image_size, width, height, position, created_by, created_at, updated_at, archived_at
+INSERT INTO achievements (workspace_id, title, description, file_id, image_size, width, height, position, created_by)
+VALUES ($1, $2, $3, $4, $5,
+    $6, $7,
+    (SELECT coalesce(max(position) + 1, 0) FROM achievements WHERE workspace_id = $1), $8)
+RETURNING id, title, description, image_size, width, height, position, created_by, created_at, updated_at, archived_at, workspace_id, file_id, legacy_image_key
 `
 
 type InsertAchievementParams struct {
+	WorkspaceID uuid.UUID
 	Title       string
 	Description string
-	ImageKey    string
+	FileID      *uuid.UUID
 	ImageSize   int32
 	Width       int32
 	Height      int32
 	CreatedBy   *uuid.UUID
 }
 
-// A new entry goes to the end of the catalog.
+// A new entry goes to the end of the workspace's catalog.
 func (q *Queries) InsertAchievement(ctx context.Context, arg InsertAchievementParams) (Achievement, error) {
 	row := q.db.QueryRow(ctx, insertAchievement,
+		arg.WorkspaceID,
 		arg.Title,
 		arg.Description,
-		arg.ImageKey,
+		arg.FileID,
 		arg.ImageSize,
 		arg.Width,
 		arg.Height,
@@ -130,7 +165,6 @@ func (q *Queries) InsertAchievement(ctx context.Context, arg InsertAchievementPa
 		&i.ID,
 		&i.Title,
 		&i.Description,
-		&i.ImageKey,
 		&i.ImageSize,
 		&i.Width,
 		&i.Height,
@@ -139,6 +173,9 @@ func (q *Queries) InsertAchievement(ctx context.Context, arg InsertAchievementPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.WorkspaceID,
+		&i.FileID,
+		&i.LegacyImageKey,
 	)
 	return i, err
 }
@@ -208,39 +245,38 @@ func (q *Queries) InsertMemberAchievement(ctx context.Context, arg InsertMemberA
 	return i, err
 }
 
-const listAchievements = `-- name: ListAchievements :many
-
-SELECT id, title, description, image_key, image_size, width, height, position, created_by, created_at, updated_at, archived_at FROM achievements ORDER BY position, id
+const isWorkspaceAchievement = `-- name: IsWorkspaceAchievement :one
+SELECT EXISTS (SELECT 1 FROM achievements WHERE file_id = $1)::boolean
 `
 
-// Achievements (ADR-0061): the host catalog and grants to workspace members.
-// The whole catalog in its order, archived entries included.
-func (q *Queries) ListAchievements(ctx context.Context) ([]Achievement, error) {
-	rows, err := q.db.Query(ctx, listAchievements)
+// The file is the picture of an achievement (files.CanRead: members of its workspace).
+func (q *Queries) IsWorkspaceAchievement(ctx context.Context, fileID *uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isWorkspaceAchievement, fileID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const listLegacyAchievementBlobs = `-- name: ListLegacyAchievementBlobs :many
+SELECT b.key FROM achievement_legacy_blobs b
+WHERE NOT EXISTS (SELECT 1 FROM achievements a WHERE a.legacy_image_key = b.key)
+ORDER BY b.key
+`
+
+// Former host pictures no entry waits for any more: safe to delete from the blob store.
+func (q *Queries) ListLegacyAchievementBlobs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listLegacyAchievementBlobs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Achievement{}
+	items := []string{}
 	for rows.Next() {
-		var i Achievement
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.ImageKey,
-			&i.ImageSize,
-			&i.Width,
-			&i.Height,
-			&i.Position,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ArchivedAt,
-		); err != nil {
+		var key string
+		if err := rows.Scan(&key); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, key)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -299,8 +335,63 @@ func (q *Queries) ListMemberAchievements(ctx context.Context, arg ListMemberAchi
 	return items, nil
 }
 
+const listWorkspaceAchievements = `-- name: ListWorkspaceAchievements :many
+
+SELECT a.id, a.title, a.description, a.image_size, a.width, a.height, a.position, a.created_by, a.created_at, a.updated_at, a.archived_at, a.workspace_id, a.file_id, a.legacy_image_key,
+    (SELECT count(*) FROM member_achievements m WHERE m.achievement_id = a.id AND m.revoked_at IS NULL)::bigint AS granted,
+    EXISTS (SELECT 1 FROM member_achievements m WHERE m.achievement_id = a.id)::boolean AS in_use
+FROM achievements a WHERE a.workspace_id = $1
+ORDER BY a.position, a.id
+`
+
+type ListWorkspaceAchievementsRow struct {
+	Achievement Achievement
+	Granted     int64
+	InUse       bool
+}
+
+// Achievements (ADR-0061, amendment 1): the workspace catalogs and grants to workspace members.
+// The workspace's catalog in its order, archived entries included, with the live grants and
+// whether it was ever granted (DELETE refuses then).
+func (q *Queries) ListWorkspaceAchievements(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAchievementsRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceAchievements, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspaceAchievementsRow{}
+	for rows.Next() {
+		var i ListWorkspaceAchievementsRow
+		if err := rows.Scan(
+			&i.Achievement.ID,
+			&i.Achievement.Title,
+			&i.Achievement.Description,
+			&i.Achievement.ImageSize,
+			&i.Achievement.Width,
+			&i.Achievement.Height,
+			&i.Achievement.Position,
+			&i.Achievement.CreatedBy,
+			&i.Achievement.CreatedAt,
+			&i.Achievement.UpdatedAt,
+			&i.Achievement.ArchivedAt,
+			&i.Achievement.WorkspaceID,
+			&i.Achievement.FileID,
+			&i.Achievement.LegacyImageKey,
+			&i.Granted,
+			&i.InUse,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockAchievement = `-- name: LockAchievement :one
-SELECT id, title, description, image_key, image_size, width, height, position, created_by, created_at, updated_at, archived_at FROM achievements WHERE id = $1 FOR UPDATE
+SELECT id, title, description, image_size, width, height, position, created_by, created_at, updated_at, archived_at, workspace_id, file_id, legacy_image_key FROM achievements WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockAchievement(ctx context.Context, id uuid.UUID) (Achievement, error) {
@@ -310,7 +401,6 @@ func (q *Queries) LockAchievement(ctx context.Context, id uuid.UUID) (Achievemen
 		&i.ID,
 		&i.Title,
 		&i.Description,
-		&i.ImageKey,
 		&i.ImageSize,
 		&i.Width,
 		&i.Height,
@@ -319,6 +409,48 @@ func (q *Queries) LockAchievement(ctx context.Context, id uuid.UUID) (Achievemen
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.WorkspaceID,
+		&i.FileID,
+		&i.LegacyImageKey,
+	)
+	return i, err
+}
+
+const lockWorkspaceAchievements = `-- name: LockWorkspaceAchievements :exec
+SELECT pg_advisory_xact_lock(hashtext('calaba.achievements.' || $1::uuid::text))
+`
+
+// Serializes achievement creation of one workspace between the count and the insert.
+func (q *Queries) LockWorkspaceAchievements(ctx context.Context, workspaceID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockWorkspaceAchievements, workspaceID)
+	return err
+}
+
+const nextLegacyAchievement = `-- name: NextLegacyAchievement :one
+SELECT id, title, description, image_size, width, height, position, created_by, created_at, updated_at, archived_at, workspace_id, file_id, legacy_image_key FROM achievements WHERE legacy_image_key IS NOT NULL
+ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+`
+
+// An entry copied from the former host catalog whose picture still waits for its file
+// (migration 00063); skipped when another instance is on it.
+func (q *Queries) NextLegacyAchievement(ctx context.Context) (Achievement, error) {
+	row := q.db.QueryRow(ctx, nextLegacyAchievement)
+	var i Achievement
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.ImageSize,
+		&i.Width,
+		&i.Height,
+		&i.Position,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+		&i.WorkspaceID,
+		&i.FileID,
+		&i.LegacyImageKey,
 	)
 	return i, err
 }
@@ -389,6 +521,22 @@ func (q *Queries) RevokeMemberAchievement(ctx context.Context, arg RevokeMemberA
 	return i, err
 }
 
+const setLegacyAchievementFile = `-- name: SetLegacyAchievementFile :exec
+UPDATE achievements SET file_id = $1, legacy_image_key = NULL
+WHERE id = $2 AND legacy_image_key IS NOT NULL
+`
+
+type SetLegacyAchievementFileParams struct {
+	FileID *uuid.UUID
+	ID     uuid.UUID
+}
+
+// The copied picture of a former host entry (migration 00063); file_id NULL = it was lost.
+func (q *Queries) SetLegacyAchievementFile(ctx context.Context, arg SetLegacyAchievementFileParams) error {
+	_, err := q.db.Exec(ctx, setLegacyAchievementFile, arg.FileID, arg.ID)
+	return err
+}
+
 const setMemberAchievementMessage = `-- name: SetMemberAchievementMessage :exec
 UPDATE member_achievements SET message_id = $2 WHERE id = $1
 `
@@ -404,22 +552,23 @@ func (q *Queries) SetMemberAchievementMessage(ctx context.Context, arg SetMember
 }
 
 const updateAchievement = `-- name: UpdateAchievement :one
-UPDATE achievements SET title = $2, description = $3, image_key = $4, image_size = $5, width = $6,
-    height = $7, position = $8, archived_at = $9, updated_at = now()
+UPDATE achievements SET title = $2, description = $3, file_id = $4, image_size = $5, width = $6,
+    height = $7, position = $8, archived_at = $9, legacy_image_key = $10, updated_at = now()
 WHERE id = $1
-RETURNING id, title, description, image_key, image_size, width, height, position, created_by, created_at, updated_at, archived_at
+RETURNING id, title, description, image_size, width, height, position, created_by, created_at, updated_at, archived_at, workspace_id, file_id, legacy_image_key
 `
 
 type UpdateAchievementParams struct {
-	ID          uuid.UUID
-	Title       string
-	Description string
-	ImageKey    string
-	ImageSize   int32
-	Width       int32
-	Height      int32
-	Position    int32
-	ArchivedAt  *time.Time
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	FileID         *uuid.UUID
+	ImageSize      int32
+	Width          int32
+	Height         int32
+	Position       int32
+	ArchivedAt     *time.Time
+	LegacyImageKey *string
 }
 
 func (q *Queries) UpdateAchievement(ctx context.Context, arg UpdateAchievementParams) (Achievement, error) {
@@ -427,19 +576,19 @@ func (q *Queries) UpdateAchievement(ctx context.Context, arg UpdateAchievementPa
 		arg.ID,
 		arg.Title,
 		arg.Description,
-		arg.ImageKey,
+		arg.FileID,
 		arg.ImageSize,
 		arg.Width,
 		arg.Height,
 		arg.Position,
 		arg.ArchivedAt,
+		arg.LegacyImageKey,
 	)
 	var i Achievement
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.Description,
-		&i.ImageKey,
 		&i.ImageSize,
 		&i.Width,
 		&i.Height,
@@ -448,6 +597,9 @@ func (q *Queries) UpdateAchievement(ctx context.Context, arg UpdateAchievementPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.WorkspaceID,
+		&i.FileID,
+		&i.LegacyImageKey,
 	)
 	return i, err
 }

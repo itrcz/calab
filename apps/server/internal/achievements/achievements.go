@@ -1,18 +1,15 @@
-// Package achievements serves ADR-0061: the host catalog of achievements kept by the
-// superadmins, grants of achievements to workspace members and the grant's card in the
-// workspace's general chat (SystemMessage.achievement).
+// Package achievements serves ADR-0061 (amendment 1): the achievement catalog of every
+// workspace kept by its owner and admins (MANAGE_WORKSPACE), grants of achievements to workspace
+// members and the grant's card in the workspace's general chat (SystemMessage.achievement).
 package achievements
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -21,27 +18,25 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/messages"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/rooms"
 )
 
-// Field limits (characters).
+// Field limits (characters) and the catalog size of a workspace.
 const (
-	maxTitle       = 60
-	maxDescription = 200
-	maxNote        = 120
+	maxTitle        = 60
+	maxDescription  = 200
+	maxNote         = 120
+	MaxPerWorkspace = 100
 )
-
-// keyPrefix is the blob.Store key space of the pictures: "achievements/<uuid>.webp".
-const keyPrefix = "achievements/"
-
-// imageRoute is the URL prefix of the pictures (Achievement.image_url).
-const imageRoute = "/api/achievements/images/"
 
 // Reasons of the 4xx answers (ApiError.reason).
 const (
@@ -49,48 +44,47 @@ const (
 	ReasonInUse      = "ACHIEVEMENT_IN_USE"
 	ReasonSelfGrant  = "SELF_GRANT"
 	ReasonArchived   = "ACHIEVEMENT_ARCHIVED"
+	ReasonLimit      = "ACHIEVEMENT_LIMIT"
 )
 
-// Service serves the catalog, the superadmin routes and the grants.
+// Service serves the catalogs and the grants.
 type Service struct {
 	db     *db.DB
 	store  blob.Store
+	files  *files.Service
 	events events.Publisher
 	system *messages.System
 	voice  rooms.VoiceRooms
 }
 
-// New creates the service. voice lets guests see the members of their call (the profile rule,
-// ADR-0051); nil = fail closed for those.
-func New(d *db.DB, store blob.Store, ev events.Publisher, voice rooms.VoiceRooms) *Service {
-	return &Service{db: d, store: store, events: ev, system: messages.NewSystem(d, ev), voice: voice}
+// New creates the service. fs stores the pictures as workspace files; voice lets guests see the
+// members of their call (the profile rule, ADR-0051); nil = fail closed for those.
+func New(d *db.DB, store blob.Store, fs *files.Service, ev events.Publisher, voice rooms.VoiceRooms) *Service {
+	return &Service{db: d, store: store, files: fs, events: ev, system: messages.NewSystem(d, ev), voice: voice}
 }
 
-// Routes registers the routes; wrap applies auth and the permission resolver, adminGuard the
-// superadmin check of /api/admin/* (plans.Admin.Guard: 404 to everyone else, 60/min).
-func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler, adminGuard func(httpx.HandlerFunc) httpx.HandlerFunc) {
-	admin := func(pattern string, f httpx.HandlerFunc) { mux.Handle(pattern, wrap(adminGuard(f))) }
-	admin("GET /api/admin/achievements", s.adminList)
-	admin("POST /api/admin/achievements", s.adminCreate)
-	admin("PATCH /api/admin/achievements/{id}", s.adminUpdate)
-	admin("DELETE /api/admin/achievements/{id}", s.adminDelete)
-	mux.Handle("GET /api/achievements", wrap(httpx.HandlerFunc(s.catalog)))
-	mux.Handle("GET /api/achievements/images/{name}", wrap(httpx.HandlerFunc(s.image)))
-	mux.Handle("GET /api/workspaces/{id}/members/{userId}/achievements", wrap(httpx.HandlerFunc(s.list)))
-	mux.Handle("POST /api/workspaces/{id}/members/{userId}/achievements", wrap(httpx.HandlerFunc(s.grant)))
-	mux.Handle("DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId}", wrap(httpx.HandlerFunc(s.revoke)))
+// Routes registers the routes; wrap applies auth and the permission resolver.
+func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
+	handle := func(pattern string, f httpx.HandlerFunc) { mux.Handle(pattern, wrap(f)) }
+	handle("GET /api/workspaces/{id}/achievements", s.catalog)
+	handle("POST /api/workspaces/{id}/achievements", s.create)
+	handle("PATCH /api/achievements/{id}", s.update)
+	handle("DELETE /api/achievements/{id}", s.remove)
+	handle("GET /api/workspaces/{id}/members/{userId}/achievements", s.list)
+	handle("POST /api/workspaces/{id}/members/{userId}/achievements", s.grant)
+	handle("DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId}", s.revoke)
 }
 
-// ImageKey is the blob key of a picture.
-func ImageKey(id uuid.UUID) string { return keyPrefix + id.String() + ".webp" }
-
-// Proto converts a catalog row.
-func Proto(a sqlc.Achievement) *v1.Achievement {
+// Proto converts a catalog row; granted / inUse are its grant stats.
+func Proto(a sqlc.Achievement, granted int64, inUse bool) *v1.Achievement {
 	out := &v1.Achievement{
-		Id: a.ID.String(), Title: a.Title, Description: a.Description,
-		ImageUrl:  imageRoute + strings.TrimPrefix(a.ImageKey, keyPrefix),
+		Id: a.ID.String(), WorkspaceId: a.WorkspaceID.String(), Title: a.Title, Description: a.Description,
 		ImageSize: uint32(max(a.ImageSize, 0)), Width: uint32(max(a.Width, 0)), Height: uint32(max(a.Height, 0)), //nolint:gosec // non-negative
 		Position: a.Position, CreatedAt: timestamppb.New(a.CreatedAt), UpdatedAt: timestamppb.New(a.UpdatedAt),
+		GrantedCount: uint32(max(granted, 0)), InUse: inUse, //nolint:gosec // a count
+	}
+	if a.FileID != nil {
+		out.FileId = a.FileID.String()
 	}
 	if a.ArchivedAt != nil {
 		out.ArchivedAt = timestamppb.New(*a.ArchivedAt)
@@ -113,16 +107,48 @@ func GrantProto(g sqlc.MemberAchievement, roomID *uuid.UUID) *v1.MemberAchieveme
 	return out
 }
 
-// catalog: GET /api/achievements — the whole catalog by position (archived entries flagged),
-// with an ETag of its content.
+// access resolves the workspace of the path and the caller's bits and role there (404 for a
+// non-member).
+func access(r *http.Request) (uuid.UUID, perm.Bits, perm.Role, error) {
+	wsID, err := httpx.PathUUID(r, "id", "workspace")
+	if err != nil {
+		return uuid.Nil, 0, "", err
+	}
+	bits, role, err := workspaceAccess(r, wsID, "workspace")
+	return wsID, bits, role, err
+}
+
+// workspaceAccess: the caller's bits and role in wsID; a non-member gets 404 what.
+func workspaceAccess(r *http.Request, wsID uuid.UUID, what string) (perm.Bits, perm.Role, error) {
+	bits, role, err := perm.FromContext(r.Context()).Workspace(r.Context(), wsID, auth.MustFromContext(r.Context()).UserID)
+	if errors.Is(err, perm.ErrNotMember) {
+		return 0, "", httpx.NotFound(what)
+	}
+	return bits, role, err
+}
+
+// canManageCatalog: MANAGE_WORKSPACE, never a guest.
+func canManageCatalog(bits perm.Bits, role perm.Role) error {
+	if !bits.Has(perm.ManageWorkspace) || role == perm.RoleGuest {
+		return httpx.Forbidden("MANAGE_WORKSPACE required")
+	}
+	return nil
+}
+
+// catalog: GET /api/workspaces/{id}/achievements — the workspace's catalog by position (archived
+// entries flagged), with an ETag of its content.
 func (s *Service) catalog(w http.ResponseWriter, r *http.Request) error {
-	rows, err := s.db.Q.ListAchievements(r.Context())
+	wsID, _, _, err := access(r)
+	if err != nil {
+		return err
+	}
+	rows, err := s.db.Q.ListWorkspaceAchievements(r.Context(), wsID)
 	if err != nil {
 		return err
 	}
 	out := &v1.ListAchievementsResponse{Achievements: make([]*v1.Achievement, len(rows))}
-	for i, a := range rows {
-		out.Achievements[i] = Proto(a)
+	for i, row := range rows {
+		out.Achievements[i] = Proto(row.Achievement, row.Granted, row.InUse)
 	}
 	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(out)
 	if err != nil {
@@ -150,35 +176,6 @@ func etagMatch(header, etag string) bool {
 	return false
 }
 
-// image: GET /api/achievements/images/{uuid}.webp — a catalog picture. The key changes with the
-// bytes, so it is cached for good.
-func (s *Service) image(w http.ResponseWriter, r *http.Request) error {
-	name, ok := strings.CutSuffix(r.PathValue("name"), ".webp")
-	if !ok {
-		return httpx.NotFound("image")
-	}
-	id, err := uuid.Parse(name)
-	if err != nil || id.String() != name {
-		return httpx.NotFound("image")
-	}
-	rc, meta, err := s.store.Get(r.Context(), ImageKey(id))
-	if errors.Is(err, blob.ErrNotFound) {
-		return httpx.NotFound("image")
-	}
-	if err != nil {
-		return err
-	}
-	defer func() { _ = rc.Close() }()
-	h := w.Header()
-	h.Set("Content-Type", "image/webp")
-	h.Set("ETag", `"`+name+`"`)
-	h.Set("Cache-Control", "public, max-age=31536000, immutable")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	http.ServeContent(w, r, "", meta.ModTime, rc)
-	return nil
-}
-
 // text validates a trimmed single-line text field of min..max characters.
 func text(field, v string, minLen, maxLen int) (string, error) {
 	v = strings.TrimSpace(v)
@@ -194,14 +191,9 @@ func text(field, v string, minLen, maxLen int) (string, error) {
 	return v, nil
 }
 
-// deleteBlob removes a picture after a commit (or of a failed write), best effort.
-func (s *Service) deleteBlob(ctx context.Context, key string) {
-	if key == "" {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
-	if err := s.store.Delete(ctx, key); err != nil {
-		slog.WarnContext(ctx, "delete achievement image", "key", key, "err", err)
-	}
+// catalogChanged tells every member of the workspace to refetch its catalog.
+func (s *Service) catalogChanged(r *http.Request, wsID uuid.UUID) {
+	s.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceAchievementsUpdate{
+		WorkspaceAchievementsUpdate: &v1.WorkspaceAchievementsUpdate{WorkspaceId: wsID.String()},
+	}})
 }

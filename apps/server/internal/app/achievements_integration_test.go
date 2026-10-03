@@ -9,7 +9,6 @@ import (
 	"image/color"
 	"image/png"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"strings"
 	"testing"
@@ -17,7 +16,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
-	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // achievementPNG is a 256x256 PNG with a disc on a transparent background (opaque: on white).
@@ -42,38 +40,23 @@ func achievementPNG(t *testing.T, opaque bool) []byte {
 	return buf.Bytes()
 }
 
-// achievementForm sends a multipart superadmin request; image nil = no image part.
-func achievementForm(t *testing.T, u *user, method, path string, fields map[string]string, img []byte) (int, *v1.Achievement, *v1.ApiError) {
+// achievementUpload uploads data to the workspace as u and returns the file id.
+func achievementUpload(t *testing.T, u *user, wsID, name string, data []byte) string {
 	t.Helper()
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	for k, v := range fields {
-		_ = mw.WriteField(k, v)
+	st, f, _ := upload(t, u, "/api/workspaces/"+wsID+"/files", name, data)
+	if st != 201 {
+		t.Fatalf("upload %s: %d", name, st)
 	}
-	if img != nil {
-		fw, _ := mw.CreateFormFile("image", "medal.png")
-		_, _ = fw.Write(img)
-	}
-	_ = mw.Close()
-	req, _ := http.NewRequestWithContext(context.Background(), method, srv.URL+path, &body)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+u.token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		var e v1.ApiError
-		_ = protojson.Unmarshal(raw, &e)
-		return resp.StatusCode, nil, &e
-	}
+	return f.GetId()
+}
+
+// newAchievement creates a catalog entry of the workspace as u (MANAGE_WORKSPACE).
+func newAchievement(t *testing.T, u *user, wsID, title string) *v1.Achievement {
+	t.Helper()
 	var a v1.Achievement
-	if err := protojson.Unmarshal(raw, &a); err != nil {
-		t.Fatal(err)
-	}
-	return resp.StatusCode, &a, nil
+	u.must(201, "POST", "/api/workspaces/"+wsID+"/achievements",
+		&v1.CreateAchievementRequest{Title: title, FileId: achievementUpload(t, u, wsID, "medal.png", achievementPNG(t, false))}, &a)
+	return &a
 }
 
 // rawResp is the status and headers of a response whose body getRaw has read and closed.
@@ -99,67 +82,91 @@ func getRaw(t *testing.T, token, path string, header map[string]string) (*rawRes
 	return &rawResp{StatusCode: resp.StatusCode, Header: resp.Header}, raw
 }
 
-// TestAchievements (ADR-0061): the superadmin catalog (404 to others, IMAGE_NEEDS_ALPHA, 409 on
-// delete with grants, archive, image replace), the public catalog with ETag and the cached
-// picture, grants (MANAGE_MEMBERS; 403 without, 422 to self / guest / bot / archived, note
-// required, bot token 403), the card in the announcement room and its absence without a text
-// room, the recipient's mention, achievement_count with WORKSPACE_MEMBER_UPDATE, revoke, the
-// list for guests by the profile rule and for bots.
+// TestAchievements (ADR-0061, amendment 1): the workspace catalog — MANAGE_WORKSPACE for the
+// owner and admins (a member 403, a bot token 403 BOT_NOT_ALLOWED), the picture from the caller's
+// own upload made into a new workspace file (IMAGE_NEEDS_ALPHA; someone else's or another
+// workspace's upload refused), read by every member and guest and not by outsiders, the
+// WORKSPACE_ACHIEVEMENTS_UPDATE event, the list with ETag, archive, replace, 409 on delete with
+// grants, the orphan cleanup keeping pictures; grants (MANAGE_MEMBERS; 403 without, 422 to self /
+// guest / bot / archived / another workspace's achievement, note required, bot token 403), the
+// card in the announcement room and its absence without a text room, the recipient's mention,
+// achievement_count with WORKSPACE_MEMBER_UPDATE, revoke, the list for guests by the profile
+// rule and for bots.
 func TestAchievements(t *testing.T) {
-	sa := superadminUser(t)
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:admin:"+sa.id)).Build()).Error()
+	ctx := context.Background()
 	o, bob, ws, voice := setupTeam(t)
 	wid := ws.GetId()
+	adminRole := v1.WorkspaceRole_WORKSPACE_ROLE_ADMIN
+	adm := register(t, invite(t, o, wid))
+	o.must(200, "PATCH", "/api/workspaces/"+wid+"/members/"+adm.id, &v1.UpdateMemberRequest{Role: &adminRole}, nil)
+	cat := "/api/workspaces/" + wid + "/achievements"
 
-	// Superadmin catalog: others get 404; the picture needs a transparent background.
-	o.must(404, "GET", "/api/admin/achievements", nil, nil)
-	if st, _, _ := achievementForm(t, o, "POST", "/api/admin/achievements", map[string]string{"title": "x"}, achievementPNG(t, false)); st != 404 {
-		t.Fatalf("owner creates: %d", st)
+	bg := dialGW(t)
+	bg.identify(bob.token)
+	catalogEvent := func(what string) {
+		t.Helper()
+		bg.wait(what, func(e *v1.DispatchEvent) bool { return e.GetWorkspaceAchievementsUpdate().GetWorkspaceId() == wid })
 	}
-	st, _, e := achievementForm(t, sa, "POST", "/api/admin/achievements", map[string]string{"title": "Opaque"}, achievementPNG(t, true))
-	if st != 422 || e.GetReason() != "IMAGE_NEEDS_ALPHA" {
-		t.Fatalf("opaque image: %d %v", st, e)
-	}
-	if st, _, _ := achievementForm(t, sa, "POST", "/api/admin/achievements", map[string]string{"title": ""}, achievementPNG(t, false)); st != 422 {
-		t.Fatalf("empty title: %d", st)
-	}
-	st, medal, _ := achievementForm(t, sa, "POST", "/api/admin/achievements",
-		map[string]string{"title": "Больше года", "description": "Год в команде"}, achievementPNG(t, false))
-	if st != 201 || medal.GetWidth() != 512 || medal.GetImageSize() == 0 || !strings.HasPrefix(medal.GetImageUrl(), "/api/achievements/images/") {
-		t.Fatalf("create: %d %v", st, medal)
-	}
-	_, old, _ := achievementForm(t, sa, "POST", "/api/admin/achievements", map[string]string{"title": "Старая"}, achievementPNG(t, false))
 
-	// Public catalog (bob, a plain member) with an ETag; the picture is cached for good.
-	resp, raw := getRaw(t, bob.token, "/api/achievements", nil)
-	var cat v1.ListAchievementsResponse
-	if resp.StatusCode != 200 || protojson.Unmarshal(raw, &cat) != nil || resp.Header.Get("ETag") == "" {
+	// Management: a member without MANAGE_WORKSPACE is refused; the picture needs alpha and
+	// must be the caller's own upload to this workspace.
+	pic := achievementUpload(t, o, wid, "medal.png", achievementPNG(t, false))
+	bob.must(403, "POST", cat, &v1.CreateAchievementRequest{Title: "x", FileId: achievementUpload(t, bob, wid, "b.png", achievementPNG(t, false))}, nil)
+	o.must(422, "POST", cat, &v1.CreateAchievementRequest{Title: "Opaque", FileId: achievementUpload(t, o, wid, "o.png", achievementPNG(t, true))}, nil)
+	if r, _ := errReason(o.client); r != "IMAGE_NEEDS_ALPHA" {
+		t.Fatalf("opaque image reason %q", r)
+	}
+	o.must(422, "POST", cat, &v1.CreateAchievementRequest{Title: "", FileId: pic}, nil)
+	o.must(422, "POST", cat, &v1.CreateAchievementRequest{Title: "Чужой", FileId: achievementUpload(t, bob, wid, "b2.png", achievementPNG(t, false))}, nil)
+	other := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	o.must(422, "POST", cat, &v1.CreateAchievementRequest{Title: "Не отсюда", FileId: achievementUpload(t, o, other.GetId(), "x.png", achievementPNG(t, false))}, nil)
+	o.must(422, "POST", cat, &v1.CreateAchievementRequest{Title: "Без файла"}, nil)
+
+	var medal v1.Achievement
+	o.must(201, "POST", cat, &v1.CreateAchievementRequest{Title: " Больше года ", Description: "Год в команде", FileId: pic}, &medal)
+	if medal.GetTitle() != "Больше года" || medal.GetWidth() != 512 || medal.GetImageSize() == 0 || medal.GetWorkspaceId() != wid ||
+		medal.GetFileId() == "" || medal.GetFileId() == pic {
+		t.Fatalf("create: %v", &medal)
+	}
+	catalogEvent("WORKSPACE_ACHIEVEMENTS_UPDATE after create")
+	old := newAchievement(t, adm, wid, "Старая") // an admin manages the catalog too
+	if old.GetPosition() <= medal.GetPosition() {
+		t.Fatalf("positions: %d after %d", old.GetPosition(), medal.GetPosition())
+	}
+
+	// The list (bob, a plain member) with an ETag; the picture is a file every member reads.
+	resp, raw := getRaw(t, bob.token, cat, nil)
+	var list v1.ListAchievementsResponse
+	if resp.StatusCode != 200 || protojson.Unmarshal(raw, &list) != nil || resp.Header.Get("ETag") == "" ||
+		len(list.GetAchievements()) != 2 || list.GetAchievements()[0].GetId() != medal.GetId() {
 		t.Fatalf("catalog: %d %s", resp.StatusCode, raw)
 	}
-	found := false
-	for _, a := range cat.GetAchievements() {
-		found = found || a.GetId() == medal.GetId()
-	}
-	if !found {
-		t.Fatal("catalog misses the new achievement")
-	}
-	if r, _ := getRaw(t, bob.token, "/api/achievements", map[string]string{"If-None-Match": resp.Header.Get("ETag")}); r.StatusCode != 304 {
+	if r, _ := getRaw(t, bob.token, cat, map[string]string{"If-None-Match": resp.Header.Get("ETag")}); r.StatusCode != 304 {
 		t.Fatalf("If-None-Match: %d", r.StatusCode)
 	}
-	img, body := getRaw(t, bob.token, medal.GetImageUrl(), nil)
-	if img.StatusCode != 200 || img.Header.Get("Content-Type") != "image/webp" || !strings.Contains(img.Header.Get("Cache-Control"), "immutable") ||
-		img.Header.Get("X-Content-Type-Options") != "nosniff" || len(body) != int(medal.GetImageSize()) {
-		t.Fatalf("image: %d %v", img.StatusCode, img.Header)
+	if st := fileStatus(t, bob, medal.GetFileId()); st != 200 {
+		t.Fatalf("picture for a member: %d", st)
 	}
+	outsider := register(t, invite(t, o, other.GetId()))
+	if st := fileStatus(t, outsider, medal.GetFileId()); st != 404 {
+		t.Fatalf("picture for an outsider: %d", st)
+	}
+	outsider.must(404, "GET", cat, nil, nil)
+	outsider.must(404, "PATCH", "/api/achievements/"+medal.GetId(), &v1.UpdateAchievementRequest{}, nil)
 
-	// Archive one: 422 on grant; the catalog keeps it flagged and its ETag changes.
-	st, archived, _ := achievementForm(t, sa, "PATCH", "/api/admin/achievements/"+old.GetId(), map[string]string{"archived": "true"}, nil)
-	if st != 200 || archived.GetArchivedAt() == nil {
-		t.Fatalf("archive: %d %v", st, archived)
+	// Archive (admin): 422 on grant; the list keeps it flagged and its ETag changes.
+	archived := true
+	var arch v1.Achievement
+	adm.must(200, "PATCH", "/api/achievements/"+old.GetId(), &v1.UpdateAchievementRequest{Archived: &archived}, &arch)
+	if arch.GetArchivedAt() == nil {
+		t.Fatalf("archive: %v", &arch)
 	}
-	if r, _ := getRaw(t, bob.token, "/api/achievements", map[string]string{"If-None-Match": resp.Header.Get("ETag")}); r.StatusCode != 200 {
+	if r, _ := getRaw(t, bob.token, cat, map[string]string{"If-None-Match": resp.Header.Get("ETag")}); r.StatusCode != 200 {
 		t.Fatalf("ETag after a change: %d", r.StatusCode)
 	}
+	title := "x"
+	bob.must(403, "PATCH", "/api/achievements/"+medal.GetId(), &v1.UpdateAchievementRequest{Title: &title}, nil)
+	bob.must(403, "DELETE", "/api/achievements/"+old.GetId(), nil, nil)
 
 	og := dialGW(t)
 	og.identify(o.token)
@@ -226,23 +233,39 @@ func TestAchievements(t *testing.T) {
 		t.Fatalf("archived reason %q", r)
 	}
 	grant(o, bob.id, "00000000-0000-0000-0000-000000000000", "Нет такой", true, 422)
+	foreign := newAchievement(t, o, other.GetId(), "Из другого пространства")
+	grant(o, bob.id, foreign.GetId(), "Чужая", true, 422)
 	b := createBot(t, o, wid, "Helper")
 	grant(o, b.id, medal.GetId(), "Боту", true, 422)
 	b.must(403, "POST", base+bob.id+"/achievements", &v1.GrantAchievementRequest{AchievementId: medal.GetId(), Note: "От бота", Announce: true}, nil)
 	if r, _ := errReason(b.client); r != "BOT_NOT_ALLOWED" {
 		t.Fatalf("bot grant reason %q", r)
 	}
+	// Bots read the catalog, never change it.
+	b.must(200, "GET", cat, nil, nil)
+	b.must(403, "POST", cat, &v1.CreateAchievementRequest{Title: "Бот", FileId: pic}, nil)
+	if r, _ := errReason(b.client); r != "BOT_NOT_ALLOWED" {
+		t.Fatalf("bot create reason %q", r)
+	}
+	b.must(403, "PATCH", "/api/achievements/"+medal.GetId(), &v1.UpdateAchievementRequest{Title: &title}, nil)
+	b.must(403, "DELETE", "/api/achievements/"+old.GetId(), nil, nil)
 	link := roomLink(t, o, voice.GetId(), &v1.CreateRoomInviteRequest{})
 	guest, _ := anonGuest(t, link.GetCode(), "Гость")
 	grant(o, guest.id, medal.GetId(), "Гостю", true, 422)
 	grant(guest, bob.id, medal.GetId(), "От гостя", true, 403)
+	// Guests read the catalog and its pictures (cards, profiles), never change it.
+	guest.must(200, "GET", cat, nil, nil)
+	if st := fileStatus(t, guest, medal.GetFileId()); st != 200 {
+		t.Fatalf("picture for a guest: %d", st)
+	}
+	guest.must(403, "PATCH", "/api/achievements/"+medal.GetId(), &v1.UpdateAchievementRequest{Title: &title}, nil)
 
-	// The list: newest first; a bot reads it; a guest only for the members it sees.
-	var list v1.ListMemberAchievementsResponse
-	o.must(200, "GET", base+bob.id+"/achievements", nil, &list)
-	if len(list.GetItems()) != 3 || list.GetItems()[1].GetId() != g2.GetId() || list.GetItems()[1].GetRoomId() != general ||
-		list.GetItems()[2].GetId() != g1.GetId() {
-		t.Fatalf("list: %v", list.GetItems())
+	// The member list: newest first; a bot reads it; a guest only for the members it sees.
+	var mlist v1.ListMemberAchievementsResponse
+	o.must(200, "GET", base+bob.id+"/achievements", nil, &mlist)
+	if len(mlist.GetItems()) != 3 || mlist.GetItems()[1].GetId() != g2.GetId() || mlist.GetItems()[1].GetRoomId() != general ||
+		mlist.GetItems()[2].GetId() != g1.GetId() {
+		t.Fatalf("list: %v", mlist.GetItems())
 	}
 	b.must(200, "GET", base+bob.id+"/achievements", nil, nil)
 	bob.must(200, "GET", base+"@me/achievements", nil, nil)
@@ -268,32 +291,49 @@ func TestAchievements(t *testing.T) {
 		t.Fatal("the card is gone after revoke")
 	}
 
-	// Superadmin view: live grants and workspaces; no delete with grants; replace the picture.
-	var al v1.AdminListAchievementsResponse
-	sa.must(200, "GET", "/api/admin/achievements", nil, &al)
-	for _, a := range al.GetAchievements() {
-		if a.GetAchievement().GetId() == medal.GetId() && (a.GetGrantedCount() != 2 || a.GetWorkspacesCount() != 1) {
-			t.Fatalf("admin stats: %v", a)
+	// Stats in the list; no delete with grants; replace the picture.
+	o.must(200, "GET", cat, nil, &list)
+	for _, a := range list.GetAchievements() {
+		if a.GetId() == medal.GetId() && (a.GetGrantedCount() != 2 || !a.GetInUse()) {
+			t.Fatalf("stats: %v", a)
+		}
+		if a.GetId() == old.GetId() && (a.GetGrantedCount() != 0 || a.GetInUse()) {
+			t.Fatalf("stats of the ungranted: %v", a)
 		}
 	}
-	sa.must(409, "DELETE", "/api/admin/achievements/"+medal.GetId(), nil, nil)
-	if r, _ := errReason(sa.client); r != "ACHIEVEMENT_IN_USE" {
+	o.must(409, "DELETE", "/api/achievements/"+medal.GetId(), nil, nil)
+	if r, _ := errReason(o.client); r != "ACHIEVEMENT_IN_USE" {
 		t.Fatalf("delete in use reason %q", r)
 	}
-	st, replaced, _ := achievementForm(t, sa, "PATCH", "/api/admin/achievements/"+medal.GetId(), map[string]string{"title": "Год+", "position": "7"}, achievementPNG(t, false))
-	if st != 200 || replaced.GetImageUrl() == medal.GetImageUrl() || replaced.GetTitle() != "Год+" || replaced.GetPosition() != 7 {
-		t.Fatalf("replace: %d %v", st, replaced)
+	newTitle, pos, newPic := "Год+", int32(7), achievementUpload(t, adm, wid, "new.png", achievementPNG(t, false))
+	var replaced v1.Achievement
+	adm.must(200, "PATCH", "/api/achievements/"+medal.GetId(), &v1.UpdateAchievementRequest{Title: &newTitle, Position: &pos, FileId: &newPic}, &replaced)
+	if replaced.GetFileId() == medal.GetFileId() || replaced.GetFileId() == newPic || replaced.GetTitle() != "Год+" || replaced.GetPosition() != 7 ||
+		replaced.GetGrantedCount() != 2 {
+		t.Fatalf("replace: %v", &replaced)
 	}
-	if r, _ := getRaw(t, bob.token, medal.GetImageUrl(), nil); r.StatusCode != 404 {
-		t.Fatalf("old picture after replace: %d", r.StatusCode)
+	catalogEvent("WORKSPACE_ACHIEVEMENTS_UPDATE after replace")
+
+	// Orphan cleanup: live pictures stay; the replaced picture and the source uploads go.
+	if _, err := testDB.Pool.Exec(ctx, "UPDATE files SET created_at = now() - interval '25 hours' WHERE workspace_id = $1", wid); err != nil {
+		t.Fatal(err)
 	}
-	if r, _ := getRaw(t, guest.token, replaced.GetImageUrl(), nil); r.StatusCode != 200 {
-		t.Fatalf("new picture for a guest: %d", r.StatusCode)
+	if _, err := testApp.Files.CleanupOrphans(ctx); err != nil {
+		t.Fatal(err)
 	}
-	// Never granted: deleted with its picture.
-	sa.must(204, "DELETE", "/api/admin/achievements/"+old.GetId(), nil, nil)
-	if r, _ := getRaw(t, bob.token, old.GetImageUrl(), nil); r.StatusCode != 404 {
-		t.Fatalf("picture after delete: %d", r.StatusCode)
+	for _, id := range []string{replaced.GetFileId(), old.GetFileId()} {
+		if st := fileStatus(t, bob, id); st != 200 {
+			t.Fatalf("live picture %s after cleanup: %d", id, st)
+		}
 	}
-	sa.must(404, "DELETE", "/api/admin/achievements/"+old.GetId(), nil, nil)
+	for _, id := range []string{medal.GetFileId(), pic, newPic} {
+		if st := fileStatus(t, o, id); st != 404 {
+			t.Fatalf("orphan %s after cleanup: %d", id, st)
+		}
+	}
+
+	// Never granted: deleted (its picture goes with the cleanup).
+	adm.must(204, "DELETE", "/api/achievements/"+old.GetId(), nil, nil)
+	catalogEvent("WORKSPACE_ACHIEVEMENTS_UPDATE after delete")
+	o.must(404, "DELETE", "/api/achievements/"+old.GetId(), nil, nil)
 }

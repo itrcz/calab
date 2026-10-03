@@ -12,18 +12,24 @@ import (
 )
 
 type Achievement struct {
-	ID          uuid.UUID
-	Title       string
-	Description string
-	ImageKey    string
-	ImageSize   int32
-	Width       int32
-	Height      int32
-	Position    int32
-	CreatedBy   *uuid.UUID
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	ArchivedAt  *time.Time
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	ImageSize      int32
+	Width          int32
+	Height         int32
+	Position       int32
+	CreatedBy      *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ArchivedAt     *time.Time
+	WorkspaceID    uuid.UUID
+	FileID         *uuid.UUID
+	LegacyImageKey *string
+}
+
+type AchievementLegacyBlob struct {
+	Key string
 }
 
 type BirthdayGreeting struct {

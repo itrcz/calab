@@ -120,6 +120,8 @@ type App struct {
 	BoardWebhooks *boards.Webhooks
 	// Birthdays: the hourly birthday-card worker (docs/09 #76).
 	Birthdays *birthdays.Service
+	// Achievements: catalogs and grants (ADR-0061); its startup task finishes migration 00063.
+	Achievements *achievements.Service
 	// Calls: one-to-one calls (ADR-0034) with their ring / lost timers.
 	Calls *calls.Service
 	// Calendar: meetings (ADR-0038) with the reminder / room badge sweeper.
@@ -162,6 +164,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Bots.Run(ctx) // bot webhook deliveries
 	go a.BoardWebhooks.Run(ctx)
 	go a.Birthdays.Run(ctx, time.Hour)
+	go a.Achievements.RunLegacyMigration(ctx) // one-shot: pictures of migration 00063
 	go a.Calls.Run(ctx)
 	go a.Calendar.Run(ctx, calendar.Tick)
 	go a.CalDAV.Run(ctx)
@@ -439,7 +442,8 @@ func New(d Deps) *App {
 		return qt.Proto(), err
 	}
 	admin.Routes(mux, private)
-	achievements.New(d.DB, d.Blob, pub, voice.Store{C: d.Redis}.Rooms).Routes(mux, private, admin.Guard)
+	achSvc := achievements.New(d.DB, d.Blob, filesSvc, pub, voice.Store{C: d.Redis}.Rooms)
+	achSvc.Routes(mux, private)
 	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)})
 	unfurlSvc.Internal = boardSvc.Unfurl(d.Config.AllowedOrigins()) // own /t/ and /b/ links (ADR-0042)
@@ -511,6 +515,6 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }

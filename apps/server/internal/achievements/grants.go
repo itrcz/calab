@@ -2,7 +2,6 @@ package achievements
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -19,20 +18,6 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/rooms"
 )
-
-// access resolves the workspace of the path and the caller's bits and role there (404 for a
-// non-member).
-func access(r *http.Request) (uuid.UUID, perm.Bits, perm.Role, error) {
-	wsID, err := httpx.PathUUID(r, "id", "workspace")
-	if err != nil {
-		return uuid.Nil, 0, "", err
-	}
-	bits, role, err := perm.FromContext(r.Context()).Workspace(r.Context(), wsID, auth.MustFromContext(r.Context()).UserID)
-	if errors.Is(err, perm.ErrNotMember) {
-		return uuid.Nil, 0, "", httpx.NotFound("workspace")
-	}
-	return wsID, bits, role, err
-}
 
 // requireManage: MANAGE_MEMBERS in the workspace (guests never, ADR-0048).
 func requireManage(r *http.Request) (uuid.UUID, error) {
@@ -145,7 +130,7 @@ func (s *Service) grant(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Validation("userId", "guests do not get achievements")
 		}
 		a, err := q.LockAchievement(ctx, achID)
-		if db.IsNotFound(err) {
+		if db.IsNotFound(err) || (err == nil && a.WorkspaceID != wsID) { // another workspace's: unknown here
 			return httpx.Validation("achievementId", "unknown achievement")
 		}
 		if err != nil {

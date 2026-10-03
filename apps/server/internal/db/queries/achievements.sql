@@ -1,8 +1,13 @@
--- Achievements (ADR-0061): the host catalog and grants to workspace members.
+-- Achievements (ADR-0061, amendment 1): the workspace catalogs and grants to workspace members.
 
--- name: ListAchievements :many
--- The whole catalog in its order, archived entries included.
-SELECT * FROM achievements ORDER BY position, id;
+-- name: ListWorkspaceAchievements :many
+-- The workspace's catalog in its order, archived entries included, with the live grants and
+-- whether it was ever granted (DELETE refuses then).
+SELECT sqlc.embed(a),
+    (SELECT count(*) FROM member_achievements m WHERE m.achievement_id = a.id AND m.revoked_at IS NULL)::bigint AS granted,
+    EXISTS (SELECT 1 FROM member_achievements m WHERE m.achievement_id = a.id)::boolean AS in_use
+FROM achievements a WHERE a.workspace_id = $1
+ORDER BY a.position, a.id;
 
 -- name: GetAchievement :one
 SELECT * FROM achievements WHERE id = $1;
@@ -10,17 +15,28 @@ SELECT * FROM achievements WHERE id = $1;
 -- name: LockAchievement :one
 SELECT * FROM achievements WHERE id = $1 FOR UPDATE;
 
+-- name: AchievementGrantStats :one
+SELECT (SELECT count(*) FROM member_achievements m WHERE m.achievement_id = sqlc.arg('id')::uuid AND m.revoked_at IS NULL)::bigint AS granted,
+    EXISTS (SELECT 1 FROM member_achievements m WHERE m.achievement_id = sqlc.arg('id')::uuid)::boolean AS in_use;
+
+-- name: LockWorkspaceAchievements :exec
+-- Serializes achievement creation of one workspace between the count and the insert.
+SELECT pg_advisory_xact_lock(hashtext('calaba.achievements.' || sqlc.arg('workspace_id')::uuid::text));
+
+-- name: CountWorkspaceAchievements :one
+SELECT count(*)::integer FROM achievements WHERE workspace_id = $1;
+
 -- name: InsertAchievement :one
--- A new entry goes to the end of the catalog.
-INSERT INTO achievements (title, description, image_key, image_size, width, height, position, created_by)
-VALUES (sqlc.arg('title'), sqlc.arg('description'), sqlc.arg('image_key'), sqlc.arg('image_size'),
+-- A new entry goes to the end of the workspace's catalog.
+INSERT INTO achievements (workspace_id, title, description, file_id, image_size, width, height, position, created_by)
+VALUES (sqlc.arg('workspace_id'), sqlc.arg('title'), sqlc.arg('description'), sqlc.arg('file_id'), sqlc.arg('image_size'),
     sqlc.arg('width'), sqlc.arg('height'),
-    (SELECT coalesce(max(position) + 1, 0) FROM achievements), sqlc.narg('created_by'))
+    (SELECT coalesce(max(position) + 1, 0) FROM achievements WHERE workspace_id = sqlc.arg('workspace_id')), sqlc.narg('created_by'))
 RETURNING *;
 
 -- name: UpdateAchievement :one
-UPDATE achievements SET title = $2, description = $3, image_key = $4, image_size = $5, width = $6,
-    height = $7, position = $8, archived_at = $9, updated_at = now()
+UPDATE achievements SET title = $2, description = $3, file_id = $4, image_size = $5, width = $6,
+    height = $7, position = $8, archived_at = $9, legacy_image_key = $10, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
@@ -29,11 +45,27 @@ RETURNING *;
 DELETE FROM achievements a WHERE a.id = $1
   AND NOT EXISTS (SELECT 1 FROM member_achievements m WHERE m.achievement_id = a.id);
 
--- name: AdminAchievementStats :many
--- Live grants and the workspaces they are in, per catalog entry.
-SELECT achievement_id, count(*)::bigint AS granted, count(DISTINCT workspace_id)::bigint AS workspaces
-FROM member_achievements WHERE revoked_at IS NULL
-GROUP BY achievement_id;
+-- name: IsWorkspaceAchievement :one
+-- The file is the picture of an achievement (files.CanRead: members of its workspace).
+SELECT EXISTS (SELECT 1 FROM achievements WHERE file_id = $1)::boolean;
+
+-- name: NextLegacyAchievement :one
+-- An entry copied from the former host catalog whose picture still waits for its file
+-- (migration 00063); skipped when another instance is on it.
+SELECT * FROM achievements WHERE legacy_image_key IS NOT NULL
+ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;
+
+-- name: ListLegacyAchievementBlobs :many
+-- Former host pictures no entry waits for any more: safe to delete from the blob store.
+SELECT b.key FROM achievement_legacy_blobs b
+WHERE NOT EXISTS (SELECT 1 FROM achievements a WHERE a.legacy_image_key = b.key)
+ORDER BY b.key;
+
+-- name: CountLegacyAchievementBlobs :one
+SELECT count(*)::integer FROM achievement_legacy_blobs;
+
+-- name: DeleteLegacyAchievementBlob :exec
+DELETE FROM achievement_legacy_blobs WHERE key = $1;
 
 -- name: InsertMemberAchievement :one
 INSERT INTO member_achievements (workspace_id, user_id, achievement_id, granted_by, note)
@@ -78,3 +110,13 @@ SELECT sqlc.arg('user_id')::uuid, sqlc.arg('message_id')::uuid, sqlc.arg('room_i
 WHERE EXISTS (SELECT 1 FROM workspace_members wm
     WHERE wm.user_id = sqlc.arg('user_id')::uuid AND wm.workspace_id = sqlc.arg('workspace_id')::uuid)
 ON CONFLICT DO NOTHING;
+
+-- name: SetLegacyAchievementFile :exec
+-- The copied picture of a former host entry (migration 00063); file_id NULL = it was lost.
+UPDATE achievements SET file_id = sqlc.narg('file_id'), legacy_image_key = NULL
+WHERE id = sqlc.arg('id') AND legacy_image_key IS NOT NULL;
+
+-- name: AddWorkspaceUsage :exec
+-- Counts server-made bytes into the workspace usage without the quota check (a one-shot data
+-- migration must not fail on a full workspace).
+UPDATE workspaces SET storage_used_bytes = storage_used_bytes + sqlc.arg('size')::bigint WHERE id = sqlc.arg('id');

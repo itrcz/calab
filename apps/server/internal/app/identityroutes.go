@@ -41,6 +41,7 @@ const (
 	scopeChecklist
 	scopeChecklistItem
 	scopeRule
+	scopeAchievement
 )
 
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
@@ -134,12 +135,10 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/admin/workspaces":                                                         scopeAdmin,
 	"GET /api/admin/workspaces/{id}":                                                    scopeAdmin,
 	"GET /api/admin/workspaces/{id}/plan/log":                                           scopeAdmin,
-	"GET /api/admin/achievements":                                                       scopeAdmin,
-	"POST /api/admin/achievements":                                                      scopeAdmin,
-	"PATCH /api/admin/achievements/{id}":                                                scopeAdmin,
-	"DELETE /api/admin/achievements/{id}":                                               scopeAdmin,
-	"GET /api/achievements":                                                             scopeAggregate,
-	"GET /api/achievements/images/{name}":                                               scopeAggregate,
+	"GET /api/workspaces/{id}/achievements":                                             scopeWorkspace,
+	"POST /api/workspaces/{id}/achievements":                                            scopeWorkspace,
+	"PATCH /api/achievements/{id}":                                                      scopeAchievement,
+	"DELETE /api/achievements/{id}":                                                     scopeAchievement,
 	"GET /api/workspaces/{id}/members/{userId}/achievements":                            scopeWorkspace,
 	"POST /api/workspaces/{id}/members/{userId}/achievements":                           scopeWorkspace,
 	"DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId}":               scopeWorkspace,
@@ -562,6 +561,9 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		return q.GetChecklistItemWorkspace(ctx, id)
 	case scopeRule:
 		return q.GetBoardRuleWorkspace(ctx, id)
+	case scopeAchievement:
+		row, err := q.GetAchievement(ctx, id)
+		return row.WorkspaceID, err
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -678,6 +680,8 @@ func IdentityRouteClass(pattern string) string {
 		return "event"
 	case scopeApp:
 		return "app"
+	case scopeAchievement:
+		return "achievement"
 	default:
 		return "specialized"
 	}

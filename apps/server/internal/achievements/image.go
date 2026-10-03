@@ -16,7 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/files"
 )
 
-// The picture of an achievement (ADR-0061 §2): the superadmin uploads a PNG or WebP with a
+// The picture of an achievement (ADR-0061 §2): the workspace admin uploads a PNG or WebP with a
 // transparent background; the server crops it to the visible part with a small margin and makes
 // an ImageSide × ImageSide WebP with alpha, the object centred.
 const (
