@@ -76,7 +76,8 @@ func TestBoardsV2Migration(t *testing.T) {
 	must(`INSERT INTO tasks (id, board_id, number, title, status_id, room_id, estimate, created_by) VALUES ($1, $2, 1, 'T', $3, $4, 5, $5)`, task, board, status, room, owner)
 	before := tasksShape()
 
-	if err := d.Migrate(ctx); err != nil {
+	// Up to 00059 only: later migrations change tasks on purpose (00066 task_milestone_id, ADR-0063).
+	if err := d.MigrateTo(ctx, 59); err != nil {
 		t.Fatal(err)
 	}
 	if got := tasksShape(); got != before {
