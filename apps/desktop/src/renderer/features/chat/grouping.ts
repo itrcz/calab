@@ -1,5 +1,6 @@
 import { MessageKind } from '@calaba/protocol';
-import type { ChatMessage } from '../../stores/messages';
+import type { Message } from '@calaba/protocol';
+import { keyIndex, type ChatMessage } from '../../stores/messages';
 import { toDate } from '../../lib/format';
 
 /** Telegram-style grouping: consecutive messages of one author within 5 minutes. */
@@ -16,8 +17,19 @@ export interface RowMeta {
   last: boolean;
 }
 
-const dayKey = (c: ChatMessage): string => toDate(c.msg.createdAt).toDateString();
-const ms = (c: ChatMessage): number => toDate(c.msg.createdAt).getTime();
+/** Day and time of a message, computed once per message object (`toDateString` is not cheap). */
+const times = new WeakMap<Message, { day: string; ms: number }>();
+function timeOf(c: ChatMessage): { day: string; ms: number } {
+  let t = times.get(c.msg);
+  if (!t) {
+    const d = toDate(c.msg.createdAt);
+    t = { day: d.toDateString(), ms: d.getTime() };
+    times.set(c.msg, t);
+  }
+  return t;
+}
+const dayKey = (c: ChatMessage): string => timeOf(c).day;
+const ms = (c: ChatMessage): number => timeOf(c).ms;
 
 export function startsNew(c: ChatMessage, prev: ChatMessage | undefined, newMarker: string, me: string): boolean {
   return (
@@ -74,6 +86,57 @@ export function buildMetas(items: readonly ChatMessage[], newMarker: string, me:
   }
   if (cache.size > seen.size * 2 + 64) for (const k of cache.keys()) if (!seen.has(k)) cache.delete(k);
   return out;
+}
+
+export type MetaBuilder = (items: readonly ChatMessage[], newMarker: string, me: string) => RowMeta[];
+
+/**
+ * Incremental `buildMetas` for the feed (docs/14 «Лента на 20 тыс. сообщений»). A row's meta
+ * depends only on itself and its two neighbours, and windows are immutable arrays where an
+ * unchanged row keeps its object. So against the previous call: the common prefix and suffix
+ * (by identity) keep their metas, and only the changed middle plus one row on each side is
+ * recomputed — a new message, an edit or a reaction touches 1–3 rows, not the whole window.
+ * A different marker or viewer recomputes everything. Unchanged metas keep their objects.
+ */
+export function createMetaBuilder(): MetaBuilder {
+  let prevItems: readonly ChatMessage[] | null = null;
+  let prevMetas: RowMeta[] = [];
+  let prevMarker = '';
+  let prevMe = '';
+  return (items, newMarker, me) => {
+    if (items === prevItems && newMarker === prevMarker && me === prevMe) return prevMetas;
+    const old = prevItems ?? [];
+    const oldMetas = prevMetas;
+    const n = items.length;
+    const o = old.length;
+    let a = 0;
+    let b = 0;
+    if (prevItems && newMarker === prevMarker && me === prevMe) {
+      while (a < n && a < o && items[a] === old[a]) a++;
+      while (b < n - a && b < o - a && items[n - 1 - b] === old[o - 1 - b]) b++;
+    }
+    const out = new Array<RowMeta>(n);
+    for (let i = 0; i < a; i++) out[i] = oldMetas[i] as RowMeta;
+    for (let i = n - b; i < n; i++) out[i] = oldMetas[i - n + o] as RowMeta;
+    // Previous meta of a recomputed row: same position when the middle kept its length (an
+    // edit, a reaction), otherwise looked up by key (a page, a jump).
+    const sameShape = n === o;
+    const oldIdx = sameShape || o === 0 ? null : keyIndex(old);
+    for (let i = Math.max(0, a - 1), hi = Math.min(n - 1, n - b); i <= hi; i++) {
+      const c = items[i];
+      if (!c) continue;
+      const m = rowMeta(items, i, newMarker, me);
+      const j =
+        i < a ? i : i >= n - b ? i - n + o : sameShape ? (old[i]?.key === c.key ? i : -1) : (oldIdx?.get(c.key) ?? -1);
+      const prev = j >= 0 ? oldMetas[j] : undefined;
+      out[i] = prev && same(prev, m) ? prev : m;
+    }
+    prevItems = items;
+    prevMetas = out;
+    prevMarker = newMarker;
+    prevMe = me;
+    return out;
+  };
 }
 
 /** Stable colour index (0..7) of a user; must match components/Avatar `colorOf`. */

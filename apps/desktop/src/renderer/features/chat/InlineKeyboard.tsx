@@ -4,7 +4,7 @@ import { Button } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api } from '../../lib/api/endpoints';
-import { useMessages } from '../../stores/messages';
+import { messageById, useMessages } from '../../stores/messages';
 import { useSession } from '../../stores/session';
 
 /** Local interaction state: pressing a button never updates the feed or neighbouring rows. */
@@ -51,9 +51,9 @@ export const InlineKeyboardView = memo(function InlineKeyboardView({ messageId, 
     try {
       const fresh = await api.messages.get(roomId, messageId);
       const state = useMessages.getState();
-      const current = state.rooms[roomId]?.items.find((item) => item.msg.id === messageId);
+      const current = messageById(state, roomId, messageId);
       // A delayed REST result must not overwrite a newer event or resurrect a deleted row.
-      if (current && fresh.keyboardRevision >= current.msg.keyboardRevision) state.upsert(fresh, { rest: true });
+      if (current && fresh.keyboardRevision >= current.keyboardRevision) state.upsert(fresh, { rest: true });
     } catch { setFeedback('stale'); }
   }
 

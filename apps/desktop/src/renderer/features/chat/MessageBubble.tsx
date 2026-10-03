@@ -15,7 +15,7 @@ import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse'
 import { platform } from '../../platform';
 import { can } from '../../lib/permissions';
 import { retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
-import { useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
+import { messageById, useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
 import { useReadReceipt } from '../../stores/readReceipts';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -730,7 +730,7 @@ function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMe
 }
 
 function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string; workspaceId: string; replyToId: string; padTop: boolean }): ReactNode {
-  const target = useMessages((s) => s.rooms[roomId]?.items.find((c) => c.key === replyToId)?.msg);
+  const target = useMessages((s) => messageById(s, roomId, replyToId));
   const gone = useMessages((s) => !!s.gone[replyToId]);
   const jump = useChatView((s) => s.requestJump);
   const sys = target ? systemPreview(target) : '';

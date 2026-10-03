@@ -11,7 +11,7 @@ import { can } from '../../lib/permissions';
 import { systemPreview } from '../../lib/recording';
 import { autoFocusAllowed, useMobile } from '../../lib/mobile';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
-import { useMessages } from '../../stores/messages';
+import { messageById, useMessages } from '../../stores/messages';
 import { myUserId, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useDms } from '../../stores/dms';
@@ -82,8 +82,8 @@ export function Composer({
   const setReply = useUi((s) => s.setReply);
   const editing = useUi((s) => s.editing);
   const setEditing = useUi((s) => s.setEditing);
-  const replyMsg = useMessages((s) => (replyTo ? s.rooms[room.id]?.items.find((c) => c.key === replyTo)?.msg : undefined));
-  const editMsg = useMessages((s) => (editing ? s.rooms[room.id]?.items.find((c) => c.key === editing)?.msg : undefined));
+  const replyMsg = useMessages((s) => (replyTo ? messageById(s, room.id, replyTo) : undefined));
+  const editMsg = useMessages((s) => (editing ? messageById(s, room.id, editing) : undefined));
   const me = useSession((s) => s.me?.user?.id ?? '');
   const canSend = can(perms, 'SEND_MESSAGES');
   // A suspended workspace is read-only (docs/09 #32): the server refuses, the field explains.

@@ -5,7 +5,8 @@ import { useUi } from '../stores/ui';
  * Long sessions (review M10): every room ever opened used to keep its whole loaded history.
  * Background rooms are cut to their newest KEEP messages right away and dropped completely
  * after IDLE_MS unopened (they reload from the API when opened; events for an unloaded room
- * are ignored by the store). The open room and rooms with unsent messages are never touched.
+ * are ignored by the store). The open room and rooms with unsent messages are never touched here;
+ * the open room's own window is capped by the store (WINDOW_CAP, stores/messages) as it pages.
  */
 export const KEEP = 200;
 export const IDLE_MS = 10 * 60_000;

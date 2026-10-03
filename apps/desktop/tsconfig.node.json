@@ -19,6 +19,7 @@
     "playwright.config.ts",
     "e2e/**/*",
     "vitest.config.ts",
+    "vitest.bench.config.ts",
     "vite.web.config.ts",
     "playwright.web.config.ts",
     "playwright.visual.config.ts",
