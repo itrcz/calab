@@ -152,7 +152,7 @@ func (s *Service) deleteLegacyBlobs(ctx context.Context) error {
 				return fmt.Errorf("delete legacy achievement picture %q: %w", key, err)
 			}
 		}
-		if err := s.db.Q.DeleteLegacyAchievementBlob(ctx, key); err != nil {
+		if err := db.GuardExec(ctx, s.db, func(q *sqlc.Queries) error { return q.DeleteLegacyAchievementBlob(ctx, key) }); err != nil {
 			return err
 		}
 	}
