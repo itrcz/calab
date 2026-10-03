@@ -7,7 +7,7 @@ import { PlanLock } from '../../components/PlanLock';
 import { audioTierKbps, type ConcreteScreenSharePreset, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Lock, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
+import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -45,11 +45,9 @@ import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat'
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
-import { SoundsTab } from './SoundsTab';
 import { RolesTab } from './RolesTab';
-import { StickersTab } from './StickersTab';
-import { BadgesTab } from './BadgesTab';
-import { BackgroundsTab } from './BackgroundsTab';
+import { LibraryTab, SEGMENT_LABEL } from './LibraryTab';
+import { LIBRARY_TAB, librarySegments, resolveSettingsTab } from './library';
 import { BotsTab } from './BotsTab';
 import { UpcomingBirthdays } from './UpcomingBirthdays';
 
@@ -93,15 +91,16 @@ export function WorkspaceSettingsDialog({
   const planLocked = (feature: IdentityFeature): boolean => !identityPlan && !entitled(feature);
   if (!entry) return null;
   // Tabs by right, as the server checks (ADR-0048, lib/permissions settingsAccess): «Общие»,
-  // «Звук», «Фоны» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Стикеры» — MANAGE_STICKERS; «Бейджи»,
+  // «Звук» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Библиотека» — by segment (library.ts);
   // «Забаненные» — MANAGE_MEMBERS; «Боты» — MANAGE_BOTS; GPTunneL pairing — MANAGE_INTEGRATIONS;
   // «Приглашения» — INVITE_MEMBERS (ADR-0043). Deleting the workspace: the owner only.
   const access = settingsAccess(myRoles);
   const admin = access.workspace;
   const owner = entry.role === WorkspaceRole.OWNER;
   const manageRoles = access.roles;
-  const manageStickers = access.stickers;
   const inviter = access.invites;
+  const library = librarySegments(access);
+  const requested = resolveSettingsTab(tab);
   const identityPanel = (feature: IdentityFeature, about: ReactNode, content: ReactNode): ReactNode =>
     identityStatus.isPending ? (
       <div className="grid place-items-center py-6">
@@ -133,13 +132,19 @@ export function WorkspaceSettingsDialog({
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
     ...(manageRoles ? [{ id: 'roles', label: t('roles.tab'), icon: Shield, content: <RolesTab workspaceId={workspaceId} /> }] : []),
-    // «Бейджи» (docs/09 #82): the library needs MANAGE_MEMBERS (ADR-0048), like the server.
-    ...(access.members ? [{ id: 'badges', label: t('badges.tab'), icon: Award, content: <BadgesTab workspaceId={workspaceId} /> }] : []),
-    // «Фоны камеры» (ADR-0035 addendum): MANAGE_WORKSPACE, like the server.
-    ...(admin ? [{ id: 'backgrounds', label: t('wsbg.tab'), icon: Wallpaper, content: <BackgroundsTab workspaceId={workspaceId} /> }] : []),
-    ...(manageStickers ? [{ id: 'stickers', label: t('stk.tab'), icon: Sticker, content: <StickersTab workspaceId={workspaceId} /> }] : []),
-    // Soundboard (ADR-0036): the same right as stickers («Стикеры и звуки»).
-    ...(manageStickers ? [{ id: 'sounds', label: t('snd.tab'), icon: Music, content: <SoundsTab workspaceId={workspaceId} /> }] : []),
+    // «Библиотека» (docs/08): achievements, badges, stickers, sounds and camera backgrounds behind
+    // one segmented switch, each segment by the right of its former tab (features/workspace/library).
+    ...(library.length
+      ? [
+          {
+            id: LIBRARY_TAB,
+            label: t('ws.tabLibrary'),
+            icon: Library,
+            keywords: library.map((x) => t(SEGMENT_LABEL[x])).join(' '),
+            content: <LibraryTab workspaceId={workspaceId} segments={library} requested={requested.segment} />,
+          },
+        ]
+      : []),
     // «Боты» (ADR-0031): MANAGE_BOTS (ADR-0048), like the server's bot management.
     ...(access.bots ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
@@ -188,7 +193,7 @@ export function WorkspaceSettingsDialog({
       title={entry.ws.name}
       titleIcon={<WorkspaceGlyph name={entry.ws.name} iconFileId={entry.ws.iconFileId} size={20} />}
       sections={sections}
-      initial={tab ?? (admin ? 'general' : 'members')}
+      initial={requested.tab ?? (admin ? 'general' : 'members')}
       onClose={onClose}
     />
   );
