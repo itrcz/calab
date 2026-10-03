@@ -30,10 +30,11 @@ concurrency:
 
 env:
   # internal/app integration tests split by the first letter after "Test" into app-N shards, balanced
-  # on CI step times; app-4 takes everything else. The go job checks that every test of internal/app
-  # is in exactly one shard. Rebalance when a shard drifts.
-  APP_1: '^Test[A-E]'
-  APP_2: '^Test[F-I]'
+  # on per-test times (`go test -v`, 03.10: A-B 170 s, C-I 146 s, J-P 87 s, Q-Z 166 s of tests + ~30 s
+  # build/migrations per shard); app-4 takes everything else. The go job checks that every test of
+  # internal/app is in exactly one shard. Rebalance when a shard drifts.
+  APP_1: '^Test[A-B]'
+  APP_2: '^Test[C-I]'
   APP_3: '^Test[J-P]'
   APP_4: '^Test[^A-P]'
 
@@ -190,7 +191,7 @@ jobs:
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   # Integration tests in parallel shards (internal/app runs its tests one after another in one
-  # process — ~7.5 min in a single job): internal/app split by test name (APP_1..4 above), every other
+  # process — ~10 min in a single job): internal/app split by test name (APP_1..4 above), every other
   # package in its own shard. PostgreSQL 17 only: one compatibility baseline on every run (owner, 2026-10-01).
   go-integration-shard:
     name: go integration ${{ matrix.shard }} (PostgreSQL ${{ matrix.pg }})
