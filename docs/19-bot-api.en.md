@@ -182,7 +182,7 @@ caller), timestamps, `kind`, `system`, `sticker` and `forward`. `command` is uns
 A recording card has `kind: "MESSAGE_KIND_SYSTEM"` and `system.recording.recordingId`; use that id
 in the transcript URL. An achievement card (ADR-0061) is `MESSAGE_KIND_SYSTEM` too: `system.achievement
 {achievementId, grantId, note, grantedBy}`, authored by the recipient. A message of a board automation rule (ADR-0060) is a system message too:
-`system.automation {boardId, taskId, ruleId, ruleName, text}`; `authorId` is the rule's creator — show it as
+`system.automation {boardId, taskId, ruleId, ruleName, text}` (`text` is plain text: no mentions or markup, it pings nobody); `authorId` is the rule's creator — show it as
 "Automation: ruleName". A command replying to a card has `replyToId` pointing to the card's **message** id.
 
 The lookup returns `404 NOT_FOUND` for inaccessible rooms, a missing/deleted message, a message

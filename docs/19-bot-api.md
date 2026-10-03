@@ -180,7 +180,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 У карточки записи `kind: "MESSAGE_KIND_SYSTEM"` и `system.recording.recordingId`; последний id
 нужен для URL транскрипта. Открытка ачивки (ADR-0061) — тоже `MESSAGE_KIND_SYSTEM`: `system.achievement
 {achievementId, grantId, note, grantedBy}`, автор — получатель. Сообщение правила автоматизации доски (ADR-0060) — тоже системное:
-`system.automation {boardId, taskId, ruleId, ruleName, text}`; `authorId` — создатель правила, показывайте его как
+`system.automation {boardId, taskId, ruleId, ruleName, text}` (`text` — простой текст: без упоминаний и разметки, никого не пингует); `authorId` — создатель правила, показывайте его как
 «Автоматизация: ruleName». В команде, отправленной ответом на карточку, `replyToId` содержит id
 **сообщения** с карточкой, а не id записи.
 
