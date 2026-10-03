@@ -121,6 +121,8 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET /api/workspaces/{id}/badges` | member badges: `WorkspaceMember.badge_id` refers to them | member |
 | `POST /api/workspaces/{id}/badges {name, fileId}` · `PATCH · DELETE …/badges/{badgeId}` | the badge library; the picture is the bot's own upload to this workspace (PNG/WebP/JPEG ≤ 128 KB). SDK `bot.badges.create/update/delete` | `MANAGE_MEMBERS` |
 | `PUT /api/workspaces/{id}/members/{userId}/badge {badgeId}` | give / take (`""`) a badge; the target is not a bot and is below the bot's top role. SDK `bot.badges.set` | `MANAGE_NICKNAMES` |
+| `GET /api/achievements` · `GET /api/achievements/images/{id}.webp` | the host's achievement catalog (ADR-0061; archived ones carry `archivedAt`, `ETag`) and their 512×512 WebP pictures | — |
+| `GET /api/workspaces/{id}/members/{userId}/achievements` | a member's live achievements `{items: [{id, achievementId, note, grantedBy, grantedAt, messageId, roomId}]}`, newest first. Granting / revoking (`POST …/achievements`, `DELETE …/achievements/{grantId}`) is 403 `BOT_NOT_ALLOWED`: people grant them | member |
 | `GET · POST /api/workspaces/{id}/invites` · `DELETE …/invites/{inviteId}` | workspace invite links `{maxUses, expiresInSeconds}`. SDK `bot.invites.list/create/delete` | `INVITE_MEMBERS` |
 | `GET · POST /api/workspaces/{id}/invites/email` · `DELETE …/invites/email/{inviteId}` | an invitation by mail `{email}`: the mail says "Workspace (on behalf of bot X)", the same address at most once a day; inviting an admin — the owner only. SDK `bot.invites.email/listEmail/deleteEmail` | `INVITE_MEMBERS` |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | rooms the bot can see | `VIEW_ROOM` |
@@ -160,7 +162,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 
 **Still for people only** (403 `BOT_NOT_ALLOWED`, ADR-0051): deleting a workspace; bot management (create, tokens,
 avatar — whatever bit the bot has); SIP settings, GPTunneL, workspace web apps; superadmin; voting in task approvals;
-RSVP, CalDAV, "today"; account lookup by address and adding an account directly (`invites/lookup`, `POST …/members`);
+granting and revoking achievements; RSVP, CalDAV, "today"; account lookup by address and adding an account directly (`invites/lookup`, `POST …/members`);
 room guest links; the birthday table and setting birthdays; board access; deleting and re-uploading recordings;
 camera backgrounds, notes, DM calls, password, email, sessions.
 
@@ -177,7 +179,8 @@ not `{message: …}` or `{messages: […]}`. Its fields and detail loading match
 `id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` relative to the
 caller), timestamps, `kind`, `system`, `sticker` and `forward`. `command` is unset, as in all REST responses.
 A recording card has `kind: "MESSAGE_KIND_SYSTEM"` and `system.recording.recordingId`; use that id
-in the transcript URL. A command replying to a card has `replyToId` pointing to the card's **message** id.
+in the transcript URL. An achievement card (ADR-0061) is `MESSAGE_KIND_SYSTEM` too: `system.achievement
+{achievementId, grantId, note, grantedBy}`, authored by the recipient. A command replying to a card has `replyToId` pointing to the card's **message** id.
 
 The lookup returns `404 NOT_FOUND` for inaccessible rooms, a missing/deleted message, a message
 from another room, or a message at/before the caller's cleared DM history marker. A DM's other

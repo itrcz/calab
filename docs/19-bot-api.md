@@ -119,6 +119,8 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET /api/workspaces/{id}/badges` | бейджи участников (docs/09 #82): `WorkspaceMember.badge_id` ссылается на них | участник |
 | `POST /api/workspaces/{id}/badges {name, fileId}` · `PATCH · DELETE …/badges/{badgeId}` | библиотека бейджей; картинка — своя загрузка бота в это пространство (PNG/WebP/JPEG ≤ 128 КБ). SDK `bot.badges.create/update/delete` | `MANAGE_MEMBERS` |
 | `PUT /api/workspaces/{id}/members/{userId}/badge {badgeId}` | выдать / снять (`""`) бейдж; цель — не бот и ниже старшей роли бота. SDK `bot.badges.set` | `MANAGE_NICKNAMES` |
+| `GET /api/achievements` · `GET /api/achievements/images/{id}.webp` | каталог ачивок хоста (ADR-0061; архивные — с `archivedAt`, `ETag`) и их картинки 512×512 WebP | — |
+| `GET /api/workspaces/{id}/members/{userId}/achievements` | живые ачивки участника `{items: [{id, achievementId, note, grantedBy, grantedAt, messageId, roomId}]}`, новые первыми. Вручить / отозвать (`POST …/achievements`, `DELETE …/achievements/{grantId}`) — 403 `BOT_NOT_ALLOWED`: вручают люди | участник |
 | `GET · POST /api/workspaces/{id}/invites` · `DELETE …/invites/{inviteId}` | ссылки-приглашения в пространство `{maxUses, expiresInSeconds}`. SDK `bot.invites.list/create/delete` | `INVITE_MEMBERS` |
 | `GET · POST /api/workspaces/{id}/invites/email` · `DELETE …/invites/email/{inviteId}` | приглашение по почте `{email}`: письмо «Пространство (от имени бота X)», тот же адрес — не чаще раза в сутки; пригласить админом — только владелец. SDK `bot.invites.email/listEmail/deleteEmail` | `INVITE_MEMBERS` |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | комнаты, которые бот видит | `VIEW_ROOM` |
@@ -158,7 +160,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 
 **Остаются только для людей** (403 `BOT_NOT_ALLOWED`, ADR-0051): удаление пространства; управление ботами (создать, токены,
 аватар — какой бы бит ни был у бота); настройки SIP, GPTunneL, веб-приложения пространства; суперадминка; голос в
-согласовании задач; RSVP, CalDAV, «сегодня»; поиск аккаунта по почте и прямое добавление аккаунта
+согласовании задач; вручение и отзыв ачивок; RSVP, CalDAV, «сегодня»; поиск аккаунта по почте и прямое добавление аккаунта
 (`invites/lookup`, `POST …/members`); гостевые ссылки комнат; таблица и правка дней рождения; доступ к доске;
 удаление и перезагрузка записей; фоны камеры, заметки, звонки DM, пароль, почта, сессии.
 
@@ -175,7 +177,8 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 `id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` относительно
 вызывающего), времена, `kind`, `system`, `sticker`, `forward`. `command` не задан, как во всех REST-ответах.
 У карточки записи `kind: "MESSAGE_KIND_SYSTEM"` и `system.recording.recordingId`; последний id
-нужен для URL транскрипта. В команде, отправленной ответом на карточку, `replyToId` содержит id
+нужен для URL транскрипта. Открытка ачивки (ADR-0061) — тоже `MESSAGE_KIND_SYSTEM`: `system.achievement
+{achievementId, grantId, note, grantedBy}`, автор — получатель. В команде, отправленной ответом на карточку, `replyToId` содержит id
 **сообщения** с карточкой, а не id записи.
 
 `404 NOT_FOUND`: комната недоступна, сообщение отсутствует/удалено, относится к другой комнате

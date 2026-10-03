@@ -27,7 +27,8 @@ workspaces          id, slug (unique), name, icon_file_id, visibility ('private'
                     time_format ('auto'|'h24'|'h12', 'auto') — формат часов для всех времён в пространстве (docs/09 #73; PATCH — MANAGE_WORKSPACE)
 workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest' — старшая встроенная роль),
                     nickname, joined_at,
-                    badge_id? → workspace_badges (ON DELETE SET NULL)   PK (workspace_id, user_id)
+                    badge_id? → workspace_badges (ON DELETE SET NULL),
+                    achievement_count (живые ачивки, ADR-0061)   PK (workspace_id, user_id)
 workspace_badges    id, workspace_id, name (1..32), file_id → files, position, created_at   (docs/09 #82, ≤ 20 в пространстве)
 workspace_backgrounds id, workspace_id, name (1..40), file_id → files, position, created_at (ADR-0035, ≤ 20 в пространстве)
 workspace_sounds    id, workspace_id, name (1..32), emoji (≤ 64 байт, '' = нет), file_id → files, duration_ms (1..5000), position, created_at (ADR-0036, ≤ 50 в пространстве)
@@ -81,6 +82,13 @@ message_reactions   message_id, emoji, user_id, created_at      PK (message_id, 
                     поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
 user_notes          author_id, subject_id, text (1..1000), updated_at   PK (author_id, subject_id) — личная заметка о человеке
 birthday_greetings  user_id, workspace_id, day (местная дата именинника), message_id?, created_at
+achievements        id, title (1..60), description (0..200), image_key ("achievements/<uuid>.webp" в blob.Store),
+                    image_size, width, height (512), position, created_by? → users (SET NULL), created_at,
+                    updated_at, archived_at?      -- каталог ХОСТА (ADR-0061), не пространства
+member_achievements id, workspace_id → workspaces CASCADE, user_id → users CASCADE, achievement_id →
+                    achievements RESTRICT, granted_by? (SET NULL), note (1..120), message_id? → messages (SET NULL),
+                    granted_at, revoked_at?, revoked_by?
+                    INDEX (workspace_id, user_id, granted_at DESC) WHERE revoked_at IS NULL; INDEX (achievement_id)
                     PK (user_id, workspace_id, day) — дедуп карточки дня рождения (docs/09 #76)
 dm_members          room_id, user_id, created_at                PK (room_id, user_id) — ровно два участника DM (ADR-0020)
 dm_state            user_id, room_id, archived_at, cleared_before  PK (user_id, room_id), FK → dm_members — своё состояние DM: архив, «Удалить чат» до id (docs/09 #51)
@@ -318,6 +326,14 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Библиотека пространства (`workspace_badges`, ≤ 20): название 1..32 + картинка — файл этого пространства, загруженный самим администратором (не чужой — бейдж делает файл читаемым всем участникам; не файл стикера; строка `files`, в квоте), PNG / WebP / JPEG ≤ 128 КБ и ≤ 256×256 (размеры сервер берёт из `files.width/height`, измеренных при загрузке). Клиент перед загрузкой обрезает картинку до квадрата и рисует 64×64 WebP (`lib/badgePrepare`). У участника — один бейдж (`workspace_members.badge_id`, `WorkspaceMember.badge_id`); бейдж — свойство членства в пространстве, в DM не показывается.
 - Права: библиотека (создать / переименовать / сменить картинку / удалить) — `MANAGE_MEMBERS` (ADR-0048); назначить / снять — `MANAGE_NICKNAMES` + иерархия `workspaces.outranks` (себе — можно), у ботов бейджа нет (403); список видят все участники (и гости), картинку бейджа читает любой участник пространства (`files.CanRead`, `IsWorkspaceBadge`). Бот-токен: управление — 403 `BOT_NOT_ALLOWED`, `GET …/badges` и `badge_id` у участника — читаются.
 - Доставка как у ролей (ADR-0026): `WorkspaceSnapshot.badges` в READY / WORKSPACE_CREATE, события `BADGE_CREATE` / `BADGE_UPDATE` / `BADGE_DELETE` всем участникам, смена бейджа участника — `WORKSPACE_MEMBER_UPDATE`. Удаление бейджа снимает его у всех (сначала `WORKSPACE_MEMBER_UPDATE` каждому, затем `BADGE_DELETE`); прежняя картинка без ссылок уходит с чисткой сирот (она пропускает живые картинки бейджей).
+
+## Ачивки (ADR-0061, миграция 00061)
+
+- Каталог — один на инсталляцию (`achievements`), ведёт суперадмин (`/api/admin/achievements*`, 404 остальным). Картинка: PNG / WebP с альфой (без прозрачных пикселей — 422 `IMAGE_NEEDS_ALPHA`), ≤ 4 МБ, сторона 128..2048; сервер обрезает по видимой части (+4 %), вписывает в 512×512 и кладёт WebP с альфой в `blob.Store` (`achievements/<uuid>.webp`, вне `files` и квот). Замена картинки — новый ключ, старый удаляется после коммита. Архив (`archived_at`) — нельзя вручать, вручённые видны; удалить можно только ни разу не вручённую (иначе 409 `ACHIEVEMENT_IN_USE`).
+- `GET /api/achievements` — весь каталог по `position` (архивные с `archived_at`), любой аутентифицированный (гости, боты), `ETag` / 304. `GET /api/achievements/images/{uuid}.webp` — `Cache-Control: public, immutable`.
+- Вручение (`member_achievements`) — `MANAGE_MEMBERS`; получатель — участник, не гость, не бот, не сам вручающий (422 `SELF_GRANT`); `note` («за что») 1..120 обязательно; ачивку можно вручить повторно. Отзыв — `revoked_at` (строка остаётся, открытка в чате тоже). Список живых — любой участник, гость — только видимых ему (правило профиля ADR-0051); боты читают, вручать/отзывать — 403 `BOT_NOT_ALLOWED`.
+- `workspace_members.achievement_count` = число живых вручений (`WorkspaceMember.achievement_count`), пересчитывается в транзакции вручения/отзыва (и триггером при повторном вступлении); изменение — `WORKSPACE_MEMBER_UPDATE`. Новых событий нет.
+- Открытка (`announce = true`): в той же транзакции системное сообщение `system.achievement {achievement_id, grant_id, note, granted_by}`, автор — получатель, в комнату `announcement_room()` (первая текстовая, неприватная предпочтительнее — то же правило, что у открытки дня рождения) + строка `message_mentions` получателя (инбокс «Упоминания», счётчики). Нет текстовой комнаты — вручение без открытки (`message_id` пуст).
 
 ## Фоны пространства (ADR-0035, дополнение 29.09)
 

@@ -59,6 +59,7 @@
 | [3.17 Статус звонка и скрытые превью (P0.6)](#317-статус-звонка-и-скрытые-превью-p06) | Статус звонка и скрытые превью (P0.6) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
 | [3.18 Тарифы и лимиты, суперадмин (ADR-0024)](#318-тарифы-и-лимиты-суперадмин-adr-0024) | Тарифы и лимиты, суперадмин | Go, Docker; часть тестов — dev-LiveKit, `lk` | 3 мин |
 | [3.19 Запись встреч и GPTunneL (ADR-0025)](#319-запись-встреч-и-gptunnel-adr-0025) | Запись, pairing, загрузка, карточка | Go, Docker, dev-LiveKit | 2 мин |
+| [3.20 Ачивки (ADR-0061)](#320-ачивки-adr-0061) | Каталог суперадмина, вручение, открытка | Go, Docker | 1 мин |
 | [4. Инфра и стенд](#4-инфра-и-стенд) | контейнеры, сертификаты, `/download/`→releases, LiveKit, relay, нагрузка, защита, бэкапы | ssh к стенду (только чтение), `lk`, openssl | 45 мин |
 | [Хотфикс 0.1.1: сервер (move без SFU, 499)](#server-перемещение-без-sfu-move-хотфикс-011-adr-0019) | app-level move против реального LiveKit, 499 для оборванных запросов | Go, Docker, dev-LiveKit, `lk` | 10 мин |
 | [Приёмка 0.1.1: клиент H.1–H.6](#приёмка-011-хотфикс-десктопа-и-веба) | плашка соединения, диалог «Присоединиться», обводка сообщения, уведомления, 4008, перемещение | Chrome, десктоп, локальный API или стенд | 40 мин |
@@ -1223,6 +1224,16 @@ TEST_REDIS_URL=redis://localhost:56379/6 TEST_RTC_REDIS_DB=5 go test -race -tags
 **Результат и удаление (docs/09 #47, #50, docs/17):** в том же прогоне `TestRecordingResult`: после DONE карточка получает `summary`, `has_transcript`, `audio_until` и вложение `audio/mp4` (`.m4a`), локальный файл удалён; 503 от `/result` повторяется; `GET …/transcript` — участник 200 (реплики, `speaker -1` без разметки), без `VIEW_ROOM` и чужой — 404; старый GPTunneL без методов → `result_state = unavailable`, 404 на транскрипт; через 31 день janitor убирает аудио (карточка без вложения); `DELETE …/recordings/{rid}`: участник без прав — 403, без `VIEW_ROOM` — 404, запустивший — 204 → карточка `deleted_at`/`deleted_by`, файл/транскрипт — 404, `DELETE` в GPTunneL; идущая запись — 409, владелец удаляет чужую.
 Клиент: `pnpm -F @calaba/desktop e2e:visual -g "chat-recording|recording-transcript"` (карточка во всю ширину, саммари «Показать всё», «Послушать запись» играет AAC/MP4 6 с, перемотка; транскрипт: поиск «эталоны» → 2, клик по реплике → плеер; удаление с подтверждением) и `e2e:visual:mobile -g "m-chat-recording"`.
 Руками (стенд, после выкатки API GPTunneL): записать 1–2 мин → «Готово» → в карточке саммари, «Послушать запись» играет с перемоткой и скоростью, «Полный транскрипт» — спикеры и время, клик по реплике перематывает; «Открыть в GPTunneL» ведёт на `gptunnel.ru`; «…» → «Удалить запись» → «Запись встречи удалена» у всех.
+
+### 3.20 Ачивки (ADR-0061)
+
+```sh
+cd apps/server
+go test -race -count=1 ./internal/achievements/
+go test -race -tags integration -count=1 -v -run 'TestAchievements' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `TestPrepareAchievement`, `TestFitRect`, `TestAchievements` — PASS (LiveKit не нужен). Проверяется: картинка без прозрачности → 422 `IMAGE_NEEDS_ALPHA`, итог — 512×512 WebP с альфой, объект обрезан по видимой части и по центру; `/api/admin/achievements*` — 404 не-суперадмину, удаление вручённой → 409 `ACHIEVEMENT_IN_USE`, замена картинки — старый URL 404; `GET /api/achievements` с `ETag` → 304; вручение без `MANAGE_MEMBERS` → 403, себе → 422 `SELF_GRANT`, гостю / боту / архивной / пустое «за что» → 422, бот-токен → 403 `BOT_NOT_ALLOWED`; открытка `system.achievement` (автор — получатель) в первой открытой текстовой комнате и в «Упоминаниях» получателя, без текстовых комнат — без открытки; `achievementCount` в `WORKSPACE_MEMBER_UPDATE`; отзыв — счётчик меньше, открытка осталась; гость видит ачивки только видимых ему участников.
+Руками (стенд, curl): суперадмин `POST /api/admin/achievements` (multipart `image`, `title`) → вручить `POST /api/workspaces/{id}/members/{userId}/achievements {achievementId, note, announce: true}` → в общем чате системное сообщение, у получателя — упоминание.
 
 ---
 
