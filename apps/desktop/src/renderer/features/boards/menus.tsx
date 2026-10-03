@@ -134,7 +134,7 @@ export function ChoiceMenu({
                 <span className="min-w-0 flex-1 truncate" {...(c.title ? { title: c.title } : {})}>
                   {c.label}
                 </span>
-                {c.caption ? <span className={cx('max-w-[55%] shrink truncate text-caption', active ? 'opacity-75' : 'text-muted')}>{c.caption}</span> : null}
+                {c.caption ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{c.caption}</span> : null}
                 {c.note ? <span className={cx('shrink-0 text-caption tabular-nums', active ? 'opacity-75' : 'text-muted')}>{c.note}</span> : null}
                 {c.checked ? <Check className="size-3.5 shrink-0" aria-label={t('boards.selected')} /> : <span className="size-3.5 shrink-0" />}
                 {digits ? (
@@ -266,7 +266,7 @@ export function AssigneeMenu({
       open={open}
       onOpenChange={setOpen}
       multi
-      width={300}
+      width={340}
       groups={groups}
       onPick={(c) => {
         if (c.id === '__none') onNone();
@@ -339,7 +339,7 @@ export function ApproverMenu({
       open={open}
       onOpenChange={setOpen}
       multi
-      width={300}
+      width={340}
       groups={groups}
       onPick={(c) => onToggle(c.id)}
       placeholder={t('boards.approverMenu')}
