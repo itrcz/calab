@@ -37,6 +37,10 @@ on:
         description: 'Publish to the update feed (S3, or the stand when S3 secrets are absent)'
         type: boolean
         default: false
+      require_ci:
+        description: 'Require a successful ci run (push on main or this ref) for the commit being built'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -54,10 +58,15 @@ env:
 
 jobs:
   # A tag must never ship clients pointing to a dead host: the feed and the default server baked into the
-  # build have to answer over valid TLS before anything is built (docs/06 «Домены»).
+  # build have to answer over valid TLS before anything is built (docs/06 «Домены»). And it must never
+  # ship a commit that did not pass ci.yml: on a tag push (and on a dispatch with require_ci) the build
+  # waits for a successful push run of ci.yml for this SHA — on main or on the tag itself (a tag on a
+  # SHA verified on main passes ci in about a minute, see ci.yml).
   preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 20
+    permissions:
+      actions: read   # ci.yml runs of this SHA
     steps:
       - name: update feed and app host answer over TLS
         run: |
@@ -74,6 +83,37 @@ jobs:
           probe "$APP_ORIGIN/api/version" "default server (APP_ORIGIN)"
           probe "$HOMEPAGE/" "site (HOMEPAGE)"
           exit $fail
+
+      - name: ci passed for this commit
+        if: github.event_name == 'push' || inputs.require_ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # push runs of ci.yml for exactly this SHA on main or on this ref: "<conclusion|status> <url>"
+          runs() {
+            gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&per_page=20" \
+              --jq '.workflow_runs[] | select(.head_sha == env.SHA and (.head_branch == "main" or .head_branch == env.REF_NAME))
+                    | "\(.conclusion // .status) \(.html_url)"'
+          }
+          for i in $(seq 1 30); do   # 30 x 30 s = 15 min
+            out=$(runs) || { echo "::warning::Actions API query failed (attempt $i)"; out="pending -"; }
+            ok=$(grep -m1 '^success ' <<<"$out" || true)
+            if [[ -n "$ok" ]]; then echo "ci passed for $SHA: ${ok#success }"; exit 0; fi
+            # every run finished and none succeeded: no point in waiting (the first minute is left for
+            # the tag's own run to appear)
+            if (( i > 2 )) && [[ -n "$out" ]] && ! grep -qvE '^(failure|cancelled|timed_out|action_required|skipped|startup_failure|stale|neutral) ' <<<"$out"; then
+              echo "$out"
+              echo "::error::ci.yml did not pass for $SHA (main or $REF_NAME): fix CI (or re-run it), then re-run this workflow"
+              exit 1
+            fi
+            echo "waiting for ci on $SHA (attempt $i/30): ${out:-no run yet}"
+            sleep 30
+          done
+          echo "::error::no successful ci.yml run for $SHA (main or $REF_NAME) within 15 min: check the ci run of this commit, then re-run this workflow"
+          exit 1
 
   build:
     name: build (${{ matrix.target }})

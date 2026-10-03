@@ -1,5 +1,14 @@
 name: ci
 
+# Tags: verified-SHA fast path. A release tag (v*) usually points to a commit whose push to main already
+# passed this workflow. The `reuse` job asks the Actions API for a successful `push` run of ci.yml on
+# main with exactly this head SHA; if there is one, every test job is skipped (`go integration tests`
+# and `landing …` still report green) and the run concludes `success` within a minute, so images.yml
+# (workflow_run, conclusion == success) starts right away. govulncheck still runs: its result depends
+# on the vulnerability database of today, not on the SHA. A tag on a commit main never tested (or whose
+# main run failed / was docs-only) runs everything, exactly like a push to main. `reuse` never fails:
+# an API error means "not verified" → full run. Pull requests and main pushes are unaffected.
+
 on:
   push:
     branches: [main]
@@ -13,9 +22,58 @@ on:
 permissions:
   contents: read
 
+# PRs: a new push cancels the outdated run. main and tag runs are never cancelled (main must stay
+# green commit by commit, and images.yml waits for the tag run): they get a group of their own
+# (run_id) — a shared group with cancel-in-progress false would still queue them one by one and
+# cancel a pending run when a newer one arrives.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # internal/app integration tests split by the first letter after "Test" into app-N shards, balanced
+  # on per-test times (`go test -v`, 03.10: A-B 170 s, C-I 146 s, J-P 87 s, Q-Z 166 s of tests + ~30 s
+  # build/migrations per shard); app-4 takes everything else. The go job checks that every test of
+  # internal/app is in exactly one shard. Rebalance when a shard drifts.
+  APP_1: '^Test[A-B]'
+  APP_2: '^Test[C-I]'
+  APP_3: '^Test[J-P]'
+  APP_4: '^Test[^A-P]'
+
 jobs:
+  reuse:
+    name: verified on main
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+    outputs:
+      verified: ${{ steps.check.outputs.verified }}
+    steps:
+      - name: successful main run of ci.yml for this SHA
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          run=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0] | select(.head_sha == env.SHA and .head_branch == "main" and .event == "push" and .conclusion == "success") | .html_url') \
+            || { echo "::warning::Actions API query failed: running the full CI"; run=""; }
+          if [[ -n "$run" ]]; then
+            echo "::notice::$SHA already passed ci on main ($run): tests skipped"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no successful ci run on main for $SHA: running the full CI"
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+
   proto:
     name: buf lint / breaking
+    needs: reuse
+    # runs unless the tag's SHA already passed on main; `!cancelled()` keeps it running when `reuse` is skipped
+    if: ${{ !cancelled() && needs.reuse.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,6 +90,9 @@ jobs:
 
   gen-drift:
     name: generated code is up to date
+    needs: reuse
+    # runs unless the tag's SHA already passed on main; `!cancelled()` keeps it running when `reuse` is skipped
+    if: ${{ !cancelled() && needs.reuse.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,13 +110,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      # apps/desktop postinstall compiles uiohook-napi (electron-rebuild): needs the X11 headers on Linux
-      - name: X11 headers for uiohook
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libx11-dev libxtst-dev libxt-dev libxext-dev libxinerama-dev libx11-xcb-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libxkbfile-dev libxrandr-dev
-      - run: pnpm install --frozen-lockfile   # provides protoc-gen-es (local buf plugin)
+      # only protoc-gen-es (local buf plugin, plain JS) is needed: no postinstall, so no uiohook rebuild
+      # and no X11 headers
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: sqlc-dev/setup-sqlc@bac53b7fb28c039a6c7f5736fd1e89744021bdd6 # v5.0.0
         with:
           sqlc-version: '1.31.1'
@@ -68,6 +125,9 @@ jobs:
 
   go:
     name: go vet / test / lint
+    needs: reuse
+    # runs unless the tag's SHA already passed on main; `!cancelled()` keeps it running when `reuse` is skipped
+    if: ${{ !cancelled() && needs.reuse.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -86,11 +146,24 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-unit-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/server/go.sum') }}
-          restore-keys: go-unit-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-
+          # also holds the -race -tags integration build of internal/app (shard coverage check below)
+          key: go-unit-it-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/server/go.sum') }}
+          restore-keys: go-unit-it-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+      # Every test of internal/app runs in exactly one app-N integration shard: fail on gaps and overlaps
+      # (a test named outside the regexes would silently never run). `-list` needs no services (TestMain).
+      - name: shards cover internal/app exactly once
+        run: |
+          list() { go test -race -tags integration -list "$1" ./internal/app | grep -E '^(Test|Example|Fuzz)' | sort; }
+          d="$RUNNER_TEMP"; list '.*' > "$d/all"
+          for i in 1 2 3 4; do re="APP_$i"; list "${!re}" > "$d/$i"; done
+          overlap=$(sort "$d"/[1-4] | uniq -d)
+          gaps=$(sort -u "$d"/[1-4] | comm -23 "$d/all" -)
+          echo "internal/app: $(wc -l < "$d/all") tests; app-1 $(wc -l < "$d/1"), app-2 $(wc -l < "$d/2"), app-3 $(wc -l < "$d/3"), app-4 $(wc -l < "$d/4")"
+          [[ -z "$overlap" ]] || { echo "::error::in two shards: $overlap"; exit 1; }
+          [[ -z "$gaps" ]] || { echo "::error::in no shard (fix APP_1..4 in ci.yml): $gaps"; exit 1; }
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.14.0
@@ -103,6 +176,8 @@ jobs:
 
   govulncheck:
     name: govulncheck
+    needs: reuse
+    if: ${{ !cancelled() }}   # also on verified tags: the vulnerability database changes, the SHA does not
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -118,22 +193,19 @@ jobs:
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   # Integration tests in parallel shards (internal/app runs its tests one after another in one
-  # process — ~5.5 min in a single job): internal/app split by test name, every other package in its
-  # own shard. PostgreSQL 17 only: one compatibility baseline on every run (owner, 2026-10-01).
+  # process — ~10 min in a single job): internal/app split by test name (APP_1..4 above), every other
+  # package in its own shard. PostgreSQL 17 only: one compatibility baseline on every run (owner, 2026-10-01).
   go-integration-shard:
     name: go integration ${{ matrix.shard }} (PostgreSQL ${{ matrix.pg }})
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         pg: ['17']
-        shard: [app-1, app-2, app-3, rest]
+        shard: [app-1, app-2, app-3, app-4, rest]
     env:
-      # internal/app split by the first letter after "Test", balanced on CI step times (30.09: ~2 min
-      # each); app-3 takes everything else and runs the coverage check. Rebalance when a shard drifts.
-      APP_1: '^Test[A-E]'
-      APP_2: '^Test[F-P]'
-      APP_3: '^Test[^A-P]'
       # Admin URL of the service database: every package creates its own database from it.
       # TEST_PG_URL is the same URL for tests that read only that name (internal/oauthprovider).
       TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba
@@ -193,18 +265,6 @@ jobs:
         if: matrix.shard == 'rest'   # only internal/blob uses S3
         timeout-minutes: 3   # pull + start take ~3 s; a hung registry must not hold the required job
         run: internal/blob/testdata/garage.sh >> "$GITHUB_ENV"
-      # Every test of internal/app runs in exactly one app-N shard: fail on gaps and overlaps (a test named
-      # outside the regexes would silently never run). Same build flags as the run below (cached build).
-      - name: shards cover internal/app exactly once
-        if: matrix.shard == 'app-3'
-        run: |
-          list() { go test -race -tags integration -list "$1" ./internal/app | grep -E '^(Test|Example|Fuzz)' | sort; }
-          d="$RUNNER_TEMP"; list '.*' > "$d/all"; list "$APP_1" > "$d/1"; list "$APP_2" > "$d/2"; list "$APP_3" > "$d/3"
-          overlap=$(sort "$d/1" "$d/2" "$d/3" | uniq -d)
-          gaps=$(sort -u "$d/1" "$d/2" "$d/3" | comm -23 "$d/all" -)
-          echo "internal/app: $(wc -l < "$d/all") tests; app-1 $(wc -l < "$d/1"), app-2 $(wc -l < "$d/2"), app-3 $(wc -l < "$d/3")"
-          [[ -z "$overlap" ]] || { echo "::error::in two shards: $overlap"; exit 1; }
-          [[ -z "$gaps" ]] || { echo "::error::in no shard (fix APP_1..3 in ci.yml): $gaps"; exit 1; }
       - name: go test (${{ matrix.shard }})
         env:
           SHARD: ${{ matrix.shard }}
@@ -213,27 +273,33 @@ jobs:
             app-1) go test -race -tags integration -count=1 -run "$APP_1" ./internal/app ;;
             app-2) go test -race -tags integration -count=1 -run "$APP_2" ./internal/app ;;
             app-3) go test -race -tags integration -count=1 -run "$APP_3" ./internal/app ;;
+            app-4) go test -race -tags integration -count=1 -run "$APP_4" ./internal/app ;;
             rest) mapfile -t pkgs < <(go list ./... | grep -v '/internal/app$')
                   go test -race -tags integration -count=1 "${pkgs[@]}" ;;
             *) echo "unknown shard $SHARD"; exit 1 ;;
           esac
 
   # The required check of branch protection keeps its name: green only when every shard is green
+  # (or, on a tag whose SHA already passed on main, when the shards were skipped on purpose)
   go-integration:
     name: go integration tests
     if: always()
-    needs: go-integration-shard
+    needs: [reuse, go-integration-shard]
     runs-on: ubuntu-latest
     steps:
       - name: all shards passed
         env:
           RESULT: ${{ needs.go-integration-shard.result }}
+          VERIFIED: ${{ needs.reuse.outputs.verified }}
         run: |
-          echo "shards: $RESULT"
-          test "$RESULT" = success
+          echo "shards: $RESULT (verified on main: ${VERIFIED:-n/a})"
+          [[ "$RESULT" == success || ( "$VERIFIED" == true && "$RESULT" == skipped ) ]]
 
   ts:
     name: pnpm typecheck / test
+    needs: reuse
+    # runs unless the tag's SHA already passed on main; `!cancelled()` keeps it running when `reuse` is skipped
+    if: ${{ !cancelled() && needs.reuse.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -256,28 +322,26 @@ jobs:
       # Bot SDK (ADR-0031): lint and the node bundle the examples run from
       - run: pnpm -F @calaba/bot-sdk lint
       - run: pnpm -F @calaba/bot-sdk build
-
-  landing:
-    name: landing lint / typecheck / build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: pnpm
-      # apps/desktop postinstall compiles uiohook-napi (electron-rebuild): needs the X11 headers on Linux
-      - name: X11 headers for uiohook
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libx11-dev libxtst-dev libxt-dev libxext-dev libxinerama-dev libx11-xcb-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libxkbfile-dev libxrandr-dev
-      - run: pnpm install --frozen-lockfile
-      # pnpm runs one script per invocation, hence three steps
+      # Landing (static export): typecheck is covered by `pnpm -r typecheck`; pnpm runs one script per
+      # invocation, hence separate steps
       - run: pnpm -F @calaba/landing lint
-      - run: pnpm -F @calaba/landing typecheck
       - run: pnpm -F @calaba/landing build
       - run: test -f apps/landing/out/index.html
+
+  # Alias of the required check «landing lint / typecheck / build» (branch protection): the landing is
+  # checked in `ts` now. Drop this job after removing the check from the protection of main.
+  landing:
+    name: landing lint / typecheck / build
+    if: always()
+    needs: [reuse, ts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: landing checked in «pnpm typecheck / test»
+        env:
+          RESULT: ${{ needs.ts.result }}
+          VERIFIED: ${{ needs.reuse.outputs.verified }}
+        run: |
+          echo "ts: $RESULT (verified on main: ${VERIFIED:-n/a})"
+          [[ "$RESULT" == success || ( "$VERIFIED" == true && "$RESULT" == skipped ) ]]
+

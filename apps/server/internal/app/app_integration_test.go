@@ -72,6 +72,11 @@ func env(k, def string) string {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
+	// `go test -list` only prints names: no database, Redis or LiveKit (the CI shard coverage check
+	// runs it in the go job, which has no services).
+	if f := flag.Lookup("test.list"); f != nil && f.Value.String() != "" {
+		os.Exit(m.Run())
+	}
 	os.Exit(run(m))
 }
 
