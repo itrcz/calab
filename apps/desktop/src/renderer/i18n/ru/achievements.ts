@@ -41,7 +41,7 @@ export const ruAchievements = {
   'ach.grant.notePh': 'Коротко: за что вручаете',
   'ach.grant.announce': 'Рассказать в общем чате → #{room}',
   'ach.grant.noRoom': 'В пространстве нет общего чата — открытки не будет.',
-  'ach.grant.keys': '↑↓←→ — выбор ачивки, {mod}↩ — вручить',
+  'ach.grant.keys': '↑↓←→ — выбор, {mod}↩ — вручить',
   'ach.grant.submit': 'Вручить',
   'ach.grant.done': 'Ачивка вручена',
   'ach.grant.failed': 'Не удалось вручить ачивку',

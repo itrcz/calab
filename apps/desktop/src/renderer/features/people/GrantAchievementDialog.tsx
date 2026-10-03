@@ -85,6 +85,14 @@ export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }
       initialFocus={search}
       footer={
         <>
+          {/* The hint (or the error) is part of the footer row: left, the buttons right — never under it. */}
+          {error ? (
+            <p role="alert" className="mr-auto min-w-0 self-center text-caption text-danger-text">
+              {error}
+            </p>
+          ) : (
+            <p className="mr-auto min-w-0 self-center truncate text-caption text-muted mobile:hidden">{t('ach.grant.keys', { mod: MOD })}</p>
+          )}
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
@@ -104,7 +112,7 @@ export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }
             role="listbox"
             aria-label={t('ach.grant.pick')}
             onKeyDown={onGridKey}
-            className="grid max-h-[260px] grid-cols-[repeat(auto-fill,88px)] justify-between gap-2 overflow-y-auto p-0.5"
+            className="grid max-h-[min(260px,calc(100vh-420px))] min-h-[120px] grid-cols-[repeat(auto-fill,88px)] justify-between gap-2 overflow-y-auto p-0.5"
           >
             {items.map((a, i) => (
               <Tile key={a.id} a={a} selected={a.id === picked} tabbable={a.id === picked || (!picked && i === 0)} onPick={pick} />
@@ -133,13 +141,6 @@ export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }
           <p className="text-caption text-muted" data-testid="grant-no-room">
             {t('ach.grant.noRoom')}
           </p>
-        )}
-        {error ? (
-          <p role="alert" className="text-caption text-danger-text">
-            {error}
-          </p>
-        ) : (
-          <p className="text-caption text-faint">{t('ach.grant.keys', { mod: MOD })}</p>
         )}
       </div>
     </Modal>
