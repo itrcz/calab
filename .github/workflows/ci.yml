@@ -23,9 +23,11 @@ permissions:
   contents: read
 
 # PRs: a new push cancels the outdated run. main and tag runs are never cancelled (main must stay
-# green commit by commit, and images.yml waits for the tag run).
+# green commit by commit, and images.yml waits for the tag run): they get a group of their own
+# (run_id) — a shared group with cancel-in-progress false would still queue them one by one and
+# cancel a pending run when a newer one arrives.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
