@@ -1,6 +1,7 @@
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole } from '@calaba/protocol';
-import { CalendarPlus, CalendarSync, Clock, ExternalLink, Mail, MapPin } from 'lucide-react';
+import { CalendarPlus, CalendarSync, Clock, ExternalLink, Mail, MapPin, Trash2, Video } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, cx } from '../../components/ui';
@@ -13,16 +14,19 @@ import { calendarAvailable } from '../../services/calendar';
 import { selectExternalDay, useFreeBusy } from '../../stores/freebusy';
 import { myUserId, useSession } from '../../stores/session';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
-import { popoverBox } from '../shell/menu';
-import { newEvent } from './actions';
+import { menuBox, menuItem, popoverBox } from '../shell/menu';
+import { deleteExternalWithConfirm, newEvent } from './actions';
 import { PX_PER_MIN } from './gridParts';
 
 /*
  * My external calendar's events in my day (ADR-0045 §3, docs/08 «Календарь»): a card in the
  * «external» style — dashed outline, `CalendarSync`, muted — with the title, the time and the place;
  * a click opens a popover with the attendees (members of this workspace with their avatar and
- * name, the others by address), «Открыть» (the event's link) and «Создать встречу в Calab» — the
- * meeting dialog prefilled with the title, the time and the attendees who are members here.
+ * name, the others by address), «Подключиться» (the conference link) and «Открыть в календаре»
+ * (the provider's page of the event, only when the server could build it — ADR-0045 amendment 1),
+ * «Удалить из календаря» (a series: «only this» / «the whole series») and «Создать встречу в
+ * Calab» — the meeting dialog prefilled with the title, the time and the attendees who are members
+ * here.
  */
 
 /** The event behind a grid key, from the day's list (the same object until that day is reloaded). */
@@ -186,6 +190,23 @@ function ExternalDetails({ workspaceId, ev, onDone }: { workspaceId: string; ev:
           </li>
         ) : null}
       </ul>
+      {ev.url || ev.webUrl ? (
+        <div className="flex flex-wrap gap-2" data-testid="external-links">
+          {ev.url ? (
+            // Synchronously in the click: the web build's window.open must not be blocked.
+            <Button variant="secondary" size="sm" onClick={() => void platform.app.openExternal(ev.url)} title={ev.url} data-testid="external-join">
+              <Video className="size-3.5" aria-hidden />
+              {t('ext.join')}
+            </Button>
+          ) : null}
+          {ev.webUrl ? (
+            <Button variant="ghost" size="sm" onClick={() => void platform.app.openExternal(ev.webUrl)} title={ev.webUrl} data-testid="external-open-calendar">
+              <ExternalLink className="size-3.5" aria-hidden />
+              {t('ext.openCalendar')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {ev.attendees.length ? (
         <div className="flex flex-col gap-0.5">
           <p className="text-caption font-medium text-muted">{t('ext.attendees', { n: ev.attendees.length })}</p>
@@ -196,21 +217,52 @@ function ExternalDetails({ workspaceId, ev, onDone }: { workspaceId: string; ev:
           </ul>
         </div>
       ) : null}
-      <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-3">
-        {ev.url ? (
-          <Button variant="secondary" size="sm" onClick={() => void platform.app.openExternal(ev.url)} data-testid="external-open">
-            <ExternalLink className="size-3.5" aria-hidden />
-            {t('ext.open')}
-          </Button>
-        ) : null}
-        {creatable ? (
-          <Button size="sm" onClick={create} data-testid="external-create">
-            <CalendarPlus className="size-3.5" aria-hidden />
-            {t('ext.create')}
-          </Button>
-        ) : null}
-      </div>
+      {ev.href || creatable ? (
+        // The main action first; «Удалить из календаря» wraps under it in the 320 px popover.
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          {creatable ? (
+            <Button size="sm" onClick={create} data-testid="external-create">
+              <CalendarPlus className="size-3.5" aria-hidden />
+              {t('ext.create')}
+            </Button>
+          ) : null}
+          {ev.href ? <DeleteButton ev={ev} onDone={onDone} /> : null}
+        </div>
+      ) : null}
     </>
+  );
+}
+
+/**
+ * «Удалить из календаря» (ADR-0045 amendment 1); a series offers this occurrence or all of them.
+ * The popover closes first, then the confirmation (it says whom the delete reaches).
+ */
+function DeleteButton({ ev, onDone }: { ev: ExternalEvent; onDone: () => void }): ReactNode {
+  const run = (scope: 'this' | 'series'): void => {
+    onDone();
+    void deleteExternalWithConfirm(ev, scope);
+  };
+  const button = (
+    <Button size="sm" variant="destructive" onClick={ev.recurring ? undefined : () => run('this')} data-testid="external-delete">
+      <Trash2 className="size-3.5" aria-hidden />
+      {t('ext.delete')}
+    </Button>
+  );
+  if (!ev.recurring) return button;
+  return (
+    <Dropdown.Root modal={false}>
+      <Dropdown.Trigger asChild>{button}</Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="start" collisionPadding={16} data-testid="external-delete-menu">
+          <Dropdown.Item className={menuItem} onSelect={() => run('this')}>
+            {t('ext.deleteOne')}
+          </Dropdown.Item>
+          <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => run('series')}>
+            {t('ext.deleteSeries')}
+          </Dropdown.Item>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
   );
 }
 

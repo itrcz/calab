@@ -178,3 +178,19 @@ describe('web media cache (review M10)', () => {
     expect(fetchSpy.mock.calls.filter((c) => c[0] === '/api/files/slow')).toHaveLength(1);
   });
 });
+
+describe('web openExternal (ADR-0045 amendment 1: «Подключиться» of an external event)', () => {
+  it('opens http(s) links whatever the case of the scheme, refuses other schemes', async () => {
+    const opened: string[] = [];
+    vi.stubGlobal('open', (u: string) => {
+      opened.push(u);
+      return null;
+    });
+    await platform.app.openExternal('https://telemost.yandex.ru/j/1');
+    await platform.app.openExternal('HTTPS://Zoom.us/j/9');
+    await platform.app.openExternal('  https://meet.google.com/abc-defg-hij ');
+    await platform.app.openExternal('javascript:alert(1)');
+    await platform.app.openExternal('file:///etc/passwd');
+    expect(opened).toEqual(['https://telemost.yandex.ru/j/1', 'HTTPS://Zoom.us/j/9', 'https://meet.google.com/abc-defg-hij']);
+  });
+});

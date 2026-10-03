@@ -250,7 +250,7 @@ export function registerIpc(): void {
     else log.info('[renderer]', msg);
   });
   handle(IPC.appOpenExternal, (_e, a) => {
-    const url = str(a, 2048);
+    const url = str(a, 2048).trim();
     // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
     if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
     return shell.openExternal(url);

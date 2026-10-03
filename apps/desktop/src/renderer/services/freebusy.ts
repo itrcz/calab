@@ -1,7 +1,16 @@
 import { t } from '../i18n';
-import { eventsByDay, mergeDays } from '../lib/calendar/external';
+import { eventsByDay, mergeDays, restoreExternal, withoutExternal } from '../lib/calendar/external';
 import { chunksIn, CHUNK_MS, replaceBusy, type WorkHours } from '../lib/calendar/freebusy';
-import { freebusyApi, type BusyInterval, type CalDavAccount, type ShareLevel } from '../lib/calendar/freebusyApi';
+import {
+  externalChanged,
+  externalReadOnly,
+  freebusyApi,
+  type BusyInterval,
+  type CalDavAccount,
+  type ExternalDeleteScopeName,
+  type ExternalEvent,
+  type ShareLevel,
+} from '../lib/calendar/freebusyApi';
 import { MAX_PEOPLE } from '../lib/calendar/people';
 import { log } from '../lib/log';
 import { entryKey, useFreeBusy, type FbEntry } from '../stores/freebusy';
@@ -213,5 +222,34 @@ async function loadExternal(ws: string, chunk: number): Promise<void> {
       delete externalChunks[chunk];
       return { externalChunks };
     });
+  }
+}
+
+/**
+ * «Удалить из календаря» (ADR-0045 amendment 1): the event (a series, or one without repeats —
+ * every occurrence; else this occurrence) leaves my day at once and comes back if the server
+ * refuses: 409 — it changed in the calendar (the server imported it again: my events are asked
+ * anew), 422 — the calendar is read-only. My busy windows are asked again after a success.
+ */
+export async function deleteExternalEvent(ev: ExternalEvent, scope: ExternalDeleteScopeName): Promise<boolean> {
+  const whole = scope === 'series' || !ev.recurring;
+  const ws = fb().externalWs;
+  const { days, removed } = withoutExternal(fb().external, ev, whole);
+  useFreeBusy.setState({ external: days });
+  try {
+    await freebusyApi.deleteExternal(ev, whole ? 'series' : 'this');
+    invalidateMe();
+    return true;
+  } catch (e) {
+    useFreeBusy.setState((s) => (s.externalWs === ws ? { external: restoreExternal(s.external, removed) } : s));
+    if (externalChanged(e)) {
+      toast.error(t('ext.deleteChanged'));
+      // Imported again by the server: the shown days ask for my events anew (the held ones stay
+      // until the answer replaces them), my busy windows too.
+      useFreeBusy.setState((s) => (s.externalWs === ws ? { externalChunks: {} } : s));
+      invalidateMe();
+    } else if (externalReadOnly(e)) toast.error(t('ext.deleteReadOnly'));
+    else toast.fail(e, t('ext.deleteFailed'));
+    return false;
   }
 }
