@@ -90,69 +90,80 @@ export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }
       open
       onClose={onClose}
       title={t('ach.grant.title', { name })}
-      initialFocus={search}
+      {...(noneAtAll ? {} : { initialFocus: search })}
       footer={
-        <>
-          {/* The hint (or the error) is part of the footer row: left, the buttons right — never under it. */}
-          {error ? (
-            <p role="alert" className="mr-auto min-w-0 self-center text-caption text-danger-text">
-              {error}
-            </p>
-          ) : (
-            <p className="mr-auto min-w-0 self-center truncate text-caption text-muted mobile:hidden">{t('ach.grant.keys', { mod: MOD })}</p>
-          )}
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
+        noneAtAll ? (
+          // Nothing to grant: only the empty state and «Закрыть».
+          <Button variant="secondary" onClick={onClose} data-testid="grant-close">
+            {t('common.close')}
           </Button>
-          <GrantSubmit enabled={ok} busy={busy} onClick={() => void submit()} />
-        </>
+        ) : (
+          <>
+            {/* The hint (or the error) is part of the footer row: left, the buttons right — never under it. */}
+            {error ? (
+              <p role="alert" className="mr-auto min-w-0 self-center text-caption text-danger-text">
+                {error}
+              </p>
+            ) : (
+              <p className="mr-auto min-w-0 self-center truncate text-caption text-muted mobile:hidden">{t('ach.grant.keys', { mod: MOD })}</p>
+            )}
+            <Button variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <GrantSubmit enabled={ok} busy={busy} onClick={() => void submit()} />
+          </>
+        )
       }
     >
-      <div className="flex flex-col gap-3" onKeyDown={onKey} data-testid="grant-achievement">
-        <Input ref={search} type="search" icon={<Search className="size-3.5" aria-hidden />} placeholder={t('ach.grant.search')} aria-label={t('ach.grant.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
-        {!catalog ? (
-          <Spinner className="mx-auto my-6" />
-        ) : noneAtAll ? (
+      {noneAtAll ? (
+        <div data-testid="grant-achievement">
           <GrantEmpty canManage={manageCatalog} onOpenSettings={() => openCatalogSettings(workspaceId)} />
-        ) : items.length === 0 ? (
-          <p className="py-6 text-center text-body text-muted">{t('ach.grant.none')}</p>
-        ) : (
-          <div
-            ref={grid}
-            role="listbox"
-            aria-label={t('ach.grant.pick')}
-            onKeyDown={onGridKey}
-            className="grid max-h-[min(260px,calc(100vh-420px))] min-h-[120px] grid-cols-[repeat(auto-fill,88px)] justify-between gap-2 overflow-y-auto p-0.5"
-          >
-            {items.map((a, i) => (
-              <Tile key={a.id} a={a} selected={a.id === picked} tabbable={a.id === picked || (!picked && i === 0)} onPick={pick} />
-            ))}
-          </div>
-        )}
-        <label className="flex flex-col gap-1">
-          <span className="flex items-center justify-between text-caption font-medium text-muted">
-            <span>{t('ach.grant.note')}</span>
-            <span className={cx('tabular-nums', note.trim().length > NOTE_MAX ? 'text-danger-text' : 'text-faint')} aria-hidden>
-              {note.trim().length}/{NOTE_MAX}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3" onKeyDown={onKey} data-testid="grant-achievement">
+          <Input ref={search} type="search" icon={<Search className="size-3.5" aria-hidden />} placeholder={t('ach.grant.search')} aria-label={t('ach.grant.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
+          {!catalog ? (
+            <Spinner className="mx-auto my-6" />
+          ) : items.length === 0 ? (
+            <p className="py-6 text-center text-body text-muted">{t('ach.grant.none')}</p>
+          ) : (
+            <div
+              ref={grid}
+              role="listbox"
+              aria-label={t('ach.grant.pick')}
+              onKeyDown={onGridKey}
+              className="grid max-h-[min(260px,calc(100vh-420px))] min-h-[120px] grid-cols-[repeat(auto-fill,88px)] justify-between gap-2 overflow-y-auto p-0.5"
+            >
+              {items.map((a, i) => (
+                <Tile key={a.id} a={a} selected={a.id === picked} tabbable={a.id === picked || (!picked && i === 0)} onPick={pick} />
+              ))}
+            </div>
+          )}
+          <label className="flex flex-col gap-1">
+            <span className="flex items-center justify-between text-caption font-medium text-muted">
+              <span>{t('ach.grant.note')}</span>
+              <span className={cx('tabular-nums', note.trim().length > NOTE_MAX ? 'text-danger-text' : 'text-faint')} aria-hidden>
+                {note.trim().length}/{NOTE_MAX}
+              </span>
             </span>
-          </span>
-          <Input
-            data-testid="grant-note"
-            required
-            maxLength={NOTE_MAX}
-            placeholder={t('ach.grant.notePh')}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </label>
-        {roomId ? (
-          <Switch checked={announce} onChange={setAnnounce} label={t('ach.grant.announce', { room: roomName })} />
-        ) : (
-          <p className="text-caption text-muted" data-testid="grant-no-room">
-            {t('ach.grant.noRoom')}
-          </p>
-        )}
-      </div>
+            <Input
+              data-testid="grant-note"
+              required
+              maxLength={NOTE_MAX}
+              placeholder={t('ach.grant.notePh')}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+          {roomId ? (
+            <Switch checked={announce} onChange={setAnnounce} label={t('ach.grant.announce', { room: roomName })} />
+          ) : (
+            <p className="text-caption text-muted" data-testid="grant-no-room">
+              {t('ach.grant.noRoom')}
+            </p>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
