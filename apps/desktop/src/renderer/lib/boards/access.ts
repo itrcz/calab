@@ -24,6 +24,7 @@ export function taskBits(board: Pick<Board, 'permissions' | 'taskScoped'> | unde
 export const boardScoped = (b: Pick<Board, 'taskScoped'> | undefined): boolean => !!b?.taskScoped;
 
 const VIEW_BOARD = BigInt(Permission.VIEW_BOARD);
+const MANAGE_BOARD = BigInt(Permission.MANAGE_BOARD);
 
 /**
  * How the assignee / approver pickers treat a member (ADR-0059 §5): `hidden` (guest, or a bot
@@ -34,13 +35,15 @@ const VIEW_BOARD = BigInt(Permission.VIEW_BOARD);
 export type PickerAccess = 'hidden' | 'ok' | 'card' | 'closed';
 
 export function pickerAccess(
-  board: Pick<Board, 'permissionOverrides' | 'isPrivate' | 'restricted'> | undefined,
+  board: Pick<Board, 'permissionOverrides' | 'isPrivate' | 'restricted' | 'permissions'> | undefined,
   roles: readonly Role[],
   m: Pick<WorkspaceMember, 'role' | 'roleIds' | 'user'>,
 ): PickerAccess {
   if (m.role === WorkspaceRole.GUEST) return 'hidden';
-  // Without the board (not loaded) nothing is known: behave as before ADR-0059.
-  const sees = !board || (computeMemberBoardPermissions(rolesOfMember(roles, m), m.user?.id ?? '', board.permissionOverrides, board.isPrivate, false, board.restricted) & VIEW_BOARD) !== 0n;
+  // The server sends permissionOverrides only to viewers with MANAGE_BOARD: without them nobody's
+  // access is known, so no guessing (no captions, nothing disabled; the server validates, 422 → toast).
+  if (!board || (board.permissions & MANAGE_BOARD) === 0n) return 'ok';
+  const sees = (computeMemberBoardPermissions(rolesOfMember(roles, m), m.user?.id ?? '', board.permissionOverrides, board.isPrivate, false, board.restricted) & VIEW_BOARD) !== 0n;
   if (sees) return 'ok';
   if (m.user?.isBot) return 'hidden';
   return board.restricted ? 'closed' : 'card';

@@ -65,9 +65,11 @@ describe('taskBits (the table of taskPermissions)', () => {
 describe('pickerAccess / accessChoice (the assignee and approver pickers)', () => {
   const roles = legacyRoles('w');
   const member = (role: WorkspaceRole, isBot = false) => create(WorkspaceMemberSchema, { role, user: create(UserSchema, { id: 'u', isBot }) });
-  const publicBoard = board();
-  const privateBoard = board({ isPrivate: true });
-  const closedBoard = board({ isPrivate: true, restricted: true });
+  const MANAGE = PERMISSION_BITS.MANAGE_BOARD;
+  // The viewer holds MANAGE_BOARD, so the board carries permissionOverrides.
+  const publicBoard = board({ permissions: VIEW | MANAGE });
+  const privateBoard = board({ permissions: VIEW | MANAGE, isPrivate: true });
+  const closedBoard = board({ permissions: VIEW | MANAGE, isPrivate: true, restricted: true });
 
   it('a member who sees the board: plain row', () => {
     expect(pickerAccess(publicBoard, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
@@ -96,5 +98,11 @@ describe('pickerAccess / accessChoice (the assignee and approver pickers)', () =
   });
   it('an unknown board changes nothing (the pre-ADR-0059 list)', () => {
     expect(pickerAccess(undefined, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
+  });
+  it('without MANAGE_BOARD (no permissionOverrides sent) nothing is guessed: no caption, nothing disabled', () => {
+    for (const b of [board({ permissions: VIEW, isPrivate: true }), board({ permissions: VIEW, isPrivate: true, restricted: true }), board({ permissions: 0n, taskScoped: true, isPrivate: true })]) {
+      expect(pickerAccess(b, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
+    }
+    expect(pickerAccess(board({ permissions: VIEW }), roles, member(WorkspaceRole.GUEST))).toBe('hidden');
   });
 });

@@ -72,6 +72,8 @@ export const TaskCard = memo(function TaskCard({
     (e: MouseEvent) => {
       const ui = useBoardsUi.getState();
       if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        // No selection without a bulk bar on a scoped board (ADR-0059).
+        if (useBoards.getState().boards[boardId]?.taskScoped) return;
         ui.toggleSelected(id);
         ui.setFocused(id);
         return;
@@ -80,7 +82,7 @@ export const TaskCard = memo(function TaskCard({
       ui.setFocused(id);
       ui.openTask(id);
     },
-    [id],
+    [id, boardId],
   );
 
   if (!task) return null;
