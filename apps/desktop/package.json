@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "pnpm build:app && playwright test",
-    "build:app": "node -e \"require('fs').rmSync('build/.gen/bundled-desktop.json',{force:true})\" && electron-vite build && node scripts/third-party-notices.mjs --bundled build/.gen/bundled-desktop.json --with-prod --out build/.gen/THIRD-PARTY-NOTICES.txt",
+    "build:app": "node -e \"require('fs').rmSync('build/.gen/bundled-desktop.json',{force:true})\" && electron-vite build && node scripts/third-party-notices.mjs --bundled build/.gen/bundled-desktop.json --with-prod --out build/.gen/THIRD-PARTY-NOTICES.txt && node scripts/check-main-bundle.mjs",
     "build:web": "node -e \"require('fs').rmSync('build/.gen/bundled-web.json',{force:true})\" && vite build --config vite.web.config.ts --mode web && node scripts/third-party-notices.mjs --bundled build/.gen/bundled-web.json --out dist-web/THIRD-PARTY-NOTICES.txt && node -e \"const f=require('fs');f.copyFileSync('../../LICENSE','dist-web/LICENSE.txt');f.copyFileSync('../../NOTICE','dist-web/NOTICE.txt');f.copyFileSync('../../COMMERCIAL-LICENSE.md','dist-web/COMMERCIAL-LICENSE.txt')\" && node scripts/check-web-bundle.mjs",
     "dev:web": "vite --config vite.web.config.ts --mode web",
     "preview:web": "vite preview --config vite.web.config.ts --mode web",
@@ -79,7 +79,7 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.0",
     "typescript-eslint": "~8.70.1",
-    "vite": "^8.3.1",
+    "vite": "~7.3.6",
     "vitest": "^3.0.0",
     "ws": "^8.22.0",
     "zustand": "^5.0.15"
