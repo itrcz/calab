@@ -286,3 +286,36 @@ export function revealScroll(span: Span, origin: number, px: number, zoom: Zoom)
   const lead = zoom === 'week' ? 2 : zoom === 'month' ? 4 : 14;
   return Math.max(0, (span.start - origin - lead) * px);
 }
+
+/** Minimum gap (px) between two milestone labels, and between a label and the visible edge. */
+export const LABEL_GAP = 6;
+const LABEL_CHAR_PX = 6.3; // text-micro, average glyph advance (cheap estimate, no DOM reads)
+const LABEL_MAX_PX = 112; // max-w-28
+
+/** Estimated width (px) of a milestone label: chars × average advance, capped (the label truncates). */
+export function labelWidth(name: string): number {
+  return Math.min(LABEL_MAX_PX, Math.ceil(Array.from(name).length * LABEL_CHAR_PX));
+}
+
+/**
+ * Where the names under a bar's milestone diamonds go. `xs` — diamond centres (px, content
+ * coordinates), `widths` — label widths, `minX` — the visible content's left edge (the sticky
+ * column's right edge). Returns, per input, the label's left edge: centred under its diamond, or
+ * shifted right just enough to clear the previous visible label (gap >= `gap`) and the edge; `null`
+ * (hidden, the diamond's tooltip carries the name) when the shift would leave the diamond before
+ * the label's start. Pure; labels are laid out left to right whatever the input order.
+ */
+export function layoutLabels(xs: readonly number[], widths: readonly number[], minX: number, gap = LABEL_GAP): (number | null)[] {
+  const out: (number | null)[] = xs.map(() => null);
+  const order = xs.map((_, i) => i).sort((a, b) => (xs[a] ?? 0) - (xs[b] ?? 0));
+  let edge = minX + gap;
+  for (const i of order) {
+    const x = xs[i] ?? 0;
+    const w = widths[i] ?? 0;
+    const left = Math.max(x - w / 2, edge);
+    if (left > x) continue; // the diamond would stand before the label's start: no room
+    out[i] = left;
+    edge = left + w + gap;
+  }
+  return out;
+}

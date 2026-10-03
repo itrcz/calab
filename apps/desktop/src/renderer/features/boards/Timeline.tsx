@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, ChevronRight } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react';
+import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { BoardFeature, type BoardMilestone, type TaskMilestone } from '@calaba/protocol';
 import { Button, Segmented, cx } from '../../components/ui';
@@ -20,7 +21,9 @@ import {
   dragSpan,
   isWeekend,
   isoDay,
+  labelWidth,
   lateBlockers,
+  layoutLabels,
   monthLabel,
   nextMonth,
   offscreenSide,
@@ -146,6 +149,10 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
         : { first: r.first, last: r.last, d0: d.start, d1: d.end, v0: v.start, v1: v.end },
     );
   }, [rows.length, head, rowH, px, range, left, origin]);
+  // The visible edge for the milestone labels: the sticky column's end, day-precise.
+  useEffect(() => {
+    useLabelEdge.setState({ x: left + (win.v0 - origin) * px });
+  }, [win.v0, origin, px, left]);
   const frame = useRef(0);
   const onScroll = useCallback(() => {
     if (frame.current) return;
@@ -699,9 +706,8 @@ const TimelineRow = memo(function TimelineRow({
           </>
         ) : null}
       </div>
-      {milestones
-        ? task.milestones.map((m) => <TaskDiamond key={m.id} m={m} origin={origin} px={px} left={left} top={barTop + barH / 2} label={!compact} today={today} />)
-        : null}
+      {milestones ? task.milestones.map((m) => <TaskDiamond key={m.id} m={m} origin={origin} px={px} left={left} top={barTop + barH / 2} today={today} />) : null}
+      {milestones && !compact && task.milestones.length ? <TaskMilestoneLabels milestones={task.milestones} origin={origin} px={px} left={left} top={barTop + barH / 2} /> : null}
     </div>
   );
 });
@@ -710,22 +716,45 @@ const TimelineRow = memo(function TimelineRow({
  * A milestone of the task on its bar (ADR-0063 §5): the diamond at its date (filled: completed,
  * red: overdue), its name below; the hint — name, date, progress of the linked subtasks.
  */
-const TaskDiamond = memo(function TaskDiamond({ m, origin, px, left, top, label, today }: { m: TaskMilestone; origin: number; px: number; left: number; top: number; label: boolean; today: number }): ReactNode {
+const TaskDiamond = memo(function TaskDiamond({ m, origin, px, left, top, today }: { m: TaskMilestone; origin: number; px: number; left: number; top: number; today: number }): ReactNode {
   const d = dayNum(m.dueOn);
   if (Number.isNaN(d)) return null;
   const x = dayCenter(d, origin, px, left);
   const iso = isoDay(today);
   const hint = milestoneHint(m, formatDue(m.dueOn, iso));
   return (
+    <span role="img" aria-label={hint} title={hint} className="absolute grid size-4 -translate-x-1/2 -translate-y-1/2 place-items-center" style={{ left: x, top }} data-testid="timeline-task-milestone">
+      <MilestoneDiamond state={milestoneState(m, iso)} size={12} />
+    </span>
+  );
+});
+
+/** Content x where the sticky column's shadow ends (the visible edge); set by the Timeline per day of scroll. */
+const useLabelEdge = create<{ x: number }>(() => ({ x: 0 }));
+
+/**
+ * The names under a bar's milestone diamonds (ADR-0063 §5): centred, shifted right off the previous
+ * name / the sticky column, hidden when crowded (the diamond's tooltip has the name). The layout
+ * is memoized on the row's milestones, the zoom and the scroll edge; only rows with milestones
+ * subscribe to the edge.
+ */
+const TaskMilestoneLabels = memo(function TaskMilestoneLabels({ milestones, origin, px, left, top }: { milestones: TaskMilestone[]; origin: number; px: number; left: number; top: number }): ReactNode {
+  const edge = useLabelEdge((s) => s.x);
+  const items = useMemo(() => {
+    const list = milestones.filter((m) => !Number.isNaN(dayNum(m.dueOn)));
+    const xs = list.map((m) => dayCenter(dayNum(m.dueOn), origin, px, left));
+    const pos = layoutLabels(xs, list.map((m) => labelWidth(m.name)), edge);
+    return list.map((m, i) => ({ id: m.id, name: m.name, x: pos[i] ?? null }));
+  }, [milestones, origin, px, left, edge]);
+  return (
     <>
-      <span role="img" aria-label={hint} title={hint} className="absolute grid size-4 -translate-x-1/2 -translate-y-1/2 place-items-center" style={{ left: x, top }} data-testid="timeline-task-milestone">
-        <MilestoneDiamond state={milestoneState(m, iso)} size={12} />
-      </span>
-      {label ? (
-        <span className="pointer-events-none absolute max-w-28 -translate-x-1/2 truncate whitespace-nowrap text-micro leading-none text-muted" style={{ left: x, top: top + BAR_H / 2 + 3 }} aria-hidden>
-          {m.name}
-        </span>
-      ) : null}
+      {items.map((it) =>
+        it.x === null ? null : (
+          <span key={it.id} className="pointer-events-none absolute max-w-28 truncate whitespace-nowrap text-micro leading-none text-muted" style={{ left: it.x, top: top + BAR_H / 2 + 3 }} aria-hidden data-testid="timeline-task-milestone-label">
+            {it.name}
+          </span>
+        ),
+      )}
     </>
   );
 });

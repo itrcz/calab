@@ -3,6 +3,8 @@ import { TaskAssigneeSchema, TaskRelationKind, TaskRelationSchema, TaskSchema, t
 import { describe, expect, it } from 'vitest';
 import {
   GROUP_ROW,
+  LABEL_GAP,
+  layoutLabels,
   barBox,
   datePatch,
   dayAt,
@@ -170,5 +172,41 @@ describe('timeline scale (ADR-0063 «меньше цифр»)', () => {
     const origin = d('2026-01-01');
     expect(revealScroll({ start: origin + 100, end: origin + 120 }, origin, 18, 'month')).toBe(96 * 18);
     expect(revealScroll({ start: origin + 1, end: origin + 2 }, origin, 44, 'week')).toBe(0);
+  });
+});
+
+describe('layoutLabels', () => {
+  it('centres a lone label under its diamond', () => {
+    expect(layoutLabels([200], [60], 100)).toEqual([170]);
+  });
+  it('clamps the leftmost label to the visible edge, hides it when the diamond is under the column', () => {
+    expect(layoutLabels([130], [80], 100)).toEqual([106]);
+    expect(layoutLabels([90], [80], 100)).toEqual([null]);
+  });
+  it('shifts right to clear the previous label, hides when crowded', () => {
+    expect(layoutLabels([200, 240], [60, 60], 0)).toEqual([170, 236]);
+    expect(layoutLabels([200, 215, 224], [60, 60, 60], 0)).toEqual([170, null, null]);
+  });
+  it('never overlaps and keeps the gap, on random input', () => {
+    let seed = 7;
+    const rnd = (): number => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    for (let n = 0; n < 300; n++) {
+      const k = 1 + Math.floor(rnd() * 8);
+      const xs = Array.from({ length: k }, () => rnd() * 600);
+      const ws = Array.from({ length: k }, () => 20 + rnd() * 90);
+      const minX = rnd() * 100;
+      const out = layoutLabels(xs, ws, minX);
+      const shown: { x: number; l: number; w: number }[] = [];
+      out.forEach((l, i) => {
+        if (l !== null) shown.push({ x: xs[i] ?? 0, l, w: ws[i] ?? 0 });
+      });
+      shown.sort((a, b) => a.l - b.l);
+      shown.forEach((s, i) => {
+        expect(s.l).toBeGreaterThanOrEqual(minX + LABEL_GAP - 1e-9);
+        expect(s.l).toBeLessThanOrEqual(s.x + 1e-9);
+        const p = shown[i - 1];
+        if (p) expect(s.l - (p.l + p.w)).toBeGreaterThanOrEqual(LABEL_GAP - 1e-9);
+      });
+    }
   });
 });
