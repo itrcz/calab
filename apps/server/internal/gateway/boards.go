@@ -323,6 +323,8 @@ func taskOfEvent(ev *v1.DispatchEvent) (task, board uuid.UUID) {
 		return parseID(e.TaskChecklistUpdate.GetTaskId()), parseID(e.TaskChecklistUpdate.GetBoardId())
 	case *v1.DispatchEvent_TaskChecklistDelete:
 		return parseID(e.TaskChecklistDelete.GetTaskId()), parseID(e.TaskChecklistDelete.GetBoardId())
+	case *v1.DispatchEvent_TaskGitLinksUpdate:
+		return parseID(e.TaskGitLinksUpdate.GetTaskId()), parseID(e.TaskGitLinksUpdate.GetBoardId())
 	}
 	return uuid.Nil, uuid.Nil
 }
@@ -389,11 +391,21 @@ func (h *Hub) routeBoards(st *wsState, wid, id uuid.UUID, sessions []*Session, e
 				}
 			}
 		})
-	case *v1.DispatchEvent_TaskActivity, *v1.DispatchEvent_TaskChecklistUpdate, *v1.DispatchEvent_TaskChecklistDelete:
+	case *v1.DispatchEvent_TaskActivity, *v1.DispatchEvent_TaskChecklistUpdate, *v1.DispatchEvent_TaskChecklistDelete,
+		*v1.DispatchEvent_TaskGitLinksUpdate:
 		tid, bid := taskOfEvent(ev)
 		shared := newScopedEnc(wid, ev)
 		for _, s := range sessions {
 			if st.taskBits(bid, tid, s.user) != 0 {
+				s.dispatchEnc(id, shared)
+			}
+		}
+	case *v1.DispatchEvent_BoardRuleUpdate, *v1.DispatchEvent_BoardRuleDelete:
+		// Automation rules (ADR-0060): to the board's viewers (not to task-scoped members).
+		bid := parseID(ev.GetBoardRuleUpdate().GetBoardId() + ev.GetBoardRuleDelete().GetBoardId())
+		shared := newScopedEnc(wid, ev)
+		for _, s := range sessions {
+			if st.boardBits(bid, s.user).Has(perm.ViewBoard) {
 				s.dispatchEnc(id, shared)
 			}
 		}

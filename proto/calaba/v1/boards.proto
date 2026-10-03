@@ -218,6 +218,9 @@ message Board {
   // taskPermissions), permission_overrides empty, open_tasks 0. Never on a restricted board,
   // never for guests or bots.
   bool task_scoped = 28;
+  // Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
+  // created or deleted).
+  uint32 rules_count = 29;
 }
 
 message TaskAssignee {
@@ -330,18 +333,29 @@ message Task {
   uint32 checklist_total = 39;
   uint32 checklist_done = 40;
   repeated TaskChecklist checklists = 41; // GET /tasks/{id} only, by position
+  // Git links (ADR-0060 §4): branches, pull / merge requests and commits that mention the task
+  // key, newest first; the links only in GET /tasks/{id}, the counter in every task.
+  repeated TaskGitLink git_links = 42;
+  uint32 git_links_count = 43;
 }
 
 // One entry of the task journal (ADR-0042 §1): written on every change, never edited.
 // kind: "created" | "status" | "assignees" | "priority" | "labels" | "dates" | "estimate" |
 // "parent" | "milestone" | "relation" | "title" | "description" | "archived" | "restored" |
-// "moved_board" | "attachments" | "approvers" | "approval" | "approvals_reset". before / after
+// "moved_board" | "attachments" | "approvers" | "approval" | "approvals_reset" | "checklist" |
+// "git". before / after
 // hold the changed fields (e.g. {"status_id": "…", "status_type": "started"},
 // {"assignees": [{"user_id": …}]}). Approvals (ADR-0049): "approvers" — {"user_ids": […],
 // "required": n} before and after; "approval" — after {"user_id", "state": "pending" |
 // "approved" | "rejected", "comment"}; "approvals_reset" — the title / description / its
 // attachments changed and every vote went back to pending: before {"approved": n,
-// "rejected": n}.
+// "rejected": n}. A vote or a change of approvers that decides the task also carries
+// after.approval_state "approved" | "rejected" (ADR-0060). "git" (ADR-0060 §4): after {"event":
+// the RuleGitEvent name without its prefix, "kind": "branch" | "pr" | "commit", "provider",
+// "repo", "ref", "title", "url", "state", "commits": [{"sha", "title", "url"}] of a push};
+// before {"state", "title"} of a pull request that changed.
+// Automations (ADR-0060): a change made by a rule has actor_id empty and rule_id set; the client
+// shows «Автоматизация: <rule name>» (names from the board's rules / BOARD_RULE_UPDATE).
 message TaskActivity {
   string id = 1;
   string task_id = 2;
@@ -351,6 +365,7 @@ message TaskActivity {
   google.protobuf.Struct after = 6;
   google.protobuf.Timestamp created_at = 7;
   string board_id = 8;
+  string rule_id = 9; // the automation rule that made the change (ADR-0060); empty otherwise
 }
 
 // The task feed: comments (messages of the task room) and journal entries in one timeline.
@@ -901,6 +916,8 @@ message BoardWebhookPingResponse {
 // X-Calab-Delivery: <id>, X-Calab-Event: <type>, User-Agent: Calab-Webhook/1.0. Receivers reject
 // a timestamp more than 5 minutes away, dedupe by id (at-least-once) and order by sequence
 // (monotonic per board). The contract changes only by adding fields.
+// Changes made by an automation rule (ADR-0060) come as their own event with actor null and
+// rule set; Git events (changes field "git") with actor null.
 // type: "task.created" | "task.updated" | "task.archived" | "task.restored" | "task.moved_out" |
 // "task.moved_in" | "task.comment.created" | "task.comment.updated" | "task.comment.deleted" |
 // "ping".
@@ -911,7 +928,8 @@ message BoardWebhookEvent {
     string key = 2;
     string name = 3;
   }
-  // Who made the change; unset (null) for the server's own changes (auto-archive).
+  // Who made the change; unset (null) for the server's own changes (auto-archive, Git events)
+  // and for changes made by an automation rule (then `rule` is set).
   message Actor {
     string id = 1;
     string name = 2;
@@ -937,6 +955,11 @@ message BoardWebhookEvent {
     google.protobuf.Timestamp created_at = 5;
     google.protobuf.Timestamp edited_at = 6;
   }
+  // The automation rule that made the change (ADR-0060); unset (null) otherwise.
+  message Rule {
+    string id = 1;
+    string name = 2;
+  }
   string id = 1;        // the delivery id: the idempotency key
   uint32 version = 2;   // 1
   string type = 3;
@@ -951,6 +974,7 @@ message BoardWebhookEvent {
   string task_url = 10; // the task's link (PUBLIC_APP_URL/t/FNG-12)
   repeated Change changes = 11;
   Comment comment = 12;
+  Rule rule = 13;
 }
 
 // ---- gateway events (docs/05; to the board's viewers, like room events) ----
@@ -990,6 +1014,8 @@ message TaskNotice {
   string actor_id = 2;
   string message_id = 3; // COMMENT / MENTIONED in a comment
   string activity_id = 4;
+  string text = 5;    // RULE: the rule's rendered message (≤ 2000 characters)
+  string rule_id = 6; // RULE: the rule that sent it
 }
 
 enum TaskNoticeKind {
@@ -1008,6 +1034,9 @@ enum TaskNoticeKind {
   // subscribers by their task level (like STATUS).
   TASK_NOTICE_KIND_APPROVED = 6;
   TASK_NOTICE_KIND_REJECTED = 7;
+  // RULE (ADR-0060): the «notify» action of an automation rule addressed the recipient (an
+  // assignee, the lead, the creator or an approver); by their task level like ASSIGNED.
+  TASK_NOTICE_KIND_RULE = 8;
 }
 
 // The task was archived (purged false) or deleted with its board.
@@ -1058,4 +1087,58 @@ message TaskChecklistDelete {
   string checklist_id = 4;
   uint32 checklist_total = 5;
   uint32 checklist_done = 6;
+}
+
+// ---- Git links of tasks (ADR-0060 §4; routes in automations.proto) ----
+
+// A Git hosting whose webhooks a board accepts.
+enum GitProvider {
+  GIT_PROVIDER_UNSPECIFIED = 0;
+  GIT_PROVIDER_GITHUB = 1;
+  GIT_PROVIDER_GITLAB = 2;
+  GIT_PROVIDER_GITEA = 3; // Gitea and Forgejo
+}
+
+enum TaskGitLinkKind {
+  TASK_GIT_LINK_KIND_UNSPECIFIED = 0;
+  TASK_GIT_LINK_KIND_BRANCH = 1; // ref = the branch name
+  TASK_GIT_LINK_KIND_PR = 2;     // a pull / merge request; ref = its number
+  TASK_GIT_LINK_KIND_COMMIT = 3; // ref = the full SHA
+}
+
+// The state of a pull / merge request; UNSPECIFIED for branches and commits.
+enum TaskGitLinkState {
+  TASK_GIT_LINK_STATE_UNSPECIFIED = 0;
+  TASK_GIT_LINK_STATE_OPEN = 1;
+  TASK_GIT_LINK_STATE_MERGED = 2;
+  TASK_GIT_LINK_STATE_CLOSED = 3;
+}
+
+// A branch, pull / merge request or commit whose name, title, body or message mentions the task
+// key (FNG-12). Unique per (task, kind, provider, repo, ref); ≤ 50 per task (old commits go
+// first). Links are written only by the board's Git webhook.
+message TaskGitLink {
+  string id = 1;
+  string task_id = 2;
+  TaskGitLinkKind kind = 3;
+  GitProvider provider = 4;
+  string repo = 5;  // owner/name (GitLab: the project path)
+  string ref = 6;
+  string title = 7; // ≤ 200 characters: the PR title, the first line of a commit, the branch
+  string url = 8;   // ≤ 2048 characters, opened in the browser
+  TaskGitLinkState state = 9;
+  string author = 10; // the provider's login, ≤ 100 characters
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+// TASK_GIT_LINKS_UPDATE (ADR-0060): the Git links of a task changed; to the board's viewers and
+// to the task's invitees (ADR-0059). links = every link of the task (≤ 50), count = their
+// number (Task.git_links_count). TASK_UPDATE follows with the new counter.
+message TaskGitLinksUpdate {
+  string workspace_id = 1;
+  string board_id = 2;
+  string task_id = 3;
+  repeated TaskGitLink links = 4;
+  uint32 count = 5;
 }

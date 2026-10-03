@@ -76,7 +76,19 @@ message SystemMessage {
     BirthdayCard birthday = 2;   // docs/09 #76
     CallCard call = 3;           // a DM call log line (ADR-0034)
     AchievementCard achievement = 4; // ADR-0061
+    AutomationCard automation = 5; // a message of a board automation rule (ADR-0060)
   }
+}
+
+// «Автоматизация»: a board automation rule posted into a text room or into the task's comments
+// (actions notify_room / comment). Rendered as the task's card with the text; the author is the
+// rule's creator, the client shows «Автоматизация: <rule_name>» instead.
+message AutomationCard {
+  string board_id = 1;
+  string task_id = 2;
+  string rule_id = 3;
+  string rule_name = 4;
+  string text = 5; // the rendered template, ≤ 2000 characters
 }
 
 // "Today is <author>'s birthday!": posted once a day per workspace by the server at 09:00 of

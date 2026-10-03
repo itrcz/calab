@@ -420,7 +420,7 @@ WHERE kind = sqlc.arg('kind') AND ((task_id = sqlc.arg('a') AND related_id = sql
 
 -- name: TaskCounts :many
 -- Per task: live subtasks and finished ones, live comments, attachments, checklist items and
--- done ones (ADR-0058 §2).
+-- done ones (ADR-0058 §2), Git links (ADR-0060).
 SELECT t.id,
     (SELECT count(*) FROM tasks s WHERE s.parent_id = t.id AND s.archived_at IS NULL)::integer AS subtasks,
     (SELECT count(*) FROM tasks s JOIN board_statuses st ON st.id = s.status_id
@@ -428,7 +428,8 @@ SELECT t.id,
     (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
     (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments,
     (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id)::integer AS checklist_total,
-    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done,
+    (SELECT count(*) FROM task_git_links g WHERE g.task_id = t.id)::integer AS git_links
 FROM tasks t WHERE t.id = ANY(sqlc.arg('task_ids')::uuid[]);
 
 -- name: ListTaskAttachments :many
@@ -504,8 +505,8 @@ LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_
 -- ---- activity ----
 
 -- name: InsertTaskActivity :one
-INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('rule_id'))
 RETURNING *;
 
 -- name: ListTaskActivity :many

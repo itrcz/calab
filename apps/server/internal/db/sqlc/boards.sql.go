@@ -1256,9 +1256,9 @@ func (q *Queries) InsertTask(ctx context.Context, arg InsertTaskParams) (uuid.UU
 
 const insertTaskActivity = `-- name: InsertTaskActivity :one
 
-INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, task_id, board_id, actor_id, kind, before, after, created_at
+INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id
 `
 
 type InsertTaskActivityParams struct {
@@ -1268,6 +1268,7 @@ type InsertTaskActivityParams struct {
 	Kind    string
 	Before  []byte
 	After   []byte
+	RuleID  *uuid.UUID
 }
 
 // ---- activity ----
@@ -1279,6 +1280,7 @@ func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivity
 		arg.Kind,
 		arg.Before,
 		arg.After,
+		arg.RuleID,
 	)
 	var i TaskActivity
 	err := row.Scan(
@@ -1290,6 +1292,7 @@ func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivity
 		&i.Before,
 		&i.After,
 		&i.CreatedAt,
+		&i.RuleID,
 	)
 	return i, err
 }
@@ -1392,7 +1395,7 @@ func (q *Queries) InsertTaskRelation(ctx context.Context, arg InsertTaskRelation
 }
 
 const listBoardActivity = `-- name: ListBoardActivity :many
-SELECT a.id, a.task_id, a.board_id, a.actor_id, a.kind, a.before, a.after, a.created_at, b.key AS board_key, t.number AS task_number FROM task_activity a
+SELECT a.id, a.task_id, a.board_id, a.actor_id, a.kind, a.before, a.after, a.created_at, a.rule_id, b.key AS board_key, t.number AS task_number FROM task_activity a
 JOIN tasks t ON t.id = a.task_id
 JOIN boards b ON b.id = t.board_id
 WHERE a.board_id = $1
@@ -1424,6 +1427,7 @@ type ListBoardActivityRow struct {
 	Before     []byte
 	After      []byte
 	CreatedAt  time.Time
+	RuleID     *uuid.UUID
 	BoardKey   string
 	TaskNumber int32
 }
@@ -1454,6 +1458,7 @@ func (q *Queries) ListBoardActivity(ctx context.Context, arg ListBoardActivityPa
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.RuleID,
 			&i.BoardKey,
 			&i.TaskNumber,
 		); err != nil {
@@ -1730,7 +1735,7 @@ func (q *Queries) ListInvitedTasks(ctx context.Context, arg ListInvitedTasksPara
 }
 
 const listTaskActivity = `-- name: ListTaskActivity :many
-SELECT id, task_id, board_id, actor_id, kind, before, after, created_at FROM task_activity WHERE task_id = $1
+SELECT id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id FROM task_activity WHERE task_id = $1
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC LIMIT $3
 `
@@ -1759,6 +1764,7 @@ func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityPara
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.RuleID,
 		); err != nil {
 			return nil, err
 		}
@@ -2668,7 +2674,8 @@ SELECT t.id,
     (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
     (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments,
     (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id)::integer AS checklist_total,
-    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done,
+    (SELECT count(*) FROM task_git_links g WHERE g.task_id = t.id)::integer AS git_links
 FROM tasks t WHERE t.id = ANY($1::uuid[])
 `
 
@@ -2680,10 +2687,11 @@ type TaskCountsRow struct {
 	Attachments    int32
 	ChecklistTotal int32
 	ChecklistDone  int32
+	GitLinks       int32
 }
 
 // Per task: live subtasks and finished ones, live comments, attachments, checklist items and
-// done ones (ADR-0058 §2).
+// done ones (ADR-0058 §2), Git links (ADR-0060).
 func (q *Queries) TaskCounts(ctx context.Context, taskIds []uuid.UUID) ([]TaskCountsRow, error) {
 	rows, err := q.db.Query(ctx, taskCounts, taskIds)
 	if err != nil {
@@ -2701,6 +2709,7 @@ func (q *Queries) TaskCounts(ctx context.Context, taskIds []uuid.UUID) ([]TaskCo
 			&i.Attachments,
 			&i.ChecklistTotal,
 			&i.ChecklistDone,
+			&i.GitLinks,
 		); err != nil {
 			return nil, err
 		}

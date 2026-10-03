@@ -64,6 +64,17 @@ type BoardCategory struct {
 	CreatedAt   time.Time
 }
 
+type BoardGit struct {
+	BoardID     uuid.UUID
+	Provider    string
+	SecretEnc   []byte
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	LastEventAt *time.Time
+	LastError   string
+	EventsCount int32
+}
+
 type BoardLabel struct {
 	ID       uuid.UUID
 	BoardID  uuid.UUID
@@ -86,6 +97,36 @@ type BoardPermission struct {
 	TargetID   string
 	Allow      int64
 	Deny       int64
+}
+
+type BoardRule struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Name        string
+	Enabled     bool
+	Position    int32
+	TriggerKind string
+	Trigger     []byte
+	Condition   []byte
+	Actions     []byte
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	RunsCount   int32
+	LastRunAt   *time.Time
+	LastError   string
+}
+
+type BoardRuleRun struct {
+	ID             uuid.UUID
+	RuleID         uuid.UUID
+	TaskID         *uuid.UUID
+	TriggerKind    string
+	Ok             bool
+	Error          string
+	ActionsApplied int16
+	SchedKey       pgtype.Date
+	CreatedAt      time.Time
 }
 
 type BoardStatus struct {
@@ -905,6 +946,7 @@ type TaskActivity struct {
 	Before    []byte
 	After     []byte
 	CreatedAt time.Time
+	RuleID    *uuid.UUID
 }
 
 type TaskApprover struct {
@@ -955,6 +997,21 @@ type TaskChecklistItem struct {
 	Position    float64
 	CreatedBy   *uuid.UUID
 	CreatedAt   time.Time
+}
+
+type TaskGitLink struct {
+	ID        uuid.UUID
+	TaskID    uuid.UUID
+	Kind      string
+	Provider  string
+	Repo      string
+	Ref       string
+	Title     string
+	Url       string
+	State     string
+	Author    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type TaskLabel struct {

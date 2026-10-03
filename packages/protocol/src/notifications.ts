@@ -26,7 +26,8 @@ export type TaskNotifyKind =
   | 'status'
   | 'approval_requested'
   | 'approved'
-  | 'rejected';
+  | 'rejected'
+  | 'rule';
 
 /** One task change by someone else, as seen by one recipient. */
 export interface TaskNotifyFacts {
@@ -59,6 +60,7 @@ export function taskNotifies(f: TaskNotifyFacts): boolean {
   switch (f.kind) {
     case 'assigned':
     case 'mentioned':
+    case 'rule':
       return level === NotificationLevel.ALL || level === NotificationLevel.MENTIONS;
     case 'comment':
     case 'status':

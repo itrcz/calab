@@ -3,6 +3,7 @@ export * from './gen/calaba/v1/achievement_pb.js';
 export * from './gen/calaba/v1/admin_pb.js';
 export * from './gen/calaba/v1/annot_pb.js';
 export * from './gen/calaba/v1/auth_pb.js';
+export * from './gen/calaba/v1/automations_pb.js';
 export * from './gen/calaba/v1/boards_pb.js';
 export * from './gen/calaba/v1/bot_pb.js';
 export * from './gen/calaba/v1/call_pb.js';

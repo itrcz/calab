@@ -259,6 +259,9 @@ var eventScope = map[protoreflect.Name]bool{
 	// the board's viewers).
 	"board_category_create": true, "board_category_update": true, "board_category_delete": true,
 	"task_checklist_update": true, "task_checklist_delete": true,
+	// Automations (ADR-0060): workspace channel; routed by routeBoards (the board's viewers;
+	// Git links also to the task's invitees).
+	"board_rule_update": true, "board_rule_delete": true, "task_git_links_update": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent
