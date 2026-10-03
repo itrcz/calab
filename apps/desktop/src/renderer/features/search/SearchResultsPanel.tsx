@@ -1,8 +1,8 @@
 import { RoomType, type SearchHit } from '@calaba/protocol';
-import { Search } from 'lucide-react';
+import { Paperclip, Search } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, CloseButton, Input, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
+import { Button, CloseButton, Input, Select, Spinner, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { log } from '../../lib/log';
 import { NO_FILTERS, panelRequest, paramsKey, type PanelFilters, type Period, type RoomKindOf } from '../../lib/search/query';
@@ -207,13 +207,18 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
         page
           ? 'mat-content flex min-h-0 flex-1 flex-col'
           : floating
-            ? 'mat-popover anim-in absolute bottom-3 right-3 top-[60px] z-[var(--z-popover)] flex w-80 flex-col overflow-hidden rounded-[var(--radius-panel)]'
-            : 'mat-sidebar flex w-80 shrink-0 flex-col border-l border-line'
+            ? 'mat-popover anim-in absolute bottom-3 right-3 top-[60px] z-[var(--z-popover)] flex w-[340px] flex-col overflow-hidden rounded-[var(--radius-panel)]'
+            : 'mat-sidebar flex w-[340px] shrink-0 flex-col border-l border-line'
       }
     >
       <div className="flex shrink-0 flex-col gap-2 border-b border-line px-3 pb-2 pt-3">
         <div className="flex items-center gap-1">
           <h2 className="min-w-0 flex-1 truncate pl-1 text-headline font-semibold">{t('search.panel.title')}</h2>
+          {anyFilter ? (
+            <button type="button" aria-label={t('search.panel.reset')} className="shrink-0 rounded-full px-1.5 text-caption text-accent-text hover:underline" onClick={() => setFilters(NO_FILTERS)}>
+              {t('search.panel.resetShort')}
+            </button>
+          ) : null}
           <CloseButton label={t('search.panel.close')} onClick={close} />
         </div>
         <Input
@@ -224,18 +229,8 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
           aria-label={t('search.panel.query')}
           data-testid="search-panel-query"
         />
-        {activeWs ? (
-          <Segmented
-            value={scope === 'all' ? 'all' : 'workspace'}
-            onChange={changeScope}
-            label={t('search.scope')}
-            options={[
-              { value: 'workspace', label: t('search.scopeWorkspace') },
-              { value: 'all', label: t('search.scopeAll') },
-            ]}
-          />
-        ) : null}
-        <div role="tablist" aria-label={t('search.panel.tabs')} className="scrollbar-none -mx-3 flex gap-1 overflow-x-auto px-3" data-testid="search-tabs">
+        {/* Seven sections fit in two rows of pills: every one stays in sight (no hidden scroll). */}
+        <div role="tablist" aria-label={t('search.panel.tabs')} className="flex flex-wrap gap-1" data-testid="search-tabs">
           {tabs.map((s) => {
             const n = counts[s];
             return (
@@ -256,12 +251,7 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
             );
           })}
         </div>
-        <Filters tab={tab} filters={filters} scope={scope} activeWs={activeWs} onChange={setFilter} />
-        {anyFilter ? (
-          <button type="button" className="self-start rounded-full px-1 text-caption text-accent-text hover:underline" onClick={() => setFilters(NO_FILTERS)}>
-            {t('search.panel.reset')}
-          </button>
-        ) : null}
+        <Filters tab={tab} filters={filters} scope={scope} activeWs={activeWs} onChange={setFilter} onScope={changeScope} />
       </div>
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5" data-testid="search-results">
         {!q ? (
@@ -306,12 +296,14 @@ function Filters({
   scope,
   activeWs,
   onChange,
+  onScope,
 }: {
   tab: SectionName;
   filters: PanelFilters;
   scope: string;
   activeWs: string | null;
   onChange: <K extends keyof PanelFilters>(k: K, v: PanelFilters[K]) => void;
+  onScope: (v: 'workspace' | 'all') => void;
 }): ReactNode {
   // The workspace whose people and places are offered: the scope's, else the open one.
   const ws = scope !== 'all' ? scope : activeWs;
@@ -345,9 +337,20 @@ function Filters({
     { value: '30d', key: 'search.period.30d' },
     { value: 'range', key: 'search.period.range' },
   ];
+  // A 2-column grid of pop-ups, filled in order: where, sort, author, room / board, period, files.
   return (
     <div className="flex flex-col gap-2" role="group" aria-label={t('search.panel.filters')} data-testid="search-filters">
       <div className="grid grid-cols-2 gap-2">
+        {activeWs ? (
+          <Select value={scope === 'all' ? 'all' : 'workspace'} onChange={(e) => onScope(e.target.value === 'all' ? 'all' : 'workspace')} aria-label={t('search.scope')}>
+            <option value="workspace">{t('search.filter.thisWorkspace')}</option>
+            <option value="all">{t('search.scopeAll')}</option>
+          </Select>
+        ) : null}
+        <Select value={f.sort} onChange={(e) => onChange('sort', e.target.value === 'new' ? 'new' : 'relevance')} aria-label={t('search.sort.label')}>
+          <option value="relevance">{t('search.sort.relevance')}</option>
+          <option value="new">{t('search.sort.new')}</option>
+        </Select>
         <Select value={f.author} onChange={(e) => onChange('author', e.target.value)} aria-label={t('search.filter.author')}>
           <option value="">{t('search.filter.anyone')}</option>
           {people.map((p) => {
@@ -361,7 +364,7 @@ function Filters({
         </Select>
         {showPlace ? (
           <Select value={f.place} onChange={(e) => onChange('place', e.target.value)} aria-label={boards ? t('search.filter.board') : t('search.filter.room')}>
-            <option value="">{t('search.filter.anywhere')}</option>
+            <option value="">{boards ? t('search.filter.anyBoard') : t('search.filter.anyRoom')}</option>
             {placeList.map((p) => {
               const [id = '', name = ''] = p.split('\u0000');
               return (
@@ -371,9 +374,7 @@ function Filters({
               );
             })}
           </Select>
-        ) : (
-          <span />
-        )}
+        ) : null}
         <Select value={f.period} onChange={(e) => onChange('period', e.target.value as Period)} aria-label={t('search.filter.period')}>
           {periods.map((p) => (
             <option key={p.value} value={p.value}>
@@ -381,22 +382,27 @@ function Filters({
             </option>
           ))}
         </Select>
-        <Select value={f.sort} onChange={(e) => onChange('sort', e.target.value === 'new' ? 'new' : 'relevance')} aria-label={t('search.sort.label')}>
-          <option value="relevance">{t('search.sort.relevance')}</option>
-          <option value="new">{t('search.sort.new')}</option>
-        </Select>
+        {messageLike(tab) ? (
+          <button
+            type="button"
+            aria-pressed={f.withFiles}
+            aria-label={t('search.filter.withFiles')}
+            onClick={() => onChange('withFiles', !f.withFiles)}
+            className={cx(
+              'flex h-7 min-w-0 items-center justify-center gap-1.5 rounded-full border px-2.5 text-control font-medium',
+              f.withFiles ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-line text-fg hover:bg-hover',
+            )}
+          >
+            <Paperclip className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{t('search.filter.withFilesShort')}</span>
+          </button>
+        ) : null}
       </div>
       {f.period === 'range' ? (
         <div className="grid grid-cols-2 gap-2">
           <Input type="date" value={f.from} max={f.to || undefined} onChange={(e) => onChange('from', e.target.value)} aria-label={t('search.filter.from')} />
           <Input type="date" value={f.to} min={f.from || undefined} onChange={(e) => onChange('to', e.target.value)} aria-label={t('search.filter.to')} />
         </div>
-      ) : null}
-      {messageLike(tab) ? (
-        <label className="flex items-center justify-between gap-2 pl-1 text-body text-fg">
-          {t('search.filter.withFiles')}
-          <Toggle checked={f.withFiles} onChange={(v) => onChange('withFiles', v)} label={t('search.filter.withFiles')} />
-        </label>
       ) : null}
     </div>
   );
