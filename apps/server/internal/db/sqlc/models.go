@@ -946,6 +946,7 @@ type Task struct {
 	CompletedBy      *uuid.UUID
 	ArchivedAt       *time.Time
 	ApprovalRequired int16
+	TaskMilestoneID  *uuid.UUID
 }
 
 type TaskActivity struct {
@@ -1028,6 +1029,19 @@ type TaskGitLink struct {
 type TaskLabel struct {
 	TaskID  uuid.UUID
 	LabelID uuid.UUID
+}
+
+type TaskMilestone struct {
+	ID          uuid.UUID
+	TaskID      uuid.UUID
+	Name        string
+	DueOn       pgtype.Date
+	Position    float64
+	CompletedAt *time.Time
+	CompletedBy *uuid.UUID
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type TaskRelation struct {

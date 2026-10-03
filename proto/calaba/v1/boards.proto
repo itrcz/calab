@@ -129,6 +129,31 @@ message TaskChecklist {
   google.protobuf.Timestamp created_at = 7;
 }
 
+// A milestone inside a task (ADR-0063): a stage with a target date, ≤ 20 per task. Subtasks of
+// the task may link to it (Task.task_milestone_id); while live non-cancelled subtasks are linked
+// (total > 0) the server completes it exactly when all of them are completed, otherwise a person
+// toggles it (UpdateTaskMilestoneRequest.completed).
+message TaskMilestone {
+  string id = 1;
+  string task_id = 2;
+  string name = 3;                              // 1..60 characters
+  string due_on = 4;                            // "YYYY-MM-DD"; empty = no date
+  double position = 5;                          // fractional order within the task, ascending
+  google.protobuf.Timestamp completed_at = 6;   // unset while not completed
+  string completed_by = 7;                      // empty for the server's completion without an actor
+  uint32 done = 8;                              // linked live subtasks in a completed status
+  uint32 total = 9;                             // linked live subtasks, cancelled ones not counted
+  string created_by = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+// The milestones of a task over all of them (the card's chip «◇ 2/4»).
+message TaskMilestoneProgress {
+  uint32 done = 1;  // completed milestones
+  uint32 total = 2; // all milestones
+}
+
 message BoardStatus {
   string id = 1;
   string name = 2; // 1..32 characters
@@ -337,13 +362,20 @@ message Task {
   // key, newest first; the links only in GET /tasks/{id}, the counter in every task.
   repeated TaskGitLink git_links = 42;
   uint32 git_links_count = 43;
+  // Milestones inside the task (ADR-0063), by position: in every task (lists, events, REST) —
+  // the timeline draws them on the task's bar and TASK_UPDATE of the task carries their changes.
+  repeated TaskMilestone milestones = 44;
+  TaskMilestoneProgress milestone_progress = 45; // unset when the task has no milestones
+  // A subtask's milestone: one of its parent's milestones (ADR-0063); reset when the parent
+  // changes. Empty = none.
+  string task_milestone_id = 46;
 }
 
 // One entry of the task journal (ADR-0042 §1): written on every change, never edited.
 // kind: "created" | "status" | "assignees" | "priority" | "labels" | "dates" | "estimate" |
 // "parent" | "milestone" | "relation" | "title" | "description" | "archived" | "restored" |
 // "moved_board" | "attachments" | "approvers" | "approval" | "approvals_reset" | "checklist" |
-// "git". before / after
+// "git" | "milestones" (ADR-0063, see TaskMilestoneResponse). before / after
 // hold the changed fields (e.g. {"status_id": "…", "status_type": "started"},
 // {"assignees": [{"user_id": …}]}). Approvals (ADR-0049): "approvers" — {"user_ids": […],
 // "required": n} before and after; "approval" — after {"user_id", "state": "pending" |
@@ -639,6 +671,9 @@ message UpdateTaskRequest {
   optional string board_id = 14;
   bool set_attachments = 15;        // replace the description's attachments
   repeated string attachment_ids = 16;
+  // A subtask's milestone (ADR-0063): one of its parent's (422 "taskMilestoneId" otherwise);
+  // "" = none. MILESTONES off: a new value is 409 FEATURE_DISABLED.
+  optional string task_milestone_id = 17;
 }
 
 // PUT /api/tasks/{id}/assignees (the full list, ≤ 10; exactly one is_lead when not empty) →
@@ -857,6 +892,44 @@ message ConvertChecklistItemResponse {
   TaskChecklist checklist = 2;      // the item's checklist without it
   uint32 checklist_total = 3;
   uint32 checklist_done = 4;
+}
+
+// ---- task milestones (ADR-0063) ----
+// Rights as for the task's fields: EDIT_TASKS on any task, CREATE_TASKS on tasks the caller
+// created or is assigned to (ADR-0059: an assignee by the card alike; bots alike); reading with
+// the task. The board feature MILESTONES off: creating and editing is 409 FEATURE_DISABLED,
+// field "milestones" (deleting is allowed). An archived task is 409. Every write answers
+// TaskMilestoneResponse, journals a "milestones" entry on the task (after {"action": "created"
+// | "renamed" | "dated" | "completed" | "reopened" | "moved" | "deleted", "milestone_id",
+// "name", "due_on"}; before: the old name / date) and sends TASK_UPDATE of the task.
+// A subtask's link is journaled on the subtask: "milestones" with action "linked" / "unlinked"
+// and the parent's TASK_UPDATE (its progress); the server's completion of a milestone (all
+// linked subtasks done, or not any more) journals "auto_completed" / "auto_reopened" on the
+// parent, actor = the author of the change that caused it.
+
+// POST /api/tasks/{id}/milestones → 201 TaskMilestoneResponse; ≤ 20 per task (409 CONFLICT,
+// reason "TASK_MILESTONE_LIMIT"); a subtask has no milestones (422). position unset = last.
+message CreateTaskMilestoneRequest {
+  string name = 1;   // 1..60 characters
+  string due_on = 2; // "YYYY-MM-DD"; empty = no date
+  optional double position = 3;
+}
+
+// PATCH /api/task-milestones/{id} → TaskMilestoneResponse. completed is a person's toggle: 409
+// CONFLICT, reason "TASK_MILESTONE_AUTO" while subtasks are linked (the server keeps it).
+// DELETE /api/task-milestones/{id} → TaskMilestoneResponse without milestone; the linked
+// subtasks lose their link.
+message UpdateTaskMilestoneRequest {
+  optional string name = 1;
+  optional string due_on = 2; // "" = no date
+  optional double position = 3;
+  optional bool completed = 4;
+}
+
+// The changed milestone and the task after the change (with every milestone).
+message TaskMilestoneResponse {
+  TaskMilestone milestone = 1; // unset after DELETE
+  Task task = 2;
 }
 
 // ---- board webhook (ADR-0058 §4) ----

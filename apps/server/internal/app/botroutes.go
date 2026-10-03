@@ -368,10 +368,14 @@ var botRoutes = map[string]botAccess{
 	"PATCH /api/checklist-items/{id}":            botAllow,
 	"DELETE /api/checklist-items/{id}":           botAllow,
 	"POST /api/checklist-items/{id}/convert":     botAllow,
-	"GET /api/boards/{id}/webhook":               botDeny,
-	"PUT /api/boards/{id}/webhook":               botDeny,
-	"DELETE /api/boards/{id}/webhook":            botDeny,
-	"POST /api/boards/{id}/webhook/ping":         botDeny,
+	// Milestones inside a task (ADR-0063): bots like people, by the task's rights.
+	"POST /api/tasks/{id}/milestones":    botAllow,
+	"PATCH /api/task-milestones/{id}":    botAllow,
+	"DELETE /api/task-milestones/{id}":   botAllow,
+	"GET /api/boards/{id}/webhook":       botDeny,
+	"PUT /api/boards/{id}/webhook":       botDeny,
+	"DELETE /api/boards/{id}/webhook":    botDeny,
+	"POST /api/boards/{id}/webhook/ping": botDeny,
 	// Automations (ADR-0060): bots read rules; changing, testing them and the repository
 	// webhook setup are people only. The repository's own delivery is public (signed).
 	"GET /api/boards/{id}/rules":            botAllow,

@@ -355,17 +355,18 @@ UPDATE tasks SET
     title = sqlc.arg('title'), description = sqlc.arg('description'), status_id = sqlc.arg('status_id'),
     priority = sqlc.arg('priority'), estimate = sqlc.narg('estimate'), start_on = sqlc.narg('start_on'),
     due_on = sqlc.narg('due_on'), parent_id = sqlc.narg('parent_id'), milestone_id = sqlc.narg('milestone_id'),
-    position = sqlc.arg('position'), started_at = sqlc.narg('started_at'), completed_at = sqlc.narg('completed_at'),
-    completed_by = sqlc.narg('completed_by'), updated_at = now()
+    task_milestone_id = sqlc.narg('task_milestone_id'), position = sqlc.arg('position'),
+    started_at = sqlc.narg('started_at'), completed_at = sqlc.narg('completed_at'), completed_by = sqlc.narg('completed_by'), updated_at = now()
 WHERE id = sqlc.arg('id');
 
 -- name: MoveTaskToBoard :exec
 UPDATE tasks SET board_id = sqlc.arg('board_id'), number = sqlc.arg('number'), status_id = sqlc.arg('status_id'),
-    milestone_id = NULL, parent_id = NULL, position = sqlc.arg('position'), updated_at = now()
+    milestone_id = NULL, parent_id = NULL, task_milestone_id = NULL, position = sqlc.arg('position'), updated_at = now()
 WHERE id = sqlc.arg('id');
 
 -- name: DetachSubtasks :exec
-UPDATE tasks SET parent_id = NULL, updated_at = now() WHERE parent_id = $1;
+-- The subtasks lose their parent and its milestone (ADR-0063).
+UPDATE tasks SET parent_id = NULL, task_milestone_id = NULL, updated_at = now() WHERE parent_id = $1;
 
 -- name: TouchTask :exec
 UPDATE tasks SET updated_at = now() WHERE id = $1;

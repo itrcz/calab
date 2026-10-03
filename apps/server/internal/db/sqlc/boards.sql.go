@@ -634,9 +634,10 @@ func (q *Queries) DeleteTaskRelation(ctx context.Context, arg DeleteTaskRelation
 }
 
 const detachSubtasks = `-- name: DetachSubtasks :exec
-UPDATE tasks SET parent_id = NULL, updated_at = now() WHERE parent_id = $1
+UPDATE tasks SET parent_id = NULL, task_milestone_id = NULL, updated_at = now() WHERE parent_id = $1
 `
 
+// The subtasks lose their parent and its milestone (ADR-0063).
 func (q *Queries) DetachSubtasks(ctx context.Context, parentID *uuid.UUID) error {
 	_, err := q.db.Exec(ctx, detachSubtasks, parentID)
 	return err
@@ -946,7 +947,7 @@ func (q *Queries) GetBoardView(ctx context.Context, arg GetBoardViewParams) (Boa
 }
 
 const getTaskByNumber = `-- name: GetTaskByNumber :one
-SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, t.approval_required FROM tasks t JOIN boards b ON b.id = t.board_id
+SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, t.approval_required, t.task_milestone_id FROM tasks t JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = $1 AND b.key = $2 AND t.number = $3 AND b.archived_at IS NULL
 `
 
@@ -982,6 +983,7 @@ func (q *Queries) GetTaskByNumber(ctx context.Context, arg GetTaskByNumberParams
 		&i.CompletedBy,
 		&i.ArchivedAt,
 		&i.ApprovalRequired,
+		&i.TaskMilestoneID,
 	)
 	return i, err
 }
@@ -1084,7 +1086,7 @@ func (q *Queries) GetTaskRoomRef(ctx context.Context, arg GetTaskRoomRefParams) 
 }
 
 const getTaskRow = `-- name: GetTaskRow :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required FROM tasks WHERE id = $1
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required, task_milestone_id FROM tasks WHERE id = $1
 `
 
 func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -1113,12 +1115,13 @@ func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.CompletedBy,
 		&i.ArchivedAt,
 		&i.ApprovalRequired,
+		&i.TaskMilestoneID,
 	)
 	return i, err
 }
 
 const getTaskRowForUpdate = `-- name: GetTaskRowForUpdate :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required FROM tasks WHERE id = $1 FOR UPDATE
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required, task_milestone_id FROM tasks WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -1147,6 +1150,7 @@ func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, 
 		&i.CompletedBy,
 		&i.ArchivedAt,
 		&i.ApprovalRequired,
+		&i.TaskMilestoneID,
 	)
 	return i, err
 }
@@ -2303,7 +2307,7 @@ func (q *Queries) MoveStatusTasks(ctx context.Context, arg MoveStatusTasksParams
 
 const moveTaskToBoard = `-- name: MoveTaskToBoard :exec
 UPDATE tasks SET board_id = $1, number = $2, status_id = $3,
-    milestone_id = NULL, parent_id = NULL, position = $4, updated_at = now()
+    milestone_id = NULL, parent_id = NULL, task_milestone_id = NULL, position = $4, updated_at = now()
 WHERE id = $5
 `
 
@@ -3006,26 +3010,27 @@ UPDATE tasks SET
     title = $1, description = $2, status_id = $3,
     priority = $4, estimate = $5, start_on = $6,
     due_on = $7, parent_id = $8, milestone_id = $9,
-    position = $10, started_at = $11, completed_at = $12,
-    completed_by = $13, updated_at = now()
-WHERE id = $14
+    task_milestone_id = $10, position = $11,
+    started_at = $12, completed_at = $13, completed_by = $14, updated_at = now()
+WHERE id = $15
 `
 
 type UpdateTaskFieldsParams struct {
-	Title       string
-	Description string
-	StatusID    uuid.UUID
-	Priority    int16
-	Estimate    *int16
-	StartOn     pgtype.Date
-	DueOn       pgtype.Date
-	ParentID    *uuid.UUID
-	MilestoneID *uuid.UUID
-	Position    float64
-	StartedAt   *time.Time
-	CompletedAt *time.Time
-	CompletedBy *uuid.UUID
-	ID          uuid.UUID
+	Title           string
+	Description     string
+	StatusID        uuid.UUID
+	Priority        int16
+	Estimate        *int16
+	StartOn         pgtype.Date
+	DueOn           pgtype.Date
+	ParentID        *uuid.UUID
+	MilestoneID     *uuid.UUID
+	TaskMilestoneID *uuid.UUID
+	Position        float64
+	StartedAt       *time.Time
+	CompletedAt     *time.Time
+	CompletedBy     *uuid.UUID
+	ID              uuid.UUID
 }
 
 // Writes the whole mutable row (internal/boards computes the new values).
@@ -3040,6 +3045,7 @@ func (q *Queries) UpdateTaskFields(ctx context.Context, arg UpdateTaskFieldsPara
 		arg.DueOn,
 		arg.ParentID,
 		arg.MilestoneID,
+		arg.TaskMilestoneID,
 		arg.Position,
 		arg.StartedAt,
 		arg.CompletedAt,

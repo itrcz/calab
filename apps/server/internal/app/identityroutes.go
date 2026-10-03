@@ -40,6 +40,7 @@ const (
 	scopeBoardCategory
 	scopeChecklist
 	scopeChecklistItem
+	scopeTaskMilestone
 	scopeRule
 	scopeAchievement
 )
@@ -379,6 +380,9 @@ var identityRoutes = map[string]identityScope{
 	"PATCH /api/checklist-items/{id}":            scopeChecklistItem,
 	"DELETE /api/checklist-items/{id}":           scopeChecklistItem,
 	"POST /api/checklist-items/{id}/convert":     scopeChecklistItem,
+	"POST /api/tasks/{id}/milestones":            scopeTask,
+	"PATCH /api/task-milestones/{id}":            scopeTaskMilestone,
+	"DELETE /api/task-milestones/{id}":           scopeTaskMilestone,
 	"GET /api/boards/{id}/webhook":               scopeBoard,
 	"PUT /api/boards/{id}/webhook":               scopeBoard,
 	"DELETE /api/boards/{id}/webhook":            scopeBoard,
@@ -561,6 +565,8 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		return q.GetChecklistWorkspace(ctx, id)
 	case scopeChecklistItem:
 		return q.GetChecklistItemWorkspace(ctx, id)
+	case scopeTaskMilestone:
+		return q.GetTaskMilestoneWorkspace(ctx, id)
 	case scopeRule:
 		return q.GetBoardRuleWorkspace(ctx, id)
 	case scopeAchievement:
@@ -672,6 +678,8 @@ func IdentityRouteClass(pattern string) string {
 		return "checklist"
 	case scopeChecklistItem:
 		return "checklist_item"
+	case scopeTaskMilestone:
+		return "task_milestone"
 	case scopeRule:
 		return "rule"
 	case scopePack:

@@ -288,7 +288,8 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 // taskCols are the columns of taskRow, over tasks t JOIN boards b.
 const taskCols = `t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by,
 	t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at,
-	t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, b.key, b.workspace_id, t.approval_required`
+	t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, b.key, b.workspace_id, t.approval_required,
+	t.task_milestone_id`
 
 // taskRow is a task with its board's key and workspace.
 type taskRow struct {
@@ -317,6 +318,8 @@ type taskRow struct {
 	WorkspaceID uuid.UUID
 	// ApprovalRequired: approvals needed, 0 = all (ADR-0049).
 	ApprovalRequired int16
+	// TaskMilestoneID: a subtask's milestone, one of its parent's (ADR-0063).
+	TaskMilestoneID *uuid.UUID
 }
 
 func scanTasks(rows interface {
@@ -331,7 +334,8 @@ func scanTasks(rows interface {
 		var t taskRow
 		if err := rows.Scan(&t.ID, &t.BoardID, &t.Number, &t.Title, &t.Description, &t.StatusID, &t.Priority, &t.CreatedBy,
 			&t.Estimate, &t.StartOn, &t.DueOn, &t.ParentID, &t.MilestoneID, &t.Position, &t.RoomID, &t.CreatedAt,
-			&t.UpdatedAt, &t.StartedAt, &t.CompletedAt, &t.CompletedBy, &t.ArchivedAt, &t.BoardKey, &t.WorkspaceID, &t.ApprovalRequired); err != nil {
+			&t.UpdatedAt, &t.StartedAt, &t.CompletedAt, &t.CompletedBy, &t.ArchivedAt, &t.BoardKey, &t.WorkspaceID, &t.ApprovalRequired,
+			&t.TaskMilestoneID); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -380,6 +384,7 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 			DueOn: DateString(t.DueOn), ParentId: idp(t.ParentID), MilestoneId: idp(t.MilestoneID), Position: t.Position,
 			RoomId: t.RoomID.String(), CreatedAt: timestamppb.New(t.CreatedAt), UpdatedAt: timestamppb.New(t.UpdatedAt),
 			StartedAt: tsp(t.StartedAt), CompletedAt: tsp(t.CompletedAt), CompletedBy: idp(t.CompletedBy), ArchivedAt: tsp(t.ArchivedAt),
+			TaskMilestoneId: idp(t.TaskMilestoneID),
 		}
 		if t.Estimate != nil {
 			out[i].Estimate = uint32(max(*t.Estimate, 0)) //nolint:gosec // CHECK 1..21
@@ -439,6 +444,9 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 		t.CommentCount, t.AttachmentCount = uint32(max(c.Comments, 0)), uint32(max(c.Attachments, 0))         //nolint:gosec // counts
 		t.ChecklistTotal, t.ChecklistDone = uint32(max(c.ChecklistTotal, 0)), uint32(max(c.ChecklistDone, 0)) //nolint:gosec // counts
 		t.GitLinksCount = uint32(max(c.GitLinks, 0))                                                          //nolint:gosec // a count
+	}
+	if err := taskMilestones(ctx, q, ids, out, idx); err != nil {
+		return nil, err
 	}
 	if viewer != uuid.Nil {
 		subs, err := q.ListViewerSubscriptions(ctx, sqlc.ListViewerSubscriptionsParams{UserID: viewer, TaskIds: ids})

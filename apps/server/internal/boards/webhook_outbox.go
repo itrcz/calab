@@ -53,6 +53,9 @@ func (s *Service) taskTx(ctx context.Context, c *change, fn func(q *sqlc.Queries
 		if err := s.runRules(ctx, q, tx, c); err != nil {
 			return err
 		}
+		if err := s.syncMilestones(ctx, q, tx, c); err != nil { // ADR-0063 §2
+			return err
+		}
 		acts := c.acts
 		var rules map[uuid.UUID]string
 		if c.auto != nil {

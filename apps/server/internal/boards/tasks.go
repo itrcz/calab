@@ -522,7 +522,7 @@ func updateRow(ctx context.Context, q *sqlc.Queries, t taskRow) error {
 	return q.UpdateTaskFields(ctx, sqlc.UpdateTaskFieldsParams{
 		ID: t.ID, Title: t.Title, Description: t.Description, StatusID: t.StatusID, Priority: t.Priority,
 		Estimate: t.Estimate, StartOn: t.StartOn, DueOn: t.DueOn, ParentID: t.ParentID, MilestoneID: t.MilestoneID,
-		Position: t.Position, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, CompletedBy: t.CompletedBy,
+		TaskMilestoneID: t.TaskMilestoneID, Position: t.Position, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, CompletedBy: t.CompletedBy,
 	})
 }
 
@@ -960,6 +960,7 @@ func updateFeatures(ctx context.Context, q *sqlc.Queries, acc perm.BoardAccess, 
 		{v1.BoardFeature_BOARD_FEATURE_PRIORITY, "priority", t.Priority != 0 && t.Priority != old.Priority},
 		{v1.BoardFeature_BOARD_FEATURE_MILESTONES, "milestoneId", t.MilestoneID != nil && !eqID(old.MilestoneID, t.MilestoneID)},
 		{v1.BoardFeature_BOARD_FEATURE_SUBTASKS, "parentId", t.ParentID != nil && !eqID(old.ParentID, t.ParentID)},
+		{v1.BoardFeature_BOARD_FEATURE_MILESTONES, "taskMilestoneId", t.TaskMilestoneID != nil && !eqID(old.TaskMilestoneID, t.TaskMilestoneID)},
 	} {
 		if err := requireFeature(d, c.f, c.field, c.sets); err != nil {
 			return err
@@ -1321,6 +1322,19 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 		}
+		// A subtask's milestone (ADR-0063): one of its parent's; reset when the parent changes.
+		if req.TaskMilestoneId != nil {
+			if t.TaskMilestoneID, err = parseOptID("taskMilestoneId", req.GetTaskMilestoneId()); err != nil {
+				return err
+			}
+		} else if !eqID(old.ParentID, t.ParentID) {
+			t.TaskMilestoneID = nil
+		}
+		if !eqID(old.TaskMilestoneID, t.TaskMilestoneID) || !eqID(old.ParentID, t.ParentID) {
+			if err := subtaskMilestone(r.Context(), q, t); err != nil {
+				return err
+			}
+		}
 		if err := updateFeatures(r.Context(), q, acc, old, t); err != nil {
 			return err
 		}
@@ -1437,8 +1451,8 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				c.tasks = append(c.tasks, *p)
 			}
 		}
-		if t.StatusID != old.StatusID && t.ParentID != nil {
-			c.tasks = append(c.tasks, *t.ParentID) // subtask_done of the parent
+		if (t.StatusID != old.StatusID || !eqID(old.TaskMilestoneID, t.TaskMilestoneID)) && t.ParentID != nil {
+			c.tasks = append(c.tasks, *t.ParentID) // subtask_done / milestone progress of the parent
 		}
 		// Notifications: a status change to subscribers; new @mentions of the description.
 		if t.StatusID != old.StatusID {
@@ -1525,6 +1539,14 @@ func (s *Service) recordFields(ctx context.Context, q *sqlc.Queries, old, t task
 		{"milestone", map[string]any{"milestone_id": idAny(old.MilestoneID)}, map[string]any{"milestone_id": idAny(t.MilestoneID)}, !eqID(old.MilestoneID, t.MilestoneID)},
 		{"status", map[string]any{"status_id": old.StatusID.String(), "status_type": from.Type, "position": old.Position},
 			map[string]any{"status_id": t.StatusID.String(), "status_type": to.Type, "position": t.Position}, old.StatusID != t.StatusID},
+	}
+	if !eqID(old.TaskMilestoneID, t.TaskMilestoneID) { // a subtask's milestone (ADR-0063)
+		action := "linked"
+		if t.TaskMilestoneID == nil {
+			action = "unlinked"
+		}
+		entries = append(entries, entry{kindMilestones, map[string]any{"task_milestone_id": idAny(old.TaskMilestoneID)},
+			map[string]any{"action": action, "task_milestone_id": idAny(t.TaskMilestoneID), "parent_id": idAny(t.ParentID)}, true})
 	}
 	for _, e := range entries {
 		if e.changed {
