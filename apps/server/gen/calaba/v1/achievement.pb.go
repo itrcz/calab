@@ -22,24 +22,31 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// An achievement of the catalog.
+// An achievement of a workspace catalog.
 type Achievement struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Title       string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`             // 1..60 characters
-	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"` // 0..200 characters
-	// The picture: a 512x512 WebP with a transparent background made by the server from the
-	// superadmin's upload. GET it with the Authorization header (any authenticated user, guests
-	// and bots too); the URL changes with the bytes (Cache-Control: immutable).
-	ImageUrl  string `protobuf:"bytes,4,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`
-	ImageSize uint32 `protobuf:"varint,5,opt,name=image_size,json=imageSize,proto3" json:"image_size,omitempty"` // bytes
-	Width     uint32 `protobuf:"varint,6,opt,name=width,proto3" json:"width,omitempty"`                          // 512
-	Height    uint32 `protobuf:"varint,7,opt,name=height,proto3" json:"height,omitempty"`                        // 512
-	Position  int32  `protobuf:"varint,8,opt,name=position,proto3" json:"position,omitempty"`                    // catalog order, ascending
+	Title       string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`                           // 1..60 characters
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`               // 0..200 characters
+	ImageSize   uint32                 `protobuf:"varint,5,opt,name=image_size,json=imageSize,proto3" json:"image_size,omitempty"` // bytes of the picture
+	Width       uint32                 `protobuf:"varint,6,opt,name=width,proto3" json:"width,omitempty"`                          // 512
+	Height      uint32                 `protobuf:"varint,7,opt,name=height,proto3" json:"height,omitempty"`                        // 512
+	Position    int32                  `protobuf:"varint,8,opt,name=position,proto3" json:"position,omitempty"`                    // catalog order, ascending
 	// Set = archived: cannot be granted any more; granted ones stay visible (profiles, cards).
-	ArchivedAt    *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=archived_at,json=archivedAt,proto3" json:"archived_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ArchivedAt  *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=archived_at,json=archivedAt,proto3" json:"archived_at,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	WorkspaceId string                 `protobuf:"bytes,12,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	// The picture: a file of the workspace (GET /api/files/{file_id}), a 512x512 WebP with a
+	// transparent background made by the server; any member of the workspace (guests too) reads
+	// it. Empty = no picture (an entry moved from the former host catalog whose picture is still
+	// being copied, or was lost).
+	FileId string `protobuf:"bytes,13,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	// Live grants of it in the workspace (revoked ones are not counted).
+	GrantedCount uint32 `protobuf:"varint,14,opt,name=granted_count,json=grantedCount,proto3" json:"granted_count,omitempty"`
+	// It was ever granted (revoked grants included): DELETE answers 409 ACHIEVEMENT_IN_USE, archive
+	// it instead.
+	InUse         bool `protobuf:"varint,15,opt,name=in_use,json=inUse,proto3" json:"in_use,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -95,13 +102,6 @@ func (x *Achievement) GetDescription() string {
 	return ""
 }
 
-func (x *Achievement) GetImageUrl() string {
-	if x != nil {
-		return x.ImageUrl
-	}
-	return ""
-}
-
 func (x *Achievement) GetImageSize() uint32 {
 	if x != nil {
 		return x.ImageSize
@@ -151,10 +151,38 @@ func (x *Achievement) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// GET /api/achievements (any authenticated user, guests and bots too): the whole catalog by
-// position, archived ones included (archived_at set) so that granted achievements and old cards
-// still resolve; clients offer only the live ones for granting. The response has an ETag that
-// changes with any change of the catalog (If-None-Match -> 304).
+func (x *Achievement) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *Achievement) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *Achievement) GetGrantedCount() uint32 {
+	if x != nil {
+		return x.GrantedCount
+	}
+	return 0
+}
+
+func (x *Achievement) GetInUse() bool {
+	if x != nil {
+		return x.InUse
+	}
+	return false
+}
+
+// GET /api/workspaces/{id}/achievements (any member of the workspace, guests and bots too): the
+// workspace's catalog by position, archived ones included (archived_at set) so that granted
+// achievements and old cards still resolve; clients offer only the live ones for granting. The
+// response has an ETag that changes with any change of the catalog (If-None-Match -> 304).
 type ListAchievementsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Achievements  []*Achievement         `protobuf:"bytes,1,rep,name=achievements,proto3" json:"achievements,omitempty"`
@@ -199,6 +227,201 @@ func (x *ListAchievementsResponse) GetAchievements() []*Achievement {
 	return nil
 }
 
+// POST /api/workspaces/{id}/achievements -> 201 Achievement. MANAGE_WORKSPACE (bot tokens: 403
+// BOT_NOT_ALLOWED). file_id: a PNG or WebP the caller uploaded to this workspace (POST
+// /api/files), at most 4 MB, each side 128..2048 px, with an alpha channel and a transparent
+// background (else 422 reason IMAGE_NEEDS_ALPHA); the server crops it to the visible part
+// (+4 % margin) and makes a new 512x512 WebP file with alpha in the workspace quota (the upload
+// itself is left to the orphan cleanup). title 1..60, description 0..200 characters. A new
+// achievement goes to the end of the catalog. 409 CONFLICT reason ACHIEVEMENT_LIMIT (used / limit)
+// when the workspace has 100 already.
+type CreateAchievementRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	FileId        string                 `protobuf:"bytes,3,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateAchievementRequest) Reset() {
+	*x = CreateAchievementRequest{}
+	mi := &file_calaba_v1_achievement_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateAchievementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateAchievementRequest) ProtoMessage() {}
+
+func (x *CreateAchievementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_achievement_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateAchievementRequest.ProtoReflect.Descriptor instead.
+func (*CreateAchievementRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CreateAchievementRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *CreateAchievementRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *CreateAchievementRequest) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+// PATCH /api/achievements/{id} -> Achievement. MANAGE_WORKSPACE in the achievement's workspace
+// (others: 404 when not a member, 403 without the right; bot tokens 403 BOT_NOT_ALLOWED). Unset
+// fields are left unchanged; file_id replaces the picture by the rules of the create.
+// position: 0..1000000. DELETE /api/achievements/{id} -> 204; 409 reason ACHIEVEMENT_IN_USE once
+// it was granted (revoked grants included: archive it instead).
+type UpdateAchievementRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         *string                `protobuf:"bytes,1,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	Description   *string                `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	Position      *int32                 `protobuf:"varint,3,opt,name=position,proto3,oneof" json:"position,omitempty"`
+	Archived      *bool                  `protobuf:"varint,4,opt,name=archived,proto3,oneof" json:"archived,omitempty"`
+	FileId        *string                `protobuf:"bytes,5,opt,name=file_id,json=fileId,proto3,oneof" json:"file_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAchievementRequest) Reset() {
+	*x = UpdateAchievementRequest{}
+	mi := &file_calaba_v1_achievement_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAchievementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAchievementRequest) ProtoMessage() {}
+
+func (x *UpdateAchievementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_achievement_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAchievementRequest.ProtoReflect.Descriptor instead.
+func (*UpdateAchievementRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UpdateAchievementRequest) GetTitle() string {
+	if x != nil && x.Title != nil {
+		return *x.Title
+	}
+	return ""
+}
+
+func (x *UpdateAchievementRequest) GetDescription() string {
+	if x != nil && x.Description != nil {
+		return *x.Description
+	}
+	return ""
+}
+
+func (x *UpdateAchievementRequest) GetPosition() int32 {
+	if x != nil && x.Position != nil {
+		return *x.Position
+	}
+	return 0
+}
+
+func (x *UpdateAchievementRequest) GetArchived() bool {
+	if x != nil && x.Archived != nil {
+		return *x.Archived
+	}
+	return false
+}
+
+func (x *UpdateAchievementRequest) GetFileId() string {
+	if x != nil && x.FileId != nil {
+		return *x.FileId
+	}
+	return ""
+}
+
+// The catalog of the workspace changed (an achievement created, edited, archived, reordered or
+// deleted): clients refetch GET /api/workspaces/{id}/achievements. To every member.
+type WorkspaceAchievementsUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkspaceAchievementsUpdate) Reset() {
+	*x = WorkspaceAchievementsUpdate{}
+	mi := &file_calaba_v1_achievement_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceAchievementsUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceAchievementsUpdate) ProtoMessage() {}
+
+func (x *WorkspaceAchievementsUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_achievement_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceAchievementsUpdate.ProtoReflect.Descriptor instead.
+func (*WorkspaceAchievementsUpdate) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *WorkspaceAchievementsUpdate) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
 // A grant of an achievement to a member of a workspace.
 type MemberAchievement struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -219,7 +442,7 @@ type MemberAchievement struct {
 
 func (x *MemberAchievement) Reset() {
 	*x = MemberAchievement{}
-	mi := &file_calaba_v1_achievement_proto_msgTypes[2]
+	mi := &file_calaba_v1_achievement_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -231,7 +454,7 @@ func (x *MemberAchievement) String() string {
 func (*MemberAchievement) ProtoMessage() {}
 
 func (x *MemberAchievement) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_achievement_proto_msgTypes[2]
+	mi := &file_calaba_v1_achievement_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -244,7 +467,7 @@ func (x *MemberAchievement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MemberAchievement.ProtoReflect.Descriptor instead.
 func (*MemberAchievement) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MemberAchievement) GetId() string {
@@ -312,8 +535,9 @@ func (x *MemberAchievement) GetRoomId() string {
 
 // POST /api/workspaces/{id}/members/{userId}/achievements -> MemberAchievement.
 // MANAGE_MEMBERS (bot tokens: 403 BOT_NOT_ALLOWED). The recipient is a member of the workspace,
-// not a guest, not a bot (422) and not the caller (422 reason SELF_GRANT); the achievement exists
-// and is not archived (422). note: 1..120 characters after trimming, required (422).
+// not a guest, not a bot (422) and not the caller (422 reason SELF_GRANT); the achievement is one
+// of this workspace's catalog and is not archived (422). note: 1..120 characters after trimming,
+// required (422).
 // announce = true posts the card (SystemMessage.achievement, author = the recipient, who is
 // mentioned by it) into the workspace's announcement room — its first text room, a non-private
 // one preferred, as for birthday cards; without a text room the grant succeeds with no card.
@@ -330,7 +554,7 @@ type GrantAchievementRequest struct {
 
 func (x *GrantAchievementRequest) Reset() {
 	*x = GrantAchievementRequest{}
-	mi := &file_calaba_v1_achievement_proto_msgTypes[3]
+	mi := &file_calaba_v1_achievement_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -342,7 +566,7 @@ func (x *GrantAchievementRequest) String() string {
 func (*GrantAchievementRequest) ProtoMessage() {}
 
 func (x *GrantAchievementRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_achievement_proto_msgTypes[3]
+	mi := &file_calaba_v1_achievement_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -355,7 +579,7 @@ func (x *GrantAchievementRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantAchievementRequest.ProtoReflect.Descriptor instead.
 func (*GrantAchievementRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GrantAchievementRequest) GetAchievementId() string {
@@ -393,7 +617,7 @@ type ListMemberAchievementsResponse struct {
 
 func (x *ListMemberAchievementsResponse) Reset() {
 	*x = ListMemberAchievementsResponse{}
-	mi := &file_calaba_v1_achievement_proto_msgTypes[4]
+	mi := &file_calaba_v1_achievement_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -405,7 +629,7 @@ func (x *ListMemberAchievementsResponse) String() string {
 func (*ListMemberAchievementsResponse) ProtoMessage() {}
 
 func (x *ListMemberAchievementsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_achievement_proto_msgTypes[4]
+	mi := &file_calaba_v1_achievement_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -418,7 +642,7 @@ func (x *ListMemberAchievementsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMemberAchievementsResponse.ProtoReflect.Descriptor instead.
 func (*ListMemberAchievementsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_achievement_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListMemberAchievementsResponse) GetItems() []*MemberAchievement {
@@ -432,12 +656,11 @@ var File_calaba_v1_achievement_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_achievement_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcalaba/v1/achievement.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x03\n" +
+	"\x1bcalaba/v1/achievement.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x03\n" +
 	"\vAchievement\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1b\n" +
-	"\timage_url\x18\x04 \x01(\tR\bimageUrl\x12\x1d\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1d\n" +
 	"\n" +
 	"image_size\x18\x05 \x01(\rR\timageSize\x12\x14\n" +
 	"\x05width\x18\x06 \x01(\rR\x05width\x12\x16\n" +
@@ -449,9 +672,31 @@ const file_calaba_v1_achievement_proto_rawDesc = "" +
 	"created_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"V\n" +
+	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12!\n" +
+	"\fworkspace_id\x18\f \x01(\tR\vworkspaceId\x12\x17\n" +
+	"\afile_id\x18\r \x01(\tR\x06fileId\x12#\n" +
+	"\rgranted_count\x18\x0e \x01(\rR\fgrantedCount\x12\x15\n" +
+	"\x06in_use\x18\x0f \x01(\bR\x05inUseJ\x04\b\x04\x10\x05R\timage_url\"V\n" +
 	"\x18ListAchievementsResponse\x12:\n" +
-	"\fachievements\x18\x01 \x03(\v2\x16.calaba.v1.AchievementR\fachievements\"\xac\x02\n" +
+	"\fachievements\x18\x01 \x03(\v2\x16.calaba.v1.AchievementR\fachievements\"k\n" +
+	"\x18CreateAchievementRequest\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x17\n" +
+	"\afile_id\x18\x03 \x01(\tR\x06fileId\"\xfc\x01\n" +
+	"\x18UpdateAchievementRequest\x12\x19\n" +
+	"\x05title\x18\x01 \x01(\tH\x00R\x05title\x88\x01\x01\x12%\n" +
+	"\vdescription\x18\x02 \x01(\tH\x01R\vdescription\x88\x01\x01\x12\x1f\n" +
+	"\bposition\x18\x03 \x01(\x05H\x02R\bposition\x88\x01\x01\x12\x1f\n" +
+	"\barchived\x18\x04 \x01(\bH\x03R\barchived\x88\x01\x01\x12\x1c\n" +
+	"\afile_id\x18\x05 \x01(\tH\x04R\x06fileId\x88\x01\x01B\b\n" +
+	"\x06_titleB\x0e\n" +
+	"\f_descriptionB\v\n" +
+	"\t_positionB\v\n" +
+	"\t_archivedB\n" +
+	"\n" +
+	"\b_file_id\"@\n" +
+	"\x1bWorkspaceAchievementsUpdate\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\"\xac\x02\n" +
 	"\x11MemberAchievement\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -486,22 +731,25 @@ func file_calaba_v1_achievement_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_achievement_proto_rawDescData
 }
 
-var file_calaba_v1_achievement_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_calaba_v1_achievement_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_calaba_v1_achievement_proto_goTypes = []any{
 	(*Achievement)(nil),                    // 0: calaba.v1.Achievement
 	(*ListAchievementsResponse)(nil),       // 1: calaba.v1.ListAchievementsResponse
-	(*MemberAchievement)(nil),              // 2: calaba.v1.MemberAchievement
-	(*GrantAchievementRequest)(nil),        // 3: calaba.v1.GrantAchievementRequest
-	(*ListMemberAchievementsResponse)(nil), // 4: calaba.v1.ListMemberAchievementsResponse
-	(*timestamppb.Timestamp)(nil),          // 5: google.protobuf.Timestamp
+	(*CreateAchievementRequest)(nil),       // 2: calaba.v1.CreateAchievementRequest
+	(*UpdateAchievementRequest)(nil),       // 3: calaba.v1.UpdateAchievementRequest
+	(*WorkspaceAchievementsUpdate)(nil),    // 4: calaba.v1.WorkspaceAchievementsUpdate
+	(*MemberAchievement)(nil),              // 5: calaba.v1.MemberAchievement
+	(*GrantAchievementRequest)(nil),        // 6: calaba.v1.GrantAchievementRequest
+	(*ListMemberAchievementsResponse)(nil), // 7: calaba.v1.ListMemberAchievementsResponse
+	(*timestamppb.Timestamp)(nil),          // 8: google.protobuf.Timestamp
 }
 var file_calaba_v1_achievement_proto_depIdxs = []int32{
-	5, // 0: calaba.v1.Achievement.archived_at:type_name -> google.protobuf.Timestamp
-	5, // 1: calaba.v1.Achievement.created_at:type_name -> google.protobuf.Timestamp
-	5, // 2: calaba.v1.Achievement.updated_at:type_name -> google.protobuf.Timestamp
+	8, // 0: calaba.v1.Achievement.archived_at:type_name -> google.protobuf.Timestamp
+	8, // 1: calaba.v1.Achievement.created_at:type_name -> google.protobuf.Timestamp
+	8, // 2: calaba.v1.Achievement.updated_at:type_name -> google.protobuf.Timestamp
 	0, // 3: calaba.v1.ListAchievementsResponse.achievements:type_name -> calaba.v1.Achievement
-	5, // 4: calaba.v1.MemberAchievement.granted_at:type_name -> google.protobuf.Timestamp
-	2, // 5: calaba.v1.ListMemberAchievementsResponse.items:type_name -> calaba.v1.MemberAchievement
+	8, // 4: calaba.v1.MemberAchievement.granted_at:type_name -> google.protobuf.Timestamp
+	5, // 5: calaba.v1.ListMemberAchievementsResponse.items:type_name -> calaba.v1.MemberAchievement
 	6, // [6:6] is the sub-list for method output_type
 	6, // [6:6] is the sub-list for method input_type
 	6, // [6:6] is the sub-list for extension type_name
@@ -514,13 +762,14 @@ func file_calaba_v1_achievement_proto_init() {
 	if File_calaba_v1_achievement_proto != nil {
 		return
 	}
+	file_calaba_v1_achievement_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_achievement_proto_rawDesc), len(file_calaba_v1_achievement_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

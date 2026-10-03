@@ -102,7 +102,7 @@ message BirthdayCard {
 // announce = true, into the announcement room of the workspace (as BirthdayCard). The author is the
 // recipient, and the card mentions them (inbox «Mentions»). Revoking the grant keeps the card.
 message AchievementCard {
-  string achievement_id = 1; // Achievement.id of the host catalog (GET /api/achievements)
+  string achievement_id = 1; // Achievement.id of the workspace catalog (GET /api/workspaces/{id}/achievements)
   string grant_id = 2;       // MemberAchievement.id
   string note = 3;           // «for what»
   string granted_by = 4;     // user id

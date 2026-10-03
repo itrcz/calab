@@ -681,7 +681,7 @@ func (x *BirthdayCard) GetMonth() uint32 {
 // recipient, and the card mentions them (inbox «Mentions»). Revoking the grant keeps the card.
 type AchievementCard struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AchievementId string                 `protobuf:"bytes,1,opt,name=achievement_id,json=achievementId,proto3" json:"achievement_id,omitempty"` // Achievement.id of the host catalog (GET /api/achievements)
+	AchievementId string                 `protobuf:"bytes,1,opt,name=achievement_id,json=achievementId,proto3" json:"achievement_id,omitempty"` // Achievement.id of the workspace catalog (GET /api/workspaces/{id}/achievements)
 	GrantId       string                 `protobuf:"bytes,2,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`                   // MemberAchievement.id
 	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`                                        // «for what»
 	GrantedBy     string                 `protobuf:"bytes,4,opt,name=granted_by,json=grantedBy,proto3" json:"granted_by,omitempty"`             // user id

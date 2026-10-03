@@ -12,10 +12,10 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/achievement.proto.
  */
 export const file_calaba_v1_achievement: GenFile = /*@__PURE__*/
-  fileDesc("ChtjYWxhYmEvdjEvYWNoaWV2ZW1lbnQucHJvdG8SCWNhbGFiYS52MSKmAgoLQWNoaWV2ZW1lbnQSCgoCaWQYASABKAkSDQoFdGl0bGUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEQoJaW1hZ2VfdXJsGAQgASgJEhIKCmltYWdlX3NpemUYBSABKA0SDQoFd2lkdGgYBiABKA0SDgoGaGVpZ2h0GAcgASgNEhAKCHBvc2l0aW9uGAggASgFEi8KC2FyY2hpdmVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJIChhMaXN0QWNoaWV2ZW1lbnRzUmVzcG9uc2USLAoMYWNoaWV2ZW1lbnRzGAEgAygLMhYuY2FsYWJhLnYxLkFjaGlldmVtZW50ItUBChFNZW1iZXJBY2hpZXZlbWVudBIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDwoHdXNlcl9pZBgDIAEoCRIWCg5hY2hpZXZlbWVudF9pZBgEIAEoCRIMCgRub3RlGAUgASgJEhIKCmdyYW50ZWRfYnkYBiABKAkSLgoKZ3JhbnRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKbWVzc2FnZV9pZBgIIAEoCRIPCgdyb29tX2lkGAkgASgJIlEKF0dyYW50QWNoaWV2ZW1lbnRSZXF1ZXN0EhYKDmFjaGlldmVtZW50X2lkGAEgASgJEgwKBG5vdGUYAiABKAkSEAoIYW5ub3VuY2UYAyABKAgiTQoeTGlzdE1lbWJlckFjaGlldmVtZW50c1Jlc3BvbnNlEisKBWl0ZW1zGAEgAygLMhwuY2FsYWJhLnYxLk1lbWJlckFjaGlldmVtZW50Qp4BCg1jb20uY2FsYWJhLnYxQhBBY2hpZXZlbWVudFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChtjYWxhYmEvdjEvYWNoaWV2ZW1lbnQucHJvdG8SCWNhbGFiYS52MSLyAgoLQWNoaWV2ZW1lbnQSCgoCaWQYASABKAkSDQoFdGl0bGUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEgoKaW1hZ2Vfc2l6ZRgFIAEoDRINCgV3aWR0aBgGIAEoDRIOCgZoZWlnaHQYByABKA0SEAoIcG9zaXRpb24YCCABKAUSLwoLYXJjaGl2ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHdvcmtzcGFjZV9pZBgMIAEoCRIPCgdmaWxlX2lkGA0gASgJEhUKDWdyYW50ZWRfY291bnQYDiABKA0SDgoGaW5fdXNlGA8gASgISgQIBBAFUglpbWFnZV91cmwiSAoYTGlzdEFjaGlldmVtZW50c1Jlc3BvbnNlEiwKDGFjaGlldmVtZW50cxgBIAMoCzIWLmNhbGFiYS52MS5BY2hpZXZlbWVudCJPChhDcmVhdGVBY2hpZXZlbWVudFJlcXVlc3QSDQoFdGl0bGUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSDwoHZmlsZV9pZBgDIAEoCSLMAQoYVXBkYXRlQWNoaWV2ZW1lbnRSZXF1ZXN0EhIKBXRpdGxlGAEgASgJSACIAQESGAoLZGVzY3JpcHRpb24YAiABKAlIAYgBARIVCghwb3NpdGlvbhgDIAEoBUgCiAEBEhUKCGFyY2hpdmVkGAQgASgISAOIAQESFAoHZmlsZV9pZBgFIAEoCUgEiAEBQggKBl90aXRsZUIOCgxfZGVzY3JpcHRpb25CCwoJX3Bvc2l0aW9uQgsKCV9hcmNoaXZlZEIKCghfZmlsZV9pZCIzChtXb3Jrc3BhY2VBY2hpZXZlbWVudHNVcGRhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJItUBChFNZW1iZXJBY2hpZXZlbWVudBIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDwoHdXNlcl9pZBgDIAEoCRIWCg5hY2hpZXZlbWVudF9pZBgEIAEoCRIMCgRub3RlGAUgASgJEhIKCmdyYW50ZWRfYnkYBiABKAkSLgoKZ3JhbnRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKbWVzc2FnZV9pZBgIIAEoCRIPCgdyb29tX2lkGAkgASgJIlEKF0dyYW50QWNoaWV2ZW1lbnRSZXF1ZXN0EhYKDmFjaGlldmVtZW50X2lkGAEgASgJEgwKBG5vdGUYAiABKAkSEAoIYW5ub3VuY2UYAyABKAgiTQoeTGlzdE1lbWJlckFjaGlldmVtZW50c1Jlc3BvbnNlEisKBWl0ZW1zGAEgAygLMhwuY2FsYWJhLnYxLk1lbWJlckFjaGlldmVtZW50Qp4BCg1jb20uY2FsYWJhLnYxQhBBY2hpZXZlbWVudFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
- * An achievement of the catalog.
+ * An achievement of a workspace catalog.
  *
  * @generated from message calaba.v1.Achievement
  */
@@ -40,16 +40,7 @@ export type Achievement = Message<"calaba.v1.Achievement"> & {
   description: string;
 
   /**
-   * The picture: a 512x512 WebP with a transparent background made by the server from the
-   * superadmin's upload. GET it with the Authorization header (any authenticated user, guests
-   * and bots too); the URL changes with the bytes (Cache-Control: immutable).
-   *
-   * @generated from field: string image_url = 4;
-   */
-  imageUrl: string;
-
-  /**
-   * bytes
+   * bytes of the picture
    *
    * @generated from field: uint32 image_size = 5;
    */
@@ -92,6 +83,36 @@ export type Achievement = Message<"calaba.v1.Achievement"> & {
    * @generated from field: google.protobuf.Timestamp updated_at = 11;
    */
   updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string workspace_id = 12;
+   */
+  workspaceId: string;
+
+  /**
+   * The picture: a file of the workspace (GET /api/files/{file_id}), a 512x512 WebP with a
+   * transparent background made by the server; any member of the workspace (guests too) reads
+   * it. Empty = no picture (an entry moved from the former host catalog whose picture is still
+   * being copied, or was lost).
+   *
+   * @generated from field: string file_id = 13;
+   */
+  fileId: string;
+
+  /**
+   * Live grants of it in the workspace (revoked ones are not counted).
+   *
+   * @generated from field: uint32 granted_count = 14;
+   */
+  grantedCount: number;
+
+  /**
+   * It was ever granted (revoked grants included): DELETE answers 409 ACHIEVEMENT_IN_USE, archive
+   * it instead.
+   *
+   * @generated from field: bool in_use = 15;
+   */
+  inUse: boolean;
 };
 
 /**
@@ -102,10 +123,10 @@ export const AchievementSchema: GenMessage<Achievement> = /*@__PURE__*/
   messageDesc(file_calaba_v1_achievement, 0);
 
 /**
- * GET /api/achievements (any authenticated user, guests and bots too): the whole catalog by
- * position, archived ones included (archived_at set) so that granted achievements and old cards
- * still resolve; clients offer only the live ones for granting. The response has an ETag that
- * changes with any change of the catalog (If-None-Match -> 304).
+ * GET /api/workspaces/{id}/achievements (any member of the workspace, guests and bots too): the
+ * workspace's catalog by position, archived ones included (archived_at set) so that granted
+ * achievements and old cards still resolve; clients offer only the live ones for granting. The
+ * response has an ETag that changes with any change of the catalog (If-None-Match -> 304).
  *
  * @generated from message calaba.v1.ListAchievementsResponse
  */
@@ -122,6 +143,105 @@ export type ListAchievementsResponse = Message<"calaba.v1.ListAchievementsRespon
  */
 export const ListAchievementsResponseSchema: GenMessage<ListAchievementsResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_achievement, 1);
+
+/**
+ * POST /api/workspaces/{id}/achievements -> 201 Achievement. MANAGE_WORKSPACE (bot tokens: 403
+ * BOT_NOT_ALLOWED). file_id: a PNG or WebP the caller uploaded to this workspace (POST
+ * /api/files), at most 4 MB, each side 128..2048 px, with an alpha channel and a transparent
+ * background (else 422 reason IMAGE_NEEDS_ALPHA); the server crops it to the visible part
+ * (+4 % margin) and makes a new 512x512 WebP file with alpha in the workspace quota (the upload
+ * itself is left to the orphan cleanup). title 1..60, description 0..200 characters. A new
+ * achievement goes to the end of the catalog. 409 CONFLICT reason ACHIEVEMENT_LIMIT (used / limit)
+ * when the workspace has 100 already.
+ *
+ * @generated from message calaba.v1.CreateAchievementRequest
+ */
+export type CreateAchievementRequest = Message<"calaba.v1.CreateAchievementRequest"> & {
+  /**
+   * @generated from field: string title = 1;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string description = 2;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string file_id = 3;
+   */
+  fileId: string;
+};
+
+/**
+ * Describes the message calaba.v1.CreateAchievementRequest.
+ * Use `create(CreateAchievementRequestSchema)` to create a new message.
+ */
+export const CreateAchievementRequestSchema: GenMessage<CreateAchievementRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_achievement, 2);
+
+/**
+ * PATCH /api/achievements/{id} -> Achievement. MANAGE_WORKSPACE in the achievement's workspace
+ * (others: 404 when not a member, 403 without the right; bot tokens 403 BOT_NOT_ALLOWED). Unset
+ * fields are left unchanged; file_id replaces the picture by the rules of the create.
+ * position: 0..1000000. DELETE /api/achievements/{id} -> 204; 409 reason ACHIEVEMENT_IN_USE once
+ * it was granted (revoked grants included: archive it instead).
+ *
+ * @generated from message calaba.v1.UpdateAchievementRequest
+ */
+export type UpdateAchievementRequest = Message<"calaba.v1.UpdateAchievementRequest"> & {
+  /**
+   * @generated from field: optional string title = 1;
+   */
+  title?: string | undefined;
+
+  /**
+   * @generated from field: optional string description = 2;
+   */
+  description?: string | undefined;
+
+  /**
+   * @generated from field: optional int32 position = 3;
+   */
+  position?: number | undefined;
+
+  /**
+   * @generated from field: optional bool archived = 4;
+   */
+  archived?: boolean | undefined;
+
+  /**
+   * @generated from field: optional string file_id = 5;
+   */
+  fileId?: string | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateAchievementRequest.
+ * Use `create(UpdateAchievementRequestSchema)` to create a new message.
+ */
+export const UpdateAchievementRequestSchema: GenMessage<UpdateAchievementRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_achievement, 3);
+
+/**
+ * The catalog of the workspace changed (an achievement created, edited, archived, reordered or
+ * deleted): clients refetch GET /api/workspaces/{id}/achievements. To every member.
+ *
+ * @generated from message calaba.v1.WorkspaceAchievementsUpdate
+ */
+export type WorkspaceAchievementsUpdate = Message<"calaba.v1.WorkspaceAchievementsUpdate"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+};
+
+/**
+ * Describes the message calaba.v1.WorkspaceAchievementsUpdate.
+ * Use `create(WorkspaceAchievementsUpdateSchema)` to create a new message.
+ */
+export const WorkspaceAchievementsUpdateSchema: GenMessage<WorkspaceAchievementsUpdate> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_achievement, 4);
 
 /**
  * A grant of an achievement to a member of a workspace.
@@ -189,13 +309,14 @@ export type MemberAchievement = Message<"calaba.v1.MemberAchievement"> & {
  * Use `create(MemberAchievementSchema)` to create a new message.
  */
 export const MemberAchievementSchema: GenMessage<MemberAchievement> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_achievement, 2);
+  messageDesc(file_calaba_v1_achievement, 5);
 
 /**
  * POST /api/workspaces/{id}/members/{userId}/achievements -> MemberAchievement.
  * MANAGE_MEMBERS (bot tokens: 403 BOT_NOT_ALLOWED). The recipient is a member of the workspace,
- * not a guest, not a bot (422) and not the caller (422 reason SELF_GRANT); the achievement exists
- * and is not archived (422). note: 1..120 characters after trimming, required (422).
+ * not a guest, not a bot (422) and not the caller (422 reason SELF_GRANT); the achievement is one
+ * of this workspace's catalog and is not archived (422). note: 1..120 characters after trimming,
+ * required (422).
  * announce = true posts the card (SystemMessage.achievement, author = the recipient, who is
  * mentioned by it) into the workspace's announcement room — its first text room, a non-private
  * one preferred, as for birthday cards; without a text room the grant succeeds with no card.
@@ -226,7 +347,7 @@ export type GrantAchievementRequest = Message<"calaba.v1.GrantAchievementRequest
  * Use `create(GrantAchievementRequestSchema)` to create a new message.
  */
 export const GrantAchievementRequestSchema: GenMessage<GrantAchievementRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_achievement, 3);
+  messageDesc(file_calaba_v1_achievement, 6);
 
 /**
  * GET /api/workspaces/{id}/members/{userId}/achievements: the member's live grants, newest
@@ -249,5 +370,5 @@ export type ListMemberAchievementsResponse = Message<"calaba.v1.ListMemberAchiev
  * Use `create(ListMemberAchievementsResponseSchema)` to create a new message.
  */
 export const ListMemberAchievementsResponseSchema: GenMessage<ListMemberAchievementsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_achievement, 4);
+  messageDesc(file_calaba_v1_achievement, 7);
 

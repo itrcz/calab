@@ -386,7 +386,7 @@ export const BirthdayCardSchema: GenMessage<BirthdayCard> = /*@__PURE__*/
  */
 export type AchievementCard = Message$1<"calaba.v1.AchievementCard"> & {
   /**
-   * Achievement.id of the host catalog (GET /api/achievements)
+   * Achievement.id of the workspace catalog (GET /api/workspaces/{id}/achievements)
    *
    * @generated from field: string achievement_id = 1;
    */

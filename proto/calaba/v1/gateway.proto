@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/achievement.proto";
 import "calaba/v1/automations.proto";
 import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
@@ -277,6 +278,8 @@ message DispatchEvent {
     BoardRuleUpdate board_rule_update = 92;
     BoardRuleDelete board_rule_delete = 93;
     TaskGitLinksUpdate task_git_links_update = 94;
+    // The workspace's achievement catalog changed (ADR-0061, amendment 1); to every member.
+    WorkspaceAchievementsUpdate workspace_achievements_update = 95;
   }
 }
 
