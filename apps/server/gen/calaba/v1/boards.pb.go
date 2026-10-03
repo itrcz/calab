@@ -1590,7 +1590,8 @@ type Board struct {
 	EstimateScale EstimateScale `protobuf:"varint,27,opt,name=estimate_scale,json=estimateScale,proto3,enum=calaba.v1.EstimateScale" json:"estimate_scale,omitempty"`
 	// Task-scoped access (ADR-0059): the recipient sees the board only through its tasks - those
 	// where they are an assignee or an approver; permissions = 0 (task bits come from
-	// taskPermissions). Never on a restricted board, never for guests or bots.
+	// taskPermissions), permission_overrides empty, open_tasks 0. Never on a restricted board,
+	// never for guests or bots.
 	TaskScoped    bool `protobuf:"varint,28,opt,name=task_scoped,json=taskScoped,proto3" json:"task_scoped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

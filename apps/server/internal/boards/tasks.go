@@ -131,11 +131,78 @@ func (s *Service) taskAccess(r *http.Request, dbtx sqlc.DBTX, id uuid.UUID, lock
 	if !ok {
 		return t, perm.BoardAccess{}, httpx.NotFound("task")
 	}
+	acc, err := taskOf(r, sqlc.New(dbtx), t)
+	return t, acc, err
+}
+
+// taskOf resolves the caller's access to task t: the board's access with Bits = perm.TaskBits
+// (ADR-0059 §2 — a task-scoped member has bits only on the live tasks they are an assignee or
+// an approver of); 404 when the task is hidden. acc.TaskScoped set = the bits come from the task.
+func taskOf(r *http.Request, q *sqlc.Queries, t taskRow) (perm.BoardAccess, error) {
 	acc, err := board(r, t.BoardID, false)
 	if err != nil {
-		return t, acc, httpx.NotFound("task")
+		return acc, httpx.NotFound("task")
 	}
-	return t, acc, nil
+	if acc.Bits.Has(perm.ViewBoard) {
+		return acc, nil
+	}
+	if t.ArchivedAt != nil { // invitations count on live tasks only
+		return perm.BoardAccess{}, httpx.NotFound("task")
+	}
+	inv, err := q.GetTaskInvite(r.Context(), sqlc.GetTaskInviteParams{TaskID: t.ID, UserID: uid(r)})
+	if err != nil {
+		return perm.BoardAccess{}, err
+	}
+	if acc.Bits = perm.TaskBits(acc, inv.Assignee, inv.Approver); acc.Bits == 0 {
+		return perm.BoardAccess{}, httpx.NotFound("task")
+	}
+	return acc, nil
+}
+
+// invitedCond is the SQL condition over tasks t "user is an assignee or an approver" (ADR-0059).
+func invitedCond(a *Args, user uuid.UUID) string {
+	u := a.Add(user)
+	return "(EXISTS (SELECT 1 FROM task_assignees ia WHERE ia.task_id = t.id AND ia.user_id = " + u + ")" +
+		" OR EXISTS (SELECT 1 FROM task_approvers ip WHERE ip.task_id = t.id AND ip.user_id = " + u + "))"
+}
+
+// visibleTasks keeps the rows the viewer sees (order kept): tasks of live boards with
+// VIEW_BOARD, and on task-scoped boards the live tasks they are invited on (ADR-0059).
+func visibleTasks(ctx context.Context, q *sqlc.Queries, rows []taskRow, me uuid.UUID) ([]taskRow, error) {
+	res := perm.FromContext(ctx)
+	accs := map[uuid.UUID]perm.BoardAccess{}
+	var scoped []uuid.UUID
+	for _, x := range rows {
+		acc, ok := accs[x.BoardID]
+		if !ok {
+			var err error
+			acc, err = res.Board(ctx, x.BoardID, me)
+			if err != nil && !errors.Is(err, perm.ErrNoBoard) {
+				return nil, err
+			}
+			accs[x.BoardID] = acc
+		}
+		if !acc.Bits.Has(perm.ViewBoard) && acc.TaskScoped && x.ArchivedAt == nil {
+			scoped = append(scoped, x.ID)
+		}
+	}
+	invited := map[uuid.UUID]bool{}
+	if len(scoped) > 0 {
+		ids, err := q.ListTaskInvites(ctx, sqlc.ListTaskInvitesParams{Ids: scoped, UserID: me})
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			invited[id] = true
+		}
+	}
+	out := make([]taskRow, 0, len(rows))
+	for _, x := range rows {
+		if acc := accs[x.BoardID]; (acc.Bits.Has(perm.ViewBoard) && !acc.Archived) || invited[x.ID] {
+			out = append(out, x)
+		}
+	}
+	return out, nil
 }
 
 // canEdit: EDIT_TASKS edits any task; CREATE_TASKS the ones the caller created or is assigned to.
@@ -268,8 +335,10 @@ func (it boardItems) labelIDs(raw []string) ([]uuid.UUID, error) {
 	return out, nil
 }
 
-// assigneesIn validates a requested assignee list (ADR-0042 §1): ≤ 10, members who see the
-// board (bots too), not guests; exactly one lead (the first when none is marked).
+// assigneesIn validates a requested assignee list (ADR-0042 §1, ADR-0059): ≤ 10 members, not
+// guests — people who see the board or, unless the board is restricted, any other member (who
+// then sees the board through this task); bots only with VIEW_BOARD; exactly one lead (the
+// first when none is marked).
 func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*v1.TaskAssigneeInput) ([]*v1.TaskAssigneeInput, error) {
 	if len(in) > MaxAssignees {
 		return nil, httpx.Validation("assignees", "at most 10 assignees")
@@ -290,12 +359,12 @@ func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*
 		if utf8.RuneCountInString(a.GetNote()) > MaxNote {
 			return nil, httpx.Validation(field+".note", "note must be at most 120 characters")
 		}
-		acc, err := res.Board(ctx, boardID, u)
-		if errors.Is(err, perm.ErrNoBoard) || (err == nil && !acc.Bits.Has(perm.ViewBoard)) {
-			return nil, httpx.Validation(field+".userId", "the user does not see this board")
-		}
+		ok, err := mayInvite(ctx, q, res, boardID, u)
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return nil, httpx.Validation(field+".userId", "the user does not see this board")
 		}
 		if a.GetIsLead() {
 			leads++
@@ -309,6 +378,36 @@ func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*
 		out[i] = &v1.TaskAssigneeInput{UserId: a.GetUserId(), IsLead: a.GetIsLead() || (leads == 0 && i == 0), Note: strings.TrimSpace(a.GetNote())}
 	}
 	return out, nil
+}
+
+// mayInvite reports whether user u may become an assignee or an approver of a task of the
+// board (ADR-0059 §3): a member who is not a guest and either sees the board or — a human, on a
+// board that is not restricted — will see it through the task. Bots need VIEW_BOARD.
+func mayInvite(ctx context.Context, q *sqlc.Queries, res *perm.Resolver, boardID, u uuid.UUID) (bool, error) {
+	acc, err := res.Board(ctx, boardID, u)
+	if errors.Is(err, perm.ErrNoBoard) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if acc.Role == perm.RoleGuest || acc.Role == "" {
+		return false, nil
+	}
+	if acc.Bits.Has(perm.ViewBoard) {
+		return true, nil
+	}
+	if acc.Restricted || acc.Archived {
+		return false, nil
+	}
+	usr, err := q.GetUser(ctx, u)
+	if db.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !usr.IsBot && !usr.IsGuest, nil
 }
 
 // writeAssignees replaces the list, keeping assigned_by / assigned_at of those who stay.
@@ -469,11 +568,16 @@ func place(ctx context.Context, q *sqlc.Queries, statusID, taskID uuid.UUID, aft
 // ---- handlers ----
 
 func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
-	id, _, err := pathBoard(r, false)
+	id, acc, err := pathBoard(r, false)
 	if err != nil {
 		return err
 	}
 	qs := r.URL.Query()
+	scoped := !acc.Bits.Has(perm.ViewBoard) // ADR-0059: only the live tasks they are invited on
+	if scoped && qs.Get("archived") == "1" {
+		httpx.Write(w, http.StatusOK, &v1.ListTasksResponse{})
+		return nil
+	}
 	f := &v1.TaskFilter{}
 	if raw := qs.Get("filter"); raw != "" {
 		if err := protojson.Unmarshal([]byte(raw), f); err != nil {
@@ -493,8 +597,11 @@ func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
 	switch {
 	case qs.Get("archived") == "1":
 		where = append(where, "t.archived_at IS NOT NULL")
-	case !HasArchived(f):
+	case scoped || !HasArchived(f):
 		where = append(where, "t.archived_at IS NULL")
+	}
+	if scoped {
+		where = append(where, invitedCond(&a, uid(r)))
 	}
 	if s := qs.Get("updated_after"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
@@ -985,6 +1092,9 @@ func (s *Service) taskResponse(r *http.Request, id uuid.UUID, full bool) (*v1.Ta
 	if err != nil {
 		return nil, err
 	}
+	if subs, err = visibleTasks(ctx, s.db.Q, subs, me); err != nil { // ADR-0059
+		return nil, err
+	}
 	if out.Subtasks, err = tasksProto(ctx, s.db.Q, subs, me); err != nil {
 		return nil, err
 	}
@@ -1006,12 +1116,10 @@ func (s *Service) taskResponse(r *http.Request, id uuid.UUID, full bool) (*v1.Ta
 		if err != nil {
 			return nil, err
 		}
-		// Only tasks of boards the caller sees (a relation may cross boards).
-		visible := rows[:0]
-		for _, x := range rows {
-			if acc, err := perm.FromContext(ctx).Board(ctx, x.BoardID, me); err == nil && acc.Bits.Has(perm.ViewBoard) && !acc.Archived {
-				visible = append(visible, x)
-			}
+		// Only tasks the caller sees (a relation may cross boards; ADR-0059: task-scoped boards).
+		visible, err := visibleTasks(ctx, s.db.Q, rows, me)
+		if err != nil {
+			return nil, err
 		}
 		pbs, err := tasksProto(ctx, s.db.Q, visible, me)
 		if err != nil {
@@ -1068,6 +1176,16 @@ func (s *Service) lookup(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		row, ok, err := taskByID(r.Context(), s.db.Pool, t.ID, false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if _, err := taskOf(r, s.db.Q, row); err != nil {
+			continue
+		}
 		acc, err := board(r, t.BoardID, false)
 		if err != nil {
 			continue
@@ -1076,7 +1194,7 @@ func (s *Service) lookup(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if out.Board, err = s.boardFor(r.Context(), s.db.Q, t.BoardID, uid(r), acc.Bits); err != nil {
+		if out.Board, err = s.boardFor(r.Context(), s.db.Q, t.BoardID, uid(r), acc); err != nil {
 			return err
 		}
 		httpx.Write(w, http.StatusOK, out)
@@ -1165,6 +1283,15 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			if t.ParentID != nil && !eqID(t.ParentID, old.ParentID) {
 				if err := checkParent(r.Context(), q, tx, t.BoardID, *t.ParentID, t.ID); err != nil {
 					return err
+				}
+				if acc.TaskScoped { // ADR-0059: only under a task the caller sees
+					p, _, err := taskByID(r.Context(), tx, *t.ParentID, false)
+					if err != nil {
+						return err
+					}
+					if _, err := taskOf(r, q, p); err != nil {
+						return httpx.Validation("parentId", "a live task of this board is required")
+					}
 				}
 			}
 		}

@@ -154,8 +154,9 @@ func loadParts(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID, viewer uui
 	return p, nil
 }
 
-// boardProto converts a board with its parts; bits = the viewer's (0 in broadcasts).
-func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
+// boardProto converts a board with its parts; bits = the viewer's (0 in broadcasts). scoped:
+// the task-scoped form (ADR-0059) — no access overrides, no board-wide task count.
+func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Board {
 	out := &v1.Board{
 		Id: b.ID.String(), WorkspaceId: b.WorkspaceID.String(), Name: b.Name, Key: b.Key, Emoji: b.Emoji,
 		IconFileId: idp(b.IconFileID), Description: b.Description, IsPrivate: b.IsPrivate, Restricted: b.Restricted, Position: b.Position,
@@ -180,7 +181,17 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
 	for _, o := range p.overrides[b.ID] {
 		out.PermissionOverrides = append(out.PermissionOverrides, BoardOverride(o))
 	}
+	if scoped {
+		return ScopedForm(out)
+	}
 	return out
+}
+
+// ScopedForm turns a broadcast board into the form a task-scoped recipient gets (ADR-0059):
+// permissions 0, no access overrides, no board-wide task count. b is modified.
+func ScopedForm(b *v1.Board) *v1.Board {
+	b.Permissions, b.TaskScoped, b.OpenTasks, b.PermissionOverrides = 0, true, 0, nil
+	return b
 }
 
 // Category converts a board category.
@@ -214,38 +225,29 @@ func All(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) ([]*v1.Board, err
 	}
 	out := make([]*v1.Board, len(rows))
 	for i, b := range rows {
-		out[i] = boardProto(b, p, 0)
+		out[i] = boardProto(b, p, 0, false)
 	}
 	return out, nil
 }
 
 // Snapshot returns the live boards member m sees in workspace wsID, with their bits and
-// shared views (READY: WorkspaceSnapshot.boards), and the ids of their unread tasks.
+// shared views (READY: WorkspaceSnapshot.boards) — task-scoped ones (ADR-0059) in their scoped
+// form — and the ids of their unread tasks.
 func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Member) ([]*v1.Board, []string, error) {
-	if m.Role == perm.RoleGuest || m.Role == "" {
-		return nil, nil, nil
-	}
-	rows, err := q.ListBoards(ctx, sqlc.ListBoardsParams{WorkspaceID: wsID, Archived: false})
-	if err != nil || len(rows) == 0 {
+	vis, err := VisibleBoards(ctx, q, wsID, m)
+	if err != nil || vis.Empty() {
 		return nil, nil, err
 	}
-	ovs, err := q.ListWorkspaceBoardOverrides(ctx, wsID)
+	rows, err := q.ListBoards(ctx, sqlc.ListBoardsParams{WorkspaceID: wsID, Archived: false})
 	if err != nil {
 		return nil, nil, err
 	}
-	byBoard := map[uuid.UUID][]sqlc.BoardPermission{}
-	for _, o := range ovs {
-		byBoard[o.BoardID] = append(byBoard[o.BoardID], o)
-	}
 	visible := make([]sqlc.Board, 0, len(rows))
-	bits := map[uuid.UUID]perm.Bits{}
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, b := range rows {
-		bb := perm.ComputeBoardIn(m, b.IsPrivate, b.Restricted, OverrideTargets(byBoard[b.ID]))
-		if !bb.Has(perm.ViewBoard) {
-			continue
+		if _, ok := vis.Full[b.ID]; ok || vis.Scoped[b.ID] {
+			visible, ids = append(visible, b), append(ids, b.ID)
 		}
-		visible, bits[b.ID], ids = append(visible, b), bb, append(ids, b.ID)
 	}
 	me, err := uuid.Parse(m.UserID)
 	if err != nil {
@@ -257,7 +259,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 	}
 	out := make([]*v1.Board, len(visible))
 	for i, b := range visible {
-		out[i] = boardProto(b, p, bits[b.ID])
+		out[i] = boardProto(b, p, vis.Full[b.ID], vis.Scoped[b.ID])
 	}
 	unread, err := q.UnreadTaskIDs(ctx, sqlc.UnreadTaskIDsParams{WorkspaceID: wsID, UserID: me})
 	if err != nil {
@@ -265,7 +267,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 	}
 	var ur []string
 	for _, u := range unread {
-		if _, ok := bits[u.BoardID]; ok {
+		if _, ok := vis.Full[u.BoardID]; ok || vis.Invited[u.ID] {
 			ur = append(ur, u.ID.String())
 		}
 	}

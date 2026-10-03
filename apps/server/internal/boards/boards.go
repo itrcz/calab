@@ -138,10 +138,13 @@ func (s *Service) tx(ctx context.Context, fn func(q *sqlc.Queries, tx pgx.Tx) er
 // ---- access ----
 
 // board resolves the caller's access to a board: 404 when it does not exist or they do not
-// see it; an archived board only for MANAGE_BOARD with archivedOK.
+// see it; an archived board only for MANAGE_BOARD with archivedOK. A task-scoped member
+// (ADR-0059) gets their access with Bits = 0: every route decides what they may do — read the
+// board, its views and their own tasks, upload; anything else answers like to a member without
+// the bit (403), or use fullBoard.
 func board(r *http.Request, boardID uuid.UUID, archivedOK bool) (perm.BoardAccess, error) {
 	acc, err := perm.FromContext(r.Context()).Board(r.Context(), boardID, uid(r))
-	if errors.Is(err, perm.ErrNoBoard) || (err == nil && !acc.Bits.Has(perm.ViewBoard)) {
+	if errors.Is(err, perm.ErrNoBoard) || (err == nil && !acc.Bits.Has(perm.ViewBoard) && !acc.TaskScoped) {
 		return perm.BoardAccess{}, httpx.NotFound("board")
 	}
 	if err != nil {
@@ -159,6 +162,16 @@ func pathBoard(r *http.Request, archivedOK bool) (uuid.UUID, perm.BoardAccess, e
 		return uuid.Nil, perm.BoardAccess{}, err
 	}
 	acc, err := board(r, id, archivedOK)
+	return id, acc, err
+}
+
+// fullBoard is pathBoard for the routes closed to task-scoped members (ADR-0059 §3): 403, as to
+// a member without bits.
+func fullBoard(r *http.Request, archivedOK bool) (uuid.UUID, perm.BoardAccess, error) {
+	id, acc, err := pathBoard(r, archivedOK)
+	if err == nil && !acc.Bits.Has(perm.ViewBoard) {
+		err = httpx.Forbidden("VIEW_BOARD required")
+	}
 	return id, acc, err
 }
 

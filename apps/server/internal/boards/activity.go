@@ -80,7 +80,7 @@ func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 // the journal of a board, oldest first (MANAGE_BOARD or EDIT_TASKS on the board, or
 // VIEW_JOURNALS of the workspace, ADR-0048 — always on a board the caller sees).
 func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := pathBoard(r, false)
+	id, acc, err := fullBoard(r, false) // not for task-scoped members, even with VIEW_JOURNALS (ADR-0059)
 	if err != nil {
 		return err
 	}

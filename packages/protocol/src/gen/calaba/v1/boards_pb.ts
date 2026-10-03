@@ -564,7 +564,8 @@ export type Board = Message<"calaba.v1.Board"> & {
   /**
    * Task-scoped access (ADR-0059): the recipient sees the board only through its tasks - those
    * where they are an assignee or an approver; permissions = 0 (task bits come from
-   * taskPermissions). Never on a restricted board, never for guests or bots.
+   * taskPermissions), permission_overrides empty, open_tasks 0. Never on a restricted board,
+   * never for guests or bots.
    *
    * @generated from field: bool task_scoped = 28;
    */

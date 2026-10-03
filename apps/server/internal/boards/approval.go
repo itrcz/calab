@@ -2,7 +2,6 @@ package boards
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -177,8 +176,9 @@ func approverProto(a sqlc.TaskApprover) *v1.TaskApprover {
 		DecidedAt: tsp(a.DecidedAt), AddedBy: idp(a.AddedBy), AddedAt: timestamppb.New(a.AddedAt)}
 }
 
-// approversIn validates a requested approver list (ADR-0049 §1): ≤ 10 distinct members who
-// see the board, not guests nor bots; required 0 = all, else ≤ their number.
+// approversIn validates a requested approver list (ADR-0049 §1, ADR-0059): ≤ 10 distinct
+// members, not guests nor bots, who see the board or — unless it is restricted — will see it
+// through the task; required 0 = all, else ≤ their number.
 func approversIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, raw []string, required uint32, field, reqField string) ([]uuid.UUID, int16, error) {
 	if len(raw) > MaxApprovers {
 		return nil, 0, httpx.Validation(field, "at most 10 approvers")
@@ -207,12 +207,12 @@ func approversIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, raw []
 		if usr.IsBot || usr.IsGuest {
 			return nil, 0, httpx.Validation(f, "bots and guests cannot approve")
 		}
-		acc, err := res.Board(ctx, boardID, u)
-		if errors.Is(err, perm.ErrNoBoard) || (err == nil && (!acc.Bits.Has(perm.ViewBoard) || acc.Role == perm.RoleGuest)) {
-			return nil, 0, httpx.Validation(f, "the user does not see this board")
-		}
+		ok, err := mayInvite(ctx, q, res, boardID, u)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !ok {
+			return nil, 0, httpx.Validation(f, "the user does not see this board")
 		}
 		out = append(out, u)
 	}
@@ -279,7 +279,7 @@ func (s *Service) notifyApprovers(ctx context.Context, q *sqlc.Queries, t taskRo
 	if len(users) == 0 {
 		return nil
 	}
-	users, err := sees(ctx, q, t.BoardID, users)
+	users, err := sees(ctx, q, t, users)
 	if err != nil || len(users) == 0 {
 		return err
 	}
@@ -320,7 +320,7 @@ func (s *Service) notifyOutcome(ctx context.Context, q *sqlc.Queries, t taskRow,
 	for _, sb := range subs {
 		add(sb.UserID)
 	}
-	if users, err = sees(ctx, q, t.BoardID, users); err != nil {
+	if users, err = sees(ctx, q, t, users); err != nil {
 		return err
 	}
 	// The creator and the lead get a subscription row (kept muted if they unsubscribed) so the
@@ -548,7 +548,7 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 					return err
 				}
 				claimed = len(users)
-				if users, err = sees(ctx, q, t.BoardID, users); err != nil || len(users) == 0 {
+				if users, err = sees(ctx, q, t, users); err != nil || len(users) == 0 {
 					return err
 				}
 				return decide(ctx, q, t, uuid.Nil, notifications.TaskApprovalRequested, users, uuid.Nil, nil, &c)

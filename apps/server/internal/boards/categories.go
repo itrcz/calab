@@ -137,7 +137,7 @@ func (s *Service) boardEvents(ctx context.Context, wsID uuid.UUID, ids []uuid.UU
 	}
 	out := make([]*v1.DispatchEvent, len(live))
 	for i, b := range live {
-		out[i] = &v1.DispatchEvent{Event: &v1.DispatchEvent_BoardUpdate{BoardUpdate: &v1.BoardUpdate{Board: boardProto(b, p, 0)}}}
+		out[i] = &v1.DispatchEvent{Event: &v1.DispatchEvent_BoardUpdate{BoardUpdate: &v1.BoardUpdate{Board: boardProto(b, p, 0, false)}}}
 	}
 	return out
 }
