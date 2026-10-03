@@ -11,7 +11,7 @@ import { attachmentFile } from '../lib/image';
 import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
-import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
+import { findByKey, lastSentId, messageById, useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { idAfter, useRooms } from '../stores/rooms';
 import { useBoards } from '../stores/boards';
 import { myUserId } from '../stores/session';
@@ -19,6 +19,9 @@ import { toast } from '../stores/toasts';
 import { sendTyping } from './gateway';
 
 const PAGE = 50;
+
+/** A row of a room's loaded window by key (O(1), stores/messages `keyIndex`). */
+const findMessage = (roomId: string, key: string): ChatMessage | undefined => findByKey(useMessages.getState().rooms[roomId]?.items ?? [], key);
 export const MAX_ATTACHMENTS = 20;
 export const MAX_CONTENT = 4000;
 
@@ -177,7 +180,7 @@ export async function loadNewer(roomId: string): Promise<void> {
   if (newerLoading.has(roomId)) return;
   const st = useMessages.getState().rooms[roomId];
   if (!st?.loaded || !st.hasMoreAfter) return;
-  const newest = [...st.items].reverse().find((c) => c.status === 'sent')?.msg.id;
+  const newest = lastSentId(st.items);
   if (!newest) return;
   newerLoading.add(roomId);
   try {
@@ -201,7 +204,7 @@ export async function loadNewer(roomId: string): Promise<void> {
  * Returns false if it no longer exists.
  */
 export async function ensureLoaded(roomId: string, messageId: string): Promise<boolean> {
-  const has = (): boolean => !!useMessages.getState().rooms[roomId]?.items.some((c) => c.key === messageId);
+  const has = (): boolean => !!messageById(useMessages.getState(), roomId, messageId);
   if (has()) return true;
   try {
     const after = await listPage(roomId, { after: messageId, limit: 25 });
@@ -287,7 +290,7 @@ export async function loadPresent(roomId: string): Promise<void> {
  */
 export async function toggleReaction(roomId: string, m: Message, emoji: string): Promise<void> {
   // The store's copy: the caller's may be a render old.
-  const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === m.id)?.msg ?? m;
+  const cur = messageById(useMessages.getState(), roomId, m.id) ?? m;
   const mine = cur.reactions.find((r) => r.emoji === emoji)?.me ?? false;
   const add = !mine;
   if (add && !canToggleReaction(cur.reactions, emoji)) {
@@ -319,7 +322,7 @@ export async function setPinned(m: Message, pin: boolean): Promise<void> {
  */
 export async function setEmbedsHidden(m: Message, hidden: boolean): Promise<void> {
   const apply = (v: boolean): void => {
-    const cur = useMessages.getState().rooms[m.roomId]?.items.find((c) => c.key === m.id)?.msg ?? m;
+    const cur = messageById(useMessages.getState(), m.roomId, m.id) ?? m;
     if (cur.embedsHidden !== v) useMessages.getState().upsert({ ...cur, embedsHidden: v }, { rest: true });
   };
   apply(hidden);
@@ -428,7 +431,7 @@ export async function sendMessage(
     replyToId: replyToId ?? '',
     createdAt: timestampNow(),
   });
-  const existing = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === key);
+  const existing = findMessage(roomId, key);
   if (existing) useMessages.getState().patchPending(roomId, key, { status: 'pending', uploads, error: '' });
   else useMessages.getState().addPending(roomId, { key, msg, status: 'pending', uploads } satisfies ChatMessage);
 
@@ -440,7 +443,7 @@ export async function sendMessage(
       // HEIC (iPhone photos) → JPEG `.jpg` that every client shows (docs/02 «Изображения»).
       const out = f.voice ? { blob: f.file, name: f.name } : await attachmentFile(f.file, f.name);
       if (out.blob !== f.file) {
-        const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === key);
+        const cur = findMessage(roomId, key);
         if (cur?.uploads) {
           useMessages.getState().patchPending(roomId, key, {
             uploads: cur.uploads.map((u, j) => (j === i ? { ...u, name: out.name, size: out.blob.size } : u)),
@@ -448,7 +451,7 @@ export async function sendMessage(
         }
       }
       const h = uploadFile(path, out.blob, out.name, (p) => {
-        const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === key);
+        const cur = findMessage(roomId, key);
         if (!cur?.uploads) return;
         useMessages.getState().patchPending(roomId, key, {
           uploads: cur.uploads.map((u, j) => (j === i ? { ...u, progress: p } : u)),
