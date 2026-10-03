@@ -3,8 +3,9 @@
 // every launch of the packaged app started another instance. Fails the build on that or on a bloated bundle.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const dir = new URL('../out/main/', import.meta.url).pathname;
+const dir = fileURLToPath(new URL('../out/main/', import.meta.url)); // not .pathname: /D:/… on Windows
 const MAX_BYTES = 700 * 1024; // 2.1.0: ~416 KB; the broken 2.2.0: ~1.1 MB
 const forbidden = ['Electron failed to install correctly', 'ELECTRON_OVERRIDE_DIST_PATH'];
 let bad = 0;
