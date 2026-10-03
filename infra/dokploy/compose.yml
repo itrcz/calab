@@ -1,0 +1,398 @@
+# Calab on Dokploy.
+#
+# Public HTTPS/TLS is owned by Dokploy Traefik; this stack does not bind :80/:443.
+# The web/API/LiveKit signaling services join dokploy-network so Traefik can reach them.
+# Database/Valkey/Egress/SIP stay on the private calab-internal network.
+#
+# Required Dokploy Environment values include:
+#   DOMAIN=calab.strong.ee
+#   POSTGRES_PASSWORD=...
+#   REDIS_PASSWORD=...
+#   JWT_SECRET=...
+#   LIVEKIT_API_KEY=...
+#   LIVEKIT_API_SECRET=...
+#
+# To enable SIP, set COMPOSE_PROFILES=sip and provide SIP credentials/config values
+# expected by LIVEKIT_SIP_CONFIG below (or replace SIP_CONFIG_BODY in the Environment).
+
+name: calaba
+
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  read_only: true
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/dokploy/web/Dockerfile
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    networks:
+      - dokploy-network
+    logging: *logging
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "dokploy-network"
+      traefik.http.routers.calab-http.rule: "Host(`${DOMAIN}`)"
+      traefik.http.routers.calab-http.entrypoints: "web"
+      traefik.http.routers.calab-http.middlewares: "redirect-to-https@file"
+      traefik.http.routers.calab.rule: "Host(`${DOMAIN}`)"
+      traefik.http.routers.calab.entrypoints: "websecure"
+      traefik.http.routers.calab.tls: "true"
+      traefik.http.routers.calab.tls.certresolver: "letsencrypt"
+      traefik.http.routers.calab.service: "calab-web"
+      traefik.http.services.calab-web.loadbalancer.server.port: "80"
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+      args:
+        VERSION: ${CALABA_VERSION:-1.7.0}
+        COMMIT: ${CALABA_COMMIT:-99a60fc}
+    restart: unless-stopped
+    <<: *hardening
+    tmpfs:
+      - /tmp
+    environment:
+      HTTP_ADDR: 0.0.0.0:3000
+      PUBLIC_APP_URL: https://${DOMAIN}
+      PUBLIC_APP_URL_ALT: ""
+      PUBLIC_APP_URLS: https://${DOMAIN}
+      DATABASE_URL: postgres://calaba:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@calab-postgres:5432/calaba
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@calab-valkey:6379
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-24h}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-8760h}
+      LIVEKIT_URL: wss://rtc.${DOMAIN}
+      LIVEKIT_INTERNAL_URL: http://calab-livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      STORAGE_DRIVER: fs
+      STORAGE_PATH: /data/files
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      STORAGE_MAX_TOTAL_BYTES: ${STORAGE_MAX_TOTAL_BYTES:-53687091200}
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-invite}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_TLS: ${SMTP_TLS:-tls}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      PLAN_FREE_LIMITS: ${PLAN_FREE_LIMITS:-}
+      PLAN_TEAM_LIMITS: ${PLAN_TEAM_LIMITS:-}
+      PLAN_BUSINESS_LIMITS: ${PLAN_BUSINESS_LIMITS:-}
+      PLAN_CONTACT_URL: ${PLAN_CONTACT_URL:-}
+      PLAN_CONTACT_EMAIL: ${PLAN_CONTACT_EMAIL:-it@gptunnel.ai}
+      SUPERADMIN_EMAILS: ${SUPERADMIN_EMAILS:-}
+      GPTUNNEL_API_URL: ${GPTUNNEL_API_URL:-https://gptunnel.ru}
+      GPTUNNEL_WEB_URL: ${GPTUNNEL_WEB_URL:-https://gptunnel.ru}
+      RECORDING_MAX_CONCURRENT: ${RECORDING_MAX_CONCURRENT:-3}
+      RECORDING_KEEP_DAYS: ${RECORDING_KEEP_DAYS:-30}
+      RECORDINGS_PATH: /data/recordings
+      RECORDING_EGRESS_DIR: /out
+      BOT_RATE_PER_SEC: ${BOT_RATE_PER_SEC:-30}
+      BOT_MESSAGES_PER_MIN: ${BOT_MESSAGES_PER_MIN:-20}
+    volumes:
+      - files_data:/data/files
+      - recordings_data:/data/recordings
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "/server", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      recordings-init:
+        condition: service_completed_successfully
+      livekit:
+        condition: service_started
+    networks:
+      calab-internal:
+        aliases:
+          - calab-api
+      dokploy-network:
+    logging: *logging
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "dokploy-network"
+      traefik.http.routers.calab-api.rule: "Host(`${DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/gateway`) || Path(`/healthz`))"
+      traefik.http.routers.calab-api.priority: "100"
+      traefik.http.routers.calab-api.entrypoints: "websecure"
+      traefik.http.routers.calab-api.tls: "true"
+      traefik.http.routers.calab-api.tls.certresolver: "letsencrypt"
+      traefik.http.routers.calab-api.service: "calab-api"
+      traefik.http.services.calab-api.loadbalancer.server.port: "3000"
+
+  livekit:
+    image: livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      LIVEKIT_CONFIG: |
+        port: 7880
+        bind_addresses:
+          - "0.0.0.0"
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: true
+          allow_tcp_fallback: true
+        redis:
+          address: calab-valkey:6379
+          db: 1
+        turn:
+          enabled: true
+          domain: turn.${DOMAIN}
+          tls_port: 5349
+          external_tls: true
+          proxy_protocol: true
+          proxy_protocol_trusted_cidrs:
+            - "172.16.0.0/12"
+          udp_port: ${TURN_UDP_PORT:-3478}
+          relay_range_start: ${TURN_RELAY_RANGE_START:-20000}
+          relay_range_end: ${TURN_RELAY_RANGE_END:-20099}
+        room:
+          auto_create: false
+          empty_timeout: 300
+          max_participants: 100
+        audio:
+          active_level: 40
+          min_percentile: 40
+          update_interval: 150
+          smooth_intervals: 2
+        webhook:
+          api_key: ${LIVEKIT_API_KEY}
+          urls:
+            - http://calab-api:3000/api/rtc/webhook
+        prometheus:
+          port: 6789
+        logging:
+          level: info
+          json: true
+    ports:
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+      - "${TURN_UDP_PORT:-3478}:${TURN_UDP_PORT:-3478}/udp"
+      - "${TURN_RELAY_RANGE_START:-20000}-${TURN_RELAY_RANGE_END:-20099}:${TURN_RELAY_RANGE_START:-20000}-${TURN_RELAY_RANGE_END:-20099}/udp"
+    depends_on:
+      valkey:
+        condition: service_healthy
+    networks:
+      calab-internal:
+        aliases:
+          - calab-livekit
+      dokploy-network:
+    logging: *logging
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "dokploy-network"
+      # LiveKit signal / WebSocket.
+      traefik.http.routers.calab-rtc.rule: "Host(`rtc.${DOMAIN}`)"
+      traefik.http.routers.calab-rtc.entrypoints: "websecure"
+      traefik.http.routers.calab-rtc.tls: "true"
+      traefik.http.routers.calab-rtc.tls.certresolver: "letsencrypt"
+      traefik.http.routers.calab-rtc.service: "calab-rtc"
+      traefik.http.services.calab-rtc.loadbalancer.server.port: "7880"
+      # TURN/TLS: Traefik terminates TLS, then sends PROXY protocol v2 + plain TURN to 5349.
+      traefik.tcp.routers.calab-turn.rule: "HostSNI(`turn.${DOMAIN}`)"
+      traefik.tcp.routers.calab-turn.entrypoints: "websecure"
+      traefik.tcp.routers.calab-turn.tls: "true"
+      traefik.tcp.routers.calab-turn.tls.certresolver: "letsencrypt"
+      traefik.tcp.routers.calab-turn.service: "calab-turn"
+      traefik.tcp.services.calab-turn.loadbalancer.server.port: "5349"
+      traefik.tcp.services.calab-turn.loadbalancer.proxyProtocol.version: "2"
+
+  egress:
+    image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: "${LIVEKIT_API_KEY}"
+        api_secret: "${LIVEKIT_API_SECRET}"
+        ws_url: ws://calab-livekit:7880
+        insecure: true
+        redis:
+          address: calab-valkey:6379
+          password: "${REDIS_PASSWORD}"
+          db: 1
+        template_port: 7980
+        session_limits:
+          file_output_max_duration: 3h59m
+        logging:
+          level: info
+          json: true
+    volumes:
+      - recordings_data:/out
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4g
+    depends_on:
+      valkey:
+        condition: service_healthy
+      recordings-init:
+        condition: service_completed_successfully
+    networks:
+      - calab-internal
+    logging: *logging
+
+  sip:
+    image: livekit/sip:v1.14.0@sha256:1487f39ca985f64879cc74b045e1ddc22f7afdb02e8a4739d92d749b9c3c3ad2
+    profiles: [sip]
+    restart: unless-stopped
+    <<: *hardening
+    tmpfs:
+      - /tmp
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      SIP_CONFIG_BODY: |
+        ws_url: ws://calab-livekit:7880
+        redis:
+          address: calab-valkey:6379
+          db: 1
+          password: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+        sip_port: 5060
+        rtp_port: 10000-10200
+        use_external_ip: true
+        hide_inbound_port: true
+        logging:
+          level: info
+          json: true
+    ports:
+      - "5060:5060/tcp"
+      - "5060:5060/udp"
+      - "10000-10200:10000-10200/udp"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 512m
+    depends_on:
+      valkey:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    networks:
+      - calab-internal
+    logging: *logging
+
+  recordings-init:
+    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    network_mode: none
+    restart: "no"
+    user: "0:0"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    entrypoint: ["sh", "-c", "chmod 0755 /out && chown 65532:65532 /out"]
+    volumes:
+      - recordings_data:/out
+    logging: *logging
+
+  postgres:
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    restart: unless-stopped
+    <<: *hardening
+    user: "70:70"
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql:uid=70,gid=70,mode=2775
+    environment:
+      POSTGRES_USER: calaba
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: calaba
+    volumes:
+      - pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calaba"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    networks:
+      calab-internal:
+        aliases:
+          - calab-postgres
+    logging: *logging
+
+  valkey:
+    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    restart: unless-stopped
+    <<: *hardening
+    user: "999:1000"
+    tmpfs:
+      - /tmp
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - sh
+      - -c
+      - |
+        umask 077
+        pw=$$(printf '%s' "$$REDIS_PASSWORD" | sed 's/[\\"]/\\&/g')
+        printf 'requirepass "%s"\n' "$$pw" > /tmp/auth.conf
+        exec valkey-server /tmp/auth.conf --save 60 1 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    volumes:
+      - valkey_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "VALKEYCLI_AUTH=\"$$REDIS_PASSWORD\" valkey-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      calab-internal:
+        aliases:
+          - calab-valkey
+    logging: *logging
+
+networks:
+  dokploy-network:
+    external: true
+  calab-internal:
+    driver: bridge
+
+volumes:
+  pg_data:
+  valkey_data:
+  files_data:
+  recordings_data:
