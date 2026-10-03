@@ -244,6 +244,10 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/admin/workspaces/{id}/suspension":         botDeny,
 	"GET /api/admin/users/{id}/storage-quota":           botDeny,
 	"PUT /api/admin/users/{id}/storage-quota":           botDeny,
+	"GET /api/admin/achievements":                       botDeny,
+	"POST /api/admin/achievements":                      botDeny,
+	"PATCH /api/admin/achievements/{id}":                botDeny,
+	"DELETE /api/admin/achievements/{id}":               botDeny,
 	"GET /api/unfurl":                                   botDeny,
 	"GET /api/unfurl/image":                             botDeny,
 	"GET /api/workspaces/{id}/integrations/gptunnel":    botDeny,
@@ -382,6 +386,13 @@ var botRoutes = map[string]botAccess{
 	"GET /api/workspaces/{id}/calls":     botDeny,
 	"POST /api/rooms/{id}/calls":         botAllow,
 	"DELETE /api/rooms/{id}/calls/{cid}": botAllow,
+
+	// ADR-0061: bots read the catalog and members' achievements; people grant and revoke.
+	"GET /api/achievements":                                               botAllow,
+	"GET /api/achievements/images/{name}":                                 botAllow,
+	"GET /api/workspaces/{id}/members/{userId}/achievements":              botAllow,
+	"POST /api/workspaces/{id}/members/{userId}/achievements":             botDeny,
+	"DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId}": botDeny,
 }
 
 // botAudited: administrative routes whose bot calls are logged as "bot action" with the

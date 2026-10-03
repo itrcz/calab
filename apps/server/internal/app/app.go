@@ -13,6 +13,7 @@ import (
 	"github.com/redis/rueidis"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/achievements"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
@@ -436,6 +437,7 @@ func New(d Deps) *App {
 		return qt.Proto(), err
 	}
 	admin.Routes(mux, private)
+	achievements.New(d.DB, d.Blob, pub, voice.Store{C: d.Redis}.Rooms).Routes(mux, private, admin.Guard)
 	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)})
 	unfurlSvc.Internal = boardSvc.Unfurl(d.Config.AllowedOrigins()) // own /t/ and /b/ links (ADR-0042)

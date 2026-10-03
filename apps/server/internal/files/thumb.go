@@ -66,6 +66,12 @@ func thumbnail(ctx context.Context, open func() (io.ReadCloser, error), side, qu
 	return out, err
 }
 
+// WithDecoded is withDecoded for server-made pictures of other packages (achievements,
+// ADR-0061): they share the decode slot and its memory budget.
+func WithDecoded(ctx context.Context, open func() (io.ReadCloser, error), fn func(image.Image) error) error {
+	return withDecoded(ctx, open, fn)
+}
+
 // withDecoded checks the header (at most MaxPixels), then decodes the image in the single decode
 // slot and runs fn with it (still in the slot: the scaled copies count in the memory budget).
 func withDecoded(ctx context.Context, open func() (io.ReadCloser, error), fn func(image.Image) error) error {
