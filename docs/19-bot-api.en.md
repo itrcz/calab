@@ -156,6 +156,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: a bot attends no meetings and has no external calendar | — |
 | task boards (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, statuses/labels/milestones/views, task archive | the bot works like a person, within the board bits of its roles and overrides (it can be an assignee and be let into a private board personally); a comment is a message in `task.roomId`. Assignees / approvers (ADR-0059): any human member who is not a guest — even without access to the board, unless it is restricted (they then see the board through their tasks only: `Board.taskScoped`); a bot only if it sees the board, never as an approver; otherwise `422`. A bot never sees a board through its tasks — it needs `VIEW_BOARD`. Board access (`PUT …/permissions`) and the final delete (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | boards 2.0 (ADR-0058): `GET/POST /api/workspaces/{id}/board-categories`, `PATCH/DELETE /api/board-categories/{id}`, `PUT /api/workspaces/{id}/boards/order`, `PATCH /api/boards/{id} {setDisabledFeatures, disabledFeatures, estimateScale}`, checklists: `POST /api/tasks/{id}/checklists`, `PATCH/DELETE /api/checklists/{id}`, `POST /api/checklists/{id}/items`, `PATCH/DELETE /api/checklist-items/{id}`, `POST /api/checklist-items/{id}/convert` | categories — `CREATE_BOARDS`, placing a board and features — `MANAGE_BOARD`, checklists — like task fields (`EDIT_TASKS`; `CREATE_TASKS` — its own and assigned); checklists need the Team plan (`409 PLAN_LIMIT`). A board feature is off → a request that **changes** its field to a non-empty value is `409 CONFLICT`, `reason FEATURE_DISABLED`, `field` = the field name (`estimate`, `dueOn`, `approverIds`…); clearing it and repeating the current value pass. The board webhook (`/api/boards/{id}/webhook*`) is for people only, a bot gets `403 BOT_NOT_ALLOWED`. SDK: `bot.boards.categories.*`, `bot.boards.setFeatures`, `bot.tasks.checklists.*` | see left |
+| milestones inside a task (ADR-0063): `POST /api/tasks/{id}/milestones {name, dueOn?}`, `PATCH /api/task-milestones/{id} {name?, dueOn?, position?, completed?}`, `DELETE /api/task-milestones/{id}`; a subtask — `PATCH /api/tasks/{id} {taskMilestoneId}` | like task fields (`EDIT_TASKS`; `CREATE_TASKS` — its own and assigned); ≤ 20 milestones per task (`409 TASK_MILESTONE_LIMIT`), subtasks have none (`422`), a subtask links only its parent's milestone (`422`). While subtasks are linked the server keeps the milestone's completion — a manual `completed` is `409 TASK_MILESTONE_AUTO`. The `MILESTONES` feature off — `409 FEATURE_DISABLED`. The answer is `{milestone, task}`; milestones and progress (`milestones`, `milestoneProgress`, `taskMilestoneId`) are in every task and in `TASK_UPDATE`. SDK: `bot.tasks.milestones.*` | see left |
 | board automations (ADR-0060): `GET /api/boards/{id}/rules`, `GET /api/rules/{id}/runs` | a bot **reads** the board's rules and their run log; creating / changing / deleting / testing a rule (`POST /api/boards/{id}/rules`, `PATCH/DELETE /api/rules/{id}`, `POST /api/rules/{id}/test`) and the board's Git webhook (`/api/boards/{id}/git`) — 403 `BOT_NOT_ALLOWED`. Task changes made by a bot run the board's rules like people's; changes made by rules show in the journal with an empty `actorId` and a `ruleId` | reading — `VIEW_BOARD`, the log — `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call |
 | `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | the sound library (ADR-0051): the clip is the bot's own upload to this workspace | `MANAGE_STICKERS` |
@@ -419,7 +420,7 @@ signature, drops repeats and emits the same `message` / `command` / `reaction` e
   approvals, checklists), `task.archived`, `task.restored` (auto-archive — `actor: null`), `task.moved_in` (the target
   board; the task already has its new key), `task.moved_out` (the source board), `task.comment.created`,
   `task.comment.updated`, `task.comment.deleted`, `ping`. The changes of one transaction make one event; `changes` are the
-  task's journal entries (`field` = the journal `kind`: `status`, `assignees`, `checklist`, `git` …; `before` / `after` —
+  task's journal entries (`field` = the journal `kind`: `status`, `assignees`, `checklist`, `milestones`, `git` …; `before` / `after` —
   their data). Changes made by an **automation rule** (ADR-0060) come as their own event of the same transaction with
   `"actor": null` and `"rule": {"id", "name"}`; for changes by people and bots `rule` is `null`. Git events (a task's
   links to branches and pull requests) are `task.updated` with `changes[field=git]` and `"actor": null`. The webhook
@@ -453,7 +454,8 @@ signature, drops repeats and emits the same `message` / `command` / `reaction` e
 field is present: unset ones are `null` (`actor: null` for server-made changes, `edited_at: null`), empty strings and lists
 as they are; `uint64` (e.g. an attachment `size`) is a **string**, `sequence` is a number. `task` is the task without any
 viewer data (`subscribed`, `muted`, `unread`, `viewer_state` are always at their defaults), `attachments` and `checklists`
-are always empty (the `attachment_count`, `checklist_total/done` counters stay); `comment` only for `task.comment.*`. The task link is `task_url`. A real example (the
+are always empty (the `attachment_count`, `checklist_total/done` counters stay); milestones (`milestones`,
+`milestone_progress`, `task_milestone_id`, ADR-0063) are as they are; `comment` only for `task.comment.*`. The task link is `task_url`. A real example (the
 golden fixture `apps/server/internal/boards/testdata/webhook_event.json`, fields in alphabetical order; to show both
 `changes` and `comment` it is assembled together — in a real `task.updated`, `comment` is `null`):
 
@@ -526,6 +528,8 @@ golden fixture `apps/server/internal/boards/testdata/webhook_event.json`, fields
     "key": "FNG-12",
     "label_ids": [],
     "milestone_id": "",
+    "milestone_progress": null,
+    "milestones": [],
     "muted": false,
     "number": 12,
     "parent_id": "",
@@ -539,6 +543,7 @@ golden fixture `apps/server/internal/boards/testdata/webhook_event.json`, fields
     "subscribed": false,
     "subtask_count": 0,
     "subtask_done": 0,
+    "task_milestone_id": "",
     "title": "Отчёт",
     "unread": false,
     "updated_at": "2026-10-02T12:00:00Z",
