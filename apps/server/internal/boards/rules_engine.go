@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -408,8 +409,8 @@ func utcDay(t time.Time) time.Time {
 
 // logRun records one run of a rule (the run row now, the rule's counters in finish).
 func (e *engine) logRun(r *rule, task uuid.UUID, ok bool, msg string, applied int) {
-	if len(msg) > 1000 {
-		msg = msg[:1000]
+	if utf8.RuneCountInString(msg) > 1000 {
+		msg = string([]rune(msg)[:1000])
 	}
 	tl := e.runs[r.row.ID]
 	if tl == nil {
