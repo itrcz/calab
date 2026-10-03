@@ -813,6 +813,7 @@ type RoomRecording struct {
 	FileID          *uuid.UUID
 	DeletedAt       *time.Time
 	DeletedBy       *uuid.UUID
+	TranscriptText  *string
 }
 
 type Session struct {

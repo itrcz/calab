@@ -166,6 +166,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/me/sessions":                                                              scopeGlobal,
 	"GET /api/me/sticker-packs":                                                         scopeAggregate,
 	"GET /api/me/tasks":                                                                 scopeAggregate,
+	"GET /api/search":                                                                   scopeAggregate,
 	"GET /api/messages/{id}/reactions/{emoji}":                                          scopeMessage,
 	"GET /api/notes":                                                                    scopeGlobal,
 	"GET /api/room-invites/{code}":                                                      scopeCapability,

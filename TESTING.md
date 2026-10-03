@@ -2105,3 +2105,15 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Manual: fresh account → stickers → Calab Stikers; emoji search, send to room and DM, reload history, view pack, check fixed built-in label in My stickers.
 - Guest with SEND_MESSAGES: send and forward succeed; without SEND_MESSAGES: send rejected. Free workspace: custom pack allowance unchanged.
 - Unknown asset ID: 404; public built-in route never serves uploads.
+
+### Единый поиск, сервер (ADR-0062, этапы 1–2)
+
+1. Unit: `cd apps/server && go test ./internal/searchq/ ./internal/search/` — разбор запроса (префикс, фразы, `-`, `or`, Unicode, пунктуация → 422), курсоры.
+2. Интеграция (PG17 + Valkey, свой `TEST_PG_URL`/`TEST_REDIS_URL`): `go test -tags integration -count=1 -run 'TestSearch|TestTaskScopedAccess|TestBotRouteTable|TestIdentityMutation' ./internal/app/` — ok.
+3. Руками (`make dev-server`, владелец O и участник B, комната «общий», закрытая «секрет», доска с задачей «Подготовить презентацию»):
+   - `curl "$CALAB/api/search?q=рел&scope=$WS" -H "Authorization: Bearer $B"` → в `sections[messages]` сообщение «релиз» из «общий», не из «секрет»; `snippet` с `\u0002релиз\u0003`.
+   - `q=презинтацию` → задача в `tasks` (опечатка); `q=<KEY>-1` → задача первой с `keyMatch: true`.
+   - Встреча C с D без комнаты: B по её названию/описанию — `events` пустой; O-встреча в комнате, которую B видит, — находится.
+   - `scope=all` → появляются DM и `notes` (свои полки); у бота-токена `notes` пустой.
+   - `type=messages&limit=2` → `nextCursor`; следующая страница с `cursor=…` без повторов; курсор с другим `q` → 400.
+4. Нагрузка (опционально, минуты): `createdb calaba_search_perf; CALABA_SEARCH_PERF_URL=postgres://…/calaba_search_perf go test -tags integration -run TestSearchPerf -v -timeout 60m ./internal/search/` — EXPLAIN разделов и p50/p95 сводки (docs/14).

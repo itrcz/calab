@@ -303,7 +303,7 @@ PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read
 GET    /api/tasks/{id}/activity?before&limit         лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)
 GET    /api/me/tasks?workspace_id&scope=assigned|lead|created|subscribed&open=1&cursor
-GET    /api/workspaces/{id}/tasks/search?q&limit     ⌘K: ключ и слова по видимым доскам
+GET    /api/workspaces/{id}/tasks/search?q&limit     ключ и слова по видимым доскам (тот же разбор, что /api/search, ADR-0062)
 ```
 
 - Комментарии — сообщения комнаты `task.room_id` через обычные `/api/rooms/{room_id}/messages*`, реакции, стикеры, закрепы (`EDIT_TASKS`), поиск, пересылка, прочтение и typing; `@<user_id>` подписывает и уведомляет упомянутого, если он видит доску.
@@ -348,6 +348,15 @@ GET    /api/me/blocked-bots                      ListBlockedBotsResponse; POST /
 ## REST
 
 Тела запросов и ответов — proto-сообщения из `proto/calaba/v1/*.proto` в JSON (`protojson`): поля в lowerCamelCase (`displayName`), enum — полными именами (`"ROOM_TYPE_VOICE"`), `uint64` (биты прав, байты) — строками, время — RFC 3339; скалярные поля по умолчанию в ответе присутствуют, неизвестные поля в запросе игнорируются. Авторизация — `Authorization: Bearer <access JWT>`.
+
+### Единый поиск (ADR-0062)
+
+`GET /api/search?q=&scope=<workspace_id>|all&types=<csv>&type=<one>&limit=&cursor=&sort=relevance|new` → `SearchResponse {sections[]}` (`search.proto`). Разделы: `messages` (комнаты, при `scope=all` — и свои DM после «Удалить чат»), `task_comments`, `tasks`, `events`, `files`, `notes` (свои полки; только `scope=all` или явно в `types`/`type`, ботам — никогда), `transcripts`.
+- Без `type` — сводка для ⌘K: каждый раздел, `limit` 1..20 (по умолчанию 4), сообщения/комментарии/заметки — свежие первыми, остальное — по релевантности. С `type` — лента раздела (`limit` по умолчанию 20) с `next_cursor`; курсор непрозрачный и привязан к `q`/`scope`/`type`/`sort`, чужой — 400.
+- `q` 1..200 символов: слова по основе (russian) и как написаны (simple), последнее слово от 2 символов — ещё и префикс, `"фраза"`, `-исключение`, `or`; короткие поля (названия задач и событий, имена файлов) — с опечатками и подстрокой (`pg_trgm`); `ABC-12` — задача по ключу первой. Без слов после удаления пунктуации — 422 (`field = q`).
+- `SearchHit`: `snippet` с подсветкой `\u0002…\u0003` (клиент рисует `<mark>`, не HTML), `title`, `workspace_id` (пусто — DM/заметки), `at`, `author_id`, ссылка `oneof` (сообщение + комната; комментарий + ключ задачи; задача; событие + ближайшее вхождение; файл + сообщение; запись + `offset_ms` первого совпавшего сегмента).
+- Права — только существующие функции видимости (docs/16 «Поиск»). `scope=<ws>` не участнику — 404; при `scope=all` пространства, закрытые политикой доступа сессии, пропускаются.
+- Каждый раздел — своя read-only транзакция с `statement_timeout` 1,5 с; не уложившийся раздел приходит пустым с `timed_out = true`, остальные не ждут. Лимит частоты — 30 сразу, 1/с на пользователя (429).
 
 ### Стикеры (ADR-0030)
 
@@ -506,7 +515,7 @@ DELETE /api/categories/{id}                            204; комнаты вы�
 PUT    /api/workspaces/{id}/rooms/order                SetRoomOrderRequest → SetRoomOrderResponse   (drag & drop, одна транзакция)
 PATCH  /api/rooms/{id}                                 + categoryId ("" — без категории); POST …/rooms — + categoryId
 GET    /api/rooms/{id}/messages?q=&before=&limit=      поиск в комнате (FTS)
-GET    /api/workspaces/{id}/messages/search?q=&room_id=&author_id=&before=&limit=   поиск по видимым комнатам
+GET    /api/workspaces/{id}/messages/search?q=&room_id=&author_id=&before=&limit=   поиск по видимым комнатам (разбор и план — как раздел messages /api/search)
 PUT    /api/messages/{id}/reactions/{emoji}            204, идемпотентно  (SEND_MESSAGES; ≤ 20 разных эмодзи на сообщение)
 DELETE /api/messages/{id}/reactions/{emoji}            204, своя реакция
 PUT    /api/messages/{id}/pin | DELETE …/pin           204   (MANAGE_MESSAGES; ≤ 50 на комнату) → MESSAGE_UPDATE

@@ -384,6 +384,7 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/boards/{id}/git":           botDeny,
 	"POST /api/git/boards/{id}/{provider}":  botPublic, // the repository hosting only (signed)
 	"GET /api/me/tasks":                     botAllow,
+	"GET /api/search":                       botAllow, // unified search (ADR-0062): same rules, never notes
 	"GET /api/workspaces/{id}/tasks/search": botAllow,
 	// telephony (ADR-0046): settings, the connection test (MANAGE_INTEGRATIONS) and the journal
 	// (VIEW_JOURNALS, ADR-0048) are for people; bots

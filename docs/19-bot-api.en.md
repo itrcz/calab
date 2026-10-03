@@ -137,6 +137,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | pins | `MANAGE_MESSAGES` / `VIEW_ROOM` |
 | `PUT /api/rooms/{id}/read` | read marker (does not give people's messages the ✓✓ «read» mark; bots get no `READ_RECEIPT`) | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/messages/search?q=` · `GET /api/me/mentions` | search, mentions of the bot | `VIEW_ROOM` |
+| `GET /api/search?q=&scope=<workspace_id>\|all&types=&type=&cursor=` (ADR-0062) | unified search: messages, task comments and tasks, events, files, transcripts — by the same rules as people (the bits of the bot's roles; events it organizes and those of rooms it views); the notes section is always empty for bots | each section's rights |
 | `POST /api/workspaces/{id}/files` · `POST /api/dms/{id}/files` | upload a file (multipart `file`) → `{file}` | `ATTACH_FILES` |
 | `GET /api/files/{id}` · `GET /api/files/{id}/thumbnail` | download a file | access to the room |
 | `POST /api/dms {userId}` · `GET /api/dms` · `GET /api/dms/candidates` | DM with a member of a shared workspace | not blocked |

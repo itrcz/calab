@@ -573,6 +573,52 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 	return items, nil
 }
 
+const listMessagesByIDs = `-- name: ListMessagesByIDs :many
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages WHERE id = ANY($1::uuid[]) ORDER BY id DESC
+`
+
+// The messages of ids (a search page, searchq.MessageIDs), newest first.
+func (q *Queries) ListMessagesByIDs(ctx context.Context, ids []uuid.UUID) ([]Message, error) {
+	rows, err := q.db.Query(ctx, listMessagesByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.AuthorID,
+			&i.Content,
+			&i.ReplyToID,
+			&i.Nonce,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.EmbedsHidden,
+			&i.Kind,
+			&i.Payload,
+			&i.StickerID,
+			&i.ForwardedFrom,
+			&i.ForwardAuthorID,
+			&i.ForwardSentAt,
+			&i.InlineKeyboard,
+			&i.KeyboardRevision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPeerReads = `-- name: ListPeerReads :many
 SELECT DISTINCT ON (rs.room_id) rs.room_id, rs.last_read_message_id
 FROM read_states rs JOIN users u ON u.id = rs.user_id
@@ -1003,76 +1049,6 @@ func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const searchMessages = `-- name: SearchMessages :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages
-WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
-  AND (to_tsvector('russian', content) || to_tsvector('simple', content))
-      @@ (websearch_to_tsquery('russian', $2::text) || websearch_to_tsquery('simple', $2::text))
-  AND ($3::uuid IS NULL OR id < $3::uuid)
-  AND ($4::uuid IS NULL OR author_id = $4::uuid)
-  AND ($5::uuid IS NULL OR id > $5::uuid)
-ORDER BY id DESC
-LIMIT $6
-`
-
-type SearchMessagesParams struct {
-	RoomIds  []uuid.UUID
-	Q        string
-	Before   *uuid.UUID
-	AuthorID *uuid.UUID
-	Since    *uuid.UUID
-	Lim      int32
-}
-
-// Full-text search, newest first. The tsvector expression must match messages_search_idx.
-func (q *Queries) SearchMessages(ctx context.Context, arg SearchMessagesParams) ([]Message, error) {
-	rows, err := q.db.Query(ctx, searchMessages,
-		arg.RoomIds,
-		arg.Q,
-		arg.Before,
-		arg.AuthorID,
-		arg.Since,
-		arg.Lim,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Message{}
-	for rows.Next() {
-		var i Message
-		if err := rows.Scan(
-			&i.ID,
-			&i.RoomID,
-			&i.AuthorID,
-			&i.Content,
-			&i.ReplyToID,
-			&i.Nonce,
-			&i.CreatedAt,
-			&i.EditedAt,
-			&i.DeletedAt,
-			&i.PinnedAt,
-			&i.PinnedBy,
-			&i.EmbedsHidden,
-			&i.Kind,
-			&i.Payload,
-			&i.StickerID,
-			&i.ForwardedFrom,
-			&i.ForwardAuthorID,
-			&i.ForwardSentAt,
-			&i.InlineKeyboard,
-			&i.KeyboardRevision,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const setEmbedsHidden = `-- name: SetEmbedsHidden :one

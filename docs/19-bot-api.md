@@ -135,6 +135,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | закрепы | `MANAGE_MESSAGES` / `VIEW_ROOM` |
 | `PUT /api/rooms/{id}/read` | отметка прочтения (не даёт людям ✓✓ «Прочитано»; `READ_RECEIPT` ботам не приходит) | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/messages/search?q=` · `GET /api/me/mentions` | поиск, упоминания бота | `VIEW_ROOM` |
+| `GET /api/search?q=&scope=<workspace_id>\|all&types=&type=&cursor=` (ADR-0062) | единый поиск: сообщения, комментарии и задачи, события, файлы, расшифровки — по тем же правам, что у людей (биты ролей бота, события — свои и комнат, которые он видит); раздела «Заметки» у бота нет (пустой) | права каждого раздела |
 | `POST /api/workspaces/{id}/files` · `POST /api/dms/{id}/files` | загрузка файла (multipart `file`) → `{file}` | `ATTACH_FILES` |
 | `GET /api/files/{id}` · `GET /api/files/{id}/thumbnail` | скачать файл | доступ к комнате |
 | `POST /api/dms {userId}` · `GET /api/dms` · `GET /api/dms/candidates` | DM с участником общего пространства | не заблокирован |

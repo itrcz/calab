@@ -68,6 +68,12 @@ func (d *DB) Tx(ctx context.Context, fn func(q *sqlc.Queries) error) error {
 	return d.TxRaw(ctx, func(q *sqlc.Queries, _ pgx.Tx) error { return fn(q) })
 }
 
+// ReadTx runs fn in a READ ONLY transaction (dynamic reads that need SET LOCAL, e.g. search
+// with its statement timeout). The database rejects any write in it, so it needs no admission.
+func (d *DB) ReadTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+	return pgx.BeginTxFunc(ctx, d.Pool, pgx.TxOptions{AccessMode: pgx.ReadOnly}, fn)
+}
+
 func newProvider(d *DB) (*goose.Provider, error) {
 	sub, err := fs.Sub(migrationsFS, "migrations")
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/searchq"
 )
 
 // Visible is what a workspace member sees of its boards (ADR-0042, ADR-0059).
@@ -248,17 +249,46 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// SearchMatch is the task part of unified search (ADR-0062), shared by GET /api/search and
+// tasks/search: the condition over tasks t (JOIN boards b) — words of title and description
+// (searchq tsquery, simple config: tasks_search_idx), the title with typos or as a substring
+// (pg_trgm: tasks_title_trgm_idx), the key ABC-12 exactly, or a board key prefix (ABC) — and
+// keyMatch, the exact-key condition ("false" when q is no key) that callers list first, and
+// rank, which adds its own parameters when called (after cond's, so that a count over cond
+// alone has no unused parameter): the best of ts_rank_cd and the title's word similarity, 0..1.
+func SearchMatch(pq searchq.Query, raw string, a *Args) (cond, keyMatch string, rank func() string) {
+	ts := a.Add(pq.TS) + "::text"
+	parts := []string{
+		SearchVector + " @@ to_tsquery('simple', " + ts + ")",
+		searchq.TitleMatch("t.title", pq, a.Add),
+	}
+	keyMatch = "false"
+	raw = strings.TrimSpace(raw)
+	if k, n, ok := ParseKey(raw); ok {
+		keyMatch = "(t.number = " + a.Add(n) + " AND b.key = " + a.Add(k) + ")"
+		parts = append(parts, keyMatch)
+	} else if keyRE.MatchString(strings.ToUpper(raw)) {
+		parts = append(parts, "b.key LIKE "+a.Add(strings.ToUpper(raw)+"%"))
+	}
+	rank = func() string {
+		return "greatest(ts_rank_cd(" + SearchVector + ", to_tsquery('simple', " + ts + ")), word_similarity(" + a.Add(pq.Text) + "::text, t.title))"
+	}
+	return "(" + strings.Join(parts, " OR ") + ")", keyMatch, rank
+}
+
 // searchTasks finds the visible live tasks by key and words; exact key matches first, then
-// by relevance and recency.
+// by relevance and recency. A query without a word finds nothing.
 func searchTasks(ctx context.Context, dbtx sqlc.DBTX, vis Visible, q string, limit int) ([]taskRow, error) {
+	pq, err := searchq.Parse(q)
+	if err != nil {
+		return nil, nil //nolint:nilerr // only punctuation: no match
+	}
 	var a Args
 	visible := vis.Cond(&a)
-	cond := TextCondition(q, &a)
-	tsq := a.Add(q)
-	key, n, isKey := ParseKey(q)
-	order := "ts_rank(" + SearchVector + ", plainto_tsquery('simple', " + tsq + ")) DESC, t.updated_at DESC"
-	if isKey {
-		order = "(b.key = " + a.Add(key) + " AND t.number = " + a.Add(n) + ") DESC, " + order
+	cond, key, rank := SearchMatch(pq, q, &a)
+	order := rank() + " DESC, t.updated_at DESC, t.id DESC"
+	if key != "false" { // a constant cannot be an ORDER BY item
+		order = key + " DESC, " + order
 	}
 	return queryTasks(ctx, dbtx, "WHERE "+visible+" AND t.archived_at IS NULL AND "+cond+
 		" ORDER BY "+order+" LIMIT "+strconv.Itoa(limit), a.Values()...)

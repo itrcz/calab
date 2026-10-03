@@ -47,6 +47,7 @@ import (
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/rtc"
+	"github.com/calaba/calaba/server/internal/search"
 	"github.com/calaba/calaba/server/internal/sip"
 	"github.com/calaba/calaba/server/internal/sounds"
 	"github.com/calaba/calaba/server/internal/sso"
@@ -114,6 +115,8 @@ type App struct {
 	Mail      *mail.Service
 	// Recording: meeting recording and GPTunneL (ADR-0025).
 	Recording *recording.Service
+	// Search: unified search (ADR-0062).
+	Search *search.Service
 	// Bots: bots and the Bot API (ADR-0031), with the webhook worker.
 	Bots *bots.Service
 	// BoardWebhooks: the board webhook worker (ADR-0058 §4).
@@ -161,7 +164,8 @@ func (a *App) Run(ctx context.Context) {
 	}
 	go a.Mail.Run(ctx) // returns at once without mail
 	go a.Recording.Run(ctx)
-	go a.Bots.Run(ctx) // bot webhook deliveries
+	go a.Recording.BackfillTranscripts(ctx) // one-shot: transcript_text of results stored before 00064
+	go a.Bots.Run(ctx)                      // bot webhook deliveries
 	go a.BoardWebhooks.Run(ctx)
 	go a.Birthdays.Run(ctx, time.Hour)
 	go a.Achievements.RunLegacyMigration(ctx) // one-shot: pictures of migration 00063
@@ -426,6 +430,9 @@ func New(d Deps) *App {
 	boardSvc.EnableGit(d.Redis, []byte(d.Config.JWTSecret))                            // repository webhooks of boards (ADR-0060)
 	msgHandlers.Routes(mux, private)
 	boardSvc.Routes(mux, private)
+	searchSvc := search.New(d.DB)
+	searchSvc.Limit = redisx.NewRateLimiter(d.Redis, "rl:search:", 30, 60) // unified search (ADR-0062): 30 at once, one per second
+	searchSvc.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
 	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
@@ -515,6 +522,6 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }
