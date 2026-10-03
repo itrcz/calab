@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/achievement.proto";
 import "calaba/v1/plan.proto";
 import "calaba/v1/user.proto";
 import "calaba/v1/workspace.proto";
@@ -87,4 +88,25 @@ message AdminSetSuspensionRequest {
 
 message AdminSetSuspensionResponse {
   AdminWorkspace workspace = 1;
+}
+
+// An achievement of the host catalog as the superadmin sees it (ADR-0061).
+message AdminAchievement {
+  Achievement achievement = 1;
+  uint32 granted_count = 2;    // live grants (revoked ones are not counted)
+  uint32 workspaces_count = 3; // workspaces with a live grant of it
+}
+
+// GET /api/admin/achievements: the whole catalog by position, archived ones included.
+// POST /api/admin/achievements (multipart/form-data: "image", "title", "description") ->
+// Achievement. The image is a PNG or WebP with an alpha channel and a transparent background
+// (else 422 reason IMAGE_NEEDS_ALPHA), at most 4 MB, each side 128..2048 px; the server crops it
+// to the visible part (+4 % margin) and makes a 512x512 WebP with alpha. title 1..60, description
+// 0..200 characters. A new achievement goes to the end of the catalog.
+// PATCH /api/admin/achievements/{id} (multipart/form-data, every field optional: "title",
+// "description", "position", "archived" = true|false, "image") -> Achievement.
+// DELETE /api/admin/achievements/{id} -> 204; 409 reason ACHIEVEMENT_IN_USE once it was granted
+// (revoked grants included: archive it instead).
+message AdminListAchievementsResponse {
+  repeated AdminAchievement achievements = 1;
 }

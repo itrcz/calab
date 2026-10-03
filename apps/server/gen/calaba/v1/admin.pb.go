@@ -684,11 +684,126 @@ func (x *AdminSetSuspensionResponse) GetWorkspace() *AdminWorkspace {
 	return nil
 }
 
+// An achievement of the host catalog as the superadmin sees it (ADR-0061).
+type AdminAchievement struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Achievement     *Achievement           `protobuf:"bytes,1,opt,name=achievement,proto3" json:"achievement,omitempty"`
+	GrantedCount    uint32                 `protobuf:"varint,2,opt,name=granted_count,json=grantedCount,proto3" json:"granted_count,omitempty"`          // live grants (revoked ones are not counted)
+	WorkspacesCount uint32                 `protobuf:"varint,3,opt,name=workspaces_count,json=workspacesCount,proto3" json:"workspaces_count,omitempty"` // workspaces with a live grant of it
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AdminAchievement) Reset() {
+	*x = AdminAchievement{}
+	mi := &file_calaba_v1_admin_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminAchievement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminAchievement) ProtoMessage() {}
+
+func (x *AdminAchievement) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_admin_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminAchievement.ProtoReflect.Descriptor instead.
+func (*AdminAchievement) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *AdminAchievement) GetAchievement() *Achievement {
+	if x != nil {
+		return x.Achievement
+	}
+	return nil
+}
+
+func (x *AdminAchievement) GetGrantedCount() uint32 {
+	if x != nil {
+		return x.GrantedCount
+	}
+	return 0
+}
+
+func (x *AdminAchievement) GetWorkspacesCount() uint32 {
+	if x != nil {
+		return x.WorkspacesCount
+	}
+	return 0
+}
+
+// GET /api/admin/achievements: the whole catalog by position, archived ones included.
+// POST /api/admin/achievements (multipart/form-data: "image", "title", "description") ->
+// Achievement. The image is a PNG or WebP with an alpha channel and a transparent background
+// (else 422 reason IMAGE_NEEDS_ALPHA), at most 4 MB, each side 128..2048 px; the server crops it
+// to the visible part (+4 % margin) and makes a 512x512 WebP with alpha. title 1..60, description
+// 0..200 characters. A new achievement goes to the end of the catalog.
+// PATCH /api/admin/achievements/{id} (multipart/form-data, every field optional: "title",
+// "description", "position", "archived" = true|false, "image") -> Achievement.
+// DELETE /api/admin/achievements/{id} -> 204; 409 reason ACHIEVEMENT_IN_USE once it was granted
+// (revoked grants included: archive it instead).
+type AdminListAchievementsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Achievements  []*AdminAchievement    `protobuf:"bytes,1,rep,name=achievements,proto3" json:"achievements,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminListAchievementsResponse) Reset() {
+	*x = AdminListAchievementsResponse{}
+	mi := &file_calaba_v1_admin_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminListAchievementsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminListAchievementsResponse) ProtoMessage() {}
+
+func (x *AdminListAchievementsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_admin_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminListAchievementsResponse.ProtoReflect.Descriptor instead.
+func (*AdminListAchievementsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AdminListAchievementsResponse) GetAchievements() []*AdminAchievement {
+	if x != nil {
+		return x.Achievements
+	}
+	return nil
+}
+
 var File_calaba_v1_admin_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x15calaba/v1/admin.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\x1a\x19calaba/v1/workspace.proto\"\xfe\x01\n" +
+	"\x15calaba/v1/admin.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bcalaba/v1/achievement.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\x1a\x19calaba/v1/workspace.proto\"\xfe\x01\n" +
 	"\x0eWorkspaceUsage\x12\x18\n" +
 	"\amembers\x18\x01 \x01(\rR\amembers\x12\x14\n" +
 	"\x05rooms\x18\x02 \x01(\rR\x05rooms\x12\x1d\n" +
@@ -742,7 +857,13 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\tsuspended\x18\x01 \x01(\bR\tsuspended\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"U\n" +
 	"\x1aAdminSetSuspensionResponse\x127\n" +
-	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspaceB\x98\x01\n" +
+	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\x9c\x01\n" +
+	"\x10AdminAchievement\x128\n" +
+	"\vachievement\x18\x01 \x01(\v2\x16.calaba.v1.AchievementR\vachievement\x12#\n" +
+	"\rgranted_count\x18\x02 \x01(\rR\fgrantedCount\x12)\n" +
+	"\x10workspaces_count\x18\x03 \x01(\rR\x0fworkspacesCount\"`\n" +
+	"\x1dAdminListAchievementsResponse\x12?\n" +
+	"\fachievements\x18\x01 \x03(\v2\x1b.calaba.v1.AdminAchievementR\fachievementsB\x98\x01\n" +
 	"\rcom.calaba.v1B\n" +
 	"AdminProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
@@ -759,7 +880,7 @@ func file_calaba_v1_admin_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_admin_proto_rawDescData
 }
 
-var file_calaba_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_calaba_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_calaba_v1_admin_proto_goTypes = []any{
 	(*WorkspaceUsage)(nil),                // 0: calaba.v1.WorkspaceUsage
 	(*AdminWorkspace)(nil),                // 1: calaba.v1.AdminWorkspace
@@ -771,35 +892,40 @@ var file_calaba_v1_admin_proto_goTypes = []any{
 	(*AdminPlanLogResponse)(nil),          // 7: calaba.v1.AdminPlanLogResponse
 	(*AdminSetSuspensionRequest)(nil),     // 8: calaba.v1.AdminSetSuspensionRequest
 	(*AdminSetSuspensionResponse)(nil),    // 9: calaba.v1.AdminSetSuspensionResponse
-	(*timestamppb.Timestamp)(nil),         // 10: google.protobuf.Timestamp
-	(*Workspace)(nil),                     // 11: calaba.v1.Workspace
-	(*User)(nil),                          // 12: calaba.v1.User
-	(Plan)(0),                             // 13: calaba.v1.Plan
-	(*PlanLimits)(nil),                    // 14: calaba.v1.PlanLimits
+	(*AdminAchievement)(nil),              // 10: calaba.v1.AdminAchievement
+	(*AdminListAchievementsResponse)(nil), // 11: calaba.v1.AdminListAchievementsResponse
+	(*timestamppb.Timestamp)(nil),         // 12: google.protobuf.Timestamp
+	(*Workspace)(nil),                     // 13: calaba.v1.Workspace
+	(*User)(nil),                          // 14: calaba.v1.User
+	(Plan)(0),                             // 15: calaba.v1.Plan
+	(*PlanLimits)(nil),                    // 16: calaba.v1.PlanLimits
+	(*Achievement)(nil),                   // 17: calaba.v1.Achievement
 }
 var file_calaba_v1_admin_proto_depIdxs = []int32{
-	10, // 0: calaba.v1.WorkspaceUsage.last_activity:type_name -> google.protobuf.Timestamp
-	11, // 1: calaba.v1.AdminWorkspace.workspace:type_name -> calaba.v1.Workspace
-	12, // 2: calaba.v1.AdminWorkspace.owner:type_name -> calaba.v1.User
+	12, // 0: calaba.v1.WorkspaceUsage.last_activity:type_name -> google.protobuf.Timestamp
+	13, // 1: calaba.v1.AdminWorkspace.workspace:type_name -> calaba.v1.Workspace
+	14, // 2: calaba.v1.AdminWorkspace.owner:type_name -> calaba.v1.User
 	0,  // 3: calaba.v1.AdminWorkspace.usage:type_name -> calaba.v1.WorkspaceUsage
-	10, // 4: calaba.v1.AdminWorkspace.plan_updated_at:type_name -> google.protobuf.Timestamp
+	12, // 4: calaba.v1.AdminWorkspace.plan_updated_at:type_name -> google.protobuf.Timestamp
 	1,  // 5: calaba.v1.AdminSearchWorkspacesResponse.workspaces:type_name -> calaba.v1.AdminWorkspace
 	1,  // 6: calaba.v1.AdminGetWorkspaceResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	13, // 7: calaba.v1.AdminSetPlanRequest.plan:type_name -> calaba.v1.Plan
-	14, // 8: calaba.v1.AdminSetPlanRequest.limits:type_name -> calaba.v1.PlanLimits
-	10, // 9: calaba.v1.AdminSetPlanRequest.valid_until:type_name -> google.protobuf.Timestamp
+	15, // 7: calaba.v1.AdminSetPlanRequest.plan:type_name -> calaba.v1.Plan
+	16, // 8: calaba.v1.AdminSetPlanRequest.limits:type_name -> calaba.v1.PlanLimits
+	12, // 9: calaba.v1.AdminSetPlanRequest.valid_until:type_name -> google.protobuf.Timestamp
 	1,  // 10: calaba.v1.AdminSetPlanResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	13, // 11: calaba.v1.PlanLogEntry.plan:type_name -> calaba.v1.Plan
-	14, // 12: calaba.v1.PlanLogEntry.limits:type_name -> calaba.v1.PlanLimits
-	10, // 13: calaba.v1.PlanLogEntry.valid_until:type_name -> google.protobuf.Timestamp
-	10, // 14: calaba.v1.PlanLogEntry.created_at:type_name -> google.protobuf.Timestamp
+	15, // 11: calaba.v1.PlanLogEntry.plan:type_name -> calaba.v1.Plan
+	16, // 12: calaba.v1.PlanLogEntry.limits:type_name -> calaba.v1.PlanLimits
+	12, // 13: calaba.v1.PlanLogEntry.valid_until:type_name -> google.protobuf.Timestamp
+	12, // 14: calaba.v1.PlanLogEntry.created_at:type_name -> google.protobuf.Timestamp
 	6,  // 15: calaba.v1.AdminPlanLogResponse.entries:type_name -> calaba.v1.PlanLogEntry
 	1,  // 16: calaba.v1.AdminSetSuspensionResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	17, // 17: calaba.v1.AdminAchievement.achievement:type_name -> calaba.v1.Achievement
+	10, // 18: calaba.v1.AdminListAchievementsResponse.achievements:type_name -> calaba.v1.AdminAchievement
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_admin_proto_init() }
@@ -807,6 +933,7 @@ func file_calaba_v1_admin_proto_init() {
 	if File_calaba_v1_admin_proto != nil {
 		return
 	}
+	file_calaba_v1_achievement_proto_init()
 	file_calaba_v1_plan_proto_init()
 	file_calaba_v1_user_proto_init()
 	file_calaba_v1_workspace_proto_init()
@@ -816,7 +943,7 @@ func file_calaba_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_admin_proto_rawDesc), len(file_calaba_v1_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

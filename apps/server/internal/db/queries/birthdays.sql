@@ -9,19 +9,14 @@ WHERE birthday_day IS NOT NULL AND NOT birthday_hidden AND NOT is_guest AND NOT 
 -- Where a user's birthday card goes: every workspace they are a non-guest member of that is
 -- not suspended and has someone else (not a bot) in it, with its first text room in sidebar
 -- order (top level first, then categories by position); a room everyone can see (not private)
--- is preferred. Workspaces without a text room are skipped. owner_timezone: the workspace
--- owner's zone, the fallback of the greeting time when the user has none (birthdays.GreetZone).
-SELECT m.workspace_id, fr.id AS room_id, ow.timezone AS owner_timezone
+-- is preferred — announcement_room() (migration 00061), shared with achievement cards.
+-- Workspaces without a text room are skipped. owner_timezone: the workspace owner's zone, the
+-- fallback of the greeting time when the user has none (birthdays.GreetZone).
+SELECT m.workspace_id, fr.id::uuid AS room_id, ow.timezone AS owner_timezone
 FROM workspace_members m
 JOIN workspaces w ON w.id = m.workspace_id AND w.suspended_at IS NULL
 JOIN users ow ON ow.id = w.owner_id
-JOIN LATERAL (
-    SELECT r.id FROM rooms r
-    LEFT JOIN room_categories c ON c.id = r.category_id
-    WHERE r.workspace_id = m.workspace_id AND r.type = 'text' AND r.archived_at IS NULL
-    ORDER BY r.is_private, (r.category_id IS NOT NULL), c.position, r.position, r.id
-    LIMIT 1
-) fr ON true
+JOIN LATERAL (SELECT announcement_room(m.workspace_id) AS id) fr ON fr.id IS NOT NULL
 WHERE m.user_id = $1 AND m.role <> 'guest'
   AND EXISTS (
       SELECT 1 FROM workspace_members o JOIN users u ON u.id = o.user_id

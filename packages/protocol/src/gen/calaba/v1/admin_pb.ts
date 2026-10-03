@@ -6,6 +6,8 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { Achievement } from "./achievement_pb.js";
+import { file_calaba_v1_achievement } from "./achievement_pb.js";
 import type { Plan, PlanLimits } from "./plan_pb.js";
 import { file_calaba_v1_plan } from "./plan_pb.js";
 import type { User } from "./user_pb.js";
@@ -18,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/admin.proto.
  */
 export const file_calaba_v1_admin: GenFile = /*@__PURE__*/
-  fileDesc("ChVjYWxhYmEvdjEvYWRtaW4ucHJvdG8SCWNhbGFiYS52MSKzAQoOV29ya3NwYWNlVXNhZ2USDwoHbWVtYmVycxgBIAEoDRINCgVyb29tcxgCIAEoDRISCgpzdG9yYWdlX21iGAMgASgEEhUKDXN0b3JhZ2VfYnl0ZXMYBCABKAQSMQoNbGFzdF9hY3Rpdml0eRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEYm90cxgGIAEoDRIVCg1zdGlja2VyX3BhY2tzGAcgASgNIqsCCg5BZG1pbldvcmtzcGFjZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEh4KBW93bmVyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXISEwoLb3duZXJfZW1haWwYAyABKAkSKAoFdXNhZ2UYBCABKAsyGS5jYWxhYmEudjEuV29ya3NwYWNlVXNhZ2USEQoJcGxhbl9ub3RlGAUgASgJEhcKD3BsYW5fdXBkYXRlZF9ieRgGIAEoCRIzCg9wbGFuX3VwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHN1c3BlbmRlZF9ieRgIIAEoCRIaChJzdXNwZW5kZWRfYnlfZW1haWwYCSABKAkiTgodQWRtaW5TZWFyY2hXb3Jrc3BhY2VzUmVzcG9uc2USLQoKd29ya3NwYWNlcxgBIAMoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSJJChlBZG1pbkdldFdvcmtzcGFjZVJlc3BvbnNlEiwKCXdvcmtzcGFjZRgBIAEoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSKaAQoTQWRtaW5TZXRQbGFuUmVxdWVzdBIdCgRwbGFuGAEgASgOMg8uY2FsYWJhLnYxLlBsYW4SJQoGbGltaXRzGAIgASgLMhUuY2FsYWJhLnYxLlBsYW5MaW1pdHMSLwoLdmFsaWRfdW50aWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBG5vdGUYBCABKAkiRAoUQWRtaW5TZXRQbGFuUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlIowCCgxQbGFuTG9nRW50cnkSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhMKC2FjdG9yX2VtYWlsGAQgASgJEh0KBHBsYW4YBSABKA4yDy5jYWxhYmEudjEuUGxhbhIlCgZsaW1pdHMYBiABKAsyFS5jYWxhYmEudjEuUGxhbkxpbWl0cxIvCgt2YWxpZF91bnRpbBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEbm90ZRgIIAEoCRIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJAChRBZG1pblBsYW5Mb2dSZXNwb25zZRIoCgdlbnRyaWVzGAEgAygLMhcuY2FsYWJhLnYxLlBsYW5Mb2dFbnRyeSI+ChlBZG1pblNldFN1c3BlbnNpb25SZXF1ZXN0EhEKCXN1c3BlbmRlZBgBIAEoCBIOCgZyZWFzb24YAiABKAkiSgoaQWRtaW5TZXRTdXNwZW5zaW9uUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlQpgBCg1jb20uY2FsYWJhLnYxQgpBZG1pblByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_plan, file_calaba_v1_user, file_calaba_v1_workspace]);
+  fileDesc("ChVjYWxhYmEvdjEvYWRtaW4ucHJvdG8SCWNhbGFiYS52MSKzAQoOV29ya3NwYWNlVXNhZ2USDwoHbWVtYmVycxgBIAEoDRINCgVyb29tcxgCIAEoDRISCgpzdG9yYWdlX21iGAMgASgEEhUKDXN0b3JhZ2VfYnl0ZXMYBCABKAQSMQoNbGFzdF9hY3Rpdml0eRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEYm90cxgGIAEoDRIVCg1zdGlja2VyX3BhY2tzGAcgASgNIqsCCg5BZG1pbldvcmtzcGFjZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEh4KBW93bmVyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXISEwoLb3duZXJfZW1haWwYAyABKAkSKAoFdXNhZ2UYBCABKAsyGS5jYWxhYmEudjEuV29ya3NwYWNlVXNhZ2USEQoJcGxhbl9ub3RlGAUgASgJEhcKD3BsYW5fdXBkYXRlZF9ieRgGIAEoCRIzCg9wbGFuX3VwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHN1c3BlbmRlZF9ieRgIIAEoCRIaChJzdXNwZW5kZWRfYnlfZW1haWwYCSABKAkiTgodQWRtaW5TZWFyY2hXb3Jrc3BhY2VzUmVzcG9uc2USLQoKd29ya3NwYWNlcxgBIAMoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSJJChlBZG1pbkdldFdvcmtzcGFjZVJlc3BvbnNlEiwKCXdvcmtzcGFjZRgBIAEoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSKaAQoTQWRtaW5TZXRQbGFuUmVxdWVzdBIdCgRwbGFuGAEgASgOMg8uY2FsYWJhLnYxLlBsYW4SJQoGbGltaXRzGAIgASgLMhUuY2FsYWJhLnYxLlBsYW5MaW1pdHMSLwoLdmFsaWRfdW50aWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBG5vdGUYBCABKAkiRAoUQWRtaW5TZXRQbGFuUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlIowCCgxQbGFuTG9nRW50cnkSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhMKC2FjdG9yX2VtYWlsGAQgASgJEh0KBHBsYW4YBSABKA4yDy5jYWxhYmEudjEuUGxhbhIlCgZsaW1pdHMYBiABKAsyFS5jYWxhYmEudjEuUGxhbkxpbWl0cxIvCgt2YWxpZF91bnRpbBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEbm90ZRgIIAEoCRIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJAChRBZG1pblBsYW5Mb2dSZXNwb25zZRIoCgdlbnRyaWVzGAEgAygLMhcuY2FsYWJhLnYxLlBsYW5Mb2dFbnRyeSI+ChlBZG1pblNldFN1c3BlbnNpb25SZXF1ZXN0EhEKCXN1c3BlbmRlZBgBIAEoCBIOCgZyZWFzb24YAiABKAkiSgoaQWRtaW5TZXRTdXNwZW5zaW9uUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlInAKEEFkbWluQWNoaWV2ZW1lbnQSKwoLYWNoaWV2ZW1lbnQYASABKAsyFi5jYWxhYmEudjEuQWNoaWV2ZW1lbnQSFQoNZ3JhbnRlZF9jb3VudBgCIAEoDRIYChB3b3Jrc3BhY2VzX2NvdW50GAMgASgNIlIKHUFkbWluTGlzdEFjaGlldmVtZW50c1Jlc3BvbnNlEjEKDGFjaGlldmVtZW50cxgBIAMoCzIbLmNhbGFiYS52MS5BZG1pbkFjaGlldmVtZW50QpgBCg1jb20uY2FsYWJhLnYxQgpBZG1pblByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_achievement, file_calaba_v1_plan, file_calaba_v1_user, file_calaba_v1_workspace]);
 
 /**
  * Usage of a workspace (admin API).
@@ -363,4 +365,65 @@ export type AdminSetSuspensionResponse = Message<"calaba.v1.AdminSetSuspensionRe
  */
 export const AdminSetSuspensionResponseSchema: GenMessage<AdminSetSuspensionResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_admin, 9);
+
+/**
+ * An achievement of the host catalog as the superadmin sees it (ADR-0061).
+ *
+ * @generated from message calaba.v1.AdminAchievement
+ */
+export type AdminAchievement = Message<"calaba.v1.AdminAchievement"> & {
+  /**
+   * @generated from field: calaba.v1.Achievement achievement = 1;
+   */
+  achievement?: Achievement | undefined;
+
+  /**
+   * live grants (revoked ones are not counted)
+   *
+   * @generated from field: uint32 granted_count = 2;
+   */
+  grantedCount: number;
+
+  /**
+   * workspaces with a live grant of it
+   *
+   * @generated from field: uint32 workspaces_count = 3;
+   */
+  workspacesCount: number;
+};
+
+/**
+ * Describes the message calaba.v1.AdminAchievement.
+ * Use `create(AdminAchievementSchema)` to create a new message.
+ */
+export const AdminAchievementSchema: GenMessage<AdminAchievement> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_admin, 10);
+
+/**
+ * GET /api/admin/achievements: the whole catalog by position, archived ones included.
+ * POST /api/admin/achievements (multipart/form-data: "image", "title", "description") ->
+ * Achievement. The image is a PNG or WebP with an alpha channel and a transparent background
+ * (else 422 reason IMAGE_NEEDS_ALPHA), at most 4 MB, each side 128..2048 px; the server crops it
+ * to the visible part (+4 % margin) and makes a 512x512 WebP with alpha. title 1..60, description
+ * 0..200 characters. A new achievement goes to the end of the catalog.
+ * PATCH /api/admin/achievements/{id} (multipart/form-data, every field optional: "title",
+ * "description", "position", "archived" = true|false, "image") -> Achievement.
+ * DELETE /api/admin/achievements/{id} -> 204; 409 reason ACHIEVEMENT_IN_USE once it was granted
+ * (revoked grants included: archive it instead).
+ *
+ * @generated from message calaba.v1.AdminListAchievementsResponse
+ */
+export type AdminListAchievementsResponse = Message<"calaba.v1.AdminListAchievementsResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.AdminAchievement achievements = 1;
+   */
+  achievements: AdminAchievement[];
+};
+
+/**
+ * Describes the message calaba.v1.AdminListAchievementsResponse.
+ * Use `create(AdminListAchievementsResponseSchema)` to create a new message.
+ */
+export const AdminListAchievementsResponseSchema: GenMessage<AdminListAchievementsResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_admin, 11);
 

@@ -75,6 +75,7 @@ message SystemMessage {
     RecordingCard recording = 1; // a meeting recording (ADR-0025)
     BirthdayCard birthday = 2;   // docs/09 #76
     CallCard call = 3;           // a DM call log line (ADR-0034)
+    AchievementCard achievement = 4; // ADR-0061
   }
 }
 
@@ -83,6 +84,16 @@ message SystemMessage {
 message BirthdayCard {
   uint32 day = 1;
   uint32 month = 2;
+}
+
+// "<author> receives an achievement": posted by the server when an achievement is granted with
+// announce = true, into the announcement room of the workspace (as BirthdayCard). The author is the
+// recipient, and the card mentions them (inbox «Mentions»). Revoking the grant keeps the card.
+message AchievementCard {
+  string achievement_id = 1; // Achievement.id of the host catalog (GET /api/achievements)
+  string grant_id = 2;       // MemberAchievement.id
+  string note = 3;           // «for what»
+  string granted_by = 4;     // user id
 }
 
 message Reaction {

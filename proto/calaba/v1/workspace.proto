@@ -81,6 +81,9 @@ message WorkspaceMember {
   // The member's badge (docs/09 #82): an id from the workspace's badges (WorkspaceSnapshot.badges,
   // GET …/badges). Empty = none. Set by MANAGE_NICKNAMES; bots have none.
   string badge_id = 7;
+  // Live achievements of the member (ADR-0061; GET …/members/{userId}/achievements lists them).
+  // A grant or a revoke sends WORKSPACE_MEMBER_UPDATE with the new count.
+  uint32 achievement_count = 8;
 }
 
 // A badge of the workspace's library (docs/09 #82): a small square picture an admin puts next to

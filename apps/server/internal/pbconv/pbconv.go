@@ -355,6 +355,8 @@ func Member(m sqlc.WorkspaceMember, u sqlc.User, roleIDs []uuid.UUID) *v1.Worksp
 		JoinedAt:    ts(m.JoinedAt),
 		RoleIds:     perm.IDStrings(roleIDs),
 		BadgeId:     idp(m.BadgeID),
+		// ADR-0061: kept by the grant / revoke transaction, never negative.
+		AchievementCount: uint32(max(m.AchievementCount, 0)), //nolint:gosec // a count
 	}
 }
 

@@ -1,0 +1,77 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Achievements (ADR-0061): a catalog of the host (one per installation, not per workspace)
+// kept by the superadmins (/api/admin/achievements*, admin.proto), from which people with
+// MANAGE_MEMBERS grant achievements to members of their workspace with a short «for what»
+// note. A grant may post a card into the workspace's general chat (SystemMessage.achievement).
+// The member's live count is WorkspaceMember.achievement_count; a change comes as
+// WORKSPACE_MEMBER_UPDATE (no events of their own).
+
+// An achievement of the catalog.
+message Achievement {
+  string id = 1;
+  string title = 2;       // 1..60 characters
+  string description = 3; // 0..200 characters
+  // The picture: a 512x512 WebP with a transparent background made by the server from the
+  // superadmin's upload. GET it with the Authorization header (any authenticated user, guests
+  // and bots too); the URL changes with the bytes (Cache-Control: immutable).
+  string image_url = 4;
+  uint32 image_size = 5; // bytes
+  uint32 width = 6;      // 512
+  uint32 height = 7;     // 512
+  int32 position = 8;    // catalog order, ascending
+  // Set = archived: cannot be granted any more; granted ones stay visible (profiles, cards).
+  google.protobuf.Timestamp archived_at = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// GET /api/achievements (any authenticated user, guests and bots too): the whole catalog by
+// position, archived ones included (archived_at set) so that granted achievements and old cards
+// still resolve; clients offer only the live ones for granting. The response has an ETag that
+// changes with any change of the catalog (If-None-Match -> 304).
+message ListAchievementsResponse {
+  repeated Achievement achievements = 1;
+}
+
+// A grant of an achievement to a member of a workspace.
+message MemberAchievement {
+  string id = 1;
+  string workspace_id = 2;
+  string user_id = 3; // the recipient
+  string achievement_id = 4;
+  string note = 5;       // «for what», 1..120 characters
+  string granted_by = 6; // user id; empty = that account is gone
+  google.protobuf.Timestamp granted_at = 7;
+  // The card in the general chat (SystemMessage.achievement) and its room; empty = no card
+  // (announce = false or the workspace has no text room).
+  string message_id = 8;
+  string room_id = 9;
+}
+
+// POST /api/workspaces/{id}/members/{userId}/achievements -> MemberAchievement.
+// MANAGE_MEMBERS (bot tokens: 403 BOT_NOT_ALLOWED). The recipient is a member of the workspace,
+// not a guest, not a bot (422) and not the caller (422 reason SELF_GRANT); the achievement exists
+// and is not archived (422). note: 1..120 characters after trimming, required (422).
+// announce = true posts the card (SystemMessage.achievement, author = the recipient, who is
+// mentioned by it) into the workspace's announcement room — its first text room, a non-private
+// one preferred, as for birthday cards; without a text room the grant succeeds with no card.
+// Proto3 has no default true: clients send announce explicitly.
+// The same achievement may be granted again (the profile shows it as a stack).
+message GrantAchievementRequest {
+  string achievement_id = 1;
+  string note = 2;
+  bool announce = 3;
+}
+
+// GET /api/workspaces/{id}/members/{userId}/achievements: the member's live grants, newest
+// first. Any member of the workspace; a guest only for the members visible to them (the profile
+// rule, ADR-0051; others 404); bots read too.
+// DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId} revokes a grant
+// (MANAGE_MEMBERS, not bots; 204): it leaves the profile, its card in the chat stays.
+message ListMemberAchievementsResponse {
+  repeated MemberAchievement items = 1;
+}

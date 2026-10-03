@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Achievement struct {
+	ID          uuid.UUID
+	Title       string
+	Description string
+	ImageKey    string
+	ImageSize   int32
+	Width       int32
+	Height      int32
+	Position    int32
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	ArchivedAt  *time.Time
+}
+
 type BirthdayGreeting struct {
 	UserID      uuid.UUID
 	WorkspaceID uuid.UUID
@@ -415,6 +430,19 @@ type MailOutbox struct {
 	SentAt    *time.Time
 	FailedAt  *time.Time
 	Error     string
+}
+
+type MemberAchievement struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	UserID        uuid.UUID
+	AchievementID uuid.UUID
+	GrantedBy     *uuid.UUID
+	Note          string
+	MessageID     *uuid.UUID
+	GrantedAt     time.Time
+	RevokedAt     *time.Time
+	RevokedBy     *uuid.UUID
 }
 
 type MemberRole struct {
@@ -1197,12 +1225,13 @@ type WorkspaceInvite struct {
 }
 
 type WorkspaceMember struct {
-	WorkspaceID uuid.UUID
-	UserID      uuid.UUID
-	Role        string
-	Nickname    string
-	JoinedAt    time.Time
-	BadgeID     *uuid.UUID
+	WorkspaceID      uuid.UUID
+	UserID           uuid.UUID
+	Role             string
+	Nickname         string
+	JoinedAt         time.Time
+	BadgeID          *uuid.UUID
+	AchievementCount int32
 }
 
 type WorkspaceNotificationSetting struct {
