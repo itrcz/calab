@@ -128,6 +128,9 @@ BOARD_CATEGORY_CREATE / UPDATE { category } — категория досок (A
 BOARD_CATEGORY_DELETE         { workspace_id, category_id } — (89) её доски уходят в «без категории» хвостом, каждой — `BOARD_UPDATE`
 TASK_CHECKLIST_UPDATE         { workspace_id, board_id, task_id, checklist, checklist_total, checklist_done } — (90) чек-лист создан/изменён, целиком (≤ 100 пунктов), зрителям доски. **`TASK_UPDATE` на операции чек-листа не шлётся**: клиент патчит два счётчика задачи; рядом — обычный `TASK_ACTIVITY` (`kind = checklist`)
 TASK_CHECKLIST_DELETE         { workspace_id, board_id, task_id, checklist_id, checklist_total, checklist_done } — (91) чек-лист удалён, новые счётчики
+BOARD_RULE_UPDATE             { workspace_id, board_id, rule } — (92) правило автоматизации создано/изменено (ADR-0060); после срабатываний — только когда сменилось last_error; зрителям доски (`VIEW_BOARD`, не по карточкам)
+BOARD_RULE_DELETE             { workspace_id, board_id, rule_id } — (93) правило удалено; создание/удаление сопровождает `BOARD_UPDATE` (`rules_count`)
+TASK_GIT_LINKS_UPDATE         { workspace_id, board_id, task_id, links, count } — (94) Git-связи задачи (все, ≤ 50) изменились; зрителям доски и приглашённым по карточке (ADR-0059); рядом `TASK_UPDATE` (`git_links_count`) и `TASK_ACTIVITY` (`kind = git`)
 SIP_CALL_UPDATE               { call: SipCall } — телефонный звонок комнаты начат или сменил статус (ADR-0046); в READY — WorkspaceSnapshot.sip_calls (живые)
 WORKSPACE_APP_UPSERT          { app: WorkspaceApp } — веб-приложение пространства добавлено / изменено / перенесено (ADR-0050; перенумерация — по событию на каждое); в READY — WorkspaceSnapshot.apps
 WORKSPACE_APP_DELETE          { workspace_id, app_id } — приложение удалено: клиент убирает иконку, десктоп закрывает вид и чистит данные сайта

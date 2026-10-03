@@ -155,6 +155,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: a bot attends no meetings and has no external calendar | — |
 | task boards (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, statuses/labels/milestones/views, task archive | the bot works like a person, within the board bits of its roles and overrides (it can be an assignee and be let into a private board personally); a comment is a message in `task.roomId`. Assignees / approvers (ADR-0059): any human member who is not a guest — even without access to the board, unless it is restricted (they then see the board through their tasks only: `Board.taskScoped`); a bot only if it sees the board, never as an approver; otherwise `422`. A bot never sees a board through its tasks — it needs `VIEW_BOARD`. Board access (`PUT …/permissions`) and the final delete (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | boards 2.0 (ADR-0058): `GET/POST /api/workspaces/{id}/board-categories`, `PATCH/DELETE /api/board-categories/{id}`, `PUT /api/workspaces/{id}/boards/order`, `PATCH /api/boards/{id} {setDisabledFeatures, disabledFeatures, estimateScale}`, checklists: `POST /api/tasks/{id}/checklists`, `PATCH/DELETE /api/checklists/{id}`, `POST /api/checklists/{id}/items`, `PATCH/DELETE /api/checklist-items/{id}`, `POST /api/checklist-items/{id}/convert` | categories — `CREATE_BOARDS`, placing a board and features — `MANAGE_BOARD`, checklists — like task fields (`EDIT_TASKS`; `CREATE_TASKS` — its own and assigned); checklists need the Team plan (`409 PLAN_LIMIT`). A board feature is off → a request that **changes** its field to a non-empty value is `409 CONFLICT`, `reason FEATURE_DISABLED`, `field` = the field name (`estimate`, `dueOn`, `approverIds`…); clearing it and repeating the current value pass. The board webhook (`/api/boards/{id}/webhook*`) is for people only, a bot gets `403 BOT_NOT_ALLOWED`. SDK: `bot.boards.categories.*`, `bot.boards.setFeatures`, `bot.tasks.checklists.*` | see left |
+| board automations (ADR-0060): `GET /api/boards/{id}/rules`, `GET /api/rules/{id}/runs` | a bot **reads** the board's rules and their run log; creating / changing / deleting / testing a rule (`POST /api/boards/{id}/rules`, `PATCH/DELETE /api/rules/{id}`, `POST /api/rules/{id}/test`) and the board's Git webhook (`/api/boards/{id}/git`) — 403 `BOT_NOT_ALLOWED`. Task changes made by a bot run the board's rules like people's; changes made by rules show in the journal with an empty `actorId` and a `ruleId` | reading — `VIEW_BOARD`, the log — `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call |
 | `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | the sound library (ADR-0051): the clip is the bot's own upload to this workspace | `MANAGE_STICKERS` |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
@@ -180,7 +181,9 @@ not `{message: …}` or `{messages: […]}`. Its fields and detail loading match
 caller), timestamps, `kind`, `system`, `sticker` and `forward`. `command` is unset, as in all REST responses.
 A recording card has `kind: "MESSAGE_KIND_SYSTEM"` and `system.recording.recordingId`; use that id
 in the transcript URL. An achievement card (ADR-0061) is `MESSAGE_KIND_SYSTEM` too: `system.achievement
-{achievementId, grantId, note, grantedBy}`, authored by the recipient. A command replying to a card has `replyToId` pointing to the card's **message** id.
+{achievementId, grantId, note, grantedBy}`, authored by the recipient. A message of a board automation rule (ADR-0060) is a system message too:
+`system.automation {boardId, taskId, ruleId, ruleName, text}`; `authorId` is the rule's creator — show it as
+"Automation: ruleName". A command replying to a card has `replyToId` pointing to the card's **message** id.
 
 The lookup returns `404 NOT_FOUND` for inaccessible rooms, a missing/deleted message, a message
 from another room, or a message at/before the caller's cleared DM history marker. A DM's other
@@ -415,7 +418,11 @@ signature, drops repeats and emits the same `message` / `command` / `reaction` e
   approvals, checklists), `task.archived`, `task.restored` (auto-archive — `actor: null`), `task.moved_in` (the target
   board; the task already has its new key), `task.moved_out` (the source board), `task.comment.created`,
   `task.comment.updated`, `task.comment.deleted`, `ping`. The changes of one transaction make one event; `changes` are the
-  task's journal entries (`field` = the journal `kind`: `status`, `assignees`, `checklist` …; `before` / `after` — their data).
+  task's journal entries (`field` = the journal `kind`: `status`, `assignees`, `checklist`, `git` …; `before` / `after` —
+  their data). Changes made by an **automation rule** (ADR-0060) come as their own event of the same transaction with
+  `"actor": null` and `"rule": {"id", "name"}`; for changes by people and bots `rule` is `null`. Git events (a task's
+  links to branches and pull requests) are `task.updated` with `changes[field=git]` and `"actor": null`. The webhook
+  version stays `1`: fields were only added.
 - **Request.** `POST <url>`, `Content-Type: application/json`, `User-Agent: Calab-Webhook/1.0`, headers:
 
   | Header | Value |
@@ -490,6 +497,7 @@ golden fixture `apps/server/internal/boards/testdata/webhook_event.json`, fields
   },
   "id": "0192a000-0000-7000-8000-000000000001",
   "occurred_at": "2026-10-02T12:00:00Z",
+  "rule": null,
   "sequence": 42,
   "task": {
     "approval_required": 0,
@@ -511,6 +519,8 @@ golden fixture `apps/server/internal/boards/testdata/webhook_event.json`, fields
     "description": "",
     "due_on": "",
     "estimate": 3,
+    "git_links": [],
+    "git_links_count": 0,
     "id": "0192a000-0000-7000-8000-0000000000dd",
     "key": "FNG-12",
     "label_ids": [],

@@ -153,6 +153,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: бот не участник встреч и не держит внешний календарь | — |
 | доски задач (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, статусы/лейблы/вехи/виды, архив задач | бот работает как человек — по битам доски своих ролей и переопределений (бота можно назначить исполнителем и дать ему доступ к приватной доске лично); комментарий — сообщение в `task.roomId`. Назначить исполнителем / согласующим (ADR-0059): участника-человека, не гостя — даже без доступа к доске, если она не закрытая (он увидит доску только по своим карточкам: `Board.taskScoped`); бота — только видящего доску, согласующим — никогда; иначе `422`. Бот сам по карточкам доску не видит — ему нужен `VIEW_BOARD`. Доступ к доске (`PUT …/permissions`) и удаление навсегда (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | доски 2.0 (ADR-0058): `GET/POST /api/workspaces/{id}/board-categories`, `PATCH/DELETE /api/board-categories/{id}`, `PUT /api/workspaces/{id}/boards/order`, `PATCH /api/boards/{id} {setDisabledFeatures, disabledFeatures, estimateScale}`, чек-листы: `POST /api/tasks/{id}/checklists`, `PATCH/DELETE /api/checklists/{id}`, `POST /api/checklists/{id}/items`, `PATCH/DELETE /api/checklist-items/{id}`, `POST /api/checklist-items/{id}/convert` | категории — `CREATE_BOARDS`, положить доску и фичи — `MANAGE_BOARD`, чек-листы — как поля задачи (`EDIT_TASKS`; `CREATE_TASKS` — свои и назначенные); чек-листы — с тарифа Team (`409 PLAN_LIMIT`). Фича доски выключена → запрос, **меняющий** её поле на непустое, — `409 CONFLICT`, `reason FEATURE_DISABLED`, `field` = имя поля (`estimate`, `dueOn`, `approverIds`…); сброс в пусто и повтор текущего значения проходят. Вебхук доски (`/api/boards/{id}/webhook*`) — только люди, боту `403 BOT_NOT_ALLOWED`. SDK: `bot.boards.categories.*`, `bot.boards.setFeatures`, `bot.tasks.checklists.*` | см. слева |
+| автоматизации досок (ADR-0060): `GET /api/boards/{id}/rules`, `GET /api/rules/{id}/runs` | бот **читает** правила доски и журнал срабатываний; создать / изменить / удалить / проверить правило (`POST /api/boards/{id}/rules`, `PATCH/DELETE /api/rules/{id}`, `POST /api/rules/{id}/test`) и Git-вебхук доски (`/api/boards/{id}/git`) — 403 `BOT_NOT_ALLOWED`. Изменения задач, сделанные ботом, запускают правила доски, как изменения людей; изменения правил видны в журнале с пустым `actorId` и `ruleId` | чтение — `VIEW_BOARD`, журнал — `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты |
 | `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | библиотека звуков (ADR-0051): клип — своя загрузка бота в это пространство | `MANAGE_STICKERS` |
 | стикеры: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | см. [Стикеры](#стикеры-по-api) | участник / `MANAGE_STICKERS` |
@@ -178,7 +179,9 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 вызывающего), времена, `kind`, `system`, `sticker`, `forward`. `command` не задан, как во всех REST-ответах.
 У карточки записи `kind: "MESSAGE_KIND_SYSTEM"` и `system.recording.recordingId`; последний id
 нужен для URL транскрипта. Открытка ачивки (ADR-0061) — тоже `MESSAGE_KIND_SYSTEM`: `system.achievement
-{achievementId, grantId, note, grantedBy}`, автор — получатель. В команде, отправленной ответом на карточку, `replyToId` содержит id
+{achievementId, grantId, note, grantedBy}`, автор — получатель. Сообщение правила автоматизации доски (ADR-0060) — тоже системное:
+`system.automation {boardId, taskId, ruleId, ruleName, text}`; `authorId` — создатель правила, показывайте его как
+«Автоматизация: ruleName». В команде, отправленной ответом на карточку, `replyToId` содержит id
 **сообщения** с карточкой, а не id записи.
 
 `404 NOT_FOUND`: комната недоступна, сообщение отсутствует/удалено, относится к другой комнате
@@ -413,7 +416,11 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
   согласования, чек-листы), `task.archived`, `task.restored` (автоархив — `actor: null`), `task.moved_in` (доска-получатель;
   задача уже с новым ключом), `task.moved_out` (доска-источник), `task.comment.created`, `task.comment.updated`,
   `task.comment.deleted`, `ping`. Изменения одной транзакции — одно событие, список `changes` — записи журнала задачи
-  (`field` = `kind` журнала: `status`, `assignees`, `checklist` …; `before` / `after` — их данные).
+  (`field` = `kind` журнала: `status`, `assignees`, `checklist`, `git` …; `before` / `after` — их данные).
+  Изменения, сделанные **правилом автоматизации** (ADR-0060), приходят отдельным событием той же транзакции с
+  `"actor": null` и `"rule": {"id", "name"}`; у изменений людей и ботов `rule` — `null`. Git-события (связи задачи с
+  ветками и PR) — `task.updated` с `changes[field=git]` и `"actor": null`. Версия вебхука остаётся `1`: поля только
+  добавлены.
 - **Запрос.** `POST <url>`, `Content-Type: application/json`, `User-Agent: Calab-Webhook/1.0`, заголовки:
 
   | Заголовок | Значение |
@@ -488,6 +495,7 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
   },
   "id": "0192a000-0000-7000-8000-000000000001",
   "occurred_at": "2026-10-02T12:00:00Z",
+  "rule": null,
   "sequence": 42,
   "task": {
     "approval_required": 0,
@@ -509,6 +517,8 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
     "description": "",
     "due_on": "",
     "estimate": 3,
+    "git_links": [],
+    "git_links_count": 0,
     "id": "0192a000-0000-7000-8000-0000000000dd",
     "key": "FNG-12",
     "label_ids": [],
