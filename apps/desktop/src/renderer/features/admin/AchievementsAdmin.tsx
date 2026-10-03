@@ -348,7 +348,7 @@ function Fields({ title, description, onTitle, onDescription }: { title: string;
           maxLength={DESCRIPTION_MAX}
           rows={3}
           onChange={(e) => onDescription(e.target.value)}
-          className="selectable w-full resize-none rounded-[var(--radius-control)] border border-line bg-elev px-2 py-1.5 text-body text-fg shadow-[var(--shadow-card)] outline-none placeholder:text-muted focus:border-[var(--color-focus)]"
+          className="selectable min-h-[72px] w-full resize-none rounded-[12px] bg-input px-3 py-2 text-body text-fg outline-none placeholder:text-faint focus-visible:ring-2 focus-visible:ring-accent"
         />
       </Field>
     </>
