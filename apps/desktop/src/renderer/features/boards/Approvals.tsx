@@ -92,7 +92,7 @@ export function ApprovalsSection({ task, canEdit, perms }: { task: Task; canEdit
         ))}
         <div className="flex flex-wrap items-center gap-1">
           {c.edit ? (
-            <ApproverMenu workspaceId={task.workspaceId} value={ids} onToggle={(u) => save(toggleApprover(ids, u))}>
+            <ApproverMenu workspaceId={task.workspaceId} boardId={task.boardId} value={ids} onToggle={(u) => save(toggleApprover(ids, u))}>
               <button type="button" className={cx(valueBtn, 'text-muted')} data-testid="approver-add">
                 <Plus className="size-3.5" aria-hidden /> {t('boards.addApprover')}
               </button>

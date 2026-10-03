@@ -37,6 +37,7 @@ import { EmptyBoard } from './ListView';
 import { MemberAvatar, useToday } from './menus';
 import { MANAGE_BOARD, hasBit, mayEditTask, visibleTasks } from './model';
 import { useFeatureOn, useMatchCtx } from './useBoardView';
+import { useTaskPerms } from './useTaskPerms';
 import { StatusIcon, colorCss } from './visuals';
 
 /**
@@ -434,7 +435,7 @@ const TimelineRow = memo(function TimelineRow({
 }): ReactNode {
   const task = useBoards((s) => s.tasks[id]);
   const status = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId) : undefined));
-  const perms = useBoards((s) => s.boards[boardId]?.permissions);
+  const perms = useTaskPerms(task);
   const blockers = useBoards((s) => (task ? lateBlockers(task, s.tasks).join(', ') : ''));
   const open = useBoardsUi((s) => s.taskId === id);
   if (!task) return null;
@@ -509,7 +510,7 @@ const TimelineRow = memo(function TimelineRow({
 const UndatedChip = memo(function UndatedChip({ id, boardId, readOnly, dragging, onDown }: { id: string; boardId: string; readOnly: boolean; dragging: boolean; onDown: (e: ReactPointerEvent, id: string) => void }): ReactNode {
   const task = useBoards((s) => s.tasks[id]);
   const status = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId) : undefined));
-  const perms = useBoards((s) => s.boards[boardId]?.permissions);
+  const perms = useTaskPerms(task);
   if (!task) return null;
   const editable = !readOnly && mayEditTask(task, perms, myUserId());
   return (

@@ -17,6 +17,7 @@ import { FilterButton, QuickChips } from './FilterBar';
 import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
+import { useBoardScoped } from './useTaskPerms';
 import { NavButton } from '../shell/MobileShell';
 import { useMobile } from '../../lib/mobile';
 
@@ -107,6 +108,8 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
 function ViewsMenu({ boardId }: { boardId: string }): ReactNode {
   const views = useBoards((s) => s.boards[boardId]?.views);
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
+  // ADR-0059: views are read-only (applying one works, saving / deleting is a 403) on a scoped board.
+  const scoped = useBoardScoped(boardId);
   const prefs = useBoardsUi((s) => prefsOf(s, boardId));
   const [saving, setSaving] = useState(false);
   const current = views?.find((v) => v.id === prefs.viewId);
@@ -151,11 +154,15 @@ function ViewsMenu({ boardId }: { boardId: string }): ReactNode {
                 {mine.map(item)}
               </>
             ) : null}
-            <Dropdown.Separator className={menuSeparator} />
-            <Dropdown.Item className={menuItem} onSelect={() => setSaving(true)} data-testid="save-view">
-              <Plus className="size-4" aria-hidden /> {t('boards.saveView')}
-            </Dropdown.Item>
-            {current && (current.shared ? hasBit(perms, MANAGE_BOARD) : current.createdBy === me) ? (
+            {scoped ? null : (
+              <>
+                <Dropdown.Separator className={menuSeparator} />
+                <Dropdown.Item className={menuItem} onSelect={() => setSaving(true)} data-testid="save-view">
+                  <Plus className="size-4" aria-hidden /> {t('boards.saveView')}
+                </Dropdown.Item>
+              </>
+            )}
+            {!scoped && current && (current.shared ? hasBit(perms, MANAGE_BOARD) : current.createdBy === me) ? (
               <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void deleteView(boardId, current.id)}>
                 <Trash2 className="size-4" aria-hidden /> {t('boards.deleteView')}
               </Dropdown.Item>

@@ -67,6 +67,7 @@ import { Checklists } from './Checklists';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
+import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 const TITLE_MAX = 200;
@@ -113,7 +114,8 @@ export function TaskPanel({ taskId, floating = false, page = false }: { taskId: 
 }
 
 function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
-  const perms = useBoards((s) => s.boards[task.boardId]?.permissions);
+  const perms = useTaskPerms(task);
+  const scoped = useBoardScoped(task.boardId);
   const boardName = useBoards((s) => s.boards[task.boardId]?.name ?? '');
   const detail = useTaskDetails((s) => s.byTask[task.id]);
   const room = useRooms((s) => (task.roomId ? s.byId[task.roomId] : undefined));
@@ -129,15 +131,15 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
   }, []);
   return (
     <>
-      <PanelHeader task={task} boardName={boardName} perms={perms} onClose={onClose} wide={wide} mobile={mobile} />
+      <PanelHeader task={task} boardName={boardName} perms={perms} scoped={scoped} onClose={onClose} wide={wide} mobile={mobile} />
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto" data-testid="task-scroll">
         <div className={cx('flex flex-col gap-5 px-5 pb-6 pt-4', wide && 'mx-auto w-full max-w-[860px]')}>
           <TitleEditor task={task} canEdit={canEdit} />
           <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
-          <Properties task={task} canEdit={canEdit} perms={perms} disabled={disabled} />
+          <Properties task={task} canEdit={canEdit} perms={perms} scoped={scoped} disabled={disabled} />
           {/* Checklists: their own subscriber (a toggle re-renders that section only, ADR-0058 §2). */}
           {on(BoardFeature.CHECKLISTS) ? <Checklists taskId={task.id} workspaceId={task.workspaceId} canEdit={canEdit} subtasks={on(BoardFeature.SUBTASKS) && !task.parentId} /> : null}
-          {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={detail?.subtasks ?? []} canCreate={hasBit(perms, CREATE_TASKS)} /> : null}
+          {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={detail?.subtasks ?? []} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} /> : null}
           {on(BoardFeature.RELATIONS) ? <Relations task={task} ids={detail?.related ?? []} canEdit={canEdit} /> : null}
           {room ? <Activity task={task} room={room} toEnd={toEnd} commentsOff={!on(BoardFeature.COMMENTS)} /> : <div className="grid h-16 place-items-center"><Spinner /></div>}
         </div>
@@ -147,7 +149,7 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
   );
 }
 
-function PanelHeader({ task, boardName, perms, onClose, wide, mobile }: { task: Task; boardName: string; perms: bigint | undefined; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
+function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: { task: Task; boardName: string; perms: bigint | undefined; scoped: boolean; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
   const boards = useBoards(useShallow((s) => workspaceBoards(s.boards, task.workspaceId).filter((b) => b.id !== task.boardId && hasBit(b.permissions, MANAGE_BOARD)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
   const me = myUserId();
   const subscribed = task.subscribed && !task.muted;
@@ -178,12 +180,12 @@ function PanelHeader({ task, boardName, perms, onClose, wide, mobile }: { task: 
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
-            {hasBit(perms, CREATE_TASKS) ? (
+            {hasBit(perms, CREATE_TASKS) && !scoped ? (
               <Dropdown.Item className={menuItem} onSelect={() => void duplicateTask(task.id).then((c) => c && useBoardsUi.getState().openTask(c.id))}>
                 <CopyPlus className="size-4" aria-hidden /> {t('boards.duplicate')}
               </Dropdown.Item>
             ) : null}
-            {boards.length && hasBit(perms, MANAGE_BOARD) ? (
+            {boards.length && !scoped && hasBit(perms, MANAGE_BOARD) ? (
               <Dropdown.Sub>
                 <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
                   <FolderInput className="size-4" aria-hidden /> <span className="flex-1">{t('boards.moveToBoard')}</span> <ChevronRight className="size-4" aria-hidden />
@@ -400,7 +402,7 @@ function Prop({ label, children, testId }: { label: string; children: ReactNode;
 
 const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
 
-function Properties({ task, canEdit, perms, disabled }: { task: Task; canEdit: boolean; perms: bigint | undefined; disabled: Disabled }): ReactNode {
+function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; canEdit: boolean; perms: bigint | undefined; scoped: boolean; disabled: Disabled }): ReactNode {
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
@@ -445,7 +447,7 @@ function Properties({ task, canEdit, perms, disabled }: { task: Task; canEdit: b
           <LabelMenu
             boardId={task.boardId}
             value={task.labelIds}
-            canCreate={hasBit(perms, CREATE_TASKS)}
+            canCreate={hasBit(perms, CREATE_TASKS) && !scoped}
             onToggle={(l) => void updateTask(task.id, { labelIds: task.labelIds.includes(l) ? task.labelIds.filter((x) => x !== l) : [...task.labelIds, l] })}
             {...req('label')}
           >
@@ -792,8 +794,8 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
   const live = useBoards((s) => s.activity[task.id]);
   const [loaded, setLoaded] = useState<TaskActivity[]>([]);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const perms = useBoards((s) => s.boards[task.boardId]?.permissions);
-  const roomPerms = useMemo(() => taskRoomPermissions(perms ?? 0n, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
+  const perms = useTaskPerms(task);
+  const roomPerms = useMemo(() => taskRoomPermissions(perms, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   useEffect(() => {
     void openRoom(room.id);
     subscribeRooms([room.id]);

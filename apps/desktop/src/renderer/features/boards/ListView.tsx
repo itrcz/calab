@@ -19,6 +19,7 @@ import { ApprovalBadge } from './Approvals';
 import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
 import { ChecklistBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
+import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 type Item = { kind: 'group'; key: string; label: ReactNode; count: number } | { kind: 'row'; id: string };
@@ -184,6 +185,8 @@ function visibleOf(s: ReturnType<typeof useBoards.getState>, b: Board, prefs: Bo
 export function ListView({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
   const { items, ids } = useListIds(boardId, workspaceId);
   const selectedCount = useBoardsUi((s) => Object.keys(s.selected).length);
+  // ADR-0059: no bulk actions on a board seen only through its cards.
+  const scoped = useBoardScoped(boardId);
   const onRowClick = useCallback(
     (id: string, e: MouseEvent) => {
       const ui = useBoardsUi.getState();
@@ -228,7 +231,7 @@ export function ListView({ boardId, workspaceId }: { boardId: string; workspaceI
           )
         }
       />
-      {selectedCount > 0 ? <BulkBar boardId={boardId} workspaceId={workspaceId} /> : null}
+      {selectedCount > 0 && !scoped ? <BulkBar boardId={boardId} workspaceId={workspaceId} /> : null}
     </div>
   );
 }
@@ -239,7 +242,8 @@ export function EmptyBoard(): ReactNode {
 
 export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick, selecting }: { id: string; boardId: string; workspaceId: string; onClick: (id: string, e: MouseEvent) => void; selecting: boolean }): ReactNode {
   const task = useBoards((s) => s.tasks[id]);
-  const perms = useBoards((s) => s.boards[boardId]?.permissions);
+  const perms = useTaskPerms(task);
+  const scoped = useBoardScoped(boardId);
   const status = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId) : undefined));
   const labels = useBoards((s) => s.boards[boardId]?.labels);
   const blocked = useBlockedStatuses(task, boardId);
@@ -304,7 +308,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
           <LabelMenu
             boardId={boardId}
             value={task.labelIds}
-            canCreate={hasBit(perms, CREATE_TASKS)}
+            canCreate={hasBit(perms, CREATE_TASKS) && !scoped}
             onToggle={(l) => void updateTask(id, { labelIds: task.labelIds.includes(l) ? task.labelIds.filter((x) => x !== l) : [...task.labelIds, l] })}
             align="end"
             {...req('label')}

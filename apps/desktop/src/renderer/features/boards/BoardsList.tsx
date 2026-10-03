@@ -396,6 +396,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const restricted = useBoards((s) => s.boards[id]?.restricted ?? false);
   const mine = useBoards((s) => s.boards[id]?.myOpenTasks ?? 0);
   const perms = useBoards((s) => s.boards[id]?.permissions);
+  const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
   const manage = hasBit(perms, MANAGE_BOARD);
   const archive = async (): Promise<void> => {
@@ -405,14 +406,23 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
     <div
       data-board-row={id}
       onPointerDown={(e) => onPointerDown(e, id)}
-      className={cx('group/board flex h-8 items-center rounded-[var(--radius-row)] pr-1', active ? 'bg-active' : 'hover:bg-hover', dragging && 'opacity-40')}
+      className={cx('group/board flex items-center rounded-[var(--radius-row)] pr-1', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'bg-active' : 'hover:bg-hover', dragging && 'opacity-40')}
       data-testid="board-row"
     >
-      <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex h-8 min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+      <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
         <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
           {emoji || <SquareKanban className="size-[18px]" />}
         </span>
-        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {scoped ? (
+          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+            <span className="w-full min-w-0 truncate">{name}</span>
+            <span className="inline-flex h-5 max-w-full items-center rounded-full bg-hover px-2 text-micro font-medium text-muted" title={t('boards.scopedHint')} data-testid="board-scoped-chip">
+              <span className="truncate">{t('boards.scopedChip')}</span>
+            </span>
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1 truncate">{name}</span>
+        )}
         {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
         {restricted ? <RestrictedMark /> : null}
         {mine > 0 ? (
