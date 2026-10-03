@@ -1,0 +1,100 @@
+import { create } from '@bufbuild/protobuf';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+import { PERMISSION_BITS, TaskApproverSchema, TaskAssigneeSchema, TaskSchema, UserSchema, WorkspaceMemberSchema, WorkspaceRole, BoardSchema, type Board, type Task } from '@calaba/protocol';
+import { describe, expect, it } from 'vitest';
+import { legacyRoles } from '../roles';
+import { accessChoice, boardScoped, boardVisible, pickerAccess, taskBits } from './access';
+
+// ADR-0059 §2 / §5: the client mirrors taskPermissions; the picker follows computeMemberBoardPermissions.
+const VIEW = PERMISSION_BITS.VIEW_BOARD;
+const CREATE = PERMISSION_BITS.CREATE_TASKS;
+const EDIT = PERMISSION_BITS.EDIT_TASKS;
+
+const board = (p: Partial<Pick<Board, 'permissions' | 'taskScoped' | 'archivedAt' | 'isPrivate' | 'restricted'>> = {}): Board => create(BoardSchema, { id: 'b', ...p });
+const task = (p: { assignees?: string[]; approvers?: string[]; archived?: boolean } = {}): Task =>
+  create(TaskSchema, {
+    id: 't',
+    assignees: (p.assignees ?? []).map((userId) => create(TaskAssigneeSchema, { userId })),
+    approvers: (p.approvers ?? []).map((userId) => create(TaskApproverSchema, { userId })),
+    ...(p.archived ? { archivedAt: timestampFromMs(1000) } : {}),
+  });
+
+describe('boardVisible', () => {
+  it.each([
+    ['a full viewer', board({ permissions: VIEW | CREATE }), true],
+    ['a scoped viewer (permissions 0, taskScoped)', board({ permissions: 0n, taskScoped: true }), true],
+    ['no bits, not scoped', board({ permissions: 0n }), false],
+    ['archived', board({ permissions: VIEW, archivedAt: timestampFromMs(1000) }), false],
+    ['archived and scoped', board({ taskScoped: true, archivedAt: timestampFromMs(1000) }), false],
+  ])('%s', (_, b, want) => expect(boardVisible(b)).toBe(want));
+
+  it('an unknown board is not visible', () => expect(boardVisible(undefined)).toBe(false));
+  it('boardScoped follows Board.taskScoped', () => {
+    expect(boardScoped(board({ taskScoped: true }))).toBe(true);
+    expect(boardScoped(board())).toBe(false);
+    expect(boardScoped(undefined)).toBe(false);
+  });
+});
+
+describe('taskBits (the table of taskPermissions)', () => {
+  const me = 'me';
+  it('a board viewer keeps the board bits whatever the task', () => {
+    const b = board({ permissions: VIEW | EDIT });
+    expect(taskBits(b, task(), me)).toBe(VIEW | EDIT);
+    expect(taskBits(b, task({ approvers: [me] }), me)).toBe(VIEW | EDIT);
+  });
+  it('a scoped assignee: VIEW_BOARD | CREATE_TASKS', () => {
+    expect(taskBits(board({ taskScoped: true }), task({ assignees: [me] }), me)).toBe(VIEW | CREATE);
+  });
+  it('a scoped approver: VIEW_BOARD only', () => {
+    expect(taskBits(board({ taskScoped: true }), task({ approvers: [me] }), me)).toBe(VIEW);
+  });
+  it('an assignee wins over an approver role on the same card', () => {
+    expect(taskBits(board({ taskScoped: true }), task({ assignees: [me], approvers: [me] }), me)).toBe(VIEW | CREATE);
+  });
+  it('a scoped viewer on a card he is not invited to, or an archived one: nothing', () => {
+    expect(taskBits(board({ taskScoped: true }), task({ assignees: ['other'] }), me)).toBe(0n);
+    expect(taskBits(board({ taskScoped: true }), task({ assignees: [me], archived: true }), me)).toBe(0n);
+  });
+  it('no bits and not scoped: nothing; an unknown board: nothing', () => {
+    expect(taskBits(board(), task({ assignees: [me] }), me)).toBe(0n);
+    expect(taskBits(undefined, task({ assignees: [me] }), me)).toBe(0n);
+  });
+});
+
+describe('pickerAccess / accessChoice (the assignee and approver pickers)', () => {
+  const roles = legacyRoles('w');
+  const member = (role: WorkspaceRole, isBot = false) => create(WorkspaceMemberSchema, { role, user: create(UserSchema, { id: 'u', isBot }) });
+  const publicBoard = board();
+  const privateBoard = board({ isPrivate: true });
+  const closedBoard = board({ isPrivate: true, restricted: true });
+
+  it('a member who sees the board: plain row', () => {
+    expect(pickerAccess(publicBoard, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
+    expect(accessChoice('ok', false)).toEqual({});
+  });
+  it('a member without VIEW_BOARD on a private board: «увидит только эту карточку»', () => {
+    const a = pickerAccess(privateBoard, roles, member(WorkspaceRole.MEMBER));
+    expect(a).toBe('card');
+    expect(accessChoice(a, false).caption).toBeTruthy();
+    expect(accessChoice(a, false).disabled).toBeUndefined();
+  });
+  it('on a restricted board the same member is disabled with the «закрытая доска» hint (unless already chosen)', () => {
+    const a = pickerAccess(closedBoard, roles, member(WorkspaceRole.MEMBER));
+    expect(a).toBe('closed');
+    expect(accessChoice(a, false)).toMatchObject({ disabled: true });
+    expect(accessChoice(a, false).title).toBeTruthy();
+    expect(accessChoice(a, true).disabled).toBeUndefined();
+  });
+  it('the owner sees a restricted board', () => {
+    expect(pickerAccess(closedBoard, roles, member(WorkspaceRole.OWNER))).toBe('ok');
+  });
+  it('guests are never listed; a bot only when it sees the board', () => {
+    expect(pickerAccess(publicBoard, roles, member(WorkspaceRole.GUEST))).toBe('hidden');
+    expect(pickerAccess(publicBoard, roles, member(WorkspaceRole.MEMBER, true))).toBe('ok');
+    expect(pickerAccess(privateBoard, roles, member(WorkspaceRole.MEMBER, true))).toBe('hidden');
+  });
+  it('an unknown board changes nothing (the pre-ADR-0059 list)', () => {
+    expect(pickerAccess(undefined, roles, member(WorkspaceRole.MEMBER))).toBe('ok');
+  });
+});

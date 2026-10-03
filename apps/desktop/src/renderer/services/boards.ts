@@ -154,10 +154,15 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
     case 'boardUpdate':
       if (ev.value.board) s.upsertBoard(ev.value.board, true);
       return true;
-    case 'boardDelete':
+    case 'boardDelete': {
+      // The open task panel of this board closes with it (ADR-0059: the last card of a scoped viewer went).
+      const ui = useBoardsUi.getState();
+      const open = ui.taskId ? s.tasks[ui.taskId] : undefined;
       s.removeBoard(ev.value.boardId);
-      if (useBoardsUi.getState().boardOf[ev.value.workspaceId] === ev.value.boardId) useBoardsUi.getState().openBoard(ev.value.workspaceId, MY_TASKS);
+      if (open?.boardId === ev.value.boardId) ui.openTask(null);
+      if (ui.boardOf[ev.value.workspaceId] === ev.value.boardId) ui.openBoard(ev.value.workspaceId, MY_TASKS);
       return true;
+    }
     case 'taskCreate':
       if (ev.value.task) onTask(ev.value.task);
       return true;
@@ -165,10 +170,13 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       if (ev.value.task) onTask(ev.value.task);
       if (ev.value.notice) notifyTask(ev.value);
       return true;
-    case 'taskDelete':
+    case 'taskDelete': {
+      // Purged, or a scoped viewer lost the card (ADR-0059: TASK_DELETE without `purged` = the card is gone for him).
+      const scoped = !!s.boards[ev.value.boardId]?.taskScoped;
       s.removeTask(ev.value.taskId);
-      if (useBoardsUi.getState().taskId === ev.value.taskId && ev.value.purged) useBoardsUi.getState().openTask(null);
+      if (useBoardsUi.getState().taskId === ev.value.taskId && (ev.value.purged || scoped)) useBoardsUi.getState().openTask(null);
       return true;
+    }
     case 'taskActivity':
       if (ev.value.activity) s.appendActivity(ev.value.activity);
       return true;

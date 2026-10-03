@@ -17,7 +17,8 @@ const update = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a) } } }));
 
 const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards } = await import('./boards');
-const { useBoards } = await import('../stores/boards');
+const { useBoards, workspaceBoards } = await import('../stores/boards');
+const { useBoardsUi, MY_TASKS } = await import('../stores/boardsUi');
 const { toast } = await import('../stores/toasts');
 const { ApiError } = await import('../lib/api/client');
 
@@ -161,3 +162,47 @@ describe('ADR-0058: events 87–91, READY categories, FEATURE_DISABLED', () => {
     expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Оценка'));
   });
 });
+
+// ADR-0059 §5: a viewer who sees a board only through his cards.
+describe('task-scoped boards in the store', () => {
+  beforeEach(() => {
+    useBoards.getState().reset();
+    useBoardsUi.setState({ taskId: null, boardOf: {}, active: false });
+  });
+  const ev = (e: Parameters<typeof create<typeof DispatchEventSchema>>[1]): ReturnType<typeof create<typeof DispatchEventSchema>>['event'] => create(DispatchEventSchema, e).event;
+  const scoped = (): void => useBoards.getState().upsertBoard(create(BoardSchema, { id: 'b1', workspaceId: 'w1', name: 'Dev', permissions: 0n, taskScoped: true }));
+
+  it('BOARD_CREATE with taskScoped shows the board in the list even with permissions 0', () => {
+    applyBoardEvent(ev({ event: { case: 'boardCreate', value: { board: create(BoardSchema, { id: 'b1', workspaceId: 'w1', name: 'Dev', permissions: 0n, taskScoped: true }) } } }));
+    expect(workspaceBoards(useBoards.getState().boards, 'w1').map((b) => b.id)).toEqual(['b1']);
+  });
+
+  it('TASK_DELETE without purged removes the card and closes its open panel on a scoped board', () => {
+    scoped();
+    useBoards.getState().setBoardTasks('b1', [task('a', 's1', 1024)]);
+    useBoardsUi.getState().openTask('a');
+    applyBoardEvent(ev({ event: { case: 'taskDelete', value: { workspaceId: 'w1', boardId: 'b1', taskId: 'a' } } }));
+    expect(useBoards.getState().tasks['a']).toBeUndefined();
+    expect(useBoardsUi.getState().taskId).toBeNull();
+  });
+
+  it('TASK_DELETE of another card leaves the open panel alone', () => {
+    scoped();
+    useBoards.getState().setBoardTasks('b1', [task('a', 's1', 1024), task('c', 's1', 2048)]);
+    useBoardsUi.getState().openTask('a');
+    applyBoardEvent(ev({ event: { case: 'taskDelete', value: { workspaceId: 'w1', boardId: 'b1', taskId: 'c' } } }));
+    expect(useBoardsUi.getState().taskId).toBe('a');
+  });
+
+  it('BOARD_DELETE closes the open board and the panel of its task', () => {
+    scoped();
+    useBoards.getState().setBoardTasks('b1', [task('a', 's1', 1024)]);
+    useBoardsUi.getState().openBoard('w1', 'b1');
+    useBoardsUi.getState().openTask('a');
+    applyBoardEvent(ev({ event: { case: 'boardDelete', value: { workspaceId: 'w1', boardId: 'b1' } } }));
+    expect(useBoards.getState().boards['b1']).toBeUndefined();
+    expect(useBoardsUi.getState().boardOf['w1']).toBe(MY_TASKS);
+    expect(useBoardsUi.getState().taskId).toBeNull();
+  });
+});
+
