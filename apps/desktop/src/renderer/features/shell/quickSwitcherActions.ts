@@ -1,7 +1,7 @@
 /**
  * ⌘K result actions (docs/09 #66, #83): what a row does. The row itself only selects — the
- * actions are its buttons, and the keys do the same: Enter — the first one, ⇧Enter / ⌘Enter —
- * the second one.
+ * actions are its buttons, and the keys do the same: Enter — the first one, ⇧Enter — the second
+ * one (⌘Enter is «Все результаты», ADR-0062 §4).
  *   voice room (I may connect): «Подключиться», «Открыть чат» (the chat without joining);
  *   voice room without CONNECT, text room: «Открыть чат»;
  *   DM: «Написать»; member: «Сообщения» (filter by author) and «Написать» (if a DM is allowed);
@@ -40,9 +40,8 @@ export function rowActions(r: SwitcherRowKind): readonly SwitcherAction[] {
   return OPEN;
 }
 
-/** Enter — the first action; ⇧Enter or ⌘/Ctrl+Enter — the second one, if the row has it. */
-export function keyAction(r: SwitcherRowKind, keys: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): SwitcherAction {
+/** Enter — the first action; ⇧Enter — the second one, if the row has it. */
+export function keyAction(r: SwitcherRowKind, keys: { shiftKey: boolean; metaKey?: boolean; ctrlKey?: boolean }): SwitcherAction {
   const acts = rowActions(r).filter((a) => a !== 'call');
-  const second = keys.shiftKey || keys.metaKey || keys.ctrlKey;
-  return (second ? acts[1] : undefined) ?? acts[0] ?? 'open';
+  return (keys.shiftKey ? acts[1] : undefined) ?? acts[0] ?? 'open';
 }

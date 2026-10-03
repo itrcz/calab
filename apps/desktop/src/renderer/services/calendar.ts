@@ -328,7 +328,15 @@ function takePendingEvent(): void {
   if (id) void showEventById(id);
 }
 
-async function showEventById(id: string): Promise<void> {
+/**
+ * A search hit (ADR-0062 §4): the meeting's card on the matched occurrence (`at`, its start in
+ * ms; a series is one hit with its nearest occurrence).
+ */
+export function openEventOccurrence(id: string, at: number): Promise<void> {
+  return showEventById(id, at);
+}
+
+async function showEventById(id: string, at?: number): Promise<void> {
   try {
     const r = await api.calendar.get(id);
     const series = r.event;
@@ -344,7 +352,11 @@ async function showEventById(id: string): Promise<void> {
     }
     useCalendar.setState((s) => ({ series: { ...s.series, [id]: series } }));
     let target: CalendarEvent = series;
-    if (series.repeat !== EventRepeat.UNSPECIFIED) {
+    if (series.repeat !== EventRepeat.UNSPECIFIED && at !== undefined) {
+      // That occurrence (the server expands the day around it).
+      const list = await api.calendar.list(series.workspaceId, new Date(at - 86_400_000), new Date(at + 86_400_000)).catch(() => null);
+      target = list?.events.find((e) => e.id === id && (occurrenceMs(e) === at || eventSpan(e).start === at)) ?? series;
+    } else if (series.repeat !== EventRepeat.UNSPECIFIED) {
       // The next occurrence from today (the server expands; ≤ 62 days ahead).
       const now = Date.now();
       const list = await api.calendar.list(series.workspaceId, new Date(now - 86_400_000), new Date(now + 61 * 86_400_000)).catch(() => null);

@@ -4,6 +4,7 @@ import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
 import { zhNotes } from './notes';
+import { zhSearch } from './search';
 import { zhCall } from './call';
 import { zhEcho } from './echo';
 import { zhMusic } from './music';
@@ -49,6 +50,7 @@ export const zhCN: Dict = {
   ...zhWebApps,
   ...zhDm,
   ...zhNotes,
+  ...zhSearch,
   ...zhCall,
   ...zhEcho,
   ...zhMusic,

@@ -116,8 +116,8 @@ export const enChat: DictShape<typeof ruChat> = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': 'Search',
-  'search.hint': 'Rooms, members and messages; arrows to select, Enter for the row’s first button (join, open chat, message), Shift+Enter for the second',
-  'search.placeholder': 'Find a room, person or message',
+  'search.hint': 'Rooms, people, messages, tasks, events, files, notes and transcripts; arrows to select, Tab for the next section, Enter for the row’s first button, Shift+Enter for the second, Cmd/Ctrl+Enter for all results of the section',
+  'search.placeholder': 'Search everything: messages, tasks, events, files',
   'search.rooms': 'Rooms',
   'search.members': 'Members',
   'search.messages': 'Messages',

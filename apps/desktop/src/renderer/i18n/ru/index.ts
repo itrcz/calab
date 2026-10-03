@@ -3,6 +3,7 @@ import { ruApp } from './app';
 import { ruChat } from './chat';
 import { ruDm } from './dm';
 import { ruNotes } from './notes';
+import { ruSearch } from './search';
 import { ruCall } from './call';
 import { ruEcho } from './echo';
 import { ruMusic } from './music';
@@ -48,6 +49,7 @@ export const ru = {
   ...ruWebApps,
   ...ruDm,
   ...ruNotes,
+  ...ruSearch,
   ...ruCall,
   ...ruEcho,
   ...ruMusic,

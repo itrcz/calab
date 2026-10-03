@@ -47,6 +47,8 @@ import { AppScreen } from '../webapps/AppScreen';
 import { installWebApps } from '../../services/webApps';
 import { useOpenApp } from '../../stores/webApps';
 import { StreamPopout } from '../voice/StreamArea';
+import { SearchResultsPanel } from '../search/SearchResultsPanel';
+import { useSearchPanel } from '../../stores/searchPanel';
 
 export function AppShell(): ReactNode {
   return (
@@ -89,6 +91,9 @@ function ShellLayout(): ReactNode {
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
   // A web app of this workspace (ADR-0050 §3) replaces the room column and the chat.
   const appId = useOpenApp(home ? null : wsId);
+  // «Результаты поиска» (ADR-0062 §4): the right panel in place of the members list.
+  const searchOpen = useSearchPanel((s) => s.open);
+  const searchSeq = useSearchPanel((s) => s.seq);
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -121,6 +126,9 @@ function ShellLayout(): ReactNode {
           </div>
         ) : locked && wsId ? (
           <WorkspaceLock workspaceId={wsId} />
+        ) : searchOpen ? (
+          // A phone: the results full screen; opening a hit closes them.
+          <SearchResultsPanel key={searchSeq} page />
         ) : home ? (
           dmId ? (
             <ChatPane key={dmId} workspaceId="" roomId={dmId} />
@@ -184,6 +192,7 @@ function ShellLayout(): ReactNode {
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
               {dmId ? <ChatPane key={dmId} workspaceId="" roomId={dmId} /> : <DmPick />}
+              {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
             </div>
           </div>
         ) : hasWs && wsId && appId ? (
@@ -212,8 +221,14 @@ function ShellLayout(): ReactNode {
               ) : (
                 <>
                   {roomId ? <ChatPane key={roomId} workspaceId={wsId} roomId={roomId} /> : <NoRoom workspaceId={wsId} />}
-                  {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
-                  {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
+                  {searchOpen ? (
+                    <SearchResultsPanel key={searchSeq} floating={!wide} />
+                  ) : (
+                    <>
+                      {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
+                      {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
+                    </>
+                  )}
                 </>
               )}
             </div>

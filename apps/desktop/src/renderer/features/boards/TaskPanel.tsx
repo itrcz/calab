@@ -31,7 +31,8 @@ import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
 import { useMobile } from '../../lib/mobile';
-import { loadOlder, markRead, openRoom, type OutgoingFile } from '../../services/chat';
+import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
+import { useChatView } from '../chat/chatView';
 import { subscribeRooms } from '../../services/gateway';
 import {
   archiveTask,
@@ -844,13 +845,41 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
   }, [count, last, me, toEnd]);
   const tab = useBoardsUi((s) => s.activityTab);
   const shown = useMemo(() => filterFeed(rows, tab), [rows, tab]);
+  // A jump to a comment (a search hit, ADR-0062 §4): page up to it, scroll it into view, flash it.
+  const jump = useChatView((s) => (s.jump?.roomId === room.id ? s.jump : null));
+  const highlight = useChatView((s) => s.highlight);
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!jump) return;
+    useChatView.getState().clearJump();
+    const target = jump.messageId;
+    // The comment must be visible in the feed: «Все» or «Комментарии», not «Изменения».
+    if (useBoardsUi.getState().activityTab === 'changes') useBoardsUi.getState().setActivityTab('all');
+    void revealOlder(room.id, target).then((ok) => {
+      if (!ok) {
+        toast.info(t('chat.messageGone'));
+        return;
+      }
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const el = section.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(target)}"]`);
+          if (!el) return;
+          el.scrollIntoView({ block: 'center' });
+          useChatView.getState().setHighlight(target);
+          window.setTimeout(() => {
+            if (useChatView.getState().highlight === target) useChatView.getState().setHighlight(null);
+          }, 1800);
+        }),
+      );
+    });
+  }, [jump, room.id]);
   const tabs: Array<{ value: ActivityTab; label: string }> = [
     { value: 'all', label: t('boards.feed.all') },
     { value: 'changes', label: t('boards.feed.changes') },
     { value: 'comments', label: t('boards.feed.comments') },
   ];
   return (
-    <section className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity">
+    <section ref={section} className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity">
       <div className="flex flex-wrap items-center gap-2 px-5 pb-2">
         <h3 className="mr-auto text-control font-semibold">{t('boards.activity')}</h3>
         <Segmented value={tab} options={tabs} onChange={useBoardsUi.getState().setActivityTab} label={t('boards.feed.label')} />
@@ -871,9 +900,9 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
           return (
             <div key={r.key} className={gap}>
               {c.msg.kind === MessageKind.SYSTEM ? (
-                <SystemRow c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={false} />
+                <SystemRow c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={highlight === c.key} />
               ) : (
-                <MessageRow c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={room.id} perms={roomPerms} highlighted={false} />
+                <MessageRow c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={room.id} perms={roomPerms} highlighted={highlight === c.key} />
               )}
             </div>
           );

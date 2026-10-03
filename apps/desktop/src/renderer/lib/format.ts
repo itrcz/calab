@@ -131,6 +131,10 @@ export const fmt = {
   dateTime(d: Date, month: 'long' | 'short' = 'long', now = new Date()): string {
     return dtf({ day: 'numeric', month, ...thisYear(d, now), hour: '2-digit', minute: '2-digit' }).format(d);
   },
+  /** «пт, 3 окт., 10:00» — an event occurrence in a list (search hits, ADR-0062); the year when not this one. */
+  occurrence(d: Date, now = new Date()): string {
+    return dtf({ weekday: 'short', day: 'numeric', month: 'short', ...thisYear(d, now), hour: '2-digit', minute: '2-digit' }).format(d);
+  },
   /** List rows (DMs): «14:05» today, «вчера», «14 янв.» earlier. */
   listTime(d: Date, now = new Date()): string {
     if (sameDay(d, now)) return fmt.time(d);

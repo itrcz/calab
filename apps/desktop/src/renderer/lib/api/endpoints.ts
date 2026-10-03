@@ -191,6 +191,7 @@ import {
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
   SetBotAvatarResponseSchema,
+  SearchResponseSchema,
   type StickerPackResponse,
   type UploadStickersResponse,
   type FileMeta,
@@ -207,6 +208,11 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 export const api = {
   /** Public build info; the web compares its bundle with it (docs/09 #125, «Обновить страницу»). */
   version: () => call('GET', '/api/version', GetVersionResponseSchema),
+  /**
+   * Unified search (ADR-0062): `q`, `scope` (workspace id | all), `types` / `type`, `limit`,
+   * `cursor`, `sort` — built by lib/search/query.ts. 429 RATE_LIMITED, 422 for a query without words.
+   */
+  search: (p: Record<string, string>, signal?: AbortSignal) => call('GET', `/api/search${qs(p)}`, SearchResponseSchema, undefined, signal),
   /** Email verification and password reset (ADR-0023). */
   auth: {
     /** 204: a code to me.pendingEmail or me.email; 409 = already verified; 429 + Retry-After. */

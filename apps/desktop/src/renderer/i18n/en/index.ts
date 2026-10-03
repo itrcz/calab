@@ -4,6 +4,7 @@ import { enApp } from './app';
 import { enChat } from './chat';
 import { enDm } from './dm';
 import { enNotes } from './notes';
+import { enSearch } from './search';
 import { enCall } from './call';
 import { enEcho } from './echo';
 import { enMusic } from './music';
@@ -49,6 +50,7 @@ export const en: Dict = {
   ...enWebApps,
   ...enDm,
   ...enNotes,
+  ...enSearch,
   ...enCall,
   ...enEcho,
   ...enMusic,

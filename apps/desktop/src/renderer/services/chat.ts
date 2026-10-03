@@ -221,6 +221,33 @@ export async function ensureLoaded(roomId: string, messageId: string): Promise<b
   }
 }
 
+/** Resolves true once `ok()` holds (polled every 50 ms; only while a jump waits), false after `ms`. */
+async function waitFor(ok: () => boolean, ms: number): Promise<boolean> {
+  for (const end = Date.now() + ms; !ok(); ) {
+    if (Date.now() >= end) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return true;
+}
+
+/**
+ * Like ensureLoaded, but keeps the window contiguous with the newest message: pages upwards from
+ * the present until `messageId` is loaded (≤ `maxPages`). For feeds without «load newer» — a
+ * task's activity (a search hit in its comments, ADR-0062 §4). False when it was not reached.
+ */
+export async function revealOlder(roomId: string, messageId: string, maxPages = 20): Promise<boolean> {
+  const st = (): ReturnType<typeof useMessages.getState>['rooms'][string] | undefined => useMessages.getState().rooms[roomId];
+  const has = (): boolean => !!st()?.items.some((c) => c.key === messageId);
+  void openRoom(roomId);
+  if (!(await waitFor(() => !!st()?.loaded || !!st()?.error, 15_000))) return has();
+  for (let i = 0; i < maxPages && !has(); i++) {
+    if (!st()?.hasMoreBefore) break;
+    if (!(await waitFor(() => !loads.has(roomId), 15_000))) break;
+    await loadOlder(roomId);
+  }
+  return has();
+}
+
 /**
  * After a fresh IDENTIFY (server deploy → INVALID_SESSION{resumable:false}) missed events are
  * not replayed: refetch the newest page of every loaded room and merge it in place (no flicker).

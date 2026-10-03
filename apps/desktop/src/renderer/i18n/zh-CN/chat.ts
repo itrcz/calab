@@ -116,8 +116,8 @@ export const zhChat: DictShape<typeof enChat> = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': '搜索',
-  'search.hint': '房间、成员和消息；方向键选择，回车执行该行第一个按钮（加入、打开聊天、发消息），Shift+回车执行第二个',
-  'search.placeholder': '查找房间、用户或消息',
+  'search.hint': '房间、用户、消息、任务、日程、文件、笔记和转写；方向键选择，Tab 切换到下一部分，回车执行该行第一个按钮，Shift+回车执行第二个，Cmd/Ctrl+回车查看该部分全部结果',
+  'search.placeholder': '搜索全部：消息、任务、日程、文件',
   'search.rooms': '房间',
   'search.members': '成员',
   'search.messages': '消息',

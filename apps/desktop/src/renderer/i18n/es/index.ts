@@ -4,6 +4,7 @@ import { esApp } from './app';
 import { esChat } from './chat';
 import { esDm } from './dm';
 import { esNotes } from './notes';
+import { esSearch } from './search';
 import { esCall } from './call';
 import { esEcho } from './echo';
 import { esMusic } from './music';
@@ -49,6 +50,7 @@ export const es: Dict = {
   ...esWebApps,
   ...esDm,
   ...esNotes,
+  ...esSearch,
   ...esCall,
   ...esEcho,
   ...esMusic,
