@@ -49,6 +49,10 @@ import {
   SetBoardOrderRequestSchema,
   SetBoardOrderResponseSchema,
   TaskChecklistResponseSchema,
+  TaskMilestoneResponseSchema,
+  CreateTaskMilestoneRequestSchema,
+  UpdateTaskMilestoneRequestSchema,
+  type TaskMilestoneResponse,
   UpdateBoardCategoryRequestSchema,
   UpdateBoardRequestSchema,
   UpdateTaskChecklistItemRequestSchema,
@@ -714,6 +718,22 @@ export class Bot extends Emitter<BotEvents> {
         const r = await this.rest.call(ConvertChecklistItemResponseSchema, 'POST', `/api/checklist-items/${enc(itemId)}/convert`);
         return { task: r.task ?? fail('task'), checklist: r.checklist, checklistTotal: r.checklistTotal, checklistDone: r.checklistDone };
       },
+    },
+    /**
+     * Milestones inside a task (ADR-0063; ≤ 20 per task, not on subtasks). Rights as for task fields; every call returns
+     * the milestone and the task with all its milestones. A subtask links one of its parent's milestones with
+     * `tasks.update(id, { taskMilestoneId })`; while subtasks are linked the server completes the milestone itself.
+     */
+    milestones: {
+      create: (taskId: string, name: string, dueOn = ''): Promise<TaskMilestoneResponse> =>
+        this.rest.call(TaskMilestoneResponseSchema, 'POST', `/api/tasks/${enc(taskId)}/milestones`, {
+          json: Rest.body(CreateTaskMilestoneRequestSchema, { name, dueOn }),
+        }),
+      /** `dueOn: ''` clears the date; `completed` is refused (409 TASK_MILESTONE_AUTO) while subtasks are linked. */
+      update: (milestoneId: string, p: { name?: string; dueOn?: string; position?: number; completed?: boolean }): Promise<TaskMilestoneResponse> =>
+        this.rest.call(TaskMilestoneResponseSchema, 'PATCH', `/api/task-milestones/${enc(milestoneId)}`, { json: Rest.body(UpdateTaskMilestoneRequestSchema, p) }),
+      /** The result has the task only; linked subtasks lose their link. */
+      delete: (milestoneId: string): Promise<TaskMilestoneResponse> => this.rest.call(TaskMilestoneResponseSchema, 'DELETE', `/api/task-milestones/${enc(milestoneId)}`),
     },
     /** A comment: a message of the task's hidden room (reactions, files, replies as in a chat). */
     comment: async (task: Task | string, content: SendContent): Promise<Message> => {
