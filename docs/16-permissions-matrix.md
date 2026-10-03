@@ -21,7 +21,6 @@
 | Установить пак, отправить стикер | не гость пространства пака; в комнате — `SEND_MESSAGES` room, в DM — оба не гости | `stickers.install`, `messages.sticker` | `packUsable` |
 | Удалить workspace | владелец | `workspaces.delete` | вкладка «Опасная зона» |
 | Личная квота пользователя (ADR-0039) | суперадмин (`SUPERADMIN_EMAILS`), остальным — 404 | `plans.Admin.setStorageQuota` | — |
-| Каталог ачивок хоста (ADR-0061): добавить / изменить / архив / удалить | суперадмин (`SUPERADMIN_EMAILS`), остальным — 404; удалить — только без вручений (409 `ACHIEVEMENT_IN_USE`) | `achievements.adminCreate`, `adminUpdate`, `adminDelete` (`plans.Admin.Guard`) | — |
 
 ## Участники
 
@@ -34,8 +33,9 @@
 | Бейдж участника: назначить / снять | `MANAGE_NICKNAMES` ws + иерархия `workspaces.outranks` (себе — можно); цель — не бот; бот — так же (ADR-0051) | `workspaces.setMemberBadge` | `canSetMemberBadge` |
 | Профиль участника `GET …/members/{userId}` (ADR-0051) | участник (и бот); гость — только видимых ему (ADR-0016), иначе 404; открытые задачи — только с досок, которые видит вызывающий (закрытая без переопределения — нет); скрытый день рождения не отдаётся | `workspaces.getMember`, `boards.OpenTasksOf` | — |
 | Список бейджей, картинка бейджа | участник пространства (и гость) | `workspaces.listBadges`, `files.CanRead` (`IsWorkspaceBadge`) | — |
+| Каталог ачивок пространства (ADR-0061, поправка 1): добавить / изменить / архив / удалить | `MANAGE_WORKSPACE` ws (не гость); ≤ 100 (409 `ACHIEVEMENT_LIMIT`); картинка — своя загрузка в это пространство; удалить — только без вручений (409 `ACHIEVEMENT_IN_USE`); чужое пространство — 404; бот-токен — 403 `BOT_NOT_ALLOWED` | `achievements.create`, `update`, `remove` | настройки → «Библиотека» → «Ачивки» |
 | Вручить / отозвать ачивку (ADR-0061) | `MANAGE_MEMBERS` ws (не гость); получатель — участник, не гость, не бот, не я (422 `SELF_GRANT`); ачивка не в архиве; бот-токен — 403 `BOT_NOT_ALLOWED` | `achievements.grant`, `revoke` | — |
-| Ачивки участника, каталог и картинки ачивок | участник (и бот); гость — ачивки только видимых ему участников (как профиль), иначе 404; каталог и картинки — любой аутентифицированный | `achievements.list`, `catalog`, `image` | — |
+| Ачивки участника, каталог и картинки ачивок | участник (и бот); гость — ачивки только видимых ему участников (как профиль), иначе 404; каталог и картинки пространства — любой его участник (и гость) | `achievements.list`, `catalog`, `files.CanRead` (`IsWorkspaceAchievement`) | — |
 | Ник другого | `MANAGE_NICKNAMES` ws (иерархии нет, docs/12) | `updateMember` | `canRenameMember` |
 | День рождения другого (docs/09 #77), таблица с датами | `MANAGE_NICKNAMES` ws + иерархия; цель — не бот и не гость; бот-токен — 403 | `workspaces.setMemberBirthday`, `listMemberBirthdays` | `canEditMemberBirthday` |
 
