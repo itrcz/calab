@@ -275,10 +275,13 @@ func TestSearchInputSafety(t *testing.T) {
 	// SET LOCAL only: no pooled connection keeps the search settings.
 	ctx := context.Background()
 	var wg sync.WaitGroup
+	path := "/api/search?" + q(w) + "&scope=all"
 	for range 8 {
-		// A copy per goroutine: client.do records lastBody, so a shared client races under -race.
-		c := *bob
-		wg.Go(func() { _ = c.do("GET", "/api/search?"+q(w)+"&scope=all", nil, nil) })
+		// Each goroutine builds its own client: client.do records lastBody, so a shared one races.
+		wg.Go(func() {
+			c := &client{t: t, token: bob.token, ip: bob.ip, lang: bob.lang}
+			_ = c.do("GET", path, nil, nil)
+		})
 	}
 	wg.Wait()
 	checkPool(ctx, t, testDB.Pool)
