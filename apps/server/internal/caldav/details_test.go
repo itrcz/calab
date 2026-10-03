@@ -71,9 +71,12 @@ func TestDetailsHelpers(t *testing.T) {
 			t.Errorf("mailto(%q) = %q, want %q", in, got, want)
 		}
 	}
-	for in, want := range map[string]string{
+	for in, want := range map[string]string{ //nolint:gosec // G101: meeting links of test descriptions, not credentials
 		"join: https://meet.example/a?b=1).": "https://meet.example/a?b=1", "<https://x.org/y>": "https://x.org/y",
-		"http://x.org": "", "nothing": "", "HTTPS://x.org/Q": "HTTPS://x.org/Q",
+		"http://x.org": "", "nothing": "", "HTTPS://x.org/Q": "https://x.org/Q",
+		`<a href="https://zoom.us/j/1?pwd=x&amp;from=addon">`:                                             "https://zoom.us/j/1?pwd=x&from=addon",
+		"https://www.google.com/url?q=https://zoom.us/j/2?pwd%3Dy&amp;sa=D&amp;source=calendar&amp;ust=1": "https://zoom.us/j/2?pwd=y",
+		`https://x.org/a\b`: "",
 	} {
 		if got := firstHTTPS(in); got != want {
 			t.Errorf("firstHTTPS(%q) = %q, want %q", in, got, want)

@@ -192,7 +192,7 @@ func TestDiscoverQueryPutDelete(t *testing.T) {
 
 	s.SetObject("a.ics", ics("BEGIN:VEVENT\r\nUID:q\r\nDTSTART:20261001T090000Z\r\nDTEND:20261001T100000Z\r\nEND:VEVENT\r\n"))
 	objs, err := c.Query(ctx, cals[0].Href, cr, utc("2026-09-30T00:00:00Z"), utc("2026-10-30T00:00:00Z"))
-	if err != nil || len(objs) != 1 || !strings.Contains(objs[0], "UID:q") {
+	if err != nil || len(objs) != 1 || !strings.Contains(objs[0].Data, "UID:q") || objs[0].Href != cals[0].Href+"a.ics" || objs[0].ETag != `"1"` {
 		t.Fatalf("query %v %v", objs, err)
 	}
 	last := s.Requests()[len(s.Requests())-1]
@@ -254,5 +254,52 @@ func TestClientLimits(t *testing.T) {
 	}
 	if _, err := CheckURL("https://localhost:1/", func(a netip.Addr) bool { return !a.IsLoopback() }); !errors.Is(err, ErrURL) {
 		t.Errorf("localhost: %v", err)
+	}
+}
+
+// Conditional writes (ADR-0045 amendment 1): the ETag of the import and of GET, If-Match, 412,
+// a read-only calendar.
+func TestConditionalWrites(t *testing.T) {
+	s := caldavtest.New("anna", "app-pass")
+	defer s.Close()
+	c := testClient(s)
+	ctx := context.Background()
+	cr := creds{"anna", "app-pass"}
+	target := s.URL + s.Calendar() + "a.ics"
+	s.SetObject("a.ics", ics("BEGIN:VEVENT\r\nUID:q\r\nDTSTART:20261001T090000Z\r\nDTEND:20261001T100000Z\r\nEND:VEVENT\r\n"))
+	objs, err := c.Query(ctx, s.URL+s.Calendar(), cr, utc("2026-09-30T00:00:00Z"), utc("2026-10-30T00:00:00Z"))
+	if err != nil || len(objs) != 1 || objs[0].Href != target || objs[0].ETag != s.ETag(s.Calendar()+"a.ics") {
+		t.Fatalf("query %+v %v", objs, err)
+	}
+	etag := objs[0].ETag
+	obj, err := c.Get(ctx, target, cr)
+	if err != nil || obj.ETag != etag || !strings.Contains(obj.Data, "UID:q") {
+		t.Fatalf("get %+v %v", obj, err)
+	}
+	if err := c.PutIf(ctx, target, cr, obj.Data, `"stale"`); !errors.Is(err, ErrChanged) {
+		t.Fatalf("stale put: %v", err)
+	}
+	if err := c.PutIf(ctx, target, cr, obj.Data, etag); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteIf(ctx, target, cr, etag); !errors.Is(err, ErrChanged) {
+		t.Fatalf("delete with the old etag after a write: %v", err)
+	}
+	s.ReadOnly = true
+	if err := c.DeleteIf(ctx, target, cr, s.ETag(s.Calendar()+"a.ics")); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("read-only: %v", err)
+	}
+	s.ReadOnly = false
+	if err := c.DeleteIf(ctx, target, cr, s.ETag(s.Calendar()+"a.ics")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteIf(ctx, target, cr, etag); err != nil {
+		t.Fatalf("delete of a missing object: %v", err)
+	}
+	if _, err := c.Get(ctx, target, cr); !errors.Is(err, ErrChanged) {
+		t.Fatalf("get of a missing object: %v", err)
+	}
+	if !sameETag(`W/"1"`, `"1"`) || sameETag(`"1"`, `"2"`) {
+		t.Error("sameETag")
 	}
 }

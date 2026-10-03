@@ -80,8 +80,21 @@ type creds struct{ user, pass string }
 
 // do sends one request and returns the status and the body (≤ 2 MB).
 func (c *davClient) do(ctx context.Context, method, target string, cr creds, depth, contentType string, body []byte) (int, []byte, error) {
+	h := http.Header{}
+	if depth != "" {
+		h.Set("Depth", depth)
+	}
+	if contentType != "" {
+		h.Set("Content-Type", contentType)
+	}
+	st, _, data, err := c.send(ctx, method, target, cr, h, body)
+	return st, data, err
+}
+
+// send is do with any request headers, also returning the answer's headers.
+func (c *davClient) send(ctx context.Context, method, target string, cr creds, h http.Header, body []byte) (int, http.Header, []byte, error) {
 	if _, err := CheckURL(target, c.allow); err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
@@ -91,38 +104,35 @@ func (c *davClient) do(ctx context.Context, method, target string, cr creds, dep
 	}
 	req, err := http.NewRequestWithContext(ctx, method, target, rd) //nolint:gosec // G704: https only, SSRF-safe dialer
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
+	}
+	for k, v := range h {
+		req.Header[k] = v
 	}
 	req.SetBasicAuth(cr.user, cr.pass)
 	req.Header.Set("User-Agent", userAgent)
-	if depth != "" {
-		req.Header.Set("Depth", depth)
-	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
 	resp, err := c.http.Do(req) //nolint:gosec // G704: see above
 	if err != nil {
 		if errors.Is(err, unfurl.ErrBlocked) {
-			return 0, nil, ErrURL
+			return 0, nil, nil, ErrURL
 		}
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return resp.StatusCode, nil, err
+		return resp.StatusCode, resp.Header, nil, err
 	}
 	if len(data) > maxBody {
-		return resp.StatusCode, nil, ErrTooLarge
+		return resp.StatusCode, resp.Header, nil, ErrTooLarge
 	}
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
-		return resp.StatusCode, data, ErrAuth
+		return resp.StatusCode, resp.Header, data, ErrAuth
 	case resp.StatusCode >= 300 && resp.StatusCode < 400:
-		return resp.StatusCode, data, ErrRedirect
+		return resp.StatusCode, resp.Header, data, ErrRedirect
 	}
-	return resp.StatusCode, data, nil
+	return resp.StatusCode, resp.Header, data, nil
 }
 
 // ---- multistatus ----
@@ -145,6 +155,7 @@ type prop struct {
 		} `xml:"urn:ietf:params:xml:ns:caldav comp"`
 	} `xml:"urn:ietf:params:xml:ns:caldav supported-calendar-component-set"`
 	CalendarData string `xml:"urn:ietf:params:xml:ns:caldav calendar-data"`
+	ETag         string `xml:"DAV: getetag"`
 }
 
 type propstat struct {
@@ -192,13 +203,16 @@ func (r response) okProp() prop {
 		if q.CalendarData != "" {
 			p.CalendarData = q.CalendarData
 		}
+		if q.ETag != "" {
+			p.ETag = q.ETag
+		}
 	}
 	return p
 }
 
 func parseMultistatus(data []byte) (*multistatus, error) {
 	var ms multistatus
-	if err := xml.Unmarshal(data, &ms); err != nil {
+	if err := xml.Unmarshal(data, &ms); err != nil { //nolint:gosec // G709: a size-limited WebDAV answer into a plain struct (encoding/xml has no entity expansion)
 		return nil, fmt.Errorf("caldav: not a WebDAV answer: %w", err)
 	}
 	return &ms, nil
@@ -369,14 +383,20 @@ func clip(s string, n int) string {
 
 const reportQuery = `<?xml version="1.0" encoding="utf-8"?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:prop><c:calendar-data/></d:prop>
+  <d:prop><d:getetag/><c:calendar-data/></d:prop>
   <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">
     <c:time-range start="%s" end="%s"/>
   </c:comp-filter></c:comp-filter></c:filter>
 </c:calendar-query>`
 
+// Object is a calendar object: its absolute URL, ETag (as the server wrote it, quotes included;
+// may be empty) and iCalendar data.
+type Object struct {
+	Href, ETag, Data string
+}
+
 // Query returns the calendar objects of the calendar with an event in [from, to).
-func (c *davClient) Query(ctx context.Context, calendar string, cr creds, from, to time.Time) ([]string, error) {
+func (c *davClient) Query(ctx context.Context, calendar string, cr creds, from, to time.Time) ([]Object, error) {
 	body := fmt.Sprintf(reportQuery, from.UTC().Format("20060102T150405Z"), to.UTC().Format("20060102T150405Z"))
 	st, data, err := c.do(ctx, "REPORT", calendar, cr, "1", "application/xml; charset=utf-8", []byte(body))
 	if err != nil {
@@ -389,13 +409,97 @@ func (c *davClient) Query(ctx context.Context, calendar string, cr creds, from, 
 	if err != nil {
 		return nil, err
 	}
-	var out []string
+	base, err := url.Parse(calendar)
+	if err != nil {
+		return nil, err
+	}
+	var out []Object
 	for _, r := range ms.Responses {
-		if d := r.okProp().CalendarData; d != "" {
-			out = append(out, d)
+		p := r.okProp()
+		if p.CalendarData == "" {
+			continue
 		}
+		o := Object{Data: p.CalendarData, ETag: strings.TrimSpace(p.ETag)}
+		if u, ok := resolve(base, r.Href); ok && strings.TrimSpace(r.Href) != "" {
+			o.Href = u.String()
+		}
+		out = append(out, o)
 	}
 	return out, nil
+}
+
+// Errors of the conditional writes of an object (ADR-0045 amendment 1).
+var (
+	ErrChanged  = errors.New("caldav: the event changed in the calendar")
+	ErrReadOnly = errors.New("caldav: the calendar is read-only")
+)
+
+// sameETag compares ETags, weak or strong.
+func sameETag(a, b string) bool {
+	norm := func(s string) string { return strings.TrimPrefix(strings.TrimSpace(s), "W/") }
+	return norm(a) == norm(b)
+}
+
+// writeStatus maps the status of a conditional DELETE / PUT.
+func writeStatus(st int) error {
+	switch {
+	case st >= 200 && st < 300:
+		return nil
+	case st == http.StatusPreconditionFailed:
+		return ErrChanged
+	case st == http.StatusForbidden || st == http.StatusMethodNotAllowed:
+		return ErrReadOnly
+	}
+	return &StatusError{Status: st}
+}
+
+// Get reads one calendar object with its ETag; a missing one is ErrChanged.
+func (c *davClient) Get(ctx context.Context, target string, cr creds) (Object, error) {
+	st, h, data, err := c.send(ctx, http.MethodGet, target, cr, http.Header{"Accept": {"text/calendar"}}, nil)
+	switch {
+	case err != nil:
+		return Object{}, err
+	case st == http.StatusNotFound || st == http.StatusGone:
+		return Object{}, ErrChanged
+	case st == http.StatusForbidden:
+		return Object{}, ErrReadOnly
+	case st != http.StatusOK:
+		return Object{}, &StatusError{Status: st}
+	}
+	return Object{Href: target, ETag: strings.TrimSpace(h.Get("ETag")), Data: string(data)}, nil
+}
+
+// DeleteIf removes an object if it still has etag (no condition with an empty one); one that is
+// gone already is fine.
+func (c *davClient) DeleteIf(ctx context.Context, target string, cr creds, etag string) error {
+	h := http.Header{}
+	if etag != "" {
+		h.Set("If-Match", etag)
+	}
+	st, _, _, err := c.send(ctx, http.MethodDelete, target, cr, h, nil)
+	if err != nil {
+		return err
+	}
+	if st == http.StatusNotFound || st == http.StatusGone {
+		return nil
+	}
+	return writeStatus(st)
+}
+
+// PutIf replaces an object if it still has etag (no condition with an empty one).
+func (c *davClient) PutIf(ctx context.Context, target string, cr creds, ics, etag string) error {
+	h := http.Header{"Content-Type": {"text/calendar; charset=utf-8"}}
+	if etag != "" {
+		h.Set("If-Match", etag)
+	}
+	st, _, _, err := c.send(ctx, http.MethodPut, target, cr, h, []byte(ics))
+	if err != nil {
+		return err
+	}
+	if st == http.StatusNotFound || st == http.StatusGone {
+		return ErrChanged
+	}
+	return writeStatus(st)
 }
 
 // Put stores an event object. A server that already has the UID in the calendar (the

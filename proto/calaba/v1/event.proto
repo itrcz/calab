@@ -378,11 +378,41 @@ message ExternalEvent {
   string location = 6; // ≤ 200 characters
   repeated ExternalAttendee attendees = 7; // ≤ 50
   string organizer = 8; // e-mail, lower case
-  string url = 9; // http(s) link of the event (URL, or the first https:// of its description)
+  // The conference link («Подключиться», ADR-0045 amendment 1): X-GOOGLE-CONFERENCE /
+  // X-MICROSOFT-SKYPETEAMSMEETINGURL, else URL (unless it is the provider's page of the event),
+  // else the first https:// of LOCATION, else of DESCRIPTION; empty = none.
+  string url = 9;
+  string href = 10; // the calendar object (absolute URL) — what DELETE names; empty until the next import
+  bool recurring = 11; // an occurrence of a series (DELETE offers THIS or SERIES)
+  // The provider's web page of the event («Открыть в календаре»), only when it is reliable
+  // (Yandex: its URL property; Nextcloud: the calendar app's link of the object); else empty.
+  string web_url = 12;
 }
 
 message ExternalEventsResponse {
   repeated ExternalEvent events = 1; // earliest first
+}
+
+// DELETE /api/me/external-events DeleteExternalEventRequest → 204 (ADR-0045 amendment 1): deletes
+// my imported event from my CalDAV calendar. SERIES (or an event without repeats) — a CalDAV
+// DELETE of the object with If-Match: its ETag; THIS of a series — a PUT of the object with an
+// added EXDATE (a changed occurrence is removed too), also with If-Match. The local rows go at
+// once; the next import confirms. 404 — no such event of mine (or no account); 409 CONFLICT — the
+// event changed in the calendar (the provider answered 412, or it was not imported with an href
+// yet): reload; 422 — the calendar is read-only (403 / 405 from the provider); 30 per minute.
+// People only: guests and bots → 403. The account's password never leaves the server.
+
+enum ExternalDeleteScope {
+  EXTERNAL_DELETE_SCOPE_UNSPECIFIED = 0;
+  EXTERNAL_DELETE_SCOPE_THIS = 1;   // only this occurrence (the whole event when it has no repeats)
+  EXTERNAL_DELETE_SCOPE_SERIES = 2; // the whole series
+}
+
+message DeleteExternalEventRequest {
+  string uid = 1; // ExternalEvent.uid
+  string href = 2; // ExternalEvent.href
+  google.protobuf.Timestamp start = 3; // ExternalEvent.starts_at of the occurrence
+  ExternalDeleteScope scope = 4;
 }
 
 // ---- gateway (docs/05) ----

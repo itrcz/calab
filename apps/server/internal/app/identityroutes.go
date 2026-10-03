@@ -102,6 +102,7 @@ var identityRoutes = map[string]identityScope{
 	"DELETE /api/events/{id}":                                                           scopeEvent,
 	"DELETE /api/me/blocked-bots/{id}":                                                  scopeGlobal,
 	"DELETE /api/me/caldav":                                                             scopeGlobal,
+	"DELETE /api/me/external-events":                                                    scopeGlobal,
 	"DELETE /api/me/sessions/{id}":                                                      scopeGlobal,
 	"DELETE /api/me/sticker-packs/{id}":                                                 scopeGlobal,
 	"DELETE /api/messages/{id}":                                                         scopeMessage,

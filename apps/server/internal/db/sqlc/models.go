@@ -398,6 +398,10 @@ type ExternalBusy struct {
 	Attendees []byte
 	Organizer string
 	Url       string
+	Href      string
+	Etag      string
+	Recurring bool
+	WebUrl    string
 }
 
 type File struct {

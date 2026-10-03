@@ -307,6 +307,7 @@ var botRoutes = map[string]botAccess{
 	"PATCH /api/me/caldav":                       botDeny,
 	"GET /api/me/external-events":                botDeny, // ADR-0045 §5: the owner's own events, people only
 	"DELETE /api/me/caldav":                      botDeny,
+	"DELETE /api/me/external-events":             botDeny, // ADR-0045 amendment 1: the owner deletes from their calendar
 	"POST /api/me/caldav/sync":                   botDeny,
 	"GET /api/event-rsvp":                        botPublic, // signed answer links of external attendees; refuses bot tokens
 	"POST /api/event-rsvp":                       botPublic,

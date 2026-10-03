@@ -483,6 +483,7 @@ func New(d Deps) *App {
 	cdSvc := caldav.New(d.DB, d.Redis, calSvc, []byte(d.Config.JWTSecret), cdOpts,
 		redisx.NewRateLimiter(d.Redis, "rl:caldav-connect:", 5, 5.0/60), // 5 per hour
 		redisx.NewRateLimiter(d.Redis, "rl:caldav-sync:", 1, 1))         // once per minute
+	cdSvc.DeleteLimit = redisx.NewRateLimiter(d.Redis, "rl:caldav-delete:", 30, 30) // ADR-0045 amendment 1: 30 per minute
 	calSvc.Changed = cdSvc.EventChanged
 	cdSvc.AllowsCalDAV, calSvc.AllowsCalDAV = planSvc.AllowsCalDAV, planSvc.AllowsCalDAV // Free has no CalDAV (ADR-0024)
 	cdSvc.Routes(mux, private)
