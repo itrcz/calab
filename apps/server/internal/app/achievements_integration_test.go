@@ -76,8 +76,14 @@ func achievementForm(t *testing.T, u *user, method, path string, fields map[stri
 	return resp.StatusCode, &a, nil
 }
 
-// getRaw performs an authenticated GET and returns the response (body read).
-func getRaw(t *testing.T, token, path string, header map[string]string) (*http.Response, []byte) {
+// rawResp is the status and headers of a response whose body getRaw has read and closed.
+type rawResp struct {
+	StatusCode int
+	Header     http.Header
+}
+
+// getRaw performs an authenticated GET and returns the status, headers and body.
+func getRaw(t *testing.T, token, path string, header map[string]string) (*rawResp, []byte) {
 	t.Helper()
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", srv.URL+path, http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -90,7 +96,7 @@ func getRaw(t *testing.T, token, path string, header map[string]string) (*http.R
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
-	return resp, raw
+	return &rawResp{StatusCode: resp.StatusCode, Header: resp.Header}, raw
 }
 
 // TestAchievements (ADR-0061): the superadmin catalog (404 to others, IMAGE_NEEDS_ALPHA, 409 on
