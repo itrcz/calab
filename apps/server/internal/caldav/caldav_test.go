@@ -303,3 +303,52 @@ func TestConditionalWrites(t *testing.T) {
 		t.Error("sameETag")
 	}
 }
+
+// The target of a write (ADR-0045 amendment 1, security review): only an object right inside the
+// chosen calendar, on its origin; never unconditional.
+func TestInCalendarAndNoETag(t *testing.T) {
+	cal := "https://dav.example.com/calendars/anna/work/"
+	for href, want := range map[string]bool{
+		cal + "a.ics": true,
+		"https://DAV.example.com/calendars/anna/work/b.ics": true,
+		cal:               false, // the collection itself
+		cal + "sub/a.ics": false,
+		cal + "..":        false,
+		cal + "%2e%2e":    false,
+		cal + "a%2Fb.ics": false,
+		"https://dav.example.com/calendars/anna/home/a.ics":      false,
+		"https://dav.example.com/calendars/anna/workx.ics":       false,
+		"https://evil.example/calendars/anna/work/a.ics":         false,
+		"https://dav.example.com:8443/calendars/anna/work/a.ics": false,
+		"http://dav.example.com/calendars/anna/work/a.ics":       false,
+		"https://x@dav.example.com/calendars/anna/work/a.ics":    false,
+		cal + "a.ics?x=1":            false,
+		cal + "a.ics#f":              false,
+		"/calendars/anna/work/a.ics": false,
+		"":                           false,
+	} {
+		if got := InCalendar(href, cal); got != want {
+			t.Errorf("InCalendar(%q) = %v", href, got)
+		}
+	}
+	if !InCalendar(cal+"a.ics", "https://dav.example.com/calendars/anna/work") {
+		t.Error("a calendar href without the trailing slash")
+	}
+
+	s := caldavtest.New("anna", "app-pass")
+	defer s.Close()
+	c := testClient(s)
+	cr := creds{"anna", "app-pass"}
+	target := s.URL + s.Calendar() + "a.ics"
+	s.SetObject("a.ics", ics("BEGIN:VEVENT\r\nUID:q\r\nDTSTART:20261001T090000Z\r\nDTEND:20261001T100000Z\r\nEND:VEVENT\r\n"))
+	n := len(s.Requests())
+	if err := c.DeleteIf(context.Background(), target, cr, ""); !errors.Is(err, errNoETag) {
+		t.Fatalf("delete without an etag: %v", err)
+	}
+	if err := c.PutIf(context.Background(), target, cr, "x", ""); !errors.Is(err, errNoETag) {
+		t.Fatalf("put without an etag: %v", err)
+	}
+	if len(s.Requests()) != n {
+		t.Fatal("an unconditional write was sent")
+	}
+}

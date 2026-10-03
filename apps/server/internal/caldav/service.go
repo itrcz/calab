@@ -544,8 +544,9 @@ func (s *Service) fetch(ctx context.Context, acc sqlc.CaldavAccount, now time.Ti
 	var out []Busy
 	for _, o := range objs {
 		busy := BusyFromICS(o.Data, from, to, loc)
-		if len(o.Href) > maxURL || len(o.ETag) > maxETag {
-			o.Href, o.ETag = "", "" // not deletable from Calab; still busy time
+		if len(o.Href) > maxURL || len(o.ETag) > maxETag || o.ETag == "" || !InCalendar(o.Href, *acc.CalendarHref) {
+			// Not deletable from Calab (no If-Match, or not an object of this calendar); still busy time.
+			o.Href, o.ETag = "", ""
 		}
 		page := NextcloudPage(o.Href)
 		for i := range busy {

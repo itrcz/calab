@@ -5,7 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,7 +68,9 @@ func (s *Service) deleteExternal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	row, err := s.db.Q.GetMyExternalEvent(ctx, sqlc.GetMyExternalEventParams{UserID: me, Uid: req.GetUid(), StartsAt: start, Href: req.GetHref()})
-	if db.IsNotFound(err) || (err == nil && (acc.CalendarHref == nil || !strings.HasPrefix(row.Href, *acc.CalendarHref))) {
+	// The target is the stored row's href, never the client's: it must still be an object of the
+	// chosen calendar (same origin, right inside it), and every write is conditional (If-Match).
+	if db.IsNotFound(err) || (err == nil && (acc.CalendarHref == nil || row.Etag == "" || !InCalendar(row.Href, *acc.CalendarHref))) {
 		return httpx.NotFound("external event")
 	}
 	if err != nil {
@@ -113,13 +115,11 @@ func (s *Service) deleteOccurrence(ctx context.Context, user uuid.UUID, row sqlc
 	if err != nil {
 		return false, err
 	}
-	etag := obj.ETag
-	if row.Etag != "" {
-		if etag != "" && !sameETag(etag, row.Etag) {
-			return false, ErrChanged
-		}
-		etag = row.Etag
+	// Always the ETag of the import (never empty here): the If-Match of the write.
+	if obj.ETag != "" && !sameETag(obj.ETag, row.Etag) {
+		return false, ErrChanged
 	}
+	etag := row.Etag
 	data, whole, err := excludeOccurrence(obj.Data, row.Uid, row.StartsAt, s.zoneOf(ctx, user))
 	if errors.Is(err, errNoOccurrence) {
 		return false, ErrChanged
@@ -137,6 +137,7 @@ func (s *Service) deleteOccurrence(ctx context.Context, user uuid.UUID, row sqlc
 // so the client's reload shows the calendar as it is.
 func (s *Service) deleteError(ctx context.Context, user uuid.UUID, err error) error {
 	var se *StatusError
+	var ue *url.Error // the provider unreachable (DNS, connect, TLS)
 	switch {
 	case errors.Is(err, ErrChanged):
 		ictx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*requestTimeout)
@@ -149,7 +150,7 @@ func (s *Service) deleteError(ctx context.Context, user uuid.UUID, err error) er
 		return httpx.Validation("href", "the calendar is read-only").WithDetails(ReasonCalendarReadOnly, 0, 0)
 	case errors.Is(err, ErrAuth):
 		return httpx.Validation("password", "the server did not accept the username and password")
-	case errors.As(err, &se), errors.Is(err, ErrURL), errors.Is(err, ErrRedirect), errors.Is(err, ErrTooLarge), errors.Is(err, context.DeadlineExceeded):
+	case errors.As(err, &se), errors.As(err, &ue), errors.Is(err, ErrURL), errors.Is(err, ErrRedirect), errors.Is(err, ErrTooLarge), errors.Is(err, context.DeadlineExceeded):
 		slog.InfoContext(ctx, "caldav: delete failed", "user_id", user, "err", err)
 		return httpx.Unavailable(err)
 	}

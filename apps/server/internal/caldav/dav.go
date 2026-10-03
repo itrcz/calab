@@ -228,6 +228,27 @@ func resolve(base *url.URL, href string) (*url.URL, bool) {
 	return u, u.Scheme == "https"
 }
 
+// InCalendar tells whether href is an object of the calendar collection cal (ADR-0045 amendment
+// 1: the only targets of a write): the same https origin, one path segment right inside the
+// collection (calendar collections hold no sub-collections, RFC 4791 §4.2), no dot segments
+// (also percent-encoded), no userinfo, query or fragment.
+func InCalendar(href, cal string) bool {
+	h, err := url.Parse(href)
+	if err != nil || h.Scheme != "https" || h.Opaque != "" || h.User != nil || h.RawQuery != "" || h.ForceQuery || h.Fragment != "" {
+		return false
+	}
+	c, err := url.Parse(cal)
+	if err != nil || c.Scheme != "https" || c.Host == "" || !strings.EqualFold(h.Host, c.Host) {
+		return false
+	}
+	dir := c.Path
+	if !strings.HasSuffix(dir, "/") {
+		dir += "/"
+	}
+	name, ok := strings.CutPrefix(h.Path, dir)
+	return ok && name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\")
+}
+
 // ---- discovery ----
 
 // Calendar is an event calendar found on the server.
@@ -469,13 +490,15 @@ func (c *davClient) Get(ctx context.Context, target string, cr creds) (Object, e
 	return Object{Href: target, ETag: strings.TrimSpace(h.Get("ETag")), Data: string(data)}, nil
 }
 
-// DeleteIf removes an object if it still has etag (no condition with an empty one); one that is
-// gone already is fine.
+// errNoETag: a conditional write without an ETag is refused (it would overwrite blindly).
+var errNoETag = errors.New("caldav: no ETag for a conditional write")
+
+// DeleteIf removes an object if it still has etag (required); one that is gone already is fine.
 func (c *davClient) DeleteIf(ctx context.Context, target string, cr creds, etag string) error {
-	h := http.Header{}
-	if etag != "" {
-		h.Set("If-Match", etag)
+	if etag == "" {
+		return errNoETag
 	}
+	h := http.Header{"If-Match": {etag}}
 	st, _, _, err := c.send(ctx, http.MethodDelete, target, cr, h, nil)
 	if err != nil {
 		return err
@@ -486,12 +509,12 @@ func (c *davClient) DeleteIf(ctx context.Context, target string, cr creds, etag 
 	return writeStatus(st)
 }
 
-// PutIf replaces an object if it still has etag (no condition with an empty one).
+// PutIf replaces an object if it still has etag (required).
 func (c *davClient) PutIf(ctx context.Context, target string, cr creds, ics, etag string) error {
-	h := http.Header{"Content-Type": {"text/calendar; charset=utf-8"}}
-	if etag != "" {
-		h.Set("If-Match", etag)
+	if etag == "" {
+		return errNoETag
 	}
+	h := http.Header{"Content-Type": {"text/calendar; charset=utf-8"}, "If-Match": {etag}}
 	st, _, _, err := c.send(ctx, http.MethodPut, target, cr, h, []byte(ics))
 	if err != nil {
 		return err

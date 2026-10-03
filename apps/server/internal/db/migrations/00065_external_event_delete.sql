@@ -7,6 +7,10 @@
 --                the next import (15 min); until then they cannot be deleted.
 
 -- +goose Up
+-- Constant defaults: metadata-only since PG 11 (no rewrite); the CHECKs scan the table once under
+-- ACCESS EXCLUSIVE, so fail fast instead of queueing the import / reads behind a long transaction.
+SET LOCAL lock_timeout = '10s';
+
 ALTER TABLE external_busy
     ADD COLUMN href      text NOT NULL DEFAULT '' CHECK (char_length(href) <= 2048),
     ADD COLUMN etag      text NOT NULL DEFAULT '' CHECK (char_length(etag) <= 256),
