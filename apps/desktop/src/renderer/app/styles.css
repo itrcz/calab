@@ -842,6 +842,12 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   /* Popovers, menus, tooltips, modals, toasts: 120 ms fade + scale 0.98 → 1 (docs/09 #22). */
   animation: calaba-fade-in var(--motion-fast) ease-out;
 }
+/* A tooltip over an open workspace app is drawn by a native overlay above the site (ADR-0053
+   «Поправка 1»): its DOM copy stays for screen readers, invisible. */
+[data-tip-native] {
+  opacity: 0 !important;
+  animation: none !important;
+}
 /* Settings search: the row the search jumped to (docs/09 #18); stays until the next search. */
 [data-settings-hit='true'] {
   background: var(--color-bubble-highlight);

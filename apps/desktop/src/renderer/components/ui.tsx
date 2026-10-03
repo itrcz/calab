@@ -3,11 +3,13 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, forwardRef, isValidElement, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
 import { autoFocusAllowed } from '../lib/phone';
+import { mirrorTip } from '../services/webAppTip';
+import { useWebApps } from '../stores/webApps';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
@@ -184,6 +186,11 @@ export function Tip(props: TipProps): ReactNode {
 
 function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & { wake: TipWake | null }): ReactNode {
   const trigger = useRef<HTMLButtonElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  // A workspace app is open: the pointer leaving the trigger usually lands on a native view (the
+  // site, or the tooltip's own overlay above it) that sends the page no pointer events, so a
+  // hoverable tooltip would wait for them and stay open — close on leave instead.
+  const appOpen = useWebApps((s) => s.open !== null);
   const woke = useRef(wake);
   useLayoutEffect(() => {
     const el = trigger.current;
@@ -199,12 +206,13 @@ function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & {
     el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, composed: true, clientX: m.x, clientY: m.y, pointerId: m.pointerId, pointerType: m.pointerType, isPrimary: true }));
   }, []);
   return (
-    <TooltipP.Root delayDuration={400}>
+    <TooltipP.Root delayDuration={400} disableHoverableContent={appOpen}>
       <TooltipP.Trigger asChild ref={trigger}>
         {children}
       </TooltipP.Trigger>
       <TooltipP.Portal>
         <TooltipP.Content
+          ref={content}
           data-app-tooltip
           side={side}
           sideOffset={6}
@@ -212,11 +220,29 @@ function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & {
           className="tip mat-popover anim-in z-[var(--z-tooltip)] flex max-w-72 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-caption text-fg"
         >
           {label}
-          {shortcut ? <kbd className="font-sans text-micro text-faint">{shortcut}</kbd> : null}
+          {shortcut ? (
+            <kbd data-tip-shortcut className="font-sans text-micro text-faint">
+              {shortcut}
+            </kbd>
+          ) : null}
+          <TipOverApp content={content} />
         </TooltipP.Content>
       </TooltipP.Portal>
     </TooltipP.Root>
   );
+}
+
+/**
+ * Mounted with an open tooltip's content: over an open workspace app on the desktop the tooltip
+ * is drawn by a native overlay above the site (services/webAppTip.ts, ADR-0053 «Поправка 1»).
+ * Renders nothing; a passive effect, so the content's ref is attached by then.
+ */
+function TipOverApp({ content }: { content: RefObject<HTMLDivElement | null> }): null {
+  useEffect(() => {
+    const el = content.current;
+    return el ? mirrorTip(el) : undefined;
+  }, [content]);
+  return null;
 }
 
 /**

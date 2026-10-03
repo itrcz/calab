@@ -52,7 +52,9 @@ import { parseMenuState } from '../shared/menu';
 import { checkForUpdates, downloadUpdate, installUpdate, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
-import { forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
+import { hideTip, showTip } from './tipOverlay';
+import { parseTipPayload } from './tipOverlayPolicy';
+import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
 import { getMainWindow, isOwnPage, isShown } from './windows';
 
@@ -413,6 +415,17 @@ export function registerIpc(): void {
   handle(IPC.webAppForget, (e, a) => {
     mainOnly(e);
     return forgetApp(parseAppId(a));
+  });
+  handle(IPC.webAppTipShow, (e, a) => {
+    const win = mainOnly(e);
+    const zoom = win.webContents.getZoomFactor();
+    const p = parseTipPayload(a, zoom, win.getContentBounds());
+    if (appViewShown()) showTip(win, p, zoom);
+    else hideTip();
+  });
+  handle(IPC.webAppTipHide, (e) => {
+    mainOnly(e);
+    hideTip();
   });
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {

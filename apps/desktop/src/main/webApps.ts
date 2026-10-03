@@ -22,6 +22,7 @@ import { IPC, type WebAppNavAction, type WebAppNavState } from '../shared/ipc';
 import { isAppSession, markAppSession } from './appSessions';
 import { markFromInternet } from './downloads';
 import { mainStrings } from './strings';
+import { hideTip } from './tipOverlay';
 import { navShortcut } from './webAppKeys';
 import {
   dropLru,
@@ -424,14 +425,18 @@ function checkHidden(e: Entry): void {
 function applyVisibility(): void {
   const on = windowShown();
   const win = getMainWindow();
+  let anyVisible = false;
+  let changed = false;
   for (const e of entries.values()) {
     const visible = !!win && on && e.appId === shown && !e.failed && !e.crashed && bounds.width > 0 && bounds.height > 0;
     if (visible) {
       clearTimeout(e.check);
       e.check = undefined;
+      anyVisible = true;
       if (!e.attached) {
         win.contentView.addChildView(e.view);
         e.attached = true;
+        changed = true;
       }
       e.view.setBounds(bounds);
       e.view.setVisible(true);
@@ -443,9 +448,19 @@ function applyVisibility(): void {
         // the window is gone
       }
       e.attached = false;
+      changed = true;
       if (!e.failed && !e.crashed) checkHidden(e);
     }
   }
+  // A tooltip drawn over the app (tipOverlay.ts) goes with it; a newly attached view would be
+  // above it — the next show raises the overlay again.
+  if (changed || !anyVisible) hideTip();
+}
+
+/** An app view is on screen now: tooltips over it may be drawn by the overlay. */
+export function appViewShown(): boolean {
+  for (const e of entries.values()) if (e.attached) return true;
+  return false;
 }
 
 function follow(win: BrowserWindow): void {

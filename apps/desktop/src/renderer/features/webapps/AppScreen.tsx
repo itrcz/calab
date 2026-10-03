@@ -5,6 +5,7 @@ import { Button } from '../../components/ui';
 import { t } from '../../i18n';
 import { coversContent, visibleViewRect } from '../../lib/webApps';
 import { platform } from '../../platform';
+import { setAppViewRect } from '../../services/webAppTip';
 import { openAppInBrowser } from '../../services/webApps';
 import { useWebApps } from '../../stores/webApps';
 import { useToasts } from '../../stores/toasts';
@@ -69,8 +70,18 @@ function useOverlayOpen(): boolean {
 /** A hidden view (main: zero bounds take it out of the window, it stays alive). */
 const HIDDEN: WebAppBounds = { x: 0, y: 0, width: 0, height: 0 };
 
-// Tooltips are native-view occluders too: a DOM z-index cannot put them above Electron.
-const OCCLUDERS = '[data-app-occluder], [data-radix-popper-content-wrapper]:has([data-app-tooltip])';
+/**
+ * Overlays the view steps aside for. Not tooltips: a tooltip over the app is drawn above it by a
+ * native overlay (services/webAppTip.ts, ADR-0053 «Поправка 1») — the site no longer shrinks on hover.
+ */
+const OCCLUDERS = '[data-app-occluder]';
+
+/** Where the view goes now (and what tooltips check against: services/webAppTip.ts). */
+function viewRect(el: HTMLElement): WebAppBounds {
+  const r = visibleViewRect(rectOf(el), occluderRects());
+  setAppViewRect(r, platform.webApps);
+  return r ?? HIDDEN;
+}
 
 /** Rectangles of the overlays that must stay visible over the site (`[data-app-occluder]`). */
 function occluderRects(): WebAppBounds[] {
@@ -113,11 +124,15 @@ function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode 
     const el = ref.current;
     if (!el || !api) return;
     if (covered) {
+      setAppViewRect(null);
       void api.hide();
       return;
     }
-    void api.open(appId, url, visibleViewRect(rectOf(el), occluderRects()) ?? HIDDEN);
-    return () => void api.hide();
+    void api.open(appId, url, viewRect(el));
+    return () => {
+      setAppViewRect(null);
+      void api.hide();
+    };
   }, [api, appId, url, covered]);
 
   // Size changes and the overlays that must stay visible (re-measured after they are laid out).
@@ -127,28 +142,16 @@ function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode 
     let raf = 0;
     const push = (): void => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => void api.setBounds(visibleViewRect(rectOf(el), occluderRects()) ?? HIDDEN));
+      raf = requestAnimationFrame(() => void api.setBounds(viewRect(el)));
     };
     const ro = new ResizeObserver(push);
     ro.observe(el);
-    let observed = new Set<Element>();
-    const observeOverlays = (): void => {
-      const next = new Set(document.querySelectorAll(OCCLUDERS));
-      if (next.size === observed.size && [...next].every((o) => observed.has(o))) return;
-      for (const o of observed) if (!next.has(o)) ro.unobserve(o);
-      for (const o of next) if (!observed.has(o)) ro.observe(o);
-      observed = next;
-      push();
-    };
-    // Radix tooltips mount lazily and lay out after their portal is inserted.
-    const mo = new MutationObserver(observeOverlays);
-    mo.observe(document.body, { childList: true, subtree: true });
-    observeOverlays();
+    // The occluders present now; a new one changes useOccluderKey and re-runs this effect.
+    for (const o of document.querySelectorAll(OCCLUDERS)) ro.observe(o);
     push();
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
-      mo.disconnect();
     };
   }, [api, covered, occluders]);
 

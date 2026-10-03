@@ -110,6 +110,8 @@ const api: CalabaApi = {
     openExternal: () => ipcRenderer.invoke(IPC.webAppOpenExternal),
     forget: (appId) => ipcRenderer.invoke(IPC.webAppForget, appId),
     onState: (cb) => on(IPC.webAppState, cb),
+    tipShow: (tip) => ipcRenderer.invoke(IPC.webAppTipShow, tip),
+    tipHide: () => ipcRenderer.invoke(IPC.webAppTipHide),
   },
 };
 

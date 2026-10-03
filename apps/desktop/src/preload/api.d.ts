@@ -27,6 +27,7 @@ import type {
   WebAppBounds,
   WebAppNavAction,
   WebAppNavState,
+  WebAppTip,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
 import type { ResumeVoice, ResumeVoiceSeat } from '../shared/resumeVoice';
@@ -203,6 +204,9 @@ export interface CalabaApi {
     /** The app was deleted: its view and this device's site data of it go. */
     forget(appId: string): Promise<void>;
     onState(cb: (s: WebAppNavState) => void): Unsubscribe;
+    /** Draw a tooltip that falls on the shown app above it (a native overlay; ADR-0053 «Поправка 1»). */
+    tipShow(tip: WebAppTip): Promise<void>;
+    tipHide(): Promise<void>;
   };
 }
 
