@@ -18,6 +18,7 @@ import { esRoles } from './roles';
 import { esCalendar } from './calendar';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
+import { esAutomations } from './automations';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
@@ -62,6 +63,7 @@ export const es: Dict = {
   ...esCalendar,
   ...esBoards,
   ...esBoards2,
+  ...esAutomations,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',

@@ -49,7 +49,7 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
  * checklists — Team and above; board webhooks (ADR-0058 §5) and telephony SIP (ADR-0046, owner
  * 02.10) — Business only.
  */
-export type PlanFeature = 'caldav' | 'musician' | 'checklists' | 'boardWebhooks' | 'telephony';
+export type PlanFeature = 'caldav' | 'musician' | 'checklists' | 'boardWebhooks' | 'telephony' | 'automations';
 
 /** The «disabled» flag of PlanLimits behind each feature. */
 const DISABLED_FLAG = {
@@ -58,6 +58,7 @@ const DISABLED_FLAG = {
   checklists: 'checklistsDisabled',
   boardWebhooks: 'boardWebhooksDisabled',
   telephony: 'telephonyDisabled',
+  automations: 'automationsDisabled',
 } as const satisfies Record<PlanFeature, keyof PlanLimits>;
 
 /**
@@ -208,6 +209,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     // Board webhooks — Business only, checklists — Team and above (ADR-0058 §5): features too.
     if (/webhook/i.test(msg)) return { text: t('plan.boardWebhooksLocked'), contact: true };
     if (/checklist/i.test(msg)) return { text: t('plan.checklistsLocked'), contact: true };
+    // Board automations and their Git webhook — Team and above (ADR-0060).
+    if (/automation/i.test(msg)) return { text: t('plan.automationsLocked'), contact: true };
     // Telephony SIP — Business only (ADR-0046, owner 02.10).
     if (/telephony/i.test(msg)) return { text: t('plan.telephonyLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
@@ -247,6 +250,7 @@ export interface LimitsForm {
   checklistsDisabled: boolean;
   boardWebhooksDisabled: boolean;
   telephonyDisabled: boolean;
+  automationsDisabled: boolean;
 }
 
 /**
@@ -271,6 +275,7 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     checklistsDisabled: src ? src.checklistsDisabled : CUSTOM_DEFAULT_FLAGS.checklistsDisabled,
     boardWebhooksDisabled: src ? src.boardWebhooksDisabled : CUSTOM_DEFAULT_FLAGS.boardWebhooksDisabled,
     telephonyDisabled: src ? src.telephonyDisabled : CUSTOM_DEFAULT_FLAGS.telephonyDisabled,
+    automationsDisabled: src ? src.automationsDisabled : CUSTOM_DEFAULT_FLAGS.automationsDisabled,
   };
 }
 
@@ -278,7 +283,7 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
  * The feature flags a CUSTOM plan starts with: checklists on, board webhooks off (ADR-0058 §5),
  * telephony off (ADR-0046: Business only) — the server's CustomBase.
  */
-export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true, telephonyDisabled: true } as const;
+export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true, telephonyDisabled: true, automationsDisabled: false } as const;
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
 const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
@@ -309,6 +314,7 @@ export interface PlanLimitsInit {
   checklistsDisabled: boolean;
   boardWebhooksDisabled: boolean;
   telephonyDisabled: boolean;
+  automationsDisabled: boolean;
 }
 
 /**
@@ -339,6 +345,7 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       checklistsDisabled: f.checklistsDisabled,
       boardWebhooksDisabled: f.boardWebhooksDisabled,
       telephonyDisabled: f.telephonyDisabled,
+      automationsDisabled: f.automationsDisabled,
     },
   };
 }

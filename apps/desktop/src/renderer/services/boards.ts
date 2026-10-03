@@ -41,6 +41,7 @@ import { planCategoryMove, planNewCategoryFirst, planRoomMove, type RoomTarget }
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { platform } from '../platform';
+import { useAutomations } from '../stores/automations';
 import { checklistsOf, useBoards, workspaceBoards, workspaceCategories } from '../stores/boards';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
@@ -95,6 +96,7 @@ function rememberRoom(room: Room | undefined): void {
 export function resetBoards(): void {
   taskRooms.clear();
   useBoards.getState().reset();
+  useAutomations.getState().reset();
   useTaskDetails.getState().reset();
   useBoardsUi.setState({ active: false, taskId: null, focused: null, selected: {}, menu: null, createFor: null, settingsFor: null });
 }
@@ -220,7 +222,7 @@ function notifyTask(u: TaskUpdate): void {
   if (prefs().presence === PresenceStatus.DND) return;
   const visible = document.hasFocus() && useBoardsUi.getState().taskId === task.id;
   if (visible) return;
-  const what = noticeText(task, n.kind, n.actorId);
+  const what = noticeText(task, n.kind, n.actorId, n.text);
   try {
     const note = new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` });
     note.onclick = () => {
@@ -237,7 +239,7 @@ function notifyTask(u: TaskUpdate): void {
  * The text of a task notice (system notification). Approvals (ADR-0049 §5) are mandatory: the
  * server sends them past the task level and «Отписаться»; the reminder has no actor.
  */
-export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string): string {
+export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string, text = ''): string {
   const actor = actorId ? memberName(task.workspaceId, actorId) : '';
   switch (kind) {
     case TaskNoticeKind.ASSIGNED:
@@ -250,6 +252,9 @@ export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: 
       return actor ? t('boards.notice.approvalRequested', { name: actor }) : t('boards.notice.approvalReminder');
     case TaskNoticeKind.APPROVED:
       return t('boards.notice.approved');
+    // ADR-0060: the «notify» action of an automation rule — its rendered text.
+    case TaskNoticeKind.RULE:
+      return text ? t('boards.notice.rule', { text }) : t('rules.noticeDefault');
     case TaskNoticeKind.REJECTED: {
       const who = task.approvers.find((a) => a.state === ApproverState.REJECTED && (!actorId || a.userId === actorId));
       const name = memberName(task.workspaceId, who?.userId ?? actorId);
@@ -308,7 +313,11 @@ function applyTaskResponse(r: TaskResponse, full = false): void {
   if (r.board) s.upsertBoard(r.board);
   const extra = [...r.subtasks, ...r.related, ...(r.parent ? [r.parent] : [])];
   s.upsertTasks([...(r.task ? [r.task] : []), ...extra]);
-  if (full && r.task) s.setChecklists(r.task.id, r.task.checklists);
+  if (full && r.task) {
+    s.setChecklists(r.task.id, r.task.checklists);
+    // Git links (ADR-0060 §4) come only with the full task, like the checklists.
+    useAutomations.getState().setGitLinks(r.task.id, r.task.gitLinks, true);
+  }
   if (r.room) rememberRoom(r.room);
   const task = r.task;
   if (!task) return;

@@ -18,6 +18,7 @@ import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
+import { zhAutomations } from './automations';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
@@ -62,6 +63,7 @@ export const zhCN: Dict = {
   ...zhCalendar,
   ...zhBoards,
   ...zhBoards2,
+  ...zhAutomations,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',

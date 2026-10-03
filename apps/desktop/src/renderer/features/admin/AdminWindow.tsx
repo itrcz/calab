@@ -483,6 +483,10 @@ function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void;
               <Row label={t('admin.limit.boardWebhooks')} hint={t('admin.limit.boardWebhooksHint')}>
                 <Toggle label={t('admin.limit.boardWebhooks')} checked={!form.limits.boardWebhooksDisabled} onChange={(v) => setLimits({ ...form.limits, boardWebhooksDisabled: !v })} />
               </Row>
+              {/* ADR-0060: board automations (rules and Git) — Team and above; a new Custom plan has them. */}
+              <Row label={t('admin.limit.automations')} hint={t('admin.limit.automationsHint')}>
+                <Toggle label={t('admin.limit.automations')} checked={!form.limits.automationsDisabled} onChange={(v) => setLimits({ ...form.limits, automationsDisabled: !v })} />
+              </Row>
               {/* ADR-0046 (owner, 02.10): telephony is Business only; a new Custom plan starts without it. */}
               <Row label={t('admin.limit.telephony')} hint={t('admin.limit.telephonyHint')}>
                 <Toggle label={t('admin.limit.telephony')} checked={!form.limits.telephonyDisabled} onChange={(v) => setLimits({ ...form.limits, telephonyDisabled: !v })} />

@@ -66,6 +66,7 @@ import {
 } from './calendar';
 import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
+import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
 import { onRoomArchived } from '../lib/api/client';
 import { isTempRoom } from '../lib/tempRooms';
@@ -255,6 +256,12 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'taskChecklistUpdate':
     case 'taskChecklistDelete':
       applyBoardEvent(e);
+      return;
+    // Board automations and Git links (ADR-0060, events 92–94).
+    case 'boardRuleUpdate':
+    case 'boardRuleDelete':
+    case 'taskGitLinksUpdate':
+      applyAutomationEvent(e);
       return;
     case 'dmCreate':
       if (e.value.dm) applyDm(e.value.dm, true);
