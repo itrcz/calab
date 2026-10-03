@@ -9,7 +9,7 @@ const closeGrant = (): void => useAchievementUi.getState().openGrant(null);
 /**
  * The achievement viewer and the grant dialog (ADR-0061 §5), above any open dialog: the grant
  * dialog is opened from the member menu and the profile, the viewer from the chat card, the
- * profile and the superadmin catalog. Mounted by features/shell/Dialogs (before ConfirmHost, so a
+ * profile and the workspace settings catalog. Mounted by features/shell/Dialogs (before ConfirmHost, so a
  * confirmation stays on top).
  */
 export function AchievementLayers(): ReactNode {

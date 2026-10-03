@@ -163,6 +163,7 @@ export const zhCN: Dict = {
   'ws.leaveConfirm': '退出"{name}"？只能通过邀请再次加入。',
   'ws.tabGeneral': '常规',
   'ws.tabMedia': '语音与屏幕共享',
+  'ws.tabLibrary': '资料库',
   'ws.tabInvites': '邀请',
   'ws.tabDanger': '删除',
   'ws.icon': '更换图标',

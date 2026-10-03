@@ -29,7 +29,6 @@ import { toast } from '../../stores/toasts';
 import { ExpiredBadge, PlanPill } from '../workspace/PlanTab';
 import { SuspendedBadge, SuspendedMark, SuspensionCard } from './SuspensionCard';
 import { LocalReauth } from '../identity/SignIn';
-import { AchievementsPane, AchievementsSide } from './AchievementsAdmin';
 
 /** The search waits this long after the last keystroke (admin API: 60 requests / min). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -107,9 +106,6 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim(), SEARCH_DEBOUNCE_MS);
   const [selected, setSelected] = useState<string | null>(workspaceId ?? null);
-  // «Пространства» | «Ачивки» (ADR-0061 §5): the host catalog of achievements is its own tab.
-  const [tab, setTab] = useState<'workspaces' | 'achievements'>('workspaces');
-  const [achSelected, setAchSelected] = useState<string | null>(null);
   const list = useQuery({
     queryKey: KEY.search(dq),
     queryFn: ({ signal }) => adminApi.search(dq, signal),
@@ -172,19 +168,7 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
               <ShieldCheck className="size-4 text-accent" aria-hidden />
               {t('admin.title')}
             </DialogP.Title>
-            <div className="px-1">
-              <Segmented<'workspaces' | 'achievements'>
-                label={t('admin.title')}
-                value={tab}
-                onChange={setTab}
-                options={[
-                  { value: 'workspaces', label: t('admin.tab.workspaces') },
-                  { value: 'achievements', label: t('admin.tab.achievements') },
-                ]}
-              />
-            </div>
-            {tab === 'achievements' ? <AchievementsSide selected={achSelected} onSelect={setAchSelected} /> : null}
-            <label className={cx('relative flex items-center', tab !== 'workspaces' && 'hidden')}>
+            <label className="relative flex items-center">
               <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted" aria-hidden />
               <input
                 type="search"
@@ -196,7 +180,7 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
                 className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:h-10 [&::-webkit-search-cancel-button]:hidden"
               />
             </label>
-            <div role="listbox" aria-label={t('admin.title')} className={cx('-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1', tab !== 'workspaces' && 'hidden')} data-testid="admin-list">
+            <div role="listbox" aria-label={t('admin.title')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1" data-testid="admin-list">
               {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
               {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{t('admin.loadFailed')}</p> : null}
               {list.isSuccess && items.length === 0 ? <p className="px-2 py-3 text-body text-muted">{t('admin.none')}</p> : null}
@@ -206,13 +190,7 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
             </div>
           </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]">
-            {tab === 'achievements' ? (
-              <>
-                <PaneHeader title={t('admin.tab.achievements')} onClose={onClose} />
-                {notice}
-                <AchievementsPane selected={achSelected} onSelect={setAchSelected} />
-              </>
-            ) : selected ? (
+            {selected ? (
               <AdminDetail key={selected} id={selected} onClose={onClose} notice={notice} />
             ) : (
               <>

@@ -3,13 +3,13 @@ import type { GrantLine } from '../lib/achievements';
 
 /**
  * The achievement layers (ADR-0061 §5): the viewer and the grant dialog open above whatever is
- * open (the profile sheet, the superadmin window, the chat), so they live outside `useUi.dialog`
+ * open (the profile sheet, the workspace settings, the chat), so they live outside `useUi.dialog`
  * (one slot) and are rendered by features/people/AchievementLayers.
  */
 export interface ViewRequest {
   achievementId: string;
-  /** The workspace of the grants (names, «Открыть в чате»); none from the superadmin catalog. */
-  workspaceId?: string;
+  /** The workspace of the catalog and the grants (names, «Открыть в чате»). */
+  workspaceId: string;
   /** The recipient (the grants' owner). */
   userId?: string;
   /** Newest first; empty = the catalog view (title, description). */

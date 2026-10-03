@@ -5,6 +5,7 @@ import { useMediaUrl } from '../../components/MediaImg';
 import { CLOSE_HIT, Button, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useAchievement } from '../../lib/achievementCatalog';
+import { filePath } from '../../lib/api/endpoints';
 import type { GrantLine } from '../../lib/achievements';
 import { fmt } from '../../lib/format';
 import { attachTilt } from '../../lib/tilt';
@@ -34,11 +35,11 @@ export function openGrantInChat(workspaceId: string, g: Pick<GrantLine, 'roomId'
  * is no work at all.
  */
 export function AchievementView({ req, onClose }: { req: ViewRequest; onClose: () => void }): ReactNode {
-  const a = useAchievement(req.achievementId);
+  const a = useAchievement(req.workspaceId, req.achievementId);
   const grants = req.grants ?? [];
   const first = grants[0];
   const title = a?.title ?? t('ach.unknown');
-  const ws = req.workspaceId ?? '';
+  const ws = req.workspaceId;
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
@@ -56,7 +57,7 @@ export function AchievementView({ req, onClose }: { req: ViewRequest; onClose: (
           )}
         >
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <Stage imageUrl={a?.imageUrl}>
+            <Stage imageUrl={a?.fileId ? filePath(a.fileId) : undefined}>
               <AchievementImg achievement={a} size={160} eager />
             </Stage>
             <div className="flex flex-col gap-1 px-5 pb-5 pt-4">

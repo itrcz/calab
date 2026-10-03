@@ -7,11 +7,15 @@ import { api } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
 import { invalidateMemberAchievements, useAchievementCatalog } from '../../lib/achievementCatalog';
 import { NOTE_MAX, grantable, gridStep, noteValid } from '../../lib/achievements';
+import { mayManageWorkspace } from '../../lib/permissions';
 import { greetingRoomId, useRooms } from '../../stores/rooms';
+import { useSession } from '../../stores/session';
 import { useToasts } from '../../stores/toasts';
-import { useMemberName } from '../../stores/workspaces';
+import { useUi } from '../../stores/ui';
+import { rolesOf, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { AchievementImg } from './AchievementImg';
 import { openGrantInChat } from './AchievementView';
+import { useAchievementUi } from '../../stores/achievementUi';
 
 /** «Вручить» is enabled: an achievement chosen, «за что» 1..120 after trimming, not sending. */
 export const canGrant = (achievementId: string, note: string, busy: boolean): boolean => !!achievementId && noteValid(note) && !busy;
@@ -27,7 +31,7 @@ export const canGrant = (achievementId: string, note: string, busy: boolean): bo
  */
 export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }: { workspaceId: string; userId: string; initial?: string; onClose: () => void }): ReactNode {
   const name = useMemberName(workspaceId, userId);
-  const catalog = useAchievementCatalog();
+  const catalog = useAchievementCatalog(workspaceId);
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState(initial ?? '');
   const [note, setNote] = useState('');
@@ -37,6 +41,10 @@ export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }
   const roomId = useRooms((s) => greetingRoomId(s.byId, s.categories, workspaceId) ?? '');
   const roomName = useRooms((s) => (roomId ? (s.byId[roomId]?.name ?? '') : ''));
   const items = useMemo(() => (catalog ? grantable(catalog, query) : []), [catalog, query]);
+  // Nothing to grant at all (not a search miss): the empty state with «Открыть настройки».
+  const noneAtAll = !!catalog && !query && items.length === 0;
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const manageCatalog = useWorkspaces((s) => mayManageWorkspace(rolesOf(s.byId[workspaceId], me)));
   const grid = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const ok = canGrant(picked, note, busy);
@@ -104,8 +112,10 @@ export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }
         <Input ref={search} type="search" icon={<Search className="size-3.5" aria-hidden />} placeholder={t('ach.grant.search')} aria-label={t('ach.grant.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
         {!catalog ? (
           <Spinner className="mx-auto my-6" />
+        ) : noneAtAll ? (
+          <GrantEmpty canManage={manageCatalog} onOpenSettings={() => openCatalogSettings(workspaceId)} />
         ) : items.length === 0 ? (
-          <p className="py-6 text-center text-body text-muted">{query ? t('ach.grant.none') : t('ach.grant.emptyCatalog')}</p>
+          <p className="py-6 text-center text-body text-muted">{t('ach.grant.none')}</p>
         ) : (
           <div
             ref={grid}
@@ -144,6 +154,29 @@ export function GrantAchievementDialog({ workspaceId, userId, initial, onClose }
         )}
       </div>
     </Modal>
+  );
+}
+
+/** «Открыть настройки» of the empty state: the grant dialog closes, the workspace settings open on «Библиотека → Ачивки». */
+export function openCatalogSettings(workspaceId: string): void {
+  useAchievementUi.getState().openGrant(null);
+  useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'achievements' });
+}
+
+/**
+ * The workspace has no live achievements (ADR-0061 amendment 1): «В пространстве ещё нет ачивок»,
+ * and «Открыть настройки» for those who manage the catalog (MANAGE_WORKSPACE).
+ */
+export function GrantEmpty({ canManage, onOpenSettings }: { canManage: boolean; onOpenSettings: () => void }): ReactNode {
+  return (
+    <div className="flex flex-col items-center gap-3 py-6 text-center" data-testid="grant-empty">
+      <p className="text-body text-muted">{t('ach.grant.emptyCatalog')}</p>
+      {canManage ? (
+        <Button variant="secondary" onClick={onOpenSettings} data-testid="grant-open-settings">
+          {t('ach.grant.openSettings')}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

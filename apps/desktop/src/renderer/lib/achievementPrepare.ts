@@ -1,5 +1,5 @@
 /**
- * An achievement picture before the upload (ADR-0061 §2, superadmin «Ачивки»): the server takes a
+ * An achievement picture before the upload (ADR-0061 §2, settings «Библиотека → Ачивки»): the server takes a
  * PNG or WebP with a transparent background, ≤ 4 MB, each side 128..2048, and makes the 512×512
  * WebP itself. The client checks the same before sending — the type by the header, the size, the
  * sides — and reads the picture into a small canvas to see whether any of it is transparent: an

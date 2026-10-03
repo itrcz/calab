@@ -161,6 +161,7 @@ export const ru = {
   'ws.leaveConfirm': 'Покинуть «{name}»? Вернуться можно будет только по приглашению.',
   'ws.tabGeneral': 'Общие',
   'ws.tabMedia': 'Голос и стрим',
+  'ws.tabLibrary': 'Библиотека',
   'ws.tabInvites': 'Приглашения',
   'ws.tabDanger': 'Удаление',
   'ws.icon': 'Сменить иконку',

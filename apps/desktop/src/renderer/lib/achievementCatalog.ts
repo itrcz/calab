@@ -3,42 +3,51 @@ import type { Achievement, ListAchievementsResponse } from '@calaba/protocol';
 import { useCallback } from 'react';
 import { api } from './api/endpoints';
 import { queryClient } from './queryClient';
-import { CATALOG_KEY } from './achievementCache';
+import { catalogKey } from './achievementCache';
 
-export { CATALOG_KEY };
+export { catalogKey };
 
 /**
- * The host catalog of achievements (ADR-0061 §3) in the react-query cache: loaded on first use
- * (a card, a profile, the grant dialog), revalidated by the server's ETag (the browser's HTTP
- * cache answers 304), archived ones kept so old cards and grants still resolve. The superadmin
- * tab invalidates it after a change. Member grants are a per-profile query (`memberKey`),
- * invalidated by WORKSPACE_MEMBER_UPDATE with a changed `achievementCount` (services/dispatch).
+ * The achievement catalog of a workspace (ADR-0061, amendment 1) in the react-query cache:
+ * `['achievements', workspaceId]`, loaded on first use (a card, a profile, the grant dialog, the
+ * settings tab), revalidated by the server's ETag (the browser's HTTP cache answers 304), archived
+ * ones kept so old cards and grants still resolve. WORKSPACE_ACHIEVEMENTS_UPDATE invalidates it
+ * (services/dispatch). Member grants are a per-profile query (`memberAchievementsKey`),
+ * invalidated by WORKSPACE_MEMBER_UPDATE with a changed `achievementCount`.
  */
 export const memberAchievementsKey = (workspaceId: string, userId: string) => ['member-achievements', workspaceId, userId] as const;
 
 const CATALOG_STALE_MS = 10 * 60_000;
 
-const catalogQuery = {
-  queryKey: CATALOG_KEY,
-  queryFn: ({ signal }: { signal: AbortSignal }) => api.achievements.catalog(signal),
-  staleTime: CATALOG_STALE_MS,
-};
-
-/** The whole catalog (archived included), by position. */
-export function useAchievementCatalog(enabled = true): readonly Achievement[] | undefined {
-  return useQuery({ ...catalogQuery, enabled, select: selectList }).data;
+function catalogQuery(workspaceId: string) {
+  return {
+    queryKey: catalogKey(workspaceId),
+    queryFn: ({ signal }: { signal: AbortSignal }) => api.achievements.catalog(workspaceId, signal),
+    staleTime: CATALOG_STALE_MS,
+  };
 }
 
 const selectList = (d: ListAchievementsResponse): readonly Achievement[] => d.achievements;
 
-/** One achievement by id (undefined while loading or when unknown). */
-export function useAchievement(id: string): Achievement | undefined {
-  const select = useCallback((d: ListAchievementsResponse) => d.achievements.find((a) => a.id === id), [id]);
-  return useQuery({ ...catalogQuery, select }).data;
+/** The workspace's whole catalog (archived included), by position; undefined while loading. */
+export function useAchievementCatalog(workspaceId: string, enabled = true): readonly Achievement[] | undefined {
+  return useQuery({ ...catalogQuery(workspaceId), enabled: enabled && !!workspaceId, select: selectList }).data;
 }
 
-export function invalidateCatalog(): void {
-  void queryClient.invalidateQueries({ queryKey: CATALOG_KEY });
+/** The catalog query itself (the settings tab: loading / error states). */
+export function useAchievementCatalogQuery(workspaceId: string) {
+  return useQuery({ ...catalogQuery(workspaceId), enabled: !!workspaceId, select: selectList });
+}
+
+/** One achievement of the workspace's catalog by id (undefined while loading or when unknown). */
+export function useAchievement(workspaceId: string, id: string): Achievement | undefined {
+  const select = useCallback((d: ListAchievementsResponse) => d.achievements.find((a) => a.id === id), [id]);
+  return useQuery({ ...catalogQuery(workspaceId), enabled: !!workspaceId && !!id, select }).data;
+}
+
+/** The workspace's catalog changed (WORKSPACE_ACHIEVEMENTS_UPDATE, or a change of mine). */
+export function invalidateCatalog(workspaceId: string): void {
+  void queryClient.invalidateQueries({ queryKey: catalogKey(workspaceId) });
 }
 
 /** The member's grants changed (WORKSPACE_MEMBER_UPDATE with another achievementCount). */

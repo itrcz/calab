@@ -84,7 +84,7 @@ export function ProfileCardAchievements({ workspaceId, userId }: { workspaceId: 
 }
 
 const Thumb = memo(function Thumb({ workspaceId, userId, stack, first }: { workspaceId: string; userId: string; stack: AchievementStack; first: boolean }): ReactNode {
-  const a = useAchievement(stack.achievementId);
+  const a = useAchievement(workspaceId, stack.achievementId);
   return (
     <button
       type="button"
@@ -137,7 +137,7 @@ export function ProfileDialogAchievements({ workspaceId, userId }: { workspaceId
 }
 
 const Tile = memo(function Tile({ workspaceId, userId, stack, canRevoke }: { workspaceId: string; userId: string; stack: AchievementStack; canRevoke: boolean }): ReactNode {
-  const a = useAchievement(stack.achievementId);
+  const a = useAchievement(workspaceId, stack.achievementId);
   const g = stack.grants[0];
   const by = useMemberName(workspaceId, g?.grantedBy ?? '');
   if (!g) return null;

@@ -34,7 +34,7 @@ export const AchievementCardView = memo(function AchievementCardView({
   messageId: string;
   createdAt: Timestamp | undefined;
 }): ReactNode {
-  const a = useAchievement(card.achievementId);
+  const a = useAchievement(workspaceId, card.achievementId);
   const mobile = useMobile();
   const name = useMemberName(workspaceId, authorId);
   const by = useMemberName(workspaceId, card.grantedBy);

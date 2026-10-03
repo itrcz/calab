@@ -1,7 +1,9 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { AchievementSchema, MemberAchievementSchema, MessageKind, MessageSchema } from '@calaba/protocol';
+import { AchievementSchema, ListAchievementsResponseSchema, MemberAchievementSchema, MessageKind, MessageSchema } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
+import { cachedAchievement, catalogKey, findAchievement } from './achievementCache';
+import { queryClient } from './queryClient';
 import { achievementCardOf, achievementForMe, grantable, gridStep, movePositions, noteValid, stackGrants, thumbsRow, NOTE_MAX, POSITION_STEP } from './achievements';
 
 const card = { achievementId: 'a1', grantId: 'g1', note: 'за релиз 2.0', grantedBy: 'u-boss' };
@@ -51,7 +53,7 @@ describe('stackGrants', () => {
 
 describe('grantable', () => {
   const a = (id: string, title: string, position: number, archived = false) =>
-    create(AchievementSchema, { id, title, position, ...(archived ? { archivedAt: timestampFromMs(1) } : {}) });
+    create(AchievementSchema, { id, title, position, workspaceId: 'w1', ...(archived ? { archivedAt: timestampFromMs(1) } : {}) });
   it('live ones by position, filtered by title (any case)', () => {
     const cat = [a('2', 'Больше года', 2), a('1', 'Премия', 1), a('3', 'Старое', 0, true)];
     expect(grantable(cat).map((x) => x.id)).toEqual(['1', '2']);
@@ -95,5 +97,37 @@ describe('movePositions', () => {
   });
   it('nothing to do for the same place', () => {
     expect(movePositions(L(1, 2), 1, 1)).toEqual([]);
+  });
+});
+
+describe('per-workspace catalog cache (ADR-0061 amendment 1)', () => {
+  const list = (ws: string, ...ids: string[]) =>
+    create(ListAchievementsResponseSchema, { achievements: ids.map((id) => create(AchievementSchema, { id, title: `${ws}:${id}`, workspaceId: ws, fileId: `f-${id}` })) });
+  const entries = [
+    [catalogKey('w1'), list('w1', 'a1', 'a2')],
+    [catalogKey('w2'), list('w2', 'b1')],
+    [catalogKey('w3'), undefined],
+  ] as const;
+
+  it('finds an id in any cached catalog without a workspace', () => {
+    expect(findAchievement(entries, 'b1')?.title).toBe('w2:b1');
+    expect(findAchievement(entries, 'a2')?.workspaceId).toBe('w1');
+    expect(findAchievement(entries, 'zz')).toBeUndefined();
+    expect(findAchievement(entries, '')).toBeUndefined();
+  });
+
+  it('with a workspace, looks only in its catalog', () => {
+    expect(findAchievement(entries, 'a1', 'w1')?.title).toBe('w1:a1');
+    expect(findAchievement(entries, 'b1', 'w1')).toBeUndefined();
+    expect(findAchievement(entries, 'a1', 'w3')).toBeUndefined();
+  });
+
+  it('cachedAchievement reads the react-query cache by key prefix', () => {
+    queryClient.setQueryData(catalogKey('w1'), list('w1', 'a1'));
+    queryClient.setQueryData(catalogKey('w2'), list('w2', 'b1'));
+    expect(cachedAchievement('b1')?.title).toBe('w2:b1');
+    expect(cachedAchievement('b1', 'w2')?.fileId).toBe('f-b1');
+    expect(cachedAchievement('b1', 'w1')).toBeUndefined();
+    queryClient.clear();
   });
 });

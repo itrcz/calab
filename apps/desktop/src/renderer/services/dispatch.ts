@@ -35,7 +35,7 @@ import { useNotes } from '../stores/notes';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { achievementForMe } from '../lib/achievements';
-import { invalidateMemberAchievements } from '../lib/achievementCatalog';
+import { invalidateCatalog, invalidateMemberAchievements } from '../lib/achievementCatalog';
 import { applyUserSettings } from './profile';
 import { applyStickerEvent } from './stickers';
 import { applyBotEvent } from './bots';
@@ -336,6 +336,11 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'badgeDelete':
       useWorkspaces.getState().removeBadge(e.value.workspaceId, e.value.badgeId);
+      return;
+    // The workspace's achievement catalog changed (ADR-0061 amendment 1): mounted users refetch
+    // it (ETag → usually 304), the rest of the cache turns stale.
+    case 'workspaceAchievementsUpdate':
+      invalidateCatalog(e.value.workspaceId);
       return;
     // Camera backgrounds of the workspace (ADR-0035 addendum): a deleted chosen one resets to «Нет».
     case 'backgroundCreate':

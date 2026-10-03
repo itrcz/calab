@@ -100,7 +100,7 @@ export const POSITION_STEP = 1024;
 export const POSITION_MAX = 1_000_000;
 
 /**
- * The PATCHes of a drag in the superadmin catalog: the moved item takes a free position between
+ * The PATCHes of a drag in the workspace catalog (settings → Библиотека → Ачивки): the moved item takes a free position between
  * its new neighbours; when there is none, the whole list is renumbered by POSITION_STEP (only the
  * items whose position changes are returned). `from` / `to` are indices of `list` (by position).
  */
