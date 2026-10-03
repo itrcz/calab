@@ -19,6 +19,7 @@ import { enRoles } from './roles';
 import { enCalendar } from './calendar';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
+import { enMilestones } from './milestones';
 import { enAutomations } from './automations';
 import { enPlan } from './plan';
 import { enShell } from './shell';
@@ -65,6 +66,7 @@ export const en: Dict = {
   ...enCalendar,
   ...enBoards,
   ...enBoards2,
+  ...enMilestones,
   ...enAutomations,
   'voice.pendingMember': 'Connecting…',
   // common

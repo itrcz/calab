@@ -52,7 +52,8 @@ import {
 import { boardsApi } from '../../services/boardsApi';
 import { ensureRules } from '../../services/automations';
 import { ruleNameOf, useAutomations } from '../../stores/automations';
-import { useBoards, workspaceBoards } from '../../stores/boards';
+import { taskMilestonesOf, useBoards, workspaceBoards } from '../../stores/boards';
+import { milestoneState } from '../../lib/boards/milestones';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EMPTY_ROOM_MESSAGES, useMessages } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
@@ -69,6 +70,7 @@ import { featureOn, type Disabled } from '../../lib/boards/features';
 import { ApprovalsSection } from './Approvals';
 import { GitSection } from './GitLinks';
 import { Checklists } from './Checklists';
+import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
@@ -144,6 +146,8 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
           {/* Git links (ADR-0060 §4): under the attachments; its own subscriber, nothing when none. */}
           <GitSection taskId={task.id} />
           <Properties task={task} canEdit={canEdit} perms={perms} scoped={scoped} disabled={disabled} />
+          {/* Milestones inside the task (ADR-0063): top-level tasks only; their own subscriber. */}
+          {on(BoardFeature.MILESTONES) && !task.parentId ? <TaskMilestones taskId={task.id} canEdit={canEdit} /> : null}
           {/* Checklists: their own subscriber (a toggle re-renders that section only, ADR-0058 §2). */}
           {on(BoardFeature.CHECKLISTS) ? <Checklists taskId={task.id} workspaceId={task.workspaceId} canEdit={canEdit} subtasks={on(BoardFeature.SUBTASKS) && !task.parentId} /> : null}
           {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={detail?.subtasks ?? []} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} /> : null}
@@ -500,6 +504,7 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
           </MilestoneMenu>
         </Prop>
       ) : null}
+      {on(BoardFeature.MILESTONES) && task.parentId ? <ParentMilestone task={task} canEdit={canEdit} /> : null}
       {on(BoardFeature.SUBTASKS) ? (
         <Prop label={t('boards.f.parent')}>
           <ParentMenu task={task}>
@@ -521,6 +526,53 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
         </Prop>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * A subtask's «Веха родителя» (ADR-0063 §5): one of the parent's milestones. Shown while the
+ * parent has milestones or the subtask still links one; the parent's milestones are read by id.
+ */
+function ParentMilestone({ task, canEdit }: { task: Task; canEdit: boolean }): ReactNode {
+  const list = useBoards(useShallow((s) => taskMilestonesOf(s, task.parentId).map((m) => `${m.id}\u0000${m.name}\u0000${m.dueOn}\u0000${m.completedAt ? 1 : 0}`)));
+  const today = useToday();
+  const rows = list.map((x) => {
+    const [id = '', name = '', dueOn = '', done = ''] = x.split('\u0000');
+    return { id, name, dueOn, done: done === '1' };
+  });
+  const cur = rows.find((m) => m.id === task.taskMilestoneId);
+  if (!rows.length && !task.taskMilestoneId) return null;
+  const groups = [
+    { id: 'none', label: '', items: [{ id: '', search: [t('boards.noMilestone')], label: t('boards.noMilestone'), checked: !task.taskMilestoneId }] },
+    {
+      id: 'm',
+      label: '',
+      items: rows.map(
+        (m): Choice => ({
+          id: m.id,
+          search: [m.name],
+          label: m.name,
+          icon: <MilestoneDiamond state={milestoneState({ completedAt: m.done, dueOn: m.dueOn }, today)} />,
+          checked: m.id === task.taskMilestoneId,
+          note: m.dueOn ? formatDue(m.dueOn, today) : '',
+        }),
+      ),
+    },
+  ];
+  return (
+    <Prop label={t('boards.ms.field')} testId="prop-task-milestone">
+      <ChoiceMenu groups={groups} onPick={(c) => c.id !== task.taskMilestoneId && void updateTask(task.id, { taskMilestoneId: c.id })} placeholder={t('boards.ms.pick')} label={t('boards.ms.field')} testId="task-milestone-menu">
+        <button type="button" disabled={!canEdit} className={cx(valueBtn, !cur && 'text-muted')} data-testid="prop-task-milestone-value">
+          {cur ? (
+            <>
+              <MilestoneDiamond state={milestoneState({ completedAt: cur.done, dueOn: cur.dueOn }, today)} /> <span className="truncate">{cur.name}</span>
+            </>
+          ) : (
+            t('boards.noMilestone')
+          )}
+        </button>
+      </ChoiceMenu>
+    </Prop>
   );
 }
 
@@ -1015,6 +1067,8 @@ export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>,
       return t('boards.act.approvalsReset');
     case 'checklist':
       return checklistActivity(f);
+    case 'milestones':
+      return milestoneActivity(f);
     case 'git':
       return gitActivity(f);
     default:
@@ -1030,6 +1084,43 @@ function gitActivity(f: Json): string {
   if (kind === 'pr' && s('state') === 'merged') return t('boards.act.gitMerged', { ref });
   if (kind === 'pr' && s('state') === 'closed') return t('boards.act.gitClosed', { ref });
   return t('boards.act.git', { what: t(kind === 'pr' ? 'boards.act.gitPr' : kind === 'commit' ? 'boards.act.gitCommit' : 'boards.act.gitBranch'), ref });
+}
+
+/**
+ * A «milestones» journal row (ADR-0063): after {action, milestone_id, name, due_on} on the task;
+ * on a subtask {action: linked | unlinked, task_milestone_id, parent_id} (the name from the parent).
+ */
+function milestoneActivity(f: Json): string {
+  const s = (k: string): string => (typeof f?.[k] === 'string' ? (f[k]) : '');
+  const name = s('name');
+  switch (f?.['action']) {
+    case 'created':
+      return t('boards.act.msCreated', { name });
+    case 'renamed':
+      return t('boards.act.msRenamed', { name });
+    case 'dated':
+      return s('due_on') ? t('boards.act.msDated', { name, date: s('due_on') }) : t('boards.act.msUndated', { name });
+    case 'moved':
+      return t('boards.act.msMoved');
+    case 'completed':
+      return t('boards.act.msCompleted', { name });
+    case 'reopened':
+      return t('boards.act.msReopened', { name });
+    case 'deleted':
+      return t('boards.act.msDeleted', { name });
+    case 'auto_completed':
+      return t('boards.act.msAutoCompleted', { name });
+    case 'auto_reopened':
+      return t('boards.act.msAutoReopened', { name });
+    case 'linked': {
+      const m = taskMilestonesOf(useBoards.getState(), s('parent_id')).find((x) => x.id === s('task_milestone_id'));
+      return t('boards.act.msLinked', { name: m?.name ?? '—' });
+    }
+    case 'unlinked':
+      return t('boards.act.msUnlinked');
+    default:
+      return t('boards.act.changed');
+  }
 }
 
 /** A «checklist» journal row (ADR-0058 §2): after {checklist_id, title, item_id?, text?, action}. */

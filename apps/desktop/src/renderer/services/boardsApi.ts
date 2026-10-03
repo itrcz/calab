@@ -4,6 +4,9 @@ import {
   BoardWebhookPingResponseSchema,
   BoardWebhookResponseSchema,
   ConvertChecklistItemResponseSchema,
+  CreateTaskMilestoneRequestSchema,
+  TaskMilestoneResponseSchema,
+  UpdateTaskMilestoneRequestSchema,
   CreateBoardCategoryRequestSchema,
   CreateTaskChecklistItemRequestSchema,
   CreateTaskChecklistRequestSchema,
@@ -202,6 +205,16 @@ export const boardsApi = {
       removeItem: (itemId: string) => call('DELETE', `/api/checklist-items/${itemId}`, TaskChecklistResponseSchema),
       /** The item becomes a subtask (SUBTASKS on, the task not a subtask itself). */
       convert: (itemId: string) => call('POST', `/api/checklist-items/${itemId}/convert`, ConvertChecklistItemResponseSchema),
+    },
+    /** Milestones inside a task (ADR-0063); every write answers the milestone and the task. */
+    milestones: {
+      create: (taskId: string, init: MessageInitShape<typeof CreateTaskMilestoneRequestSchema>) =>
+        call('POST', `/api/tasks/${taskId}/milestones`, TaskMilestoneResponseSchema, body(CreateTaskMilestoneRequestSchema, init)),
+      /** name / dueOn ("" clears) / position / completed (a person's toggle: no subtasks linked). */
+      update: (milestoneId: string, init: MessageInitShape<typeof UpdateTaskMilestoneRequestSchema>) =>
+        call('PATCH', `/api/task-milestones/${milestoneId}`, TaskMilestoneResponseSchema, body(UpdateTaskMilestoneRequestSchema, init)),
+      /** Answers the task without the milestone; its subtasks lose the link. */
+      remove: (milestoneId: string) => call('DELETE', `/api/task-milestones/${milestoneId}`, TaskMilestoneResponseSchema),
     },
     mine: (workspaceId: string, scope: TaskScope, open = true, signal?: AbortSignal) =>
       call('GET', `/api/me/tasks${qs({ workspace_id: workspaceId, scope, open: open ? 1 : undefined })}`, MyTasksResponseSchema, undefined, signal),

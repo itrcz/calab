@@ -18,6 +18,7 @@ import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
+import { ruMilestones } from './milestones';
 import { ruAutomations } from './automations';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
@@ -64,6 +65,7 @@ export const ru = {
   ...ruCalendar,
   ...ruBoards,
   ...ruBoards2,
+  ...ruMilestones,
   ...ruAutomations,
   // common
   'common.cancel': 'Отмена',

@@ -1,4 +1,5 @@
 import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
+import { timestampNow } from '@bufbuild/protobuf/wkt';
 import {
   ApproverState,
   BoardViewKind,
@@ -8,6 +9,7 @@ import {
   TaskAssigneeSchema,
   TaskNoticeKind,
   TaskSchema,
+  TaskMilestoneProgressSchema,
   type Board,
   type BoardCategory,
   type BoardFeature,
@@ -15,6 +17,7 @@ import {
   type BoardWebhook,
   type EstimateScale,
   type TaskChecklist,
+  type TaskMilestone,
   type CreateTaskRequestSchema,
   type DispatchEvent,
   type Room,
@@ -35,6 +38,7 @@ import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
 import { countItems, itemPosition, toggledItem, withItem } from '../lib/boards/checklists';
+import { milestonePosition, progressOf, withMilestone } from '../lib/boards/milestones';
 import { boardLayout, boardPlacements } from '../lib/boards/categories';
 import { countsUnread } from '../lib/boards/reducers';
 import { planCategoryMove, planNewCategoryFirst, planRoomMove, type RoomTarget } from '../lib/roomOrder';
@@ -471,6 +475,8 @@ export interface TaskPatch {
   dueOn?: string;
   parentId?: string;
   milestoneId?: string;
+  /** A subtask's milestone: one of its parent's (ADR-0063); '' = none. */
+  taskMilestoneId?: string;
   labelIds?: string[];
 }
 
@@ -487,6 +493,8 @@ const FEATURE_FIELD: Record<string, MessageKey> = {
   priority: 'boards.f.priority',
   labelIds: 'boards.f.label',
   milestoneId: 'boards.f.milestone',
+  milestones: 'boards.feat.milestones',
+  taskMilestoneId: 'boards.feat.milestones',
   parentId: 'boards.subtasks',
   relatedId: 'boards.relations',
   attachmentIds: 'boards.feat.attachments',
@@ -1321,5 +1329,85 @@ export async function pingWebhook(workspaceId: string, boardId: string): Promise
   } catch (e) {
     webhookFail(e, workspaceId);
     return false;
+  }
+}
+
+// ------------------------------------------------------------------ task milestones (ADR-0063)
+
+function milestoneFail(e: unknown, taskId: string): void {
+  if (reportFeatureError(e, wsOfTask(taskId))) return;
+  if (e instanceof ApiError && e.reason === 'TASK_MILESTONE_LIMIT') toast.error(t('boards.ms.limit'));
+  else if (e instanceof ApiError && e.reason === 'TASK_MILESTONE_AUTO') toast.error(t('boards.ms.auto'));
+  else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
+  else toast.fail(e, t('boards.err.save'));
+}
+
+/** Puts a task's milestones locally (optimistic), the progress recomputed. */
+function localMilestones(taskId: string, list: TaskMilestone[]): void {
+  const cur = useBoards.getState().tasks[taskId];
+  if (!cur) return;
+  const p = progressOf(list);
+  useBoards.getState().upsertTask({ ...cur, milestones: list, milestoneProgress: cur.milestoneProgress ? { ...cur.milestoneProgress, ...p } : createMsg(TaskMilestoneProgressSchema, p) });
+}
+
+const milestonesOf = (taskId: string): TaskMilestone[] => [...(useBoards.getState().tasks[taskId]?.milestones ?? [])];
+
+/** «Вехи» → ✓: a new milestone at the end; true when the server took it. */
+export async function createTaskMilestone(taskId: string, name: string, dueOn: string): Promise<boolean> {
+  try {
+    const r = await boardsApi.tasks.milestones.create(taskId, { name, dueOn });
+    if (r.task) useBoards.getState().upsertTask(r.task);
+    return true;
+  } catch (e) {
+    milestoneFail(e, taskId);
+    return false;
+  }
+}
+
+export interface MilestonePatch {
+  name?: string;
+  dueOn?: string;
+  position?: number;
+  completed?: boolean;
+}
+
+/** Rename / date / order / a person's toggle: the row changes at once, the answer confirms. */
+export async function updateTaskMilestone(taskId: string, id: string, patch: MilestonePatch): Promise<void> {
+  const before = milestonesOf(taskId);
+  const m = before.find((x) => x.id === id);
+  if (!m) return;
+  const { completed, ...fields } = patch;
+  let next: TaskMilestone = { ...m, ...fields };
+  if (completed !== undefined) {
+    const { completedAt: _drop, ...rest } = next;
+    next = completed ? { ...next, completedAt: timestampNow(), completedBy: myUserId() } : { ...rest, completedBy: '' };
+  }
+  localMilestones(taskId, withMilestone(before, next));
+  try {
+    const r = await boardsApi.tasks.milestones.update(id, patch);
+    if (r.task) useBoards.getState().upsertTask(r.task);
+  } catch (e) {
+    localMilestones(taskId, before);
+    milestoneFail(e, taskId);
+  }
+}
+
+/** Drag & drop: the milestone at `index` of the task's list (the dragged one excluded). */
+export function moveTaskMilestone(taskId: string, id: string, index: number): void {
+  const list = milestonesOf(taskId);
+  const at = list.findIndex((x) => x.id === id);
+  if (at < 0 || at === index) return; // back in its own place
+  void updateTaskMilestone(taskId, id, { position: milestonePosition(list, id, index) });
+}
+
+export async function deleteTaskMilestone(taskId: string, id: string): Promise<void> {
+  const before = milestonesOf(taskId);
+  localMilestones(taskId, before.filter((m) => m.id !== id));
+  try {
+    const r = await boardsApi.tasks.milestones.remove(id);
+    if (r.task) useBoards.getState().upsertTask(r.task);
+  } catch (e) {
+    localMilestones(taskId, before);
+    milestoneFail(e, taskId);
   }
 }

@@ -17,7 +17,7 @@ import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMe
 import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS } from './model';
 import { ApprovalBadge } from './Approvals';
 import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
-import { ChecklistBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
+import { ChecklistBadge, MilestoneBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
@@ -304,6 +304,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         <span className={cx('min-w-0 flex-1 truncate', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
         {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} compact /> : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
         {on(BoardFeature.LABELS) && (mine.length || menu === 'label') ? (
           <LabelMenu
             boardId={boardId}

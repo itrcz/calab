@@ -179,3 +179,110 @@ export function timelineRows(tasks: readonly RowTask[], group: TimelineGroup): {
   for (const k of keys) rows.push(GROUP_ROW + k, ...(groups.get(k) ?? []));
   return { rows, undated };
 }
+
+// ------------------------------------------------------------------ scale «меньше цифр» (ADR-0063, «Дополнение»)
+
+/** A Monday: the scale's numbers stand at week starts. */
+export function isWeekStart(n: number): boolean {
+  return new Date(n * DAY_MS).getUTCDay() === 1;
+}
+
+/**
+ * The scale's labels in [d0, d1] (as Linear): on the week / month zoom a number at each Monday;
+ * the months as segments a row above — each starts at the 1st (the first segment at d0, so the
+ * month in view keeps its name at the left edge); on the quarter zoom the months only. Weekends
+ * have no labels (the grid shades them).
+ */
+export function scaleMarks(d0: number, d1: number, zoom: Zoom): { weeks: number[]; months: number[] } {
+  const weeks: number[] = [];
+  const months: number[] = [d0];
+  for (let d = d0; d <= d1; d++) {
+    if (d > d0 && new Date(d * DAY_MS).getUTCDate() === 1) months.push(d);
+    if (zoom !== 'quarter' && isWeekStart(d)) weeks.push(d);
+  }
+  return { weeks, months };
+}
+
+/** The first day of the next month after day d (a month segment's end). */
+export function nextMonth(d: number): number {
+  const date = new Date(d * DAY_MS);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) / DAY_MS;
+}
+
+const fmtCache = new Map<string, Intl.DateTimeFormat>();
+function fmt(locale: string, opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const k = `${locale}|${JSON.stringify(opts)}`;
+  let f = fmtCache.get(k);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' });
+    fmtCache.set(k, f);
+  }
+  return f;
+}
+
+/** A short month of the locale without its abbreviation dot: «окт», «Oct», «10月». */
+function monthPart(d: number, locale: string): string {
+  return fmt(locale, { month: 'short' }).format(new Date(d * DAY_MS)).replace(/\.$/, '');
+}
+
+const yearOf = (d: number): number => new Date(d * DAY_MS).getUTCFullYear();
+
+/** The scale's month: short, upper case, with the year when it is not today's («ОКТ», «ЯНВ 2027»). */
+export function monthLabel(d: number, today: number, locale: string): string {
+  const m = monthPart(d, locale).toLocaleUpperCase(locale);
+  return yearOf(d) === yearOf(today) ? m : `${m} ${yearOf(d)}`;
+}
+
+/** A day pill on the scale (today, the hover): the locale's day and short month, upper case («4 ОКТ», «OCT 4»). */
+export function dayPill(d: number, locale: string): string {
+  return fmt(locale, { day: 'numeric', month: 'short' })
+    .formatToParts(new Date(d * DAY_MS))
+    .map((p) => (p.type === 'month' ? p.value.replace(/\.$/, '').toLocaleUpperCase(locale) : p.value))
+    .join('');
+}
+
+/** The x of a day's centre on the scale (today's line, the hover line, a milestone's diamond). */
+export const dayCenter = (d: number, origin: number, px: number, left: number): number => left + (d - origin) * px + px / 2;
+
+/** The day under content x (scroll included); null over the sticky list on the left. */
+export function dayAt(x: number, origin: number, px: number, left: number): number | null {
+  if (x < left) return null;
+  return origin + Math.floor((x - left) / px);
+}
+
+/** The days the viewport shows (no overscan): the off-screen hints compare against them. */
+export function viewDays(scrollLeft: number, width: number, px: number, left: number, origin: number): Span {
+  const start = origin + Math.floor(scrollLeft / px);
+  return { start, end: Math.max(start, origin + Math.ceil((scrollLeft + Math.max(0, width - left)) / px) - 1) };
+}
+
+/** Where a task lies relative to the viewport: entirely before it, after it, or (null) in view. */
+export function offscreenSide(span: Span, view: Span): 'left' | 'right' | null {
+  if (span.end < view.start) return 'left';
+  if (span.start > view.end) return 'right';
+  return null;
+}
+
+/**
+ * The muted hint of an off-screen task: «28 мая – 27 авг» in today's year (day and month), else
+ * months with years («апр 2025 – июн 2025», one «янв 2025» when both ends are in one month).
+ */
+export function offscreenText(span: Span, today: number, locale: string): string {
+  const thisYear = yearOf(span.start) === yearOf(today) && yearOf(span.end) === yearOf(today);
+  const one = (d: number): string =>
+    thisYear
+      ? fmt(locale, { day: 'numeric', month: 'short' })
+          .formatToParts(new Date(d * DAY_MS))
+          .map((p) => (p.type === 'month' ? p.value.replace(/\.$/, '') : p.value))
+          .join('')
+      : `${monthPart(d, locale)} ${yearOf(d)}`;
+  const a = one(span.start);
+  const b = one(span.end);
+  return a === b ? a : `${a} – ${b}`;
+}
+
+/** The scroll offset that puts a span's start a few days from the scale's left edge. */
+export function revealScroll(span: Span, origin: number, px: number, zoom: Zoom): number {
+  const lead = zoom === 'week' ? 2 : zoom === 'month' ? 4 : 14;
+  return Math.max(0, (span.start - origin - lead) * px);
+}

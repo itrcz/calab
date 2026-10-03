@@ -19,6 +19,7 @@ import { esRoles } from './roles';
 import { esCalendar } from './calendar';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
+import { esMilestones } from './milestones';
 import { esAutomations } from './automations';
 import { esPlan } from './plan';
 import { esShell } from './shell';
@@ -65,6 +66,7 @@ export const es: Dict = {
   ...esCalendar,
   ...esBoards,
   ...esBoards2,
+  ...esMilestones,
   ...esAutomations,
   'voice.pendingMember': 'Conectando…',
   // common

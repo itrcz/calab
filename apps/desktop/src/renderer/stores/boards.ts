@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist } from '@calaba/protocol';
+import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist, TaskMilestone } from '@calaba/protocol';
+import { milestoneChip } from '../lib/boards/milestones';
 import {
   EMPTY_DATA,
   appendActivity,
@@ -98,6 +99,18 @@ export function checklistsOf(s: BoardsData, taskId: string): readonly TaskCheckl
 export function checklistProgress(s: BoardsData, taskId: string): string {
   const c = checkCountsOf(s, taskId);
   return c.total > 0 ? `${c.done}/${c.total}` : '';
+}
+
+const NO_MILESTONES: readonly TaskMilestone[] = [];
+
+/** A task's milestones by position (ADR-0063; kept by reference while they do not change). */
+export function taskMilestonesOf(s: Pick<BoardsData, 'tasks'>, taskId: string): readonly TaskMilestone[] {
+  return s.tasks[taskId]?.milestones ?? NO_MILESTONES;
+}
+
+/** The card's «2/4» of the task's milestones (a primitive for a leaf chip). */
+export function milestoneChipOf(s: Pick<BoardsData, 'tasks'>, taskId: string): string {
+  return milestoneChip(s.tasks[taskId]);
 }
 
 /** Board categories of a workspace by position. */

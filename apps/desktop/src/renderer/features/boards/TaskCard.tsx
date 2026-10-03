@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
-import { CalendarClock, ChevronRight, Copy, CopyPlus, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
+import { CalendarClock, ChevronRight, Copy, CopyPlus, Diamond, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -8,7 +8,7 @@ import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
 import { archiveTask, copyTaskKey, copyTaskLink, duplicateTask, setAssignees, updateTask } from '../../services/boards';
 import { featureOn } from '../../lib/boards/features';
-import { checklistProgress, useBoards } from '../../stores/boards';
+import { checklistProgress, milestoneChipOf, useBoards } from '../../stores/boards';
 import { useBoardsUi, type CardMenu } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
@@ -211,6 +211,7 @@ export const TaskCard = memo(function TaskCard({
           </span>
         ) : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
         <GitBadge id={id} />
         {on(BoardFeature.COMMENTS) && task.commentCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.comments')}>
@@ -236,6 +237,22 @@ export const ChecklistBadge = memo(function ChecklistBadge({ id }: { id: string 
   return (
     <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.cl.title')} data-testid="card-checklist">
       <ListChecks className="size-3" aria-hidden />
+      {text}
+    </span>
+  );
+});
+
+/**
+ * The card's milestones chip «◇ 2/4» (ADR-0063 §5, shown while the task has milestones): a leaf
+ * with a primitive selector — a milestone change re-renders this chip, not the card.
+ */
+export const MilestoneBadge = memo(function MilestoneBadge({ id }: { id: string }): ReactNode {
+  const text = useBoards((s) => milestoneChipOf(s, id));
+  if (!text) return null;
+  const [done, total] = text.split('/');
+  return (
+    <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.ms.chip', { done: done ?? '', total: total ?? '' })} data-testid="card-milestones">
+      <Diamond className="size-3" aria-hidden />
       {text}
     </span>
   );
