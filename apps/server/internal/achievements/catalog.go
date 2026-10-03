@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/moderation"
 )
 
 const maxPosition = 1_000_000
@@ -171,7 +172,8 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 }
 
 // loadManaged resolves PATCH / DELETE /api/achievements/{id}: the entry and its workspace, where
-// the caller needs MANAGE_WORKSPACE (404 to non-members, 403 without the right).
+// the caller needs MANAGE_WORKSPACE (404 to non-members, 403 without the right) and the workspace
+// must not be suspended (read-only, docs/04).
 func loadManaged(r *http.Request, q *sqlc.Queries) (sqlc.Achievement, error) {
 	id, err := httpx.PathUUID(r, "id", "achievement")
 	if err != nil {
@@ -188,7 +190,10 @@ func loadManaged(r *http.Request, q *sqlc.Queries) (sqlc.Achievement, error) {
 	if err != nil {
 		return a, err
 	}
-	return a, canManageCatalog(bits, role)
+	if err := canManageCatalog(bits, role); err != nil {
+		return a, err
+	}
+	return a, moderation.CheckSuspended(r.Context(), q, a.WorkspaceID)
 }
 
 // update: PATCH /api/achievements/{id} (MANAGE_WORKSPACE; every field optional).

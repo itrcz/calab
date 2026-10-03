@@ -116,10 +116,37 @@ func TestAchievementsWorkspaceScope(t *testing.T) {
 		t.Fatalf("count in the other workspace: %d", n)
 	}
 
-	// A suspended workspace refuses grants (ADR-0056).
+	// The catalog of the first workspace through the second: an achievement id is resolved to
+	// its own workspace, never to the caller's (carol owns nothing there: 404).
+	title := "чужая"
+	carol.must(404, "PATCH", "/api/achievements/"+a.GetId(), &v1.UpdateAchievementRequest{Title: &title}, nil)
+	carol.must(404, "DELETE", "/api/achievements/"+a.GetId(), nil, nil)
+
+	// A suspended workspace refuses grants (ADR-0056) and catalog changes (read-only, docs/04:
+	// a new picture is a new file); the catalog is still read.
+	spare := newAchievement(t, o, wid, "Запасная")
+	pic := achievementUpload(t, o, wid, "medal.png", achievementPNG(t, false))
 	suspend(t, wid, true, "review")
 	o.must(403, "POST", path(wid, bob.id), &v1.GrantAchievementRequest{AchievementId: a.GetId(), Note: "приостановлено"}, nil)
+	o.must(403, "POST", "/api/workspaces/"+wid+"/achievements", &v1.CreateAchievementRequest{Title: "Новая", FileId: pic}, nil)
+	if _, code := errReason(o.client); code != v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED {
+		t.Fatalf("create while suspended: %v", code)
+	}
+	o.must(403, "PATCH", "/api/achievements/"+spare.GetId(), &v1.UpdateAchievementRequest{Title: &title}, nil)
+	if _, code := errReason(o.client); code != v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED {
+		t.Fatalf("patch while suspended: %v", code)
+	}
+	o.must(403, "DELETE", "/api/achievements/"+spare.GetId(), nil, nil)
+	bob.must(200, "GET", "/api/workspaces/"+wid+"/achievements", nil, nil)
 	suspend(t, wid, false, "")
+	o.must(204, "DELETE", "/api/achievements/"+spare.GetId(), nil, nil)
+
+	// Deleting a workspace takes its catalog, granted entries and their pictures included.
+	o.must(204, "DELETE", "/api/workspaces/"+wid, nil, nil)
+	var left int
+	if err := testDB.Pool.QueryRow(context.Background(), "SELECT count(*) FROM achievements WHERE workspace_id = $1", wid).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("achievements after the workspace delete: %d %v", left, err)
+	}
 }
 
 // TestAchievementsUploadRefusals: the decoder is the gate — not the file name or its stored

@@ -104,9 +104,6 @@ func (a *Admin) setStorageQuota(w http.ResponseWriter, r *http.Request) error {
 
 const maxNote = 500
 
-// Guard is guard for the superadmin routes of other packages (achievements, ADR-0061).
-func (a *Admin) Guard(next httpx.HandlerFunc) httpx.HandlerFunc { return a.guard(next) }
-
 // guard lets superadmins through (email re-read on every request) and rate-limits them.
 func (a *Admin) guard(next httpx.HandlerFunc) httpx.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
