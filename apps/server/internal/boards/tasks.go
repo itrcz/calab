@@ -1281,10 +1281,9 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if t.ParentID != nil && !eqID(t.ParentID, old.ParentID) {
-				if err := checkParent(r.Context(), q, tx, t.BoardID, *t.ParentID, t.ID); err != nil {
-					return err
-				}
-				if acc.TaskScoped { // ADR-0059: only under a task the caller sees
+				// ADR-0059: only under a task the caller sees — checked first, so that checkParent's
+				// answers (one level, subtask limit) say nothing about a task they do not see.
+				if acc.TaskScoped {
 					p, _, err := taskByID(r.Context(), tx, *t.ParentID, false)
 					if err != nil {
 						return err
@@ -1292,6 +1291,9 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 					if _, err := taskOf(r, q, p); err != nil {
 						return httpx.Validation("parentId", "a live task of this board is required")
 					}
+				}
+				if err := checkParent(r.Context(), q, tx, t.BoardID, *t.ParentID, t.ID); err != nil {
+					return err
 				}
 			}
 		}
