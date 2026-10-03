@@ -807,9 +807,17 @@ SELECT b.workspace_id,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
-       b.disabled_features
+       b.disabled_features,
+       -- ADR-0059: the user (a human) is an assignee or an approver of a live task of the board.
+       (NOT coalesce(u.is_bot, true) AND (
+           EXISTS (SELECT 1 FROM task_assignees x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = $1::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+        OR EXISTS (SELECT 1 FROM task_approvers x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = $1::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+       ))::boolean AS invited
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
+LEFT JOIN users u ON u.id = $1::uuid
 LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
 LEFT JOIN LATERAL (
     SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
@@ -846,14 +854,15 @@ type GetBoardAccessRow struct {
 	UserDeny         *int64
 	Suspended        bool
 	DisabledFeatures int64
+	Invited          bool
 }
 
 // Task boards (ADR-0042). Task lists with filters are built dynamically in internal/boards
 // (TaskFilter → SQL); everything else is here.
 // Everything needed to compute a user's board bits, in one round trip: the membership (role
 // NULL = not a member), the member's roles lowest position first with each role's board
-// override (0/0 = none), the user's own override and the disabled board features (ADR-0058 §3:
-// COMMENTS off makes the task rooms read-only).
+// override (0/0 = none), the user's own override, the disabled board features (ADR-0058 §3:
+// COMMENTS off makes the task rooms read-only) and whether the user is invited on a task.
 func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) (GetBoardAccessRow, error) {
 	row := q.db.QueryRow(ctx, getBoardAccess, arg.UserID, arg.BoardID)
 	var i GetBoardAccessRow
@@ -872,6 +881,7 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 		&i.UserDeny,
 		&i.Suspended,
 		&i.DisabledFeatures,
+		&i.Invited,
 	)
 	return i, err
 }
@@ -976,6 +986,29 @@ func (q *Queries) GetTaskByNumber(ctx context.Context, arg GetTaskByNumberParams
 	return i, err
 }
 
+const getTaskInvite = `-- name: GetTaskInvite :one
+SELECT EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = $1 AND x.user_id = $2)::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = $1 AND x.user_id = $2)::boolean AS approver
+`
+
+type GetTaskInviteParams struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+}
+
+type GetTaskInviteRow struct {
+	Assignee bool
+	Approver bool
+}
+
+// Whether the user is an assignee / approver of a task (ADR-0059: perm.TaskBits).
+func (q *Queries) GetTaskInvite(ctx context.Context, arg GetTaskInviteParams) (GetTaskInviteRow, error) {
+	row := q.db.QueryRow(ctx, getTaskInvite, arg.TaskID, arg.UserID)
+	var i GetTaskInviteRow
+	err := row.Scan(&i.Assignee, &i.Approver)
+	return i, err
+}
+
 const getTaskLevel = `-- name: GetTaskLevel :many
 SELECT u.id::uuid AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
     (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted
@@ -1016,21 +1049,37 @@ func (q *Queries) GetTaskLevel(ctx context.Context, arg GetTaskLevelParams) ([]G
 }
 
 const getTaskRoomRef = `-- name: GetTaskRoomRef :one
-SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived
-FROM tasks t WHERE t.room_id = $1
+SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived,
+       EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS approver
+FROM tasks t WHERE t.room_id = $2
 `
+
+type GetTaskRoomRefParams struct {
+	UserID uuid.UUID
+	RoomID uuid.UUID
+}
 
 type GetTaskRoomRefRow struct {
 	TaskID       uuid.UUID
 	BoardID      uuid.UUID
 	TaskArchived bool
+	Assignee     bool
+	Approver     bool
 }
 
-// The task and board of a task room (perm.Resolver: RoomAccess.Task).
-func (q *Queries) GetTaskRoomRef(ctx context.Context, roomID uuid.UUID) (GetTaskRoomRefRow, error) {
-	row := q.db.QueryRow(ctx, getTaskRoomRef, roomID)
+// The task and board of a task room and whether the user is its assignee / approver
+// (perm.Resolver: RoomAccess.Task, ADR-0059).
+func (q *Queries) GetTaskRoomRef(ctx context.Context, arg GetTaskRoomRefParams) (GetTaskRoomRefRow, error) {
+	row := q.db.QueryRow(ctx, getTaskRoomRef, arg.UserID, arg.RoomID)
 	var i GetTaskRoomRefRow
-	err := row.Scan(&i.TaskID, &i.BoardID, &i.TaskArchived)
+	err := row.Scan(
+		&i.TaskID,
+		&i.BoardID,
+		&i.TaskArchived,
+		&i.Assignee,
+		&i.Approver,
+	)
 	return i, err
 }
 
@@ -1639,6 +1688,47 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 	return items, nil
 }
 
+const listInvitedTasks = `-- name: ListInvitedTasks :many
+SELECT t.id, t.board_id
+FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND NOT b.restricted AND t.archived_at IS NULL
+  AND t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = $2
+               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = $2)
+  AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = $2 AND u.is_bot)
+`
+
+type ListInvitedTasksParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+type ListInvitedTasksRow struct {
+	ID      uuid.UUID
+	BoardID uuid.UUID
+}
+
+// The live tasks on live, non-restricted boards of a workspace where the user (a human) is an
+// assignee or an approver: the task-scoped boards of ADR-0059.
+func (q *Queries) ListInvitedTasks(ctx context.Context, arg ListInvitedTasksParams) ([]ListInvitedTasksRow, error) {
+	rows, err := q.db.Query(ctx, listInvitedTasks, arg.WorkspaceID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInvitedTasksRow{}
+	for rows.Next() {
+		var i ListInvitedTasksRow
+		if err := rows.Scan(&i.ID, &i.BoardID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskActivity = `-- name: ListTaskActivity :many
 SELECT id, task_id, board_id, actor_id, kind, before, after, created_at FROM task_activity WHERE task_id = $1
   AND ($2::uuid IS NULL OR id < $2::uuid)
@@ -1782,6 +1872,38 @@ func (q *Queries) ListTaskAttachments(ctx context.Context, taskID uuid.UUID) ([]
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaskInvites = `-- name: ListTaskInvites :many
+SELECT x.task_id FROM task_assignees x WHERE x.task_id = ANY($1::uuid[]) AND x.user_id = $2
+UNION
+SELECT a.task_id FROM task_approvers a WHERE a.task_id = ANY($1::uuid[]) AND a.user_id = $2
+`
+
+type ListTaskInvitesParams struct {
+	Ids    []uuid.UUID
+	UserID uuid.UUID
+}
+
+// The tasks among ids where the user is an assignee or an approver (ADR-0059).
+func (q *Queries) ListTaskInvites(ctx context.Context, arg ListTaskInvitesParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listTaskInvites, arg.Ids, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var task_id uuid.UUID
+		if err := rows.Scan(&task_id); err != nil {
+			return nil, err
+		}
+		items = append(items, task_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1985,6 +2107,53 @@ func (q *Queries) ListWorkspaceBoardOverrides(ctx context.Context, workspaceID u
 			&i.TargetID,
 			&i.Allow,
 			&i.Deny,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspaceTaskInvitees = `-- name: ListWorkspaceTaskInvitees :many
+SELECT t.id AS task_id, t.board_id, x.user_id, bool_or(x.assignee)::boolean AS assignee, bool_or(NOT x.assignee)::boolean AS approver
+FROM tasks t
+JOIN boards b ON b.id = t.board_id
+JOIN (SELECT a.task_id, a.user_id, true AS assignee FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id, false AS assignee FROM task_approvers p) x ON x.task_id = t.id
+JOIN users u ON u.id = x.user_id AND NOT u.is_bot
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
+GROUP BY t.id, t.board_id, x.user_id
+`
+
+type ListWorkspaceTaskInviteesRow struct {
+	TaskID   uuid.UUID
+	BoardID  uuid.UUID
+	UserID   uuid.UUID
+	Assignee bool
+	Approver bool
+}
+
+// The assignees and approvers (humans) of the live tasks on live boards of a workspace: the
+// gateway's invited map (ADR-0059).
+func (q *Queries) ListWorkspaceTaskInvitees(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceTaskInviteesRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceTaskInvitees, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspaceTaskInviteesRow{}
+	for rows.Next() {
+		var i ListWorkspaceTaskInviteesRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.BoardID,
+			&i.UserID,
+			&i.Assignee,
+			&i.Approver,
 		); err != nil {
 			return nil, err
 		}

@@ -1588,6 +1588,10 @@ type Board struct {
 	DisabledFeatures []BoardFeature `protobuf:"varint,26,rep,packed,name=disabled_features,json=disabledFeatures,proto3,enum=calaba.v1.BoardFeature" json:"disabled_features,omitempty"`
 	// The estimate scale (ADR-0058 §3); the server always sends a concrete value.
 	EstimateScale EstimateScale `protobuf:"varint,27,opt,name=estimate_scale,json=estimateScale,proto3,enum=calaba.v1.EstimateScale" json:"estimate_scale,omitempty"`
+	// Task-scoped access (ADR-0059): the recipient sees the board only through its tasks - those
+	// where they are an assignee or an approver; permissions = 0 (task bits come from
+	// taskPermissions). Never on a restricted board, never for guests or bots.
+	TaskScoped    bool `protobuf:"varint,28,opt,name=task_scoped,json=taskScoped,proto3" json:"task_scoped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1811,6 +1815,13 @@ func (x *Board) GetEstimateScale() EstimateScale {
 	return EstimateScale_ESTIMATE_SCALE_UNSPECIFIED
 }
 
+func (x *Board) GetTaskScoped() bool {
+	if x != nil {
+		return x.TaskScoped
+	}
+	return false
+}
+
 type TaskAssignee struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -1889,10 +1900,12 @@ func (x *TaskAssignee) GetAssignedAt() *timestamppb.Timestamp {
 
 // Requested assignee (POST /tasks, PUT /tasks/{id}/assignees).
 type TaskAssigneeInput struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // a member of the workspace who sees the board (bots too), not a guest
-	IsLead        bool                   `protobuf:"varint,2,opt,name=is_lead,json=isLead,proto3" json:"is_lead,omitempty"`
-	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A member of the workspace, not a guest; on a restricted board only one who sees it; a bot
+	// only one who sees the board (ADR-0059).
+	UserId        string `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	IsLead        bool   `protobuf:"varint,2,opt,name=is_lead,json=isLead,proto3" json:"is_lead,omitempty"`
+	Note          string `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4218,9 +4231,11 @@ func (x *SetAssigneesRequest) GetAssignees() []*TaskAssigneeInput {
 // votes; removed ones lose them; new ones start PENDING, are subscribed and notified
 // (APPROVAL_REQUESTED). Journal "approvers".
 type SetTaskApproversRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserIds       []string               `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
-	Required      uint32                 `protobuf:"varint,2,opt,name=required,proto3" json:"required,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Members of the workspace, not guests nor bots; on a restricted board only those who see it
+	// (ADR-0059).
+	UserIds       []string `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
+	Required      uint32   `protobuf:"varint,2,opt,name=required,proto3" json:"required,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7297,7 +7312,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x12\x1a\n" +
 	"\bposition\x18\t \x01(\x05R\bposition\x12\x19\n" +
 	"\bboard_id\x18\n" +
-	" \x01(\tR\aboardId\"\xcc\b\n" +
+	" \x01(\tR\aboardId\"\xed\b\n" +
 	"\x05Board\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -7338,7 +7353,9 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\vcategory_id\x18\x19 \x01(\tR\n" +
 	"categoryId\x12D\n" +
 	"\x11disabled_features\x18\x1a \x03(\x0e2\x17.calaba.v1.BoardFeatureR\x10disabledFeatures\x12?\n" +
-	"\x0eestimate_scale\x18\x1b \x01(\x0e2\x18.calaba.v1.EstimateScaleR\restimateScale\"\xb2\x01\n" +
+	"\x0eestimate_scale\x18\x1b \x01(\x0e2\x18.calaba.v1.EstimateScaleR\restimateScale\x12\x1f\n" +
+	"\vtask_scoped\x18\x1c \x01(\bR\n" +
+	"taskScoped\"\xb2\x01\n" +
 	"\fTaskAssignee\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\ais_lead\x18\x02 \x01(\bR\x06isLead\x12\x12\n" +

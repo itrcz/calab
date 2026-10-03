@@ -3,6 +3,8 @@ import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 import { WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, RoomPermissionOverrideSchema } from './gen/calaba/v1/room_pb.js';
+import { TaskApproverSchema, TaskAssigneeSchema } from './gen/calaba/v1/boards_pb.js';
+import { TimestampSchema } from '@bufbuild/protobuf/wkt';
 import {
   ALL_PERMISSIONS,
   PERMISSION_BITS,
@@ -11,6 +13,7 @@ import {
   BOARD_ONLY_PERMISSIONS,
   ROLES_V2_PERMISSIONS,
   WORKSPACE_ONLY_PERMISSIONS,
+  taskPermissions,
   taskRoomPermissions,
   computeMemberBoardPermissions,
   computeMemberRoomPermissions,
@@ -244,5 +247,35 @@ describe('roles (ADR-0026)', () => {
     expect(taskRoomPermissions(VIEW_BOARD, true)).toBe(VIEW_ROOM);
     expect(taskRoomPermissions(VIEW_BOARD | EDIT_TASKS, false, true)).toBe(VIEW_ROOM | MANAGE_MESSAGES);
     expect(vectors.filter((v) => v.taskRoom).length).toBeGreaterThanOrEqual(8);
+  });
+  // ADR-0059 §2: the same table as perm.TestTaskBits in Go.
+  it('task bits for task-scoped boards (ADR-0059)', () => {
+    const { VIEW_BOARD, CREATE_TASKS, EDIT_TASKS } = PERMISSION_BITS;
+    const member = VIEW_BOARD | CREATE_TASKS;
+    const me = 'u1';
+    const task = (assignee: boolean, approver: boolean, archived = false) => ({
+      assignees: assignee ? [create(TaskAssigneeSchema, { userId: me })] : [create(TaskAssigneeSchema, { userId: 'u2' })],
+      approvers: approver ? [create(TaskApproverSchema, { userId: me })] : [],
+      archivedAt: archived ? create(TimestampSchema, { seconds: 1n }) : undefined,
+    });
+    const cases: [string, { permissions: bigint; taskScoped: boolean }, boolean, boolean, bigint][] = [
+      ['viewer keeps the board bits', { permissions: member, taskScoped: false }, false, false, member],
+      ['viewer assigned keeps the board bits', { permissions: VIEW_BOARD, taskScoped: false }, true, true, VIEW_BOARD],
+      ['editor keeps EDIT_TASKS', { permissions: VIEW_BOARD | EDIT_TASKS, taskScoped: false }, false, true, VIEW_BOARD | EDIT_TASKS],
+      ['scoped assignee', { permissions: 0n, taskScoped: true }, true, false, VIEW_BOARD | CREATE_TASKS],
+      ['scoped assignee and approver', { permissions: 0n, taskScoped: true }, true, true, VIEW_BOARD | CREATE_TASKS],
+      ['scoped approver', { permissions: 0n, taskScoped: true }, false, true, VIEW_BOARD],
+      ['scoped, another task', { permissions: 0n, taskScoped: true }, false, false, 0n],
+      ['not scoped, assigned (restricted / guest / bot)', { permissions: 0n, taskScoped: false }, true, true, 0n],
+      ['no access', { permissions: 0n, taskScoped: false }, false, false, 0n],
+    ];
+    for (const [name, board, assignee, approver, want] of cases) {
+      expect(taskPermissions(board, task(assignee, approver), me), name).toBe(want);
+    }
+    // An archived task: the invitation no longer counts (the server passes live flags only).
+    expect(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, true, true), me)).toBe(0n);
+    expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, false), me))).toBe(
+      PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES,
+    );
   });
 });

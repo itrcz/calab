@@ -4,8 +4,8 @@
 -- name: GetBoardAccess :one
 -- Everything needed to compute a user's board bits, in one round trip: the membership (role
 -- NULL = not a member), the member's roles lowest position first with each role's board
--- override (0/0 = none), the user's own override and the disabled board features (ADR-0058 §3:
--- COMMENTS off makes the task rooms read-only).
+-- override (0/0 = none), the user's own override, the disabled board features (ADR-0058 §3:
+-- COMMENTS off makes the task rooms read-only) and whether the user is invited on a task.
 SELECT b.workspace_id,
        b.is_private,
        b.restricted,
@@ -18,9 +18,17 @@ SELECT b.workspace_id,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
-       b.disabled_features
+       b.disabled_features,
+       -- ADR-0059: the user (a human) is an assignee or an approver of a live task of the board.
+       (NOT coalesce(u.is_bot, true) AND (
+           EXISTS (SELECT 1 FROM task_assignees x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = sqlc.arg('user_id')::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+        OR EXISTS (SELECT 1 FROM task_approvers x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = sqlc.arg('user_id')::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+       ))::boolean AS invited
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
+LEFT JOIN users u ON u.id = sqlc.arg('user_id')::uuid
 LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = sqlc.arg('user_id')
 LEFT JOIN LATERAL (
     SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
@@ -37,9 +45,45 @@ LEFT JOIN board_permissions uo ON uo.board_id = b.id AND uo.target_type = 'user'
 WHERE b.id = sqlc.arg('board_id');
 
 -- name: GetTaskRoomRef :one
--- The task and board of a task room (perm.Resolver: RoomAccess.Task).
-SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived
-FROM tasks t WHERE t.room_id = $1;
+-- The task and board of a task room and whether the user is its assignee / approver
+-- (perm.Resolver: RoomAccess.Task, ADR-0059).
+SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived,
+       EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS approver
+FROM tasks t WHERE t.room_id = sqlc.arg('room_id');
+
+-- name: GetTaskInvite :one
+-- Whether the user is an assignee / approver of a task (ADR-0059: perm.TaskBits).
+SELECT EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id'))::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id'))::boolean AS approver;
+
+-- name: ListTaskInvites :many
+-- The tasks among ids where the user is an assignee or an approver (ADR-0059).
+SELECT x.task_id FROM task_assignees x WHERE x.task_id = ANY(sqlc.arg('ids')::uuid[]) AND x.user_id = sqlc.arg('user_id')
+UNION
+SELECT a.task_id FROM task_approvers a WHERE a.task_id = ANY(sqlc.arg('ids')::uuid[]) AND a.user_id = sqlc.arg('user_id');
+
+-- name: ListInvitedTasks :many
+-- The live tasks on live, non-restricted boards of a workspace where the user (a human) is an
+-- assignee or an approver: the task-scoped boards of ADR-0059.
+SELECT t.id, t.board_id
+FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = sqlc.arg('workspace_id') AND b.archived_at IS NULL AND NOT b.restricted AND t.archived_at IS NULL
+  AND t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = sqlc.arg('user_id')
+               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = sqlc.arg('user_id'))
+  AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = sqlc.arg('user_id') AND u.is_bot);
+
+-- name: ListWorkspaceTaskInvitees :many
+-- The assignees and approvers (humans) of the live tasks on live boards of a workspace: the
+-- gateway's invited map (ADR-0059).
+SELECT t.id AS task_id, t.board_id, x.user_id, bool_or(x.assignee)::boolean AS assignee, bool_or(NOT x.assignee)::boolean AS approver
+FROM tasks t
+JOIN boards b ON b.id = t.board_id
+JOIN (SELECT a.task_id, a.user_id, true AS assignee FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id, false AS assignee FROM task_approvers p) x ON x.task_id = t.id
+JOIN users u ON u.id = x.user_id AND NOT u.is_bot
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
+GROUP BY t.id, t.board_id, x.user_id;
 
 -- name: ListWorkspaceTaskRooms :many
 -- The comment rooms of the tasks on live boards of a workspace (the gateway's task room map).

@@ -213,6 +213,10 @@ message Board {
   repeated BoardFeature disabled_features = 26;
   // The estimate scale (ADR-0058 §3); the server always sends a concrete value.
   EstimateScale estimate_scale = 27;
+  // Task-scoped access (ADR-0059): the recipient sees the board only through its tasks - those
+  // where they are an assignee or an approver; permissions = 0 (task bits come from
+  // taskPermissions). Never on a restricted board, never for guests or bots.
+  bool task_scoped = 28;
 }
 
 message TaskAssignee {
@@ -225,7 +229,9 @@ message TaskAssignee {
 
 // Requested assignee (POST /tasks, PUT /tasks/{id}/assignees).
 message TaskAssigneeInput {
-  string user_id = 1; // a member of the workspace who sees the board (bots too), not a guest
+  // A member of the workspace, not a guest; on a restricted board only one who sees it; a bot
+  // only one who sees the board (ADR-0059).
+  string user_id = 1;
   bool is_lead = 2;
   string note = 3;
 }
@@ -632,6 +638,8 @@ message SetAssigneesRequest {
 // votes; removed ones lose them; new ones start PENDING, are subscribed and notified
 // (APPROVAL_REQUESTED). Journal "approvers".
 message SetTaskApproversRequest {
+  // Members of the workspace, not guests nor bots; on a restricted board only those who see it
+  // (ADR-0059).
   repeated string user_ids = 1;
   uint32 required = 2;
 }

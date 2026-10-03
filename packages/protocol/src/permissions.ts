@@ -1,5 +1,6 @@
 import { Permission, WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, type RoomPermissionOverride } from './gen/calaba/v1/room_pb.js';
+import type { Board, Task } from './gen/calaba/v1/boards_pb.js';
 
 /**
  * Permission bits as bigint (uint64 on the wire). Values come from the generated
@@ -342,6 +343,25 @@ export function taskRoomPermissions(board: PermissionBits, archived = false, com
   if (!archived && !commentsOff) p |= SEND_MESSAGES | ATTACH_FILES;
   if (board & PERMISSION_BITS.EDIT_TASKS) p |= PERMISSION_BITS.MANAGE_MESSAGES;
   return p;
+}
+
+/**
+ * The viewer's bits on one task (Go: perm.TaskBits, ADR-0059 §2). A viewer of the board keeps
+ * `board.permissions`; on a task-scoped board (`board.taskScoped`, permissions 0) an assignee of a
+ * live task gets VIEW_BOARD | CREATE_TASKS (edits the task like a member their assigned task; never
+ * creates tasks — that takes the board's bits), an approver VIEW_BOARD (view, comment, vote);
+ * anything else 0. Feed the result to taskRoomPermissions for the task's comment room.
+ */
+export function taskPermissions(
+  board: Pick<Board, 'permissions' | 'taskScoped'>,
+  task: Pick<Task, 'assignees' | 'approvers' | 'archivedAt'>,
+  me: string,
+): PermissionBits {
+  if (board.permissions & VIEW_BOARD) return board.permissions;
+  if (!board.taskScoped || task.archivedAt) return 0n; // invitations count on live tasks only
+  if (task.assignees.some((a) => a.userId === me)) return VIEW_BOARD | PERMISSION_BITS.CREATE_TASKS;
+  if (task.approvers.some((a) => a.userId === me)) return VIEW_BOARD;
+  return 0n;
 }
 
 /** The member's roles among the workspace's (WorkspaceMember.roleIds → WorkspaceSnapshot.roles). */

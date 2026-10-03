@@ -177,3 +177,28 @@ func BenchmarkComputeIn50Roles100Rooms(b *testing.B) {
 		}
 	}
 }
+
+// ADR-0059 §2: the same table as taskPermissions in packages/protocol (permissions.test.ts).
+func TestTaskBits(t *testing.T) {
+	member := ViewBoard | CreateTasks
+	for _, c := range []struct {
+		name               string
+		acc                BoardAccess
+		assignee, approver bool
+		want               Bits
+	}{
+		{"viewer keeps the board bits", BoardAccess{Bits: member}, false, false, member},
+		{"viewer assigned keeps the board bits", BoardAccess{Bits: ViewBoard}, true, true, ViewBoard},
+		{"editor keeps EDIT_TASKS", BoardAccess{Bits: ViewBoard | EditTasks}, false, true, ViewBoard | EditTasks},
+		{"scoped assignee", BoardAccess{TaskScoped: true}, true, false, ViewBoard | CreateTasks},
+		{"scoped assignee and approver", BoardAccess{TaskScoped: true}, true, true, ViewBoard | CreateTasks},
+		{"scoped approver", BoardAccess{TaskScoped: true}, false, true, ViewBoard},
+		{"scoped, another task", BoardAccess{TaskScoped: true}, false, false, 0},
+		{"not scoped, assigned (restricted / guest / bot)", BoardAccess{}, true, true, 0},
+		{"no access", BoardAccess{}, false, false, 0},
+	} {
+		if got := TaskBits(c.acc, c.assignee, c.approver); got != c.want {
+			t.Errorf("%s: TaskBits = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
