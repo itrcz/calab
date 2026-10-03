@@ -168,6 +168,10 @@ export const enShell: DictShape<typeof ruShell> = {
   'streamView.self': 'You’re streaming',
   'streamView.leaveFullscreen': 'Exit',
   'streamView.leaveFullscreenHint': 'Exit full screen (Esc)',
+  'zoom.hint': '{mod} + wheel to zoom, double-click to magnify',
+  'zoom.stage': 'Screen share viewport. + and − zoom, 0 resets, arrow keys pan',
+  'zoom.reset': 'Reset zoom ({level})',
+  'zoom.minimap': 'Screen share minimap: click to move the viewport',
   // voice states (#15)
   'voiceUi.serverMuted': 'Muted by a moderator',
   'voiceUi.serverUnmuted': 'A moderator allowed you to speak — unmute your mic',

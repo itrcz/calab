@@ -280,7 +280,7 @@ const en: Dict = {
       enterprise: { name: 'Enterprise', price: 'Your server', note: 'On-prem without limits, BSL 1.1 or commercial licence' },
     },
     cta: {
-      web: 'Web app',
+      web: 'Web',
       download: 'Download',
       contact: 'Contact us',
       license: 'Licence terms',

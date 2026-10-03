@@ -87,23 +87,15 @@ SHORT = """## [2.0.0] — 2026-10-02
 
 
 class ShortTest(unittest.TestCase):
-    def setUp(self):
-        os.environ.pop("CALAB_RELEASE_NOTES_URL", None)
-
     def test_short_only(self):
         self.assertEqual(ra.render("2.0.0", SHORT), "\n\n".join([
             "🚀 **Calab 2.0.0** — 2 октября 2026",
             "• Вход через корпоративный SSO.\n• Новый сайт calab.io.",
-            "Подробнее: https://github.com/itrcz/calab/releases/tag/v2.0.0",
             "Обновление придёт само",
         ]))
 
-    def test_url_override(self):
-        os.environ["CALAB_RELEASE_NOTES_URL"] = "https://x.test/{version}/"
-        try:
-            self.assertIn("Подробнее: https://x.test/2.0.0/\n", ra.render("2.0.0", SHORT))
-        finally:
-            del os.environ["CALAB_RELEASE_NOTES_URL"]
+    def test_no_link(self):
+        self.assertNotIn("http", ra.render("2.0.0", SHORT))
 
     def test_without_short_is_unchanged(self):
         # byte-for-byte the pre-«Коротко» output
@@ -123,7 +115,7 @@ class ShortTest(unittest.TestCase):
     def test_all_mixes_both(self):
         text = SHORT + "\n" + CHANGELOG.split("# Изменения\n", 1)[1]
         out = {v: ra.render(v, text) for v in ra.released_versions(text)}
-        self.assertIn("Подробнее:", out["2.0.0"])
+        self.assertTrue(out["2.0.0"].startswith("🚀 **Calab 2.0.0**"))
         self.assertNotIn("Подробнее:", out["1.2.3"])
         self.assertIn("🐞 **Исправлено**", out["1.2.3"])
 

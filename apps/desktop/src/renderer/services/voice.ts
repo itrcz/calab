@@ -347,7 +347,7 @@ class VoiceEngine {
     if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
     if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
     if (s.cameraDeviceId !== p.cameraDeviceId) void this.camera.setDevice(s.cameraDeviceId);
-    if (s.cameraBackground !== p.cameraBackground || s.cameraEffects !== p.cameraEffects) void this.camera.setBackground(s.cameraBackground, s.cameraEffects);
+    if (s.cameraBackground !== p.cameraBackground || s.cameraEffects !== p.cameraEffects || s.cameraBgFps !== p.cameraBgFps) void this.camera.setBackground(s.cameraBackground, s.cameraEffects);
   }
 
   private async syncPttBinding(): Promise<void> {

@@ -167,6 +167,10 @@ export const ruShell = {
   'streamView.self': 'Вы стримите',
   'streamView.leaveFullscreen': 'Свернуть',
   'streamView.leaveFullscreenHint': 'Выйти из полноэкранного режима (Esc)',
+  'zoom.hint': '{mod} + колесо — масштаб, двойной клик — приблизить',
+  'zoom.stage': 'Область просмотра стрима. + и − — масштаб, 0 — сбросить, стрелки — сдвиг',
+  'zoom.reset': 'Сбросить масштаб ({level})',
+  'zoom.minimap': 'Миникарта стрима: нажмите, чтобы переместить область просмотра',
   // voice states (#15)
   'voiceUi.serverMuted': 'Микрофон выключен модератором',
   'voiceUi.serverUnmuted': 'Модератор разрешил вам говорить — включите микрофон',

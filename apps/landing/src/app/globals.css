@@ -398,9 +398,10 @@ footer { background: #0b0b0b; }
 }
 @media(max-width:639px) { .topbar-action { padding:0 10px; font-size:14px; gap:7px; } }
 @media(prefers-reduced-motion:reduce) { .locale-globe svg,.topbar-action,.topbar-action-label,.topbar-action-dots i { transition:none; } .locale-globe:hover svg,.locale-globe:focus-visible svg { transform:none; } }
-.nav-wordmark { display:block; width:120px; height:auto; }
+/* The wordmark carries a 6-unit dark outline (public/calab-wordmark.svg), so the glyphs stay 120/96 px wide. */
+.nav-wordmark { display:block; width:125px; height:auto; }
 .footer-wordmark { display:block; width:240px; max-width:100%; height:auto; }
-@media(max-width:639px) { .nav-wordmark { width:96px; } .footer-wordmark { width:190px; } }
+@media(max-width:639px) { .nav-wordmark { width:100px; } .footer-wordmark { width:190px; } }
 .download-platform[data-current-os=true] { border-color:#397cff; background:#101b31; }
 
 /* Isolated reference-style discover link: no generic span styles. */
@@ -477,6 +478,28 @@ footer { background: #0b0b0b; }
 .conference-scroll { padding-top:125px; padding-bottom:125px; }
 @media(max-width:639px) { .conference-card > .photo-card-surface { padding:12px 12px 0; } .card-stickers img { width:90px; height:90px; } }
 @media(prefers-reduced-motion:reduce) { .card-stickers img { transition:none; } }
+
+/* Screenshot stickers: one per shot, only on wide screens (lg, text beside the shot; stacked layouts have no room):
+   slides out from behind the frame into the free space above/below the text. One-shot, transform/opacity only. */
+.shot-stage { position:relative; isolation:isolate; }
+.shot-stage-body { position:relative; z-index:1; }
+.shot-stickers { display:none; }
+@media(min-width:1024px) {
+ .shot-stage { --out:calc(-112px - 40px); }
+ .shot-stickers { display:block; position:absolute; inset:0; z-index:0; pointer-events:none; }
+ .shot-stickers img { position:absolute; width:112px; height:112px; max-width:none; object-fit:contain; transform:rotate(var(--a,0deg)); }
+ .shot-stage[data-v=top] .shot-stickers img { top:-2%; }
+ .shot-stage[data-v=bottom] .shot-stickers img { bottom:-2%; }
+ .shot-stage[data-v=below] .shot-stickers img { bottom:-96px; }
+ .shot-stage[data-side=left] .shot-stickers img { left:var(--out); }
+ .shot-stage[data-side=right] .shot-stickers img { right:var(--out); }
+}
+@media(min-width:1024px) and (prefers-reduced-motion:no-preference) {
+ /* Starts tucked behind the frame edge (the frame covers it), then slides out sideways. */
+ .shot-stage[data-side=left].reveal-ready .shot-stickers img { transform:translateX(200px) rotate(0deg); }
+ .shot-stage[data-side=right].reveal-ready .shot-stickers img { transform:translateX(-200px) rotate(0deg); }
+ .shot-stage.reveal-ready.is-visible .shot-stickers img { transform:rotate(var(--a,0deg)); transition:transform .9s cubic-bezier(.22,1.25,.4,1) .35s; }
+}
 
 /* Access infographic: connected capabilities rather than a second pricing CTA. */
 .control-infographic { padding-top:64px; }

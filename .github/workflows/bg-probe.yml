@@ -1,0 +1,54 @@
+name: camera background probe
+
+# Manual diagnostic for the camera background (ADR-0035): bundles the app's processor like the
+# app does, runs it in Electron over file:// from an app.asar (the packaged situation) and in
+# Chromium over http, on Chromium's fake camera, and uploads one JSON report per OS.
+#   gh workflow run bg-probe.yml --ref <branch> [-f os=windows-latest]   (once the file is on main)
+# A push to a spike/camera-background-* branch runs it on Windows with the default inputs.
+on:
+  push:
+    branches: ['spike/camera-background-*']
+    paths: ['apps/desktop/src/renderer/lib/media/background/**', 'apps/desktop/resources/mediapipe/**', 'apps/desktop/e2e-media/bg*', 'apps/desktop/scripts/bg-probe.mjs', '.github/workflows/bg-probe.yml']
+  workflow_dispatch:
+    inputs:
+      os:
+        description: runner (windows-latest, macos-latest, ubuntu-latest)
+        default: windows-latest
+      flags:
+        description: "semicolon-separated Electron flag sets, one run each (empty = default flags)"
+        default: ";--ignore-gpu-blocklist;--use-angle=swiftshader --enable-unsafe-swiftshader"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ${{ inputs.os || 'windows-latest' }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      # No native rebuilds (uiohook): only the Electron binary is needed.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node node_modules/electron/install.js
+      - run: pnpm -F @calaba/desktop exec playwright install chromium
+      - name: probe
+        env:
+          PROBE_FLAGS: ${{ github.event_name == 'push' && ';--ignore-gpu-blocklist;--use-angle=swiftshader --enable-unsafe-swiftshader' || inputs.flags }}
+        run: |
+          cd apps/desktop
+          if [[ "$RUNNER_OS" == "Linux" ]]; then xvfb-run -a node scripts/bg-probe.mjs --out bg-probe.json; else node scripts/bg-probe.mjs --out bg-probe.json; fi
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bg-probe-${{ inputs.os || 'windows-latest' }}
+          path: apps/desktop/bg-probe.json

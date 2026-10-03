@@ -208,7 +208,10 @@ export async function ensureLoaded(roomId: string, messageId: string): Promise<b
     const first = after.messages[0];
     const before = await listPage(roomId, { ...(first ? { before: first.id } : {}), limit: first ? 26 : PAGE });
     const asc = [...before.messages].reverse().concat(after.messages);
-    if (!asc.some((m) => m.id === messageId)) return false;
+    if (!asc.some((m) => m.id === messageId)) {
+      useMessages.getState().markGone(messageId);
+      return false;
+    }
     useMessages.getState().setWindow(roomId, asc, before.hasMore, after.hasMore);
     return true;
   } catch (e) {

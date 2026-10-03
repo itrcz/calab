@@ -27,6 +27,7 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.reactedWith': 'Reacted with {emoji}',
   'chat.reactionOthers': { one: 'and {n} other', other: 'and {n} others' },
   'chat.replyOpen': 'Show original message',
+  'chat.replyDeleted': 'Message deleted',
   'chat.messageGone': 'Message deleted or unavailable',
   'chat.rowFailed': 'This message couldn’t be displayed',
   'chat.historyStart': 'Start of room history',

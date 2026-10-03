@@ -79,7 +79,7 @@ export const zhIdentity: DictShape<typeof ruIdentity> = {
   'identity.allow': '允许',
   'identity.deny': '拒绝',
   'identity.consentHelp': '应用仅获取此工作区所选资料数据，无法访问聊天或其他工作区。',
-  'identity.grants': '已授权应用',
+  'identity.grants': 'OAuth 应用',
   'identity.revoke': '撤销访问',
   'identity.noApps': '暂无应用',
   'identity.noLink': '企业身份尚未关联，请本地登录后手动关联。',
@@ -114,4 +114,9 @@ export const zhIdentity: DictShape<typeof ruIdentity> = {
   'identity.accountStatusHelp': "你的账户对此工作空间的访问状态。下方的账户关联与近期 SSO 确认是独立操作。",
   'identity.stepUpHelp': "在浏览器中重新登录，以便在此工作空间中执行敏感操作。此操作不会关联新账户。",
   'identity.unlinkHelp': "解除关联需要确认。如果工作空间要求 SSO，你可能会失去访问权限。",
+  'identity.reauthRequired': "请确认密码：此操作需要最近 5 分钟内的登录验证。",
+  'identity.notConfigured': "此服务器未配置企业登录和 OAuth。请联系服务器管理员。",
+  'identity.ssoAbout': "员工通过企业 IdP（OpenID Connect、Microsoft Entra ID、AD FS）登录，并按 Active Directory 控制访问。",
+  'identity.grantsHelp': "你通过 Calab 登录的应用。撤销后它们将无法访问你的资料。",
+  'identity.adminReauth': "管理功能需要最近 5 分钟内确认过密码。",
 };

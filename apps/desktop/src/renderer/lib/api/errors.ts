@@ -25,7 +25,7 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_IDENTITY_SCOPE_DENIED: { key: 'identity.scope' },
   ERROR_CODE_DIRECTORY_ACCESS_DENIED: { key: 'identity.directoryDenied' },
   ERROR_CODE_RECOVERY_ONLY: { key: 'identity.recoveryOnly' },
-  ERROR_CODE_RECENT_AUTH_REQUIRED: { key: 'identity.reauth' },
+  ERROR_CODE_RECENT_AUTH_REQUIRED: { key: 'identity.reauthRequired' },
   ERROR_CODE_IDENTITY_CONFIG_CHANGED: { key: 'identity.changed', retry: true },
   ERROR_CODE_IDENTITY_NOT_LINKED: { key: 'identity.noLink' },
   ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE: { key: 'identity.unavailable', retry: true },
@@ -145,8 +145,22 @@ export function isAbort(e: unknown): boolean {
   return (e instanceof DOMException || e instanceof Error) && e.name === 'AbortError';
 }
 
+/**
+ * 409 CONFLICT reason IDENTITY_NOT_CONFIGURED: the server has no SSO / OAuth provider operator
+ * configuration (ADR-0054). A normal state of the install, shown as «не настроено на сервере».
+ */
+export function identityNotConfigured(e: unknown): boolean {
+  return e instanceof ApiError && e.reason === 'IDENTITY_NOT_CONFIGURED';
+}
+
+/** 403 RECENT_AUTH_REQUIRED: the action needs a fresh local password proof (5 min, ADR-0054). */
+export function recentAuthRequired(e: unknown): boolean {
+  return e instanceof ApiError && e.code === 'ERROR_CODE_RECENT_AUTH_REQUIRED';
+}
+
 export function describeError(e: unknown): HumanError {
   if (e instanceof ApiError) {
+    if (identityNotConfigured(e)) return { text: t('identity.notConfigured'), retry: false, generic: false };
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
       const sticker = e.field ? stickerField(e.field, e.message) : null;

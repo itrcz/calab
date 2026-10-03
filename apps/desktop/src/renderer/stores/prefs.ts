@@ -12,7 +12,7 @@ import { PTT_RELEASE_DEFAULT_MS } from '../lib/pttRelease';
 import type { EchoMode } from '../lib/media/echo';
 import type { CodecPref } from '../lib/media/codecSelect';
 import type { CameraPreset } from '../lib/plan';
-import { NO_BACKGROUND, type CameraBackground } from '../lib/media/background/logic';
+import { NO_BACKGROUND, SEG_FPS, normalizeSegFps, type CameraBackground, type SegFpsOption } from '../lib/media/background/logic';
 import { DEFAULT_CAMERA_EFFECTS, type CameraEffects } from '../lib/media/background/effects';
 import type { LocalePref } from '../i18n/types';
 import type { OpenChatSound } from '../lib/chatSound';
@@ -44,6 +44,8 @@ export interface Prefs {
   cameraBackground: CameraBackground;
   /** Camera «Внешний вид» (ADR-0035 addendum): touch-up + its strength, low-light lift; independent of the background. */
   cameraEffects: CameraEffects;
+  /** Background mask rate, segmentations/s: 8 · 16 · 20 (default) · 25 — smoothness vs CPU (ADR-0035 2.1). */
+  cameraBgFps: SegFpsOption;
   /** «Экономить трафик»: only the featured / PiP camera is received, at most 360p. */
   saveTraffic: boolean;
   /** userId → «Не показывать видео»: their camera is not subscribed (an avatar tile instead). */
@@ -127,6 +129,7 @@ const DEFAULTS: Prefs = {
   cameraPreset: ScreenSharePreset.H720,
   cameraBackground: NO_BACKGROUND,
   cameraEffects: DEFAULT_CAMERA_EFFECTS,
+  cameraBgFps: SEG_FPS,
   saveTraffic: false,
   hiddenVideo: {},
   outputVolume: 1,
@@ -175,14 +178,20 @@ interface PrefsState extends Prefs {
 export const usePrefs = create<PrefsState>()(
   persist((set) => ({ ...DEFAULTS, setPrefs: (p) => set(p) }), {
     name: 'calaba-prefs',
-    version: 3,
+    version: 4,
     // v2: statuses moved to the server — a status chosen on this device before is sent once.
     // v3: RNNoise off for everyone (it was on by default and costs CPU); re-enable in settings.
     migrate: (state, version) => {
       let s = state as Partial<Prefs>;
       if (version < 2) s = { ...s, presenceSynced: (s.presence ?? PresenceStatus.ONLINE) === PresenceStatus.ONLINE };
       if (version < 3) s = { ...s, rnnoise: false };
-      return s;
+      // v4: cameraBgFps; anything outside 8/16/20/25 is the default.
+      return { ...s, cameraBgFps: normalizeSegFps(s.cameraBgFps) };
+    },
+    // Whatever the stored value, the rate is one of the options.
+    merge: (persisted, current) => {
+      const p = (persisted ?? {}) as Partial<Prefs>;
+      return { ...current, ...p, cameraBgFps: normalizeSegFps(p.cameraBgFps) };
     },
     // Musician mode is never stored on (ADR-0052: it lasts until I leave voice).
     partialize: ({ setPrefs: _s, ...rest }) => ({ ...rest, musicianMode: false }),

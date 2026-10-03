@@ -717,20 +717,23 @@ function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMe
 
 function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string; workspaceId: string; replyToId: string; padTop: boolean }): ReactNode {
   const target = useMessages((s) => s.rooms[roomId]?.items.find((c) => c.key === replyToId)?.msg);
+  const gone = useMessages((s) => !!s.gone[replyToId]);
   const jump = useChatView((s) => s.requestJump);
   const sys = target ? systemPreview(target) : '';
   const parts = target && !sys ? previewPartsOf(workspaceId, target.content, 140) : [];
   const snippet = sys || (parts.length ? <PreviewRuns parts={parts} /> : target?.attachments.length ? t('chat.attachment') : '');
+  const deleted = !target && gone;
   const who = target ? memberName(workspaceId, target.authorId) : t('chat.reply');
   return (
     <div className={cx('px-2 pb-0.5', padTop ? 'pt-2' : 'pt-1')}>
       <button
         type="button"
+        disabled={deleted}
         onClick={() => jump(roomId, replyToId)}
         className="flex w-full min-w-0 flex-col rounded-[var(--radius-row)] border-l-[3px] border-[color:var(--bubble-accent)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] px-2 py-1 text-left hover:bg-[color-mix(in_srgb,var(--bubble-accent)_18%,transparent)]"
       >
         <span className="truncate text-body font-semibold text-[color:var(--bubble-accent)]">{who}</span>
-        <span className="truncate text-body text-fg">{target ? snippet : t('chat.replyOpen')}</span>
+        <span className="truncate text-body text-fg">{target ? snippet : deleted ? t('chat.replyDeleted') : t('chat.replyOpen')}</span>
       </button>
     </div>
   );

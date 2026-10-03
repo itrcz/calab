@@ -27,6 +27,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.reactedWith': '回应了 {emoji}',
   'chat.reactionOthers': { other: '还有 {n} 人' },
   'chat.replyOpen': '显示原消息',
+  'chat.replyDeleted': '消息已删除',
   'chat.messageGone': '消息已删除或不可用',
   'chat.rowFailed': '无法显示此消息',
   'chat.historyStart': '房间历史记录开始',

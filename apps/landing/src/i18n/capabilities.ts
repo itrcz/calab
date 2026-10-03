@@ -7,7 +7,6 @@ export type CapCard = {
   key: 'voice' | 'chat' | 'meetings' | 'boards' | 'bots' | 'company';
   title: string;
   lines: CapLine[];
-  alt: string;
 };
 export type ShowRow = { key: 'voice' | 'chat' | 'calendar' | 'kanban'; title: string; text: string; alt: string };
 
@@ -29,7 +28,7 @@ const caps: Record<Locale, Capabilities> = {
     more: 'Подробнее',
     legend: 'Team — тариф Team и выше. Business — Business и Enterprise (свой сервер). Остальное доступно на всех тарифах.',
     cards: [
-      { key: 'voice', title: 'Голос и видео', alt: 'Голосовая комната Calab: участники, камеры и демонстрация экрана',
+      { key: 'voice', title: 'Голос и видео',
         lines: [
           { t: 'Голосовые комнаты: один клик — и вы в разговоре' },
           { t: 'Шумо- и эхоподавление (RNNoise, AEC3), push-to-talk на любую клавишу' },
@@ -37,7 +36,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Запись встреч с расшифровкой и резюме в чате' },
           { t: 'Режим музыканта: звук без обработки', plan: 'team' },
         ] },
-      { key: 'chat', title: 'Чат', alt: 'Чат комнаты: ответ на сообщение, реакции и стикер',
+      { key: 'chat', title: 'Чат',
         lines: [
           { t: 'Ответы, реакции, пересылка сразу в несколько чатов' },
           { t: 'Голосовые сообщения, файлы с превью, закрепы' },
@@ -45,7 +44,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Поиск по пространству, упоминания, быстрый переход по ⌘K' },
           { t: 'Личные сообщения, заметки-полки и веб-версия для телефона' },
         ] },
-      { key: 'meetings', title: 'Встречи и календарь', alt: 'Календарь Calab: день со встречами рядом',
+      { key: 'meetings', title: 'Встречи и календарь',
         lines: [
           { t: 'Календарь с карточкой встречи, повторами и напоминаниями' },
           { t: 'Приглашения по почте с invite.ics для Apple, Google, Outlook' },
@@ -53,7 +52,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Временные комнаты и гостевые ссылки без регистрации' },
           { t: 'Синхронизация CalDAV: Яндекс, iCloud, Nextcloud', plan: 'team' },
         ] },
-      { key: 'boards', title: 'Доски задач', alt: 'Доска «Продукт» в виде канбана',
+      { key: 'boards', title: 'Доски задач',
         lines: [
           { t: 'Канбан, список и таймлайн с вехами' },
           { t: 'Статусы, приоритеты, метки, подзадачи и связи' },
@@ -62,7 +61,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Чек-листы в задачах', plan: 'team' },
           { t: 'Вебхук доски с подписью событий', plan: 'business' },
         ] },
-      { key: 'bots', title: 'Боты и интеграции', alt: 'Встроенное веб-приложение рядом со звонком',
+      { key: 'bots', title: 'Боты и интеграции',
         lines: [
           { t: 'Боты — участники с токеном: чат, доски, календарь, голос' },
           { t: 'События по WebSocket или webhook с подписью HMAC' },
@@ -70,7 +69,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Веб-приложения пространства (Grafana, вики, CRM) прямо в окне Calab' },
           { t: 'Звонки на телефон через вашего SIP-провайдера', plan: 'business' },
         ] },
-      { key: 'company', title: 'Для компаний и безопасность', alt: 'Доступ под вашим контролем',
+      { key: 'company', title: 'On-premise',
         lines: [
           { t: 'Свой сервер: один docker compose, данные остаются у вас' },
           { t: 'Корпоративный вход (SSO, OpenID Connect)', plan: 'business' },
@@ -94,7 +93,7 @@ const caps: Record<Locale, Capabilities> = {
     more: 'Learn more',
     legend: 'Team — the Team plan and above. Business — Business and Enterprise (your own server). Everything else is on every plan.',
     cards: [
-      { key: 'voice', title: 'Voice and video', alt: 'A Calab voice room: participants, cameras and screen sharing',
+      { key: 'voice', title: 'Voice and video',
         lines: [
           { t: 'Voice rooms: one click and you’re in the conversation' },
           { t: 'Noise and echo suppression (RNNoise, AEC3), push-to-talk on any key' },
@@ -102,7 +101,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Meeting recordings with a transcript and summary in the chat' },
           { t: 'Musician mode: sound without processing', plan: 'team' },
         ] },
-      { key: 'chat', title: 'Chat', alt: 'A room chat: a reply, reactions and a sticker',
+      { key: 'chat', title: 'Chat',
         lines: [
           { t: 'Replies, reactions, forwarding to several chats at once' },
           { t: 'Voice messages, files with previews, pins' },
@@ -110,7 +109,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Workspace search, mentions, quick switcher on ⌘K' },
           { t: 'Direct messages, notes shelves and a phone-friendly web app' },
         ] },
-      { key: 'meetings', title: 'Meetings and calendar', alt: 'The Calab calendar: a day with meetings side by side',
+      { key: 'meetings', title: 'Meetings and calendar',
         lines: [
           { t: 'A calendar with meeting cards, recurrence and reminders' },
           { t: 'Email invitations with invite.ics for Apple, Google, Outlook' },
@@ -118,7 +117,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Temporary rooms and guest links without sign-up' },
           { t: 'CalDAV sync: Yandex, iCloud, Nextcloud', plan: 'team' },
         ] },
-      { key: 'boards', title: 'Task boards', alt: 'The Product board as a kanban',
+      { key: 'boards', title: 'Task boards',
         lines: [
           { t: 'Kanban, list and timeline with milestones' },
           { t: 'Statuses, priorities, labels, subtasks and relations' },
@@ -127,7 +126,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Checklists inside tasks', plan: 'team' },
           { t: 'Board webhook with signed events', plan: 'business' },
         ] },
-      { key: 'bots', title: 'Bots and integrations', alt: 'An embedded web app next to a call',
+      { key: 'bots', title: 'Bots and integrations',
         lines: [
           { t: 'Bots are members with a token: chat, boards, calendar, voice' },
           { t: 'Events over WebSocket or a webhook with an HMAC signature' },
@@ -135,7 +134,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Workspace web apps (Grafana, wiki, CRM) right inside Calab' },
           { t: 'Phone calls through your own SIP provider', plan: 'business' },
         ] },
-      { key: 'company', title: 'For companies and security', alt: 'Access under your control',
+      { key: 'company', title: 'On-premise',
         lines: [
           { t: 'Your own server: one docker compose, your data stays with you' },
           { t: 'Corporate sign-in (SSO, OpenID Connect)', plan: 'business' },
@@ -159,7 +158,7 @@ const caps: Record<Locale, Capabilities> = {
     more: 'Más información',
     legend: 'Team: plan Team o superior. Business: Business y Enterprise (tu propio servidor). Lo demás está en todos los planes.',
     cards: [
-      { key: 'voice', title: 'Voz y vídeo', alt: 'Una sala de voz de Calab: participantes, cámaras y pantalla compartida',
+      { key: 'voice', title: 'Voz y vídeo',
         lines: [
           { t: 'Salas de voz: un clic y ya estás en la conversación' },
           { t: 'Supresión de ruido y eco (RNNoise, AEC3), pulsar para hablar en cualquier tecla' },
@@ -167,7 +166,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Grabación de reuniones con transcripción y resumen en el chat' },
           { t: 'Modo músico: sonido sin procesar', plan: 'team' },
         ] },
-      { key: 'chat', title: 'Chat', alt: 'El chat de una sala: una respuesta, reacciones y un sticker',
+      { key: 'chat', title: 'Chat',
         lines: [
           { t: 'Respuestas, reacciones y reenvío a varios chats a la vez' },
           { t: 'Mensajes de voz, archivos con vista previa, mensajes fijados' },
@@ -175,7 +174,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Búsqueda en el espacio, menciones, cambio rápido con ⌘K' },
           { t: 'Mensajes directos, estantes de notas y web adaptada al móvil' },
         ] },
-      { key: 'meetings', title: 'Reuniones y calendario', alt: 'El calendario de Calab: un día con reuniones en paralelo',
+      { key: 'meetings', title: 'Reuniones y calendario',
         lines: [
           { t: 'Calendario con ficha de reunión, repeticiones y recordatorios' },
           { t: 'Invitaciones por correo con invite.ics para Apple, Google, Outlook' },
@@ -183,7 +182,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Salas temporales y enlaces de invitado sin registro' },
           { t: 'Sincronización CalDAV: Yandex, iCloud, Nextcloud', plan: 'team' },
         ] },
-      { key: 'boards', title: 'Tableros de tareas', alt: 'El tablero Producto en formato kanban',
+      { key: 'boards', title: 'Tableros de tareas',
         lines: [
           { t: 'Kanban, lista y cronograma con hitos' },
           { t: 'Estados, prioridades, etiquetas, subtareas y relaciones' },
@@ -192,7 +191,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Listas de comprobación en las tareas', plan: 'team' },
           { t: 'Webhook del tablero con eventos firmados', plan: 'business' },
         ] },
-      { key: 'bots', title: 'Bots e integraciones', alt: 'Una aplicación web integrada junto a una llamada',
+      { key: 'bots', title: 'Bots e integraciones',
         lines: [
           { t: 'Los bots son miembros con token: chat, tableros, calendario, voz' },
           { t: 'Eventos por WebSocket o webhook con firma HMAC' },
@@ -200,7 +199,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Aplicaciones web del espacio (Grafana, wiki, CRM) dentro de Calab' },
           { t: 'Llamadas a teléfono con tu propio proveedor SIP', plan: 'business' },
         ] },
-      { key: 'company', title: 'Para empresas y seguridad', alt: 'Acceso bajo tu control',
+      { key: 'company', title: 'On-premise',
         lines: [
           { t: 'Tu servidor: un docker compose, los datos se quedan contigo' },
           { t: 'Acceso corporativo (SSO, OpenID Connect)', plan: 'business' },
@@ -224,7 +223,7 @@ const caps: Record<Locale, Capabilities> = {
     more: '了解更多',
     legend: 'Team：Team 及以上方案。Business：Business 和 Enterprise（自有服务器）。其余功能所有方案均可使用。',
     cards: [
-      { key: 'voice', title: '语音与视频', alt: 'Calab 语音房间：成员、摄像头和屏幕共享',
+      { key: 'voice', title: '语音与视频',
         lines: [
           { t: '语音房间：一键加入，立即交谈' },
           { t: '降噪与回声消除（RNNoise、AEC3），任意按键一键说话' },
@@ -232,7 +231,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: '会议录制，聊天中附转写与摘要' },
           { t: '音乐人模式：声音不经处理', plan: 'team' },
         ] },
-      { key: 'chat', title: '聊天', alt: '房间聊天：回复、表情回应和贴纸',
+      { key: 'chat', title: '聊天',
         lines: [
           { t: '回复、表情回应、一次转发到多个聊天' },
           { t: '语音消息、带预览的文件、置顶' },
@@ -240,7 +239,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: '空间搜索、@提及、⌘K 快速切换' },
           { t: '私信、笔记架，以及适配手机的网页版' },
         ] },
-      { key: 'meetings', title: '会议与日历', alt: 'Calab 日历：并排显示当天的会议',
+      { key: 'meetings', title: '会议与日历',
         lines: [
           { t: '日历含会议卡片、重复和提醒' },
           { t: '邮件邀请附 invite.ics，兼容 Apple、Google、Outlook' },
@@ -248,7 +247,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: '临时房间与免注册访客链接' },
           { t: 'CalDAV 同步：Yandex、iCloud、Nextcloud', plan: 'team' },
         ] },
-      { key: 'boards', title: '任务看板', alt: '以看板形式显示的“产品”看板',
+      { key: 'boards', title: '任务看板',
         lines: [
           { t: '看板、列表与带里程碑的时间线' },
           { t: '状态、优先级、标签、子任务与关联' },
@@ -257,7 +256,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: '任务内清单', plan: 'team' },
           { t: '看板 webhook，事件带签名', plan: 'business' },
         ] },
-      { key: 'bots', title: '机器人与集成', alt: '通话旁嵌入的网页应用',
+      { key: 'bots', title: '机器人与集成',
         lines: [
           { t: '机器人是持令牌的成员：聊天、看板、日历、语音' },
           { t: '通过 WebSocket 或带 HMAC 签名的 webhook 接收事件' },
@@ -265,7 +264,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: '空间网页应用（Grafana、Wiki、CRM）直接在 Calab 内打开' },
           { t: '通过你自己的 SIP 服务商拨打电话', plan: 'business' },
         ] },
-      { key: 'company', title: '企业与安全', alt: '由你掌控的访问权限',
+      { key: 'company', title: 'On-premise',
         lines: [
           { t: '自有服务器：一条 docker compose，数据留在你手中' },
           { t: '企业登录（SSO，OpenID Connect）', plan: 'business' },

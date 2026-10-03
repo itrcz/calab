@@ -70,6 +70,17 @@ export function planHas(p: WorkspacePlan | undefined, f: PlanFeature): boolean {
   return !l || !l[DISABLED_FLAG[f]];
 }
 
+/**
+ * Can the plan have corporate identity — SSO, directory sync, the OAuth provider (ADR-0054 §5)?
+ * In the cloud only a current Business (PLAN_ENTERPRISE); the server additionally wants a positive
+ * entitlement and the operator configuration. No plan (an older server): the server decides.
+ * A hint only: an on-prem Enterprise workspace is entitled on any plan, so the UI still asks the
+ * server and an effective grant overrides this (PlanLock only without one).
+ */
+export function planHasIdentity(p: WorkspacePlan | undefined): boolean {
+  return !p || (p.plan === Plan.ENTERPRISE && !p.expired);
+}
+
 /** The stored plan (UNSPECIFIED reads as FREE: the server's default when none was ever set). */
 export const planKind = (p: WorkspacePlan | undefined): Plan => (!p || p.plan === Plan.UNSPECIFIED ? Plan.FREE : p.plan);
 

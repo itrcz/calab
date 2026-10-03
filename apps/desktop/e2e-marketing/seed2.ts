@@ -61,7 +61,7 @@ export function seedBoardsV2(mock: MockServer, c: Copy, c2: Copy2): void {
 }
 
 /** Business plan on the main workspace (board webhooks) and a working webhook on «Продукт». */
-export function seedWebhook(mock: MockServer, c: Copy, c2: Copy2): void {
+export function seedWebhook(mock: MockServer, _c: Copy, c2: Copy2): void {
   const w = mock.state.workspaces.get(W.main);
   if (w) w.plan = create(WorkspacePlanSchema, { plan: Plan.ENTERPRISE, limits: ENTERPRISE_PLAN_LIMITS, validUntil: timestampFromMs(Date.parse('2026-12-31T23:59:59Z')), expired: false });
   const b = mock.boards;
@@ -74,7 +74,6 @@ export function seedWebhook(mock: MockServer, c: Copy, c2: Copy2): void {
     h.updatedAt = h.createdAt;
     h.lastOkAt = timestampFromMs(msk('13:12'));
   }
-  void c;
 }
 
 /** The global «Calab Stikers» (ADR-0057) in the mock, the first sticker of the pack in the chat. */

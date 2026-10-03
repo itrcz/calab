@@ -10,7 +10,8 @@ import { BUILTIN_BACKGROUNDS } from '../../lib/media/background/images';
 import { isWorkspaceImage, workspaceImageId, type BackgroundKind } from '../../lib/media/background/logic';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { MediaImg } from '../../components/MediaImg';
-import { backgroundAvailable } from '../../services/cameraBackground';
+import { backgroundBlocked, blockedText, effectsBlocked } from '../../services/cameraBackground';
+import { useCameraBg } from '../../stores/cameraBg';
 import { useCustomBackgrounds } from '../voice/BackgroundPicker';
 import { setCameraEffects } from '../voice/CameraAppearance';
 import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
@@ -318,14 +319,7 @@ export function CameraMenu(): ReactNode {
       {devices !== null && list.length === 0 ? <div className="px-2 py-1 text-caption text-muted">{t('video.noDevices')}</div> : null}
       <Dropdown.Separator className={menuSeparator} />
       <CameraQualityItems />
-      {backgroundAvailable() ? (
-        <>
-          <Dropdown.Separator className={menuSeparator} />
-          <CameraBackgroundItems />
-          <Dropdown.Separator className={menuSeparator} />
-          <CameraEffectsItems />
-        </>
-      ) : null}
+      <CameraLookItems />
       <Dropdown.Separator className={menuSeparator} />
       {phase === 'off' ? (
         <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'camera-preview' })}>
@@ -336,6 +330,30 @@ export function CameraMenu(): ReactNode {
         <Settings className="size-4" /> {t('shell.voiceSettings')}
       </Dropdown.Item>
     </Dropdown.Content>
+  );
+}
+
+/**
+ * «Фон» and «Внешний вид» in the camera ▾ menu; where they cannot run, one disabled line with the
+ * reason instead (owner, 2.1: checked before the choice, never hidden). A leaf subscriber.
+ */
+function CameraLookItems(): ReactNode {
+  const failure = useCameraBg((s) => s.failure);
+  const bg = backgroundBlocked(failure);
+  const fx = effectsBlocked(failure);
+  const blocked = bg ?? fx;
+  return (
+    <>
+      <Dropdown.Separator className={menuSeparator} />
+      {bg ? null : <CameraBackgroundItems />}
+      {!bg && !fx ? <Dropdown.Separator className={menuSeparator} /> : null}
+      {fx ? null : <CameraEffectsItems />}
+      {blocked ? (
+        <Dropdown.Item disabled className={cx(menuItem, 'h-auto whitespace-normal py-1.5 text-caption text-muted')} data-testid="camera-bg-blocked">
+          {blockedText(blocked, failure)}
+        </Dropdown.Item>
+      ) : null}
+    </>
   );
 }
 

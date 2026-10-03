@@ -18,6 +18,7 @@ import { CameraGrid, CameraPip, CameraStripTile, useAnyCamera, useStripCameras }
 import { FullscreenState, domHost, isExitKey, mainFullscreen, useIdle, useStreamFullscreen, windowHost } from './fullscreen';
 import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOptions } from './streamFormat';
 import { bindPopoutVideo } from './popoutVideo';
+import { ZoomSurface } from './ZoomSurface';
 
 /**
  * <video> bound to a stream track: a remote one (its on-screen size drives adaptive stream, the
@@ -31,11 +32,14 @@ function StreamVideo({
   avatarSize,
   className,
   annotate,
+  zoom,
 }: {
   stream: RemoteStream;
   wsId: string | null;
   avatarSize: number;
   className?: string;
+  /** Viewer-side zoom and pan (issue #33): stage and full screen, not the PiP / strip tiles. */
+  zoom?: boolean;
   /** Annotations over the video (ADR-0028): shown only, or shown and drawn on. */
   annotate?: 'view' | 'edit';
 }): ReactNode {
@@ -58,12 +62,19 @@ function StreamVideo({
       track.detach(el);
     };
   }, [trackSid, epoch]);
-  return (
+  const body = (
     <>
       <video ref={ref} muted playsInline autoPlay className={cx('bg-[var(--color-video-bg)] object-contain', className)} />
       {hasFrame ? null : <StreamPlaceholder stream={stream} wsId={wsId} size={avatarSize} />}
       {annotate ? <AnnotLayer stream={stream} video={ref} interactive={annotate === 'edit'} /> : null}
     </>
+  );
+  return zoom ? (
+    <ZoomSurface video={ref} resetKey={trackSid}>
+      {body}
+    </ZoomSurface>
+  ) : (
+    body
   );
 }
 
@@ -128,8 +139,10 @@ function Popout({ stream, wsId, title, onClose }: { stream: RemoteStream; wsId: 
   if (!container || !child) return null;
   return createPortal(
     <PopoutView stream={stream} wsId={wsId} win={child}>
-      <video ref={videoRef} muted playsInline autoPlay className="size-full bg-[var(--color-video-bg)] object-contain" />
-      <AnnotLayer stream={stream} video={videoRef} win={child} interactive />
+      <ZoomSurface video={videoRef} resetKey={trackSid}>
+        <video ref={videoRef} muted playsInline autoPlay className="size-full bg-[var(--color-video-bg)] object-contain" />
+        <AnnotLayer stream={stream} video={videoRef} win={child} interactive />
+      </ZoomSurface>
     </PopoutView>,
     container,
   );
@@ -259,7 +272,7 @@ function FullscreenStage({ stream, wsId }: { stream: RemoteStream; wsId: string 
   const containerRef = useCallback((el: HTMLDivElement | null) => fs.attach(el), [fs]);
   return createPortal(
     <FullscreenView stream={stream} wsId={wsId} win={window} fullscreen onToggle={onToggle} containerRef={containerRef}>
-      <StreamVideo stream={stream} wsId={wsId} avatarSize={96} className="size-full" annotate="edit" />
+      <StreamVideo stream={stream} wsId={wsId} avatarSize={96} className="size-full" annotate="edit" zoom />
     </FullscreenView>,
     document.body,
   );
@@ -535,7 +548,7 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
         // Inline, as in the PiP: the unlayered .mat-popover material overrides a bg utility.
         style={{ background: 'var(--color-video-bg)' }}
       >
-        {stage !== 'popout' ? <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" annotate="edit" /> : null}
+        {stage !== 'popout' ? <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" annotate="edit" zoom /> : null}
         {stage !== 'popout' ? <AnnotTools stream={stream} /> : null}
         <span className="absolute left-3 top-3 flex max-w-[calc(100%-120px)]">
           <StreamerChip stream={stream} wsId={wsId} />

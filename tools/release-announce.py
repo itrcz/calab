@@ -8,11 +8,9 @@ Env:
   CALAB_RELEASE_BOT_TOKEN  bot token (required unless --dry-run); sent only as `Authorization: Bearer`
   CALAB_API_URL            default https://app.calab.io
   CALAB_RELEASE_ROOM       default «Calab - что нового? ✨» (exact room name)
-  CALAB_RELEASE_NOTES_URL  «Подробнее» link template, `{version}` is substituted
-                           (default https://github.com/itrcz/calab/releases/tag/v{version})
 
 If the section has a `### Коротко` block (3-7 one-line bullets), only it is posted: header, the bullets,
-«Подробнее: <link>», footer. Without it the whole section is rendered (old versions, --all).
+footer — no link (owner, 03.10). Without it the whole section is rendered (old versions, --all).
 Reads the `## [<version>]` section of CHANGELOG.md and renders it with the chat's markdown-lite
 (apps/desktop/src/renderer/lib/markdown: bold, links, line breaks — no lists or headings, so bullets
 are «• » lines). The post uses nonce `release-<version>`: the server dedups by (author, nonce)
@@ -44,7 +42,6 @@ SECTIONS = [("Добавлено", "✨"), ("Изменено", "🔧"), ("Ис�
             ("Удалено", "🧹"), ("Безопасность", "🔒")]
 SKIP = {"Обновление", "Коротко"}  # «Коротко» is the summary: never repeated in the full render
 SUMMARY = "Коротко"
-DEFAULT_NOTES_URL = "https://github.com/itrcz/calab/releases/tag/v{version}"
 OTHER_EMOJI = "📌"
 MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
           "сентября", "октября", "ноября", "декабря"]
@@ -108,10 +105,9 @@ def clean_bullet(s: str) -> str:
 
 
 def render_short(version: str, date: str, bullets: list[str]) -> str:
-    """Header, the «Коротко» bullets, the link to the full list, footer."""
-    url = (os.environ.get("CALAB_RELEASE_NOTES_URL") or DEFAULT_NOTES_URL).replace("{version}", version)
+    """Header, the «Коротко» bullets, footer (no link to the full list — owner, 03.10)."""
     header = f"🚀 **Calab {version}**" + (f" — {date}" if date else "")
-    msg = "\n\n".join([header, "\n".join(f"• {b}" for b in bullets), f"Подробнее: {url}", "Обновление придёт само"])
+    msg = "\n\n".join([header, "\n".join(f"• {b}" for b in bullets), "Обновление придёт само"])
     if len(msg) > MAX_CONTENT:
         raise AnnounceError(f"«{SUMMARY}» of [{version}] is {len(msg)} chars (limit {MAX_CONTENT}): shorten it")
     return msg

@@ -81,7 +81,7 @@ export const enIdentity: DictShape<typeof ruIdentity> = {
   'identity.allow': 'Allow',
   'identity.deny': 'Deny',
   'identity.consentHelp': 'The app receives only the selected profile data in this workspace. It cannot access chats or other workspaces.',
-  'identity.grants': 'Authorized applications',
+  'identity.grants': 'OAuth apps',
   'identity.revoke': 'Revoke access',
   'identity.noApps': 'No applications yet',
   'identity.noLink': 'Corporate identity is not linked yet. Sign in locally and explicitly link it.',
@@ -116,4 +116,9 @@ export const enIdentity: DictShape<typeof ruIdentity> = {
   'identity.accountStatusHelp': "Your account’s access status in this workspace. Account linking and recent SSO confirmation are separate actions below.",
   'identity.stepUpHelp': "Sign in again in your browser to confirm SSO for sensitive actions in this workspace. This does not link a new account.",
   'identity.unlinkHelp': "Unlinking requires confirmation. Required SSO may prevent further access to this workspace.",
+  'identity.reauthRequired': "Confirm your password: this action needs a sign-in from the last 5 minutes.",
+  'identity.notConfigured': "Corporate sign-in and OAuth are not configured on this server. Contact the server administrator.",
+  'identity.ssoAbout': "Employee sign-in through your corporate IdP (OpenID Connect, Microsoft Entra ID, AD FS) and access control by Active Directory.",
+  'identity.grantsHelp': "Apps you signed in to with Calab. Revoking closes their access to your profile.",
+  'identity.adminReauth': "Administration requires a password confirmation from the last 5 minutes.",
 };

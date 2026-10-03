@@ -27,8 +27,9 @@ const MAX = 300_000;
 export const CROPS = {
   // hero: the whole window in a call — the shared slide on the stage, cameras, the room list
   voice: null,
-  // chat: the feed (mockup with reactions, a reply, a sticker) and the members column
-  chat: { left: 330, top: 30, width: 1110, height: 870 },
+  // chat: the room header and a narrow feed only (mockup with reactions, a reply, a sticker; the capture's
+  // window is 930×800, so the members column is hidden and the sticker sits next to the messages)
+  chat: { left: 330, top: 30, width: 600, height: 690 },
   // one-to-one call: the DM with «Звонок · 00:00 · Завершить», the island
   call: { left: 0, top: 30, width: 1440, height: 870 },
   // calendar: the day with the planning meeting's card
@@ -53,8 +54,9 @@ export const CROPS = {
   // a workspace web app (the test dashboard) open in the window, the call island kept
   webapps: { left: 0, top: 30, width: 1440, height: 870 },
   // Calab 2.0 (e2e-marketing/landing-v2.spec.ts)
-  // boards with categories in the list and checklist progress «3/7» on the cards
-  boards2: { left: 0, top: 30, width: 1440, height: 640 },
+  // boards: three kanban columns with checklist progress «3/7» on the cards (the capture's window is
+  // 1220 px wide; the boards list on the left is cut off)
+  boards2: { left: 330, top: 30, width: 890, height: 640 },
   // the task panel with two named checklists
   checklists: { left: 960, top: 30, width: 480, height: 870 },
   // board settings windows: «Фичи», «Вебхук» (Business)
@@ -73,7 +75,7 @@ export const CROPS = {
 };
 
 // `--only=sipdial,siproom` regenerates just those images (raw captures of the other scenes are not needed,
-// the existing files and the OpenGraph cards stay untouched).
+// the existing files stay untouched; the OpenGraph cards are redrawn only when `voice` is in the list).
 const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',');
 
 const scaled = (c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Math.round(v * SCALE)]));
@@ -108,7 +110,7 @@ for (const [short, lang] of Object.entries(LOCALES)) {
     console.log(`${lang}/${name}: @2x ${(big / 1000).toFixed(0)} KB, 1x ${(small / 1000).toFixed(0)} KB${phone ? `, 720 ${(phone / 1000).toFixed(0)} KB` : ''}`);
   }
 
-  if (only) continue;
+  if (only && !only.includes('voice')) continue;
   // OpenGraph: the hero window (top part) on a dark brand gradient, 1200×630.
   await mkdir(og, { recursive: true });
   const shot = await sharp(join(src, `voice-${short}@2x.png`))

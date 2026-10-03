@@ -169,8 +169,45 @@ func TestIdentityCompatibilityBotCardAndOperatorOffReauth(t *testing.T) {
 		t.Fatal("operator-off reauth bypassed existing limiter")
 	}
 	status, _, _ = identityRequest(t, srv.URL, "POST", "/api/auth/sso/workspaces/"+f.a.Id+"/begin", f.local.token, "https://app.example.com", nil, &v1.SSOBeginRequest{})
-	if status != 503 {
-		t.Fatalf("operator-off SSO should remain unavailable: %d", status)
+	if status != 409 {
+		t.Fatalf("operator-off SSO should remain unavailable (not configured): %d", status)
+	}
+}
+
+// Regression (2.0.1): an install without identity operator configuration answered every
+// SSO / OAuth settings request with 503 IDENTITY_DEPENDENCY_UNAVAILABLE, shown as an error
+// in workspace settings («SSO», «OAuth-клиенты») and user settings («OAuth-приложения»). Not
+// configured is a normal state: 409 CONFLICT reason IDENTITY_NOT_CONFIGURED on the
+// first-party API; RFC endpoints keep the OAuth protocol's server_error.
+func TestIdentityOperatorOffRoutesAnswerNotConfigured(t *testing.T) {
+	f := identitySetup(t, "optional")
+	if settings, err := testCfg.IdentitySettings(); err != nil || settings != nil {
+		t.Fatal("test must use the actual operator-off main App")
+	}
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	for _, c := range []struct {
+		who          *client
+		method, path string
+	}{
+		{f.local.client, "GET", "/api/me/oauth-grants"},
+		{f.local.client, "DELETE", "/api/me/oauth-grants/" + uuid.NewString()},
+		{o.client, "GET", "/api/workspaces/" + ws.Id + "/identity"},
+		{o.client, "GET", "/api/workspaces/" + ws.Id + "/identity/directory"},
+		{o.client, "GET", "/api/workspaces/" + ws.Id + "/oauth/clients"},
+		{&client{t: t}, "GET", "/api/auth/sso/workspaces/" + ws.Slug},
+	} {
+		if st := c.who.do(c.method, c.path, nil, nil); st != 409 {
+			t.Fatalf("%s %s: %d %s, want 409", c.method, c.path, st, c.who.lastBody)
+		}
+		var e v1.ApiError
+		if err := protojson.Unmarshal(c.who.lastBody, &e); err != nil || e.GetCode() != v1.ErrorCode_ERROR_CODE_CONFLICT || e.GetReason() != "IDENTITY_NOT_CONFIGURED" {
+			t.Fatalf("%s %s: %s, want CONFLICT IDENTITY_NOT_CONFIGURED", c.method, c.path, c.who.lastBody)
+		}
+	}
+	anon := &client{t: t}
+	if st := anon.do("GET", "/oidc/workspaces/"+ws.Id+"/.well-known/openid-configuration", nil, nil); st != 503 || !strings.Contains(string(anon.lastBody), `"server_error"`) {
+		t.Fatalf("operator-off OIDC metadata: %d %s, want RFC server_error", st, anon.lastBody)
 	}
 }
 
@@ -281,4 +318,37 @@ func TestIdentityMemberRemovalKeepsOtherMembersLeases(t *testing.T) {
 	if !found {
 		t.Fatal("fresh READY lost the workspace")
 	}
+}
+
+// Regression (2.0.1): «OAuth-приложения» of a user who never granted an app is an empty list,
+// not an error, on a configured install.
+func TestIdentityOAuthGrantsEmptyForNewUser(t *testing.T) {
+	_, base := identityHTTPWithDB(t, testDB)
+	u := register(t, invite(t, owner(t), createWorkspace(t, owner(t), v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).Id))
+	status, _, raw := quotaWire(t, base, "GET", "/api/me/oauth-grants", "10.93.2.1", u.token, "", "", nil)
+	var list v1.ListOAuthGrantsResponse
+	if status != 200 || protojson.Unmarshal(raw, &list) != nil || len(list.GetGrants()) != 0 {
+		t.Fatalf("zero grants: %d %s, want 200 and an empty list", status, raw)
+	}
+}
+
+// Regression (2.0.1): «Администрирование» of a SUPERADMIN_EMAILS admin whose local proof is
+// older than 5 minutes answers 403 RECENT_AUTH_REQUIRED (the contract requires a fresh local
+// proof for product administration, reads included); the client's password confirmation
+// (POST /api/auth/local/reauth on the same session) must open it again.
+func TestIdentityAdminRecentAuthStepUp(t *testing.T) {
+	su := superadminUser(t)
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '6 minutes' WHERE id=$1", uuid.MustParse(su.session)); err != nil {
+		t.Fatal(err)
+	}
+	auth.ForgetSessionChecks()
+	if st, e := su.apiErr("GET", "/api/admin/workspaces"); st != 403 || e.GetCode() != v1.ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED {
+		t.Fatalf("stale proof: %d %v, want 403 RECENT_AUTH_REQUIRED", st, e)
+	}
+	status, data, _ := identityRequest(t, srv.URL, "POST", "/api/auth/local/reauth", su.token, "https://app.example.com", nil, &v1.LocalReauthRequest{CurrentPassword: "password123"})
+	if status != 200 {
+		t.Fatalf("local reauth: %d %s", status, data)
+	}
+	auth.ForgetSessionChecks()
+	su.must(200, "GET", "/api/admin/workspaces", nil, nil)
 }

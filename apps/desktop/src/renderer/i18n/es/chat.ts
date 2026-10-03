@@ -27,6 +27,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.reactedWith': 'Reaccionaron con {emoji}',
   'chat.reactionOthers': { one: 'y {n} más', many: 'y {n} más', other: 'y {n} más' },
   'chat.replyOpen': 'Mostrar mensaje original',
+  'chat.replyDeleted': 'Mensaje eliminado',
   'chat.messageGone': 'Mensaje eliminado o no disponible',
   'chat.rowFailed': 'No se pudo mostrar este mensaje',
   'chat.historyStart': 'Inicio del historial de la sala',

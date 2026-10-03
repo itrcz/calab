@@ -4,7 +4,7 @@ import { MediaImg } from '../../components/MediaImg';
 import { Segmented, Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { BUILTIN_BACKGROUNDS, addCustomBackground, listCustomBackgrounds, prepareUpload, removeCustomBackground } from '../../lib/media/background/images';
-import { MAX_CUSTOM_BACKGROUNDS, UPLOAD_TYPES, uploadProblem, workspaceImageId, type BackgroundKind, type CameraBackground } from '../../lib/media/background/logic';
+import { MAX_CUSTOM_BACKGROUNDS, SEG_FPS_OPTIONS, normalizeSegFps, type SegFpsOption, UPLOAD_TYPES, uploadProblem, workspaceImageId, type BackgroundKind, type CameraBackground } from '../../lib/media/background/logic';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
 import { useCameraBg } from '../../stores/cameraBg';
@@ -13,6 +13,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useBackgroundList } from '../../stores/workspaces';
+import { backgroundBlocked, blockedText } from '../../services/cameraBackground';
 
 /** The user's pictures as thumbnail object URLs (revoked on change / unmount). */
 export function useCustomBackgrounds(): { list: { id: string; url: string }[]; reload: () => void } {
@@ -53,7 +54,9 @@ export function BackgroundPicker(): ReactNode {
   const setPrefs = usePrefs((s) => s.setPrefs);
   const software = useCameraBg((s) => s.software);
   const hardware = useCameraBg((s) => s.hardware);
-  const failed = useCameraBg((s) => s.state === 'failed');
+  // Checked before a choice (owner, 2.1): where it cannot run, the section is shown disabled with why.
+  const failure = useCameraBg((s) => s.failure);
+  const blocked = backgroundBlocked(failure);
   const locale = useLocale();
   const { list, reload } = useCustomBackgrounds();
   const voiceWs = useVoice((s) => s.workspaceId);
@@ -90,7 +93,7 @@ export function BackgroundPicker(): ReactNode {
     reload();
   };
 
-  const hint = failed ? t('video.bg.failed') : hardware ? t('video.bg.system') : software ? t('video.bg.software') : null;
+  const hint = blocked ? blockedText(blocked, failure) : hardware ? t('video.bg.system') : software ? t('video.bg.software') : null;
   const full = list.length >= MAX_CUSTOM_BACKGROUNDS;
   const current: CameraBackground = { kind, ...(imageId ? { imageId } : {}) };
   return (
@@ -98,66 +101,93 @@ export function BackgroundPicker(): ReactNode {
       <h3 id="camera-bg-title" className="mb-2 text-footnote font-semibold text-muted">
         {t('video.bg.title')}
       </h3>
-      <Segmented<BackgroundKind>
-        label={t('video.bg.title')}
-        value={kind}
-        onChange={(k) => choose({ kind: k })}
-        options={[
-          { value: 'none', label: t('video.bg.none') },
-          { value: 'blur-light', label: t('video.bg.blurLight') },
-          { value: 'blur-strong', label: t('video.bg.blurStrong') },
-        ]}
-      />
-      {workspace.length > 0 ? (
-        <>
-          <h4 id="camera-bg-ws" className="mb-1.5 mt-3 text-caption text-muted">
-            {t('video.bg.workspace')}
-          </h4>
-          <div role="radiogroup" aria-labelledby="camera-bg-ws" className="grid grid-cols-4 gap-2" data-testid="camera-bg-workspace">
-            {workspace.map((b) => {
-              const id = workspaceImageId(b.id);
-              return <Thumb key={b.id} id={id} path={thumbnailPath(b.fileId)} label={b.name} selected={same(current, 'image', id)} onChoose={choose} />;
-            })}
-          </div>
-          <h4 className="mb-1.5 mt-3 text-caption text-muted">{t('video.bg.builtin')}</h4>
-        </>
+      <fieldset disabled={blocked !== null} aria-describedby={blocked ? 'camera-bg-blocked' : undefined} className={cx('m-0 min-w-0 border-0 p-0', blocked && 'opacity-50')} data-testid="camera-bg-choices">
+        <Segmented<BackgroundKind>
+          label={t('video.bg.title')}
+          value={kind}
+          onChange={(k) => choose({ kind: k })}
+          options={[
+            { value: 'none', label: t('video.bg.none') },
+            { value: 'blur-light', label: t('video.bg.blurLight') },
+            { value: 'blur-strong', label: t('video.bg.blurStrong') },
+          ]}
+        />
+        {workspace.length > 0 ? (
+          <>
+            <h4 id="camera-bg-ws" className="mb-1.5 mt-3 text-caption text-muted">
+              {t('video.bg.workspace')}
+            </h4>
+            <div role="radiogroup" aria-labelledby="camera-bg-ws" className="grid grid-cols-4 gap-2" data-testid="camera-bg-workspace">
+              {workspace.map((b) => {
+                const id = workspaceImageId(b.id);
+                return <Thumb key={b.id} id={id} path={thumbnailPath(b.fileId)} label={b.name} selected={same(current, 'image', id)} onChoose={choose} />;
+              })}
+            </div>
+            <h4 className="mb-1.5 mt-3 text-caption text-muted">{t('video.bg.builtin')}</h4>
+          </>
+        ) : null}
+        <div role="radiogroup" aria-label={t('video.bg.pictureList')} className={cx('grid grid-cols-4 gap-2', workspace.length === 0 && 'mt-3')}>
+          {BUILTIN_BACKGROUNDS.map((b) => (
+            <Thumb key={b.id} id={b.id} url={b.thumbUrl} label={b.name(locale)} selected={same(current, 'image', b.id)} onChoose={choose} />
+          ))}
+          {list.map((c, i) => (
+            <Thumb key={c.id} id={c.id} url={c.url} label={t('video.bg.custom', { n: i + 1 })} selected={same(current, 'image', c.id)} onChoose={choose} onRemove={remove} />
+          ))}
+          <Tip label={full ? t('video.bg.limit', { n: MAX_CUSTOM_BACKGROUNDS }) : t('video.bg.addHint')}>
+            <button
+              type="button"
+              aria-disabled={full || busy}
+              onClick={() => !full && !busy && input.current?.click()}
+              className={cx(
+                'flex aspect-video items-center justify-center gap-1 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-popover)] text-footnote text-muted transition-colors duration-[var(--motion-fast)]',
+                full ? 'opacity-50' : 'hover:bg-hover hover:text-fg',
+              )}
+              data-testid="camera-bg-add"
+            >
+              {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Plus className="size-3.5" aria-hidden />}
+              {t('video.bg.add')}
+            </button>
+          </Tip>
+        </div>
+        {kind !== 'none' ? <BackgroundSmoothness hint /> : null}
+        <input
+          ref={input}
+          type="file"
+          accept={UPLOAD_TYPES.join(',')}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) void upload(f);
+          }}
+        />
+      </fieldset>
+      {hint ? (
+        <p id={blocked ? 'camera-bg-blocked' : undefined} className="mt-2 text-caption text-muted" data-testid={blocked ? 'camera-bg-blocked' : undefined}>
+          {hint}
+        </p>
       ) : null}
-      <div role="radiogroup" aria-label={t('video.bg.pictureList')} className={cx('grid grid-cols-4 gap-2', workspace.length === 0 && 'mt-3')}>
-        {BUILTIN_BACKGROUNDS.map((b) => (
-          <Thumb key={b.id} id={b.id} url={b.thumbUrl} label={b.name(locale)} selected={same(current, 'image', b.id)} onChoose={choose} />
-        ))}
-        {list.map((c, i) => (
-          <Thumb key={c.id} id={c.id} url={c.url} label={t('video.bg.custom', { n: i + 1 })} selected={same(current, 'image', c.id)} onChoose={choose} onRemove={remove} />
-        ))}
-        <Tip label={full ? t('video.bg.limit', { n: MAX_CUSTOM_BACKGROUNDS }) : t('video.bg.addHint')}>
-          <button
-            type="button"
-            aria-disabled={full || busy}
-            onClick={() => !full && !busy && input.current?.click()}
-            className={cx(
-              'flex aspect-video items-center justify-center gap-1 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-popover)] text-footnote text-muted transition-colors duration-[var(--motion-fast)]',
-              full ? 'opacity-50' : 'hover:bg-hover hover:text-fg',
-            )}
-            data-testid="camera-bg-add"
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Plus className="size-3.5" aria-hidden />}
-            {t('video.bg.add')}
-          </button>
-        </Tip>
-      </div>
-      <input
-        ref={input}
-        type="file"
-        accept={UPLOAD_TYPES.join(',')}
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = '';
-          if (f) void upload(f);
-        }}
-      />
-      {hint ? <p className="mt-2 text-caption text-muted">{hint}</p> : null}
     </section>
+  );
+}
+
+/**
+ * «Плавность»: how often the mask is computed (8 · 16 · 20 · 25 per second) — a leaf with its own
+ * primitive subscription; applies live (services/voice.ts, CameraPreview follow prefs.cameraBgFps).
+ */
+export function BackgroundSmoothness({ hint = false }: { hint?: boolean }): ReactNode {
+  const fps = usePrefs((s) => s.cameraBgFps);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const onChange = useCallback((v: string) => setPrefs({ cameraBgFps: normalizeSegFps(Number(v)) }), [setPrefs]);
+  return (
+    <div className={hint ? 'mt-3' : undefined} data-testid="camera-bg-fps">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        {hint ? <span className="text-footnote text-muted">{t('video.bg.fps')}</span> : null}
+        <Segmented<string> label={t('video.bg.fps')} value={String(fps)} onChange={onChange} options={SEG_FPS_OPTIONS.map((o: SegFpsOption) => ({ value: String(o), label: String(o) }))} />
+        <span className="text-caption text-muted">{t('video.bg.fpsUnit')}</span>
+      </div>
+      {hint ? <p className="mt-1.5 text-caption text-muted">{t('video.bg.fpsHint')}</p> : null}
+    </div>
   );
 }
 

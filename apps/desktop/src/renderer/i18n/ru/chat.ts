@@ -25,6 +25,7 @@ export const ruChat = {
   'chat.reactedWith': 'Отреагировали {emoji}',
   'chat.reactionOthers': { one: 'и ещё {n}', few: 'и ещё {n}', many: 'и ещё {n}', other: 'и ещё {n}' },
   'chat.replyOpen': 'Показать исходное сообщение',
+  'chat.replyDeleted': 'Сообщение удалено',
   'chat.messageGone': 'Сообщение удалено или недоступно',
   'chat.rowFailed': 'Сообщение не удалось отобразить',
   'chat.historyStart': 'Начало истории комнаты',

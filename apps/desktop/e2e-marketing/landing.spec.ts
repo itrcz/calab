@@ -4,8 +4,9 @@ import { chromium, expect, test, type Browser, type Page } from '@playwright/tes
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
 import { startPublisher, type Publisher } from '../e2e-visual/publisher';
-import { LOOKS, cameraHtml, render, slideHtml } from './art';
+import { render, slideHtml } from './art';
 import { APP_LOCALE, COPY, type Copy, type PersonKey, type Short } from './copy';
+import { cameraPhoto, dataUrl } from './photos';
 import { SCENE, drawArt, seedBoard, seedMeetings, seedNotes, seedScene } from './seed';
 
 /**
@@ -26,6 +27,8 @@ import { SCENE, drawArt, seedBoard, seedMeetings, seedNotes, seedScene } from '.
 const OUT = resolve(import.meta.dirname, '../../landing/shots');
 const DIST = resolve(import.meta.dirname, '../dist-web');
 const SIZE = { width: 1440, height: 900 };
+/** chat: the window (CSS px) of the closer chat frame — a narrow feed (crop in apps/landing/scripts/assets.mjs). */
+const CHAT_WINDOW = { width: 930, height: 800 };
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const ALL: Short[] = ['ru', 'en', 'es', 'zh'];
@@ -126,8 +129,8 @@ async function speaking(page: Page, ids: string[]): Promise<void> {
   await page.evaluate((list) => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.(list), ids);
 }
 
-/** Chromium's fake camera replaced by Анна's drawn camera frame (the page's own camera requests). */
-async function fakeCamera(page: Page, png: Buffer): Promise<void> {
+/** Chromium's fake camera replaced by Анна's camera photo (the page's own camera requests). */
+async function fakeCamera(page: Page, frame: Buffer): Promise<void> {
   await page.evaluate(async (src) => {
     const img = new Image();
     img.src = src;
@@ -144,7 +147,7 @@ async function fakeCamera(page: Page, png: Buffer): Promise<void> {
     const md = navigator.mediaDevices;
     const orig = md.getUserMedia.bind(md);
     md.getUserMedia = async (constraints) => (constraints?.video ? new MediaStream(stream.getVideoTracks().map((t) => t.clone())) : orig(constraints));
-  }, `data:image/png;base64,${png.toString('base64')}`);
+  }, dataUrl(frame));
 }
 
 async function frames(page: Page, n: number): Promise<void> {
@@ -180,6 +183,10 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
     // Memoized feed rows keep the old language after a live switch: re-open the room.
     await aside(ctx.page).getByRole('button', { name: new RegExp(ctx.c.rooms.dev) }).first().click();
     await openRoom(ctx, ctx.c.rooms.general);
+    // A shorter window: the bottom-anchored feed brings the mockup, the reactions, the reply and the
+    // sticker right under the room header (assets.mjs crops the feed only, no members column).
+    await ctx.page.setViewportSize(CHAT_WINDOW);
+    await feedBottom(ctx.page);
     await shoot(ctx, 'chat');
   },
 
@@ -187,7 +194,7 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
   async voice(ctx) {
     const { page, mock, c } = ctx;
     await openRoom(ctx, c.rooms.general);
-    await fakeCamera(page, await render(ctx.browser, cameraHtml(LOOKS.anna), 1280, 720));
+    await fakeCamera(page, cameraPhoto('anna'));
     await joinMeeting(ctx);
     inRoom(mock, 'dina', { muted: true });
     await page.getByTestId('camera-button').click();
@@ -195,7 +202,7 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
     await page.getByTestId('camera-preview-enable').click();
     await expect(page.getByTestId('camera-button')).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
     for (const k of ['boris', 'grigory'] as const) {
-      ctx.pubs.push(await startPublisher({ userId: IDS.users[k], name: c.people[k].name, roomId: IDS.rooms.meeting, source: 'camera', image: await render(ctx.browser, cameraHtml(LOOKS[k]), 1280, 720) }));
+      ctx.pubs.push(await startPublisher({ userId: IDS.users[k], name: c.people[k].name, roomId: IDS.rooms.meeting, source: 'camera', image: cameraPhoto(k) }));
       inRoom(mock, k, { camera: true, muted: k === 'grigory' });
     }
     ctx.pubs.push(await startPublisher({ userId: IDS.users.vera, name: c.people.vera.name, roomId: IDS.rooms.meeting, image: await render(ctx.browser, slideHtml(c), 1280, 720) }));

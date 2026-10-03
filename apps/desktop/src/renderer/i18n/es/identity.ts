@@ -82,7 +82,7 @@ export const esIdentity: DictShape<typeof ruIdentity> = {
   'identity.allow': 'Permitir',
   'identity.deny': 'Denegar',
   'identity.consentHelp': 'La aplicación solo recibe los datos de perfil elegidos de este espacio. No accede a chats ni a otros espacios.',
-  'identity.grants': 'Aplicaciones autorizadas',
+  'identity.grants': 'Aplicaciones OAuth',
   'identity.revoke': 'Revocar acceso',
   'identity.noApps': 'Aún no hay aplicaciones',
   'identity.noLink': 'La identidad aún no está vinculada. Entra localmente y vincúlala.',
@@ -117,4 +117,9 @@ export const esIdentity: DictShape<typeof ruIdentity> = {
   'identity.accountStatusHelp': "Estado de acceso de tu cuenta a este espacio. Vincular la cuenta y confirmar SSO recientemente son acciones separadas abajo.",
   'identity.stepUpHelp': "Vuelve a iniciar sesión en el navegador para confirmar SSO para acciones sensibles en este espacio. Esto no vincula una cuenta nueva.",
   'identity.unlinkHelp': "Desvincular requiere confirmación. El SSO obligatorio puede impedir el acceso posterior a este espacio.",
+  'identity.reauthRequired': "Confirma tu contraseña: esta acción requiere un inicio de sesión de los últimos 5 minutos.",
+  'identity.notConfigured': "El acceso corporativo y OAuth no están configurados en este servidor. Contacta con el administrador del servidor.",
+  'identity.ssoAbout': "Inicio de sesión de empleados mediante el IdP corporativo (OpenID Connect, Microsoft Entra ID, AD FS) y acceso según Active Directory.",
+  'identity.grantsHelp': "Aplicaciones en las que iniciaste sesión con Calab. Al revocar, pierden el acceso a tu perfil.",
+  'identity.adminReauth': "La administración requiere confirmar la contraseña en los últimos 5 minutos.",
 };

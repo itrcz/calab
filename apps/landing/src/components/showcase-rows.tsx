@@ -4,6 +4,7 @@ import { getCapabilities } from '@/i18n/capabilities';
 import { localePath } from '@/i18n/locales';
 import type { ScreenName } from '@/lib/screens';
 import { Container, Frame, Screen, cx } from './ui';
+import { ShotStage } from './shot-stickers';
 
 // 2.0 shots: boards with categories and checklist progress.
 const shots = { voice: 'voice', chat: 'chat', calendar: 'findtime', kanban: 'boards2' } as const satisfies Record<string, ScreenName>;
@@ -33,9 +34,11 @@ export function ShowcaseRows({ locale, more }: { locale: Locale; more: string })
                   <ArrowUpRight size={16} aria-hidden="true" />
                 </a>
               </div>
-              <Frame>
-                <Screen name={shots[row.key]} locale={locale} alt={row.alt} sizes="(min-width: 1024px) 700px, 92vw" />
-              </Frame>
+              <ShotStage set={row.key} side={index % 2 === 1 ? 'right' : 'left'}>
+                <Frame>
+                  <Screen name={shots[row.key]} locale={locale} alt={row.alt} sizes="(min-width: 1024px) 700px, 92vw" />
+                </Frame>
+              </ShotStage>
             </div>
           ))}
         </div>
