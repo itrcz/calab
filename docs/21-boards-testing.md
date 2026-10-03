@@ -31,6 +31,7 @@
 | K.21 | Таймлайн: перенос, края, «Без дат», вехи, метка блокировки | — | — | unit `lib/boards/timeline.test.ts` (даты, привязка, окно, группы, блокировка); e2e `boards-timeline.spec.ts` (тела `PATCH`); снимок `boards-timeline` | телефон — только чтение |
 | K.22 | Задача из сообщения (клиент), `/m/` прокручивает к сообщению | `TestTaskLifecycle` | — | e2e `boards-timeline.spec.ts` | переход по `/m/` — вручную |
 | K.23 | Карточки `/t/` `/b/` в чате, «Задачи» в уведомлениях, архив досок | `TestTaskUnfurl` | — | unit `card.test.ts`, e2e, снимки `chat-task-card`, `m-boards-kanban` | уровни и восстановление — вручную |
+| K.24–25 | Доска по карточкам (ADR-0059): позвать со стороны исполнителем / согласующим, видна только своя карточка, снять — карточка и доска уходят; закрытая доска, гость, бот — 422 | `TestTaskScopedAccess`, unit `perm.TestTaskBits`, `perm.TestResolverTaskRoom`, gateway `TestTaskScopedTransitions` | `taskPermissions` (та же таблица, `permissions.test.ts`) | клиентская ветка ADR-0059 | бейдж «Только мои карточки», пикер — QA скриншотами |
 
 ## Пробелы
 - Стикер и голосовое в комментарии задачи отдельным тестом не покрыты: путь тот же, что у любой комнаты (`TestStickers*`, `TestVoiceMessages`), отличие — только права комнаты задачи (K.11).
