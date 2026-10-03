@@ -121,22 +121,6 @@ func EventName(provider string, h http.Header) string {
 	return ""
 }
 
-// DeliveryID is the provider's delivery id (the idempotency key); "" when absent.
-func DeliveryID(provider string, h http.Header) string {
-	var v string
-	switch provider {
-	case GitHub:
-		v = h.Get("X-GitHub-Delivery")
-	case GitLab:
-		v = h.Get("X-Gitlab-Event-UUID")
-	case Gitea:
-		if v = h.Get("X-Gitea-Delivery"); v == "" {
-			v = h.Get("X-Forgejo-Delivery")
-		}
-	}
-	return clip(strings.TrimSpace(v), 200)
-}
-
 // Event is a push or a pull / merge request in a provider-neutral form.
 type Event struct {
 	Provider string

@@ -155,6 +155,13 @@ func TestBoardGit(t *testing.T) {
 	if st := hookPost(t, hook, signed(opened, "d1"), opened); st != 204 || countGit() != 1 {
 		t.Fatalf("repeat: %d, %d entries", st, countGit())
 	}
+	// Unknown boards and providers: 404 like a board without the setup.
+	for _, p := range []string{"/api/git/boards/01890000-0000-7000-8000-00000000abcd/github", "/api/git/boards/" + b.GetId() + "/bitbucket",
+		"/api/git/boards/not-a-uuid/github"} {
+		if st := hookPost(t, p, signed(opened, "d404"), opened); st != 404 {
+			t.Fatalf("%s: %d, want 404", p, st)
+		}
+	}
 
 	// Merged: the state follows, the rule closes the task.
 	merged := prBody("closed", key+" Login", "", true)
@@ -167,6 +174,19 @@ func TestBoardGit(t *testing.T) {
 	}
 	if n := countGit(); n != 2 {
 		t.Fatalf("git entries %d", n)
+	}
+	// The captured "opened" delivery replayed with another (unsigned) delivery id, or none: still a
+	// repeat — the PR stays merged and the rule does not move the task back.
+	noID := signed(opened, "")
+	delete(noID, "X-GitHub-Delivery")
+	for _, h := range []map[string]string{signed(opened, "d1-replayed"), noID} {
+		if st := hookPost(t, hook, h, opened); st != 204 {
+			t.Fatalf("replay: %d", st)
+		}
+		full = getTask(t, o, task.GetId()).GetTask()
+		if full.GetGitLinks()[0].GetState() != v1.TaskGitLinkState_TASK_GIT_LINK_STATE_MERGED || full.GetStatusId() != done || countGit() != 2 {
+			t.Fatalf("a replay applied: %v", full)
+		}
 	}
 
 	// A key of another board is ignored; so is an unknown task number.
@@ -214,4 +234,35 @@ func TestBoardGit(t *testing.T) {
 		t.Fatalf("after delete: %d", st)
 	}
 	gc.quiet("nothing more for the invitee", 100*time.Millisecond, func(e *v1.DispatchEvent) bool { return e.GetBoardRuleUpdate() != nil })
+
+	// 60 signed deliveries a minute per board, then 429 (a storm from a big repository).
+	t.Run("rate limit", func(t *testing.T) {
+		br := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Storm", Key: "STM"}, 201)
+		var gr v1.BoardGitResponse
+		o.must(200, "PUT", "/api/boards/"+br.GetId()+"/git", &v1.SetBoardGitRequest{Provider: v1.GitProvider_GIT_PROVIDER_GITHUB}, &gr)
+		path := "/api/git/boards/" + br.GetId() + "/github"
+		body := []byte(`{"zen":"x"}`)
+		h := map[string]string{"X-GitHub-Event": "ping", "X-Hub-Signature-256": "sha256=" + vcs.Sign(body, []byte(gr.GetSecret()))}
+		// Unsigned requests do not spend the board's budget.
+		for range 70 {
+			if st := hookPost(t, path, map[string]string{"X-GitHub-Event": "ping"}, body); st != 401 {
+				t.Fatalf("unsigned: %d", st)
+			}
+		}
+		limited := 0
+		for i := range 75 {
+			switch st := hookPost(t, path, h, body); {
+			case st == 429:
+				limited = i
+			case st != 204:
+				t.Fatalf("delivery %d: %d", i, st)
+			}
+			if limited > 0 {
+				break
+			}
+		}
+		if limited < 60 {
+			t.Fatalf("429 after %d deliveries, want 60 allowed then 429", limited)
+		}
+	})
 }

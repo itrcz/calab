@@ -397,6 +397,14 @@ func (s *Service) updateRule(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	// Below Team the rules are read-only (ADR-0060 §3): only switching one off (and its order) is
+	// allowed, never editing or switching on.
+	if ok, err := s.automationsAllowed(r.Context(), acc.WorkspaceID); err != nil {
+		return err
+	} else if !ok && (req.Enabled == nil || req.GetEnabled() || req.Name != nil || req.Trigger != nil || req.Condition != nil ||
+		req.GetClearCondition() || req.GetSetActions()) {
+		return plans.FeatureError(automationsFeature)
+	}
 	old, err := decodeRule(cur)
 	if err != nil {
 		return err
@@ -424,9 +432,13 @@ func (s *Service) updateRule(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := s.validateRule(r, s.db.Q, b, name, tr, cond, acts)
-	if err != nil {
-		return err
+	// Switching a rule off (or moving it) keeps it as stored: a rule whose status, label or room
+	// is gone can always be stopped. Anything else — switching on included — is validated again.
+	in := ruleInput{name: cur.Name, kind: cur.TriggerKind, trigger: cur.Trigger, cond: cur.Condition, actions: cur.Actions}
+	if enabled || req.Name != nil || req.Trigger != nil || req.Condition != nil || req.GetClearCondition() || req.GetSetActions() {
+		if in, err = s.validateRule(r, s.db.Q, b, name, tr, cond, acts); err != nil {
+			return err
+		}
 	}
 	var row sqlc.BoardRule
 	if err := s.tx(r.Context(), func(q *sqlc.Queries, _ pgx.Tx) error {

@@ -203,7 +203,7 @@ func (s *Service) deleteRepoHook(w http.ResponseWriter, r *http.Request) error {
 
 // repoInbound: POST /api/git/boards/{id}/{provider} — a delivery of the repository hosting.
 // Order: the board's setup (404), the body (≤ 1 MB, 413), the signature (401), the rate limit
-// (429), the event (204 when unused), the dedup by delivery id, then one transaction.
+// (429), the event (204 when unused), the dedup by body hash, then one transaction.
 func (s *Service) repoInbound(w http.ResponseWriter, r *http.Request) error {
 	if s.repo == nil {
 		return httpx.NotFound("git")
@@ -266,7 +266,7 @@ func (s *Service) repoInbound(w http.ResponseWriter, r *http.Request) error {
 		httpx.NoContent(w)
 		return nil
 	}
-	key, fresh, err := s.claimDelivery(ctx, id, provider, vcs.DeliveryID(provider, r.Header))
+	key, fresh, err := s.claimDelivery(ctx, id, provider, body)
 	if err != nil {
 		return err
 	}
@@ -282,14 +282,18 @@ func (s *Service) repoInbound(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// claimDelivery remembers a delivery id for 24 h; fresh = not seen before (no id or no Valkey:
-// always fresh).
-func (s *Service) claimDelivery(ctx context.Context, board uuid.UUID, provider, delivery string) (string, bool, error) {
-	if delivery == "" || s.repo.redis == nil {
+// claimDelivery remembers a delivery for 24 h by the hash of its signed body; fresh = not seen
+// before (no Valkey: always fresh). Not by the delivery id header: it is outside the signature,
+// so a captured delivery replayed with a new id (or none) would apply again; a redelivery by the
+// hosting carries the same body and is a repeat too.
+func (s *Service) claimDelivery(ctx context.Context, board uuid.UUID, provider string, body []byte) (string, bool, error) {
+	if s.repo.redis == nil {
 		return "", true, nil
 	}
-	sum := sha256.Sum256([]byte(provider + ":" + delivery))
-	key := redisx.Key("boards:git:delivery:" + board.String() + ":" + hex.EncodeToString(sum[:16]))
+	h := sha256.New()
+	h.Write([]byte(provider + "\x00"))
+	h.Write(body)
+	key := redisx.Key("boards:git:delivery:" + board.String() + ":" + hex.EncodeToString(h.Sum(nil)[:16]))
 	err := s.repo.redis.Do(ctx, s.repo.redis.B().Set().Key(key).Value("1").Nx().Ex(repoDedupTTL).Build()).Error()
 	if rueidis.IsRedisNil(err) {
 		return key, false, nil

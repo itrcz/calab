@@ -402,4 +402,99 @@ func TestBoardRules(t *testing.T) {
 			t.Fatalf("reason %q", reason)
 		}
 	})
+
+	// Security review (ADR-0060): references outside the board / workspace / the author's reach.
+	t.Run("foreign references", func(t *testing.T) {
+		bf := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Refs", Key: "REF"}, 201)
+		setBoardPerms(o, bf.GetId(), 200, userOv(bob.id, perm.ViewBoard|perm.ManageBoard, 0))
+		other := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Other", Key: "OTR"}, 201)
+		otherLabel := createLabel(t, o, other.GetId(), "чужой")
+		otherStatus := statusOf(other, v1.BoardStatusType_BOARD_STATUS_TYPE_STARTED)
+		ws2 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+		outsider := register(t, invite(t, o, ws2.GetId())) // not a member of wid
+		foreignRoom := textRoom(t, o, ws2.GetId(), "elsewhere", false)
+		secret := textRoom(t, o, wid, "secret", true) // bob cannot see it
+		notify := func(room string) *v1.RuleAction {
+			return &v1.RuleAction{Kind: &v1.RuleAction_NotifyRoom_{NotifyRoom: &v1.RuleAction_NotifyRoom{RoomId: room, Template: "x"}}}
+		}
+		trig := onCreated()
+		for name, c := range map[string]struct {
+			u   *user
+			act *v1.RuleAction
+		}{
+			"label of another board":     {o, doLabel(otherLabel)},
+			"status of another board":    {o, doStatus(otherStatus)},
+			"room of another workspace":  {o, notify(foreignRoom)},
+			"room the author cannot see": {bob, notify(secret)},
+			"assignee outside the workspace": {o, &v1.RuleAction{Kind: &v1.RuleAction_SetAssignees_{SetAssignees: &v1.RuleAction_SetAssignees{
+				Mode: v1.RuleAssigneesMode_RULE_ASSIGNEES_MODE_ADD, UserIds: []string{outsider.id}}}}},
+			"approver outside the workspace": {o, &v1.RuleAction{Kind: &v1.RuleAction_SetApprovers_{SetApprovers: &v1.RuleAction_SetApprovers{
+				UserIds: []string{outsider.id}, Required: 1}}}},
+		} {
+			if st := c.u.do("POST", "/api/boards/"+bf.GetId()+"/rules", &v1.CreateBoardRuleRequest{Name: "x", Trigger: trig,
+				Actions: []*v1.RuleAction{c.act}}, nil); st != 422 {
+				t.Fatalf("%s: %d, want 422", name, st)
+			}
+		}
+		if st := o.do("POST", "/api/boards/"+bf.GetId()+"/rules", &v1.CreateBoardRuleRequest{Name: "x", Trigger: onLabel(otherLabel),
+			Actions: []*v1.RuleAction{doComment("x")}}, nil); st != 422 {
+			t.Fatalf("trigger label of another board: %d", st)
+		}
+		// The owner sees the private room: allowed.
+		createRule(t, o, bf.GetId(), &v1.CreateBoardRuleRequest{Name: "ok", Trigger: trig, Actions: []*v1.RuleAction{notify(secret)}}, 201)
+	})
+
+	// A status ping-pong: A (→ doing) sets done, B (→ done) sets doing, which would fire A again.
+	t.Run("status loop", func(t *testing.T) {
+		bl := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Ping", Key: "PNG"}, 201)
+		ldoing := statusOf(bl, v1.BoardStatusType_BOARD_STATUS_TYPE_STARTED)
+		ldone := statusOf(bl, v1.BoardStatusType_BOARD_STATUS_TYPE_COMPLETED)
+		ra := createRule(t, o, bl.GetId(), &v1.CreateBoardRuleRequest{Name: "A", Trigger: onStatus(ldoing), Actions: []*v1.RuleAction{doStatus(ldone)}}, 201)
+		rb := createRule(t, o, bl.GetId(), &v1.CreateBoardRuleRequest{Name: "B", Trigger: onStatus(ldone), Actions: []*v1.RuleAction{doStatus(ldoing)}}, 201)
+		tk := createTask(t, o, bl.GetId(), &v1.CreateTaskRequest{Title: "Пинг-понг"}, 201)
+		patchTask(t, o, tk.GetId(), &v1.UpdateTaskRequest{StatusId: &ldoing}, 200)
+		if s := getTask(t, o, tk.GetId()).GetTask().GetStatusId(); s != ldoing {
+			t.Fatalf("loop end status %s, want doing (A, then B, then A stops)", s)
+		}
+		n := 0
+		for _, k := range activityKinds(t, o, tk.GetId()) {
+			if k == "status" {
+				n++
+			}
+		}
+		if n != 3 { // the user's move, A's, B's
+			t.Fatalf("status entries %d, want 3", n)
+		}
+		runsA, runsB := ruleRuns(t, o, ra.GetId()), ruleRuns(t, o, rb.GetId())
+		if len(runsA) != 2 || !strings.HasPrefix(runsA[0].GetError(), "RULE_LOOP") || !runsA[1].GetOk() || len(runsB) != 1 || !runsB[0].GetOk() {
+			t.Fatalf("loop runs: A %v, B %v", runsA, runsB)
+		}
+	})
+
+	// The plan drops below Team: rules are read-only — no edits, no switching on; switching off is allowed.
+	t.Run("plan downgrade", func(t *testing.T) {
+		withFreeLimits(t)
+		ws3 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+		setPlan(t, ws3.GetId(), &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+		b3 := createBoard(t, o, ws3.GetId(), &v1.CreateBoardRequest{Name: "Down", Key: "DWN"}, 201)
+		r := createRule(t, o, b3.GetId(), &v1.CreateBoardRuleRequest{Name: "r", Trigger: onCreated(),
+			Actions: []*v1.RuleAction{doPriority(v1.TaskPriority_TASK_PRIORITY_HIGH)}}, 201)
+		setPlan(t, ws3.GetId(), &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_FREE})
+		tk := createTask(t, o, b3.GetId(), &v1.CreateTaskRequest{Title: "без правил"}, 201)
+		if p := getTask(t, o, tk.GetId()).GetTask().GetPriority(); p != v1.TaskPriority_TASK_PRIORITY_NONE {
+			t.Fatalf("a rule ran below Team: %v", p)
+		}
+		name, on, off := "r2", true, false
+		for what, req := range map[string]*v1.UpdateBoardRuleRequest{"rename": {Name: &name}, "switch on": {Enabled: &on}} {
+			st, e := o.apiErrBody("PATCH", "/api/rules/"+r.GetId(), req)
+			if st != 409 || e.GetReason() != "PLAN_LIMIT" {
+				t.Fatalf("%s below Team: %d %v", what, st, e)
+			}
+		}
+		var got v1.BoardRuleResponse
+		o.must(200, "PATCH", "/api/rules/"+r.GetId(), &v1.UpdateBoardRuleRequest{Enabled: &off}, &got)
+		if got.GetRule().GetEnabled() {
+			t.Fatal("switching off below Team")
+		}
+	})
 }

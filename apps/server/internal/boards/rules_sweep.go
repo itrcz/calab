@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strconv"
 	"time"
 
@@ -147,6 +148,16 @@ func (s *Service) scheduledTasks(ctx context.Context, r rule) ([]taskRow, error)
 		key = "(t.updated_at AT TIME ZONE 'UTC')::date"
 	default:
 		return nil, nil
+	}
+	// The condition in the query too (the engine checks it again in the run): tasks it rules out
+	// are not claimed and rolled back every pass, nor do they fill the batch and starve the
+	// matching tasks behind them. A filter that does not translate is left to the run, which logs it.
+	if r.cond != nil {
+		b := Args{vals: slices.Clone(a.vals)}
+		if cond, err := Translate(r.cond, FilterEnv{Today: today}, &b); err == nil {
+			a = b
+			where += " AND (" + cond + ")"
+		}
 	}
 	where += " AND NOT EXISTS (SELECT 1 FROM board_rule_runs rr WHERE rr.rule_id = " + ruleID + " AND rr.task_id = t.id AND rr.sched_key = " + key + ")"
 	return queryTasks(ctx, s.db.Pool, where+" ORDER BY t.number LIMIT "+strconv.Itoa(ruleSweepBatch), a.Values()...)
