@@ -26,6 +26,11 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: next
         update-types: ["version-update:semver-major"]
+      # Vite 8 (rolldown) with electron-vite 5 bundled the `electron` npm package into out/main: every launch of
+      # 2.2.0 spawned another app instance (process.execPath install.js). Major bumps only together with
+      # electron-vite, after scripts/check-main-bundle.mjs passes on a packaged build.
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
     groups:
       electron:
         patterns: ["electron"]
