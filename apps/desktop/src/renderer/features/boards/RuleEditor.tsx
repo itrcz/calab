@@ -268,7 +268,7 @@ function LabelsPick({ board, value, onChange }: { board: Board; value: readonly 
 }
 
 /** People (≤ 10): names + the approver picker (members, no guests or bots). */
-function PeoplePick({ workspaceId, value, onChange }: { workspaceId: string; value: readonly string[]; onChange: (ids: string[]) => void }): ReactNode {
+function PeoplePick({ workspaceId, boardId, value, onChange }: { workspaceId: string; boardId: string; value: readonly string[]; onChange: (ids: string[]) => void }): ReactNode {
   return (
     <>
       {value.map((id) => (
@@ -279,7 +279,7 @@ function PeoplePick({ workspaceId, value, onChange }: { workspaceId: string; val
           </button>
         </span>
       ))}
-      <ApproverMenu workspaceId={workspaceId} value={value} onToggle={(id) => onChange(value.includes(id) ? value.filter((x) => x !== id) : value.length < MAX_RULE_USERS ? [...value, id] : [...value])}>
+      <ApproverMenu workspaceId={workspaceId} boardId={boardId} value={value} onToggle={(id) => onChange(value.includes(id) ? value.filter((x) => x !== id) : value.length < MAX_RULE_USERS ? [...value, id] : [...value])}>
         <button type="button" className={cx(chipBtn, 'text-muted')} aria-label={t('rules.people')} data-testid="rule-people">
           <Plus className="size-3.5" aria-hidden /> {value.length ? null : t('rules.choose')}
         </button>
@@ -627,7 +627,7 @@ function ActionParams({ board, action, onChange }: { board: Board; action: RuleA
           {k.value.mode === RuleAssigneesMode.CLEAR ? null : (
             <>
               <Labeled label={t('rules.people')}>
-                <PeoplePick workspaceId={ws} value={k.value.userIds} onChange={(ids) => onChange(withAction(action, 'setAssignees', { userIds: ids, leadUserId: ids.includes(k.value.leadUserId) ? k.value.leadUserId : '' }))} />
+                <PeoplePick boardId={board.id} workspaceId={ws} value={k.value.userIds} onChange={(ids) => onChange(withAction(action, 'setAssignees', { userIds: ids, leadUserId: ids.includes(k.value.leadUserId) ? k.value.leadUserId : '' }))} />
               </Labeled>
               <Labeled label={t('rules.special')}>
                 <Select className="w-48" value={String(k.value.special)} onChange={(e) => onChange(withAction(action, 'setAssignees', { special: Number(e.target.value) }))} aria-label={t('rules.special')}>
@@ -679,7 +679,7 @@ function ActionParams({ board, action, onChange }: { board: Board; action: RuleA
       return (
         <>
           <Labeled label={t('rules.people')}>
-            <PeoplePick workspaceId={ws} value={k.value.userIds} onChange={(ids) => onChange(withAction(action, 'setApprovers', { userIds: ids, required: Math.min(k.value.required, ids.length) }))} />
+            <PeoplePick boardId={board.id} workspaceId={ws} value={k.value.userIds} onChange={(ids) => onChange(withAction(action, 'setApprovers', { userIds: ids, required: Math.min(k.value.required, ids.length) }))} />
           </Labeled>
           {k.value.userIds.length > 1 ? (
             <Labeled label={t('rules.required')}>
