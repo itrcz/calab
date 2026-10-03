@@ -276,7 +276,9 @@ func TestSearchInputSafety(t *testing.T) {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Go(func() { _ = bob.do("GET", "/api/search?"+q(w)+"&scope=all", nil, nil) })
+		// A copy per goroutine: client.do records lastBody, so a shared client races under -race.
+		c := *bob
+		wg.Go(func() { _ = c.do("GET", "/api/search?"+q(w)+"&scope=all", nil, nil) })
 	}
 	wg.Wait()
 	checkPool(ctx, t, testDB.Pool)
