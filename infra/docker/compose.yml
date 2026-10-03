@@ -121,7 +121,7 @@ services:
   # v1.14.0 is built on the same livekit/protocol commit as livekit-server v1.13.7 (psrpc
   # 0.7.6 / 0.7.7); newer sip releases move to protocol 1.52 / psrpc 0.8 — upgrade together.
   sip:
-    image: livekit/sip:v1.14.0@sha256:1487f39ca985f64879cc74b045e1ddc22f7afdb02e8a4739d92d749b9c3c3ad2
+    image: livekit/sip:v1.17.0@sha256:d3c6441eb0918a81ab9e48ba7df6f02c1eebbeace42c963b2c6a6e5418675671
     profiles: [sip]
     network_mode: host
     restart: unless-stopped
