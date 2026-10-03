@@ -515,6 +515,7 @@ export function Modal({
   description,
   children,
   wide,
+  medium,
   footer,
   closeButton = true,
   initialFocus,
@@ -528,6 +529,8 @@ export function Modal({
   description?: string | undefined;
   children: ReactNode;
   wide?: boolean;
+  /** A 560 px sheet (the rule editor, ADR-0060 §6). */
+  medium?: boolean;
   footer?: ReactNode;
   /** macOS alerts have no close box (confirmations): only «Отмена» and the action. */
   closeButton?: boolean;
@@ -570,7 +573,7 @@ export function Modal({
           }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
-            wide ? 'max-w-[880px]' : 'max-w-[440px]',
+            wide ? 'max-w-[880px]' : medium ? 'max-w-[560px]' : 'max-w-[440px]',
             nonModal && 'no-drag shadow-[var(--shadow-popover)]',
             // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',

@@ -32,7 +32,8 @@ import { PreviewRuns } from './PreviewRuns';
 import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
-import { birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
+import { automationCardOf, birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
+import { AutomationCardView } from '../boards/AutomationCard';
 import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
 import { AchievementCardView } from './AchievementCard';
@@ -133,8 +134,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   const ach = achievementCardOf(c.msg);
   // A DM call log line (ADR-0034): one line like Telegram, on the caller's side.
   const call = callCardOf(c.msg);
+  // A board automation's message (ADR-0060): a room (notify_room) or the task's comments.
+  const auto = automationCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -155,6 +158,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       ) : call ? (
         <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <CallLogRow card={call} at={c.msg.createdAt} />
+        </div>
+      ) : auto ? (
+        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <AutomationCardView card={auto} workspaceId={workspaceId} roomId={c.msg.roomId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />

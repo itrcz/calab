@@ -4,6 +4,7 @@ import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermis
 import {
   Archive,
   ArrowLeft,
+  Cog,
   Bell,
   BellOff,
   ChevronRight,
@@ -48,6 +49,8 @@ import {
   useTaskDetails,
 } from '../../services/boards';
 import { boardsApi } from '../../services/boardsApi';
+import { ensureRules } from '../../services/automations';
+import { ruleNameOf, useAutomations } from '../../stores/automations';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EMPTY_ROOM_MESSAGES, useMessages } from '../../stores/messages';
@@ -63,6 +66,7 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { featureOn, type Disabled } from '../../lib/boards/features';
 import { ApprovalsSection } from './Approvals';
+import { GitSection } from './GitLinks';
 import { Checklists } from './Checklists';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
@@ -136,6 +140,8 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
         <div className={cx('flex flex-col gap-5 px-5 pb-6 pt-4', wide && 'mx-auto w-full max-w-[860px]')}>
           <TitleEditor task={task} canEdit={canEdit} />
           <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
+          {/* Git links (ADR-0060 §4): under the attachments; its own subscriber, nothing when none. */}
+          <GitSection taskId={task.id} />
           <Properties task={task} canEdit={canEdit} perms={perms} scoped={scoped} disabled={disabled} />
           {/* Checklists: their own subscriber (a toggle re-renders that section only, ADR-0058 §2). */}
           {on(BoardFeature.CHECKLISTS) ? <Checklists taskId={task.id} workspaceId={task.workspaceId} canEdit={canEdit} subtasks={on(BoardFeature.SUBTASKS) && !task.parentId} /> : null}
@@ -887,14 +893,38 @@ function ActivityRow({ a, task, className }: { a: TaskActivity; task: Task; clas
   const board = useBoards((s) => s.boards[task.boardId]);
   const text = activityText(a, board, task.workspaceId);
   const at = a.createdAt ? toDate(a.createdAt) : null;
+  // A change made by an automation rule (ADR-0060): no actor, «⚙ Автоматизация: имя правила».
+  const rule = !a.actorId && !!a.ruleId;
   return (
-    <div className={cx('flex items-start gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind}>
-      <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />
+    <div className={cx('flex items-start gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind} data-rule={rule || undefined}>
+      {rule ? <RuleActor boardId={task.boardId} ruleId={a.ruleId} /> : <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />}
       <span className="min-w-0 flex-1">
-        <span className="font-medium text-fg">{name}</span> {text}
+        {rule ? null : <span className="font-medium text-fg">{name}</span>} {text}
       </span>
       {at ? <span className="shrink-0 tabular-nums text-faint" title={fmt.full(at)}>{fmt.time(at)}</span> : null}
     </div>
+  );
+}
+
+/**
+ * The actor of a rule's change: a cog and «Автоматизация: <имя правила>». The name comes from the
+ * board's rules (loaded on demand — readable by every viewer, BOARD_RULE_UPDATE keeps it); a
+ * deleted or unknown rule — «Автоматизация».
+ */
+function RuleActor({ boardId, ruleId }: { boardId: string; ruleId: string }): ReactNode {
+  const name = useAutomations((s) => ruleNameOf(s, ruleId));
+  useEffect(() => {
+    if (!name) void ensureRules(boardId);
+  }, [boardId, name]);
+  return (
+    <>
+      <span className="grid size-4 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg" aria-hidden>
+        <Cog className="size-3" />
+      </span>
+      <span className="-mr-1 shrink-0 font-medium text-fg" data-testid="activity-rule">
+        {name ? t('rules.actorNamed', { name }) : t('rules.actor')}
+      </span>
+    </>
   );
 }
 
@@ -956,9 +986,21 @@ export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>,
       return t('boards.act.approvalsReset');
     case 'checklist':
       return checklistActivity(f);
+    case 'git':
+      return gitActivity(f);
     default:
       return t('boards.act.changed');
   }
+}
+
+/** A «git» journal row (ADR-0060 §4): after {event, kind, repo, ref, state…}. */
+function gitActivity(f: Json): string {
+  const s = (k: string): string => (typeof f?.[k] === 'string' ? (f[k]) : '');
+  const kind = s('kind');
+  const ref = kind === 'pr' ? `${s('repo')}#${s('ref')}` : kind === 'commit' ? `${s('repo')}@${s('ref').slice(0, 7)}` : s('ref');
+  if (kind === 'pr' && s('state') === 'merged') return t('boards.act.gitMerged', { ref });
+  if (kind === 'pr' && s('state') === 'closed') return t('boards.act.gitClosed', { ref });
+  return t('boards.act.git', { what: t(kind === 'pr' ? 'boards.act.gitPr' : kind === 'commit' ? 'boards.act.gitCommit' : 'boards.act.gitBranch'), ref });
 }
 
 /** A «checklist» journal row (ADR-0058 §2): after {checklist_id, title, item_id?, text?, action}. */

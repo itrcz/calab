@@ -15,6 +15,7 @@ import { memberName } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { ApprovalBadge } from './Approvals';
+import { GitBadge } from './GitLinks';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue, PRIORITIES } from './visuals';
@@ -210,6 +211,7 @@ export const TaskCard = memo(function TaskCard({
           </span>
         ) : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        <GitBadge id={id} />
         {on(BoardFeature.COMMENTS) && task.commentCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.comments')}>
             <MessageSquare className="size-3" aria-hidden />

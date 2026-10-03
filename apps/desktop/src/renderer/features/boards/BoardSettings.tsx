@@ -13,7 +13,7 @@ import {
   type BoardWebhook,
   type Role,
 } from '@calaba/protocol';
-import { Archive, ChevronDown, ChevronUp, Copy, Diamond, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook } from 'lucide-react';
+import { Archive, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
@@ -62,7 +62,9 @@ import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/m
 import { CommitInput } from '../settings/CommitInput';
 import { AccessLevelPicker } from '../workspace/AccessLevel';
 import { TriToggle } from '../workspace/RoomDialogs';
+import { GitTab } from './GitSettings';
 import { DeleteStatusDialog } from './Kanban';
+import { RulesTab } from './Rules';
 import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, sortedStatuses } from './model';
 import { Dot, PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss } from './visuals';
 
@@ -92,6 +94,9 @@ function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string
     { id: 'labels', label: t('boards.set.labels'), icon: Tag, content: <LabelsTab board={board} /> },
     { id: 'milestones', label: t('boards.set.milestones'), icon: Diamond, content: <MilestonesTab board={board} /> },
     { id: 'access', label: t('boards.access'), icon: ShieldCheck, content: <AccessTab board={board} /> },
+    // Automations (ADR-0060 §6): every manager of the board; Git also needs MANAGE_INTEGRATIONS.
+    { id: 'rules', label: t('rules.tab'), icon: Workflow, content: <RulesTab board={board} /> },
+    ...(integrations ? [{ id: 'git', label: t('git.tab'), icon: GitBranch, content: <GitTab board={board} /> }] : []),
     ...(integrations ? [{ id: 'webhook', label: t('boards.set.webhook'), icon: Webhook, content: <WebhookTab board={board} /> }] : []),
     { id: 'danger', label: t('boards.set.danger'), icon: Archive, content: <DangerTab board={board} onDone={onClose} />, destructive: true },
   ];
