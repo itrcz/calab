@@ -34,6 +34,8 @@ import { applyShelf, applyShelves, dropShelf } from './notes';
 import { useNotes } from '../stores/notes';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
+import { achievementForMe } from '../lib/achievements';
+import { invalidateMemberAchievements } from '../lib/achievementCatalog';
 import { applyUserSettings } from './profile';
 import { applyStickerEvent } from './stickers';
 import { applyBotEvent } from './bots';
@@ -290,7 +292,10 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'workspaceMemberUpdate':
       if (e.value.member) {
         const m = e.value.member;
+        // ADR-0061: the live achievements of a member changed → an open profile reloads them.
+        const before = useWorkspaces.getState().byId[m.workspaceId]?.members[m.user?.id ?? '']?.achievementCount;
         useWorkspaces.getState().upsertMember(m);
+        if (before !== undefined && before !== m.achievementCount && m.user) invalidateMemberAchievements(m.workspaceId, m.user.id);
         // A bot joined (ADR-0031): the rooms' command hints may have grown.
         if (m.user?.isBot) useBots.getState().dropCommands();
         // My roles changed (ADR-0026): the entry's built-in role (admin UI) and my call's
@@ -586,7 +591,9 @@ function onMessage(m: Message, workspaceId: string): void {
     return;
   }
   rooms.setLastMessage(m.roomId, m.id);
-  if (m.authorId === myUserId()) {
+  // My own message is read — except my achievement card (ADR-0061 §4): posted by the server in
+  // my name, it is news to me, a mention.
+  if (m.authorId === myUserId() && !achievementForMe(m, myUserId())) {
     rooms.setRead(m.roomId, m.id);
     return;
   }

@@ -107,6 +107,13 @@ import {
   SetMemberRolesRequestSchema,
   SetMemberRolesResponseSchema,
   ListBadgesResponseSchema,
+  ListAchievementsResponseSchema,
+  ListMemberAchievementsResponseSchema,
+  MemberAchievementSchema,
+  GrantAchievementRequestSchema,
+  AchievementSchema,
+  AdminListAchievementsResponseSchema,
+  type Achievement,
   ListBackgroundsResponseSchema,
   CreateBackgroundRequestSchema,
   CreateBackgroundResponseSchema,
@@ -314,6 +321,20 @@ export const api = {
     /** "" clears → WORKSPACE_MEMBER_UPDATE. */
     setMember: (workspaceId: string, userId: string, badgeId: string) =>
       call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
+  },
+  /**
+   * Achievements (ADR-0061): the host catalog for anyone (archived ones included, `archivedAt`
+   * set); grants per member — list for members, grant / revoke with MANAGE_MEMBERS.
+   */
+  achievements: {
+    catalog: (signal?: AbortSignal) => call('GET', '/api/achievements', ListAchievementsResponseSchema, undefined, signal),
+    list: (workspaceId: string, userId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/members/${userId}/achievements`, ListMemberAchievementsResponseSchema, undefined, signal),
+    /** 422: note empty / too long, SELF_GRANT, a guest or bot, an archived achievement. */
+    grant: (workspaceId: string, userId: string, init: { achievementId: string; note: string; announce: boolean }) =>
+      call('POST', `/api/workspaces/${workspaceId}/members/${userId}/achievements`, MemberAchievementSchema, body(GrantAchievementRequestSchema, init)),
+    /** 204; the chat card stays. */
+    revoke: (workspaceId: string, userId: string, grantId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/members/${userId}/achievements/${grantId}`),
   },
   /**
    * Web apps of a workspace (ADR-0050): the list for members (not guests); create / edit / delete
@@ -680,6 +701,41 @@ export const adminApi = {
       AdminSetSuspensionResponseSchema,
       body(AdminSetSuspensionRequestSchema, { suspended, reason }),
     ),
+};
+
+/** Fields of an achievement form (superadmin, ADR-0061 §3): multipart, every one optional on PATCH. */
+export interface AchievementForm {
+  title?: string;
+  description?: string;
+  position?: number;
+  archived?: boolean;
+  image?: { blob: Blob; name: string };
+}
+
+function achievementFormData(f: AchievementForm): FormData {
+  const form = new FormData();
+  if (f.title !== undefined) form.append('title', f.title);
+  if (f.description !== undefined) form.append('description', f.description);
+  if (f.position !== undefined) form.append('position', String(f.position));
+  if (f.archived !== undefined) form.append('archived', f.archived ? 'true' : 'false');
+  if (f.image) form.append('image', f.image.blob, f.image.name);
+  return form;
+}
+
+async function sendAchievement(method: 'POST' | 'PATCH', path: string, f: AchievementForm): Promise<Achievement> {
+  const res = await platform.apiFetch(path, { method, body: achievementFormData(f) });
+  if (!res.ok) throw await toApiError(res);
+  return fromJson(AchievementSchema, (await res.json()) as JsonValue, { ignoreUnknownFields: true });
+}
+
+/** The host catalog of achievements (superadmins, ADR-0061 §3; 404 to anyone else). */
+export const adminAchievementsApi = {
+  list: (signal?: AbortSignal) => call('GET', '/api/admin/achievements', AdminListAchievementsResponseSchema, undefined, signal),
+  /** 422 IMAGE_NEEDS_ALPHA when the picture has no transparent background. */
+  create: (f: AchievementForm & { title: string; image: { blob: Blob; name: string } }) => sendAchievement('POST', '/api/admin/achievements', f),
+  update: (id: string, f: AchievementForm) => sendAchievement('PATCH', `/api/admin/achievements/${id}`, f),
+  /** 204; 409 ACHIEVEMENT_IN_USE once granted (archive it instead). */
+  remove: (id: string) => callEmpty('DELETE', `/api/admin/achievements/${id}`),
 };
 
 export interface UploadHandle {
