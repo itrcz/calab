@@ -627,7 +627,10 @@ func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return httpx.BadRequest("updated_after must be RFC 3339")
 		}
-		where = append(where, "t.updated_at > "+a.Add(t))
+		// A milestone completed by the server (ADR-0063 §2) touches its own row, not the task's
+		// (no parent row lock in a subtask's transaction): it counts as a change of the task.
+		at := a.Add(t)
+		where = append(where, "(t.updated_at > "+at+" OR EXISTS (SELECT 1 FROM task_milestones um WHERE um.task_id = t.id AND um.updated_at > "+at+"))")
 	}
 	cond, err := Translate(f, s.env(r), &a)
 	if err != nil {

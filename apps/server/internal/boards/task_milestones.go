@@ -123,6 +123,9 @@ var milestoneTriggers = []string{"status", "parent", kindMilestones, "archived",
 // milestones of the parents the change touched get completed exactly when all their linked
 // subtasks are (ADR-0063 §2). A milestone that flips journals "auto_completed" /
 // "auto_reopened" on its task (actor: the author of the change) and the task gets TASK_UPDATE.
+// Lock order: only the milestone rows are written, never the parent's task row — a subtask's
+// transaction holds the subtask and must not wait for its parent, which a milestone write holds
+// (task → milestone → subtasks); updated_after sees the milestone's own updated_at.
 func (s *Service) syncMilestones(ctx context.Context, q *sqlc.Queries, tx pgx.Tx, c *change) error {
 	acts := c.acts
 	if c.auto != nil {
@@ -206,11 +209,6 @@ func (s *Service) syncMilestones(ctx context.Context, q *sqlc.Queries, tx pgx.Tx
 			c.tasks = append(c.tasks, m.TaskID)
 		}
 	}
-	for id := range rows {
-		if err := q.TouchTask(ctx, id); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -237,7 +235,13 @@ func (s *Service) msWrite(w http.ResponseWriter, r *http.Request, deleting bool,
 		if err != nil {
 			return err
 		}
-		t, acc, err := s.taskAccess(r, tx, taskID, true)
+		// FOR NO KEY UPDATE serializes the task's milestone writes, yet lets a subtask's
+		// transaction journal on this task meanwhile (its foreign key takes KEY SHARE) — no
+		// deadlock with syncMilestones while a deletion unlinks the subtasks.
+		if _, err := tx.Exec(r.Context(), `SELECT 1 FROM tasks WHERE id = $1 FOR NO KEY UPDATE`, taskID); err != nil {
+			return err
+		}
+		t, acc, err := s.taskAccess(r, tx, taskID, false)
 		if err != nil {
 			return err
 		}
@@ -448,13 +452,15 @@ func (s *Service) deleteTaskMilestone(w http.ResponseWriter, r *http.Request) er
 	me := uid(r)
 	return s.msWrite(w, r, true, resolve, func(q *sqlc.Queries, _ pgx.Tx, t taskRow, o *msOut) error {
 		ctx := r.Context()
-		old, err := q.GetTaskMilestoneForUpdate(ctx, id)
-		if err != nil {
-			return notFoundOr(err, "milestone")
-		}
+		// The subtasks first, then the milestone row (lock order with syncMilestones: a subtask's
+		// transaction holds the subtask, then takes the milestone).
 		subs, err := q.UnlinkMilestoneSubtasks(ctx, &id)
 		if err != nil {
 			return err
+		}
+		old, err := q.GetTaskMilestoneForUpdate(ctx, id)
+		if err != nil {
+			return notFoundOr(err, "milestone")
 		}
 		o.c.tasks = append(o.c.tasks, subs...)
 		if _, err := q.DeleteTaskMilestone(ctx, id); err != nil {
