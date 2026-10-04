@@ -445,9 +445,6 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
             <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
               {manage ? (
                 <>
-                  <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
-                    <FileText className="size-4" aria-hidden /> {t('forms.title')}
-                  </Dropdown.Item>
                   <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>
                     <Settings className="size-4" aria-hidden /> {t('boards.settings')}
                   </Dropdown.Item>
@@ -462,6 +459,10 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
               </Dropdown.Item>
               {manage ? (
                 <>
+                  <Dropdown.Separator className={menuSeparator} />
+                  <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                    <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                  </Dropdown.Item>
                   <Dropdown.Separator className={menuSeparator} />
                   <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
                     <Archive className="size-4" aria-hidden /> {t('boards.archive')}

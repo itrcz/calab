@@ -313,9 +313,6 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
             {manage ? (
               <>
-                <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
-                  <FileText className="size-4" aria-hidden /> {t('forms.title')}
-                </Dropdown.Item>
                 <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId })} data-testid="board-settings">
                   <Settings className="size-4" aria-hidden /> {t('boards.settings')}
                 </Dropdown.Item>
@@ -333,6 +330,10 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
             </Dropdown.Item>
             {manage ? (
               <>
+                <Dropdown.Separator className={menuSeparator} />
+                <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                  <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                </Dropdown.Item>
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
                   <Archive className="size-4" aria-hidden /> {t('boards.archive')}
