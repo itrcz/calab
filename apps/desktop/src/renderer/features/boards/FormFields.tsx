@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { BoardFormAnswerSchema, BoardFormFieldType as Kind, type BoardFormAnswer, type BoardFormField } from '@calaba/protocol';
 import { useState, type ReactNode } from 'react';
-import { Button, Input } from '../../components/ui';
+import { Button, Input, Select } from '../../components/ui';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 
@@ -84,12 +84,12 @@ export function FormFields({
                 onChange={(e) => update(e.target.value)}
               />
             ) : f.type === Kind.SELECT ? (
-              <select {...props} className={formControl} value={value} onChange={(e) => update(e.target.value)}>
+              <Select {...props} value={value} onChange={(e) => update(e.target.value)}>
                 <option value="">{f.placeholder || '—'}</option>
                 {f.options.map((o) => (
                   <option key={o}>{o}</option>
                 ))}
-              </select>
+              </Select>
             ) : f.type === Kind.CHECKBOX ? (
               <input
                 {...props}

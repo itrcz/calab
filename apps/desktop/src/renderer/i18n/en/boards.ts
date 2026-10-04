@@ -29,6 +29,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   "forms.placeholder": "Placeholder",
   "forms.required": "Required",
   "forms.options": "Options — one per line",
+  "forms.titleTypeHint": "The task title is required and always uses short text. Add a field below to choose another type.",
   "forms.taskTitle": "Task title",
   "forms.status": "New task status",
   "forms.priority": "New task priority",

@@ -11,7 +11,7 @@ import {
 import { ArrowDown, ArrowUp, Copy, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, Input, Modal, Switch, Spinner } from '../../components/ui';
+import { Button, Field, Input, Modal, Select, Switch, Spinner } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { boardForms } from '../../services/boardForms';
 import { copyText } from '../../services/boards';
@@ -254,21 +254,27 @@ function FormEditor({
                 <Trash2 className="size-4" />
               </Button>
             </div>
-            <Field label={t('forms.type')}>
-              <select
-                aria-label={t('forms.type')}
-                className={formControl}
-                disabled={f.id === draft.titleFieldId}
-                value={f.type}
-                onChange={(e) => field(f.id, { type: Number(e.target.value), options: [] })}
-              >
-                {TYPES.map(([kind, label]) => (
-                  <option key={kind} value={kind}>
-                    {t(label)}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            {f.id === draft.titleFieldId ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-caption font-medium text-muted">{t('forms.type')}</span>
+                <span className="text-body text-fg">{t('forms.text')}</span>
+                <span className="text-caption text-faint">{t('forms.titleTypeHint')}</span>
+              </div>
+            ) : (
+              <Field label={t('forms.type')}>
+                <Select
+                  aria-label={t('forms.type')}
+                  value={f.type}
+                  onChange={(e) => field(f.id, { type: Number(e.target.value), options: [] })}
+                >
+                  {TYPES.map(([kind, label]) => (
+                    <option key={kind} value={kind}>
+                      {t(label)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
             <Field label={t('forms.label')}>
               <Input value={f.label} maxLength={100} onChange={(e) => field(f.id, { label: e.target.value })} />
             </Field>
@@ -313,8 +319,7 @@ function FormEditor({
           {t('forms.addField')}
         </Button>
         <Field label={t('forms.status')}>
-          <select
-            className={formControl}
+          <Select
             aria-label={t('forms.status')}
             value={draft.statusId}
             onChange={(e) => change({ statusId: e.target.value })}
@@ -325,11 +330,10 @@ function FormEditor({
                 {s.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label={t('forms.priority')}>
-          <select
-            className={formControl}
+          <Select
             aria-label={t('forms.priority')}
             value={draft.priority}
             onChange={(e) => change({ priority: Number(e.target.value) })}
@@ -339,7 +343,7 @@ function FormEditor({
                 {t((['boards.prio.none', 'boards.prio.low', 'boards.prio.medium', 'boards.prio.high', 'boards.prio.urgent'] as const)[p])}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Switch
           checked={draft.isPrivate}

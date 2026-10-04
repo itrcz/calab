@@ -29,6 +29,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   "forms.placeholder": "Ejemplo de respuesta",
   "forms.required": "Obligatorio",
   "forms.options": "Opciones: una por línea",
+  "forms.titleTypeHint": "El título de la tarea es obligatorio y siempre usa texto corto. Añade un campo abajo para elegir otro tipo.",
   "forms.taskTitle": "Título de la tarea",
   "forms.status": "Estado de la nueva tarea",
   "forms.priority": "Prioridad de la nueva tarea",

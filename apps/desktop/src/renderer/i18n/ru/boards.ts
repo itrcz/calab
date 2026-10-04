@@ -30,6 +30,7 @@ export const ruBoards = {
   "forms.placeholder": "Пример ответа",
   "forms.required": "Обязательное",
   "forms.options": "Варианты — по одному в строке",
+  "forms.titleTypeHint": "Заголовок задачи обязателен и всегда использует короткий текст. Для другого типа добавьте поле ниже.",
   "forms.taskTitle": "Заголовок задачи",
   "forms.status": "Статус новой задачи",
   "forms.priority": "Приоритет новой задачи",

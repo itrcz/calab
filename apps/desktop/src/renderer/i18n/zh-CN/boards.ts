@@ -29,6 +29,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   "forms.placeholder": "输入示例",
   "forms.required": "必填",
   "forms.options": "选项：每行一个",
+  "forms.titleTypeHint": "任务标题为必填项，始终使用短文本。请在下方添加字段以选择其他类型。",
   "forms.taskTitle": "任务标题",
   "forms.status": "新任务状态",
   "forms.priority": "新任务优先级",
