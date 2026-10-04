@@ -14,18 +14,28 @@ SELECT * FROM messages WHERE id = $1 AND deleted_at IS NULL;
 -- name: ListMessagesBefore :many
 -- Newest first. NULL before = from the newest message; since = only after this id (a DM the
 -- caller cleared, dm_state.cleared_before).
+-- Plan-proof shape (docs/14 «Лента на 20 тыс. сообщений»): pgx prepares statements and
+-- PostgreSQL switches to a generic plan after five runs. "$2 IS NULL OR id < $2" kept the cursor
+-- as a Filter there and walked the room from its newest message (1.7-2.7 s at 1.5M rows); a
+-- plain "room_id = $1 AND id < $2" lets the generic plan walk messages_pkey across all rooms
+-- (the start of a small room's history: the whole table). Row comparisons bound the scan to
+-- this room's slice of the (room_id, id) index on both ends; no real id equals the nil/max uuid.
 SELECT * FROM messages
-WHERE room_id = sqlc.arg('room_id') AND deleted_at IS NULL
-  AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
-  AND (sqlc.narg('since')::uuid IS NULL OR id > sqlc.narg('since')::uuid)
-ORDER BY id DESC
+WHERE deleted_at IS NULL
+  AND (room_id, id) < (sqlc.arg('room_id')::uuid, coalesce(sqlc.narg('before')::uuid, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))
+  AND (room_id, id) > (sqlc.arg('room_id')::uuid, coalesce(sqlc.narg('since')::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+ORDER BY room_id DESC, id DESC
 LIMIT sqlc.arg('lim');
 
 -- name: ListMessagesAfter :many
--- Oldest first.
+-- Oldest first. The same plan-proof shape as ListMessagesBefore ("room_id = $1 AND id > $2"
+-- walked messages_pkey from the cursor to the newest message of the whole table near a small
+-- room's end).
 SELECT * FROM messages
-WHERE room_id = sqlc.arg('room_id') AND deleted_at IS NULL AND id > sqlc.arg('after')::uuid
-ORDER BY id ASC
+WHERE deleted_at IS NULL
+  AND (room_id, id) > (sqlc.arg('room_id')::uuid, sqlc.arg('after')::uuid)
+  AND (room_id, id) <= (sqlc.arg('room_id')::uuid, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
+ORDER BY room_id, id
 LIMIT sqlc.arg('lim');
 
 -- name: UpdateMessageContent :one
@@ -175,11 +185,12 @@ ORDER BY message_id, first_at;
 
 -- name: ListReactionUsers :many
 -- Who reacted with an emoji, by user id — a stable keyset for the `after` cursor (the PK
--- order, index-only for the reaction rows; ≤ lim lookups of users).
+-- order, index-only for the reaction rows; ≤ lim lookups of users). The cursor is coalesced to
+-- the nil uuid so a generic plan keeps it in the index condition (see ListMessagesBefore).
 SELECT sqlc.embed(u)
 FROM message_reactions mr JOIN users u ON u.id = mr.user_id
 WHERE mr.message_id = sqlc.arg('message_id') AND mr.emoji = sqlc.arg('emoji')
-  AND (sqlc.narg('after')::uuid IS NULL OR mr.user_id > sqlc.narg('after')::uuid)
+  AND mr.user_id > coalesce(sqlc.narg('after')::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
 ORDER BY mr.user_id
 LIMIT sqlc.arg('lim');
 
