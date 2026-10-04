@@ -115,7 +115,7 @@ func (s *Service) createForm(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req v1.CreateBoardFormRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
-	if err := httpx.Decode(w, r, &req); err != nil {
+	if err := httpx.DecodeStrict(w, r, &req); err != nil {
 		return err
 	}
 	if err := validateForm(req.Definition); err != nil {
@@ -173,7 +173,7 @@ func (s *Service) updateForm(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req v1.UpdateBoardFormRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
-	if err := httpx.Decode(w, r, &req); err != nil {
+	if err := httpx.DecodeStrict(w, r, &req); err != nil {
 		return err
 	}
 	if err := validateForm(req.Definition); err != nil {
@@ -268,7 +268,7 @@ func (s *Service) previewForm(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req v1.PreviewBoardFormRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
-	if err := httpx.Decode(w, r, &req); err != nil {
+	if err := httpx.DecodeStrict(w, r, &req); err != nil {
 		return err
 	}
 	if err := validateForm(req.Definition); err != nil {

@@ -106,7 +106,7 @@ func (s *Service) submitForm(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req v1.SubmitBoardFormRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
-	if err := httpx.Decode(w, r, &req); err != nil {
+	if err := httpx.DecodeStrict(w, r, &req); err != nil {
 		return err
 	}
 	nonce, err := uuid.Parse(req.Nonce)

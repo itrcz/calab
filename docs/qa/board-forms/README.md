@@ -31,3 +31,11 @@ Contract revision 4 adds PHONE/URL/MULTISELECT and a separate optional task-titl
 - Real browser: required multiple-choice error; invalid phone error; valid public submission → success and second task on Typed requests board. Editor shows enabled first-field type and separate title source. Shared Modal header/footer retain spacing when body is scrolled.
 - Earlier QA fixes: forms actions in both board menus with icon/separators; shared Select controls; save returns to list; shared public footer; dedicated success checkmark; view label Board/Доска. No visual regression suites run.
 - These follow-ups need CI and independent security/protocol review on the updated commit before release. The earlier CI link validates the earlier implementation only.
+
+## Release 2.3.1 review correction
+
+Two independent Codex reviews of `f266ae66` found the same major: generic protojson decoding discarded unknown properties, violating ADR-0064 and allowing a misspelled privacy setting to become a public form. Form create/update/preview/submit now use strict decoding; legacy endpoints retain their previous decoder.
+- `TestBoardFormsRejectUnknownJSON` covers unknown request/definition/field/answer properties, privacy typos, no writes on rejection, unchanged revision and an unconsumed submission nonce.
+- PG17 `go test -race -tags integration ./internal/app -run '^TestBoardForms' -count=1`: passed (16.562 s).
+- `go test -race ./internal/boards ./internal/httpx ./internal/plans`: passed.
+- Minor findings are recorded in docs/09 and docs/12. Final delta reviews and CI must pass before merge/tag; their exact SHA is recorded in PR #105.
