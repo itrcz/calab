@@ -163,7 +163,7 @@ func loadParts(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID, viewer uui
 }
 
 // boardProto converts a board with its parts; bits = the viewer's (0 in broadcasts). scoped:
-// the task-scoped form (ADR-0059) — no access overrides, no board-wide task count.
+// the task-scoped form (ADR-0064) — no access overrides, no board-wide task count.
 func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Board {
 	out := &v1.Board{
 		Id: b.ID.String(), WorkspaceId: b.WorkspaceID.String(), Name: b.Name, Key: b.Key, Emoji: b.Emoji,
@@ -196,7 +196,7 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Boa
 	return out
 }
 
-// ScopedForm turns a broadcast board into the form a task-scoped recipient gets (ADR-0059):
+// ScopedForm turns a broadcast board into the form a task-scoped recipient gets (ADR-0064):
 // permissions 0, no access overrides, no board-wide task count. b is modified.
 func ScopedForm(b *v1.Board) *v1.Board {
 	b.Permissions, b.TaskScoped, b.OpenTasks, b.PermissionOverrides = 0, true, 0, nil

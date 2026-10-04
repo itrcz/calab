@@ -1,3 +1,4 @@
+import { formPageCode } from './boardForms';
 import { installIdentityDenials } from './identity';
 import { useIdentity } from '../stores/identity';
 import { resetIdentityGate } from '../lib/api/identityGate';
@@ -110,7 +111,7 @@ export async function bootstrap(): Promise<void> {
   // Web /e/<id>?t=… (a meeting link of an invited address, ADR-0038): the public meeting page, not
   // the in-app card — the token says who answers, not the session.
   const eventPage = takeEventPage();
-  const webLink = platform.kind === 'web' && !eventPage ? await platform.app.takeDeepLink() : null;
+  const webLink = platform.kind === 'web' && !eventPage && !formPageCode() ? await platform.app.takeDeepLink() : null;
   const landed = webLink !== null && showLinkLanding(webLink);
 
   try {

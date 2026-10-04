@@ -51,7 +51,8 @@ type Service struct {
 	PublicURL string
 	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
 	// (security review 1.1.0; comments are messages under the message limit). nil = none.
-	CreateLimit, SearchLimit Limiter
+	CreateLimit, SearchLimit                                   Limiter
+	FormReadLimit, FormIPLimit, FormUserLimit, FormSubmitLimit Limiter
 	// Now is the clock (tests move it).
 	Now func() time.Time
 }
@@ -69,6 +70,15 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/workspaces/{id}/boards", s.listBoards)
 	h("POST /api/workspaces/{id}/boards", s.createBoard)
 	h("GET /api/boards/{id}", s.getBoard)
+	h("GET /api/boards/{id}/forms", s.listForms)
+	h("POST /api/boards/{id}/forms", s.createForm)
+	h("PUT /api/boards/{id}/forms/{fid}", s.updateForm)
+	h("DELETE /api/boards/{id}/forms/{fid}", s.deleteForm)
+	h("POST /api/boards/{id}/forms/preview", s.previewForm)
+	h("GET /api/forms/{code}", s.publicForm)
+	h("POST /api/forms/{code}/submissions", s.submitForm)
+	mux.Handle("GET /api/public/forms/{code}", httpx.HandlerFunc(s.publicForm))
+	mux.Handle("POST /api/public/forms/{code}/submissions", httpx.HandlerFunc(s.submitForm))
 	h("PATCH /api/boards/{id}", s.updateBoard)
 	h("DELETE /api/boards/{id}", s.deleteBoard)
 	h("POST /api/boards/{id}/restore", s.restoreBoard)

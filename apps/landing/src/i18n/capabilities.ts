@@ -54,7 +54,7 @@ const caps: Record<Locale, Capabilities> = {
         ] },
       { key: 'boards', title: 'Доски задач',
         lines: [
-          { t: 'Канбан, список и таймлайн с вехами' },
+          { t: 'Доска, список и таймлайн с вехами' },
           { t: 'Статусы, приоритеты, метки, подзадачи и связи' },
           { t: 'Задача из любого сообщения; ссылка раскрывается карточкой в чате' },
           { t: 'Согласование: задача не двигается без нужных одобрений' },
@@ -84,7 +84,7 @@ const caps: Record<Locale, Capabilities> = {
       { key: 'voice', title: 'Голос: зашли и говорите', text: 'Комнаты всегда открыты. Видно, кто говорит, камеры и экран — рядом, без отдельных ссылок и приложений.', alt: 'Голосовая комната Calab во время планёрки' },
       { key: 'chat', title: 'Чат, как в Telegram', text: 'Ответы, реакции, стикеры, голосовые и файлы. У каждой комнаты свой чат, у каждого сообщения — быстрый путь в задачу.', alt: 'Чат комнаты с реакциями, ответом и стикером' },
       { key: 'calendar', title: 'Календарь и поиск времени', text: 'Встречи со ссылкой на комнату и приглашением по почте. «Найти время» показывает общие окна коллег.', alt: 'Поиск времени для четырёх человек в календаре' },
-      { key: 'kanban', title: 'Доски задач', text: 'Канбан, список и таймлайн. Обсудили в чате — задача уже на доске, статусы и согласования на месте.', alt: 'Доска «Продукт» в виде канбана' },
+      { key: 'kanban', title: 'Доски задач', text: 'Доска, список и таймлайн. Обсудили в чате — задача уже на доске, статусы и согласования на месте.', alt: 'Доска «Продукт» с колонками задач' },
     ],
   },
   en: {
@@ -119,7 +119,7 @@ const caps: Record<Locale, Capabilities> = {
         ] },
       { key: 'boards', title: 'Task boards',
         lines: [
-          { t: 'Kanban, list and timeline with milestones' },
+          { t: 'Board, list and timeline with milestones' },
           { t: 'Statuses, priorities, labels, subtasks and relations' },
           { t: 'A task from any message; the link unfolds into a card in chat' },
           { t: 'Approvals: a task can’t move on without the needed sign-offs' },
@@ -149,7 +149,7 @@ const caps: Record<Locale, Capabilities> = {
       { key: 'voice', title: 'Voice: step in and talk', text: 'Rooms are always open. See who is speaking; cameras and screens sit right there, with no separate links or apps.', alt: 'A Calab voice room during a planning meeting' },
       { key: 'chat', title: 'Chat like Telegram', text: 'Replies, reactions, stickers, voice messages and files. Every room has its own chat, and every message a short path to a task.', alt: 'A room chat with reactions, a reply and a sticker' },
       { key: 'calendar', title: 'Calendar and find a time', text: 'Meetings with a room link and an email invitation. “Find a time” shows the free windows colleagues share.', alt: 'Finding a time for four people in the calendar' },
-      { key: 'kanban', title: 'Task boards', text: 'Kanban, list and timeline. Talk it through in chat and the task is already on the board, with statuses and approvals in place.', alt: 'The Product board as a kanban' },
+      { key: 'kanban', title: 'Task boards', text: 'Board, list and timeline. Talk it through in chat and the task is already on the board, with statuses and approvals in place.', alt: 'The Product board with task columns' },
     ],
   },
   es: {
@@ -184,7 +184,7 @@ const caps: Record<Locale, Capabilities> = {
         ] },
       { key: 'boards', title: 'Tableros de tareas',
         lines: [
-          { t: 'Kanban, lista y cronograma con hitos' },
+          { t: 'Tablero, lista y cronograma con hitos' },
           { t: 'Estados, prioridades, etiquetas, subtareas y relaciones' },
           { t: 'Una tarea desde cualquier mensaje; el enlace se muestra como tarjeta' },
           { t: 'Aprobaciones: la tarea no avanza sin los vistos buenos necesarios' },
@@ -214,7 +214,7 @@ const caps: Record<Locale, Capabilities> = {
       { key: 'voice', title: 'Voz: entra y habla', text: 'Las salas están siempre abiertas. Se ve quién habla; las cámaras y la pantalla están ahí mismo, sin enlaces ni apps aparte.', alt: 'Una sala de voz de Calab durante una reunión de planificación' },
       { key: 'chat', title: 'Chat como Telegram', text: 'Respuestas, reacciones, stickers, mensajes de voz y archivos. Cada sala tiene su chat y cada mensaje, un camino corto hacia una tarea.', alt: 'El chat de una sala con reacciones, una respuesta y un sticker' },
       { key: 'calendar', title: 'Calendario y buscar hora', text: 'Reuniones con enlace a la sala e invitación por correo. «Buscar hora» muestra los huecos libres comunes.', alt: 'Buscar hora para cuatro personas en el calendario' },
-      { key: 'kanban', title: 'Tableros de tareas', text: 'Kanban, lista y cronograma. Lo hablas en el chat y la tarea ya está en el tablero, con estados y aprobaciones.', alt: 'El tablero Producto en formato kanban' },
+      { key: 'kanban', title: 'Tableros de tareas', text: 'Tablero, lista y cronograma. Lo hablas en el chat y la tarea ya está en el tablero, con estados y aprobaciones.', alt: 'El tablero Producto con columnas de tareas' },
     ],
   },
   zh: {

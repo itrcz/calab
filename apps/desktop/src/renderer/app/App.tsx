@@ -1,3 +1,5 @@
+import { formPageCode } from '../services/boardForms';
+import { FormPublicPage } from '../features/boards/FormPublicPage';
 import { OAuthConsent } from '../features/identity/OAuth';
 import { SsoComplete } from '../features/identity/SignIn';
 import { consentHandle } from '../features/identity/model';
@@ -79,6 +81,7 @@ export function App(): ReactNode {
   const tooMany = useSession((s) => s.tooManySessions);
   const landing = useLinkLanding((s) => s.link);
   const eventPage = useEventPage((s) => s.page);
+  const formCode = formPageCode();
   // A guest's knock on a room (ADR-0040): the waiting screen in place of the app.
   const waiting = useWaiting();
   let screen: ReactNode;
@@ -93,7 +96,8 @@ export function App(): ReactNode {
   else if (platform.kind === 'web' && location.pathname === '/oauth/consent') {
     const handle = consentHandle(location.href);
     screen = handle ? <OAuthConsent handle={handle} /> : <div className="mat-content grid h-full place-items-center p-6" role="alert">{t('identity.changed')}</div>;
-  } else if (eventPage) screen = <EventPublicPage page={eventPage} />;
+  } else if (formCode) screen = <FormPublicPage code={formCode} />;
+  else if (eventPage) screen = <EventPublicPage page={eventPage} />;
   // Web /join/<code>, /r/<code>: the link card first, signed in or not (docs/09 #53).
   else if (landing) screen = <LinkLandingScreen link={landing} />;
   else if (status === 'anon') screen = <AuthScreen />;

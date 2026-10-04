@@ -1,7 +1,7 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import type { Board } from '@calaba/protocol';
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
@@ -24,6 +24,7 @@ import {
   restoreBoard,
 } from '../../services/boards';
 import { DeleteBoardDialog } from './BoardSettings';
+import { BoardForms } from './BoardForms';
 import { unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
@@ -399,72 +400,80 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
   const manage = hasBit(perms, MANAGE_BOARD);
+  const [forms, setForms] = useState(false);
   const archive = async (): Promise<void> => {
     if (await confirmAction(t('boards.archiveBoardTitle', { name }), t('boards.archiveBoardText'), t('boards.archiveBoard'))) void removeBoard(id, false);
   };
   return (
-    <div
-      data-board-row={id}
-      onPointerDown={(e) => onPointerDown(e, id)}
-      className={cx('group/board flex items-center rounded-[var(--radius-row)] pr-1', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'bg-active' : 'hover:bg-hover', dragging && 'opacity-40')}
-      data-testid="board-row"
-    >
-      <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
-        <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
-          {emoji || <SquareKanban className="size-[18px]" />}
-        </span>
-        {scoped ? (
-          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-            <span className="w-full min-w-0 truncate">{name}</span>
-            <span className="inline-flex h-5 max-w-full items-center rounded-full bg-hover px-2 text-micro font-medium text-muted" title={t('boards.scopedHint')} data-testid="board-scoped-chip">
-              <span className="truncate">{t('boards.scopedChip')}</span>
+    <>
+      {forms ? <BoardForms boardId={id} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
+      <div
+        data-board-row={id}
+        onPointerDown={(e) => onPointerDown(e, id)}
+        className={cx('group/board flex items-center rounded-[var(--radius-row)] pr-1', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'bg-active' : 'hover:bg-hover', dragging && 'opacity-40')}
+        data-testid="board-row"
+      >
+        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+          <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+            {emoji || <SquareKanban className="size-[18px]" />}
+          </span>
+          {scoped ? (
+            <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+              <span className="w-full min-w-0 truncate">{name}</span>
+              <span className="inline-flex h-5 max-w-full items-center rounded-full bg-hover px-2 text-micro font-medium text-muted" title={t('boards.scopedHint')} data-testid="board-scoped-chip">
+                <span className="truncate">{t('boards.scopedChip')}</span>
+              </span>
             </span>
-          </span>
-        ) : (
-          <span className="min-w-0 flex-1 truncate">{name}</span>
-        )}
-        {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
-        {restricted ? <RestrictedMark /> : null}
-        {mine > 0 ? (
-          <span className="shrink-0 text-caption tabular-nums text-muted" title={t('boards.myOpen')}>
-            {mine}
-          </span>
-        ) : null}
-      </button>
-      <Dropdown.Root modal={false}>
-        <Dropdown.Trigger asChild>
-          <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
-            <Ellipsis className="size-4" aria-hidden />
-          </button>
-        </Dropdown.Trigger>
-        <Dropdown.Portal>
-          <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
-            {manage ? (
-              <>
-                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>
-                  <Settings className="size-4" aria-hidden /> {t('boards.settings')}
-                </Dropdown.Item>
-                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
-                  <Shield className="size-4" aria-hidden /> {t('boards.access')}
-                </Dropdown.Item>
-              </>
-            ) : null}
-            {manage ? <MoveToCategory id={id} workspaceId={workspaceId} /> : null}
-            <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>
-              <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
-            </Dropdown.Item>
-            {manage ? (
-              <>
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
-                  <Archive className="size-4" aria-hidden /> {t('boards.archive')}
-                </Dropdown.Item>
-              </>
-            ) : null}
-          </Dropdown.Content>
-        </Dropdown.Portal>
-      </Dropdown.Root>
-    </div>
+          ) : (
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+          )}
+          {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
+          {restricted ? <RestrictedMark /> : null}
+          {mine > 0 ? (
+            <span className="shrink-0 text-caption tabular-nums text-muted" title={t('boards.myOpen')}>
+              {mine}
+            </span>
+          ) : null}
+        </button>
+        <Dropdown.Root modal={false}>
+          <Dropdown.Trigger asChild>
+            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
+              <Ellipsis className="size-4" aria-hidden />
+            </button>
+          </Dropdown.Trigger>
+          <Dropdown.Portal>
+            <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
+              {manage ? (
+                <>
+                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>
+                    <Settings className="size-4" aria-hidden /> {t('boards.settings')}
+                  </Dropdown.Item>
+                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
+                    <Shield className="size-4" aria-hidden /> {t('boards.access')}
+                  </Dropdown.Item>
+                </>
+              ) : null}
+              {manage ? <MoveToCategory id={id} workspaceId={workspaceId} /> : null}
+              <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>
+                <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
+              </Dropdown.Item>
+              {manage ? (
+                <>
+                  <Dropdown.Separator className={menuSeparator} />
+                  <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                    <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                  </Dropdown.Item>
+                  <Dropdown.Separator className={menuSeparator} />
+                  <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
+                    <Archive className="size-4" aria-hidden /> {t('boards.archive')}
+                  </Dropdown.Item>
+                </>
+              ) : null}
+            </Dropdown.Content>
+          </Dropdown.Portal>
+        </Dropdown.Root>
+      </div>
+    </>
   );
 });
 

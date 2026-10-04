@@ -90,10 +90,10 @@ const es: Dict = {
     boards: {
       eyebrow: 'Tableros de tareas',
       title: 'Las tareas junto a la conversación',
-      text: 'Kanban, lista y cronograma al estilo de Linear, sin otro servicio. Crea una tarea desde cualquier mensaje; su enlace se despliega como tarjeta en el chat.',
+      text: 'Tablero, lista y cronograma al estilo de Linear, sin otro servicio. Crea una tarea desde cualquier mensaje; su enlace se despliega como tarjeta en el chat.',
       points: ['Estados, prioridades, etiquetas, hitos y fechas límite', 'Varios responsables, subtareas y relaciones', 'Comentarios como en el chat: reacciones, stickers, mensajes de voz', 'Filtros, vistas guardadas y atajos de teclado'],
       free: 'Free tiene 3 tableros, Team 30, Business 50 y Enterprise no tiene límite.',
-      alt: 'El tablero «Producto» en kanban: columnas de estado con tarjetas, etiquetas, fechas y responsables',
+      alt: 'El tablero «Producto» con columnas: columnas de estado con tarjetas, etiquetas, fechas y responsables',
       timelineAlt: 'El cronograma del tablero: barras de tareas por fecha, la línea de «hoy» y el hito «Versión 1.1»',
       taskAlt: 'El panel de la tarea: subtareas, una relación «bloquea», historial y comentarios como en el chat',
     },

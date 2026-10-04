@@ -70,6 +70,27 @@ type BoardCategory struct {
 	CreatedAt   time.Time
 }
 
+type BoardForm struct {
+	ID         uuid.UUID
+	BoardID    uuid.UUID
+	Code       string
+	Definition []byte
+	Revision   int32
+	CreatedBy  *uuid.UUID
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type BoardFormSubmission struct {
+	ID          uuid.UUID
+	FormID      uuid.UUID
+	Nonce       uuid.UUID
+	RequestHash []byte
+	ActorID     *uuid.UUID
+	TaskID      *uuid.UUID
+	CreatedAt   time.Time
+}
+
 type BoardGit struct {
 	BoardID     uuid.UUID
 	Provider    string

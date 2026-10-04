@@ -25,7 +25,7 @@ import (
 )
 
 // boardFor renders one board as viewer sees it (acc: theirs; zero = a broadcast, shared views
-// only; acc.TaskScoped = the task-scoped form of ADR-0059).
+// only; acc.TaskScoped = the task-scoped form of ADR-0064).
 func (s *Service) boardFor(ctx context.Context, q *sqlc.Queries, id, viewer uuid.UUID, acc perm.BoardAccess) (*v1.Board, error) {
 	b, err := q.GetBoard(ctx, id)
 	if err != nil {

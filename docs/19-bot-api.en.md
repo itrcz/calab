@@ -787,3 +787,37 @@ for external effects. A callback accepted before a draft changes is not cancelle
 revalidate your own current draft/version. The SDK's bounded webhook cache is not an
 exactly-once guarantee. The UI disables the whole keyboard after acceptance until the
 bot sends a new revision; stale clicks refresh the message without executing a new action.
+
+## Board forms (ADR-0064)
+
+Team allows 5 forms per board, Business 20, Custom/on-prem follows configured limits
+(0 is unlimited). Management requires `VIEW_BOARD | MANAGE_BOARD`, using the normal bot
+Bearer token: `GET/POST /api/boards/{id}/forms`, `PUT/DELETE /api/boards/{id}/forms/{fid}`.
+PUT replaces `definition` and requires its current `revision`. SDK: `bot.forms.list/create/update/delete`.
+
+`BoardFormDefinition` contains title, description, fields (UUID id, type, label, hint,
+placeholder, required, options), titleFieldId (optional single-value title source, excluding CHECKBOX/MULTISELECT), statusId,
+priority, isPrivate and allowedUserIds. Field types: TEXT, PARAGRAPH, EMAIL, NUMBER,
+DATE, SELECT, CHECKBOX, PHONE, URL, MULTISELECT, with the `BOARD_FORM_FIELD_TYPE_` JSON enum prefix.
+Management does not bypass a private form's allowlist: include the bot's user ID explicitly.
+
+`GET /api/forms/{code}` returns the respondent view; `POST …/submissions` accepts
+`{revision,nonce,answers:[{fieldId,value}]}` and returns `{receiptId}` without task details.
+Keep the same UUID nonce when retrying: identical submissions create one task. Values are
+strings; checkboxes use `"true"` or `"false"`. SDK: `bot.forms.get/submit`.
+`POST /api/boards/{id}/forms/preview {definition,answers}` (`bot.forms.preview`) validates
+an unsaved definition and answers without creating tasks, numbers or webhook deliveries.
+Request/response types come from `@calaba/protocol`.
+
+Errors: FORM_CHANGED (reload revision), NONCE_CONFLICT (nonce reused for other content),
+FORM_TARGET_UNAVAILABLE (status removed), PLAN_LIMIT, FEATURE_DISABLED. Deleting a form
+revokes its link and preserves tasks. Anonymous `/api/public/forms/{code}` is a public
+capability blocked by enforced SSO; bots use authenticated `/api/forms/{code}`.
+
+PHONE preserves formatting and leading zeroes (7–15 digits, up to 64 characters; optional
+leading `+`, spaces, parentheses, dots and hyphens). URL accepts absolute HTTP/HTTPS without
+credentials or whitespace; no URL fetching occurs. MULTISELECT uses
+`{fieldId, values:["Design","Support"]}` with no `value`; other types use only `value`.
+Unknown/duplicate options are rejected; choice order does not affect nonce idempotency.
+Missing/unanswered `titleFieldId` uses the form title. A title-source answer is collapsed to
+one line and truncated to 200 characters; its full value is retained in the task description.

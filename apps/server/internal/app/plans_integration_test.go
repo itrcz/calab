@@ -22,7 +22,7 @@ import (
 // Plans and limits (ADR-0024).
 
 const (
-	unlimitedPlan   = `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"cameras_per_room":0,"caldav_disabled":false,"musician_disabled":false,"checklists_disabled":false,"automations_disabled":false}`
+	unlimitedPlan   = `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"cameras_per_room":0,"caldav_disabled":false,"musician_disabled":false,"checklists_disabled":false,"board_forms_disabled":false,"automations_disabled":false}`
 	superadminEmail = "it-admin@example.com"
 	// superadminEmail2 belongs to TestAdminGuardAndLimit only (it exhausts its rate limit).
 	superadminEmail2 = "it-admin2@example.com"

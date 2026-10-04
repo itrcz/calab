@@ -267,7 +267,7 @@ func (s *wsState) taskRoomBits(roomID, userID uuid.UUID) perm.Bits {
 }
 
 // forRecipient is a board event as one recipient gets it: with their bits, or in the
-// task-scoped form (ADR-0059).
+// task-scoped form (ADR-0064).
 func forRecipient(ev *v1.DispatchEvent, v boardView) *v1.DispatchEvent {
 	form := func(b *v1.Board) *v1.Board {
 		b = proto.CloneOf(b)

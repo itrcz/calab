@@ -1,3 +1,4 @@
+import { BoardFormResponseSchema, CreateBoardFormRequestSchema, UpdateBoardFormRequestSchema, ListBoardFormsResponseSchema, PublicBoardFormResponseSchema, SubmitBoardFormRequestSchema, PreviewBoardFormRequestSchema, FormSubmissionResponseSchema } from '@calaba/protocol';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { create, toJson, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
@@ -610,6 +611,17 @@ export class Bot extends Emitter<BotEvents> {
   };
 
   // ---- task boards (ADR-0042): a bot works within the board bits of its roles ----
+
+  /** Board intake forms (ADR-0064). Management requires MANAGE_BOARD; submission uses the form ACL. */
+  readonly forms = {
+    list: (boardId: string) => this.rest.call(ListBoardFormsResponseSchema, 'GET', `/api/boards/${enc(boardId)}/forms`),
+    create: (boardId: string, input: MessageInitShape<typeof CreateBoardFormRequestSchema>) => this.rest.call(BoardFormResponseSchema, 'POST', `/api/boards/${enc(boardId)}/forms`, { json: Rest.body(CreateBoardFormRequestSchema, input) }),
+    update: (boardId: string, formId: string, input: MessageInitShape<typeof UpdateBoardFormRequestSchema>) => this.rest.call(BoardFormResponseSchema, 'PUT', `/api/boards/${enc(boardId)}/forms/${enc(formId)}`, { json: Rest.body(UpdateBoardFormRequestSchema, input) }),
+    delete: (boardId: string, formId: string) => this.rest.request('DELETE', `/api/boards/${enc(boardId)}/forms/${enc(formId)}`),
+    get: (code: string) => this.rest.call(PublicBoardFormResponseSchema, 'GET', `/api/forms/${enc(code)}`),
+    submit: (code: string, input: MessageInitShape<typeof SubmitBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/forms/${enc(code)}/submissions`, { json: Rest.body(SubmitBoardFormRequestSchema, input) }),
+    preview: (boardId: string, input: MessageInitShape<typeof PreviewBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/boards/${enc(boardId)}/forms/preview`, { json: Rest.body(PreviewBoardFormRequestSchema, input) }),
+  };
 
   readonly boards = {
     /** Boards of a workspace the bot sees. */
