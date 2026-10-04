@@ -20,6 +20,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   "forms.previewHint": "Test mode — no task will be created",
   "forms.previewSuccess": "Validation passed. No task was created.",
   "forms.submit": "Submit",
+  "forms.successHint": "Thank you! You can close this page.",
   "forms.success": "Response submitted",
   "forms.unavailable": "Form unavailable",
   "forms.signin": "Sign in to open this form",

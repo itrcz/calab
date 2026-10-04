@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Check } from 'lucide-react';
 import type { PublicBoardFormResponse } from '@calaba/protocol';
 import { Button, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
@@ -11,6 +12,7 @@ import { FormFields } from './FormFields';
 
 export function FormPublicPage({ code }: { code: string }): ReactNode {
   const signed = useSession((s) => s.status === 'authed');
+  const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState<PublicBoardFormResponse>();
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
@@ -69,7 +71,17 @@ export function FormPublicPage({ code }: { code: string }): ReactNode {
     <div className="h-full overflow-y-auto bg-bg px-5 text-fg">
       <div className="mx-auto flex min-h-full max-w-[640px] flex-col">
         <main className="flex flex-1 flex-col gap-6 py-10">
-          {form && (signed || !privateRoute) ? (
+          {submitted ? (
+            <section role="status" className="flex flex-1 flex-col items-center justify-center gap-5 py-16 text-center">
+              <div className="grid size-24 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-green)_12%,transparent)] text-[var(--color-green-text)]" aria-hidden>
+                <Check className="size-12" strokeWidth={2} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <h1 className="text-title font-semibold">{t('forms.success')}</h1>
+                <p className="text-body text-muted">{t('forms.successHint')}</p>
+              </div>
+            </section>
+          ) : form && (signed || !privateRoute) ? (
             <>
               <h1 className="text-title font-semibold">{form.title}</h1>
               {form.description ? <p className="whitespace-pre-wrap text-body text-muted">{form.description}</p> : null}
@@ -78,7 +90,9 @@ export function FormPublicPage({ code }: { code: string }): ReactNode {
                 fields={form.fields}
                 submit={async (answers) => {
                   try {
-                    return await boardForms.submit(code, privateRoute, form.revision, nonce, answers);
+                    const response = await boardForms.submit(code, privateRoute, form.revision, nonce, answers);
+                    setSubmitted(true);
+                    return response;
                   } catch (e) {
                     if (e instanceof ApiError && e.reason === 'FORM_CHANGED') setChanged(true);
                     throw e;

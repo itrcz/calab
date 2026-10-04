@@ -20,6 +20,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   "forms.previewHint": "测试模式：不会创建任务",
   "forms.previewSuccess": "验证通过，未创建任务。",
   "forms.submit": "提交",
+  "forms.successHint": "谢谢！您可以关闭此页面。",
   "forms.success": "已提交回复",
   "forms.unavailable": "表单不可用",
   "forms.signin": "请登录以打开表单",

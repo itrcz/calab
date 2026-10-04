@@ -21,6 +21,7 @@ export const ruBoards = {
   "forms.previewHint": "Тестовый режим — задача не будет создана",
   "forms.previewSuccess": "Проверка пройдена. Задача не создана.",
   "forms.submit": "Отправить",
+  "forms.successHint": "Спасибо! Можно закрыть эту страницу.",
   "forms.success": "Ответ отправлен",
   "forms.unavailable": "Форма недоступна",
   "forms.signin": "Войдите, чтобы открыть форму",

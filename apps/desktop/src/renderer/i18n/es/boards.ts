@@ -20,6 +20,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   "forms.previewHint": "Modo de prueba: no se creará ninguna tarea",
   "forms.previewSuccess": "Validación correcta. No se creó ninguna tarea.",
   "forms.submit": "Enviar",
+  "forms.successHint": "¡Gracias! Puedes cerrar esta página.",
   "forms.success": "Respuesta enviada",
   "forms.unavailable": "Formulario no disponible",
   "forms.signin": "Inicia sesión para abrir el formulario",
