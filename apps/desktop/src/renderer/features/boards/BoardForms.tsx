@@ -204,14 +204,14 @@ function FormEditor({
       onClose={close}
       title={t('forms.title')}
       footer={
-        <>
+        <div className="flex items-center justify-end gap-2 pt-4">
           <Button variant="secondary" onClick={() => setPreview(true)}>
             {t('forms.preview')}
           </Button>
           <Button busy={busy} onClick={save}>
             {t('common.save')}
           </Button>
-        </>
+        </div>
       }
     >
       <div className="flex flex-col gap-5">
