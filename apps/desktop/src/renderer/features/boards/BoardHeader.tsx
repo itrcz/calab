@@ -1,7 +1,7 @@
 import { BoardForms } from './BoardForms';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Archive, Check, ChevronDown, Columns3, Download, Ellipsis, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Archive, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { BoardFeature } from '@calaba/protocol';
 import { useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
@@ -313,7 +313,9 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
             {manage ? (
               <>
-                <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>{t('forms.title')}</Dropdown.Item>
+                <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                  <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                </Dropdown.Item>
                 <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId })} data-testid="board-settings">
                   <Settings className="size-4" aria-hidden /> {t('boards.settings')}
                 </Dropdown.Item>
