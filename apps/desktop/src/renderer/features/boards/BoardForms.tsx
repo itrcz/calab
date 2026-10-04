@@ -58,7 +58,7 @@ export function BoardForms({ boardId, workspaceId, onClose }: { boardId: string;
         onClose={() => setEditing(undefined)}
         onSaved={(f) => {
           setForms((old) => [...(old ?? []).filter((x) => x.id !== f.id), f]);
-          setEditing(f);
+          setEditing(undefined);
         }}
       />
     );
@@ -205,11 +205,6 @@ function FormEditor({
       title={t('forms.title')}
       footer={
         <>
-          {existing ? (
-            <Button variant="secondary" aria-label={t('forms.copy')} onClick={() => copyText(existing.url, t('forms.copied'))}>
-              <Copy className="size-4" />
-            </Button>
-          ) : null}
           <Button variant="secondary" onClick={() => setPreview(true)}>
             {t('forms.preview')}
           </Button>
