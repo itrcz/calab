@@ -1,7 +1,35 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { TaskAssigneeSchema, TaskRelationKind, TaskRelationSchema, TaskSchema, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { GROUP_ROW, barBox, datePatch, dayNum, daysOf, dayWindow, dragSpan, isWeekend, isoDay, lateBlockers, placePatch, rowWindow, scaleRange, spanOf, timelineRows } from './timeline';
+import {
+  GROUP_ROW,
+  LABEL_GAP,
+  layoutLabels,
+  barBox,
+  datePatch,
+  dayAt,
+  dayCenter,
+  dayNum,
+  dayPill,
+  daysOf,
+  dayWindow,
+  dragSpan,
+  isWeekend,
+  isoDay,
+  lateBlockers,
+  monthLabel,
+  nextMonth,
+  offscreenSide,
+  offscreenText,
+  placePatch,
+  revealScroll,
+  rowWindow,
+  scaleMarks,
+  scaleRange,
+  spanOf,
+  timelineRows,
+  viewDays,
+} from './timeline';
 
 const task = (id: string, init: MessageInitShape<typeof TaskSchema> = {}): Task => create(TaskSchema, { id, key: id.toUpperCase(), ...init });
 
@@ -92,5 +120,93 @@ describe('timeline layout', () => {
     expect(timelineRows(list, 'none')).toEqual({ rows: ['y', 'w', 'x'], undated: ['z'] });
     expect(timelineRows(list, 'assignee').rows).toEqual([`${GROUP_ROW}u1`, 'w', 'x', GROUP_ROW, 'y']);
     expect(timelineRows(list, 'milestone').rows).toEqual([`${GROUP_ROW}m`, 'w', GROUP_ROW, 'y', 'x']);
+  });
+});
+
+describe('timeline scale (ADR-0063 «меньше цифр»)', () => {
+  const d = dayNum;
+  it('numbers at Mondays, months as segments from the 1st (the first one from the window start)', () => {
+    // 2026-08-31 is a Monday.
+    const m = scaleMarks(d('2026-08-30'), d('2026-10-11'), 'month');
+    expect(m.weeks.map(isoDay)).toEqual(['2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05']);
+    expect(m.months.map(isoDay)).toEqual(['2026-08-30', '2026-09-01', '2026-10-01']);
+    expect(scaleMarks(d('2026-08-30'), d('2026-10-11'), 'week')).toEqual(m);
+    const q = scaleMarks(d('2026-09-01'), d('2026-12-31'), 'quarter');
+    expect(q.weeks).toEqual([]);
+    expect(q.months.map(isoDay)).toEqual(['2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01']);
+    expect(isoDay(nextMonth(d('2026-12-15')))).toBe('2027-01-01');
+  });
+  it('labels: short upper-case months of the locale, the year when not this year', () => {
+    const today = d('2026-10-04');
+    expect(monthLabel(d('2026-10-05'), today, 'ru')).toBe('ОКТ');
+    expect(monthLabel(d('2026-09-07'), today, 'ru')).toBe('СЕНТ');
+    expect(monthLabel(d('2026-10-05'), today, 'en')).toBe('OCT');
+    expect(monthLabel(d('2027-01-04'), today, 'en')).toBe('JAN 2027');
+    expect(dayPill(today, 'ru')).toBe('4 ОКТ');
+    expect(dayPill(today, 'en')).toBe('OCT 4');
+    expect(dayPill(d('2026-09-25'), 'en')).toBe('SEP 25');
+  });
+  it('today / hover geometry: the day centre and the day under x', () => {
+    const origin = d('2026-09-01');
+    expect(dayCenter(origin + 3, origin, 18, 248)).toBe(248 + 54 + 9);
+    expect(dayAt(247, origin, 18, 248)).toBeNull();
+    expect(dayAt(248, origin, 18, 248)).toBe(origin);
+    expect(dayAt(248 + 18 * 3 + 17, origin, 18, 248)).toBe(origin + 3);
+    expect(dayAt(dayCenter(origin + 10, origin, 44, 248), origin, 44, 248)).toBe(origin + 10);
+  });
+  it('off-screen: the side against the viewport days and the hint text', () => {
+    const origin = d('2026-01-01');
+    const view = viewDays(18 * 240, 248 + 18 * 30, 18, 248, origin);
+    expect(view).toEqual({ start: origin + 240, end: origin + 269 });
+    expect(offscreenSide({ start: origin + 10, end: origin + 239 }, view)).toBe('left');
+    expect(offscreenSide({ start: origin + 10, end: origin + 240 }, view)).toBeNull();
+    expect(offscreenSide({ start: origin + 270, end: origin + 300 }, view)).toBe('right');
+    const today = d('2026-10-04');
+    expect(offscreenText({ start: d('2026-05-28'), end: d('2026-08-27') }, today, 'en')).toBe('May 28 – Aug 27');
+    expect(offscreenText({ start: d('2026-05-28'), end: d('2026-08-27') }, today, 'ru')).toBe('28 мая – 27 авг');
+    expect(offscreenText({ start: d('2025-01-10'), end: d('2025-01-20') }, today, 'en')).toBe('Jan 2025');
+    expect(offscreenText({ start: d('2025-04-01'), end: d('2025-05-30') }, today, 'ru')).toBe('апр 2025 – май 2025');
+    expect(offscreenText({ start: d('2026-03-03'), end: d('2026-03-03') }, today, 'en')).toBe('Mar 3');
+  });
+  it('a hint click scrolls the start a few days from the edge', () => {
+    const origin = d('2026-01-01');
+    expect(revealScroll({ start: origin + 100, end: origin + 120 }, origin, 18, 'month')).toBe(96 * 18);
+    expect(revealScroll({ start: origin + 1, end: origin + 2 }, origin, 44, 'week')).toBe(0);
+  });
+});
+
+describe('layoutLabels', () => {
+  it('centres a lone label under its diamond', () => {
+    expect(layoutLabels([200], [60], 100)).toEqual([170]);
+  });
+  it('clamps the leftmost label to the visible edge, hides it when the diamond is under the column', () => {
+    expect(layoutLabels([130], [80], 100)).toEqual([106]);
+    expect(layoutLabels([90], [80], 100)).toEqual([null]);
+  });
+  it('shifts right to clear the previous label, hides when crowded', () => {
+    expect(layoutLabels([200, 240], [60, 60], 0)).toEqual([170, 236]);
+    expect(layoutLabels([200, 215, 224], [60, 60, 60], 0)).toEqual([170, null, null]);
+  });
+  it('never overlaps and keeps the gap, on random input', () => {
+    let seed = 7;
+    const rnd = (): number => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    for (let n = 0; n < 300; n++) {
+      const k = 1 + Math.floor(rnd() * 8);
+      const xs = Array.from({ length: k }, () => rnd() * 600);
+      const ws = Array.from({ length: k }, () => 20 + rnd() * 90);
+      const minX = rnd() * 100;
+      const out = layoutLabels(xs, ws, minX);
+      const shown: { x: number; l: number; w: number }[] = [];
+      out.forEach((l, i) => {
+        if (l !== null) shown.push({ x: xs[i] ?? 0, l, w: ws[i] ?? 0 });
+      });
+      shown.sort((a, b) => a.l - b.l);
+      shown.forEach((s, i) => {
+        expect(s.l).toBeGreaterThanOrEqual(minX + LABEL_GAP - 1e-9);
+        expect(s.l).toBeLessThanOrEqual(s.x + 1e-9);
+        const p = shown[i - 1];
+        if (p) expect(s.l - (p.l + p.w)).toBeGreaterThanOrEqual(LABEL_GAP - 1e-9);
+      });
+    }
   });
 });

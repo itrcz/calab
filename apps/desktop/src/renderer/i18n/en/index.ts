@@ -4,6 +4,7 @@ import { enApp } from './app';
 import { enChat } from './chat';
 import { enDm } from './dm';
 import { enNotes } from './notes';
+import { enSearch } from './search';
 import { enCall } from './call';
 import { enEcho } from './echo';
 import { enMusic } from './music';
@@ -18,10 +19,13 @@ import { enRoles } from './roles';
 import { enCalendar } from './calendar';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
+import { enMilestones } from './milestones';
+import { enAutomations } from './automations';
 import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
+import { enAchievements } from './achievements';
 import { enSounds } from './sounds';
 import { enBots } from './bots';
 import { enGuests } from './guests';
@@ -38,6 +42,7 @@ export const en: Dict = {
   ...enApp,
   ...enVideo,
   ...enStickers,
+  ...enAchievements,
   ...enSounds,
   ...enBots,
   ...enGuests,
@@ -46,6 +51,7 @@ export const en: Dict = {
   ...enWebApps,
   ...enDm,
   ...enNotes,
+  ...enSearch,
   ...enCall,
   ...enEcho,
   ...enMusic,
@@ -60,6 +66,8 @@ export const en: Dict = {
   ...enCalendar,
   ...enBoards,
   ...enBoards2,
+  ...enMilestones,
+  ...enAutomations,
   'voice.pendingMember': 'Connecting…',
   // common
   'common.cancel': 'Cancel',
@@ -159,6 +167,7 @@ export const en: Dict = {
   'ws.leaveConfirm': 'Leave “{name}”? You can only come back with an invite.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voice & screen share',
+  'ws.tabLibrary': 'Library',
   'ws.tabInvites': 'Invites',
   'ws.tabDanger': 'Delete',
   'ws.icon': 'Change icon',

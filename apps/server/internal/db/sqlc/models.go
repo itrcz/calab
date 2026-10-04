@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Achievement struct {
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	ImageSize      int32
+	Width          int32
+	Height         int32
+	Position       int32
+	CreatedBy      *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ArchivedAt     *time.Time
+	WorkspaceID    uuid.UUID
+	FileID         *uuid.UUID
+	LegacyImageKey *string
+}
+
+type AchievementLegacyBlob struct {
+	Key string
+}
+
 type BirthdayGreeting struct {
 	UserID      uuid.UUID
 	WorkspaceID uuid.UUID
@@ -70,6 +91,17 @@ type BoardFormSubmission struct {
 	CreatedAt   time.Time
 }
 
+type BoardGit struct {
+	BoardID     uuid.UUID
+	Provider    string
+	SecretEnc   []byte
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	LastEventAt *time.Time
+	LastError   string
+	EventsCount int32
+}
+
 type BoardLabel struct {
 	ID       uuid.UUID
 	BoardID  uuid.UUID
@@ -92,6 +124,36 @@ type BoardPermission struct {
 	TargetID   string
 	Allow      int64
 	Deny       int64
+}
+
+type BoardRule struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Name        string
+	Enabled     bool
+	Position    int32
+	TriggerKind string
+	Trigger     []byte
+	Condition   []byte
+	Actions     []byte
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	RunsCount   int32
+	LastRunAt   *time.Time
+	LastError   string
+}
+
+type BoardRuleRun struct {
+	ID             uuid.UUID
+	RuleID         uuid.UUID
+	TaskID         *uuid.UUID
+	TriggerKind    string
+	Ok             bool
+	Error          string
+	ActionsApplied int16
+	SchedKey       pgtype.Date
+	CreatedAt      time.Time
 }
 
 type BoardStatus struct {
@@ -357,6 +419,10 @@ type ExternalBusy struct {
 	Attendees []byte
 	Organizer string
 	Url       string
+	Href      string
+	Etag      string
+	Recurring bool
+	WebUrl    string
 }
 
 type File struct {
@@ -436,6 +502,19 @@ type MailOutbox struct {
 	SentAt    *time.Time
 	FailedAt  *time.Time
 	Error     string
+}
+
+type MemberAchievement struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	UserID        uuid.UUID
+	AchievementID uuid.UUID
+	GrantedBy     *uuid.UUID
+	Note          string
+	MessageID     *uuid.UUID
+	GrantedAt     time.Time
+	RevokedAt     *time.Time
+	RevokedBy     *uuid.UUID
 }
 
 type MemberRole struct {
@@ -759,6 +838,7 @@ type RoomRecording struct {
 	FileID          *uuid.UUID
 	DeletedAt       *time.Time
 	DeletedBy       *uuid.UUID
+	TranscriptText  *string
 }
 
 type Session struct {
@@ -887,6 +967,7 @@ type Task struct {
 	CompletedBy      *uuid.UUID
 	ArchivedAt       *time.Time
 	ApprovalRequired int16
+	TaskMilestoneID  *uuid.UUID
 }
 
 type TaskActivity struct {
@@ -898,6 +979,7 @@ type TaskActivity struct {
 	Before    []byte
 	After     []byte
 	CreatedAt time.Time
+	RuleID    *uuid.UUID
 }
 
 type TaskApprover struct {
@@ -950,9 +1032,37 @@ type TaskChecklistItem struct {
 	CreatedAt   time.Time
 }
 
+type TaskGitLink struct {
+	ID        uuid.UUID
+	TaskID    uuid.UUID
+	Kind      string
+	Provider  string
+	Repo      string
+	Ref       string
+	Title     string
+	Url       string
+	State     string
+	Author    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type TaskLabel struct {
 	TaskID  uuid.UUID
 	LabelID uuid.UUID
+}
+
+type TaskMilestone struct {
+	ID          uuid.UUID
+	TaskID      uuid.UUID
+	Name        string
+	DueOn       pgtype.Date
+	Position    float64
+	CompletedAt *time.Time
+	CompletedBy *uuid.UUID
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type TaskRelation struct {
@@ -1218,12 +1328,13 @@ type WorkspaceInvite struct {
 }
 
 type WorkspaceMember struct {
-	WorkspaceID uuid.UUID
-	UserID      uuid.UUID
-	Role        string
-	Nickname    string
-	JoinedAt    time.Time
-	BadgeID     *uuid.UUID
+	WorkspaceID      uuid.UUID
+	UserID           uuid.UUID
+	Role             string
+	Nickname         string
+	JoinedAt         time.Time
+	BadgeID          *uuid.UUID
+	AchievementCount int32
 }
 
 type WorkspaceNotificationSetting struct {

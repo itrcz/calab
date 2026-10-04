@@ -128,3 +128,22 @@ export function showBottomIsland(appOpen: boolean, workTab = false): boolean {
 export function titleSlot(appName: string | undefined): { kind: 'app'; text: string } | { kind: 'workspace' } {
   return appName ? { kind: 'app', text: appName } : { kind: 'workspace' };
 }
+
+/**
+ * A tooltip must be drawn by the native overlay above the app (ADR-0053 «Поправка 1»): its
+ * rectangle overlaps the visible app view (a DOM tooltip there would be under the site). Touching
+ * edges do not count; no app on screen (`app` null) → the plain DOM tooltip.
+ */
+export function tipOverApp(tip: ViewRect, app: ViewRect | null): boolean {
+  if (!app || tip.width <= 0 || tip.height <= 0 || app.width <= 0 || app.height <= 0) return false;
+  return tip.x < app.x + app.width && tip.x + tip.width > app.x && tip.y < app.y + app.height && tip.y + tip.height > app.y;
+}
+
+/** Longest tooltip text the overlay accepts (main validates the same bound). */
+export const TIP_TEXT_MAX = 200;
+
+/** The overlay's text: whitespace collapsed, at most TIP_TEXT_MAX chars (an ellipsis when cut). */
+export function tipText(raw: string): string {
+  const s = raw.replace(/\s+/g, ' ').trim();
+  return s.length > TIP_TEXT_MAX ? `${s.slice(0, TIP_TEXT_MAX - 1)}…` : s;
+}

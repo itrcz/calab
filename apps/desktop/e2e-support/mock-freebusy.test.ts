@@ -158,6 +158,9 @@ describe('external event details (ADR-0045)', () => {
           attendees: [{ email: 'boris@calaba.test', name: 'Борис', userId: IDS.users.boris }, { email: 'pm@partner.org', name: '' }],
           organizer: 'pm@partner.org',
           url: 'https://zoom.us/j/1',
+          href: '',
+          recurring: false,
+          webUrl: '',
         },
       ],
     });

@@ -80,7 +80,7 @@ func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 // the journal of a board, oldest first (MANAGE_BOARD or EDIT_TASKS on the board, or
 // VIEW_JOURNALS of the workspace, ADR-0048 — always on a board the caller sees).
 func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := pathBoard(r, false)
+	id, acc, err := fullBoard(r, false) // not for task-scoped members, even with VIEW_JOURNALS (ADR-0059)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
 	out := &v1.BoardActivityResponse{Activities: make([]*v1.TaskActivity, len(rows))}
 	for i, a := range rows {
 		out.Activities[i] = activity(sqlc.TaskActivity{ID: a.ID, TaskID: a.TaskID, BoardID: a.BoardID, ActorID: a.ActorID,
-			Kind: a.Kind, Before: a.Before, After: a.After, CreatedAt: a.CreatedAt})
+			Kind: a.Kind, Before: a.Before, After: a.After, CreatedAt: a.CreatedAt, RuleID: a.RuleID})
 	}
 	if len(rows) == exportPage {
 		out.NextCursor = rows[len(rows)-1].ID.String()
@@ -142,12 +142,12 @@ func (s *Service) exportCSV(w http.ResponseWriter, r *http.Request, p sqlc.ListB
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="board-activity.csv"`)
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"id", "created_at", "task_key", "actor_id", "kind", "before", "after"})
+	_ = cw.Write([]string{"id", "created_at", "task_key", "actor_id", "kind", "before", "after", "rule_id"})
 	rows, n := first, 0
 	for len(rows) > 0 && n < exportMaxRows {
 		for _, a := range rows {
 			_ = cw.Write([]string{a.ID.String(), a.CreatedAt.UTC().Format(time.RFC3339), TaskKey(a.BoardKey, a.TaskNumber),
-				idp(a.ActorID), a.Kind, string(a.Before), string(a.After)})
+				idp(a.ActorID), a.Kind, string(a.Before), string(a.After), idp(a.RuleID)})
 		}
 		n += len(rows)
 		if len(rows) < exportPage {

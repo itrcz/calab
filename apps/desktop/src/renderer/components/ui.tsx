@@ -3,11 +3,13 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, forwardRef, isValidElement, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
 import { autoFocusAllowed } from '../lib/phone';
+import { mirrorTip } from '../services/webAppTip';
+import { useWebApps } from '../stores/webApps';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
@@ -184,6 +186,11 @@ export function Tip(props: TipProps): ReactNode {
 
 function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & { wake: TipWake | null }): ReactNode {
   const trigger = useRef<HTMLButtonElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  // A workspace app is open: the pointer leaving the trigger usually lands on a native view (the
+  // site, or the tooltip's own overlay above it) that sends the page no pointer events, so a
+  // hoverable tooltip would wait for them and stay open — close on leave instead.
+  const appOpen = useWebApps((s) => s.open !== null);
   const woke = useRef(wake);
   useLayoutEffect(() => {
     const el = trigger.current;
@@ -199,12 +206,13 @@ function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & {
     el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, composed: true, clientX: m.x, clientY: m.y, pointerId: m.pointerId, pointerType: m.pointerType, isPrimary: true }));
   }, []);
   return (
-    <TooltipP.Root delayDuration={400}>
+    <TooltipP.Root delayDuration={400} disableHoverableContent={appOpen}>
       <TooltipP.Trigger asChild ref={trigger}>
         {children}
       </TooltipP.Trigger>
       <TooltipP.Portal>
         <TooltipP.Content
+          ref={content}
           data-app-tooltip
           side={side}
           sideOffset={6}
@@ -212,11 +220,29 @@ function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & {
           className="tip mat-popover anim-in z-[var(--z-tooltip)] flex max-w-72 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-caption text-fg"
         >
           {label}
-          {shortcut ? <kbd className="font-sans text-micro text-faint">{shortcut}</kbd> : null}
+          {shortcut ? (
+            <kbd data-tip-shortcut className="font-sans text-micro text-faint">
+              {shortcut}
+            </kbd>
+          ) : null}
+          <TipOverApp content={content} />
         </TooltipP.Content>
       </TooltipP.Portal>
     </TooltipP.Root>
   );
+}
+
+/**
+ * Mounted with an open tooltip's content: over an open workspace app on the desktop the tooltip
+ * is drawn by a native overlay above the site (services/webAppTip.ts, ADR-0053 «Поправка 1»).
+ * Renders nothing; a passive effect, so the content's ref is attached by then.
+ */
+function TipOverApp({ content }: { content: RefObject<HTMLDivElement | null> }): null {
+  useEffect(() => {
+    const el = content.current;
+    return el ? mirrorTip(el) : undefined;
+  }, [content]);
+  return null;
 }
 
 /**
@@ -515,6 +541,7 @@ export function Modal({
   description,
   children,
   wide,
+  medium,
   footer,
   closeButton = true,
   initialFocus,
@@ -528,6 +555,8 @@ export function Modal({
   description?: string | undefined;
   children: ReactNode;
   wide?: boolean;
+  /** A 560 px sheet (the rule editor, ADR-0060 §6). */
+  medium?: boolean;
   footer?: ReactNode;
   /** macOS alerts have no close box (confirmations): only «Отмена» and the action. */
   closeButton?: boolean;
@@ -570,7 +599,7 @@ export function Modal({
           }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
-            wide ? 'max-w-[880px]' : 'max-w-[440px]',
+            wide ? 'max-w-[880px]' : medium ? 'max-w-[560px]' : 'max-w-[440px]',
             nonModal && 'no-drag shadow-[var(--shadow-popover)]',
             // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',

@@ -1,7 +1,15 @@
-selfie_segmenter_landscape.tflite — MediaPipe Selfie Segmenter (landscape, 256x144, float16)
-Copyright 2023 The MediaPipe Authors. Licensed under the Apache License 2.0 (LICENSE here).
+MediaPipe Image Segmenter models, Copyright 2023 The MediaPipe Authors.
+Licensed under the Apache License 2.0 (LICENSE here). Used by
+apps/desktop/src/renderer/lib/media/background (ADR-0035); bundled with the desktop app and the web
+build, loaded only when a camera background is first enabled. The WASM runtime comes from
+@mediapipe/tasks-vision (Apache-2.0) at build time.
+
+selfie_multiclass_256x256.tflite — Selfie Multiclass Segmenter (256x256, float32), the default
+Source: https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite
+Model card: https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Multiclass%20Segmentation.pdf
+sha256: c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0 (downloaded 2026-10-03)
+
+selfie_segmenter_landscape.tflite — Selfie Segmenter (landscape, 256x144, float16), software GL / CPU fallback
 Source: https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite
 Model card: https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf
 sha256: 490e9ea734313e0de10fa0cd9e3c6133e36ea4db2b7a49bde9ef019f72796b8e (downloaded 2026-09-29)
-Used by apps/desktop/src/renderer/lib/media/background (ADR-0035). The WASM runtime comes from
-@mediapipe/tasks-vision (Apache-2.0) at build time.

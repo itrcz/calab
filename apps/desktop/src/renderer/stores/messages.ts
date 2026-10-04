@@ -45,6 +45,9 @@ interface MessagesState {
   rooms: Record<string, RoomMessages>;
   /** Pinned messages per room (most recently pinned first); undefined = not loaded. */
   pins: Record<string, Message[] | undefined>;
+  /** Ids known to be deleted (MESSAGE_DELETE, own delete, a failed jump): reply quotes show «deleted». */
+  gone: Record<string, true | undefined>;
+  markGone: (id: string) => void;
   reset: () => void;
   setLoading: (roomId: string, loading: boolean, error?: string | null) => void;
   /** Older page, as returned by the API (newest first). */
@@ -174,7 +177,9 @@ export function trimWindow(r: RoomMessages, keep: number): RoomMessages | null {
 export const useMessages = create<MessagesState>()((set) => ({
   rooms: {},
   pins: {},
-  reset: () => set({ rooms: {}, pins: {} }),
+  gone: {},
+  markGone: (id) => set((s) => (s.gone[id] ? {} : { gone: { ...s.gone, [id]: true } })),
+  reset: () => set({ rooms: {}, pins: {}, gone: {} }),
   setLoading: (roomId, loading, error = null) =>
     set((s) => ({ rooms: { ...s.rooms, [roomId]: { ...room(s, roomId), loading, error } } })),
   prependPage: (roomId, page, hasMore) =>
@@ -257,8 +262,9 @@ export const useMessages = create<MessagesState>()((set) => ({
       const r = s.rooms[roomId];
       const pins = s.pins[roomId];
       const pinsPatch = pins?.some((p) => p.id === id) ? { pins: { ...s.pins, [roomId]: pins.filter((p) => p.id !== id) } } : {};
-      if (!r) return pinsPatch;
-      return { ...pinsPatch, rooms: { ...s.rooms, [roomId]: { ...r, items: r.items.filter((c) => c.key !== id) } } };
+      const gonePatch = { gone: { ...s.gone, [id]: true as const } };
+      if (!r) return { ...pinsPatch, ...gonePatch };
+      return { ...pinsPatch, ...gonePatch, rooms: { ...s.rooms, [roomId]: { ...r, items: r.items.filter((c) => c.key !== id) } } };
     }),
   resyncLatest: (roomId, latestDesc, hasMore) =>
     set((s) => {

@@ -284,7 +284,9 @@ type ApiError struct {
 	// (ADR-0039); "FEATURE_DISABLED" = CONFLICT on setting a field of a board feature that is
 	// switched off on the board, with `field` (ADR-0058 §3); "BOARD_CATEGORY_LIMIT",
 	// "CHECKLIST_LIMIT", "CHECKLIST_ITEM_LIMIT" = CONFLICT on the 51st board category, the 11th
-	// checklist of a task, the 101st item of a checklist (ADR-0058). Absent otherwise.
+	// checklist of a task, the 101st item of a checklist (ADR-0058); "IDENTITY_NOT_CONFIGURED" =
+	// CONFLICT on an SSO / directory / OAuth provider route of a server without the identity
+	// operator configuration (ADR-0054: IDENTITY_PUBLIC_ORIGIN and keyrings). Absent otherwise.
 	Reason *string `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
 	// The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
 	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;

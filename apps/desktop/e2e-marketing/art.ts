@@ -1,16 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { Browser } from '@playwright/test';
-import type { Copy, PersonKey } from './copy';
+import type { Copy } from './copy';
 
 /**
- * Pictures for the landing scenes, drawn by Chromium from HTML/SVG (deterministic, no binary
- * fixtures): people (avatars and camera frames over the app's own blurred room backgrounds), the
- * screen-share slide, the design mockup posted in the chat and emoji stickers.
+ * Pictures for the landing scenes drawn by Chromium from HTML/SVG (deterministic): the screen-share
+ * slide and the design mockup posted in the chat. People (avatars, camera frames)
+ * are real photos (photos.ts), stickers the built-in Calab ones (seed.ts).
  */
-
-const BG_DIR = resolve(import.meta.dirname, '../src/renderer/assets/backgrounds');
-const bgUrl = (id: string): string => `data:image/webp;base64,${readFileSync(resolve(BG_DIR, `${id}.webp`)).toString('base64')}`;
 
 const FONT = `-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', sans-serif`;
 
@@ -24,73 +19,6 @@ export async function render(browser: Browser, html: string, width: number, heig
   } finally {
     await page.close();
   }
-}
-
-interface Look {
-  skin: string;
-  hair: string;
-  style: 'short' | 'long' | 'bun' | 'curly' | 'bob';
-  shirt: string;
-  /** Avatar tile colour and the camera's room background (the app's built-in pictures). */
-  tint: string;
-  room: string;
-  glasses?: boolean;
-  beard?: boolean;
-}
-
-export const LOOKS: Record<PersonKey, Look> = {
-  anna: { skin: '#f1c7a8', hair: '#6b3f26', style: 'long', shirt: '#2f5d8a', tint: '#5b8def', room: 'bg-05' },
-  boris: { skin: '#e2b08c', hair: '#2b2220', style: 'short', shirt: '#37474f', tint: '#f2994a', room: 'bg-06', beard: true },
-  vera: { skin: '#f3d0b5', hair: '#1d1a1a', style: 'bob', shirt: '#8e5bd6', tint: '#bb6bd9', room: 'bg-02', glasses: true },
-  grigory: { skin: '#c98e6b', hair: '#3a2a22', style: 'curly', shirt: '#2e7d5b', tint: '#27ae60', room: 'bg-04', glasses: true },
-  dina: { skin: '#f5d6c0', hair: '#b5652f', style: 'bun', shirt: '#c0392b', tint: '#eb5757', room: 'bg-07' },
-};
-
-/** A flat head-and-shoulders figure in a 200×200 box (translated/scaled by the caller). */
-function figure(l: Look): string {
-  const hairBack = {
-    long: `<path d="M58 88 C54 40 146 40 142 88 L146 150 C130 160 70 160 54 150 Z" fill="${l.hair}"/>`,
-    bob: `<path d="M56 90 C52 38 148 38 144 90 L146 124 C128 132 72 132 54 124 Z" fill="${l.hair}"/>`,
-    bun: `<circle cx="100" cy="30" r="20" fill="${l.hair}"/>`,
-    short: '',
-    curly: '',
-  }[l.style];
-  const hairTop = {
-    long: `<path d="M60 90 C54 26 146 26 140 90 C130 64 96 56 60 90 Z" fill="${l.hair}"/>`,
-    bob: `<path d="M58 92 C52 24 148 24 142 92 C130 64 90 54 58 92 Z" fill="${l.hair}"/>`,
-    bun: `<path d="M62 84 C58 30 142 30 138 84 C124 62 86 58 62 84 Z" fill="${l.hair}"/>`,
-    short: `<path d="M62 84 C58 30 142 30 138 84 C130 64 98 56 62 84 Z" fill="${l.hair}"/>`,
-    curly: `<g fill="${l.hair}"><circle cx="72" cy="66" r="14"/><circle cx="88" cy="54" r="15"/><circle cx="106" cy="51" r="15"/><circle cx="123" cy="58" r="14"/><circle cx="133" cy="72" r="11"/><circle cx="66" cy="80" r="10"/></g>`,
-  }[l.style];
-  const glasses = l.glasses
-    ? `<g fill="none" stroke="#1b1b1f" stroke-width="3"><rect x="72" y="86" width="22" height="16" rx="6"/><rect x="106" y="86" width="22" height="16" rx="6"/><path d="M94 93 L106 93"/></g>`
-    : '';
-  const beard = l.beard ? `<path d="M65 98 C66 146 134 146 135 98 C130 116 118 127 100 127 C82 127 70 116 65 98 Z" fill="${l.hair}" opacity="0.9"/>` : '';
-  return `
-    ${hairBack}
-    <path d="M28 200 C30 158 60 142 100 142 C140 142 170 158 172 200 Z" fill="${l.shirt}"/>
-    <rect x="88" y="118" width="24" height="30" rx="10" fill="${l.skin}"/>
-    <ellipse cx="100" cy="92" rx="36" ry="42" fill="${l.skin}"/>
-    <g fill="#2a1d18"><circle cx="86" cy="94" r="3.2"/><circle cx="114" cy="94" r="3.2"/></g><g fill="none" stroke="#2a1d18" stroke-opacity=".55" stroke-width="2.4" stroke-linecap="round"><path d="M79 83 Q86 79 93 82"/><path d="M107 82 Q114 79 121 83"/></g>
-    <path d="M90 113 Q100 120 110 113" stroke="#9c5a48" stroke-width="3" fill="none" stroke-linecap="round"/>
-    ${beard}
-    ${hairTop}
-    ${glasses}`;
-}
-
-/** A round-cropped avatar picture (the app masks it into a circle). */
-export function avatarHtml(l: Look, size: number): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 200 200">
-    <rect width="200" height="200" fill="${l.tint}"/>
-    <g transform="translate(10 22) scale(0.9)">${figure(l)}</g></svg>`;
-}
-
-/** A 1280×720 camera frame: the person in front of a softly blurred room. */
-export function cameraHtml(l: Look): string {
-  return `<div style="position:relative;width:1280px;height:720px;overflow:hidden">
-    <img src="${bgUrl(l.room)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(6px) brightness(0.92)">
-    <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;left:290px;top:40px" width="700" height="700" viewBox="0 0 200 200">${figure(l)}</svg>
-  </div>`;
 }
 
 /** The release slide Вера shares (1280×720). */
@@ -143,14 +71,6 @@ export function mockupHtml(c: Copy): string {
       </div>
     </div>
   </div>`;
-}
-
-/** An emoji sticker (transparent, with a white outline like Telegram's). */
-export function stickerHtml(emoji: string, size: number): string {
-  const px = Math.round(size * 0.78);
-  const o = Math.max(3, Math.round(size / 40));
-  const shadow = [-o, 0, o].flatMap((x) => [-o, 0, o].map((y) => `${x}px ${y}px 0 #fff`)).join(',');
-  return `<div style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;font-size:${px}px;line-height:1;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif;filter:drop-shadow(0 4px 6px rgba(0,0,0,.25));text-shadow:${shadow}">${emoji}</div>`;
 }
 
 /** A tiny valid one-page PDF (the chat shows name, size and an icon). */

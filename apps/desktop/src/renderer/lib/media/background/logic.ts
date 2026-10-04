@@ -51,11 +51,28 @@ export interface BackgroundEnv {
 }
 
 /**
- * Whether the «Фон» choice is shown at all. Safari / Firefox (no breakout box), phones, low-end
- * mode and machines without WebGL2 do not get it — also when the camera could blur by itself.
+ * Why «Фон» cannot be chosen here (null = it can). Owner, 2.1: a background is never «selected but
+ * not shown» — the section stays visible but disabled with this reason, checked BEFORE a choice:
+ *   browser — Safari / Firefox (no MediaStreamTrackProcessor / Generator, VideoFrame);
+ *   mobile  — phone or tablet web (CPU and battery);
+ *   lowEnd  — «Слабый компьютер» (docs/09 #44);
+ *   webgl   — no WebGL2 context on an OffscreenCanvas (probed once per session, not guessed);
+ *   failed  — the pipeline already failed in this session (model, worker, frames): see `failure`.
  */
-export function backgroundSupported(env: BackgroundEnv): boolean {
-  return env.breakoutBox && env.webgl2 && !env.mobile && !env.lowEnd;
+export type BgUnavailable = 'browser' | 'mobile' | 'lowEnd' | 'webgl' | 'failed';
+
+export function backgroundUnavailable(env: BackgroundEnv & { failed?: boolean }): BgUnavailable | null {
+  if (env.mobile) return 'mobile';
+  if (!env.breakoutBox) return 'browser';
+  if (env.lowEnd) return 'lowEnd';
+  if (!env.webgl2) return 'webgl';
+  if (env.failed) return 'failed';
+  return null;
+}
+
+/** The choice can be applied (no reason against it). */
+export function backgroundSupported(env: BackgroundEnv & { failed?: boolean }): boolean {
+  return backgroundUnavailable(env) === null;
 }
 
 /**
@@ -78,15 +95,114 @@ export function hasHardwareBlur(supported: Record<string, unknown> | undefined, 
   return Array.isArray(c) && c.includes(true);
 }
 
+// ------------------------------------------------------------------ failures (never silent)
+
+/**
+ * The worker gives up on the background — state `failed`, frames pass through, the reason goes to
+ * the app log and the UI shows «Фон недоступен» — when frames keep throwing (`FRAME_FAILURES_MAX`
+ * in a row, 2 s at 15 fps) or the segmenter keeps returning no mask (`MASKLESS_SEGMENTS_MAX` runs in
+ * a row, ≈ 3 s at 8/s). Before 2.1 both passed the raw camera on with the state `ready`.
+ */
+export const FRAME_FAILURES_MAX = 30;
+export const MASKLESS_SEGMENTS_MAX = 24;
+
+/**
+ * A runtime failure, by the worker's `detail` prefix (worker.ts): `webgl` (no GL context — nothing
+ * can render), `worker` (the worker script died), `effects` (the GL passes keep throwing without a
+ * background), `model` (MediaPipe / WASM / model did not start), `frames` (frames keep throwing or
+ * no mask comes). The first three take the appearance effects down too.
+ */
+export type BgFailure = 'webgl' | 'worker' | 'effects' | 'model' | 'frames';
+
+export function failureKind(detail: string | undefined): BgFailure {
+  const d = detail ?? '';
+  if (d.startsWith('webgl2:')) return 'webgl';
+  if (d.startsWith('worker:')) return 'worker';
+  if (d.startsWith('effects:')) return 'effects';
+  if (d.startsWith('frames:')) return 'frames';
+  return 'model';
+}
+
+/** Whether a failure also takes «Улучшить внешность» / «Низкая освещённость» down (same GL / worker). */
+export const failureStopsEffects = (f: BgFailure): boolean => f === 'webgl' || f === 'worker' || f === 'effects';
+
+/**
+ * The fallback after a runtime failure (owner, 2.1): the camera goes on plain, and the choice that
+ * cannot be shown is reset — the background to «Нет», the effects off too when they died with it.
+ * Returns only what changes (null = nothing chosen that failed).
+ */
+export function failureFallback<Fx extends { touchUp: boolean; lowLight: boolean }>(
+  failure: BgFailure,
+  bg: CameraBackground,
+  fx: Fx,
+): { cameraBackground?: CameraBackground; cameraEffects?: Fx } | null {
+  const out: { cameraBackground?: CameraBackground; cameraEffects?: Fx } = {};
+  if (bg.kind !== 'none') out.cameraBackground = NO_BACKGROUND;
+  if (failureStopsEffects(failure) && (fx.touchUp || fx.lowLight)) out.cameraEffects = { ...fx, touchUp: false, lowLight: false };
+  return out.cameraBackground || out.cameraEffects ? out : null;
+}
+
+/** An error as one log line (MediaPipe throws Errors, strings and Events). */
+export function errorText(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  if (typeof err === 'string') return err;
+  if (err && typeof err === 'object' && 'type' in err) return `event ${String(err.type)}`;
+  return String(err);
+}
+
 // ------------------------------------------------------------------ budget (ADR §2)
 
 /**
- * Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). ADR-0035
- * allows ≤ 12; 8 is the measured compromise on M4 (docs/14 «Фон камеры»): 12 → 8 saves ≈ 2 % of a
- * core, the mask still follows a moving head (EMA + edge smoothing hide the steps).
+ * Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). 20 (owner,
+ * 03.10, after the 2.1 previews): at 8/s the mask lagged a turning head by ≈ 125 ms and patches of
+ * the real background showed; 15 was better but not enough. Capped by the camera's own rate.
  */
-export const SEG_FPS = 8;
+export const SEG_FPS = 20;
 export const SEG_FPS_SOFTWARE = 6;
+/** The user's choice (owner, 03.10): smoothness vs CPU; prefs.cameraBgFps, default SEG_FPS. */
+export const SEG_FPS_OPTIONS = [8, 16, 20, 25] as const;
+export type SegFpsOption = (typeof SEG_FPS_OPTIONS)[number];
+/** Anything unknown (a stale or hand-edited pref) is the default. */
+export function normalizeSegFps(v: unknown): SegFpsOption {
+  return SEG_FPS_OPTIONS.find((o) => o === v) ?? SEG_FPS;
+}
+/**
+ * The rate the worker segments at: the setting, but the software / CPU-delegate fallback keeps its
+ * own lower rate whatever is chosen. (The camera's real frame rate caps it further: segmentStep.)
+ */
+export function effectiveSegFps(setting: number, fallback: boolean): number {
+  return fallback ? SEG_FPS_SOFTWARE : setting;
+}
+
+/**
+ * Segmentation models (ADR-0035 addendum 2.1, both MediaPipe, Apache-2.0, bundled):
+ *   multiclass — selfie_multiclass_256x256 (16 MB, float32): the default on the GPU delegate. Clean
+ *     contour, hair and ears kept. The person is 1 − the background class: it counts every person
+ *     class at once, accessories (headset, glasses) included, and is one texture — summing hair,
+ *     body, face and clothes would drop accessories and cost three more mask reads.
+ *   landscape — selfie_segmenter_landscape (256×144, 0.25 MB): software GL or the CPU delegate,
+ *     at SEG_FPS_SOFTWARE; the larger model would cost too much there.
+ * `edge`: smoothstep over the person confidence (below — background, above — person). Multiclass is
+ * confident; 0.3–0.95 gives a soft feathered edge (owner, 03.10: 0.5–0.85 looked cut out); landscape is
+ * softer, 0.3–0.7 (2.0).
+ */
+export type SegModel = 'multiclass' | 'landscape';
+export interface SegModelSpec {
+  input: [number, number];
+  edge: [number, number];
+  /** The model's mask 0 is the background (person = 1 − it). */
+  invert: boolean;
+}
+export const SEG_MODELS: Record<SegModel, SegModelSpec> = {
+  multiclass: { input: [256, 256], edge: [0.3, 0.95], invert: true },
+  landscape: { input: [256, 144], edge: [0.3, 0.7], invert: false },
+};
+
+/** The model for a delegate: multiclass only on the GPU delegate over a hardware GL. */
+export function segModel(o: { delegate: 'GPU' | 'CPU'; software: boolean; override?: SegModel }): SegModel {
+  if (o.delegate === 'CPU') return 'landscape';
+  return o.override ?? (o.software ? 'landscape' : 'multiclass');
+}
 /** Token bucket cap: after a pause at most one extra segmentation, no burst. */
 const SEG_TOKENS_MAX = 2;
 

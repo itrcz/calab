@@ -4,7 +4,7 @@ package calaba.v1;
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/boards.proto";
 
-// Board intake forms (ADR-0059). Management definitions are never public responses.
+// Board intake forms (ADR-0064). Management definitions are never public responses.
 enum BoardFormFieldType {
   BOARD_FORM_FIELD_TYPE_UNSPECIFIED = 0;
   BOARD_FORM_FIELD_TYPE_TEXT = 1;

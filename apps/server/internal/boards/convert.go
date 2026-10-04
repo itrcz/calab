@@ -94,6 +94,7 @@ type boardParts struct {
 	overrides  map[uuid.UUID][]sqlc.BoardPermission
 	open       map[uuid.UUID]int64
 	mine       map[uuid.UUID]int64
+	rules      map[uuid.UUID]int64 // automation rules (ADR-0060)
 }
 
 // loadParts loads statuses, labels, milestones, views (shared, plus viewer's own with
@@ -101,7 +102,7 @@ type boardParts struct {
 func loadParts(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID, viewer uuid.UUID, personal bool) (boardParts, error) {
 	p := boardParts{statuses: map[uuid.UUID][]sqlc.BoardStatus{}, labels: map[uuid.UUID][]sqlc.BoardLabel{},
 		milestones: map[uuid.UUID][]sqlc.BoardMilestone{}, views: map[uuid.UUID][]sqlc.BoardView{},
-		overrides: map[uuid.UUID][]sqlc.BoardPermission{}, open: map[uuid.UUID]int64{}, mine: map[uuid.UUID]int64{}}
+		overrides: map[uuid.UUID][]sqlc.BoardPermission{}, open: map[uuid.UUID]int64{}, mine: map[uuid.UUID]int64{}, rules: map[uuid.UUID]int64{}}
 	if len(ids) == 0 {
 		return p, nil
 	}
@@ -151,11 +152,19 @@ func loadParts(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID, viewer uui
 	for _, c := range counts {
 		p.open[c.BoardID], p.mine[c.BoardID] = int64(c.Open), int64(c.Mine)
 	}
+	rc, err := q.BoardRuleCounts(ctx, ids)
+	if err != nil {
+		return p, err
+	}
+	for _, c := range rc {
+		p.rules[c.BoardID] = int64(c.Rules)
+	}
 	return p, nil
 }
 
-// boardProto converts a board with its parts; bits = the viewer's (0 in broadcasts).
-func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
+// boardProto converts a board with its parts; bits = the viewer's (0 in broadcasts). scoped:
+// the task-scoped form (ADR-0064) — no access overrides, no board-wide task count.
+func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Board {
 	out := &v1.Board{
 		Id: b.ID.String(), WorkspaceId: b.WorkspaceID.String(), Name: b.Name, Key: b.Key, Emoji: b.Emoji,
 		IconFileId: idp(b.IconFileID), Description: b.Description, IsPrivate: b.IsPrivate, Restricted: b.Restricted, Position: b.Position,
@@ -164,6 +173,7 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
 		CreatedBy: idp(b.CreatedBy), CreatedAt: timestamppb.New(b.CreatedAt), ArchivedAt: tsp(b.ArchivedAt),
 		KeyLocked: b.NextNumber > 1, DefaultViewId: idp(b.DefaultViewID),
 		CategoryId: idp(b.CategoryID), DisabledFeatures: FeaturesProto(b.DisabledFeatures), EstimateScale: EstimateScaleFromDB(b.EstimateScale),
+		RulesCount: uint32(max(p.rules[b.ID], 0)), //nolint:gosec // ≤ 20
 	}
 	for _, s := range p.statuses[b.ID] {
 		out.Statuses = append(out.Statuses, status(s))
@@ -180,7 +190,17 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
 	for _, o := range p.overrides[b.ID] {
 		out.PermissionOverrides = append(out.PermissionOverrides, BoardOverride(o))
 	}
+	if scoped {
+		return ScopedForm(out)
+	}
 	return out
+}
+
+// ScopedForm turns a broadcast board into the form a task-scoped recipient gets (ADR-0064):
+// permissions 0, no access overrides, no board-wide task count. b is modified.
+func ScopedForm(b *v1.Board) *v1.Board {
+	b.Permissions, b.TaskScoped, b.OpenTasks, b.PermissionOverrides = 0, true, 0, nil
+	return b
 }
 
 // Category converts a board category.
@@ -214,38 +234,29 @@ func All(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) ([]*v1.Board, err
 	}
 	out := make([]*v1.Board, len(rows))
 	for i, b := range rows {
-		out[i] = boardProto(b, p, 0)
+		out[i] = boardProto(b, p, 0, false)
 	}
 	return out, nil
 }
 
 // Snapshot returns the live boards member m sees in workspace wsID, with their bits and
-// shared views (READY: WorkspaceSnapshot.boards), and the ids of their unread tasks.
+// shared views (READY: WorkspaceSnapshot.boards) — task-scoped ones (ADR-0059) in their scoped
+// form — and the ids of their unread tasks.
 func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Member) ([]*v1.Board, []string, error) {
-	if m.Role == perm.RoleGuest || m.Role == "" {
-		return nil, nil, nil
-	}
-	rows, err := q.ListBoards(ctx, sqlc.ListBoardsParams{WorkspaceID: wsID, Archived: false})
-	if err != nil || len(rows) == 0 {
+	vis, err := VisibleBoards(ctx, q, wsID, m)
+	if err != nil || vis.Empty() {
 		return nil, nil, err
 	}
-	ovs, err := q.ListWorkspaceBoardOverrides(ctx, wsID)
+	rows, err := q.ListBoards(ctx, sqlc.ListBoardsParams{WorkspaceID: wsID, Archived: false})
 	if err != nil {
 		return nil, nil, err
 	}
-	byBoard := map[uuid.UUID][]sqlc.BoardPermission{}
-	for _, o := range ovs {
-		byBoard[o.BoardID] = append(byBoard[o.BoardID], o)
-	}
 	visible := make([]sqlc.Board, 0, len(rows))
-	bits := map[uuid.UUID]perm.Bits{}
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, b := range rows {
-		bb := perm.ComputeBoardIn(m, b.IsPrivate, b.Restricted, OverrideTargets(byBoard[b.ID]))
-		if !bb.Has(perm.ViewBoard) {
-			continue
+		if _, ok := vis.Full[b.ID]; ok || vis.Scoped[b.ID] {
+			visible, ids = append(visible, b), append(ids, b.ID)
 		}
-		visible, bits[b.ID], ids = append(visible, b), bb, append(ids, b.ID)
 	}
 	me, err := uuid.Parse(m.UserID)
 	if err != nil {
@@ -257,7 +268,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 	}
 	out := make([]*v1.Board, len(visible))
 	for i, b := range visible {
-		out[i] = boardProto(b, p, bits[b.ID])
+		out[i] = boardProto(b, p, vis.Full[b.ID], vis.Scoped[b.ID])
 	}
 	unread, err := q.UnreadTaskIDs(ctx, sqlc.UnreadTaskIDsParams{WorkspaceID: wsID, UserID: me})
 	if err != nil {
@@ -265,7 +276,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 	}
 	var ur []string
 	for _, u := range unread {
-		if _, ok := bits[u.BoardID]; ok {
+		if _, ok := vis.Full[u.BoardID]; ok || vis.Invited[u.ID] {
 			ur = append(ur, u.ID.String())
 		}
 	}
@@ -277,7 +288,8 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 // taskCols are the columns of taskRow, over tasks t JOIN boards b.
 const taskCols = `t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by,
 	t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at,
-	t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, b.key, b.workspace_id, t.approval_required`
+	t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, b.key, b.workspace_id, t.approval_required,
+	t.task_milestone_id`
 
 // taskRow is a task with its board's key and workspace.
 type taskRow struct {
@@ -306,6 +318,8 @@ type taskRow struct {
 	WorkspaceID uuid.UUID
 	// ApprovalRequired: approvals needed, 0 = all (ADR-0049).
 	ApprovalRequired int16
+	// TaskMilestoneID: a subtask's milestone, one of its parent's (ADR-0063).
+	TaskMilestoneID *uuid.UUID
 }
 
 func scanTasks(rows interface {
@@ -320,7 +334,8 @@ func scanTasks(rows interface {
 		var t taskRow
 		if err := rows.Scan(&t.ID, &t.BoardID, &t.Number, &t.Title, &t.Description, &t.StatusID, &t.Priority, &t.CreatedBy,
 			&t.Estimate, &t.StartOn, &t.DueOn, &t.ParentID, &t.MilestoneID, &t.Position, &t.RoomID, &t.CreatedAt,
-			&t.UpdatedAt, &t.StartedAt, &t.CompletedAt, &t.CompletedBy, &t.ArchivedAt, &t.BoardKey, &t.WorkspaceID, &t.ApprovalRequired); err != nil {
+			&t.UpdatedAt, &t.StartedAt, &t.CompletedAt, &t.CompletedBy, &t.ArchivedAt, &t.BoardKey, &t.WorkspaceID, &t.ApprovalRequired,
+			&t.TaskMilestoneID); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -342,7 +357,11 @@ func queryTasks(ctx context.Context, dbtx sqlc.DBTX, tail string, args ...any) (
 func taskByID(ctx context.Context, dbtx sqlc.DBTX, id uuid.UUID, lock bool) (taskRow, bool, error) {
 	tail := "WHERE t.id = $1"
 	if lock {
-		tail += " FOR UPDATE OF t"
+		// NO KEY UPDATE: writers of the task serialize, yet another transaction may still take
+		// KEY SHARE (a journal entry or a milestone of this task, foreign keys) — a subtask's
+		// transaction does so on its parent while the parent's own write (move to another board,
+		// DetachSubtasks) waits for the subtask: FOR UPDATE would deadlock them (ADR-0063).
+		tail += " FOR NO KEY UPDATE OF t"
 	}
 	ts, err := queryTasks(ctx, dbtx, tail, id)
 	if err != nil || len(ts) == 0 {
@@ -369,6 +388,7 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 			DueOn: DateString(t.DueOn), ParentId: idp(t.ParentID), MilestoneId: idp(t.MilestoneID), Position: t.Position,
 			RoomId: t.RoomID.String(), CreatedAt: timestamppb.New(t.CreatedAt), UpdatedAt: timestamppb.New(t.UpdatedAt),
 			StartedAt: tsp(t.StartedAt), CompletedAt: tsp(t.CompletedAt), CompletedBy: idp(t.CompletedBy), ArchivedAt: tsp(t.ArchivedAt),
+			TaskMilestoneId: idp(t.TaskMilestoneID),
 		}
 		if t.Estimate != nil {
 			out[i].Estimate = uint32(max(*t.Estimate, 0)) //nolint:gosec // CHECK 1..21
@@ -427,6 +447,10 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 		t.SubtaskCount, t.SubtaskDone = uint32(max(c.Subtasks, 0)), uint32(max(c.SubtasksDone, 0))            //nolint:gosec // counts
 		t.CommentCount, t.AttachmentCount = uint32(max(c.Comments, 0)), uint32(max(c.Attachments, 0))         //nolint:gosec // counts
 		t.ChecklistTotal, t.ChecklistDone = uint32(max(c.ChecklistTotal, 0)), uint32(max(c.ChecklistDone, 0)) //nolint:gosec // counts
+		t.GitLinksCount = uint32(max(c.GitLinks, 0))                                                          //nolint:gosec // a count
+	}
+	if err := taskMilestones(ctx, q, ids, out, idx); err != nil {
+		return nil, err
 	}
 	if viewer != uuid.Nil {
 		subs, err := q.ListViewerSubscriptions(ctx, sqlc.ListViewerSubscriptionsParams{UserID: viewer, TaskIds: ids})
@@ -449,7 +473,7 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 func activity(a sqlc.TaskActivity) *v1.TaskActivity {
 	return &v1.TaskActivity{
 		Id: a.ID.String(), TaskId: a.TaskID.String(), BoardId: a.BoardID.String(), ActorId: idp(a.ActorID), Kind: a.Kind,
-		Before: jsonStruct(a.Before), After: jsonStruct(a.After), CreatedAt: timestamppb.New(a.CreatedAt),
+		Before: jsonStruct(a.Before), After: jsonStruct(a.After), CreatedAt: timestamppb.New(a.CreatedAt), RuleId: idp(a.RuleID),
 	}
 }
 

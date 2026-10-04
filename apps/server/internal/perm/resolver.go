@@ -29,7 +29,7 @@ type Store interface {
 	GetMemberAccess(ctx context.Context, arg sqlc.GetMemberAccessParams) (sqlc.GetMemberAccessRow, error)
 	GetRoomAccess(ctx context.Context, arg sqlc.GetRoomAccessParams) (sqlc.GetRoomAccessRow, error)
 	GetBoardAccess(ctx context.Context, arg sqlc.GetBoardAccessParams) (sqlc.GetBoardAccessRow, error)
-	GetTaskRoomRef(ctx context.Context, roomID uuid.UUID) (sqlc.GetTaskRoomRefRow, error)
+	GetTaskRoomRef(ctx context.Context, arg sqlc.GetTaskRoomRefParams) (sqlc.GetTaskRoomRefRow, error)
 }
 
 // RoomAccess is a user's resolved access to a room.

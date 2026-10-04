@@ -281,7 +281,7 @@ const zh: Dict = {
       enterprise: { name: 'Enterprise', price: '自己的服务器', note: '无限制的 On-prem，BSL 1.1 或商业许可证' },
     },
     cta: {
-      web: '网页版',
+      web: '网页',
       download: '下载',
       contact: '联系我们',
       license: '许可条款',

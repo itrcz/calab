@@ -121,11 +121,20 @@ export function SsoButton({ workspaceId, purpose, onDone }: SsoStart & { onDone?
   );
 }
 
-export function LocalReauth({ embedded = false }: { embedded?: boolean } = {}): ReactNode {
+/**
+ * «Подтвердить пароль»: a fresh local password proof (POST /api/auth/local/reauth, 5 minutes,
+ * ADR-0054/0055). `open` starts with the password field shown (a screen that is blocked on
+ * RECENT_AUTH_REQUIRED); `onConfirmed` retries what needed the proof.
+ */
+export function LocalReauth({
+  embedded = false,
+  open: initiallyOpen = false,
+  onConfirmed,
+}: { embedded?: boolean; open?: boolean; onConfirmed?: () => void } = {}): ReactNode {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const sessionId = useSession((s) => s.sessionId);
   const [confirmedSession, setConfirmedSession] = useState<string | null>(null);
   const confirmed = confirmedSession !== null && confirmedSession === sessionId;
@@ -141,6 +150,7 @@ export function LocalReauth({ embedded = false }: { embedded?: boolean } = {}): 
       if (useSession.getState().sessionId === sessionId) {
         setConfirmedSession(sessionId);
         setOpen(false);
+        onConfirmed?.();
       }
     } catch (e) {
       setMessage(errorText(e));

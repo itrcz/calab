@@ -107,6 +107,13 @@ import {
   SetMemberRolesRequestSchema,
   SetMemberRolesResponseSchema,
   ListBadgesResponseSchema,
+  ListAchievementsResponseSchema,
+  ListMemberAchievementsResponseSchema,
+  MemberAchievementSchema,
+  GrantAchievementRequestSchema,
+  AchievementSchema,
+  CreateAchievementRequestSchema,
+  UpdateAchievementRequestSchema,
   ListBackgroundsResponseSchema,
   CreateBackgroundRequestSchema,
   CreateBackgroundResponseSchema,
@@ -184,6 +191,7 @@ import {
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
   SetBotAvatarResponseSchema,
+  SearchResponseSchema,
   type StickerPackResponse,
   type UploadStickersResponse,
   type FileMeta,
@@ -200,6 +208,11 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 export const api = {
   /** Public build info; the web compares its bundle with it (docs/09 #125, «Обновить страницу»). */
   version: () => call('GET', '/api/version', GetVersionResponseSchema),
+  /**
+   * Unified search (ADR-0062): `q`, `scope` (workspace id | all), `types` / `type`, `limit`,
+   * `cursor`, `sort` — built by lib/search/query.ts. 429 RATE_LIMITED, 422 for a query without words.
+   */
+  search: (p: Record<string, string>, signal?: AbortSignal) => call('GET', `/api/search${qs(p)}`, SearchResponseSchema, undefined, signal),
   /** Email verification and password reset (ADR-0023). */
   auth: {
     /** 204: a code to me.pendingEmail or me.email; 409 = already verified; 429 + Retry-After. */
@@ -314,6 +327,30 @@ export const api = {
     /** "" clears → WORKSPACE_MEMBER_UPDATE. */
     setMember: (workspaceId: string, userId: string, badgeId: string) =>
       call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
+  },
+  /**
+   * Achievements (ADR-0061, amendment 1): the workspace catalog — read by any member (archived
+   * ones included, `archivedAt` set), changed with MANAGE_WORKSPACE; grants per member — list for
+   * members, grant / revoke with MANAGE_MEMBERS.
+   */
+  achievements: {
+    catalog: (workspaceId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/achievements`, ListAchievementsResponseSchema, undefined, signal),
+    /** 201; fileId = a PNG / WebP just uploaded to the workspace. 422 IMAGE_NEEDS_ALPHA, 409 ACHIEVEMENT_LIMIT. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateAchievementRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/achievements`, AchievementSchema, body(CreateAchievementRequestSchema, init)),
+    /** Unset fields stay; fileId replaces the picture (the create's rules). */
+    update: (id: string, init: MessageInitShape<typeof UpdateAchievementRequestSchema>) =>
+      call('PATCH', `/api/achievements/${id}`, AchievementSchema, body(UpdateAchievementRequestSchema, init)),
+    /** 204; 409 ACHIEVEMENT_IN_USE once granted (archive it instead). */
+    remove: (id: string) => callEmpty('DELETE', `/api/achievements/${id}`),
+    list: (workspaceId: string, userId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/members/${userId}/achievements`, ListMemberAchievementsResponseSchema, undefined, signal),
+    /** 422: note empty / too long, SELF_GRANT, a guest or bot, an archived achievement. */
+    grant: (workspaceId: string, userId: string, init: { achievementId: string; note: string; announce: boolean }) =>
+      call('POST', `/api/workspaces/${workspaceId}/members/${userId}/achievements`, MemberAchievementSchema, body(GrantAchievementRequestSchema, init)),
+    /** 204; the chat card stays. */
+    revoke: (workspaceId: string, userId: string, grantId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/members/${userId}/achievements/${grantId}`),
   },
   /**
    * Web apps of a workspace (ADR-0050): the list for members (not guests); create / edit / delete

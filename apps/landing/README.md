@@ -69,8 +69,10 @@ Performance: the hero shot is preloaded with its `srcset` and `fetchpriority=hig
 Every scene is captured per language with that language's team (docs/09 #139).
 
 1. Captures — `apps/desktop/e2e-marketing/landing.spec.ts`: the production web build (`dist-web`) served by the mock
-   API, Chromium at 1440×900 CSS px, device scale 2, dark. Data per language: `e2e-marketing/copy.ts`; pictures
-   (avatars, camera frames, the shared slide, the chat mockup, emoji stickers) are drawn by Chromium (`art.ts`);
+   API, Chromium at 1440×900 CSS px, device scale 2, dark. Data per language: `e2e-marketing/copy.ts`; people are real
+   photos (avatars and camera frames, `e2e-marketing/photos/`, the person→photo table in `photos.ts`); stickers are
+   the built-in Calab ones (`apps/server/internal/builtinstickers`); the shared slide and the chat mockup are drawn by
+   Chromium (`art.ts`);
    the scene data is set on the mock before sign-in (`seed.ts`). Dev LiveKit running (`pnpm infra:dev`) for the voice
    and call scenes; one Playwright run at a time:
    ```sh
@@ -87,7 +89,7 @@ Every scene is captured per language with that language's team (docs/09 #139).
 2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` crops (CSS px at the top of the script, equal to
    `src/lib/screens.ts`), writes `public/screens/<lang>/<name>@2x.webp`, `<name>.webp` (1x) and `<name>-720.webp`
    (phones), each ≤ 300 KB, and `public/og/<lang>.png` (1200×630). `node scripts/assets.mjs --only=sipdial,webapps` regenerates
-   just those images (no other raw captures needed, OpenGraph untouched). The READMEs (`README*.md`) use the same files.
+   just those images (no other raw captures needed; OpenGraph is redrawn only when `voice` is listed). The READMEs (`README*.md`) use the same files.
 3. Rebuild and commit `public/screens` and `public/og`.
 
 ## TODO

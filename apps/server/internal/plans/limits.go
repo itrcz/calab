@@ -47,6 +47,9 @@ type Limits struct {
 	// TelephonyDisabled: telephony SIP (ADR-0046) is Business only (owner, 02.10); without it a
 	// saved trunk stays readable but cannot be enabled, tested or called through.
 	TelephonyDisabled bool
+	// AutomationsDisabled: board automations (ADR-0060) are Team and above; without them new rules
+	// are refused, existing rules and Git events do not run (the setup stays).
+	AutomationsDisabled bool
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS override them key by key.
@@ -54,13 +57,15 @@ var (
 	// DefaultFree (owner, 28.09): 5 in a room, 50 members, voice up to «Нормальное» (16 kbps),
 	// video up to 720p / 15 fps, one stream per room, 5 GiB of files, one sticker pack with 200
 	// stickers, one bot, no CalDAV (owner, 30.09), no musician mode (owner, 01.10, ADR-0052), no
-	// checklists and no board webhooks (owner, 02.10, ADR-0058 §5), no telephony (owner, 02.10, ADR-0046).
+	// checklists and no board webhooks (owner, 02.10, ADR-0058 §5), no telephony (owner, 02.10, ADR-0046),
+	// no board automations (owner, 03.10, ADR-0060).
 	DefaultFree = Limits{BoardFormsDisabled: true,
 		RoomMembers: 5, Members: 50, AudioMaxKbps: 16,
 		StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, StreamMaxFPS: 15,
 		CameraMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, CameraMaxFPS: 15,
 		StreamsPerRoom: 1, CamerasPerRoom: 3, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1, Boards: 3, CalDAVDisabled: true,
 		MusicianDisabled: true, ChecklistsDisabled: true, BoardWebhooksDisabled: true, TelephonyDisabled: true,
+		AutomationsDisabled: true,
 	}
 	// DefaultTeam (owner, 30.09): 15 in a room, 100 workspace members, 300 GiB of files, 5 bots, 30 boards;
 	// voice and video not limited by the plan; no board webhooks (ADR-0058 §5), no telephony (ADR-0046).
@@ -136,6 +141,7 @@ type limitsJSON struct {
 	Checklists         *bool   `json:"checklists_disabled,omitempty"`
 	BoardWebhooks      *bool   `json:"board_webhooks_disabled,omitempty"`
 	Telephony          *bool   `json:"telephony_disabled,omitempty"`
+	Automations        *bool   `json:"automations_disabled,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -195,6 +201,9 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	if j.Telephony != nil {
 		l.TelephonyDisabled = *j.Telephony
 	}
+	if j.Automations != nil {
+		l.AutomationsDisabled = *j.Automations
+	}
 	for _, p := range []struct {
 		dst  *v1.ScreenSharePreset
 		v    *string
@@ -227,6 +236,7 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
 		AudioMaxKbps: &l.AudioMaxKbps, Boards: &l.Boards, CalDAVDisabled: &l.CalDAVDisabled, MusicianDisabled: &l.MusicianDisabled,
 		Checklists: &l.ChecklistsDisabled, BoardWebhooks: &l.BoardWebhooksDisabled, Telephony: &l.TelephonyDisabled,
+		Automations: &l.AutomationsDisabled,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
 }
@@ -270,6 +280,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
 		AudioTierMaxKbps: l.AudioMaxKbps, Boards: l.Boards, CaldavDisabled: l.CalDAVDisabled, MusicianDisabled: l.MusicianDisabled,
 		ChecklistsDisabled: l.ChecklistsDisabled, BoardWebhooksDisabled: l.BoardWebhooksDisabled, TelephonyDisabled: l.TelephonyDisabled,
+		AutomationsDisabled: l.AutomationsDisabled,
 	}
 }
 
@@ -281,6 +292,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
 		AudioMaxKbps: p.GetAudioTierMaxKbps(), Boards: p.GetBoards(), CalDAVDisabled: p.GetCaldavDisabled(), MusicianDisabled: p.GetMusicianDisabled(),
 		ChecklistsDisabled: p.GetChecklistsDisabled(), BoardWebhooksDisabled: p.GetBoardWebhooksDisabled(), BoardFormsDisabled: p.GetBoardFormsDisabled(), BoardFormsPerBoard: p.GetBoardFormsPerBoard(), TelephonyDisabled: p.GetTelephonyDisabled(),
+		AutomationsDisabled: p.GetAutomationsDisabled(),
 	}
 }
 

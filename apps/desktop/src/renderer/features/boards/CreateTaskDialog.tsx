@@ -309,6 +309,7 @@ function Dialog({
           {on(BoardFeature.APPROVALS) ? (
             <ApproverMenu
               workspaceId={board.workspaceId}
+              boardId={boardId}
               value={approvers}
               onToggle={(u) => {
                 const next = toggleApprover(approvers, u);

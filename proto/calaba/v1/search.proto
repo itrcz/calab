@@ -1,0 +1,157 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/boards.proto";
+
+// Unified search (ADR-0062): one endpoint over messages, task comments, tasks, events, files,
+// the caller's notes and meeting transcripts. Every section uses the visibility rules of its
+// objects (rooms.VisibleIDs, boards.VisibleBoards / perm.TaskBits, the calendar's viewer, the
+// recording card rule); nothing is found that the caller cannot open.
+
+// The kind of a section and of its hits. In the query string a type is written in lower case
+// without the prefix: messages, task_comments, tasks, events, files, notes, transcripts.
+enum SearchType {
+  SEARCH_TYPE_UNSPECIFIED = 0;
+  SEARCH_TYPE_MESSAGES = 1;      // messages of rooms and (scope=all) the caller's DMs
+  SEARCH_TYPE_TASK_COMMENTS = 2; // messages of task rooms the caller sees (TaskBits != 0)
+  SEARCH_TYPE_TASKS = 3;         // live tasks by title and description, key ABC-12 exactly
+  SEARCH_TYPE_EVENTS = 4;        // calendar events seen with details (never busy-only ones)
+  SEARCH_TYPE_FILES = 5;         // attachments of visible live messages, by file name
+  SEARCH_TYPE_NOTES = 6;         // the caller's own notes shelves (scope=all or types=notes)
+  SEARCH_TYPE_TRANSCRIPTS = 7;   // transcripts of visible recordings with a ready result, newest first
+}
+
+// Order inside a section feed (type=…). The summary (no type) always uses its defaults.
+enum SearchSort {
+  SEARCH_SORT_UNSPECIFIED = 0; // = RELEVANCE
+  SEARCH_SORT_RELEVANCE = 1;   // ts_rank_cd / trigram similarity × freshness 1 / (1 + days / 30)
+  SEARCH_SORT_NEW = 2;         // newest first (by creation: message, task, event, file)
+}
+
+// GET /api/search?q=&scope=&types=&type=&limit=&cursor=&sort= — the parameters travel in the
+// query string; this message documents them (the endpoint has no body).
+// Rate limit per user (30 at once, one per second): 429 RATE_LIMITED.
+// Bots: allowed by the same rules, never the notes section. Guests: what their roles show (no
+// boards, no calendar).
+message SearchRequest {
+  // 1..200 characters. Words are matched by stem (russian) and as written (simple); the last
+  // word of 2+ characters also as a prefix («рел» finds «релиз»); "quoted phrase", -excluded and
+  // OR work as in websearch_to_tsquery. Short fields (task and event titles, file names) also
+  // match with typos and inside words (pg_trgm). A task key (ABC-12) finds that task first.
+  // A query with no word left after removing punctuation: 422 VALIDATION_FAILED (field q).
+  string q = 1;
+  // A workspace id (the caller must be a member: else 404), or "all": every workspace of the
+  // caller, the caller's DMs and notes shelves. Required.
+  string scope = 2;
+  // Comma-separated section types to compute, default all; notes only with scope=all or when
+  // listed explicitly. Unknown names: 400.
+  repeated SearchType types = 3;
+  // Summary (no type): hits per section, 1..20, default 4. Feed (type set): 1..20, default 20.
+  uint32 limit = 4;
+  // One section as a feed with a cursor ("Все результаты"). Overrides types.
+  SearchType type = 5;
+  // SearchSection.next_cursor of the previous page of the same q / scope / type / sort; opaque.
+  // Anything else: 400 "invalid cursor".
+  string cursor = 6;
+  // Feed order: relevance (default) or new.
+  SearchSort sort = 7;
+}
+
+// GET /api/search response: the requested sections in the order of SearchType, each present
+// even when empty.
+message SearchResponse {
+  repeated SearchSection sections = 1;
+}
+
+message SearchSection {
+  SearchType type = 1;
+  repeated SearchHit items = 2;
+  // Number of matches, counted up to 1000 (1000 means "1000 or more"); only on the first page.
+  uint32 total_estimate = 3;
+  // Empty = no more hits (always empty in the summary).
+  string next_cursor = 4;
+  // The section did not finish within its time budget (1.5 s): items is empty, other sections
+  // are unaffected. Retrying later or narrowing the query may help.
+  bool timed_out = 5;
+}
+
+// One hit. snippet is plain text where the matched words are wrapped in U+0002 … U+0003
+// (start / end of a highlight): the client renders them as <mark>, never as HTML. Source texts
+// never contain these characters (they are stripped before highlighting).
+message SearchHit {
+  // The highlighted fragment: of the message text, the task description (or title), the event
+  // description (or title), the file name, the transcript segment.
+  string snippet = 1;
+  // The object's name: task title, event title, file name; empty for messages, notes and
+  // transcripts (the client names the room itself).
+  string title = 2;
+  // The hit's workspace; empty for DMs and notes shelves (and files / transcripts found there).
+  string workspace_id = 3;
+  // When: the message's creation, the task's last update, the event occurrence's start (see
+  // SearchEventRef), the file's upload, the recording's start.
+  google.protobuf.Timestamp at = 4;
+  // Author: of the message (the attachment's message, the comment), the task's creator, the
+  // event's organizer, who started the recording. Empty when unknown.
+  string author_id = 5;
+  oneof ref {
+    SearchMessageRef message = 10;
+    SearchTaskCommentRef task_comment = 11;
+    SearchTaskRef task = 12;
+    SearchEventRef event = 13;
+    SearchFileRef file = 14;
+    SearchMessageRef note = 15;
+    SearchTranscriptRef transcript = 16;
+  }
+}
+
+// A message of a room, a DM or (note) a notes shelf: jump to it in the room's history.
+message SearchMessageRef {
+  string message_id = 1;
+  string room_id = 2;
+}
+
+// A comment of a task: the message in the task's room and the task it belongs to.
+message SearchTaskCommentRef {
+  string message_id = 1;
+  string room_id = 2;
+  string task_id = 3;
+  string task_key = 4; // ABC-12
+  string task_title = 5;
+}
+
+message SearchTaskRef {
+  string task_id = 1;
+  string board_id = 2;
+  string key = 3; // ABC-12
+  BoardStatusType status_type = 4;
+  bool key_match = 5; // found by its key (ABC-12), listed first
+}
+
+// One hit per event series: occurrence_start is the next occurrence from now (the last one when
+// the series is over).
+message SearchEventRef {
+  string event_id = 1;
+  google.protobuf.Timestamp occurrence_start = 2;
+  google.protobuf.Timestamp occurrence_end = 3;
+  string room_id = 4; // empty = no room
+  bool recurring = 5;
+}
+
+// An attachment: open the preview, «Показать в чате» jumps to message_id in room_id.
+message SearchFileRef {
+  string file_id = 1;
+  string message_id = 2;
+  string room_id = 3;
+  string mime = 4;
+  int64 size = 5;
+}
+
+// A recording's transcript: open the recording at offset_ms (the first matching segment).
+// room_id is a room where the caller sees the recording's card: its own room, else one holding a
+// forwarded copy (ADR-0033 §4).
+message SearchTranscriptRef {
+  string recording_id = 1;
+  string room_id = 2;
+  int64 offset_ms = 3;
+}

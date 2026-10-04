@@ -152,6 +152,9 @@ export const IPC = {
   webAppForget: 'webapp:forget',
   /** main → renderer: WebAppNavState of an app (navigation, title, loading, failure). */
   webAppState: 'webapp:state',
+  /** A tooltip over the shown app: drawn by a native overlay above it (WebAppTip; ADR-0053 «Поправка 1»). */
+  webAppTipShow: 'webapp:tip-show',
+  webAppTipHide: 'webapp:tip-hide',
 } as const;
 
 /** ◀ ▶ ⟳ of the navigation strip. */
@@ -162,6 +165,16 @@ export interface WebAppBounds {
   y: number;
   width: number;
   height: number;
+}
+
+/** A tooltip the overlay draws over the app: `rect` in CSS px of the main window. */
+export interface WebAppTip {
+  text: string;
+  /** The tooltip's shortcut hint ('' = none). */
+  shortcut: string;
+  rect: WebAppBounds;
+  theme: 'dark' | 'light';
+  side: 'top' | 'right' | 'bottom' | 'left';
 }
 
 /** A view's state for the navigation strip (updated by events, no polling). */

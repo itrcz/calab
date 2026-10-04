@@ -1,9 +1,9 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import { RoomType, type Message, type Room, type WorkspaceMember } from '@calaba/protocol';
-import { Hash, MessageCircle, MessageSquare, NotebookText, Phone, Search, Volume2, X } from 'lucide-react';
+import { ArrowRight, Hash, MessageCircle, MessageSquare, NotebookText, Phone, Search, Volume2, X } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Button, Spinner, Tip, cx } from '../../components/ui';
+import { Button, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
@@ -29,23 +29,44 @@ import { startDm } from '../../services/dms';
 import { canCallNow, canDmNow, useCanCall, useCanDm } from '../dm/canDm';
 import { startCall } from '../../services/call';
 import { keyAction, rowActions, type SwitcherAction, type SwitcherRowKind } from './quickSwitcherActions';
+import { switcherKey } from '../../lib/search/keys';
+import { readScope, scopeParam, writeScope, type ScopeMode } from '../../lib/search/scope';
+import type { SectionName } from '../../lib/search/sections';
+import { summaryRows, type SummaryRow } from '../../lib/search/summary';
+import { useSearchSummary } from '../search/useSearch';
+import { HitIcon, HitTitle, hitPlace, sectionTitle, totalText } from '../search/hitParts';
+import { openHit } from '../../services/searchNav';
+import { useSearchPanel } from '../../stores/searchPanel';
 
 type Item =
   | { kind: 'notes'; id: string; roomId: string; name: string; emoji: string }
   | { kind: 'dm'; id: string; roomId: string; peerId: string; name: string }
   | { kind: 'room'; id: string; room: Room }
   | { kind: 'member'; id: string; member: WorkspaceMember }
-  | { kind: 'message'; id: string; msg: Message };
+  | { kind: 'message'; id: string; msg: Message }
+  /** Unified search (ADR-0062): a hit, «Все: N →», a timed-out section (lib/search/summary.ts). */
+  | SummaryRow;
 
 const MAX_ROOMS_QUERY = 6;
 const MAX_DMS = 5;
 const MAX_SHELVES_SHOWN = 5;
 const MAX_MEMBERS = 5;
+/** Server hits shown per section (ADR-0062 §4). */
+const MAX_HITS = 4;
+
+/** The group a row belongs to: a header above its first row, Tab jumps between groups. */
+function groupOf(it: Item): string {
+  if (it.kind === 'hit') return it.byKey ? 'key' : `s:${it.section}`;
+  if (it.kind === 'more' || it.kind === 'timeout') return `s:${it.section}`;
+  return it.kind;
+}
 
 /**
- * ⌘/Ctrl+K — global search (docs/09 #3): notes shelves by name (ADR-0039), DMs by the peer's name (ADR-0020), rooms of every
- * workspace, members and messages of the active one (server FTS). Choosing a member filters
- * messages by that author.
+ * ⌘/Ctrl+K — global search (docs/09 #3, ADR-0062 §4). Instant local results — notes shelves
+ * (ADR-0039), DMs by the peer's name (ADR-0020), rooms of every workspace, members of the active
+ * one — and one debounced GET /api/search: messages, tasks, comments, events, files, notes and
+ * transcripts, ≤ 4 each with «Все: N →» to the results panel. «Это пространство | Везде» is
+ * remembered. Choosing a member filters messages by that author (the workspace message search).
  */
 export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => void; initialQuery?: string }): ReactNode {
   const rooms = useRooms((s) => s.byId);
@@ -59,9 +80,12 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const [q, setQ] = useState(initialQuery);
   const [author, setAuthor] = useState<WorkspaceMember | null>(null);
   const [sel, setSel] = useState(0);
-  // Server results tagged with the request they answer (no state reset inside effects).
+  const [scopeMode, setScopeMode] = useState<ScopeMode>(() => readScope());
+  const scope = scopeParam(scopeMode, activeWs);
+  // Messages of one author (the member filter): the workspace message search, tagged with its request.
   const [found, setFound] = useState<{ key: string; list: Message[] } | null>(null);
   const needle = q.trim().toLowerCase();
+  const text = q.trim();
 
   const home = useUi((s) => s.activeWorkspaceId === HOME);
   const dmItems = useMemo(() => {
@@ -101,53 +125,76 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
       .slice(0, MAX_MEMBERS);
   }, [needle, author, activeWs, workspaces]);
 
-  // Messages: server full-text search in the active workspace, debounced.
-  const text = q.trim();
-  const searchKey = text && activeWs ? `${activeWs}|${author?.user?.id ?? ''}|${text}` : '';
+  // Unified search (ADR-0062): one debounced request, the previous one aborted, answers cached.
+  const summary = useSearchSummary(text, scope, !author);
+
+  // The author filter: that member's messages in the active workspace, debounced.
+  const searchKey = author && text && activeWs ? `${activeWs}|${author.user?.id ?? ''}|${text}` : '';
   useEffect(() => {
-    if (!searchKey || !activeWs) return;
+    if (!searchKey || !activeWs || !author) return;
     const ctl = new AbortController();
     const timer = window.setTimeout(() => {
       api.messages
-        .searchWorkspace(activeWs, { q: text, limit: 20, ...(author?.user ? { author_id: author.user.id } : {}) }, ctl.signal)
+        .searchWorkspace(activeWs, { q: text, limit: 20, ...(author.user ? { author_id: author.user.id } : {}) }, ctl.signal)
         .then(
           (r) => setFound({ key: searchKey, list: r.messages }),
           () => {
             if (!ctl.signal.aborted) setFound({ key: searchKey, list: [] });
           },
         );
-    }, 250);
+    }, 200);
     return () => {
       window.clearTimeout(timer);
       ctl.abort();
     };
   }, [searchKey, text, activeWs, author]);
   const messages = searchKey && found?.key === searchKey ? found.list : null;
-  const busy = !!searchKey && found?.key !== searchKey;
+  const busy = (!!searchKey && found?.key !== searchKey) || summary.busy;
+
+  const serverItems = useMemo(() => (summary.data && !author ? summaryRows(summary.data, MAX_HITS) : { byKey: [], rows: [] }), [summary.data, author]);
 
   const items: Item[] = useMemo(
     () => [
+      ...serverItems.byKey,
       ...shelfItems.map((e): Item => ({ kind: 'notes', id: `n-${e.roomId}`, roomId: e.roomId, name: e.name, emoji: e.emoji })),
       ...dmItems.map((e): Item => ({ kind: 'dm', id: `d-${e.roomId}`, roomId: e.roomId, peerId: e.peerId, name: e.name })),
       ...roomItems.map((room): Item => ({ kind: 'room', id: `r-${room.id}`, room })),
       ...memberItems.map((member): Item => ({ kind: 'member', id: `u-${member.user?.id ?? ''}`, member })),
       ...(messages ?? []).map((msg): Item => ({ kind: 'message', id: `m-${msg.id}`, msg })),
+      ...serverItems.rows,
     ],
-    [shelfItems, dmItems, roomItems, memberItems, messages],
+    [serverItems, shelfItems, dmItems, roomItems, memberItems, messages],
   );
+  const groups = useMemo(() => items.map(groupOf), [items]);
   const cur = Math.min(sel, Math.max(0, items.length - 1));
   // Grid row of each result (a section header takes the row above it).
   const gridRows = useMemo(() => {
     let r = 0;
-    return items.map((it, i) => {
-      if (needle && (i === 0 || items[i - 1]?.kind !== it.kind)) r += 1;
+    return items.map((_it, i) => {
+      if (needle && (i === 0 || groups[i - 1] !== groups[i])) r += 1;
       return (r += 1);
     });
-  }, [items, needle]);
+  }, [items, groups, needle]);
+
+  /** «Все результаты» of a section: the results panel (the chat stays where it is). */
+  const openAll = (section: SectionName): void => {
+    if (!text) return;
+    useSearchPanel.getState().show(text, scope, section);
+    onClose();
+  };
 
   const go = (i: number, action?: SwitcherAction): void => {
     const it = items[i];
     if (!it) return;
+    if (it.kind === 'more' || it.kind === 'timeout') {
+      openAll(it.section);
+      return;
+    }
+    if (it.kind === 'hit') {
+      onClose();
+      openHit(it.hit);
+      return;
+    }
     const act = action ?? rowActions(rowKindNow(it))[0];
     if (act === 'call') {
       const peer = it.kind === 'dm' ? it.peerId : it.kind === 'member' ? (it.member.user?.id ?? '') : '';
@@ -191,23 +238,36 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const hover = useCallback((i: number) => setSel(i), []);
 
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSel(Math.min(items.length - 1, cur + 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSel(Math.max(0, cur - 1));
-    } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      const it = items[cur];
-      if (it) go(cur, keyAction(rowKindNow(it), e));
-    } else if (e.key === 'Backspace' && !q && author) {
+    if (e.key === 'Backspace' && !q && author) {
       setAuthor(null);
+      return;
+    }
+    const out = switcherKey(groups, cur, { key: e.key, shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey, isComposing: e.nativeEvent.isComposing });
+    if (out.kind === 'none') return;
+    e.preventDefault();
+    if (out.kind === 'move') setSel(out.index);
+    else if (out.kind === 'all') {
+      const it = items[out.index];
+      openAll(it && (it.kind === 'hit' || it.kind === 'more' || it.kind === 'timeout') ? it.section : 'messages');
+    } else {
+      const it = items[out.index];
+      if (!it) return;
+      if (it.kind === 'hit' || it.kind === 'more' || it.kind === 'timeout') go(out.index);
+      else go(out.index, keyAction(rowKindNow(it), { shiftKey: out.second }));
     }
   };
 
-  const section = (kind: Item['kind']): string =>
-    kind === 'notes' ? t('search.notes') : kind === 'dm' ? t('search.dms') : kind === 'room' ? t('search.rooms') : kind === 'member' ? t('search.members') : t('search.messages');
+  const header = (it: Item): string => {
+    if (it.kind === 'hit' && it.byKey) return t('search.byKey');
+    if (it.kind === 'hit' || it.kind === 'more' || it.kind === 'timeout') return sectionTitle(it.section);
+    return it.kind === 'notes' ? t('search.notes') : it.kind === 'dm' ? t('search.dms') : it.kind === 'room' ? t('search.rooms') : it.kind === 'member' ? t('search.members') : t('search.messages');
+  };
+
+  const changeScope = (v: ScopeMode): void => {
+    setScopeMode(v);
+    writeScope(v);
+    setSel(0);
+  };
 
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
@@ -216,7 +276,8 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
         <DialogP.Content aria-modal="true"
           aria-label={t('search.title')}
           data-layout-anchor="top" // Spotlight-like: anchored near the top, not centred
-          className="mat-sheet anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] w-[min(600px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
+          data-testid="quick-switcher"
+          className="mat-sheet anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
         >
           <DialogP.Title className="sr-only">{t('search.title')}</DialogP.Title>
           <DialogP.Description className="sr-only">{t('search.hint')}</DialogP.Description>
@@ -251,6 +312,20 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint"
             />
             {busy ? <Spinner className="size-4" /> : null}
+            {/* «Это пространство | Везде» (ADR-0062 §4); «Личные» always searches everywhere. */}
+            {activeWs && !author ? (
+              <span className="shrink-0 mobile:hidden" data-testid="search-scope">
+                <Segmented
+                  value={scopeMode}
+                  onChange={changeScope}
+                  label={t('search.scope')}
+                  options={[
+                    { value: 'workspace', label: t('search.scopeWorkspace') },
+                    { value: 'all', label: t('search.scopeAll') },
+                  ]}
+                />
+              </span>
+            ) : null}
           </div>
           {/* A two-column grid: the listbox (display: contents) fills column 1 with its options;
               each option's action buttons sit in column 2 on the same grid row — outside the
@@ -264,9 +339,9 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               ) : null}
               {items.map((it, i) => (
                 <Fragment key={it.id}>
-                  {needle && (i === 0 || items[i - 1]?.kind !== it.kind) ? (
+                  {needle && (i === 0 || groups[i - 1] !== groups[i]) ? (
                     <li role="presentation" className="col-span-full px-3 pb-1 pt-2 text-caption font-semibold text-muted" style={{ gridRow: (gridRows[i] ?? 1) - 1 }}>
-                      {section(it.kind)}
+                      {header(it)}
                     </li>
                   ) : null}
                   <SwitcherOption
@@ -274,10 +349,12 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
                     index={i}
                     row={gridRows[i] ?? 1}
                     selected={i === cur}
-                    q={q.trim()}
+                    q={text}
                     workspaceName={it.kind === 'room' ? (workspaces[it.room.workspaceId]?.ws.name ?? '') : ''}
+                    activeWs={activeWs}
                     rooms={rooms}
                     onHover={hover}
+                    onPick={pick}
                   />
                 </Fragment>
               ))}
@@ -306,7 +383,7 @@ function rowKind(it: Item, canConnect: boolean, canDm: boolean, canCall: boolean
   if (it.kind === 'member') return { kind: 'member', canDm, canCall };
   if (it.kind === 'dm') return { kind: 'dm', canCall };
   if (it.kind === 'notes') return { kind: 'room' };
-  return { kind: it.kind };
+  return { kind: 'message' };
 }
 
 /** Whose row it is, for «Позвонить» (ADR-0034): a DM's peer or a member; '' otherwise. */
@@ -339,7 +416,8 @@ function joinVoice(r: Room): void {
 
 /**
  * One result: the `option`, column 1 of its grid row. A click only selects it (docs/09 #83) —
- * the actions are the row's buttons (and Enter / ⇧Enter).
+ * the actions are the row's buttons (and Enter / ⇧Enter); «Все: N →» and a timed-out section
+ * have no buttons: a click opens the results panel.
  */
 const SwitcherOption = memo(function SwitcherOption({
   it,
@@ -348,8 +426,10 @@ const SwitcherOption = memo(function SwitcherOption({
   selected,
   q,
   workspaceName,
+  activeWs,
   rooms,
   onHover,
+  onPick,
 }: {
   it: Item;
   index: number;
@@ -357,9 +437,12 @@ const SwitcherOption = memo(function SwitcherOption({
   selected: boolean;
   q: string;
   workspaceName: string;
+  activeWs: string | null;
   rooms: Record<string, Room>;
   onHover: (i: number) => void;
+  onPick: (i: number) => void;
 }): ReactNode {
+  const link = it.kind === 'more' || it.kind === 'timeout';
   return (
     <li
       id={`qs-${it.id}`}
@@ -367,14 +450,15 @@ const SwitcherOption = memo(function SwitcherOption({
       aria-selected={selected}
       style={{ gridRow: row }}
       onMouseMove={selected ? undefined : () => onHover(index)}
-      onClick={selected ? undefined : () => onHover(index)}
+      onClick={link ? () => onPick(index) : selected ? undefined : () => onHover(index)}
+      data-testid={it.kind === 'hit' ? 'search-hit' : link ? `search-${it.kind}` : undefined}
       className={cx(
         'col-start-1 flex min-w-0 cursor-default items-center gap-2 rounded-l-[var(--radius-row)] pl-3 pr-2 text-left text-body text-fg',
-        it.kind === 'message' ? 'py-1.5' : 'h-9 mobile:h-12',
+        it.kind === 'message' || it.kind === 'hit' ? 'py-1.5' : link ? 'h-8 mobile:h-11' : 'h-9 mobile:h-12',
         selected && 'bg-active',
       )}
     >
-      <RowBody it={it} q={q} workspaceName={workspaceName} rooms={rooms} />
+      <RowBody it={it} q={q} workspaceName={workspaceName} activeWs={activeWs} rooms={rooms} />
     </li>
   );
 });
@@ -402,7 +486,7 @@ const SwitcherActions = memo(function SwitcherActions({
   const canConnect = useCanConnect(it.kind === 'room' && it.room.type === RoomType.VOICE ? it.room : null);
   const canDm = useCanDm(it.kind === 'member' ? it.member.workspaceId : '', it.kind === 'member' ? (it.member.user?.id ?? '') : '');
   const canCall = useCanCall(personOf(it));
-  const actions = rowActions(rowKind(it, canConnect, canDm, canCall));
+  const actions = it.kind === 'more' || it.kind === 'timeout' ? [] : rowActions(rowKind(it, canConnect, canDm, canCall));
   const name = rowName(it);
   return (
     <div
@@ -455,11 +539,38 @@ function rowName(it: Item): string {
   if (it.kind === 'dm' || it.kind === 'notes') return it.name;
   if (it.kind === 'room') return it.room.name;
   if (it.kind === 'member') return it.member.nickname || it.member.user?.displayName || '';
+  if (it.kind === 'hit') return it.hit.title || sectionTitle(it.section);
+  if (it.kind === 'more' || it.kind === 'timeout') return sectionTitle(it.section);
   return memberName(useRooms.getState().byId[it.msg.roomId]?.workspaceId ?? null, it.msg.authorId);
 }
 
-function RowBody({ it, q, workspaceName, rooms }: { it: Item; q: string; workspaceName: string; rooms: Record<string, Room> }): ReactNode {
+function RowBody({ it, q, workspaceName, activeWs, rooms }: { it: Item; q: string; workspaceName: string; activeWs: string | null; rooms: Record<string, Room> }): ReactNode {
   const sub = 'shrink-0 truncate text-caption text-muted mobile:hidden';
+  if (it.kind === 'hit') {
+    const place = hitPlace(it.hit, activeWs);
+    return (
+      <>
+        <HitIcon section={it.section} hit={it.hit} className="mt-0.5 size-4 shrink-0 self-start text-muted" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">
+            <HitTitle hit={it.hit} q={q} />
+          </span>
+          {place ? <span className="truncate text-caption text-muted">{place}</span> : null}
+        </span>
+      </>
+    );
+  }
+  if (it.kind === 'more') {
+    return (
+      <span className="flex min-w-0 flex-1 items-center gap-1 pl-6 text-caption font-medium text-accent-text">
+        {t('search.all', { n: totalText(it.total) })}
+        <ArrowRight className="size-3.5" aria-hidden />
+      </span>
+    );
+  }
+  if (it.kind === 'timeout') {
+    return <span className="min-w-0 flex-1 truncate pl-6 text-caption text-muted">{t('search.timedOut')}</span>;
+  }
   if (it.kind === 'notes') {
     return (
       <>

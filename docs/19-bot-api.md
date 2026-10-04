@@ -119,6 +119,8 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET /api/workspaces/{id}/badges` | бейджи участников (docs/09 #82): `WorkspaceMember.badge_id` ссылается на них | участник |
 | `POST /api/workspaces/{id}/badges {name, fileId}` · `PATCH · DELETE …/badges/{badgeId}` | библиотека бейджей; картинка — своя загрузка бота в это пространство (PNG/WebP/JPEG ≤ 128 КБ). SDK `bot.badges.create/update/delete` | `MANAGE_MEMBERS` |
 | `PUT /api/workspaces/{id}/members/{userId}/badge {badgeId}` | выдать / снять (`""`) бейдж; цель — не бот и ниже старшей роли бота. SDK `bot.badges.set` | `MANAGE_NICKNAMES` |
+| `GET /api/workspaces/{id}/achievements` | каталог ачивок пространства (ADR-0061; архивные — с `archivedAt`, `ETag`); картинка — `GET /api/files/{fileId}` (512×512 WebP). Изменять каталог (`POST …/achievements`, `PATCH · DELETE /api/achievements/{id}`) — только людям: 403 `BOT_NOT_ALLOWED` | участник |
+| `GET /api/workspaces/{id}/members/{userId}/achievements` | живые ачивки участника `{items: [{id, achievementId, note, grantedBy, grantedAt, messageId, roomId}]}`, новые первыми. Вручить / отозвать (`POST …/achievements`, `DELETE …/achievements/{grantId}`) — 403 `BOT_NOT_ALLOWED`: вручают люди | участник |
 | `GET · POST /api/workspaces/{id}/invites` · `DELETE …/invites/{inviteId}` | ссылки-приглашения в пространство `{maxUses, expiresInSeconds}`. SDK `bot.invites.list/create/delete` | `INVITE_MEMBERS` |
 | `GET · POST /api/workspaces/{id}/invites/email` · `DELETE …/invites/email/{inviteId}` | приглашение по почте `{email}`: письмо «Пространство (от имени бота X)», тот же адрес — не чаще раза в сутки; пригласить админом — только владелец. SDK `bot.invites.email/listEmail/deleteEmail` | `INVITE_MEMBERS` |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | комнаты, которые бот видит | `VIEW_ROOM` |
@@ -133,6 +135,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | закрепы | `MANAGE_MESSAGES` / `VIEW_ROOM` |
 | `PUT /api/rooms/{id}/read` | отметка прочтения (не даёт людям ✓✓ «Прочитано»; `READ_RECEIPT` ботам не приходит) | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/messages/search?q=` · `GET /api/me/mentions` | поиск, упоминания бота | `VIEW_ROOM` |
+| `GET /api/search?q=&scope=<workspace_id>\|all&types=&type=&cursor=` (ADR-0062) | единый поиск: сообщения, комментарии и задачи, события, файлы, расшифровки — по тем же правам, что у людей (биты ролей бота, события — свои и комнат, которые он видит); раздела «Заметки» у бота нет (пустой) | права каждого раздела |
 | `POST /api/workspaces/{id}/files` · `POST /api/dms/{id}/files` | загрузка файла (multipart `file`) → `{file}` | `ATTACH_FILES` |
 | `GET /api/files/{id}` · `GET /api/files/{id}/thumbnail` | скачать файл | доступ к комнате |
 | `POST /api/dms {userId}` · `GET /api/dms` · `GET /api/dms/candidates` | DM с участником общего пространства | не заблокирован |
@@ -149,8 +152,10 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `PATCH · DELETE /api/events/{id}[?occurrence=]` | изменить / отменить встречу (или одно вхождение серии). SDK `bot.calendar.update/delete` | свою; чужую — `MANAGE_ROOM` в её комнате или `MANAGE_EVENTS` (внешние адреса в чужую встречу — 403) |
 | `GET /api/workspaces/{id}/freebusy?users=&from=&to=` · `POST …/freebusy/suggest` | свободно/занято и подбор времени (ADR-0041): боту — только «занято» (без названий и участников внешних событий). SDK `bot.calendar.freebusy/suggest` | не гость |
 | `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: бот не участник встреч и не держит внешний календарь | — |
-| доски задач (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, статусы/лейблы/вехи/виды, архив задач | бот работает как человек — по битам доски своих ролей и переопределений (бота можно назначить исполнителем и дать ему доступ к приватной доске лично); комментарий — сообщение в `task.roomId`. Доступ к доске (`PUT …/permissions`) и удаление навсегда (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
+| доски задач (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, статусы/лейблы/вехи/виды, архив задач | бот работает как человек — по битам доски своих ролей и переопределений (бота можно назначить исполнителем и дать ему доступ к приватной доске лично); комментарий — сообщение в `task.roomId`. Назначить исполнителем / согласующим (ADR-0059): участника-человека, не гостя — даже без доступа к доске, если она не закрытая (он увидит доску только по своим карточкам: `Board.taskScoped`); бота — только видящего доску, согласующим — никогда; иначе `422`. Бот сам по карточкам доску не видит — ему нужен `VIEW_BOARD`. Доступ к доске (`PUT …/permissions`) и удаление навсегда (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | доски 2.0 (ADR-0058): `GET/POST /api/workspaces/{id}/board-categories`, `PATCH/DELETE /api/board-categories/{id}`, `PUT /api/workspaces/{id}/boards/order`, `PATCH /api/boards/{id} {setDisabledFeatures, disabledFeatures, estimateScale}`, чек-листы: `POST /api/tasks/{id}/checklists`, `PATCH/DELETE /api/checklists/{id}`, `POST /api/checklists/{id}/items`, `PATCH/DELETE /api/checklist-items/{id}`, `POST /api/checklist-items/{id}/convert` | категории — `CREATE_BOARDS`, положить доску и фичи — `MANAGE_BOARD`, чек-листы — как поля задачи (`EDIT_TASKS`; `CREATE_TASKS` — свои и назначенные); чек-листы — с тарифа Team (`409 PLAN_LIMIT`). Фича доски выключена → запрос, **меняющий** её поле на непустое, — `409 CONFLICT`, `reason FEATURE_DISABLED`, `field` = имя поля (`estimate`, `dueOn`, `approverIds`…); сброс в пусто и повтор текущего значения проходят. Вебхук доски (`/api/boards/{id}/webhook*`) — только люди, боту `403 BOT_NOT_ALLOWED`. SDK: `bot.boards.categories.*`, `bot.boards.setFeatures`, `bot.tasks.checklists.*` | см. слева |
+| вехи внутри задачи (ADR-0063): `POST /api/tasks/{id}/milestones {name, dueOn?}`, `PATCH /api/task-milestones/{id} {name?, dueOn?, position?, completed?}`, `DELETE /api/task-milestones/{id}`; подзадача — `PATCH /api/tasks/{id} {taskMilestoneId}` | как поля задачи (`EDIT_TASKS`; `CREATE_TASKS` — свои и назначенные); ≤ 20 вех на задачу (`409 TASK_MILESTONE_LIMIT`), у подзадачи вех нет (`422`), веха подзадачи — только веха родителя (`422`). Пока к вехе привязаны подзадачи, её выполненность ведёт сервер — ручной `completed` даёт `409 TASK_MILESTONE_AUTO`. Фича `MILESTONES` выключена — `409 FEATURE_DISABLED`. Ответ — `{milestone, task}`; вехи и прогресс (`milestones`, `milestoneProgress`, `taskMilestoneId`) есть в каждой задаче и в `TASK_UPDATE`. SDK: `bot.tasks.milestones.*` | см. слева |
+| автоматизации досок (ADR-0060): `GET /api/boards/{id}/rules`, `GET /api/rules/{id}/runs` | бот **читает** правила доски и журнал срабатываний; создать / изменить / удалить / проверить правило (`POST /api/boards/{id}/rules`, `PATCH/DELETE /api/rules/{id}`, `POST /api/rules/{id}/test`) и Git-вебхук доски (`/api/boards/{id}/git`) — 403 `BOT_NOT_ALLOWED`. Изменения задач, сделанные ботом, запускают правила доски, как изменения людей; изменения правил видны в журнале с пустым `actorId` и `ruleId` | чтение — `VIEW_BOARD`, журнал — `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты |
 | `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | библиотека звуков (ADR-0051): клип — своя загрузка бота в это пространство | `MANAGE_STICKERS` |
 | стикеры: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | см. [Стикеры](#стикеры-по-api) | участник / `MANAGE_STICKERS` |
@@ -158,7 +163,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 
 **Остаются только для людей** (403 `BOT_NOT_ALLOWED`, ADR-0051): удаление пространства; управление ботами (создать, токены,
 аватар — какой бы бит ни был у бота); настройки SIP, GPTunneL, веб-приложения пространства; суперадминка; голос в
-согласовании задач; RSVP, CalDAV, «сегодня»; поиск аккаунта по почте и прямое добавление аккаунта
+согласовании задач; вручение и отзыв ачивок; RSVP, CalDAV, «сегодня»; поиск аккаунта по почте и прямое добавление аккаунта
 (`invites/lookup`, `POST …/members`); гостевые ссылки комнат; таблица и правка дней рождения; доступ к доске;
 удаление и перезагрузка записей; фоны камеры, заметки, звонки DM, пароль, почта, сессии.
 
@@ -175,7 +180,10 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 `id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` относительно
 вызывающего), времена, `kind`, `system`, `sticker`, `forward`. `command` не задан, как во всех REST-ответах.
 У карточки записи `kind: "MESSAGE_KIND_SYSTEM"` и `system.recording.recordingId`; последний id
-нужен для URL транскрипта. В команде, отправленной ответом на карточку, `replyToId` содержит id
+нужен для URL транскрипта. Открытка ачивки (ADR-0061) — тоже `MESSAGE_KIND_SYSTEM`: `system.achievement
+{achievementId, grantId, note, grantedBy}`, автор — получатель. Сообщение правила автоматизации доски (ADR-0060) — тоже системное:
+`system.automation {boardId, taskId, ruleId, ruleName, text}` (`text` — простой текст: без упоминаний и разметки, никого не пингует); `authorId` — создатель правила, показывайте его как
+«Автоматизация: ruleName». В команде, отправленной ответом на карточку, `replyToId` содержит id
 **сообщения** с карточкой, а не id записи.
 
 `404 NOT_FOUND`: комната недоступна, сообщение отсутствует/удалено, относится к другой комнате
@@ -410,7 +418,11 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
   согласования, чек-листы), `task.archived`, `task.restored` (автоархив — `actor: null`), `task.moved_in` (доска-получатель;
   задача уже с новым ключом), `task.moved_out` (доска-источник), `task.comment.created`, `task.comment.updated`,
   `task.comment.deleted`, `ping`. Изменения одной транзакции — одно событие, список `changes` — записи журнала задачи
-  (`field` = `kind` журнала: `status`, `assignees`, `checklist` …; `before` / `after` — их данные).
+  (`field` = `kind` журнала: `status`, `assignees`, `checklist`, `milestones`, `git` …; `before` / `after` — их данные).
+  Изменения, сделанные **правилом автоматизации** (ADR-0060), приходят отдельным событием той же транзакции с
+  `"actor": null` и `"rule": {"id", "name"}`; у изменений людей и ботов `rule` — `null`. Git-события (связи задачи с
+  ветками и PR) — `task.updated` с `changes[field=git]` и `"actor": null`. Версия вебхука остаётся `1`: поля только
+  добавлены.
 - **Запрос.** `POST <url>`, `Content-Type: application/json`, `User-Agent: Calab-Webhook/1.0`, заголовки:
 
   | Заголовок | Значение |
@@ -439,7 +451,8 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
 присутствует: неустановленные — `null` (`actor: null` у изменений сервера, `edited_at: null`), пустые строки и списки — как
 есть; `uint64` (например `size` вложения) — **строкой**, `sequence` — числом. `task` — задача без данных зрителя
 (`subscribed`, `muted`, `unread`, `viewer_state` всегда в значениях по умолчанию), `attachments` и `checklists` всегда пусты
-(счётчики `attachment_count`, `checklist_total/done` на месте);
+(счётчики `attachment_count`, `checklist_total/done` на месте); вехи (`milestones`, `milestone_progress`, `task_milestone_id`,
+ADR-0063) — как есть;
 `comment` — только у `task.comment.*`. Ссылка на задачу — `task_url`. Реальный пример (golden-фикстура
 `apps/server/internal/boards/testdata/webhook_event.json`, поля по алфавиту; чтобы показать и `changes`, и `comment`, она
 собрана вместе, у настоящего `task.updated` `comment` равен `null`):
@@ -485,6 +498,7 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
   },
   "id": "0192a000-0000-7000-8000-000000000001",
   "occurred_at": "2026-10-02T12:00:00Z",
+  "rule": null,
   "sequence": 42,
   "task": {
     "approval_required": 0,
@@ -506,10 +520,14 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
     "description": "",
     "due_on": "",
     "estimate": 3,
+    "git_links": [],
+    "git_links_count": 0,
     "id": "0192a000-0000-7000-8000-0000000000dd",
     "key": "FNG-12",
     "label_ids": [],
     "milestone_id": "",
+    "milestone_progress": null,
+    "milestones": [],
     "muted": false,
     "number": 12,
     "parent_id": "",
@@ -523,6 +541,7 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
     "subscribed": false,
     "subtask_count": 0,
     "subtask_done": 0,
+    "task_milestone_id": "",
     "title": "Отчёт",
     "unread": false,
     "updated_at": "2026-10-02T12:00:00Z",
@@ -766,7 +785,7 @@ user channel gateway и подписанный webhook. Включённый web
 кэш SDK не гарантирует exactly-once. UI блокирует всю клавиатуру после принятия до
 новой версии от бота; устаревший клик обновляет сообщение без запуска нового действия.
 
-## Формы досок (ADR-0059)
+## Формы досок (ADR-0064)
 
 С Team: до 5 форм на доску, Business — 20, Custom/on-prem — по лимитам (0 = без
 ограничения). Управление требует `VIEW_BOARD | MANAGE_BOARD`; бот использует обычный

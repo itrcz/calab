@@ -1,0 +1,15 @@
+{
+  "action": "closed",
+  "number": 42,
+  "pull_request": {
+    "number": 42,
+    "title": "FNG-12 Login form",
+    "body": null,
+    "html_url": "https://github.com/acme/app/pull/42",
+    "state": "closed",
+    "merged": true,
+    "user": {"login": "octocat"},
+    "head": {"ref": "feature/FNG-12-login"}
+  },
+  "repository": {"full_name": "acme/app", "html_url": "https://github.com/acme/app"}
+}

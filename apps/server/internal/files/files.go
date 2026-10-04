@@ -644,8 +644,8 @@ func (s *Service) UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.
 // CanRead implements the download rule:
 //   - the uploader;
 //   - an avatar (user-scoped): any authenticated user;
-//   - a workspace icon, badge picture (docs/09 #82), camera background (ADR-0035) or soundboard
-//     clip (ADR-0036): members of the workspace (guests too);
+//   - a workspace icon, badge picture (docs/09 #82), camera background (ADR-0035), soundboard
+//     clip (ADR-0036) or achievement picture (ADR-0061): members of the workspace (guests too);
 //   - a web app icon (ADR-0050): members of the workspace except guests;
 //   - a sticker (ADR-0030): members of its workspace, or VIEW_ROOM in a room where a live
 //     message shows it;
@@ -731,6 +731,11 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 		}
 		if !icon {
 			if icon, err = s.db.Q.IsWorkspaceSound(ctx, f.ID); err != nil {
+				return false, err
+			}
+		}
+		if !icon {
+			if icon, err = s.db.Q.IsWorkspaceAchievement(ctx, &f.ID); err != nil {
 				return false, err
 			}
 		}

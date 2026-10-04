@@ -20,6 +20,7 @@ import {
   capMax,
   clampToCap,
   planHas,
+  planHasIdentity,
   planUsage,
   setPlanBody,
   streamPresetLock,
@@ -269,5 +270,11 @@ describe('plan caps for workspace voice defaults (#42)', () => {
     expect(capMax(10, 1)).toBe(1);
     expect(capMax(10, 0)).toBe(10);
     expect(capMax(10, 99)).toBe(10);
+  });
+  it('planHasIdentity: SSO / OAuth provider only on a current Business plan (ADR-0054 §5)', () => {
+    expect(planHasIdentity(undefined)).toBe(true);
+    expect(planHasIdentity(create(WorkspacePlanSchema, { plan: Plan.ENTERPRISE }))).toBe(true);
+    expect(planHasIdentity(create(WorkspacePlanSchema, { plan: Plan.ENTERPRISE, expired: true }))).toBe(false);
+    for (const plan of [Plan.UNSPECIFIED, Plan.FREE, Plan.TEAM, Plan.CUSTOM]) expect(planHasIdentity(create(WorkspacePlanSchema, { plan }))).toBe(false);
   });
 });

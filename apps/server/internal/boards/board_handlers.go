@@ -24,23 +24,24 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 )
 
-// boardFor renders one board as viewer sees it (bits: theirs; 0 = a broadcast, shared views only).
-func (s *Service) boardFor(ctx context.Context, q *sqlc.Queries, id, viewer uuid.UUID, bits perm.Bits) (*v1.Board, error) {
+// boardFor renders one board as viewer sees it (acc: theirs; zero = a broadcast, shared views
+// only; acc.TaskScoped = the task-scoped form of ADR-0064).
+func (s *Service) boardFor(ctx context.Context, q *sqlc.Queries, id, viewer uuid.UUID, acc perm.BoardAccess) (*v1.Board, error) {
 	b, err := q.GetBoard(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	p, err := loadParts(ctx, q, []uuid.UUID{id}, viewer, bits != 0)
+	p, err := loadParts(ctx, q, []uuid.UUID{id}, viewer, acc.Bits != 0 || acc.TaskScoped)
 	if err != nil {
 		return nil, err
 	}
-	return boardProto(b, p, bits), nil
+	return boardProto(b, p, acc.Bits, acc.TaskScoped), nil
 }
 
 // publishBoard sends BOARD_UPDATE (or create) of a board to its viewers (the gateway fills in
 // each recipient's bits).
 func (s *Service) publishBoard(ctx context.Context, wsID, id uuid.UUID, created bool) {
-	b, err := s.boardFor(ctx, s.db.Q, id, uuid.Nil, 0)
+	b, err := s.boardFor(ctx, s.db.Q, id, uuid.Nil, perm.BoardAccess{})
 	if err != nil {
 		return
 	}
@@ -57,7 +58,7 @@ func (s *Service) respondBoard(w http.ResponseWriter, r *http.Request, id uuid.U
 	if fresh, err := perm.FromContext(r.Context()).Board(r.Context(), id, uid(r)); err == nil {
 		acc = fresh
 	}
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc.Bits)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc)
 	if err != nil {
 		return err
 	}
@@ -147,7 +148,7 @@ func (s *Service) listBoards(w http.ResponseWriter, r *http.Request) error {
 		if err != nil || !acc.Bits.Has(perm.ViewBoard|perm.ManageBoard) {
 			continue
 		}
-		pb, err := s.boardFor(r.Context(), s.db.Q, b.ID, uid(r), acc.Bits)
+		pb, err := s.boardFor(r.Context(), s.db.Q, b.ID, uid(r), acc)
 		if err != nil {
 			return err
 		}
@@ -313,7 +314,7 @@ func (s *Service) getBoard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc.Bits)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc)
 	if err != nil {
 		return err
 	}
@@ -610,7 +611,7 @@ func (s *Service) getPermissions(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Bits.Has(perm.ManageBoard) {
 		return httpx.Forbidden("MANAGE_BOARD required")
 	}
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc.Bits)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc)
 	if err != nil {
 		return err
 	}
@@ -654,7 +655,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	perm.FromContext(r.Context()).Invalidate()
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), 0)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), perm.BoardAccess{})
 	if err != nil {
 		return err
 	}

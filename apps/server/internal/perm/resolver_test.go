@@ -16,6 +16,7 @@ type fakeStore struct {
 	access      map[key]sqlc.GetRoomAccessRow
 	boards      map[key]sqlc.GetBoardAccessRow
 	taskRooms   map[uuid.UUID]sqlc.GetTaskRoomRefRow
+	invites     map[key][2]bool // (task, user) → assignee, approver
 	memberCalls int
 	accessCalls int
 	err         error
@@ -50,11 +51,13 @@ func (f *fakeStore) GetBoardAccess(_ context.Context, a sqlc.GetBoardAccessParam
 	return row, nil
 }
 
-func (f *fakeStore) GetTaskRoomRef(_ context.Context, roomID uuid.UUID) (sqlc.GetTaskRoomRefRow, error) {
-	row, ok := f.taskRooms[roomID]
+func (f *fakeStore) GetTaskRoomRef(_ context.Context, a sqlc.GetTaskRoomRefParams) (sqlc.GetTaskRoomRefRow, error) {
+	row, ok := f.taskRooms[a.RoomID]
 	if !ok {
 		return sqlc.GetTaskRoomRefRow{}, pgx.ErrNoRows
 	}
+	inv := f.invites[key{row.TaskID, a.UserID}]
+	row.Assignee, row.Approver = inv[0], inv[1]
 	return row, nil
 }
 
@@ -106,6 +109,33 @@ func TestResolverTaskRoom(t *testing.T) {
 	r = NewResolver(s)
 	if acc, _ := r.Room(ctx, room, u); acc.Bits != ViewRoom|ManageMessages {
 		t.Fatalf("comments off: task room must be read-only: %d", acc.Bits)
+	}
+	// ADR-0059: a member without VIEW_BOARD invited on the task sees its room like a viewer
+	// (no moderation); once the task is archived, the invitation no longer counts.
+	s.boards[key{board, other}] = func() sqlc.GetBoardAccessRow {
+		r := access(true, false)
+		r.Invited = true
+		return r
+	}()
+	s.invites = map[key][2]bool{{task, other}: {false, true}}
+	r = NewResolver(s)
+	if b, _ := r.Board(ctx, board, other); b.Bits != 0 || !b.TaskScoped {
+		t.Fatalf("invited on a private board: %+v", b)
+	}
+	if acc, _ := r.Room(ctx, room, other); acc.Bits != ViewRoom|SendMessages|AttachFiles {
+		t.Fatalf("approver of the task: %d", acc.Bits)
+	}
+	s.taskRooms[room] = sqlc.GetTaskRoomRefRow{TaskID: task, BoardID: board, TaskArchived: true}
+	r = NewResolver(s)
+	if acc, _ := r.Room(ctx, room, other); acc.Bits != 0 {
+		t.Fatalf("archived task: the invitation must not count: %d", acc.Bits)
+	}
+	restricted := access(true, false)
+	restricted.Invited, restricted.Restricted = true, true
+	s.boards[key{board, other}] = restricted
+	r = NewResolver(s)
+	if b, _ := r.Board(ctx, board, other); b.TaskScoped {
+		t.Fatalf("restricted board is never task-scoped: %+v", b)
 	}
 	if TaskRoom(ViewBoard, false, false) != ViewRoom|SendMessages|AttachFiles || TaskRoom(CreateTasks, false, false) != 0 ||
 		TaskRoom(ViewBoard, false, true) != ViewRoom || !CommentsOff(1<<12) || CommentsOff(1<<9) {

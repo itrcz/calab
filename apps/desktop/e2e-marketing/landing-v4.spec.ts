@@ -3,12 +3,13 @@ import { createServer, type Server } from 'node:http';
 import { join, resolve } from 'node:path';
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { SipCallStatus, WorkspaceAppSchema } from '@calaba/protocol';
+import { Plan, SipCallStatus, WorkspaceAppSchema, WorkspacePlanSchema } from '@calaba/protocol';
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
+import { ENTERPRISE_PLAN_LIMITS } from '../e2e-support/fixtures';
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
-import { LOOKS, cameraHtml, render } from './art';
 import { APP_LOCALE, COPY, type Copy, type Short } from './copy';
+import { cameraPhoto, dataUrl } from './photos';
 import { drawArt, seedScene } from './seed';
 
 /**
@@ -110,8 +111,8 @@ async function speaking(page: Page, ids: string[]): Promise<void> {
   await page.evaluate((list) => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.(list), ids);
 }
 
-/** Chromium's fake camera replaced by Анна's drawn camera frame. */
-async function fakeCamera(page: Page, png: Buffer): Promise<void> {
+/** Chromium's fake camera replaced by Анна's camera photo. */
+async function fakeCamera(page: Page, frame: Buffer): Promise<void> {
   await page.evaluate(async (src) => {
     const img = new Image();
     img.src = src;
@@ -128,7 +129,7 @@ async function fakeCamera(page: Page, png: Buffer): Promise<void> {
     const md = navigator.mediaDevices;
     const orig = md.getUserMedia.bind(md);
     md.getUserMedia = async (constraints) => (constraints?.video ? new MediaStream(stream.getVideoTracks().map((t) => t.clone())) : orig(constraints));
-  }, `data:image/png;base64,${png.toString('base64')}`);
+  }, dataUrl(frame));
 }
 
 /** In «Переговорка», muted (the fake mic beeps), a room status, steady «good» signal. */
@@ -157,11 +158,14 @@ function team(mock: MockServer): void {
 
 /** The telephony of the workspace as an admin left it: the account saved and on (set before sign-in). */
 function telephony(mock: MockServer): void {
+  // Telephony is a Business+ feature: the workspace on Enterprise, or the dial button stays hidden.
+  const w = mock.state.workspaces.get(IDS.workspaces.main);
+  if (w) w.plan = create(WorkspacePlanSchema, { plan: Plan.ENTERPRISE, limits: ENTERPRISE_PLAN_LIMITS, validUntil: timestampFromMs(Date.parse('2026-12-31T23:59:59Z')), expired: false });
   mock.setSip(IDS.workspaces.main, { enabled: true, host: 'sip.zadarma.com', callerId: '+74951230099', allowedPrefixes: ['+7', '+1', '+34', '+44', '+86', '+52'], hasPassword: true });
 }
 
 async function inCall(ctx: Ctx): Promise<void> {
-  await fakeCamera(ctx.page, await render(ctx.browser, cameraHtml(LOOKS.anna), 1280, 720));
+  await fakeCamera(ctx.page, cameraPhoto('anna'));
   await joinMeeting(ctx);
   await setLocale(ctx.page, ctx.short);
 }

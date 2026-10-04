@@ -32,9 +32,12 @@ import { PreviewRuns } from './PreviewRuns';
 import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
-import { birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
+import { automationCardOf, birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
+import { AutomationCardView } from '../boards/AutomationCard';
 import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
+import { AchievementCardView } from './AchievementCard';
+import { achievementCardOf } from '../../lib/achievements';
 import { CallLogRow } from '../call/CallBits';
 import { callCardOf } from '../../lib/callModel';
 import { ForwardLine, forwardSentMs } from './ForwardLine';
@@ -128,10 +131,13 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   useTimeFormat();
   const card = recordingCardOf(c.msg);
   const bday = birthdayCardOf(c.msg);
+  const ach = achievementCardOf(c.msg);
   // A DM call log line (ADR-0034): one line like Telegram, on the caller's side.
   const call = callCardOf(c.msg);
+  // A board automation's message (ADR-0060): a room (notify_room) or the task's comments.
+  const auto = automationCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday || call ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -145,9 +151,17 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
         <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <BirthdayCardView authorId={c.msg.authorId} card={bday} workspaceId={workspaceId} />
         </div>
+      ) : ach ? (
+        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <AchievementCardView authorId={c.msg.authorId} card={ach} workspaceId={workspaceId} roomId={c.msg.roomId} messageId={c.msg.id} createdAt={c.msg.createdAt} />
+        </div>
       ) : call ? (
         <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <CallLogRow card={call} at={c.msg.createdAt} />
+        </div>
+      ) : auto ? (
+        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <AutomationCardView card={auto} workspaceId={workspaceId} roomId={c.msg.roomId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />
@@ -717,20 +731,23 @@ function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMe
 
 function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string; workspaceId: string; replyToId: string; padTop: boolean }): ReactNode {
   const target = useMessages((s) => s.rooms[roomId]?.items.find((c) => c.key === replyToId)?.msg);
+  const gone = useMessages((s) => !!s.gone[replyToId]);
   const jump = useChatView((s) => s.requestJump);
   const sys = target ? systemPreview(target) : '';
   const parts = target && !sys ? previewPartsOf(workspaceId, target.content, 140) : [];
   const snippet = sys || (parts.length ? <PreviewRuns parts={parts} /> : target?.attachments.length ? t('chat.attachment') : '');
+  const deleted = !target && gone;
   const who = target ? memberName(workspaceId, target.authorId) : t('chat.reply');
   return (
     <div className={cx('px-2 pb-0.5', padTop ? 'pt-2' : 'pt-1')}>
       <button
         type="button"
+        disabled={deleted}
         onClick={() => jump(roomId, replyToId)}
         className="flex w-full min-w-0 flex-col rounded-[var(--radius-row)] border-l-[3px] border-[color:var(--bubble-accent)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] px-2 py-1 text-left hover:bg-[color-mix(in_srgb,var(--bubble-accent)_18%,transparent)]"
       >
         <span className="truncate text-body font-semibold text-[color:var(--bubble-accent)]">{who}</span>
-        <span className="truncate text-body text-fg">{target ? snippet : t('chat.replyOpen')}</span>
+        <span className="truncate text-body text-fg">{target ? snippet : deleted ? t('chat.replyDeleted') : t('chat.replyOpen')}</span>
       </button>
     </div>
   );

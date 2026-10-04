@@ -4,15 +4,15 @@
  * transferred MediaStreamTrackGenerator stream; the UI thread takes no part per frame.
  *
  * A frame passes through untouched (no GL, no canvas) unless it needs work: a background (once the
- * model is loaded — segmentation at SEG_FPS, 8/s; 6/s without a GPU delegate), «Улучшить
- * внешность», or «Низкая освещённость» while the room is dark. The low-light meter reads the frame
+ * model is loaded — multiclass at SEG_FPS, 15/s (every camera frame); the landscape model at 6/s on software GL or the
+ * CPU delegate), «Улучшить внешность», or «Низкая освещённость» while the room is dark. The low-light meter reads the frame
  * at 256×144 once a second on the CPU (a histogram, effects.ts); a bright room stays pass-through.
  * The appearance effects need no model: the compositor alone, created on the first frame.
  */
 import { Compositor } from './compositor';
 import { METER_HEIGHT, METER_INTERVAL_MS, METER_WIDTH, NO_WORKER_EFFECTS, denoiseAmount, exposureDecision, exposureRamp, histogramMean, lumaHistogram, type WorkerEffects } from './effects';
-import { SEG_FPS, SEG_FPS_SOFTWARE, blurSigma, emaAlpha, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
-import type { FromWorker, ToWorker, WorkerMode } from './protocol';
+import { FRAME_FAILURES_MAX, MASKLESS_SEGMENTS_MAX, SEG_FPS, SEG_MODELS, blurSigma, effectiveSegFps, emaAlpha, errorText, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
+import type { BgTune, FromWorker, ToWorker, WorkerMode } from './protocol';
 import { createSegmenter, type Segmenter } from './segmenter';
 
 interface WorkerScope {
@@ -33,13 +33,22 @@ let seg: Segmenter | null = null;
 let loading: Promise<void> | null = null;
 /** The segmenter could not start: no background (the appearance effects still work). */
 let failed = false;
+/** The user's setting and whether the software / CPU-delegate fallback is in use (it keeps its own rate). */
+let segSetting: number = SEG_FPS;
+let segFallback = false;
 let segFps = SEG_FPS;
+function updateSegFps(): void {
+  segFps = tune.segFps ?? effectiveSegFps(segSetting, segFallback);
+}
 let tokens = 0;
 let lastFrameTs = -1;
 let lastSegTs = -1;
 let lastGoodAt: number | null = null;
 let pendingImage: ImageBitmap | null = null;
 let stopped = false;
+/** Frames that threw in a row, segmentations without a mask in a row (logic.ts: never silent). */
+let frameFailures = 0;
+let masklessSegments = 0;
 let segCtx: OffscreenCanvasRenderingContext2D | null = null;
 /** Low light: the meter's canvas (CPU-backed, read once a second), its state, the curve in use. */
 let meterCtx: OffscreenCanvasRenderingContext2D | null = null;
@@ -48,9 +57,10 @@ let meanLuma = -1;
 let exposureOn = false;
 let gammaTarget = 1;
 let gamma = 1;
-/** The selfie landscape model's input. */
-const SEG_WIDTH = 256;
-const SEG_HEIGHT = 144;
+/** The model's input size (logic.ts SEG_MODELS), set when the segmenter starts. */
+let segWidth = 256;
+let segHeight = 256;
+let tune: BgTune = {};
 const stats = { frames: 0, rendered: 0, segs: 0, ms: 0, since: 0 };
 
 function count(ms: number, rendered: boolean, segmented: boolean): void {
@@ -77,7 +87,7 @@ function compositor(): Compositor | null {
   } catch (err) {
     glFailed = true;
     console.warn('camera effects: WebGL2 unavailable', err);
-    post({ type: 'state', state: 'failed', error: String(err) });
+    post({ type: 'state', state: 'failed', detail: `webgl2: ${errorText(err)}` });
   }
   return comp;
 }
@@ -90,17 +100,28 @@ function load(): Promise<void> {
       const c = compositor();
       if (!c) throw new Error('webgl2 unavailable');
       const software = c.software;
-      seg = await createSegmenter(c.canvas);
+      seg = await createSegmenter(c.canvas, { software, ...(tune.model ? { model: tune.model } : {}), ...(tune.failGpu ? { failGpu: true } : {}) });
       if (stopped) return;
-      if (!seg.gpu || software) segFps = SEG_FPS_SOFTWARE;
-      post({ type: 'state', state: 'ready', software: !seg.gpu || software });
+      const spec = SEG_MODELS[seg.model];
+      [segWidth, segHeight] = spec.input;
+      c.setMaskSpec(spec);
+      segFallback = !seg.gpu || software;
+      updateSegFps();
+      const delegate = `${seg.model}, ${seg.gpu ? 'gpu delegate' : `cpu delegate (gpu: ${seg.gpuError})`}, ${segFps}/s`;
+      post({ type: 'state', state: 'ready', software: !seg.gpu || software, detail: `${delegate}; ${c.renderer}` });
     } catch (err) {
-      failed = true;
-      console.warn('camera background: segmentation unavailable', err);
-      post({ type: 'state', state: 'failed', error: String(err) });
+      fail(`segmenter: ${errorText(err)}`);
     }
   })();
   return loading;
+}
+
+/** The background gives up (frames pass through, effects go on): the state and the reason, once. */
+function fail(detail: string): void {
+  if (failed) return;
+  failed = true;
+  console.warn('camera background: unavailable', detail);
+  post({ type: 'state', state: 'failed', detail });
 }
 
 function setImage(image: ImageBitmap | null): void {
@@ -170,9 +191,13 @@ async function handle(frame: VideoFrame): Promise<void> {
         segmented = true;
         // The model's own input size (ADR §2): scaled once here instead of MediaPipe uploading
         // the full frame and scaling its mask back up to it.
-        if (seg.small) segCtx ??= new OffscreenCanvas(SEG_WIDTH, SEG_HEIGHT).getContext('2d', { alpha: false, desynchronized: true });
-        segCtx?.drawImage(frame, 0, 0, SEG_WIDTH, SEG_HEIGHT);
-        seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now)));
+        if (seg.small) segCtx ??= new OffscreenCanvas(segWidth, segHeight).getContext('2d', { alpha: false, desynchronized: true });
+        segCtx?.drawImage(frame, 0, 0, segWidth, segHeight);
+        if (++masklessSegments > MASKLESS_SEGMENTS_MAX) throw new Error(`no mask from the segmenter after ${MASKLESS_SEGMENTS_MAX} runs`);
+        seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => {
+          masklessSegments = 0;
+          c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now));
+        });
       }
     }
     const bg = bgOn && c.ready ? (mode === 'image' ? ({ kind: 'image' } as const) : ({ kind: 'blur', sigma: blurSigma(mode === 'blur-light' ? 'blur-light' : 'blur-strong', frame.displayHeight) } as const)) : null;
@@ -181,8 +206,20 @@ async function handle(frame: VideoFrame): Promise<void> {
       c.render({ bg, touchUp: fx.touchUp, touchRange: fx.touchRange, gamma, denoise: denoiseAmount(gamma) });
       out = new VideoFrame(c.canvas, { timestamp: frame.timestamp, alpha: 'discard' });
     }
+    frameFailures = 0;
   } catch (err) {
-    console.warn('camera background: frame failed, passing through', err);
+    // Passes through; a persistent failure turns the background off with its reason (never silent).
+    out?.close();
+    out = null;
+    if (++frameFailures === 1) console.warn('camera background: frame failed, passing through', err);
+    if (frameFailures >= FRAME_FAILURES_MAX || masklessSegments > MASKLESS_SEGMENTS_MAX) {
+      if (bgOn) fail(`frames: ${errorText(err)}`);
+      else {
+        glFailed = true;
+        post({ type: 'state', state: 'failed', detail: `effects: ${errorText(err)}` });
+      }
+      frameFailures = 0;
+    }
   }
   count(performance.now() - t0, !!out, segmented);
   if (out) {
@@ -238,6 +275,9 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   switch (m.type) {
     case 'init':
+      tune = m.tune ?? {};
+      if (m.segFps) segSetting = m.segFps;
+      updateSegFps();
       writer = m.writable.getWriter();
       mode = m.mode;
       setEffects(m.effects);
@@ -255,6 +295,10 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'effects':
       setEffects(m.effects);
+      break;
+    case 'segFps':
+      segSetting = m.fps;
+      updateSegFps();
       break;
     case 'stop':
       stopped = true;

@@ -4,6 +4,7 @@ import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermis
 import {
   Archive,
   ArrowLeft,
+  Cog,
   Bell,
   BellOff,
   ChevronRight,
@@ -30,7 +31,8 @@ import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
 import { useMobile } from '../../lib/mobile';
-import { loadOlder, markRead, openRoom, type OutgoingFile } from '../../services/chat';
+import { loadOlder, markRead, openRoom, revealOlder, type OutgoingFile } from '../../services/chat';
+import { useChatView } from '../chat/chatView';
 import { subscribeRooms } from '../../services/gateway';
 import {
   archiveTask,
@@ -48,7 +50,10 @@ import {
   useTaskDetails,
 } from '../../services/boards';
 import { boardsApi } from '../../services/boardsApi';
-import { useBoards, workspaceBoards } from '../../stores/boards';
+import { ensureRules } from '../../services/automations';
+import { ruleNameOf, useAutomations } from '../../stores/automations';
+import { taskMilestonesOf, useBoards, workspaceBoards } from '../../stores/boards';
+import { milestoneState } from '../../lib/boards/milestones';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EMPTY_ROOM_MESSAGES, useMessages } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
@@ -63,10 +68,13 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { featureOn, type Disabled } from '../../lib/boards/features';
 import { ApprovalsSection } from './Approvals';
+import { GitSection } from './GitLinks';
 import { Checklists } from './Checklists';
+import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
+import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 const TITLE_MAX = 200;
@@ -113,7 +121,8 @@ export function TaskPanel({ taskId, floating = false, page = false }: { taskId: 
 }
 
 function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
-  const perms = useBoards((s) => s.boards[task.boardId]?.permissions);
+  const perms = useTaskPerms(task);
+  const scoped = useBoardScoped(task.boardId);
   const boardName = useBoards((s) => s.boards[task.boardId]?.name ?? '');
   const detail = useTaskDetails((s) => s.byTask[task.id]);
   const room = useRooms((s) => (task.roomId ? s.byId[task.roomId] : undefined));
@@ -129,15 +138,19 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
   }, []);
   return (
     <>
-      <PanelHeader task={task} boardName={boardName} perms={perms} onClose={onClose} wide={wide} mobile={mobile} />
+      <PanelHeader task={task} boardName={boardName} perms={perms} scoped={scoped} onClose={onClose} wide={wide} mobile={mobile} />
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto" data-testid="task-scroll">
         <div className={cx('flex flex-col gap-5 px-5 pb-6 pt-4', wide && 'mx-auto w-full max-w-[860px]')}>
           <TitleEditor task={task} canEdit={canEdit} />
           <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
-          <Properties task={task} canEdit={canEdit} perms={perms} disabled={disabled} />
+          {/* Git links (ADR-0060 §4): under the attachments; its own subscriber, nothing when none. */}
+          <GitSection taskId={task.id} />
+          <Properties task={task} canEdit={canEdit} perms={perms} scoped={scoped} disabled={disabled} />
+          {/* Milestones inside the task (ADR-0063): top-level tasks only; their own subscriber. */}
+          {on(BoardFeature.MILESTONES) && !task.parentId ? <TaskMilestones taskId={task.id} canEdit={canEdit} /> : null}
           {/* Checklists: their own subscriber (a toggle re-renders that section only, ADR-0058 §2). */}
           {on(BoardFeature.CHECKLISTS) ? <Checklists taskId={task.id} workspaceId={task.workspaceId} canEdit={canEdit} subtasks={on(BoardFeature.SUBTASKS) && !task.parentId} /> : null}
-          {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={detail?.subtasks ?? []} canCreate={hasBit(perms, CREATE_TASKS)} /> : null}
+          {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={detail?.subtasks ?? []} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} /> : null}
           {on(BoardFeature.RELATIONS) ? <Relations task={task} ids={detail?.related ?? []} canEdit={canEdit} /> : null}
           {room ? <Activity task={task} room={room} toEnd={toEnd} commentsOff={!on(BoardFeature.COMMENTS)} /> : <div className="grid h-16 place-items-center"><Spinner /></div>}
         </div>
@@ -147,7 +160,7 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
   );
 }
 
-function PanelHeader({ task, boardName, perms, onClose, wide, mobile }: { task: Task; boardName: string; perms: bigint | undefined; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
+function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: { task: Task; boardName: string; perms: bigint | undefined; scoped: boolean; onClose: () => void; wide: boolean; mobile: boolean }): ReactNode {
   const boards = useBoards(useShallow((s) => workspaceBoards(s.boards, task.workspaceId).filter((b) => b.id !== task.boardId && hasBit(b.permissions, MANAGE_BOARD)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
   const me = myUserId();
   const subscribed = task.subscribed && !task.muted;
@@ -178,12 +191,12 @@ function PanelHeader({ task, boardName, perms, onClose, wide, mobile }: { task: 
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
-            {hasBit(perms, CREATE_TASKS) ? (
+            {hasBit(perms, CREATE_TASKS) && !scoped ? (
               <Dropdown.Item className={menuItem} onSelect={() => void duplicateTask(task.id).then((c) => c && useBoardsUi.getState().openTask(c.id))}>
                 <CopyPlus className="size-4" aria-hidden /> {t('boards.duplicate')}
               </Dropdown.Item>
             ) : null}
-            {boards.length && hasBit(perms, MANAGE_BOARD) ? (
+            {boards.length && !scoped && hasBit(perms, MANAGE_BOARD) ? (
               <Dropdown.Sub>
                 <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
                   <FolderInput className="size-4" aria-hidden /> <span className="flex-1">{t('boards.moveToBoard')}</span> <ChevronRight className="size-4" aria-hidden />
@@ -400,7 +413,7 @@ function Prop({ label, children, testId }: { label: string; children: ReactNode;
 
 const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
 
-function Properties({ task, canEdit, perms, disabled }: { task: Task; canEdit: boolean; perms: bigint | undefined; disabled: Disabled }): ReactNode {
+function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; canEdit: boolean; perms: bigint | undefined; scoped: boolean; disabled: Disabled }): ReactNode {
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
@@ -445,7 +458,7 @@ function Properties({ task, canEdit, perms, disabled }: { task: Task; canEdit: b
           <LabelMenu
             boardId={task.boardId}
             value={task.labelIds}
-            canCreate={hasBit(perms, CREATE_TASKS)}
+            canCreate={hasBit(perms, CREATE_TASKS) && !scoped}
             onToggle={(l) => void updateTask(task.id, { labelIds: task.labelIds.includes(l) ? task.labelIds.filter((x) => x !== l) : [...task.labelIds, l] })}
             {...req('label')}
           >
@@ -491,6 +504,7 @@ function Properties({ task, canEdit, perms, disabled }: { task: Task; canEdit: b
           </MilestoneMenu>
         </Prop>
       ) : null}
+      {on(BoardFeature.MILESTONES) && task.parentId ? <ParentMilestone task={task} canEdit={canEdit} /> : null}
       {on(BoardFeature.SUBTASKS) ? (
         <Prop label={t('boards.f.parent')}>
           <ParentMenu task={task}>
@@ -512,6 +526,53 @@ function Properties({ task, canEdit, perms, disabled }: { task: Task; canEdit: b
         </Prop>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * A subtask's «Веха родителя» (ADR-0063 §5): one of the parent's milestones. Shown while the
+ * parent has milestones or the subtask still links one; the parent's milestones are read by id.
+ */
+function ParentMilestone({ task, canEdit }: { task: Task; canEdit: boolean }): ReactNode {
+  const list = useBoards(useShallow((s) => taskMilestonesOf(s, task.parentId).map((m) => `${m.id}\u0000${m.name}\u0000${m.dueOn}\u0000${m.completedAt ? 1 : 0}`)));
+  const today = useToday();
+  const rows = list.map((x) => {
+    const [id = '', name = '', dueOn = '', done = ''] = x.split('\u0000');
+    return { id, name, dueOn, done: done === '1' };
+  });
+  const cur = rows.find((m) => m.id === task.taskMilestoneId);
+  if (!rows.length && !task.taskMilestoneId) return null;
+  const groups = [
+    { id: 'none', label: '', items: [{ id: '', search: [t('boards.noMilestone')], label: t('boards.noMilestone'), checked: !task.taskMilestoneId }] },
+    {
+      id: 'm',
+      label: '',
+      items: rows.map(
+        (m): Choice => ({
+          id: m.id,
+          search: [m.name],
+          label: m.name,
+          icon: <MilestoneDiamond state={milestoneState({ completedAt: m.done, dueOn: m.dueOn }, today)} />,
+          checked: m.id === task.taskMilestoneId,
+          note: m.dueOn ? formatDue(m.dueOn, today) : '',
+        }),
+      ),
+    },
+  ];
+  return (
+    <Prop label={t('boards.ms.field')} testId="prop-task-milestone">
+      <ChoiceMenu groups={groups} onPick={(c) => c.id !== task.taskMilestoneId && void updateTask(task.id, { taskMilestoneId: c.id })} placeholder={t('boards.ms.pick')} label={t('boards.ms.field')} testId="task-milestone-menu">
+        <button type="button" disabled={!canEdit} className={cx(valueBtn, !cur && 'text-muted')} data-testid="prop-task-milestone-value">
+          {cur ? (
+            <>
+              <MilestoneDiamond state={milestoneState({ completedAt: cur.done, dueOn: cur.dueOn }, today)} /> <span className="truncate">{cur.name}</span>
+            </>
+          ) : (
+            t('boards.noMilestone')
+          )}
+        </button>
+      </ChoiceMenu>
+    </Prop>
   );
 }
 
@@ -792,8 +853,8 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
   const live = useBoards((s) => s.activity[task.id]);
   const [loaded, setLoaded] = useState<TaskActivity[]>([]);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const perms = useBoards((s) => s.boards[task.boardId]?.permissions);
-  const roomPerms = useMemo(() => taskRoomPermissions(perms ?? 0n, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
+  const perms = useTaskPerms(task);
+  const roomPerms = useMemo(() => taskRoomPermissions(perms, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   useEffect(() => {
     void openRoom(room.id);
     subscribeRooms([room.id]);
@@ -836,13 +897,41 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
   }, [count, last, me, toEnd]);
   const tab = useBoardsUi((s) => s.activityTab);
   const shown = useMemo(() => filterFeed(rows, tab), [rows, tab]);
+  // A jump to a comment (a search hit, ADR-0062 §4): page up to it, scroll it into view, flash it.
+  const jump = useChatView((s) => (s.jump?.roomId === room.id ? s.jump : null));
+  const highlight = useChatView((s) => s.highlight);
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!jump) return;
+    useChatView.getState().clearJump();
+    const target = jump.messageId;
+    // The comment must be visible in the feed: «Все» or «Комментарии», not «Изменения».
+    if (useBoardsUi.getState().activityTab === 'changes') useBoardsUi.getState().setActivityTab('all');
+    void revealOlder(room.id, target).then((ok) => {
+      if (!ok) {
+        toast.info(t('chat.messageGone'));
+        return;
+      }
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const el = section.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(target)}"]`);
+          if (!el) return;
+          el.scrollIntoView({ block: 'center' });
+          useChatView.getState().setHighlight(target);
+          window.setTimeout(() => {
+            if (useChatView.getState().highlight === target) useChatView.getState().setHighlight(null);
+          }, 1800);
+        }),
+      );
+    });
+  }, [jump, room.id]);
   const tabs: Array<{ value: ActivityTab; label: string }> = [
     { value: 'all', label: t('boards.feed.all') },
     { value: 'changes', label: t('boards.feed.changes') },
     { value: 'comments', label: t('boards.feed.comments') },
   ];
   return (
-    <section className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity">
+    <section ref={section} className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity">
       <div className="flex flex-wrap items-center gap-2 px-5 pb-2">
         <h3 className="mr-auto text-control font-semibold">{t('boards.activity')}</h3>
         <Segmented value={tab} options={tabs} onChange={useBoardsUi.getState().setActivityTab} label={t('boards.feed.label')} />
@@ -863,9 +952,9 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
           return (
             <div key={r.key} className={gap}>
               {c.msg.kind === MessageKind.SYSTEM ? (
-                <SystemRow c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={false} />
+                <SystemRow c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={highlight === c.key} />
               ) : (
-                <MessageRow c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={room.id} perms={roomPerms} highlighted={false} />
+                <MessageRow c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={room.id} perms={roomPerms} highlighted={highlight === c.key} />
               )}
             </div>
           );
@@ -885,14 +974,38 @@ function ActivityRow({ a, task, className }: { a: TaskActivity; task: Task; clas
   const board = useBoards((s) => s.boards[task.boardId]);
   const text = activityText(a, board, task.workspaceId);
   const at = a.createdAt ? toDate(a.createdAt) : null;
+  // A change made by an automation rule (ADR-0060): no actor, «⚙ Автоматизация: имя правила».
+  const rule = !a.actorId && !!a.ruleId;
   return (
-    <div className={cx('flex items-start gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind}>
-      <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />
+    <div className={cx('flex items-start gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind} data-rule={rule || undefined}>
+      {rule ? <RuleActor boardId={task.boardId} ruleId={a.ruleId} /> : <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />}
       <span className="min-w-0 flex-1">
-        <span className="font-medium text-fg">{name}</span> {text}
+        {rule ? null : <span className="font-medium text-fg">{name}</span>} {text}
       </span>
       {at ? <span className="shrink-0 tabular-nums text-faint" title={fmt.full(at)}>{fmt.time(at)}</span> : null}
     </div>
+  );
+}
+
+/**
+ * The actor of a rule's change: a cog and «Автоматизация: <имя правила>». The name comes from the
+ * board's rules (loaded on demand — readable by every viewer, BOARD_RULE_UPDATE keeps it); a
+ * deleted or unknown rule — «Автоматизация».
+ */
+function RuleActor({ boardId, ruleId }: { boardId: string; ruleId: string }): ReactNode {
+  const name = useAutomations((s) => ruleNameOf(s, ruleId));
+  useEffect(() => {
+    if (!name) void ensureRules(boardId);
+  }, [boardId, name]);
+  return (
+    <>
+      <span className="grid size-4 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg" aria-hidden>
+        <Cog className="size-3" />
+      </span>
+      <span className="-mr-1 shrink-0 font-medium text-fg" data-testid="activity-rule">
+        {name ? t('rules.actorNamed', { name }) : t('rules.actor')}
+      </span>
+    </>
   );
 }
 
@@ -954,6 +1067,57 @@ export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>,
       return t('boards.act.approvalsReset');
     case 'checklist':
       return checklistActivity(f);
+    case 'milestones':
+      return milestoneActivity(f);
+    case 'git':
+      return gitActivity(f);
+    default:
+      return t('boards.act.changed');
+  }
+}
+
+/** A «git» journal row (ADR-0060 §4): after {event, kind, repo, ref, state…}. */
+function gitActivity(f: Json): string {
+  const s = (k: string): string => (typeof f?.[k] === 'string' ? (f[k]) : '');
+  const kind = s('kind');
+  const ref = kind === 'pr' ? `${s('repo')}#${s('ref')}` : kind === 'commit' ? `${s('repo')}@${s('ref').slice(0, 7)}` : s('ref');
+  if (kind === 'pr' && s('state') === 'merged') return t('boards.act.gitMerged', { ref });
+  if (kind === 'pr' && s('state') === 'closed') return t('boards.act.gitClosed', { ref });
+  return t('boards.act.git', { what: t(kind === 'pr' ? 'boards.act.gitPr' : kind === 'commit' ? 'boards.act.gitCommit' : 'boards.act.gitBranch'), ref });
+}
+
+/**
+ * A «milestones» journal row (ADR-0063): after {action, milestone_id, name, due_on} on the task;
+ * on a subtask {action: linked | unlinked, task_milestone_id, parent_id} (the name from the parent).
+ */
+function milestoneActivity(f: Json): string {
+  const s = (k: string): string => (typeof f?.[k] === 'string' ? (f[k]) : '');
+  const name = s('name');
+  switch (f?.['action']) {
+    case 'created':
+      return t('boards.act.msCreated', { name });
+    case 'renamed':
+      return t('boards.act.msRenamed', { name });
+    case 'dated':
+      return s('due_on') ? t('boards.act.msDated', { name, date: s('due_on') }) : t('boards.act.msUndated', { name });
+    case 'moved':
+      return t('boards.act.msMoved');
+    case 'completed':
+      return t('boards.act.msCompleted', { name });
+    case 'reopened':
+      return t('boards.act.msReopened', { name });
+    case 'deleted':
+      return t('boards.act.msDeleted', { name });
+    case 'auto_completed':
+      return t('boards.act.msAutoCompleted', { name });
+    case 'auto_reopened':
+      return t('boards.act.msAutoReopened', { name });
+    case 'linked': {
+      const m = taskMilestonesOf(useBoards.getState(), s('parent_id')).find((x) => x.id === s('task_milestone_id'));
+      return t('boards.act.msLinked', { name: m?.name ?? '—' });
+    }
+    case 'unlinked':
+      return t('boards.act.msUnlinked');
     default:
       return t('boards.act.changed');
   }

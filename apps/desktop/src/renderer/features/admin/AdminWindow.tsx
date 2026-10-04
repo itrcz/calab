@@ -3,12 +3,13 @@ import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
 import * as DialogP from '@radix-ui/react-dialog';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, ShieldCheck } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
 import { plural, t, type MessageKey } from '../../i18n';
 import { adminApi } from '../../lib/api/endpoints';
-import { errorText } from '../../lib/api/errors';
+import { onApiError } from '../../lib/api/client';
+import { errorText, recentAuthRequired } from '../../lib/api/errors';
 import { fmt } from '../../lib/format';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import {
@@ -27,6 +28,7 @@ import { platform } from '../../platform';
 import { toast } from '../../stores/toasts';
 import { ExpiredBadge, PlanPill } from '../workspace/PlanTab';
 import { SuspendedBadge, SuspendedMark, SuspensionCard } from './SuspensionCard';
+import { LocalReauth } from '../identity/SignIn';
 
 /** The search waits this long after the last keystroke (admin API: 60 requests / min). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -100,6 +102,7 @@ function WorkspaceCard({ a, selected, onSelect }: { a: AdminWorkspace; selected:
  * right (summary, the plan form, the change log). The web client shows it at `/admin`.
  */
 export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; workspaceId?: string | undefined }): ReactNode {
+  const qc = useQueryClient();
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim(), SEARCH_DEBOUNCE_MS);
   const [selected, setSelected] = useState<string | null>(workspaceId ?? null);
@@ -109,6 +112,23 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
     placeholderData: keepPreviousData,
     retry: false,
   });
+  // Product administration — reads included — needs a local password proof not older than
+  // 5 minutes (ADR-0054, release-2.0-identity «SUPERADMIN_EMAILS … свежей local proof»). Any
+  // admin request answered 403 RECENT_AUTH_REQUIRED (a list, a workspace, a save) asks for the
+  // password above the pane; a confirmation refetches. The open form is kept.
+  const [reauth, setReauth] = useState(false);
+  useEffect(
+    () =>
+      onApiError((e) => {
+        if (recentAuthRequired(e)) setReauth(true);
+      }),
+    [],
+  );
+  const reauthDone = useCallback(() => {
+    setReauth(false);
+    void qc.invalidateQueries({ queryKey: ['admin'] });
+  }, [qc]);
+  const notice = reauth || recentAuthRequired(list.error) ? <AdminReauth onConfirmed={reauthDone} /> : null;
 
   // Web: the address bar says /admin while the window is open (a reload comes back here).
   useEffect(() => {
@@ -162,7 +182,7 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
             </label>
             <div role="listbox" aria-label={t('admin.title')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1" data-testid="admin-list">
               {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
-              {list.isError ? <p className="px-2 py-3 text-body text-danger-text">{t('admin.loadFailed')}</p> : null}
+              {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{t('admin.loadFailed')}</p> : null}
               {list.isSuccess && items.length === 0 ? <p className="px-2 py-3 text-body text-muted">{t('admin.none')}</p> : null}
               {items.map((a) =>
                 a.workspace ? <WorkspaceCard key={a.workspace.id} a={a} selected={a.workspace.id === selected} onSelect={() => setSelected(a.workspace?.id ?? null)} /> : null,
@@ -171,19 +191,30 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
           </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]">
             {selected ? (
-              <AdminDetail key={selected} id={selected} onClose={onClose} />
+              <AdminDetail key={selected} id={selected} onClose={onClose} notice={notice} />
             ) : (
               <>
                 <PaneHeader title={t('admin.title')} onClose={onClose} />
-                <div className="grid flex-1 place-items-center">
-                  <Empty>{t('admin.pick')}</Empty>
-                </div>
+                {notice}
+                <div className="grid flex-1 place-items-center">{notice ? null : <Empty>{t('admin.pick')}</Empty>}</div>
               </>
             )}
           </div>
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>
+  );
+}
+
+/** The password confirmation the admin API asks for (RECENT_AUTH_REQUIRED), under the pane header. */
+function AdminReauth({ onConfirmed }: { onConfirmed: () => void }): ReactNode {
+  return (
+    <div className="shrink-0 border-b border-line px-6 py-4 mobile:px-4" data-testid="admin-reauth">
+      <div className="mx-auto flex max-w-[640px] flex-col gap-2">
+        <p className="text-body text-muted">{t('identity.adminReauth')}</p>
+        <LocalReauth open onConfirmed={onConfirmed} />
+      </div>
+    </div>
   );
 }
 
@@ -272,7 +303,7 @@ function PresetField({
 }
 
 /** The chosen workspace: summary, the plan form (PUT with a confirmation), the change log. */
-function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): ReactNode {
+function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void; notice: ReactNode }): ReactNode {
   const qc = useQueryClient();
   const ws = useQuery({ queryKey: KEY.ws(id), queryFn: ({ signal }) => adminApi.get(id, signal), retry: false });
   const log = useQuery({ queryKey: KEY.log(id), queryFn: ({ signal }) => adminApi.log(id, signal), retry: false });
@@ -300,7 +331,10 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
     return (
       <>
         <PaneHeader title={t('admin.title')} onClose={onClose} />
-        <div className="grid flex-1 place-items-center">{ws.isError ? <Empty>{errorText(ws.error)}</Empty> : <Spinner />}</div>
+        {notice}
+        <div className="grid flex-1 place-items-center">
+          {recentAuthRequired(ws.error) ? null : ws.isError ? <Empty>{errorText(ws.error)}</Empty> : <Spinner />}
+        </div>
       </>
     );
   }
@@ -327,6 +361,7 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
         {w.plan?.expired ? <ExpiredBadge /> : null}
         <PlanPill plan={planKind(w.plan)} />
       </PaneHeader>
+      {notice}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 mobile:px-4" data-testid="admin-detail">
         <div className="mx-auto flex max-w-[640px] flex-col gap-6">
           <Card title={t('admin.card.workspace')}>
@@ -432,6 +467,10 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
               </Row>
               <Row label={t('admin.limit.boardWebhooks')} hint={t('admin.limit.boardWebhooksHint')}>
                 <Toggle label={t('admin.limit.boardWebhooks')} checked={!form.limits.boardWebhooksDisabled} onChange={(v) => setLimits({ ...form.limits, boardWebhooksDisabled: !v })} />
+              </Row>
+              {/* ADR-0060: board automations (rules and Git) — Team and above; a new Custom plan has them. */}
+              <Row label={t('admin.limit.automations')} hint={t('admin.limit.automationsHint')}>
+                <Toggle label={t('admin.limit.automations')} checked={!form.limits.automationsDisabled} onChange={(v) => setLimits({ ...form.limits, automationsDisabled: !v })} />
               </Row>
               {/* ADR-0046 (owner, 02.10): telephony is Business only; a new Custom plan starts without it. */}
               <Row label={t('admin.limit.telephony')} hint={t('admin.limit.telephonyHint')}>

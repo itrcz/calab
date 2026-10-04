@@ -1,5 +1,7 @@
 import { localAuthority } from '../identity/model';
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
+import { t } from '../../i18n';
+import { openMessage } from '../../services/searchNav';
 import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
 import { useUi } from '../../stores/ui';
@@ -10,6 +12,7 @@ import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileDialog } from '../people/ProfileDialog';
+import { AchievementLayers } from '../people/AchievementLayers';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
@@ -17,6 +20,8 @@ import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './l
 import { useSession } from '../../stores/session';
 import { EventDialog } from '../calendar/EventDialog';
 import { AppDialog } from '../webapps/AppDialog';
+
+const RecordingTranscript = lazy(() => import('../chat/RecordingTranscript'));
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
@@ -90,14 +95,47 @@ export function Dialogs(): ReactNode {
       case 'web-app':
         node = <AppDialog key={d.appId ?? 'new'} workspaceId={d.workspaceId} appId={d.appId} onClose={close} />;
         break;
-      case 'image':
-        node = <Lightbox images={d.images} index={d.index} onClose={close} />;
+      case 'image': {
+        const inChat = d.inChat;
+        node = (
+          <Lightbox
+            images={d.images}
+            index={d.index}
+            onClose={close}
+            {...(inChat
+              ? {
+                  onShowInChat: () => {
+                    close();
+                    openMessage(inChat.roomId, inChat.messageId);
+                  },
+                }
+              : {})}
+          />
+        );
+        break;
+      }
+      case 'transcript':
+        node = (
+          <Suspense fallback={null}>
+            <RecordingTranscript
+              key={`${d.recordingId}@${d.offsetMs}`}
+              roomId={d.roomId}
+              recordingId={d.recordingId}
+              title={t('rec.card.title')}
+              started={new Date(d.startedAt)}
+              track={null}
+              initialMs={d.offsetMs}
+              onClose={close}
+            />
+          </Suspense>
+        );
         break;
     }
   }
   return (
     <>
       {node}
+      <AchievementLayers />
       <ConfirmHost />
     </>
   );

@@ -38,6 +38,8 @@ import { seedBoardsV2, seedStickerChat, seedWebhook } from './seed2';
 const OUT = resolve(import.meta.dirname, '../../landing/shots');
 const DIST = resolve(import.meta.dirname, '../dist-web');
 const SIZE = { width: 1440, height: 900 };
+/** boards2: the window width (CSS px) for three kanban columns (crop in apps/landing/scripts/assets.mjs). */
+const BOARDS2_WIDTH = 1220;
 
 const ALL: Short[] = ['ru', 'en', 'es', 'zh'];
 const wanted = process.env['CALABA_LANDING_LOCALES']?.split(',').map((s) => s.trim());
@@ -226,6 +228,10 @@ const scenes: Record<string, { run: (ctx: Ctx) => Promise<void>; seed?: (mock: M
       await boards(ctx);
       await expect(ctx.page.getByTestId('board-category')).toHaveCount(2);
       await expect(ctx.page.getByTestId('task-card').filter({ hasText: '3/7' })).toHaveCount(1);
+      // A closer frame (assets.mjs crops the board only): the window just wide enough for three
+      // columns and the whole header toolbar.
+      await ctx.page.setViewportSize({ width: BOARDS2_WIDTH, height: SIZE.height });
+      await ctx.page.waitForTimeout(300);
       await shoot(ctx, 'boards2');
     },
   },

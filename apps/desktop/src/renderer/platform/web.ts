@@ -617,8 +617,11 @@ export function createWebPlatform(): Platform {
       log: (level, message) => {
         (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(message);
       },
-      openExternal: (url) => {
-        if (/^https?:\/\//.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+      openExternal: (raw) => {
+        // Synchronously, within the click (popup blockers); the scheme in any case, like main's
+        // IPC check (ADR-0045 amendment 1: «HTTPS://…» links of calendars did nothing here).
+        const url = raw.trim();
+        if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
         // mailto: (the plan contact, ADR-0024) hands over to the mail client, the page stays.
         else if (/^mailto:[^\s/]+@/i.test(url)) location.href = url;
         return Promise.resolve();

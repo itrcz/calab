@@ -1,9 +1,11 @@
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { MessageKind, RecordingStatus, RoomRecordingState, type BirthdayCard, type Message, type RecordingCard, type RoomRecording } from '@calaba/protocol';
+import { MessageKind, RecordingStatus, RoomRecordingState, type AutomationCard, type BirthdayCard, type Message, type RecordingCard, type RoomRecording } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { stickerPreview } from './stickers';
 import { callCardOf, callLogLine } from './callModel';
 import { myUserId } from '../stores/session';
+import { achievementCardOf } from './achievements';
+import { cachedAchievement } from './achievementCache';
 
 /**
  * Meeting recording (ADR-0025, docs/08 «Запись встреч»): the pure parts — the GPTunneL pairing
@@ -127,6 +129,13 @@ export function birthdayCardOf(m: Pick<Message, 'kind' | 'system'>): BirthdayCar
   return p?.case === 'birthday' ? p.value : null;
 }
 
+/** The automation card of a system message (ADR-0060), if it is one. */
+export function automationCardOf(m: Pick<Message, 'kind' | 'system'>): AutomationCard | null {
+  if (m.kind !== MessageKind.SYSTEM) return null;
+  const p = m.system?.payload;
+  return p?.case === 'automation' ? p.value : null;
+}
+
 /** The recording card of a system message, if it is one. */
 export function recordingCardOf(m: Pick<Message, 'kind' | 'system'>): RecordingCard | null {
   if (m.kind !== MessageKind.SYSTEM) return null;
@@ -227,6 +236,16 @@ export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: 
   // A sticker message (ADR-0030) previews as «😀 Стикер» too; one whose sticker is gone has no content.
   if (m.sticker) return stickerPreview(m.sticker.emoji);
   if (birthdayCardOf(m)) return authorName ? t('birthday.card', { name: authorName }) : t('birthday.preview');
+  // An achievement card (ADR-0061): «🏆 Имя получает ачивку «Больше года»».
+  const ach = achievementCardOf(m);
+  if (ach) {
+    const title = cachedAchievement(ach.achievementId)?.title ?? '';
+    if (authorName) return title ? t('ach.notify', { name: authorName, title }) : t('ach.notifyNoTitle', { name: authorName });
+    return title ? t('ach.preview', { title }) : t('ach.previewNoTitle');
+  }
+  // A board automation (ADR-0060): «Автоматизация: <text>».
+  const auto = automationCardOf(m);
+  if (auto) return t('rules.cardPreview', { text: auto.text || auto.ruleName });
   // A DM call log line (ADR-0034): «Исходящий звонок · 5:12», «Пропущенный звонок»…
   const call = callCardOf(m);
   if (call) return callLogLine(call, myUserId()).text;

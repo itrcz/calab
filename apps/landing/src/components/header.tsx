@@ -24,7 +24,7 @@ export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Lo
       </a>
       <Container className="flex h-20 items-center justify-between gap-5">
         <a href={home === '' ? '#top' : home} className="nav-brand flex shrink-0 items-center gap-2 rounded-md" aria-label={t.home}>
-          <img className="nav-wordmark" src="/calab-wordmark.svg" width={299} height={84} alt="Calab" />
+          <img className="nav-wordmark" src="/calab-wordmark.svg" width={311} height={96} alt="Calab" />
         </a>
         <nav aria-label={t.navLabel} className="nav-island hidden lg:block">
           <ul className="flex items-center gap-7 text-[14px] text-fg">

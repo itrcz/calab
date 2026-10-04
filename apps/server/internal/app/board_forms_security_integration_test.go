@@ -201,3 +201,28 @@ func TestBoardFormsDeleteRaceAndRevocation(t *testing.T) {
 	}
 	o.must(404, "GET", target, nil, nil)
 }
+
+func TestBoardFormsAutomations(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	setPlan(t, ws.Id, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	b := createBoard(t, o, ws.Id, &v1.CreateBoardRequest{Name: "Form rules"}, 201)
+	d := formFixture(b)
+	rule := createRule(t, o, b.Id, &v1.CreateBoardRuleRequest{Name: "Intake priority", Trigger: onCreated(), Actions: []*v1.RuleAction{doPriority(v1.TaskPriority_TASK_PRIORITY_URGENT)}}, 201)
+	path := "/api/boards/" + b.Id + "/forms"
+	answers := []*v1.BoardFormAnswer{{FieldId: d.TitleFieldId, Value: "Automated intake"}}
+	o.must(200, "POST", path+"/preview", &v1.PreviewBoardFormRequest{Definition: d, Answers: answers}, nil)
+	if len(ruleRuns(t, o, rule.Id)) != 0 || len(listTasks(t, o, b.Id, nil)) != 0 {
+		t.Fatal("preview ran automation")
+	}
+	var fr v1.BoardFormResponse
+	o.must(201, "POST", path, &v1.CreateBoardFormRequest{Definition: d}, &fr)
+	code := fr.Form.Url[strings.LastIndex(fr.Form.Url, "/")+1:]
+	a := &client{t: t, ip: "192.0.2.160"}
+	req := &v1.SubmitBoardFormRequest{Revision: fr.Form.Revision, Nonce: uuid.NewString(), Answers: answers}
+	a.must(201, "POST", "/api/public/forms/"+code+"/submissions", req, nil)
+	a.must(200, "POST", "/api/public/forms/"+code+"/submissions", req, nil)
+	tasks := listTasks(t, o, b.Id, nil)
+	if len(tasks) != 1 || tasks[0].Priority != v1.TaskPriority_TASK_PRIORITY_URGENT || len(ruleRuns(t, o, rule.Id)) != 1 {
+		t.Fatal("submission must run automation exactly once")
+	}
+}

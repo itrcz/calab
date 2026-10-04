@@ -18,6 +18,7 @@ import { FilterButton, QuickChips } from './FilterBar';
 import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
+import { useBoardScoped } from './useTaskPerms';
 import { NavButton } from '../shell/MobileShell';
 import { useMobile } from '../../lib/mobile';
 
@@ -108,6 +109,8 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
 function ViewsMenu({ boardId }: { boardId: string }): ReactNode {
   const views = useBoards((s) => s.boards[boardId]?.views);
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
+  // ADR-0059: views are read-only (applying one works, saving / deleting is a 403) on a scoped board.
+  const scoped = useBoardScoped(boardId);
   const prefs = useBoardsUi((s) => prefsOf(s, boardId));
   const [saving, setSaving] = useState(false);
   const current = views?.find((v) => v.id === prefs.viewId);
@@ -152,11 +155,15 @@ function ViewsMenu({ boardId }: { boardId: string }): ReactNode {
                 {mine.map(item)}
               </>
             ) : null}
-            <Dropdown.Separator className={menuSeparator} />
-            <Dropdown.Item className={menuItem} onSelect={() => setSaving(true)} data-testid="save-view">
-              <Plus className="size-4" aria-hidden /> {t('boards.saveView')}
-            </Dropdown.Item>
-            {current && (current.shared ? hasBit(perms, MANAGE_BOARD) : current.createdBy === me) ? (
+            {scoped ? null : (
+              <>
+                <Dropdown.Separator className={menuSeparator} />
+                <Dropdown.Item className={menuItem} onSelect={() => setSaving(true)} data-testid="save-view">
+                  <Plus className="size-4" aria-hidden /> {t('boards.saveView')}
+                </Dropdown.Item>
+              </>
+            )}
+            {!scoped && current && (current.shared ? hasBit(perms, MANAGE_BOARD) : current.createdBy === me) ? (
               <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void deleteView(boardId, current.id)}>
                 <Trash2 className="size-4" aria-hidden /> {t('boards.deleteView')}
               </Dropdown.Item>
@@ -287,7 +294,7 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
 
 function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; workspaceId: string; manage: boolean }): ReactNode {
   const ctx = useMatchCtx(boardId);
- const [forms, setForms] = useState(false);
+  const [forms, setForms] = useState(false);
   const archive = async (): Promise<void> => {
     const b = useBoards.getState().boards[boardId];
     if (!b) return;
@@ -295,43 +302,44 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
   };
   return (
     <>
- {forms ? <BoardForms boardId={boardId} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
- <Dropdown.Root modal={false}>
-      <Dropdown.Trigger asChild>
-        <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="board-more">
-          <Ellipsis className="size-[18px]" aria-hidden />
-        </button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
-          {manage ? (
-            <>
-              <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>{t('forms.title')}</Dropdown.Item>
- <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId })} data-testid="board-settings">
-                <Settings className="size-4" aria-hidden /> {t('boards.settings')}
-              </Dropdown.Item>
-              <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId, tab: 'access' })}>
-                <Shield className="size-4" aria-hidden /> {t('boards.access')}
-              </Dropdown.Item>
-              <Dropdown.Separator className={menuSeparator} />
-            </>
-          ) : null}
-          <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(boardId), t('boards.linkCopied'))}>
-            <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
-          </Dropdown.Item>
-          <Dropdown.Item className={menuItem} onSelect={() => exportCsv(boardId, ctx)}>
-            <Download className="size-4" aria-hidden /> {t('boards.exportCsv')}
-          </Dropdown.Item>
-          {manage ? (
-            <>
-              <Dropdown.Separator className={menuSeparator} />
-              <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
-                <Archive className="size-4" aria-hidden /> {t('boards.archive')}
-              </Dropdown.Item>
-            </>
-          ) : null}
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root></>
+      {forms ? <BoardForms boardId={boardId} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
+      <Dropdown.Root modal={false}>
+        <Dropdown.Trigger asChild>
+          <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="board-more">
+            <Ellipsis className="size-[18px]" aria-hidden />
+          </button>
+        </Dropdown.Trigger>
+        <Dropdown.Portal>
+          <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
+            {manage ? (
+              <>
+                <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>{t('forms.title')}</Dropdown.Item>
+                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId })} data-testid="board-settings">
+                  <Settings className="size-4" aria-hidden /> {t('boards.settings')}
+                </Dropdown.Item>
+                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId, tab: 'access' })}>
+                  <Shield className="size-4" aria-hidden /> {t('boards.access')}
+                </Dropdown.Item>
+                <Dropdown.Separator className={menuSeparator} />
+              </>
+            ) : null}
+            <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(boardId), t('boards.linkCopied'))}>
+              <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
+            </Dropdown.Item>
+            <Dropdown.Item className={menuItem} onSelect={() => exportCsv(boardId, ctx)}>
+              <Download className="size-4" aria-hidden /> {t('boards.exportCsv')}
+            </Dropdown.Item>
+            {manage ? (
+              <>
+                <Dropdown.Separator className={menuSeparator} />
+                <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
+                  <Archive className="size-4" aria-hidden /> {t('boards.archive')}
+                </Dropdown.Item>
+              </>
+            ) : null}
+          </Dropdown.Content>
+        </Dropdown.Portal>
+      </Dropdown.Root>
+    </>
   );
 }

@@ -52,7 +52,9 @@ import { parseMenuState } from '../shared/menu';
 import { checkForUpdates, downloadUpdate, installUpdate, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
-import { forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
+import { hideTip, showTip } from './tipOverlay';
+import { parseTipPayload } from './tipOverlayPolicy';
+import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
 import { getMainWindow, isOwnPage, isShown } from './windows';
 
@@ -248,7 +250,7 @@ export function registerIpc(): void {
     else log.info('[renderer]', msg);
   });
   handle(IPC.appOpenExternal, (_e, a) => {
-    const url = str(a, 2048);
+    const url = str(a, 2048).trim();
     // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
     if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
     return shell.openExternal(url);
@@ -413,6 +415,17 @@ export function registerIpc(): void {
   handle(IPC.webAppForget, (e, a) => {
     mainOnly(e);
     return forgetApp(parseAppId(a));
+  });
+  handle(IPC.webAppTipShow, (e, a) => {
+    const win = mainOnly(e);
+    const zoom = win.webContents.getZoomFactor();
+    const p = parseTipPayload(a, zoom, win.getContentBounds());
+    if (appViewShown()) showTip(win, p, zoom);
+    else hideTip();
+  });
+  handle(IPC.webAppTipHide, (e) => {
+    mainOnly(e);
+    hideTip();
   });
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {

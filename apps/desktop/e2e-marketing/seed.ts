@@ -6,8 +6,9 @@ import type { Browser } from '@playwright/test';
 import { AttendeeStatus, BoardTemplate, EventRepeat, PresenceStatus, ReactionSchema, RoomInviteSchema, TaskPriority, TaskRelationKind, VoiceInfoSchema, WorkspaceRole, type Message } from '@calaba/protocol';
 import { IDS, fileMeta, mockId, ts, VOICE_WAVEFORM } from '../e2e-support/fixtures';
 import type { MockServer } from '../e2e-support/mock-server';
-import { LOOKS, avatarHtml, mockupHtml, pdfBytes, render, stickerHtml } from './art';
+import { mockupHtml, pdfBytes, render } from './art';
 import type { Copy, PersonKey } from './copy';
+import { avatarPhoto } from './photos';
 
 /**
  * The landing scenes' data (docs/09 #139) on top of the mock's `data` scenario: the fixture ids
@@ -36,20 +37,36 @@ export const SCENE = {
   meetingLink: 'meeting-guest-link',
 } as const;
 
+export interface Sticker {
+  name: string;
+  emoji: string;
+  bytes: Buffer;
+}
+
 export interface Art {
   mockup: Buffer;
   avatars: Record<PersonKey, Buffer>;
-  stickers: Buffer[];
+  stickers: Sticker[];
 }
 
-export const STICKER_EMOJI = ['🚀', '🎉', '😎'] as const;
+/** Real built-in Calab stickers (apps/server/internal/builtinstickers, 512×512 still WebP) for the «Calab» pack. */
+const STICKERS_DIR = resolve(import.meta.dirname, '../../server/internal/builtinstickers');
+const STICKER_NAMES = ['like', 'fire', 'cool'] as const;
+const STICKER_SIZE = 512;
+
+function builtinStickers(): Sticker[] {
+  const manifest = JSON.parse(readFileSync(resolve(STICKERS_DIR, 'manifest.json'), 'utf8')) as { stickers: { name: string; emoji: string }[] };
+  return STICKER_NAMES.map((name) => ({
+    name,
+    emoji: manifest.stickers.find((x) => x.name === name)?.emoji ?? '',
+    bytes: readFileSync(resolve(STICKERS_DIR, 'assets', `${name}.webp`)),
+  }));
+}
 
 export async function drawArt(browser: Browser, c: Copy): Promise<Art> {
   const avatars = {} as Record<PersonKey, Buffer>;
-  for (const k of KEYS) avatars[k] = await render(browser, avatarHtml(LOOKS[k], 256), 256, 256);
-  const stickers: Buffer[] = [];
-  for (const e of STICKER_EMOJI) stickers.push(await render(browser, stickerHtml(e, 160), 160, 160, { transparent: true }));
-  return { mockup: await render(browser, mockupHtml(c), 1600, 900), avatars, stickers };
+  for (const k of KEYS) avatars[k] = avatarPhoto(k);
+  return { mockup: await render(browser, mockupHtml(c), 1600, 900), avatars, stickers: builtinStickers() };
 }
 
 /** Freezes a message at a Moscow wall time (runtime messages get the mock's tick clock). */
@@ -67,7 +84,7 @@ function react(mock: MockServer, m: Message, list: Record<string, PersonKey[]>):
 export function seedScene(mock: MockServer, c: Copy, art: Art): void {
   const s = mock.state;
 
-  // ---- people: names, statuses, drawn avatars, presence
+  // ---- people: names, statuses, photo avatars, presence
   for (const k of KEYS) {
     const rec = s.users.get(U[k]);
     if (!rec) continue;
@@ -76,9 +93,9 @@ export function seedScene(mock: MockServer, c: Copy, art: Art): void {
     rec.user.timezone = 'Europe/Moscow';
     const id = SCENE.files.avatars[k];
     s.files.set(id, {
-      meta: fileMeta(id, '', U[k], 'avatar.png', 'image/png', art.avatars[k], ts('2025-12-02T10:00:00Z'), { width: 256, height: 256 }),
+      meta: fileMeta(id, '', U[k], 'avatar.jpg', 'image/jpeg', art.avatars[k], ts('2025-12-02T10:00:00Z'), { width: 256, height: 256 }),
       bytes: art.avatars[k],
-      thumbnail: { bytes: art.avatars[k], mime: 'image/png' },
+      thumbnail: { bytes: art.avatars[k], mime: 'image/jpeg' },
     });
     rec.user.avatarFileId = id;
   }
@@ -148,19 +165,20 @@ export function seedScene(mock: MockServer, c: Copy, art: Art): void {
   noteMeta.voice = create(VoiceInfoSchema, { durationMs: 17_400, waveform: VOICE_WAVEFORM });
   s.files.set(SCENE.files.voice, { meta: noteMeta, bytes: noteBytes });
 
-  // ---- stickers: the «Calab» pack drawn as emoji stickers
+  // ---- stickers: the «Calab» pack made of real built-in Calab stickers
   const pack = s.stickerPacks.get(IDS.stickerPacks.calab);
   const stickerFiles = [IDS.files.stickerSun, IDS.files.stickerGem, IDS.files.stickerOrbit];
   pack?.stickers.forEach((st, i) => {
-    const bytes = art.stickers[i];
+    const sticker = art.stickers[i];
     const fid = stickerFiles[i];
-    if (!bytes || !fid) return;
-    st.emoji = STICKER_EMOJI[i] ?? st.emoji;
+    if (!sticker || !fid) return;
+    const { bytes } = sticker;
+    st.emoji = sticker.emoji || st.emoji;
     st.animated = false;
     s.files.set(fid, {
-      meta: fileMeta(fid, W.main, U.anna, `sticker-${i}.png`, 'image/png', bytes, ts('2026-01-12T10:00:00Z'), { width: 160, height: 160 }),
+      meta: fileMeta(fid, W.main, U.anna, `${sticker.name}.webp`, 'image/webp', bytes, ts('2026-01-12T10:00:00Z'), { width: STICKER_SIZE, height: STICKER_SIZE }),
       bytes,
-      thumbnail: { bytes, mime: 'image/png' },
+      thumbnail: { bytes, mime: 'image/webp' },
     });
   });
 

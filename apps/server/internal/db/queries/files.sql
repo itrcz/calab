@@ -38,7 +38,8 @@ SELECT (EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = $1) OR EXISTS 
 
 -- name: ListOrphanFiles :many
 -- Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82), camera background
--- (ADR-0035), soundboard clip (ADR-0036) or web app icon (ADR-0050), older than the cutoff.
+-- (ADR-0035), soundboard clip (ADR-0036), web app icon (ADR-0050) or achievement picture
+-- (ADR-0061), older than the cutoff.
 SELECT * FROM files f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
@@ -51,6 +52,7 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM boards bi WHERE bi.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_apps wa WHERE wa.icon_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500;
 
@@ -82,4 +84,5 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
-  AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id);
+  AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id);

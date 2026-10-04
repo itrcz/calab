@@ -11,7 +11,8 @@ import { blockedStatusIds } from '../../lib/boards/approvals';
 import type { FilterState, MatchCtx } from '../../lib/boards/filter';
 import { dropIndex } from '../../lib/boards/position';
 import { createStatus, deleteStatus, gateText, moveStatus, moveTask, updateStatus } from '../../services/boards';
-import { useBoards } from '../../stores/boards';
+import { taskPermsOf, useBoards } from '../../stores/boards';
+import { myUserId } from '../../stores/session';
 import { prefsOf, useBoardsUi } from '../../stores/boardsUi';
 import { toast } from '../../stores/toasts';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
@@ -246,13 +247,13 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
     (e: ReactPointerEvent, taskId: string, statusId: string): void => {
       if (e.button !== 0 || (e.target as HTMLElement).closest('button:not([data-task]), input, [role=menu]')) return;
       const task = useBoards.getState().tasks[taskId];
-      const p = useBoards.getState().boards[boardId]?.permissions;
-      if (!task || !hasBit(p, CREATE_TASKS)) return;
+      // Per-task bits: a scoped assignee drags his own cards (ADR-0059).
+      if (!task || !hasBit(taskPermsOf(useBoards.getState(), task, myUserId()), CREATE_TASKS)) return;
       const card = (e.currentTarget as HTMLElement).getBoundingClientRect();
       press.current = { kind: { kind: 'card', id: taskId, from: statusId }, x: e.clientX, y: e.clientY, dx: e.clientX - card.left, dy: e.clientY - card.top, w: card.width, started: false };
       pointer.current = { x: e.clientX, y: e.clientY };
     },
-    [boardId],
+    [],
   );
 
   const onHeaderPointerDown = useCallback(

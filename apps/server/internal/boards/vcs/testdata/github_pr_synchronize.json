@@ -1,0 +1,1 @@
+{"action": "synchronize", "number": 42, "pull_request": {"number": 42, "title": "FNG-12", "state": "open", "merged": false, "user": {"login": "octocat"}, "head": {"ref": "x"}}, "repository": {"full_name": "acme/app"}}

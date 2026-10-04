@@ -1,0 +1,44 @@
+{
+  "Event": {
+    "Provider": "github",
+    "Repo": "acme/app",
+    "RepoURL": "https://github.com/acme/app",
+    "Author": "octocat",
+    "Push": false,
+    "Branch": "",
+    "BranchCreated": false,
+    "Commits": null,
+    "PR": {
+      "Number": 42,
+      "Title": "FNG-12 Login form",
+      "Body": "Closes FNG-13. Not BAR-1.",
+      "URL": "https://github.com/acme/app/pull/42",
+      "State": "open",
+      "Branch": "feature/FNG-12-login",
+      "Author": "octocat",
+      "Event": "PR_OPENED"
+    }
+  },
+  "Links": [
+    {
+      "Number": 12,
+      "Kind": "pr",
+      "Ref": "42",
+      "Title": "FNG-12 Login form",
+      "URL": "https://github.com/acme/app/pull/42",
+      "State": "open",
+      "Author": "octocat",
+      "Event": "PR_OPENED"
+    },
+    {
+      "Number": 13,
+      "Kind": "pr",
+      "Ref": "42",
+      "Title": "FNG-12 Login form",
+      "URL": "https://github.com/acme/app/pull/42",
+      "State": "open",
+      "Author": "octocat",
+      "Event": "PR_OPENED"
+    }
+  ]
+}

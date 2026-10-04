@@ -16,11 +16,19 @@ import (
 
 const maxFormFields = 30
 
+// Definition text is stored verbatim; bound the stored value, including whitespace.
+func validFormText(field, value string) error {
+	if strings.TrimSpace(value) == "" || utf8.RuneCountInString(value) > 100 {
+		return httpx.Validation(field, "1..100 characters required")
+	}
+	return nil
+}
+
 func validateForm(d *v1.BoardFormDefinition) error {
 	if d == nil {
 		return httpx.Validation("definition", "form definition required")
 	}
-	if _, err := validText("title", d.Title, 1, 100); err != nil {
+	if err := validFormText("title", d.Title); err != nil {
 		return err
 	}
 	if utf8.RuneCountInString(d.Description) > 2000 {
@@ -45,7 +53,7 @@ func validateForm(d *v1.BoardFormDefinition) error {
 			return httpx.Validation(key+".id", "unique UUID required")
 		}
 		seen[f.Id] = true
-		if _, err := validText(key+".label", f.Label, 1, 100); err != nil {
+		if err := validFormText(key+".label", f.Label); err != nil {
 			return err
 		}
 		if utf8.RuneCountInString(f.Hint) > 500 || utf8.RuneCountInString(f.Placeholder) > 500 {
@@ -66,7 +74,7 @@ func validateForm(d *v1.BoardFormDefinition) error {
 			}
 			opts := map[string]bool{}
 			for _, o := range f.Options {
-				if _, err := validText(key+".options", o, 1, 100); err != nil {
+				if err := validFormText(key+".options", o); err != nil {
 					return err
 				}
 				if opts[o] {

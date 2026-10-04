@@ -499,6 +499,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
 			st.setMember(uid, r, m.GetRoleIds())
 		}
+		st.setBot(uid, m.GetUser().GetIsBot())
 		about(uid)
 	case *v1.DispatchEvent_WorkspaceMemberUpdate:
 		m := e.WorkspaceMemberUpdate.GetMember()

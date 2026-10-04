@@ -168,6 +168,10 @@ export const zhShell: DictShape<typeof enShell> = {
   'streamView.self': '你正在直播',
   'streamView.leaveFullscreen': '退出全屏',
   'streamView.leaveFullscreenHint': '退出全屏（Esc）',
+  'zoom.hint': '{mod} + 滚轮缩放，双击放大',
+  'zoom.stage': '屏幕共享视图。+ 和 − 缩放，0 重置，方向键平移',
+  'zoom.reset': '重置缩放（{level}）',
+  'zoom.minimap': '屏幕共享小地图：点击以移动视图',
   // voice states (#15)
   'voiceUi.serverMuted': '已被版主静音',
   'voiceUi.serverUnmuted': '版主已允许你发言——请取消麦克风静音',

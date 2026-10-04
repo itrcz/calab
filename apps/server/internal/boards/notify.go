@@ -22,6 +22,9 @@ type notice struct {
 	kind    notifications.TaskKind
 	actor   uuid.UUID
 	message uuid.UUID
+	// text / rule: the message of an automation rule (TaskRule, ADR-0060).
+	text string
+	rule uuid.UUID
 }
 
 var noticeKinds = map[notifications.TaskKind]v1.TaskNoticeKind{
@@ -33,6 +36,7 @@ var noticeKinds = map[notifications.TaskKind]v1.TaskNoticeKind{
 	notifications.TaskApprovalRequested: v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED,
 	notifications.TaskApproved:          v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVED,
 	notifications.TaskRejected:          v1.TaskNoticeKind_TASK_NOTICE_KIND_REJECTED,
+	notifications.TaskRule:              v1.TaskNoticeKind_TASK_NOTICE_KIND_RULE,
 }
 
 func actsOf(acts []sqlc.TaskActivity, taskID uuid.UUID) []sqlc.TaskActivity {
@@ -45,18 +49,32 @@ func actsOf(acts []sqlc.TaskActivity, taskID uuid.UUID) []sqlc.TaskActivity {
 	return out
 }
 
-// sees keeps the users who see the task's board.
-func sees(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, users []uuid.UUID) ([]uuid.UUID, error) {
+// sees keeps the users who see the task (ADR-0059: perm.TaskBits ≠ 0 — the board's viewers and,
+// on a task-scoped board, the task's own assignees and approvers while it is live).
+func sees(ctx context.Context, q *sqlc.Queries, t taskRow, users []uuid.UUID) ([]uuid.UUID, error) {
 	res := perm.NewResolver(q)
 	out := make([]uuid.UUID, 0, len(users))
 	for _, u := range users {
-		acc, err := res.Board(ctx, boardID, u)
-		if err == nil && acc.Bits.Has(perm.ViewBoard) && !acc.Archived {
+		acc, err := res.Board(ctx, t.BoardID, u)
+		if err != nil && err != perm.ErrNoBoard { //nolint:errorlint // sentinel from the resolver
+			return nil, err
+		}
+		if err != nil || acc.Archived {
+			continue
+		}
+		if acc.Bits.Has(perm.ViewBoard) {
 			out = append(out, u)
 			continue
 		}
-		if err != nil && err != perm.ErrNoBoard { //nolint:errorlint // sentinel from the resolver
+		if !acc.TaskScoped || t.ArchivedAt != nil {
+			continue
+		}
+		inv, err := q.GetTaskInvite(ctx, sqlc.GetTaskInviteParams{TaskID: t.ID, UserID: u})
+		if err != nil {
 			return nil, err
+		}
+		if perm.TaskBits(acc, inv.Assignee, inv.Approver) != 0 {
+			out = append(out, u)
 		}
 	}
 	return out, nil
@@ -109,7 +127,7 @@ func (s *Service) notifyDirect(ctx context.Context, q *sqlc.Queries, t taskRow, 
 		if len(g.users) == 0 {
 			continue
 		}
-		users, err := sees(ctx, q, t.BoardID, g.users)
+		users, err := sees(ctx, q, t, g.users)
 		if err != nil {
 			return err
 		}
@@ -136,7 +154,7 @@ func (s *Service) notifySubscribers(ctx context.Context, q *sqlc.Queries, t task
 	for _, sb := range subs {
 		users = append(users, sb.UserID)
 	}
-	if users, err = sees(ctx, q, t.BoardID, users); err != nil {
+	if users, err = sees(ctx, q, t, users); err != nil {
 		return err
 	}
 	return decide(ctx, q, t, actor, kind, users, msg, nil, c)
@@ -163,6 +181,9 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 		if n.message != uuid.Nil {
 			tn.MessageId = n.message.String()
 		}
+		if n.rule != uuid.Nil {
+			tn.Text, tn.RuleId = n.text, n.rule.String()
+		}
 		s.ev.User(ctx, n.user, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskUpdate{TaskUpdate: &v1.TaskUpdate{Task: pbs[0], Notice: tn}}})
 	}
 }
@@ -176,11 +197,14 @@ func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Me
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	var c change
-	err := s.tx(ctx, func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(ctx, &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, ok, err := taskByID(ctx, tx, acc.TaskID, false)
 		if err != nil || !ok {
 			return err
 		}
+		// The rule trigger comment_created (ADR-0060): not a journal entry.
+		author := msg.AuthorID
+		c.extra = []ruleEvent{{task: t.ID, board: t.BoardID, kind: kindComment, actor: &author}}
 		if err := q.Subscribe(ctx, sqlc.SubscribeParams{TaskID: t.ID, UserIds: []uuid.UUID{msg.AuthorID}}); err != nil {
 			return err
 		}

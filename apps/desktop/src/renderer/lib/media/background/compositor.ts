@@ -1,16 +1,17 @@
-import { BLUR_DOWNSCALE, BLUR_MAX_RADIUS, MASK_MIN_COVERAGE, coverUv, gaussianKernel } from './logic';
+import { BLUR_DOWNSCALE, BLUR_MAX_RADIUS, MASK_MIN_COVERAGE, SEG_MODELS, coverUv, gaussianKernel, type SegModelSpec } from './logic';
 
 /**
  * The GPU half of the camera background (ADR-0035 §2), WebGL2 on the worker's OffscreenCanvas —
  * the same context MediaPipe's GPU delegate runs in, so the mask never leaves the GPU.
  *
- * Per segmentation (SEG_FPS, 8/s): the MediaPipe mask (scaled to the frame by MediaPipe) → `raw` at 256×144 (+ mipmaps: its 1×1 level is
- * the person's share of the frame) → temporal EMA into `ema` (a nearly empty mask keeps the
+ * Per segmentation (SEG_FPS, 15/s): the MediaPipe mask at the model's size (256×256 multiclass —
+ * inverted, its mask 0 is the background — or 256×144 landscape) → `raw` (+ mipmaps: its 1×1 level
+ * is the person's share of the frame) → temporal EMA into `ema` (a nearly empty mask keeps the
  * previous one while the hold is allowed — decided per pixel from the 1×1 level, no readback).
  * Per camera frame: joint bilateral smoothing of the mask at ¼ size guided by the frame's luma
  * (edges follow the picture, less halo) → for blur: separable Gaussian at ¼ size, H straight from the
  * frame with the background premultiplied by (1 − mask) so the person does not bleed into it, then
- * V → composite at full size: mix(background, camera, smoothstep(mask)). 2 passes for a picture,
+ * V → composite at full size: mix(background, camera, smoothstep(edge, mask)). 2 passes for a picture,
  * 4 for blur (docs/14 «Фон камеры»: render passes are what the GPU process pays for).
  *
  * Appearance effects (effects.ts), with or without a background: touch-up = a bilateral of the frame
@@ -39,11 +40,13 @@ out vec4 o;
 const FS_MASK_IN = `${HEAD}
 uniform highp sampler2D u_src;
 uniform bool u_flip;
+uniform bool u_invert;
 void main() {
   ivec2 sz = textureSize(u_src, 0);
   vec2 uv = u_flip ? vec2(v_uv.x, 1.0 - v_uv.y) : v_uv;
   ivec2 p = clamp(ivec2(uv * vec2(sz)), ivec2(0), sz - ivec2(1));
-  o = vec4(clamp(texelFetch(u_src, p, 0).r, 0.0, 1.0), 0.0, 0.0, 1.0);
+  float c = clamp(texelFetch(u_src, p, 0).r, 0.0, 1.0);
+  o = vec4(u_invert ? 1.0 - c : c, 0.0, 0.0, 1.0);
 }`;
 
 /** Temporal EMA; a nearly empty new mask keeps the previous one while `u_hold` (ADR §6). */
@@ -79,7 +82,7 @@ void main() {
     for (int x = -2; x <= 2; x++) {
       vec2 uv = v_uv + vec2(float(x), float(y)) * u_step;
       float dl = dot(texture(u_frame, uv).rgb, LUMA) - lc;
-      float w = exp(-float(x * x + y * y) / 4.5 - dl * dl / 0.0128);
+      float w = exp(-float(x * x + y * y) / 8.0 - dl * dl / 0.04);
       sum += w * texture(u_mask, uv).r;
       wsum += w;
     }
@@ -197,6 +200,7 @@ vec3 lift(vec3 c) {
 void main() {
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
   vec3 fg = texture(u_frame, uv).rgb;
+  float raw = u_mode == 0 ? 1.0 : texture(u_mask, uv).r;
   if (u_denoise > 0.0) {
     float lc = dot(fg, LUMA);
     vec3 s = fg;
@@ -211,7 +215,7 @@ void main() {
     }
     fg = mix(fg, s / ws, u_denoise);
   }
-  float m = u_mode == 0 ? 1.0 : smoothstep(u_edge.x, u_edge.y, texture(u_mask, uv).r);
+  float m = u_mode == 0 ? 1.0 : smoothstep(u_edge.x, u_edge.y, raw);
   if (u_touch > 0.0) {
     vec3 sm = texture(u_smooth, uv).rgb;
     float dl = abs(dot(fg, LUMA) - dot(sm, LUMA));
@@ -259,16 +263,17 @@ export interface RenderOpts {
   denoise: number;
 }
 
-/** Width of the working mask: the selfie landscape model's input (256×144). */
+/** Width of the working mask: the models' input width (256, logic.ts SEG_MODELS). */
 const MASK_WIDTH = 256;
 
-/** Mask edge: below `lo` background, above `hi` person, smooth between. */
-const EDGE: [number, number] = [0.3, 0.7];
+/** The model's mask: its edge (smoothstep over the person confidence) and whether it is the background's. */
+export type MaskSpec = Pick<SegModelSpec, 'edge' | 'invert'>;
 
 export class Compositor {
   readonly gl: WebGL2RenderingContext;
   private readonly vao: WebGLVertexArrayObject;
   private readonly progs: Record<'maskIn' | 'ema' | 'refine' | 'blurH' | 'blur' | 'smooth' | 'out', Program>;
+  private maskSpec: MaskSpec = SEG_MODELS.landscape;
   private frame: WebGLTexture | null = null;
   private frameW = 0;
   private frameH = 0;
@@ -305,7 +310,7 @@ export class Compositor {
     gl.bindVertexArray(null);
     this.vao = vao;
     this.progs = {
-      maskIn: this.program(FS_MASK_IN, ['u_src', 'u_flip']),
+      maskIn: this.program(FS_MASK_IN, ['u_src', 'u_flip', 'u_invert']),
       ema: this.program(FS_EMA, ['u_raw', 'u_prev', 'u_alpha', 'u_hold', 'u_top', 'u_min']),
       refine: this.program(FS_REFINE, ['u_mask', 'u_frame', 'u_step']),
       blurH: this.program(FS_BLUR_H, ['u_frame', 'u_mask', 'u_dir', 'u_texel', 'u_w', 'u_r']),
@@ -319,12 +324,16 @@ export class Compositor {
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   }
 
-  /** The renderer string: SwiftShader / llvmpipe / «Basic Render» = software WebGL (ADR §2). */
-  get software(): boolean {
+  /** The GL renderer string (ANGLE backend and GPU), for the app log. */
+  get renderer(): string {
     const gl = this.gl;
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  }
+
+  /** SwiftShader / llvmpipe / «Basic Render» = software WebGL (ADR §2). */
+  get software(): boolean {
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(this.renderer);
   }
 
   private program(fs: string, uniforms: string[]): Program {
@@ -344,6 +353,11 @@ export class Compositor {
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`program: ${gl.getProgramInfoLog(p) ?? ''}`);
     return { p, u: Object.fromEntries(uniforms.map((n) => [n, gl.getUniformLocation(p, n)])) };
+  }
+
+  /** The segmentation model's mask (set once the segmenter has started). */
+  setMaskSpec(spec: MaskSpec): void {
+    this.maskSpec = spec;
   }
 
   private texture(w: number, h: number, mipmaps = false): WebGLTexture {
@@ -468,6 +482,7 @@ export class Compositor {
     this.pass(this.raw, maskIn);
     this.bind(0, mask, maskIn.u['u_src']);
     gl.uniform1i(maskIn.u['u_flip'] ?? null, this.flipMask ? 1 : 0);
+    gl.uniform1i(maskIn.u['u_invert'] ?? null, this.maskSpec.invert ? 1 : 0);
     this.draw();
     gl.bindTexture(gl.TEXTURE_2D, this.raw.tex);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -589,7 +604,7 @@ export class Compositor {
     const c = coverUv(this.imageAspect, this.frameW / this.frameH);
     gl.uniform2f(out.u['u_bgScale'] ?? null, c.scale[0], c.scale[1]);
     gl.uniform2f(out.u['u_bgOffset'] ?? null, c.offset[0], c.offset[1]);
-    gl.uniform2f(out.u['u_edge'] ?? null, EDGE[0], EDGE[1]);
+    gl.uniform2f(out.u['u_edge'] ?? null, this.maskSpec.edge[0], this.maskSpec.edge[1]);
     gl.uniform2f(out.u['u_texel'] ?? null, 1 / this.frameW, 1 / this.frameH);
     gl.uniform1f(out.u['u_touch'] ?? null, opts.touchUp > 0 && this.smooth ? opts.touchUp : 0);
     gl.uniform1f(out.u['u_range'] ?? null, Math.max(0.01, opts.touchRange));

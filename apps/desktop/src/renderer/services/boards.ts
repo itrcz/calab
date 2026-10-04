@@ -1,4 +1,5 @@
 import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
+import { timestampNow } from '@bufbuild/protobuf/wkt';
 import {
   ApproverState,
   BoardViewKind,
@@ -8,6 +9,7 @@ import {
   TaskAssigneeSchema,
   TaskNoticeKind,
   TaskSchema,
+  TaskMilestoneProgressSchema,
   type Board,
   type BoardCategory,
   type BoardFeature,
@@ -15,6 +17,7 @@ import {
   type BoardWebhook,
   type EstimateScale,
   type TaskChecklist,
+  type TaskMilestone,
   type CreateTaskRequestSchema,
   type DispatchEvent,
   type Room,
@@ -35,12 +38,14 @@ import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
 import { countItems, itemPosition, toggledItem, withItem } from '../lib/boards/checklists';
+import { milestonePosition, progressOf, withMilestone } from '../lib/boards/milestones';
 import { boardLayout, boardPlacements } from '../lib/boards/categories';
 import { countsUnread } from '../lib/boards/reducers';
 import { planCategoryMove, planNewCategoryFirst, planRoomMove, type RoomTarget } from '../lib/roomOrder';
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { platform } from '../platform';
+import { useAutomations } from '../stores/automations';
 import { checklistsOf, useBoards, workspaceBoards, workspaceCategories } from '../stores/boards';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
@@ -95,6 +100,7 @@ function rememberRoom(room: Room | undefined): void {
 export function resetBoards(): void {
   taskRooms.clear();
   useBoards.getState().reset();
+  useAutomations.getState().reset();
   useTaskDetails.getState().reset();
   useBoardsUi.setState({ active: false, taskId: null, focused: null, selected: {}, menu: null, createFor: null, settingsFor: null });
 }
@@ -154,10 +160,15 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
     case 'boardUpdate':
       if (ev.value.board) s.upsertBoard(ev.value.board, true);
       return true;
-    case 'boardDelete':
+    case 'boardDelete': {
+      // The open task panel of this board closes with it (ADR-0059: the last card of a scoped viewer went).
+      const ui = useBoardsUi.getState();
+      const open = ui.taskId ? s.tasks[ui.taskId] : undefined;
       s.removeBoard(ev.value.boardId);
-      if (useBoardsUi.getState().boardOf[ev.value.workspaceId] === ev.value.boardId) useBoardsUi.getState().openBoard(ev.value.workspaceId, MY_TASKS);
+      if (open?.boardId === ev.value.boardId) ui.openTask(null);
+      if (ui.boardOf[ev.value.workspaceId] === ev.value.boardId) ui.openBoard(ev.value.workspaceId, MY_TASKS);
       return true;
+    }
     case 'taskCreate':
       if (ev.value.task) onTask(ev.value.task);
       return true;
@@ -165,10 +176,13 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       if (ev.value.task) onTask(ev.value.task);
       if (ev.value.notice) notifyTask(ev.value);
       return true;
-    case 'taskDelete':
+    case 'taskDelete': {
+      // Purged, or a scoped viewer lost the card (ADR-0059: TASK_DELETE without `purged` = the card is gone for him).
+      const scoped = !!s.boards[ev.value.boardId]?.taskScoped;
       s.removeTask(ev.value.taskId);
-      if (useBoardsUi.getState().taskId === ev.value.taskId && ev.value.purged) useBoardsUi.getState().openTask(null);
+      if (useBoardsUi.getState().taskId === ev.value.taskId && (ev.value.purged || scoped)) useBoardsUi.getState().openTask(null);
       return true;
+    }
     case 'taskActivity':
       if (ev.value.activity) s.appendActivity(ev.value.activity);
       return true;
@@ -212,7 +226,7 @@ function notifyTask(u: TaskUpdate): void {
   if (prefs().presence === PresenceStatus.DND) return;
   const visible = document.hasFocus() && useBoardsUi.getState().taskId === task.id;
   if (visible) return;
-  const what = noticeText(task, n.kind, n.actorId);
+  const what = noticeText(task, n.kind, n.actorId, n.text);
   try {
     const note = new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` });
     note.onclick = () => {
@@ -229,7 +243,7 @@ function notifyTask(u: TaskUpdate): void {
  * The text of a task notice (system notification). Approvals (ADR-0049 §5) are mandatory: the
  * server sends them past the task level and «Отписаться»; the reminder has no actor.
  */
-export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string): string {
+export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string, text = ''): string {
   const actor = actorId ? memberName(task.workspaceId, actorId) : '';
   switch (kind) {
     case TaskNoticeKind.ASSIGNED:
@@ -242,6 +256,9 @@ export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: 
       return actor ? t('boards.notice.approvalRequested', { name: actor }) : t('boards.notice.approvalReminder');
     case TaskNoticeKind.APPROVED:
       return t('boards.notice.approved');
+    // ADR-0060: the «notify» action of an automation rule — its rendered text.
+    case TaskNoticeKind.RULE:
+      return text ? t('boards.notice.rule', { text }) : t('rules.noticeDefault');
     case TaskNoticeKind.REJECTED: {
       const who = task.approvers.find((a) => a.state === ApproverState.REJECTED && (!actorId || a.userId === actorId));
       const name = memberName(task.workspaceId, who?.userId ?? actorId);
@@ -300,7 +317,11 @@ function applyTaskResponse(r: TaskResponse, full = false): void {
   if (r.board) s.upsertBoard(r.board);
   const extra = [...r.subtasks, ...r.related, ...(r.parent ? [r.parent] : [])];
   s.upsertTasks([...(r.task ? [r.task] : []), ...extra]);
-  if (full && r.task) s.setChecklists(r.task.id, r.task.checklists);
+  if (full && r.task) {
+    s.setChecklists(r.task.id, r.task.checklists);
+    // Git links (ADR-0060 §4) come only with the full task, like the checklists.
+    useAutomations.getState().setGitLinks(r.task.id, r.task.gitLinks, true);
+  }
   if (r.room) rememberRoom(r.room);
   const task = r.task;
   if (!task) return;
@@ -454,6 +475,8 @@ export interface TaskPatch {
   dueOn?: string;
   parentId?: string;
   milestoneId?: string;
+  /** A subtask's milestone: one of its parent's (ADR-0063); '' = none. */
+  taskMilestoneId?: string;
   labelIds?: string[];
 }
 
@@ -470,6 +493,8 @@ const FEATURE_FIELD: Record<string, MessageKey> = {
   priority: 'boards.f.priority',
   labelIds: 'boards.f.label',
   milestoneId: 'boards.f.milestone',
+  milestones: 'boards.feat.milestones',
+  taskMilestoneId: 'boards.feat.milestones',
   parentId: 'boards.subtasks',
   relatedId: 'boards.relations',
   attachmentIds: 'boards.feat.attachments',
@@ -1304,5 +1329,85 @@ export async function pingWebhook(workspaceId: string, boardId: string): Promise
   } catch (e) {
     webhookFail(e, workspaceId);
     return false;
+  }
+}
+
+// ------------------------------------------------------------------ task milestones (ADR-0063)
+
+function milestoneFail(e: unknown, taskId: string): void {
+  if (reportFeatureError(e, wsOfTask(taskId))) return;
+  if (e instanceof ApiError && e.reason === 'TASK_MILESTONE_LIMIT') toast.error(t('boards.ms.limit'));
+  else if (e instanceof ApiError && e.reason === 'TASK_MILESTONE_AUTO') toast.error(t('boards.ms.auto'));
+  else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
+  else toast.fail(e, t('boards.err.save'));
+}
+
+/** Puts a task's milestones locally (optimistic), the progress recomputed. */
+function localMilestones(taskId: string, list: TaskMilestone[]): void {
+  const cur = useBoards.getState().tasks[taskId];
+  if (!cur) return;
+  const p = progressOf(list);
+  useBoards.getState().upsertTask({ ...cur, milestones: list, milestoneProgress: cur.milestoneProgress ? { ...cur.milestoneProgress, ...p } : createMsg(TaskMilestoneProgressSchema, p) });
+}
+
+const milestonesOf = (taskId: string): TaskMilestone[] => [...(useBoards.getState().tasks[taskId]?.milestones ?? [])];
+
+/** «Вехи» → ✓: a new milestone at the end; true when the server took it. */
+export async function createTaskMilestone(taskId: string, name: string, dueOn: string): Promise<boolean> {
+  try {
+    const r = await boardsApi.tasks.milestones.create(taskId, { name, dueOn });
+    if (r.task) useBoards.getState().upsertTask(r.task);
+    return true;
+  } catch (e) {
+    milestoneFail(e, taskId);
+    return false;
+  }
+}
+
+export interface MilestonePatch {
+  name?: string;
+  dueOn?: string;
+  position?: number;
+  completed?: boolean;
+}
+
+/** Rename / date / order / a person's toggle: the row changes at once, the answer confirms. */
+export async function updateTaskMilestone(taskId: string, id: string, patch: MilestonePatch): Promise<void> {
+  const before = milestonesOf(taskId);
+  const m = before.find((x) => x.id === id);
+  if (!m) return;
+  const { completed, ...fields } = patch;
+  let next: TaskMilestone = { ...m, ...fields };
+  if (completed !== undefined) {
+    const { completedAt: _drop, ...rest } = next;
+    next = completed ? { ...next, completedAt: timestampNow(), completedBy: myUserId() } : { ...rest, completedBy: '' };
+  }
+  localMilestones(taskId, withMilestone(before, next));
+  try {
+    const r = await boardsApi.tasks.milestones.update(id, patch);
+    if (r.task) useBoards.getState().upsertTask(r.task);
+  } catch (e) {
+    localMilestones(taskId, before);
+    milestoneFail(e, taskId);
+  }
+}
+
+/** Drag & drop: the milestone at `index` of the task's list (the dragged one excluded). */
+export function moveTaskMilestone(taskId: string, id: string, index: number): void {
+  const list = milestonesOf(taskId);
+  const at = list.findIndex((x) => x.id === id);
+  if (at < 0 || at === index) return; // back in its own place
+  void updateTaskMilestone(taskId, id, { position: milestonePosition(list, id, index) });
+}
+
+export async function deleteTaskMilestone(taskId: string, id: string): Promise<void> {
+  const before = milestonesOf(taskId);
+  localMilestones(taskId, before.filter((m) => m.id !== id));
+  try {
+    const r = await boardsApi.tasks.milestones.remove(id);
+    if (r.task) useBoards.getState().upsertTask(r.task);
+  } catch (e) {
+    localMilestones(taskId, before);
+    milestoneFail(e, taskId);
   }
 }

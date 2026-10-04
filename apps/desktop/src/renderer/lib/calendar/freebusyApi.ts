@@ -4,6 +4,8 @@ import {
   CalDavAccountResponseSchema,
   CalDavShareLevel,
   ConnectCalDavRequestSchema,
+  DeleteExternalEventRequestSchema,
+  ExternalDeleteScope,
   ExternalEventsResponseSchema,
   SetCalDavShareRequestSchema,
   FreeBusyResponseSchema,
@@ -83,8 +85,17 @@ export interface ExternalEvent {
   location: string;
   attendees: readonly ExternalAttendee[];
   organizer: string;
+  /** «Подключиться»: the conference link (ADR-0045 amendment 1); '' = none. */
   url: string;
+  /** The calendar object (what «Удалить из календаря» names); '' until the next import. */
+  href: string;
+  /** An occurrence of a series: the delete offers «only this» / «the whole series». */
+  recurring: boolean;
+  /** «Открыть в календаре»: the provider's page of the event, only when reliable; '' = no button. */
+  webUrl: string;
 }
+
+export type ExternalDeleteScopeName = 'this' | 'series';
 
 export interface SuggestInit {
   users: readonly string[];
@@ -177,9 +188,28 @@ export const freebusyApi = {
         attendees: e.attendees.map((a) => ({ email: a.email, name: a.name, userId: a.userId })),
         organizer: e.organizer,
         url: e.url,
+        href: e.href,
+        recurring: e.recurring,
+        webUrl: e.webUrl,
       }))
       .filter((e) => e.end > e.start);
   },
+  /**
+   * DELETE /api/me/external-events (ADR-0045 amendment 1): the event (or this occurrence of its
+   * series) out of my CalDAV calendar. 409 CONFLICT — it changed there (reload); 422 — the
+   * calendar is read-only (reason CALENDAR_READ_ONLY); 404 — not mine / gone.
+   */
+  deleteExternal: (e: Pick<ExternalEvent, 'uid' | 'href' | 'start'>, scope: ExternalDeleteScopeName): Promise<void> =>
+    callEmpty(
+      'DELETE',
+      '/api/me/external-events',
+      body(DeleteExternalEventRequestSchema, {
+        uid: e.uid,
+        href: e.href,
+        start: timestampFromMs(e.start),
+        scope: scope === 'series' ? ExternalDeleteScope.SERIES : ExternalDeleteScope.THIS,
+      }),
+    ),
   /** PATCH /api/me {work_hours}: the updated Me. */
   saveWorkHours: (wh: WorkHours) => api.me.update({ workHours: { startMin: wh.startMin, endMin: wh.endMin, days: [...wh.days] } }),
   caldav: {
@@ -201,6 +231,10 @@ export const freebusyApi = {
     sync: async (): Promise<CalDavAccount | null> => accountOf(await call('POST', '/api/me/caldav/sync', CalDavAccountResponseSchema)),
   },
 };
+
+/** The delete of an external event failed because it changed in the calendar (409) / the calendar is read-only (422). */
+export const externalChanged = (e: unknown): boolean => e instanceof ApiError && e.status === 409 && e.code === 'ERROR_CODE_CONFLICT' && e.extra.reason !== 'PLAN_LIMIT';
+export const externalReadOnly = (e: unknown): boolean => e instanceof ApiError && e.status === 422 && e.extra.reason === 'CALENDAR_READ_ONLY';
 
 /** 409 NO_COMMON_HOURS: the people's work hours never overlap (ADR-0041 §2). */
 export const noCommonHours = (e: unknown): boolean => e instanceof ApiError && (e.code === 'ERROR_CODE_NO_COMMON_HOURS' || e.reason === 'NO_COMMON_HOURS');

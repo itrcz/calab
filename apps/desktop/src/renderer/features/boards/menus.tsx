@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { WorkspaceRole, type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
+import { type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
 import { Check, ChevronLeft, ChevronRight, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -13,6 +13,7 @@ import { MAX_APPROVERS } from '../../lib/boards/approvals';
 import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { createLabel } from '../../services/boards';
+import { accessChoice, pickerAccess, type PickerAccess } from '../../lib/boards/access';
 import { useBoards } from '../../stores/boards';
 import { useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -35,6 +36,9 @@ export interface Choice extends PickerItem {
   checked?: boolean;
   /** Muted text before the check (counts). */
   note?: string;
+  /** Secondary caption after the name («увидит только эту карточку», ADR-0059); `title` is its tooltip. */
+  caption?: string;
+  title?: string;
 }
 
 interface MenuShell {
@@ -127,7 +131,10 @@ export function ChoiceMenu({
             renderItem={(c, active) => (
               <>
                 {c.icon ? <span className="grid size-5 shrink-0 place-items-center">{c.icon}</span> : null}
-                <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                <span className="min-w-0 flex-1 truncate" {...(c.title ? { title: c.title } : {})}>
+                  {c.label}
+                </span>
+                {c.caption ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{c.caption}</span> : null}
                 {c.note ? <span className={cx('shrink-0 text-caption tabular-nums', active ? 'opacity-75' : 'text-muted')}>{c.note}</span> : null}
                 {c.checked ? <Check className="size-3.5 shrink-0" aria-label={t('boards.selected')} /> : <span className="size-3.5 shrink-0" />}
                 {digits ? (
@@ -219,10 +226,19 @@ export function AssigneeMenu({
   const [open, setOpen] = useOpen(shell);
   // Only while open: a closed menu on every card must not re-render on presence / voice changes.
   const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
+  const roles = useWorkspaces((s) => (open ? s.byId[workspaceId]?.roles : undefined));
+  const board = useBoards((s) => (open ? s.boards[boardId] : undefined));
   const counts = useAssigneeCounts(boardId, open);
   const openDialog = useUi((s) => s.openDialog);
   const groups = useMemo((): Array<PickerGroup<Choice>> => {
-    const list = Object.values(members ?? {}).filter((m) => m.user && m.role !== WorkspaceRole.GUEST);
+    // ADR-0059: every non-guest member (a bot only when it sees the board).
+    const access = new Map<string, PickerAccess>();
+    const list = Object.values(members ?? {}).filter((m) => {
+      if (!m.user) return false;
+      const a = pickerAccess(board, roles ?? [], m);
+      access.set(m.user.id, a);
+      return a !== 'hidden' || value.includes(m.user.id);
+    });
     const person = (id: string, name: string, fileId: string): Choice => ({
       id,
       search: [name],
@@ -230,6 +246,7 @@ export function AssigneeMenu({
       icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
       checked: value.includes(id),
       note: String(counts[id] ?? 0),
+      ...accessChoice(access.get(id), value.includes(id)),
     });
     const chosen = list.filter((m) => value.includes(m.user?.id ?? '')).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
     const others = list
@@ -242,14 +259,14 @@ export function AssigneeMenu({
       { id: 'members', label: t('boards.members'), items: others },
       { id: 'invite', label: t('boards.newUser'), items: [{ id: '__invite', search: [t('boards.inviteAssign')], label: t('boards.inviteAssign'), icon: <Send className="size-4 text-muted" /> }] },
     ];
-  }, [members, value, counts]);
+  }, [members, roles, board, value, counts]);
   return (
     <ChoiceMenu
       {...shell}
       open={open}
       onOpenChange={setOpen}
       multi
-      width={300}
+      width={340}
       groups={groups}
       onPick={(c) => {
         if (c.id === '__none') onNone();
@@ -271,18 +288,30 @@ export function AssigneeMenu({
  */
 export function ApproverMenu({
   workspaceId,
+  boardId,
   value,
   onToggle,
   ...shell
-}: MenuShell & { workspaceId: string; value: readonly string[]; onToggle: (userId: string) => void }): ReactNode {
+}: MenuShell & { workspaceId: string; boardId: string; value: readonly string[]; onToggle: (userId: string) => void }): ReactNode {
   const [open, setOpen] = useOpen(shell);
   const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
+  const roles = useWorkspaces((s) => (open ? s.byId[workspaceId]?.roles : undefined));
+  const board = useBoards((s) => (open ? s.boards[boardId] : undefined));
   const groups = useMemo((): Array<PickerGroup<Choice>> => {
     const full = value.length >= MAX_APPROVERS;
-    const list = Object.values(members ?? {}).filter((m) => m.user && !m.user.isBot && m.role !== WorkspaceRole.GUEST);
+    const access = new Map<string, PickerAccess>();
+    const list = Object.values(members ?? {}).filter((m) => {
+      if (!m.user) return false;
+      const a = pickerAccess(board, roles ?? [], m);
+      access.set(m.user.id, a);
+      // A bot only when it sees the board; a guest never (ADR-0059).
+      return a !== 'hidden' && (!m.user.isBot || a === 'ok');
+    });
     const person = (id: string, name: string, fileId: string): Choice => {
       const on = value.includes(id);
+      const acc = accessChoice(access.get(id), on);
       return {
+        ...acc,
         id,
         search: [name],
         label: name,
@@ -303,14 +332,14 @@ export function ApproverMenu({
       { id: 'chosen', label: '', items: chosen },
       { id: 'members', label: t('boards.members'), items: others },
     ];
-  }, [members, value]);
+  }, [members, roles, board, value]);
   return (
     <ChoiceMenu
       {...shell}
       open={open}
       onOpenChange={setOpen}
       multi
-      width={300}
+      width={340}
       groups={groups}
       onPick={(c) => onToggle(c.id)}
       placeholder={t('boards.approverMenu')}

@@ -45,7 +45,10 @@ func (x identityRegistrar) Handle(pattern string, h http.Handler) {
 			return
 		}
 		if !x.enabled {
-			x.reject(w, r, 503, "server_error", httpx.Coded(503, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE, "identity dependency unavailable"))
+			// An install without identity operator configuration is a normal state, not a
+			// dependency outage: first-party API routes answer 409 IDENTITY_NOT_CONFIGURED
+			// (clients show «not configured»); RFC endpoints keep the protocol server_error.
+			x.reject(w, r, 503, "server_error", errIdentityNotConfigured)
 			return
 		}
 		if x.quota != nil {
@@ -65,6 +68,9 @@ func (x identityRegistrar) Handle(pattern string, h http.Handler) {
 		h.ServeHTTP(w, r)
 	}))
 }
+
+var errIdentityNotConfigured = httpx.Conflict("identity is not configured on this server").WithDetails(httpx.ReasonIdentityNotConfigured, 0, 0)
+
 func (x identityRegistrar) reject(w http.ResponseWriter, r *http.Request, status int, code string, err error) {
 	if strings.HasPrefix(r.URL.Path, "/oidc/") || strings.HasPrefix(r.URL.Path, "/.well-known/") {
 		w.Header().Set("Cache-Control", "no-store")

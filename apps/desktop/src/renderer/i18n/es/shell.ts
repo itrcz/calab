@@ -168,6 +168,10 @@ export const esShell: DictShape<typeof enShell> = {
   'streamView.self': 'Estás transmitiendo',
   'streamView.leaveFullscreen': 'Salir',
   'streamView.leaveFullscreenHint': 'Salir de pantalla completa (Esc)',
+  'zoom.hint': '{mod} + rueda para ampliar, doble clic para acercar',
+  'zoom.stage': 'Vista de la pantalla compartida. + y − amplían, 0 restablece, las flechas desplazan',
+  'zoom.reset': 'Restablecer zoom ({level})',
+  'zoom.minimap': 'Minimapa de la pantalla compartida: haz clic para mover la vista',
   // voice states (#15)
   'voiceUi.serverMuted': 'Silenciado por un moderador',
   'voiceUi.serverUnmuted': 'Un moderador te permitió hablar — activa tu micrófono',

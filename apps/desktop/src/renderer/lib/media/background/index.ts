@@ -1,7 +1,7 @@
 import type { Track, TrackProcessor, VideoProcessorOptions } from 'livekit-client';
 import type { WorkerEffects } from './effects';
-import { BACKGROUND_PROCESSOR, type BackgroundKind } from './logic';
-import type { FromWorker, ToWorker, WorkerState } from './protocol';
+import { BACKGROUND_PROCESSOR, SEG_FPS, type BackgroundKind } from './logic';
+import type { BgTune, FromWorker, ToWorker, WorkerState } from './protocol';
 
 /**
  * The camera background and appearance effects as a LiveKit track processor (ADR-0035 §1 and the
@@ -29,6 +29,8 @@ export interface BackgroundStatus {
   state: WorkerState | 'idle';
   /** No GPU delegate / software WebGL: 6 fps and the «нагружает процессор» hint. */
   software: boolean;
+  /** `failed`: why (for the log; the UI shows a generic hint). `ready`: delegate and GL renderer. */
+  detail?: string;
 }
 
 export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, VideoProcessorOptions> {
@@ -38,6 +40,10 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
   private generator: MediaStreamTrackGenerator<VideoFrame> | null = null;
   /** The worker's last 5 s report (frames, segmentations, ms per frame): e2e and benchmarks. */
   lastStats: Extract<FromWorker, { type: 'stats' }> | null = null;
+  /** Quality knobs for prototypes and benchmarks (protocol.ts), set before `init`. */
+  tune: BgTune | undefined;
+  /** prefs.cameraBgFps (logic.ts SEG_FPS_OPTIONS); the worker's fallback keeps its own rate. */
+  segFps = SEG_FPS;
 
   constructor(
     private mode: BackgroundKind,
@@ -58,12 +64,13 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
     generator.contentHint = 'motion';
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'camera-background' });
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
-      if (e.data.type === 'state') this.onStatus({ state: e.data.state, software: e.data.software ?? false });
+      if (e.data.type === 'state') this.onStatus({ state: e.data.state, software: e.data.software ?? false, ...(e.data.detail ? { detail: e.data.detail } : {}) });
       else this.lastStats = e.data;
     };
+    // The worker script itself failed (load, syntax, an uncaught throw): never silent.
     worker.onerror = (e) => {
-      console.warn('camera background worker error', e.message);
-      this.onStatus({ state: 'failed', software: false });
+      e.preventDefault();
+      this.onStatus({ state: 'failed', software: false, detail: `worker: ${e.message || 'script error'}` });
     };
     this.worker = worker;
     this.generator = generator;
@@ -71,7 +78,7 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
     const readable = new MediaStreamTrackProcessor<VideoFrame>({ track: opts.track, maxBufferSize: 2 }).readable;
     const image = this.image;
     this.image = null; // transferred
-    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image, effects: this.effects }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
+    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image, effects: this.effects, segFps: this.segFps, ...(this.tune ? { tune: this.tune } : {}) }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
     return Promise.resolve();
   }
 
@@ -94,6 +101,13 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
   setEffects(effects: WorkerEffects): void {
     this.effects = effects;
     this.send({ type: 'effects', effects });
+  }
+
+  /** «Плавность»: the segmentation rate, without restarting anything. */
+  setSegFps(fps: number): void {
+    if (fps === this.segFps) return;
+    this.segFps = fps;
+    this.send({ type: 'segFps', fps });
   }
 
   get currentMode(): BackgroundKind {

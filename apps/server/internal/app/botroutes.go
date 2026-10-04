@@ -307,6 +307,7 @@ var botRoutes = map[string]botAccess{
 	"PATCH /api/me/caldav":                       botDeny,
 	"GET /api/me/external-events":                botDeny, // ADR-0045 §5: the owner's own events, people only
 	"DELETE /api/me/caldav":                      botDeny,
+	"DELETE /api/me/external-events":             botDeny, // ADR-0045 amendment 1: the owner deletes from their calendar
 	"POST /api/me/caldav/sync":                   botDeny,
 	"GET /api/event-rsvp":                        botPublic, // signed answer links of external attendees; refuses bot tokens
 	"POST /api/event-rsvp":                       botPublic,
@@ -376,12 +377,29 @@ var botRoutes = map[string]botAccess{
 	"PATCH /api/checklist-items/{id}":            botAllow,
 	"DELETE /api/checklist-items/{id}":           botAllow,
 	"POST /api/checklist-items/{id}/convert":     botAllow,
-	"GET /api/boards/{id}/webhook":               botDeny,
-	"PUT /api/boards/{id}/webhook":               botDeny,
-	"DELETE /api/boards/{id}/webhook":            botDeny,
-	"POST /api/boards/{id}/webhook/ping":         botDeny,
-	"GET /api/me/tasks":                          botAllow,
-	"GET /api/workspaces/{id}/tasks/search":      botAllow,
+	// Milestones inside a task (ADR-0063): bots like people, by the task's rights.
+	"POST /api/tasks/{id}/milestones":    botAllow,
+	"PATCH /api/task-milestones/{id}":    botAllow,
+	"DELETE /api/task-milestones/{id}":   botAllow,
+	"GET /api/boards/{id}/webhook":       botDeny,
+	"PUT /api/boards/{id}/webhook":       botDeny,
+	"DELETE /api/boards/{id}/webhook":    botDeny,
+	"POST /api/boards/{id}/webhook/ping": botDeny,
+	// Automations (ADR-0060): bots read rules; changing, testing them and the repository
+	// webhook setup are people only. The repository's own delivery is public (signed).
+	"GET /api/boards/{id}/rules":            botAllow,
+	"POST /api/boards/{id}/rules":           botDeny,
+	"PATCH /api/rules/{id}":                 botDeny,
+	"DELETE /api/rules/{id}":                botDeny,
+	"POST /api/rules/{id}/test":             botDeny,
+	"GET /api/rules/{id}/runs":              botAllow,
+	"GET /api/boards/{id}/git":              botDeny,
+	"PUT /api/boards/{id}/git":              botDeny,
+	"DELETE /api/boards/{id}/git":           botDeny,
+	"POST /api/git/boards/{id}/{provider}":  botPublic, // the repository hosting only (signed)
+	"GET /api/me/tasks":                     botAllow,
+	"GET /api/search":                       botAllow, // unified search (ADR-0062): same rules, never notes
+	"GET /api/workspaces/{id}/tasks/search": botAllow,
 	// telephony (ADR-0046): settings, the connection test (MANAGE_INTEGRATIONS) and the journal
 	// (VIEW_JOURNALS, ADR-0048) are for people; bots
 	// with PLACE_CALLS place and end calls from a room whose call they are in
@@ -391,6 +409,16 @@ var botRoutes = map[string]botAccess{
 	"GET /api/workspaces/{id}/calls":     botDeny,
 	"POST /api/rooms/{id}/calls":         botAllow,
 	"DELETE /api/rooms/{id}/calls/{cid}": botAllow,
+
+	// ADR-0061: bots read the workspace catalog and members' achievements; people manage the
+	// catalog (MANAGE_WORKSPACE) and grant and revoke (MANAGE_MEMBERS).
+	"GET /api/workspaces/{id}/achievements":                               botAllow,
+	"POST /api/workspaces/{id}/achievements":                              botDeny,
+	"PATCH /api/achievements/{id}":                                        botDeny,
+	"DELETE /api/achievements/{id}":                                       botDeny,
+	"GET /api/workspaces/{id}/members/{userId}/achievements":              botAllow,
+	"POST /api/workspaces/{id}/members/{userId}/achievements":             botDeny,
+	"DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId}": botDeny,
 }
 
 // botAudited: administrative routes whose bot calls are logged as "bot action" with the

@@ -137,17 +137,10 @@ CROSS JOIN LATERAL (
     LIMIT 1
 ) lm;
 
--- name: SearchMessages :many
--- Full-text search, newest first. The tsvector expression must match messages_search_idx.
-SELECT * FROM messages
-WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND deleted_at IS NULL
-  AND (to_tsvector('russian', content) || to_tsvector('simple', content))
-      @@ (websearch_to_tsquery('russian', sqlc.arg('q')::text) || websearch_to_tsquery('simple', sqlc.arg('q')::text))
-  AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
-  AND (sqlc.narg('author_id')::uuid IS NULL OR author_id = sqlc.narg('author_id')::uuid)
-  AND (sqlc.narg('since')::uuid IS NULL OR id > sqlc.narg('since')::uuid)
-ORDER BY id DESC
-LIMIT sqlc.arg('lim');
+-- name: ListMessagesByIDs :many
+-- The live messages of ids (a search page, searchq.MessageIDs), newest first; one deleted
+-- since the ids were found is left out.
+SELECT * FROM messages WHERE id = ANY(sqlc.arg('ids')::uuid[]) AND deleted_at IS NULL ORDER BY id DESC;
 
 -- name: AddReaction :execrows
 INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)

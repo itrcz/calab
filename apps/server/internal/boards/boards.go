@@ -21,6 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -42,7 +43,10 @@ type Service struct {
 	ev    events.Publisher
 	plans *plans.Service
 	files Uploader
-	hooks *Webhooks // board webhooks (EnableWebhooks); nil = off
+	hooks *Webhooks  // board webhooks (EnableWebhooks); nil = off
+	repo  *repoHooks // Git webhooks of boards (EnableGit, ADR-0060); nil = off
+	// system posts the automation cards of rules (ADR-0060).
+	system *messages.System
 	// PublicURL is PUBLIC_APP_URL: links to messages in «Создать задачу из сообщения».
 	PublicURL string
 	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
@@ -55,7 +59,7 @@ type Service struct {
 
 // New creates the service; p and f may be nil (no plan limit, no uploads).
 func New(d *db.DB, ev events.Publisher, p *plans.Service, f Uploader) *Service {
-	return &Service{db: d, ev: ev, plans: p, files: f, Now: time.Now}
+	return &Service{db: d, ev: ev, plans: p, files: f, system: messages.NewSystem(d, ev), Now: time.Now}
 }
 
 // Routes registers the routes; wrap applies auth + the permission resolver.
@@ -125,7 +129,12 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("PATCH /api/checklist-items/{id}", s.updateChecklistItem)
 	h("DELETE /api/checklist-items/{id}", s.deleteChecklistItem)
 	h("POST /api/checklist-items/{id}/convert", s.convertChecklistItem)
+	h("POST /api/tasks/{id}/milestones", s.createTaskMilestone)
+	h("PATCH /api/task-milestones/{id}", s.updateTaskMilestone)
+	h("DELETE /api/task-milestones/{id}", s.deleteTaskMilestone)
 	s.webhookRoutes(mux, wrap)
+	s.ruleRoutes(mux, wrap)
+	s.repoRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -148,10 +157,13 @@ func (s *Service) tx(ctx context.Context, fn func(q *sqlc.Queries, tx pgx.Tx) er
 // ---- access ----
 
 // board resolves the caller's access to a board: 404 when it does not exist or they do not
-// see it; an archived board only for MANAGE_BOARD with archivedOK.
+// see it; an archived board only for MANAGE_BOARD with archivedOK. A task-scoped member
+// (ADR-0059) gets their access with Bits = 0: every route decides what they may do — read the
+// board, its views and their own tasks, upload; anything else answers like to a member without
+// the bit (403), or use fullBoard.
 func board(r *http.Request, boardID uuid.UUID, archivedOK bool) (perm.BoardAccess, error) {
 	acc, err := perm.FromContext(r.Context()).Board(r.Context(), boardID, uid(r))
-	if errors.Is(err, perm.ErrNoBoard) || (err == nil && !acc.Bits.Has(perm.ViewBoard)) {
+	if errors.Is(err, perm.ErrNoBoard) || (err == nil && !acc.Bits.Has(perm.ViewBoard) && !acc.TaskScoped) {
 		return perm.BoardAccess{}, httpx.NotFound("board")
 	}
 	if err != nil {
@@ -169,6 +181,16 @@ func pathBoard(r *http.Request, archivedOK bool) (uuid.UUID, perm.BoardAccess, e
 		return uuid.Nil, perm.BoardAccess{}, err
 	}
 	acc, err := board(r, id, archivedOK)
+	return id, acc, err
+}
+
+// fullBoard is pathBoard for the routes closed to task-scoped members (ADR-0059 §3): 403, as to
+// a member without bits.
+func fullBoard(r *http.Request, archivedOK bool) (uuid.UUID, perm.BoardAccess, error) {
+	id, acc, err := pathBoard(r, archivedOK)
+	if err == nil && !acc.Bits.Has(perm.ViewBoard) {
+		err = httpx.Forbidden("VIEW_BOARD required")
+	}
 	return id, acc, err
 }
 

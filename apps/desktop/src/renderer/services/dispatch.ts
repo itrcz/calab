@@ -34,6 +34,8 @@ import { applyShelf, applyShelves, dropShelf } from './notes';
 import { useNotes } from '../stores/notes';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
+import { achievementForMe } from '../lib/achievements';
+import { invalidateCatalog, invalidateMemberAchievements } from '../lib/achievementCatalog';
 import { applyUserSettings } from './profile';
 import { applyStickerEvent } from './stickers';
 import { applyBotEvent } from './bots';
@@ -64,6 +66,7 @@ import {
 } from './calendar';
 import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
+import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
 import { onRoomArchived } from '../lib/api/client';
 import { isTempRoom } from '../lib/tempRooms';
@@ -254,6 +257,12 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'taskChecklistDelete':
       applyBoardEvent(e);
       return;
+    // Board automations and Git links (ADR-0060, events 92–94).
+    case 'boardRuleUpdate':
+    case 'boardRuleDelete':
+    case 'taskGitLinksUpdate':
+      applyAutomationEvent(e);
+      return;
     case 'dmCreate':
       if (e.value.dm) applyDm(e.value.dm, true);
       return;
@@ -290,7 +299,10 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'workspaceMemberUpdate':
       if (e.value.member) {
         const m = e.value.member;
+        // ADR-0061: the live achievements of a member changed → an open profile reloads them.
+        const before = useWorkspaces.getState().byId[m.workspaceId]?.members[m.user?.id ?? '']?.achievementCount;
         useWorkspaces.getState().upsertMember(m);
+        if (before !== undefined && before !== m.achievementCount && m.user) invalidateMemberAchievements(m.workspaceId, m.user.id);
         // A bot joined (ADR-0031): the rooms' command hints may have grown.
         if (m.user?.isBot) useBots.getState().dropCommands();
         // My roles changed (ADR-0026): the entry's built-in role (admin UI) and my call's
@@ -324,6 +336,11 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'badgeDelete':
       useWorkspaces.getState().removeBadge(e.value.workspaceId, e.value.badgeId);
+      return;
+    // The workspace's achievement catalog changed (ADR-0061 amendment 1): mounted users refetch
+    // it (ETag → usually 304), the rest of the cache turns stale.
+    case 'workspaceAchievementsUpdate':
+      invalidateCatalog(e.value.workspaceId);
       return;
     // Camera backgrounds of the workspace (ADR-0035 addendum): a deleted chosen one resets to «Нет».
     case 'backgroundCreate':
@@ -586,7 +603,9 @@ function onMessage(m: Message, workspaceId: string): void {
     return;
   }
   rooms.setLastMessage(m.roomId, m.id);
-  if (m.authorId === myUserId()) {
+  // My own message is read — except my achievement card (ADR-0061 §4): posted by the server in
+  // my name, it is news to me, a mention.
+  if (m.authorId === myUserId() && !achievementForMe(m, myUserId())) {
     rooms.setRead(m.roomId, m.id);
     return;
   }

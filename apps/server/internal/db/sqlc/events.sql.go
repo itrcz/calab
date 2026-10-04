@@ -693,6 +693,49 @@ func (q *Queries) ListEventUsers(ctx context.Context, ids []uuid.UUID) ([]ListEv
 	return items, nil
 }
 
+const listEventsByIDs = `-- name: ListEventsByIDs :many
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at FROM events WHERE id = ANY($1::uuid[])
+`
+
+// Events of a search page (unified search, ADR-0062); the caller keeps its own order.
+func (q *Queries) ListEventsByIDs(ctx context.Context, ids []uuid.UUID) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEventsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Tz,
+			&i.OrganizerID,
+			&i.Record,
+			&i.Rrule,
+			&i.UntilAt,
+			&i.Sequence,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEventsForRecording = `-- name: ListEventsForRecording :many
 SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at FROM events
 WHERE room_id = $1 AND organizer_id = $2 AND cancelled_at IS NULL

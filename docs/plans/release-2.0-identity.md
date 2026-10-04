@@ -648,7 +648,9 @@ backfill из email нет; изменение env/email отзывает legacy
 ### Загрузка операторской конфигурации
 
 Полностью отсутствующая identity-конфигурация сохраняет запуск старой инсталляции:
-SSO/directory/provider маршруты зарегистрированы, но возвращают 503. Локальный
+SSO/directory/provider маршруты зарегистрированы, но отказывают: first-party `/api/*` — 409
+`CONFLICT` reason `IDENTITY_NOT_CONFIGURED` (обычное состояние установки, не сбой; уточнено в 2.0.1),
+RFC-эндпоинты `/oidc/*` — 503 `server_error`. Локальный
 `POST /api/auth/local/reauth` — first-party password proof и работает независимо
 от этих keyrings: иначе legacy product admin теряет возможность обновить обязательный
 пятиминутный proof. Он сохраняет local bearer/current password, запрет bot/scoped/recovery,

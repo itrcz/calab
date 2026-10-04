@@ -104,6 +104,41 @@ func (q *Queries) DeleteExternalBusy(ctx context.Context, userID uuid.UUID) erro
 	return err
 }
 
+const deleteMyExternalOccurrence = `-- name: DeleteMyExternalOccurrence :execrows
+DELETE FROM external_busy WHERE user_id = $1 AND uid = $2 AND starts_at = $3
+`
+
+type DeleteMyExternalOccurrenceParams struct {
+	UserID   uuid.UUID
+	Uid      string
+	StartsAt time.Time
+}
+
+func (q *Queries) DeleteMyExternalOccurrence(ctx context.Context, arg DeleteMyExternalOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMyExternalOccurrence, arg.UserID, arg.Uid, arg.StartsAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteMyExternalSeries = `-- name: DeleteMyExternalSeries :execrows
+DELETE FROM external_busy WHERE user_id = $1 AND uid = $2
+`
+
+type DeleteMyExternalSeriesParams struct {
+	UserID uuid.UUID
+	Uid    string
+}
+
+func (q *Queries) DeleteMyExternalSeries(ctx context.Context, arg DeleteMyExternalSeriesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMyExternalSeries, arg.UserID, arg.Uid)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const enqueueCalDavPushes = `-- name: EnqueueCalDavPushes :execrows
 INSERT INTO caldav_pushes (user_id, event_id)
 SELECT a.user_id, $1::uuid FROM caldav_accounts a
@@ -151,12 +186,55 @@ func (q *Queries) GetCalDavAccount(ctx context.Context, userID uuid.UUID) (Calda
 	return i, err
 }
 
+const getMyExternalEvent = `-- name: GetMyExternalEvent :one
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url FROM external_busy
+WHERE user_id = $1 AND uid = $2 AND starts_at = $3 AND href = $4::text
+LIMIT 1
+`
+
+type GetMyExternalEventParams struct {
+	UserID   uuid.UUID
+	Uid      string
+	StartsAt time.Time
+	Href     string
+}
+
+// One imported occurrence of the caller (ADR-0045, amendment 1): a delete names it by uid, start and href.
+func (q *Queries) GetMyExternalEvent(ctx context.Context, arg GetMyExternalEventParams) (ExternalBusy, error) {
+	row := q.db.QueryRow(ctx, getMyExternalEvent,
+		arg.UserID,
+		arg.Uid,
+		arg.StartsAt,
+		arg.Href,
+	)
+	var i ExternalBusy
+	err := row.Scan(
+		&i.UserID,
+		&i.Uid,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.AllDay,
+		&i.Summary,
+		&i.Location,
+		&i.Attendees,
+		&i.Organizer,
+		&i.Url,
+		&i.Href,
+		&i.Etag,
+		&i.Recurring,
+		&i.WebUrl,
+	)
+	return i, err
+}
+
 const insertExternalBusy = `-- name: InsertExternalBusy :exec
-INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url)
+INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url,
+    href, etag, recurring, web_url)
 SELECT $1::uuid, unnest($2::text[]), unnest($3::timestamptz[]),
     unnest($4::timestamptz[]), unnest($5::boolean[]), unnest($6::text[]),
     unnest($7::text[]), unnest($8::text[])::jsonb, unnest($9::text[]),
-    unnest($10::text[])
+    unnest($10::text[]), unnest($11::text[]), unnest($12::text[]),
+    unnest($13::boolean[]), unnest($14::text[])
 `
 
 type InsertExternalBusyParams struct {
@@ -170,6 +248,10 @@ type InsertExternalBusyParams struct {
 	Attendees  []string
 	Organizers []string
 	Urls       []string
+	Hrefs      []string
+	Etags      []string
+	Recurrings []bool
+	WebUrls    []string
 }
 
 func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusyParams) error {
@@ -184,6 +266,10 @@ func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusy
 		arg.Attendees,
 		arg.Organizers,
 		arg.Urls,
+		arg.Hrefs,
+		arg.Etags,
+		arg.Recurrings,
+		arg.WebUrls,
 	)
 	return err
 }
@@ -276,7 +362,7 @@ func (q *Queries) ListDueCalDavImports(ctx context.Context, arg ListDueCalDavImp
 }
 
 const listExternalBusy = `-- name: ListExternalBusy :many
-SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.all_day, b.summary, b.location, b.attendees, b.organizer, b.url, coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
+SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.all_day, b.summary, b.location, b.attendees, b.organizer, b.url, b.href, b.etag, b.recurring, b.web_url, coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
 LEFT JOIN caldav_accounts a ON a.user_id = b.user_id
 WHERE b.user_id = ANY($1::uuid[]) AND b.starts_at < $2 AND b.ends_at > $3
 ORDER BY b.user_id, b.starts_at
@@ -314,6 +400,10 @@ func (q *Queries) ListExternalBusy(ctx context.Context, arg ListExternalBusyPara
 			&i.ExternalBusy.Attendees,
 			&i.ExternalBusy.Organizer,
 			&i.ExternalBusy.Url,
+			&i.ExternalBusy.Href,
+			&i.ExternalBusy.Etag,
+			&i.ExternalBusy.Recurring,
+			&i.ExternalBusy.WebUrl,
 			&i.ShareLevel,
 		); err != nil {
 			return nil, err
@@ -374,7 +464,7 @@ func (q *Queries) ListFreeBusyMembers(ctx context.Context, arg ListFreeBusyMembe
 }
 
 const listMyExternalEvents = `-- name: ListMyExternalEvents :many
-SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url FROM external_busy
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url FROM external_busy
 WHERE user_id = $1 AND starts_at < $2 AND ends_at > $3
 ORDER BY starts_at, ends_at, uid
 `
@@ -405,6 +495,10 @@ func (q *Queries) ListMyExternalEvents(ctx context.Context, arg ListMyExternalEv
 			&i.Attendees,
 			&i.Organizer,
 			&i.Url,
+			&i.Href,
+			&i.Etag,
+			&i.Recurring,
+			&i.WebUrl,
 		); err != nil {
 			return nil, err
 		}

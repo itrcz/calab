@@ -1,0 +1,45 @@
+BEGIN:VCALENDAR
+PRODID:-//Google Inc//Google Calendar 70.9054//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+DTSTART:20261005T070000Z
+DTEND:20261005T073000Z
+DTSTAMP:20261003T101010Z
+ORGANIZER;CN=boris@example.com:mailto:boris@example.com
+UID:6p1k2o9h6dj3cb9n6lgj8b9k6so3gbb26sr34b9g64q3gd1l6ss32@google.com
+ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;CN=anna@ex
+ ample.com;X-NUM-GUESTS=0:mailto:anna@example.com
+X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij
+CREATED:20260930T120000Z
+DESCRIPTION:-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~
+ :~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-\nJoin with Google Meet: https://meet.g
+ oogle.com/abc-defg-hij\n\nLearn more about Meet at: https://support.google.
+ com/a/users/answer/9282720\n\nPlease do not edit this section.\n-::~:~::~:~
+ :~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~
+ :~:~:~::~:~::-
+LAST-MODIFIED:20260930T120500Z
+LOCATION:
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:Sync with Boris
+TRANSP:OPAQUE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261005T090000Z
+DTEND:20261005T100000Z
+DTSTAMP:20261003T101010Z
+UID:0q8v1t3l7oqa9r5f2b6m3c1d4e@google.com
+CREATED:20260930T120000Z
+DESCRIPTION:<p>Zoom:&nbsp\;<a href="https://www.google.com/url?q=https://us0
+ 2web.zoom.us/j/8812345678?pwd%3DQWErty&amp\;sa=D&amp\;source=calendar&amp\;
+ ust=1759740000000000&amp\;usg=AOvVaw0xyz" target="_blank">https://us02web.z
+ oom.us/j/8812345678?pwd=QWErty</a></p>
+LAST-MODIFIED:20260930T120500Z
+LOCATION:
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:Partner call
+TRANSP:OPAQUE
+END:VEVENT
+END:VCALENDAR

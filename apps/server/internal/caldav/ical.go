@@ -2,6 +2,7 @@ package caldav
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"net/url"
@@ -18,6 +19,13 @@ import (
 // (else the first https:// link of DESCRIPTION; the description itself is dropped). Transparent («free») and cancelled events are skipped, and so are the
 // meetings Calab itself put there (UID …@calab): they are busy time already.
 //
+// The link of an event (ADR-0045 amendment 1) is the conference to join: X-GOOGLE-CONFERENCE /
+// X-MICROSOFT-SKYPETEAMSMEETINGURL, else URL — unless URL is the provider's own page of the event
+// (Yandex writes calendar.yandex.ru/event?event_id=…, and the Telemost link into LOCATION), which
+// is kept apart as the web page («Открыть в календаре») — else the first https:// of LOCATION,
+// else of DESCRIPTION. HTML descriptions (Google) are read with &amp; decoded and the
+// google.com/url?q= redirect unwrapped.
+//
 // Recurrence: the RFC 5545 rules calendars actually write — FREQ DAILY / WEEKLY / MONTHLY /
 // YEARLY with INTERVAL, COUNT, UNTIL, BYDAY (with ordinals for MONTHLY / YEARLY), BYMONTHDAY
 // and BYMONTH — in wall-clock time of the event's zone, like the calendar's own expander.
@@ -28,7 +36,10 @@ type Busy struct {
 	UID        string // hash of the VEVENT UID
 	Start, End time.Time
 	AllDay     bool
-	*Details   // shared by the occurrences of a series; never nil from BusyFromICS
+	Recurring  bool   // an occurrence of a series (RRULE or RECURRENCE-ID)
+	WebURL     string // the provider's web page of the event, when reliable; else ""
+	Href, ETag string // the calendar object (set by the import, not by BusyFromICS)
+	*Details          // shared by the occurrences of a series; never nil from BusyFromICS
 }
 
 // Attendee is one ATTENDEE of an event.
@@ -63,18 +74,24 @@ type icsTime struct {
 }
 
 type vevent struct {
-	uid          string
-	start, end   icsTime
-	hasEnd       bool
-	dur          time.Duration
-	hasDur       bool
-	rrule        string
-	exdates      []icsTime
-	recurrenceID *icsTime
-	status       string
-	transp       string
-	details      Details
-	descURL      string // the first https:// link of DESCRIPTION
+	uid              string
+	start, end       icsTime
+	startTZID        string // DTSTART's TZID as written ("" = UTC, floating or a DATE)
+	startUTC         bool
+	hasEnd           bool
+	dur              time.Duration
+	hasDur           bool
+	rrule            string
+	exdates          []icsTime
+	recurrenceID     *icsTime
+	status           string
+	transp           string
+	recurrenceIDLine string // RECURRENCE-ID as an EXDATE content line of the master
+	details          Details
+	confURL          string // X-GOOGLE-CONFERENCE / X-MICROSOFT-SKYPETEAMSMEETINGURL
+	urlProp          string // URL
+	locURL           string // the first https:// link of LOCATION
+	descURL          string // the first https:// link of DESCRIPTION
 }
 
 // Windows zone names some servers (Exchange, Outlook) write as TZID.
@@ -267,20 +284,22 @@ func mailto(v string) string {
 	return v
 }
 
-// webLink is v when it is an http(s) URL (https only with httpsOnly) of at most maxLink bytes.
+// webLink is v when it is an http(s) URL (https only with httpsOnly) of at most maxLink bytes;
+// the scheme is written in lower case (the clients open http:// and https:// only).
 func webLink(v string, httpsOnly bool) string {
 	v = strings.TrimSpace(v)
-	if len(v) > maxLink || strings.ContainsAny(v, " \t\r\n") || !utf8.ValidString(v) {
+	if len(v) > maxLink || strings.ContainsAny(v, " \t\r\n\\") || !utf8.ValidString(v) {
 		return ""
 	}
 	u, err := url.Parse(v)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && (httpsOnly || u.Scheme != "http")) {
 		return ""
 	}
-	return v
+	return u.Scheme + v[len(u.Scheme):]
 }
 
-// firstHTTPS is the first https:// link of a text (a description), trailing punctuation cut.
+// firstHTTPS is the first https:// link of a text (a description, a place), trailing punctuation
+// cut; &amp; of an HTML description decoded and Google's redirect (google.com/url?q=…) unwrapped.
 func firstHTTPS(text string) string {
 	i := strings.Index(strings.ToLower(text), "https://")
 	if i < 0 {
@@ -290,7 +309,53 @@ func firstHTTPS(text string) string {
 	if j := strings.IndexFunc(rest, func(r rune) bool { return r <= ' ' || strings.ContainsRune(`<>"'`, r) }); j >= 0 {
 		rest = rest[:j]
 	}
-	return webLink(strings.TrimRight(rest, ".,;:!?)]}"), true)
+	rest = strings.ReplaceAll(rest, "&amp;", "&")
+	link := webLink(strings.TrimRight(rest, ".,;:!?)]}"), true)
+	if u, err := url.Parse(link); err == nil && link != "" && u.Path == "/url" && (u.Host == "www.google.com" || u.Host == "google.com") {
+		if q := webLink(u.Query().Get("q"), true); q != "" {
+			return q
+		}
+	}
+	return link
+}
+
+// eventPage tells whether a link is a calendar provider's own web page of an event (not a
+// conference): Yandex Calendar (calendar.yandex.<tld>/event?event_id=N) and Google Calendar
+// (calendar.google.com/calendar/event?eid=…, www.google.com/calendar/event?eid=…).
+func eventPage(link string) bool {
+	u, err := url.Parse(link)
+	if err != nil || u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	q := u.Query()
+	switch {
+	case strings.HasPrefix(host, "calendar.yandex.") && strings.TrimSuffix(u.Path, "/") == "/event":
+		n := q.Get("event_id")
+		return n != "" && strings.Trim(n, "0123456789") == ""
+	case host == "calendar.google.com" || host == "www.google.com":
+		return strings.HasPrefix(u.Path, "/calendar/") && strings.HasSuffix(strings.TrimSuffix(u.Path, "/"), "/event") && q.Get("eid") != ""
+	}
+	return false
+}
+
+// NextcloudPage is the Nextcloud Calendar app's page of a calendar object (its own deep link:
+// <root>/index.php/apps/calendar/edit/<base64 of the object's DAV path>), or "" when href is not a
+// Nextcloud DAV object (…/remote.php/dav/calendars/<user>/<calendar>/<object>.ics).
+func NextcloudPage(href string) string {
+	u, err := url.Parse(href)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return ""
+	}
+	i := strings.Index(u.Path, "/remote.php/dav/calendars/")
+	if i < 0 || strings.HasSuffix(u.Path, "/") || strings.Count(u.Path[i:], "/") != 6 {
+		return ""
+	}
+	page := "https://" + u.Host + u.Path[:i] + "/index.php/apps/calendar/edit/" + base64.StdEncoding.EncodeToString([]byte(u.Path))
+	if len(page) > maxLink*4 {
+		return ""
+	}
+	return page
 }
 
 // parseEvents reads the VEVENTs of a VCALENDAR (bad values skip the event).
@@ -332,6 +397,8 @@ func parseEvents(data string, fallback *time.Location) []vevent {
 			cur.uid = strings.TrimSpace(val)
 		case "DTSTART":
 			cur.start, err = parseTime(val, params, fallback)
+			cur.startTZID = strings.Trim(params["TZID"], `"`)
+			cur.startUTC = strings.HasSuffix(strings.TrimSpace(val), "Z")
 		case "DTEND":
 			cur.end, err = parseTime(val, params, fallback)
 			cur.hasEnd = true
@@ -351,6 +418,7 @@ func parseEvents(data string, fallback *time.Location) []vevent {
 			var t icsTime
 			if t, err = parseTime(val, params, fallback); err == nil {
 				cur.recurrenceID = &t
+				cur.recurrenceIDLine = exdateLine(params, strings.TrimSpace(val))
 			}
 		case "STATUS":
 			cur.status = strings.ToUpper(strings.TrimSpace(val))
@@ -359,7 +427,9 @@ func parseEvents(data string, fallback *time.Location) []vevent {
 		case "SUMMARY":
 			cur.details.Summary = clipLine(unescapeText(val), MaxSummary)
 		case "LOCATION":
-			cur.details.Location = clipLine(unescapeText(val), MaxLocation)
+			loc := unescapeText(val)
+			cur.details.Location = clipLine(loc, MaxLocation)
+			cur.locURL = firstHTTPS(loc)
 		case "ORGANIZER":
 			cur.details.Organizer = mailto(val)
 		case "ATTENDEE":
@@ -369,7 +439,12 @@ func parseEvents(data string, fallback *time.Location) []vevent {
 				cur.details.Attendees = append(cur.details.Attendees, Attendee{Email: email, Name: clipLine(params["CN"], maxName)})
 			}
 		case "URL":
-			cur.details.URL = webLink(val, false)
+			// A URI, but some servers escape it like TEXT (\, \;).
+			cur.urlProp = webLink(unescapeText(val), false)
+		case "X-GOOGLE-CONFERENCE", "X-MICROSOFT-SKYPETEAMSMEETINGURL":
+			if cur.confURL == "" {
+				cur.confURL = webLink(unescapeText(val), true)
+			}
 		case "DESCRIPTION":
 			cur.descURL = firstHTTPS(unescapeText(val))
 		}
@@ -619,15 +694,13 @@ func (ev vevent) occurrences(from, to time.Time) []Busy {
 		return s, s.Add(dur)
 	}
 	hash := uidHash(ev.uid)
-	det := ev.details
-	if det.URL == "" {
-		det.URL = ev.descURL
-	}
+	det, web := ev.links()
+	recurring := ev.rrule != "" || ev.recurrenceID != nil
 	var out []Busy
 	emit := func(s time.Time) {
 		st, en := span(s)
 		if en.After(from) && st.Before(to) {
-			out = append(out, Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay, Details: &det})
+			out = append(out, Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay, Recurring: recurring, WebURL: web, Details: &det})
 		}
 	}
 	excluded := map[int64]bool{}
@@ -670,6 +743,26 @@ func (ev vevent) occurrences(from, to time.Time) []Busy {
 		}
 	}
 	return out
+}
+
+// links: the details with the conference link chosen, and the provider's page of the event.
+func (ev vevent) links() (Details, string) {
+	det := ev.details
+	web := ""
+	if ev.urlProp != "" && eventPage(ev.urlProp) {
+		web = ev.urlProp
+	}
+	switch {
+	case ev.confURL != "":
+		det.URL = ev.confURL
+	case ev.urlProp != "" && web == "":
+		det.URL = ev.urlProp
+	case ev.locURL != "":
+		det.URL = ev.locURL
+	default:
+		det.URL = ev.descURL
+	}
+	return det, web
 }
 
 func uidHash(uid string) string {

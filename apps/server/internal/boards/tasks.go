@@ -35,6 +35,12 @@ type change struct {
 	// task arrives on its new board as TASK_CREATE.
 	before []wsEvent
 	moved  bool
+	// rule: the entries are made by this automation rule (ADR-0060): actor_id NULL, rule_id set.
+	rule *ruleRef
+	// extra: rule triggers that are not journal entries (a comment was posted).
+	extra []ruleEvent
+	// auto: what automation rules did in the transaction, published after the commit (taskTx).
+	auto *autoEffects
 }
 
 type wsEvent struct {
@@ -42,8 +48,17 @@ type wsEvent struct {
 	ev *v1.DispatchEvent
 }
 
-// record writes a journal entry (ADR-0042 §1: every change, actor = user or bot).
+// record writes a journal entry (ADR-0042 §1: every change, actor = user or bot; a rule's
+// change has no actor and the rule's id).
 func (c *change) record(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, kind string, before, after map[string]any) error {
+	if c.rule != nil {
+		return c.recordAs(ctx, q, t, nil, kind, before, after)
+	}
+	return c.recordAs(ctx, q, t, &actor, kind, before, after)
+}
+
+// recordAs writes a journal entry with actor (nil: the server, e.g. a Git event, or the rule of c).
+func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID, kind string, before, after map[string]any) error {
 	enc := func(m map[string]any) []byte {
 		if m == nil {
 			return nil
@@ -54,8 +69,12 @@ func (c *change) record(ctx context.Context, q *sqlc.Queries, t taskRow, actor u
 		}
 		return b
 	}
+	var rule *uuid.UUID
+	if c.rule != nil {
+		rule = &c.rule.id
+	}
 	a, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
-		TaskID: t.ID, BoardID: t.BoardID, ActorID: &actor, Kind: kind, Before: enc(before), After: enc(after),
+		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: enc(before), After: enc(after), RuleID: rule,
 	})
 	if err != nil {
 		return err
@@ -131,11 +150,78 @@ func (s *Service) taskAccess(r *http.Request, dbtx sqlc.DBTX, id uuid.UUID, lock
 	if !ok {
 		return t, perm.BoardAccess{}, httpx.NotFound("task")
 	}
+	acc, err := taskOf(r, sqlc.New(dbtx), t)
+	return t, acc, err
+}
+
+// taskOf resolves the caller's access to task t: the board's access with Bits = perm.TaskBits
+// (ADR-0059 §2 — a task-scoped member has bits only on the live tasks they are an assignee or
+// an approver of); 404 when the task is hidden. acc.TaskScoped set = the bits come from the task.
+func taskOf(r *http.Request, q *sqlc.Queries, t taskRow) (perm.BoardAccess, error) {
 	acc, err := board(r, t.BoardID, false)
 	if err != nil {
-		return t, acc, httpx.NotFound("task")
+		return acc, httpx.NotFound("task")
 	}
-	return t, acc, nil
+	if acc.Bits.Has(perm.ViewBoard) {
+		return acc, nil
+	}
+	if t.ArchivedAt != nil { // invitations count on live tasks only
+		return perm.BoardAccess{}, httpx.NotFound("task")
+	}
+	inv, err := q.GetTaskInvite(r.Context(), sqlc.GetTaskInviteParams{TaskID: t.ID, UserID: uid(r)})
+	if err != nil {
+		return perm.BoardAccess{}, err
+	}
+	if acc.Bits = perm.TaskBits(acc, inv.Assignee, inv.Approver); acc.Bits == 0 {
+		return perm.BoardAccess{}, httpx.NotFound("task")
+	}
+	return acc, nil
+}
+
+// invitedCond is the SQL condition over tasks t "user is an assignee or an approver" (ADR-0059).
+func invitedCond(a *Args, user uuid.UUID) string {
+	u := a.Add(user)
+	return "(EXISTS (SELECT 1 FROM task_assignees ia WHERE ia.task_id = t.id AND ia.user_id = " + u + ")" +
+		" OR EXISTS (SELECT 1 FROM task_approvers ip WHERE ip.task_id = t.id AND ip.user_id = " + u + "))"
+}
+
+// visibleTasks keeps the rows the viewer sees (order kept): tasks of live boards with
+// VIEW_BOARD, and on task-scoped boards the live tasks they are invited on (ADR-0059).
+func visibleTasks(ctx context.Context, q *sqlc.Queries, rows []taskRow, me uuid.UUID) ([]taskRow, error) {
+	res := perm.FromContext(ctx)
+	accs := map[uuid.UUID]perm.BoardAccess{}
+	var scoped []uuid.UUID
+	for _, x := range rows {
+		acc, ok := accs[x.BoardID]
+		if !ok {
+			var err error
+			acc, err = res.Board(ctx, x.BoardID, me)
+			if err != nil && !errors.Is(err, perm.ErrNoBoard) {
+				return nil, err
+			}
+			accs[x.BoardID] = acc
+		}
+		if !acc.Bits.Has(perm.ViewBoard) && acc.TaskScoped && x.ArchivedAt == nil {
+			scoped = append(scoped, x.ID)
+		}
+	}
+	invited := map[uuid.UUID]bool{}
+	if len(scoped) > 0 {
+		ids, err := q.ListTaskInvites(ctx, sqlc.ListTaskInvitesParams{Ids: scoped, UserID: me})
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			invited[id] = true
+		}
+	}
+	out := make([]taskRow, 0, len(rows))
+	for _, x := range rows {
+		if acc := accs[x.BoardID]; (acc.Bits.Has(perm.ViewBoard) && !acc.Archived) || invited[x.ID] {
+			out = append(out, x)
+		}
+	}
+	return out, nil
 }
 
 // canEdit: EDIT_TASKS edits any task; CREATE_TASKS the ones the caller created or is assigned to.
@@ -268,8 +354,10 @@ func (it boardItems) labelIDs(raw []string) ([]uuid.UUID, error) {
 	return out, nil
 }
 
-// assigneesIn validates a requested assignee list (ADR-0042 §1): ≤ 10, members who see the
-// board (bots too), not guests; exactly one lead (the first when none is marked).
+// assigneesIn validates a requested assignee list (ADR-0042 §1, ADR-0059): ≤ 10 members, not
+// guests — people who see the board or, unless the board is restricted, any other member (who
+// then sees the board through this task); bots only with VIEW_BOARD; exactly one lead (the
+// first when none is marked).
 func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*v1.TaskAssigneeInput) ([]*v1.TaskAssigneeInput, error) {
 	if len(in) > MaxAssignees {
 		return nil, httpx.Validation("assignees", "at most 10 assignees")
@@ -290,12 +378,12 @@ func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*
 		if utf8.RuneCountInString(a.GetNote()) > MaxNote {
 			return nil, httpx.Validation(field+".note", "note must be at most 120 characters")
 		}
-		acc, err := res.Board(ctx, boardID, u)
-		if errors.Is(err, perm.ErrNoBoard) || (err == nil && !acc.Bits.Has(perm.ViewBoard)) {
-			return nil, httpx.Validation(field+".userId", "the user does not see this board")
-		}
+		ok, err := mayInvite(ctx, q, res, boardID, u)
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return nil, httpx.Validation(field+".userId", "the user does not see this board")
 		}
 		if a.GetIsLead() {
 			leads++
@@ -311,9 +399,39 @@ func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*
 	return out, nil
 }
 
+// mayInvite reports whether user u may become an assignee or an approver of a task of the
+// board (ADR-0059 §3): a member who is not a guest and either sees the board or — a human, on a
+// board that is not restricted — will see it through the task. Bots need VIEW_BOARD.
+func mayInvite(ctx context.Context, q *sqlc.Queries, res *perm.Resolver, boardID, u uuid.UUID) (bool, error) {
+	acc, err := res.Board(ctx, boardID, u)
+	if errors.Is(err, perm.ErrNoBoard) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if acc.Role == perm.RoleGuest || acc.Role == "" {
+		return false, nil
+	}
+	if acc.Bits.Has(perm.ViewBoard) {
+		return true, nil
+	}
+	if acc.Restricted || acc.Archived {
+		return false, nil
+	}
+	usr, err := q.GetUser(ctx, u)
+	if db.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !usr.IsBot && !usr.IsGuest, nil
+}
+
 // writeAssignees replaces the list, keeping assigned_by / assigned_at of those who stay.
 // Returns the users newly assigned or newly made the lead.
-func writeAssignees(ctx context.Context, q *sqlc.Queries, taskID uuid.UUID, in []*v1.TaskAssigneeInput, me uuid.UUID, now time.Time) ([]uuid.UUID, []sqlc.TaskAssignee, error) {
+func writeAssignees(ctx context.Context, q *sqlc.Queries, taskID uuid.UUID, in []*v1.TaskAssigneeInput, me *uuid.UUID, now time.Time) ([]uuid.UUID, []sqlc.TaskAssignee, error) {
 	old, err := q.ListTaskAssignees(ctx, []uuid.UUID{taskID})
 	if err != nil {
 		return nil, nil, err
@@ -328,7 +446,7 @@ func writeAssignees(ctx context.Context, q *sqlc.Queries, taskID uuid.UUID, in [
 	var fresh []uuid.UUID
 	for _, a := range in {
 		u := uuid.MustParse(a.GetUserId())
-		by, at := &me, now
+		by, at := me, now
 		if p, ok := prev[u]; ok {
 			by, at = p.AssignedBy, p.AssignedAt
 			if a.GetIsLead() && !p.IsLead {
@@ -404,7 +522,7 @@ func updateRow(ctx context.Context, q *sqlc.Queries, t taskRow) error {
 	return q.UpdateTaskFields(ctx, sqlc.UpdateTaskFieldsParams{
 		ID: t.ID, Title: t.Title, Description: t.Description, StatusID: t.StatusID, Priority: t.Priority,
 		Estimate: t.Estimate, StartOn: t.StartOn, DueOn: t.DueOn, ParentID: t.ParentID, MilestoneID: t.MilestoneID,
-		Position: t.Position, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, CompletedBy: t.CompletedBy,
+		TaskMilestoneID: t.TaskMilestoneID, Position: t.Position, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, CompletedBy: t.CompletedBy,
 	})
 }
 
@@ -469,11 +587,16 @@ func place(ctx context.Context, q *sqlc.Queries, statusID, taskID uuid.UUID, aft
 // ---- handlers ----
 
 func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
-	id, _, err := pathBoard(r, false)
+	id, acc, err := pathBoard(r, false)
 	if err != nil {
 		return err
 	}
 	qs := r.URL.Query()
+	scoped := !acc.Bits.Has(perm.ViewBoard) // ADR-0059: only the live tasks they are invited on
+	if scoped && qs.Get("archived") == "1" {
+		httpx.Write(w, http.StatusOK, &v1.ListTasksResponse{})
+		return nil
+	}
 	f := &v1.TaskFilter{}
 	if raw := qs.Get("filter"); raw != "" {
 		if err := protojson.Unmarshal([]byte(raw), f); err != nil {
@@ -493,15 +616,21 @@ func (s *Service) listTasks(w http.ResponseWriter, r *http.Request) error {
 	switch {
 	case qs.Get("archived") == "1":
 		where = append(where, "t.archived_at IS NOT NULL")
-	case !HasArchived(f):
+	case scoped || !HasArchived(f):
 		where = append(where, "t.archived_at IS NULL")
+	}
+	if scoped {
+		where = append(where, invitedCond(&a, uid(r)))
 	}
 	if s := qs.Get("updated_after"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
 			return httpx.BadRequest("updated_after must be RFC 3339")
 		}
-		where = append(where, "t.updated_at > "+a.Add(t))
+		// A milestone completed by the server (ADR-0063 §2) touches its own row, not the task's
+		// (no parent row lock in a subtask's transaction): it counts as a change of the task.
+		at := a.Add(t)
+		where = append(where, "(t.updated_at > "+at+" OR EXISTS (SELECT 1 FROM task_milestones um WHERE um.task_id = t.id AND um.updated_at > "+at+"))")
 	}
 	cond, err := Translate(f, s.env(r), &a)
 	if err != nil {
@@ -740,7 +869,7 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if err := attach(r.Context(), q, t, fileIDs, me); err != nil {
 			return err
 		}
-		fresh, _, err := writeAssignees(r.Context(), q, taskID, assignees, me, now)
+		fresh, _, err := writeAssignees(r.Context(), q, taskID, assignees, &me, now)
 		if err != nil {
 			return err
 		}
@@ -834,6 +963,7 @@ func updateFeatures(ctx context.Context, q *sqlc.Queries, acc perm.BoardAccess, 
 		{v1.BoardFeature_BOARD_FEATURE_PRIORITY, "priority", t.Priority != 0 && t.Priority != old.Priority},
 		{v1.BoardFeature_BOARD_FEATURE_MILESTONES, "milestoneId", t.MilestoneID != nil && !eqID(old.MilestoneID, t.MilestoneID)},
 		{v1.BoardFeature_BOARD_FEATURE_SUBTASKS, "parentId", t.ParentID != nil && !eqID(old.ParentID, t.ParentID)},
+		{v1.BoardFeature_BOARD_FEATURE_MILESTONES, "taskMilestoneId", t.TaskMilestoneID != nil && !eqID(old.TaskMilestoneID, t.TaskMilestoneID)},
 	} {
 		if err := requireFeature(d, c.f, c.field, c.sets); err != nil {
 			return err
@@ -981,8 +1111,16 @@ func (s *Service) taskResponse(r *http.Request, id uuid.UUID, full bool) (*v1.Ta
 	if out.Task.Checklists, err = taskChecklists(ctx, s.db.Q, t.ID); err != nil {
 		return nil, err
 	}
+	ls, err := s.db.Q.ListTaskGitLinks(ctx, t.ID)
+	if err != nil {
+		return nil, err
+	}
+	out.Task.GitLinks = gitLinks(ls)
 	subs, err := queryTasks(ctx, s.db.Pool, "WHERE t.parent_id = $1 AND t.archived_at IS NULL ORDER BY t.position, t.number", t.ID)
 	if err != nil {
+		return nil, err
+	}
+	if subs, err = visibleTasks(ctx, s.db.Q, subs, me); err != nil { // ADR-0059
 		return nil, err
 	}
 	if out.Subtasks, err = tasksProto(ctx, s.db.Q, subs, me); err != nil {
@@ -1006,12 +1144,10 @@ func (s *Service) taskResponse(r *http.Request, id uuid.UUID, full bool) (*v1.Ta
 		if err != nil {
 			return nil, err
 		}
-		// Only tasks of boards the caller sees (a relation may cross boards).
-		visible := rows[:0]
-		for _, x := range rows {
-			if acc, err := perm.FromContext(ctx).Board(ctx, x.BoardID, me); err == nil && acc.Bits.Has(perm.ViewBoard) && !acc.Archived {
-				visible = append(visible, x)
-			}
+		// Only tasks the caller sees (a relation may cross boards; ADR-0059: task-scoped boards).
+		visible, err := visibleTasks(ctx, s.db.Q, rows, me)
+		if err != nil {
+			return nil, err
 		}
 		pbs, err := tasksProto(ctx, s.db.Q, visible, me)
 		if err != nil {
@@ -1068,6 +1204,16 @@ func (s *Service) lookup(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		row, ok, err := taskByID(r.Context(), s.db.Pool, t.ID, false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if _, err := taskOf(r, s.db.Q, row); err != nil {
+			continue
+		}
 		acc, err := board(r, t.BoardID, false)
 		if err != nil {
 			continue
@@ -1076,7 +1222,7 @@ func (s *Service) lookup(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if out.Board, err = s.boardFor(r.Context(), s.db.Q, t.BoardID, uid(r), acc.Bits); err != nil {
+		if out.Board, err = s.boardFor(r.Context(), s.db.Q, t.BoardID, uid(r), acc); err != nil {
 			return err
 		}
 		httpx.Write(w, http.StatusOK, out)
@@ -1163,9 +1309,33 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if t.ParentID != nil && !eqID(t.ParentID, old.ParentID) {
+				// ADR-0059: only under a task the caller sees — checked first, so that checkParent's
+				// answers (one level, subtask limit) say nothing about a task they do not see.
+				if acc.TaskScoped {
+					p, _, err := taskByID(r.Context(), tx, *t.ParentID, false)
+					if err != nil {
+						return err
+					}
+					if _, err := taskOf(r, q, p); err != nil {
+						return httpx.Validation("parentId", "a live task of this board is required")
+					}
+				}
 				if err := checkParent(r.Context(), q, tx, t.BoardID, *t.ParentID, t.ID); err != nil {
 					return err
 				}
+			}
+		}
+		// A subtask's milestone (ADR-0063): one of its parent's; reset when the parent changes.
+		if req.TaskMilestoneId != nil {
+			if t.TaskMilestoneID, err = parseOptID("taskMilestoneId", req.GetTaskMilestoneId()); err != nil {
+				return err
+			}
+		} else if !eqID(old.ParentID, t.ParentID) {
+			t.TaskMilestoneID = nil
+		}
+		if !eqID(old.TaskMilestoneID, t.TaskMilestoneID) || !eqID(old.ParentID, t.ParentID) {
+			if err := subtaskMilestone(r.Context(), q, t); err != nil {
+				return err
 			}
 		}
 		if err := updateFeatures(r.Context(), q, acc, old, t); err != nil {
@@ -1284,8 +1454,8 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				c.tasks = append(c.tasks, *p)
 			}
 		}
-		if t.StatusID != old.StatusID && t.ParentID != nil {
-			c.tasks = append(c.tasks, *t.ParentID) // subtask_done of the parent
+		if (t.StatusID != old.StatusID || !eqID(old.TaskMilestoneID, t.TaskMilestoneID)) && t.ParentID != nil {
+			c.tasks = append(c.tasks, *t.ParentID) // subtask_done / milestone progress of the parent
 		}
 		// Notifications: a status change to subscribers; new @mentions of the description.
 		if t.StatusID != old.StatusID {
@@ -1372,6 +1542,14 @@ func (s *Service) recordFields(ctx context.Context, q *sqlc.Queries, old, t task
 		{"milestone", map[string]any{"milestone_id": idAny(old.MilestoneID)}, map[string]any{"milestone_id": idAny(t.MilestoneID)}, !eqID(old.MilestoneID, t.MilestoneID)},
 		{"status", map[string]any{"status_id": old.StatusID.String(), "status_type": from.Type, "position": old.Position},
 			map[string]any{"status_id": t.StatusID.String(), "status_type": to.Type, "position": t.Position}, old.StatusID != t.StatusID},
+	}
+	if !eqID(old.TaskMilestoneID, t.TaskMilestoneID) { // a subtask's milestone (ADR-0063)
+		action := "linked"
+		if t.TaskMilestoneID == nil {
+			action = "unlinked"
+		}
+		entries = append(entries, entry{kindMilestones, map[string]any{"task_milestone_id": idAny(old.TaskMilestoneID)},
+			map[string]any{"action": action, "task_milestone_id": idAny(t.TaskMilestoneID), "parent_id": idAny(t.ParentID)}, true})
 	}
 	for _, e := range entries {
 		if e.changed {
@@ -1467,6 +1645,17 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 	if err != nil {
 		return err
 	}
+	// The subtasks are detached before the task's own row changes: the move rewrites board_id and
+	// number (a unique key, so the row update takes FOR UPDATE), and a subtask's transaction holds
+	// the subtask while it journals on this task (KEY SHARE). Waiting for the subtasks under the
+	// row lock taken so far (FOR NO KEY UPDATE, taskByID) lets that transaction finish first.
+	kids, err := queryTasks(r.Context(), tx, "WHERE t.parent_id = $1", t.ID)
+	if err != nil {
+		return err
+	}
+	if err := q.DetachSubtasks(r.Context(), &t.ID); err != nil {
+		return err
+	}
 	oldKey, oldBoard := TaskKey(t.BoardKey, t.Number), t.BoardID
 	if err := q.MoveTaskToBoard(r.Context(), sqlc.MoveTaskToBoardParams{BoardID: dstID, Number: number, StatusID: to.ID, Position: pos, ID: t.ID}); err != nil {
 		return err
@@ -1478,13 +1667,6 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 		if err := q.InsertTaskLabels(r.Context(), sqlc.InsertTaskLabelsParams{TaskID: t.ID, LabelIds: labels}); err != nil {
 			return err
 		}
-	}
-	kids, err := queryTasks(r.Context(), tx, "WHERE t.parent_id = $1", t.ID)
-	if err != nil {
-		return err
-	}
-	if err := q.DetachSubtasks(r.Context(), &t.ID); err != nil {
-		return err
 	}
 	for _, k := range kids {
 		c.tasks = append(c.tasks, k.ID)
@@ -1597,7 +1779,7 @@ func (s *Service) setAssignees(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		fresh, old, err := writeAssignees(r.Context(), q, t.ID, in, me, s.Now())
+		fresh, old, err := writeAssignees(r.Context(), q, t.ID, in, &me, s.Now())
 		if err != nil {
 			return err
 		}

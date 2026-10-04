@@ -1,6 +1,7 @@
 import { CallOutcome, PresenceStatus, levelNotifies, type Message, type Room } from '@calaba/protocol';
 import { chatSound } from '../lib/chatSound';
 import { mentionsMe } from '../lib/mentions';
+import { achievementForMe } from '../lib/achievements';
 import { playSound } from '../lib/sounds';
 import { useInbox } from '../stores/inbox';
 import { prefs } from '../stores/prefs';
@@ -80,7 +81,8 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   // Sounds (docs/09 #29, P1 #13, item 22): «Упоминание» for a mention / DM, «Новое сообщение»
   // only in rooms at «Все сообщения»; the open chat is quiet or silent.
   const sound = chatSound({
-    own: m.authorId === myId,
+    // My achievement card (ADR-0061) is authored by me, yet it is news: it sounds like a mention.
+    own: m.authorId === myId && !achievementForMe(m, myId),
     mention,
     visible,
     notify,

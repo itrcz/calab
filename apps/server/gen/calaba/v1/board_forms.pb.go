@@ -22,7 +22,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Board intake forms (ADR-0059). Management definitions are never public responses.
+// Board intake forms (ADR-0064). Management definitions are never public responses.
 type BoardFormFieldType int32
 
 const (

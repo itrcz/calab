@@ -118,6 +118,7 @@ type clOut struct {
 	// caller's rights on the board.
 	disabled int64
 	bits     perm.Bits
+	scoped   bool // the bits come from the task (ADR-0059), not from the board
 }
 
 // write runs a checklist mutation: resolve finds the task of the path object, then the task row
@@ -146,7 +147,7 @@ func (s *Service) write(w http.ResponseWriter, r *http.Request, deleting bool,
 		if err := s.checklistGate(r.Context(), t, acc.DisabledFeatures, deleting); err != nil {
 			return err
 		}
-		o.t, o.disabled, o.bits = t, acc.DisabledFeatures, acc.Bits
+		o.t, o.disabled, o.bits, o.scoped = t, acc.DisabledFeatures, acc.Bits, acc.TaskScoped
 		if err := fn(q, tx, t, &o); err != nil {
 			return err
 		}
@@ -590,7 +591,7 @@ func (s *Service) convertChecklistItem(w http.ResponseWriter, r *http.Request) e
 	me, now := uid(r), s.Now()
 	return s.write(w, r, false, resolve, func(q *sqlc.Queries, tx pgx.Tx, t taskRow, o *clOut) error {
 		ctx := r.Context()
-		if !o.bits.Has(perm.CreateTasks) {
+		if !o.bits.Has(perm.CreateTasks) || o.scoped { // a subtask is a new task of the board
 			return httpx.Forbidden("CREATE_TASKS required")
 		}
 		old, err := q.GetChecklistItemForUpdate(ctx, id)

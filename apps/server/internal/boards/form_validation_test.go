@@ -52,3 +52,14 @@ func TestFormAnswers(t *testing.T) {
 		}
 	}
 }
+
+func TestFormDefinitionTextLimits(t *testing.T) {
+	for _, value := range []string{"", "   ", "x" + strings.Repeat(" ", 100), strings.Repeat("я", 101)} {
+		if err := validFormText("label", value); err == nil {
+			t.Fatalf("accepted oversized or blank definition text: %q", value)
+		}
+	}
+	if err := validFormText("label", strings.Repeat("я", 100)); err != nil {
+		t.Fatal(err)
+	}
+}

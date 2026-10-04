@@ -29,6 +29,11 @@ type Error struct {
 // ReasonPlanLimit marks errors caused by a limit of the workspace plan (ADR-0024).
 const ReasonPlanLimit = "PLAN_LIMIT"
 
+// ReasonIdentityNotConfigured marks a CONFLICT from an SSO / directory / OAuth provider route
+// of a server without the identity operator configuration (ADR-0054): a normal state of the
+// install, not an outage, so clients show «not configured on the server» instead of an error.
+const ReasonIdentityNotConfigured = "IDENTITY_NOT_CONFIGURED"
+
 // IsPlanLimit reports whether err is an API error with reason PLAN_LIMIT.
 func IsPlanLimit(err error) bool {
 	var e *Error

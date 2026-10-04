@@ -28,11 +28,12 @@ const roots = new Set();
 for (const f of bundledFiles) if (existsSync(f)) for (const r of JSON.parse(readFileSync(f, 'utf8'))) roots.add(r);
 
 if (withProd) {
-  // Run pnpm through node when we were started by pnpm (npm_execpath = pnpm.cjs): on Windows there is only a
+  // Run pnpm through node only when npm_execpath is its JS entry (pnpm.cjs; the native @pnpm/exe binary is
+  // spawned directly): on Windows there is only a
   // pnpm.cmd shim, which execFileSync cannot spawn without a shell (pnpm/action-setup v6 no longer adds pnpm.exe).
   const pnpmArgs = ['licenses', 'list', '--json', '--prod'];
   const execPath = process.env.npm_execpath;
-  const [cmd, argv] = execPath && /pnpm/i.test(execPath) && !/\.(cmd|exe)$/i.test(execPath)
+  const [cmd, argv] = execPath && /pnpm/i.test(execPath) && /\.c?js$/i.test(execPath)
     ? [process.execPath, [execPath, ...pnpmArgs]]
     : ['pnpm', pnpmArgs];
   const json = JSON.parse(
@@ -91,13 +92,13 @@ for (const p of pkgs.values()) {
   if (!p.texts.length && LICENSE_TEXT[p.name]) p.texts.push(readFileSync(LICENSE_TEXT[p.name], 'utf8').trim());
 }
 
-// Non-npm components shipped with every build (desktop and web): the camera background model
-// (ADR-0035, resources/mediapipe/SOURCE.txt).
+// Non-npm components shipped with every build (desktop and web): the camera background models
+// (ADR-0035: selfie_multiclass_256x256 and selfie_segmenter_landscape, resources/mediapipe/SOURCE.txt).
 const MODEL_SOURCE = join(here, '..', 'resources', 'mediapipe', 'SOURCE.txt');
 if (existsSync(MODEL_SOURCE)) {
-  pkgs.set('mediapipe-selfie-segmenter-landscape', {
-    name: 'MediaPipe Selfie Segmenter (landscape) model',
-    version: 'float16',
+  pkgs.set('mediapipe-image-segmenter-models', {
+    name: 'MediaPipe Image Segmenter models (Selfie Multiclass 256x256, Selfie Segmenter landscape)',
+    version: 'multiclass float32, landscape float16',
     license: 'Apache-2.0',
     url: 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter',
     texts: [readFileSync(MODEL_SOURCE, 'utf8').trim(), readFileSync(MEDIAPIPE_LICENSE, 'utf8').trim()],

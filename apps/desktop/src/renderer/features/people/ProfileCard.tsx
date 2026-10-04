@@ -23,6 +23,7 @@ import { startDm } from '../../services/dms';
 import { openProfile } from './actions';
 import { LocalTime } from './LocalTime';
 import { BirthdayInfo } from './Birthday';
+import { ProfileCardAchievements } from './ProfileAchievements';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -141,6 +142,7 @@ export function ProfileCard({
         <dd className="flex min-w-0 items-center gap-1.5">
           {t(ROLE_KEY[m.role])}
         </dd>
+        <ProfileCardAchievements workspaceId={workspaceId} userId={userId} />
         {u.isBot ? null : <LocalTime userId={userId} variant="row" />}
         {u.isBot ? null : <BirthdayInfo userId={userId} variant="row" />}
         {v?.roomId ? (

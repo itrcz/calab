@@ -6598,6 +6598,21 @@ class MockImpl {
       const match = (e: string): string => (wsId ? this.memberByEmail(wsId, e) : '');
       send(c.res, 200, JSON.stringify(externalEventsOut(this.calExternal.get(me) ?? [], from, to, match)), 'application/json');
     });
+    // ADR-0045 amendment 1: the event (THIS: that occurrence; SERIES or no repeats: the uid) out of
+    // the fake calendar; an href ending in «readonly.ics» answers 422 like a read-only calendar.
+    this.route('DELETE', '/api/me/external-events', (c) => {
+      const me = davUser(c);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { uid?: string; href?: string; start?: string; scope?: string };
+      const list = this.calExternal.get(me) ?? [];
+      const start = Date.parse(b.start ?? '');
+      const at = list.findIndex((x, i) => (x.uid ?? `ext${i}`) === b.uid && x.href === b.href && x.startMs === start);
+      const target = list[at];
+      if (!target || !b.href) throw notFound('external event not found');
+      if (b.href.endsWith('readonly.ics')) throw invalid('href', 'the calendar is read-only');
+      const whole = b.scope === 'EXTERNAL_DELETE_SCOPE_SERIES' || !target.recurring;
+      this.calExternal.set(me, list.filter((x, i) => (whole ? (x.uid ?? `ext${i}`) !== b.uid : i !== at)));
+      noContent(c.res);
+    });
     this.route('POST', '/api/me/caldav/sync', (c) => {
       const me = davUser(c);
       const a = this.calDav.get(me);

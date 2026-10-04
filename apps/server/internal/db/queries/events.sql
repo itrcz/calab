@@ -185,3 +185,7 @@ UPDATE events SET ends_at = sqlc.arg('ends_at'), sequence = sequence + 1, update
 WHERE room_id = sqlc.arg('room_id') AND cancelled_at IS NULL AND rrule IS NULL
   AND ends_at = sqlc.arg('old_ends_at') AND starts_at < sqlc.arg('ends_at')
 RETURNING *;
+
+-- name: ListEventsByIDs :many
+-- Events of a search page (unified search, ADR-0062); the caller keeps its own order.
+SELECT * FROM events WHERE id = ANY(sqlc.arg('ids')::uuid[]);

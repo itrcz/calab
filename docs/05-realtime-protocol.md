@@ -128,6 +128,9 @@ BOARD_CATEGORY_CREATE / UPDATE { category } — категория досок (A
 BOARD_CATEGORY_DELETE         { workspace_id, category_id } — (89) её доски уходят в «без категории» хвостом, каждой — `BOARD_UPDATE`
 TASK_CHECKLIST_UPDATE         { workspace_id, board_id, task_id, checklist, checklist_total, checklist_done } — (90) чек-лист создан/изменён, целиком (≤ 100 пунктов), зрителям доски. **`TASK_UPDATE` на операции чек-листа не шлётся**: клиент патчит два счётчика задачи; рядом — обычный `TASK_ACTIVITY` (`kind = checklist`)
 TASK_CHECKLIST_DELETE         { workspace_id, board_id, task_id, checklist_id, checklist_total, checklist_done } — (91) чек-лист удалён, новые счётчики
+BOARD_RULE_UPDATE             { workspace_id, board_id, rule } — (92) правило автоматизации создано/изменено (ADR-0060); после срабатываний — только когда сменилось last_error; зрителям доски (`VIEW_BOARD`, не по карточкам)
+BOARD_RULE_DELETE             { workspace_id, board_id, rule_id } — (93) правило удалено; создание/удаление сопровождает `BOARD_UPDATE` (`rules_count`)
+TASK_GIT_LINKS_UPDATE         { workspace_id, board_id, task_id, links, count } — (94) Git-связи задачи (все, ≤ 50) изменились; зрителям доски и приглашённым по карточке (ADR-0059); рядом `TASK_UPDATE` (`git_links_count`) и `TASK_ACTIVITY` (`kind = git`)
 SIP_CALL_UPDATE               { call: SipCall } — телефонный звонок комнаты начат или сменил статус (ADR-0046); в READY — WorkspaceSnapshot.sip_calls (живые)
 WORKSPACE_APP_UPSERT          { app: WorkspaceApp } — веб-приложение пространства добавлено / изменено / перенесено (ADR-0050; перенумерация — по событию на каждое); в READY — WorkspaceSnapshot.apps
 WORKSPACE_APP_DELETE          { workspace_id, app_id } — приложение удалено: клиент убирает иконку, десктоп закрывает вид и чистит данные сайта
@@ -284,7 +287,7 @@ POST · PATCH · DELETE /api/boards/{id}/milestones[/{sid}]
 GET · POST · PATCH · DELETE /api/boards/{id}/views[/{sid}] общие (shared, MANAGE_BOARD) и личные (автор)
 POST   /api/boards/{id}/files                        загрузка вложения задачи или комментария (VIEW_BOARD, квота пространства)
 GET    /api/boards/{id}/activity?since&until&actor&kind&cursor[&format=csv]   журнал (MANAGE_BOARD или EDIT_TASKS), CSV — целиком
-GET    /api/boards/{id}/tasks?filter=<TaskFilter JSON>&archived=1&updated_after&cursor&limit   ≤ 500 за страницу (по номеру) → {tasks, next_cursor}
+GET    /api/boards/{id}/tasks?filter=<TaskFilter JSON>&archived=1&updated_after&cursor&limit   ≤ 500 за страницу (по номеру) → {tasks, next_cursor}; updated_after видит и смену вех задачи (ADR-0063: авто-выполнение вехи меняет только её updated_at)
 POST   /api/boards/{id}/tasks                        CreateTaskRequest → 201 TaskResponse (CREATE_TASKS)
 GET    /api/tasks/{id}                               TaskResponse {task (+attachments), subtasks, related, parent, room}
 PATCH  /api/tasks/{id}                               UpdateTaskRequest (EDIT_TASKS; CREATE_TASKS — свои и назначенные); status_id + after_task_id/before_task_id — перенос; board_id — на другую доску (MANAGE_BOARD на обеих)
@@ -300,7 +303,7 @@ PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read
 GET    /api/tasks/{id}/activity?before&limit         лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)
 GET    /api/me/tasks?workspace_id&scope=assigned|lead|created|subscribed&open=1&cursor
-GET    /api/workspaces/{id}/tasks/search?q&limit     ⌘K: ключ и слова по видимым доскам
+GET    /api/workspaces/{id}/tasks/search?q&limit     ключ и слова по видимым доскам (тот же разбор, что /api/search, ADR-0062)
 ```
 
 - Комментарии — сообщения комнаты `task.room_id` через обычные `/api/rooms/{room_id}/messages*`, реакции, стикеры, закрепы (`EDIT_TASKS`), поиск, пересылка, прочтение и typing; `@<user_id>` подписывает и уведомляет упомянутого, если он видит доску.
@@ -345,6 +348,15 @@ GET    /api/me/blocked-bots                      ListBlockedBotsResponse; POST /
 ## REST
 
 Тела запросов и ответов — proto-сообщения из `proto/calaba/v1/*.proto` в JSON (`protojson`): поля в lowerCamelCase (`displayName`), enum — полными именами (`"ROOM_TYPE_VOICE"`), `uint64` (биты прав, байты) — строками, время — RFC 3339; скалярные поля по умолчанию в ответе присутствуют, неизвестные поля в запросе игнорируются. Авторизация — `Authorization: Bearer <access JWT>`.
+
+### Единый поиск (ADR-0062)
+
+`GET /api/search?q=&scope=<workspace_id>|all&types=<csv>&type=<one>&limit=&cursor=&sort=relevance|new` → `SearchResponse {sections[]}` (`search.proto`). Разделы: `messages` (комнаты, при `scope=all` — и свои DM после «Удалить чат»), `task_comments`, `tasks`, `events`, `files`, `notes` (свои полки; только `scope=all` или явно в `types`/`type`, ботам — никогда), `transcripts`.
+- Без `type` — сводка для ⌘K: каждый раздел, `limit` 1..20 (по умолчанию 4), сообщения/комментарии/заметки — свежие первыми, остальное — по релевантности. С `type` — лента раздела (`limit` по умолчанию 20) с `next_cursor`; курсор непрозрачный и привязан к `q`/`scope`/`type`/`sort`, чужой — 400.
+- `q` 1..200 символов: слова по основе (russian) и как написаны (simple), последнее слово от 2 символов — ещё и префикс, `"фраза"`, `-исключение`, `or`; короткие поля (названия задач и событий, имена файлов) — с опечатками и подстрокой (`pg_trgm`); `ABC-12` — задача по ключу первой. Без слов после удаления пунктуации — 422 (`field = q`).
+- `SearchHit`: `snippet` с подсветкой `\u0002…\u0003` (клиент рисует `<mark>`, не HTML), `title`, `workspace_id` (пусто — DM/заметки), `at`, `author_id`, ссылка `oneof` (сообщение + комната; комментарий + ключ задачи; задача; событие + ближайшее вхождение; файл + сообщение; запись + `offset_ms` первого совпавшего сегмента).
+- Права — только существующие функции видимости (docs/16 «Поиск»). `scope=<ws>` не участнику — 404; при `scope=all` пространства, закрытые политикой доступа сессии, пропускаются.
+- Каждый раздел — своя read-only транзакция с `statement_timeout` 1,5 с; не уложившийся раздел приходит пустым с `timed_out = true`, остальные не ждут. Лимит частоты — 30 сразу, 1/с на пользователя (429).
 
 ### Стикеры (ADR-0030)
 
@@ -503,7 +515,7 @@ DELETE /api/categories/{id}                            204; комнаты вы�
 PUT    /api/workspaces/{id}/rooms/order                SetRoomOrderRequest → SetRoomOrderResponse   (drag & drop, одна транзакция)
 PATCH  /api/rooms/{id}                                 + categoryId ("" — без категории); POST …/rooms — + categoryId
 GET    /api/rooms/{id}/messages?q=&before=&limit=      поиск в комнате (FTS)
-GET    /api/workspaces/{id}/messages/search?q=&room_id=&author_id=&before=&limit=   поиск по видимым комнатам
+GET    /api/workspaces/{id}/messages/search?q=&room_id=&author_id=&before=&limit=   поиск по видимым комнатам (разбор и план — как раздел messages /api/search)
 PUT    /api/messages/{id}/reactions/{emoji}            204, идемпотентно  (SEND_MESSAGES; ≤ 20 разных эмодзи на сообщение)
 DELETE /api/messages/{id}/reactions/{emoji}            204, своя реакция
 PUT    /api/messages/{id}/pin | DELETE …/pin           204   (MANAGE_MESSAGES; ≤ 50 на комнату) → MESSAGE_UPDATE

@@ -4,6 +4,7 @@ import { esApp } from './app';
 import { esChat } from './chat';
 import { esDm } from './dm';
 import { esNotes } from './notes';
+import { esSearch } from './search';
 import { esCall } from './call';
 import { esEcho } from './echo';
 import { esMusic } from './music';
@@ -18,10 +19,13 @@ import { esRoles } from './roles';
 import { esCalendar } from './calendar';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
+import { esMilestones } from './milestones';
+import { esAutomations } from './automations';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
 import { esStickers } from './stickers';
+import { esAchievements } from './achievements';
 import { esSounds } from './sounds';
 import { esBots } from './bots';
 import { esGuests } from './guests';
@@ -38,6 +42,7 @@ export const es: Dict = {
   ...esApp,
   ...esVideo,
   ...esStickers,
+  ...esAchievements,
   ...esSounds,
   ...esBots,
   ...esGuests,
@@ -46,6 +51,7 @@ export const es: Dict = {
   ...esWebApps,
   ...esDm,
   ...esNotes,
+  ...esSearch,
   ...esCall,
   ...esEcho,
   ...esMusic,
@@ -60,6 +66,8 @@ export const es: Dict = {
   ...esCalendar,
   ...esBoards,
   ...esBoards2,
+  ...esMilestones,
+  ...esAutomations,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',
@@ -159,6 +167,7 @@ export const es: Dict = {
   'ws.leaveConfirm': '¿Abandonar «{name}»? Solo podrás volver con una invitación.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voz y pantalla compartida',
+  'ws.tabLibrary': 'Biblioteca',
   'ws.tabInvites': 'Invitaciones',
   'ws.tabDanger': 'Eliminar',
   'ws.icon': 'Cambiar icono',

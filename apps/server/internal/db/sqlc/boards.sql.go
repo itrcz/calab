@@ -634,9 +634,10 @@ func (q *Queries) DeleteTaskRelation(ctx context.Context, arg DeleteTaskRelation
 }
 
 const detachSubtasks = `-- name: DetachSubtasks :exec
-UPDATE tasks SET parent_id = NULL, updated_at = now() WHERE parent_id = $1
+UPDATE tasks SET parent_id = NULL, task_milestone_id = NULL, updated_at = now() WHERE parent_id = $1
 `
 
+// The subtasks lose their parent and its milestone (ADR-0063).
 func (q *Queries) DetachSubtasks(ctx context.Context, parentID *uuid.UUID) error {
 	_, err := q.db.Exec(ctx, detachSubtasks, parentID)
 	return err
@@ -807,9 +808,17 @@ SELECT b.workspace_id,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
-       b.disabled_features
+       b.disabled_features,
+       -- ADR-0059: the user (a human) is an assignee or an approver of a live task of the board.
+       (NOT coalesce(u.is_bot, true) AND (
+           EXISTS (SELECT 1 FROM task_assignees x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = $1::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+        OR EXISTS (SELECT 1 FROM task_approvers x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = $1::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+       ))::boolean AS invited
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
+LEFT JOIN users u ON u.id = $1::uuid
 LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
 LEFT JOIN LATERAL (
     SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
@@ -846,14 +855,15 @@ type GetBoardAccessRow struct {
 	UserDeny         *int64
 	Suspended        bool
 	DisabledFeatures int64
+	Invited          bool
 }
 
 // Task boards (ADR-0042). Task lists with filters are built dynamically in internal/boards
 // (TaskFilter → SQL); everything else is here.
 // Everything needed to compute a user's board bits, in one round trip: the membership (role
 // NULL = not a member), the member's roles lowest position first with each role's board
-// override (0/0 = none), the user's own override and the disabled board features (ADR-0058 §3:
-// COMMENTS off makes the task rooms read-only).
+// override (0/0 = none), the user's own override, the disabled board features (ADR-0058 §3:
+// COMMENTS off makes the task rooms read-only) and whether the user is invited on a task.
 func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) (GetBoardAccessRow, error) {
 	row := q.db.QueryRow(ctx, getBoardAccess, arg.UserID, arg.BoardID)
 	var i GetBoardAccessRow
@@ -872,6 +882,7 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 		&i.UserDeny,
 		&i.Suspended,
 		&i.DisabledFeatures,
+		&i.Invited,
 	)
 	return i, err
 }
@@ -936,7 +947,7 @@ func (q *Queries) GetBoardView(ctx context.Context, arg GetBoardViewParams) (Boa
 }
 
 const getTaskByNumber = `-- name: GetTaskByNumber :one
-SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, t.approval_required FROM tasks t JOIN boards b ON b.id = t.board_id
+SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, t.approval_required, t.task_milestone_id FROM tasks t JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = $1 AND b.key = $2 AND t.number = $3 AND b.archived_at IS NULL
 `
 
@@ -972,7 +983,31 @@ func (q *Queries) GetTaskByNumber(ctx context.Context, arg GetTaskByNumberParams
 		&i.CompletedBy,
 		&i.ArchivedAt,
 		&i.ApprovalRequired,
+		&i.TaskMilestoneID,
 	)
+	return i, err
+}
+
+const getTaskInvite = `-- name: GetTaskInvite :one
+SELECT EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = $1 AND x.user_id = $2)::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = $1 AND x.user_id = $2)::boolean AS approver
+`
+
+type GetTaskInviteParams struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+}
+
+type GetTaskInviteRow struct {
+	Assignee bool
+	Approver bool
+}
+
+// Whether the user is an assignee / approver of a task (ADR-0059: perm.TaskBits).
+func (q *Queries) GetTaskInvite(ctx context.Context, arg GetTaskInviteParams) (GetTaskInviteRow, error) {
+	row := q.db.QueryRow(ctx, getTaskInvite, arg.TaskID, arg.UserID)
+	var i GetTaskInviteRow
+	err := row.Scan(&i.Assignee, &i.Approver)
 	return i, err
 }
 
@@ -1016,26 +1051,42 @@ func (q *Queries) GetTaskLevel(ctx context.Context, arg GetTaskLevelParams) ([]G
 }
 
 const getTaskRoomRef = `-- name: GetTaskRoomRef :one
-SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived
-FROM tasks t WHERE t.room_id = $1
+SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived,
+       EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS approver
+FROM tasks t WHERE t.room_id = $2
 `
+
+type GetTaskRoomRefParams struct {
+	UserID uuid.UUID
+	RoomID uuid.UUID
+}
 
 type GetTaskRoomRefRow struct {
 	TaskID       uuid.UUID
 	BoardID      uuid.UUID
 	TaskArchived bool
+	Assignee     bool
+	Approver     bool
 }
 
-// The task and board of a task room (perm.Resolver: RoomAccess.Task).
-func (q *Queries) GetTaskRoomRef(ctx context.Context, roomID uuid.UUID) (GetTaskRoomRefRow, error) {
-	row := q.db.QueryRow(ctx, getTaskRoomRef, roomID)
+// The task and board of a task room and whether the user is its assignee / approver
+// (perm.Resolver: RoomAccess.Task, ADR-0059).
+func (q *Queries) GetTaskRoomRef(ctx context.Context, arg GetTaskRoomRefParams) (GetTaskRoomRefRow, error) {
+	row := q.db.QueryRow(ctx, getTaskRoomRef, arg.UserID, arg.RoomID)
 	var i GetTaskRoomRefRow
-	err := row.Scan(&i.TaskID, &i.BoardID, &i.TaskArchived)
+	err := row.Scan(
+		&i.TaskID,
+		&i.BoardID,
+		&i.TaskArchived,
+		&i.Assignee,
+		&i.Approver,
+	)
 	return i, err
 }
 
 const getTaskRow = `-- name: GetTaskRow :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required FROM tasks WHERE id = $1
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required, task_milestone_id FROM tasks WHERE id = $1
 `
 
 func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -1064,12 +1115,13 @@ func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.CompletedBy,
 		&i.ArchivedAt,
 		&i.ApprovalRequired,
+		&i.TaskMilestoneID,
 	)
 	return i, err
 }
 
 const getTaskRowForUpdate = `-- name: GetTaskRowForUpdate :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required FROM tasks WHERE id = $1 FOR UPDATE
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required, task_milestone_id FROM tasks WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -1098,6 +1150,7 @@ func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, 
 		&i.CompletedBy,
 		&i.ArchivedAt,
 		&i.ApprovalRequired,
+		&i.TaskMilestoneID,
 	)
 	return i, err
 }
@@ -1207,9 +1260,9 @@ func (q *Queries) InsertTask(ctx context.Context, arg InsertTaskParams) (uuid.UU
 
 const insertTaskActivity = `-- name: InsertTaskActivity :one
 
-INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, task_id, board_id, actor_id, kind, before, after, created_at
+INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id
 `
 
 type InsertTaskActivityParams struct {
@@ -1219,6 +1272,7 @@ type InsertTaskActivityParams struct {
 	Kind    string
 	Before  []byte
 	After   []byte
+	RuleID  *uuid.UUID
 }
 
 // ---- activity ----
@@ -1230,6 +1284,7 @@ func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivity
 		arg.Kind,
 		arg.Before,
 		arg.After,
+		arg.RuleID,
 	)
 	var i TaskActivity
 	err := row.Scan(
@@ -1241,6 +1296,7 @@ func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivity
 		&i.Before,
 		&i.After,
 		&i.CreatedAt,
+		&i.RuleID,
 	)
 	return i, err
 }
@@ -1343,7 +1399,7 @@ func (q *Queries) InsertTaskRelation(ctx context.Context, arg InsertTaskRelation
 }
 
 const listBoardActivity = `-- name: ListBoardActivity :many
-SELECT a.id, a.task_id, a.board_id, a.actor_id, a.kind, a.before, a.after, a.created_at, b.key AS board_key, t.number AS task_number FROM task_activity a
+SELECT a.id, a.task_id, a.board_id, a.actor_id, a.kind, a.before, a.after, a.created_at, a.rule_id, b.key AS board_key, t.number AS task_number FROM task_activity a
 JOIN tasks t ON t.id = a.task_id
 JOIN boards b ON b.id = t.board_id
 WHERE a.board_id = $1
@@ -1375,6 +1431,7 @@ type ListBoardActivityRow struct {
 	Before     []byte
 	After      []byte
 	CreatedAt  time.Time
+	RuleID     *uuid.UUID
 	BoardKey   string
 	TaskNumber int32
 }
@@ -1405,6 +1462,7 @@ func (q *Queries) ListBoardActivity(ctx context.Context, arg ListBoardActivityPa
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.RuleID,
 			&i.BoardKey,
 			&i.TaskNumber,
 		); err != nil {
@@ -1639,8 +1697,49 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 	return items, nil
 }
 
+const listInvitedTasks = `-- name: ListInvitedTasks :many
+SELECT t.id, t.board_id
+FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND NOT b.restricted AND t.archived_at IS NULL
+  AND t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = $2
+               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = $2)
+  AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = $2 AND u.is_bot)
+`
+
+type ListInvitedTasksParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+type ListInvitedTasksRow struct {
+	ID      uuid.UUID
+	BoardID uuid.UUID
+}
+
+// The live tasks on live, non-restricted boards of a workspace where the user (a human) is an
+// assignee or an approver: the task-scoped boards of ADR-0059.
+func (q *Queries) ListInvitedTasks(ctx context.Context, arg ListInvitedTasksParams) ([]ListInvitedTasksRow, error) {
+	rows, err := q.db.Query(ctx, listInvitedTasks, arg.WorkspaceID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInvitedTasksRow{}
+	for rows.Next() {
+		var i ListInvitedTasksRow
+		if err := rows.Scan(&i.ID, &i.BoardID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskActivity = `-- name: ListTaskActivity :many
-SELECT id, task_id, board_id, actor_id, kind, before, after, created_at FROM task_activity WHERE task_id = $1
+SELECT id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id FROM task_activity WHERE task_id = $1
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC LIMIT $3
 `
@@ -1669,6 +1768,7 @@ func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityPara
 			&i.Before,
 			&i.After,
 			&i.CreatedAt,
+			&i.RuleID,
 		); err != nil {
 			return nil, err
 		}
@@ -1782,6 +1882,38 @@ func (q *Queries) ListTaskAttachments(ctx context.Context, taskID uuid.UUID) ([]
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaskInvites = `-- name: ListTaskInvites :many
+SELECT x.task_id FROM task_assignees x WHERE x.task_id = ANY($1::uuid[]) AND x.user_id = $2
+UNION
+SELECT a.task_id FROM task_approvers a WHERE a.task_id = ANY($1::uuid[]) AND a.user_id = $2
+`
+
+type ListTaskInvitesParams struct {
+	Ids    []uuid.UUID
+	UserID uuid.UUID
+}
+
+// The tasks among ids where the user is an assignee or an approver (ADR-0059).
+func (q *Queries) ListTaskInvites(ctx context.Context, arg ListTaskInvitesParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listTaskInvites, arg.Ids, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var task_id uuid.UUID
+		if err := rows.Scan(&task_id); err != nil {
+			return nil, err
+		}
+		items = append(items, task_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1996,6 +2128,53 @@ func (q *Queries) ListWorkspaceBoardOverrides(ctx context.Context, workspaceID u
 	return items, nil
 }
 
+const listWorkspaceTaskInvitees = `-- name: ListWorkspaceTaskInvitees :many
+SELECT t.id AS task_id, t.board_id, x.user_id, bool_or(x.assignee)::boolean AS assignee, bool_or(NOT x.assignee)::boolean AS approver
+FROM tasks t
+JOIN boards b ON b.id = t.board_id
+JOIN (SELECT a.task_id, a.user_id, true AS assignee FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id, false AS assignee FROM task_approvers p) x ON x.task_id = t.id
+JOIN users u ON u.id = x.user_id AND NOT u.is_bot
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
+GROUP BY t.id, t.board_id, x.user_id
+`
+
+type ListWorkspaceTaskInviteesRow struct {
+	TaskID   uuid.UUID
+	BoardID  uuid.UUID
+	UserID   uuid.UUID
+	Assignee bool
+	Approver bool
+}
+
+// The assignees and approvers (humans) of the live tasks on live boards of a workspace: the
+// gateway's invited map (ADR-0059).
+func (q *Queries) ListWorkspaceTaskInvitees(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceTaskInviteesRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceTaskInvitees, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspaceTaskInviteesRow{}
+	for rows.Next() {
+		var i ListWorkspaceTaskInviteesRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.BoardID,
+			&i.UserID,
+			&i.Assignee,
+			&i.Approver,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkspaceTaskRooms = `-- name: ListWorkspaceTaskRooms :many
 SELECT t.id, t.room_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS archived
 FROM tasks t JOIN boards b ON b.id = t.board_id
@@ -2128,7 +2307,7 @@ func (q *Queries) MoveStatusTasks(ctx context.Context, arg MoveStatusTasksParams
 
 const moveTaskToBoard = `-- name: MoveTaskToBoard :exec
 UPDATE tasks SET board_id = $1, number = $2, status_id = $3,
-    milestone_id = NULL, parent_id = NULL, position = $4, updated_at = now()
+    milestone_id = NULL, parent_id = NULL, task_milestone_id = NULL, position = $4, updated_at = now()
 WHERE id = $5
 `
 
@@ -2499,7 +2678,8 @@ SELECT t.id,
     (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
     (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments,
     (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id)::integer AS checklist_total,
-    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done,
+    (SELECT count(*) FROM task_git_links g WHERE g.task_id = t.id)::integer AS git_links
 FROM tasks t WHERE t.id = ANY($1::uuid[])
 `
 
@@ -2511,10 +2691,11 @@ type TaskCountsRow struct {
 	Attachments    int32
 	ChecklistTotal int32
 	ChecklistDone  int32
+	GitLinks       int32
 }
 
 // Per task: live subtasks and finished ones, live comments, attachments, checklist items and
-// done ones (ADR-0058 §2).
+// done ones (ADR-0058 §2), Git links (ADR-0060).
 func (q *Queries) TaskCounts(ctx context.Context, taskIds []uuid.UUID) ([]TaskCountsRow, error) {
 	rows, err := q.db.Query(ctx, taskCounts, taskIds)
 	if err != nil {
@@ -2532,6 +2713,7 @@ func (q *Queries) TaskCounts(ctx context.Context, taskIds []uuid.UUID) ([]TaskCo
 			&i.Attachments,
 			&i.ChecklistTotal,
 			&i.ChecklistDone,
+			&i.GitLinks,
 		); err != nil {
 			return nil, err
 		}
@@ -2828,26 +3010,27 @@ UPDATE tasks SET
     title = $1, description = $2, status_id = $3,
     priority = $4, estimate = $5, start_on = $6,
     due_on = $7, parent_id = $8, milestone_id = $9,
-    position = $10, started_at = $11, completed_at = $12,
-    completed_by = $13, updated_at = now()
-WHERE id = $14
+    task_milestone_id = $10, position = $11,
+    started_at = $12, completed_at = $13, completed_by = $14, updated_at = now()
+WHERE id = $15
 `
 
 type UpdateTaskFieldsParams struct {
-	Title       string
-	Description string
-	StatusID    uuid.UUID
-	Priority    int16
-	Estimate    *int16
-	StartOn     pgtype.Date
-	DueOn       pgtype.Date
-	ParentID    *uuid.UUID
-	MilestoneID *uuid.UUID
-	Position    float64
-	StartedAt   *time.Time
-	CompletedAt *time.Time
-	CompletedBy *uuid.UUID
-	ID          uuid.UUID
+	Title           string
+	Description     string
+	StatusID        uuid.UUID
+	Priority        int16
+	Estimate        *int16
+	StartOn         pgtype.Date
+	DueOn           pgtype.Date
+	ParentID        *uuid.UUID
+	MilestoneID     *uuid.UUID
+	TaskMilestoneID *uuid.UUID
+	Position        float64
+	StartedAt       *time.Time
+	CompletedAt     *time.Time
+	CompletedBy     *uuid.UUID
+	ID              uuid.UUID
 }
 
 // Writes the whole mutable row (internal/boards computes the new values).
@@ -2862,6 +3045,7 @@ func (q *Queries) UpdateTaskFields(ctx context.Context, arg UpdateTaskFieldsPara
 		arg.DueOn,
 		arg.ParentID,
 		arg.MilestoneID,
+		arg.TaskMilestoneID,
 		arg.Position,
 		arg.StartedAt,
 		arg.CompletedAt,

@@ -90,6 +90,23 @@ func ComputeBoardRoles(roles []RoleBits, sc BoardScope, roleOvs map[string]Overr
 	return ComputeBoard(m.Raw(), sc, ovs, userOv)
 }
 
+// TaskBits is the caller's bits on one task (ADR-0059 §2): a viewer of the board keeps the
+// board's bits; on a task-scoped board an assignee gets VIEW_BOARD | CREATE_TASKS (works on the
+// task like a member on their assigned task: canEdit, never a new task — createTask checks the
+// board's bits) and an approver VIEW_BOARD (view, comment, vote); anyone else 0 (404).
+// assignee / approver must be on a live task. Mirror of taskPermissions in packages/protocol.
+func TaskBits(acc BoardAccess, assignee, approver bool) Bits {
+	switch {
+	case acc.Bits.Has(ViewBoard):
+		return acc.Bits
+	case acc.TaskScoped && assignee:
+		return ViewBoard | CreateTasks
+	case acc.TaskScoped && approver:
+		return ViewBoard
+	}
+	return 0
+}
+
 // TaskRoom maps board bits to the bits in a task's comment room (ADR-0042 §1): VIEW_BOARD →
 // VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES, EDIT_TASKS adds MANAGE_MESSAGES. The room of an
 // archived task is read-only, and so is every task room of a board with the feature COMMENTS

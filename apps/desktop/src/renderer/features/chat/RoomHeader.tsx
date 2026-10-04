@@ -1,7 +1,7 @@
 import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Message, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Timer, Users, Volume2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
@@ -114,7 +114,7 @@ export function RoomHeader({
         <NotifyButton roomId={room.id} className={touch} />
         {can(perms, 'MANAGE_ROOM') && !mobile ? (
           <IconButton label={t('room.settings')} onClick={() => openDialog({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-[18px]" />
+            <SlidersHorizontal className="size-[18px]" />
           </IconButton>
         ) : null}
         <IconButton label={t('shell.members')} active={membersOpen} onClick={toggleMembers} className={touch}>

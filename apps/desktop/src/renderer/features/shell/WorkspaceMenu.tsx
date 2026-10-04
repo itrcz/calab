@@ -9,6 +9,7 @@ import { api } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
 import { mayInviteMembers, mayOpenWorkspaceSettings } from '../../lib/permissions';
 import { setWorkspaceNotifications, setWorkspaceTaskLevel } from '../../services/mentions';
+import { boardVisible } from '../../lib/boards/access';
 import { useBoards } from '../../stores/boards';
 import { useRooms, workspaceNotify, workspaceTaskLevel } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
@@ -156,7 +157,7 @@ const TASK_LEVELS: ReadonlyArray<{ level: NotificationLevel; label: 'boards.noti
  */
 function TaskNotifyItems({ workspaceId }: { workspaceId: string }): ReactNode {
   const level = useRooms((s) => workspaceTaskLevel(s.wsNotify[workspaceId]));
-  const any = useBoards((s) => Object.values(s.boards).some((b) => b.workspaceId === workspaceId && !b.archivedAt));
+  const any = useBoards((s) => Object.values(s.boards).some((b) => b.workspaceId === workspaceId && boardVisible(b)));
   if (!any) return null;
   return (
     <>

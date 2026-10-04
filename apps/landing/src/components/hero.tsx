@@ -11,7 +11,7 @@ export function Hero({ t, locale }: { t: Dict['hero']; locale: Locale }) {
   return <section id="top" aria-labelledby="hero-title" className="story-hero">
     <Container>
       <div className="story-hero-layout">
-        <LivingTitle lines={s.title} className="!text-[clamp(28px,7.4vw,96px)]" />
+        <LivingTitle lines={s.title} />
         <div className="story-hero-copy">
           <p>{s.lead}</p>
           <div className="hero-actions mt-7 flex flex-wrap gap-5">

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Field, Modal, Select, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import type { MediaErrorAction } from '../../lib/media/errors';
-import { applyCameraBackground, backgroundAvailable } from '../../services/cameraBackground';
+import { applyCameraBackground, backgroundEnv } from '../../services/cameraBackground';
 import { humanMediaError, mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
 import { useCameraBg } from '../../stores/cameraBg';
@@ -44,8 +44,9 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
   // show its tooltip, and a focused select draws a ring on a sheet opened with the mouse.
   const frame = useRef<HTMLDivElement>(null);
   const cameras = useCameras(track);
-  // «Фон» (ADR-0035): shown where the effect can run; the preview gets the choice live.
-  const [bgShown] = useState(backgroundAvailable);
+  // «Фон» (ADR-0035): always shown — where it cannot run, disabled with the reason (owner, 2.1).
+  // Two columns on desktop; a phone stacks it under the preview.
+  const [wide] = useState(() => !backgroundEnv().mobile);
 
   // (Re)open the camera for the chosen device; release it when the device changes or on close.
   useEffect(() => {
@@ -98,7 +99,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
       title={t('video.preview.title')}
       description={t('video.preview.text')}
       initialFocus={frame}
-      wide={bgShown}
+      wide={wide}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -110,7 +111,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
         </>
       }
     >
-      <div className={cx(bgShown && 'grid grid-cols-[minmax(0,1fr)_320px] gap-5')}>
+      <div className={cx(wide && 'grid grid-cols-[minmax(0,1fr)_320px] gap-5')}>
         <div className="min-w-0">
           <div ref={frame} tabIndex={-1} className="relative aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-video-bg)] outline-none" data-testid="camera-preview">
             {/* Mirrored like a mirror: moving right moves right (the others see it unmirrored). */}
@@ -122,8 +123,8 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
                 </span>
               </span>
             ) : null}
-            {track && !error && bgShown ? <BackgroundLoading /> : null}
-            {track && bgShown ? <ApplyEffects track={track} /> : null}
+            {track && !error ? <BackgroundLoading /> : null}
+            {track ? <ApplyEffects track={track} /> : null}
             {error ? (
               <span className="absolute inset-0 grid place-items-center p-4 text-center" role="alert">
                 <span className="flex flex-col items-center gap-2 text-body text-white">
@@ -150,13 +151,11 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
             </Field>
           </div>
         </div>
-        {bgShown ? (
-          // «Внешний вид» under «Фон» (docs/08): in the smallest window the sheet's body scrolls to it.
-          <div className="flex min-w-0 flex-col gap-4">
-            <BackgroundPicker />
-            <CameraAppearance />
-          </div>
-        ) : null}
+        {/* «Внешний вид» under «Фон» (docs/08): in the smallest window the sheet's body scrolls to it. */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <BackgroundPicker />
+          <CameraAppearance />
+        </div>
       </div>
     </Modal>
   );
@@ -180,8 +179,9 @@ function BackgroundLoading(): ReactNode {
 function ApplyEffects({ track }: { track: LocalVideoTrack }): null {
   const background = usePrefs((s) => s.cameraBackground);
   const effects = usePrefs((s) => s.cameraEffects);
+  const fps = usePrefs((s) => s.cameraBgFps);
   useEffect(() => {
     void applyCameraBackground(track, background, effects);
-  }, [track, background, effects]);
+  }, [track, background, effects, fps]);
   return null;
 }

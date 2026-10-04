@@ -1,5 +1,6 @@
 import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist } from '@calaba/protocol';
 import { putChecklist, putChecklists } from './checklists';
+import { mergeMilestones } from './milestones';
 import { byPosition } from './position';
 
 /**
@@ -115,7 +116,7 @@ export function setBoardTasks(d: BoardsData, boardId: string, list: readonly Tas
   let counts = d.checkCounts;
   for (const t of sorted) {
     counts = keepCounts(counts, d.tasks[t.id], t);
-    tasks[t.id] = keepViewer(d.tasks[t.id], t);
+    tasks[t.id] = keepMilestones(d.tasks[t.id], keepViewer(d.tasks[t.id], t));
     if (t.roomId) roomTask[t.roomId] = t.id;
     (cols[t.statusId] ??= []).push(t.id);
   }
@@ -142,13 +143,26 @@ function keepViewer(prev: Task | undefined, t: Task): Task {
 }
 
 /**
+ * The task's milestones (ADR-0063) travel in every task: unchanged ones keep their objects, so a
+ * TASK_UPDATE re-renders only the milestone rows / diamonds that changed.
+ */
+function keepMilestones(prev: Task | undefined, t: Task): Task {
+  if (!prev || prev.milestones === t.milestones || (!prev.milestones.length && !t.milestones.length)) return t;
+  const milestones = mergeMilestones(prev.milestones, t.milestones);
+  const p = prev.milestoneProgress;
+  const q = t.milestoneProgress;
+  const milestoneProgress = p && q && p.done === q.done && p.total === q.total ? p : q;
+  return milestones === t.milestones && milestoneProgress === q ? t : { ...t, milestones, milestoneProgress };
+}
+
+/**
  * TASK_CREATE / TASK_UPDATE / a REST answer / an optimistic change. The column lists change only
  * when the status or the position did; an archived task leaves the board.
  */
 export function upsertTask(d: BoardsData, task: Task): Partial<BoardsData> {
   if (task.archivedAt) return removeTask(d, task.id, task);
   const prev = d.tasks[task.id];
-  const next = keepViewer(prev, task);
+  const next = keepMilestones(prev, keepViewer(prev, task));
   const out: Partial<BoardsData> = { tasks: { ...d.tasks, [task.id]: next } };
   const cc = keepCounts(d.checkCounts, prev, next);
   if (cc !== d.checkCounts) out.checkCounts = cc;

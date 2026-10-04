@@ -39,7 +39,7 @@ import {
   Lock,
   Pencil,
   Plus,
-  Settings,
+  SlidersHorizontal,
   SquareKanban,
   Trash2,
   UserPlus,
@@ -756,7 +756,7 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
       {canSettings ? (
         <Tip label={t('room.settings')}>
           <button type="button" className={btn} aria-label={t('shell.roomSettingsOf', { name: room.name })} onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-[18px]" aria-hidden />
+            <SlidersHorizontal className="size-[18px]" aria-hidden />
           </button>
         </Tip>
       ) : null}
@@ -899,7 +899,7 @@ function RoomMenu({
       case 'settings':
         return (
           <ContextMenu.Item key={id} className={menuItem} onSelect={() => open({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-4" /> {t('roomMenu.settings')}
+            <SlidersHorizontal className="size-4" /> {t('roomMenu.settings')}
           </ContextMenu.Item>
         );
       case 'markRead':
@@ -1123,24 +1123,24 @@ function CardActions({ room }: { room: Room }): ReactNode {
 
 /**
  * «Войти» (owner, 02.10): the voice room row's way into the call (the row itself opens the chat).
- * Shown on hover / focus-within (always on touch, never in a full room without MOVE_MEMBERS); when hidden it is
- * `sr-only`, so Tab still reaches it (and focus reveals it).
+ * Shown on hover / focus-within (always on touch, never in a full room without MOVE_MEMBERS); when hidden its
+ * wrapper is `sr-only`, so Tab still reaches it (and focus reveals it). The wrapper, not the button, toggles
+ * `sr-only`/`not-sr-only`: `not-sr-only` resets padding and height, which stripped the button's own `px-2 h-5`.
  */
 const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: string; onJoin: () => void; always: boolean }): ReactNode {
   useLocale();
   return (
-    <Button
-      size="sm"
-      aria-label={t('shell.joinVoiceOf', { name })}
-      data-testid="room-join"
-      onClick={onJoin}
-      className={cx(
-        'h-5 px-2 text-micro mobile:h-6',
-        always ? '' : 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only',
-      )}
-    >
-      {t('shell.joinVoiceShort')}
-    </Button>
+    <span className={cx('inline-flex shrink-0', !always && 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only')}>
+      <Button
+        size="sm"
+        aria-label={t('shell.joinVoiceOf', { name })}
+        data-testid="room-join"
+        onClick={onJoin}
+        className="h-5 px-2 text-micro mobile:h-6"
+      >
+        {t('shell.joinVoiceShort')}
+      </Button>
+    </span>
   );
 });
 
@@ -1576,7 +1576,6 @@ function VoiceMember({
   isMe: boolean;
   canMove: boolean;
 }): ReactNode {
-  const speaking = useVoice((s) => s.speaking[state.userId] ?? false);
   const inSameRoom = useVoice((s) => s.roomId === room.id);
   // Only our own moderator mute is known (VoiceState has no server-mute flag yet).
   const serverMuted = useVoice((s) => s.serverMuted);
@@ -1592,7 +1591,9 @@ function VoiceMember({
   const tz = useLocalTimeTag(state.userId);
   // Pending (optimistic join, docs/05) for more than 3 s: the «connecting» ring.
   const connectingRing = useConnectingRing(workspaceId, state.userId, state.pending);
-  const talking = speaking && !state.muted && !connectingRing;
+  // No «speaking» highlight here (owner, 03.10): the sidebar lists every voice room, but speaking is only
+  // known for the room we are in, so a ring in one room and none in the others read as broken. The call
+  // stage shows who is talking; not subscribing also spares the sidebar a re-render per speaking event.
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `member:${room.id}:${state.userId}`,
     data: { type: 'member', userId: state.userId, fromRoomId: room.id, name } satisfies DragMember,
@@ -1614,19 +1615,18 @@ function VoiceMember({
         if (stream && inSameRoom) voice.watch(stream.trackSid);
       }}
       className={cx(
-        // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
+        // Discord (2x reference): 28 px rows, 24 px avatars starting where
         // the room name starts (8 + 18 + 6 = 32 px), 8 px to the 14 px name.
         'group/member relative flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
       title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
-      data-speaking={talking || undefined}
       data-pending={state.pending || undefined}
     >
       {/* «Только вошёл»: 6 px dot 4 px left of the 24 px avatar (32 px), outside the flex flow. */}
       <JustJoinedDot joinedAt={joinedAtMs(state.joinedAt)} className="absolute left-[22px] top-1/2 -translate-y-1/2" />
-      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} role={role} workspaceId={workspaceId} />
+      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={false} pending={connectingRing} suffix={tz} role={role} workspaceId={workspaceId} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}

@@ -4,6 +4,7 @@ import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
 import { zhNotes } from './notes';
+import { zhSearch } from './search';
 import { zhCall } from './call';
 import { zhEcho } from './echo';
 import { zhMusic } from './music';
@@ -18,10 +19,13 @@ import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
+import { zhMilestones } from './milestones';
+import { zhAutomations } from './automations';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 import { zhStickers } from './stickers';
+import { zhAchievements } from './achievements';
 import { zhSounds } from './sounds';
 import { zhBots } from './bots';
 import { zhGuests } from './guests';
@@ -38,6 +42,7 @@ export const zhCN: Dict = {
   ...zhApp,
   ...zhVideo,
   ...zhStickers,
+  ...zhAchievements,
   ...zhSounds,
   ...zhBots,
   ...zhGuests,
@@ -46,6 +51,7 @@ export const zhCN: Dict = {
   ...zhWebApps,
   ...zhDm,
   ...zhNotes,
+  ...zhSearch,
   ...zhCall,
   ...zhEcho,
   ...zhMusic,
@@ -60,6 +66,8 @@ export const zhCN: Dict = {
   ...zhCalendar,
   ...zhBoards,
   ...zhBoards2,
+  ...zhMilestones,
+  ...zhAutomations,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',
@@ -159,6 +167,7 @@ export const zhCN: Dict = {
   'ws.leaveConfirm': '退出"{name}"？只能通过邀请再次加入。',
   'ws.tabGeneral': '常规',
   'ws.tabMedia': '语音与屏幕共享',
+  'ws.tabLibrary': '资料库',
   'ws.tabInvites': '邀请',
   'ws.tabDanger': '删除',
   'ws.icon': '更换图标',

@@ -27,6 +27,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.reactedWith': 'Reaccionaron con {emoji}',
   'chat.reactionOthers': { one: 'y {n} más', many: 'y {n} más', other: 'y {n} más' },
   'chat.replyOpen': 'Mostrar mensaje original',
+  'chat.replyDeleted': 'Mensaje eliminado',
   'chat.messageGone': 'Mensaje eliminado o no disponible',
   'chat.rowFailed': 'No se pudo mostrar este mensaje',
   'chat.historyStart': 'Inicio del historial de la sala',
@@ -115,8 +116,8 @@ export const esChat: DictShape<typeof enChat> = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': 'Buscar',
-  'search.hint': 'Salas, miembros y mensajes; flechas para elegir, Intro para el primer botón de la fila (unirse, abrir chat, escribir), Mayús+Intro para el segundo',
-  'search.placeholder': 'Buscar una sala, persona o mensaje',
+  'search.hint': 'Salas, personas, mensajes, tareas, eventos, archivos, notas y transcripciones; flechas para elegir, Tab para la siguiente sección, Intro para el primer botón de la fila, Mayús+Intro para el segundo, Cmd/Ctrl+Intro para todos los resultados de la sección',
+  'search.placeholder': 'Buscar en todo: mensajes, tareas, eventos, archivos',
   'search.rooms': 'Salas',
   'search.members': 'Miembros',
   'search.messages': 'Mensajes',

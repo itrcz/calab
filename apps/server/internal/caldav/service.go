@@ -73,6 +73,7 @@ const (
 	maxPassword   = 1024
 	maxUsername   = 256
 	maxURL        = 2048
+	maxETag       = 256
 	pushLockKey   = "caldav:push:worker"
 	importLockKey = "caldav:import:worker"
 )
@@ -87,8 +88,11 @@ type Service struct {
 	opts    Options
 	connect *redisx.RateLimiter // connections per user (5 per hour)
 	sync    *redisx.RateLimiter // manual imports per user (1 per minute)
-	wake    chan struct{}
-	token   string
+	// DeleteLimit: deletions of external events per user (30 per minute, ADR-0045 amendment 1);
+	// nil = unlimited.
+	DeleteLimit *redisx.RateLimiter
+	wake        chan struct{}
+	token       string
 	// AllowsCalDAV tells whether the plans of the user's workspaces include CalDAV (ADR-0024,
 	// 30.09); nil allows everything (plans.Service.AllowsCalDAV).
 	AllowsCalDAV func(ctx context.Context, user uuid.UUID) (bool, error)
@@ -126,6 +130,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("PUT /api/me/caldav", wrap(httpx.HandlerFunc(s.update)))
 	mux.Handle("PATCH /api/me/caldav", wrap(httpx.HandlerFunc(s.setShare)))
 	mux.Handle("GET /api/me/external-events", wrap(httpx.HandlerFunc(s.externalEvents)))
+	mux.Handle("DELETE /api/me/external-events", wrap(httpx.HandlerFunc(s.deleteExternal)))
 	mux.Handle("DELETE /api/me/caldav", wrap(httpx.HandlerFunc(s.remove)))
 	mux.Handle("POST /api/me/caldav/sync", wrap(httpx.HandlerFunc(s.syncNow)))
 }
@@ -519,6 +524,7 @@ func insertParams(user uuid.UUID, busy []Busy) (sqlc.InsertExternalBusyParams, e
 		p.Uids, p.Starts, p.Ends, p.AllDays = append(p.Uids, b.UID), append(p.Starts, b.Start), append(p.Ends, b.End), append(p.AllDays, b.AllDay)
 		p.Summaries, p.Locations, p.Attendees = append(p.Summaries, d.Summary), append(p.Locations, d.Location), append(p.Attendees, att)
 		p.Organizers, p.Urls = append(p.Organizers, d.Organizer), append(p.Urls, d.URL)
+		p.Hrefs, p.Etags, p.Recurrings, p.WebUrls = append(p.Hrefs, b.Href), append(p.Etags, b.ETag), append(p.Recurrings, b.Recurring), append(p.WebUrls, b.WebURL)
 	}
 	return p, nil
 }
@@ -529,12 +535,7 @@ func (s *Service) fetch(ctx context.Context, acc sqlc.CaldavAccount, now time.Ti
 	if err != nil {
 		return nil, err
 	}
-	loc := time.UTC
-	if u, err := s.db.Q.GetUser(ctx, acc.UserID); err == nil && u.Timezone != nil {
-		if l, err := time.LoadLocation(*u.Timezone); err == nil {
-			loc = l
-		}
-	}
+	loc := s.zoneOf(ctx, acc.UserID)
 	from, to := now.Add(-importBefore), now.Add(importAfter)
 	objs, err := s.dav.Query(ctx, *acc.CalendarHref, cr, from, to)
 	if err != nil {
@@ -542,7 +543,19 @@ func (s *Service) fetch(ctx context.Context, acc sqlc.CaldavAccount, now time.Ti
 	}
 	var out []Busy
 	for _, o := range objs {
-		out = append(out, BusyFromICS(o, from, to, loc)...)
+		busy := BusyFromICS(o.Data, from, to, loc)
+		if len(o.Href) > maxURL || len(o.ETag) > maxETag || o.ETag == "" || !InCalendar(o.Href, *acc.CalendarHref) {
+			// Not deletable from Calab (no If-Match, or not an object of this calendar); still busy time.
+			o.Href, o.ETag = "", ""
+		}
+		page := NextcloudPage(o.Href)
+		for i := range busy {
+			busy[i].Href, busy[i].ETag = o.Href, o.ETag
+			if busy[i].WebURL == "" {
+				busy[i].WebURL = page
+			}
+		}
+		out = append(out, busy...)
 		if len(out) >= maxBusyRows {
 			return out[:maxBusyRows], nil
 		}

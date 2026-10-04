@@ -281,7 +281,7 @@ const ru = {
       enterprise: { name: 'Enterprise', price: 'Свой сервер', note: 'On-prem без ограничений, лицензия BSL 1.1 или коммерческая' },
     },
     cta: {
-      web: 'Веб-версия',
+      web: 'Веб',
       download: 'Скачать',
       contact: 'Связаться',
       license: 'Условия лицензии',

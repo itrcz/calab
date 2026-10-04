@@ -2,8 +2,7 @@ import { ArrowUpRight, AudioLines, Bot, CalendarCheck, LayoutGrid, MessagesSquar
 import type { Locale } from '@/i18n';
 import { getCapabilities, type CapCard } from '@/i18n/capabilities';
 import { localePath } from '@/i18n/locales';
-import type { ScreenName } from '@/lib/screens';
-import { Container, Screen } from './ui';
+import { Container } from './ui';
 
 const icons: Record<CapCard['key'], LucideIcon> = {
   voice: AudioLines,
@@ -12,15 +11,6 @@ const icons: Record<CapCard['key'], LucideIcon> = {
   boards: LayoutGrid,
   bots: Bot,
   company: ShieldCheck,
-};
-// Screenshot crop per card (2.0 shots: boards with categories and checklist progress, workspace SSO settings).
-const shots: Record<CapCard['key'], ScreenName> = {
-  voice: 'voice',
-  chat: 'chat',
-  meetings: 'calendar',
-  boards: 'boards2',
-  bots: 'webapps',
-  company: 'sso',
 };
 // Anchors on /features.
 const anchors: Record<CapCard['key'], string> = {
@@ -49,13 +39,9 @@ export function Capabilities({ locale }: { locale: Locale }) {
         <ul className="mt-10 grid list-none gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {t.cards.map((card) => {
             const Icon = icons[card.key];
-            const shot = shots[card.key];
             return (
               <li key={card.key} className="flex flex-col rounded-[20px] bg-card p-5 sm:p-6">
-                <div className="aspect-[16/8] overflow-hidden rounded-[10px] bg-bg">
-                  <Screen name={shot} locale={locale} alt={card.alt} sizes="(min-width: 1024px) 400px, (min-width: 640px) 46vw, 92vw" className="min-h-full object-cover object-top" />
-                </div>
-                <h3 className="mt-5 flex items-center gap-3 text-[22px] leading-7 font-bold">
+                <h3 className="flex items-center gap-3 text-[22px] leading-7 font-bold">
                   <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent-tint text-accent-text">
                     <Icon aria-hidden="true" className="size-5" strokeWidth={2} />
                   </span>

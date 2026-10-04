@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- The app's CSP (src/renderer/index.html), so the probe hits the same policy. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: calaba-api:; media-src 'self' blob: mediastream: calaba-api:; connect-src 'self' calaba-api: ws: wss: http: https:; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>background probe</title>
+  </head>
+  <body>
+    <script type="module" src="./bgProbePage.ts"></script>
+  </body>
+</html>

@@ -128,7 +128,8 @@ func (s *Service) externalEvents(w http.ResponseWriter, r *http.Request) error {
 	out := &v1.ExternalEventsResponse{Events: make([]*v1.ExternalEvent, 0, len(rows))}
 	for i, row := range rows {
 		ev := &v1.ExternalEvent{Uid: row.Uid, StartsAt: timestamppb.New(row.StartsAt), EndsAt: timestamppb.New(row.EndsAt), AllDay: row.AllDay,
-			Summary: row.Summary, Location: row.Location, Organizer: row.Organizer, Url: row.Url, Attendees: make([]*v1.ExternalAttendee, 0, len(lists[i]))}
+			Summary: row.Summary, Location: row.Location, Organizer: row.Organizer, Url: row.Url, Href: row.Href, Recurring: row.Recurring, WebUrl: row.WebUrl,
+			Attendees: make([]*v1.ExternalAttendee, 0, len(lists[i]))}
 		for _, a := range lists[i] {
 			ev.Attendees = append(ev.Attendees, &v1.ExternalAttendee{Email: a.Email, Name: a.Name, UserId: ids[a.Email]})
 		}

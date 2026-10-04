@@ -15,6 +15,7 @@ import { startDm } from '../../services/dms';
 import { LocalTime } from './LocalTime';
 import { ClientVersion } from './ClientVersion';
 import { BirthdayInfo } from './Birthday';
+import { ProfileDialogAchievements } from './ProfileAchievements';
 import { isGuest, rolesOf, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { useSession } from '../../stores/session';
 import { canEditMemberBirthday } from './members';
@@ -241,6 +242,8 @@ export function ProfileDialog({
               <Section title={t('people.profile.roles')}>
                 <RoleChips workspaceId={workspaceId} userId={userId} />
               </Section>
+
+              <ProfileDialogAchievements workspaceId={workspaceId} userId={userId} />
 
               <NoteEditor userId={userId} textareaRef={noteRef} />
             </div>

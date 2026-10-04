@@ -1,5 +1,6 @@
-import type { ExternalAttendee, ExternalEvent } from './freebusyApi';
-import { addDays, dayEnd, dayKey, dayStart } from './time';
+import { t } from '../../i18n';
+import type { ExternalAttendee, ExternalDeleteScopeName, ExternalEvent } from './freebusyApi';
+import { addDays, dayEnd, dayKey, dayStart, formatLongDay } from './time';
 
 /*
  * My external calendar's events on the client (ADR-0045 §3): which local days an event is on, its
@@ -109,4 +110,72 @@ export function sharedLabel(b: { title: string; attendees: readonly string[] }):
   const title = b.title.trim();
   if (!title) return null;
   return { title, count: b.attendees.length };
+}
+
+// ---------------------------------------------------------------- delete (ADR-0045 amendment 1)
+
+/**
+ * Whom «Удалить из календаря» reaches: I organize it with others — they get a cancellation from my
+ * calendar; otherwise only my calendar changes. `myEmails` — my Calab address and my CalDAV login.
+ */
+export function deleteRole(e: Pick<ExternalEvent, 'organizer' | 'attendees'>, myEmails: readonly string[]): 'organizer' | 'attendee' {
+  const mine = new Set(myEmails.map((m) => m.trim().toLowerCase()).filter(Boolean));
+  const org = e.organizer.toLowerCase();
+  if (!org || !mine.has(org)) return 'attendee';
+  return e.attendees.some((a) => !mine.has(a.email.toLowerCase())) ? 'organizer' : 'attendee';
+}
+
+/**
+ * The confirmation of «Удалить из календаря»: the title by what goes (the event / this occurrence /
+ * the whole series), the text by whom it reaches (`deleteRole`).
+ */
+export function deletePrompt(
+  e: Pick<ExternalEvent, 'summary' | 'start' | 'recurring' | 'organizer' | 'attendees'>,
+  scope: ExternalDeleteScopeName,
+  myEmails: readonly string[],
+): { title: string; text: string; action: string } {
+  const title = e.summary || t('ext.noTitle');
+  const head = !e.recurring
+    ? t('ext.deleteTitle', { title })
+    : scope === 'series'
+      ? t('ext.deleteSeriesTitle', { title })
+      : t('ext.deleteOneTitle', { date: formatLongDay(e.start) });
+  return { title: head, text: t(deleteRole(e, myEmails) === 'organizer' ? 'ext.deleteOrganizer' : 'ext.deleteAttendee'), action: t('ext.deleteAction') };
+}
+
+/** The deleted event: `whole` — every occurrence of its uid (a series, an event without repeats), else this occurrence. */
+const removes =
+  (target: Pick<ExternalEvent, 'uid' | 'start'>, whole: boolean) =>
+  (e: ExternalEvent): boolean =>
+    e.uid === target.uid && (whole || e.start === target.start);
+
+/** The days without the deleted event; `removed` — what was taken out of each day (put back if the server refuses). */
+export function withoutExternal(
+  days: Readonly<Record<string, readonly ExternalEvent[]>>,
+  target: Pick<ExternalEvent, 'uid' | 'start'>,
+  whole: boolean,
+): { days: Record<string, readonly ExternalEvent[]>; removed: Record<string, ExternalEvent[]> } {
+  const out: Record<string, readonly ExternalEvent[]> = { ...days };
+  const removed: Record<string, ExternalEvent[]> = {};
+  const gone = removes(target, whole);
+  for (const [d, list] of Object.entries(days)) {
+    if (!list.some(gone)) continue;
+    removed[d] = list.filter(gone);
+    out[d] = list.filter((e) => !gone(e));
+  }
+  return { days: out, removed };
+}
+
+/** Puts back what `withoutExternal` took out (an event loaded again meanwhile is not doubled). */
+export function restoreExternal(
+  days: Readonly<Record<string, readonly ExternalEvent[]>>,
+  removed: Readonly<Record<string, readonly ExternalEvent[]>>,
+): Record<string, readonly ExternalEvent[]> {
+  const out: Record<string, readonly ExternalEvent[]> = { ...days };
+  for (const [d, back] of Object.entries(removed)) {
+    const list = out[d] ?? [];
+    const keys = new Set(list.map(externalKey));
+    out[d] = [...list, ...back.filter((e) => !keys.has(externalKey(e)))].sort((a, b) => a.start - b.start || a.end - b.end);
+  }
+  return out;
 }

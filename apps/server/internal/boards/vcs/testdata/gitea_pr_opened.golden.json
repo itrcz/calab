@@ -1,0 +1,34 @@
+{
+  "Event": {
+    "Provider": "gitea",
+    "Repo": "team/site",
+    "RepoURL": "https://gitea.example.com/team/site",
+    "Author": "alice",
+    "Push": false,
+    "Branch": "",
+    "BranchCreated": false,
+    "Commits": null,
+    "PR": {
+      "Number": 3,
+      "Title": "Fix FNG-21",
+      "Body": "",
+      "URL": "https://gitea.example.com/team/site/pulls/3",
+      "State": "open",
+      "Branch": "fix-21",
+      "Author": "alice",
+      "Event": "PR_OPENED"
+    }
+  },
+  "Links": [
+    {
+      "Number": 21,
+      "Kind": "pr",
+      "Ref": "3",
+      "Title": "Fix FNG-21",
+      "URL": "https://gitea.example.com/team/site/pulls/3",
+      "State": "open",
+      "Author": "alice",
+      "Event": "PR_OPENED"
+    }
+  ]
+}

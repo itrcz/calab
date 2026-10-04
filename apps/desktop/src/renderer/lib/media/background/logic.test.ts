@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   backgroundPath,
   backgroundSupported,
+  backgroundUnavailable,
+  failureFallback,
+  failureKind,
+  failureStopsEffects,
   blurSigma,
+  errorText,
   coverCrop,
   coverUv,
   emaAlpha,
@@ -12,7 +17,12 @@ import {
   MASK_HOLD_MS,
   segmentStep,
   SEG_FPS,
+  SEG_FPS_OPTIONS,
   SEG_FPS_SOFTWARE,
+  effectiveSegFps,
+  normalizeSegFps,
+  SEG_MODELS,
+  segModel,
   uploadProblem,
   isWorkspaceImage,
   nameFromFile,
@@ -75,10 +85,10 @@ describe('segmentStep: the rate budget of a 15 fps camera', () => {
   };
   it('15 fps camera, 12 fps budget → 12 segmentations a second', () => expect(run(12, 15, 150)).toBeGreaterThanOrEqual(118));
   it('never above the budget', () => expect(run(12, 15, 150)).toBeLessThanOrEqual(121));
-  it('the default (8) at 15 fps → 8 a second', () => {
-    expect(SEG_FPS).toBeLessThanOrEqual(12);
-    expect(run(SEG_FPS, 15, 150)).toBeGreaterThanOrEqual(SEG_FPS * 10 - 2);
-    expect(run(SEG_FPS, 15, 150)).toBeLessThanOrEqual(SEG_FPS * 10 + 1);
+  it('the default (20) at 30 fps → 20 a second; a 15 fps camera caps it at 15', () => {
+    expect(SEG_FPS).toBe(20);
+    expect(run(SEG_FPS, 30, 300)).toBeGreaterThanOrEqual(SEG_FPS * 10 - 2);
+    expect(run(SEG_FPS, 15, 150)).toBeLessThanOrEqual(151);
   });
   it('30 fps camera → still the budget', () => expect(run(SEG_FPS, 30, 300)).toBeLessThanOrEqual(SEG_FPS * 10 + 1));
   it('software fallback → 6', () => expect(run(SEG_FPS_SOFTWARE, 15, 150)).toBeLessThanOrEqual(61));
@@ -88,6 +98,17 @@ describe('segmentStep: the rate budget of a 15 fps camera', () => {
     const b = segmentStep(a.tokens, 1, SEG_FPS);
     expect(b.run).toBe(true);
     expect(segmentStep(b.tokens, 1, SEG_FPS).run).toBe(false);
+  });
+});
+
+describe('segModel: multiclass on the GPU, landscape where it would cost too much (2.1)', () => {
+  it('GPU delegate on a hardware GL → multiclass', () => expect(segModel({ delegate: 'GPU', software: false })).toBe('multiclass'));
+  it('software GL (SwiftShader / WARP) → landscape', () => expect(segModel({ delegate: 'GPU', software: true })).toBe('landscape'));
+  it('CPU delegate → landscape, whatever was asked', () => expect(segModel({ delegate: 'CPU', software: false, override: 'multiclass' })).toBe('landscape'));
+  it('benchmark override on the GPU', () => expect(segModel({ delegate: 'GPU', software: false, override: 'landscape' })).toBe('landscape'));
+  it('multiclass mask 0 is the background, soft edge 0.3–0.95', () => {
+    expect(SEG_MODELS.multiclass).toEqual({ input: [256, 256], edge: [0.3, 0.95], invert: true });
+    expect(SEG_MODELS.landscape.invert).toBe(false);
   });
 });
 
@@ -175,5 +196,83 @@ describe('nameFromFile', () => {
     expect(nameFromFile('  logo.final.png ')).toBe('logo.final');
     expect(nameFromFile('a\u0001b.webp')).toBe('a b');
     expect(nameFromFile(`${'я'.repeat(50)}.png`)).toBe('я'.repeat(40));
+  });
+});
+
+describe('errorText', () => {
+  it('formats Errors, strings and events as one line', () => {
+    expect(errorText(new TypeError('Failed to fetch'))).toBe('TypeError: Failed to fetch');
+    expect(errorText('abort')).toBe('abort');
+    expect(errorText({ type: 'error' })).toBe('event error');
+    expect(errorText(42)).toBe('42');
+  });
+});
+
+describe('backgroundUnavailable (owner 2.1: disabled with a reason, never hidden)', () => {
+  it('a working desktop: available', () => expect(backgroundUnavailable(DESKTOP)).toBeNull());
+  it('phone web first, then the browser, low-end, WebGL2, a failure in this session', () => {
+    expect(backgroundUnavailable({ ...DESKTOP, mobile: true, breakoutBox: false })).toBe('mobile');
+    expect(backgroundUnavailable({ ...DESKTOP, breakoutBox: false, webgl2: false })).toBe('browser');
+    expect(backgroundUnavailable({ ...DESKTOP, lowEnd: true })).toBe('lowEnd');
+    expect(backgroundUnavailable({ ...DESKTOP, webgl2: false })).toBe('webgl');
+    expect(backgroundUnavailable({ ...DESKTOP, failed: true })).toBe('failed');
+    expect(backgroundSupported({ ...DESKTOP, failed: true })).toBe(false);
+  });
+});
+
+describe('runtime failure → fallback (owner 2.1: never «selected but not shown»)', () => {
+  const fx = { touchUp: true, touchUpStrength: 40, lowLight: true };
+  const off = { touchUp: false, touchUpStrength: 40, lowLight: false };
+  it('classifies the worker detail', () => {
+    expect(failureKind('webgl2: Error: webgl2 unavailable')).toBe('webgl');
+    expect(failureKind('worker: script error')).toBe('worker');
+    expect(failureKind('effects: Error: x')).toBe('effects');
+    expect(failureKind('frames: Error: no mask from the segmenter after 24 runs')).toBe('frames');
+    expect(failureKind('segmenter: TypeError: Failed to fetch')).toBe('model');
+    expect(failureKind(undefined)).toBe('model');
+  });
+  it('a model / frames failure resets the background only', () => {
+    expect(failureFallback('model', { kind: 'image', imageId: 'bg-01' }, fx)).toEqual({ cameraBackground: { kind: 'none' } });
+    expect(failureFallback('frames', { kind: 'blur-strong' }, off)).toEqual({ cameraBackground: { kind: 'none' } });
+    expect(failureStopsEffects('model')).toBe(false);
+  });
+  it('a GL / worker failure resets the effects too', () => {
+    expect(failureFallback('webgl', { kind: 'blur-light' }, fx)).toEqual({ cameraBackground: { kind: 'none' }, cameraEffects: off });
+    expect(failureFallback('worker', { kind: 'none' }, fx)).toEqual({ cameraEffects: off });
+  });
+  it('nothing chosen that failed: nothing to reset', () => {
+    expect(failureFallback('model', { kind: 'none' }, fx)).toBeNull();
+    expect(failureFallback('webgl', { kind: 'none' }, off)).toBeNull();
+  });
+});
+
+describe('segmentation rate setting', () => {
+  it('options are 8 / 16 / 20 / 25, default 20', () => {
+    expect([...SEG_FPS_OPTIONS]).toEqual([8, 16, 20, 25]);
+    expect(SEG_FPS).toBe(20);
+  });
+  it('normalizeSegFps: valid kept, anything else → 20', () => {
+    for (const o of SEG_FPS_OPTIONS) expect(normalizeSegFps(o)).toBe(o);
+    for (const bad of [undefined, null, 0, 15, 30, '20', NaN, {}]) expect(normalizeSegFps(bad)).toBe(20);
+  });
+  it('effectiveSegFps: the setting on the GPU, always 6 on the fallback', () => {
+    for (const o of SEG_FPS_OPTIONS) {
+      expect(effectiveSegFps(o, false)).toBe(o);
+      expect(effectiveSegFps(o, true)).toBe(SEG_FPS_SOFTWARE);
+    }
+  });
+  it('the camera rate still caps the setting (token bucket)', () => {
+    const run = (fps: number, cameraFps: number, frames: number): number => {
+      let tokens = 0;
+      let n = 0;
+      for (let i = 0; i < frames; i++) {
+        const st = segmentStep(tokens, 1000 / cameraFps, fps);
+        tokens = st.tokens;
+        if (st.run) n++;
+      }
+      return n;
+    };
+    expect(run(25, 15, 150)).toBeLessThanOrEqual(151);
+    expect(run(8, 30, 300)).toBeLessThanOrEqual(8 * 10 + 1);
   });
 });

@@ -144,6 +144,9 @@ const (
 	TaskApprovalRequested TaskKind = "approval_requested" // the recipient's vote is asked for: always notifies
 	TaskApproved          TaskKind = "approved"           // the quorum was reached
 	TaskRejected          TaskKind = "rejected"           // an approver rejected
+	// TaskRule: an automation rule's «notify» action addressed the recipient (ADR-0060); like an
+	// assignment.
+	TaskRule TaskKind = "rule"
 )
 
 // TaskFacts are one task change by someone else, as seen by one recipient.
@@ -174,7 +177,7 @@ func TaskNotifies(f TaskFacts) bool {
 		return false
 	}
 	switch f.Kind {
-	case TaskAssigned, TaskMentioned:
+	case TaskAssigned, TaskMentioned, TaskRule:
 		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL || level == v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS
 	case TaskComment, TaskStatus, TaskApproved, TaskRejected:
 		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL && f.Subscribed && !f.Muted

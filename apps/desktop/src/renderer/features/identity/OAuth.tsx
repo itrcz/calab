@@ -8,10 +8,14 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, Card, Field, Input, Modal, Select, Switch as Toggle } from '../../components/ui';
+import { Button, Card, Field, Input, Modal, Select, Spinner, Switch as Toggle } from '../../components/ui';
 import { confirmIdentity as confirmAction } from './confirm';
 import { t } from '../../i18n';
-import { errorText } from '../../lib/api/errors';
+import { errorText, identityNotConfigured } from '../../lib/api/errors';
+import { PlanLock } from '../../components/PlanLock';
+import { planHasIdentity } from '../../lib/plan';
+import { useWorkspaces } from '../../stores/workspaces';
+import { IdentityAbout, IdentityNotConfigured } from './IdentityGate';
 import { useSession } from '../../stores/session';
 import { AuthScreen } from '../auth/AuthScreen';
 import { identityApi } from './api';
@@ -264,7 +268,18 @@ function ClientForm({
     </Modal>
   );
 }
+/** Some workspace of mine can have the OAuth provider (Business): otherwise «OAuth-приложения» is PlanLock'ed. */
+export const useOAuthAppsAvailable = (): boolean => useWorkspaces((s) => Object.values(s.byId).some((e) => planHasIdentity(e.ws.plan)));
+
+/**
+ * Settings → «OAuth-приложения»: the apps I signed in to with Calab, and revoking them. Business
+ * only in the cloud (ADR-0054 §5): with no Business workspace PlanLock dims a description. The
+ * list is still requested — an on-prem Enterprise workspace is entitled on any plan, and an
+ * existing grant must stay revocable — and shown whenever it has an active grant. A server
+ * without identity configuration says so instead of an error.
+ */
 export function AuthorizedApps(): ReactNode {
+  const available = useOAuthAppsAvailable();
   const grants = useQuery({
     queryKey: ['oauth-grants', useSession((s) => s.sessionId)],
     queryFn: identityApi.grants,
@@ -283,15 +298,23 @@ export function AuthorizedApps(): ReactNode {
     },
     [run, refetch],
   );
+  const active = grants.data?.grants.filter((g) => !g.revokedAt);
+  if (!available && !active?.length)
+    return (
+      <PlanLock plan="business" testId="oauth-grants-lock">
+        <IdentityAbout title="identity.grants" text="identity.grantsHelp" />
+      </PlanLock>
+    );
+  if (identityNotConfigured(grants.error)) return <IdentityNotConfigured />;
   return (
     <Card title={t('identity.grants')}>
       <div className="flex flex-col gap-3 p-4">
-        {grants.data?.grants
-          .filter((g) => !g.revokedAt)
-          .map((g) => (
-            <GrantRow key={g.id} grant={g} busy={action.busy} onRevoke={revokeGrant} />
-          ))}
-        {grants.data?.grants.length === 0 ? <p>{t('identity.noApps')}</p> : null}
+        <p className="text-body text-muted">{t('identity.grantsHelp')}</p>
+        {grants.isPending ? <Spinner className="mx-auto" /> : null}
+        {active?.map((g) => (
+          <GrantRow key={g.id} grant={g} busy={action.busy} onRevoke={revokeGrant} />
+        ))}
+        {active?.length === 0 ? <p className="text-body font-medium" data-testid="oauth-grants-empty">{t('identity.noApps')}</p> : null}
         {grants.error || action.error ? (
           <p role="alert" className="text-danger-text">
             {action.error || errorText(grants.error)}

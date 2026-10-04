@@ -8,7 +8,7 @@ import { livekitRoomPrefix } from '../e2e-support/mock-server';
  * canvas with flat colour blocks — so the stream stage, the PiP and the video tiles can be
  * photographed deterministically. Joins the same LiveKit room the mock server hands out
  * (`mock_<roomId>`, prefix MOCK_LIVEKIT_ROOM_PREFIX). The client's own camera is Chromium's fake
- * device (CALABA_FAKE_MEDIA). `image` (a 1280×720 PNG) replaces the colour blocks (marketing
+ * device (CALABA_FAKE_MEDIA). `image` (a 1280×720 PNG or JPEG) replaces the colour blocks (marketing
  * screenshots only).
  */
 const LK_URL = process.env['MOCK_LIVEKIT_URL'] ?? 'ws://127.0.0.1:7880';
@@ -122,7 +122,7 @@ export async function startPublisher(args: {
       await room.connect(url, token, { autoSubscribe: false });
       await room.localParticipant.publishTrack(track, { source: camera ? LK.Track.Source.Camera : LK.Track.Source.ScreenShare, simulcast: false, videoCodec: 'vp8' });
     },
-    { url: LK_URL, token, camera, none, mic, image: args.image ? `data:image/png;base64,${args.image.toString('base64')}` : '' },
+    { url: LK_URL, token, camera, none, mic, image: args.image ? `data:image/${args.image[0] === 0xff ? 'jpeg' : 'png'};base64,${args.image.toString('base64')}` : '' },
   );
   type Win = { __room: import('livekit-client').Room; __data: ReceivedData[] };
   return {

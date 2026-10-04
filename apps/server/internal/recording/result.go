@@ -360,13 +360,10 @@ func (s *Service) visibleRecording(r *http.Request) (sqlc.RoomRecording, error) 
 	if db.IsNotFound(err) || (err == nil && rec.DeletedAt != nil) {
 		return rec, httpx.NotFound("recording")
 	}
-	if err != nil || rec.RoomID == roomID {
+	if err != nil {
 		return rec, err
 	}
-	if rec.MessageID == nil {
-		return rec, httpx.NotFound("recording")
-	}
-	ok, err := s.db.Q.RecordingVisibleInRoom(r.Context(), sqlc.RecordingVisibleInRoomParams{MessageID: *rec.MessageID, RoomID: roomID})
+	ok, err := visibleIn(r.Context(), s.db, rec.ID, roomID) // the rule search uses too (VisibleSQL)
 	if err == nil && !ok {
 		err = httpx.NotFound("recording")
 	}

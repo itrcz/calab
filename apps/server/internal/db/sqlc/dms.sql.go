@@ -395,6 +395,41 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 	return items, nil
 }
 
+const listSearchPersonalRooms = `-- name: ListSearchPersonalRooms :many
+SELECT r.id, r.type, ds.cleared_before FROM dm_members d
+JOIN rooms r ON r.id = d.room_id AND r.archived_at IS NULL AND r.type IN ('dm', 'notes')
+LEFT JOIN dm_state ds ON ds.user_id = d.user_id AND ds.room_id = r.id
+WHERE d.user_id = $1
+`
+
+type ListSearchPersonalRoomsRow struct {
+	ID            uuid.UUID
+	Type          string
+	ClearedBefore *uuid.UUID
+}
+
+// The user's live DMs and notes shelves with their «Удалить чат» mark (unified search, ADR-0062:
+// the user is a participant, as perm.ReadRoom checks for these rooms).
+func (q *Queries) ListSearchPersonalRooms(ctx context.Context, userID uuid.UUID) ([]ListSearchPersonalRoomsRow, error) {
+	rows, err := q.db.Query(ctx, listSearchPersonalRooms, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSearchPersonalRoomsRow{}
+	for rows.Next() {
+		var i ListSearchPersonalRoomsRow
+		if err := rows.Scan(&i.ID, &i.Type, &i.ClearedBefore); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setDMArchived = `-- name: SetDMArchived :one
 INSERT INTO dm_state (user_id, room_id, archived_at)
 VALUES ($1, $2, CASE WHEN $3::boolean THEN now() END)

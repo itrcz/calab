@@ -2,10 +2,12 @@ import { IdentitySettings } from '../identity/IdentitySettings';
 import { OAuthClients } from '../identity/OAuth';
 import { identityApi } from '../identity/api';
 import { localAuthority } from '../identity/model';
+import { IdentityAbout, IdentityNotConfigured } from '../identity/IdentityGate';
+import { PlanLock } from '../../components/PlanLock';
 import { audioTierKbps, type ConcreteScreenSharePreset, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Lock, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
+import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -14,7 +16,7 @@ import { MediaImg } from '../../components/MediaImg';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Toggle } from '../../components/ui';
 import { getLocale, t, type MessageKey } from '../../i18n';
-import { errorText } from '../../lib/api/errors';
+import { errorText, identityNotConfigured } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
@@ -37,17 +39,15 @@ import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
 import { TelephonyTab } from './TelephonyTab';
-import { PLAN_LABEL, capMax, clampToCap, planKind } from '../../lib/plan';
+import { PLAN_LABEL, capMax, clampToCap, planHasIdentity, planKind } from '../../lib/plan';
 import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
-import { SoundsTab } from './SoundsTab';
 import { RolesTab } from './RolesTab';
-import { StickersTab } from './StickersTab';
-import { BadgesTab } from './BadgesTab';
-import { BackgroundsTab } from './BackgroundsTab';
+import { LibraryTab, SEGMENT_LABEL } from './LibraryTab';
+import { LIBRARY_TAB, librarySegments, resolveSettingsTab } from './library';
 import { BotsTab } from './BotsTab';
 import { UpcomingBirthdays } from './UpcomingBirthdays';
 
@@ -77,26 +77,47 @@ export function WorkspaceSettingsDialog({
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
+  // SSO / OAuth clients are Business only in the cloud (ADR-0054 §5). The server decides: an
+  // on-prem Enterprise workspace (IDENTITY_EDITION=enterprise + allowlist) is entitled on any
+  // plan, so the status is always requested and an effective grant unlocks the tab whatever the
+  // plan says. Below Business without a grant the tab is PlanLock'ed; a server without identity
+  // configuration answers 409 IDENTITY_NOT_CONFIGURED — «не настроено на сервере», not an error.
+  const identityPlan = useWorkspaces((s) => planHasIdentity(s.byId[workspaceId]?.ws.plan));
   const identityStatus = useQuery({ queryKey: ['identity', workspaceId], queryFn: () => identityApi.status(workspaceId), enabled: !!entry, retry: false, refetchOnWindowFocus: false });
+  const identityOff = identityNotConfigured(identityStatus.error);
   const grants = identityStatus.data?.access?.entitlements?.grants;
-  const featureLocked = (feature: IdentityFeature): boolean => !!grants && !grants.some((g) => g.feature === feature && g.enabled && (!g.validUntil || timestampDate(g.validUntil).getTime() > Date.now()));
+  const entitled = (feature: IdentityFeature): boolean => !!grants?.some((g) => g.feature === feature && g.enabled && (!g.validUntil || timestampDate(g.validUntil).getTime() > Date.now()));
+  const featureLocked = (feature: IdentityFeature): boolean => !!grants && !entitled(feature);
+  const planLocked = (feature: IdentityFeature): boolean => !identityPlan && !entitled(feature);
   if (!entry) return null;
   // Tabs by right, as the server checks (ADR-0048, lib/permissions settingsAccess): «Общие»,
-  // «Звук», «Фоны» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Стикеры» — MANAGE_STICKERS; «Бейджи»,
+  // «Звук» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Библиотека» — by segment (library.ts);
   // «Забаненные» — MANAGE_MEMBERS; «Боты» — MANAGE_BOTS; GPTunneL pairing — MANAGE_INTEGRATIONS;
   // «Приглашения» — INVITE_MEMBERS (ADR-0043). Deleting the workspace: the owner only.
   const access = settingsAccess(myRoles);
   const admin = access.workspace;
   const owner = entry.role === WorkspaceRole.OWNER;
   const manageRoles = access.roles;
-  const manageStickers = access.stickers;
   const inviter = access.invites;
-  const identityPanel = (feature: IdentityFeature, content: ReactNode): ReactNode => (
-    <div className="flex flex-col gap-4">
-      {featureLocked(feature) ? <p className="flex items-start gap-2 text-body text-muted"><Lock className="mt-0.5 size-4 shrink-0" aria-hidden />{t('identity.plan')}</p> : null}
-      {content}
-    </div>
-  );
+  const library = librarySegments(access);
+  const requested = resolveSettingsTab(tab);
+  const identityPanel = (feature: IdentityFeature, about: ReactNode, content: ReactNode): ReactNode =>
+    identityStatus.isPending ? (
+      <div className="grid place-items-center py-6">
+        <Spinner />
+      </div>
+    ) : planLocked(feature) ? (
+      <PlanLock plan="business" testId={feature === IdentityFeature.OAUTH_PROVIDER ? 'oauth-plan-lock' : 'sso-plan-lock'}>
+        {about}
+      </PlanLock>
+    ) : identityOff ? (
+      <IdentityNotConfigured />
+    ) : (
+      <div className="flex flex-col gap-4">
+        {featureLocked(feature) ? <p className="flex items-start gap-2 text-body text-muted"><Lock className="mt-0.5 size-4 shrink-0" aria-hidden />{t('identity.plan')}</p> : null}
+        {content}
+      </div>
+    );
   const sections: SettingsSection[] = [
     ...(admin
       ? [
@@ -111,13 +132,19 @@ export function WorkspaceSettingsDialog({
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
     ...(manageRoles ? [{ id: 'roles', label: t('roles.tab'), icon: Shield, content: <RolesTab workspaceId={workspaceId} /> }] : []),
-    // «Бейджи» (docs/09 #82): the library needs MANAGE_MEMBERS (ADR-0048), like the server.
-    ...(access.members ? [{ id: 'badges', label: t('badges.tab'), icon: Award, content: <BadgesTab workspaceId={workspaceId} /> }] : []),
-    // «Фоны камеры» (ADR-0035 addendum): MANAGE_WORKSPACE, like the server.
-    ...(admin ? [{ id: 'backgrounds', label: t('wsbg.tab'), icon: Wallpaper, content: <BackgroundsTab workspaceId={workspaceId} /> }] : []),
-    ...(manageStickers ? [{ id: 'stickers', label: t('stk.tab'), icon: Sticker, content: <StickersTab workspaceId={workspaceId} /> }] : []),
-    // Soundboard (ADR-0036): the same right as stickers («Стикеры и звуки»).
-    ...(manageStickers ? [{ id: 'sounds', label: t('snd.tab'), icon: Music, content: <SoundsTab workspaceId={workspaceId} /> }] : []),
+    // «Библиотека» (docs/08): achievements, badges, stickers, sounds and camera backgrounds behind
+    // one segmented switch, each segment by the right of its former tab (features/workspace/library).
+    ...(library.length
+      ? [
+          {
+            id: LIBRARY_TAB,
+            label: t('ws.tabLibrary'),
+            icon: Library,
+            keywords: library.map((x) => t(SEGMENT_LABEL[x])).join(' '),
+            content: <LibraryTab workspaceId={workspaceId} segments={library} requested={requested.segment} />,
+          },
+        ]
+      : []),
     // «Боты» (ADR-0031): MANAGE_BOTS (ADR-0048), like the server's bot management.
     ...(access.bots ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
@@ -132,11 +159,27 @@ export function WorkspaceSettingsDialog({
       id: 'identity',
       label: t('identity.settingsTitle'),
       icon: KeyRound,
-      locked: featureLocked(IdentityFeature.CORPORATE_SSO),
-      content: identityPanel(IdentityFeature.CORPORATE_SSO, <IdentitySettings workspaceId={workspaceId} owner={owner && local} />),
+      locked: planLocked(IdentityFeature.CORPORATE_SSO) || featureLocked(IdentityFeature.CORPORATE_SSO),
+      content: identityPanel(
+        IdentityFeature.CORPORATE_SSO,
+        <IdentityAbout title="identity.title" text="identity.ssoAbout" />,
+        <IdentitySettings workspaceId={workspaceId} owner={owner && local} />,
+      ),
     },
     ...(local && (owner || entry.role === WorkspaceRole.ADMIN)
-      ? [{ id: 'oauth', label: t('identity.oauth'), icon: AppWindow, locked: featureLocked(IdentityFeature.OAUTH_PROVIDER), content: identityPanel(IdentityFeature.OAUTH_PROVIDER, <OAuthClients workspaceId={workspaceId} />) }]
+      ? [
+          {
+            id: 'oauth',
+            label: t('identity.oauth'),
+            icon: AppWindow,
+            locked: planLocked(IdentityFeature.OAUTH_PROVIDER) || featureLocked(IdentityFeature.OAUTH_PROVIDER),
+            content: identityPanel(
+              IdentityFeature.OAUTH_PROVIDER,
+              <IdentityAbout title="identity.oauth" text="identity.oauthEmptyHelp" />,
+              <OAuthClients workspaceId={workspaceId} />,
+            ),
+          },
+        ]
       : []),
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_MEMBERS, ADR-0048).
@@ -150,7 +193,7 @@ export function WorkspaceSettingsDialog({
       title={entry.ws.name}
       titleIcon={<WorkspaceGlyph name={entry.ws.name} iconFileId={entry.ws.iconFileId} size={20} />}
       sections={sections}
-      initial={tab ?? (admin ? 'general' : 'members')}
+      initial={requested.tab ?? (admin ? 'general' : 'members')}
       onClose={onClose}
     />
   );

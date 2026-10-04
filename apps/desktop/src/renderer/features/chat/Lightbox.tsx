@@ -1,5 +1,5 @@
 import * as DialogP from '@radix-ui/react-dialog';
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { useMediaUrl } from '../../components/MediaImg';
 import { CloseButton, IconButton, Spinner, cx } from '../../components/ui';
@@ -18,7 +18,7 @@ const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14
  * Name + download + close; ←/→ step through the images of the message; a click outside, a click on
  * the image itself (not the end of a drag, docs/09 #132) or Esc closes.
  */
-export function Lightbox({ images, index: start, onClose }: { images: LightboxImage[]; index: number; onClose: () => void }): ReactNode {
+export function Lightbox({ images, index: start, onClose, onShowInChat }: { images: LightboxImage[]; index: number; onClose: () => void; onShowInChat?: () => void }): ReactNode {
   const [index, setIndex] = useState(start);
   const os = useSession((s) => s.appInfo?.platform);
   // Where the press began: a drag from the image released over the backdrop is not a backdrop click
@@ -78,6 +78,12 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
             </DialogP.Title>
             {gallery ? <span className="shrink-0 text-caption tabular-nums opacity-75">{`${index + 1} / ${images.length}`}</span> : null}
             <DialogP.Description className="sr-only">{img.name}</DialogP.Description>
+            {/* Opened from a search hit (ADR-0062 §4): the message carrying the file. */}
+            {onShowInChat ? (
+              <IconButton label={t('search.showInChat')} onClick={onShowInChat} className={onDark}>
+                <MessageSquare className="size-5" />
+              </IconButton>
+            ) : null}
             <IconButton label={t('lightbox.download')} onClick={download} className={onDark}>
               <Download className="size-5" />
             </IconButton>

@@ -1,0 +1,331 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/boards.proto";
+
+// Board automations (ADR-0060): rules «Когда → Если → Тогда» and Git links.
+//
+// A rule belongs to a board (≤ 20 per board): a trigger (what happened to a task — the kinds of
+// the task journal, a Git event, or a schedule), an optional condition (a TaskFilter checked on
+// the task after the change, the same filter as on the board) and 1..5 actions run in order.
+// The actions of one rule are atomic: an action that fails (the approval gate, a disabled board
+// feature, a limit) rolls back that rule's actions, never the change that triggered it; a
+// referenced status / label / user that no longer exists skips that action. Every run is logged
+// (RuleRun; ≤ 100 per rule, 90 days) and an error marks the rule (last_error).
+// A rule acts on behalf of the board: the task journal has actor_id empty and rule_id set, the
+// board webhook "actor": null and "rule": {id, name}. Changes made by rules trigger the board's
+// rules again up to a depth of 3, each rule at most once per task in a chain (a repeat is the
+// run error RULE_LOOP). Disabled rules, rules of an archived board and rules of a workspace
+// whose plan has no automations (PlanLimits.automations_disabled, below Team) do not run.
+//
+// Routes: GET /api/boards/{id}/rules (VIEW_BOARD; bots too), POST /api/boards/{id}/rules,
+// PATCH / DELETE /api/rules/{id}, POST /api/rules/{id}/test, GET /api/rules/{id}/runs —
+// MANAGE_BOARD; bots may only read (writes are 403 BOT_NOT_ALLOWED). Without the plan's
+// automations POST is 409 PLAN_LIMIT (existing rules stay editable and stop running).
+
+// A Git event of the board's Git webhook (§4).
+enum RuleGitEvent {
+  RULE_GIT_EVENT_UNSPECIFIED = 0; // any of them
+  RULE_GIT_EVENT_BRANCH_CREATED = 1;
+  RULE_GIT_EVENT_PR_OPENED = 2; // opened or reopened
+  RULE_GIT_EVENT_PR_MERGED = 3;
+  RULE_GIT_EVENT_PR_CLOSED = 4; // closed without merging
+  RULE_GIT_EVENT_COMMIT_PUSHED = 5;
+}
+
+// When a rule runs. Change triggers come from the task journal of the change (the same
+// entries the activity feed and the board webhook show); scheduled ones from the boards
+// sweeper every 15 minutes, once per task and deadline / idle spell.
+message RuleTrigger {
+  message TaskCreated {}
+  // Any of the set fields must match; none set = any status change.
+  message StatusChanged {
+    string to_status_id = 1;
+    string from_status_id = 2;     // the state «before» lives here, not in the condition
+    BoardStatusType to_type = 3;   // UNSPECIFIED = any
+  }
+  // The approval of the task was decided (ADR-0049): APPROVED or REJECTED.
+  message ApprovalChanged {
+    TaskApprovalState state = 1;
+  }
+  // added / removed: someone was added / removed; lead: the lead changed. None set = any change.
+  message AssigneesChanged {
+    bool added = 1;
+    bool removed = 2;
+    bool lead = 3;
+  }
+  // label_id empty = any label; added false = the label was removed.
+  message LabelChanged {
+    string label_id = 1;
+    bool added = 2;
+  }
+  message PriorityChanged {
+    optional TaskPriority to_priority = 1; // unset = any
+  }
+  // The last open item of the task's checklists was done: every item of every checklist is done.
+  message ChecklistCompleted {}
+  message CommentCreated {}
+  message Git {
+    RuleGitEvent event = 1;
+  }
+  // The task is due in at most `days` days (0 = today) and not finished. Needs DUE_DATE.
+  message DueIn {
+    uint32 days = 1; // 0..30
+  }
+  // The task is overdue by at least max(days, 1) days and not finished. Needs DUE_DATE.
+  message Overdue {
+    uint32 days = 1; // 0..30
+  }
+  // The live task has not changed for `days` days and is not finished.
+  message Stale {
+    uint32 days = 1; // 1..90
+  }
+  oneof kind {
+    TaskCreated task_created = 1;
+    StatusChanged status_changed = 2;
+    ApprovalChanged approval_changed = 3;
+    AssigneesChanged assignees_changed = 4;
+    LabelChanged label_changed = 5;
+    PriorityChanged priority_changed = 6;
+    ChecklistCompleted checklist_completed = 7;
+    CommentCreated comment_created = 8;
+    Git git = 9;
+    DueIn due_in = 10;
+    Overdue overdue = 11;
+    Stale stale = 12;
+  }
+}
+
+enum RuleAssigneesMode {
+  RULE_ASSIGNEES_MODE_UNSPECIFIED = 0;
+  RULE_ASSIGNEES_MODE_SET = 1;    // replace the list
+  RULE_ASSIGNEES_MODE_ADD = 2;
+  RULE_ASSIGNEES_MODE_REMOVE = 3;
+  RULE_ASSIGNEES_MODE_CLEAR = 4;
+}
+
+// A person derived from the task or the change.
+enum RuleSpecialUser {
+  RULE_SPECIAL_USER_UNSPECIFIED = 0; // none
+  RULE_SPECIAL_USER_CREATOR = 1;     // the task's creator
+  RULE_SPECIAL_USER_ACTOR = 2;       // who made the triggering change (none for rules and Git)
+}
+
+enum RuleRecipients {
+  RULE_RECIPIENTS_UNSPECIFIED = 0;
+  RULE_RECIPIENTS_ASSIGNEES = 1;
+  RULE_RECIPIENTS_LEAD = 2;
+  RULE_RECIPIENTS_CREATOR = 3;
+  RULE_RECIPIENTS_APPROVERS = 4;
+}
+
+// What a rule does. Templates (≤ 2000 characters) may use {key} {title} {status} {actor}
+// {assignees} {due} {url}; unknown names stay as written.
+message RuleAction {
+  // Through the same path as PATCH /tasks/{id}: the approval gate applies.
+  message SetStatus {
+    string status_id = 1;
+  }
+  message SetAssignees {
+    RuleAssigneesMode mode = 1;
+    repeated string user_ids = 2;  // ≤ 10
+    string lead_user_id = 3;       // optional: the lead among the result
+    RuleSpecialUser special = 4;   // added to user_ids
+  }
+  message SetLabels {
+    repeated string add_ids = 1;
+    repeated string remove_ids = 2;
+  }
+  message SetPriority {
+    TaskPriority priority = 1;
+  }
+  // due = today (UTC) + days_from_now, or none with clear.
+  message SetDue {
+    uint32 days_from_now = 1; // 0..365
+    bool clear = 2;
+  }
+  // Replaces the approvers (ADR-0049); required 0 = all.
+  message SetApprovers {
+    repeated string user_ids = 1; // ≤ 10
+    uint32 required = 2;
+  }
+  message AddChecklist {
+    string name = 1;            // 1..100 characters
+    repeated string items = 2;  // ≤ 100, each 1..500 characters
+  }
+  // An automation card (SystemMessage.automation) in the task's comments.
+  message Comment {
+    string template = 1;
+  }
+  // An automation card in a text room of the workspace (the author of the rule must be able to
+  // post there when saving it).
+  message NotifyRoom {
+    string room_id = 1;
+    string template = 2;
+  }
+  // A task notice TASK_NOTICE_KIND_RULE to people of the task (who see it).
+  message NotifyDm {
+    RuleRecipients to = 1;
+    string template = 2;
+  }
+  // Subtasks in the board's default status (feature SUBTASKS; the task is not a subtask itself).
+  message CreateSubtasks {
+    repeated string titles = 1; // 1..10, each 1..200 characters
+  }
+  message Archive {}
+  oneof kind {
+    SetStatus set_status = 1;
+    SetAssignees set_assignees = 2;
+    SetLabels set_labels = 3;
+    SetPriority set_priority = 4;
+    SetDue set_due = 5;
+    SetApprovers set_approvers = 6;
+    AddChecklist add_checklist = 7;
+    Comment comment = 8;
+    NotifyRoom notify_room = 9;
+    NotifyDm notify_dm = 10;
+    CreateSubtasks create_subtasks = 11;
+    Archive archive = 12;
+  }
+}
+
+message BoardRule {
+  string id = 1;
+  string board_id = 2;
+  string name = 3; // 1..60 characters
+  bool enabled = 4;
+  int32 position = 5; // order in the board's list, ascending
+  RuleTrigger trigger = 6;
+  TaskFilter condition = 7; // unset = always
+  repeated RuleAction actions = 8; // 1..5, run in order
+  string created_by = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+  uint32 runs_count = 12;
+  google.protobuf.Timestamp last_run_at = 13;
+  string last_error = 14; // the error of the last run that had one; empty after a clean run
+}
+
+// GET /api/boards/{id}/rules → the board's rules by position.
+message ListBoardRulesResponse {
+  repeated BoardRule rules = 1;
+}
+
+// POST /api/boards/{id}/rules → 201 BoardRuleResponse. Validation (422 with field): name,
+// trigger set and its references on the board, condition (TaskFilter), actions 1..5 with their
+// references (statuses / labels of the board, members who may be invited, a text room of the
+// workspace), templates ≤ 2000. 409 CONFLICT: RULE_LIMIT (20 per board), FEATURE_DISABLED (a
+// due trigger with DUE_DATE off; field "trigger"), PLAN_LIMIT.
+message CreateBoardRuleRequest {
+  string name = 1;
+  optional bool enabled = 2; // default true
+  RuleTrigger trigger = 3;
+  TaskFilter condition = 4;
+  repeated RuleAction actions = 5;
+}
+
+// PATCH /api/rules/{id} → BoardRuleResponse. Unset fields stay; position moves the rule within
+// the board (others shift).
+message UpdateBoardRuleRequest {
+  optional string name = 1;
+  optional bool enabled = 2;
+  optional int32 position = 3;
+  RuleTrigger trigger = 4;      // set = replace
+  TaskFilter condition = 5;     // set = replace
+  bool clear_condition = 6;     // remove the condition
+  bool set_actions = 7;         // replace the actions with `actions`
+  repeated RuleAction actions = 8;
+}
+
+message BoardRuleResponse {
+  BoardRule rule = 1;
+}
+
+// POST /api/rules/{id}/test {task_id}: a dry run on a task of the board — does the condition
+// hold, and what each action would do (nothing is changed).
+message TestBoardRuleRequest {
+  string task_id = 1;
+}
+
+message RuleTestResponse {
+  message Action {
+    string kind = 1;    // the RuleAction field name: "set_status", "comment"…
+    string summary = 2; // what it would do, e.g. "status → Done"
+    string problem = 3; // why it would fail or be skipped; empty = fine
+  }
+  bool matches = 1; // the condition holds (no condition = true)
+  repeated Action actions = 2;
+}
+
+// One run of a rule (DELETE /api/rules/{id}: the runs go with it).
+message RuleRun {
+  string id = 1;
+  string rule_id = 2;
+  string task_id = 3; // empty when the task was deleted since
+  string trigger_kind = 4; // the RuleTrigger field name
+  bool ok = 5;
+  string error = 6; // e.g. "TASK_APPROVAL_REQUIRED: …", "RULE_LOOP", "skipped set_labels: label deleted"
+  uint32 actions_applied = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// GET /api/rules/{id}/runs?limit= (1..100, default 50) → newest first.
+message ListRuleRunsResponse {
+  repeated RuleRun runs = 1;
+}
+
+// ---- Git (ADR-0060 §4) ----
+// PUT / GET / DELETE /api/boards/{id}/git: MANAGE_BOARD on the board and MANAGE_INTEGRATIONS of
+// the workspace; people only (bots: 403). The repository posts to
+// POST /api/git/boards/{board_id}/{provider} (provider "github" | "gitlab" | "gitea"; public,
+// signed with the secret): GitHub — content type application/json, secret (X-Hub-Signature-256);
+// GitLab — Secret token (X-Gitlab-Token); Gitea / Forgejo — secret (X-Gitea-Signature). Body ≤ 1
+// MB, 60 per minute per board (429), deliveries deduplicated for 24 h; 401 on a bad signature,
+// 404 for a board without this provider, 204 otherwise (unknown events are ignored). Events:
+// push (new branches and commit messages) and pull / merge requests (opened, reopened, closed /
+// merged, edited); task keys «FNG-12» of this board in branch names, PR titles and bodies and
+// commit messages become TaskGitLink rows, a journal entry "git", TASK_GIT_LINKS_UPDATE, a board
+// webhook task.updated and the rule trigger `git`.
+
+message BoardGit {
+  string board_id = 1;
+  GitProvider provider = 2;
+  bool has_secret = 3;
+  string url = 4; // the address to paste into the repository's webhook settings
+  google.protobuf.Timestamp last_event_at = 5;
+  uint32 events_count = 6;
+  string last_error = 7;
+  string created_by = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// PUT /api/boards/{id}/git → BoardGitResponse (creates or replaces). secret: 16..256
+// characters, or empty — the server generates 32 random bytes (base64url), returned once.
+message SetBoardGitRequest {
+  GitProvider provider = 1;
+  string secret = 2;
+}
+
+// GET / PUT /api/boards/{id}/git (GET without a setup: git unset); DELETE → 204.
+message BoardGitResponse {
+  BoardGit git = 1;
+  string secret = 2; // PUT only, once
+}
+
+// ---- gateway events (to the board's viewers) ----
+
+// BOARD_RULE_UPDATE: a rule was created or changed; after a run only when its last_error changed
+// (runs_count / last_run_at are current in REST).
+message BoardRuleUpdate {
+  string workspace_id = 1;
+  string board_id = 2;
+  BoardRule rule = 3;
+}
+
+// BOARD_RULE_DELETE: a rule was deleted.
+message BoardRuleDelete {
+  string workspace_id = 1;
+  string board_id = 2;
+  string rule_id = 3;
+}

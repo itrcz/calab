@@ -18,8 +18,8 @@ enum Plan {
 
 // Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
 message PlanLimits {
-  bool board_forms_disabled = 32;
-  uint32 board_forms_per_board = 33; // 0 = unlimited; ADR-0059
+  bool board_forms_disabled = 33;
+  uint32 board_forms_per_board = 34; // 0 = unlimited; ADR-0064
   uint32 room_members = 1;                 // users in one voice room (guests and pending devices count)
   ScreenSharePreset stream_max_preset = 2; // highest screen share preset
   uint32 stream_max_fps = 3;               // screen share frame rate cap
@@ -39,6 +39,7 @@ message PlanLimits {
   bool checklists_disabled = 29;           // task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
   bool board_webhooks_disabled = 30;       // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
   bool telephony_disabled = 31;            // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
+  bool automations_disabled = 32;          // board automations (ADR-0060) are Team and above: new rules refused, rules and Git events do not run
   // Removed flags (an older telephony flag, web apps, approvals per plan): never reuse their numbers.
   reserved 24, 25, 26;
 }

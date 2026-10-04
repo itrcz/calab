@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../platform', () => ({ platform: { kind: 'web', apiBase: '', apiFetch: vi.fn() } }));
 
 const { ApiError } = await import('./client');
-const { describeError, errorText, isAbort } = await import('./errors');
+const { describeError, errorText, identityNotConfigured, isAbort, recentAuthRequired } = await import('./errors');
 
 const api = (code: string, status: number, field?: string): InstanceType<typeof ApiError> => new ApiError(code, 'raw english message', status, field);
 
@@ -87,5 +87,24 @@ describe('errorText', () => {
     expect(errorText(api('ERROR_CODE_FORBIDDEN', 403), 'Не удалось удалить')).toBe('Не удалось удалить. Недостаточно прав');
     expect(errorText(new Error('x'), 'Не удалось удалить')).toBe('Не удалось удалить. Попробуйте ещё раз');
     expect(errorText(api('ERROR_CODE_FORBIDDEN', 403))).toBe('Недостаточно прав');
+  });
+});
+
+describe('identity states (2.0.1)', () => {
+  const notConfigured = new ApiError('ERROR_CODE_CONFLICT', 'identity is not configured on this server', 409, undefined, { reason: 'IDENTITY_NOT_CONFIGURED' });
+  it('a server without identity configuration is «не настроено», not a conflict or an outage', () => {
+    expect(identityNotConfigured(notConfigured)).toBe(true);
+    expect(identityNotConfigured(api('ERROR_CODE_CONFLICT', 409))).toBe(false);
+    expect(identityNotConfigured(api('ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE', 503))).toBe(false);
+    const h = describeError(notConfigured);
+    expect(h.text).toMatch(/не настроены на этом сервере/);
+    expect(h.retry).toBe(false);
+  });
+  it('RECENT_AUTH_REQUIRED asks to confirm the password, never shows the raw body', () => {
+    const e = api('ERROR_CODE_RECENT_AUTH_REQUIRED', 403);
+    expect(recentAuthRequired(e)).toBe(true);
+    expect(recentAuthRequired(api('ERROR_CODE_FORBIDDEN', 403))).toBe(false);
+    expect(describeError(e).text).toMatch(/^Подтвердите пароль/);
+    expect(describeError(e).text).not.toContain('ERROR_CODE');
   });
 });

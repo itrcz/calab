@@ -3,6 +3,7 @@ import { ruApp } from './app';
 import { ruChat } from './chat';
 import { ruDm } from './dm';
 import { ruNotes } from './notes';
+import { ruSearch } from './search';
 import { ruCall } from './call';
 import { ruEcho } from './echo';
 import { ruMusic } from './music';
@@ -17,10 +18,13 @@ import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
+import { ruMilestones } from './milestones';
+import { ruAutomations } from './automations';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
 import { ruStickers } from './stickers';
+import { ruAchievements } from './achievements';
 import { ruSounds } from './sounds';
 import { ruBots } from './bots';
 import { ruGuests } from './guests';
@@ -37,6 +41,7 @@ export const ru = {
   ...ruApp,
   ...ruVideo,
   ...ruStickers,
+  ...ruAchievements,
   ...ruSounds,
   ...ruBots,
   ...ruGuests,
@@ -45,6 +50,7 @@ export const ru = {
   ...ruWebApps,
   ...ruDm,
   ...ruNotes,
+  ...ruSearch,
   ...ruCall,
   ...ruEcho,
   ...ruMusic,
@@ -59,6 +65,8 @@ export const ru = {
   ...ruCalendar,
   ...ruBoards,
   ...ruBoards2,
+  ...ruMilestones,
+  ...ruAutomations,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',
@@ -157,6 +165,7 @@ export const ru = {
   'ws.leaveConfirm': 'Покинуть «{name}»? Вернуться можно будет только по приглашению.',
   'ws.tabGeneral': 'Общие',
   'ws.tabMedia': 'Голос и стрим',
+  'ws.tabLibrary': 'Библиотека',
   'ws.tabInvites': 'Приглашения',
   'ws.tabDanger': 'Удаление',
   'ws.icon': 'Сменить иконку',

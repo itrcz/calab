@@ -67,8 +67,9 @@ export function AnnotLayer({ stream, video, win = window, interactive }: { strea
     const canvas = e.currentTarget;
     const box = canvas.getBoundingClientRect();
     const rect = frameRect(canvas, video.current);
-    const x = e.clientX - box.left;
-    const y = e.clientY - box.top;
+    // The box may be scaled by the viewer's zoom (CSS transform): back to the canvas's own pixels.
+    const x = ((e.clientX - box.left) * canvas.clientWidth) / (box.width || 1);
+    const y = ((e.clientY - box.top) * canvas.clientHeight) / (box.height || 1);
     return clamp ? toFrameClamped(rect, x, y) : toFrame(rect, x, y);
   };
 

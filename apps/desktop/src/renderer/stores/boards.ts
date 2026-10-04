@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist } from '@calaba/protocol';
+import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist, TaskMilestone } from '@calaba/protocol';
+import { milestoneChip } from '../lib/boards/milestones';
 import {
   EMPTY_DATA,
   appendActivity,
@@ -20,6 +21,7 @@ import {
   upsertTask,
   type BoardsData,
 } from '../lib/boards/reducers';
+import { boardVisible, taskBits } from '../lib/boards/access';
 
 /**
  * Task boards data (ADR-0042 §5): boards by id, tasks by id, each status column as an id list,
@@ -99,6 +101,18 @@ export function checklistProgress(s: BoardsData, taskId: string): string {
   return c.total > 0 ? `${c.done}/${c.total}` : '';
 }
 
+const NO_MILESTONES: readonly TaskMilestone[] = [];
+
+/** A task's milestones by position (ADR-0063; kept by reference while they do not change). */
+export function taskMilestonesOf(s: Pick<BoardsData, 'tasks'>, taskId: string): readonly TaskMilestone[] {
+  return s.tasks[taskId]?.milestones ?? NO_MILESTONES;
+}
+
+/** The card's «2/4» of the task's milestones (a primitive for a leaf chip). */
+export function milestoneChipOf(s: Pick<BoardsData, 'tasks'>, taskId: string): string {
+  return milestoneChip(s.tasks[taskId]);
+}
+
 /** Board categories of a workspace by position. */
 export function workspaceCategories(categories: Readonly<Record<string, BoardCategory>>, workspaceId: string): BoardCategory[] {
   return Object.values(categories)
@@ -114,8 +128,16 @@ export function columnIds(s: BoardsData, boardId: string, statusId: string): rea
 /** Boards of a workspace by position (for lists; call inside useShallow / useMemo). */
 export function workspaceBoards(boards: Readonly<Record<string, Board>>, workspaceId: string): Board[] {
   return Object.values(boards)
-    .filter((b) => b.workspaceId === workspaceId && !b.archivedAt)
+    .filter((b) => b.workspaceId === workspaceId && boardVisible(b))
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+}
+
+/**
+ * The viewer's bits on a task (ADR-0059): a primitive, so a selector built on it re-renders only
+ * when the bits change. Use inside `useBoards(...)` or with `getState()` (hotkeys, bulk actions).
+ */
+export function taskPermsOf(s: Pick<BoardsData, 'boards'>, task: Pick<Task, 'boardId' | 'assignees' | 'approvers' | 'archivedAt'>, me: string): bigint {
+  return taskBits(s.boards[task.boardId], task, me);
 }
 
 /** The number of unread tasks of a workspace (the header icon badge). */
