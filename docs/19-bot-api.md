@@ -765,3 +765,29 @@ user channel gateway и подписанный webhook. Включённый web
 внешнего эффекта. Уже принятое событие не отменяется правкой сообщения. Ограниченный
 кэш SDK не гарантирует exactly-once. UI блокирует всю клавиатуру после принятия до
 новой версии от бота; устаревший клик обновляет сообщение без запуска нового действия.
+
+## Формы досок (ADR-0059)
+
+С Team: до 5 форм на доску, Business — 20, Custom/on-prem — по лимитам (0 = без
+ограничения). Управление требует `VIEW_BOARD | MANAGE_BOARD`; бот использует обычный
+Bearer token. `GET/POST /api/boards/{id}/forms`, `PUT/DELETE /api/boards/{id}/forms/{fid}`;
+PUT передаёт полное `definition` и текущую `revision`. SDK: `bot.forms.list/create/update/delete`.
+
+Определение (`BoardFormDefinition`): `title`, `description`, `fields[] {id,type,label,hint,
+placeholder,required,options[]}`, `titleFieldId` (обязательное короткое поле), `statusId`,
+`priority`, `isPrivate`, `allowedUserIds[]`. Идентификаторы полей — UUID, типы — enum
+`BOARD_FORM_FIELD_TYPE_TEXT|PARAGRAPH|EMAIL|NUMBER|DATE|SELECT|CHECKBOX`. Бот должен быть
+в allowedUserIds приватной формы; право управления не подменяет право заполнения.
+
+`GET /api/forms/{code}` → безопасное представление формы; `POST …/submissions` принимает
+`{revision,nonce,answers:[{fieldId,value}]}` и возвращает только `{receiptId}`. `nonce` —
+UUID, сохраняйте его при повторе запроса: тот же запрос не создаёт вторую задачу.
+Ответы — строки; checkbox — `"true"/"false"`. SDK: `bot.forms.get/submit`.
+`POST /api/boards/{id}/forms/preview {definition,answers}` / `bot.forms.preview` проверяет
+несохранённую форму без записи задачи, номера или вебхука. Все типы экспортирует `@calaba/protocol`.
+
+`FORM_CHANGED` — перечитать форму/ревизию; `NONCE_CONFLICT` — nonce использован другим
+запросом; `FORM_TARGET_UNAVAILABLE` — выбранный статус удалён; `PLAN_LIMIT` — тариф;
+`FEATURE_DISABLED` — приоритет выключен на доске. Удаление формы отзывает ссылку, задачи
+сохраняются. Публичный `/api/public/forms/{code}` не даёт прав на доску и блокируется
+при обязательном SSO; боты используют авторизованный `/api/forms/{code}`.

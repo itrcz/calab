@@ -218,8 +218,9 @@
 		header @manifest Content-Type "application/manifest+json"
 		import web_security_headers
 		# The same SPA scripts/CSP load on completion and consent, but URLs/HTML are sensitive.
-		@sensitive_spa path /sso/complete /oauth/consent
+		@sensitive_spa path /sso/complete /oauth/consent /f/*
 		handle @sensitive_spa {
+			header X-Robots-Tag "noindex, nofollow"
 			header >Cache-Control "no-store"
 			header >Referrer-Policy "no-referrer"
 			try_files /index.html

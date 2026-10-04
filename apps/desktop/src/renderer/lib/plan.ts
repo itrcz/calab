@@ -220,6 +220,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
 
 /** The CUSTOM form's fields as typed (strings: inputs), converted by `limitsFromForm`. */
 export interface LimitsForm {
+  boardFormsDisabled: boolean;
+  boardFormsPerBoard: string;
   roomMembers: string;
   streamMaxPreset: ScreenSharePreset;
   streamMaxFps: string;
@@ -245,6 +247,8 @@ export interface LimitsForm {
 export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): LimitsForm {
   const src = plan === Plan.CUSTOM && limits ? limits : null;
   return {
+    boardFormsDisabled: src?.boardFormsDisabled ?? false,
+    boardFormsPerBoard: String(src?.boardFormsPerBoard ?? 0),
     roomMembers: String(src ? src.roomMembers : FREE_LIMITS.roomMembers),
     streamMaxPreset: src ? src.streamMaxPreset : FREE_LIMITS.streamMaxPreset,
     streamMaxFps: String(src ? src.streamMaxFps : FREE_LIMITS.streamMaxFps),
@@ -270,7 +274,8 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
 export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true, telephonyDisabled: true } as const;
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
-const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
+const MAX: Record<'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
+  boardFormsPerBoard: 1_000_000,
   roomMembers: 10_000,
   streamMaxFps: 120,
   cameraMaxFps: 120,
@@ -284,6 +289,8 @@ const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerR
 export type LimitsField = keyof typeof MAX;
 
 export interface PlanLimitsInit {
+  boardFormsDisabled: boolean;
+  boardFormsPerBoard: number;
   roomMembers: number;
   streamMaxPreset: ScreenSharePreset;
   streamMaxFps: number;
@@ -314,6 +321,8 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
   }
   return {
     limits: {
+      boardFormsDisabled: f.boardFormsDisabled,
+      boardFormsPerBoard: out.boardFormsPerBoard ?? 0,
       roomMembers: out.roomMembers ?? 0,
       streamMaxPreset: f.streamMaxPreset,
       streamMaxFps: out.streamMaxFps ?? 0,

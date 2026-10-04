@@ -18,6 +18,8 @@ enum Plan {
 
 // Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
 message PlanLimits {
+  bool board_forms_disabled = 32;
+  uint32 board_forms_per_board = 33; // 0 = unlimited; ADR-0059
   uint32 room_members = 1;                 // users in one voice room (guests and pending devices count)
   ScreenSharePreset stream_max_preset = 2; // highest screen share preset
   uint32 stream_max_fps = 3;               // screen share frame rate cap

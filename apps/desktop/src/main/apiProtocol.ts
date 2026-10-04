@@ -302,7 +302,7 @@ export function handleApiScheme(): void {
     } catch (err) {
       disarmAll();
       if (err instanceof DOMException && err.name === 'TimeoutError') {
-        log.warn(`api request timeout ${req.method} ${url.pathname}`);
+        log.warn(`api request timeout ${req.method} ${url.pathname.replace(/^(\/api\/(?:public\/)?forms)\/[^/]+/, '$1/{code}')}`);
         // Several of these at once = the connection, not the request (apiStall.ts).
         const reason = stall.timedOut(stallId);
         if (reason) void resetApiTransport(reason);

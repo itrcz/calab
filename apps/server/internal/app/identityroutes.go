@@ -40,6 +40,7 @@ const (
 	scopeBoardCategory
 	scopeChecklist
 	scopeChecklistItem
+	scopeForm
 )
 
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
@@ -133,6 +134,15 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/admin/workspaces":                                                         scopeAdmin,
 	"GET /api/admin/workspaces/{id}":                                                    scopeAdmin,
 	"GET /api/admin/workspaces/{id}/plan/log":                                           scopeAdmin,
+	"GET /api/boards/{id}/forms":                                                        scopeBoard,
+	"POST /api/boards/{id}/forms":                                                       scopeBoard,
+	"PUT /api/boards/{id}/forms/{fid}":                                                  scopeBoard,
+	"DELETE /api/boards/{id}/forms/{fid}":                                               scopeBoard,
+	"POST /api/boards/{id}/forms/preview":                                               scopeBoard,
+	"GET /api/forms/{code}":                                                             scopeForm,
+	"POST /api/forms/{code}/submissions":                                                scopeForm,
+	"GET /api/public/forms/{code}":                                                      scopePublic,
+	"POST /api/public/forms/{code}/submissions":                                         scopePublic,
 	"GET /api/boards/{id}":                                                              scopeBoard,
 	"GET /api/boards/{id}/activity":                                                     scopeBoard,
 	"GET /api/boards/{id}/permissions":                                                  scopeBoard,
@@ -486,6 +496,9 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 }
 
 func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UUID, error) {
+	if sc == scopeForm {
+		return q.GetBoardFormWorkspace(r.Context(), r.PathValue("code"))
+	}
 	ctx := r.Context()
 	if sc == scopeCapability {
 		row, err := q.GetInviteByCode(ctx, r.PathValue("code"))
@@ -632,6 +645,8 @@ func IdentityRouteClass(pattern string) string {
 		return "message"
 	case scopeBoard:
 		return "board"
+	case scopeForm:
+		return "form"
 	case scopeTask:
 		return "task"
 	case scopeFile:

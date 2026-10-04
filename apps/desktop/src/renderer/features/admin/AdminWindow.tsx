@@ -210,6 +210,7 @@ const PRESET_NAME: Record<ScreenSharePreset, MessageKey> = {
 };
 
 const FIELD_LABEL: Record<LimitsField, MessageKey> = {
+ boardFormsPerBoard: 'forms.limit',
   roomMembers: 'plan.limit.roomMembers',
   members: 'plan.limit.members',
   streamsPerRoom: 'plan.limit.streams',
@@ -422,6 +423,12 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
               {/* ADR-0058 §5: written with the plan — without them a save would switch both on. */}
               <Row label={t('admin.limit.checklists')} hint={t('admin.limit.checklistsHint')}>
                 <Toggle label={t('admin.limit.checklists')} checked={!form.limits.checklistsDisabled} onChange={(v) => setLimits({ ...form.limits, checklistsDisabled: !v })} />
+              </Row>
+              <Row label={t('forms.title')}>
+                <Toggle label={t('forms.title')} checked={!form.limits.boardFormsDisabled} onChange={(v) => setLimits({ ...form.limits, boardFormsDisabled: !v })} />
+              </Row>
+              <Row label={t('forms.limit')}>
+                <Input aria-label={t('forms.limit')} type="number" min={0} value={form.limits.boardFormsPerBoard} onChange={(e) => setLimits({ ...form.limits, boardFormsPerBoard: e.target.value })} />
               </Row>
               <Row label={t('admin.limit.boardWebhooks')} hint={t('admin.limit.boardWebhooksHint')}>
                 <Toggle label={t('admin.limit.boardWebhooks')} checked={!form.limits.boardWebhooksDisabled} onChange={(v) => setLimits({ ...form.limits, boardWebhooksDisabled: !v })} />

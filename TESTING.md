@@ -2086,3 +2086,16 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Manual: fresh account → stickers → Calab Stikers; emoji search, send to room and DM, reload history, view pack, check fixed built-in label in My stickers.
 - Guest with SEND_MESSAGES: send and forward succeed; without SEND_MESSAGES: send rejected. Free workspace: custom pack allowance unchanged.
 - Unknown asset ID: 404; public built-in route never serves uploads.
+
+## Формы досок (ADR-0059)
+1. PG17: `go test -race -tags integration ./internal/app -run '^TestBoardForms'`; отдельные DB/Redis.
+2. Team: 5 форм; шестая — PLAN_LIMIT. Business — 20; Custom 0 — unlimited; Free — отказ записи.
+3. Меню ⋯ → Формы: создать поля/подсказки/required, выбрать статус/приоритет, сохранить и скопировать ссылку.
+4. Preview: заполнить, отправить; число задач/комнат/журнала/outbox и next_number не меняются.
+5. Публичная ссылка в отдельном браузере: заполнить; задача появляется в выбранной колонке с приоритетом.
+6. Private: anonymous требует вход, чужой аккаунт — отказ, выбранный участник — успех без доступа к доске.
+7. Отозвать ACL/членство или удалить форму: уже открытая страница не отправляет; старые задачи остаются.
+8. Бот: CRUD при MANAGE_BOARD, без права — отказ; private ACL и submit; задача с автором-ботом.
+9. Concurrent POST: квота атомарна, одинаковый nonce — одна задача; другой payload — NONCE_CONFLICT.
+10. Устаревшая revision, удалённый статус, архив, suspension, SSO enforced: запись закрыта без побочных эффектов.
+11. Ручной Playwright QA: редактор/preview/публичная/успех/удалённая desktop 960×600 и mobile 390; visual suites не запускать.

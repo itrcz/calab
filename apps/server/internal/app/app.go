@@ -413,6 +413,10 @@ func New(d Deps) *App {
 	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
 	boardSvc := boards.New(d.DB, pub, planSvc, filesSvc)
 	boardSvc.PublicURL = d.Config.PublicAppURL
+	boardSvc.FormReadLimit = redisx.NewRateLimiter(d.Redis, "rl:form-read:", 30, 30)
+	boardSvc.FormIPLimit = redisx.NewRateLimiter(d.Redis, "rl:form-ip:", 5, 5)
+	boardSvc.FormUserLimit = redisx.NewRateLimiter(d.Redis, "rl:form-user:", 10, 10)
+	boardSvc.FormSubmitLimit = redisx.NewRateLimiter(d.Redis, "rl:form-submit:", 30, 30)
 	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60) // 60 at once, one per second
 	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60) // ⌘K: 30 at once, one per second
 	msgHandlers.TaskHook = boardSvc.TaskHook
