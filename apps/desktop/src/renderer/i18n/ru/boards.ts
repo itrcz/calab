@@ -82,7 +82,7 @@ export const ruBoards = {
   'boards.more': 'Ещё',
   // header, views
   'boards.view.label': 'Вид',
-  'boards.view.kanban': 'Канбан',
+  'boards.view.kanban': 'Доска',
   'boards.view.list': 'Список',
   'boards.view.timeline': 'Таймлайн',
   'boards.fromMessage': 'Создать задачу',
@@ -388,7 +388,7 @@ export const ruBoards = {
   // settings
   'boards.set.general': 'Основное',
   'boards.set.statuses': 'Статусы',
-  'boards.set.statusesHint': 'Порядок статусов — порядок колонок канбана. Задачи удаляемого статуса переносятся в другой.',
+  'boards.set.statusesHint': 'Порядок статусов — порядок колонок доски. Задачи удаляемого статуса переносятся в другой.',
   'boards.set.labels': 'Лейблы',
   'boards.set.milestones': 'Вехи',
   'boards.set.milestonesHint': 'Вехи — ромбы на таймлайне; задачу можно привязать к вехе.',
@@ -452,7 +452,7 @@ export const ruBoards = {
   'boards.kbd.newTask': 'Новая задача',
   'boards.kbd.filter': 'Фильтр',
   'boards.kbd.cycleView': 'Следующий вид',
-  'boards.kbd.viewKanban': 'Канбан',
+  'boards.kbd.viewKanban': 'Доска',
   'boards.kbd.viewList': 'Список',
   'boards.kbd.viewTimeline': 'Таймлайн',
   'boards.kbd.help': 'Эта подсказка',

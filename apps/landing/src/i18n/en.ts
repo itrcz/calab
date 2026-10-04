@@ -90,10 +90,10 @@ const en: Dict = {
     boards: {
       eyebrow: 'Task boards',
       title: 'Tasks next to the conversation',
-      text: 'Kanban, list and timeline in the spirit of Linear — without another service. Create a task from any message; a link to it unfolds into a card in the chat.',
+      text: 'Board, list and timeline in the spirit of Linear — without another service. Create a task from any message; a link to it unfolds into a card in the chat.',
       points: ['Statuses, priorities, labels, milestones and due dates', 'Several assignees, subtasks and relations', 'Comments like chat: reactions, stickers, voice messages', 'Filters, saved views and keyboard shortcuts'],
       free: 'Free has 3 boards, Team 30, Business 50 and Enterprise has no limit.',
-      alt: 'The “Product” board as a kanban: status columns with task cards, labels, due dates and assignees',
+      alt: 'The “Product” board with task columns: status columns with task cards, labels, due dates and assignees',
       timelineAlt: 'The board timeline: task bars by date, the “today” line and the “Release 1.1” milestone',
       taskAlt: 'The task panel: subtasks, a “blocks” relation, history and chat-like comments',
     },
