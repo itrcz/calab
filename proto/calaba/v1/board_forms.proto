@@ -14,6 +14,9 @@ enum BoardFormFieldType {
   BOARD_FORM_FIELD_TYPE_DATE = 5;
   BOARD_FORM_FIELD_TYPE_SELECT = 6;
   BOARD_FORM_FIELD_TYPE_CHECKBOX = 7;
+  BOARD_FORM_FIELD_TYPE_PHONE = 8; // formatted phone text, 7..15 digits; ADR-0064
+  BOARD_FORM_FIELD_TYPE_URL = 9; // absolute HTTP/HTTPS URL
+  BOARD_FORM_FIELD_TYPE_MULTISELECT = 10;
 }
 message BoardFormField {
   string id = 1;
@@ -28,7 +31,7 @@ message BoardFormDefinition {
   string title = 1;
   string description = 2;
   repeated BoardFormField fields = 3;
-  string title_field_id = 4;
+  string title_field_id = 4; // optional single-value source; empty or unanswered uses the form title
   bool is_private = 5;
   repeated string allowed_user_ids = 6;
   string status_id = 7;
@@ -54,6 +57,7 @@ message UpdateBoardFormRequest {
 message BoardFormAnswer {
   string field_id = 1;
   string value = 2;
+  repeated string values = 3; // MULTISELECT only; value must be empty
 }
 message PreviewBoardFormRequest {
   BoardFormDefinition definition = 1;

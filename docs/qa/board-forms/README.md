@@ -20,3 +20,14 @@ Release is pending the required two independent security/protocol reviews; no pr
 ## Screenshots
 
 [Preview](preview.png) · [Public form, mobile](public-mobile.png) · [Success](success-mobile.png) · [Task on board](task-board.png) · [Private form, anonymous](private-anonymous.png) · [Deleted form](deleted-mobile.png).
+
+## Local follow-up acceptance — data types and editor QA
+
+Contract revision 4 adds PHONE/URL/MULTISELECT and a separate optional task-title source.
+- Go 1.26.8 `go test -race ./internal/boards`: passed; malformed phone/URL/choices, optional/required, scalar/array separation, title fallback/Unicode truncation/full description.
+- PG17 `go test -race -tags integration ./internal/app -run '^TestBoardForms' -count=1`: passed (8.599 s), including public/bot extended-type flow and nonce independent of choice order.
+- Root `make lint`, workspace typecheck, web production build and SDK build: passed.
+- Built SDK against local API: create, preview, submit, reordered-values retry; owner verified phone formatting, URL, ordered choices and title fallback in task. Passed. A first fixture artifact export failed on protobuf BigInt timestamps after assertions; JSON export was fixed and the SDK scenario rerun successfully.
+- Real browser: required multiple-choice error; invalid phone error; valid public submission → success and second task on Typed requests board. Editor shows enabled first-field type and separate title source. Shared Modal header/footer retain spacing when body is scrolled.
+- Earlier QA fixes: forms actions in both board menus with icon/separators; shared Select controls; save returns to list; shared public footer; dedicated success checkmark; view label Board/Доска. No visual regression suites run.
+- These follow-ups need CI and independent security/protocol review on the updated commit before release. The earlier CI link validates the earlier implementation only.

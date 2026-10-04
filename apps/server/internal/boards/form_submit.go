@@ -136,6 +136,7 @@ func (s *Service) submitForm(w http.ResponseWriter, r *http.Request) error {
 		if a == nil {
 			return httpx.Validation("answers", "answer required")
 		}
+		slices.Sort(a.Values) // multiple choices are an unordered set for idempotency
 	}
 	slices.SortFunc(answers, func(a, b *v1.BoardFormAnswer) int { return strings.Compare(a.FieldId, b.FieldId) })
 	payload, err := json.Marshal(struct {

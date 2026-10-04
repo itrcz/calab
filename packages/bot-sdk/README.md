@@ -153,3 +153,7 @@ Board intake forms: `bot.forms.list(boardId)`, `create(boardId, { definition })`
 `preview(boardId, { definition, answers })`. Use a stable UUID nonce when retrying
 submission. Management needs MANAGE_BOARD; private submission requires the bot in
 the form allowlist. See [the form API](../../docs/19-bot-api.en.md#board-forms-adr-0059).
+
+Form answers use `{fieldId, value}` for scalar fields (including PHONE and URL) and
+`{fieldId, values: ['Design', 'Support']}` for MULTISELECT. Do not send both value shapes.
+`titleFieldId` is optional: an absent or unanswered source uses the form title.

@@ -23,9 +23,12 @@ const TYPES: [Kind, MessageKey][] = [
   [Kind.TEXT, 'forms.text'],
   [Kind.PARAGRAPH, 'forms.paragraph'],
   [Kind.EMAIL, 'forms.email'],
+  [Kind.PHONE, 'forms.phone'],
+  [Kind.URL, 'forms.url'],
   [Kind.NUMBER, 'forms.number'],
   [Kind.DATE, 'forms.date'],
   [Kind.SELECT, 'forms.select'],
+  [Kind.MULTISELECT, 'forms.multiselect'],
   [Kind.CHECKBOX, 'forms.checkbox'],
 ];
 
@@ -146,8 +149,7 @@ function FormEditor({
     return create(BoardFormDefinitionSchema, {
       title: t('forms.new'),
       statusId: statuses?.find((s) => s.isDefault)?.id ?? statuses?.[0]?.id ?? '',
-      titleFieldId: id,
-      fields: [{ id, type: Kind.TEXT, label: t('forms.taskTitle'), required: true }],
+      fields: [{ id, type: Kind.TEXT, label: t('forms.label'), required: true }],
     });
   });
   const [dirty, setDirty] = useState(false);
@@ -162,6 +164,7 @@ function FormEditor({
   const field = (id: string, patch: Partial<BoardFormField>): void =>
     change({
       fields: draft.fields.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+      ...(draft.titleFieldId === id && (patch.type === Kind.CHECKBOX || patch.type === Kind.MULTISELECT) ? { titleFieldId: '' } : {}),
     });
   const move = (index: number, delta: number): void => {
     const fs = [...draft.fields];
@@ -204,7 +207,7 @@ function FormEditor({
       onClose={close}
       title={t('forms.title')}
       footer={
-        <div className="flex items-center justify-end gap-2 pt-4">
+        <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" onClick={() => setPreview(true)}>
             {t('forms.preview')}
           </Button>
@@ -242,34 +245,34 @@ function FormEditor({
               </Button>
               <Button
                 variant="secondary"
-                disabled={f.id === draft.titleFieldId}
+                disabled={draft.fields.length === 1}
                 aria-label={t('forms.removeField')}
-                onClick={() => change({ fields: draft.fields.filter((x) => x.id !== f.id) })}
+                onClick={() =>
+                  change({
+                    fields: draft.fields.filter((x) => x.id !== f.id),
+                    titleFieldId: draft.titleFieldId === f.id ? '' : draft.titleFieldId,
+                  })
+                }
               >
                 <Trash2 className="size-4" />
               </Button>
             </div>
-            {f.id === draft.titleFieldId ? (
-              <div className="flex flex-col gap-1">
-                <span className="text-caption font-medium text-muted">{t('forms.type')}</span>
-                <span className="text-body text-fg">{t('forms.text')}</span>
-                <span className="text-caption text-faint">{t('forms.titleTypeHint')}</span>
-              </div>
-            ) : (
-              <Field label={t('forms.type')}>
-                <Select
-                  aria-label={t('forms.type')}
-                  value={f.type}
-                  onChange={(e) => field(f.id, { type: Number(e.target.value), options: [] })}
-                >
-                  {TYPES.map(([kind, label]) => (
-                    <option key={kind} value={kind}>
-                      {t(label)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
+            <Field label={t('forms.type')}>
+              <Select
+                aria-label={t('forms.type')}
+                value={f.type}
+                onChange={(e) => {
+                  const type = TYPES.find(([kind]) => String(kind) === e.target.value)?.[0] ?? Kind.TEXT;
+                  field(f.id, { type, options: type === Kind.SELECT || type === Kind.MULTISELECT ? f.options : [] });
+                }}
+              >
+                {TYPES.map(([kind, label]) => (
+                  <option key={kind} value={kind}>
+                    {t(label)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
             <Field label={t('forms.label')}>
               <Input value={f.label} maxLength={100} onChange={(e) => field(f.id, { label: e.target.value })} />
             </Field>
@@ -279,7 +282,7 @@ function FormEditor({
             <Field label={t('forms.placeholder')}>
               <Input value={f.placeholder} maxLength={500} onChange={(e) => field(f.id, { placeholder: e.target.value })} />
             </Field>
-            {f.type === Kind.SELECT ? (
+            {f.type === Kind.SELECT || f.type === Kind.MULTISELECT ? (
               <Field label={t('forms.options')}>
                 <textarea
                   className={`${formControl} !rounded-[var(--radius-card)]`}
@@ -289,9 +292,7 @@ function FormEditor({
                 />
               </Field>
             ) : null}
-            {f.id !== draft.titleFieldId ? (
-              <Switch checked={f.required} onChange={(v) => field(f.id, { required: v })} label={t('forms.required')} />
-            ) : null}
+            <Switch checked={f.required} onChange={(v) => field(f.id, { required: v })} label={t('forms.required')} />
           </section>
         ))}
         <Button
@@ -313,12 +314,20 @@ function FormEditor({
           <Plus className="size-4" />
           {t('forms.addField')}
         </Button>
+        <Field label={t('forms.titleSource')} hint={t('forms.titleSourceHint')}>
+          <Select value={draft.titleFieldId} onChange={(e) => change({ titleFieldId: e.target.value })}>
+            <option value="">{t('forms.useFormTitle')}</option>
+            {draft.fields
+              .filter((f) => f.type !== Kind.CHECKBOX && f.type !== Kind.MULTISELECT)
+              .map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+          </Select>
+        </Field>
         <Field label={t('forms.status')}>
-          <Select
-            aria-label={t('forms.status')}
-            value={draft.statusId}
-            onChange={(e) => change({ statusId: e.target.value })}
-          >
+          <Select aria-label={t('forms.status')} value={draft.statusId} onChange={(e) => change({ statusId: e.target.value })}>
             <option value="">—</option>
             {statuses?.map((s) => (
               <option key={s.id} value={s.id}>
@@ -328,11 +337,7 @@ function FormEditor({
           </Select>
         </Field>
         <Field label={t('forms.priority')}>
-          <Select
-            aria-label={t('forms.priority')}
-            value={draft.priority}
-            onChange={(e) => change({ priority: Number(e.target.value) })}
-          >
+          <Select aria-label={t('forms.priority')} value={draft.priority} onChange={(e) => change({ priority: Number(e.target.value) })}>
             {[TaskPriority.NONE, TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH, TaskPriority.URGENT].map((p) => (
               <option key={p} value={p}>
                 {t((['boards.prio.none', 'boards.prio.low', 'boards.prio.medium', 'boards.prio.high', 'boards.prio.urgent'] as const)[p])}

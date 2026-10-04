@@ -605,7 +605,7 @@ export function Modal({
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
           )}
         >
-          <div className="flex shrink-0 items-start justify-between gap-4 px-5 pt-5">
+          <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5">
             {/* A flex sibling, never under the «×»: the title wraps before it (docs/09 #105). */}
             <div className="min-w-0 flex-1">
               <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
@@ -625,14 +625,15 @@ export function Modal({
           <div
             ref={fill ? undefined : trackScrollEdges}
             className={cx(
-              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 pb-5 pt-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
+              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
               fill && 'flex flex-col',
+              !footer && 'pb-5',
             )}
           >
             {children}
           </div>
           {/* macOS order: secondary/cancel on the left of the primary action, primary rightmost. */}
-          {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 pb-5">{footer}</div> : null}
+          {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 py-5">{footer}</div> : null}
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>

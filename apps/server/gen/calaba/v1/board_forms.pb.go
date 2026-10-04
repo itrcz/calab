@@ -34,19 +34,25 @@ const (
 	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_DATE        BoardFormFieldType = 5
 	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_SELECT      BoardFormFieldType = 6
 	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_CHECKBOX    BoardFormFieldType = 7
+	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_PHONE       BoardFormFieldType = 8 // formatted phone text, 7..15 digits; ADR-0064
+	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_URL         BoardFormFieldType = 9 // absolute HTTP/HTTPS URL
+	BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT BoardFormFieldType = 10
 )
 
 // Enum value maps for BoardFormFieldType.
 var (
 	BoardFormFieldType_name = map[int32]string{
-		0: "BOARD_FORM_FIELD_TYPE_UNSPECIFIED",
-		1: "BOARD_FORM_FIELD_TYPE_TEXT",
-		2: "BOARD_FORM_FIELD_TYPE_PARAGRAPH",
-		3: "BOARD_FORM_FIELD_TYPE_EMAIL",
-		4: "BOARD_FORM_FIELD_TYPE_NUMBER",
-		5: "BOARD_FORM_FIELD_TYPE_DATE",
-		6: "BOARD_FORM_FIELD_TYPE_SELECT",
-		7: "BOARD_FORM_FIELD_TYPE_CHECKBOX",
+		0:  "BOARD_FORM_FIELD_TYPE_UNSPECIFIED",
+		1:  "BOARD_FORM_FIELD_TYPE_TEXT",
+		2:  "BOARD_FORM_FIELD_TYPE_PARAGRAPH",
+		3:  "BOARD_FORM_FIELD_TYPE_EMAIL",
+		4:  "BOARD_FORM_FIELD_TYPE_NUMBER",
+		5:  "BOARD_FORM_FIELD_TYPE_DATE",
+		6:  "BOARD_FORM_FIELD_TYPE_SELECT",
+		7:  "BOARD_FORM_FIELD_TYPE_CHECKBOX",
+		8:  "BOARD_FORM_FIELD_TYPE_PHONE",
+		9:  "BOARD_FORM_FIELD_TYPE_URL",
+		10: "BOARD_FORM_FIELD_TYPE_MULTISELECT",
 	}
 	BoardFormFieldType_value = map[string]int32{
 		"BOARD_FORM_FIELD_TYPE_UNSPECIFIED": 0,
@@ -57,6 +63,9 @@ var (
 		"BOARD_FORM_FIELD_TYPE_DATE":        5,
 		"BOARD_FORM_FIELD_TYPE_SELECT":      6,
 		"BOARD_FORM_FIELD_TYPE_CHECKBOX":    7,
+		"BOARD_FORM_FIELD_TYPE_PHONE":       8,
+		"BOARD_FORM_FIELD_TYPE_URL":         9,
+		"BOARD_FORM_FIELD_TYPE_MULTISELECT": 10,
 	}
 )
 
@@ -184,7 +193,7 @@ type BoardFormDefinition struct {
 	Title          string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
 	Description    string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	Fields         []*BoardFormField      `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`
-	TitleFieldId   string                 `protobuf:"bytes,4,opt,name=title_field_id,json=titleFieldId,proto3" json:"title_field_id,omitempty"`
+	TitleFieldId   string                 `protobuf:"bytes,4,opt,name=title_field_id,json=titleFieldId,proto3" json:"title_field_id,omitempty"` // optional single-value source; empty or unanswered uses the form title
 	IsPrivate      bool                   `protobuf:"varint,5,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
 	AllowedUserIds []string               `protobuf:"bytes,6,rep,name=allowed_user_ids,json=allowedUserIds,proto3" json:"allowed_user_ids,omitempty"`
 	StatusId       string                 `protobuf:"bytes,7,opt,name=status_id,json=statusId,proto3" json:"status_id,omitempty"`
@@ -567,6 +576,7 @@ type BoardFormAnswer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FieldId       string                 `protobuf:"bytes,1,opt,name=field_id,json=fieldId,proto3" json:"field_id,omitempty"`
 	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Values        []string               `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty"` // MULTISELECT only; value must be empty
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -613,6 +623,13 @@ func (x *BoardFormAnswer) GetValue() string {
 		return x.Value
 	}
 	return ""
+}
+
+func (x *BoardFormAnswer) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
 }
 
 type PreviewBoardFormRequest struct {
@@ -897,10 +914,11 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2\x1e.calaba.v1.BoardFormDefinitionR\n" +
 	"definition\x12\x1a\n" +
-	"\brevision\x18\x02 \x01(\rR\brevision\"B\n" +
+	"\brevision\x18\x02 \x01(\rR\brevision\"Z\n" +
 	"\x0fBoardFormAnswer\x12\x19\n" +
 	"\bfield_id\x18\x01 \x01(\tR\afieldId\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\x8f\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x16\n" +
+	"\x06values\x18\x03 \x03(\tR\x06values\"\x8f\x01\n" +
 	"\x17PreviewBoardFormRequest\x12>\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2\x1e.calaba.v1.BoardFormDefinitionR\n" +
@@ -918,7 +936,7 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\x16FormSubmissionResponse\x12\x1d\n" +
 	"\n" +
 	"receipt_id\x18\x01 \x01(\tR\treceiptId\x12\x18\n" +
-	"\apreview\x18\x02 \x01(\bR\apreview*\xa9\x02\n" +
+	"\apreview\x18\x02 \x01(\bR\apreview*\x90\x03\n" +
 	"\x12BoardFormFieldType\x12%\n" +
 	"!BOARD_FORM_FIELD_TYPE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aBOARD_FORM_FIELD_TYPE_TEXT\x10\x01\x12#\n" +
@@ -927,7 +945,11 @@ const file_calaba_v1_board_forms_proto_rawDesc = "" +
 	"\x1cBOARD_FORM_FIELD_TYPE_NUMBER\x10\x04\x12\x1e\n" +
 	"\x1aBOARD_FORM_FIELD_TYPE_DATE\x10\x05\x12 \n" +
 	"\x1cBOARD_FORM_FIELD_TYPE_SELECT\x10\x06\x12\"\n" +
-	"\x1eBOARD_FORM_FIELD_TYPE_CHECKBOX\x10\aB\x9d\x01\n" +
+	"\x1eBOARD_FORM_FIELD_TYPE_CHECKBOX\x10\a\x12\x1f\n" +
+	"\x1bBOARD_FORM_FIELD_TYPE_PHONE\x10\b\x12\x1d\n" +
+	"\x19BOARD_FORM_FIELD_TYPE_URL\x10\t\x12%\n" +
+	"!BOARD_FORM_FIELD_TYPE_MULTISELECT\x10\n" +
+	"B\x9d\x01\n" +
 	"\rcom.calaba.v1B\x0fBoardFormsProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"math"
 	"net/mail"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -43,7 +45,7 @@ func validateForm(d *v1.BoardFormDefinition) error {
 	if _, err := validPriority(d.Priority); err != nil {
 		return err
 	}
-	seen, title := map[string]bool{}, false
+	seen, title := map[string]bool{}, d.TitleFieldId == ""
 	for i, f := range d.Fields {
 		key := fmt.Sprintf("fields[%d]", i)
 		if f == nil {
@@ -59,16 +61,16 @@ func validateForm(d *v1.BoardFormDefinition) error {
 		if utf8.RuneCountInString(f.Hint) > 500 || utf8.RuneCountInString(f.Placeholder) > 500 {
 			return httpx.Validation(key, "hint and placeholder: at most 500 characters")
 		}
-		if f.Type < v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_TEXT || f.Type > v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_CHECKBOX {
+		if f.Type < v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_TEXT || f.Type > v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT {
 			return httpx.Validation(key+".type", "unknown field type")
 		}
 		if f.Id == d.TitleFieldId {
 			title = true
-			if !f.Required || f.Type != v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_TEXT {
-				return httpx.Validation("titleFieldId", "required short text field required")
+			if f.Type == v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_CHECKBOX || f.Type == v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT {
+				return httpx.Validation("titleFieldId", "single-value field required")
 			}
 		}
-		if f.Type == v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_SELECT {
+		if f.Type == v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_SELECT || f.Type == v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT {
 			if len(f.Options) == 0 || len(f.Options) > 30 {
 				return httpx.Validation(key+".options", "1..30 options required")
 			}
@@ -114,7 +116,7 @@ func formAnswers(d *v1.BoardFormDefinition, answers []*v1.BoardFormAnswer) (stri
 	if len(answers) > maxFormFields {
 		return "", "", httpx.Validation("answers", "too many answers")
 	}
-	vals := map[string]string{}
+	vals := map[string]*v1.BoardFormAnswer{}
 	fields := map[string]bool{}
 	for _, f := range d.Fields {
 		fields[f.Id] = true
@@ -126,20 +128,43 @@ func formAnswers(d *v1.BoardFormDefinition, answers []*v1.BoardFormAnswer) (stri
 		if _, ok := vals[a.FieldId]; ok {
 			return "", "", httpx.Validation(a.FieldId, "duplicate answer")
 		}
-		vals[a.FieldId] = strings.TrimSpace(a.Value)
+		vals[a.FieldId] = a
 	}
-	var title string
+
+	title := d.Title
 	var desc strings.Builder
 	for _, f := range d.Fields {
-		v := vals[f.Id]
+		a := vals[f.Id]
+		v := strings.TrimSpace(a.GetValue())
 		fail := func(message string) (string, string, error) { return "", "", httpx.Validation(f.Id, message) }
+		if f.Type == v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT {
+			if a.GetValue() != "" || len(a.GetValues()) > 30 {
+				return fail("multiple choices require values only, at most 30")
+			}
+			selected := map[string]bool{}
+			for _, option := range a.GetValues() {
+				if selected[option] || !slices.Contains(f.Options, option) {
+					return fail("unknown or duplicate option")
+				}
+				selected[option] = true
+			}
+			var ordered []string
+			for _, option := range f.Options {
+				if selected[option] {
+					ordered = append(ordered, option)
+				}
+			}
+			v = strings.Join(ordered, "; ")
+		} else if len(a.GetValues()) != 0 {
+			return fail("values is only supported for multiple choices")
+		}
 		if f.Required && (v == "" || (f.Type == v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_CHECKBOX && v != "true")) {
 			return fail("required field")
 		}
 		if v == "" {
 			continue
 		}
-		if utf8.RuneCountInString(v) > 2000 {
+		if f.Type != v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT && utf8.RuneCountInString(v) > 2000 {
 			return fail("at most 2000 characters")
 		}
 		switch f.Type {
@@ -147,6 +172,15 @@ func formAnswers(d *v1.BoardFormDefinition, answers []*v1.BoardFormAnswer) (stri
 			addr, err := mail.ParseAddress(v)
 			if err != nil || addr.Address != v || addr.Name != "" {
 				return fail("invalid email")
+			}
+		case v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_PHONE:
+			if !validFormPhone(v) {
+				return fail("phone: 7..15 digits, optional leading +, spaces, parentheses, dots and hyphens")
+			}
+		case v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_URL:
+			u, err := url.Parse(v)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || strings.ContainsFunc(v, func(c rune) bool { return unicode.IsSpace(c) || unicode.IsControl(c) }) {
+				return fail("absolute HTTP or HTTPS URL required, without credentials or whitespace")
 			}
 		case v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_NUMBER:
 			n, err := strconv.ParseFloat(v, 64)
@@ -167,20 +201,39 @@ func formAnswers(d *v1.BoardFormDefinition, answers []*v1.BoardFormAnswer) (stri
 			}
 		}
 		if f.Id == d.TitleFieldId {
-			if utf8.RuneCountInString(v) > MaxTitle || strings.ContainsAny(v, "\r\n") {
-				return fail("single line, at most 200 characters")
+			title = strings.Join(strings.Fields(v), " ")
+			runes := []rune(title)
+			if len(runes) > MaxTitle {
+				title = string(runes[:MaxTitle])
 			}
-			title = v
-		} else {
-			if desc.Len() > 0 {
-				desc.WriteString("\n\n")
-			}
-			desc.WriteString("**" + formText(f.Label) + "**\n" + formText(v))
 		}
+		if desc.Len() > 0 {
+			desc.WriteString("\n\n")
+		}
+		desc.WriteString("**" + formText(f.Label) + "**\n" + formText(v))
 	}
 	if _, err := validTitle(title); err != nil {
 		return "", "", err
 	}
 	description, err := validDescription(desc.String())
 	return title, description, err
+}
+
+// Validate presentation, not reachability. Do not guess a country or discard leading zeroes.
+func validFormPhone(value string) bool {
+	if len(value) > 64 {
+		return false
+	}
+	digits := 0
+	for i, c := range value {
+		switch {
+		case c >= '0' && c <= '9':
+			digits++
+		case c == '+' && i == 0:
+		case c == ' ' || c == '(' || c == ')' || c == '-' || c == '.':
+		default:
+			return false
+		}
+	}
+	return digits >= 7 && digits <= 15
 }

@@ -5,8 +5,10 @@ package app_test
 import (
 	"context"
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"strings"
 	"sync"
 	"testing"
@@ -224,5 +226,70 @@ func TestBoardFormsAutomations(t *testing.T) {
 	tasks := listTasks(t, o, b.Id, nil)
 	if len(tasks) != 1 || tasks[0].Priority != v1.TaskPriority_TASK_PRIORITY_URGENT || len(ruleRuns(t, o, rule.Id)) != 1 {
 		t.Fatal("submission must run automation exactly once")
+	}
+}
+
+func TestBoardFormsExtendedTypes(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	b := createBoard(t, o, ws.Id, &v1.CreateBoardRequest{Name: "Typed intake"}, 201)
+	bt := createBot(t, o, ws.Id, "typedforms")
+	setBoardPerms(o, b.Id, 200, userOv(bt.id, perm.ViewBoard|perm.ManageBoard, 0))
+	phone, link, multi := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	d := &v1.BoardFormDefinition{Title: "Contact request", StatusId: b.Statuses[0].Id, TitleFieldId: phone, Fields: []*v1.BoardFormField{
+		{Id: phone, Label: "Phone", Type: v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_PHONE, Required: true},
+		{Id: link, Label: "Website", Type: v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_URL},
+		{Id: multi, Label: "Services", Type: v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT, Required: true, Options: []string{"Design", "Development", "Support"}},
+	}}
+	path := "/api/boards/" + b.Id + "/forms"
+	var fr v1.BoardFormResponse
+	bt.must(201, "POST", path, &v1.CreateBoardFormRequest{Definition: d}, &fr)
+	code := fr.Form.Url[strings.LastIndex(fr.Form.Url, "/")+1:]
+	answers := []*v1.BoardFormAnswer{{FieldId: phone, Value: "+7 (999) 123-45-67"}, {FieldId: link, Value: "https://example.test/request"}, {FieldId: multi, Values: []string{"Support", "Design"}}}
+	bt.must(200, "POST", path+"/preview", &v1.PreviewBoardFormRequest{Definition: d, Answers: answers}, nil)
+	if len(listTasks(t, o, b.Id, nil)) != 0 {
+		t.Fatal("preview created a task")
+	}
+	a := &client{t: t, ip: "192.0.2.180"}
+	for _, bad := range []struct {
+		field  int
+		value  string
+		values []string
+	}{
+		{0, "not a phone", nil}, {1, "javascript:alert(1)", nil}, {2, "", []string{"Design", "Design"}}, {2, "", []string{"Unknown"}},
+	} {
+		req := &v1.SubmitBoardFormRequest{Revision: fr.Form.Revision, Nonce: uuid.NewString(), Answers: answers}
+		req = proto.Clone(req).(*v1.SubmitBoardFormRequest)
+		req.Answers[bad.field].Value, req.Answers[bad.field].Values = bad.value, bad.values
+		a.must(422, "POST", "/api/public/forms/"+code+"/submissions", req, nil)
+	}
+	if len(listTasks(t, o, b.Id, nil)) != 0 {
+		t.Fatal("invalid submission created a task")
+	}
+	req := &v1.SubmitBoardFormRequest{Revision: fr.Form.Revision, Nonce: uuid.NewString(), Answers: answers}
+	bt.must(201, "POST", "/api/forms/"+code+"/submissions", req, nil)
+	answers[2].Values = []string{"Design", "Support"}
+	bt.must(200, "POST", "/api/forms/"+code+"/submissions", req, nil)
+	tasks := listTasks(t, o, b.Id, nil)
+	if len(tasks) != 1 || tasks[0].Title != answers[0].Value || tasks[0].CreatedBy != bt.id || !strings.Contains(tasks[0].Description, "Design; Support") || !strings.Contains(tasks[0].Description, answers[1].Value) {
+		t.Fatal("typed bot task differs from submitted values")
+	}
+	// No fixed first-field type: replace it with multiple choice and use the form name.
+	d.TitleFieldId = ""
+	d.Fields[0].Type = v1.BoardFormFieldType_BOARD_FORM_FIELD_TYPE_MULTISELECT
+	d.Fields[0].Options = []string{"Call", "Email"}
+	bt.must(200, "PUT", path+"/"+fr.Form.Id, &v1.UpdateBoardFormRequest{Definition: d, Revision: fr.Form.Revision}, &fr)
+	req.Revision, req.Nonce = fr.Form.Revision, uuid.NewString()
+	req.Answers[0] = &v1.BoardFormAnswer{FieldId: phone, Values: []string{"Call"}}
+	anon := &client{t: t, ip: "192.0.2.181"}
+	anon.must(201, "POST", "/api/public/forms/"+code+"/submissions", req, nil)
+	tasks = listTasks(t, o, b.Id, nil)
+	found := false
+	for _, task := range tasks {
+		if task.Title == d.Title && task.CreatedBy == "" {
+			found = true
+		}
+	}
+	if len(tasks) != 2 || !found {
+		t.Fatal("anonymous title fallback missing")
 	}
 }

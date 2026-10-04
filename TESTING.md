@@ -2122,6 +2122,7 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 9. Concurrent POST: квота атомарна, одинаковый nonce — одна задача; другой payload — NONCE_CONFLICT.
 10. Устаревшая revision, удалённый статус, архив, suspension, SSO enforced: запись закрыта без побочных эффектов.
 11. Ручной Playwright QA: редактор/preview/публичная/успех/удалённая desktop 960×600 и mobile 390; visual suites не запускать.
+12. PHONE/URL/MULTISELECT: valid/invalid, required/optional, preview и bot/public submit; nonce с переставленными values; смена типа первого поля, источник заголовка/fallback/обрезка без потери ответа.
 
 ### Единый поиск, сервер (ADR-0062, этапы 1–2)
 

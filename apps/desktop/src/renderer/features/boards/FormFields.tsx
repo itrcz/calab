@@ -20,6 +20,7 @@ export function FormFields({
   preview?: boolean;
 }): ReactNode {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
@@ -36,6 +37,12 @@ export function FormFields({
       onSubmit={(e) => {
         e.preventDefault();
         if (busy) return;
+        const missing = fields.find((f) => f.type === Kind.MULTISELECT && f.required && !multiValues[f.id]?.length);
+        if (missing) {
+          setBad(missing.id);
+          setError(t('forms.chooseAtLeastOne'));
+          return;
+        }
         setBusy(true);
         setError('');
         setBad('');
@@ -43,13 +50,17 @@ export function FormFields({
           fields.map((f) =>
             create(BoardFormAnswerSchema, {
               fieldId: f.id,
-              value: values[f.id] ?? (f.type === Kind.CHECKBOX ? 'false' : ''),
+              value: f.type === Kind.MULTISELECT ? '' : (values[f.id] ?? (f.type === Kind.CHECKBOX ? 'false' : '')),
+              values: f.type === Kind.MULTISELECT ? (multiValues[f.id] ?? []) : [],
             }),
           ),
         )
           .then(() => setDone(true))
           .catch((err: unknown) => {
-            setError(formError(err));
+            const invalid = err instanceof ApiError && err.status === 422 ? fields.find((f) => f.id === err.field) : undefined;
+            setError(
+              invalid?.type === Kind.PHONE ? t('forms.invalidPhone') : invalid?.type === Kind.URL ? t('forms.invalidUrl') : formError(err),
+            );
             if (err instanceof ApiError) setBad(err.field ?? '');
           })
           .finally(() => setBusy(false));
@@ -69,7 +80,7 @@ export function FormFields({
         };
         return (
           <div key={f.id} className="flex flex-col gap-1.5">
-            <label htmlFor={id} className="text-body font-medium">
+            <label id={`${id}-label`} htmlFor={f.type === Kind.MULTISELECT ? undefined : id} className="text-body font-medium">
               {f.label}
               {f.required ? ' *' : ''}
             </label>
@@ -90,6 +101,32 @@ export function FormFields({
                   <option key={o}>{o}</option>
                 ))}
               </Select>
+            ) : f.type === Kind.MULTISELECT ? (
+              <fieldset
+                aria-labelledby={`${id}-label`}
+                aria-describedby={`${id}-hint`}
+                aria-invalid={bad === f.id}
+                className="flex flex-col gap-2"
+              >
+                {f.options.map((option) => (
+                  <label key={option} className="flex min-h-8 items-center gap-2 text-body">
+                    <input
+                      type="checkbox"
+                      className="size-5 shrink-0 accent-[var(--color-accent)]"
+                      disabled={busy}
+                      checked={multiValues[f.id]?.includes(option) ?? false}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setMultiValues((old) => ({
+                          ...old,
+                          [f.id]: checked ? [...(old[f.id] ?? []), option] : (old[f.id] ?? []).filter((v) => v !== option),
+                        }));
+                      }}
+                    />
+                    {option}
+                  </label>
+                ))}
+              </fieldset>
             ) : f.type === Kind.CHECKBOX ? (
               <input
                 {...props}
@@ -101,9 +138,22 @@ export function FormFields({
             ) : (
               <Input
                 {...props}
-                type={f.type === Kind.EMAIL ? 'email' : f.type === Kind.NUMBER ? 'number' : f.type === Kind.DATE ? 'date' : 'text'}
+                type={
+                  f.type === Kind.URL
+                    ? 'url'
+                    : f.type === Kind.PHONE
+                      ? 'tel'
+                      : f.type === Kind.EMAIL
+                        ? 'email'
+                        : f.type === Kind.NUMBER
+                          ? 'number'
+                          : f.type === Kind.DATE
+                            ? 'date'
+                            : 'text'
+                }
                 step="any"
-                maxLength={2000}
+                maxLength={f.type === Kind.PHONE ? 64 : 2000}
+                autoComplete={f.type === Kind.PHONE ? 'tel' : undefined}
                 placeholder={f.placeholder}
                 value={value}
                 onChange={(e) => update(e.target.value)}
