@@ -240,7 +240,7 @@ async function waitFor(ok: () => boolean, ms: number): Promise<boolean> {
  */
 export async function revealOlder(roomId: string, messageId: string, maxPages = 20): Promise<boolean> {
   const st = (): ReturnType<typeof useMessages.getState>['rooms'][string] | undefined => useMessages.getState().rooms[roomId];
-  const has = (): boolean => !!st()?.items.some((c) => c.key === messageId);
+  const has = (): boolean => !!findMessage(roomId, messageId);
   void openRoom(roomId);
   if (!(await waitFor(() => !!st()?.loaded || !!st()?.error, 15_000))) return has();
   for (let i = 0; i < maxPages && !has(); i++) {
