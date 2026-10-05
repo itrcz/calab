@@ -1,6 +1,6 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
 import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
-import { Component, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MessageKind, RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
@@ -16,7 +16,7 @@ import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { createMetaBuilder, type RowMeta } from './grouping';
-import { createLastRowPin } from './lastRowPin';
+import { createBottomPin } from './lastRowPin';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
@@ -175,9 +175,9 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const virtuoso = useRef<VirtuosoHandle>(null);
   // False until Virtuoso reports it: opening at the first unread must not mark the room read.
   const [atBottom, setAtBottom] = useState(false);
-  // docs/09 #149: a reaction added to the last row (mine or incoming) grows it in place — no new
-  // item, so followOutput below never sees it. Pinned to one instance so re-renders don't lose it.
-  const [lastRowPin] = useState(() => createLastRowPin());
+  // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
+  // edit) or the composer growing is no new item, so followOutput never sees it (lastRowPin.ts).
+  const [bottomPin] = useState(createBottomPin);
 
   // Grouping, incremental: only changed rows and their neighbours are recomputed; unchanged rows
   // keep their meta object → no re-render (docs/14 «Лента на 20 тыс. сообщений»).
@@ -271,13 +271,14 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     },
     [items, me, state.hasMoreAfter],
   );
-  const onAtBottomStateChange = useCallback(
-    (v: boolean) => {
-      lastRowPin.setAtBottom(v);
-      setAtBottom(v);
-    },
-    [lastRowPin],
-  );
+  // Layout effects: a window loaded away from the present must stop the pin before the next
+  // ResizeObserver delivery (which precedes passive effects), or it would chase endReached.
+  useLayoutEffect(() => bottomPin.setLive(!state.hasMoreAfter), [bottomPin, state.hasMoreAfter]);
+  const lastKey = items[items.length - 1]?.key ?? '';
+  const lastKeyRef = useRef(lastKey);
+  useLayoutEffect(() => {
+    lastKeyRef.current = lastKey;
+  }, [lastKey]);
 
   // Floating date: the day of the topmost visible row, hidden while that day's own pill is in view.
   const scroller = useRef<HTMLElement | null>(null);
@@ -285,24 +286,24 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     scroller.current = r instanceof HTMLElement ? r : null;
   }, []);
 
-  // docs/09 #149: observe only the last row's own element — not the whole feed — so a reaction
-  // pill growing it can re-pin the bottom without any per-render cost on the other rows.
-  const lastKey = items[items.length - 1]?.key;
+  // docs/09 #149: keep the bottom while stuck to it. One observer, no per-render or per-frame
+  // work, on two elements: the scroller (its height — the composer growing, the window resizing)
+  // and Virtuoso's item list (the rendered rows' height — any row changing size, the last one
+  // included). A new last message is left to followOutput, so incoming ones still scroll smoothly.
   useEffect(() => {
     const root = scroller.current;
-    if (!root || !lastKey || typeof ResizeObserver === 'undefined') return;
-    const el = root.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(lastKey)}"]`);
-    if (!el) return;
-    lastRowPin.reset(el.getBoundingClientRect().height);
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h !== undefined && lastRowPin.measure(h)) {
-        virtuoso.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' });
-      }
+    if (!root || typeof ResizeObserver === 'undefined') return;
+    let seenKey = lastKeyRef.current;
+    const ro = new ResizeObserver(() => {
+      const fresh = seenKey !== lastKeyRef.current;
+      seenKey = lastKeyRef.current;
+      if (bottomPin.resized(root) && !fresh) root.scrollTop = root.scrollHeight;
     });
-    ro.observe(el);
+    ro.observe(root);
+    const list = root.querySelector('[data-testid="virtuoso-item-list"]');
+    if (list) ro.observe(list);
     return () => ro.disconnect();
-  }, [lastKey, lastRowPin]);
+  }, [bottomPin]);
 
   const [sticky, setSticky] = useState<string | null>(null);
   const frame = useRef(0);
@@ -311,6 +312,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const [scrolling, setScrolling] = useState(false);
   const idle = useRef(0);
   const onScroll = useCallback(() => {
+    if (scroller.current) bottomPin.scrolled(scroller.current);
     setScrolling(true);
     scroller.current?.setAttribute('data-scrolling', '');
     window.clearTimeout(idle.current);
@@ -338,7 +340,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       }
       setSticky(null);
     });
-  }, []);
+  }, [bottomPin]);
   useEffect(
     () => () => {
       cancelAnimationFrame(frame.current);
@@ -377,7 +379,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         startReached={startReached}
         endReached={endReached}
         followOutput={followOutput}
-        atBottomStateChange={onAtBottomStateChange}
+        atBottomStateChange={setAtBottom}
         atBottomThreshold={48}
         scrollerRef={scrollerRef}
         onScroll={onScroll}
