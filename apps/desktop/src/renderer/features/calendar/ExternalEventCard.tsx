@@ -1,13 +1,13 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { WorkspaceRole } from '@calaba/protocol';
+import { AttendeeStatus, WorkspaceRole } from '@calaba/protocol';
 import { CalendarPlus, CalendarSync, Clock, ExternalLink, Mail, MapPin, Trash2, Video } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { parseExternalKey, splitAttendees } from '../../lib/calendar/external';
-import type { ExternalAttendee, ExternalEvent } from '../../lib/calendar/freebusyApi';
+import type { ExternalAnswer, ExternalAttendee, ExternalEvent } from '../../lib/calendar/freebusyApi';
 import { formatLongDay, formatTime } from '../../lib/calendar/time';
 import { platform } from '../../platform';
 import { calendarAvailable } from '../../services/calendar';
@@ -15,7 +15,9 @@ import { selectExternalDay, useFreeBusy } from '../../stores/freebusy';
 import { myUserId, useSession } from '../../stores/session';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, popoverBox } from '../shell/menu';
+import { respondExternalEvent } from '../../services/freebusy';
 import { deleteExternalWithConfirm, newEvent } from './actions';
+import { RsvpButtons, StatusIcon } from './EventCard';
 import { PX_PER_MIN } from './gridParts';
 
 /*
@@ -24,6 +26,8 @@ import { PX_PER_MIN } from './gridParts';
  * a click opens a popover with the attendees (members of this workspace with their avatar and
  * name, the others by address), «Подключиться» (the conference link) and «Открыть в календаре»
  * (the provider's page of the event, only when the server could build it — ADR-0045 amendment 1),
+ * «Приму / Отклоню / Может быть» when I am an attendee (written into my calendar, the provider
+ * mails the organizer — amendment 2),
  * «Удалить из календаря» (a series: «only this» / «the whole series») and «Создать встречу в
  * Calab» — the meeting dialog prefilled with the title, the time and the attendees who are members
  * here.
@@ -207,6 +211,7 @@ function ExternalDetails({ workspaceId, ev, onDone }: { workspaceId: string; ev:
           ) : null}
         </div>
       ) : null}
+      {ev.href && ev.myStatus !== AttendeeStatus.UNSPECIFIED ? <ExternalRsvp ev={ev} /> : null}
       {ev.attendees.length ? (
         <div className="flex flex-col gap-0.5">
           <p className="text-caption font-medium text-muted">{t('ext.attendees', { n: ev.attendees.length })}</p>
@@ -230,6 +235,22 @@ function ExternalDetails({ workspaceId, ev, onDone }: { workspaceId: string; ev:
         </div>
       ) : null}
     </>
+  );
+}
+
+const isAnswer = (s: AttendeeStatus): s is ExternalAnswer =>
+  s === AttendeeStatus.ACCEPTED || s === AttendeeStatus.DECLINED || s === AttendeeStatus.MAYBE;
+
+/** My answer (ADR-0045 amendment 2): the same control as a Calab meeting's; a series is answered as a whole. */
+function ExternalRsvp({ ev }: { ev: ExternalEvent }): ReactNode {
+  const onAnswer = (s: AttendeeStatus): void => {
+    if (isAnswer(s) && s !== ev.myStatus) void respondExternalEvent(ev, s);
+  };
+  return (
+    <div data-testid="external-rsvp">
+      <RsvpButtons className="" mine={ev.myStatus} onAnswer={onAnswer} />
+      {ev.recurring ? <p className="mt-1 text-caption text-muted">{t('ext.rsvpSeries')}</p> : null}
+    </div>
   );
 }
 
@@ -269,24 +290,26 @@ function DeleteButton({ ev, onDone }: { ev: ExternalEvent; onDone: () => void })
 /** A member of this workspace: avatar and name; anyone else: the envelope and the address (their name as the tip). */
 function AttendeeRow({ workspaceId, a }: { workspaceId: string; a: ExternalAttendee }): ReactNode {
   const member = useWorkspaces((s) => !!(a.userId && s.byId[workspaceId]?.members[a.userId]));
-  if (member) return <MemberRow workspaceId={workspaceId} userId={a.userId} />;
+  if (member) return <MemberRow workspaceId={workspaceId} userId={a.userId} status={a.status} />;
   return (
     <li className="flex h-7 items-center gap-2 text-body" title={a.name || undefined} data-testid="external-attendee">
       <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-fill)] text-muted">
         <Mail className="size-3" aria-hidden />
       </span>
-      <span className="min-w-0 truncate">{a.email}</span>
+      <span className="min-w-0 flex-1 truncate">{a.email}</span>
+      <StatusIcon status={a.status} />
     </li>
   );
 }
 
-function MemberRow({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
+function MemberRow({ workspaceId, userId, status }: { workspaceId: string; userId: string; status: AttendeeStatus }): ReactNode {
   const name = useMemberName(workspaceId, userId);
   const avatar = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.user?.avatarFileId ?? '');
   return (
     <li className="flex h-7 items-center gap-2 text-body" data-testid="external-attendee" data-user={userId}>
       <Avatar userId={userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
-      <span className="min-w-0 truncate">{userId === myUserId() ? t('fb.me') : name}</span>
+      <span className="min-w-0 flex-1 truncate">{userId === myUserId() ? t('fb.me') : name}</span>
+      <StatusIcon status={status} />
     </li>
   );
 }

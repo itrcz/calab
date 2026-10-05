@@ -258,6 +258,9 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'ext.deleteChanged': "活动已在日历中更改——已刷新，请重试",
   'ext.deleteReadOnly': "日历为只读——无法删除活动",
   'ext.deleteFailed': "无法删除活动",
+  'ext.rsvpSeries': "回复适用于所有重复",
+  'ext.rsvpChanged': "日历中的活动已更改——已刷新，请重新回复",
+  'ext.rsvpReadOnly': "日历为只读——无法回复",
   'ext.create': "在 Calab 创建会议",
   'ext.outside': "不在本空间：{list}",
 };

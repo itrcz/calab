@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import type { AttendeeStatus } from '@calaba/protocol';
 import type { ExternalAttendee, ExternalDeleteScopeName, ExternalEvent } from './freebusyApi';
 import { addDays, dayEnd, dayKey, dayStart, formatLongDay } from './time';
 
@@ -176,6 +177,25 @@ export function restoreExternal(
     const list = out[d] ?? [];
     const keys = new Set(list.map(externalKey));
     out[d] = [...list, ...back.filter((e) => !keys.has(externalKey(e)))].sort((a, b) => a.start - b.start || a.end - b.end);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- answer (ADR-0045 amendment 2)
+
+/**
+ * The days with my answer on every occurrence of the event (an answer covers the series); days
+ * without it keep their list object (the grid's selectors stay quiet).
+ */
+export function withMyStatus(
+  days: Readonly<Record<string, readonly ExternalEvent[]>>,
+  uid: string,
+  status: AttendeeStatus,
+): Record<string, readonly ExternalEvent[]> {
+  const out: Record<string, readonly ExternalEvent[]> = { ...days };
+  for (const [d, list] of Object.entries(days)) {
+    if (!list.some((e) => e.uid === uid && e.myStatus !== status)) continue;
+    out[d] = list.map((e) => (e.uid === uid ? { ...e, myStatus: status } : e));
   }
   return out;
 }

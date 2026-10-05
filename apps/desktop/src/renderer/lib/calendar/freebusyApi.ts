@@ -1,5 +1,6 @@
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
+  AttendeeStatus,
   BusyKind,
   CalDavAccountResponseSchema,
   CalDavShareLevel,
@@ -7,6 +8,7 @@ import {
   DeleteExternalEventRequestSchema,
   ExternalDeleteScope,
   ExternalEventsResponseSchema,
+  RespondExternalEventRequestSchema,
   SetCalDavShareRequestSchema,
   FreeBusyResponseSchema,
   SuggestSlotsRequestSchema,
@@ -72,6 +74,8 @@ export interface ExternalAttendee {
   email: string;
   name: string;
   userId: string;
+  /** Their answer as the calendar has it (PARTSTAT). */
+  status: AttendeeStatus;
 }
 
 /** One of my imported external events with its details (ADR-0045 §3). */
@@ -93,7 +97,15 @@ export interface ExternalEvent {
   recurring: boolean;
   /** «Открыть в календаре»: the provider's page of the event, only when reliable; '' = no button. */
   webUrl: string;
+  /**
+   * My answer when I am an attendee, not the organizer (ADR-0045 amendment 2): «Приму / Отклоню /
+   * Может быть» are offered; UNSPECIFIED = no answer buttons.
+   */
+  myStatus: AttendeeStatus;
 }
+
+/** The answers I can give to an external event. */
+export type ExternalAnswer = AttendeeStatus.ACCEPTED | AttendeeStatus.DECLINED | AttendeeStatus.MAYBE;
 
 export type ExternalDeleteScopeName = 'this' | 'series';
 
@@ -185,12 +197,13 @@ export const freebusyApi = {
         allDay: e.allDay,
         summary: e.summary,
         location: e.location,
-        attendees: e.attendees.map((a) => ({ email: a.email, name: a.name, userId: a.userId })),
+        attendees: e.attendees.map((a) => ({ email: a.email, name: a.name, userId: a.userId, status: a.status })),
         organizer: e.organizer,
         url: e.url,
         href: e.href,
         recurring: e.recurring,
         webUrl: e.webUrl,
+        myStatus: e.myStatus,
       }))
       .filter((e) => e.end > e.start);
   },
@@ -209,6 +222,17 @@ export const freebusyApi = {
         start: timestampFromMs(e.start),
         scope: scope === 'series' ? ExternalDeleteScope.SERIES : ExternalDeleteScope.THIS,
       }),
+    ),
+  /**
+   * POST /api/me/external-events/rsvp (ADR-0045 amendment 2): my answer written into my CalDAV
+   * calendar for the whole series (the provider mails it to the organizer). 409 — it changed there
+   * (reload); 422 — the calendar is read-only (CALENDAR_READ_ONLY) or I am not an attendee.
+   */
+  respondExternal: (e: Pick<ExternalEvent, 'uid' | 'href' | 'start'>, status: ExternalAnswer): Promise<void> =>
+    callEmpty(
+      'POST',
+      '/api/me/external-events/rsvp',
+      body(RespondExternalEventRequestSchema, { uid: e.uid, href: e.href, start: timestampFromMs(e.start), status }),
     ),
   /** PATCH /api/me {work_hours}: the updated Me. */
   saveWorkHours: (wh: WorkHours) => api.me.update({ workHours: { startMin: wh.startMin, endMin: wh.endMin, days: [...wh.days] } }),

@@ -258,6 +258,9 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'ext.deleteChanged': "The event changed in the calendar — refreshed, try again",
   'ext.deleteReadOnly': "The calendar is read-only — the event cannot be deleted",
   'ext.deleteFailed': "Could not delete the event",
+  'ext.rsvpSeries': "The answer covers every occurrence",
+  'ext.rsvpChanged': "The event changed in the calendar — refreshed, answer again",
+  'ext.rsvpReadOnly': "The calendar is read-only — you cannot answer",
   'ext.create': "Create a Calab meeting",
   'ext.outside': "Not in the workspace: {list}",
 };

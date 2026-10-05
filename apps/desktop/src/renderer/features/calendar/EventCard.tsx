@@ -2,7 +2,7 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
 import { ArrowLeft, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
-import { Suspense, lazy, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, CloseButton, IconButton, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
@@ -232,13 +232,25 @@ const RSVP: Array<{ status: AttendeeStatus; key: MessageKey }> = [
 ];
 
 /** «Приму / Отклоню / Может быть» — my current answer highlighted (informational, ADR-0038). */
-export function RsvpButtons({ ev, mine, onAnswer }: { ev?: CalendarEvent; mine: AttendeeStatus; onAnswer?: (s: AttendeeStatus) => void }): ReactNode {
+export function RsvpButtons({
+  ev,
+  mine,
+  onAnswer,
+  className = 'mt-3',
+}: {
+  ev?: CalendarEvent;
+  mine: AttendeeStatus;
+  onAnswer?: (s: AttendeeStatus) => void;
+  className?: string;
+}): ReactNode {
+  // Unique: the meeting panel and an external event's popover can be open together.
+  const labelId = useId();
   return (
-    <div className="mt-3">
-      <p id="rsvp-label" className="mb-1.5 text-caption font-medium text-muted">
+    <div className={className}>
+      <p id={labelId} className="mb-1.5 text-caption font-medium text-muted">
         {t('cal.rsvp.title')}
       </p>
-      <div role="group" aria-labelledby="rsvp-label" className="grid grid-cols-3 gap-1 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="rsvp">
+      <div role="group" aria-labelledby={labelId} className="grid grid-cols-3 gap-1 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="rsvp">
         {RSVP.map((r) => {
           const on = mine === r.status;
           return (

@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { eventsByDay, mergeDays, restoreExternal, withoutExternal } from '../lib/calendar/external';
+import { eventsByDay, mergeDays, restoreExternal, withMyStatus, withoutExternal } from '../lib/calendar/external';
 import { chunksIn, CHUNK_MS, replaceBusy, type WorkHours } from '../lib/calendar/freebusy';
 import {
   externalChanged,
@@ -7,6 +7,7 @@ import {
   freebusyApi,
   type BusyInterval,
   type CalDavAccount,
+  type ExternalAnswer,
   type ExternalDeleteScopeName,
   type ExternalEvent,
   type ShareLevel,
@@ -250,6 +251,30 @@ export async function deleteExternalEvent(ev: ExternalEvent, scope: ExternalDele
       invalidateMe();
     } else if (externalReadOnly(e)) toast.error(t('ext.deleteReadOnly'));
     else toast.fail(e, t('ext.deleteFailed'));
+    return false;
+  }
+}
+
+/**
+ * «Приму / Отклоню / Может быть» of my external event (ADR-0045 amendment 2): the answer shows on
+ * every occurrence at once and goes back if the server refuses (409 — it changed in the calendar,
+ * 422 — read-only); after a success my events are asked anew (the server imported them again).
+ */
+export async function respondExternalEvent(ev: ExternalEvent, status: ExternalAnswer): Promise<boolean> {
+  const ws = fb().externalWs;
+  const before = ev.myStatus;
+  useFreeBusy.setState((s) => (s.externalWs === ws ? { external: withMyStatus(s.external, ev.uid, status) } : s));
+  try {
+    await freebusyApi.respondExternal(ev, status);
+    useFreeBusy.setState((s) => (s.externalWs === ws ? { externalChunks: {} } : s));
+    return true;
+  } catch (e) {
+    useFreeBusy.setState((s) => (s.externalWs === ws ? { external: withMyStatus(s.external, ev.uid, before) } : s));
+    if (externalChanged(e)) {
+      toast.error(t('ext.rsvpChanged'));
+      useFreeBusy.setState((s) => (s.externalWs === ws ? { externalChunks: {} } : s));
+    } else if (externalReadOnly(e)) toast.error(t('ext.rsvpReadOnly'));
+    else toast.fail(e, t('cal.rsvp.failed'));
     return false;
   }
 }
