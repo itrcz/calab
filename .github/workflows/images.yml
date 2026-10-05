@@ -5,7 +5,8 @@ name: images
 #
 #   1. api: build apps/server/Dockerfile at the exact commit `ci` tested.
 #   2. web: build the web client and the landing (as release.sh does) into infra/docker/web-image:
-#      Caddy plus static files only; the server configuration is supplied by the deployment.
+#      Caddy, its behind-proxy config (infra/docker/caddy) and the static files; the config is validated
+#      in the built image before the push.
 #   3. Push both to the production registry. No stored keys: each job's GitHub OIDC token is exchanged
 #      for a short-lived Yandex Cloud IAM token of a service account that may only push to the calab
 #      repositories of that registry.
@@ -139,8 +140,17 @@ jobs:
           mkdir -p "$ctx"
           cp -R apps/desktop/dist-web "$ctx/web"
           cp -R apps/landing/out "$ctx/landing"
+          mkdir "$ctx/caddy"
+          cp infra/docker/caddy/Caddyfile.behind-proxy infra/docker/caddy/sites.caddy infra/docker/caddy/log.caddy \
+            infra/docker/caddy/entrypoint.sh "$ctx/caddy/"
           find "$ctx" -name '*.map' -delete   # source maps are not published (as sync.sh)
           docker build -f infra/docker/web-image/Dockerfile -t "$REGISTRY/web:$SHA" "$ctx"
+          # The shipped config must parse with every optional site present (test hosts only, no listeners).
+          docker run --rm -e DOMAIN=calab.test -e APP_HOST=app.calab.test -e LANDING_HOST=calab.test \
+            -e LANDING_HOST_ALIASES=www.calab.test -e LANDING_HOST_MIRRORS=calab2.test \
+            -e RELEASES_HOST=releases.calab.test -e RELEASES_HOST_ALIASES=releases.calab2.test \
+            -e S3_PUBLIC_URL=https://storage.example.test/bucket -e API_UPSTREAM=api:3000 \
+            "$REGISTRY/web:$SHA" caddy validate --config /etc/caddy/Caddyfile
 
       - name: registry login (OIDC → Yandex Cloud IAM)
         run: |
