@@ -61,6 +61,7 @@ import { VOICE_TABS_CHANNEL, parseClaim, yieldsTo, type VoiceClaim } from '../li
 import { cameraWanted } from '../lib/media/cameraLogic';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
+import { lastSpoke, speakingStarts } from '../lib/lastSpoke';
 import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
 import { seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
 import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
@@ -1164,6 +1165,7 @@ class VoiceEngine {
     this.endPttTail();
     this.resetSpeaking();
     this.active.reset();
+    lastSpoke.clear();
     this.clearMoveTimer();
     this.stopStats();
     this.resetEcho();
@@ -1352,6 +1354,7 @@ class VoiceEngine {
         this.setSelfSpeaking(useVoice.getState().transmitting); // the mic stays on air across the move
         this.startLevelSpeaking(); // stops itself on the first tick if no mic track is left
         this.active.reset();
+        lastSpoke.clear();
         for (const set of this.viewers.values()) set.clear();
         for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
         this.refreshStreams();
@@ -1565,7 +1568,7 @@ class VoiceEngine {
 
   // ------------------------------------------------------------ cameras
 
-  /** Speaking rings now; the active speaker for video only after 2 s of speech (lib/activeSpeaker.ts). */
+  /** Speaking rings now; the active speaker for video only after 800 ms of speech (lib/activeSpeaker.ts). */
   private syncSpeaking(): void {
     const local = this.room?.localParticipant.identity ?? null;
     const me = this.myId() || null;
@@ -1622,7 +1625,10 @@ class VoiceEngine {
   }
 
   private onSpeaking(speaking: Record<string, boolean>): void {
+    // «Last spoke at» for the call grid (ADR-0066 §2): speaking starts only, outside the store.
+    const starts = speakingStarts(useVoice.getState().speaking, speaking);
     setVoice({ speaking });
+    lastSpoke.mark(starts, performance.now());
     this.active.update(speaking);
   }
 
