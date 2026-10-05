@@ -45,6 +45,7 @@ import { BoardHotkeysList } from '../boards/HotkeysSheet';
 import { PttBinder } from './PttBinder';
 import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
 import { AboutUpdateRow } from './AboutUpdateRow';
+import { WebUpdateRow } from './WebUpdateRow';
 import { deviceLabel, osLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
@@ -949,6 +950,7 @@ function AboutTab(): ReactNode {
   const setPrefs = usePrefs((s) => s.setPrefs);
   const desktop = platform.kind === 'electron';
   const version = info?.version ?? '—';
+  const webUpdate = useSession((s) => s.webVersion !== '');
   return (
     <>
       <div className="flex flex-col items-center gap-2 py-2 text-center">
@@ -961,6 +963,10 @@ function AboutTab(): ReactNode {
       {desktop ? (
         <Card title={t('about.updates')}>
           <AboutUpdateRow version={version} />
+        </Card>
+      ) : webUpdate ? (
+        <Card title={t('about.updates')}>
+          <WebUpdateRow version={version} />
         </Card>
       ) : null}
       <LicenseCard />
