@@ -263,6 +263,8 @@ func New(d Deps) *App {
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
 	pushSvc.Auth = authSvc
+	pushSvc.DeviceLimit = redisx.NewRateLimiter(d.Redis, "rl:push-device:", 20, 20)   // 20 at once, 20 per minute
+	pushSvc.ResolveLimit = redisx.NewRateLimiter(d.Redis, "rl:push-resolve:", 60, 60) // notification taps: one per second
 	authSvc.OnSessionsRevoked = pushSvc.CleanupSessions
 	authSvc.CheckSeat = func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
 		return planSvc.Check(ctx, q, wsID, plans.KindMembers, true)

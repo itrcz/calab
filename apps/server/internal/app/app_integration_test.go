@@ -351,6 +351,8 @@ func owner(t *testing.T) *user {
 	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:event-write:"+bootstrapUser.id)).Build()).Error()
 	// And its task creation (60 at once): the boards feature and checklist tests create many.
 	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:task-create:"+bootstrapUser.id)).Build()).Error()
+	// And its push endpoint registrations (20 at once): every push test registers through it.
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:push-device:"+bootstrapUser.id)).Build()).Error()
 	return bootstrapUser
 }
 
