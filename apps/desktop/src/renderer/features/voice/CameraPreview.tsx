@@ -1,8 +1,9 @@
 import type { LocalVideoTrack } from 'livekit-client';
-import { Loader2 } from 'lucide-react';
+import { Loader2, SwitchCamera } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Field, Modal, Select, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { cameraMirrored } from '../../lib/media/cameraLogic';
 import type { MediaErrorAction } from '../../lib/media/errors';
 import { applyCameraBackground, backgroundEnv } from '../../services/cameraBackground';
 import { humanMediaError, mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
@@ -12,6 +13,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useVoice } from '../../stores/voice';
 import { BackgroundPicker } from './BackgroundPicker';
 import { CameraAppearance } from './CameraAppearance';
+import { useCanFlipCamera } from './useCanFlipCamera';
 
 /** Video inputs, refreshed on `devicechange` (labels appear once the camera is allowed). */
 export function useCameras(refresh: unknown = null): MediaDeviceInfo[] {
@@ -35,6 +37,8 @@ export function useCameras(refresh: unknown = null): MediaDeviceInfo[] {
 export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
   const deviceId = usePrefs((s) => s.cameraDeviceId);
   const setPrefs = usePrefs((s) => s.setPrefs);
+  const facing = useVoice((s) => s.cameraFacing);
+  const canFlip = useCanFlipCamera();
   const inCall = useVoice((s) => s.phase === 'connected' && s.camera === 'off');
   const [track, setTrack] = useState<LocalVideoTrack | null>(null);
   const [error, setError] = useState<{ text: string; action: MediaErrorAction | null } | null>(null);
@@ -72,7 +76,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
       alive = false;
       if (got && handed.current !== got) got.stop();
     };
-  }, [deviceId]);
+  }, [deviceId, facing]);
 
   useEffect(() => {
     const el = video.current;
@@ -114,8 +118,19 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
       <div className={cx(wide && 'grid grid-cols-[minmax(0,1fr)_320px] gap-5')}>
         <div className="min-w-0">
           <div ref={frame} tabIndex={-1} className="relative aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-video-bg)] outline-none" data-testid="camera-preview">
-            {/* Mirrored like a mirror: moving right moves right (the others see it unmirrored). */}
-            <video ref={video} muted playsInline autoPlay className="size-full -scale-x-100 object-cover" />
+            {/* Mirrored like a mirror: moving right moves right (the others see it unmirrored). The back camera is not mirrored. */}
+            <video ref={video} muted playsInline autoPlay className={cx('size-full object-cover', cameraMirrored(facing) && '-scale-x-100')} />
+            {canFlip ? (
+              <button
+                type="button"
+                aria-label={t('video.flip')}
+                data-testid="camera-preview-flip"
+                onClick={() => voice.camera.flip()}
+                className="absolute right-2 top-2 grid size-10 place-items-center rounded-full bg-black/50 text-white active:bg-black/70"
+              >
+                <SwitchCamera className="size-5" aria-hidden />
+              </button>
+            ) : null}
             {!track && !error ? (
               <span className="absolute inset-0 grid place-items-center text-body text-white/80" role="status">
                 <span className="flex items-center gap-2">

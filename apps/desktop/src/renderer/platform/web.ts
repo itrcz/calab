@@ -461,6 +461,7 @@ const noop = (): (() => void) => () => undefined;
 export function createWebPlatform(): Platform {
   return {
     kind: 'web',
+    canShareScreen: () => typeof navigator !== 'undefined' && typeof (navigator.mediaDevices as MediaDevices | undefined)?.getDisplayMedia === 'function',
     apiBase: '',
     apiFetch,
     authHeaders: async (): Promise<Record<string, string>> => {

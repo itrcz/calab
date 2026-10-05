@@ -152,3 +152,24 @@ export function cpuLimitStep(count: number, cpuLimited: boolean): { count: numbe
   const next = cpuLimited ? count + 1 : 0;
   return { count: next, limit: next === CPU_LIMIT_SAMPLES };
 }
+
+/** Which way a phone camera looks: `user` = front (selfie), `environment` = back. */
+export type CameraFacing = 'user' | 'environment';
+
+export const otherFacing = (f: CameraFacing | null): CameraFacing => (f === 'environment' ? 'user' : 'environment');
+
+/** The self-view is mirrored except for the back camera (the picture must read like the room). */
+export const cameraMirrored = (f: CameraFacing | null): boolean => f !== 'environment';
+
+/** «Переключить камеру» is for touch devices that report two or more video inputs (front + back). */
+export const canFlipCamera = (videoInputs: number, touch: boolean): boolean => touch && videoInputs >= 2;
+
+/**
+ * getUserMedia video constraint for the chosen device or, on a phone, the chosen side. An explicit
+ * device wins over the side; no choice at all adds nothing (desktop behaviour is unchanged).
+ */
+export function cameraTarget(deviceId: string | null, facing: CameraFacing | null): { deviceId: { exact: string } } | { facingMode: CameraFacing } | Record<string, never> {
+  if (deviceId) return { deviceId: { exact: deviceId } };
+  if (facing) return { facingMode: facing };
+  return {};
+}

@@ -90,6 +90,8 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.voiceIn': '{room} / {ws}',
   'shell.shareScreen': '共享屏幕',
   'shell.stopShare': '停止共享',
+  'shell.screenUnsupported': '此浏览器不支持共享屏幕',
+  'shell.noStreamPermission': '你没有在此房间共享屏幕的权限',
   'shell.noiseOn': '降噪已开启',
   'shell.noiseOff': '降噪已关闭',
   'shell.stats': '统计信息',

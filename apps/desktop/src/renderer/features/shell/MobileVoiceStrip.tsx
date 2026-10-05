@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, Ellipsis, Headphones, HeadphoneOff, Mic, MicOff, Music, Phone, Radio, Settings } from 'lucide-react';
+import { Check, Ellipsis, Headphones, HeadphoneOff, Loader2, Mic, MicOff, Music, Phone, Radio, Settings, SwitchCamera, Video, VideoOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
@@ -18,7 +18,9 @@ import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
 import { MobileRecDot, useRecording } from '../voice/Recording';
-import { SoundboardAnchored, SoundboardButton } from '../voice/Soundboard';
+import { SoundboardAnchored } from '../voice/Soundboard';
+import { useCanFlipCamera } from '../voice/useCanFlipCamera';
+import { useCameraToggle } from './VoiceBar';
 import { TempExpiry } from '../voice/TempExpiry';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
@@ -29,8 +31,11 @@ const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-da
 /**
  * Phone voice strip (ADR-0021, Discord mobile): one 56 px solid bar at the bottom of the screen
  * while in voice — «Голос подключён · Комната» (tap = open the voice room), mute, deafen, the
- * push-to-talk hold button (PTT mic mode), «Ещё» (mic mode switch) and hang up. The full panel (camera, stream, devices)
- * stays in the navigation drawer's bottom island.
+ * push-to-talk hold button (PTT mic mode), the camera, «Ещё» (soundboard, mic mode switch) and
+ * hang up. The rest of the panel (stream, devices) stays in the navigation drawer's bottom island.
+ * Room for five 40 px buttons next to the avatar and the status text: the camera takes the place
+ * of the soundboard button (now «Ещё → Звуки»); in push-to-talk mode (the PTT button is the fifth)
+ * the camera is «Ещё → Камера» too.
  */
 export function MobileVoiceStrip(): ReactNode {
   const roomId = useVoice((s) => s.roomId);
@@ -109,20 +114,16 @@ export function MobileVoiceStrip(): ReactNode {
         >
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
-        {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
-        {/* Soundboard (ADR-0036): the island's panel as a bottom sheet — a button of the strip, or
-            «Ещё → Звуки» in push-to-talk mode (the strip has no room for one more 40 px button). */}
-        {call ? null : ptt ? (
+        {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : <StripCamera roomId={roomId} />}
+        {/* Soundboard (ADR-0036): the island's panel as a bottom sheet, «Ещё → Звуки». */}
+        {call ? (
+          <MoreMenu roomId={roomId} cameraItem={ptt} />
+        ) : (
           <SoundboardAnchored open={sounds} onOpenChange={setSounds}>
             <span className="flex shrink-0">
-              <MoreMenu onSounds={connected ? openSounds : undefined} />
+              <MoreMenu roomId={roomId} cameraItem={ptt} onSounds={connected ? openSounds : undefined} />
             </span>
           </SoundboardAnchored>
-        ) : (
-          <>
-            <SoundboardButton testId="mobile-soundboard-button" className={cx(round, idle, 'disabled:opacity-40 data-[state=open]:bg-[var(--color-fill-hover)]')} />
-            <MoreMenu />
-          </>
         )}
         <button type="button" aria-label={t('voice.leave')} onClick={() => void voice.leave()} className={cx(round, 'bg-danger-fill text-white active:brightness-90')}>
           <Phone className="size-5 rotate-[135deg]" aria-hidden />
@@ -132,8 +133,35 @@ export function MobileVoiceStrip(): ReactNode {
   );
 }
 
-/** «Ещё»: the mic mode (docs/09 #28 — voice activation / push-to-talk), «Звуки» (push-to-talk mode) and «Настройки голоса». */
-function MoreMenu({ onSounds }: { onSounds?: (() => void) | undefined }): ReactNode {
+/**
+ * The strip's camera: the island's toggle (first tap = «Проверьте камеру», then on / off; the
+ * reason when unavailable is a toast, VoiceBar `useCameraToggle`).
+ */
+function StripCamera({ roomId }: { roomId: string }): ReactNode {
+  const { label, disabled, on, busy, click } = useCameraToggle(roomId);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={on}
+      aria-disabled={disabled || undefined}
+      data-testid="mobile-camera-button"
+      onClick={click}
+      className={cx(round, on ? 'bg-accent-strong text-white' : idle, disabled && 'opacity-40')}
+    >
+      {busy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : on ? <Video className="size-5" aria-hidden /> : <VideoOff className="size-5" aria-hidden />}
+    </button>
+  );
+}
+
+/**
+ * «Ещё»: «Звуки», the camera (push-to-talk mode, where the strip has no room for it), «Переключить
+ * камеру» (phone with front + back camera, camera on), the mic mode (docs/09 #28 — voice
+ * activation / push-to-talk) and «Настройки голоса».
+ */
+function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem: boolean; onSounds?: (() => void) | undefined }): ReactNode {
+  const cam = useCameraToggle(roomId);
+  const canFlip = useCanFlipCamera();
   const micMode = usePrefs((s) => s.micMode);
   const openDialog = useUi((s) => s.openDialog);
   const soundsPicked = useRef(false);
@@ -155,6 +183,17 @@ function MoreMenu({ onSounds }: { onSounds?: (() => void) | undefined }): ReactN
           // «Звуки» opens the sheet: focus must not jump back to «Ещё» (it would close the sheet).
           onCloseAutoFocus={(e) => (soundsPicked.current ? e.preventDefault() : undefined)}
         >
+          {cameraItem ? (
+            <Dropdown.Item className={cx(menuItem, 'h-10', cam.disabled && 'opacity-40')} data-testid="mobile-voice-camera" onSelect={cam.click}>
+              {cam.on ? <Video className="size-4" aria-hidden /> : <VideoOff className="size-4" aria-hidden />} {cam.label}
+            </Dropdown.Item>
+          ) : null}
+          {canFlip && cam.on ? (
+            <Dropdown.Item className={cx(menuItem, 'h-10')} data-testid="mobile-voice-flip" onSelect={() => voice.camera.flip()}>
+              <SwitchCamera className="size-4" aria-hidden /> {t('video.flip')}
+            </Dropdown.Item>
+          ) : null}
+          {!onSounds && (cameraItem || (canFlip && cam.on)) ? <Dropdown.Separator className={menuSeparator} /> : null}
           {onSounds ? (
             <>
               <Dropdown.Item

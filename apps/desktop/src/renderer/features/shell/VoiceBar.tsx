@@ -1,9 +1,12 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ChevronDown, ChevronRight, Ellipsis, Eye, Guitar, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Ellipsis, Eye, Guitar, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, SwitchCamera, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
+import { isTouchPrimary } from '../../lib/phone';
+import { platform } from '../../platform';
+import { useCanFlipCamera } from '../voice/useCanFlipCamera';
 import { Badge, Button, Tip, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { BUILTIN_BACKGROUNDS } from '../../lib/media/background/images';
@@ -154,10 +157,16 @@ const OFF = 'bg-[var(--color-fill)] text-fg hover:bg-[var(--color-fill-hover)] d
 const panelBtn = (active: boolean): string =>
   cx('grid h-9 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40', active ? ON : OFF);
 
+/** Touch only (desktop has the tooltip): a tap on a disabled control says why. */
+export function explainDisabled(reason: string): void {
+  if (isTouchPrimary()) toast.info(reason);
+}
+
 function PanelButton({
   label,
   active = false,
   disabled,
+  reason,
   onClick,
   testId,
   children,
@@ -165,6 +174,8 @@ function PanelButton({
   label: string;
   active?: boolean;
   disabled?: boolean;
+  /** Why it is off: a tooltip never opens on touch, so a tap on the disabled button toasts it. */
+  reason?: string;
   onClick?: () => void;
   testId?: string;
   children: ReactNode;
@@ -178,7 +189,7 @@ function PanelButton({
         aria-pressed={active}
         aria-disabled={disabled || undefined}
         data-testid={testId}
-        onClick={disabled ? undefined : onClick}
+        onClick={disabled ? () => explainDisabled(reason ?? label) : onClick}
         className={cx(panelBtn(active), disabled && 'cursor-default opacity-40 hover:bg-[var(--color-fill)]')}
       >
         {children}
@@ -209,20 +220,34 @@ function useCameraLabel(roomId: string): { label: string; disabled: boolean } {
 }
 
 /** «Камера» with its ▾ device menu: one 56×40 button, the ▾ a narrow part at the right edge. */
-function CameraButton({ roomId }: { roomId: string }): ReactNode {
+/**
+ * The camera toggle shared by the island's split button and the phone strip's round one: what a
+ * tap does (stop / first-time preview / start), its label and why it may be unavailable. A tap on
+ * the disabled one says why on touch (tooltips never open there).
+ */
+export function useCameraToggle(roomId: string): { label: string; disabled: boolean; on: boolean; busy: boolean; click: () => void } {
   const phase = useVoice((s) => s.camera);
   const checked = usePrefs((s) => s.cameraChecked);
   const open = useUi((s) => s.openDialog);
   const { label, disabled } = useCameraLabel(roomId);
-  const [menu, setMenu] = useState(false);
   const on = phase === 'on';
   const busy = phase === 'starting' || phase === 'stopping';
   const click = (): void => {
+    if (disabled) {
+      explainDisabled(label);
+      return;
+    }
     if (on || phase === 'starting') void voice.camera.stop();
     else if (phase !== 'off') return;
     else if (!checked) open({ kind: 'camera-preview' });
     else void voice.camera.start();
   };
+  return { label, disabled, on, busy, click };
+}
+
+function CameraButton({ roomId }: { roomId: string }): ReactNode {
+  const { label, disabled, on, busy, click } = useCameraToggle(roomId);
+  const [menu, setMenu] = useState(false);
   // One 56×40 split button: the camera toggle and a 20 px ▾ (the full 40 px height) with a
   // hairline between them; right-click on the toggle opens the device menu too.
   const part = on ? 'hover:bg-white/15' : 'hover:bg-[var(--color-fill-hover)]';
@@ -235,7 +260,7 @@ function CameraButton({ roomId }: { roomId: string }): ReactNode {
           aria-pressed={on}
           aria-disabled={disabled || undefined}
           data-testid="camera-button"
-          onClick={disabled ? undefined : click}
+          onClick={click}
           onContextMenu={(e) => {
             e.preventDefault();
             setMenu(true);
@@ -296,9 +321,18 @@ export function CameraMenu(): ReactNode {
     };
   }, []);
   const list = (devices ?? []).filter((d) => d.kind === 'videoinput');
+  const canFlip = useCanFlipCamera();
   return (
     // To the right of the panel, over the chat: it doesn't cover the «Голос подключён» header.
     <Dropdown.Content className={cx(menuBox, 'w-72')} side="right" align="end" sideOffset={8} collisionPadding={16}>
+      {canFlip ? (
+        <>
+          <Dropdown.Item className={cx(menuItem, 'h-10')} onSelect={() => voice.camera.flip()} data-testid="camera-flip">
+            <SwitchCamera className="size-4" aria-hidden /> {t('video.flip')}
+          </Dropdown.Item>
+          <Dropdown.Separator className={menuSeparator} />
+        </>
+      ) : null}
       <Dropdown.Label className={menuLabel}>{t('video.device')}</Dropdown.Label>
       <Dropdown.RadioGroup value={current} onValueChange={(v) => setPrefs({ cameraDeviceId: v === DEFAULT_CAMERA ? null : v })}>
         <Dropdown.RadioItem value={DEFAULT_CAMERA} className={cx(menuItem, 'relative pl-7')}>
@@ -573,6 +607,9 @@ export function VoiceBar(): ReactNode {
   const saveTraffic = usePrefs((s) => s.saveTraffic);
   const musician = usePrefs((s) => s.musicianMode);
   const musicianAllowed = useMusicianAllowed();
+  // camera + more, plus «Показать экран» (not on a phone browser) and «Звуки» (not in a one-to-one call).
+  const screenCapture = platform.canShareScreen();
+  const cols = 2 + (screenCapture || myStream ? 1 : 0) + (call ? 0 : 1);
   const anyVideo = useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
   const stage = useVoice((s) => s.stage);
   const videoPip = useVoice((s) => s.videoPip);
@@ -655,14 +692,15 @@ export function VoiceBar(): ReactNode {
       {/* Equal 36 px buttons 10 px apart across the island (docs/09 #12): camera ▾, screen,
           sounds (ADR-0036; not in a one-to-one call), more. Noise suppression lives in the
           header's popover and in Settings. */}
-      <div className={cx('mt-2 grid gap-2.5', call ? 'grid-cols-3' : 'grid-cols-4')}>
+      <div className={cx('mt-2 grid gap-2.5', cols === 2 ? 'grid-cols-2' : cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}>
         <CameraButton roomId={roomId} />
-        {myStream ? (
+        {/* A phone browser has no getDisplayMedia: no button rather than one that always fails. */}
+        {!myStream && !screenCapture ? null : myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>
             <MonitorX className="size-5" aria-hidden />
           </PanelButton>
         ) : (
-          <PanelButton label={t('shell.shareScreen')} disabled={phase !== 'connected' || streamBusy || !canStream} onClick={() => open({ kind: 'stream-picker' })}>
+          <PanelButton label={t('shell.shareScreen')} reason={phase === 'connected' && !streamBusy && !canStream ? t('shell.noStreamPermission') : t('shell.shareScreen')} disabled={phase !== 'connected' || streamBusy || !canStream} onClick={() => open({ kind: 'stream-picker' })}>
             <MonitorUp className="size-5" aria-hidden />
           </PanelButton>
         )}

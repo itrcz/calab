@@ -19,6 +19,8 @@ export interface Platform extends CalabaApi {
   finishSso?(): Promise<import('../../shared/ipc').IpcResult<import('../../shared/ipc').SsoResult>>;
   /** Prefix for API paths (`calaba-api://api` in Electron, '' on the web = same origin). */
   apiBase: string;
+  /** The host can capture a screen / window (Electron always; the web needs `getDisplayMedia`, phones have none). */
+  canShareScreen(): boolean;
   /** Authenticated API request (Bearer + one refresh-and-retry on 401 where needed). */
   apiFetch(path: string, init?: RequestInit): Promise<Response>;
   /** Headers for requests the platform cannot wrap itself (XHR uploads). */
