@@ -44,7 +44,7 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
 Copy the contents of `out/` there. `trailingSlash: true`, so every page `/x/` is exported as `x/index.html`.
 Links: «Открыть в браузере» → `https://app.calab.io`, downloads → direct links to the stable names
 `https://releases.calab.io/latest/<file>` (`DOWNLOADS` in `src/lib/site.ts`; the main button picks the visitor's OS
-in the browser, the version comes from `latest/VERSION`, never versioned file names), licence and support → `it@gptunnel.ai` (`CONTACT_EMAIL`), source → `https://github.com/itrcz/calab` (`REPO_URL` in `src/lib/site.ts`; LICENSE/SECURITY/TRADEMARKS links point to `blob/main/…`).
+in the browser, the version comes from `latest/VERSION`, never versioned file names), licence and support → the public CALAB intake form (`CONTACT_FORM_URL`), source → `https://github.com/itrcz/calab` (`REPO_URL` in `src/lib/site.ts`; LICENSE/SECURITY/TRADEMARKS links point to `blob/main/…`).
 
 ## Design
 
@@ -94,6 +94,6 @@ Every scene is captured per language with that language's team (docs/09 #139).
 
 ## TODO
 
-- Telegram channel in the footer when there is one (contact now: `it@gptunnel.ai`).
+- Telegram channel in the footer when there is one (contact now: the CALAB intake form).
 - FAQ hardware estimate («ориентировочно 4 vCPU и 8 ГБ» for up to 30 users) comes from the compose memory limits,
   not a load test — refine after the load test.

@@ -349,6 +349,7 @@ const en: Dict = {
     licenseLink: 'Licence text',
   },
   faq: {
+    contactLink: 'contact form',
     eyebrow: 'FAQ',
     title: 'The short version',
     items: {
@@ -382,11 +383,12 @@ const en: Dict = {
       },
       buy: {
         q: "How do I buy?",
-        a: "Write to {email} with a few words about your company and use case. We usually enable Team and Business within a day; for Enterprise we will send licence terms.",
+        a: "Use our {contact} with a few words about your company and use case. We usually enable Team and Business within a day; for Enterprise we will send licence terms.",
       },
     },
   },
   footer: {
+    contact: 'Contact us',
     navLabel: 'Documents',
     license: 'License',
     commercial: 'Commercial license',

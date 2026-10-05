@@ -350,6 +350,7 @@ const zh: Dict = {
     licenseLink: '许可证全文',
   },
   faq: {
+    contactLink: '联系表单',
     eyebrow: '常见问题',
     title: '要点速览',
     items: {
@@ -383,11 +384,12 @@ const zh: Dict = {
       },
       buy: {
         q: "如何购买？",
-        a: "请写信至 {email}，简要介绍公司和使用场景。Team 和 Business 通常一天内开通；Enterprise 我们会发送许可条款。",
+        a: "请填写{contact}，简要介绍公司和使用场景。Team 和 Business 通常一天内开通；Enterprise 我们会发送许可条款。",
       },
     },
   },
   footer: {
+    contact: '联系我们',
     navLabel: '文档',
     license: '许可证',
     commercial: '商业许可',

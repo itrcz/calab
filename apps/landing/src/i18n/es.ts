@@ -349,6 +349,7 @@ const es: Dict = {
     licenseLink: 'Texto de la licencia',
   },
   faq: {
+    contactLink: 'formulario de contacto',
     eyebrow: 'Preguntas',
     title: 'Lo esencial, en breve',
     items: {
@@ -382,11 +383,12 @@ const es: Dict = {
       },
       buy: {
         q: "¿Cómo compro?",
-        a: "Escribe a {email} con unas palabras sobre tu empresa y el caso de uso. Team y Business suelen activarse en un día; para Enterprise enviaremos las condiciones de la licencia.",
+        a: "Escribe mediante el {contact} con unas palabras sobre tu empresa y el caso de uso. Team y Business suelen activarse en un día; para Enterprise enviaremos las condiciones de la licencia.",
       },
     },
   },
   footer: {
+    contact: 'Contactar',
     navLabel: 'Documentos',
     license: 'Licencia',
     commercial: 'Licencia comercial',

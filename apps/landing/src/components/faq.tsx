@@ -1,15 +1,15 @@
 import { Plus } from 'lucide-react';
 import type { Dict } from '@/i18n';
 import { rich } from '@/lib/rich';
-import { CONTACT_EMAIL } from '@/lib/site';
+import { CONTACT_FORM_URL } from '@/lib/site';
 import { Section, SectionHeading } from './ui';
 
 const ORDER = ['server', 'identity', 'recording', 'sip', 'security', 'firewall', 'enterprise', 'buy'] as const;
 
 export function Faq({ t }: { t: Dict['faq'] }) {
-  const email = (
-    <a href={`mailto:${CONTACT_EMAIL}`} className="link">
-      {CONTACT_EMAIL}
+  const contact = (
+    <a href={CONTACT_FORM_URL} className="link">
+      {t.contactLink}
     </a>
   );
   return (
@@ -25,7 +25,7 @@ export function Faq({ t }: { t: Dict['faq'] }) {
               <h3>{t.items[id].q}</h3>
               <span className="faq-toggle" aria-hidden="true"><Plus size={20} strokeWidth={1.75} /></span>
             </summary>
-            <div className="faq-answer"><p>{rich(t.items[id].a, { email })}</p></div>
+            <div className="faq-answer"><p>{rich(t.items[id].a, { contact })}</p></div>
           </details>
         ))}
       </div>

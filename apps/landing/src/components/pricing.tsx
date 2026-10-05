@@ -1,7 +1,7 @@
 import { ChevronDown, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Dict } from '@/i18n';
-import { APP_URL, CONTACT_EMAIL, repoFile } from '@/lib/site';
+import { APP_URL, CONTACT_FORM_URL, repoFile } from '@/lib/site';
 import { Button, Section, SectionHeading } from './ui';
 
 const PLAN_IDS = ['free', 'team', 'business', 'enterprise'] as const;
@@ -33,7 +33,6 @@ const ROW_IDS = Object.keys({
   price: 0,
 } satisfies Record<RowId, 0>) as RowId[];
 
-const mailto = (plan: string): string => `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Calab ${plan}`)}`;
 
 const CTA: Record<PlanId, (t: Dict['pricing']) => ReactNode> = {
   free: (t) => (
@@ -47,12 +46,12 @@ const CTA: Record<PlanId, (t: Dict['pricing']) => ReactNode> = {
     </div>
   ),
   team: (t) => (
-    <Button href={mailto('Team')} variant="secondary" className="w-full">
+    <Button href={CONTACT_FORM_URL} variant="secondary" className="w-full">
       {t.cta.contact}
     </Button>
   ),
   business: (t) => (
-    <Button href={mailto('Business')} variant="secondary" className="w-full">
+    <Button href={CONTACT_FORM_URL} variant="secondary" className="w-full">
       {t.cta.contact}
     </Button>
   ),

@@ -1,6 +1,6 @@
 import type { Dict, Locale } from '@/i18n';
 import { localePath } from '@/i18n/locales';
-import { CONTACT_EMAIL, GPTUNNEL_URL, REPO_URL, repoFile } from '@/lib/site';
+import { CONTACT_FORM_URL, GPTUNNEL_URL, REPO_URL, repoFile } from '@/lib/site';
 import { Container } from './ui';
 
 export function Footer({ t, locale }: { t: Dict['footer']; locale: Locale }) {
@@ -11,7 +11,7 @@ export function Footer({ t, locale }: { t: Dict['footer']; locale: Locale }) {
     { href: repoFile('COMMERCIAL-LICENSE.md'), label: t.commercial },
     { href: repoFile('SECURITY.md'), label: t.security },
     { href: repoFile('TRADEMARKS.md'), label: t.trademarks },
-    { href: `mailto:${CONTACT_EMAIL}`, label: CONTACT_EMAIL },
+    { href: CONTACT_FORM_URL, label: t.contact },
   ];
   return (
     <footer className="border-t border-line py-10">
