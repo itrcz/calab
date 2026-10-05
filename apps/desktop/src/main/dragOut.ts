@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -24,7 +24,8 @@ import { log } from './logging';
  *   attachment id, the renderer never passes a URL, so no other origin is ever requested;
  * - must answer `image/*` and stay under DRAG_MAX_BYTES (streamed, counted);
  * - is saved under its sanitized original name (shared/fileName.ts) in the app's own temp folder
- *   `<temp>/calab-drag/<pid>/<fileId>/`, marked as downloaded from the Internet (quarantine /
+ *   `<temp>/calab-drag/<pid>/<n>/` (a fresh folder per download, so a late failure of an evicted
+ *   one never removes another's file; the base folder must be ours — 0700, not a symlink), marked as downloaded from the Internet (quarantine /
  *   Mark-of-the-Web, like downloads.ts) so the copy the user drops keeps the mark;
  * - is kept for the last MAX_ENTRIES images (a second drag is instant), evicted folders are
  *   deleted, the whole folder goes at quit and folders of dead processes at the next start.
@@ -42,6 +43,7 @@ interface Ready {
 
 interface Entry {
   dir: string;
+  abort: AbortController;
   ready: Promise<Ready | null>;
   done: Ready | null;
 }
@@ -49,6 +51,7 @@ interface Entry {
 /** By file id; Map order = LRU order. */
 const cache = new Map<string, Entry>();
 let rootDir: string | null = null;
+let seq = 0;
 
 function alive(pid: number): boolean {
   try {
@@ -63,6 +66,13 @@ function alive(pid: number): boolean {
 function root(): string {
   if (rootDir) return rootDir;
   const base = join(app.getPath('temp'), 'calab-drag');
+  // On Linux <temp> is the shared /tmp: another local user could pre-create the folder or plant a
+  // symlink there to swap the file we hand to startDrag. Only a real folder we own is used.
+  mkdirSync(base, { recursive: true, mode: 0o700 });
+  const st = lstatSync(base);
+  if (!st.isDirectory() || st.isSymbolicLink() || (typeof process.getuid === 'function' && st.uid !== process.getuid())) {
+    throw new Error('drag-out temp folder is not ours');
+  }
   try {
     for (const name of readdirSync(base)) {
       const pid = Number(name);
@@ -72,28 +82,35 @@ function root(): string {
     // no folder yet
   }
   rootDir = join(base, String(process.pid));
-  mkdirSync(rootDir, { recursive: true });
+  mkdirSync(rootDir, { recursive: true, mode: 0o700 });
   return rootDir;
 }
 
 /** At quit: nothing of ours stays in temp. */
 export function cleanupDragOut(): void {
+  for (const e of cache.values()) e.abort.abort();
   cache.clear();
   if (rootDir) rmSync(rootDir, { recursive: true, force: true });
   rootDir = null;
+}
+
+/** Forgets an entry: its download (if still running) is cancelled and its folder removed. */
+function drop(fileId: string, e: Entry): void {
+  if (cache.get(fileId) === e) cache.delete(fileId);
+  e.abort.abort();
+  void rm(e.dir, { recursive: true, force: true });
 }
 
 function evict(): void {
   while (cache.size > MAX_ENTRIES) {
     const oldest = cache.entries().next().value;
     if (!oldest) break;
-    cache.delete(oldest[0]);
-    void rm(oldest[1].dir, { recursive: true, force: true });
+    drop(oldest[0], oldest[1]);
   }
 }
 
-async function fetchTo(fileId: string, dest: string): Promise<void> {
-  const res = await net.fetch(`${API_ORIGIN}/api/files/${fileId}`, { signal: AbortSignal.timeout(FETCH_DEADLINE_MS) });
+async function fetchTo(fileId: string, dest: string, signal: AbortSignal): Promise<void> {
+  const res = await net.fetch(`${API_ORIGIN}/api/files/${fileId}`, { signal: AbortSignal.any([signal, AbortSignal.timeout(FETCH_DEADLINE_MS)]) });
   if (!res.ok || !res.body) {
     void res.body?.cancel();
     throw new Error(`HTTP ${res.status}`);
@@ -114,7 +131,7 @@ async function fetchTo(fileId: string, dest: string): Promise<void> {
       else cb(null, chunk);
     },
   });
-  await pipeline(Readable.fromWeb(res.body as unknown as NodeReadableStream<Uint8Array>), limit, createWriteStream(dest, { flags: 'wx' }));
+  await pipeline(Readable.fromWeb(res.body as unknown as NodeReadableStream<Uint8Array>), limit, createWriteStream(dest, { flags: 'wx' }), { signal });
 }
 
 async function dragIcon(path: string): Promise<NativeImage> {
@@ -132,12 +149,12 @@ async function dragIcon(path: string): Promise<NativeImage> {
   return appIconImage(64); // startDrag refuses an empty icon on macOS
 }
 
-async function load(fileId: string, name: string, dir: string): Promise<Ready> {
-  await rm(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
+async function load(fileId: string, name: string, dir: string, signal: AbortSignal): Promise<Ready> {
+  mkdirSync(dir, { mode: 0o700 }); // fresh: fails if anything is already there
   const path = join(dir, safeFileName(name));
   const part = `${path}.part`;
-  await fetchTo(fileId, part);
+  await fetchTo(fileId, part, signal);
+  signal.throwIfAborted();
   await rename(part, path);
   await markFromInternet(path, new URL(currentServerUrl()).origin);
   return { path, icon: await dragIcon(path) };
@@ -155,17 +172,23 @@ export function prepareDragOut(fileId: string, name: string): Promise<boolean> {
     cache.set(fileId, hit);
     return hit.ready.then((r) => r !== null);
   }
-  const dir = join(root(), fileId.toLowerCase());
-  const entry: Entry = { dir, done: null, ready: Promise.resolve(null) };
-  entry.ready = load(fileId, name, dir).then(
+  if (hit) drop(fileId, hit); // its file was moved out of the folder
+  let dir: string;
+  try {
+    dir = join(root(), String(++seq));
+  } catch (e) {
+    log.warn('[drag-out] no temp folder', e);
+    return Promise.resolve(false);
+  }
+  const entry: Entry = { dir, abort: new AbortController(), done: null, ready: Promise.resolve(null) };
+  entry.ready = load(fileId, name, dir, entry.abort.signal).then(
     (r) => {
       entry.done = r;
       return r;
     },
     (e: unknown) => {
-      log.warn('[drag-out] could not prepare the file', e);
-      if (cache.get(fileId) === entry) cache.delete(fileId);
-      void rm(dir, { recursive: true, force: true });
+      if (!entry.abort.signal.aborted) log.warn('[drag-out] could not prepare the file', e);
+      drop(fileId, entry);
       return null;
     },
   );

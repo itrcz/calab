@@ -200,7 +200,7 @@ function ImageStage({
           />
         ) : null}
         {fullSrc && layers.full ? (
-          <img src={fullSrc} alt={img.name} {...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime })} {...dragOutHandlers} data-testid="lightbox-image"className="absolute inset-0 size-full object-contain" />
+          <img src={fullSrc} alt={img.name} {...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime })} {...dragOutHandlers} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
         ) : null}
         {layers.spinner ? (
           <span className="absolute inset-0 grid place-items-center">

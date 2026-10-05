@@ -13,7 +13,7 @@ export function safeFileName(name: string): string {
     // eslint-disable-next-line no-control-regex -- strip control chars from user-supplied file names
     .replace(/[:*?"<>|\u0000-\u001f\u007f]/g, '_')
     // Bidi overrides / isolates / marks: «photo‮gpj.exe» would show as «photoexe.jpg».
-    .replace(/[؜‎‏‪-‮⁦-⁩]/g, '')
+    .replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
     .trim()
     // Windows drops trailing dots / spaces (a.exe. → a.exe): never let the OS rewrite the name.
     .replace(/[. ]+$/, '');

@@ -340,7 +340,7 @@ export function registerIpc(): void {
   });
   // The drag starts from the caller's own window (the press began there), never another one.
   handle(IPC.filesDragStart, (e, a) => startDragOut(e.sender, str(a, 64)));
-  handle(IPC.filesDecodeImage,(_e, a) => decodeImageNative(a));
+  handle(IPC.filesDecodeImage, (_e, a) => decodeImageNative(a));
 
   // ---- media ----
   handle(IPC.captureListSources, (_e, req) => listSources(parseThumbRequest(req)));
