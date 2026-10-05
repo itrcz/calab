@@ -16,7 +16,7 @@ import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { createMetaBuilder, type RowMeta } from './grouping';
-import { createBottomPin } from './lastRowPin';
+import { createBottomPin, initialFeedLocation } from './lastRowPin';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
@@ -175,9 +175,6 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const virtuoso = useRef<VirtuosoHandle>(null);
   // False until Virtuoso reports it: opening at the first unread must not mark the room read.
   const [atBottom, setAtBottom] = useState(false);
-  // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
-  // edit) or the composer growing is no new item, so followOutput never sees it (lastRowPin.ts).
-  const [bottomPin] = useState(createBottomPin);
 
   // Grouping, incremental: only changed rows and their neighbours are recomputed; unchanged rows
   // keep their meta object → no re-render (docs/14 «Лента на 20 тыс. сообщений»).
@@ -188,11 +185,11 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   // firstItemIndex; the store keeps the window's base exact for every change.
   const firstIndex = START_INDEX + state.base;
 
-  // Opens at the first unread message (docs/09 #39), otherwise at the bottom.
-  const [initialIndex] = useState(() => {
-    const i = metas.findIndex((m) => m.isNew);
-    return i >= 0 ? { index: i, align: 'start' as const, offset: -40 } : Math.max(0, items.length - 1);
-  });
+  // Opens at the first unread message (docs/09 #39), otherwise at the last row's bottom.
+  // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
+  // edit) or the composer growing is no new item, so followOutput never sees it (lastRowPin.ts).
+  const [{ location: initialIndex, stuck: openStuck }] = useState(() => initialFeedLocation(metas.findIndex((m) => m.isNew), state.hasMoreAfter));
+  const [bottomPin] = useState(() => createBottomPin(openStuck));
 
   const lastSentId = useMemo(() => lastSentOf(items), [items]);
 
@@ -381,6 +378,10 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         followOutput={followOutput}
         atBottomStateChange={setAtBottom}
         atBottomThreshold={48}
+        // Measure rows in the ResizeObserver callback, before paint, not a frame later: a row
+        // mounted while scrolling whose real height differs from the estimate otherwise paints one
+        // frame with the whole feed shifted by the difference (the «flicker» while scrolling).
+        skipAnimationFrameInResizeObserver
         scrollerRef={scrollerRef}
         onScroll={onScroll}
         increaseViewportBy={INCREASE_VIEWPORT}

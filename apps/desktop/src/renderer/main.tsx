@@ -17,7 +17,12 @@ import { installHostNotifications } from './services/hostNotifications';
 import { installHostActivity } from './services/hostActivity';
 import './app/styles.css';
 
-window.addEventListener('error', (e) => log.error('uncaught', e.error ?? e.message));
+window.addEventListener('error', (e) => {
+  // Benign by spec: a ResizeObserver callback resized something observed (the chat feed measures
+  // rows synchronously — skipAnimationFrameInResizeObserver); the rest is delivered next frame.
+  if (!e.error && e.message.startsWith('ResizeObserver loop')) return;
+  log.error('uncaught', e.error ?? e.message);
+});
 window.addEventListener('unhandledrejection', (e) => log.error('unhandled rejection', e.reason));
 
 // Desktop: document.visibilityState follows the window (hidden / minimized) — docs/14-energy.md.
