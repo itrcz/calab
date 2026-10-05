@@ -83,6 +83,9 @@ type Service struct {
 	// without a request (ADR-0054): the CalDAV push and the meeting mails. nil fails closed —
 	// nothing is pushed and mails carry no meeting details; the app always sets it.
 	Identity IdentityGate
+	// EmailGate: whether adding outside attendees needs a confirmed address (ADR-0023,
+	// EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
+	EmailGate auth.EmailGate
 }
 
 // IdentityGate is the background side of the identity policy (identitypolicy.Delivery).

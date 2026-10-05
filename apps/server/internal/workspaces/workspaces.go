@@ -63,6 +63,9 @@ type Handlers struct {
 	email  EmailInvites
 	files  *files.Service
 	voice  rooms.VoiceRooms // nil: guests see nobody through a call (WithVoice)
+	// emailGate: whether creating workspaces and invitations needs a confirmed address
+	// (ADR-0023, EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
+	emailGate auth.EmailGate
 }
 
 // Limits against abuse of the shared disk (security review H2).
@@ -79,6 +82,9 @@ type Limits struct {
 func NewHandlers(d *db.DB, ev events.Publisher, store blob.Store, limits Limits) *Handlers {
 	return &Handlers{db: d, events: ev, store: store, limits: limits}
 }
+
+// WithEmailGate applies EMAIL_VERIFICATION to creating workspaces and invitations (ADR-0065).
+func (h *Handlers) WithEmailGate(g auth.EmailGate) *Handlers { h.emailGate = g; return h }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
 func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {

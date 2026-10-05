@@ -57,6 +57,7 @@ type Service struct {
 	tokens       *Tokens
 	events       events.Publisher
 	mode         config.RegistrationMode
+	emailGate    EmailGate
 	refresh      time.Duration
 	accessTL     time.Duration
 	now          func() time.Time
@@ -88,6 +89,7 @@ func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publis
 		tokens:       NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
 		events:       ev,
 		mode:         cfg.RegistrationMode,
+		emailGate:    NewEmailGate(cfg.EmailVerification),
 		refresh:      cfg.RefreshTokenTTL,
 		accessTL:     cfg.AccessTokenTTL,
 		now:          time.Now,
@@ -95,6 +97,9 @@ func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publis
 		entitlements: cfg.IdentityEntitlements(),
 	}
 }
+
+// EmailGate is the configured EMAIL_VERIFICATION policy for actions (ADR-0065).
+func (s *Service) EmailGate() EmailGate { return s.emailGate }
 
 // Tokens exposes the access-token verifier (used by the gateway for IDENTIFY).
 func (s *Service) Tokens() *Tokens { return s.tokens }
@@ -441,10 +446,14 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			}})
 		}
 	}
-	if user.EmailVerifiedAt == nil {
+	// EMAIL_VERIFICATION=optional (ADR-0065): no code unless an email invitation waits for
+	// the address (its join needs the confirmation); the user asks for one in the settings.
+	vs := s.Verification(ctx, user)
+	if user.EmailVerifiedAt == nil && vs.Ask() {
 		s.sendVerificationQuietly(ctx, user)
 	}
-	return &v1.RegisterResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
+	return &v1.RegisterResponse{Tokens: tokens, Me: pbconv.Me(user),
+		EmailVerificationOptional: vs.Optional, EmailInvitePending: vs.InvitePending}, nil
 }
 
 // Login verifies credentials and opens a new session.
@@ -483,13 +492,16 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 		return nil, err
 	}
 	// Unverified (e.g. accounts from before ADR-0023): a fresh code with every sign-in,
-	// unless one was sent less than 60 s ago.
-	s.sendVerificationQuietly(ctx, user)
+	// unless one was sent less than 60 s ago — not when nothing asks for it (ADR-0065).
+	vs := s.Verification(ctx, user)
+	if vs.Ask() {
+		s.sendVerificationQuietly(ctx, user)
+	}
 	me, err := pbconv.LocalMe(ctx, s.db.Q, user)
 	if err != nil {
 		return nil, err
 	}
-	return &v1.LoginResponse{Tokens: tokens, Me: me}, nil
+	return &v1.LoginResponse{Tokens: tokens, Me: me, EmailVerificationOptional: vs.Optional, EmailInvitePending: vs.InvitePending}, nil
 }
 
 // Refresh rotates the refresh token of a session. The previous token gets the same new pair

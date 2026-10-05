@@ -174,7 +174,7 @@ func (h *Handlers) createTemp(w http.ResponseWriter, r *http.Request) error {
 		if !bits.Has(perm.InviteGuests) {
 			return httpx.Forbidden("INVITE_GUESTS required for a link that admits guests (guests=false: members only)")
 		}
-		if _, err := auth.VerifiedUser(ctx, h.db.Q, me); err != nil { // invitations need a verified email (ADR-0023)
+		if _, err := h.EmailGate.User(ctx, h.db.Q, me); err != nil { // invitations need a verified email (ADR-0023, ADR-0065)
 			return err
 		}
 	}

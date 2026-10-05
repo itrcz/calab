@@ -513,6 +513,10 @@ type Me struct {
 	// Unverified accounts may sign in and read, but get 403 EMAIL_NOT_VERIFIED on creating
 	// workspaces, invites and new DMs. Accounts from before ADR-0023 start unverified too
 	// (no grandfathering): show a non-dismissable "confirm your email" bar with a code field.
+	// With EMAIL_VERIFICATION=optional (ADR-0065) nothing is blocked and the bar is shown only
+	// for a waiting email invitation (Ready / LoginResponse / RegisterResponse:
+	// email_verification_optional, email_invite_pending), but the address stays unconfirmed
+	// and is not trusted (email invitations, OAuth claims, superadmin).
 	// Always true for guests (no email). Servers without SMTP verify at registration.
 	EmailVerified bool `protobuf:"varint,5,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
 	// Requested new address (PATCH /api/me/email) waiting for its code; empty = none.

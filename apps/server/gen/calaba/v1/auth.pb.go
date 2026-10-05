@@ -290,7 +290,8 @@ type RegisterRequest struct {
 	InviteCode string `protobuf:"bytes,4,opt,name=invite_code,json=inviteCode,proto3" json:"invite_code,omitempty"`
 	DeviceName string `protobuf:"bytes,5,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
 	// Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
-	// Registration sends a verification code to `email` (ADR-0023, ADR-0027).
+	// Registration sends a verification code to `email` (ADR-0023, ADR-0027) unless
+	// EMAIL_VERIFICATION=optional and no email invitation waits for it (ADR-0065).
 	Locale string `protobuf:"bytes,6,opt,name=locale,proto3" json:"locale,omitempty"`
 	// Opt-in similar-address check (docs/09 #119). When set and another account has the same
 	// local part at a sibling domain of the same organisation (same name, different last label:
@@ -388,8 +389,17 @@ type RegisterResponse struct {
 	// Set only for check_similar_account (then tokens and me are empty). Never names the other
 	// address.
 	SimilarAccount bool `protobuf:"varint,3,opt,name=similar_account,json=similarAccount,proto3" json:"similar_account,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+	// no action. The client shows no "confirm your email" onboarding step and no bar (unless
+	// email_invite_pending); the address is offered for confirmation in the account settings.
+	// false (also from servers before ADR-0065): ask as ADR-0023 says.
+	EmailVerificationOptional bool `protobuf:"varint,4,opt,name=email_verification_optional,json=emailVerificationOptional,proto3" json:"email_verification_optional,omitempty"`
+	// ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+	// only after the confirmation (ADR-0027), so the client asks for it even when
+	// email_verification_optional. Set only when email_verification_optional.
+	EmailInvitePending bool `protobuf:"varint,5,opt,name=email_invite_pending,json=emailInvitePending,proto3" json:"email_invite_pending,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RegisterResponse) Reset() {
@@ -439,6 +449,20 @@ func (x *RegisterResponse) GetMe() *Me {
 func (x *RegisterResponse) GetSimilarAccount() bool {
 	if x != nil {
 		return x.SimilarAccount
+	}
+	return false
+}
+
+func (x *RegisterResponse) GetEmailVerificationOptional() bool {
+	if x != nil {
+		return x.EmailVerificationOptional
+	}
+	return false
+}
+
+func (x *RegisterResponse) GetEmailInvitePending() bool {
+	if x != nil {
+		return x.EmailInvitePending
 	}
 	return false
 }
@@ -505,11 +529,20 @@ func (x *LoginRequest) GetDeviceName() string {
 }
 
 type LoginResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tokens        *AuthTokens            `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
-	Me            *Me                    `protobuf:"bytes,2,opt,name=me,proto3" json:"me,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Tokens *AuthTokens            `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	Me     *Me                    `protobuf:"bytes,2,opt,name=me,proto3" json:"me,omitempty"`
+	// ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+	// no action. The client shows no "confirm your email" onboarding step and no bar (unless
+	// email_invite_pending); the address is offered for confirmation in the account settings.
+	// false (also from servers before ADR-0065): ask as ADR-0023 says.
+	EmailVerificationOptional bool `protobuf:"varint,3,opt,name=email_verification_optional,json=emailVerificationOptional,proto3" json:"email_verification_optional,omitempty"`
+	// ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+	// only after the confirmation (ADR-0027), so the client asks for it even when
+	// email_verification_optional. Set only when email_verification_optional.
+	EmailInvitePending bool `protobuf:"varint,4,opt,name=email_invite_pending,json=emailInvitePending,proto3" json:"email_invite_pending,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *LoginResponse) Reset() {
@@ -554,6 +587,20 @@ func (x *LoginResponse) GetMe() *Me {
 		return x.Me
 	}
 	return nil
+}
+
+func (x *LoginResponse) GetEmailVerificationOptional() bool {
+	if x != nil {
+		return x.EmailVerificationOptional
+	}
+	return false
+}
+
+func (x *LoginResponse) GetEmailInvitePending() bool {
+	if x != nil {
+		return x.EmailInvitePending
+	}
+	return false
 }
 
 // POST /api/auth/refresh (no access token needed).
@@ -1120,19 +1167,23 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\vdevice_name\x18\x05 \x01(\tR\n" +
 	"deviceName\x12\x16\n" +
 	"\x06locale\x18\x06 \x01(\tR\x06locale\x122\n" +
-	"\x15check_similar_account\x18\a \x01(\bR\x13checkSimilarAccount\"\x89\x01\n" +
+	"\x15check_similar_account\x18\a \x01(\bR\x13checkSimilarAccount\"\xfb\x01\n" +
 	"\x10RegisterResponse\x12-\n" +
 	"\x06tokens\x18\x01 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\x12\x1d\n" +
 	"\x02me\x18\x02 \x01(\v2\r.calaba.v1.MeR\x02me\x12'\n" +
-	"\x0fsimilar_account\x18\x03 \x01(\bR\x0esimilarAccount\"a\n" +
+	"\x0fsimilar_account\x18\x03 \x01(\bR\x0esimilarAccount\x12>\n" +
+	"\x1bemail_verification_optional\x18\x04 \x01(\bR\x19emailVerificationOptional\x120\n" +
+	"\x14email_invite_pending\x18\x05 \x01(\bR\x12emailInvitePending\"a\n" +
 	"\fLoginRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1f\n" +
 	"\vdevice_name\x18\x03 \x01(\tR\n" +
-	"deviceName\"]\n" +
+	"deviceName\"\xcf\x01\n" +
 	"\rLoginResponse\x12-\n" +
 	"\x06tokens\x18\x01 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\x12\x1d\n" +
-	"\x02me\x18\x02 \x01(\v2\r.calaba.v1.MeR\x02me\"5\n" +
+	"\x02me\x18\x02 \x01(\v2\r.calaba.v1.MeR\x02me\x12>\n" +
+	"\x1bemail_verification_optional\x18\x03 \x01(\bR\x19emailVerificationOptional\x120\n" +
+	"\x14email_invite_pending\x18\x04 \x01(\bR\x12emailInvitePending\"5\n" +
 	"\x0eRefreshRequest\x12#\n" +
 	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"@\n" +
 	"\x0fRefreshResponse\x12-\n" +
