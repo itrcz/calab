@@ -312,15 +312,15 @@ async function withBorisCamera(page: Page, mock: MockServer): Promise<Publisher>
   return pub;
 }
 
-/** The camera grid with 3 tiles (two cameras + Вера's avatar tile), Борис large. */
+/** The call view (ADR-0066 «Галерея», the default) with 3 equal tiles: two cameras + Вера's avatar tile. */
 async function cameraGrid(page: Page): Promise<void> {
   await page.getByTestId('camera-pip').getByRole('button', { name: 'Развернуть видео' }).first().click();
   await expect(page.getByTestId('video-grid')).toBeVisible();
+  await expect(page.getByTestId('video-grid')).toHaveAttribute('data-view', 'gallery');
   await expect(page.getByRole('button', { name: 'Камера: Борис Петров' })).toBeVisible({ timeout: 30_000 });
   await expectFrames(page, 2);
   await expect(page.getByTestId('video-tile')).toHaveCount(3);
-  // My own camera is never the large tile by default: Борис's is.
-  await expect(page.locator('[data-testid="video-tile"][data-featured]')).toHaveAccessibleName('Камера: Борис Петров');
+  await expect(page.locator('[data-testid="video-tile"][data-featured]')).toHaveCount(0);
 }
 
 /**
@@ -3021,12 +3021,15 @@ test('voice-camera-focus', async ({ open, win, mock, shot }) => {
   const pub = await withBorisCamera(win, mock);
   try {
     await cameraGrid(win);
-    // Pin a tile: accent ring + pin badge, «Вернуться к сетке» in the header; Esc unpins.
+    // «Спикер»: Борис large (my own camera never is by default). Pin my tile: accent ring + pin
+    // badge, it goes large, «Открепить» in the header; Esc unpins.
+    await win.getByRole('radio', { name: 'Спикер' }).click();
+    await expect(win.locator('[data-testid="video-tile"][data-featured]')).toHaveAccessibleName('Камера: Борис Петров');
     const meTile = win.getByRole('button', { name: 'Камера: Анна Смирнова' });
     await meTile.click();
     await expect(meTile).toHaveAttribute('aria-pressed', 'true');
     await expect(win.locator('[data-testid="video-tile"][data-featured]')).toHaveAccessibleName('Камера: Анна Смирнова');
-    await expect(win.getByRole('button', { name: 'Вернуться к сетке' })).toBeVisible();
+    await expect(win.getByRole('button', { name: 'Открепить' })).toBeVisible();
     await checkpoint(shot, 'voice-camera-focus');
     await win.mouse.move(0, 0);
     await win.keyboard.press('Escape');
