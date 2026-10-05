@@ -90,6 +90,8 @@ export const enShell: DictShape<typeof ruShell> = {
   'shell.voiceIn': '{room} / {ws}',
   'shell.shareScreen': 'Share screen',
   'shell.stopShare': 'Stop sharing',
+  'shell.screenUnsupported': 'Screen sharing is not available in this browser',
+  'shell.noStreamPermission': 'You don’t have permission to share the screen in this room',
   'shell.noiseOn': 'Noise suppression on',
   'shell.noiseOff': 'Noise suppression off',
   'shell.stats': 'Stats',

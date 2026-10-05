@@ -17,6 +17,7 @@ export const ruVideo = {
   'video.roomOff': 'Камеры в этой комнате выключены',
   'video.full': 'Камера — в комнате уже {n} из {max}',
   'video.noDevices': 'Камеры не найдены',
+  'video.flip': 'Переключить камеру',
   'shell.streamBtn': 'Стрим',
   'shell.noiseBtn': 'Шумодав',
 

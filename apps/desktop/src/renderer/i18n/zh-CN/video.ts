@@ -17,6 +17,7 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'video.roomOff': '此房间已关闭摄像头',
   'video.full': '摄像头——该房间已有{n}/{max}人开启',
   'video.noDevices': '未找到摄像头',
+  'video.flip': '切换摄像头',
   'shell.streamBtn': '共享',
   'shell.noiseBtn': '降噪',
 

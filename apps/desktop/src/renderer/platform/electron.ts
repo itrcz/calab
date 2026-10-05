@@ -7,6 +7,7 @@ export function createElectronPlatform(): Platform {
   return {
     ...c,
     kind: 'electron',
+    canShareScreen: () => true,
     apiBase: API_ORIGIN,
     apiFetch: (path, init) => fetch(`${API_ORIGIN}${path}`, init),
     authHeaders: () => Promise.resolve({}),

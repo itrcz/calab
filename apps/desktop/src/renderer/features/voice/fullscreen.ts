@@ -28,15 +28,60 @@ export function windowHost(api: CalabaApi['window']): FullscreenHost {
   };
 }
 
-/** The Fullscreen API of `doc` (web; a pop-out without the bridge). */
+/** iOS Safari: only a <video> can go full screen (its native player); other elements lack requestFullscreen. */
+interface IosVideo extends HTMLVideoElement {
+  webkitEnterFullscreen?: () => void;
+  webkitExitFullscreen?: () => void;
+  webkitDisplayingFullscreen?: boolean;
+}
+
+/**
+ * How `el` goes full screen: the Fullscreen API on the element, else (iPhone) the native player
+ * of the <video> inside it, else not at all. Pure — unit-tested.
+ */
+export function pickFullscreen(el: Pick<HTMLElement, 'requestFullscreen' | 'querySelector'>): { kind: 'element' } | { kind: 'video'; video: IosVideo } | null {
+  if (typeof el.requestFullscreen === 'function') return { kind: 'element' };
+  const video = el.querySelector<IosVideo>('video');
+  if (video && typeof video.webkitEnterFullscreen === 'function') return { kind: 'video', video };
+  return null;
+}
+
+/** The Fullscreen API of `doc` (web; a pop-out without the bridge), with iPhone's video-only fallback. */
 export function domHost(doc: Document): FullscreenHost {
+  let nativeVideo: IosVideo | null = null;
   return {
-    enter: (el) => el.requestFullscreen().catch(() => undefined),
-    exit: () => (doc.fullscreenElement ? doc.exitFullscreen().catch(() => undefined) : Promise.resolve()),
+    enter: (el) => {
+      const pick = pickFullscreen(el);
+      if (pick?.kind === 'video') {
+        nativeVideo = pick.video;
+        try {
+          pick.video.webkitEnterFullscreen?.();
+        } catch {
+          nativeVideo = null;
+        }
+        return Promise.resolve();
+      }
+      return pick ? el.requestFullscreen().catch(() => undefined) : Promise.resolve();
+    },
+    exit: () => {
+      const v = nativeVideo;
+      nativeVideo = null;
+      if (v?.webkitDisplayingFullscreen) v.webkitExitFullscreen?.();
+      return doc.fullscreenElement ? doc.exitFullscreen().catch(() => undefined) : Promise.resolve();
+    },
     subscribe: (cb) => {
       const listener = (): void => cb(doc.fullscreenElement !== null);
+      // iOS «Done» in the native player: webkitendfullscreen does not bubble, so listen in capture.
+      const native = (): void => {
+        nativeVideo = null;
+        cb(false);
+      };
       doc.addEventListener('fullscreenchange', listener);
-      return () => doc.removeEventListener('fullscreenchange', listener);
+      doc.addEventListener('webkitendfullscreen', native, true);
+      return () => {
+        doc.removeEventListener('fullscreenchange', listener);
+        doc.removeEventListener('webkitendfullscreen', native, true);
+      };
     },
   };
 }

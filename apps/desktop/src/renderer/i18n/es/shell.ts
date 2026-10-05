@@ -90,6 +90,8 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.voiceIn': '{room} / {ws}',
   'shell.shareScreen': 'Compartir pantalla',
   'shell.stopShare': 'Dejar de compartir',
+  'shell.screenUnsupported': 'Compartir pantalla no está disponible en este navegador',
+  'shell.noStreamPermission': 'No tienes permiso para compartir la pantalla en esta sala',
   'shell.noiseOn': 'Supresión de ruido activada',
   'shell.noiseOff': 'Supresión de ruido desactivada',
   'shell.stats': 'Estadísticas',

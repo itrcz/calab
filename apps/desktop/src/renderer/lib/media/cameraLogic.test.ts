@@ -1,7 +1,7 @@
 import { ScreenSharePreset } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { cameraCapture, cameraLayers, grantedCameraQuality } from './cameraLogic';
-import { CAMERA_LAYERS, CPU_LIMIT_SAMPLES, isChromium, cameraBlock, cameraWanted, cameraNext, camerasFull, cpuLimitStep, type CameraEvent, type CameraPhase } from './cameraLogic';
+import { CAMERA_LAYERS, canFlipCamera, cameraMirrored, cameraTarget, otherFacing, CPU_LIMIT_SAMPLES, isChromium, cameraBlock, cameraWanted, cameraNext, camerasFull, cpuLimitStep, type CameraEvent, type CameraPhase } from './cameraLogic';
 
 describe('camera layers (docs/09 #41)', () => {
   it('180p / 360p / 720p with 0.15 / 0.5 / 1.5 Mbps ceilings at 24–30 fps', () => {
@@ -118,5 +118,26 @@ describe('cpuLimitStep', () => {
       out.push(r.limit);
     }
     expect(out).toEqual([false, false, false, false, false, true, false]);
+  });
+});
+
+describe('phone camera side', () => {
+  it('offers the flip only on touch with two or more inputs', () => {
+    expect(canFlipCamera(2, true)).toBe(true);
+    expect(canFlipCamera(1, true)).toBe(false);
+    expect(canFlipCamera(3, false)).toBe(false);
+  });
+  it('flips front <-> back and mirrors only the front one', () => {
+    expect(otherFacing(null)).toBe('environment');
+    expect(otherFacing('environment')).toBe('user');
+    expect(otherFacing('user')).toBe('environment');
+    expect(cameraMirrored(null)).toBe(true);
+    expect(cameraMirrored('user')).toBe(true);
+    expect(cameraMirrored('environment')).toBe(false);
+  });
+  it('a chosen device wins over the side; no choice adds nothing', () => {
+    expect(cameraTarget('d1', 'environment')).toEqual({ deviceId: { exact: 'd1' } });
+    expect(cameraTarget(null, 'environment')).toEqual({ facingMode: 'environment' });
+    expect(cameraTarget(null, null)).toEqual({});
   });
 });

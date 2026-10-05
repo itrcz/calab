@@ -20,6 +20,7 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'video.roomOff': 'Cameras are off in this room',
   'video.full': 'Camera — {n} of {max} already on in this room',
   'video.noDevices': 'No cameras found',
+  'video.flip': 'Switch camera',
   'shell.streamBtn': 'Share',
   'shell.noiseBtn': 'Noise',
 

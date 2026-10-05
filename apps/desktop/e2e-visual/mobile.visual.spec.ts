@@ -647,8 +647,9 @@ test('m-voice-soundboard', async ({ page }) => {
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
   await page.getByTestId('mobile-nav').getByRole('button', { name: 'Войти в голос «Созвон»' }).tap();
   const strip = page.getByTestId('mobile-voice-strip');
-  await expect(strip.getByTestId('mobile-soundboard-button')).toBeEnabled({ timeout: 30_000 });
-  await strip.getByTestId('mobile-soundboard-button').tap();
+  await expect(strip.getByTestId('mobile-voice-more')).toBeEnabled({ timeout: 30_000 });
+  await strip.getByTestId('mobile-voice-more').tap();
+  await page.getByTestId('mobile-voice-sounds').tap();
   const board = page.getByTestId('soundboard');
   await expect(board.getByRole('region', { name: 'Стандартные' }).getByTestId('sound-tile')).toHaveCount(6);
   await expect(board.getByRole('region', { name: 'Звуки пространства' }).getByTestId('sound-tile')).toHaveCount(1);

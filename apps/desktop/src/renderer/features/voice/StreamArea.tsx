@@ -17,6 +17,7 @@ import { AnnotLayer, AnnotTools } from './Annotations';
 import { CameraGrid, CameraPip, CameraStripTile, useAnyCamera, useStripCameras } from './CameraTiles';
 import { FullscreenState, domHost, isExitKey, mainFullscreen, useIdle, useStreamFullscreen, windowHost } from './fullscreen';
 import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOptions } from './streamFormat';
+import { isTouchPrimary } from '../../lib/phone';
 import { bindPopoutVideo } from './popoutVideo';
 import { ZoomSurface } from './ZoomSurface';
 
@@ -382,7 +383,7 @@ function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: numb
       {others > 0 ? (
         <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/60 px-2 text-[11px] font-medium leading-5 text-white">{t('streamView.more', { n: others })}</span>
       ) : null}
-      <span className="absolute right-1.5 top-1.5 flex gap-0.5 rounded-[var(--radius-card)] bg-black/60 p-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100">
+      <span className="absolute right-1.5 top-1.5 flex gap-0.5 rounded-[var(--radius-card)] bg-black/60 p-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
         <IconButton size="sm" label={t('stream.expand')} className={overlayBtn} onClick={() => voice.setStage('expanded')}>
           <Maximize2 className="size-4" aria-hidden />
         </IconButton>
@@ -574,11 +575,11 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
             </div>
           </div>
         ) : null}
-        {/* Control bar: shows on hover / keyboard focus (and while its menu is open). */}
+        {/* Control bar: shows on hover / keyboard focus (and while its menu is open); always on touch, where there is no hover. */}
         <div
           data-testid="stream-controls"
           className={cx(
-            'absolute bottom-3 left-1/2 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-[var(--radius-card)] bg-black/70 p-1 ring-1 ring-white/10 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100',
+            'absolute bottom-3 left-1/2 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-[var(--radius-card)] bg-black/70 p-1 ring-1 ring-white/10 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
             menuOpen ? 'opacity-100' : 'opacity-0',
           )}
         >
@@ -596,9 +597,12 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
           <IconButton size="sm" label={t('stream.collapse')} className={overlayBtn} onClick={() => voice.setStage('pip')}>
             <Minimize2 className="size-4" aria-hidden />
           </IconButton>
-          <IconButton size="sm" label={t('stream.popout')} className={overlayBtn} onClick={() => voice.setStage(stage === 'popout' ? 'expanded' : 'popout')}>
-            <SquareArrowOutUpRight className="size-4" aria-hidden />
-          </IconButton>
+          {/* A phone browser has no second window (window.open leaves the page). */}
+          {isTouchPrimary() ? null : (
+            <IconButton size="sm" label={t('stream.popout')} className={overlayBtn} onClick={() => voice.setStage(stage === 'popout' ? 'expanded' : 'popout')}>
+              <SquareArrowOutUpRight className="size-4" aria-hidden />
+            </IconButton>
+          )}
           <IconButton size="sm" label={t('stream.fullscreen')} className={overlayBtn} onClick={() => mainFs().request()}>
             <Fullscreen className="size-4" aria-hidden />
           </IconButton>

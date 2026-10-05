@@ -1,5 +1,5 @@
 import { LocalVideoTrack, Track, VideoPreset, createLocalVideoTrack, type TrackPublishOptions } from 'livekit-client';
-import { CAMERA_CPU_CAPTURE, CAMERA_DEFAULT_QUALITY, cameraCapture, cameraLayers, type CameraQuality } from './cameraLogic';
+import { CAMERA_CPU_CAPTURE, CAMERA_DEFAULT_QUALITY, cameraCapture, cameraLayers, cameraTarget, type CameraFacing, type CameraQuality } from './cameraLogic';
 import { BACKGROUND_PROCESSOR } from './background/logic';
 import type { CodecPick, PublishCodec } from './codecSelect';
 import { layerSize, type H264Layout } from './h264';
@@ -27,10 +27,10 @@ export function cameraSource(track: LocalVideoTrack): MediaStreamTrack {
 }
 
 /** Opens the camera (preview sheet or straight publish). `motion`: faces and gestures, keep fps. */
-export async function captureCamera(deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY): Promise<LocalVideoTrack> {
+export async function captureCamera(deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY, facing: CameraFacing | null = null): Promise<LocalVideoTrack> {
   const c = cameraCapture(q);
   const track = await createLocalVideoTrack({
-    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    ...cameraTarget(deviceId, facing),
     resolution: { width: c.width, height: c.height, frameRate: c.fps },
   });
   track.mediaStreamTrack.contentHint = 'motion';
@@ -102,10 +102,10 @@ export async function applyCameraQuality(track: LocalVideoTrack, q: CameraQualit
 }
 
 /** Switches the capture device of a live (possibly published) camera track in place. */
-export async function switchCameraDevice(track: LocalVideoTrack, deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY): Promise<void> {
+export async function switchCameraDevice(track: LocalVideoTrack, deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY, facing: CameraFacing | null = null): Promise<void> {
   const c = cameraCapture(q);
   await track.restartTrack({
-    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    ...cameraTarget(deviceId, facing),
     resolution: { width: c.width, height: c.height, frameRate: c.fps },
   });
   cameraSource(track).contentHint = 'motion';

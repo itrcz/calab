@@ -1,7 +1,7 @@
 import type { ConcreteScreenSharePreset } from '@calaba/protocol';
 import { create } from 'zustand';
 import type { MediaErrorAction } from '../lib/media/errors';
-import type { CameraPhase } from '../lib/media/cameraLogic';
+import type { CameraFacing, CameraPhase } from '../lib/media/cameraLogic';
 import type { CandidatePairInfo, InboundVideoStats, OutboundVideoLayer } from '../lib/media/stats';
 
 /** `blocked`: the app's CSP refused the LiveKit host — retrying cannot help, an update can. */
@@ -111,6 +111,8 @@ export interface VoiceStore {
   camera: CameraPhase;
   /** The camera encoder was CPU-bound: capture dropped to 360p for this session. */
   cameraCpuLimited: boolean;
+  /** Phone camera side picked with «Переключить камеру» (null = the device's default, mirrored). Reset on leave. */
+  cameraFacing: CameraFacing | null;
   /** Remote webcams of my room, in publication order. */
   cameras: RemoteCamera[];
   /** Active speaker for video: spoke ≥ 2 s continuously, stays until someone else does (lib/activeSpeaker.ts). */
@@ -177,6 +179,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   canVideo: false,
   camera: 'off',
   cameraCpuLimited: false,
+  cameraFacing: null,
   cameras: [],
   activeSpeaker: null,
   focusedTile: null,

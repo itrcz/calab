@@ -88,6 +88,8 @@ export const ruShell = {
   'shell.voiceIn': '{room} / {ws}',
   'shell.shareScreen': 'Показать экран',
   'shell.stopShare': 'Остановить показ',
+  'shell.screenUnsupported': 'Показ экрана недоступен в этом браузере',
+  'shell.noStreamPermission': 'Нет права показывать экран в этой комнате',
   'shell.noiseOn': 'Шумодав включён',
   'shell.noiseOff': 'Шумодав выключен',
   'shell.stats': 'Статистика',
