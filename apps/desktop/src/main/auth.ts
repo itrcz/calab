@@ -7,6 +7,7 @@ import log from 'electron-log/main';
 import {
   IPC,
   noSession,
+  verificationOf,
   type ApiErrorJson,
   type AuthSession,
   type IpcResult,
@@ -321,7 +322,13 @@ async function authenticate(args: LoginArgs, path: string, body: Record<string, 
   try {
     const res = await postJson(base, path, body);
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
+    const data = (await res.json()) as {
+      tokens?: TokensJson;
+      me: unknown;
+      similarAccount?: boolean;
+      emailVerificationOptional?: boolean;
+      emailInvitePending?: boolean;
+    };
     if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
     const tokens = toTokens(data.tokens);
     if (started !== authEpoch) throw new Error('Account changed');
@@ -329,7 +336,7 @@ async function authenticate(args: LoginArgs, path: string, body: Record<string, 
     recovery = null;
     broker.set(base, tokens);
     if (getSettings().serverUrl !== base) updateSettings({ serverUrl: base });
-    return { ok: true, data: { serverUrl: base, sessionId: tokens.sessionId, me: data.me } };
+    return { ok: true, data: { serverUrl: base, sessionId: tokens.sessionId, me: data.me, ...verificationOf(data) } };
   } catch (e) {
     return { ok: false, error: networkError(e) };
   }

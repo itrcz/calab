@@ -149,6 +149,8 @@ export function beginSession(s: AuthSession): void {
     serverUrl: s.serverUrl,
     sessionId: s.sessionId,
     me,
+    emailVerificationOptional: s.emailVerificationOptional === true,
+    emailInvitePending: s.emailInvitePending === true,
     ready: false,
     tooManySessions: false,
     loggedOutReason: null,
@@ -232,7 +234,17 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useUi.getState().openDialog(null);
   useSession
     .getState()
-    .set({ status: 'anon', authority: null, me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });
+    .set({
+      status: 'anon',
+      authority: null,
+      me: null,
+      sessionId: '',
+      ready: false,
+      gateway: 'idle',
+      loggedOutReason: reason,
+      emailVerificationOptional: false,
+      emailInvitePending: false,
+    });
   const notice = logoutToastKey(reason);
   if (notice) toast.info(t(notice));
 }

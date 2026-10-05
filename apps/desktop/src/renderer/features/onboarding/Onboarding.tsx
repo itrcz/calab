@@ -18,6 +18,7 @@ import { notifyStepView, readNotifyState, requestNotify, type NotifyState } from
 import { screenStepState, screenStepView } from '../../lib/screenPermission';
 import { resendVerification, verifyEmail } from '../../services/email';
 import { CodeInput, CodeNote, ResendButton, useCodeAddress, useCodeFlow } from '../auth/VerifyEmail';
+import { asksToVerify, verifyReason } from '../auth/verifyAsk';
 import { InvitePreviewRow, useInviteJoin } from '../workspace/WorkspaceDialogs';
 import { joinPlaceholder } from '../../services/links';
 import { micStateAfterRequest, micStateOnArrival, nextStep, onboardingSteps, prevStep, resolveStep, type MicState, type Step } from './steps';
@@ -43,11 +44,12 @@ interface Nav {
 export function Onboarding(): ReactNode {
   const mac = useIsMacDesktop();
   // «Подтвердите почту» first (ADR-0023): right after sign-up the code is in the inbox and the
-  // user's attention is on it. «Позже» leaves the bar in the main window instead. Fixed at mount.
-  const [withVerify] = useState(() => {
-    const me = useSession.getState().me;
-    return !!me && !me.emailVerified && !me.user?.isGuest;
-  });
+  // user's attention is on it. «Позже» leaves the bar in the main window instead. Fixed at mount
+  // from the sign-up / sign-in answer (verifyAsk.ts: not with EMAIL_VERIFICATION=optional unless
+  // an email invitation waits, ADR-0065); READY may only drop it (a restored session has no flags).
+  const [verifyAtMount] = useState(() => asksToVerify(useSession.getState()));
+  const verifyAsked = useSession((s) => !s.ready || !s.emailVerificationOptional || s.emailInvitePending);
+  const withVerify = verifyAtMount && verifyAsked;
   // Before READY nothing is known: no join step rather than one that vanishes a moment later.
   const hasWorkspace = useWorkspaces((s) => s.order.length > 0);
   const ready = useSession((s) => s.ready);
@@ -279,6 +281,7 @@ function VerifyStep({ nav }: { nav: Nav }): ReactNode {
   // The confirmation may join workspaces (emailed invitations): verifyEmail opens the first and
   // says so in its one toast; the join step then drops out of the run by itself.
   const flow = useCodeFlow(verifyEmail, resendVerification, nav.next);
+  const join = useSession((s) => verifyReason(s) === 'join');
   return (
     <StepFrame
       illustration={<Illustration icon={MailCheck} />}
@@ -301,7 +304,7 @@ function VerifyStep({ nav }: { nav: Nav }): ReactNode {
         <CodeNote flow={flow} id={noteId} className="text-center" />
         <ResendButton flow={flow} />
       </div>
-      <p className="text-center text-caption text-muted">{t('mail.step.later')}</p>
+      <p className="text-center text-caption text-muted">{t(join ? 'mail.step.laterJoin' : 'mail.step.later')}</p>
     </StepFrame>
   );
 }

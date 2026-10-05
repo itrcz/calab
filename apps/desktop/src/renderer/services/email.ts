@@ -10,8 +10,9 @@ import { useVerify } from '../stores/verify';
 
 /**
  * Email wiring of a signed-in session (ADR-0023):
- *  - a blocked action (403 EMAIL_NOT_VERIFIED: create a workspace, invite, a new DM) closes the
- *    dialog it came from and sends the user to the «Подтвердите почту» bar;
+ *  - a blocked action (403 EMAIL_NOT_VERIFIED: create a workspace, invite, a new DM; with
+ *    EMAIL_VERIFICATION=optional only joining by an email invitation, ADR-0065) closes the dialog
+ *    it came from and sends the user to the «Подтвердите почту» bar;
  *  - the language of emails (`me.locale`) follows the UI language: set when empty, updated when
  *    the user switches the language here.
  */
@@ -23,6 +24,9 @@ export function installEmail(): () => void {
       // Stale local state: the server knows better (the bar appears).
       useSession.getState().set({ me: { ...me, emailVerified: false } });
     }
+    // With EMAIL_VERIFICATION=optional only an email invitation's join answers this (ADR-0065):
+    // one waits for the address now, so the bar appears for it.
+    if (useSession.getState().emailVerificationOptional) useSession.getState().set({ emailInvitePending: true });
     useUi.getState().openDialog(null);
     useVerify.getState().request();
   });

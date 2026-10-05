@@ -14,6 +14,13 @@ export interface SessionState {
   authority: SessionAuthority | null;
   /** Where to ask for a paid plan (READY.plan_contact, ADR-0024): mailto: or https:; '' = unknown. */
   planContact: string;
+  /**
+   * EMAIL_VERIFICATION=optional on the server (ADR-0065: an unconfirmed address blocks nothing),
+   * from the login / register answer, then READY. false = unknown or required (ADR-0023).
+   */
+  emailVerificationOptional: boolean;
+  /** An email invitation waits for the unconfirmed address (ADR-0065): asked even when optional. */
+  emailInvitePending: boolean;
   gateway: GatewayStatus;
   /** «Нет соединения с сервером» banner (lib/gateway/banner.ts decides). */
   reconnectBanner: boolean;
@@ -37,6 +44,8 @@ export const useSession = create<SessionState>()((set) => ({
   me: null,
   authority: null,
   planContact: '',
+  emailVerificationOptional: false,
+  emailInvitePending: false,
   gateway: 'idle',
   reconnectBanner: false,
   ready: false,

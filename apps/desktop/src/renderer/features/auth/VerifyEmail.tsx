@@ -7,6 +7,7 @@ import { resendVerification, verifyEmail } from '../../services/email';
 import { useSession } from '../../stores/session';
 import { useVerify } from '../../stores/verify';
 import { CODE_LENGTH, CodeFlow, formatCountdown, type CodeFlowState } from './emailCode';
+import { asksToVerify, verifyReason } from './verifyAsk';
 
 export interface CodeFlowApi {
   state: CodeFlowState;
@@ -141,19 +142,21 @@ export function useCodeAddress(): string {
 
 /**
  * «Подтвердите почту» (ADR-0023, docs/08 «Почта»): a thin bar over the main content while
- * `me.emailVerified` is false. Not dismissable — the code is the only way out. A blocked action
+ * `me.emailVerified` is false and the server asks for it (verifyAsk.ts: always with
+ * EMAIL_VERIFICATION=required; with optional only while an email invitation waits for the address,
+ * ADR-0065). Not dismissable — the code is the only way out. A blocked action
  * (403 EMAIL_NOT_VERIFIED) calls it (stores/verify): the field takes the focus (on a phone only the
  * highlight — the keyboard waits for a tap, lib/phone.ts) and the text says why.
  */
 export function VerifyBanner(): ReactNode {
-  const me = useSession((s) => s.me);
-  const show = !!me && !me.emailVerified && !me.user?.isGuest;
+  const show = useSession(asksToVerify);
   if (!show) return null;
   return <VerifyBar />;
 }
 
 function VerifyBar(): ReactNode {
   const email = useCodeAddress();
+  const join = useSession((s) => verifyReason(s) === 'join');
   const attention = useVerify((s) => s.attention);
   const [seen] = useState(attention);
   const input = useRef<HTMLInputElement>(null);
@@ -183,7 +186,13 @@ function VerifyBar(): ReactNode {
     >
       <MailCheck className="size-4 shrink-0 text-warn" aria-hidden />
       <p className="min-w-0 flex-1 text-caption text-fg mobile:basis-[calc(100%-28px)]">
-        {asked ? t('mail.bar.needed') : t('mail.bar.text', { email })}
+        {join
+          ? asked
+            ? t('mail.bar.neededJoin')
+            : t('mail.bar.textJoin', { email })
+          : asked
+            ? t('mail.bar.needed')
+            : t('mail.bar.text', { email })}
       </p>
       <form
         className="flex items-center gap-2 mobile:w-full"

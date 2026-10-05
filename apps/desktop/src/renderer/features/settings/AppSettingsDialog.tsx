@@ -109,7 +109,7 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
 
 function ProfileTab(): ReactNode {
   const me = useSession((s) => s.me);
-  const [credDialog, setCredDialog] = useState<'password' | 'email' | 'email-code' | 'email-cancel' | null>(null);
+  const [credDialog, setCredDialog] = useState<'password' | 'email' | 'email-code' | 'email-cancel' | 'email-verify' | null>(null);
   const update = async (init: Parameters<typeof api.me.update>[0]): Promise<void> => {
     const r = await api.me.update(init);
     if (r.me) useSession.getState().set({ me: r.me });
@@ -152,6 +152,15 @@ function ProfileTab(): ReactNode {
                   {t('mail.change.cancel')}
                 </button>
               </span>
+            ) : !me.emailVerified && !u.isGuest ? (
+              // ADR-0065: with EMAIL_VERIFICATION=optional nothing asks for the code, so this is where
+              // the address gets confirmed (also with required, next to the bar).
+              <span className="flex flex-wrap items-center gap-x-2" data-testid="unverified-email">
+                <span>{t('mail.unverified')}</span>
+                <button type="button" className="rounded-[var(--radius-control)] text-accent-text hover:underline" onClick={() => setCredDialog('email-verify')}>
+                  {t('mail.confirm')}
+                </button>
+              </span>
             ) : undefined
           }
         >
@@ -180,6 +189,7 @@ function ProfileTab(): ReactNode {
       {credDialog === 'email' ? <ChangeEmailDialog onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email-code' ? <ChangeEmailDialog mode="confirm" onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email-cancel' ? <ChangeEmailDialog mode="cancel" onClose={() => setCredDialog(null)} /> : null}
+      {credDialog === 'email-verify' ? <ChangeEmailDialog mode="verify" onClose={() => setCredDialog(null)} /> : null}
       <AfkCard />
       {/* Guest accounts do not install sticker packs (ADR-0030 §4). */}
       {u.isGuest ? null : <MyStickersCard />}
