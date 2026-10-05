@@ -1,3 +1,4 @@
+import { requestNotify } from '../../lib/notifyPermission';
 import { AuthorizedApps, useOAuthAppsAvailable } from '../identity/OAuth';
 import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
@@ -271,7 +272,7 @@ export function PermissionsCard(): ReactNode {
       <Row label={t('perm.notifications')}>
         <span className="text-body text-muted">{statusText(notif)}</span>
         {notif === 'default' ? (
-          <Button size="sm" variant="secondary" onClick={() => void Notification.requestPermission().then(() => platform.system.permissions().then(setP))}>
+          <Button size="sm" variant="secondary" onClick={() => void requestNotify(undefined, platform.notifications).then(() => platform.system.permissions().then(setP))}>
             {t('perm.ask')}
           </Button>
         ) : null}
@@ -583,7 +584,7 @@ function NotificationsTab(): ReactNode {
           <Button
             variant="secondary"
             onClick={() => {
-              if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission().then(show);
+              if (platform.notifications || (typeof Notification !== 'undefined' && Notification.permission === 'default')) void requestNotify(undefined, platform.notifications).then(show);
               else show();
             }}
           >

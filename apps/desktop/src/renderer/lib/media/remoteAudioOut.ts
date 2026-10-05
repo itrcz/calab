@@ -17,8 +17,13 @@ import { remoteAudio } from '../voiceLogic';
  * element reports `volumechange` with a state that is not ours.
  */
 
-/** What an output element must look like (a real HTMLMediaElement; a fake in unit tests). */
-export type AudioOutElement = Pick<HTMLMediaElement, 'muted' | 'volume' | 'setSinkId' | 'addEventListener' | 'removeEventListener'>;
+/**
+ * What an output element must look like (a real HTMLMediaElement; a fake in unit tests).
+ * `setSinkId` is optional: lib.dom declares it, but engines without per-element output selection
+ * (WebKit gates it behind a setting) have no such method — the OS picks the output there.
+ */
+export type AudioOutElement = Pick<HTMLMediaElement, 'muted' | 'volume' | 'addEventListener' | 'removeEventListener'> &
+  Partial<Pick<HTMLMediaElement, 'setSinkId'>>;
 
 /** Everything the playback of one element depends on (voice store + prefs). */
 export interface AudioOutState {
@@ -105,8 +110,9 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
   }
 
   private async sink(entry: Entry<E>, id: string): Promise<void> {
+    // No setSinkId: the element keeps the OS-selected output; the playback state is still re-asserted.
     // A gone device rejects: the element stays on what it plays to now (Chromium falls back to the default).
-    await entry.el.setSinkId(id).catch(() => undefined);
+    if (typeof entry.el.setSinkId === 'function') await entry.el.setSinkId(id).catch(() => undefined);
     if (this.els.get(entry.sid) === entry) this.apply(entry, true);
   }
 

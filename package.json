@@ -22,7 +22,8 @@
       "electron-winstaller"
     ],
     "patchedDependencies": {
-      "uiohook-napi@1.5.5": "patches/uiohook-napi@1.5.5.patch"
+      "uiohook-napi@1.5.5": "patches/uiohook-napi@1.5.5.patch",
+      "react-native-webview@13.16.1": "patches/react-native-webview@13.16.1.patch"
     }
   },
   "license": "BUSL-1.1",

@@ -2089,6 +2089,11 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
 
+## iOS shared-web incoming calls (ADR-0071)
+
+1. Сценарий реального устройства: [incoming-calls-testing](docs/mobile/incoming-calls-testing.md); APNs/cold locked answer пока не проверены.
+2. Source gates: mobile protocol/queue/expiry; web READY/revocation/late accept/receipt retry; Go push/config и incoming integration с race.
+3. Native R06 build/установка и deployment разрешаются отдельно; [push overlay](docs/mobile/push-deployment.md) сам ничего не запускает.
 
 ### Identity 2.0: совместимость локальных событий и чтения
 
@@ -2139,3 +2144,25 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
    - ⌘K «рел» → свои комнаты/люди мгновенно, затем разделы с подсветкой и «Все: N →»; `<KEY>-1` → задача первой строкой, Enter открывает панель задачи. «Везде» → DM и «Заметки», выбор помнится после перезапуска.
    - Tab — к следующему разделу, ⌘Enter — панель «Результаты поиска»; фильтры «Автор», «7 дней», «Только с файлами», «Сначала новые» меняют ленту, прокрутка догружает страницы.
    - Переходы: сообщение (прыжок с подсветкой), комментарий (панель задачи у комментария), событие (карточка вхождения), картинка («Показать в чате»), расшифровка (транскрипт на реплике). Скриншоты — docs/qa/2.3.0/search/.
+
+### Phone host/main integration (R07, PostgreSQL 17)
+
+- Pinned main: `969bd18fb873218e53518b09c6059c1e6c1c4630`; push migration `00068`, phone ADR `0067`–`0071`.
+- `TestPushIdentityExactSessionAndRevocation` checks exact-session assurance isolation,
+  scoped/recovery route rejection, revoked proof at dispatch/tap and disabled managed directory.
+  `TestIdentityMutationQueryAndPoolInventory` covers guarded push mutations/locking queries.
+- Shared web SSO test rejects phone external navigation before flow creation; web/desktop
+  adapters keep their own generated SSO path. Phone external SSO/step-up parity remains open.
+- Workspace typecheck/tests and web bundle check pass: desktop 2529, mobile 109,
+  protocol 439, bot SDK 30 tests; two mobile native-project plugin tests. No Electron in web bundle.
+- Device APNs/PushKit, cold locked answer, CallKit audio activation and bidirectional audio
+  are **UNVERIFIED**; source tests do not prove them. R01–R06 device/build notes remain historical.
+- R07 physical-iOS arm64 Release compiled/signed locally with zero native input drift;
+  development APS/WidgetKit/UIScene/audio+voip verified. No installation or runtime proof.
+- Go unit `-race` passes. PG17 integration coverage completed after a sequential
+  `internal/app` default 10-minute timeout: 241 tests returned without assertion failures;
+  `TestUserNotes` had just started (0s). Same `go -list` order, no shuffle/parallel tests:
+  only the remaining 109 names ran once with an 8-minute bound, PASS in 238.359s.
+  All other server packages pass. Original full command remains exit 1 (timeout);
+  this recovery does not claim an uninterrupted green run. GitHub CI uses app shards.
+- Two independent security/protocol reviews found no blocker/major.

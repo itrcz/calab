@@ -12,7 +12,7 @@ import { setCall, useCall } from '../stores/call';
 import { dmWith } from '../stores/dms';
 import { prefs } from '../stores/prefs';
 import { useRooms } from '../stores/rooms';
-import { myUserId } from '../stores/session';
+import { myUserId, useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { useVoice } from '../stores/voice';
 import { memberName, useWorkspaces } from '../stores/workspaces';
@@ -71,10 +71,34 @@ function effects(prev: CallModel, next: CallModel, peerId: string, resumed: bool
 /** The last CALL_STATE seen, for the caller's toast (the model forgets an ended call). */
 let ended: Call | null = null;
 
+const hostIncoming = new Set<string>();
+export function setHostIncomingOwnership(id: string, owned: boolean): void {
+  if (owned) hostIncoming.add(id); else hostIncoming.delete(id);
+  syncRing(useCall.getState());
+}
+
+/** Narrow host adapter; REST/model/media stay on the normal call path. */
+export async function performHostCallAction(id: string, action: 'answer' | 'end', signal?: AbortSignal, isCurrent: () => boolean = () => true, isSessionCurrent: () => boolean = () => true): Promise<boolean> {
+  const c = useCall.getState();
+  if (c.call?.id !== id || c.busy || signal?.aborted || !isCurrent()) return false;
+  const context = { signal, isCurrent, isSessionCurrent, session: useSession.getState().sessionId };
+  if (action === 'answer') {
+    if (c.phase !== 'incoming') return false;
+    applyCallEvent({kind:'accepting',callId:id});
+    await act(id,'accept',context);
+    const next = useCall.getState();
+    return next.call?.id === id && next.phase === 'active' && next.own === id;
+  }
+  if (c.phase === 'incoming') await act(id,'decline',context);
+  else if (c.phase === 'active' && c.own === id) await act(id,'hangup',context);
+  else return false;
+  return useCall.getState().phase === 'idle';
+}
+
 function syncRing(m: CallModel): void {
   if (m.phase === 'outgoing') startRing('call-outgoing');
   // «Не беспокоить»: the modal shows, the ringtone stays silent (ADR-0034).
-  else if (m.phase === 'incoming' && prefs().presence !== PresenceStatus.DND) startRing('call-incoming');
+  else if (m.phase === 'incoming' && !hostIncoming.has(m.call?.id ?? '') && prefs().presence !== PresenceStatus.DND) startRing('call-incoming');
   else stopRing();
 }
 
@@ -178,21 +202,43 @@ export function hangup(): Promise<void> {
   return id ? act(id, 'hangup') : Promise.resolve();
 }
 
-async function act(callId: string, action: Action): Promise<void> {
+interface HostActionContext {signal?:AbortSignal;isCurrent:()=>boolean;isSessionCurrent:()=>boolean;session:string}
+async function act(callId: string, action: Action, host?:HostActionContext): Promise<void> {
+  const sameSession = () => !host || (host.isSessionCurrent() && useSession.getState().sessionId === host.session);
+  const valid = () => sameSession() && (!host || (!host.signal?.aborted && host.isCurrent()));
+  if(!valid())return;
   setCall({ busy: true });
   try {
-    const res = await api.calls.act(callId, action);
+    const res = await api.calls.act(callId, action, host?.signal);
+    if(host && !valid()) {
+      // A successful late accept is proof of this request's transition. Never join its RTC;
+      // retire only that call while the same session still owns it, never under a new account.
+      if(sameSession() && useCall.getState().call?.id === callId && useCall.getState().own === callId) {
+        applyCallEvent({kind:'failed',callId});
+        if(action === 'accept' && res.call?.id === callId && res.call.state === CallState.ACTIVE) {
+          const cleanup = new AbortController(); const timer = setTimeout(() => cleanup.abort(),3000);
+          const unsubscribe = useSession.subscribe(() => {if(!sameSession())cleanup.abort();});
+          const logout = platform.auth.onLoggedOut(() => cleanup.abort());
+          void api.calls.act(callId,'hangup',cleanup.signal).catch(() => undefined).finally(() => {clearTimeout(timer);unsubscribe();logout();});
+        }
+      }
+      return;
+    }
     if (res.call) {
       ended = res.call;
       applyCallEvent({ kind: 'answer', call: res.call });
     }
   } catch (e) {
+    if(host && !valid()) {
+      if(sameSession() && useCall.getState().call?.id === callId && useCall.getState().own === callId) applyCallEvent({kind:'failed',callId});
+      return;
+    }
     log.warn(`call ${action} failed`, e);
     // Gone or already in another state (answered / ended elsewhere): the call is over for us.
     if (e instanceof ApiError && (e.status === 404 || e.status === 409 || e.status === 403)) applyCallEvent({ kind: 'failed', callId });
     else toast.error(errorText(e));
   } finally {
-    if (useCall.getState().call?.id === callId) setCall({ busy: false });
+    if (sameSession() && useCall.getState().call?.id === callId) setCall({ busy: false });
   }
 }
 
@@ -240,7 +286,7 @@ let notice: Notification | null = null;
 
 /** «Входящий звонок от X» when the window is hidden or not focused; a click brings the app up. */
 function notifyIncoming(call: Call | null, peerId: string): void {
-  if (!call) return;
+  if (!call || hostIncoming.has(call.id)) return;
   platform.app.attention();
   if (document.visibilityState === 'visible' && document.hasFocus()) return;
   if (prefs().presence === PresenceStatus.DND) return;

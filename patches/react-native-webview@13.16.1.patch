@@ -1,0 +1,411 @@
+diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
+--- a/apple/RNCWebViewImpl.m
++++ b/apple/RNCWebViewImpl.m
+@@ -24,6 +24,218 @@
+ static NSDictionary* customCertificatesForHost;
+
+ NSString *const CUSTOM_SELECTOR = @"_CUSTOM_SELECTOR_";
++
++#if TARGET_OS_IOS
++#pragma mark - Page downloads (Calab patch, ADR-0068)
++
++/**
++ * WebKit reports an `<a download>` click as a navigation; the library never answers one with a
++ * download, so it reached `onShouldStartLoadWithRequest` and was dropped. One case becomes a native
++ * download here: a blob: URL of the origin the WebView was opened with (`source.uri`), started by
++ * the main frame of that origin. Both facts come from WebKit (WKFrameInfo.securityOrigin, the
++ * request URL), not from anything the page reports; iframes, http(s) URLs and other sources keep
++ * the old path. WebKit streams the blob into a fresh directory in the app's tmp; once it is complete
++ * the system share sheet gets the file (Save to Files, Save Image, AirDrop, other apps). The
++ * directory is deleted when the sheet closes, on failure or cancel, and a killed process's
++ * leftovers at the first download of the next run.
++ */
++
++static NSString *const RNCDownloadsDirName = @"rnc-webview-downloads";
++/** UTF-8 bytes of a file name (APFS allows 255). */
++static const NSUInteger RNCDownloadNameMaxBytes = 200;
++static const NSUInteger RNCDownloadExtMaxLength = 16;
++
++static NSURL *RNCDownloadsRoot(void)
++{
++  return [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:RNCDownloadsDirName isDirectory:YES];
++}
++
++/** Messaging nil returns 0 == NSOrderedSame: both hosts must be present. */
++static BOOL RNCSameHost(NSString *a, NSString *b)
++{
++  return a.length > 0 && b.length > 0 && [a caseInsensitiveCompare:b] == NSOrderedSame;
++}
++
++/** The https default filled in: NSURL leaves the port nil, WKSecurityOrigin reports 0. */
++static NSInteger RNCHttpsPort(NSInteger port)
++{
++  return port > 0 ? port : 443;
++}
++
++/** `source.uri` as an origin: https with a host and no credentials; nil for anything else (html source, http). */
++static NSURL *RNCDownloadOrigin(NSString *uri)
++{
++  NSURL *url = uri.length > 0 ? [NSURL URLWithString:uri] : nil;
++  BOOL https = [url.scheme.lowercaseString isEqualToString:@"https"];
++  return https && url.host.length > 0 && url.user == nil && url.password == nil ? url : nil;
++}
++
++static BOOL RNCUrlHasOrigin(NSURL *url, NSURL *origin)
++{
++  return [url.scheme.lowercaseString isEqualToString:@"https"] && url.user == nil && url.password == nil &&
++    RNCSameHost(url.host, origin.host) && RNCHttpsPort(url.port.integerValue) == RNCHttpsPort(origin.port.integerValue);
++}
++
++static BOOL RNCFrameHasOrigin(WKFrameInfo *frame, NSURL *origin)
++{
++  WKSecurityOrigin *o = frame.securityOrigin;
++  return [o.protocol.lowercaseString isEqualToString:@"https"] && RNCSameHost(o.host, origin.host) &&
++    RNCHttpsPort(o.port) == RNCHttpsPort(origin.port.integerValue);
++}
++
++/**
++ * A leaf name from the page's `download` attribute: no path separators, control or format
++ * characters (bidi overrides are format characters), no leading or trailing dots and spaces,
++ * bounded with the extension kept, never empty. It only names a file inside a fresh directory.
++ */
++static NSString *RNCSafeFileName(NSString *raw)
++{
++  NSMutableCharacterSet *bad = [NSMutableCharacterSet controlCharacterSet];
++  [bad formUnionWithCharacterSet:[NSCharacterSet illegalCharacterSet]];
++  [bad formUnionWithCharacterSet:[NSCharacterSet newlineCharacterSet]];
++  [bad addCharactersInString:@"/\\:"];
++  NSString *name = raw.length > 1024 ? [raw substringToIndex:[raw rangeOfComposedCharacterSequenceAtIndex:1024].location] : (raw ?: @"");
++  name = [[name componentsSeparatedByCharactersInSet:bad] componentsJoinedByString:@"_"];
++  NSMutableCharacterSet *edge = [NSMutableCharacterSet whitespaceCharacterSet];
++  [edge addCharactersInString:@"."];
++  name = [name stringByTrimmingCharactersInSet:edge];
++  NSString *ext = name.pathExtension.length <= RNCDownloadExtMaxLength ? name.pathExtension : @"";
++  NSString *base = ext.length > 0 ? name.stringByDeletingPathExtension : name;
++  NSString *(^join)(NSString *) = ^(NSString *b) {
++    return ext.length > 0 ? [NSString stringWithFormat:@"%@.%@", b, ext] : b;
++  };
++  while (base.length > 0 && [join(base) lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > RNCDownloadNameMaxBytes) {
++    base = [base substringToIndex:[base rangeOfComposedCharacterSequenceAtIndex:base.length - 1].location];
++  }
++  base = [base stringByTrimmingCharactersInSet:edge];
++  return join(base.length > 0 ? base : @"file");
++}
++
++/** One share sheet in the app at a time. Weak: the presentation keeps it alive. */
++static __weak UIViewController *RNCDownloadSheet;
++
++/** Still on screen; a dismissed sheet the system keeps alive a little longer does not count. */
++static BOOL RNCDownloadSheetOpen(void)
++{
++  return RNCDownloadSheet.presentingViewController != nil;
++}
++
++API_AVAILABLE(ios(14.5))
++@interface RNCWebViewDownloads : NSObject <WKDownloadDelegate>
+++ (BOOL)accepts:(WKNavigationAction *)action sourceUri:(NSString *)uri;
++- (BOOL)busy;
++- (void)adopt:(WKDownload *)download from:(UIView *)anchor;
++- (void)cancel;
++@end
++
++@implementation RNCWebViewDownloads {
++  WKDownload *_download;
++  NSURL *_dir;
++  NSURL *_file;
++  __weak UIView *_anchor;
++}
++
++/** The one kind of download this patch takes (see above). */
+++ (BOOL)accepts:(WKNavigationAction *)action sourceUri:(NSString *)uri
++{
++  NSURL *origin = RNCDownloadOrigin(uri);
++  NSURL *url = action.request.URL;
++  if (origin == nil || !action.shouldPerformDownload || ![url.scheme.lowercaseString isEqualToString:@"blob"]) return NO;
++  WKFrameInfo *initiator = action.sourceFrame;
++  if (!initiator.isMainFrame || !RNCFrameHasOrigin(initiator, origin)) return NO;
++  NSURL *inner = [NSURL URLWithString:url.resourceSpecifier];
++  return inner != nil && RNCUrlHasOrigin(inner, origin);
++}
++
++/** A download is in flight here or a sheet is open anywhere: the next one is refused. */
++- (BOOL)busy
++{
++  return _download != nil || RNCDownloadSheetOpen();
++}
++
++- (void)adopt:(WKDownload *)download from:(UIView *)anchor
++{
++  if ([self busy]) {
++    [download cancel:nil];
++    return;
++  }
++  static dispatch_once_t swept;
++  dispatch_once(&swept, ^{
++    [NSFileManager.defaultManager removeItemAtURL:RNCDownloadsRoot() error:nil];
++  });
++  _download = download;
++  _anchor = anchor;
++  download.delegate = self;
++}
++
++/** The WebView goes away: stop the download in flight. An open sheet keeps its file until it closes. */
++- (void)cancel
++{
++  WKDownload *download = _download;
++  [self drop];
++  [download cancel:nil];
++}
++
++- (void)drop
++{
++  if (_dir != nil) [NSFileManager.defaultManager removeItemAtURL:_dir error:nil];
++  _download = nil;
++  _dir = nil;
++  _file = nil;
++}
++
++- (void)download:(WKDownload *)download decideDestinationUsingResponse:(NSURLResponse *)response suggestedFilename:(NSString *)suggestedFilename completionHandler:(void (^)(NSURL *))completionHandler
++{
++  if (download != _download) {
++    completionHandler(nil);
++    return;
++  }
++  NSURL *dir = [RNCDownloadsRoot() URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
++  if (![NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil]) {
++    [self drop];
++    completionHandler(nil);
++    return;
++  }
++  _dir = dir;
++  _file = [dir URLByAppendingPathComponent:RNCSafeFileName(suggestedFilename) isDirectory:NO];
++  completionHandler(_file);
++}
++
++- (void)download:(WKDownload *)download didFailWithError:(NSError *)error resumeData:(NSData *)resumeData
++{
++  if (download != _download) return;
++  RCTLogWarn(@"WebView download failed: %@ %ld", error.domain, (long)error.code);
++  [self drop];
++}
++
++- (void)downloadDidFinish:(WKDownload *)download
++{
++  if (download != _download) return;
++  NSURL *dir = _dir;
++  NSURL *file = _file;
++  UIView *anchor = _anchor;
++  _download = nil;
++  _dir = nil;
++  _file = nil;
++  UIViewController *host = anchor.window.rootViewController;
++  while (host.presentedViewController != nil) host = host.presentedViewController;
++  if (file == nil || host == nil || host.isBeingDismissed || RNCDownloadSheetOpen()) {
++    [NSFileManager.defaultManager removeItemAtURL:dir error:nil];
++    return;
++  }
++  UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[file] applicationActivities:nil];
++  sheet.popoverPresentationController.sourceView = anchor;
++  sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(anchor.bounds), CGRectGetMidY(anchor.bounds), 0, 0);
++  // Called once the sheet closes: after the chosen activity has taken the file, or on dismissal.
++  sheet.completionWithItemsHandler = ^(UIActivityType type, BOOL completed, NSArray *items, NSError *error) {
++    [NSFileManager.defaultManager removeItemAtURL:dir error:nil];
++  };
++  RNCDownloadSheet = sheet;
++  [host presentViewController:sheet animated:YES completion:nil];
++}
++
++@end
++#endif // TARGET_OS_IOS
+
+ #if TARGET_OS_IOS
+ // runtime trick to remove WKWebView keyboard default toolbar
+@@ -151,6 +363,12 @@
+ #endif
+ #if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000 /* __IPHONE_13_0 */
+   BOOL _savedAutomaticallyAdjustsScrollIndicatorInsets;
++#endif
++#if TARGET_OS_IOS
++  // RNCWebViewDownloads (iOS 14.5+), created at the first accepted download.
++  id _downloads;
++  NSString *_calabBridgeDocument;
++  NSUInteger _calabBridgeEpoch;
+ #endif
+ }
+
+@@ -613,6 +831,13 @@
+ - (void)removeFromSuperview
+ #endif
+ {
++#if TARGET_OS_IOS
++  if (@available(iOS 14.5, *)) {
++    [(RNCWebViewDownloads *)_downloads cancel];
++  }
++  _downloads = nil;
++  [self calabRevokeAuthority];
++#endif
+   if (_webView) {
+     [_webView.configuration.userContentController removeScriptMessageHandlerForName:HistoryShimName];
+     [_webView.configuration.userContentController removeScriptMessageHandlerForName:MessageHandlerName];
+@@ -768,6 +993,71 @@
+ }
+ #endif
+
++#if TARGET_OS_IOS
++#pragma mark - Optional Calab status capability (ADR-0069)
++
++- (void)calabRevokeAuthority
++{
++  _calabBridgeDocument = nil;
++  _calabBridgeEpoch++;
++  // Native consumers revoke synchronously, before RN can receive more page messages.
++  [NSNotificationCenter.defaultCenter postNotificationName:@"CalabHostDocumentInvalidated" object:self];
++}
++
++- (void)calabForwardMessage:(WKScriptMessage *)message
++{
++  if (!_onMessage) return;
++  NSMutableDictionary<NSString *, id> *event = [self baseEvent];
++  event[@"data"] = message.body;
++  _onMessage(event);
++}
++
++- (void)calabReceiveMessage:(WKScriptMessage *)message
++{
++  NSURL *origin = RNCDownloadOrigin([RCTConvert NSString:_source[@"uri"]]);
++  WKFrameInfo *frame = message.frameInfo;
++  // Native identity is mandatory: the top page's URL or main-frame injection alone proves nothing.
++  if (!_messagingEnabled || !_onMessage || message.webView != _webView || origin == nil ||
++      !frame.isMainFrame || !RNCFrameHasOrigin(frame, origin) || !RNCUrlHasOrigin(frame.request.URL, origin) ||
++      !RNCUrlHasOrigin(_webView.URL, origin) || ![message.body isKindOfClass:NSString.class]) return;
++  NSString *raw = message.body;
++  if ([raw lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 2048) return;
++  NSData *data = [raw dataUsingEncoding:NSUTF8StringEncoding];
++  id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
++  if (![parsed isKindOfClass:NSDictionary.class]) return;
++  NSDictionary *body = parsed;
++  if (![body[@"v"] isKindOfClass:NSNumber.class] || [body[@"v"] integerValue] != 1 ||
++      ![body[@"document"] isKindOfClass:NSString.class] || ![body[@"host"] isKindOfClass:NSNumber.class]) return;
++  NSString *document = body[@"document"];
++  if (document.length != 36 || [[NSUUID alloc] initWithUUIDString:document] == nil) return;
++  NSString *type = body[@"type"];
++  if (![type isKindOfClass:NSString.class]) return;
++  if ([type isEqualToString:@"hello"]) {
++    if ([_calabBridgeDocument isEqualToString:document]) { [self calabForwardMessage:message]; return; }
++    // An old document can queue a hello during navigation. Challenge the CURRENT top document;
++    // completion must still belong to this WebView/navigation epoch. No origin/nonce from JS is trusted alone.
++    NSString *ids = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@[document, body[@"host"]] options:0 error:nil] encoding:NSUTF8StringEncoding];
++    NSString *challenge = [NSString stringWithFormat:@"(() => { const h=window.CalabHostActivity; const ids=%@; return !!h && h.version===1 && h.document===ids[0] && h.host===ids[1]; })()", ids];
++    NSUInteger epoch = _calabBridgeEpoch;
++    __weak RNCWebViewImpl *weakSelf = self;
++    __weak WKWebView *expectedView = _webView;
++    [_webView evaluateJavaScript:challenge completionHandler:^(id result, NSError *error) {
++      RNCWebViewImpl *host = weakSelf;
++      if (host == nil || expectedView == nil || host->_webView != expectedView || host->_calabBridgeEpoch != epoch ||
++          error != nil || ![result isKindOfClass:NSNumber.class] || ![result boolValue]) return;
++      [host calabRevokeAuthority];
++      host->_calabBridgeDocument = document;
++      [NSNotificationCenter.defaultCenter postNotificationName:@"CalabHostDocumentGranted" object:host userInfo:@{@"document":document}];
++      [host calabForwardMessage:message];
++    }];
++    return;
++  }
++  if (![_calabBridgeDocument isEqualToString:document]) return;
++  if ([type isEqualToString:@"revoke"]) { if ([body[@"reason"] isEqual:@"logout"]) [NSNotificationCenter.defaultCenter postNotificationName:@"CalabHostSessionCleared" object:self]; [self calabRevokeAuthority]; [self calabForwardMessage:message]; }
++  else if ([type isEqualToString:@"activity"] || [type isEqualToString:@"notifications"] || [type isEqualToString:@"calls"]) [self calabForwardMessage:message];
++}
++#endif
++
+ /**
+  * This method is called whenever JavaScript running within the web view calls:
+  *   - window.webkit.messageHandlers[MessageHandlerName].postMessage
+@@ -782,18 +1072,25 @@
+       _onLoadingFinish(event);
+     }
+   } else if ([message.name isEqualToString:MessageHandlerName]) {
++#if TARGET_OS_IOS
++    [self calabReceiveMessage:message];
++#else
+     if (_onMessage) {
+       NSMutableDictionary<NSString *, id> *event = [self baseEvent];
+       [event addEntriesFromDictionary: @{@"data": message.body}];
+       [event addEntriesFromDictionary: @{@"url": message.frameInfo.request.URL.absoluteString}];
+       _onMessage(event);
+     }
++#endif
+   }
+ }
+
+ - (void)setSource:(NSDictionary *)source
+ {
+   if (![_source isEqualToDictionary:source]) {
++#if TARGET_OS_IOS
++    [self calabRevokeAuthority];
++#endif
+     _source = [source copy];
+
+     if (_webView != nil) {
+@@ -1343,6 +1640,17 @@
+         };
+     });
+
++#if TARGET_OS_IOS
++    // Calab patch: a blob: download of the source origin's main frame, decided natively (see RNCWebViewDownloads).
++    if (@available(iOS 14.5, *)) {
++      if ([RNCWebViewDownloads accepts:navigationAction sourceUri:[RCTConvert NSString:_source[@"uri"]]]) {
++        if (_downloads == nil) _downloads = [RNCWebViewDownloads new];
++        decisionHandler([(RNCWebViewDownloads *)_downloads busy] ? WKNavigationActionPolicyCancel : WKNavigationActionPolicyDownload);
++        return;
++      }
++    }
++#endif
++
+     WKNavigationType navigationType = navigationAction.navigationType;
+     NSURLRequest *request = navigationAction.request;
+     BOOL isTopFrame = [request.URL isEqual:request.mainDocumentURL];
+@@ -1420,12 +1728,35 @@
+     decisionHandler(WKNavigationActionPolicyAllow);
+ }
+
++#if TARGET_OS_IOS
++/** Calab patch: only actions RNCWebViewDownloads accepted are answered with a download. */
++- (void)webView:(WKWebView *)webView navigationAction:(WKNavigationAction *)navigationAction didBecomeDownload:(WKDownload *)download
++{
++  if (_downloads == nil) {
++    [download cancel:nil];
++    return;
++  }
++  [(RNCWebViewDownloads *)_downloads adopt:download from:self];
++}
++#endif
++
++// A full top-document navigation clears authority before the new page can run.
++- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation
++{
++#if TARGET_OS_IOS
++  [self calabRevokeAuthority];
++#endif
++}
++
+ /**
+  * Called when the web view's content process is terminated.
+  * @see https://developer.apple.com/documentation/webkit/wknavigationdelegate/1455639-webviewwebcontentprocessdidtermi?language=objc
+  */
+ - (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView
+ {
++#if TARGET_OS_IOS
++  [self calabRevokeAuthority];
++#endif
+   RCTLogWarn(@"Webview Process Terminated");
+   if (_onContentProcessDidTerminate) {
+     NSMutableDictionary<NSString *, id> *event = [self baseEvent];
+@@ -1769,6 +2100,9 @@
+ }
+
+ - (void)setMessagingEnabled:(BOOL)messagingEnabled {
++#if TARGET_OS_IOS
++  if (!messagingEnabled) [self calabRevokeAuthority];
++#endif
+   _messagingEnabled = messagingEnabled;
+
+   self.postMessageScript = _messagingEnabled ?

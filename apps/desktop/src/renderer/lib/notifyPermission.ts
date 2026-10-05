@@ -1,3 +1,5 @@
+import type { HostNotificationsCapability } from '../../shared/hostActivity';
+
 /**
  * Notification permission for the onboarding step (docs/09 #20): one pure mapping from the
  * browser / Electron state to what the step shows, so `default` («not asked yet») is never
@@ -12,7 +14,8 @@ function normalise(p: unknown): NotifyState {
 }
 
 /** Current state; `unsupported` without the API (insecure context, iOS Safari outside a PWA). */
-export function readNotifyState(api: NotificationApi = (globalThis as { Notification?: NotificationApi }).Notification): NotifyState {
+export function readNotifyState(api: NotificationApi = (globalThis as { Notification?: NotificationApi }).Notification, host?: HostNotificationsCapability): NotifyState {
+  if (host) return 'default';
   if (!api || typeof api.requestPermission !== 'function') return 'unsupported';
   return normalise(api.permission);
 }
@@ -21,7 +24,8 @@ export function readNotifyState(api: NotificationApi = (globalThis as { Notifica
  * Asks the browser — call it straight from the click handler (user gesture). Handles the old
  * callback-only Safari API and never throws: a failure leaves the state as it was.
  */
-export function requestNotify(api: NotificationApi = (globalThis as { Notification?: NotificationApi }).Notification): Promise<NotifyState> {
+export function requestNotify(api: NotificationApi = (globalThis as { Notification?: NotificationApi }).Notification, host?: HostNotificationsCapability): Promise<NotifyState> {
+  if (host) return host.state(true).then(s => s.permission === 'unsupported' ? 'unsupported' : s.permission);
   if (!api || typeof api.requestPermission !== 'function') return Promise.resolve('unsupported');
   const request = api.requestPermission.bind(api);
   return new Promise<NotifyState>((resolve) => {

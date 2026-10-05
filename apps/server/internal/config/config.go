@@ -102,6 +102,17 @@ type Config struct {
 	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
 	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
 
+	// Native push is inert unless a complete transport is explicitly configured.
+	PushVoIPEnabled           bool   `env:"PUSH_VOIP_ENABLED"`
+	PushAPNSKeyFile           string `env:"PUSH_APNS_KEY_FILE"`
+	PushAPNSKeyID             string `env:"PUSH_APNS_KEY_ID"`
+	PushAPNSTeamID            string `env:"PUSH_APNS_TEAM_ID"`
+	PushAPNSAppID             string `env:"PUSH_APNS_APP_ID"`
+	PushAPNSEnvironment       string `env:"PUSH_APNS_ENVIRONMENT" envDefault:"production"`
+	PushFCMServiceAccountFile string `env:"PUSH_FCM_SERVICE_ACCOUNT_FILE"`
+	PushFCMProjectID          string `env:"PUSH_FCM_PROJECT_ID"`
+	PushFCMAppID              string `env:"PUSH_FCM_APP_ID"`
+
 	// Link previews: extra address ranges the unfurler may fetch from although they are not
 	// public. Only for dev machines whose VPN resolves names into a fake-IP range
 	// (e.g. 198.18.0.0/15). Loopback and link-local stay blocked regardless. Never set in prod.
@@ -246,6 +257,17 @@ func (c *Config) Validate() error {
 	lk := []string{c.LiveKitURL, c.LiveKitInternalURL, c.LiveKitAPIKey, c.LiveKitAPISecret}
 	if n := countSet(lk); n != 0 && n != len(lk) {
 		errs = append(errs, errors.New("LIVEKIT_URL, LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set together"))
+	}
+	apns := []string{c.PushAPNSKeyFile, c.PushAPNSKeyID, c.PushAPNSTeamID, c.PushAPNSAppID}
+	if n := countSet(apns); n != 0 && n != len(apns) {
+		errs = append(errs, errors.New("PUSH_APNS_KEY_FILE, PUSH_APNS_KEY_ID, PUSH_APNS_TEAM_ID and PUSH_APNS_APP_ID must be set together"))
+	}
+	if countSet(apns) > 0 && c.PushAPNSEnvironment != "production" && c.PushAPNSEnvironment != "development" {
+		errs = append(errs, errors.New("PUSH_APNS_ENVIRONMENT must be production or development"))
+	}
+	fcm := []string{c.PushFCMServiceAccountFile, c.PushFCMProjectID, c.PushFCMAppID}
+	if n := countSet(fcm); n != 0 && n != len(fcm) {
+		errs = append(errs, errors.New("PUSH_FCM_SERVICE_ACCOUNT_FILE, PUSH_FCM_PROJECT_ID and PUSH_FCM_APP_ID must be set together"))
 	}
 	if c.HeartbeatInterval < 5*time.Second || c.MaxDevicesPerUser < 1 {
 		errs = append(errs, errors.New("GATEWAY_HEARTBEAT_INTERVAL must be >= 5s and GATEWAY_MAX_SESSIONS_PER_USER >= 1"))

@@ -25,6 +25,7 @@ import (
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/plans"
+	"github.com/calaba/calaba/server/internal/push"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
@@ -112,7 +113,11 @@ func serve(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Blob: store})
+	providers, err := push.NewProviders(cfg)
+	if err != nil {
+		return err
+	}
+	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Blob: store, Push: providers})
 	bg, stopBG := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopBG()
 	a.Run(bg)

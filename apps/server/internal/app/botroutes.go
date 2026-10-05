@@ -29,6 +29,10 @@ const (
 // registers must be listed: TestBotRouteTable fails on an unlisted route, so a new route
 // needs an explicit decision; an unlisted pattern is denied to bots at run time.
 var botRoutes = map[string]botAccess{
+	"GET /api/me/push-capabilities":                                                     botDeny,
+	"POST /api/me/push-devices":                                                         botDeny,
+	"DELETE /api/me/push-devices/{id}":                                                  botDeny,
+	"POST /api/me/push-resolve":                                                         botDeny,
 	"GET /api/stickers/builtin/{name}":                                                  botPublic,
 	"PUT /api/workspaces/{workspace_id}/identity/policy":                                botDeny,
 	"PUT /api/workspaces/{workspace_id}/identity/directory/members/{user_id}":           botDeny,
