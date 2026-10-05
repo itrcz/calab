@@ -113,10 +113,19 @@ func TestIdentityLeaseSlowRefreshDoesNotSerializeFanout(t *testing.T) {
 	}
 	close(release)
 	workers.Wait()
-	for _, s := range sessions {
-		if s.allowsEvent(leaseEvent(a)) {
-			t.Fatal("refresh error kept positive lease")
+	// A dependency failure is not a revocation (incident 2026-10-05): the stored lease
+	// stays until it expires. A definitive denial drops it at once.
+	for _, s := range sessions[1:] { // sessions[0] left the workspace above
+		if !s.allowsEvent(leaseEvent(a)) {
+			t.Fatal("transient refresh error dropped a positive lease")
 		}
+	}
+	h.checkWorkspace = func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		return identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, time.Now(), nil
+	}
+	_, _ = sessions[1].refreshWorkspaceLease(context.Background(), a)
+	if sessions[1].allowsEvent(leaseEvent(a)) {
+		t.Fatal("denial kept positive lease")
 	}
 }
 

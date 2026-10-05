@@ -12,6 +12,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -417,10 +418,10 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 	}
 	cancel()
 	if err != nil {
-		ids = nil
-		s.leases.mu.Lock()
-		s.leases.workspaces = nil
-		s.leases.mu.Unlock()
+		// A failed membership read says nothing about access (incident 2026-10-05: a slow
+		// DB removed every workspace from every client). Keep the leases; they expire on
+		// their own (ReadLeaseTTL), and the next pass retries.
+		return
 	}
 	s.mu.Lock()
 	old := make(map[uuid.UUID]bool, len(s.workspaces))
@@ -455,7 +456,8 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		cancel()
 		if err == nil && decision.Allowed && s.workspaceLeaseAllows(ws) {
 			allowed[ws] = decision
-		} else if old[ws] {
+		} else if old[ws] && (!identityTransient(decision, err) || !s.workspaceLeaseAllows(ws)) {
+			// A transient failure keeps a still-valid lease (incident 2026-10-05).
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
 	}
@@ -561,6 +563,18 @@ func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]b
 		due = append(due, c.ws)
 	}
 	return due, probes
+}
+
+// identityTransient reports a failed evaluation that says nothing about access (dependency
+// failure, timeout, connection error) as opposed to a decision (4xx, a policy denial, a
+// revoked session, a missing row). The stored lease is kept and expires on its own
+// (ReadLeaseTTL), so an outage longer than the lease still fails closed; a definitive denial
+// acts at once. Incident 2026-10-05: the RTC sweep had the same shape (fixed in 2.3.4).
+func identityTransient(d identitypolicy.Decision, err error) bool {
+	if err != nil {
+		return !httpx.IsDenial(err) && !errors.Is(err, identitypolicy.ErrDenied) && !errors.Is(err, auth.ErrSessionRevoked) && !db.IsNotFound(err)
+	}
+	return d.Reason == identitypolicy.StateUnavailable
 }
 
 func (h *Hub) identityRemoveWorkspace(s *Session, ws uuid.UUID, d identitypolicy.Decision, err error) {

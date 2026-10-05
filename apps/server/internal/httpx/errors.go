@@ -75,6 +75,23 @@ func (e *Error) Proto() *v1.ApiError {
 	return p
 }
 
+// IsDenial reports a definitive access decision (401, 403, 404, or a 409 plan limit), as
+// opposed to a dependency failure or timeout, which says nothing about access. Enforcement
+// sweeps evict only on a denial (incident 2026-10-05: a slow DB evicted every participant).
+func IsDenial(err error) bool {
+	var e *Error
+	if !errors.As(err, &e) {
+		return false
+	}
+	switch e.Status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+		return true
+	case http.StatusConflict:
+		return e.Reason == ReasonPlanLimit
+	}
+	return false
+}
+
 // AsError extracts an *Error from err; unknown errors become 500 INTERNAL.
 func AsError(err error) *Error {
 	var e *Error

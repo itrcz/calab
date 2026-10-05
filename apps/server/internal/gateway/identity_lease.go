@@ -114,6 +114,10 @@ func (s *Session) refreshWorkspaceLeaseOnce(ctx context.Context, ws uuid.UUID) (
 	if ctx.Err() != nil {
 		err = ctx.Err()
 	}
+	if identityTransient(d, err) {
+		// Keep the stored lease (it expires on its own): a slow DB is not a revocation.
+		return d, false, err
+	}
 	if err == nil {
 		l = s.lease(d, ws, started, evaluated, revision)
 	}
@@ -167,6 +171,9 @@ func (s *Session) refreshSessionLease(ctx context.Context) {
 				p.Revoked = true
 			}
 		}
+	}
+	if identityTransient(identitypolicy.Decision{}, err) {
+		return // keep the session lease; it expires on its own (ReadLeaseTTL)
 	}
 	l := identityLease{}
 	if err == nil && p.Authority == s.principal.Authority && p.WorkspaceID == s.principal.WorkspaceID && p.ConnectionID == s.principal.ConnectionID && p.SessionID == s.asess && p.UserID == s.user {
