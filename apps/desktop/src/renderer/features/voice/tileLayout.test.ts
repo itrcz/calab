@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutTiles, pipCamera, selectTiles, type Rect, type TilePerson } from './tileLayout';
+import { NO_SLOTS, TILE_SWAP_MS, layoutTiles, pipCamera, sameSelection, selectTiles, type Rect, type TileSelection, type TilePerson } from './tileLayout';
 
 const P = (userId: string, video = false): TilePerson => ({ userId, video });
 
@@ -46,6 +46,151 @@ describe('selectTiles', () => {
     expect(s.overflow).toBe(4);
     expect(s.tiles.slice(0, 2).every((t) => t.video)).toBe(true);
     expect(selectTiles(people.slice(0, 6), { focused: null, active: null })).toMatchObject({ overflow: 0 });
+  });
+});
+
+/** A tiny seeded PRNG (mulberry32): property tests stay reproducible. */
+function rng(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A call driven by speaking starts: carries slots and the clock like the grid does. */
+function call(people: TilePerson[], opts: { focused?: string | null; me?: string } = {}) {
+  const spoke = new Map<string, number>();
+  let now = 10_000;
+  let sel: TileSelection = selectTiles(people, { focused: opts.focused ?? null, active: null, me: opts.me, spoke, prev: NO_SLOTS, now });
+  const run = (): TileSelection => (sel = selectTiles(people, { focused: opts.focused ?? null, active: null, me: opts.me, spoke, prev: sel.slots, now }));
+  return {
+    get sel() {
+      return sel;
+    },
+    ids: () => sel.tiles.map((t) => t.userId),
+    speak(id: string, after = 0): TileSelection {
+      now += after;
+      spoke.set(id, now);
+      return run();
+    },
+    wait(ms: number): TileSelection {
+      now += ms;
+      return run();
+    },
+  };
+}
+
+describe('selectTiles with overflow: speakers come forward (ADR-0066 §2)', () => {
+  const nine = (): TilePerson[] => Array.from({ length: 9 }, (_, i) => P(`u${i}`, i % 3 === 0));
+
+  it('a hidden speaker takes the slot of the tile silent longest, in place', () => {
+    const c = call(nine());
+    const before = c.ids();
+    expect(before).toEqual(['u0', 'u3', 'u6', 'u1', 'u2']); // cameras first, then call order
+    c.speak('u0', 100);
+    c.speak('u3', 100);
+    c.speak('u6', 100);
+    c.speak('u2', 100);
+    expect(c.ids()).toEqual(before); // visible people talking moves nothing
+    c.speak('u8', 2000);
+    const after = c.ids();
+    expect(after).toEqual(['u0', 'u3', 'u6', 'u8', 'u2']); // u1 never spoke: replaced in place
+    expect(c.sel.hidden).toEqual(['u1', 'u4', 'u5', 'u7']);
+    expect(c.sel.overflow).toBe(4);
+  });
+
+  it('at most one swap per 1.5 s; the late one lands once the window passes', () => {
+    const c = call(nine());
+    c.speak('u8', 2000);
+    expect(c.ids()).toContain('u8');
+    const sel = c.speak('u7', 200);
+    expect(c.ids()).not.toContain('u7');
+    expect(sel.retryAt).not.toBeNull();
+    c.wait(TILE_SWAP_MS - 200);
+    expect(c.ids()).toContain('u7');
+    expect(c.ids()).toContain('u8'); // the newer speaker is not the one replaced
+  });
+
+  it('pinned and my tile always stay; they are never replaced by a speaker', () => {
+    const c = call(nine(), { focused: 'u7', me: 'u5' });
+    expect(c.ids()).toContain('u7');
+    expect(c.ids()).toContain('u5');
+    expect(c.sel.featured).toBe('u7');
+    for (const id of ['u1', 'u2', 'u4', 'u8']) c.speak(id, 2000);
+    expect(c.ids()).toContain('u7');
+    expect(c.ids()).toContain('u5');
+    expect(c.ids()[0]).toBe('u7');
+  });
+
+  it('property: speech of a visible participant never reorders visible tiles; a hidden speaker becomes visible', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const r = rng(seed);
+      const n = 7 + Math.floor(r() * 12);
+      const people = Array.from({ length: n }, (_, i) => P(`p${i}`, r() < 0.4));
+      const me = r() < 0.5 ? `p${Math.floor(r() * n)}` : undefined;
+      const c = call(people, { me });
+      for (let step = 0; step < 60; step++) {
+        const visible = c.ids();
+        const slots = [...c.sel.slots.ids];
+        const hidden = c.sel.hidden;
+        if (r() < 0.6 || hidden.length === 0) {
+          const id = visible[Math.floor(r() * visible.length)] as string;
+          c.speak(id, Math.floor(r() * 3000));
+          expect(c.ids(), `seed ${seed} step ${step}`).toEqual(visible);
+        } else {
+          const id = hidden[Math.floor(r() * hidden.length)] as string;
+          c.speak(id, TILE_SWAP_MS + Math.floor(r() * 1000));
+          expect(c.ids(), `seed ${seed} step ${step}`).toContain(id);
+          // Exactly one slot changed, and it changed in place (the large tile may then change:
+          // a replaced first camera hands «large» to the next one).
+          const changed = c.sel.slots.ids.filter((x, i) => x !== slots[i]);
+          expect(changed).toEqual([id]);
+          if (me) expect(c.ids()).toContain(me);
+        }
+        expect(c.ids().length + c.sel.overflow).toBe(n);
+      }
+    }
+  });
+
+  it('someone leaving frees a slot for the most recent hidden speaker', () => {
+    const people = nine();
+    const c = call(people);
+    c.speak('u7', 100); // swapped in for the longest-silent tile
+    c.speak('u8', 100); // rate-limited: stays hidden for now
+    expect(c.ids()).not.toContain('u8');
+    const left = people.filter((p) => p.userId !== 'u3');
+    const sel = selectTiles(left, { focused: null, active: null, spoke: new Map([['u7', 10_100], ['u8', 10_200]]), prev: c.sel.slots, now: 10_300 });
+    expect(sel.tiles.map((t) => t.userId)).toContain('u8');
+    expect(sel.tiles).toHaveLength(5);
+  });
+
+  it('rerenders: a speaking start changes the grid state only when the visible set changes', () => {
+    // useTileSelection keeps the previous state when sameSelection() holds: count real changes.
+    const c = call(nine());
+    let renders = 0;
+    let swaps = 0;
+    const r = rng(7);
+    for (let step = 0; step < 200; step++) {
+      const before = c.sel;
+      const pool = r() < 0.8 ? before.tiles.map((t) => t.userId) : before.hidden;
+      const id = pool[Math.floor(r() * pool.length)] as string;
+      const after = c.speak(id, Math.floor(r() * 2000));
+      if (!sameSelection(before, after)) renders++;
+      // A swap (now, or a rate-limited one landing on this run) — the only reason to re-render.
+      if (after.tiles.map((t) => t.userId).join() !== before.tiles.map((t) => t.userId).join()) swaps++;
+    }
+    expect(renders).toBe(swaps);
+    expect(swaps).toBeGreaterThan(0);
+  });
+
+  it('sameSelection ignores the clock, sees tiles, the large one and the hidden list', () => {
+    const people = nine();
+    const a = selectTiles(people, { focused: null, active: null, now: 1 });
+    expect(sameSelection(a, selectTiles(people, { focused: null, active: null, prev: a.slots, now: 5 }))).toBe(true);
+    expect(sameSelection(a, selectTiles(people, { focused: 'u8', active: null, prev: a.slots, now: 5 }))).toBe(false);
   });
 });
 

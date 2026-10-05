@@ -4,6 +4,8 @@
  */
 
 export const MAX_TILES = 6;
+/** A hidden speaker replaces a visible tile at most this often (ADR-0066 §2: no flicker on cross-talk). */
+export const TILE_SWAP_MS = 1500;
 const ASPECT = 16 / 9;
 
 export interface TilePerson {
@@ -12,52 +14,158 @@ export interface TilePerson {
   video: boolean;
 }
 
+/**
+ * The visible set carried from one selection to the next: which people hold the visible slots
+ * (in slot order) and when the last speech swap happened (same clock as `now`).
+ */
+export interface TileSlots {
+  ids: readonly string[];
+  swappedAt: number;
+}
+
+export const NO_SLOTS: TileSlots = { ids: [], swappedAt: Number.NEGATIVE_INFINITY };
+
 export interface TileSelection {
   /** In display order; the featured tile (if any) first. */
   tiles: TilePerson[];
-  /** People who did not fit (shown as «+N» on the last tile). */
+  /** People who did not fit (shown as «Ещё N» on the last tile). */
   overflow: number;
+  /** Who is behind «Ещё N», in call order. */
+  hidden: string[];
   /**
    * Large tile: the one the viewer clicked, else (≥ 3 tiles) the latest *remote* speaker with a
    * camera, else the first remote camera. My own camera is never large unless I click it
    * (Discord / FaceTime: the self-view stays small).
    */
   featured: string | null;
+  /** Pass back as `prev` next time. */
+  slots: TileSlots;
+  /** A speech swap is due but rate-limited: select again at this time. */
+  retryAt: number | null;
+}
+
+export interface SelectOpts {
+  focused: string | null;
+  active: string | null;
+  me?: string;
+  max?: number;
+  /** userId → when they last started speaking (lib/lastSpoke.ts); missing = never. */
+  spoke?: ReadonlyMap<string, number>;
+  /** The previous selection's slots: visible tiles keep their places. */
+  prev?: TileSlots;
+  now?: number;
 }
 
 /**
- * Tile order is stable: the clicked (focused) tile, then cameras, then everyone else, each group
- * in call order — tiles don't jump when someone starts talking (review L5). At most MAX_TILES:
- * with more people the last slot turns into «+N».
+ * Which tiles show and in what order.
+ *
+ * Everyone fits (≤ max): the clicked tile, then cameras, then everyone else, each group in call
+ * order — tiles don't jump when someone starts talking (review L5).
+ *
+ * More people than fit (ADR-0066 §2): max − 1 tiles and «Ещё N». The pinned tile and mine always
+ * have a slot; the other slots prefer recent speakers. When someone hidden starts speaking they
+ * take the slot of the visible tile (not pinned, not mine) that has been silent longest — in
+ * place, nothing else moves; at most one such swap per TILE_SWAP_MS. Visible tiles never move
+ * because someone else spoke. Empty slots fill by: last spoke (recent first), cameras before
+ * avatars, call order.
  */
-export function selectTiles(
-  people: readonly TilePerson[],
-  opts: { focused: string | null; active: string | null; me?: string; max?: number },
-): TileSelection {
+export function selectTiles(people: readonly TilePerson[], opts: SelectOpts): TileSelection {
   const max = opts.max ?? MAX_TILES;
+  const prev = opts.prev ?? NO_SLOTS;
+  const spoke = opts.spoke ?? new Map<string, number>();
+  const now = opts.now ?? 0;
   const order = new Map(people.map((p, i) => [p.userId, i]));
+  const byId = new Map(people.map((p) => [p.userId, p]));
   const focused = opts.focused && order.has(opts.focused) ? opts.focused : null;
-  const sorted = [...people].sort((a, b) => {
-    if (a.userId === focused) return -1;
-    if (b.userId === focused) return 1;
-    if (a.video !== b.video) return a.video ? -1 : 1;
-    return (order.get(a.userId) ?? 0) - (order.get(b.userId) ?? 0);
-  });
-  const fits = sorted.length <= max;
-  const tiles = fits ? sorted : sorted.slice(0, max - 1);
-  const overflow = fits ? 0 : sorted.length - tiles.length;
+  let ids: string[];
+  let swappedAt = prev.swappedAt;
+  let retryAt: number | null = null;
+  if (people.length <= max) {
+    ids = [...people]
+      .sort((a, b) => {
+        if (a.userId === focused) return -1;
+        if (b.userId === focused) return 1;
+        if (a.video !== b.video) return a.video ? -1 : 1;
+        return (order.get(a.userId) ?? 0) - (order.get(b.userId) ?? 0);
+      })
+      .map((p) => p.userId);
+  } else {
+    const cap = max - 1;
+    const said = (id: string): number => spoke.get(id) ?? 0;
+    // Fill rank: recent speakers, then cameras, then call order.
+    const rank = (a: string, b: string): number =>
+      said(b) - said(a) || Number(byId.get(b)?.video ?? false) - Number(byId.get(a)?.video ?? false) || (order.get(a) ?? 0) - (order.get(b) ?? 0);
+    const required = [focused, opts.me && order.has(opts.me) ? opts.me : null].filter((id): id is string => id !== null);
+    ids = prev.ids.filter((id) => order.has(id));
+    // The visible tile silent longest (ties: the lowest-ranked) — the one a newcomer replaces.
+    const victim = (): number => {
+      let at = -1;
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i] as string;
+        if (required.includes(id)) continue;
+        const cur = at < 0 ? undefined : (ids[at] as string);
+        if (cur === undefined || said(id) < said(cur) || (said(id) === said(cur) && rank(id, cur) > 0)) at = i;
+      }
+      return at;
+    };
+    while (ids.length > cap) {
+      const at = victim();
+      if (at < 0) break;
+      ids.splice(at, 1);
+    }
+    // Reversed: with free slots, the pinned tile ends up first, mine second.
+    for (const id of [...required].reverse()) {
+      if (ids.includes(id)) continue;
+      const at = ids.length >= cap ? victim() : -1;
+      if (at >= 0) ids[at] = id;
+      else ids.unshift(id);
+    }
+    const hiddenRanked = (): string[] => people.map((p) => p.userId).filter((id) => !ids.includes(id)).sort(rank);
+    for (const id of hiddenRanked()) {
+      if (ids.length >= cap) break;
+      ids.push(id);
+    }
+    // One speech swap: the most recent hidden speaker vs the longest-silent visible tile.
+    const speaker = hiddenRanked()[0];
+    const at = victim();
+    const out = at >= 0 ? (ids[at] as string) : undefined;
+    if (speaker !== undefined && out !== undefined && said(speaker) > said(out)) {
+      if (now - prev.swappedAt >= TILE_SWAP_MS) {
+        ids[at] = speaker;
+        swappedAt = now;
+      } else retryAt = prev.swappedAt + TILE_SWAP_MS;
+    }
+  }
+  const tiles = ids.map((id) => byId.get(id)).filter((p): p is TilePerson => p !== undefined);
+  const shown = new Set(ids);
+  const hidden = people.map((p) => p.userId).filter((id) => !shown.has(id));
   let featured: string | null = focused;
   if (!featured && tiles.length >= 3) {
-    // The active speaker (held 2 s, lib/activeSpeaker.ts) if they show video, else the first
+    // The active speaker (800 ms, lib/activeSpeaker.ts) if they show video, else the first
     // remote camera. Never my own camera by default.
     const remote = tiles.filter((t) => t.video && t.userId !== opts.me);
     featured = remote.find((t) => t.userId === opts.active)?.userId ?? remote[0]?.userId ?? null;
   }
   if (featured) {
+    // The large tile goes first; the tile it displaces takes its place (the rest stay put).
     const i = tiles.findIndex((t) => t.userId === featured);
-    if (i > 0) tiles.unshift(...tiles.splice(i, 1));
+    if (i > 0) [tiles[0], tiles[i]] = [tiles[i] as TilePerson, tiles[0] as TilePerson];
   }
-  return { tiles, overflow, featured };
+  return { tiles, overflow: hidden.length, hidden, featured, slots: { ids, swappedAt }, retryAt };
+}
+
+/** Same tiles, large tile and hidden list — the grid needn't re-render. */
+export function sameSelection(a: TileSelection, b: TileSelection): boolean {
+  return (
+    a.featured === b.featured &&
+    a.tiles.length === b.tiles.length &&
+    a.tiles.every((t, i) => {
+      const o = b.tiles[i];
+      return o !== undefined && t.userId === o.userId && t.video === o.video;
+    }) &&
+    a.hidden.length === b.hidden.length &&
+    a.hidden.every((id, i) => id === b.hidden[i])
+  );
 }
 
 export interface Rect {

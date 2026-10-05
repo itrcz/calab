@@ -928,22 +928,45 @@ describe('VoiceEngine', () => {
     usePrefs.getState().setPrefs({ hiddenVideo: {} });
   });
 
-  it('the active speaker for video switches only after 2 s of continuous speech (review M2)', async () => {
+  it('the active speaker for video switches only after 800 ms of continuous speech (review M2, ADR-0066)', async () => {
     await voice.join('A', 'ws');
     const room = FakeRoom.all[0];
     const p = (id: string) => ({ identity: `${id}:s` });
     room?.emit('ActiveSpeakersChanged', [p('b')]);
-    await vi.advanceTimersByTimeAsync(1500);
+    await vi.advanceTimersByTimeAsync(500);
     expect(useVoice.getState().speaking['b']).toBe(true);
     expect(useVoice.getState().activeSpeaker).toBeNull();
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(400);
     expect(useVoice.getState().activeSpeaker).toBe('b');
     // A short interjection by c does not take the picture.
+    await vi.advanceTimersByTimeAsync(2000);
     room?.emit('ActiveSpeakersChanged', [p('c')]);
-    await vi.advanceTimersByTimeAsync(800);
+    await vi.advanceTimersByTimeAsync(400);
     room?.emit('ActiveSpeakersChanged', []);
     await vi.advanceTimersByTimeAsync(5000);
     expect(useVoice.getState().activeSpeaker).toBe('b');
+  });
+
+  it('records «last spoke» on speaking starts only, for the call grid (ADR-0066 §2)', async () => {
+    await voice.join('A', 'ws');
+    const room = FakeRoom.all[0];
+    const p = (id: string) => ({ identity: `${id}:s` });
+    const { lastSpoke } = await import('../lib/lastSpoke');
+    let calls = 0;
+    const off = lastSpoke.subscribe(() => calls++);
+    room?.emit('ActiveSpeakersChanged', [p('b')]);
+    await vi.advanceTimersByTimeAsync(100);
+    const first = lastSpoke.get('b');
+    expect(first).toBeGreaterThan(0);
+    // Still speaking: no new mark, no listener call.
+    room?.emit('ActiveSpeakersChanged', [p('b'), p('c')]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(lastSpoke.get('b')).toBe(first);
+    expect(lastSpoke.get('c')).toBeGreaterThan(0);
+    expect(calls).toBe(2);
+    off();
+    await voice.leave();
+    expect(lastSpoke.get('b')).toBe(0);
   });
 });
 
