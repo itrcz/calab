@@ -9,6 +9,8 @@
 export interface LightboxImage {
   fileId: string;
   name: string;
+  /** MIME type from FileMeta, when known (the web drag-out names the file's type with it). */
+  mime?: string;
   /** Pixel size from FileMeta (0 when the server does not know it). */
   width: number;
   height: number;

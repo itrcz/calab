@@ -339,6 +339,7 @@ export const es: Dict = {
   'chat.deleteTitle': 'Eliminar mensaje',
   'chat.deleteText': 'El mensaje se eliminará para todos.',
   'chat.download': 'Descargar',
+  'chat.downloadImage': 'Descargar imagen',
   'chat.downloaded': '«{name}» guardado en Descargas',
   'chat.noSend': 'No tienes permiso para enviar mensajes en esta sala.',
 

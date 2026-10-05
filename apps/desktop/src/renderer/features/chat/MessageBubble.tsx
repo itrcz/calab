@@ -2,7 +2,7 @@ import { RoomType, type FileMeta, type Message, type PermissionBits } from '@cal
 import { useRooms } from '../../stores/rooms';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
@@ -52,6 +52,7 @@ import { BotBadge } from '../people/MemberBits';
 import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
 import { InlineKeyboardView } from './InlineKeyboard';
+import { dragOutAttrs, dragOutHandlers } from './imageDragOut';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -259,6 +260,22 @@ function Bubble({
   const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((f) => !isImage(f));
+  // «Скачать картинку» in the menu: the image under the right click / long press (its press marks
+  // it — a ref, no render), else the message's only image; read once when the menu opens.
+  const pressedImage = useRef<string | null>(null);
+  const markPressedImage = useCallback((e: SyntheticEvent) => {
+    pressedImage.current = e.target instanceof Element ? (e.target.closest('[data-drag-file]')?.getAttribute('data-drag-file') ?? null) : null;
+  }, []);
+  const [menuImageId, setMenuImageId] = useState<string | null>(null);
+  const setBarMenu = bar.setMenu;
+  const onMenuOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) setMenuImageId(pressedImage.current);
+      setBarMenu(open);
+    },
+    [setBarMenu],
+  );
+  const menuImage = images.find((f) => f.id === menuImageId) ?? (images.length === 1 ? images[0] : undefined);
   // Videos are full-bleed boxes like images; audio players and other files are rows (docs/08 «Медиа в чате»).
   const videos = files.filter((f) => !isVoice(f) && mediaKind(f) === 'video');
   const rows = files.filter((f) => isVoice(f) || mediaKind(f) !== 'video');
@@ -405,7 +422,7 @@ function Bubble({
   );
 
   return (
-    <ContextMenu.Root modal={false} onOpenChange={bar.setMenu}>
+    <ContextMenu.Root modal={false} onOpenChange={onMenuOpenChange}>
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
           className={cx(
@@ -420,6 +437,8 @@ function Bubble({
           role={bar.enabled ? 'article' : undefined}
           aria-label={bar.enabled ? `${name}, ${fmt.time(toDate(m.createdAt))}` : undefined}
           {...bar.handlers}
+          onPointerDownCapture={markPressedImage}
+          onContextMenuCapture={markPressedImage}
         >
           {body}
           {m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' ? (
@@ -432,7 +451,7 @@ function Bubble({
           ) : null}
         </div>
       </ContextMenu.Trigger>
-      <MessageMenu c={c} own={own} roomId={roomId} perms={perms} />
+      <MessageMenu c={c} own={own} roomId={roomId} perms={perms} image={menuImage} />
     </ContextMenu.Root>
   );
 }
@@ -804,7 +823,9 @@ function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: bool
           key={f.id}
           type="button"
           aria-label={t('chat.openImage', { name: f.name })}
-          onClick={() => open({ kind: 'image', images: files.map((g) => ({ fileId: g.id, name: g.name, width: g.width, height: g.height })), index })}
+          onClick={() => open({ kind: 'image', images: files.map((g) => ({ fileId: g.id, name: g.name, mime: g.mime, width: g.width, height: g.height })), index })}
+          {...dragOutAttrs(f)}
+          {...dragOutHandlers}
           className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
           style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width: '100%' } : { aspectRatio: '1 / 1' }}
         >

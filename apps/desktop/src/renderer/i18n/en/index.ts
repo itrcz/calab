@@ -339,6 +339,7 @@ export const en: Dict = {
   'chat.deleteTitle': 'Delete message',
   'chat.deleteText': 'The message will be deleted for everyone.',
   'chat.download': 'Download',
+  'chat.downloadImage': 'Download image',
   'chat.downloaded': '“{name}” saved to Downloads',
   'chat.noSend': 'You don’t have permission to send messages in this room.',
 

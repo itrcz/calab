@@ -337,6 +337,7 @@ export const ru = {
   'chat.deleteTitle': 'Удалить сообщение',
   'chat.deleteText': 'Сообщение будет удалено у всех.',
   'chat.download': 'Скачать',
+  'chat.downloadImage': 'Скачать картинку',
   'chat.downloaded': '«{name}» сохранён в «Загрузки»',
   'chat.noSend': 'У вас нет права писать в этой комнате.',
 

@@ -339,6 +339,7 @@ export const zhCN: Dict = {
   'chat.deleteTitle': '删除消息',
   'chat.deleteText': '该消息将对所有人删除。',
   'chat.download': '下载',
+  'chat.downloadImage': '下载图片',
   'chat.downloaded': '"{name}"已保存到下载文件夹',
   'chat.noSend': '你没有权限在此房间发送消息。',
 

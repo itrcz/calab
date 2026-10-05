@@ -8,6 +8,7 @@ import { filePath, thumbnailPath } from '../../lib/api/endpoints';
 import { platform } from '../../platform';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
+import { dragOutAttrs, dragOutHandlers } from './imageDragOut';
 import { dimsOf, fitFrame, isTap, lightboxLayers, stepImage, type Dims, type LightboxImage, type LoadState } from '../../lib/lightbox';
 
 const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
@@ -199,7 +200,7 @@ function ImageStage({
           />
         ) : null}
         {fullSrc && layers.full ? (
-          <img src={fullSrc} alt={img.name} draggable={false} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
+          <img src={fullSrc} alt={img.name} {...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime })} {...dragOutHandlers} data-testid="lightbox-image"className="absolute inset-0 size-full object-contain" />
         ) : null}
         {layers.spinner ? (
           <span className="absolute inset-0 grid place-items-center">

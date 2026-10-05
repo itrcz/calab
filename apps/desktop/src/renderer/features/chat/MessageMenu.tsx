@@ -1,6 +1,6 @@
-import { RoomType, type PermissionBits } from '@calaba/protocol';
+import { RoomType, type FileMeta, type PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Copy, CornerUpLeft, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Copy, CornerUpLeft, Download, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
@@ -9,6 +9,7 @@ import { can, mayPin } from '../../lib/permissions';
 import { firstLink, parseMarkdown } from '../../lib/markdown/parse';
 import { deleteMessage, setEmbedsHidden, setPinned, toggleReaction } from '../../services/chat';
 import { openForward } from '../../services/forward';
+import { platform } from '../../platform';
 import { useRooms } from '../../stores/rooms';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -45,8 +46,16 @@ function menuPadding(): { top: number; right: number; bottom: number; left: numb
   return { top: 8, right: 8, left: 8, bottom: Math.max(8, window.innerHeight - top + 8) };
 }
 
+/** «Скачать картинку»: the original, the way every attachment is saved (desktop: ~/Downloads; web: <a download>). */
+function downloadImage(f: FileMeta): void {
+  void platform.files.download({ fileId: f.id, name: f.name }).then(
+    () => toast.success(t('chat.downloaded', { name: f.name })),
+    (e: unknown) => toast.fail(e, t('err.ctx.download')),
+  );
+}
+
 /** Right click / long press on a bubble (docs/09 #38); also «Ещё…» of the hover bar (MessageActions.tsx). */
-export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: boolean; roomId: string; perms: PermissionBits }): ReactNode {
+export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; own: boolean; roomId: string; perms: PermissionBits; image?: FileMeta }): ReactNode {
   const m = c.msg;
   const canSend = can(perms, 'SEND_MESSAGES');
   const canManage = can(perms, 'MANAGE_MESSAGES');
@@ -104,6 +113,11 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
         {m.content ? (
           <ContextMenu.Item className={menuItem} onSelect={copy}>
             <Copy className="size-4" aria-hidden /> {t('chat.copy')}
+          </ContextMenu.Item>
+        ) : null}
+        {image ? (
+          <ContextMenu.Item className={menuItem} onSelect={() => downloadImage(image)} data-testid="message-download-image">
+            <Download className="size-4" aria-hidden /> {t('chat.downloadImage')}
           </ContextMenu.Item>
         ) : null}
         <ContextMenu.Item className={menuItem} onSelect={() => openForward(roomId, m.id)} data-testid="message-forward">
