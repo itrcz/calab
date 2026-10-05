@@ -19,6 +19,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/google/uuid"
 )
 
@@ -65,10 +66,13 @@ type CallStore interface {
 
 // Service owns session-bound endpoints and durable authorized routing/delivery.
 type Service struct {
-	Auth      *auth.Service
-	Calls     CallStore
-	db        *db.DB
-	providers map[v1.PushProvider]Provider
+	Auth  *auth.Service
+	Calls CallStore
+	// DeviceLimit bounds endpoint registration/removal per user (each takes the global
+	// registry lock); ResolveLimit bounds notification-tap resolution. nil = none (tests).
+	DeviceLimit, ResolveLimit *redisx.RateLimiter
+	db                        *db.DB
+	providers                 map[v1.PushProvider]Provider
 }
 
 // New copies configured providers; no sender means no routing or delivery.
@@ -83,6 +87,18 @@ func New(d *db.DB, providers map[v1.PushProvider]Provider) *Service {
 }
 
 type routeMux interface{ Handle(string, http.Handler) }
+
+// limited takes one token of l for the authenticated user; Redis failures fail closed.
+func limited(w http.ResponseWriter, r *http.Request, l *redisx.RateLimiter) bool {
+	if l == nil {
+		return false
+	}
+	if err := l.Take(r.Context(), auth.MustFromContext(r.Context()).UserID.String()); err != nil {
+		httpx.WriteError(w, r, err)
+		return true
+	}
+	return false
+}
 
 // Routes exposes authenticated capabilities and current-session registry mutations.
 func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) {
@@ -103,6 +119,9 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 		httpx.Write(w, http.StatusOK, capabilities)
 	})))
 	mux.Handle("POST /api/me/push-devices", private(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if limited(w, r, s.DeviceLimit) {
+			return
+		}
 		var request v1.RegisterPushDeviceRequest
 		if err := httpx.Decode(w, r, &request); err != nil {
 			httpx.WriteError(w, r, err)
@@ -116,6 +135,9 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 		httpx.Write(w, http.StatusOK, result)
 	})))
 	mux.Handle("DELETE /api/me/push-devices/{id}", private(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if limited(w, r, s.DeviceLimit) {
+			return
+		}
 		id, err := uuid.Parse(r.PathValue("id"))
 		if err != nil {
 			httpx.WriteError(w, r, httpx.BadRequest("invalid device"))
@@ -146,6 +168,9 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 		httpx.NoContent(w)
 	})))
 	mux.Handle("POST /api/me/push-resolve", private(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if limited(w, r, s.ResolveLimit) {
+			return
+		}
 		var request v1.ResolvePushRequest
 		if err := httpx.Decode(w, r, &request); err != nil {
 			httpx.WriteError(w, r, err)

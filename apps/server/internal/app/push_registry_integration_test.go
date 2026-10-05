@@ -241,3 +241,17 @@ func TestPushRegistryRejectsDifferentUserOwnership(t *testing.T) {
 	pushHTTP(t, server, stranger, 404, "DELETE", "/api/me/push-devices/"+endpoint.Id, &v1.UnregisterPushDeviceRequest{Version: endpoint.Version}, nil)
 	pushHTTP(t, server, u, 204, "DELETE", "/api/me/push-devices/"+endpoint.Id, &v1.UnregisterPushDeviceRequest{Version: endpoint.Version}, nil)
 }
+
+// Every registration takes the global registry lock: one user cannot flood it.
+func TestPushRegistrationIsRateLimited(t *testing.T) {
+	server := pushServer(t)
+	o := owner(t)
+	u := register(t, invite(t, o, createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).Id))
+	installation := uuid.NewString()
+	for range 20 {
+		registerPush(t, server, u, installation, "routing-token-limit", 200)
+	}
+	registerPush(t, server, u, installation, "routing-token-limit", 429)
+	// The bucket is per user: another account still registers.
+	registerPush(t, server, o, uuid.NewString(), "routing-token-other", 200)
+}
