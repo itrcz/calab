@@ -115,7 +115,7 @@ export interface VoiceStore {
   cameraFacing: CameraFacing | null;
   /** Remote webcams of my room, in publication order. */
   cameras: RemoteCamera[];
-  /** Active speaker for video: spoke ≥ 2 s continuously, stays until someone else does (lib/activeSpeaker.ts). */
+  /** Active speaker for video: spoke ≥ 800 ms continuously, held ≥ 1.5 s, stays until someone else does (lib/activeSpeaker.ts). */
   activeSpeaker: string | null;
   /** Tile the viewer clicked in the video grid (large until clicked again). */
   focusedTile: string | null;
