@@ -1,0 +1,208 @@
+# Shared snippets and the app site, imported by Caddyfile (stand, TLS here) and Caddyfile.behind-proxy
+# (behind a TLS-terminating proxy). Host lists and /tmp/*.caddy come from entrypoint.sh.
+# API_UPSTREAM: the Go API address (default 127.0.0.1:3000, host network on the stand).
+
+# Desktop releases + electron-updater feed (generic provider: https://<app host>/download/), served on the
+# app hosts and the landing. Files from /srv/releases (pushed by sync.sh, never deleted).
+# Release files from /srv/releases (pushed by sync.sh; never deleted): caching + MIME rules.
+(releases_files) {
+	root * /srv/releases
+	header {
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	# Update metadata and listings change in place: always revalidate.
+	@mutable path *.yml *.yaml *.json */ /
+	header @mutable Cache-Control "no-cache"
+	@yaml path *.yml *.yaml
+	header @yaml Content-Type "text/yaml; charset=utf-8"
+	# Not in Go's MIME table: without this they go out with no Content-Type at all.
+	@binary path *.dmg *.AppImage *.deb *.exe *.blockmap
+	header @binary Content-Type "application/octet-stream"
+	# Installers/blockmaps carry the version in the file name: cache forever.
+	@immutable {
+		file
+		not path *.yml *.yaml *.json */ /
+	}
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	file_server browse
+}
+
+# /download/ on the app and landing hosts: the generated /tmp/download.caddy either redirects to
+# RELEASES_HOST (same path — electron-updater resolves file URLs relative to its feed; plus the stable
+# shortcuts /download/<mac-arm64|mac-x64|win|linux|deb> → latest/<file> and /download/ by User-Agent) or
+# serves /srv/releases here (releases_files).
+(releases) {
+	redir /download /download/ 308
+	import /tmp/download.caddy
+}
+
+# Release host (RELEASES_HOST, generated /tmp/releases.caddy): security headers for both variants.
+(releases_host_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}
+
+# Security headers of the web client (SPA on the app hosts).
+(web_security_headers) {
+	header {
+		# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
+		# frame-src https: — the sandboxed iframe of a workspace web app (ADR-0050 §6); the page has no
+		# other frames. No http: — this page is served over https, where an http frame is mixed content.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
+		-Server
+	}
+	# Default only: completion/consent set a stricter policy in their SPA handle.
+	header ?Referrer-Policy "same-origin"
+}
+
+# Static landing (Next.js static export in /srv/landing, pushed by sync.sh from apps/landing/out).
+# Not a SPA: /foo → foo.html or foo/index.html (trailingSlash export); unknown paths → 404.html.
+# Localized (ADR-0022 §3): / is index.html — a content-less language router (saved choice → browser
+# languages → /en/, keeps #hash, so old /#download links still work); pages live in /ru/ /en/ /es/ /zh/.
+(landing_site) {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	import releases
+	# canonical locale URLs end with a slash (trailingSlash export)
+	@locale_noslash path /ru /en /es /zh
+	redir @locale_noslash {path}/ 308
+	handle {
+		root * /srv/landing
+		encode zstd gzip
+		header {
+			# Next.js static export hydrates through inline <script> tags: 'unsafe-inline' for scripts is the
+			# price of a no-server export (no nonces). No connect targets beyond self; no framing.
+			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'{$RELEASES_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+			X-Content-Type-Options nosniff
+			Referrer-Policy strict-origin-when-cross-origin
+			X-Frame-Options DENY
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			-Server
+		}
+		# content-hashed build output: cache forever (only if the file exists)
+		@hashed {
+			path /_next/static/*
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /_next/static/*
+		header @pages Cache-Control "no-cache"
+		try_files {path} {path}.html {path}/index.html
+		file_server
+	}
+	handle_errors 404 {
+		# A locale we don't have (/de/, /fr/…, /pt-BR/…) → the default locale instead of a 404.
+		@unknown_locale {
+			path_regexp ^/[A-Za-z]{2}([-_][A-Za-z0-9]{2,8})?(/.*)?$
+			not path /ru/* /en/* /es/* /zh/*
+		}
+		redir @unknown_locale /en/ 302
+		root * /srv/landing
+		rewrite * /404.html
+		file_server
+	}
+}
+
+{$APP_HOSTS} {
+	# Identity URLs contain one-time credentials. Access logging is intentionally disabled;
+	# sanitized API logs/metrics remain available. Do not enable raw request logging here.
+	log {
+		output discard
+	}
+	# HSTS on the whole site (no preload: the parent gptunnel.* zones are not ours to pin).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# Internal-only endpoints: Prometheus metrics and the readiness probe (it names the backends).
+	# The api healthcheck and monitoring use 127.0.0.1:3000 directly.
+	# Inside handle: a bare `respond` sorts after `handle` and would never run.
+	@internal path /metrics /readyz
+	handle @internal {
+		respond 404
+	}
+
+	# Workspace OIDC issuer + RFC 8414 path-issuer metadata must precede SPA fallback.
+	# Match only the published endpoints; /oauth/consent and /sso/complete stay SPA routes.
+	@identity_provider path_regexp ^(/oidc/workspaces/[^/]+/(\.well-known/openid-configuration|jwks|authorize|token|userinfo|revoke)|/\.well-known/oauth-authorization-server/oidc/workspaces/[^/]+)$
+	handle @identity_provider {
+		header >Referrer-Policy "no-referrer"
+		# Keep upstream JWKS max-age=60; default to no-store for other responses.
+		header ?Cache-Control "no-store"
+		header >Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		reverse_proxy {$API_UPSTREAM:127.0.0.1:3000}
+	}
+	# Proxy failures are written by Caddy's error chain, outside deferred proxy headers.
+	# They carry no credentials and must still be private and unframeable.
+	handle_errors {
+		header @identity_provider {
+			Cache-Control "no-store"
+			Referrer-Policy "no-referrer"
+			Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		}
+		@api_failure path /api/*
+		header @api_failure {
+			Cache-Control "no-store"
+			Referrer-Policy "no-referrer"
+			Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		}
+		respond "" {err.status_code}
+	}
+
+	# Go API (host network): REST, gateway WS, liveness.
+	@api path /api/* /gateway /healthz
+	handle @api {
+		# The API sets Cache-Control (no-store on JSON, its own on files/unfurl) and nosniff itself;
+		# identity/OAuth routes also set no-referrer: never weaken it at the proxy.
+		header /api/* >Referrer-Policy "no-referrer"
+		# JSON only (lists, READY-sized pages, search: 4–6× smaller; docs/18 step 3). Never touched:
+		# the gateway WebSocket, files/thumbnails (http.ServeContent with Range/ETag — encoding would
+		# break ranged and resumable downloads) and proxied unfurl images.
+		@api_json not path /gateway /api/files/* /api/unfurl/image
+		encode @api_json {
+			zstd
+			gzip
+			match header Content-Type application/json*
+		}
+		reverse_proxy {$API_UPSTREAM:127.0.0.1:3000}
+	}
+
+	import releases
+
+	# Web client SPA (ADR-0015): static files from /srv/web (pushed by sync.sh).
+	handle {
+		root * /srv/web
+		# Static only (API responses incl. file downloads with Range stay untouched).
+		encode zstd gzip
+		# Go's MIME table has no .webmanifest; file_server keeps a preset Content-Type.
+		@manifest path *.webmanifest
+		header @manifest Content-Type "application/manifest+json"
+		import web_security_headers
+		# The same SPA scripts/CSP load on completion and consent, but URLs/HTML are sensitive.
+		@sensitive_spa path /sso/complete /oauth/consent /f/*
+		handle @sensitive_spa {
+			header X-Robots-Tag "noindex, nofollow"
+			header >Cache-Control "no-store"
+			header >Referrer-Policy "no-referrer"
+			try_files /index.html
+			file_server
+		}
+		# Vite puts content-hashed files under /assets/: cache forever; a missing asset is a 404,
+		# never index.html (otherwise a stale index would get HTML cached as JS for a year).
+		handle /assets/* {
+			@found file
+			header @found Cache-Control "public, max-age=31536000, immutable"
+			file_server
+		}
+		# Everything else (index.html, SPA routes, favicon…) must be revalidated on each load.
+		handle {
+			header Cache-Control "no-cache"
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}

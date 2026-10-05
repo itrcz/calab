@@ -8,6 +8,8 @@
 #   DOMAIN_ALIASES extra zones, space-separated (optional; e.g. calab.ru next to DOMAIN=calab.io): rtc.<zone> and
 #                  turn.<zone> are served too (same LiveKit), so a client allowed only the old family keeps working
 #   LANDING_HOST_ALIASES   extra landing hosts, space-separated (optional): 301 to LANDING_HOST, same path
+#   LANDING_HOST_MIRRORS   extra landing hosts, space-separated (optional): the SAME landing, no redirect (a mirror
+#                  domain that must keep working on its own when the primary one is unreachable)
 #   RELEASES_HOST_ALIASES  extra release feed hosts, space-separated (optional): the SAME feed, no redirect —
 #                  installed builds have their feed host baked in (docs/06 «Домены»)
 #   RELEASES_HOST  desktop release feed (optional; empty = none): reverse proxy to a public-read S3 bucket
@@ -18,11 +20,19 @@
 #                  (→ RELEASES_HOST/latest/<file>, copied there by release.yml) and /download/ itself (picks the
 #                  file by User-Agent; unknown → the landing's #download). The release host's root and any
 #                  listing redirect to the landing's #download (when LANDING_HOST is set).
+#   BEHIND_PROXY_PORT  set only with Caddyfile.behind-proxy (TLS terminated by a proxy in front): every site
+#                  address becomes http://<host>:<port>, so Caddy serves plain HTTP there and requests no certificates
 # Caddy substitutes {$VAR} before parsing, so a list expands into several site addresses / SNI values.
 # The landing site is generated into /tmp/landing.caddy (imported by the Caddyfile; empty when unset),
 # because a site block with an empty address would not parse.
 set -eu
 : "${DOMAIN:?DOMAIN is required}"
+# Site address(es) for the given hosts: as is, or http://<host>:<port> behind a proxy.
+addr() {
+	for h in "$@"; do
+		if [ -n "${BEHIND_PROXY_PORT:-}" ]; then printf 'http://%s:%s ' "$h" "$BEHIND_PROXY_PORT"; else printf '%s ' "$h"; fi
+	done
+}
 APP_HOSTS="${APP_HOST:-$DOMAIN}" RTC_HOSTS="rtc.$DOMAIN" TURN_HOSTS="turn.$DOMAIN"
 for h in "${DOMAIN_ALT:-}" "${DOMAIN_LEGACY:-}"; do
 	[ -n "$h" ] || continue
@@ -35,9 +45,10 @@ done
 RTC_ORIGINS=""
 for h in $RTC_HOSTS; do RTC_ORIGINS="$RTC_ORIGINS wss://$h https://$h"; done
 if [ -n "${LANDING_HOST:-}" ]; then
-	printf '%s {\n\timport landing_site\n}\n' "$LANDING_HOST" > /tmp/landing.caddy
+	# shellcheck disable=SC2086 # host lists are space-separated on purpose
+	printf '%s{\n\timport landing_site\n}\n' "$(addr "$LANDING_HOST" ${LANDING_HOST_MIRRORS:-})" > /tmp/landing.caddy
 	for h in ${LANDING_HOST_ALIASES:-}; do
-		printf '%s {\n\tredir https://%s{uri} 301\n}\n' "$h" "$LANDING_HOST" >> /tmp/landing.caddy
+		printf '%s{\n\tredir https://%s{uri} 301\n}\n' "$(addr "$h")" "$LANDING_HOST" >> /tmp/landing.caddy
 	done
 else
 	: > /tmp/landing.caddy
@@ -88,6 +99,8 @@ RELEASES_LISTING=""
 if [ -n "${LANDING_HOST:-}" ]; then
 	RELEASES_LISTING="$(printf '\t@listing path / */ /index.html\n\tredir @listing https://%s/#download 302' "$LANDING_HOST")"
 fi
+# shellcheck disable=SC2086
+[ -z "${RELEASES_HOST:-}" ] || RELEASES_SITE="$(addr "$RELEASES_HOST" ${RELEASES_HOST_ALIASES:-})"
 if [ -z "${RELEASES_HOST:-}" ]; then
 	: > /tmp/releases.caddy
 elif [ -n "${S3_PUBLIC_URL:-}" ]; then
@@ -95,7 +108,7 @@ elif [ -n "${S3_PUBLIC_URL:-}" ]; then
 	S3_UPSTREAM="$(printf '%s' "$S3_PUBLIC_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
 	S3_PREFIX="$(printf '%s' "$S3_PUBLIC_URL" | sed -E 's#^https?://[^/]+##; s#/+$##')"
 	cat > /tmp/releases.caddy <<EOF_S3
-$RELEASES_HOST ${RELEASES_HOST_ALIASES:-} {
+$RELEASES_SITE{
 	import releases_host_headers
 $RELEASES_LISTING
 	# latest/: stable names overwritten by every release — revalidate; VERSION is read by the landing (CORS).
@@ -133,12 +146,14 @@ $RELEASES_LISTING
 }
 EOF_S3
 else
-	printf '%s %s {\n\timport releases_host_headers\n%s\n\timport releases_files\n}\n' "$RELEASES_HOST" "${RELEASES_HOST_ALIASES:-}" "$RELEASES_LISTING" > /tmp/releases.caddy
+	printf '%s{\n\timport releases_host_headers\n%s\n\timport releases_files\n}\n' "$RELEASES_SITE" "$RELEASES_LISTING" > /tmp/releases.caddy
 fi
 
 # The landing reads RELEASES_HOST/latest/VERSION (its CSP connect-src).
 RELEASES_ORIGIN=""
 [ -z "${RELEASES_HOST:-}" ] || RELEASES_ORIGIN=" https://$RELEASES_HOST"
 
+# shellcheck disable=SC2086
+APP_HOSTS="$(addr $APP_HOSTS)"
 export APP_HOSTS RTC_HOSTS TURN_HOSTS RTC_ORIGINS RELEASES_ORIGIN
 exec "$@"

@@ -6,7 +6,7 @@ RUN xcaddy build --with github.com/mholt/caddy-l4@v0.1.2
 
 FROM caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
-COPY Caddyfile /etc/caddy/Caddyfile
+COPY Caddyfile sites.caddy log.caddy /etc/caddy/
 COPY entrypoint.sh /usr/local/bin/caddy-entrypoint
 ENTRYPOINT ["/usr/local/bin/caddy-entrypoint"]
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
