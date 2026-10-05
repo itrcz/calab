@@ -179,3 +179,38 @@ func TestOptionalVerifySquatting(t *testing.T) {
 	}
 	u2.must(200, "GET", path, nil, nil)
 }
+
+// The real owner of a squatted address takes it back (ADR-0065 «Если адрес занят»): sign-up
+// answers 409, the password reset mails the code to the mailbox, and resetting it confirms
+// the address, signs the squatter out everywhere and runs the waiting email invitation.
+func TestOptionalVerifySquatterReclaimed(t *testing.T) {
+	optionalServer(t)
+	o := owner(t)
+	ivan := uniq("ivan") + "@example.com"
+	squatter, _ := registerRaw(t, ivan, invite(t, o, createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()), "")
+	admin, ws := wsOwner(t)
+	path := "/api/workspaces/" + ws.GetId()
+	emailInviteCode(t, admin, ws.GetId(), ivan)
+
+	anon := newClient(t)
+	if st := anon.do("POST", "/api/auth/register", &v1.RegisterRequest{Email: ivan, Password: "ivans-password", DisplayName: "Ivan", InviteCode: invite(t, admin, ws.GetId())}, nil); st != 409 {
+		t.Fatalf("sign-up with the squatted address: %d", st)
+	}
+	anon.must(200, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: ivan}, nil)
+	code := nthMail(t, 1, mail.TemplatePasswordReset, ivan).Params["code"]
+	anon.must(204, "POST", "/api/auth/password/reset", &v1.ResetPasswordRequest{Email: ivan, Code: code, Password: "ivans-password"}, nil)
+
+	if st := squatter.do("GET", "/api/me", nil, nil); st != 401 {
+		t.Fatalf("squatter session after the reset: %d", st)
+	}
+	if st := anon.do("POST", "/api/auth/refresh", &v1.RefreshRequest{RefreshToken: squatter.refresh}, nil); st != 401 {
+		t.Fatalf("squatter refresh after the reset: %d", st)
+	}
+	var login v1.LoginResponse
+	newClient(t).must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: ivan, Password: "ivans-password"}, &login)
+	if !login.GetMe().GetEmailVerified() || login.GetEmailInvitePending() {
+		t.Fatalf("login after the reset: %v", &login)
+	}
+	reclaimed := &client{t: t, token: login.GetTokens().GetAccessToken()}
+	reclaimed.must(200, "GET", path, nil, nil) // the email invitation joined on the confirmation
+}
