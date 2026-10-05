@@ -61,28 +61,7 @@ type icsBlock struct {
 // starting at start, read with fallback as the zone of floating times (as the import did). whole:
 // nothing of the object would be left — delete it instead.
 func excludeOccurrence(data, uid string, start time.Time, fallback *time.Location) (out string, whole bool, err error) {
-	// Logical lines, each with its physical (folded) lines.
-	var lines [][]string
-	for _, phys := range strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n") {
-		if (strings.HasPrefix(phys, " ") || strings.HasPrefix(phys, "\t")) && len(lines) > 0 {
-			lines[len(lines)-1] = append(lines[len(lines)-1], phys)
-			continue
-		}
-		if phys == "" {
-			continue
-		}
-		lines = append(lines, []string{phys})
-	}
-	logical := func(i int) string {
-		var b strings.Builder
-		for j, p := range lines[i] {
-			if j > 0 {
-				p = p[1:]
-			}
-			b.WriteString(p)
-		}
-		return b.String()
-	}
+	lines, logical := icsLines(data) // logical lines, each with its physical (folded) lines
 	var blocks []icsBlock
 	depth, open := 0, -1
 	for i := range lines {

@@ -367,6 +367,9 @@ message ExternalAttendee {
   string email = 1; // lower case
   string name = 2;  // CN; may be empty
   string user_id = 3; // a member of the asked workspace with this confirmed address; else empty
+  // The attendee's answer as the calendar has it (PARTSTAT): ACCEPTED, DECLINED, TENTATIVE = MAYBE;
+  // NEEDS-ACTION, none or another value = PENDING.
+  AttendeeStatus status = 4;
 }
 
 message ExternalEvent {
@@ -387,6 +390,10 @@ message ExternalEvent {
   // The provider's web page of the event («Открыть в календаре»), only when it is reliable
   // (Yandex: its URL property; Nextcloud: the calendar app's link of the object); else empty.
   string web_url = 12;
+  // My answer when I am an attendee and not the organizer (my addresses: my Calab e-mail and the
+  // CalDAV login when it is an address): «Принять / Отклонить / Может быть» are offered
+  // (POST /api/me/external-events/rsvp). UNSPECIFIED = not an attendee, or the organizer.
+  AttendeeStatus my_status = 13;
 }
 
 message ExternalEventsResponse {
@@ -413,6 +420,22 @@ message DeleteExternalEventRequest {
   string href = 2; // ExternalEvent.href
   google.protobuf.Timestamp start = 3; // ExternalEvent.starts_at of the occurrence
   ExternalDeleteScope scope = 4;
+}
+
+// POST /api/me/external-events/rsvp RespondExternalEventRequest → 204 (ADR-0045 amendment 2): my
+// answer to an imported event, written into my CalDAV calendar — the object read again (it must
+// still be the imported version), PARTSTAT of my ATTENDEE set in every VEVENT of the uid (the whole
+// series, like Calab's own answers), a PUT with If-Match. The provider mails the reply to the
+// organizer (RFC 6638 implicit scheduling). The server imports again at once, so the next GET has
+// the new answer. 404 — no such event of mine (or no account); 409 CONFLICT — the event changed in
+// the calendar (EVENT_CHANGED): reload; 422 — status not ACCEPTED / DECLINED / MAYBE, I am not an
+// attendee (reason NOT_AN_ATTENDEE) or the calendar is read-only (CALENDAR_READ_ONLY); shares the
+// 30 per minute of the delete. People only: guests and bots → 403.
+message RespondExternalEventRequest {
+  string uid = 1; // ExternalEvent.uid
+  string href = 2; // ExternalEvent.href
+  google.protobuf.Timestamp start = 3; // ExternalEvent.starts_at of the occurrence
+  AttendeeStatus status = 4; // ACCEPTED, DECLINED or MAYBE
 }
 
 // ---- gateway (docs/05) ----

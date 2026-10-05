@@ -44,8 +44,9 @@ type Busy struct {
 
 // Attendee is one ATTENDEE of an event.
 type Attendee struct {
-	Email string `json:"email"`          // lower case
-	Name  string `json:"name,omitempty"` // CN
+	Email  string `json:"email"`            // lower case
+	Name   string `json:"name,omitempty"`   // CN
+	Status string `json:"status,omitempty"` // PARTSTAT in upper case (ACCEPTED, TENTATIVE, …); "" = none
 }
 
 // Details are what the owner sees of an event (ADR-0045 §1), clipped to the column limits.
@@ -436,7 +437,8 @@ func parseEvents(data string, fallback *time.Location) []vevent {
 			email := mailto(val)
 			if email != "" && len(cur.details.Attendees) < MaxAttendees &&
 				!slices.ContainsFunc(cur.details.Attendees, func(a Attendee) bool { return a.Email == email }) {
-				cur.details.Attendees = append(cur.details.Attendees, Attendee{Email: email, Name: clipLine(params["CN"], maxName)})
+				cur.details.Attendees = append(cur.details.Attendees, Attendee{Email: email, Name: clipLine(params["CN"], maxName),
+					Status: partstatOf(params["PARTSTAT"])})
 			}
 		case "URL":
 			// A URI, but some servers escape it like TEXT (\, \;).

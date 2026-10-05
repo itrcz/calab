@@ -59,26 +59,9 @@ func (s *Service) deleteExternal(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	start := req.GetStart().AsTime()
-	acc, err := s.db.Q.GetCalDavAccount(ctx, me)
-	if db.IsNotFound(err) {
-		return httpx.NotFound("external event")
-	}
+	_, row, cr, err := s.myExternal(ctx, me, req.GetUid(), req.GetHref(), req.GetStart().AsTime())
 	if err != nil {
 		return err
-	}
-	row, err := s.db.Q.GetMyExternalEvent(ctx, sqlc.GetMyExternalEventParams{UserID: me, Uid: req.GetUid(), StartsAt: start, Href: req.GetHref()})
-	// The target is the stored row's href, never the client's: it must still be an object of the
-	// chosen calendar (same origin, right inside it), and every write is conditional (If-Match).
-	if db.IsNotFound(err) || (err == nil && (acc.CalendarHref == nil || row.Etag == "" || !InCalendar(row.Href, *acc.CalendarHref))) {
-		return httpx.NotFound("external event")
-	}
-	if err != nil {
-		return err
-	}
-	cr, err := s.open(acc)
-	if err != nil {
-		return httpx.Validation("password", "the stored password does not open: connect the calendar again")
 	}
 	series := scope == v1.ExternalDeleteScope_EXTERNAL_DELETE_SCOPE_SERIES || !row.Recurring
 	if !series {
@@ -90,7 +73,7 @@ func (s *Service) deleteExternal(w http.ResponseWriter, r *http.Request) error {
 		err = s.dav.DeleteIf(ctx, row.Href, cr, row.Etag)
 	}
 	if err != nil {
-		return s.deleteError(ctx, me, err)
+		return s.writeError(ctx, me, err)
 	}
 	err = db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
 		if series {
@@ -133,9 +116,35 @@ func (s *Service) deleteOccurrence(ctx context.Context, user uuid.UUID, row sqlc
 	return false, s.dav.PutIf(ctx, row.Href, cr, data, etag)
 }
 
-// deleteError maps a failure of the provider; a changed event is imported again (best effort),
-// so the client's reload shows the calendar as it is.
-func (s *Service) deleteError(ctx context.Context, user uuid.UUID, err error) error {
+// myExternal is my imported occurrence (uid, start, href) with the account's credentials. The
+// target is the stored row's href, never the client's: it must still be an object of the chosen
+// calendar (same origin, right inside it), and every write is conditional (If-Match).
+func (s *Service) myExternal(ctx context.Context, me uuid.UUID, uid, href string, start time.Time) (sqlc.CaldavAccount, sqlc.ExternalBusy, creds, error) {
+	var none sqlc.ExternalBusy
+	acc, err := s.db.Q.GetCalDavAccount(ctx, me)
+	if db.IsNotFound(err) {
+		return acc, none, creds{}, httpx.NotFound("external event")
+	}
+	if err != nil {
+		return acc, none, creds{}, err
+	}
+	row, err := s.db.Q.GetMyExternalEvent(ctx, sqlc.GetMyExternalEventParams{UserID: me, Uid: uid, StartsAt: start, Href: href})
+	if db.IsNotFound(err) || (err == nil && (acc.CalendarHref == nil || row.Etag == "" || !InCalendar(row.Href, *acc.CalendarHref))) {
+		return acc, none, creds{}, httpx.NotFound("external event")
+	}
+	if err != nil {
+		return acc, none, creds{}, err
+	}
+	cr, err := s.open(acc)
+	if err != nil {
+		return acc, none, creds{}, httpx.Validation("password", "the stored password does not open: connect the calendar again")
+	}
+	return acc, row, cr, nil
+}
+
+// writeError maps a failure of the provider on a delete or an answer; a changed event is imported
+// again (best effort), so the client's reload shows the calendar as it is.
+func (s *Service) writeError(ctx context.Context, user uuid.UUID, err error) error {
 	var se *StatusError
 	var ue *url.Error // the provider unreachable (DNS, connect, TLS)
 	switch {
@@ -151,7 +160,7 @@ func (s *Service) deleteError(ctx context.Context, user uuid.UUID, err error) er
 	case errors.Is(err, ErrAuth):
 		return httpx.Validation("password", "the server did not accept the username and password")
 	case errors.As(err, &se), errors.As(err, &ue), errors.Is(err, ErrURL), errors.Is(err, ErrRedirect), errors.Is(err, ErrTooLarge), errors.Is(err, context.DeadlineExceeded):
-		slog.InfoContext(ctx, "caldav: delete failed", "user_id", user, "err", err)
+		slog.InfoContext(ctx, "caldav: write failed", "user_id", user, "err", err)
 		return httpx.Unavailable(err)
 	}
 	return err

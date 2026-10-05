@@ -88,8 +88,8 @@ type Service struct {
 	opts    Options
 	connect *redisx.RateLimiter // connections per user (5 per hour)
 	sync    *redisx.RateLimiter // manual imports per user (1 per minute)
-	// DeleteLimit: deletions of external events per user (30 per minute, ADR-0045 amendment 1);
-	// nil = unlimited.
+	// DeleteLimit: deletions of and answers to external events per user (30 per minute, ADR-0045
+	// amendments 1, 2); nil = unlimited.
 	DeleteLimit *redisx.RateLimiter
 	wake        chan struct{}
 	token       string
@@ -131,6 +131,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("PATCH /api/me/caldav", wrap(httpx.HandlerFunc(s.setShare)))
 	mux.Handle("GET /api/me/external-events", wrap(httpx.HandlerFunc(s.externalEvents)))
 	mux.Handle("DELETE /api/me/external-events", wrap(httpx.HandlerFunc(s.deleteExternal)))
+	mux.Handle("POST /api/me/external-events/rsvp", wrap(httpx.HandlerFunc(s.respondExternal)))
 	mux.Handle("DELETE /api/me/caldav", wrap(httpx.HandlerFunc(s.remove)))
 	mux.Handle("POST /api/me/caldav/sync", wrap(httpx.HandlerFunc(s.syncNow)))
 }

@@ -27,7 +27,7 @@ func TestDetailsFromICS(t *testing.T) {
 	if meet.Organizer != "anna@example.com" {
 		t.Errorf("organizer %q", meet.Organizer)
 	}
-	want := []Attendee{{Email: "ivan.petrov@example.com", Name: "Petrov; Ivan"}, {Email: "anna@example.com", Name: "Anna Ivanova"}, {Email: "guest@partner.org"}}
+	want := []Attendee{{Email: "ivan.petrov@example.com", Name: "Petrov; Ivan", Status: "ACCEPTED"}, {Email: "anna@example.com", Name: "Anna Ivanova"}, {Email: "guest@partner.org"}}
 	if !reflect.DeepEqual(meet.Attendees, want) {
 		t.Errorf("attendees %+v", meet.Attendees)
 	}

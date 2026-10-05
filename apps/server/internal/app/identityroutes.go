@@ -297,6 +297,7 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/me/blocked-bots/{id}":                                      scopeGlobal,
 	"POST /api/me/caldav":                                                 scopeGlobal,
 	"POST /api/me/caldav/sync":                                            scopeGlobal,
+	"POST /api/me/external-events/rsvp":                                   scopeGlobal,
 	"POST /api/messages/{id}/interactions":                                scopeMessage,
 	"POST /api/notes":                                                     scopeGlobal,
 	"POST /api/room-invites/{code}/join":                                  scopeCapability,

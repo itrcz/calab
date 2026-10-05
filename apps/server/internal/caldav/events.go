@@ -125,13 +125,21 @@ func (s *Service) externalEvents(w http.ResponseWriter, r *http.Request) error {
 			ids[m.Email] = m.ID.String()
 		}
 	}
+	var mine map[string]bool // my addresses (my answer, ADR-0045 amendment 2)
+	if len(rows) > 0 {
+		login := ""
+		if acc, err := s.db.Q.GetCalDavAccount(ctx, me); err == nil {
+			login = acc.Username
+		}
+		mine = s.myAddresses(ctx, me, login)
+	}
 	out := &v1.ExternalEventsResponse{Events: make([]*v1.ExternalEvent, 0, len(rows))}
 	for i, row := range rows {
 		ev := &v1.ExternalEvent{Uid: row.Uid, StartsAt: timestamppb.New(row.StartsAt), EndsAt: timestamppb.New(row.EndsAt), AllDay: row.AllDay,
 			Summary: row.Summary, Location: row.Location, Organizer: row.Organizer, Url: row.Url, Href: row.Href, Recurring: row.Recurring, WebUrl: row.WebUrl,
-			Attendees: make([]*v1.ExternalAttendee, 0, len(lists[i]))}
+			Attendees: make([]*v1.ExternalAttendee, 0, len(lists[i])), MyStatus: myStatus(row.Organizer, lists[i], mine)}
 		for _, a := range lists[i] {
-			ev.Attendees = append(ev.Attendees, &v1.ExternalAttendee{Email: a.Email, Name: a.Name, UserId: ids[a.Email]})
+			ev.Attendees = append(ev.Attendees, &v1.ExternalAttendee{Email: a.Email, Name: a.Name, UserId: ids[a.Email], Status: statusOfPartstat(a.Status)})
 		}
 		out.Events = append(out.Events, ev)
 	}
