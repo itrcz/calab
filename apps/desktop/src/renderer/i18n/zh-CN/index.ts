@@ -315,6 +315,7 @@ export const zhCN: Dict = {
   'perm.deny': '禁止',
   'perm.inherit': '跟随角色',
   'perm.addUser': '添加角色或成员…',
+  'perm.removeTarget': '从列表中移除：{name}',
   'perm.adminNote': '所有者和管理员始终拥有全部权限，不受房间设置限制。',
 
   // chat

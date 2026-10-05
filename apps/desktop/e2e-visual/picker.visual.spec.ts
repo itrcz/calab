@@ -40,7 +40,7 @@ test('room-permissions-picker', async ({ open, win, shot }) => {
   await expect(picker.getByTestId('picker-option')).toHaveCount(1);
   await field.press('Enter');
   await expect(picker).toBeHidden();
-  await expect(dialog.getByTestId('perm-targets').getByRole('button', { name: /Вера/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByTestId('perm-targets').locator('button[aria-pressed]', { hasText: 'Вера' })).toHaveAttribute('aria-pressed', 'true');
 
   // Nothing found → the empty state.
   await dialog.getByTestId('perm-add').click();

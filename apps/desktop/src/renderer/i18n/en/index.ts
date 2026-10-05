@@ -315,6 +315,7 @@ export const en: Dict = {
   'perm.deny': 'denied',
   'perm.inherit': 'role default',
   'perm.addUser': 'Add role or member…',
+  'perm.removeTarget': 'Remove from the list: {name}',
   'perm.adminNote': 'The owner and admins have all permissions regardless of room settings.',
 
   // chat

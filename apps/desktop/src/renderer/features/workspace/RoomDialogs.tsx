@@ -14,7 +14,7 @@ import { useMutation } from '@tanstack/react-query';
 import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Timer, Volume2, X } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
@@ -501,6 +501,16 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
     save.mutate(next);
   };
 
+  // «×» of a person's row: their whole override goes (the same as every right back to neutral, but
+  // at once, and the row leaves the list). Roles are always listed (they are the workspace's), never removed.
+  const removeUser = (k: string): void => {
+    const d = drafts.find((x) => targetKey(x) === k);
+    const next = drafts.filter((x) => targetKey(x) !== k);
+    setDrafts(next);
+    if (current?.key === k) setSelected(`${PermissionTargetType.ROLE}:${memberRoleId}`);
+    if (d && (d.allow !== 0n || d.deny !== 0n)) save.mutate(next); // a row only added here was never saved
+  };
+
   const addUser = (userId: string): void => {
     const d: OverrideDraft = { targetType: PermissionTargetType.USER, targetId: userId, allow: 0n, deny: 0n };
     if (!drafts.some((x) => targetKey(x) === targetKey(d))) setDrafts([...drafts, d]);
@@ -547,32 +557,50 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
     const on = current?.key === x.key;
     const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
     const look = m ? customLook(rolesOf(entry, x.id)) : undefined;
+    const user = x.type === PermissionTargetType.USER;
     return (
-      <button
+      <div
         key={x.key}
-        type="button"
-        aria-pressed={on}
-        title={x.label}
-        onClick={() => setSelected(x.key)}
-        className={cx('flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-body', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+        className={cx('flex h-8 shrink-0 items-center rounded-[var(--radius-row)]', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+        data-testid="perm-target"
       >
-        {x.type === PermissionTargetType.USER ? (
-          <Avatar userId={x.id} name={x.label} {...(m?.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />
-        ) : x.role && isCustomRole(x.role) ? (
-          <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-            <span className="size-2.5 rounded-full" style={{ background: x.role.color ? roleColorCss(x.role.color) : 'var(--color-label-tertiary)' }} />
-          </span>
-        ) : null}
-        <span
-          className={cx('min-w-0 truncate', x.type === PermissionTargetType.USER && roleTextClass(m?.role, on ? 'inherit' : 'role', look))}
-          style={x.type === PermissionTargetType.USER ? roleTextStyle(m?.role, on ? 'inherit' : 'role', look) : undefined}
+        <button
+          type="button"
+          aria-pressed={on}
+          title={x.label}
+          onClick={() => setSelected(x.key)}
+          className={cx('flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 text-left text-body', user && 'pr-0')}
         >
-          {x.type === PermissionTargetType.ROLE ? '@' : ''}
-          {x.label}
-        </span>
-        {m ? <RoleMark role={m.role} custom={look} tone={on ? 'inherit' : 'role'} /> : null}
-        {m && isGuest(m) ? <GuestBadge /> : null}
-      </button>
+          {x.type === PermissionTargetType.USER ? (
+            <Avatar userId={x.id} name={x.label} {...(m?.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />
+          ) : x.role && isCustomRole(x.role) ? (
+            <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
+              <span className="size-2.5 rounded-full" style={{ background: x.role.color ? roleColorCss(x.role.color) : 'var(--color-label-tertiary)' }} />
+            </span>
+          ) : null}
+          <span
+            className={cx('min-w-0 truncate', x.type === PermissionTargetType.USER && roleTextClass(m?.role, on ? 'inherit' : 'role', look))}
+            style={x.type === PermissionTargetType.USER ? roleTextStyle(m?.role, on ? 'inherit' : 'role', look) : undefined}
+          >
+            {x.type === PermissionTargetType.ROLE ? '@' : ''}
+            {x.label}
+          </span>
+          {m ? <RoleMark role={m.role} custom={look} tone={on ? 'inherit' : 'role'} /> : null}
+          {m && isGuest(m) ? <GuestBadge /> : null}
+        </button>
+        {user ? (
+          <IconButton
+            size="sm"
+            label={t('perm.removeTarget', { name: x.label })}
+            className={cx('mr-0.5', on && 'text-accent-fg hover:text-accent-fg')}
+            disabled={save.isPending}
+            onClick={() => removeUser(x.key)}
+            data-testid="perm-target-remove"
+          >
+            <X className="size-3.5" aria-hidden />
+          </IconButton>
+        ) : null}
+      </div>
     );
   };
 

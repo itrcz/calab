@@ -313,6 +313,7 @@ export const ru = {
   'perm.deny': 'запрещено',
   'perm.inherit': 'как у роли',
   'perm.addUser': 'Добавить роль или участника…',
+  'perm.removeTarget': 'Убрать из списка: {name}',
   'perm.adminNote': 'Владелец и администраторы имеют все права независимо от настроек комнаты.',
 
   // chat

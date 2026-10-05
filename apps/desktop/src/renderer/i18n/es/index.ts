@@ -315,6 +315,7 @@ export const es: Dict = {
   'perm.deny': 'denegado',
   'perm.inherit': 'predeterminado del rol',
   'perm.addUser': 'Añadir rol o miembro…',
+  'perm.removeTarget': 'Quitar de la lista: {name}',
   'perm.adminNote': 'El propietario y los administradores tienen todos los permisos sin importar los ajustes de la sala.',
 
   // chat

@@ -13,14 +13,14 @@ import {
   type BoardWebhook,
   type Role,
 } from '@calaba/protocol';
-import { Archive, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow } from 'lucide-react';
+import { Archive, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
 import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
-import { Button, Card, Field, Input, Modal, Row, Select, Spinner, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
 import { fmt } from '../../lib/format';
@@ -522,6 +522,15 @@ function AccessTab({ board }: { board: Board }): ReactNode {
     const base = exists ? drafts : [...drafts, { targetType: current.type, targetId: current.id, allow: 0n, deny: 0n }];
     save(base.map((d) => (key(d) === current.key ? withTri(d, bit, v) : d)));
   };
+  // «×» of a person's row: their whole override goes at once (as every bit back to neutral) and the
+  // row leaves the list; roles are always listed, never removed.
+  const removeUser = (k: string): void => {
+    const d = drafts.find((x) => key(x) === k);
+    const next = drafts.filter((x) => key(x) !== k);
+    if (current?.key === k) setSelected(`${PermissionTargetType.ROLE}:${memberRole}`);
+    if (d && (d.allow !== 0n || d.deny !== 0n)) save(next);
+    else setDrafts(next); // only added here, never saved
+  };
   // One or two PATCHes in order (lib/permissions accessSteps); the answer carries the new overrides
   // (turning «без администраторов» on gives me a personal allow), so the drafts follow the board.
   const setLevel = (to: AccessLevel): void => {
@@ -560,12 +569,27 @@ function AccessTab({ board }: { board: Board }): ReactNode {
           {targets.map((x) => {
             const on = current?.key === x.key;
             const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
+            const user = x.type === PermissionTargetType.USER;
             return (
-              <button key={x.key} type="button" aria-pressed={on} onClick={() => setSelected(x.key)} className={cx('flex h-8 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-body', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}>
-                {m ? <Avatar userId={x.id} name={x.label} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} /> : null}
-                <span className="min-w-0 truncate">{x.label}</span>
-                {x.role ? <RoleMark role={x.role.builtin} tone={on ? 'inherit' : 'role'} /> : null}
-              </button>
+              <div key={x.key} className={cx('flex h-8 items-center rounded-[var(--radius-row)]', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')} data-testid="board-access-target">
+                <button type="button" aria-pressed={on} onClick={() => setSelected(x.key)} className={cx('flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 text-left text-body', user && 'pr-0')}>
+                  {m ? <Avatar userId={x.id} name={x.label} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} /> : null}
+                  <span className="min-w-0 truncate">{x.label}</span>
+                  {x.role ? <RoleMark role={x.role.builtin} tone={on ? 'inherit' : 'role'} /> : null}
+                </button>
+                {user ? (
+                  <IconButton
+                    size="sm"
+                    label={t('perm.removeTarget', { name: x.label })}
+                    className={cx('mr-0.5', on && 'text-accent-fg hover:text-accent-fg')}
+                    disabled={busy}
+                    onClick={() => removeUser(x.key)}
+                    data-testid="board-access-remove"
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </IconButton>
+                ) : null}
+              </div>
             );
           })}
           <MemberPicker
