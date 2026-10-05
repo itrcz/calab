@@ -239,6 +239,8 @@ export const esCalendar: DictShape<typeof ruCalendar> = {
   'fb.dav.shareBusyHint': "Sus compañeros solo ven «Ocupado»",
   'fb.dav.shareTitleHint': "Sus compañeros ven el título del evento",
   'fb.dav.shareDetailsHint': "Sus compañeros ven el título y los participantes del espacio; nunca el lugar ni el enlace",
+  'fb.dav.remind': "Recordarme las reuniones externas",
+  'fb.dav.remindHint': "Con la misma antelación que las reuniones de Calab; salvo eventos de todo el día o rechazados",
   'ext.noTitle': "Sin título",
   'ext.block': "{title}, {time} · calendario externo",
   'ext.source': "Calendario externo",

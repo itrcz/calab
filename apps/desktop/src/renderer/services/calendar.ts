@@ -7,6 +7,7 @@ import {
   type CalendarEvent,
   type CalendarEventAttendeeInputSchema,
   type CalendarEventReminder,
+  type ExternalEvent as WireExternalEvent,
   type CalendarEventRsvp,
   type RoomEventActive,
   type RoomEventEnded,
@@ -30,7 +31,7 @@ import {
   withoutActive,
   type Applied,
 } from '../lib/calendar/events';
-import { reminderText, remindNow } from '../lib/calendar/reminders';
+import { externalReminderText, reminderText, remindNow } from '../lib/calendar/reminders';
 import { dayKey, eventSpan, formatWhen, gridWindow, monthOf, occurrenceMs, viewerZone } from '../lib/calendar/time';
 import { can, mayManageEvents, roomPerms } from '../lib/permissions';
 import { log } from '../lib/log';
@@ -258,15 +259,35 @@ export function onRoomEventEnded(v: RoomEventEnded): void {
  * «Не беспокоить» silences it only with «Напоминать при "Не беспокоить"» off.
  */
 export function onEventReminder(v: CalendarEventReminder): void {
-  const ev = v.event;
-  if (!ev) return;
   const dnd = useSession.getState().me?.settings?.eventRemindersDnd ?? true;
   if (!remindNow(prefs().presence, dnd)) return;
+  const ev = v.event;
+  if (!ev) {
+    if (v.externalEvent) remindExternal(v.minutes, v.externalEvent);
+    return;
+  }
   const room = ev.roomId ? useRooms.getState().byId[ev.roomId] : undefined;
   const text = reminderText(v.minutes, ev.title, room?.name ?? '');
   const act = room ? (): void => goToRoom(ev) : (): void => openEvent(ev);
+  notifyReminder(text, room ? t('cal.goToRoom') : t('cal.openEvent'), `event:${occKey(ev)}:${v.minutes}`, act);
+}
+
+/**
+ * A reminder of my imported CalDAV event (ADR-0045 amendment 3), the same notification and toast:
+ * «Подключиться» opens its conference link; without one — its day in the calendar.
+ */
+function remindExternal(minutes: number, ev: WireExternalEvent): void {
+  const start = ev.startsAt ? timestampMs(ev.startsAt) : Date.now();
+  const text = externalReminderText(minutes, ev.summary, ev.location, t('ext.noTitle'));
+  const link = ev.url;
+  const act = link ? (): void => void platform.app.openExternal(link) : (): void => useUi.getState().openCalendarDay(dayKey(start), null);
+  notifyReminder(text, link ? t('ext.join') : t('cal.openEvent'), `external:${ev.uid}:${start}:${minutes}`, act);
+}
+
+/** The system notification (one per tag on a machine) and the in-app toast with its action. */
+function notifyReminder(text: string, action: string, tag: string, act: () => void): void {
   try {
-    const n = new Notification(text, { body: room ? t('cal.goToRoom') : t('cal.openEvent'), tag: `event:${occKey(ev)}:${v.minutes}` });
+    const n = new Notification(text, { body: action, tag });
     n.onclick = () => {
       window.focus();
       act();
@@ -274,7 +295,7 @@ export function onEventReminder(v: CalendarEventReminder): void {
   } catch {
     // notifications unavailable: the toast below still says it
   }
-  useToasts.getState().push('info', text, { label: room ? t('cal.goToRoom') : t('cal.openEvent'), run: act }, 15_000);
+  useToasts.getState().push('info', text, { label: action, run: act }, 15_000);
   platform.app.attention();
 }
 

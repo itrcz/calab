@@ -239,6 +239,8 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'fb.dav.shareBusyHint': "同事只看到“忙碌”",
   'fb.dav.shareTitleHint': "同事看到事件标题",
   'fb.dav.shareDetailsHint': "同事看到标题和本空间内的参与者；地点和链接永不显示",
+  'fb.dav.remind': "提醒我外部会议",
+  'fb.dav.remindHint': "提前时间与 Calab 会议相同；全天和已拒绝的事件除外",
   'ext.noTitle': "无标题",
   'ext.block': "{title}，{time} · 外部日历",
   'ext.source': "外部日历",

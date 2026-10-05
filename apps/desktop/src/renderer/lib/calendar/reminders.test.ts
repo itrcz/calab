@@ -1,6 +1,6 @@
 import { PresenceStatus } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { reminderChip, reminderText, remindNow, toggleReminder } from './reminders';
+import { externalReminderText, reminderChip, reminderText, remindNow, toggleReminder } from './reminders';
 
 describe('reminder chips (Settings → Уведомления)', () => {
   it('adds and removes, largest first like the server', () => {
@@ -27,6 +27,11 @@ describe('EVENT_REMINDER → system notification', () => {
     expect(reminderText(60, 'Планёрка', 'Переговорка')).toBe('Через 1 час: Планёрка · Переговорка');
     expect(reminderText(1440, 'Ревью', '')).toBe('Через 1 день: Ревью');
     expect(reminderText(5, 'Ревью', '')).toBe('Через 5 минут: Ревью');
+  });
+
+  it('external events: the title or a stand-in, the place unless it is a link', () => {
+    expect(externalReminderText(15, 'Стоматолог', 'Ленина, 1', 'Без названия')).toBe('Через 15 минут: Стоматолог · Ленина, 1');
+    expect(externalReminderText(5, ' ', 'https://telemost.yandex.ru/j/1', 'Без названия')).toBe('Через 5 минут: Без названия');
   });
 
   it('«Не беспокоить» silences it only with the setting off', () => {

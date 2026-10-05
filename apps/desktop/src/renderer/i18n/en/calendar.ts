@@ -239,6 +239,8 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'fb.dav.shareBusyHint': "Colleagues see only “Busy”",
   'fb.dav.shareTitleHint': "Colleagues see the event’s title",
   'fb.dav.shareDetailsHint': "Colleagues see the title and attendees from the workspace; never the place or the link",
+  'fb.dav.remind': "Remind me of external meetings",
+  'fb.dav.remindHint': "As early as of Calab meetings; not of all-day or declined events",
   'ext.noTitle': "No title",
   'ext.block': "{title}, {time} · external calendar",
   'ext.source': "External calendar",

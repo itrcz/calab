@@ -46,6 +46,15 @@ export function reminderText(minutes: number, title: string, roomName: string): 
 }
 
 /**
+ * An external event's notification (ADR-0045 amendment 3): its title (or `untitled`) and its place,
+ * unless the place is only a link (a conference link is offered as «Подключиться»).
+ */
+export function externalReminderText(minutes: number, summary: string, location: string, untitled: string): string {
+  const place = /^\s*https?:\/\//i.test(location) ? '' : location.trim();
+  return reminderText(minutes, summary.trim() || untitled, place);
+}
+
+/**
  * Show it now? «Не беспокоить» silences reminders only when the user turned «Напоминать при
  * "Не беспокоить"» off (the server checks it too; the local status may be ahead of it).
  */

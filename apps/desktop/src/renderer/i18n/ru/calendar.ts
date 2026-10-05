@@ -244,6 +244,8 @@ export const ruCalendar = {
   'fb.dav.shareBusyHint': "Коллеги видят только «Занято»",
   'fb.dav.shareTitleHint': "Коллеги видят название события",
   'fb.dav.shareDetailsHint': "Коллеги видят название и участников из пространства; место и ссылку — никогда",
+  'fb.dav.remind': "Напоминать о внешних встречах",
+  'fb.dav.remindHint': "За столько же, сколько о встречах Calab; кроме событий на весь день и отклонённых",
   'ext.noTitle': "Без названия",
   'ext.block': "{title}, {time} · внешний календарь",
   'ext.source': "Внешний календарь",

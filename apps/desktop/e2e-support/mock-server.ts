@@ -6579,10 +6579,12 @@ class MockImpl {
       const me = davUser(c);
       const a = this.calDav.get(me);
       if (!a) throw notFound('no CalDAV account');
-      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { shareLevel?: unknown };
-      const level = shareLevelIn(b.shareLevel);
-      if (!level) throw invalid('shareLevel', 'one of busy, title, details');
-      a.shareLevel = level;
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { shareLevel?: unknown; remind?: unknown };
+      const remind = typeof b.remind === 'boolean' ? b.remind : undefined;
+      const level = b.shareLevel === undefined && remind !== undefined ? null : shareLevelIn(b.shareLevel);
+      if (!level && remind === undefined) throw invalid('shareLevel', 'one of busy, title, details');
+      if (level) a.shareLevel = level;
+      if (remind !== undefined) a.remind = remind;
       send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
     });
     this.route('GET', '/api/me/external-events', (c) => {

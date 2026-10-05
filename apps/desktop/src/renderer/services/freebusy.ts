@@ -188,6 +188,20 @@ export async function setShareLevel(level: ShareLevel): Promise<void> {
   }
 }
 
+/** «Напоминать о внешних встречах» (ADR-0045 amendment 3), optimistic like the share level. */
+export async function setExternalReminders(remind: boolean): Promise<void> {
+  const before = fb().caldav;
+  if (!before || before.remind === remind) return;
+  useFreeBusy.setState({ caldav: { ...before, remind } });
+  try {
+    const account = await freebusyApi.caldav.setRemind(remind);
+    if (account) useFreeBusy.setState({ caldav: account });
+  } catch (e) {
+    useFreeBusy.setState((s) => (s.caldav ? { caldav: { ...s.caldav, remind: before.remind } } : s));
+    toast.fail(e, t('err.ctx.save'));
+  }
+}
+
 // ---------------------------------------------------------------- my external events (ADR-0045 §3)
 
 /**

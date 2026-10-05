@@ -233,6 +233,8 @@ export interface CalDavRec {
   lastError: string;
   /** What colleagues see of the imported events (ADR-0045 §2). */
   shareLevel?: ShareLevelRec;
+  /** Reminders of the imported events (ADR-0045 amendment 3). */
+  remind?: boolean;
 }
 
 export type ShareLevelRec = 'busy' | 'title' | 'details';
@@ -330,6 +332,7 @@ export function davOut(a: CalDavRec | undefined): Record<string, unknown> {
       lastError: a.lastError,
       calendars: davCalendars(a.url),
       shareLevel: SHARE_WIRE[a.shareLevel ?? 'busy'],
+      remind: a.remind ?? false,
     },
   };
 }

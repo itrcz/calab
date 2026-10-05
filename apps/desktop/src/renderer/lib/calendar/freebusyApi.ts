@@ -65,6 +65,8 @@ export interface CalDavAccount {
   calendars: CalDavCalendar[];
   /** What colleagues see of my external events (ADR-0045 §2). */
   shareLevel: ShareLevel;
+  /** Remind of my external events like of meetings (ADR-0045 amendment 3). */
+  remind: boolean;
 }
 
 export type ShareLevel = 'busy' | 'title' | 'details';
@@ -157,6 +159,7 @@ function accountOf(r: CalDavAccountResponse): CalDavAccount | null {
     lastError: a.lastError,
     calendars: a.calendars.map((c) => ({ href: c.href, name: c.name, color: c.color })),
     shareLevel: a.shareLevel === CalDavShareLevel.DETAILS ? 'details' : a.shareLevel === CalDavShareLevel.TITLE ? 'title' : 'busy',
+    remind: a.remind,
   };
 }
 
@@ -250,6 +253,9 @@ export const freebusyApi = {
     /** PATCH {share_level}: what colleagues see (ADR-0045 §2). */
     setShare: async (level: ShareLevel): Promise<CalDavAccount | null> =>
       accountOf(await call('PATCH', '/api/me/caldav', CalDavAccountResponseSchema, body(SetCalDavShareRequestSchema, { shareLevel: SHARE_WIRE[level] }))),
+    /** PATCH /api/me/caldav {remind}: reminders of my external events (ADR-0045 amendment 3). */
+    setRemind: async (remind: boolean): Promise<CalDavAccount | null> =>
+      accountOf(await call('PATCH', '/api/me/caldav', CalDavAccountResponseSchema, body(SetCalDavShareRequestSchema, { remind }))),
     remove: (): Promise<void> => callEmpty('DELETE', '/api/me/caldav'),
     /** A manual sync (≤ 1 a minute: 429). */
     sync: async (): Promise<CalDavAccount | null> => accountOf(await call('POST', '/api/me/caldav/sync', CalDavAccountResponseSchema)),
