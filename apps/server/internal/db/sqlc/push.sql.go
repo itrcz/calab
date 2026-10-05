@@ -966,8 +966,8 @@ func (q *Queries) QueuePushDelivery(ctx context.Context, arg QueuePushDeliveryPa
 const queuePushIntent = `-- name: QueuePushIntent :execrows
 INSERT INTO push_intents(recipient_id,event_key,kind,reference_id,room_id,actor_id,notice_kind,context_id,occurrence_at,reminder_minutes,expires_at)
 SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
-WHERE CASE WHEN $3::smallint=2 THEN (SELECT count(*) FROM push_intents WHERE kind=2)<4096
-ELSE (SELECT count(*) FROM push_intents WHERE kind<>2)<8192 END
+WHERE CASE WHEN $3::smallint=2 THEN (SELECT count(*) FROM push_intents WHERE kind=2 AND completed_at IS NULL)<4096
+ELSE (SELECT count(*) FROM push_intents WHERE kind<>2 AND completed_at IS NULL)<8192 END
 ON CONFLICT(recipient_id,event_key) DO NOTHING
 `
 
@@ -985,6 +985,8 @@ type QueuePushIntentParams struct {
 	ExpiresAt       time.Time
 }
 
+// The cap bounds pending work. Completed rows only keep dedupe until expiry (<= 5 min)
+// and must not make a busy server drop new notifications.
 func (q *Queries) QueuePushIntent(ctx context.Context, arg QueuePushIntentParams) (int64, error) {
 	result, err := q.db.Exec(ctx, queuePushIntent,
 		arg.RecipientID,

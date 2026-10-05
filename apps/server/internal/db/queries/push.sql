@@ -144,10 +144,12 @@ DELETE FROM push_deliveries WHERE device_id=$1 AND kind=2 AND reference_id<>$2;
 SELECT pg_advisory_xact_lock(71550665450630185);
 
 -- name: QueuePushIntent :execrows
+-- The cap bounds pending work. Completed rows only keep dedupe until expiry (<= 5 min)
+-- and must not make a busy server drop new notifications.
 INSERT INTO push_intents(recipient_id,event_key,kind,reference_id,room_id,actor_id,notice_kind,context_id,occurrence_at,reminder_minutes,expires_at)
 SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
-WHERE CASE WHEN $3::smallint=2 THEN (SELECT count(*) FROM push_intents WHERE kind=2)<4096
-ELSE (SELECT count(*) FROM push_intents WHERE kind<>2)<8192 END
+WHERE CASE WHEN $3::smallint=2 THEN (SELECT count(*) FROM push_intents WHERE kind=2 AND completed_at IS NULL)<4096
+ELSE (SELECT count(*) FROM push_intents WHERE kind<>2 AND completed_at IS NULL)<8192 END
 ON CONFLICT(recipient_id,event_key) DO NOTHING;
 
 -- name: ClaimPushIntents :many
