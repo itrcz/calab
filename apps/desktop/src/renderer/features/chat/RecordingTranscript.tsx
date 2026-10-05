@@ -18,6 +18,8 @@ import { toast } from '../../stores/toasts';
  * words; a click on a remark plays the recording from there (the chat's player; the remark
  * being played is highlighted); «Копировать» and «Скачать .txt». The list is virtualised: a
  * 4-hour meeting has thousands of remarks.
+ * With `lead` (the recording window opened from search, RecordingResult) it is «Запись встречи»:
+ * the player and the summary above, the transcript under a hairline with a shorter list.
  */
 export default function RecordingTranscript({
   roomId,
@@ -27,6 +29,7 @@ export default function RecordingTranscript({
   track,
   onClose,
   initialMs,
+  lead,
 }: {
   roomId: string;
   recordingId: string;
@@ -37,6 +40,8 @@ export default function RecordingTranscript({
   onClose: () => void;
   /** Open at this offset (a search hit, ADR-0062 §4): the remark there is centred and marked. */
   initialMs?: number;
+  /** Above the transcript (the player, the summary); the dialog is then «Запись встречи». */
+  lead?: ReactNode;
 }): ReactNode {
   const q = useQuery({
     queryKey: ['recording-transcript', recordingId],
@@ -73,8 +78,10 @@ export default function RecordingTranscript({
   };
 
   return (
-    <Modal open onClose={onClose} title={t('rec.tr.title')} description={title} wide>
+    <Modal open onClose={onClose} title={lead ? t('rec.card.label') : t('rec.tr.title')} description={title} wide>
       <div className="flex flex-col gap-3" data-testid="recording-transcript">
+        {lead}
+        {lead ? <h3 className="border-t border-line pt-3 text-body font-semibold text-fg">{t('rec.tr.title')}</h3> : null}
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-[200px] flex-1">
             <Input
@@ -112,7 +119,7 @@ export default function RecordingTranscript({
         ) : (
           <Virtuoso
             ref={list}
-            style={{ height: 'min(60vh, 560px)' }}
+            style={{ height: lead ? 'min(44vh, 440px)' : 'min(60vh, 560px)' }}
             {...(focus >= 0 && !query ? { initialTopMostItemIndex: { index: focus, align: 'center' as const } } : {})}
             data={shown}
             computeItemKey={(_i, idx) => idx}

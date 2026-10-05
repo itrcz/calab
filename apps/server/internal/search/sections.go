@@ -537,9 +537,9 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 	opts := a.Add(searchq.HeadlineOptions)
 	// The first segment matching on its own gives the offset and the snippet (a phrase across
 	// segments: the start of the transcript).
-	sql := "SELECT c.id, c.room_id, r.workspace_id, c.started_by, c.started_at, coalesce(seg.start, 0)::float8, " +
+	sql := "SELECT c.id, c.room_id, c.message_id, r.workspace_id, c.started_by, c.started_at, coalesce(seg.start, 0)::float8, " +
 		searchq.Headline("coalesce(seg.text, left(c.transcript_text, 2000))", tsq, opts) +
-		" FROM (SELECT rr.id, rr.started_by, rr.started_at, rr.transcript_json, rr.transcript_text, " + recording.VisibleRoomSQL("rr", p) + " AS room_id" +
+		" FROM (SELECT rr.id, rr.started_by, rr.started_at, rr.transcript_json, rr.transcript_text, " + recording.VisibleRoomSQL("rr", p) + " AS room_id, " + recording.VisibleMessageSQL("rr", p) + " AS message_id" +
 		from + " ORDER BY rr.id DESC LIMIT " + strconv.Itoa(min(req.limit+1, transcriptCandidates)) + ") c" +
 		" LEFT JOIN rooms r ON r.id = c.room_id" +
 		" LEFT JOIN LATERAL (SELECT (x.seg->>'start')::float8 AS start, x.seg->>'text' AS text" +
@@ -548,6 +548,7 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 		" ORDER BY x.ord LIMIT 1) seg ON true ORDER BY c.id DESC"
 	type row struct {
 		id, room uuid.UUID
+		msg      *uuid.UUID
 		ws       *uuid.UUID
 		by       *uuid.UUID
 		at       time.Time
@@ -560,7 +561,7 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
 		var x row
-		err := r.Scan(&x.id, &x.room, &x.ws, &x.by, &x.at, &x.start, &x.snippet)
+		err := r.Scan(&x.id, &x.room, &x.msg, &x.ws, &x.by, &x.at, &x.start, &x.snippet)
 		return x, err
 	})
 	if err != nil {
@@ -569,7 +570,7 @@ func (s *Service) transcripts(ctx context.Context, tx pgx.Tx, req *request, sc *
 	for _, x := range page(req, sec, list, func(x row) (float64, uuid.UUID) { return 0, x.id }) {
 		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: x.snippet, WorkspaceId: str(x.ws), At: ts(x.at), AuthorId: str(x.by),
 			Ref: &v1.SearchHit_Transcript{Transcript: &v1.SearchTranscriptRef{RecordingId: x.id.String(), RoomId: x.room.String(),
-				OffsetMs: int64(x.start * 1000)}}})
+				OffsetMs: int64(x.start * 1000), MessageId: str(x.msg)}}})
 	}
 	return nil
 }

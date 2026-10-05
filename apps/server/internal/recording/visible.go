@@ -29,6 +29,13 @@ func VisibleRoomSQL(rr, p string) string {
 		rr + ".message_id AND fm.room_id = ANY(" + p + "::uuid[]) AND fm.deleted_at IS NULL ORDER BY fm.id LIMIT 1) END)"
 }
 
+// VisibleMessageSQL is the card message of rr in the room of VisibleRoomSQL: its own card,
+// else (the oldest) live forwarded copy there. NULL when the card message is gone.
+func VisibleMessageSQL(rr, p string) string {
+	return "(CASE WHEN " + rr + ".room_id = ANY(" + p + "::uuid[]) THEN " + rr + ".message_id ELSE (SELECT fm.id FROM messages fm WHERE fm.forwarded_from = " +
+		rr + ".message_id AND fm.room_id = ANY(" + p + "::uuid[]) AND fm.deleted_at IS NULL ORDER BY fm.id LIMIT 1) END)"
+}
+
 // visibleIn reports whether recording id is seen in roomID (VisibleSQL with that one room).
 func visibleIn(ctx context.Context, d *db.DB, id, roomID uuid.UUID) (bool, error) {
 	var ok bool

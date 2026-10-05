@@ -97,5 +97,5 @@ function openTranscript(tr: SearchTranscriptRef, startedAt: number): void {
   }
   const dm = room.type === RoomType.DM || room.type === RoomType.NOTES;
   useUi.getState().openRoom(dm ? HOME : room.workspaceId, room.id);
-  useUi.getState().openDialog({ kind: 'transcript', roomId: tr.roomId, recordingId: tr.recordingId, offsetMs: Number(tr.offsetMs), startedAt });
+  useUi.getState().openDialog({ kind: 'transcript', roomId: tr.roomId, recordingId: tr.recordingId, messageId: tr.messageId, offsetMs: Number(tr.offsetMs), startedAt });
 }

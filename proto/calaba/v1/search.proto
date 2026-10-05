@@ -154,4 +154,8 @@ message SearchTranscriptRef {
   string recording_id = 1;
   string room_id = 2;
   int64 offset_ms = 3;
+  // The recording's card message in room_id (its own card, else the forwarded copy there):
+  // GET /api/rooms/{room_id}/messages/{message_id} gives the summary, status and audio.
+  // "" when the card message is gone.
+  string message_id = 4;
 }

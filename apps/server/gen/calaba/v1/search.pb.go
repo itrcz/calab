@@ -954,10 +954,14 @@ func (x *SearchFileRef) GetSize() int64 {
 // room_id is a room where the caller sees the recording's card: its own room, else one holding a
 // forwarded copy (ADR-0033 §4).
 type SearchTranscriptRef struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RecordingId   string                 `protobuf:"bytes,1,opt,name=recording_id,json=recordingId,proto3" json:"recording_id,omitempty"`
-	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	OffsetMs      int64                  `protobuf:"varint,3,opt,name=offset_ms,json=offsetMs,proto3" json:"offset_ms,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	RecordingId string                 `protobuf:"bytes,1,opt,name=recording_id,json=recordingId,proto3" json:"recording_id,omitempty"`
+	RoomId      string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	OffsetMs    int64                  `protobuf:"varint,3,opt,name=offset_ms,json=offsetMs,proto3" json:"offset_ms,omitempty"`
+	// The recording's card message in room_id (its own card, else the forwarded copy there):
+	// GET /api/rooms/{room_id}/messages/{message_id} gives the summary, status and audio.
+	// "" when the card message is gone.
+	MessageId     string `protobuf:"bytes,4,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1011,6 +1015,13 @@ func (x *SearchTranscriptRef) GetOffsetMs() int64 {
 		return x.OffsetMs
 	}
 	return 0
+}
+
+func (x *SearchTranscriptRef) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
 }
 
 var File_calaba_v1_search_proto protoreflect.FileDescriptor
@@ -1083,11 +1094,13 @@ const file_calaba_v1_search_proto_rawDesc = "" +
 	"message_id\x18\x02 \x01(\tR\tmessageId\x12\x17\n" +
 	"\aroom_id\x18\x03 \x01(\tR\x06roomId\x12\x12\n" +
 	"\x04mime\x18\x04 \x01(\tR\x04mime\x12\x12\n" +
-	"\x04size\x18\x05 \x01(\x03R\x04size\"n\n" +
+	"\x04size\x18\x05 \x01(\x03R\x04size\"\x8d\x01\n" +
 	"\x13SearchTranscriptRef\x12!\n" +
 	"\frecording_id\x18\x01 \x01(\tR\vrecordingId\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
-	"\toffset_ms\x18\x03 \x01(\x03R\boffsetMs*\xdc\x01\n" +
+	"\toffset_ms\x18\x03 \x01(\x03R\boffsetMs\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x04 \x01(\tR\tmessageId*\xdc\x01\n" +
 	"\n" +
 	"SearchType\x12\x1b\n" +
 	"\x17SEARCH_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +

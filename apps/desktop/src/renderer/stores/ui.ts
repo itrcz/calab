@@ -24,8 +24,11 @@ export type Dialog =
   | { kind: 'camera-preview' }
   /** The image viewer; `images` are the message's images (←/→), `index` the one opened; `inChat`: «Показать в чате». */
   | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string } }
-  /** A meeting's transcript opened from a search hit at a segment (ADR-0062 §4). */
-  | { kind: 'transcript'; roomId: string; recordingId: string; offsetMs: number; startedAt: number }
+  /**
+   * A meeting recording opened from a search hit at a segment (ADR-0062 §4): the player and the
+   * summary from its card message (messageId, '' = gone), the transcript.
+   */
+  | { kind: 'transcript'; roomId: string; recordingId: string; messageId: string; offsetMs: number; startedAt: number }
   /** ⌘K search; `query` pre-fills it (typed into the room header's search field). */
   | { kind: 'quick-switcher'; query?: string }
   /** «Новое сообщение»: pick a person to write to (ADR-0020). */

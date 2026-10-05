@@ -319,7 +319,7 @@ func TestSearchEvents(t *testing.T) {
 }
 
 // TestSearchTranscripts: the recording card rule (own room or a live forwarded copy), the
-// backfill of transcript_text, the offset of the matching segment.
+// backfill of transcript_text, the offset of the matching segment, the card message to open.
 func TestSearchTranscripts(t *testing.T) {
 	o, bob, ws, voice := setupTeam(t)
 	wid := ws.GetId()
@@ -345,7 +345,7 @@ func TestSearchTranscripts(t *testing.T) {
 	scope := "&scope=" + wid
 	got := hits(t, o, q("релиз "+w)+scope, stTranscripts)
 	wantHits(t, "owner", got, rid.String())
-	if tr := got[rid.String()].GetTranscript(); tr.GetOffsetMs() != 12250 || tr.GetRoomId() != priv ||
+	if tr := got[rid.String()].GetTranscript(); tr.GetOffsetMs() != 12250 || tr.GetRoomId() != priv || tr.GetMessageId() != card.GetId() ||
 		got[rid.String()].GetSnippet() != "обсудим \u0002релиз\u0003 \u0002"+w+"\u0003" {
 		t.Fatalf("transcript hit %v", got[rid.String()])
 	}
@@ -358,7 +358,7 @@ func TestSearchTranscripts(t *testing.T) {
 	}
 	got = hits(t, bob, q(w)+scope, stTranscripts)
 	wantHits(t, "forwarded", got, rid.String())
-	if got[rid.String()].GetTranscript().GetRoomId() != pub {
+	if tr := got[rid.String()].GetTranscript(); tr.GetRoomId() != pub || tr.GetMessageId() != fwd.String() {
 		t.Fatalf("forwarded room %v", got[rid.String()])
 	}
 	// The same rule serves the transcript endpoint.

@@ -1,6 +1,5 @@
 import { localAuthority } from '../identity/model';
 import { lazy, Suspense, type ReactNode } from 'react';
-import { t } from '../../i18n';
 import { openMessage } from '../../services/searchNav';
 import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
@@ -21,7 +20,7 @@ import { useSession } from '../../stores/session';
 import { EventDialog } from '../calendar/EventDialog';
 import { AppDialog } from '../webapps/AppDialog';
 
-const RecordingTranscript = lazy(() => import('../chat/RecordingTranscript'));
+const RecordingResult = lazy(() => import('../chat/RecordingResult'));
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
@@ -117,14 +116,13 @@ export function Dialogs(): ReactNode {
       case 'transcript':
         node = (
           <Suspense fallback={null}>
-            <RecordingTranscript
+            <RecordingResult
               key={`${d.recordingId}@${d.offsetMs}`}
               roomId={d.roomId}
               recordingId={d.recordingId}
-              title={t('rec.card.title')}
-              started={new Date(d.startedAt)}
-              track={null}
-              initialMs={d.offsetMs}
+              messageId={d.messageId}
+              offsetMs={d.offsetMs}
+              startedAt={d.startedAt}
               onClose={close}
             />
           </Suspense>
