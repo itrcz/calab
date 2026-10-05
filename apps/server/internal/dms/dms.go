@@ -37,6 +37,9 @@ type Handlers struct {
 	db      *db.DB
 	events  events.Publisher
 	limiter *redisx.RateLimiter // new DMs per user
+	// EmailGate: whether starting a DM needs a confirmed address (ADR-0023,
+	// EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
+	EmailGate auth.EmailGate
 }
 
 // NewHandlers creates the DM handlers; limiter bounds how many DMs a user creates.
@@ -180,8 +183,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if !shared {
 		return httpx.NotFound("user") // do not reveal users outside the caller's workspaces
 	}
-	// Starting a new DM needs a verified email (ADR-0023); existing DMs stay reachable.
-	if _, err := auth.VerifiedUser(r.Context(), h.db.Q, me); err != nil {
+	// Starting a new DM needs a verified email (ADR-0023) unless EMAIL_VERIFICATION=optional
+	// (ADR-0065); existing DMs stay reachable.
+	if _, err := h.EmailGate.User(r.Context(), h.db.Q, me); err != nil {
 		return err
 	}
 	if err := h.limiter.Take(r.Context(), me.String()); err != nil {

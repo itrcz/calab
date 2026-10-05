@@ -373,6 +373,10 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if s.principal.Authority == identitypolicy.WorkspaceSSO {
 		ready.Me = pbconv.ScopedMe(u)
 	}
+	if h.auth != nil { // nil (tests): false, the client asks as ADR-0023 says
+		vs := h.auth.Verification(ctx, u)
+		ready.EmailVerificationOptional, ready.EmailInvitePending = vs.Optional, vs.InvitePending
+	}
 	if m := manualFromDB(u.PresenceStatus, u.PresenceUntil, time.Now()); s.principal.Authority == identitypolicy.LocalAccount && m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
 		ready.Presence = m.self(uid)
 	}

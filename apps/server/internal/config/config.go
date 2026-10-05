@@ -24,6 +24,20 @@ const (
 	RegistrationInvite RegistrationMode = "invite"
 )
 
+// EmailVerificationMode controls whether an unconfirmed email address blocks actions
+// (ADR-0065).
+type EmailVerificationMode string
+
+// Email verification modes (EMAIL_VERIFICATION).
+const (
+	// EmailVerificationRequired: creating workspaces, invitations, new DMs etc. need a
+	// confirmed address (403 EMAIL_NOT_VERIFIED, ADR-0023).
+	EmailVerificationRequired EmailVerificationMode = "required"
+	// EmailVerificationOptional: nothing is gated by the confirmation; the address stays
+	// unconfirmed and is still never trusted (email invitations, OAuth claims, superadmin).
+	EmailVerificationOptional EmailVerificationMode = "optional"
+)
+
 // Config is the full server configuration. See apps/server/README.md for the list.
 type Config struct {
 	IdentityPublicOrigin           string   `env:"IDENTITY_PUBLIC_ORIGIN"`
@@ -59,6 +73,9 @@ type Config struct {
 	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"8760h"`
 
 	RegistrationMode RegistrationMode `env:"REGISTRATION_MODE" envDefault:"invite"`
+	// Whether an unconfirmed address blocks actions (ADR-0065). Without SMTP addresses count
+	// as confirmed in either mode.
+	EmailVerification EmailVerificationMode `env:"EMAIL_VERIFICATION" envDefault:"required"`
 
 	// Login/register rate limit per client IP (token bucket in Redis).
 	AuthRateBurst     int     `env:"AUTH_RATE_BURST" envDefault:"10"`
@@ -212,6 +229,13 @@ func (c *Config) Validate() error {
 	case RegistrationOpen, RegistrationInvite:
 	default:
 		errs = append(errs, fmt.Errorf("REGISTRATION_MODE must be open or invite, got %q", c.RegistrationMode))
+	}
+	switch c.EmailVerification {
+	case "": // a Config built in code: the default, required
+		c.EmailVerification = EmailVerificationRequired
+	case EmailVerificationRequired, EmailVerificationOptional:
+	default:
+		errs = append(errs, fmt.Errorf("EMAIL_VERIFICATION must be required or optional, got %q", c.EmailVerification))
 	}
 	if c.AccessTokenTTL < time.Minute || c.RefreshTokenTTL < c.AccessTokenTTL {
 		errs = append(errs, errors.New("ACCESS_TOKEN_TTL must be >= 1m and REFRESH_TOKEN_TTL >= ACCESS_TOKEN_TTL"))

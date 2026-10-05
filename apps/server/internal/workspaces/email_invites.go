@@ -58,7 +58,9 @@ func (h *Handlers) emailRoutes(handle func(string, httpx.HandlerFunc)) {
 }
 
 // verifiedAccount: the caller must be a registered (non-guest) account with a verified
-// email (403 EMAIL_NOT_VERIFIED).
+// email (403 EMAIL_NOT_VERIFIED) — unless EMAIL_VERIFICATION=optional (ADR-0065): then the
+// caller's own address is not checked. Whom it may reach by email is decided by the
+// invitee side, which always requires a confirmed address (lookupInvitee, AcceptEmailInvites).
 func (h *Handlers) verifiedAccount(r *http.Request) (sqlc.User, error) {
 	u, err := h.db.Q.GetUser(r.Context(), uid(r))
 	if err != nil {
@@ -67,7 +69,7 @@ func (h *Handlers) verifiedAccount(r *http.Request) (sqlc.User, error) {
 	if u.IsGuest {
 		return u, httpx.Forbidden("not available for guest accounts")
 	}
-	return u, auth.RequireVerified(u)
+	return u, h.emailGate.Allow(u)
 }
 
 // inviter: verified caller with the invite right (INVITE_MEMBERS, ADR-0043) in the path workspace.

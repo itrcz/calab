@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -47,22 +48,50 @@ func codeErr(c v1.ErrorCode, msg string) *httpx.Error {
 	return e
 }
 
+// EmailGate guards the actions ADR-0023 reserved for confirmed addresses (creating
+// workspaces, invitations, bots, new DMs, outside meeting attendees). It is a policy about
+// what an account may DO, never about whether its address may be TRUSTED: code that relies
+// on the address belonging to the user (email invitations, OAuth email claims, superadmin,
+// meeting mail) checks email_verified_at itself / RequireVerified, in every mode (ADR-0065).
+//
+// The zero value requires a confirmed address (EMAIL_VERIFICATION=required), so a handler
+// that was not wired stays closed.
+type EmailGate struct {
+	// Optional: EMAIL_VERIFICATION=optional — an unconfirmed address blocks nothing.
+	Optional bool
+}
+
+// NewEmailGate maps the configured mode.
+func NewEmailGate(m config.EmailVerificationMode) EmailGate {
+	return EmailGate{Optional: m == config.EmailVerificationOptional}
+}
+
+// Allow applies the gate to u: nil when the mode is optional, else RequireVerified.
+func (g EmailGate) Allow(u sqlc.User) error {
+	if g.Optional {
+		return nil
+	}
+	return RequireVerified(u)
+}
+
+// User loads the user and applies the gate.
+func (g EmailGate) User(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (sqlc.User, error) {
+	u, err := q.GetUser(ctx, id)
+	if err != nil {
+		return u, err
+	}
+	return u, g.Allow(u)
+}
+
 // RequireVerified rejects accounts whose email is not verified yet (403
-// EMAIL_NOT_VERIFIED). Guest accounts have no email and are not affected.
+// EMAIL_NOT_VERIFIED) regardless of EMAIL_VERIFICATION: for checks that rely on the
+// address (ADR-0027 email invitation codes). Guest accounts have no email and are not
+// affected.
 func RequireVerified(u sqlc.User) error {
 	if u.IsGuest || u.EmailVerifiedAt != nil {
 		return nil
 	}
 	return errEmailNotVerified
-}
-
-// VerifiedUser loads the user and applies RequireVerified.
-func VerifiedUser(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (sqlc.User, error) {
-	u, err := q.GetUser(ctx, id)
-	if err != nil {
-		return u, err
-	}
-	return u, RequireVerified(u)
 }
 
 func (s *Service) mailOn() bool { return s.Mail.Enabled() }
@@ -388,6 +417,35 @@ func (s *Service) ResetPassword(ctx context.Context, email, code, password strin
 		s.OnEmailVerified(ctx, u)
 	}
 	return nil
+}
+
+// VerificationState is what the client needs to decide whether to ask u to confirm its
+// address (Ready / LoginResponse / RegisterResponse, ADR-0065).
+type VerificationState struct {
+	// Optional: EMAIL_VERIFICATION=optional — an unconfirmed address blocks nothing.
+	Optional bool
+	// InvitePending: with Optional, an email invitation waits for u's unconfirmed address. It
+	// joins only after the confirmation (ADR-0027), so its invitee is still asked. A failed
+	// lookup counts as pending: the client asks rather than hides the reason to.
+	InvitePending bool
+}
+
+// Ask reports whether u should be asked for (and mailed) a confirmation code unprompted.
+func (v VerificationState) Ask() bool { return !v.Optional || v.InvitePending }
+
+// Verification returns u's VerificationState.
+func (s *Service) Verification(ctx context.Context, u sqlc.User) VerificationState {
+	v := VerificationState{Optional: s.emailGate.Optional}
+	if !v.Optional || !s.mailOn() || u.IsGuest || u.Email == nil || u.EmailVerifiedAt != nil {
+		return v
+	}
+	pending, err := s.db.Q.HasPendingEmailInvite(ctx, *u.Email)
+	if err != nil {
+		slog.WarnContext(ctx, "email invite lookup failed", "user_id", u.ID, "err", err)
+		pending = true
+	}
+	v.InvitePending = pending
+	return v
 }
 
 // sendVerificationQuietly queues a verification code after registration / login of an

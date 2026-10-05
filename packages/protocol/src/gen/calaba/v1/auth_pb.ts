@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/auth.proto.
  */
 export const file_calaba_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIp0CCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCglhdXRob3JpdHkYCSABKAsyGy5jYWxhYmEudjEuU2Vzc2lvbkF1dGhvcml0eRIPCgdjdXJyZW50GAggASgIIuwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkSLgoJYXV0aG9yaXR5GAYgASgLMhsuY2FsYWJhLnYxLlNlc3Npb25BdXRob3JpdHkifgoTU1NPQ29tcGxldGVSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIwCglhc3N1cmFuY2UYAiABKAsyHS5jYWxhYmEudjEuV29ya3NwYWNlQXNzdXJhbmNlEg4KBnRlc3RlZBgDIAEoCCKhAQoPUmVnaXN0ZXJSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRITCgtpbnZpdGVfY29kZRgEIAEoCRITCgtkZXZpY2VfbmFtZRgFIAEoCRIOCgZsb2NhbGUYBiABKAkSHQoVY2hlY2tfc2ltaWxhcl9hY2NvdW50GAcgASgIIm0KEFJlZ2lzdGVyUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUSFwoPc2ltaWxhcl9hY2NvdW50GAMgASgIIkQKDExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRITCgtkZXZpY2VfbmFtZRgDIAEoCSJRCg1Mb2dpblJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIicKDlJlZnJlc2hSZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAkiOAoPUmVmcmVzaFJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zIjwKDUxvZ291dFJlcXVlc3QSFAoMYWxsX3Nlc3Npb25zGAEgASgIEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkiPAoUTGlzdFNlc3Npb25zUmVzcG9uc2USJAoIc2Vzc2lvbnMYASADKAsyEi5jYWxhYmEudjEuU2Vzc2lvbiIiChJWZXJpZnlFbWFpbFJlcXVlc3QSDAoEY29kZRgBIAEoCSJOChNWZXJpZnlFbWFpbFJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lEhwKFGpvaW5lZF93b3Jrc3BhY2VfaWRzGAIgAygJIiYKFUZvcmdvdFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCSIxChZGb3Jnb3RQYXNzd29yZFJlc3BvbnNlEhcKD3NpbWlsYXJfYWNjb3VudBgBIAEoCCJFChRSZXNldFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIMCgRjb2RlGAIgASgJEhAKCHBhc3N3b3JkGAMgASgJIokBChFTU09GaW5pc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIyCgZhY2Nlc3MYAiABKAsyIi5jYWxhYmEudjEuV29ya3NwYWNlSWRlbnRpdHlBY2Nlc3MSGQoCbWUYAyABKAsyDS5jYWxhYmEudjEuTWVClwEKDWNvbS5jYWxhYmEudjFCCUF1dGhQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_user, file_calaba_v1_identity]);
+  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIp0CCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCglhdXRob3JpdHkYCSABKAsyGy5jYWxhYmEudjEuU2Vzc2lvbkF1dGhvcml0eRIPCgdjdXJyZW50GAggASgIIuwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkSLgoJYXV0aG9yaXR5GAYgASgLMhsuY2FsYWJhLnYxLlNlc3Npb25BdXRob3JpdHkifgoTU1NPQ29tcGxldGVSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIwCglhc3N1cmFuY2UYAiABKAsyHS5jYWxhYmEudjEuV29ya3NwYWNlQXNzdXJhbmNlEg4KBnRlc3RlZBgDIAEoCCKhAQoPUmVnaXN0ZXJSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRITCgtpbnZpdGVfY29kZRgEIAEoCRITCgtkZXZpY2VfbmFtZRgFIAEoCRIOCgZsb2NhbGUYBiABKAkSHQoVY2hlY2tfc2ltaWxhcl9hY2NvdW50GAcgASgIIrABChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lEhcKD3NpbWlsYXJfYWNjb3VudBgDIAEoCBIjChtlbWFpbF92ZXJpZmljYXRpb25fb3B0aW9uYWwYBCABKAgSHAoUZW1haWxfaW52aXRlX3BlbmRpbmcYBSABKAgiRAoMTG9naW5SZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhMKC2RldmljZV9uYW1lGAMgASgJIpQBCg1Mb2dpblJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lEiMKG2VtYWlsX3ZlcmlmaWNhdGlvbl9vcHRpb25hbBgDIAEoCBIcChRlbWFpbF9pbnZpdGVfcGVuZGluZxgEIAEoCCInCg5SZWZyZXNoUmVxdWVzdBIVCg1yZWZyZXNoX3Rva2VuGAEgASgJIjgKD1JlZnJlc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucyI8Cg1Mb2dvdXRSZXF1ZXN0EhQKDGFsbF9zZXNzaW9ucxgBIAEoCBIVCg1yZWZyZXNoX3Rva2VuGAIgASgJIjwKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2FsYWJhLnYxLlNlc3Npb24iIgoSVmVyaWZ5RW1haWxSZXF1ZXN0EgwKBGNvZGUYASABKAkiTgoTVmVyaWZ5RW1haWxSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZRIcChRqb2luZWRfd29ya3NwYWNlX2lkcxgCIAMoCSImChVGb3Jnb3RQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkiMQoWRm9yZ290UGFzc3dvcmRSZXNwb25zZRIXCg9zaW1pbGFyX2FjY291bnQYASABKAgiRQoUUmVzZXRQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkSDAoEY29kZRgCIAEoCRIQCghwYXNzd29yZBgDIAEoCSKJAQoRU1NPRmluaXNoUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSMgoGYWNjZXNzGAIgASgLMiIuY2FsYWJhLnYxLldvcmtzcGFjZUlkZW50aXR5QWNjZXNzEhkKAm1lGAMgASgLMg0uY2FsYWJhLnYxLk1lQpcBCg1jb20uY2FsYWJhLnYxQglBdXRoUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_user, file_calaba_v1_identity]);
 
 /**
  * A login session = one device. Each session has its own rotating refresh token.
@@ -196,7 +196,8 @@ export type RegisterRequest = Message<"calaba.v1.RegisterRequest"> & {
 
   /**
    * Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
-   * Registration sends a verification code to `email` (ADR-0023, ADR-0027).
+   * Registration sends a verification code to `email` (ADR-0023, ADR-0027) unless
+   * EMAIL_VERIFICATION=optional and no email invitation waits for it (ADR-0065).
    *
    * @generated from field: string locale = 6;
    */
@@ -242,6 +243,25 @@ export type RegisterResponse = Message<"calaba.v1.RegisterResponse"> & {
    * @generated from field: bool similar_account = 3;
    */
   similarAccount: boolean;
+
+  /**
+   * ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+   * no action. The client shows no "confirm your email" onboarding step and no bar (unless
+   * email_invite_pending); the address is offered for confirmation in the account settings.
+   * false (also from servers before ADR-0065): ask as ADR-0023 says.
+   *
+   * @generated from field: bool email_verification_optional = 4;
+   */
+  emailVerificationOptional: boolean;
+
+  /**
+   * ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+   * only after the confirmation (ADR-0027), so the client asks for it even when
+   * email_verification_optional. Set only when email_verification_optional.
+   *
+   * @generated from field: bool email_invite_pending = 5;
+   */
+  emailInvitePending: boolean;
 };
 
 /**
@@ -293,6 +313,25 @@ export type LoginResponse = Message<"calaba.v1.LoginResponse"> & {
    * @generated from field: calaba.v1.Me me = 2;
    */
   me?: Me | undefined;
+
+  /**
+   * ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+   * no action. The client shows no "confirm your email" onboarding step and no bar (unless
+   * email_invite_pending); the address is offered for confirmation in the account settings.
+   * false (also from servers before ADR-0065): ask as ADR-0023 says.
+   *
+   * @generated from field: bool email_verification_optional = 3;
+   */
+  emailVerificationOptional: boolean;
+
+  /**
+   * ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+   * only after the confirmation (ADR-0027), so the client asks for it even when
+   * email_verification_optional. Set only when email_verification_optional.
+   *
+   * @generated from field: bool email_invite_pending = 4;
+   */
+  emailInvitePending: boolean;
 };
 
 /**

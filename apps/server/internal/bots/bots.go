@@ -255,7 +255,7 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	me := identity(r).UserID
-	if _, err := auth.VerifiedUser(r.Context(), s.db.Q, me); err != nil {
+	if _, err := s.auth.EmailGate().User(r.Context(), s.db.Q, me); err != nil {
 		return err
 	}
 	var req v1.CreateBotRequest

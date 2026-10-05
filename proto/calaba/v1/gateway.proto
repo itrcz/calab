@@ -427,6 +427,15 @@ message Ready {
   // The user's notes shelves (ADR-0039) by position; empty for bots and guest accounts.
   repeated NotesShelf notes = 13;
   repeated WorkspaceIdentityAccess identity_access = 14;
+  // ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+  // no action. The client shows no "confirm your email" onboarding step and no bar (unless
+  // email_invite_pending); the address is offered for confirmation in the account settings.
+  // false (also from servers before ADR-0065): ask as ADR-0023 says.
+  bool email_verification_optional = 15;
+  // ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+  // only after the confirmation (ADR-0027), so the client asks for it even when
+  // email_verification_optional. Set only when email_verification_optional.
+  bool email_invite_pending = 16;
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.

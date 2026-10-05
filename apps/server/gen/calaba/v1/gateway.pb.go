@@ -3338,8 +3338,17 @@ type Ready struct {
 	// The user's notes shelves (ADR-0039) by position; empty for bots and guest accounts.
 	Notes          []*NotesShelf              `protobuf:"bytes,13,rep,name=notes,proto3" json:"notes,omitempty"`
 	IdentityAccess []*WorkspaceIdentityAccess `protobuf:"bytes,14,rep,name=identity_access,json=identityAccess,proto3" json:"identity_access,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+	// no action. The client shows no "confirm your email" onboarding step and no bar (unless
+	// email_invite_pending); the address is offered for confirmation in the account settings.
+	// false (also from servers before ADR-0065): ask as ADR-0023 says.
+	EmailVerificationOptional bool `protobuf:"varint,15,opt,name=email_verification_optional,json=emailVerificationOptional,proto3" json:"email_verification_optional,omitempty"`
+	// ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+	// only after the confirmation (ADR-0027), so the client asks for it even when
+	// email_verification_optional. Set only when email_verification_optional.
+	EmailInvitePending bool `protobuf:"varint,16,opt,name=email_invite_pending,json=emailInvitePending,proto3" json:"email_invite_pending,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Ready) Reset() {
@@ -3468,6 +3477,20 @@ func (x *Ready) GetIdentityAccess() []*WorkspaceIdentityAccess {
 		return x.IdentityAccess
 	}
 	return nil
+}
+
+func (x *Ready) GetEmailVerificationOptional() bool {
+	if x != nil {
+		return x.EmailVerificationOptional
+	}
+	return false
+}
+
+func (x *Ready) GetEmailInvitePending() bool {
+	if x != nil {
+		return x.EmailInvitePending
+	}
+	return false
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.
@@ -7227,7 +7250,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x10board_categories\x18\x14 \x03(\v2\x18.calaba.v1.BoardCategoryR\x0fboardCategories\x1a>\n" +
 	"\x10PermissionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\x9e\x06\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\x90\a\n" +
 	"\x05Ready\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -7248,7 +7271,9 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"peer_reads\x18\v \x03(\v2\x13.calaba.v1.PeerReadR\tpeerReads\x12G\n" +
 	"\x12pending_admissions\x18\f \x03(\v2\x18.calaba.v1.RoomAdmissionR\x11pendingAdmissions\x12+\n" +
 	"\x05notes\x18\r \x03(\v2\x15.calaba.v1.NotesShelfR\x05notes\x12K\n" +
-	"\x0fidentity_access\x18\x0e \x03(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\"N\n" +
+	"\x0fidentity_access\x18\x0e \x03(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\x12>\n" +
+	"\x1bemail_verification_optional\x18\x0f \x01(\bR\x19emailVerificationOptional\x120\n" +
+	"\x14email_invite_pending\x18\x10 \x01(\bR\x12emailInvitePending\"N\n" +
 	"\x14RoomAdmissionRequest\x126\n" +
 	"\tadmission\x18\x01 \x01(\v2\x18.calaba.v1.RoomAdmissionR\tadmission\"N\n" +
 	"\x14RoomAdmissionDecided\x126\n" +

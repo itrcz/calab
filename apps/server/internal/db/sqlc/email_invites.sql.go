@@ -137,6 +137,21 @@ func (q *Queries) GetPendingEmailInvite(ctx context.Context, arg GetPendingEmail
 	return i, err
 }
 
+const hasPendingEmailInvite = `-- name: HasPendingEmailInvite :one
+SELECT EXISTS (
+  SELECT 1 FROM email_invites
+  WHERE email = $1 AND accepted_at IS NULL AND expires_at > now()
+)::bool
+`
+
+// Whether a live invitation waits for an address (ADR-0065: its join needs the confirmation).
+func (q *Queries) HasPendingEmailInvite(ctx context.Context, email string) (bool, error) {
+	row := q.db.QueryRow(ctx, hasPendingEmailInvite, email)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listEmailInvites = `-- name: ListEmailInvites :many
 SELECT id, workspace_id, email, role, invited_by, invite_id, expires_at, last_sent_at, accepted_at, created_at FROM email_invites WHERE workspace_id = $1 AND accepted_at IS NULL ORDER BY created_at DESC
 `

@@ -412,9 +412,10 @@ func New(d Deps) *App {
 		Mail: mailSvc, PublicURL: d.Config.PublicAppURL,
 		Lookup: redisx.NewRateLimiter(d.Redis, "rl:invite-lookup:", 20, 20), // 20 per minute
 		Send:   redisx.NewRateLimiter(d.Redis, "rl:invite-send:", 20, 0.5),  // 20 at once, 30 per hour
-	}).WithFiles(filesSvc).WithVoice(voice.Store{C: d.Redis}.Rooms).Routes(mux, private)
+	}).WithFiles(filesSvc).WithVoice(voice.Store{C: d.Redis}.Rooms).WithEmailGate(authSvc.EmailGate()).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub).WithPlans(planSvc)
 	roomHandlers.PublicURL = d.Config.PublicAppURL
+	roomHandlers.EmailGate = authSvc.EmailGate()
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
 	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)
@@ -437,7 +438,9 @@ func New(d Deps) *App {
 	searchSvc := search.New(d.DB)
 	searchSvc.Limit = redisx.NewRateLimiter(d.Redis, "rl:search:", 30, 60) // unified search (ADR-0062): 30 at once, one per second
 	searchSvc.Routes(mux, private)
-	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
+	dmHandlers := dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)) // 10 at once, 30 per hour
+	dmHandlers.EmailGate = authSvc.EmailGate()
+	dmHandlers.Routes(mux, private)
 	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
@@ -469,6 +472,7 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:event-write:", 30, 2), // 30 at once, 120 per hour
 		redisx.NewRateLimiter(d.Redis, "rl:event-rsvp:", 30, 30)) // signed answer links: 30 per minute per IP
 	calSvc.Presence = hub.Statuses
+	calSvc.EmailGate = authSvc.EmailGate()
 	// CalDAV push and meeting mails leave Calab without a request: the workspace identity
 	// policy decides per user (ADR-0054).
 	calSvc.Identity = &identitypolicy.Delivery{Loader: identitypolicy.NewSQLLoader(d.DB.Q, d.Config.IdentityEntitlements())}

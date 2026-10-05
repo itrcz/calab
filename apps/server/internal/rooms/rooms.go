@@ -36,6 +36,9 @@ type Handlers struct {
 	Meetings Meetings
 	// PublicURL: the app's public address, for the link of a temporary room.
 	PublicURL string
+	// EmailGate: whether a guest link of a temporary room needs a confirmed address
+	// (ADR-0023, EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
+	EmailGate auth.EmailGate
 }
 
 // NewHandlers creates the room handlers.
