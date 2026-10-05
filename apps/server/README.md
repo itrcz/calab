@@ -60,6 +60,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `JWT_SECRET` | — (обязательна, ≥ 32 байт) | подпись access JWT (HS256) |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `24h` / `8760h` | время жизни access JWT / сессии (скользящее, 1 год); отзыв мгновенный при любых сроках (docs/04 «Auth») |
 | `REGISTRATION_MODE` | `invite` | `open` \| `invite` (без кода — только первый пользователь сервера) |
+| `EMAIL_VERIFICATION` | `required` | `required` \| `optional` (ADR-0065). `required` — неподтверждённая почта: 403 `EMAIL_NOT_VERIFIED` на создание пространств, приглашения, ботов, новые DM, внешних участников встреч (ADR-0023). `optional` — ничего не блокирует, кода при регистрации нет (кроме приглашённых по почте); адрес остаётся неподтверждённым и не считается доказанным (поиск/добавление по почте, вступление по email-приглашению, OAuth `email`, суперадмин). Без `SMTP_HOST` не влияет: адреса подтверждены сразу |
 | `AUTH_RATE_BURST` / `AUTH_RATE_PER_MINUTE` | `10` / `10` | token bucket по IP на login и register |
 | `LOGIN_ACCOUNT_ATTEMPTS` | `10` | попыток входа на один email за 15 мин с любых IP (429 + `Retry-After`) |
 | `MAX_WORKSPACES_PER_USER` | `5` | сколько workspace может принадлежать одному пользователю (409 `WORKSPACE_LIMIT`) |

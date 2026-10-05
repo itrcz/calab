@@ -562,6 +562,7 @@ Down guard не делает pre-identity image безопасным; fallback �
 authority/policy. Не отключать enforcement автоматически ради rollback.
 
 ### Почта (ADR-0023)
+- **Открытая регистрация без кода** (владелец, 05.10, ADR-0065): `REGISTRATION_MODE=open` + `EMAIL_VERIFICATION=optional` в `.env` (compose передаёт обе; по умолчанию `invite` / `required`). Код из письма тогда ничего не блокирует: регистрация без письма, подтвердить адрес можно в настройках профиля; приглашённых по почте по-прежнему просят подтвердить адрес, чтобы вступить. Лимиты против спама — ADR-0065 «Злоупотребления».
 - `.env` стенда: `SMTP_HOST=mail.unne.ai`, `SMTP_PORT=465`, `SMTP_TLS=tls`, `SMTP_USER` = `SMTP_FROM`-адрес, `SMTP_PASSWORD`, `SMTP_FROM="Calab <noreply@calab.io>"`. Проверка: регистрация → письмо с кодом; в логах API `mail sent` / `mail: giving up`.
 - **Владелец, DNS `calab.io`** (отправитель с 2.0.0): SPF `v=spf1 include:<SPF почтового сервера mail.unne.ai> -all` (или `a:mail.unne.ai`); DKIM — TXT `<selector>._domainkey.calab.io` с публичным ключом, которым подписывает mail.unne.ai (на mail.unne.ai — ключ для домена `calab.io`); DMARC `_dmarc.calab.io` → `v=DMARC1; p=quarantine; rua=mailto:<ящик отчётов>` (начать с `p=none` на неделю). Записи `calab.ru` не удалять, пока в очередях/ответах могут быть письма со старого адреса.
 

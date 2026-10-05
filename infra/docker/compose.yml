@@ -201,6 +201,7 @@ services:
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
       - STORAGE_MAX_TOTAL_BYTES=${STORAGE_MAX_TOTAL_BYTES:-53687091200}   # 50 GiB for all uploads (shared host disk)
       - REGISTRATION_MODE=${REGISTRATION_MODE:-invite}
+      - EMAIL_VERIFICATION=${EMAIL_VERIFICATION:-required}   # required | optional (ADR-0065)
       # mail (ADR-0023): values only in the stand's .env (never in the repo); empty = mail disabled
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-465}
