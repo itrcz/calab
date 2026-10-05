@@ -55,7 +55,7 @@ import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
-import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
+import { Badge, Button, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, mayArrangeRooms, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
@@ -1129,15 +1129,27 @@ function CardActions({ room }: { room: Room }): ReactNode {
  */
 const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: string; onJoin: () => void; always: boolean }): ReactNode {
   useLocale();
-  return (
-    <span className={cx('inline-flex shrink-0', !always && 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only')}>
-      <Button
-        size="sm"
-        aria-label={t('shell.joinVoiceOf', { name })}
+  const mobile = useMobile();
+  const label = t('shell.joinVoiceOf', { name });
+  // Phone (owner, 05.10): a quiet round speaker button, not the accent pill — many rooms, many pills shout.
+  // 32 px circle, hit area 44 px through the pseudo-element.
+  if (mobile) {
+    return (
+      <IconButton
+        label={label}
+        title={t('shell.joinVoiceShort')}
+        tip={false}
         data-testid="room-join"
         onClick={onJoin}
-        className="h-5 px-2 text-micro mobile:h-6"
+        className="relative size-8 rounded-full bg-hover before:absolute before:-inset-1.5 before:content-['']"
       >
+        <Volume2 className="size-4" aria-hidden />
+      </IconButton>
+    );
+  }
+  return (
+    <span className={cx('inline-flex shrink-0', !always && 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only')}>
+      <Button size="sm" aria-label={label} data-testid="room-join" onClick={onJoin} className="h-5 px-2 text-micro mobile:h-6">
         {t('shell.joinVoiceShort')}
       </Button>
     </span>
