@@ -111,7 +111,9 @@ func (s *Session) refreshWorkspaceLeaseOnce(ctx context.Context, ws uuid.UUID) (
 		}
 	}
 	l := identityLease{}
-	if ctx.Err() != nil {
+	// A late result is stale, but a definitive denial still holds: the deadline must not turn
+	// it into a transient failure that keeps the positive lease.
+	if ctx.Err() != nil && ((err == nil && d.Allowed) || identityTransient(d, err)) {
 		err = ctx.Err()
 	}
 	if identityTransient(d, err) {
