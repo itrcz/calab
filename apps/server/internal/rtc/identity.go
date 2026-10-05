@@ -2,12 +2,13 @@ package rtc
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/google/uuid"
@@ -17,14 +18,17 @@ import (
 // checkIdentity is session-specific and separate from member permission computation.
 func (s *Service) checkIdentity(ctx context.Context, ws, room, user, session uuid.UUID) error {
 	if s.IdentityAccess == nil {
-		return errors.New("RTC identity gate unavailable")
+		// Misconfiguration, not a transient failure: still fails closed.
+		return httpx.Forbidden("RTC identity gate unavailable")
 	}
 	return s.IdentityAccess(ctx, ws, room, user, session)
 }
 
 const (
-	identityRoomWorkers        = 8
-	identityParticipantWorkers = 64
+	identityRoomWorkers = 8
+	// Well below the DB pool (20): the sweep must not starve request handlers.
+	identityParticipantWorkers = 8
+	identityCheckTimeout       = 2 * time.Second
 )
 
 // A context-aware semaphore serializes sweeps without holding a mutex over I/O.
@@ -37,7 +41,10 @@ type identitySweepState struct {
 
 // EnforceIdentity enumerates the SFU independently of Redis. Lost pubsub, a lost webhook
 // and an unavailable voice-state store cannot keep a denied participant connected.
-// Errors from the gate deny; SFU removal failures remain visible and are retried.
+// Only a definitive denial (httpx.IsDenial) evicts. A dependency failure or timeout says
+// nothing about access and is retried by the next sweep: on 2026-10-05 a DB latency spike
+// made every check time out and the sweep evicted every participant. SFU removal failures
+// remain visible and are retried.
 func (s *Service) EnforceIdentity(ctx context.Context) error {
 	state := &s.identitySweep
 	state.once.Do(func() { state.token = make(chan struct{}, 1) })
@@ -79,6 +86,12 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 	}
 	var mu sync.Mutex
 	var firstErr error
+	var transient atomic.Int64
+	defer func() {
+		if n := transient.Load(); n > 0 {
+			slog.WarnContext(ctx, "RTC identity sweep: checks failed without a decision, participants kept", "count", n)
+		}
+	}()
 	record := func(err error) {
 		if err != nil {
 			mu.Lock()
@@ -129,7 +142,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 				if !ok {
 					continue
 				}
-				gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+				gate, cancel := context.WithTimeout(ctx, identityCheckTimeout)
 				err := s.checkIdentity(gate, job.ws, job.rid, uid, sid)
 				cancel()
 				if err == nil {
@@ -138,6 +151,11 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return
 				}
+				if !httpx.IsDenial(err) {
+					transient.Add(1)
+					continue
+				}
+				slog.InfoContext(ctx, "RTC identity sweep: evicting", "room", job.room, "identity", job.person.Identity, "err", err)
 				remove, done := context.WithTimeout(ctx, 2*time.Second)
 				err = s.lk.RemoveParticipant(remove, job.room, job.person.Identity)
 				done()

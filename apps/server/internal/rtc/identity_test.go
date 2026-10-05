@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/google/uuid"
 )
@@ -34,11 +35,14 @@ func (f *identitySFU) RemoveParticipant(ctx context.Context, room, id string) er
 	return nil
 }
 
+// Incident 2026-10-05: a slow DB made every check time out and the sweep evicted everyone.
+// A timeout says nothing about access: nobody is evicted, concurrency stays bounded and the
+// sweep ends within its budget (the cursor resumes next time).
 func TestIdentitySweepSlowDependencyMultipleRooms(t *testing.T) {
-	denied, allowed := uuid.New(), uuid.New()
+	slow, allowed := uuid.New(), uuid.New()
 	f := &identitySFU{people: map[string][]Participant{}, removed: map[string]int{}}
 	for i := 0; i < 8; i++ {
-		ws := denied
+		ws := slow
 		if i == 7 {
 			ws = allowed
 		}
@@ -63,28 +67,50 @@ func TestIdentitySweepSlowDependencyMultipleRooms(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	start := time.Now()
-	if err := svc.EnforceIdentity(ctx); err != nil {
+	if err := svc.EnforceIdentity(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}
 	if time.Since(start) > 4*time.Second {
-		t.Fatal("slow dependency starved later rooms")
+		t.Fatal("sweep outlived its budget")
 	}
-	if maxInFlight.Load() > 64 {
+	if maxInFlight.Load() > identityParticipantWorkers {
 		t.Fatalf("unbounded concurrency: %d", maxInFlight.Load())
 	}
-	for i, room := range f.rooms {
-		for _, p := range f.people[room.Name] {
-			want := 1
-			if i == 7 {
-				want = 0
+	if len(f.removed) != 0 {
+		t.Fatalf("a slow dependency evicted %d participants", len(f.removed))
+	}
+}
+
+// Only a definitive denial evicts; a dependency failure keeps the participant.
+func TestIdentitySweepEvictsOnlyOnDenial(t *testing.T) {
+	cases := map[string]struct {
+		err  error
+		want int
+	}{
+		"forbidden":       {httpx.Forbidden("revoked"), 1},
+		"unauthenticated": {httpx.Unauthenticated("session revoked"), 1},
+		"not found":       {httpx.NotFound("workspace"), 1},
+		"plan limit":      {httpx.Conflict("entitlement").WithDetails(httpx.ReasonPlanLimit, 0, 0), 1},
+		"unavailable":     {httpx.Unavailable(errors.New("pool timeout")), 0},
+		"deadline":        {context.DeadlineExceeded, 0},
+		"plain error":     {errors.New("dial tcp: connection refused"), 0},
+		"conflict":        {httpx.Conflict("busy"), 0},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			room := voice.RoomName(uuid.New(), uuid.New())
+			f := &identitySFU{rooms: []Room{{Name: room}}, people: map[string][]Participant{room: {{Identity: voice.Identity(uuid.New(), uuid.New())}}}, removed: map[string]int{}}
+			svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return c.err }}
+			if err := svc.EnforceIdentity(context.Background()); err != nil {
+				t.Fatal(err)
 			}
-			if got := f.removed[room.Name+p.Identity]; got != want {
-				t.Fatalf("room %d removal=%d want=%d", i, got, want)
+			if got := len(f.removed); got != c.want {
+				t.Fatalf("removed=%d want=%d", got, c.want)
 			}
-		}
+		})
 	}
 }
 
@@ -94,7 +120,7 @@ func TestIdentitySweepCancellationDoesNotDetachRemoval(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
 		cancel()
-		return errors.New("denied")
+		return httpx.Forbidden("denied")
 	}}
 	if err := svc.EnforceIdentity(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("want cancellation, got %v", err)
@@ -139,7 +165,9 @@ func TestReviewerSlowRoomEnumerationCannotDeferHealthyEviction(t *testing.T) {
 		base.rooms = append(base.rooms, Room{Name: voice.RoomName(uuid.New(), uuid.New())})
 	}
 	f := &reviewerSlowEnumeration{identitySFU: base, healthy: healthy}
-	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return errors.New("revoked") }}
+	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		return httpx.Forbidden("revoked")
+	}}
 	started := time.Now()
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -216,7 +244,9 @@ func TestIdentitySweepEvictsBeforeEnumerationBarrier(t *testing.T) {
 		cancel()
 		return err
 	}
-	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return errors.New("revoked") }}
+	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		return httpx.Forbidden("revoked")
+	}}
 	if err := svc.EnforceIdentity(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation hidden: %v", err)
 	}
@@ -244,7 +274,9 @@ func TestIdentitySweepResumesAfterSlowPrefixAcrossSweeps(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}}
-	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return errors.New("revoked") }}
+	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		return httpx.Forbidden("revoked")
+	}}
 	if err := svc.EnforceIdentity(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("first budget cancellation=%v", err)
 	}
@@ -299,7 +331,7 @@ func TestIdentitySweepPreservesAllowedWorkspaceAndDM(t *testing.T) {
 		if ws == allowed || (ws == dm && room == dm) {
 			return nil
 		}
-		return errors.New("DB access denied")
+		return httpx.Forbidden("DB access denied")
 	}}
 	if err := svc.EnforceIdentity(context.Background()); err != nil {
 		t.Fatal(err)

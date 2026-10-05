@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/netip"
 	"time"
@@ -281,6 +282,9 @@ func New(d Deps) *App {
 			}
 			if !u.IsBot {
 				p, err := authSvc.ResolvePrincipal(ctx, id)
+				if errors.Is(err, auth.ErrSessionRevoked) {
+					return httpx.Unauthenticated("session revoked")
+				}
 				if err != nil {
 					return httpx.Unavailable(err)
 				}
