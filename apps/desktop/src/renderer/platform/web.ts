@@ -33,6 +33,7 @@ import { mouseName } from '../../shared/pttKeys';
 import { logoutReasonFromRefresh } from '../../shared/logoutReason';
 import { AUTH_TIMEOUT_MS, refreshGate } from '../../shared/refreshGate';
 import type { GuestJoin, Platform } from './types';
+import { createHostCapabilities } from './hostActivity';
 
 /**
  * Web platform (ADR-0015). Same origin as the API (`https://app.<domain>`):
@@ -72,8 +73,12 @@ function applyTokens(t: TokensJson): void {
 
 /** Bumped on every sign-out: a refresh answer that arrives later must not resurrect it. */
 let epoch = 0;
+let clearHostSession = (): void => undefined;
 
 function clear(reason: LogoutReason | null, preserveFlow = false): void {
+  // Revoke native bindings while the current document still has authority, before session
+  // listeners start asynchronous voice teardown or rotate the shared host document.
+  clearHostSession();
   epoch++;
   recovery = null;
   scopedWorkspace = '';
@@ -465,7 +470,10 @@ function takeDeepLink(): Promise<string | null> {
 const noop = (): (() => void) => () => undefined;
 
 export function createWebPlatform(): Platform {
+  const hostCapabilities = createHostCapabilities();
+  clearHostSession = () => hostCapabilities.sessionActivity?.clear('logout');
   return {
+    ...hostCapabilities,
     kind: 'web',
     canShareScreen: () => typeof navigator !== 'undefined' && typeof (navigator.mediaDevices as MediaDevices | undefined)?.getDisplayMedia === 'function',
     apiBase: '',
@@ -693,12 +701,13 @@ export function createWebPlatform(): Platform {
             return 'n/a';
           }
         };
+        const notification = hostCapabilities.notifications ? (await hostCapabilities.notifications.state()).permission : null;
         return {
           microphone: await q('microphone'),
           camera: await q('camera'),
           screen: 'n/a',
           accessibility: true,
-          notifications: typeof Notification === 'undefined' ? 'n/a' : Notification.permission,
+          notifications: notification === 'unsupported' ? 'n/a' : notification ?? (typeof Notification === 'undefined' ? 'n/a' : Notification.permission),
         };
       },
       requestMic: async () => {
@@ -778,6 +787,9 @@ function webIdleSeconds(): number {
 async function beginWebSso(args: SsoStart): Promise<IpcResult<{ attemptId: string; expiresAt: number }>> {
   const generation = ++ssoGeneration;
   try {
+    // The strict-origin phone host has no external SSO callback adapter yet.
+    // Reject before creating a flow that cannot finish in this cookie context.
+    if (window.CalabHostActivity?.version === 1) throw new Error('Phone SSO unavailable');
     if (args.purpose === 'login' && access) throw new Error('Local session active');
     const token = await accessToken();
     const purpose = {

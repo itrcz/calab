@@ -120,7 +120,7 @@
 - Захват: `audioCaptureConstraints` (`packages/protocol/src/media.ts`): `echoCancellation: true`, `autoGainControl: true`, `noiseSuppression` = `!rnnoise`, mono. Что применил браузер, пишется в лог: `[mic] capture settings {echoCancellation: true, …}` (`micPipeline.ts`, `track.getSettings()`).
 - RNNoise/VAD-worklet и новый GainNode работают на выходе getUserMedia (это уже результат AEC3). Встроенная обработка не заменяется.
 - Удалённый звук: `webAudioMix: false`, каждый трек → `track.attach()` → `<audio>` в `#remote-audio-sink`, громкость только `element.volume`/`muted`. У видео `<video muted>`. `AudioContext` в renderer один — у микрофона (вход). LiveKit создаёт свой контекст, но только для локальных треков, к remote он не подключён.
-- Вывод: `setSinkId` на тех же `<audio>` (`applyOutputDevice`, при attach). Chromium передаёт устройство WebRTC-рендера в захват (`SetOutputDeviceForAec`), и опорный сигнал AEC идёт с того же устройства. Звуки интерфейса — `<audio>` на том же устройстве. При Chrome-wide AEC они тоже попадают в опорный сигнал.
+- Вывод: `setSinkId` на тех же `<audio>` (`applyOutputDevice`, при attach). Нет `setSinkId` (WebKit без выбора вывода у элемента): устройство выбирает ОС, `RemoteAudioOut` только переприменяет muted/volume. Chromium передаёт устройство WebRTC-рендера в захват (`SetOutputDeviceForAec`), и опорный сигнал AEC идёт с того же устройства. Звуки интерфейса — `<audio>` на том же устройстве. При Chrome-wide AEC они тоже попадают в опорный сигнал.
 
 **Флаги Chromium** (`src/main/echoFeatures.ts`). Имена проверены по строкам Electron Framework 44.4.5 = Chromium 152.0.7977.130. В новом макросе `BASE_FEATURE` имя хранится как `kИмя`.
 

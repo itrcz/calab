@@ -719,6 +719,69 @@ type ProductAdminGrant struct {
 	OperatorNote string
 }
 
+type PushDelivery struct {
+	ID              uuid.UUID
+	DeviceID        uuid.UUID
+	DeviceVersion   int64
+	EventKey        string
+	Kind            int16
+	ReferenceID     uuid.UUID
+	RoomID          *uuid.UUID
+	ActorID         *uuid.UUID
+	NoticeKind      int16
+	ContextID       *uuid.UUID
+	OccurrenceAt    *time.Time
+	ReminderMinutes int16
+	ExpiresAt       time.Time
+	NotBefore       time.Time
+	Attempts        int16
+	LeaseID         *uuid.UUID
+	LeaseUntil      *time.Time
+	CreatedAt       time.Time
+	DeliveredAt     *time.Time
+}
+
+type PushDevice struct {
+	ID                   uuid.UUID
+	UserID               uuid.UUID
+	SessionID            uuid.UUID
+	InstallationID       uuid.UUID
+	Provider             int16
+	Environment          string
+	AppID                string
+	Token                string
+	TokenHash            []byte
+	Version              int64
+	NotificationsEnabled bool
+	CallsEnabled         bool
+	MentionsEnabled      bool
+	AllEnabled           bool
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ExpiresAt            time.Time
+}
+
+type PushIntent struct {
+	ID              uuid.UUID
+	RecipientID     *uuid.UUID
+	EventKey        string
+	Kind            int16
+	ReferenceID     uuid.UUID
+	RoomID          *uuid.UUID
+	ActorID         *uuid.UUID
+	NoticeKind      int16
+	ContextID       *uuid.UUID
+	OccurrenceAt    *time.Time
+	ReminderMinutes int16
+	ExpiresAt       time.Time
+	NotBefore       time.Time
+	AfterUser       uuid.UUID
+	Attempts        int16
+	LeaseID         *uuid.UUID
+	LeaseUntil      *time.Time
+	CompletedAt     *time.Time
+}
+
 type ReadState struct {
 	UserID            uuid.UUID
 	RoomID            uuid.UUID

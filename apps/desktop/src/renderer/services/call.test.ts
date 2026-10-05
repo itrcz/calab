@@ -40,9 +40,9 @@ const confirm = vi.fn(() => Promise.resolve(true));
 vi.mock('../components/Confirm', () => ({ confirmAction: () => confirm() }));
 const openDm = vi.fn((_id: string) => undefined);
 vi.mock('./dms', () => ({ ensureDm: () => Promise.resolve('dm1'), openDm: (id: string) => openDm(id) }));
-vi.mock('../platform', () => ({ platform: { app: { attention: vi.fn() } } }));
+vi.mock('../platform', () => ({ platform: { app: { attention: vi.fn() }, auth:{onLoggedOut:()=>()=>undefined} } }));
 
-const { applyCallEvent, accept, hangup, onCallRing, onCallState, onReadyCall, resumeCall, startCall, installCalls } = await import('./call');
+const { applyCallEvent, accept, hangup, onCallRing, onCallState, onReadyCall, resumeCall, startCall, installCalls, performHostCallAction, setHostIncomingOwnership } = await import('./call');
 const { useCall, setCall } = await import('../stores/call');
 const { useVoice } = await import('../stores/voice');
 const { useSession } = await import('../stores/session');
@@ -177,4 +177,44 @@ describe('call service', () => {
     await hangup();
     expect(useCall.getState().phase).toBe('idle');
   });
+});
+
+
+it('host answer reuses call transition and refuses a different/answered-elsewhere call', async () => {
+ onCallRing(incoming(CallState.RINGING), undefined);
+ expect(await performHostCallAction('foreign', 'answer')).toBe(false);
+ act.mockResolvedValueOnce({ call: incoming(CallState.ACTIVE) });
+ expect(await performHostCallAction('c1', 'answer')).toBe(true);
+ expect(useCall.getState()).toMatchObject({phase:'active',own:'c1'});
+ expect(await performHostCallAction('c1', 'answer')).toBe(false);
+});
+it('native-owned ringing uses CallKit sound without starting a second web ring', () => {
+ setHostIncomingOwnership('c1',true);onCallRing(incoming(CallState.RINGING),undefined);
+ expect(startRing).not.toHaveBeenCalled();
+ setHostIncomingOwnership('c1',false);
+ expect(startRing).toHaveBeenCalledWith('call-incoming');
+});
+
+it('a successful accept arriving after native expiry never joins and retires only its call', async () => {
+ useSession.setState({sessionId:'first'});onCallRing(incoming(CallState.RINGING),undefined);
+ let finish:(value:unknown)=>void=()=>{};act.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+ const signal=new AbortController();const pending=performHostCallAction('c1','answer',signal.signal,()=>!signal.signal.aborted);
+ signal.abort();act.mockResolvedValueOnce({call:incoming(CallState.ENDED)});finish({call:incoming(CallState.ACTIVE)});
+ expect(await pending).toBe(false);expect(join).not.toHaveBeenCalled();expect(act).toHaveBeenLastCalledWith('c1','hangup');
+ expect(useCall.getState().phase).toBe('idle');
+});
+it('a late accept after account switch never joins, mutates the next call or cleans with new credentials', async () => {
+ useSession.setState({sessionId:'first'});onCallRing(incoming(CallState.RINGING),undefined);
+ let finish:(value:unknown)=>void=()=>{};act.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+ const signal=new AbortController();const pending=performHostCallAction('c1','answer',signal.signal,()=>!signal.signal.aborted);
+ signal.abort();useSession.setState({sessionId:'second'});setCall({...IDLE,call:{...incoming(CallState.ACTIVE),id:'next'},phase:'active',own:'next'});
+ finish({call:incoming(CallState.ACTIVE)});expect(await pending).toBe(false);expect(join).not.toHaveBeenCalled();
+ expect(act).toHaveBeenCalledTimes(1);expect(useCall.getState()).toMatchObject({phase:'active',own:'next',call:{id:'next'}});
+});
+it('revoked authentication prevents a late accept while the old store is still authed', async () => {
+ useSession.setState({sessionId:'first'});onCallRing(incoming(CallState.RINGING),undefined);
+ let finish:(value:unknown)=>void=()=>{};act.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+ let current=true;const pending=performHostCallAction('c1','answer',undefined,()=>current,()=>current);
+ current=false;finish({call:incoming(CallState.ACTIVE)});
+ expect(await pending).toBe(false);expect(join).not.toHaveBeenCalled();expect(act).toHaveBeenCalledTimes(1);
 });

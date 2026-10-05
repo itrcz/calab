@@ -59,7 +59,9 @@ function setup(init: Partial<AudioOutState> = {}) {
   const state: AudioOutState = { deafened: false, userVolumes: {}, mutedUsers: {}, deafUsers: {}, streamVolume: {}, outputVolume: 1, ...init };
   const out = new RemoteAudioOut<FakeAudio & HTMLMediaElement>(() => state);
   const el = (): FakeAudio & HTMLMediaElement => new FakeAudio() as FakeAudio & HTMLMediaElement;
-  return { state, out, el };
+  /** An engine without per-element output selection (WebKit with the setting off): no `setSinkId`. */
+  const noSinkEl = (): FakeAudio & HTMLMediaElement => Object.defineProperty(el(), 'setSinkId', { value: undefined });
+  return { state, out, el, noSinkEl };
 }
 
 describe('RemoteAudioOut — deafen holds on every path', () => {
@@ -138,5 +140,45 @@ describe('RemoteAudioOut — deafen holds on every path', () => {
     await out.setSink('x');
     expect([a.muted, a.sinkId]).toEqual([false, '']);
     expect(out.size).toBe(0);
+  });
+});
+
+describe('RemoteAudioOut — engines without setSinkId', () => {
+  it('setSink resolves (devicechange, default and chosen id), the output stays the OS one, deafen is re-asserted', async () => {
+    const { state, out, noSinkEl } = setup({ userVolumes: { u1: 0.5 } });
+    const a = noSinkEl();
+    out.add('TR_a', a, 'u1', false);
+    const before = a.pushes;
+    await expect(out.setSink('')).resolves.toBeUndefined();
+    expect(a.pushes).toBeGreaterThan(before);
+    expect(a.volume).toBe(0.5);
+    state.deafened = true;
+    await expect(out.setSink('usb-headset')).resolves.toBeUndefined();
+    expect(a.sinkId).toBe('');
+    expect(a.muted).toBe(true);
+  });
+
+  it('a new element on a remembered sink: no rejection, muted from the start while deafened', async () => {
+    const { out, noSinkEl } = setup({ deafened: true });
+    await out.setSink('speakers');
+    const c = noSinkEl();
+    out.add('TR_c', c, 'u3', false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(c.muted).toBe(true);
+    expect(c.sinkId).toBe('');
+  });
+
+  it('mixed with a supporting element: that one still switches, both keep deafen', async () => {
+    const { state, out, el, noSinkEl } = setup();
+    const a = el();
+    const b = noSinkEl();
+    out.add('TR_a', a, 'u1', false);
+    out.add('TR_b', b, 'u2', false);
+    state.deafened = true;
+    a.resetOnSink = true;
+    await out.setSink('usb-headset');
+    expect([a.sinkId, b.sinkId]).toEqual(['usb-headset', '']);
+    expect([a.muted, b.muted]).toEqual([true, true]);
   });
 });

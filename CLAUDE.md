@@ -11,6 +11,7 @@ Voice-first десктоп-мессенджер для команды (Electron 
 
 ## Структура
 - `apps/desktop` — Electron (main / preload / renderer). Медиа-логика в renderer. Renderer без Node.
+- `apps/mobile` — оболочка телефона (ADR-0067): Expo + один WebView с веб-клиентом, без своих экранов; origin из env; статус — `docs/mobile/shared-web-status.md`.
 - `apps/server` — Go: REST + WS gateway (`net/http`, `coder/websocket`, `pgx`+`sqlc`, `rueidis`). Stateless, состояние в Postgres/Redis. Лёгкость и низкая задержка — приоритет: без тяжёлых фреймворков и ORM.
 - `proto/` — protobuf-контракт (buf), источник правды. `make gen` → Go в `apps/server/gen`, TS в `packages/protocol/src/gen`. **Сгенерированный код коммитим** (агентам и CI не нужен `buf` для сборки; CI проверяет дрейф: `buf generate` + `git diff --exit-code`). После правки `.proto` — `make gen` и коммит вместе.
 - `packages/protocol` — TS-сторона контракта + `computePermissions` (дублируется в Go `internal/perm`, общие тест-векторы в `proto/testdata`).

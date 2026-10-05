@@ -43,6 +43,7 @@ import (
 	"github.com/calaba/calaba/server/internal/oauthprovider"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
+	"github.com/calaba/calaba/server/internal/push"
 	"github.com/calaba/calaba/server/internal/recording"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
@@ -89,6 +90,8 @@ type Deps struct {
 	// SIPOptions tune telephony (tests: address policy, DNS, short timings); the zero value is
 	// production with the address policy of UnfurlAllowAddr.
 	SIPOptions sip.Options
+	// Push transports override provider clients in local deterministic tests.
+	Push map[v1.PushProvider]push.Provider
 }
 
 // BlobConfig is the file store of the configuration (STORAGE_*, ADR-0011).
@@ -127,6 +130,7 @@ type App struct {
 	Achievements *achievements.Service
 	// Calls: one-to-one calls (ADR-0034) with their ring / lost timers.
 	Calls *calls.Service
+	Push  *push.Service
 	// Calendar: meetings (ADR-0038) with the reminder / room badge sweeper.
 	Calendar *calendar.Service
 	// CalDAV: the users' CalDAV calendars (ADR-0041) with the import sweeper and push worker.
@@ -170,6 +174,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Birthdays.Run(ctx, time.Hour)
 	go a.Achievements.RunLegacyMigration(ctx) // one-shot: pictures of migration 00063
 	go a.Calls.Run(ctx)
+	go a.Push.Run(ctx)
 	go a.Calendar.Run(ctx, calendar.Tick)
 	go a.CalDAV.Run(ctx)
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
@@ -221,6 +226,8 @@ func New(d Deps) *App {
 	// Voice: the rtc service reacts to permission/membership/session events it publishes
 	// through SyncPublisher; everything else publishes through the same decorated publisher.
 	var rtcSvc *rtc.Service
+	pushSvc := push.New(d.DB, d.Push)
+	base = push.Publisher{Publisher: base, S: pushSvc}
 	pub := base
 	if d.Config.LiveKitEnabled() {
 		lk := d.LiveKit
@@ -255,6 +262,8 @@ func New(d Deps) *App {
 	}, d.DB, d.Redis, sender)
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
+	pushSvc.Auth = authSvc
+	authSvc.OnSessionsRevoked = pushSvc.CleanupSessions
 	authSvc.CheckSeat = func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
 		return planSvc.Check(ctx, q, wsID, plans.KindMembers, true)
 	}
@@ -370,6 +379,7 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:call:", 10, 10),  // 10 at once, 10 per minute
 		redisx.NewRateLimiter(d.Redis, "rl:call:dm:", 3, 2)) // per DM: 3 at once, then one per 30 s
 	callSvc.Presence = hub.PresenceChanged
+	pushSvc.Calls = callSvc.Store()
 	if rtcSvc != nil {
 		rtcSvc.Calls = callSvc
 		callSvc.Media = rtcSvc
@@ -401,6 +411,7 @@ func New(d Deps) *App {
 	rp, ds, op := wireIdentity(d, mux, authSvc)
 	ah.Public(mux)
 	ah.Private(mux, private)
+	pushSvc.Routes(mux, private)
 	users.NewHandlers(d.DB, pub, hub).Routes(mux, private)
 	workspaces.NewHandlers(d.DB, pub, d.Blob, workspaces.Limits{
 		MaxOwned:      d.Config.MaxWorkspacesPerUser,
@@ -531,6 +542,6 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }

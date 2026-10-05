@@ -1,0 +1,22 @@
+# Optional phone push overlay. Use only after signing, migration and deployment approval.
+# docker compose -f compose.yml -f compose.push.yml config --quiet
+# Existing .env provides identifiers; secret bytes live outside the checkout.
+services:
+  api:
+    environment:
+      - PUSH_APNS_KEY_FILE=${PUSH_APNS_KEY_FILE:-}
+      - PUSH_APNS_KEY_ID=${PUSH_APNS_KEY_ID:-}
+      - PUSH_APNS_TEAM_ID=${PUSH_APNS_TEAM_ID:-}
+      - PUSH_APNS_APP_ID=${PUSH_APNS_APP_ID:-}
+      - PUSH_APNS_ENVIRONMENT=${PUSH_APNS_ENVIRONMENT:-production}
+      - PUSH_VOIP_ENABLED=${PUSH_VOIP_ENABLED:-false}
+      - PUSH_FCM_SERVICE_ACCOUNT_FILE=${PUSH_FCM_SERVICE_ACCOUNT_FILE:-}
+      - PUSH_FCM_PROJECT_ID=${PUSH_FCM_PROJECT_ID:-}
+      - PUSH_FCM_APP_ID=${PUSH_FCM_APP_ID:-}
+    volumes:
+      - type: bind
+        source: ${PUSH_SECRET_DIRECTORY:?set an existing operator-owned directory outside the checkout}
+        target: /run/calab-push
+        read_only: true
+        bind:
+          create_host_path: false

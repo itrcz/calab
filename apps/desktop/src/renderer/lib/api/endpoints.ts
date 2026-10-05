@@ -616,7 +616,7 @@ export const api = {
    */
   calls: {
     start: (dmRoomId: string) => call('POST', `/api/dms/${dmRoomId}/call`, StartCallResponseSchema),
-    act: (callId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup') => call('POST', `/api/calls/${callId}/${action}`, CallActionResponseSchema),
+    act: (callId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup', signal?: AbortSignal) => call('POST', `/api/calls/${callId}/${action}`, CallActionResponseSchema, undefined, signal),
   },
   /**
    * Telephony (ADR-0046, sip.proto). Settings, the connection test (a real call, up to ~25 s) and

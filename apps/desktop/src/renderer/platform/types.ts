@@ -1,5 +1,7 @@
+import type { HostCallsCapability } from '../../shared/hostCalls';
 import type { CalabaApi } from '../../preload/api';
 import type { AuthSession, IpcResult } from '../../shared/ipc';
+import type { SessionActivityCapability, HostNotificationsCapability } from '../../shared/hostActivity';
 
 /** Result of a guest sign-in by a room link (ADR-0016). */
 export interface GuestJoin {
@@ -15,6 +17,10 @@ export interface GuestJoin {
  * `electron` — preload bridge (IPC to main); `web` — browser APIs, same-origin API.
  */
 export interface Platform extends CalabaApi {
+  /** Optional status-only phone host capability; absent in ordinary browsers/older hosts. */
+  sessionActivity?: SessionActivityCapability;
+  notifications?: HostNotificationsCapability;
+  incomingCalls?: HostCallsCapability;
   kind: 'electron' | 'web';
   finishSso?(): Promise<import('../../shared/ipc').IpcResult<import('../../shared/ipc').SsoResult>>;
   /** Prefix for API paths (`calaba-api://api` in Electron, '' on the web = same origin). */

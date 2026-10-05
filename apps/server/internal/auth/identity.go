@@ -355,6 +355,13 @@ func (s *Service) LogoutWorkspace(ctx context.Context, id Identity, ws uuid.UUID
 func (s *Service) CheckWorkspaceDecision(ctx context.Context, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
 	return s.checkWorkspaceDecision(ctx, s.db.Q, id, ws, op)
 }
+
+// CheckWorkspaceDecisionInTx evaluates an exact session using already source-locked
+// transaction queries. Background delivery must never borrow another session's proof.
+func (s *Service) CheckWorkspaceDecisionInTx(ctx context.Context, q *sqlc.Queries, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
+	return s.checkWorkspaceDecision(ctx, q, id, ws, op)
+}
+
 func (s *Service) checkWorkspaceDecision(ctx context.Context, q *sqlc.Queries, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
 	state, err := identitypolicy.NewSQLLoader(q, s.entitlements).LoadIdentityState(ctx, id.SessionID, id.UserID, ws)
 	if err != nil {

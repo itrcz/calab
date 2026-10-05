@@ -70,6 +70,9 @@ type Service struct {
 	// email invitations, see workspaces.AcceptEmailInvites) and returns the joined workspaces.
 	// Optional.
 	OnEmailVerified func(ctx context.Context, u sqlc.User) []uuid.UUID
+	// OnSessionsRevoked deletes optional native endpoints after every common revocation hook.
+	// Each call has its own bounded context and runs even when Redis markers failed.
+	OnSessionsRevoked func(context.Context, []uuid.UUID) error
 	// BotLimiter bounds the requests of one bot (ADR-0031, BOT_RATE_PER_SEC); nil = none.
 	BotLimiter *redisx.RateLimiter
 	// OnBotRequest runs for every authenticated bot request (presence of webhook-only bots).
@@ -816,6 +819,13 @@ func (s *Service) afterRevokeMany(ctx context.Context, sids []uuid.UUID, reason 
 		}
 	}
 	done()
+	if s.OnSessionsRevoked != nil {
+		cleanup, cancel := context.WithTimeout(ctx, revokeBudget)
+		if err := s.OnSessionsRevoked(cleanup, sids); err != nil {
+			slog.WarnContext(ctx, "native endpoint revocation cleanup failed")
+		}
+		cancel()
+	}
 	pctx := events.WithBudget(ctx, revokeBudget)
 	for _, sid := range sids {
 		s.events.SessionRevoked(pctx, sid, reason)

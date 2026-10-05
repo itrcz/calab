@@ -435,8 +435,11 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
   // starts as «not asked»; enabling turns mentions on and shows a first notification — on macOS
   // that is when the system asks for permission.
   const desktop = platform.kind === 'electron';
-  const [state, setState] = useState<NotifyState>(() => (desktop ? 'default' : readNotifyState()));
+  const [state, setState] = useState<NotifyState>(() => (desktop ? 'default' : readNotifyState(undefined, platform.notifications)));
   const [asking, setAsking] = useState(false);
+  useEffect(() => {
+    if (platform.notifications) void platform.notifications.state().then(s => setState(s.permission === 'unsupported' ? 'unsupported' : s.permission));
+  }, []);
   const view = notifyStepView(state);
   const enable = (): void => {
     if (desktop) {
@@ -451,7 +454,7 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
     }
     // Straight from the click (user gesture): requestNotify calls Notification.requestPermission now.
     setAsking(true);
-    void requestNotify().then((next) => {
+    void requestNotify(undefined, platform.notifications).then((next) => {
       setAsking(false);
       setState(next);
       if (next === 'granted') usePrefs.getState().setPrefs({ notifyMentions: true });
@@ -642,7 +645,7 @@ function useSetupSummary(micChecked: boolean): SummaryRow[] {
   useEffect(() => {
     if (mac) void platform.system.permissions().then((p) => setScreen(p.screen));
   }, [mac]);
-  const notifOn = notifyMentions && (platform.kind === 'electron' || readNotifyState() === 'granted');
+  const notifOn = notifyMentions && (platform.kind === 'electron' || readNotifyState(undefined, platform.notifications) === 'granted');
   const rows: SummaryRow[] = [
     {
       label: t('onb.sumMic'),

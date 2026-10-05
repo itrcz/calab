@@ -24,7 +24,7 @@
 | [0018](0018-webcam.md) | Веб-камера: VP9 SVC simulcast 180/360/720p, подписка по виду, сетка плиток и PiP в области чата | принято, дополняет 0012 |
 | [0019](0019-move-without-sfu.md) | Перемещение участников без SFU-move (LiveKit OSS не реализует MoveParticipant): токен + реконнект клиента | принято |
 | [0020](0020-direct-messages.md) | Личные сообщения: DM = комната без пространства, фиксированные права, рассылка по user-каналам | принято |
-| [0021](0021-mobile.md) | Мобильные клиенты: этап A — мобильный веб/PWA, этап B — Expo/React Native с `packages/core` и expo-updates | принято |
+| [0021](0021-mobile.md) | Мобильные клиенты: этап A — мобильный веб/PWA, этап B — Expo/React Native с `packages/core` и expo-updates | принято, этап B заменён 0054 |
 | [0022](0022-localization.md) | Локализация ru/en/es/zh-CN: TS-словари по локалям, Intl plural/date, автоопределение, лендинг с локальными маршрутами | принято |
 | [0023](0023-email.md) | Почта: SMTP-outbox, подтверждение email кодом, сброс пароля, приглашения по email с точным поиском | принято |
 | [0024](0024-plans-and-limits.md) | Тарифы и лимиты пространств (free: 5 в комнате, 720p/15 fps), суперадмин-API и интерфейс, контакт для покупки | принято |
@@ -70,3 +70,9 @@
 | [0063](0063-task-milestones.md) | Вехи внутри задачи: этапы со сроком, подзадачи привязываются к вехе родителя, прогресс считается сервером; секция в панели задачи и ромбы на полосе таймлайна; права как у полей задачи | принято |
 | [0064](0064-board-forms.md) | Формы приёма задач: публичная ссылка и приватный ACL, поля, статус/приоритет, preview без записи, Bot API; Team 5 / Business 20 на доску | реализовано, acceptance пройден; review/выпуск ожидаются |
 | [0065](0065-optional-email-verification.md) | `EMAIL_VERIFICATION=optional`: неподтверждённая почта ничего не блокирует, но адресу по-прежнему не доверяют (поиск/приглашения по почте, OAuth, суперадмин); флаги в ответах входа/регистрации и READY | реализовано (feat/optional-email-verification) |
+| [0066](0066-video-conference-gallery.md) | Видеовстреча «как в Zoom»: галерея со страницами, говорящие в приоритете, понятный вход в видео; дополняет ADR-0018 | этап 1 реализован |
+| [0067](0067-phone-shared-web-host.md) | Телефон: общий веб-клиент в оболочке Expo + `react-native-webview` — один UI, origin из env, точная политика навигации, без моста | принято |
+| [0068](0068-phone-file-downloads.md) | Телефон (iOS): `<a download>` своего blob: из основного фрейма точного origin → штатный WKDownload в tmp приложения → системный лист «Поделиться»; патч react-native-webview, без JS-моста; Android не входит; дополняет 0067 | принято |
+| [0069](0069-phone-session-activity.md) | iOS: status-only Live Activity через проверенный main-frame/origin/document канал общего веба | принято, устройство требует проверки |
+| [0070](0070-phone-message-notifications.md) | iOS: session-bound push сообщений, opaque tap и общий web notification service | принято, доставка требует проверки |
+| [0071](0071-phone-incoming-calls.md) | iOS: opt-in PushKit/CallKit и общий web call/RTC service | принято, locked answer/audio требуют проверки |

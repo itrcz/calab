@@ -12,6 +12,9 @@ import { installCalls } from './services/call';
 import { installResumeVoice } from './services/resumeVoice';
 import { installTimeFormat } from './services/timeFormat';
 import { bootstrap } from './services/session';
+import { installHostIncomingCalls } from './services/hostIncomingCalls';
+import { installHostNotifications } from './services/hostNotifications';
+import { installHostActivity } from './services/hostActivity';
 import './app/styles.css';
 
 window.addEventListener('error', (e) => log.error('uncaught', e.error ?? e.message));
@@ -35,6 +38,9 @@ installCalls();
 
 // After a restart for an update: back into the same room / call (docs/09 #126).
 installResumeVoice();
+installHostActivity();
+installHostNotifications();
+installHostIncomingCalls();
 
 // The clock format follows the current workspace (docs/09 #73): `fmt` reads it at call time.
 installTimeFormat();
