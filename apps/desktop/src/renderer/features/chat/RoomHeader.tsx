@@ -1,11 +1,11 @@
 import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Message, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Volume2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Video, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
-import { t, type MessageKey } from '../../i18n';
+import { t, useLocale, type MessageKey } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { can, mayPin } from '../../lib/permissions';
 import { setPinned } from '../../services/chat';
@@ -73,6 +73,8 @@ export function RoomHeader({
   const touch = mobile ? 'size-10 rounded-full' : undefined;
   // Re-render (and re-measure) when «Войти в голос» appears or goes.
   const preview = useVoice((s) => voiceRoom && isVoicePreview(room, s.roomId));
+  // «Видео · N» (ADR-0066 §3): a boolean here (re-measure when it appears), the count in the leaf.
+  const videoButton = useVoice((s) => voiceRoom && hasHiddenVideo(s, room.id));
   const [fit, headerEl] = useHeaderFit(!mobile);
 
   return (
@@ -91,6 +93,7 @@ export function RoomHeader({
       </h1>
       {voiceRoom ? <RoomEventBadge roomId={room.id} variant="header" compact={mobile} /> : null}
       {preview ? <VoicePreviewBar workspaceId={workspaceId} room={room} perms={perms} /> : null}
+      {videoButton ? <VideoButton roomId={room.id} compact={mobile} /> : null}
       {mobile ? null : typing ? (
         <span data-header-fill className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">
           <span className="text-faint" aria-hidden>
@@ -152,6 +155,27 @@ function useHeaderFit(enabled: boolean): [HeaderFit, (el: HTMLElement | null) =>
     return () => ro.disconnect();
   }, [el, enabled, measure]);
   return [fit, setEl];
+}
+
+/** In this room's voice, someone's camera is on and the call view is closed. */
+function hasHiddenVideo(s: { roomId: string | null; stage: string; cameras: readonly unknown[] }, roomId: string): boolean {
+  return s.roomId === roomId && s.stage === 'pip' && s.cameras.length > 0;
+}
+
+/**
+ * «Видео · N» (ADR-0066 §3): the way to the call view from the chat — remote cameras are on but
+ * only the PiP (or nothing) shows them. Its own subscriber: the count changes re-render only it.
+ */
+function VideoButton({ roomId, compact }: { roomId: string; compact: boolean }): ReactNode {
+  useLocale();
+  const n = useVoice((s) => (hasHiddenVideo(s, roomId) ? s.cameras.length : 0));
+  if (n === 0) return null;
+  return (
+    <Button size="sm" variant="secondary" onClick={() => voice.showVideo()} title={t('video.watchHint')} aria-label={`${t('video.watchHint')} · ${n}`} className="no-drag" data-testid="header-video">
+      <Video className="size-3.5" aria-hidden />
+      {compact ? n : t('video.watch', { n })}
+    </Button>
+  );
 }
 
 /**

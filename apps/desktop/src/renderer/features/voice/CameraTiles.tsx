@@ -1,8 +1,9 @@
-import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, VideoOff } from 'lucide-react';
-import { forwardRef, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import * as Popover from '@radix-ui/react-popover';
+import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, Video, VideoOff } from 'lucide-react';
+import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Badge, CloseButton, IconButton, cx } from '../../components/ui';
-import { t, useLocale } from '../../i18n';
+import { Badge, CloseButton, cx } from '../../components/ui';
+import { plural, t, useLocale } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -13,9 +14,11 @@ import { MemberBadge } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { joinedAtMs } from '../../lib/justJoined';
 import { JustJoinedDot } from './JustJoinedDot';
+import { popoverBox } from '../shell/menu';
 import type { Box } from './StreamArea';
 import { PIP_SHADOW, WELCOME_ROW, pipSize } from './streamFormat';
-import { layoutTiles, selectTiles, type TilePerson } from './tileLayout';
+import { layoutTiles, type TilePerson } from './tileLayout';
+import { useTileSelection } from './useTileSelection';
 
 /*
  * Webcam tiles of my voice room (docs/09 #42): the grid over the chat area, the camera PiP while
@@ -110,7 +113,7 @@ function AvatarFill({ userId, wsId, size }: { userId: string; wsId: string | nul
 }
 
 /** Name chip at the bottom-left of a tile: name, «(вы)», crossed mic when muted. */
-function TileName({ userId, wsId, small }: { userId: string; wsId: string | null; small?: boolean }): ReactNode {
+function TileName({ userId, wsId, small, className }: { userId: string; wsId: string | null; small?: boolean; className?: string }): ReactNode {
   const name = useMemberName(wsId, userId);
   const me = useMe();
   const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
@@ -121,6 +124,7 @@ function TileName({ userId, wsId, small }: { userId: string; wsId: string | null
       className={cx(
         'pointer-events-none absolute flex max-w-[calc(100%-12px)] items-center gap-1 rounded-full bg-black/60 font-semibold text-white',
         small ? 'bottom-1 left-1 px-1.5 text-[11px] leading-4' : 'bottom-2 left-2 px-2 py-0.5 text-[12px]',
+        className,
       )}
     >
       {muted ? <MicOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('shell.mutedState')} role="img" /> : null}
@@ -223,9 +227,94 @@ function useSize(ref: React.RefObject<HTMLElement | null>): { w: number; h: numb
 
 const avatarFor = (w: number, h: number): number => Math.round(Math.max(32, Math.min(96, Math.min(w, h) * 0.36)));
 
+/** One row of the «Ещё N» list: avatar with the speaking ring, name, camera icon; click = pin. */
+const HiddenRow = memo(function HiddenRow({ userId, wsId, onPick }: { userId: string; wsId: string | null; onPick: (userId: string) => void }): ReactNode {
+  useLocale();
+  const name = useMemberName(wsId, userId);
+  const avatar = useWorkspaces((s) => s.users[userId]?.avatarFileId);
+  const speaking = useVoice((s) => s.speaking[userId] ?? false);
+  const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
+  const hasCamera = useVoice((s) => s.cameras.some((c) => c.userId === userId));
+  const me = useMe();
+  const label = userId === me ? t('video.you', { name }) : name;
+  return (
+    <li>
+      <button
+        type="button"
+        data-testid="video-hidden-row"
+        title={t('video.focus')}
+        onClick={() => onPick(userId)}
+        className="flex h-9 w-full items-center gap-2 rounded-[5px] px-2 text-left text-body text-fg outline-none hover:bg-hover focus-visible:bg-hover"
+      >
+        <Avatar userId={userId} name={name} fileId={avatar || undefined} size={24} speaking={speaking && !muted} />
+        <span className={cx('min-w-0 flex-1 truncate', speaking && !muted ? 'text-fg' : 'text-muted')}>{label}</span>
+        {muted ? <MicOff className="size-3.5 shrink-0 text-faint" aria-label={t('shell.mutedState')} role="img" /> : null}
+        {hasCamera ? <Video className="size-4 shrink-0 text-faint" aria-label={t('video.stateOn')} role="img" /> : null}
+      </button>
+    </li>
+  );
+});
+
+/** ↑/↓ (Home/End) move between the rows of the «Ещё N» list; Tab works as usual. */
+function onListKey(e: ReactKeyboardEvent<HTMLUListElement>): void {
+  const rows = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+  const i = rows.indexOf(document.activeElement as HTMLButtonElement);
+  const next = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : null;
+  if (next === null) return;
+  e.preventDefault();
+  rows[Math.max(0, Math.min(rows.length - 1, next))]?.focus();
+}
+
+/**
+ * «Ещё N» (ADR-0066 stage 1): the last slot of a full grid; opens the list of the people behind
+ * it, a click pins one (they take a slot and go large). Rows subscribe per id: a speaking start
+ * repaints its ring only.
+ */
+const OverflowTile = memo(function OverflowTile({ hidden, wsId, x, y, w, h }: { hidden: readonly string[]; wsId: string | null; x: number; y: number; w: number; h: number }): ReactNode {
+  useLocale();
+  const [open, setOpen] = useState(false);
+  const pick = useCallback((userId: string) => {
+    setOpen(false);
+    voice.focusTile(userId);
+  }, []);
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          data-testid="video-overflow"
+          aria-label={t('video.hiddenList')}
+          className="absolute grid place-items-center rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-headline font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover aria-expanded:ring-2 aria-expanded:ring-inset aria-expanded:ring-accent"
+          style={{ left: x, top: y, width: w, height: h }}
+        >
+          {t('video.more', { n: hidden.length })}
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="top"
+          align="end"
+          sideOffset={8}
+          collisionPadding={16}
+          aria-label={t('video.hiddenList')}
+          className={cx(popoverBox, 'max-h-[min(360px,calc(100vh-96px))] w-64 overflow-y-auto p-1')}
+          data-testid="video-hidden-list"
+        >
+          <ul onKeyDown={onListKey}>
+            {hidden.map((id) => (
+              <HiddenRow key={id} userId={id} wsId={wsId} onPick={pick} />
+            ))}
+          </ul>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+});
+
 /**
  * The call view (stage «expanded» without a watched stream): up to 6 tiles, the active speaker
- * (or the clicked tile) large, avatars for people without a camera, «Ещё N» for the rest.
+ * (or the clicked tile) large, avatars for people without a camera, «Ещё N» for the rest — a
+ * hidden speaker comes forward into a slot (ADR-0066 §2, useTileSelection).
  */
 export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; wsId: string | null; top?: ReactNode; emptyFeed?: boolean }): ReactNode {
   const people = useRoomPeople(wsId);
@@ -234,7 +323,8 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
   const area = useRef<HTMLDivElement>(null);
   const { w, h } = useSize(area);
   const me = useMe();
-  const sel = useMemo(() => selectTiles(people, { focused, active, me }), [people, focused, active, me]);
+  // Re-renders only when the visible set changes, not on every speaking start (useTileSelection).
+  const sel = useTileSelection(people, focused, active, me);
   // Esc returns a pinned tile to the grid (not while a menu or dialog handles its own Esc).
   useEffect(() => {
     if (!focused) return;
@@ -245,8 +335,11 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [focused]);
-  const n = sel.tiles.length + (sel.overflow > 0 ? 1 : 0);
-  const rects = layoutTiles(n, sel.featured !== null, w, h, 8);
+  const tiles = sel?.tiles ?? [];
+  const overflow = sel?.overflow ?? 0;
+  const n = tiles.length + (overflow > 0 ? 1 : 0);
+  const rects = layoutTiles(n, (sel?.featured ?? null) !== null, w, h, 8);
+  const more = rects[n - 1];
   return (
     <div
       data-testid="video-grid"
@@ -279,7 +372,7 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
         </button>
       </div>
       <div ref={area} className="relative min-h-0 flex-1">
-        {sel.tiles.map((p, i) => {
+        {tiles.map((p, i) => {
           const r = rects[i];
           if (!r) return null;
           return (
@@ -288,22 +381,14 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
               userId={p.userId}
               wsId={wsId}
               video={p.video}
-              featured={p.userId === sel.featured}
+              featured={p.userId === sel?.featured}
               small={r.w < 240}
               avatarSize={avatarFor(r.w, r.h)}
               style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
             />
           );
         })}
-        {sel.overflow > 0 && rects[n - 1] ? (
-          <div
-            className="absolute grid place-items-center rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-headline font-semibold text-fg"
-            style={{ left: rects[n - 1]?.x, top: rects[n - 1]?.y, width: rects[n - 1]?.w, height: rects[n - 1]?.h }}
-            data-testid="video-overflow"
-          >
-            {t('video.more', { n: sel.overflow })}
-          </div>
-        ) : null}
+        {sel && overflow > 0 && more ? <OverflowTile hidden={sel.hidden} wsId={wsId} x={more.x} y={more.y} w={more.w} h={more.h} /> : null}
       </div>
     </div>
   );
@@ -324,19 +409,28 @@ export function useStripCameras(wsId: string | null): string[] {
 /** PiP inset from the header and the right edge (docs/08: 16). */
 const PIP_GAP = 16;
 
-/** The active speaker's camera over the chat (no stream watched): click = the call view. */
+/**
+ * The active speaker's camera over the chat (no stream watched): click = the call view. Always
+ * says so (ADR-0066 §3): a «Развернуть» pill and «+N камер» when more cameras are on — not on
+ * hover only.
+ */
 export function CameraPip({ box, wsId }: { box: Box; wsId: string | null }): ReactNode {
+  useLocale();
   const wide = useMediaQuery('(min-width: 1200px)');
   const me = useMe();
   const mine = useVoice((s) => s.camera === 'on');
-  usePrefs((s) => s.hiddenVideo); // re-render when «Не показывать видео» changes
+  const hiddenVideo = usePrefs((s) => s.hiddenVideo); // re-render when «Не показывать видео» changes
   // The same choice as the engine's subscription (primaryCamera: no hidden ones, review M1);
   // my self-view only when there is no remote camera.
   const primary = useVoice(() => voice.primaryCamera());
+  // Cameras one can see in the call view (a primitive: other voice changes don't re-render).
+  const shown = useVoice((s) => s.cameras.reduce((n, c) => n + (hiddenVideo[c.userId] ? 0 : 1), 0)) + (mine ? 1 : 0);
   const userId = primary ?? (mine ? me : null);
   const { w, h } = pipSize(wide, box.height, PIP_GAP);
   const name = useMemberName(wsId, userId ?? '');
   if (!userId) return null;
+  const small = w < 240;
+  const others = shown - 1;
   return (
     <div
       data-testid="camera-pip"
@@ -345,13 +439,30 @@ export function CameraPip({ box, wsId }: { box: Box; wsId: string | null }): Rea
       className="mat-popover group absolute z-[var(--z-pip)] overflow-hidden rounded-[var(--radius-panel)]"
       style={{ top: box.top + PIP_GAP, right: PIP_GAP, width: w, height: h, background: 'var(--color-video-bg)', boxShadow: PIP_SHADOW }}
     >
-      <CameraVideo userId={userId} wsId={wsId} avatarSize={w < 240 ? 32 : 48} />
-      <button type="button" className="absolute inset-0 rounded-[var(--radius-panel)]" onClick={() => voice.showVideo()} aria-label={t('video.expand')} />
-      <TileName userId={userId} wsId={wsId} small={w < 240} />
+      <CameraVideo userId={userId} wsId={wsId} avatarSize={small ? 32 : 48} />
+      <button
+        type="button"
+        className="absolute inset-0 rounded-[var(--radius-panel)]"
+        onClick={() => voice.showVideo()}
+        aria-label={others > 0 ? `${t('video.expand')} · ${plural('video.moreCameras', others)}` : t('video.expand')}
+      />
+      {/* Leaves room for the «Развернуть» pill on the right. */}
+      <TileName userId={userId} wsId={wsId} small={small} className={small ? 'max-w-[calc(100%-36px)]' : 'max-w-[calc(100%-124px)]'} />
+      {others > 0 ? (
+        <span data-testid="camera-pip-more" className="pointer-events-none absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 text-[11px] font-medium leading-5 text-white" aria-hidden>
+          {plural('video.moreCameras', others)}
+        </span>
+      ) : null}
+      {/* Always visible: the PiP is the door to the call view (not discoverable on hover only). */}
+      <span
+        data-testid="camera-pip-expand"
+        className={cx('pointer-events-none absolute flex items-center gap-1 rounded-full bg-black/60 font-medium text-white', small ? 'bottom-1 right-1 size-5 justify-center' : 'bottom-2 right-2 px-2 py-0.5 text-[12px]')}
+        aria-hidden
+      >
+        <Maximize2 className="size-3" />
+        {small ? null : t('video.expandShort')}
+      </span>
       <span className="absolute right-1.5 top-1.5 flex gap-0.5 rounded-[var(--radius-card)] bg-black/60 p-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100">
-        <IconButton size="sm" label={t('video.expand')} className="text-white hover:bg-white/15 hover:text-white" onClick={() => voice.showVideo()}>
-          <Maximize2 className="size-4" aria-hidden />
-        </IconButton>
         <CloseButton label={t('video.close')} shortcut="" className="text-white hover:bg-white/15 hover:text-white" onClick={() => setVoice({ videoPip: false })} />
       </span>
     </div>
