@@ -218,6 +218,10 @@ export interface AuthSession {
   me: unknown;
   /** Public session authority, encoded using the generated schema. */
   authority?: unknown;
+  /** Login / RegisterResponse.email_verification_optional (ADR-0065); absent = false. */
+  emailVerificationOptional?: boolean;
+  /** Login / RegisterResponse.email_invite_pending (ADR-0065); absent = false. */
+  emailInvitePending?: boolean;
 }
 
 export interface LoginArgs {
@@ -246,6 +250,17 @@ export function noSession(similar: boolean | undefined, status: number): ApiErro
   return similar
     ? { code: SIMILAR_ACCOUNT_CODE, message: 'similar account exists', status }
     : { code: 'ERROR_CODE_INTERNAL', message: 'no session in the response', status };
+}
+
+/** The email-verification flags of a login / register answer (ADR-0065); only `true` is kept. */
+export function verificationOf(data: {
+  emailVerificationOptional?: boolean;
+  emailInvitePending?: boolean;
+}): Pick<AuthSession, 'emailVerificationOptional' | 'emailInvitePending'> {
+  return {
+    ...(data.emailVerificationOptional === true ? { emailVerificationOptional: true } : {}),
+    ...(data.emailInvitePending === true ? { emailInvitePending: true } : {}),
+  };
 }
 
 /** 'reset' = ended by reuse detection (after a connection loss), shared/logoutReason.ts. */

@@ -27,7 +27,7 @@ import type {
   PttStatus,
   RegisterArgs,
 } from '../../shared/ipc';
-import { noSession } from '../../shared/ipc';
+import { noSession, verificationOf } from '../../shared/ipc';
 import { PttGate } from '../../shared/pttGate';
 import { mouseName } from '../../shared/pttKeys';
 import { logoutReasonFromRefresh } from '../../shared/logoutReason';
@@ -179,12 +179,18 @@ async function authenticate(path: string, body: Record<string, unknown>): Promis
   try {
     const res = await postAuth(path, { ...body, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
+    const data = (await res.json()) as {
+      tokens?: TokensJson;
+      me: unknown;
+      similarAccount?: boolean;
+      emailVerificationOptional?: boolean;
+      emailInvitePending?: boolean;
+    };
     if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
     if (started !== epoch) throw new Error('Account changed');
     clear(null);
     applyTokens(data.tokens);
-    return { ok: true, data: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me } };
+    return { ok: true, data: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me, ...verificationOf(data) } };
   } catch (e) {
     return { ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE', message: e instanceof Error ? e.message : String(e), status: 0 } };
   }

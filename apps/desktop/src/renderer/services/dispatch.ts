@@ -199,7 +199,13 @@ export function applyDispatch(ev: DispatchEvent): void {
       resetRecordings(r.workspaces);
       // Telephony (ADR-0046): the rooms' live phone lines.
       resetSipCalls(r.workspaces);
-      useSession.getState().set({ me: r.me ?? null, planContact: r.planContact, ready: true });
+      useSession.getState().set({
+        me: r.me ?? null,
+        planContact: r.planContact,
+        emailVerificationOptional: r.emailVerificationOptional,
+        emailInvitePending: r.emailInvitePending,
+        ready: true,
+      });
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
