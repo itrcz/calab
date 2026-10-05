@@ -8,8 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type identitySFU struct {
@@ -63,14 +67,27 @@ func TestIdentitySweepSlowDependencyMultipleRooms(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	start := time.Now()
-	if err := svc.EnforceIdentity(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if time.Since(start) > 4*time.Second {
-		t.Fatal("slow dependency starved later rooms")
+	// A slow gate is a transient failure: the first sweep keeps everyone, a sweep after
+	// identityTransientGrace of unbroken failures evicts. Both stay within budget.
+	now := time.Now()
+	svc.identitySweep.now = func() time.Time { return now }
+	for sweep := 0; sweep < 2; sweep++ {
+		if sweep == 1 {
+			if len(f.removed) != 0 {
+				t.Fatalf("first slow sweep evicted %d participants", len(f.removed))
+			}
+			now = now.Add(identityTransientGrace)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		start := time.Now()
+		if err := svc.EnforceIdentity(ctx); err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		cancel()
+		if time.Since(start) > 4*time.Second {
+			t.Fatal("slow dependency starved later rooms")
+		}
 	}
 	if maxInFlight.Load() > 64 {
 		t.Fatalf("unbounded concurrency: %d", maxInFlight.Load())
@@ -455,5 +472,86 @@ func TestIdentitySweepJoinsCancelledRemoval(t *testing.T) {
 	}
 	if active.Load() {
 		t.Fatal("removal outlived its sweep")
+	}
+}
+
+func identityOneParticipant(t *testing.T) (*identitySFU, string) {
+	t.Helper()
+	room := voice.RoomName(uuid.New(), uuid.New())
+	f := &identitySFU{rooms: []Room{{Name: room}}, people: map[string][]Participant{}, removed: map[string]int{}}
+	id := voice.Identity(uuid.New(), uuid.New())
+	f.people[room] = []Participant{{Identity: id}}
+	return f, room + id
+}
+
+func identitySweepAt(t *testing.T, svc *Service, at time.Time) {
+	t.Helper()
+	svc.identitySweep.now = func() time.Time { return at }
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := svc.EnforceIdentity(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A database stall (503 from the gate) must not drop people from calls; an outage that
+// outlasts the grace still evicts.
+func TestIdentitySweepTransientFailureWaitsForGrace(t *testing.T) {
+	f, key := identityOneParticipant(t)
+	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		return httpx.Unavailable(errors.New("pool timeout"))
+	}}
+	t0 := time.Now()
+	identitySweepAt(t, svc, t0)
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace-time.Second))
+	if f.removed[key] != 0 {
+		t.Fatal("transient failure evicted before the grace")
+	}
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace))
+	if f.removed[key] != 1 {
+		t.Fatalf("unbroken failure past the grace: removal=%d want 1", f.removed[key])
+	}
+}
+
+func TestIdentitySweepDenialEvictsAtOnce(t *testing.T) {
+	for name, deny := range map[string]error{
+		"forbidden": httpx.Forbidden("account disabled"),
+		"not found": httpx.NotFound("room"),
+		"unknown":   errors.New("denied"),
+		// the gate wraps these decisions in 503
+		"session revoked": httpx.Unavailable(auth.ErrSessionRevoked),
+		"user gone":       httpx.Unavailable(pgx.ErrNoRows),
+		"policy denial":   httpx.Unavailable(identitypolicy.ErrDenied),
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, key := identityOneParticipant(t)
+			svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return deny }}
+			identitySweepAt(t, svc, time.Now())
+			if f.removed[key] != 1 {
+				t.Fatalf("denial: removal=%d want 1", f.removed[key])
+			}
+		})
+	}
+}
+
+// A successful check ends the run: failures before and after a success do not add up.
+func TestIdentitySweepSuccessResetsTransientRun(t *testing.T) {
+	f, key := identityOneParticipant(t)
+	var fail atomic.Bool
+	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		if fail.Load() {
+			return httpx.Unavailable(errors.New("stall"))
+		}
+		return nil
+	}}
+	t0 := time.Now()
+	fail.Store(true)
+	identitySweepAt(t, svc, t0)
+	fail.Store(false)
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace/2))
+	fail.Store(true)
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace))
+	if f.removed[key] != 0 {
+		t.Fatal("failures separated by a success were summed")
 	}
 }

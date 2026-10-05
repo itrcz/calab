@@ -8,6 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/google/uuid"
@@ -33,11 +37,83 @@ type identitySweepState struct {
 	once     sync.Once
 	token    chan struct{}
 	lastRoom string
+
+	// failing: room + SFU identity -> unbroken run of transient gate failures (timeout,
+	// 5xx). Per replica; another replica's sweep only delays the eviction.
+	failMu  sync.Mutex
+	failing map[string]failureRun
+	now     func() time.Time // tests
+}
+
+type failureRun struct{ first, last time.Time }
+
+// identityTransientGrace: how long the gate may keep failing transiently for one
+// participant before the sweep evicts anyway. A blip of the shared database (seconds)
+// must not empty every call, while an outage still cannot keep a revoked session for long.
+const identityTransientGrace = 30 * time.Second
+
+func (st *identitySweepState) clock() time.Time {
+	if st.now != nil {
+		return st.now()
+	}
+	return time.Now()
+}
+
+// transientFailureExpired records a transient failure for key and reports whether its
+// unbroken run has lasted identityTransientGrace.
+func (st *identitySweepState) transientFailureExpired(key string) bool {
+	now := st.clock()
+	st.failMu.Lock()
+	defer st.failMu.Unlock()
+	if st.failing == nil {
+		st.failing = map[string]failureRun{}
+	}
+	run, ok := st.failing[key]
+	if !ok {
+		run.first = now
+	}
+	run.last = now
+	st.failing[key] = run
+	return now.Sub(run.first) >= identityTransientGrace
+}
+
+func (st *identitySweepState) clearFailure(key string) {
+	st.failMu.Lock()
+	delete(st.failing, key)
+	st.failMu.Unlock()
+}
+
+// pruneFailures forgets runs not seen for a while: the participant left the SFU.
+func (st *identitySweepState) pruneFailures() {
+	cutoff := st.clock().Add(-10 * identityTransientGrace)
+	st.failMu.Lock()
+	for key, run := range st.failing {
+		if run.last.Before(cutoff) {
+			delete(st.failing, key)
+		}
+	}
+	st.failMu.Unlock()
+}
+
+// transientIdentityError: the gate could not decide (its budget ran out or a dependency
+// failed), as opposed to deciding "no". The gate wraps a revoked session and a missing
+// user or room in 503 too; those are decisions. Unknown errors stay denials.
+func transientIdentityError(err error) bool {
+	if errors.Is(err, auth.ErrSessionRevoked) || errors.Is(err, identitypolicy.ErrDenied) || db.IsNotFound(err) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var he *httpx.Error
+	return errors.As(err, &he) && he.Status >= 500
 }
 
 // EnforceIdentity enumerates the SFU independently of Redis. Lost pubsub, a lost webhook
 // and an unavailable voice-state store cannot keep a denied participant connected.
-// Errors from the gate deny; SFU removal failures remain visible and are retried.
+// A denial from the gate evicts at once; a transient gate failure (timeout, 5xx) evicts
+// only after identityTransientGrace of unbroken failures, so a short database stall does
+// not drop everyone in every call. SFU removal failures remain visible and are retried.
 func (s *Service) EnforceIdentity(ctx context.Context) error {
 	state := &s.identitySweep
 	state.once.Do(func() { state.token = make(chan struct{}, 1) })
@@ -50,6 +126,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	state.pruneFailures()
 	rooms, err := s.lk.ListRooms(ctx)
 	if err != nil {
 		return err
@@ -132,11 +209,20 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 				gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 				err := s.checkIdentity(gate, job.ws, job.rid, uid, sid)
 				cancel()
+				runKey := job.room + "\x00" + job.person.Identity
 				if err == nil {
+					state.clearFailure(runKey)
 					continue
 				}
 				if ctx.Err() != nil {
 					return
+				}
+				if transientIdentityError(err) {
+					if !state.transientFailureExpired(runKey) {
+						slog.DebugContext(ctx, "RTC identity check undecided, keeping participant", "room", job.room, "err", err)
+						continue
+					}
+					slog.WarnContext(ctx, "RTC identity check undecided past grace, evicting", "room", job.room, "grace", identityTransientGrace, "err", err)
 				}
 				remove, done := context.WithTimeout(ctx, 2*time.Second)
 				err = s.lk.RemoveParticipant(remove, job.room, job.person.Identity)
@@ -145,6 +231,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 					record(err)
 					continue
 				}
+				state.clearFailure(runKey)
 				// Redis is bookkeeping after authoritative SFU eviction, never its prerequisite.
 				if s.voice.C != nil {
 					clean, done := context.WithTimeout(ctx, 100*time.Millisecond)
