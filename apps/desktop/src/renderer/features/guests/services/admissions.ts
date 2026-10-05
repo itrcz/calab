@@ -13,6 +13,7 @@ import {
   type RoomAdmission,
 } from '@calaba/protocol';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { t } from '../../../i18n';
 import { ApiError, body, call, callEmpty } from '../../../lib/api/client';
 import { errorText } from '../../../lib/api/errors';
@@ -24,6 +25,8 @@ import { isQuietRoom, useRooms } from '../../../stores/rooms';
 import { myUserId, useSession } from '../../../stores/session';
 import { toast } from '../../../stores/toasts';
 import { useUi } from '../../../stores/ui';
+import { useVoice } from '../../../stores/voice';
+import { memberName, useWorkspaces } from '../../../stores/workspaces';
 import { knockKey, type MyKnock } from '../admissionsModel';
 import { admissions, useAdmissions } from '../stores/admissions';
 
@@ -108,12 +111,22 @@ export function onAdmissionEvent(e: DispatchEvent['event']): void {
     if (!a) return;
     const before = useAdmissions.getState().toasts;
     admissions({ type: 'request', admission: a });
-    if (useAdmissions.getState().toasts !== before) announceKnock(a);
+    const key = knockKey(a.roomId, a.user?.id ?? '');
+    const added = useAdmissions.getState().toasts !== before;
+    if (shownAtOnce(a)) {
+      if (added) announceKnock(a);
+    } else if (useAdmissions.getState().toasts.includes(key)) {
+      // Not for me yet (every INVITE_GUESTS member receives the event): hold the toast back and
+      // escalate when nobody has decided for KNOCK_ESCALATE_MS.
+      admissions({ type: 'dismissToast', key });
+      armEscalation(a, key);
+    }
     return;
   }
   if (e.case !== 'roomAdmissionDecided' || !e.value.admission) return;
   const a = e.value.admission;
   const me = myUserId();
+  clearEscalation(knockKey(a.roomId, a.user?.id ?? ''));
   const hidden = a.user?.id === me ? useAdmissions.getState().mine[a.roomId]?.hidden === true : false;
   admissions({ type: 'decided', admission: a, me });
   if (a.user?.id !== me) return;
@@ -199,8 +212,59 @@ useSession.subscribe((s, prev) => {
   if (s.status !== 'authed' && prev.status === 'authed') {
     useAdmissions.setState({ byRoom: {}, gone: {}, toasts: [], mine: {} });
     dismissed.clear();
+    for (const id of escalations.values()) window.clearTimeout(id);
+    escalations.clear();
   }
 });
+
+/** A knock nobody has decided for this long is shown to every decider who got the event. */
+export const KNOCK_ESCALATE_MS = 60_000;
+
+/**
+ * Who sees the knock at once: the author of the link, a decider in the voice of that room, or a
+ * decider with that room open. Everyone else only gets the room row counter and the waiting group.
+ */
+function shownAtOnce(a: RoomAdmission): boolean {
+  if (a.inviteCreatedBy && a.inviteCreatedBy === myUserId()) return true;
+  if (useVoice.getState().roomId === a.roomId) return true;
+  const ui = useUi.getState();
+  return !!ui.activeWorkspaceId && ui.lastRoom[ui.activeWorkspaceId] === a.roomId;
+}
+
+const escalations = new Map<string, number>();
+
+function clearEscalation(key: string): void {
+  const id = escalations.get(key);
+  if (id === undefined) return;
+  window.clearTimeout(id);
+  escalations.delete(key);
+}
+
+function armEscalation(a: RoomAdmission, key: string): void {
+  if (escalations.has(key)) return;
+  const at = a.requestedAt ? timestampMs(a.requestedAt) : Date.now();
+  const id = window.setTimeout(
+    () => {
+      escalations.delete(key);
+      const still = useAdmissions.getState().byRoom[a.roomId]?.find((x) => x.user?.id === a.user?.id);
+      if (!still) return;
+      admissions({ type: 'showToast', key });
+      announceKnock(still);
+    },
+    Math.max(0, at + KNOCK_ESCALATE_MS - Date.now()),
+  );
+  escalations.set(key, id);
+}
+
+/** The knock title: «Гость «{name}» просит войти в «{room}»». */
+export const knockTitle = (name: string, room: string): string => t('adm.knockTitle', { name, room });
+
+/** «По ссылке от {author}»: the author when he is a member of the workspace, else ''. */
+export function knockAuthor(a: RoomAdmission): string {
+  const id = a.inviteCreatedBy;
+  if (!id || !a.workspaceId || !useWorkspaces.getState().byId[a.workspaceId]?.members[id]) return '';
+  return t('adm.knockByLink', { author: memberName(a.workspaceId, id) });
+}
 
 /** A live knock: the notification sound (not in «Не беспокоить» or a muted room) and, in the background, a system notification. */
 function announceKnock(a: RoomAdmission): void {
@@ -211,7 +275,7 @@ function announceKnock(a: RoomAdmission): void {
   if (quiet || document.hasFocus() || !(p.notifyMentions || p.notifyAll)) return;
   const room = useRooms.getState().byId[a.roomId];
   try {
-    const n = new Notification(t('adm.knockTitle', { name: a.user?.displayName ?? '', room: room?.name ?? '' }), { body: t('adm.knockBody'), silent: true, tag: `knock:${a.roomId}` });
+    const n = new Notification(knockTitle(a.user?.displayName ?? '', room?.name ?? ''), { body: t('adm.knockBody'), silent: true, tag: `knock:${a.roomId}` });
     n.onclick = () => {
       window.focus();
       if (room) useUi.getState().openRoom(room.workspaceId, room.id);
@@ -238,6 +302,7 @@ export interface Decision {
  */
 export async function decide(roomId: string, userId: string, d: Decision): Promise<boolean> {
   const a = useAdmissions.getState().byRoom[roomId]?.find((x) => x.user?.id === userId);
+  clearEscalation(knockKey(roomId, userId));
   admissions({ type: 'take', roomId, userId });
   try {
     await admissionApi.decide(roomId, userId, {

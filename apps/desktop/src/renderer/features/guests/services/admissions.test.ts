@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { MeSchema, ReadySchema, RoomAdmissionSchema, RoomAdmissionStatus, RoomSchema, RoomType, UserSchema, WorkspaceSnapshotSchema, type DispatchEvent } from '@calaba/protocol';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mem = new Map<string, string>();
 vi.stubGlobal('localStorage', {
@@ -21,6 +21,7 @@ const svc = await import('./admissions');
 const { useAdmissions } = await import('../stores/admissions');
 const { useRooms } = await import('../../../stores/rooms');
 const { useUi } = await import('../../../stores/ui');
+const { useVoice } = await import('../../../stores/voice');
 const { useSession } = await import('../../../stores/session');
 
 const ME = 'guest-1';
@@ -89,6 +90,7 @@ describe('deciders', () => {
     svc.applyReadyAdmissions(create(ReadySchema, { workspaces: [create(WorkspaceSnapshotSchema, { admissions: [knock(RoomAdmissionStatus.PENDING, 'g0')] })] }));
     expect(played).not.toHaveBeenCalled();
     useRooms.getState().upsert(room);
+    useUi.setState({ activeWorkspaceId: 'ws', lastRoom: { ws: 'voice' } }); // the room is open: shown at once
     svc.onAdmissionEvent(requestEv('g1'));
     expect(played).toHaveBeenCalledWith('mention');
     expect(useAdmissions.getState().byRoom['voice']?.map((a) => a.user?.id)).toEqual(['g0', 'g1']);
@@ -120,5 +122,73 @@ describe('deciders', () => {
     expect(useUi.getState().lastRoom).toEqual({ 'other-ws': 'other-room' });
     expect(useAdmissions.getState().toasts).toEqual([]);
     expect(useAdmissions.getState().mine).toEqual({});
+  });
+});
+
+describe('decider: who sees the knock toast at once (escalation after 60 s)', () => {
+  const DEC = 'dec-1';
+  const req = (by: string): DispatchEvent['event'] => ({
+    case: 'roomAdmissionRequest',
+    value: { $typeName: 'calaba.v1.RoomAdmissionRequest', admission: create(RoomAdmissionSchema, { ...knock(RoomAdmissionStatus.PENDING, 'g-2'), inviteCreatedBy: by }) },
+  });
+  const toasts = () => useAdmissions.getState().toasts;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0 + 1000);
+    useSession.setState({ me: create(MeSchema, { user: { id: DEC } }) });
+    useUi.setState({ activeWorkspaceId: 'ws', lastRoom: {} });
+    useVoice.setState({ roomId: null });
+    useRooms.getState().upsert(room);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('the link author: at once, with the sound', () => {
+    svc.onAdmissionEvent(req(DEC));
+    expect(toasts()).toEqual(['voice:g-2']);
+    expect(played).toHaveBeenCalledTimes(1);
+  });
+
+  it('in the voice of the room: at once', () => {
+    useVoice.setState({ roomId: 'voice' });
+    svc.onAdmissionEvent(req('someone'));
+    expect(toasts()).toHaveLength(1);
+  });
+
+  it('with the room open: at once', () => {
+    useUi.setState({ lastRoom: { ws: 'voice' } });
+    svc.onAdmissionEvent(req('someone'));
+    expect(toasts()).toHaveLength(1);
+  });
+
+  it('another decider: nothing, then once after 60 s of the server time', () => {
+    svc.onAdmissionEvent(req('someone'));
+    expect(toasts()).toEqual([]);
+    expect(played).not.toHaveBeenCalled();
+    expect(useAdmissions.getState().byRoom['voice']).toHaveLength(1);
+    vi.advanceTimersByTime(58_999);
+    expect(toasts()).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(toasts()).toEqual(['voice:g-2']);
+    expect(played).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(120_000);
+    expect(played).toHaveBeenCalledTimes(1);
+  });
+
+  it('decided before 60 s: never shown, the timer is gone', () => {
+    svc.onAdmissionEvent(req('someone'));
+    svc.onAdmissionEvent(decidedEv(RoomAdmissionStatus.ADMITTED, 'g-2'));
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(120_000);
+    expect(toasts()).toEqual([]);
+    expect(played).not.toHaveBeenCalled();
+  });
+
+  it('the title marks a guest; the author line only for a known member', () => {
+    expect(svc.knockTitle('Кука', 'Созвон')).toBe('Гость «Кука» просит войти в «Созвон»');
+    const a = create(RoomAdmissionSchema, { ...knock(), inviteCreatedBy: 'u-9' });
+    expect(svc.knockAuthor(a)).toBe('');
   });
 });

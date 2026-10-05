@@ -4,8 +4,9 @@ import { Button, CloseButton } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
+import { useWorkspaces } from '../../stores/workspaces';
 import { splitKey } from './admissionsModel';
-import { decide, dismissKnockToast } from './services/admissions';
+import { decide, dismissKnockToast, knockAuthor, knockTitle } from './services/admissions';
 import { useAdmissions, useKnock } from './stores/admissions';
 
 /** At most this many knock toasts at once (the rest wait in the members panel group). */
@@ -42,6 +43,7 @@ const KnockToast = memo(function KnockToast({ knockKey }: { knockKey: string }):
   const roomName = useRooms((s) => s.byId[roomId]?.name ?? '');
   const workspaceId = useRooms((s) => s.byId[roomId]?.workspaceId ?? '');
   const close = useCallback(() => dismissKnockToast(roomId, userId), [roomId, userId]);
+  const byLink = useWorkspaces(() => (a ? knockAuthor(a) : ''));
   if (!a) return null;
   const name = a.user?.displayName ?? '';
   const open = (): void => {
@@ -50,7 +52,7 @@ const KnockToast = memo(function KnockToast({ knockKey }: { knockKey: string }):
   return (
     <div
       role="alertdialog"
-      aria-label={t('adm.knockTitle', { name, room: roomName })}
+      aria-label={knockTitle(name, roomName)}
       data-testid="knock-toast"
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
@@ -63,9 +65,9 @@ const KnockToast = memo(function KnockToast({ knockKey }: { knockKey: string }):
       <Avatar userId={userId} name={name} fileId={a.user?.avatarFileId || undefined} size={32} />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <button type="button" className="min-w-0 rounded-[var(--radius-control)] text-left leading-[18px] hover:underline" onClick={open}>
-          <span className="font-semibold [overflow-wrap:anywhere]">{name}</span>{' '}
-          <span className="text-muted">{t('adm.knockAsks', { room: roomName })}</span>
+          <span className="font-semibold [overflow-wrap:anywhere]">{knockTitle(name, roomName)}</span>
         </button>
+        {byLink ? <div className="-mt-1 text-caption text-muted [overflow-wrap:anywhere]">{byLink}</div> : null}
         <div className="flex gap-2">
           <Button size="sm" aria-label={t('adm.admitName', { name })} onClick={() => void decide(roomId, userId, { admit: true })}>
             {t('adm.admit')}
