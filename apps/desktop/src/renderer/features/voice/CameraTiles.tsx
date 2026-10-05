@@ -13,6 +13,7 @@ import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberBadge } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { joinedAtMs } from '../../lib/justJoined';
+import { cameraMirrored } from '../../lib/media/cameraLogic';
 import { JustJoinedDot } from './JustJoinedDot';
 import { popoverBox } from '../shell/menu';
 import type { Box } from './StreamArea';
@@ -81,6 +82,8 @@ function CameraVideo({ userId, wsId, avatarSize, fit = 'cover' }: { userId: stri
       track.detach(el);
     };
   }, [track]);
+  // Own video is mirrored like a mirror, except the back camera (phones: «Переключить камеру»).
+  const mirrored = useVoice((s) => isMe && cameraMirrored(s.cameraFacing));
   return (
     <>
       <video
@@ -89,7 +92,7 @@ function CameraVideo({ userId, wsId, avatarSize, fit = 'cover' }: { userId: stri
         playsInline
         autoPlay
         data-testid="camera-video"
-        className={cx('absolute inset-0 size-full bg-[var(--color-video-bg)]', fit === 'cover' ? 'object-cover' : 'object-contain', isMe && '-scale-x-100')}
+        className={cx('absolute inset-0 size-full bg-[var(--color-video-bg)]', fit === 'cover' ? 'object-cover' : 'object-contain', mirrored && '-scale-x-100')}
       />
       {hasFrame ? null : <AvatarFill userId={userId} wsId={wsId} size={avatarSize} />}
     </>
