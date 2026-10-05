@@ -1352,10 +1352,12 @@ function VoiceRoomRow({
               <button
                 type="button"
                 onClick={click}
+                // Desktop pointer only (the phone has the round speaker button): the same path as «Войти».
+                onDoubleClick={joinUi.shown && !mobile ? join : undefined}
                 aria-current={active ? 'page' : undefined}
                 title={canConnect ? undefined : t('voice.noConnect')}
                 className={cx(
-                  'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pr-1 text-left text-list leading-5',
+                  'flex h-full select-none min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pr-1 text-left text-list leading-5',
                   card ? 'pl-0' : 'pl-2',
                   active || unread || inRoom ? 'text-fg' : 'text-muted group-hover/row:text-fg',
                   unread && !active && 'font-semibold',
