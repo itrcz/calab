@@ -363,3 +363,4 @@
 
 - 2026-10-04 · ADR-0064 release review · minor: explain in the form editor that enforced workspace SSO blocks public ingress when public links are disabled; server already enforces the policy.
 - (minor, issue #110) Отключение сервером (identity sweep, лимит, реконнект) показывает тот же тост «Модератор исключил вас», что и кик модератора — пользователи ищут виноватого. Различать причину: `SERVICE_REQUEST_REMOVE_PARTICIPANT` без события модерации → «Соединение сброшено сервером, переподключаемся…» и автоматический повторный вход.
+- (05.10, жалоба в «Dev's peak») История уведомлений — тосты быстро пропадают, истории нет.
