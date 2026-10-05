@@ -692,3 +692,9 @@ Scope/subject/версии и отзыв проверяются на begin/callb
 session требует нового login/request. Provider `auth_time` остаётся связан с authority:
 local account требует local reauth для `prompt=login`/`max_age`, scoped session — SSO.
 При необходимости локальный consent проходит обе проверки; SSO не обновляет local proof.
+
+### Инцидент 2026-10-05: сбой зависимости — не отзыв
+07:19, 08:19, 08:25 и 08:36 UTC: сервер сам отключил всех участников голосовых комнат (22–27 человек за секунды, в LiveKit — `SERVICE_REQUEST_REMOVE_PARTICIPANT`), в API в ту же секунду `load room for call update: timeout: context deadline exceeded`. Механизм: проверка `rtc.EnforceIdentity` (каждые 5 с, 64 параллельных проверки по 500 мс при пуле БД в 20 соединений) трактовала любую ошибку как запрет, и одного медленного ответа БД хватало на всех разом.
+- **2.3.4 (PR #111):** в RTC-проверке таймаут и 5xx — «не решено»: участник остаётся, отключение только после 30 с непрерывных неудач по той же identity (на реплику); 4xx, `ErrSessionRevoked`, `ErrDenied`, отсутствующая строка — отказ, действует сразу.
+- **Следом (шлюз):** `enforceIdentitySession` — ошибка чтения членства больше не убирает пространства; `refreshWorkspaceLease`/`refreshSessionLease` при сбое зависимости сохраняют действующую лизу до её истечения (`ReadLeaseTTL` 30 с) — граница fail-closed; отказ действует сразу. Классификация — `httpx.IsDenial` (401/403/404, 409 `PLAN_LIMIT`) + `ErrDenied`/`ErrSessionRevoked`/`db.IsNotFound`.
+- Не выяснено: что замедлило управляемый PostgreSQL (метрики БД и логи API в кластере). Открыто (docs/12): нагрузка самой проверки на пул БД (64 параллельных запроса каждые 5 с) и остальные вызовы `checkIdentity` (resync, боты), где ошибка всё ещё означает отказ.
