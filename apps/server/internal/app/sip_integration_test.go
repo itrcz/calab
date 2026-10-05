@@ -473,6 +473,10 @@ func TestSIP(t *testing.T) {
 		if c.CallTo != "874951234567" || !strings.HasPrefix(c.Room, "sip-test_") {
 			t.Errorf("test dial: %+v", c)
 		}
+		// LiveKit's max_call_duration covers ringing too: it must outlast the ringing timeout.
+		if c.MaxCallDuration <= c.RingingTimeout {
+			t.Errorf("test dial cut before the ringing timeout: %+v", c)
+		}
 		return rtc.SIPParticipant{}, &rtc.Error{Status: 503, Code: "unavailable", Meta: map[string]string{"sip_status_code": "486", "sip_status": "Busy Here"}}
 	}
 	sipFake.mu.Unlock()
@@ -490,6 +494,16 @@ func TestSIP(t *testing.T) {
 	o.must(200, "GET", base, nil, &g)
 	if tr1.GetOk() || g.GetSettings().GetLastError() != "401 Unauthorized" {
 		t.Fatalf("test 401: %v / %v", &tr1, g.GetSettings())
+	}
+	// LiveKit's ringing timeout with no ringing seen: a failure that says what timed out.
+	sipFake.mu.Lock()
+	sipFake.auto = func(rtc.SIPCall) (rtc.SIPParticipant, error) {
+		return rtc.SIPParticipant{}, &rtc.Error{Status: 499, Code: "canceled", Msg: "sip request timed out"}
+	}
+	sipFake.mu.Unlock()
+	o.must(200, "POST", base+"/test", nil, &tr1)
+	if tr1.GetOk() || !strings.Contains(tr1.GetMessage(), "did not answer the call within 15 s") {
+		t.Fatalf("test timed out: %v", &tr1)
 	}
 	sipFake.mu.Lock()
 	sipFake.auto = nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -232,9 +233,7 @@ func failureReason(err error) string {
 	}
 	var e *rtc.Error
 	switch {
-	case errors.Is(err, context.DeadlineExceeded):
-		return reasonNoAnswer
-	case errors.As(err, &e) && e.Code == "deadline_exceeded":
+	case errors.Is(err, context.DeadlineExceeded), sipTimedOut(err):
 		return reasonNoAnswer
 	case errors.As(err, &e) && e.Code != "unavailable" && e.Code != "internal":
 		return reasonError
@@ -437,36 +436,25 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	tctx, cancel := context.WithTimeout(ctx, testRinging+10*time.Second)
+	tctx, cancel := context.WithTimeout(ctx, testDeadline)
 	defer cancel()
+	// LiveKit reports a 1xx only through the line's sip.callStatus attribute (webhooks skip the
+	// service room), so the test watches it: a provider that rings the number accepted the call.
+	ringing := s.watchRinging(tctx, lkRoom, call.ParticipantIdentity)
 	_, err = s.sip.CreateSIPParticipant(tctx, rtc.SIPCall{
 		TrunkID: a.TrunkID, CallTo: DialString(a.OutboundPrefix, a.CallerID), Room: lkRoom,
 		Identity: call.ParticipantIdentity, Name: "connection test", WaitUntilAnswered: true,
-		RingingTimeout: testRinging, MaxCallDuration: testMaxCall,
+		// LiveKit's max_call_duration bounds the whole call, dialing and ringing included: a
+		// bare 5 s cut every test that the provider did not answer within 5 s (ADR-0046).
+		RingingTimeout: testRinging, MaxCallDuration: testRinging + testMaxCall,
 	})
+	cancel()
 	bg := context.WithoutCancel(ctx)
-	out := &v1.TestSipResponse{}
+	out := testVerdict(err, <-ringing)
 	if err == nil {
-		out.Ok, out.Message = true, "answered"
 		s.removeLine(bg, lkRoom, call.ParticipantIdentity)
 		s.finish(bg, id, pbconv.SipEnded, reasonHangup, &me)
 	} else {
-		code, text := rtc.SIPStatus(err)
-		out.SipStatus = uint32(max(code, 0)) //nolint:gosec // SIP codes are 3 digits
-		out.Ok = testOK[code]
-		switch {
-		case code > 0:
-			out.Message = fmt.Sprintf("%d %s", code, text)
-		case errors.Is(err, context.DeadlineExceeded):
-			out.Message = "no answer from the provider: check the host, port and transport" // an unreachable host looks like this
-		default:
-			var e *rtc.Error
-			if errors.As(err, &e) && e.Msg != "" {
-				out.Message = clip(e.Msg, 300)
-			} else {
-				out.Message = "LiveKit SIP is unreachable"
-			}
-		}
 		s.finish(bg, id, pbconv.SipFailed, failureReason(err), nil)
 	}
 	last := ""
@@ -481,6 +469,80 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 	slog.InfoContext(ctx, "sip: connection test", "workspace", wsID, "by", me, "ok", out.Ok, "message", out.Message)
 	httpx.Write(w, http.StatusOK, out)
 	return nil
+}
+
+// watchRinging polls the test line's sip.callStatus until ctx ends and then reports whether
+// the provider got as far as ringing (or answering) the number. At most one LiveKit call a second.
+func (s *Service) watchRinging(ctx context.Context, lkRoom, identity string) <-chan bool {
+	out := make(chan bool, 1)
+	go func() {
+		seen := false
+		defer func() { out <- seen }()
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			ps, err := s.lk.ListParticipants(ctx, lkRoom)
+			if err != nil {
+				continue
+			}
+			for _, p := range ps {
+				if st := p.Attributes[rtc.AttrSIPCallStatus]; p.Identity == identity && (st == "ringing" || st == "active") {
+					seen = true
+					return
+				}
+			}
+		}
+	}()
+	return out
+}
+
+// testVerdict turns the test call's outcome into the answer for the settings tab: ok when the
+// provider took the call (answered, rang, or refused it with a callee-side code), otherwise a
+// message naming what timed out or failed and where.
+func testVerdict(err error, rang bool) *v1.TestSipResponse {
+	out := &v1.TestSipResponse{}
+	if err == nil {
+		out.Ok, out.Message = true, "answered"
+		return out
+	}
+	code, text := rtc.SIPStatus(err)
+	out.SipStatus = uint32(max(code, 0)) //nolint:gosec // SIP codes are 3 digits
+	var e *rtc.Error
+	switch {
+	case code > 0:
+		out.Ok = testOK[code]
+		out.Message = fmt.Sprintf("%d %s", code, text)
+	case rang:
+		// The provider authenticated the call and rang the number; nobody picked up in time.
+		out.Ok = true
+		out.Message = fmt.Sprintf("the provider rang the number, no answer in %d s", int(testRinging/time.Second))
+	case sipTimedOut(err):
+		out.Message = fmt.Sprintf("the provider did not answer the call within %d s (no ringing, no SIP code): "+
+			"check the host, port and transport; some providers do not ring a call to their own number", int(testRinging/time.Second))
+	case errors.Is(err, context.DeadlineExceeded):
+		out.Message = fmt.Sprintf("LiveKit SIP did not report the call's outcome within %d s", int(testDeadline/time.Second))
+	case errors.As(err, &e) && e.Msg != "":
+		out.Message = clip(e.Msg, 300)
+	default:
+		out.Message = "LiveKit SIP is unreachable"
+	}
+	return out
+}
+
+// sipTimedOut reports LiveKit SIP giving up on a call that got no final answer: its ringing
+// timeout ("sip request timed out") or an INVITE transaction that never completed.
+func sipTimedOut(err error) bool {
+	var e *rtc.Error
+	if !errors.As(err, &e) {
+		return false
+	}
+	m := strings.ToLower(e.Msg)
+	return strings.Contains(m, "sip request timed out") || strings.Contains(m, "transaction failed to complete") || e.Code == "deadline_exceeded"
 }
 
 // ---- LiveKit webhooks (rtc.SIPHook) ----
