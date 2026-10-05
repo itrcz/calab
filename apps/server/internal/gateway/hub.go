@@ -6,6 +6,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"strings"
@@ -237,11 +238,13 @@ func (h *Hub) ofUser(uid uuid.UUID) []*Session {
 
 // ---- workspace state ----
 
-// ensureState loads the workspace state synchronously (IDENTIFY / RESUME paths).
-func (h *Hub) ensureState(ctx context.Context, wid uuid.UUID) {
+// ensureState loads the workspace state synchronously (IDENTIFY / RESUME paths). false: the
+// load failed and the workspace's sessions here must resync (stateFailed).
+func (h *Hub) ensureState(ctx context.Context, wid uuid.UUID) bool {
 	if st, created := h.placeholder(wid); created {
-		h.loadInto(ctx, st, wid)
+		return h.loadInto(ctx, st, wid)
 	}
+	return true
 }
 
 func (h *Hub) placeholder(wid uuid.UUID) (*wsState, bool) {
@@ -255,7 +258,7 @@ func (h *Hub) placeholder(wid uuid.UUID) (*wsState, bool) {
 	return st, true
 }
 
-func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
+func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) bool {
 	// Who is in which call, before Postgres: VOICE_STATE_UPDATEs from now on are in the backlog.
 	var inVoice map[uuid.UUID]uuid.UUID
 	if h.voice.C != nil {
@@ -266,12 +269,13 @@ func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 		}
 	}
 	loaded, err := loadState(ctx, h.db.Q, wid)
-	st.mu.Lock()
-	defer st.mu.Unlock()
 	if err != nil {
 		slog.Error("gateway: load workspace state", "workspace", wid, "err", err)
-		loaded = &wsState{rooms: map[uuid.UUID]*v1.Room{}}
+		h.stateFailed(st, wid)
+		return false
 	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
 	st.ws, st.rooms, st.targets = loaded.ws, loaded.rooms, loaded.targets
 	st.roleDefs, st.roleIDs, st.members = loaded.roleDefs, loaded.roleIDs, loaded.members
 	st.boardState = loaded.boardState
@@ -282,6 +286,27 @@ func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 		h.routeLocked(st, wid, p.id, p.enc.ev)
 	}
 	st.loading = false
+	return true
+}
+
+// stateFailed handles a workspace state that could not be loaded (Postgres stall). It used
+// to be kept EMPTY — no rooms, no members — so every VOICE_STATE_UPDATE of the workspace was
+// filtered to "not in voice" and messages went nowhere for the sessions on this instance,
+// for as long as any of them stayed connected: their room lists lost people who were in the
+// call. Now the state is dropped (the next IDENTIFY loads it again) and the workspace's
+// sessions here resync.
+func (h *Hub) stateFailed(st *wsState, wid uuid.UUID) {
+	h.mu.Lock()
+	if h.states[wid] == st {
+		delete(h.states, wid)
+	}
+	h.mu.Unlock()
+	st.mu.Lock()
+	st.backlog, st.loading = nil, false
+	st.mu.Unlock()
+	for _, s := range h.inWorkspace(wid) {
+		s.requireResync("resync required")
+	}
 }
 
 func (h *Hub) state(wid uuid.UUID) *wsState {
@@ -301,8 +326,11 @@ func (h *Hub) routeWorkspace(wid, id uuid.UUID, ev *v1.DispatchEvent) {
 	defer st.mu.Unlock()
 	if st.loading {
 		if len(st.backlog) >= bufferQueue {
+			// The event is lost for the workspace's sessions here: they must resync, not
+			// carry on live without it (a missed VOICE_STATE_UPDATE stays wrong until the
+			// user's next change).
 			for _, s := range h.inWorkspace(wid) {
-				s.broken.Store(true)
+				s.requireResync("resync required")
 			}
 			return
 		}
@@ -782,7 +810,10 @@ func (h *Hub) dispatchGained(s *Session, wid, id uuid.UUID, out *v1.DispatchEven
 		evs := []pendingEvent{{id: id, enc: newScopedEnc(wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomCreate{RoomCreate: &v1.RoomCreate{Room: r}}})}}
 		states, err := h.voice.States(ctx, wid)
 		if err != nil {
+			// The room would arrive without the people in its call: resync instead.
 			slog.WarnContext(ctx, "gateway: voice states of a gained room", "room", rid, "err", err)
+			s.preparationFailed(marker)
+			return
 		}
 		for _, vs := range states {
 			if vs.GetRoomId() == room.GetId() {
@@ -894,7 +925,16 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		if created := ev.GetWorkspaceCreate(); created != nil {
 			snap := created.GetSnapshot()
 			wid := parseID(snap.GetWorkspace().GetId())
-			h.fillLive(ctx, wid, uid, snap)
+			if err := h.fillLive(ctx, wid, uid, snap); err != nil {
+				slog.Warn("gateway: workspace snapshot", "workspace", wid, "err", err)
+				if loadPreparingState {
+					h.stateFailed(preparingState, wid)
+				}
+				for i, s := range sessions {
+					s.preparationFailed(markers[i])
+				}
+				return
+			}
 			enc = newScopedEnc(wid, ev)
 			for _, s := range sessions {
 				if !s.bot {
@@ -941,7 +981,11 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 // fillLive adds Redis-backed parts (voice states, presences, call start times) to user's
 // snapshot. Only members listed in the snapshot are included (guests see a filtered list),
 // plus, for a guest, the people in the calls of its rooms (perm.GuestVisible).
-func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.WorkspaceSnapshot) {
+//
+// The voice states are required: a snapshot without them shows every call empty until each
+// person in it changes something, so a Redis error fails the snapshot (the caller retries or
+// makes the client resync). Presences and call start times stay best-effort.
+func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.WorkspaceSnapshot) error {
 	visible := map[uuid.UUID]bool{}
 	var voiceRooms []uuid.UUID
 	for _, r := range snap.GetRooms() {
@@ -968,24 +1012,26 @@ func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.Worksp
 	if guest {
 		h.ensureGuestAuthors(ctx, wid, user)
 	}
-	if states, err := h.voice.States(ctx, wid); err == nil {
-		snap.VoiceStates = nil
-		for _, vs := range states {
-			if !guest || members[vs.GetUserId()] || !visible[parseID(vs.GetRoomId())] {
-				continue // only a guest's snapshot lacks people (those in its calls)
-			}
-			row, err := h.db.Q.GetMemberWithUser(ctx, sqlc.GetMemberWithUserParams{WorkspaceID: wid, UserID: parseID(vs.GetUserId())})
-			if err != nil {
-				continue // not a member (any more): stays hidden
-			}
-			snap.Members = append(snap.Members, pbconv.Member(row.WorkspaceMember, row.User, row.RoleIds))
-			members[vs.GetUserId()] = true
-			users = append(users, row.User.ID)
+	states, err := h.voice.States(ctx, wid)
+	if err != nil {
+		return fmt.Errorf("voice states of workspace %s: %w", wid, err)
+	}
+	snap.VoiceStates = nil
+	for _, vs := range states {
+		if !guest || members[vs.GetUserId()] || !visible[parseID(vs.GetRoomId())] {
+			continue // only a guest's snapshot lacks people (those in its calls)
 		}
-		for _, vs := range states {
-			if members[vs.GetUserId()] {
-				snap.VoiceStates = append(snap.VoiceStates, sanitizeVoice(vs, func(rid uuid.UUID) bool { return visible[rid] }))
-			}
+		row, err := h.db.Q.GetMemberWithUser(ctx, sqlc.GetMemberWithUserParams{WorkspaceID: wid, UserID: parseID(vs.GetUserId())})
+		if err != nil {
+			continue // not a member (any more): stays hidden
+		}
+		snap.Members = append(snap.Members, pbconv.Member(row.WorkspaceMember, row.User, row.RoleIds))
+		members[vs.GetUserId()] = true
+		users = append(users, row.User.ID)
+	}
+	for _, vs := range states {
+		if members[vs.GetUserId()] {
+			snap.VoiceStates = append(snap.VoiceStates, sanitizeVoice(vs, func(rid uuid.UUID) bool { return visible[rid] }))
 		}
 	}
 	if pres, err := h.pres.get(ctx, users); err == nil {
@@ -994,6 +1040,7 @@ func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.Worksp
 			snap.Presences = append(snap.Presences, pres[u])
 		}
 	}
+	return nil
 }
 
 // ensureGuestAuthors loads the message authors of the guest's rooms into the workspace state

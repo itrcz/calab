@@ -504,9 +504,13 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
 		}
 		snap.Workspace.IdentityAccess = access
-		h.fillLive(ctx, ws, s.user, snap)
+		if err := h.fillLive(ctx, ws, s.user, snap); err != nil {
+			continue // re-added by a later pass, with the people in its calls
+		}
 		h.joinWorkspace(s, ws)
-		h.ensureState(ctx, ws)
+		if !h.ensureState(ctx, ws) {
+			return // stateFailed made the session resync
+		}
 		// The access status first: the client may hold a stale lock for this workspace
 		// (an earlier denial) that would otherwise drop its events after the snapshot.
 		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: access}}})

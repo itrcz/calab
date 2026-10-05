@@ -326,7 +326,13 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 	// Register first so that events published while READY is being built are queued.
 	h.register(s, wids)
 	for _, w := range wids {
-		h.ensureState(ctx, w)
+		if !h.ensureState(ctx, w) {
+			// No workspace state to filter its events with: try again later rather than
+			// run without them (stateFailed).
+			c.closeGraceful(4000, "try again")
+			h.destroy(s, 4000, "try again")
+			return nil
+		}
 	}
 	_ = h.pres.set(ctx, s.user, s.id, s.status, s.client)
 	ready, err := h.buildReady(ctx, s, id.UserID)
@@ -428,7 +434,9 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		if access != nil {
 			snap.Workspace.IdentityAccess = access
 		}
-		h.fillLive(ctx, w.ID, uid, snap)
+		if err := h.fillLive(ctx, w.ID, uid, snap); err != nil {
+			return nil, err // "try again": not a READY with every call shown empty
+		}
 		if u.IsBot {
 			snap.Apps = nil // web apps are for people (ADR-0050)
 		}
@@ -601,7 +609,10 @@ func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Sess
 	s.client = h.pres.client(ctx, meta.user, gsid)
 	h.register(s, wids) // events from now on are queued (s.ready=false)
 	for _, w := range wids {
-		h.ensureState(ctx, w)
+		if !h.ensureState(ctx, w) {
+			h.abandon(s) // the client IDENTIFYs (INVALID_SESSION) and loads it again
+			return nil
+		}
 	}
 	ch := make(chan struct{})
 	h.mu.Lock()
