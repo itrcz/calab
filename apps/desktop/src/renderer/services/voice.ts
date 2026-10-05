@@ -59,6 +59,8 @@ import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQu
 import { platform } from '../platform';
 import { VOICE_TABS_CHANNEL, parseClaim, yieldsTo, type VoiceClaim } from '../lib/voiceTabs';
 import { cameraWanted } from '../lib/media/cameraLogic';
+import { CameraShown, type ShownQuality } from '../lib/media/cameraShown';
+import { useUi } from '../stores/ui';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { lastSpoke, speakingStarts } from '../lib/lastSpoke';
@@ -251,6 +253,12 @@ class VoiceEngine {
   private failedSeat: { roomId: string; workspaceId: string; at: number } | null = null;
   /** The current user join brings me back after a window reload / update restart: its cue is «reconnect», not «join». */
   private resumedJoin = false;
+  /** «Войти и смотреть» (ADR-0066 §3): the room whose join opens the call view. */
+  private videoOnJoin: string | null = null;
+  /** The cameras present at connect are known: a camera after that «turned on» (ADR-0066 §3). */
+  private camerasPrimed = false;
+  /** Remote cameras on screen (ADR-0066 §4): only these are subscribed. */
+  private readonly shownCams = new CameraShown(() => this.applyCameras());
   /** The connect() attempt in flight (the latest one; a superseded attempt never clears it). */
   private attempt: ConnectAttempt | null = null;
   /** Watchdog retries spent on the current intent (docs/09 #131): one fresh Room + token, then out with a toast. */
@@ -388,7 +396,7 @@ class VoiceEngine {
    * voice activation only. `resumed`: back into the seat left by a reload / update restart
    * (services/resumeVoice.ts) — the «reconnect» cue instead of «join».
    */
-  async join(roomId: string, workspaceId: string, opts: { call?: boolean; resumed?: boolean } = {}): Promise<void> {
+  async join(roomId: string, workspaceId: string, opts: { call?: boolean; resumed?: boolean; video?: boolean } = {}): Promise<void> {
     // A suspended workspace has no calls (docs/09 #32): say so instead of a 403 toast.
     if (useWorkspaces.getState().byId[workspaceId]?.ws.suspension) {
       toast.info(t('suspended.voice'));
@@ -400,6 +408,8 @@ class VoiceEngine {
     this.takenOverRoom = null;
     this.stuckRetries = 0;
     this.resumedJoin = opts.resumed === true;
+    // «Войти и смотреть» (ADR-0066 §3): the call view opens as soon as the cameras are known.
+    this.videoOnJoin = opts.video === true ? roomId : null;
     this.announceJoin();
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
@@ -535,8 +545,10 @@ class VoiceEngine {
       activeSpeaker: null,
       focusedTile: null,
       videoPip: true,
+      galleryPage: 0,
       ...(carried !== undefined ? { serverMuted: carried } : {}),
     });
+    this.camerasPrimed = false;
     try {
       attempt.stage = 'join';
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
@@ -598,6 +610,11 @@ class VoiceEngine {
       this.pushSelfState();
       this.refreshStreams();
       this.refreshCameras();
+      this.camerasPrimed = true;
+      if (this.videoOnJoin === roomId) {
+        this.videoOnJoin = null;
+        if (this.anyCamera() && !useVoice.getState().watching) setVoice({ stage: 'expanded', videoPip: true });
+      }
       // Back in after a lost connection (the rejoin cycle) or a reload: «reconnect», else «join».
       playSound(quiet || this.resumedJoin ? 'reconnect' : 'join');
       this.resumedJoin = false;
@@ -1206,6 +1223,7 @@ class VoiceEngine {
       cameras: [],
       activeSpeaker: null,
       focusedTile: null,
+      galleryPage: 0,
       quality: 'unknown',
       rttMs: null,
       lossPct: null,
@@ -1660,7 +1678,34 @@ class VoiceEngine {
     if (!same || focusGone) setVoice({ ...(same ? {} : { cameras }), ...(focusGone ? { focusedTile: null } : {}) });
     // Last camera gone and no stream on the stage: back to the chat.
     if (!this.anyCamera() && st.stage === 'expanded' && !st.watching) setVoice({ stage: 'pip' });
+    // The first remote camera of the call turned on (not the ones already on when I joined).
+    const first = cameras[0];
+    if (this.camerasPrimed && st.cameras.length === 0 && first && st.stage === 'pip' && !st.watching) this.firstCamera(first.userId);
     this.applyCameras();
+  }
+
+  /**
+   * ADR-0066 §3: the first remote camera turned on while the call view is closed. A (nearly) empty
+   * chat — the same rule as a new stream (defaultStage) — opens the view; a busy one gets a toast
+   * «Анна: включена камера · Смотреть».
+   */
+  private firstCamera(userId: string): void {
+    const { roomId, workspaceId } = useVoice.getState();
+    if (!roomId) return;
+    if (defaultStage(roomId) === 'expanded') {
+      setVoice({ stage: 'expanded', videoPip: true });
+      this.applyWatching();
+      return;
+    }
+    const name = memberName(workspaceId, userId);
+    useToasts.getState().push('info', t('video.cameraOnToast', { name }), {
+      label: t('video.watchAction'),
+      run: () => {
+        if (useVoice.getState().roomId !== roomId) return;
+        if (workspaceId) useUi.getState().openRoom(workspaceId, roomId);
+        this.showVideo();
+      },
+    });
   }
 
   private inRoom(userId: string): boolean {
@@ -1695,14 +1740,25 @@ class VoiceEngine {
     const room = this.room;
     if (!room) return;
     const p = prefs();
-    const wanted = cameraWanted(useVoice.getState().cameras.map((c) => c.userId), { hidden: p.hiddenVideo, saveTraffic: p.saveTraffic, primary: this.primaryCamera(), me: this.myId() });
+    const shown = this.shownCams.ids();
+    const wanted = cameraWanted(useVoice.getState().cameras.map((c) => c.userId), { hidden: p.hiddenVideo, saveTraffic: p.saveTraffic, primary: this.primaryCamera(), me: this.myId(), shown });
     for (const rp of room.remoteParticipants.values()) {
       const pub = rp.getTrackPublication(Track.Source.Camera);
       if (!pub) continue;
-      const on = wanted.has(userIdOf(rp.identity)) && !pub.isMuted;
+      const userId = userIdOf(rp.identity);
+      const on = wanted.has(userId) && !pub.isMuted;
       this.subscribe(pub, on);
-      if (on) pub.setVideoQuality(p.saveTraffic ? VideoQuality.MEDIUM : VideoQuality.HIGH);
+      // A 16+ gallery page asks for 360p at most (ADR-0066 §4); adaptive stream picks below the cap.
+      if (on) pub.setVideoQuality(p.saveTraffic || this.shownCams.quality(userId) === 'medium' ? VideoQuality.MEDIUM : VideoQuality.HIGH);
     }
+  }
+
+  /**
+   * A camera <video> of `userId` is on screen (lib/media/cameraShown.ts): subscribe to it at most
+   * at `quality`. Call the returned function when the element goes; the subscription lingers 3 s.
+   */
+  showCamera(userId: string, quality: ShownQuality): () => void {
+    return this.shownCams.claim(userId, quality);
   }
 
   /** Remote camera track of a user in my room (subscribed), for a tile. */
@@ -1715,9 +1771,22 @@ class VoiceEngine {
   focusTile(userId: string | null): void {
     const st = useVoice.getState();
     const focusedTile = userId !== null && st.focusedTile === userId ? null : userId;
-    setVoice({ focusedTile, watching: null, stage: 'expanded' });
+    this.pinTile(focusedTile);
+  }
+
+  /**
+   * Pin `userId` (no toggle) and open the call view: large in «Спикер», first on page 1 in the
+   * gallery (ADR-0066 §1). Also the sidebar's camera icon (§3).
+   */
+  pinTile(userId: string | null): void {
+    setVoice({ focusedTile: userId, watching: null, stage: 'expanded', ...(userId !== null ? { galleryPage: 0, videoPip: true } : {}) });
     this.applyWatching();
     this.applyCameras();
+  }
+
+  /** Gallery page flip (clamped by the view; subscriptions follow the tiles with a 3 s linger). */
+  setGalleryPage(page: number): void {
+    if (useVoice.getState().galleryPage !== page) setVoice({ galleryPage: Math.max(0, page) });
   }
 
   /** Opens the camera grid (the stream, if one is watched, stays the main picture). */

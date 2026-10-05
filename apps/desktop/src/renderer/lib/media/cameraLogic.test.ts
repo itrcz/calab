@@ -106,6 +106,11 @@ describe('cameraWanted (subscriptions)', () => {
   it('never my own camera from another device (review L9)', () => {
     expect([...cameraWanted(['me', 'a'], { hidden: {}, saveTraffic: false, primary: null, me: 'me' })]).toEqual(['a']);
   });
+
+  it('only cameras on screen (ADR-0066 §4)', () => {
+    expect([...cameraWanted(['a', 'b', 'c'], { hidden: { c: true }, saveTraffic: false, primary: null, shown: new Set(['b', 'c']) })]).toEqual(['b']);
+    expect([...cameraWanted(['a', 'b'], { hidden: {}, saveTraffic: true, primary: 'a', shown: new Set(['b']) })]).toEqual([]);
+  });
 });
 
 describe('cpuLimitStep', () => {

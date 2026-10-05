@@ -166,7 +166,7 @@ vi.mock('livekit-client', () => ({
   ParticipantEvent: names,
   ConnectionState: names,
   DisconnectReason: names,
-  Track: { Source: { Microphone: 'microphone', ScreenShare: 'screen_share', ScreenShareAudio: 'screen_share_audio' }, Kind: { Audio: 'audio', Video: 'video' } },
+  Track: { Source: { Microphone: 'microphone', Camera: 'camera', ScreenShare: 'screen_share', ScreenShareAudio: 'screen_share_audio' }, Kind: { Audio: 'audio', Video: 'video' } },
   VideoQuality: { LOW: 0, MEDIUM: 1, HIGH: 2 },
 }));
 
@@ -915,6 +915,92 @@ describe('VoiceEngine', () => {
     useVoice.setState({ pttDown: true });
     voice.resetPtt();
     expect(useVoice.getState().pttDown).toBe(false);
+  });
+
+  describe('cameras in the call view (ADR-0066)', () => {
+    type CamPub = { source: string; trackSid: string; kind: string; isMuted: boolean; setSubscribed: ReturnType<typeof vi.fn>; setVideoQuality: ReturnType<typeof vi.fn>; setEnabled: () => void };
+    const camPub = (trackSid: string): CamPub => ({ source: 'camera', trackSid, kind: 'video', isMuted: false, setSubscribed: vi.fn(), setVideoQuality: vi.fn(), setEnabled: () => undefined });
+    const participant = (identity: string, pubs: CamPub[]) => ({
+      identity,
+      trackPublications: new Map(pubs.map((p) => [p.trackSid, p])),
+      getTrackPublication: (source: string) => pubs.find((p) => p.source === source),
+      getTrackPublicationBySid: (sid: string) => pubs.find((p) => p.trackSid === sid),
+    });
+    const last = (p: CamPub): unknown => p.setSubscribed.mock.calls.at(-1)?.[0];
+    const publish = (room: FakeRoom | undefined, identity: string, pub: CamPub): void => {
+      room?.remoteParticipants.set(identity, participant(identity, [pub]));
+      room?.emit('TrackPublished', pub, room.remoteParticipants.get(identity));
+    };
+
+    it('subscribes only cameras on screen; a tile gone unsubscribes after 3 s; a 16+ page caps at 360p', async () => {
+      await voice.join('A', 'ws');
+      useVoice.setState({ stage: 'expanded' });
+      const room = FakeRoom.all.at(-1);
+      const camB = camPub('TR_cam_b');
+      const camC = camPub('TR_cam_c');
+      publish(room, 'u2:b', camB);
+      publish(room, 'u3:c', camC);
+      expect(useVoice.getState().cameras.map((c) => c.userId)).toEqual(['u2', 'u3']);
+      expect(camB.setSubscribed).not.toHaveBeenCalledWith(true);
+      const release = voice.showCamera('u2', 'medium');
+      await settle();
+      expect(last(camB)).toBe(true);
+      expect(camB.setVideoQuality.mock.calls.at(-1)?.[0]).toBe(1); // MEDIUM
+      expect(camC.setSubscribed).not.toHaveBeenCalledWith(true);
+      const big = voice.showCamera('u2', 'high');
+      await settle();
+      expect(camB.setVideoQuality.mock.calls.at(-1)?.[0]).toBe(2); // HIGH
+      big();
+      release();
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(last(camB)).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(last(camB)).toBe(false);
+    });
+
+    it('the first remote camera opens the call view when the chat is (nearly) empty', async () => {
+      await voice.join('A', 'ws');
+      expect(useVoice.getState().stage).toBe('pip');
+      publish(FakeRoom.all.at(-1), 'u2:b', camPub('TR_cam_b'));
+      expect(useVoice.getState().stage).toBe('expanded');
+      expect(pushToast).not.toHaveBeenCalled();
+    });
+
+    it('in a busy chat the first camera is a toast «… · Смотреть» instead', async () => {
+      const { useRooms } = await import('../stores/rooms');
+      useRooms.setState({ lastMessage: { A: 'm1' } });
+      pushToast.mockClear();
+      await voice.join('A', 'ws');
+      publish(FakeRoom.all.at(-1), 'u2:b', camPub('TR_cam_b'));
+      expect(useVoice.getState().stage).toBe('pip');
+      expect(pushToast).toHaveBeenCalledTimes(1);
+      const action = pushToast.mock.calls[0]?.[2] as { run: () => void };
+      action.run();
+      expect(useVoice.getState().stage).toBe('expanded');
+      useRooms.setState({ lastMessage: {} });
+    });
+
+    it('cameras already on at join are not «turned on»; «Войти и смотреть» opens the call view', async () => {
+      FakeRoom.onConnect = () => {
+        publish(FakeRoom.all.at(-1), 'u2:b', camPub('TR_cam_b'));
+        return Promise.resolve();
+      };
+      pushToast.mockClear();
+      await voice.join('A', 'ws');
+      expect(useVoice.getState().cameras).toHaveLength(1);
+      expect(useVoice.getState().stage).toBe('pip');
+      expect(pushToast).not.toHaveBeenCalled();
+      await voice.leave();
+      await voice.join('B', 'ws', { video: true });
+      expect(useVoice.getState().stage).toBe('expanded');
+    });
+
+    it('pinTile opens the call view on page 1 with that person pinned', async () => {
+      await voice.join('A', 'ws');
+      useVoice.setState({ galleryPage: 2 });
+      voice.pinTile('u2');
+      expect(useVoice.getState()).toMatchObject({ focusedTile: 'u2', stage: 'expanded', galleryPage: 0 });
+    });
   });
 
   it('primaryCamera never picks a hidden camera: PiP, grid and «Экономить трафик» agree (review M1)', () => {

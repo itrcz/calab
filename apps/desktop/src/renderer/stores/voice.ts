@@ -121,6 +121,8 @@ export interface VoiceStore {
   focusedTile: string | null;
   /** The camera PiP over the chat (closed with ×, back from «Ещё → Показать видео»). */
   videoPip: boolean;
+  /** The gallery page on screen, 0-based (ADR-0066 §1); back to page 1 on a pin and on leave. */
+  galleryPage: number;
   muted: boolean;
   deafened: boolean;
   /** The mic before deafen went on: undeafen returns to it (lib/voiceLogic toggleDeafen, #11). */
@@ -184,6 +186,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   activeSpeaker: null,
   focusedTile: null,
   videoPip: true,
+  galleryPage: 0,
   muted: false,
   deafened: false,
   mutedBeforeDeafen: false,
