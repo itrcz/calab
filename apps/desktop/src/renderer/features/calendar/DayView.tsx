@@ -5,13 +5,13 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { Button, IconButton, Modal, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
-import { dayKeys, daySignature, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
+import { dayKeys, daySignature, involvedIndexes, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
 import { externalSignature, isExternalKey, parseExternalSignature, sharedLabel } from '../../lib/calendar/external';
 import { chunkOf } from '../../lib/calendar/freebusy';
 import { layoutDay } from '../../lib/calendar/layout';
 import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan, formatLongDay, formatMinutes, formatRange, formatTime, monthOf } from '../../lib/calendar/time';
 import { dateTimeFormat } from '../../lib/format';
-import { addPeople } from '../../lib/calendar/people';
+import { addPeople, personColor } from '../../lib/calendar/people';
 import { useMobile } from '../../lib/mobile';
 import { calendarAvailable, canEditEvent, copyEventLink, ensureMonth, eventOf, moveOccurrence } from '../../services/calendar';
 import { useCalendar } from '../../stores/calendar';
@@ -19,7 +19,7 @@ import { busySignature, ensureBusy, ensureExternal, loadCalDav, parseBusySignatu
 import { entryKey, selectPeople, useFreeBusy } from '../../stores/freebusy';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
-import { useWorkspaces } from '../../stores/workspaces';
+import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { NavButton } from '../shell/MobileShell';
@@ -45,8 +45,11 @@ const EDGE_PX = 24;
  * switches the day while dragging); a press-and-drag on the empty grid selects a range for a new
  * meeting, a click proposes 30 minutes. Keys: N new, ←/→ day, T today, Delete cancels.
  * The drag lives in a leaf store (dragState.ts); the calendar store is written once, on drop.
- * «Люди» (ADR-0041 §3): the chips over the grid narrow it to those people's meetings, their busy
- * time I may not see as grey «Занято» blocks; my own external calendar's busy time always shows.
+ * «Люди» (ADR-0041 §3): the chips over the grid switch it to those people's meetings (only theirs —
+ * owner, 05.10; me among them brings mine back), each block dotted in the colours of the selected
+ * people it involves; their busy time I may not see — grey «Занято» blocks (the server decides
+ * what I see: ADR-0041 §1, ADR-0045 §4). My external calendar shows without a selection or with me
+ * selected.
  * «Подобрать время» replaces the grid with the availability columns (FindTime.tsx).
  */
 export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
@@ -72,27 +75,29 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   // not on an answer / title (the blocks subscribe to those themselves).
   const people = useFreeBusy(selectPeople(workspaceId));
   const peopleSet = useMemo(() => (people.length ? new Set(people) : undefined), [people]);
-  // Default scope (owner, 02.10): only meetings I organize or attend; selected people add theirs.
+  // Scope: without a selection only meetings I organize or attend (owner, 02.10); with one — only
+  // the selected people's (owner, 05.10).
   const me = myUserId();
   const mine = me;
   const sig = useCalendar((s) => daySignature(s.occ, dayKeys(s.occ, workspaceId, day, peopleSet, mine)));
   const items = useMemo(() => parseSignature(sig), [sig]);
-  // Busy time from free / busy: the selected people's (what I cannot see as a meeting), else — and
-  // my external calendar's (shown with the filter too). A primitive per person: a busy change of someone
-  // else re-renders nothing.
+  // Busy time from free / busy: the selected people's (what I cannot see as a meeting), else my
+  // external calendar's. A primitive per person: a busy change of someone else re-renders nothing.
   const own = people.length === 0;
+  // My external calendar's events: in my own day, or when I am one of the selected people.
+  const showMine = own || (!!me && people.includes(me));
   const watched = useMemo(() => (!own ? people : me ? [me] : NO_PEOPLE), [own, people, me]);
   useEffect(() => ensureBusy(workspaceId, watched, dayStart(day), dayEnd(day)), [workspaceId, watched, day]);
   const fbSig = useFreeBusy((s) => watched.map((u) => `${u}#${busySignature(s.entries[entryKey(workspaceId, u)], dayStart(day), dayEnd(day))}`).join('¦'));
   // My external calendar's events with their details (ADR-0045 §3) wherever my busy time shows:
   // cards instead of my grey external blocks once the day is loaded.
-  const extOn = useFreeBusy((s) => !!s.caldav?.calendarHref && s.caldav.import);
+  const extOn = useFreeBusy((s) => showMine && !!s.caldav?.calendarHref && s.caldav.import);
   const extLoaded = useFreeBusy((s) => s.externalWs === workspaceId && !!s.externalChunks[chunkOf(dayStart(day))] && !!s.externalChunks[chunkOf(dayEnd(day) - 1)]);
   useEffect(() => {
     if (extOn && !extLoaded) ensureExternal(workspaceId, dayStart(day), dayEnd(day));
   }, [workspaceId, day, extOn, extLoaded]);
-  const extSig = useFreeBusy((s) => (s.externalWs === workspaceId ? externalSignature(s.external[day]) : ''));
-  const extHeld = useFreeBusy((s) => s.externalWs === workspaceId && s.external[day] !== undefined);
+  const extSig = useFreeBusy((s) => (showMine && s.externalWs === workspaceId ? externalSignature(s.external[day]) : ''));
+  const extHeld = useFreeBusy((s) => showMine && s.externalWs === workspaceId && s.external[day] !== undefined);
   const ext = useMemo<SigItem[]>(() => parseExternalSignature(extSig).map((e) => ({ key: e.key, allDay: e.allDay, start: e.start, end: e.end })), [extSig]);
   const busy = useMemo(() => busyItems(fbSig, items, own, extHeld ? me : ''), [fbSig, items, own, extHeld, me]);
   const timed = useMemo(() => [...items.filter((i) => !i.allDay), ...busy.filter((i) => !i.allDay), ...ext.filter((i) => !i.allDay)], [items, busy, ext]);
@@ -531,6 +536,7 @@ const EventBlock = memo(function EventBlock({
             {px > 70 && ev.repeat !== EventRepeat.UNSPECIFIED ? <Repeat className="mt-0.5 size-3 opacity-70" aria-hidden /> : null}
           </>
         )}
+        <PersonDots occKey={occKey} className="absolute right-1 top-1" />
         {editable ? (
           <span
             aria-hidden
@@ -634,11 +640,37 @@ const AllDayChip = memo(function AllDayChip({ occKey, onDown }: { occKey: string
             useUi.getState().selectCalEvent(occKey);
           }
         }}
-        className={cx('truncate rounded-[6px] border-l-[3px] px-1.5 text-caption font-semibold leading-5 outline-none focus-visible:ring-2 focus-visible:ring-accent', blockTone(myStatusOf(ev, myUserId()), selected))}
+        className={cx('flex min-w-0 items-center gap-1 rounded-[6px] border-l-[3px] px-1.5 text-caption font-semibold leading-5 outline-none focus-visible:ring-2 focus-visible:ring-accent', blockTone(myStatusOf(ev, myUserId()), selected))}
       >
-        {ev.title}
+        <span className="min-w-0 flex-1 truncate">{ev.title}</span>
+        <PersonDots occKey={occKey} />
       </div>
     </BlockMenu>
+  );
+});
+
+/**
+ * With the «Люди» filter on: a dot per selected person the meeting involves, in their chip colour
+ * (docs/08 «Фильтр «Люди»»). A leaf: a selection change re-renders the dots, not the block.
+ */
+const PersonDots = memo(function PersonDots({ occKey, className }: { occKey: string; className?: string }): ReactNode {
+  const ws = useCalendar((s) => s.occ[occKey]?.workspaceId ?? '');
+  const people = useFreeBusy(selectPeople(ws));
+  // A primitive: the involved positions, re-computed only when the meeting or the selection changes.
+  const sig = useCalendar((s) => {
+    const ev = s.occ[occKey];
+    return ev && people.length ? involvedIndexes(ev, people).join(',') : '';
+  });
+  if (!sig) return null;
+  const idx = sig.split(',').map(Number);
+  const names = idx.map((i) => memberName(ws, people[i] ?? '')).join(', ');
+  return (
+    <span className={cx('pointer-events-none flex shrink-0 items-center gap-0.5', className)} title={names} data-testid="person-dots">
+      {idx.map((i) => (
+        <span key={i} className="size-1.5 rounded-full ring-1 ring-[var(--color-bg)]" style={{ background: personColor(i) }} aria-hidden />
+      ))}
+      <span className="sr-only">{names}</span>
+    </span>
   );
 });
 

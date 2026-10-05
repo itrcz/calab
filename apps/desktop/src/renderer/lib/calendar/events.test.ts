@@ -2,7 +2,7 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, CalendarEventAttendeeSchema, CalendarEventCountsSchema, CalendarEventSchema, EventRepeat, type CalendarEvent } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { applyCreate, applyDelete, busyDays, dayKeys, applyRsvp, applyUpdate, keysIn, myStatusOf, occKey, replaceWindow, roomMeeting, withActive, withoutActive } from './events';
+import { applyCreate, applyDelete, busyDays, dayKeys, applyRsvp, involvedIndexes, applyUpdate, keysIn, myStatusOf, occKey, replaceWindow, roomMeeting, withActive, withoutActive } from './events';
 import { dayKey } from './time';
 
 const H = 3_600_000;
@@ -131,22 +131,39 @@ describe('room badges (ROOM_EVENT_ACTIVE / ENDED)', () => {
   });
 });
 
-describe('«Только мои» (docs/09 #140)', () => {
+describe('calendar scope: mine / «Люди» (docs/09 #140)', () => {
   const invited = ev('invited', T0);
   const organized = ev('organized', T0 + H / 4, { organizerId: ME, attendees: [] });
   const others = ev('others', T0 + H / 2, { attendees: [create(CalendarEventAttendeeSchema, { userId: BOB, required: true, status: AttendeeStatus.ACCEPTED })] });
   const m = map(invited, organized, others);
   const day = dayKey(T0);
 
-  it('shows the meetings I organize or attend, plus the selected people\'s', () => {
+  it('shows the meetings I organize or attend without a selection', () => {
     expect(dayKeys(m, 'ws', day)).toHaveLength(3);
     expect(dayKeys(m, 'ws', day, undefined, ME).map((k) => m[k]?.id)).toEqual(['invited', 'organized']);
-    expect(dayKeys(m, 'ws', day, new Set([BOB]), ME).map((k) => m[k]?.id)).toEqual(['invited', 'organized', 'others']);
+  });
+
+  it('with people selected shows only their meetings, not mine (owner, 05.10)', () => {
+    expect(dayKeys(m, 'ws', day, new Set([BOB]), ME).map((k) => m[k]?.id)).toEqual(['invited', 'others']);
+    // Me among the selected brings my meetings back.
+    expect(dayKeys(m, 'ws', day, new Set([BOB, ME]), ME).map((k) => m[k]?.id)).toEqual(['invited', 'organized', 'others']);
+    // A selected person who declined is not in that meeting.
+    const declined = ev('declined', T0, { organizerId: 'u-carol', attendees: [create(CalendarEventAttendeeSchema, { userId: BOB, status: AttendeeStatus.DECLINED })] });
+    expect(dayKeys(map(declined), 'ws', day, new Set([BOB]), ME)).toEqual([]);
+  });
+
+  it('marks which selected people a meeting involves (chip colours by position)', () => {
+    expect(involvedIndexes(others, [ME, BOB])).toEqual([1]);
+    expect(involvedIndexes(organized, [BOB, ME])).toEqual([1]);
+    expect(involvedIndexes(invited, [ME, BOB])).toEqual([0, 1]);
+    expect(involvedIndexes(organized, ['u-carol'])).toEqual([]);
   });
 
   it('the mini month dots follow it', () => {
     const from = T0 - 12 * H;
     expect(busyDays(map(others), 'ws', from, from + 24 * H, undefined, undefined, ME)).toEqual([]);
     expect(busyDays(m, 'ws', from, from + 24 * H, undefined, undefined, ME)).toContain(day);
+    expect(busyDays(map(organized), 'ws', from, from + 24 * H, undefined, new Set([BOB]), ME)).toEqual([]);
+    expect(busyDays(m, 'ws', from, from + 24 * H, undefined, new Set([BOB]), ME)).toContain(day);
   });
 });

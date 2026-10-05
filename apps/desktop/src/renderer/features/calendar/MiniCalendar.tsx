@@ -60,7 +60,8 @@ export const MiniCalendar = memo(function MiniCalendar({ workspaceId }: { worksp
   useEffect(() => {
     if (people.length) ensureBusy(workspaceId, people, from, to);
   }, [workspaceId, people, from, to]);
-  // Default scope (owner, 02.10): days of meetings I organize or attend, plus the selected people's.
+  // Scope: days of meetings I organize or attend (owner, 02.10); with a selection — only the
+  // selected people's (owner, 05.10).
   const mine = myUserId();
   const busy = useCalendar(useShallow((s) => busyDays(s.occ, workspaceId, from, to, undefined, peopleSet, mine)));
   const fbBusy = useFreeBusy(useShallow((s) => (peopleSet ? peopleBusyDays(people.map((u) => s.entries[entryKey(workspaceId, u)]), from, to) : NO_DAYS)));

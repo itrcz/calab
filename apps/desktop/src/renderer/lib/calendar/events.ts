@@ -44,11 +44,24 @@ export const isAttendee =(ev: Pick<CalendarEvent, 'attendees'>, me: string): boo
 export const isMine = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, mine: string): boolean => !mine || ev.organizerId === mine || isAttendee(ev, mine);
 
 /**
- * The calendar's default scope (owner, 02.10): my meetings (`mine`), plus those involving the people
- * selected in the «Люди» filter. Neither given = everything.
+ * The calendar's scope: without a «Люди» selection — my meetings (`mine`, owner 02.10); with one —
+ * only the meetings of the selected people (owner, 05.10: «когда выбраны люди, нужно показывать
+ * встречи выбранных людей», not mine; me among them brings mine back). Neither given = everything.
  */
 const inScope = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, people: ReadonlySet<string> | undefined, mine: string): boolean =>
-  (!people && !mine) || (!!mine && isMine(ev, mine)) || (!!people && involvesAny(ev, people));
+  people ? involvesAny(ev, people) : !mine || isMine(ev, mine);
+
+/**
+ * Which of the selected people (positions in the filter's order — their chip colours) a meeting
+ * involves: the person dots on its block in the filtered day.
+ */
+export function involvedIndexes(ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, people: readonly string[]): number[] {
+  const out: number[] = [];
+  people.forEach((id, i) => {
+    if (involvesAny(ev, new Set([id]))) out.push(i);
+  });
+  return out;
+}
 
 const overlaps = (ev: CalendarEvent, from: number, to: number): boolean => {
   const { start, end } = eventSpan(ev);
