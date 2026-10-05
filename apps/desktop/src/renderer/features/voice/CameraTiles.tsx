@@ -1,10 +1,26 @@
-import * as Popover from '@radix-ui/react-popover';
-import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, Video, VideoOff } from 'lucide-react';
-import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import { Check, ChevronLeft, ChevronRight, Ellipsis, Maximize2, MessageCircle, Mic, MicOff, Pin, PinOff, VideoOff } from 'lucide-react';
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Badge, CloseButton, cx } from '../../components/ui';
+import { Badge, CloseButton, IconButton, Segmented, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
+import { useMobile } from '../../lib/mobile';
+import type { ShownQuality } from '../../lib/media/cameraShown';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
@@ -15,40 +31,50 @@ import { MemberContextMenu } from '../people/MemberContextMenu';
 import { joinedAtMs } from '../../lib/justJoined';
 import { cameraMirrored } from '../../lib/media/cameraLogic';
 import { JustJoinedDot } from './JustJoinedDot';
-import { popoverBox } from '../shell/menu';
+import { menuBox, menuItem } from '../shell/menu';
 import type { Box } from './StreamArea';
 import { PIP_SHADOW, WELCOME_ROW, pipSize } from './streamFormat';
-import { layoutTiles, type TilePerson } from './tileLayout';
-import { useTileSelection } from './useTileSelection';
+import { GALLERY_MEDIUM_FROM, gridTiles, speakerLayout, speakerTiles, type CallView, type TilePerson } from './tileLayout';
+import { useGallery, useGalleryPageSize } from './useGallery';
 
 /*
- * Webcam tiles of my voice room (docs/09 #42): the grid over the chat area, the camera PiP while
- * the chat is open, and 160×90 tiles in the stream stage's strip. Each <video> is attached with
- * LiveKit's attach(), so adaptive stream sizes the subscription to the tile and pauses it when
- * the tile is gone; the engine decides what is subscribed at all (services/voice.ts
- * applyCameras). Video elements are always muted: a camera has no audio.
+ * Webcam tiles of my voice room (docs/09 #42, ADR-0066): the call view over the chat area
+ * («Галерея» with pages or «Спикер» with a scrollable strip), the camera PiP while the chat is
+ * open, and 160×90 tiles in the stream stage's strip. Each <video> is attached with LiveKit's
+ * attach(), so adaptive stream sizes the subscription to the tile; a mounted camera <video> claims
+ * its participant (voice.showCamera) and only claimed cameras are subscribed (ADR-0066 §4).
+ * Video elements are always muted: a camera has no audio.
  */
 
 const useMe = (): string => useSession((s) => s.me?.user?.id ?? '');
 
-/** People in my voice room with their tile video flag (call order). */
+/**
+ * People in my voice room with their tile video flag (call order). The room's membership is read
+ * as a primitive key: a mute or a «speaking» flag elsewhere in the room changes nothing here.
+ */
 export function useRoomPeople(wsId: string | null): TilePerson[] {
   const roomId = useVoice((s) => s.roomId);
-  const states = useWorkspaces((s) => (wsId ? s.byId[wsId]?.voice : undefined));
-  const cameras = useVoice((s) => s.cameras);
+  const members = useWorkspaces((s) => {
+    const states = wsId ? s.byId[wsId]?.voice : undefined;
+    if (!states || !roomId) return '';
+    return Object.values(states)
+      .filter((v) => v.roomId === roomId)
+      .sort((a, b) => Number(a.joinedAt?.seconds ?? 0n) - Number(b.joinedAt?.seconds ?? 0n) || a.userId.localeCompare(b.userId))
+      .map((v) => v.userId)
+      .join(',');
+  });
+  const cameras = useVoice((s) => s.cameras.map((c) => c.userId).join(','));
   const myCamera = useVoice((s) => s.camera === 'on');
   const hidden = usePrefs((s) => s.hiddenVideo);
   const me = useMe();
   return useMemo(() => {
-    const list = Object.values(states ?? {})
-      .filter((v) => v.roomId === roomId)
-      .sort((a, b) => Number(a.joinedAt?.seconds ?? 0n) - Number(b.joinedAt?.seconds ?? 0n) || a.userId.localeCompare(b.userId))
-      .map((v) => v.userId);
+    const list = members ? members.split(',') : [];
+    const cams = cameras ? cameras.split(',') : [];
     if (me && !list.includes(me)) list.push(me);
     // Someone with a live camera but no voice state yet (webhook lag) still gets a tile.
-    for (const c of cameras) if (!list.includes(c.userId)) list.push(c.userId);
-    return list.map((userId) => ({ userId, video: userId === me ? myCamera : cameras.some((c) => c.userId === userId) && !hidden[userId] }));
-  }, [states, roomId, cameras, myCamera, hidden, me]);
+    for (const c of cams) if (!list.includes(c)) list.push(c);
+    return list.map((userId) => ({ userId, video: userId === me ? myCamera : cams.includes(userId) && !hidden[userId] }));
+  }, [members, cameras, myCamera, hidden, me]);
 }
 
 /** Any camera to show (mine or a remote one)? */
@@ -56,11 +82,15 @@ export function useAnyCamera(): boolean {
   return useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
 }
 
-/** A camera <video>: mine (mirrored self-view) or a remote one; avatar until the first frame. */
-function CameraVideo({ userId, wsId, avatarSize, fit = 'cover' }: { userId: string; wsId: string | null; avatarSize: number; fit?: 'cover' | 'contain' }): ReactNode {
+/**
+ * A camera <video>: mine (mirrored self-view) or a remote one; avatar until the first frame.
+ * A remote one claims its subscription while mounted (ADR-0066 §4: only what is on screen).
+ */
+function CameraVideo({ userId, wsId, avatarSize, fit = 'cover', quality = 'high' }: { userId: string; wsId: string | null; avatarSize: number; fit?: 'cover' | 'contain'; quality?: ShownQuality }): ReactNode {
   const ref = useRef<HTMLVideoElement>(null);
   const me = useMe();
   const isMe = userId === me;
+  useEffect(() => (isMe ? undefined : voice.showCamera(userId, quality)), [isMe, userId, quality]);
   // This tile's own track object: re-attach only when *it* changes, not on every (un)subscribe in
   // the room — adaptive stream would see the element flap (review L4). The selector re-reads it
   // whenever the voice store changes (trackEpoch is bumped on every track change).
@@ -141,66 +171,79 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
   );
 }
 
-type TileProps = ComponentPropsWithoutRef<'button'> & {
+type TileProps = Omit<ComponentPropsWithoutRef<'button'>, 'style'> & {
   userId: string;
   wsId: string | null;
   video: boolean;
   featured: boolean;
   small?: boolean;
   avatarSize: number;
+  /** The layer this tile needs (a 16+ gallery page: medium). */
+  quality?: ShownQuality;
+  /** Absolute position in the call area (primitives: a memo row gets no new objects). */
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
 };
 
-/** One participant tile; a button (click = show large / back to the grid). */
-const Tile = memo(forwardRef<HTMLButtonElement, TileProps>(function Tile({ userId, wsId, video, featured, small, avatarSize, className, style, ...rest }, ref) {
-  // Memo row: re-render on a language switch too (ADR-0022).
-  useLocale();
-  const name = useMemberName(wsId, userId);
-  const speaking = useVoice((s) => s.speaking[userId] ?? false);
-  const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
-  const hasCamera = useVoice((s) => s.cameras.some((c) => c.userId === userId));
-  const hidden = usePrefs((s) => !!s.hiddenVideo[userId]);
-  const saveTraffic = usePrefs((s) => s.saveTraffic);
-  const primary = useVoice(() => voice.primaryCamera());
-  const saved = saveTraffic && hasCamera && !hidden && primary !== userId;
-  const focused = useVoice((s) => s.focusedTile === userId);
-  const off = hasCamera && (hidden || saved);
-  return (
-    <button
-      ref={ref}
-      type="button"
-      data-testid="video-tile"
-      data-featured={featured || undefined}
-      aria-label={video || hasCamera ? t('video.of', { name }) : name}
-      aria-pressed={focused}
-      title={focused ? t('video.unfocus') : t('video.focus')}
-      onClick={() => voice.focusTile(userId)}
-      className={cx('group/tile absolute overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-left', className)}
-      style={style}
-      {...rest}
-    >
-      {video && !saved ? <CameraVideo userId={userId} wsId={wsId} avatarSize={avatarSize} fit={featured ? 'contain' : 'cover'} /> : <AvatarFill userId={userId} wsId={wsId} size={avatarSize} />}
-      {/* Speaking ring over the video (docs/09 #30): green, 2 px inside the tile; a pinned tile keeps an accent ring. */}
-      <span
-        aria-hidden
-        className={cx(
-          'pointer-events-none absolute inset-0 rounded-[var(--radius-card)] ring-2 ring-inset transition-shadow duration-100',
-          speaking && !muted ? 'ring-[var(--color-green)]' : focused ? 'ring-accent' : 'ring-transparent',
+/** One participant tile; a button (click = pin / unpin). */
+const Tile = memo(
+  forwardRef<HTMLButtonElement, TileProps>(function Tile({ userId, wsId, video, featured, small, avatarSize, quality, x, y, w, h, className, ...rest }, ref) {
+    // Memo row: re-render on a language switch too (ADR-0022).
+    useLocale();
+    const name = useMemberName(wsId, userId);
+    const speaking = useVoice((s) => s.speaking[userId] ?? false);
+    const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
+    const hasCamera = useVoice((s) => s.cameras.some((c) => c.userId === userId));
+    const hidden = usePrefs((s) => !!s.hiddenVideo[userId]);
+    const saveTraffic = usePrefs((s) => s.saveTraffic);
+    const primary = useVoice(() => voice.primaryCamera());
+    const saved = saveTraffic && hasCamera && !hidden && primary !== userId;
+    const focused = useVoice((s) => s.focusedTile === userId);
+    const off = hasCamera && (hidden || saved);
+    return (
+      <button
+        ref={ref}
+        type="button"
+        data-testid="video-tile"
+        data-featured={featured || undefined}
+        aria-label={video || hasCamera ? t('video.of', { name }) : name}
+        aria-pressed={focused}
+        title={focused ? t('video.unfocus') : t('video.focus')}
+        onClick={() => voice.focusTile(userId)}
+        className={cx('group/tile absolute overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-left', className)}
+        style={x !== undefined ? { left: x, top: y, width: w, height: h } : undefined}
+        {...rest}
+      >
+        {video && !saved ? (
+          <CameraVideo userId={userId} wsId={wsId} avatarSize={avatarSize} fit={featured ? 'contain' : 'cover'} quality={quality} />
+        ) : (
+          <AvatarFill userId={userId} wsId={wsId} size={avatarSize} />
         )}
-      />
-      {focused ? (
-        <span className="pointer-events-none absolute left-2 top-2 grid size-6 place-items-center rounded-full bg-black/60 text-white" title={t('video.pinned')}>
-          <Pin className="size-3.5" aria-label={t('video.pinned')} role="img" />
-        </span>
-      ) : null}
-      {off ? (
-        <span className="pointer-events-none absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-black/60 text-white" title={hidden ? t('video.hidden') : t('video.saved')}>
-          <VideoOff className="size-3.5" aria-label={hidden ? t('video.hidden') : t('video.saved')} role="img" />
-        </span>
-      ) : null}
-      <TileName userId={userId} wsId={wsId} small={small} />
-    </button>
-  );
-}));
+        {/* Speaking ring over the video (docs/09 #30): green, 2 px inside the tile; a pinned tile keeps an accent ring. */}
+        <span
+          aria-hidden
+          className={cx(
+            'pointer-events-none absolute inset-0 rounded-[var(--radius-card)] ring-2 ring-inset transition-shadow duration-100',
+            speaking && !muted ? 'ring-[var(--color-green)]' : focused ? 'ring-accent' : 'ring-transparent',
+          )}
+        />
+        {focused ? (
+          <span className="pointer-events-none absolute left-2 top-2 grid size-6 place-items-center rounded-full bg-black/60 text-white" title={t('video.pinned')}>
+            <Pin className="size-3.5" aria-label={t('video.pinned')} role="img" />
+          </span>
+        ) : null}
+        {off ? (
+          <span className="pointer-events-none absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-black/60 text-white" title={hidden ? t('video.hidden') : t('video.saved')}>
+            <VideoOff className="size-3.5" aria-label={hidden ? t('video.hidden') : t('video.saved')} role="img" />
+          </span>
+        ) : null}
+        <TileName userId={userId} wsId={wsId} small={small} />
+      </button>
+    );
+  }),
+);
 
 /** Tile with the member's right-click menu (volume, «Не показывать видео», moderation). */
 function MemberTile(props: TileProps): ReactNode {
@@ -213,7 +256,7 @@ function MemberTile(props: TileProps): ReactNode {
   );
 }
 
-function useSize(ref: React.RefObject<HTMLElement | null>): { w: number; h: number } {
+function useSize(ref: RefObject<HTMLElement | null>): { w: number; h: number } {
   const [size, setSize] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
     const el = ref.current;
@@ -230,104 +273,155 @@ function useSize(ref: React.RefObject<HTMLElement | null>): { w: number; h: numb
 
 const avatarFor = (w: number, h: number): number => Math.round(Math.max(32, Math.min(96, Math.min(w, h) * 0.36)));
 
-/** One row of the «Ещё N» list: avatar with the speaking ring, name, camera icon; click = pin. */
-const HiddenRow = memo(function HiddenRow({ userId, wsId, onPick }: { userId: string; wsId: string | null; onPick: (userId: string) => void }): ReactNode {
-  useLocale();
-  const name = useMemberName(wsId, userId);
-  const avatar = useWorkspaces((s) => s.users[userId]?.avatarFileId);
-  const speaking = useVoice((s) => s.speaking[userId] ?? false);
-  const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
-  const hasCamera = useVoice((s) => s.cameras.some((c) => c.userId === userId));
-  const me = useMe();
-  const label = userId === me ? t('video.you', { name }) : name;
-  return (
-    <li>
-      <button
-        type="button"
-        data-testid="video-hidden-row"
-        title={t('video.focus')}
-        onClick={() => onPick(userId)}
-        className="flex h-9 w-full items-center gap-2 rounded-[5px] px-2 text-left text-body text-fg outline-none hover:bg-hover focus-visible:bg-hover"
-      >
-        <Avatar userId={userId} name={name} fileId={avatar || undefined} size={24} speaking={speaking && !muted} />
-        <span className={cx('min-w-0 flex-1 truncate', speaking && !muted ? 'text-fg' : 'text-muted')}>{label}</span>
-        {muted ? <MicOff className="size-3.5 shrink-0 text-faint" aria-label={t('shell.mutedState')} role="img" /> : null}
-        {hasCamera ? <Video className="size-4 shrink-0 text-faint" aria-label={t('video.stateOn')} role="img" /> : null}
-      </button>
-    </li>
-  );
-});
-
-/** ↑/↓ (Home/End) move between the rows of the «Ещё N» list; Tab works as usual. */
-function onListKey(e: ReactKeyboardEvent<HTMLUListElement>): void {
-  const rows = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
-  const i = rows.indexOf(document.activeElement as HTMLButtonElement);
-  const next = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : null;
-  if (next === null) return;
-  e.preventDefault();
-  rows[Math.max(0, Math.min(rows.length - 1, next))]?.focus();
+/** Typing somewhere (the composer, a field): ←/→ belong to it, not to the gallery. */
+function typingTarget(el: Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  return el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
 }
 
+const NO_TILES: readonly TilePerson[] = [];
+
+/** A horizontal touch swipe of at least this many px flips the page. */
+const SWIPE_PX = 48;
+
 /**
- * «Ещё N» (ADR-0066 stage 1): the last slot of a full grid; opens the list of the people behind
- * it, a click pins one (they take a slot and go large). Rows subscribe per id: a speaking start
- * repaints its ring only.
+ * «Говорят сейчас: Анна, Борис» (ADR-0066 §2): someone speaking is not on this gallery page.
+ * Its own subscriber with a primitive selector (the ids, joined): a speaking start on the page
+ * re-renders nothing; a click goes to the first speaker's page.
  */
-const OverflowTile = memo(function OverflowTile({ hidden, wsId, x, y, w, h }: { hidden: readonly string[]; wsId: string | null; x: number; y: number; w: number; h: number }): ReactNode {
+const SpeakingNow = memo(function SpeakingNow({ visible, me, wsId, pageOf, onGo }: { visible: string; me: string; wsId: string | null; pageOf: (userId: string) => number; onGo: (page: number) => void }): ReactNode {
   useLocale();
-  const [open, setOpen] = useState(false);
-  const pick = useCallback((userId: string) => {
-    setOpen(false);
-    voice.focusTile(userId);
-  }, []);
+  const on = useMemo(() => new Set(visible.split(',')), [visible]);
+  const ids = useVoice((s) => {
+    let out = '';
+    for (const [id, speaking] of Object.entries(s.speaking)) if (speaking && id !== me && !on.has(id)) out += out ? `,${id}` : id;
+    return out;
+  });
+  const list = ids ? ids.split(',').filter((id) => pageOf(id) >= 0) : [];
+  const first = list[0];
+  if (first === undefined) return null;
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          data-testid="video-overflow"
-          aria-label={t('video.hiddenList')}
-          className="absolute grid place-items-center rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-headline font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover aria-expanded:ring-2 aria-expanded:ring-inset aria-expanded:ring-accent"
-          style={{ left: x, top: y, width: w, height: h }}
-        >
-          {t('video.more', { n: hidden.length })}
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="top"
-          align="end"
-          sideOffset={8}
-          collisionPadding={16}
-          aria-label={t('video.hiddenList')}
-          className={cx(popoverBox, 'max-h-[min(360px,calc(100vh-96px))] w-64 overflow-y-auto p-1')}
-          data-testid="video-hidden-list"
-        >
-          <ul onKeyDown={onListKey}>
-            {hidden.map((id) => (
-              <HiddenRow key={id} userId={id} wsId={wsId} onPick={pick} />
-            ))}
-          </ul>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+    <button
+      type="button"
+      data-testid="video-speaking-now"
+      onClick={() => onGo(pageOf(first))}
+      title={t('video.speakingNowHint')}
+      className="flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-hover px-2.5 text-[12px] font-medium text-fg transition-colors duration-[var(--motion-fast)] hover:bg-active"
+    >
+      <Mic className="size-3.5 shrink-0 text-[var(--color-green)]" aria-hidden />
+      <span className="sr-only">{t('video.speakingNow')}</span>
+      <span className="min-w-0 truncate">
+        {list.slice(0, 3).map((id, i) => (
+          <SpeakerName key={id} userId={id} wsId={wsId} comma={i > 0} />
+        ))}
+        {list.length > 3 ? ` +${list.length - 3}` : null}
+      </span>
+    </button>
   );
 });
 
+function SpeakerName({ userId, wsId, comma }: { userId: string; wsId: string | null; comma: boolean }): ReactNode {
+  const name = useMemberName(wsId, userId);
+  return (
+    <>
+      {comma ? ', ' : null}
+      {name}
+    </>
+  );
+}
+
+/** «Галерея | Спикер» (ADR-0066 §1), remembered on the device. */
+function ViewSwitch({ view }: { view: CallView }): ReactNode {
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const options = [
+    { value: 'gallery' as const, label: t('video.viewGallery') },
+    { value: 'speaker' as const, label: t('video.viewSpeaker') },
+  ];
+  return <Segmented label={t('video.view')} value={view} options={options} onChange={(v) => setPrefs({ callView: v })} />;
+}
+
+/** «⋯»: «Скрыть себя», «Скрыть участников без видео». */
+function ViewMenu(): ReactNode {
+  const hideSelf = usePrefs((s) => s.hideSelf);
+  const hideNoVideo = usePrefs((s) => s.hideNoVideo);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  return (
+    <Dropdown.Root modal={false}>
+      <Dropdown.Trigger asChild>
+        <IconButton size="sm" label={t('video.viewMenu')} className="data-[state=open]:bg-hover" data-testid="video-view-menu">
+          <Ellipsis className="size-4" aria-hidden />
+        </IconButton>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-64')} side="bottom" align="end" sideOffset={6} collisionPadding={16}>
+          <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={hideSelf} onCheckedChange={(v) => setPrefs({ hideSelf: v })}>
+            <Dropdown.ItemIndicator className="absolute left-2">
+              <Check className="size-3.5" />
+            </Dropdown.ItemIndicator>
+            {t('video.hideSelf')}
+          </Dropdown.CheckboxItem>
+          <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={hideNoVideo} onCheckedChange={(v) => setPrefs({ hideNoVideo: v })}>
+            <Dropdown.ItemIndicator className="absolute left-2">
+              <Check className="size-3.5" />
+            </Dropdown.ItemIndicator>
+            {t('video.hideNoVideo')}
+          </Dropdown.CheckboxItem>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
+  );
+}
+
+/** «Скрыть себя» is on: a small «Вы» badge in the corner instead of my tile; click shows it again. */
+function SelfBadge({ me }: { me: string }): ReactNode {
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const speaking = useVoice((s) => s.speaking[me] ?? false);
+  return (
+    <button
+      type="button"
+      data-testid="video-self-badge"
+      onClick={() => setPrefs({ hideSelf: false })}
+      title={t('video.showSelf')}
+      className={cx(
+        'absolute bottom-1 right-1 z-[1] flex h-6 items-center rounded-full bg-black/60 px-2.5 text-[12px] font-semibold text-white ring-2 ring-inset',
+        speaking ? 'ring-[var(--color-green)]' : 'ring-transparent',
+      )}
+    >
+      {t('video.youBadge')}
+    </button>
+  );
+}
+
+const pagerBtn = 'absolute top-1/2 z-[1] grid size-8 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-white transition-colors duration-[var(--motion-fast)] hover:bg-black/80';
+
 /**
- * The call view (stage «expanded» without a watched stream): up to 6 tiles, the active speaker
- * (or the clicked tile) large, avatars for people without a camera, «Ещё N» for the rest — a
- * hidden speaker comes forward into a slot (ADR-0066 §2, useTileSelection).
+ * The call view (stage «expanded» without a watched stream), ADR-0066: «Галерея» — equal tiles
+ * in pages (‹ › · «1 / 3» · ←/→ · swipe), page 1 led by the pinned tile, me and recent speakers;
+ * «Спикер» — the pinned / active speaker large, everyone else in a scrollable strip.
  */
 export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; wsId: string | null; top?: ReactNode; emptyFeed?: boolean }): ReactNode {
+  useLocale();
   const people = useRoomPeople(wsId);
   const focused = useVoice((s) => s.focusedTile);
-  const active = useVoice((s) => s.activeSpeaker);
+  const view = usePrefs((s) => s.callView);
+  const hideSelf = usePrefs((s) => s.hideSelf);
+  const hideNoVideo = usePrefs((s) => s.hideNoVideo);
+  const page = useVoice((s) => s.galleryPage);
+  const phone = useMobile();
+  const size = useGalleryPageSize(phone);
   const area = useRef<HTMLDivElement>(null);
   const { w, h } = useSize(area);
   const me = useMe();
-  // Re-renders only when the visible set changes, not on every speaking start (useTileSelection).
-  const sel = useTileSelection(people, focused, active, me);
+  const gallery = view === 'gallery';
+  // Re-renders only when the page's tiles change, not on every speaking start (useGallery).
+  const { gallery: g, pageOf } = useGallery(gallery ? { people, pinned: focused, me, hideSelf, hideNoVideo, size, page } : null);
+  const pages = g?.pages ?? 1;
+  const shownPage = g?.page ?? 0;
+  // The page clamped (people left, a bigger page size): the store follows.
+  useEffect(() => {
+    if (g && g.page !== page) voice.setGalleryPage(g.page);
+  }, [g, page]);
+  const go = useCallback((p: number) => voice.setGalleryPage(Math.max(0, p)), []);
   // Esc returns a pinned tile to the grid (not while a menu or dialog handles its own Esc).
   useEffect(() => {
     if (!focused) return;
@@ -338,14 +432,51 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [focused]);
-  const tiles = sel?.tiles ?? [];
-  const overflow = sel?.overflow ?? 0;
-  const n = tiles.length + (overflow > 0 ? 1 : 0);
-  const rects = layoutTiles(n, (sel?.featured ?? null) !== null, w, h, 8);
-  const more = rects[n - 1];
+  // ←/→ flip gallery pages (not while typing, not in a menu / dialog).
+  useEffect(() => {
+    if (!gallery || pages < 2) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (typingTarget(document.activeElement) || document.querySelector('[role="menu"], [role="dialog"]')) return;
+      const next = shownPage + (e.key === 'ArrowRight' ? 1 : -1);
+      if (next < 0 || next >= pages) return;
+      e.preventDefault();
+      go(next);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [gallery, pages, shownPage, go]);
+  // Swipe on touch: a mostly horizontal stroke of SWIPE_PX flips the page.
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  // A swipe that flipped the page must not also pin the tile it ended on.
+  const swiped = useRef(false);
+  const onPointerDown = (e: ReactPointerEvent): void => {
+    swipe.current = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY } : null;
+    swiped.current = false;
+  };
+  const onPointerUp = (e: ReactPointerEvent): void => {
+    const s = swipe.current;
+    swipe.current = null;
+    if (!s || !gallery || pages < 2) return;
+    const dx = e.clientX - s.x;
+    if (Math.abs(dx) < SWIPE_PX || Math.abs(dx) < Math.abs(e.clientY - s.y) * 1.5) return;
+    const next = shownPage + (dx < 0 ? 1 : -1);
+    swiped.current = true;
+    if (next >= 0 && next < pages) go(next);
+  };
+  const onClickCapture = (e: ReactMouseEvent): void => {
+    if (!swiped.current) return;
+    swiped.current = false;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const tiles = g?.tiles ?? NO_TILES;
+  const visible = useMemo(() => (g?.tiles ?? NO_TILES).map((p) => p.userId).join(','), [g]);
+  const meInCall = people.some((p) => p.userId === me);
   return (
     <div
       data-testid="video-grid"
+      data-view={view}
       role="region"
       aria-label={t('video.grid')}
       className="absolute inset-x-0 z-[var(--z-sticky)] flex flex-col gap-2 bg-feed px-3 pb-3 pt-3"
@@ -353,7 +484,10 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
       style={{ top: box.top, bottom: emptyFeed ? `calc(var(--composer-height) + ${WELCOME_ROW}px)` : 'var(--composer-height)' }}
     >
       <div className="flex min-h-7 shrink-0 items-center gap-2">
-        <div className="min-w-0 flex-1">{top}</div>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {top}
+          {gallery && pages > 1 ? <SpeakingNow visible={visible} me={me} wsId={wsId} pageOf={pageOf} onGo={go} /> : null}
+        </div>
         {focused ? (
           <button
             type="button"
@@ -361,41 +495,144 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
             title={t('video.unfocusHint')}
             className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-hover px-2.5 text-[12px] font-medium text-fg transition-colors duration-[var(--motion-fast)] hover:bg-active"
           >
-            <LayoutGrid className="size-3.5" aria-hidden />
-            {t('video.unfocus')}
+            <PinOff className="size-3.5" aria-hidden />
+            {phone ? null : t('video.unfocus')}
           </button>
         ) : null}
+        <ViewSwitch view={view} />
+        <ViewMenu />
         <button
           type="button"
           onClick={() => voice.setStage('pip')}
+          aria-label={t('video.showChat')}
           className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-hover px-2.5 text-[12px] font-medium text-fg transition-colors duration-[var(--motion-fast)] hover:bg-active"
         >
           <MessageCircle className="size-3.5" aria-hidden />
-          {t('video.showChat')}
+          {phone ? null : t('video.showChat')}
         </button>
       </div>
-      <div ref={area} className="relative min-h-0 flex-1">
-        {tiles.map((p, i) => {
-          const r = rects[i];
-          if (!r) return null;
-          return (
-            <MemberTile
-              key={p.userId}
-              userId={p.userId}
-              wsId={wsId}
-              video={p.video}
-              featured={p.userId === sel?.featured}
-              small={r.w < 240}
-              avatarSize={avatarFor(r.w, r.h)}
-              style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
-            />
-          );
-        })}
-        {sel && overflow > 0 && more ? <OverflowTile hidden={sel.hidden} wsId={wsId} x={more.x} y={more.y} w={more.w} h={more.h} /> : null}
+      <div ref={area} className="relative min-h-0 flex-1 touch-pan-y" onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerCancel={() => (swipe.current = null)} onClickCapture={onClickCapture}>
+        {gallery ? (
+          <GalleryTiles tiles={tiles} wsId={wsId} w={w} h={h} />
+        ) : (
+          <SpeakerView people={people} wsId={wsId} pinned={focused} me={me} hideSelf={hideSelf} hideNoVideo={hideNoVideo} w={w} h={h} />
+        )}
+        {gallery && pages > 1 ? (
+          <>
+            {shownPage > 0 ? (
+              <button type="button" className={cx(pagerBtn, 'left-1')} aria-label={t('video.pagePrev')} onClick={() => go(shownPage - 1)} data-testid="video-page-prev">
+                <ChevronLeft className="size-5" aria-hidden />
+              </button>
+            ) : null}
+            {shownPage < pages - 1 ? (
+              <button type="button" className={cx(pagerBtn, 'right-1')} aria-label={t('video.pageNext')} onClick={() => go(shownPage + 1)} data-testid="video-page-next">
+                <ChevronRight className="size-5" aria-hidden />
+              </button>
+            ) : null}
+          </>
+        ) : null}
+        {hideSelf && meInCall ? <SelfBadge me={me} /> : null}
       </div>
+      {gallery && pages > 1 ? (
+        <div className="-mb-1 -mt-1 flex h-5 shrink-0 items-center justify-center text-[12px] font-medium tabular-nums text-muted" data-testid="video-page" aria-live="polite">
+          {t('video.pageOf', { page: shownPage + 1, pages })}
+        </div>
+      ) : null}
     </div>
   );
 }
+
+/** One gallery page: equal 16:9 tiles; 16+ tiles ask for 360p at most (ADR-0066 §4). */
+const GalleryTiles = memo(function GalleryTiles({ tiles, wsId, w, h }: { tiles: readonly TilePerson[]; wsId: string | null; w: number; h: number }): ReactNode {
+  const rects = gridTiles(tiles.length, w, h, 8);
+  const quality: ShownQuality = tiles.length >= GALLERY_MEDIUM_FROM ? 'medium' : 'high';
+  return (
+    <>
+      {tiles.map((p, i) => {
+        const r = rects[i];
+        if (!r) return null;
+        return (
+          <MemberTile
+            key={p.userId}
+            userId={p.userId}
+            wsId={wsId}
+            video={p.video}
+            featured={false}
+            small={r.w < 240}
+            avatarSize={avatarFor(r.w, r.h)}
+            quality={quality}
+            x={r.x}
+            y={r.y}
+            w={r.w}
+            h={r.h}
+          />
+        );
+      })}
+    </>
+  );
+});
+
+/**
+ * «Спикер»: the large tile and a scrollable strip. Speech changes the large tile only through the
+ * held active speaker (800 ms / 1.5 s, lib/activeSpeaker.ts); the strip's order never follows
+ * speech. Strip tiles scrolled out of view show no video (and claim no subscription).
+ */
+function SpeakerView({ people, wsId, pinned, me, hideSelf, hideNoVideo, w, h }: { people: readonly TilePerson[]; wsId: string | null; pinned: string | null; me: string; hideSelf: boolean; hideNoVideo: boolean; w: number; h: number }): ReactNode {
+  const active = useVoice((s) => s.activeSpeaker);
+  // Strip rows are memo and get the same person objects (useRoomPeople) while nothing changes.
+  const sel = speakerTiles(people, { pinned, active, me, hideSelf, hideNoVideo });
+  const lay = speakerLayout(sel.strip.length, w, h, 8);
+  const featured = people.find((p) => p.userId === sel.featured);
+  const scroller = useRef<HTMLDivElement>(null);
+  return (
+    <>
+      {featured && lay.main.w > 0 ? (
+        <MemberTile
+          userId={featured.userId}
+          wsId={wsId}
+          video={featured.video}
+          featured
+          avatarSize={avatarFor(lay.main.w, lay.main.h)}
+          x={lay.main.x}
+          y={lay.main.y}
+          w={lay.main.w}
+          h={lay.main.h}
+        />
+      ) : null}
+      {lay.strip ? (
+        <div
+          ref={scroller}
+          data-testid="video-strip"
+          className={cx('absolute flex gap-2', lay.vertical ? 'flex-col overflow-y-auto overflow-x-hidden' : 'flex-row overflow-x-auto overflow-y-hidden')}
+          style={{ left: lay.strip.x, top: lay.strip.y, width: lay.strip.w, height: lay.strip.h }}
+        >
+          {sel.strip.map((p) => (
+            <StripTile key={p.userId} person={p} wsId={wsId} w={lay.tile.w} h={lay.tile.h} root={scroller} />
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** A strip tile shows video only while scrolled into view (IntersectionObserver on the strip). */
+const StripTile = memo(function StripTile({ person, wsId, w, h, root }: { person: TilePerson; wsId: string | null; w: number; h: number; root: RefObject<HTMLDivElement | null> }): ReactNode {
+  const ref = useRef<HTMLDivElement>(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => setInView(entries.some((e) => e.isIntersecting)), { root: root.current });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [root]);
+  const style = useMemo(() => ({ width: w, height: h }), [w, h]);
+  return (
+    <div ref={ref} className="relative shrink-0" style={style}>
+      <MemberTile userId={person.userId} wsId={wsId} video={person.video && inView} featured={false} small avatarSize={avatarFor(w, h)} className="inset-0" />
+    </div>
+  );
+});
 
 /** 160×90 camera tile in the stream stage's strip (the low simulcast layer). */
 export function CameraStripTile({ userId, wsId }: { userId: string; wsId: string | null }): ReactNode {

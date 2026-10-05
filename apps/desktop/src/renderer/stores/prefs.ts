@@ -20,6 +20,7 @@ import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
 import type { StatusChoice } from '../services/customStatus';
 import type { UpdateNag } from '../features/shell/updateBarModel';
+import type { CallView } from '../features/voice/tileLayout';
 
 /**
  * Device-local preferences (localStorage — nothing secret here). Settings that
@@ -50,6 +51,12 @@ export interface Prefs {
   saveTraffic: boolean;
   /** userId → «Не показывать видео»: their camera is not subscribed (an avatar tile instead). */
   hiddenVideo: Record<string, true>;
+  /** Call view «Галерея | Спикер» (ADR-0066 §1), per device. */
+  callView: CallView;
+  /** «Скрыть себя» in the call view: my tile goes, a small «Вы» badge stays. */
+  hideSelf: boolean;
+  /** «Скрыть участников без видео» in the call view. */
+  hideNoVideo: boolean;
   /** Volume of everyone in voice, 0..1 (headphones ▾); multiplies the per-user volume, element.volume only. */
   outputVolume: number;
   micMode: MicMode;
@@ -132,6 +139,9 @@ const DEFAULTS: Prefs = {
   cameraBgFps: SEG_FPS,
   saveTraffic: false,
   hiddenVideo: {},
+  callView: 'gallery',
+  hideSelf: false,
+  hideNoVideo: false,
   outputVolume: 1,
   micMode: 'voice',
   thresholdDb: -50,

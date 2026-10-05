@@ -134,14 +134,15 @@ export function cameraStopText(reason: 'limit' | 'moderator' | 'other'): 'video.
 }
 
 /**
- * Which remote cameras to subscribe to: everyone's except «Не показывать видео»; with «Экономить
- * трафик» only the primary one (the featured / PiP camera).
+ * Which remote cameras to subscribe to: the ones on screen (`shown`, lib/media/cameraShown.ts —
+ * ADR-0066 §4: the gallery page, the large tile, the PiP) except «Не показывать видео»; with
+ * «Экономить трафик» only the primary one (the featured / PiP camera). Without `shown`: everyone's.
  */
 export function cameraWanted(
   cameras: readonly string[],
-  o: { hidden: Readonly<Record<string, true>>; saveTraffic: boolean; primary: string | null; me?: string },
+  o: { hidden: Readonly<Record<string, true>>; saveTraffic: boolean; primary: string | null; me?: string; shown?: ReadonlySet<string> },
 ): Set<string> {
-  return new Set(cameras.filter((id) => id !== o.me && !o.hidden[id] && (!o.saveTraffic || id === o.primary)));
+  return new Set(cameras.filter((id) => id !== o.me && !o.hidden[id] && (!o.saveTraffic || id === o.primary) && (!o.shown || o.shown.has(id))));
 }
 
 /** Consecutive CPU-limited stats samples (2 s apart) before dropping the capture to 360p. */
