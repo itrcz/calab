@@ -31,7 +31,10 @@ if (withProd) {
   // Run pnpm through node only when npm_execpath is its JS entry (pnpm.cjs; the native @pnpm/exe binary is
   // spawned directly): on Windows there is only a
   // pnpm.cmd shim, which execFileSync cannot spawn without a shell (pnpm/action-setup v6 no longer adds pnpm.exe).
-  const pnpmArgs = ['licenses', 'list', '--json', '--prod'];
+  // `--filter .`: only this app's production tree. Without it pnpm lists every workspace
+  // project's prod deps (the phone host's Expo CLI brings node-forge, GPL-2.0 dual licence),
+  // none of which is packaged into the desktop app.
+  const pnpmArgs = ['licenses', 'list', '--json', '--prod', '--filter', '.'];
   const execPath = process.env.npm_execpath;
   const [cmd, argv] = execPath && /pnpm/i.test(execPath) && /\.c?js$/i.test(execPath)
     ? [process.execPath, [execPath, ...pnpmArgs]]
