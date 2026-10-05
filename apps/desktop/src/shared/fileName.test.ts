@@ -40,3 +40,10 @@ describe('safeFileName (downloads.uniquePath)', () => {
     expect(numberedName('archive', 1)).toBe('archive (1)');
   });
 });
+
+describe('safeFileName — bidi controls', () => {
+  it('drops right-to-left overrides that disguise the extension', () => {
+    expect(safeFileName('photo‮gpj.exe')).toBe('photogpj.exe');
+    expect(safeFileName('a⁦b⁩‏.png')).toBe('ab.png');
+  });
+});
