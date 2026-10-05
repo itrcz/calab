@@ -42,6 +42,7 @@ import { takePendingDeepLink } from './deeplink';
 import { fullscreenFor } from './fullscreen';
 import { systemLocales } from './systemLocales';
 import { downloadFile } from './downloads';
+import { prepareDragOut, startDragOut } from './dragOut';
 import { decodeImageNative } from './imageDecode';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
@@ -333,7 +334,13 @@ export function registerIpc(): void {
     const args: DownloadArgs = { fileId: str(r['fileId'], 64), name: str(r['name'], 512) };
     return downloadFile(args);
   });
-  handle(IPC.filesDecodeImage, (_e, a) => decodeImageNative(a));
+  handle(IPC.filesDragPrepare, (_e, a) => {
+    const r = obj(a);
+    return prepareDragOut(str(r['fileId'], 64), str(r['name'], 512));
+  });
+  // The drag starts from the caller's own window (the press began there), never another one.
+  handle(IPC.filesDragStart, (e, a) => startDragOut(e.sender, str(a, 64)));
+  handle(IPC.filesDecodeImage,(_e, a) => decodeImageNative(a));
 
   // ---- media ----
   handle(IPC.captureListSources, (_e, req) => listSources(parseThumbRequest(req)));

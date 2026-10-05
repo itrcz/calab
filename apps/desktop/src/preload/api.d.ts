@@ -113,6 +113,13 @@ export interface CalabaApi {
     download(args: DownloadArgs): Promise<string>;
     /** Progress of downloads started with `download` (quarantined by Chromium's download manager). */
     onProgress(cb: (p: DownloadProgress) => void): Unsubscribe;
+    /**
+     * Drag-out of a chat image (main/dragOut.ts): fetches the original (an image attachment) into
+     * the app's temp folder under its sanitized name; true once it is there. The web: false.
+     */
+    prepareDrag(args: DownloadArgs): Promise<boolean>;
+    /** Starts the OS drag of a prepared file from this window; false when it is not ready. */
+    startDrag(fileId: string): Promise<boolean>;
     /** Absolute path of a dropped/picked File (for display only). */
     pathOf(file: File): string;
     /**

@@ -36,6 +36,8 @@ export interface Platform extends CalabaApi {
    * Web: a blob: URL of an authenticated fetch (cached).
    */
   mediaUrl(path: string): Promise<string>;
+  /** Web: the blob: URL of `path` if `mediaUrl` has already loaded it, else null (sync). */
+  loadedMediaUrl?(path: string): string | null;
   /** Whether the platform can hand out a synchronous media URL (no blob fetch needed). */
   directMedia: boolean;
   clearProtectedMedia?(): void;

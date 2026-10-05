@@ -90,6 +90,10 @@ export const IPC = {
   // ---- files ----
   filesDownload: 'files:download',
   filesProgress: 'files:progress',
+  /** Drag an image out of the window (main/dragOut.ts): fetch the original into temp ahead… */
+  filesDragPrepare: 'files:drag-prepare',
+  /** …then start the OS drag of that file from the sender's window. */
+  filesDragStart: 'files:drag-start',
   /** A picture Chromium cannot decode (HEIC) → JPEG by the OS (main/imageDecode.ts); null = cannot. */
   filesDecodeImage: 'files:decode-image',
 

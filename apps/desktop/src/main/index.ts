@@ -6,6 +6,7 @@ import { apiTransportWake } from './apiTransport';
 import { forceQuit, handleMainWindowClose, installLifecycle } from './appLifecycle';
 import { installDisplayMediaHandler, MAC_SYSTEM_AUDIO_FEATURES, macSystemAudioEnabled } from './capture';
 import { echoFeatures } from './echoFeatures';
+import { cleanupDragOut } from './dragOut';
 import { findDeepLink, handleDeepLink, registerProtocolClient } from './deeplink';
 import { registerIpc } from './ipc';
 import { initLogging, log } from './logging';
@@ -167,4 +168,5 @@ void app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   shutdownPtt();
+  cleanupDragOut();
 });

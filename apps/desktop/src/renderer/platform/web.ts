@@ -332,6 +332,12 @@ function mediaUrl(path: string): Promise<string> {
   return e.url;
 }
 
+/** The blob: URL of `path` when it is already loaded (synchronous: a `dragstart` cannot wait). */
+function loadedMediaUrl(path: string): string | null {
+  const e = mediaCache.get(path);
+  return e && !e.evicted ? e.objectUrl : null;
+}
+
 // ---------------------------------------------------------------- PTT (focused tab only)
 
 let binding: PttBinding | null = null;
@@ -484,6 +490,7 @@ export function createWebPlatform(): Platform {
       return t ? { Authorization: `Bearer ${t}` } : {};
     },
     mediaUrl,
+    loadedMediaUrl,
     directMedia: false,
     guestJoin,
     clearProtectedMedia: clearMediaCache,
@@ -663,7 +670,15 @@ export function createWebPlatform(): Platform {
       onAction: noop,
     },
     menu: { setState: () => undefined, onAction: noop },
-    files: { download, onProgress: noop, pathOf: (f) => f.name, decodeImage: () => Promise.resolve(null) },
+    files: {
+      download,
+      onProgress: noop,
+      // Drag-out on the web: Chromium's DownloadURL with the loaded blob (lib/imageDrag.ts).
+      prepareDrag: () => Promise.resolve(false),
+      startDrag: () => Promise.resolve(false),
+      pathOf: (f) => f.name,
+      decodeImage: () => Promise.resolve(null),
+    },
     capture: {
       // The browser shows its own picker on getDisplayMedia().
       listSources: () => Promise.resolve([]),
