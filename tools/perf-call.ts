@@ -52,6 +52,14 @@
  * `--window-name <regex>` (share another window). It opens a visible window: not on a machine
  * someone is using (docs/14 «Стрим экрана: захват»).
  *
+ * `--bench G --cameras N [--view gallery|speaker] [--window 1920x1080] [--cam-res 720|360]`: the call
+ * view with N remote cameras (ADR-0066 §4, docs/14 «Галерея: N камер»). N synthetic participants
+ * `perfcam0…` join «Созвон» from one headless Chromium (one page each, fake camera, simulcast),
+ * the app's window is resized (the gallery page size follows it: 1440×900 → 16, 1920×1080 → 25),
+ * the call view opens in the gallery (or the speaker view) and, after 20 s for subscriptions and
+ * bandwidth estimation, the decoded <video> sizes are printed. The publishers cost CPU too, outside
+ * the app's processes: on a laptop 25 × 720p publishers load several cores — run on a quiet machine.
+ *
  * `--musician` (C): «Режим музыканта» on (ADR-0052): the mic without AEC / NS / AGC, open (no VAD
  * gate), Opus 128 kbps without DTX; the scenario name gets `-musician` and the mic's outgoing
  * kbps / fmtp are printed before and after the run (docs/14 «Режим музыканта»).
@@ -117,6 +125,11 @@ const PRESET = opt('preset', '1080');
 const HINT = opt('hint', 'detail');
 /** F `--source window`: share another window by its name instead (e.g. a Finder window). */
 const WINDOW_NAME = opt('window-name', '');
+/** G: remote cameras, the call view, the window's content size, the publishers' capture. */
+const CAMERAS = Number(opt('cameras', '9'));
+const VIEW = opt('view', 'gallery');
+const WINDOW_SIZE = opt('window', '1440x900').split('x').map(Number) as [number, number];
+const CAM_RES = opt('cam-res', '720');
 const ROOT = resolve(import.meta.dirname, '..');
 const DESKTOP = resolve(ROOT, 'apps/desktop');
 process.env['MOCK_LIVEKIT_ROOM_PREFIX'] ||= `perfcall${PORT}_`;
@@ -357,6 +370,34 @@ async function startSpeaker(origin: string, userId: string, name: string, roomId
   return browser;
 }
 
+/**
+ * G: `n` participants `perfcam0…` publishing Chromium's fake camera (a moving test pattern) into
+ * `roomId`, one page each in one headless browser. Same rules as startSpeaker (no named functions
+ * inside `evaluate`).
+ */
+async function startCameras(origin: string, n: number, roomId: string, res: string): Promise<Browser> {
+  const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'] });
+  const umd = createRequire(import.meta.url).resolve('livekit-client').replace(/[^/]+$/, 'livekit-client.umd.js');
+  for (let i = 0; i < n; i++) {
+    const at = new AccessToken(process.env['MOCK_LIVEKIT_KEY'] ?? 'devkey', process.env['MOCK_LIVEKIT_SECRET'] ?? 'secret', { identity: `perfcam${i}:camera`, name: `Камера ${i + 1}`, ttl: '30m' });
+    at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${roomId}`, canPublish: true, canSubscribe: false });
+    const token = await at.toJwt();
+    const page = await browser.newPage();
+    await page.goto(`${origin}/__mock/ids`);
+    await page.addScriptTag({ path: umd });
+    await page.evaluate(
+      async ({ url, token, res }) => {
+        const LK = (window as unknown as { LivekitClient: typeof import('livekit-client') }).LivekitClient;
+        const room = new LK.Room({ dynacast: true });
+        await room.connect(url, token);
+        await room.localParticipant.setCameraEnabled(true, { resolution: (res === '360' ? LK.VideoPresets.h360 : LK.VideoPresets.h720).resolution }, { simulcast: true });
+      },
+      { url: process.env['MOCK_LIVEKIT_URL'] ?? 'ws://127.0.0.1:7880', token, res },
+    );
+  }
+  return browser;
+}
+
 const CONTENT_TITLE = 'Calab bench content';
 
 /**
@@ -576,6 +617,11 @@ async function main(): Promise<void> {
       mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, camera: true });
       publisher = await startSpeaker(mock.url, IDS.users.boris, 'Борис Петров', IDS.rooms.call, 'camera');
     }
+    if (BENCH === 'G') {
+      await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0]?.setContentSize(w, h), WINDOW_SIZE);
+      for (let i = 0; i < CAMERAS; i++) mock.setVoiceState({ userId: `perfcam${i}`, roomId: IDS.rooms.call, muted: true, camera: true });
+      publisher = await startCameras(mock.url, CAMERAS, IDS.rooms.call, CAM_RES);
+    }
 
     // Live events, like production.
     if (EMULATE) {
@@ -598,6 +644,21 @@ async function main(): Promise<void> {
     await page.waitForTimeout(3000);
     // A menu over the playing video (docs/09 #65): the call's own room (camera grid), with the
     // room's notification menu dropped over the tile.
+    if (BENCH === 'G') {
+      await aside.getByRole('button', { name: /Созвон/ }).first().click();
+      // The first camera may have opened the call view already (a near-empty chat); else «Видео · N».
+      const grid = page.getByTestId('video-grid');
+      await page.waitForTimeout(2000);
+      if (!(await grid.isVisible())) await page.getByTestId('header-video').click();
+      await grid.waitFor({ timeout: 30_000 });
+      if (VIEW === 'speaker') await page.getByRole('radio', { name: 'Спикер' }).click();
+      await page.waitForTimeout(20_000);
+      const seen = await page.evaluate(() => ({
+        tiles: document.querySelectorAll('[data-testid="video-tile"]').length,
+        decoded: [...document.querySelectorAll<HTMLVideoElement>('video[data-testid="camera-video"]')].filter((v) => v.videoWidth > 0).map((v) => `${v.videoWidth}x${v.videoHeight}`),
+      }));
+      process.stdout.write(`call view: ${JSON.stringify(seen)}\n`);
+    }
     if (POPOVER) {
       await aside.getByRole('button', { name: /Созвон/ }).first().click();
       await page
@@ -760,7 +821,7 @@ async function main(): Promise<void> {
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
-      const scenario = (BENCH === 'F' ? `F-stream-${PRESET}p-${SOURCE}-${CONTENT}-${HINT}` : BENCH === 'K' ? `K-camera-720p15-bg-${BG}${FX ? `-fx-${FX}` : ''}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '') + (MUSICIAN ? '-musician' : '');
+      const scenario = (BENCH === 'F' ? `F-stream-${PRESET}p-${SOURCE}-${CONTENT}-${HINT}` : BENCH === 'K' ? `K-camera-720p15-bg-${BG}${FX ? `-fx-${FX}` : ''}` : BENCH === 'E' ? 'E-watch-video' : BENCH === 'G' ? `G-${VIEW}-${CAMERAS}cams-${WINDOW_SIZE.join('x')}` : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '') + (MUSICIAN ? '-musician' : '');
       const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, scenario, '--seconds', String(BENCH_SECONDS), '--out', outDir, '--with', 'WindowServer', ...(BENCH === 'F' ? ['--with', 'replayd'] : [])], {
         stdio: 'inherit',
       });
