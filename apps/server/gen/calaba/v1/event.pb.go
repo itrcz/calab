@@ -1957,16 +1957,19 @@ func (x *CalDavCalendar) GetColor() string {
 }
 
 type CalDavAccount struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
-	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	CalendarHref  string                 `protobuf:"bytes,3,opt,name=calendar_href,json=calendarHref,proto3" json:"calendar_href,omitempty"` // the chosen calendar (one of calendars); empty = none yet
-	Import        bool                   `protobuf:"varint,4,opt,name=import,proto3" json:"import,omitempty"`                                // import busy time (default true)
-	Push          bool                   `protobuf:"varint,5,opt,name=push,proto3" json:"push,omitempty"`                                    // put the user's meetings into the calendar (default false)
-	LastSyncAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_sync_at,json=lastSyncAt,proto3" json:"last_sync_at,omitempty"`
-	LastError     string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`                                     // of the last import or push; empty = fine
-	Calendars     []*CalDavCalendar      `protobuf:"bytes,8,rep,name=calendars,proto3" json:"calendars,omitempty"`                                                      // event calendars found at connection
-	ShareLevel    CalDavShareLevel       `protobuf:"varint,9,opt,name=share_level,json=shareLevel,proto3,enum=calaba.v1.CalDavShareLevel" json:"share_level,omitempty"` // what colleagues see (ADR-0045 §2); BUSY by default
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Url          string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	Username     string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	CalendarHref string                 `protobuf:"bytes,3,opt,name=calendar_href,json=calendarHref,proto3" json:"calendar_href,omitempty"` // the chosen calendar (one of calendars); empty = none yet
+	Import       bool                   `protobuf:"varint,4,opt,name=import,proto3" json:"import,omitempty"`                                // import busy time (default true)
+	Push         bool                   `protobuf:"varint,5,opt,name=push,proto3" json:"push,omitempty"`                                    // put the user's meetings into the calendar (default false)
+	LastSyncAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_sync_at,json=lastSyncAt,proto3" json:"last_sync_at,omitempty"`
+	LastError    string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`                                     // of the last import or push; empty = fine
+	Calendars    []*CalDavCalendar      `protobuf:"bytes,8,rep,name=calendars,proto3" json:"calendars,omitempty"`                                                      // event calendars found at connection
+	ShareLevel   CalDavShareLevel       `protobuf:"varint,9,opt,name=share_level,json=shareLevel,proto3,enum=calaba.v1.CalDavShareLevel" json:"share_level,omitempty"` // what colleagues see (ADR-0045 §2); BUSY by default
+	// Remind of the imported events (ADR-0045 amendment 3) like of meetings: the user's
+	// event_reminders, EVENT_REMINDER with external_event; not all-day or declined ones. Default false.
+	Remind        bool `protobuf:"varint,10,opt,name=remind,proto3" json:"remind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2064,9 +2067,18 @@ func (x *CalDavAccount) GetShareLevel() CalDavShareLevel {
 	return CalDavShareLevel_CAL_DAV_SHARE_LEVEL_UNSPECIFIED
 }
 
+func (x *CalDavAccount) GetRemind() bool {
+	if x != nil {
+		return x.Remind
+	}
+	return false
+}
+
+// Changes what is given: share_level UNSPECIFIED and remind unset leave them as they are.
 type SetCalDavShareRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ShareLevel    CalDavShareLevel       `protobuf:"varint,1,opt,name=share_level,json=shareLevel,proto3,enum=calaba.v1.CalDavShareLevel" json:"share_level,omitempty"`
+	Remind        *bool                  `protobuf:"varint,2,opt,name=remind,proto3,oneof" json:"remind,omitempty"` // CalDavAccount.remind
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2106,6 +2118,13 @@ func (x *SetCalDavShareRequest) GetShareLevel() CalDavShareLevel {
 		return x.ShareLevel
 	}
 	return CalDavShareLevel_CAL_DAV_SHARE_LEVEL_UNSPECIFIED
+}
+
+func (x *SetCalDavShareRequest) GetRemind() bool {
+	if x != nil && x.Remind != nil {
+		return *x.Remind
+	}
+	return false
 }
 
 type CalDavAccountResponse struct {
@@ -2902,11 +2921,14 @@ func (x *CalendarEventRsvp) GetEvent() *CalendarEvent {
 
 // EVENT_REMINDER: to one attendee's devices (user channel), `minutes` before the occurrence
 // (one of the user's event_reminders). The client shows a system notification.
+// Either event (a Calab meeting) or external_event (an imported CalDAV event of the user,
+// ADR-0045 amendment 3) is set.
 type CalendarEventReminder struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Event         *CalendarEvent         `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"` // the occurrence (occurrence_at set)
 	OccurrenceAt  *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=occurrence_at,json=occurrenceAt,proto3" json:"occurrence_at,omitempty"`
 	Minutes       uint32                 `protobuf:"varint,3,opt,name=minutes,proto3" json:"minutes,omitempty"`
+	ExternalEvent *ExternalEvent         `protobuf:"bytes,4,opt,name=external_event,json=externalEvent,proto3" json:"external_event,omitempty"` // the occurrence as GET /api/me/external-events has it
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2960,6 +2982,13 @@ func (x *CalendarEventReminder) GetMinutes() uint32 {
 		return x.Minutes
 	}
 	return 0
+}
+
+func (x *CalendarEventReminder) GetExternalEvent() *ExternalEvent {
+	if x != nil {
+		return x.ExternalEvent
+	}
+	return nil
 }
 
 // ROOM_EVENT_ACTIVE: 15 minutes before an occurrence with a room starts (and at once for one
@@ -3252,7 +3281,7 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\x0eCalDavCalendar\x12\x12\n" +
 	"\x04href\x18\x01 \x01(\tR\x04href\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
-	"\x05color\x18\x03 \x01(\tR\x05color\"\xe2\x02\n" +
+	"\x05color\x18\x03 \x01(\tR\x05color\"\xfa\x02\n" +
 	"\rCalDavAccount\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12#\n" +
@@ -3265,10 +3294,14 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"last_error\x18\a \x01(\tR\tlastError\x127\n" +
 	"\tcalendars\x18\b \x03(\v2\x19.calaba.v1.CalDavCalendarR\tcalendars\x12<\n" +
 	"\vshare_level\x18\t \x01(\x0e2\x1b.calaba.v1.CalDavShareLevelR\n" +
-	"shareLevel\"U\n" +
+	"shareLevel\x12\x16\n" +
+	"\x06remind\x18\n" +
+	" \x01(\bR\x06remind\"}\n" +
 	"\x15SetCalDavShareRequest\x12<\n" +
 	"\vshare_level\x18\x01 \x01(\x0e2\x1b.calaba.v1.CalDavShareLevelR\n" +
-	"shareLevel\"l\n" +
+	"shareLevel\x12\x1b\n" +
+	"\x06remind\x18\x02 \x01(\bH\x00R\x06remind\x88\x01\x01B\t\n" +
+	"\a_remind\"l\n" +
 	"\x15CalDavAccountResponse\x122\n" +
 	"\aaccount\x18\x01 \x01(\v2\x18.calaba.v1.CalDavAccountR\aaccount\x12\x1f\n" +
 	"\vplan_locked\x18\x02 \x01(\bR\n" +
@@ -3324,11 +3357,12 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12<\n" +
 	"\battendee\x18\x03 \x01(\v2 .calaba.v1.CalendarEventAttendeeR\battendee\x126\n" +
 	"\x06counts\x18\x04 \x01(\v2\x1e.calaba.v1.CalendarEventCountsR\x06counts\x12.\n" +
-	"\x05event\x18\x05 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"\xa2\x01\n" +
+	"\x05event\x18\x05 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"\xe3\x01\n" +
 	"\x15CalendarEventReminder\x12.\n" +
 	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\x12?\n" +
 	"\roccurrence_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\foccurrenceAt\x12\x18\n" +
-	"\aminutes\x18\x03 \x01(\rR\aminutes\"}\n" +
+	"\aminutes\x18\x03 \x01(\rR\aminutes\x12?\n" +
+	"\x0eexternal_event\x18\x04 \x01(\v2\x18.calaba.v1.ExternalEventR\rexternalEvent\"}\n" +
 	"\x0fRoomEventActive\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12.\n" +
@@ -3497,13 +3531,14 @@ var file_calaba_v1_event_proto_depIdxs = []int32{
 	7,  // 67: calaba.v1.CalendarEventRsvp.event:type_name -> calaba.v1.CalendarEvent
 	7,  // 68: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
 	41, // 69: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
-	7,  // 70: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
-	41, // 71: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
-	72, // [72:72] is the sub-list for method output_type
-	72, // [72:72] is the sub-list for method input_type
-	72, // [72:72] is the sub-list for extension type_name
-	72, // [72:72] is the sub-list for extension extendee
-	0,  // [0:72] is the sub-list for field type_name
+	30, // 70: calaba.v1.CalendarEventReminder.external_event:type_name -> calaba.v1.ExternalEvent
+	7,  // 71: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
+	41, // 72: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
+	73, // [73:73] is the sub-list for method output_type
+	73, // [73:73] is the sub-list for method input_type
+	73, // [73:73] is the sub-list for extension type_name
+	73, // [73:73] is the sub-list for extension extendee
+	0,  // [0:73] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_event_proto_init() }
@@ -3513,6 +3548,7 @@ func file_calaba_v1_event_proto_init() {
 	}
 	file_calaba_v1_user_proto_init()
 	file_calaba_v1_event_proto_msgTypes[6].OneofWrappers = []any{}
+	file_calaba_v1_event_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -34,7 +34,8 @@ func shareLevelProto(s string) v1.CalDavShareLevel {
 	return v1.CalDavShareLevel_CAL_DAV_SHARE_LEVEL_BUSY
 }
 
-// setShare: PATCH /api/me/caldav {share_level} — only the account's own user (the route is /me).
+// setShare: PATCH /api/me/caldav {share_level?, remind?} — only the account's own user (the route
+// is /me); what is not given stays.
 func (s *Service) setShare(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	me, err := s.paidPerson(r)
@@ -45,6 +46,7 @@ func (s *Service) setShare(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	p := sqlc.PatchCalDavAccountParams{UserID: me, Remind: req.Remind}
 	var level string
 	switch req.GetShareLevel() {
 	case v1.CalDavShareLevel_CAL_DAV_SHARE_LEVEL_BUSY:
@@ -53,11 +55,18 @@ func (s *Service) setShare(w http.ResponseWriter, r *http.Request) error {
 		level = ShareTitle
 	case v1.CalDavShareLevel_CAL_DAV_SHARE_LEVEL_DETAILS:
 		level = ShareDetails
+	case v1.CalDavShareLevel_CAL_DAV_SHARE_LEVEL_UNSPECIFIED:
+		if req.Remind == nil {
+			return httpx.Validation("shareLevel", "one of busy, title, details")
+		}
 	default:
 		return httpx.Validation("shareLevel", "one of busy, title, details")
 	}
+	if level != "" {
+		p.ShareLevel = &level
+	}
 	acc, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.CaldavAccount, error) {
-		return guarded.SetCalDavShareLevel(ctx, sqlc.SetCalDavShareLevelParams{UserID: me, ShareLevel: level})
+		return guarded.PatchCalDavAccount(ctx, p)
 	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("CalDAV account")
@@ -135,14 +144,19 @@ func (s *Service) externalEvents(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := &v1.ExternalEventsResponse{Events: make([]*v1.ExternalEvent, 0, len(rows))}
 	for i, row := range rows {
-		ev := &v1.ExternalEvent{Uid: row.Uid, StartsAt: timestamppb.New(row.StartsAt), EndsAt: timestamppb.New(row.EndsAt), AllDay: row.AllDay,
-			Summary: row.Summary, Location: row.Location, Organizer: row.Organizer, Url: row.Url, Href: row.Href, Recurring: row.Recurring, WebUrl: row.WebUrl,
-			Attendees: make([]*v1.ExternalAttendee, 0, len(lists[i])), MyStatus: myStatus(row.Organizer, lists[i], mine)}
-		for _, a := range lists[i] {
-			ev.Attendees = append(ev.Attendees, &v1.ExternalAttendee{Email: a.Email, Name: a.Name, UserId: ids[a.Email], Status: statusOfPartstat(a.Status)})
-		}
-		out.Events = append(out.Events, ev)
+		out.Events = append(out.Events, externalProto(row, lists[i], ids, myStatus(row.Organizer, lists[i], mine)))
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
+}
+
+// externalProto is the owner's view of an imported occurrence; ids: user ids by e-mail (may be nil).
+func externalProto(row sqlc.ExternalBusy, attendees []Attendee, ids map[string]string, my v1.AttendeeStatus) *v1.ExternalEvent {
+	ev := &v1.ExternalEvent{Uid: row.Uid, StartsAt: timestamppb.New(row.StartsAt), EndsAt: timestamppb.New(row.EndsAt), AllDay: row.AllDay,
+		Summary: row.Summary, Location: row.Location, Organizer: row.Organizer, Url: row.Url, Href: row.Href, Recurring: row.Recurring, WebUrl: row.WebUrl,
+		Attendees: make([]*v1.ExternalAttendee, 0, len(attendees)), MyStatus: my}
+	for _, a := range attendees {
+		ev.Attendees = append(ev.Attendees, &v1.ExternalAttendee{Email: a.Email, Name: a.Name, UserId: ids[a.Email], Status: statusOfPartstat(a.Status)})
+	}
+	return ev
 }

@@ -309,6 +309,14 @@ func (h *Hub) prepareEvent(ctx context.Context, enc *encEvent) {
 			*v1.DispatchEvent_NotesCreate, *v1.DispatchEvent_NotesUpdate, *v1.DispatchEvent_NotesDelete,
 			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
 			scopes[uuid.Nil] = true
+		case *v1.DispatchEvent_EventReminder:
+			// A reminder of the user's own imported CalDAV event (ADR-0045 amendment 3): personal,
+			// like notes. A meeting's reminder always resolves its workspace above.
+			if r := enc.ev.GetEventReminder(); r.GetEvent() == nil && r.GetExternalEvent() != nil {
+				scopes[uuid.Nil] = true
+			} else {
+				return
+			}
 		default:
 			return
 		}

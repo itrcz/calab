@@ -203,7 +203,7 @@ func calendarsOfRow(acc sqlc.CaldavAccount) []Calendar {
 
 func accountProto(acc sqlc.CaldavAccount) *v1.CalDavAccount {
 	out := &v1.CalDavAccount{Url: acc.Url, Username: acc.Username, Import: acc.Import, Push: acc.Push, LastError: acc.LastError,
-		Calendars: []*v1.CalDavCalendar{}, ShareLevel: shareLevelProto(acc.ShareLevel)}
+		Calendars: []*v1.CalDavCalendar{}, ShareLevel: shareLevelProto(acc.ShareLevel), Remind: acc.Remind}
 	if acc.CalendarHref != nil {
 		out.CalendarHref = *acc.CalendarHref
 	}

@@ -266,6 +266,7 @@ type CaldavAccount struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	ShareLevel   string
+	Remind       bool
 }
 
 type CaldavPush struct {
@@ -423,6 +424,14 @@ type ExternalBusy struct {
 	Etag      string
 	Recurring bool
 	WebUrl    string
+}
+
+type ExternalRemindersSent struct {
+	UserID       uuid.UUID
+	Uid          string
+	OccurrenceAt time.Time
+	Minutes      int16
+	SentAt       time.Time
 }
 
 type File struct {

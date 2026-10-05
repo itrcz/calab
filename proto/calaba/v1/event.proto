@@ -301,8 +301,9 @@ message SuggestSlotsResponse {
 // chosen calendar.
 // PUT /api/me/caldav UpdateCalDavRequest → the account; 404 without one; 422 for a calendar
 // not in calendars.
-// PATCH /api/me/caldav SetCalDavShareRequest → the account; 404 without one; 422 for UNSPECIFIED
-// (ADR-0045 §2: what colleagues see of the imported events in free / busy).
+// PATCH /api/me/caldav SetCalDavShareRequest → the account; 404 without one; 422 when neither
+// share_level (ADR-0045 §2: what colleagues see of the imported events in free / busy) nor
+// remind (ADR-0045 amendment 3) is given.
 // DELETE /api/me/caldav → 204; the imported busy time is removed.
 // POST /api/me/caldav/sync → the account after an import now; 422 without a calendar or with
 // import off; once per minute.
@@ -325,6 +326,9 @@ message CalDavAccount {
   string last_error = 7; // of the last import or push; empty = fine
   repeated CalDavCalendar calendars = 8; // event calendars found at connection
   CalDavShareLevel share_level = 9; // what colleagues see (ADR-0045 §2); BUSY by default
+  // Remind of the imported events (ADR-0045 amendment 3) like of meetings: the user's
+  // event_reminders, EVENT_REMINDER with external_event; not all-day or declined ones. Default false.
+  bool remind = 10;
 }
 
 // What colleagues see of the imported events in free / busy (ADR-0045 §2, §4).
@@ -335,8 +339,10 @@ enum CalDavShareLevel {
   CAL_DAV_SHARE_LEVEL_DETAILS = 3; // the title and the attendees who are members of the workspace
 }
 
+// Changes what is given: share_level UNSPECIFIED and remind unset leave them as they are.
 message SetCalDavShareRequest {
   CalDavShareLevel share_level = 1;
+  optional bool remind = 2; // CalDavAccount.remind
 }
 
 message CalDavAccountResponse {
@@ -467,10 +473,13 @@ message CalendarEventRsvp {
 
 // EVENT_REMINDER: to one attendee's devices (user channel), `minutes` before the occurrence
 // (one of the user's event_reminders). The client shows a system notification.
+// Either event (a Calab meeting) or external_event (an imported CalDAV event of the user,
+// ADR-0045 amendment 3) is set.
 message CalendarEventReminder {
   CalendarEvent event = 1; // the occurrence (occurrence_at set)
   google.protobuf.Timestamp occurrence_at = 2;
   uint32 minutes = 3;
+  ExternalEvent external_event = 4; // the occurrence as GET /api/me/external-events has it
 }
 
 // ROOM_EVENT_ACTIVE: 15 minutes before an occurrence with a room starts (and at once for one

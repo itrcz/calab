@@ -108,8 +108,14 @@ ON CONFLICT DO NOTHING;
 INSERT INTO event_room_signals (event_id, occurrence_at, kind) VALUES ($1, $2, $3)
 ON CONFLICT DO NOTHING;
 
+-- name: ClaimExternalReminder :execrows
+-- An imported event's reminder (ADR-0045 amendment 3), once per user, event, occurrence, minutes.
+INSERT INTO external_reminders_sent (user_id, uid, occurrence_at, minutes) VALUES ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING;
+
 -- name: DeleteOldEventSignals :exec
-WITH r AS (DELETE FROM event_reminders_sent WHERE event_reminders_sent.sent_at < sqlc.arg('before'))
+WITH r AS (DELETE FROM event_reminders_sent WHERE event_reminders_sent.sent_at < sqlc.arg('before')),
+x AS (DELETE FROM external_reminders_sent WHERE external_reminders_sent.sent_at < sqlc.arg('before'))
 DELETE FROM event_room_signals WHERE event_room_signals.sent_at < sqlc.arg('before');
 
 -- name: ListReminderTargets :many

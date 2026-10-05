@@ -116,6 +116,32 @@ func (q *Queries) ClaimEventRoomSignal(ctx context.Context, arg ClaimEventRoomSi
 	return result.RowsAffected(), nil
 }
 
+const claimExternalReminder = `-- name: ClaimExternalReminder :execrows
+INSERT INTO external_reminders_sent (user_id, uid, occurrence_at, minutes) VALUES ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING
+`
+
+type ClaimExternalReminderParams struct {
+	UserID       uuid.UUID
+	Uid          string
+	OccurrenceAt time.Time
+	Minutes      int16
+}
+
+// An imported event's reminder (ADR-0045 amendment 3), once per user, event, occurrence, minutes.
+func (q *Queries) ClaimExternalReminder(ctx context.Context, arg ClaimExternalReminderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimExternalReminder,
+		arg.UserID,
+		arg.Uid,
+		arg.OccurrenceAt,
+		arg.Minutes,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createEventRoomInvite = `-- name: CreateEventRoomInvite :one
 INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, not_before, event_id)
 VALUES ($1, $2, $3, $4, 1, true, $5, $6, $7)
@@ -192,7 +218,8 @@ func (q *Queries) DeleteExternalAttendee(ctx context.Context, arg DeleteExternal
 }
 
 const deleteOldEventSignals = `-- name: DeleteOldEventSignals :exec
-WITH r AS (DELETE FROM event_reminders_sent WHERE event_reminders_sent.sent_at < $1)
+WITH r AS (DELETE FROM event_reminders_sent WHERE event_reminders_sent.sent_at < $1),
+x AS (DELETE FROM external_reminders_sent WHERE external_reminders_sent.sent_at < $1)
 DELETE FROM event_room_signals WHERE event_room_signals.sent_at < $1
 `
 

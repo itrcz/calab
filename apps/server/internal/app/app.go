@@ -506,6 +506,7 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:caldav-sync:", 1, 1))         // once per minute
 	cdSvc.DeleteLimit = redisx.NewRateLimiter(d.Redis, "rl:caldav-delete:", 30, 30) // ADR-0045 amendment 1: 30 per minute
 	calSvc.Changed = cdSvc.EventChanged
+	calSvc.ExternalReminders = cdSvc.DueReminders                                        // ADR-0045 amendment 3: one sweep, one EVENT_REMINDER
 	cdSvc.AllowsCalDAV, calSvc.AllowsCalDAV = planSvc.AllowsCalDAV, planSvc.AllowsCalDAV // Free has no CalDAV (ADR-0024)
 	cdSvc.Routes(mux, private)
 	// Telephony (ADR-0046): phone lines join rooms through the LiveKit SIP API.

@@ -73,6 +73,10 @@ type Service struct {
 	// FreeBusyLimit / SuggestLimit: per-user budgets of freebusy and suggest (ADR-0041 §5);
 	// nil = unlimited.
 	FreeBusyLimit, SuggestLimit *redisx.RateLimiter
+	// ExternalReminders returns the reminders of imported CalDAV events due at now (ADR-0045
+	// amendment 3; caldav.Service.DueReminders); the sweep sends them with the meetings' ones.
+	// nil = none.
+	ExternalReminders func(ctx context.Context, now time.Time) ([]ExternalReminder, error)
 	// Changed is told after a meeting changed for the users involved before or after the change
 	// (their CalDAV push, ADR-0041 §4); nil = nobody listens.
 	Changed func(ctx context.Context, eventID uuid.UUID, users []uuid.UUID)

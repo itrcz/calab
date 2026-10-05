@@ -524,6 +524,9 @@ func TestIdentityUserChannelPresenceOnlyAboutSelf(t *testing.T) {
 		{&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: other}}}}, false},
 		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: &v1.Me{}}}}, true},
 		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{User: &v1.User{Id: other}}}}, false},
+		// A reminder of the user's own imported event (ADR-0045 amendment 3); an empty one is denied.
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_EventReminder{EventReminder: &v1.CalendarEventReminder{ExternalEvent: &v1.ExternalEvent{Uid: "u"}, Minutes: 5}}}, true},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_EventReminder{EventReminder: &v1.CalendarEventReminder{Minutes: 5}}}, false},
 	} {
 		enc := newEnc(c.ev)
 		h.prepareEvent(context.Background(), enc)

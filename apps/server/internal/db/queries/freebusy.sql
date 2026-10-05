@@ -90,9 +90,29 @@ UPDATE caldav_accounts SET calendar_href = $2, import = $3, push = $4, last_erro
 WHERE user_id = $1
 RETURNING *;
 
--- name: SetCalDavShareLevel :one
-UPDATE caldav_accounts SET share_level = $2, updated_at = now() WHERE user_id = $1
+-- name: PatchCalDavAccount :one
+-- What colleagues see (ADR-0045 §2) and the reminders (amendment 3); NULL = unchanged.
+UPDATE caldav_accounts SET share_level = coalesce(sqlc.narg('share_level')::text, share_level),
+    remind = coalesce(sqlc.narg('remind')::boolean, remind), updated_at = now()
+WHERE user_id = $1
 RETURNING *;
+
+-- name: ListDueExternalReminders :many
+-- Reminders of imported events due at now (ADR-0045 amendment 3): accounts that remind and import
+-- a chosen calendar, enabled people; timed (not all-day) events starting in (now, to] whose moment
+-- (start − one of the user's event_reminders) is in (since, now] — since = now − the grace.
+SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.summary, b.location, b.attendees, b.organizer, b.url,
+    b.href, b.recurring, b.web_url, m.minutes::int AS minutes, u.event_reminders_dnd, a.username AS login
+FROM caldav_accounts a
+JOIN users u ON u.id = a.user_id
+CROSS JOIN LATERAL unnest(u.event_reminders) AS m (minutes)
+JOIN external_busy b ON b.user_id = a.user_id
+WHERE a.remind AND a.import AND a.calendar_href IS NOT NULL
+  AND u.disabled_at IS NULL AND NOT u.is_bot AND NOT u.is_guest AND NOT b.all_day
+  AND b.starts_at > sqlc.arg('now')::timestamptz AND b.starts_at <= sqlc.arg('to')::timestamptz
+  AND b.starts_at - m.minutes * interval '1 minute' <= sqlc.arg('now')::timestamptz
+  AND b.starts_at - m.minutes * interval '1 minute' > sqlc.arg('since')::timestamptz
+ORDER BY b.user_id, b.starts_at, b.uid, m.minutes;
 
 -- name: DeleteCalDavAccount :execrows
 DELETE FROM caldav_accounts WHERE user_id = $1;
