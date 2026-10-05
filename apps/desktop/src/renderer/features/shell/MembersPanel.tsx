@@ -291,7 +291,7 @@ function CardHint({ workspaceId, userId, day, month }: { workspaceId: string; us
 
 const NONE: never[] = [];
 
-/** One 42 px row; memoised so presence / speaking changes re-render only that row. */
+/** One 42 px row; memoised so presence changes re-render only that row. */
 const MemberRow = memo(function MemberRow({
   workspaceId,
   member: m,
@@ -313,7 +313,6 @@ const MemberRow = memo(function MemberRow({
   const v = useVoiceStateOf(workspaceId, userId);
   const connectingRing = useConnectingRing(workspaceId, userId, v?.pending ?? false);
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));
-  const speaking = useVoice((s) => s.speaking[userId] ?? false);
   const look = useRoleLook(workspaceId, userId);
   // In a one-to-one call (ADR-0034, Presence.on_call): a primitive per row.
   const onCall = useOnCall(userId);
@@ -390,7 +389,7 @@ const MemberRow = memo(function MemberRow({
             {v?.roomId ? <JustJoinedDot joinedAt={joinedAtMs(v.joinedAt)} className="absolute left-0 top-1/2 -translate-y-1/2" /> : null}
             {/* Offline: grey, faded avatar + secondary text — never opacity on text (≥ 4.5:1). */}
             <span className={cx('flex shrink-0', offline && 'opacity-60 grayscale')}>
-              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence speaking={speaking && !v?.muted} connecting={connectingRing} />
+              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence connecting={connectingRing} />
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-1">
