@@ -29,6 +29,9 @@ export const ruCall = {
   // back in the room / call after a restart for an update (docs/09 #126)
   'call.resumeRoom': 'Вы снова в {room}',
   'call.resumeCall': 'Вы снова в звонке с {name}',
+  'call.resumePromptRoom': 'Страница обновилась — вернуться в {room}?',
+  'call.resumePromptCall': 'Страница обновилась — вернуться в звонок с {name}?',
+  'call.resumeAction': 'Вернуться',
   'call.resumeOtherDevice': 'Вы уже в голосе на другом устройстве',
   'call.resumeUnavailable': 'Не удалось вернуться в комнату: она недоступна',
   // the DM call log (SystemMessage.call), one line like Telegram

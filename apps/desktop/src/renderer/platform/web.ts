@@ -34,6 +34,7 @@ import { logoutReasonFromRefresh } from '../../shared/logoutReason';
 import { AUTH_TIMEOUT_MS, refreshGate } from '../../shared/refreshGate';
 import type { GuestJoin, Platform } from './types';
 import { createHostCapabilities } from './hostActivity';
+import { saveWebResume, takeWebResume, tabStorage } from '../lib/webResume';
 
 /**
  * Web platform (ADR-0015). Same origin as the API (`https://app.<domain>`):
@@ -624,10 +625,14 @@ export function createWebPlatform(): Platform {
       updateStatus: () => Promise.resolve({ state: 'disabled' }),
       installUpdate: () => Promise.resolve(false),
       downloadUpdate: () => Promise.resolve(false),
-      // No restart for an update on the web (docs/09 #126 is desktop only).
+      // No main process asks before a restart: «Обновить страницу» stores the seat itself
+      // (services/resumeVoice.reloadForUpdate) in this tab's sessionStorage (lib/webResume.ts).
       onPrepareRestart: noop,
-      setResumeVoice: () => Promise.resolve(),
-      takeResumeVoice: () => Promise.resolve(null),
+      setResumeVoice: (seat) => {
+        saveWebResume(tabStorage(), seat, location.origin, Date.now());
+        return Promise.resolve();
+      },
+      takeResumeVoice: () => Promise.resolve(takeWebResume(tabStorage(), Date.now())),
       networkOnline: () => undefined,
       log: (level, message) => {
         (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(message);

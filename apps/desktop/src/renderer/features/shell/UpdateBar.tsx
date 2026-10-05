@@ -8,6 +8,7 @@ import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
+import { reloadForUpdate } from '../../services/resumeVoice';
 import { laterAllowed, pendingUpdate, snooze, snoozed, type UpdateBarModel } from './updateBarModel';
 
 declare global {
@@ -24,7 +25,8 @@ declare global {
  * also in a call: the relaunched app rejoins the same room / call, docs/09 #126; in a call the
  * hint says so) + a quiet «Позже» (4 h, until
  * the next start at most); after three «Позже» only «×» (24 h). Web: «Обновить страницу» when the
- * server is newer than the loaded bundle. The logic is pure in updateBarModel.ts; this leaf is the only
+ * server is newer than the loaded bundle (the reloaded page rejoins the room with the same mic /
+ * deafen state, services/resumeVoice.reloadForUpdate). The logic is pure in updateBarModel.ts; this leaf is the only
  * subscriber to the update status (download progress re-renders just the bar).
  */
 export function UpdateBar(): ReactNode {
@@ -147,7 +149,7 @@ function Action({ model, inVoice, installing, onInstall }: { model: UpdateBarMod
       );
     case 'web':
       return (
-        <button type="button" onClick={() => window.location.reload()} className={primary}>
+        <button type="button" onClick={() => void reloadForUpdate()} className={primary}>
           {t('update.reload')}
         </button>
       );
