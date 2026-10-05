@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+### Добавлено
+- Оболочка iPhone (`apps/mobile`, ADR-0067–0071): тот же веб-клиент в Expo + WebView; скачивание файлов через системный лист «Поделиться», статус звонка в Live Activity, push о сообщениях и (опционально) системные входящие звонки. Push не содержит текста, имён и комнат — только общий текст «Новое сообщение»; права проверяются заново перед каждой отправкой.
+
+### Для операторов
+- Миграция `00068` (таблицы `push_devices`, `push_deliveries`, `push_intents`) выполняется автоматически при старте API.
+- Push выключен, пока не заданы вместе `PUSH_APNS_KEY_FILE`, `PUSH_APNS_KEY_ID`, `PUSH_APNS_TEAM_ID`, `PUSH_APNS_APP_ID` (`PUSH_APNS_ENVIRONMENT`, по умолчанию `production`); входящие звонки через VoIP — отдельно `PUSH_VOIP_ENABLED=true`. Ключ Apple — файл из Secret, не в git; порядок — `docs/mobile/push-deployment.md`.
+
 ## [2.3.7] — 2026-10-05
 
 ### Коротко
