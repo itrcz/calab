@@ -282,3 +282,23 @@ func TestPushMessageCutRejectsCallCapabilities(t *testing.T) {
 	pushHTTP(t, server, u, 422, "POST", "/api/me/push-devices", &v1.RegisterPushDeviceRequest{Provider: v1.PushProvider_PUSH_PROVIDER_FCM, AppId: "ru.calab.test", Environment: "production", InstallationId: uuid.NewString(), Token: "test", CallsEnabled: true, NotificationsEnabled: true, MentionsEnabled: proto.Bool(true)}, nil)
 	pushHTTP(t, server, u, 422, "POST", "/api/me/push-devices", &v1.RegisterPushDeviceRequest{Provider: v1.PushProvider_PUSH_PROVIDER_VOIP, AppId: "ru.calab.test", Environment: "production", InstallationId: uuid.NewString(), Token: "aa"}, nil)
 }
+
+// Completed intents only hold dedupe until expiry; they must not exhaust the pending cap.
+func TestPushIntentCapCountsPendingOnly(t *testing.T) {
+	s, _, _ := pushHarness(t)
+	o, bob, _, room := setupTeam(t)
+	marker := "cap-filler:" + uuid.NewString() + ":"
+	if _, err := testDB.Pool.Exec(context.Background(), `INSERT INTO push_intents(recipient_id,event_key,kind,reference_id,expires_at,completed_at)
+SELECT NULL,$1||g,1,gen_random_uuid(),now()+interval '5 minutes',now() FROM generate_series(1,8192) g`, marker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = testDB.Pool.Exec(context.Background(), "DELETE FROM push_intents WHERE starts_with(event_key,$1)", marker)
+	})
+	msg := dmPost(t, o, room.Id, "after a burst of completed routing")
+	s.Observe(context.Background(), uuid.MustParse(bob.id), pushMessage(msg))
+	var queued int
+	if err := testDB.Pool.QueryRow(context.Background(), "SELECT count(*) FROM push_intents WHERE recipient_id=$1 AND event_key=$2", bob.id, "message:"+msg.Id).Scan(&queued); err != nil || queued != 1 {
+		t.Fatalf("pending intent dropped behind completed rows: queued=%d err=%v", queued, err)
+	}
+}
