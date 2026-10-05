@@ -12,6 +12,7 @@ import { useVoice } from '../../stores/voice';
 import { useMemberRoles } from '../../stores/workspaces';
 import { StatsOverlay } from '../voice/StatsOverlay';
 import { StreamArea } from '../voice/StreamArea';
+import { MeetingBanner } from '../voice/MeetingBanner';
 import { useChatView } from './chatView';
 import { Composer, toOutgoing } from './Composer';
 import { MessageList } from './MessageList';
@@ -104,6 +105,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       )}
       {searchOpen ? <SearchPanel roomId={roomId} /> : <PinnedBar workspaceId={workspaceId} roomId={roomId} />}
 
+      {inThisVoice || isDm(room) || isNotes(room) ? null : <MeetingBanner workspaceId={workspaceId} room={room} perms={perms} />}
       {inThisVoice ? <StreamArea /> : null}
       {inThisVoice ? <StatsOverlay /> : null}
 

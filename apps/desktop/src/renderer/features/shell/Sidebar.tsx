@@ -1632,7 +1632,27 @@ function VoiceMember({
           {t('shell.live')}
         </Badge>
       ) : null}
-      {state.camera ? <Video className="size-4 shrink-0 text-muted" aria-label={t('video.stateOn')} role="img" /> : null}
+      {state.camera ? (
+        inSameRoom ? (
+          // ADR-0066 §3: my room — the call view with this person pinned.
+          <button
+            type="button"
+            data-testid="voice-member-camera"
+            title={t('video.openPinned', { name })}
+            aria-label={t('video.openPinned', { name })}
+            onClick={(e) => {
+              e.stopPropagation();
+              useUi.getState().openRoom(workspaceId, room.id);
+              voice.pinTile(state.userId);
+            }}
+            className="-m-1 grid shrink-0 place-items-center rounded-[var(--radius-row)] p-1 text-muted transition-colors duration-[var(--motion-fast)] hover:bg-active hover:text-fg"
+          >
+            <Video className="size-4" aria-hidden />
+          </button>
+        ) : (
+          <Video className="size-4 shrink-0 text-muted" aria-label={t('video.stateOn')} role="img" />
+        )
+      ) : null}
       {state.musician ? <MusicianIcon /> : null}
       <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
     </li>
