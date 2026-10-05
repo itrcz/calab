@@ -464,6 +464,37 @@ Custom plan у новых запросов тот же (Index Scan по `message
 
 Повторить: `pnpm --filter @calaba/desktop bench:feed`; SQL — `CALABA_PAGINATION_PERF_URL=postgres://…/calaba_test_chatscale TEST_PG_URL=… go test -tags integration -run TestListMessagesPerf -v ./internal/messages/` (в `apps/server`, база мигрируется и засевается один раз, ~25 с; объём — `CALABA_PAGINATION_PERF_ROWS`, по умолчанию 1,5 млн). В CI тест пропускается.
 
+## Галерея: N камер (ADR-0066 этап 2, 05.10)
+
+**Что изменилось в подписке.** Раньше подписывались все камеры комнаты, кроме скрытых; adaptive stream ставил на паузу те, чьих `<video>` нет на экране. Теперь видео подписано только у камер, которые реально показаны: плитки текущей страницы галереи, крупная плитка и видимые плитки ленты «Спикер», PiP (`lib/media/cameraShown.ts`, `voice.showCamera`). Ушедшая с экрана плитка отписывается через 3 с: листание туда-обратно подписку не дёргает. Страница из 16+ плиток просит не выше MEDIUM (360p), плитки 9–25 adaptive stream и так берёт 180p/360p по размеру. Звук не менялся. Скрытое окно, как и раньше, не декодирует видео (adaptive stream по видимости окна).
+
+**Бюджет (ADR-0066 §4):** галерея 25 × 180p не дороже просмотра одной 720p-камеры (E) больше чем вдвое.
+
+**Замер: не снят.** На машине разработки в момент работы шли другие агенты (load average 5,5), а 25 издателей 720p simulcast в одном Chromium сами занимают несколько ядер — чистых цифр так не получить. Сценарий готов, прогнать на тихой машине (M4 владельца или стенд-агентом на Mac):
+
+```sh
+pnpm -F @calaba/desktop build:app      # out/ — то, что запускает perf-call
+pnpm infra:dev                      # dev-LiveKit на :7880
+for n in 1 9 16 25; do
+  nice -n 19 npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --bench G --cameras $n --window 1920x1080 --bench-seconds 90 --name gallery
+done
+nice -n 19 npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --bench G --cameras 25 --view speaker --window 1920x1080 --bench-seconds 90 --name gallery
+nice -n 19 npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --bench E --bench-seconds 90 --name gallery   # опорная: одна камера 720p
+```
+
+Перед прогоном — `pgrep -fl "playwright|out/main"` (один тестовый Electron за раз). Строка `call view: {...}` в выводе — сколько плиток и какие размеры кадров декодируются: на 25 плитках ожидаем 320×180 у всех (16+ — не выше 640×360). CSV → `$TMPDIR/calaba-energy/calab-gallery-G-*.csv`.
+
+| Сценарий · окно 1920×1080 | Всего, % ядра (p95) | renderer | GPU | Кадры |
+|---|---|---|---|---|
+| E · одна камера 720p (опорная) | TBD | TBD | TBD | 1280×720 |
+| G · галерея, 1 камера | TBD | TBD | TBD | TBD |
+| G · галерея, 9 камер | TBD | TBD | TBD | TBD |
+| G · галерея, 16 камер | TBD | TBD | TBD | TBD |
+| G · галерея, 25 камер | TBD | TBD | TBD | TBD |
+| G · спикер, 25 камер (видимы ~6) | TBD | TBD | TBD | TBD |
+
+**Ререндеры.** Речь не перерисовывает сетку: время последней речи — в `lib/lastSpoke.ts` вне сторов, `useGallery` меняет состояние только при смене состава страницы (тест `rerenders: a speaking start changes the grid state only when the page on screen changes` — число смен состояния равно числу реальных замен плиток). Плитка — `memo` с координатами-примитивами, «Говорят сейчас» — свой подписчик с примитивным селектором, номер страницы — примитив в сторе, состав комнаты — строковый ключ (мьют соседа не перерисовывает сетку). Проверка в живом звонке: `CALABA_REACT_PROFILING=1` + `tools/perf-call.ts --bench G --cameras 16 --speaker --seconds 30` — тоже ещё не прогнана.
+
 ## Слабые машины
 
 Что при медленном CPU масштабируется хуже всего, по данным выше:
