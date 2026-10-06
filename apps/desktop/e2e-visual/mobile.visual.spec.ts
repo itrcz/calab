@@ -508,6 +508,7 @@ test('m-calendar-findtime', async ({ page }) => {
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
   await page.getByTestId('mobile-nav').getByTestId('calendar-button').tap();
   await expect(page.getByTestId('day-view')).toBeVisible();
+  await page.getByTestId('day-more').tap();
   await page.getByTestId('day-find').tap();
   const pane = page.getByTestId('find-time');
   await pane.getByTestId('find-people-add').tap();

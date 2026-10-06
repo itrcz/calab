@@ -17,7 +17,6 @@ import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { popoverBox } from '../shell/menu';
-import { NavButton } from '../shell/MobileShell';
 import { useNow } from '../shell/voiceFormat';
 import { newEvent } from './actions';
 import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, PX_PER_MIN } from './gridParts';
@@ -97,8 +96,8 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
 
   return (
     <section ref={section} className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('fb.find')} data-testid="find-time">
-      <header className={cx('mat-toolbar flex h-12 shrink-0 items-center gap-3 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-1')}>
-        {mobile ? <NavButton /> : null}
+      {/* Phone: the header's one control is ✕ — no nav button next to it (it would be hamburger + ✕). */}
+      <header className="mat-toolbar flex h-12 shrink-0 items-center gap-3 border-b border-line pl-4 pr-2">
         <h1 className="shrink-0 text-list font-semibold">{t('fb.find')}</h1>
         {/* Phone: the list covers two weeks from today — no day to page through. */}
         {mobile ? null : <DayNav day={day} today={today} setDay={ctl.setDay} />}
@@ -111,7 +110,7 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
       <FindControls ctl={ctl} wrap={mobile} />
       <NoCommonHours ctl={ctl} slots={slots} />
       {mobile ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <SlotPanel slots={slots} onPick={pick} next={false} />
         </div>
       ) : (
@@ -382,8 +381,20 @@ function useSlots(ctl: FindCtl | null): Slots {
  * The list: compact rows (weekday + date left, time right, 36 px, 6 px apart), «Следующее окно»
  * right under it (content width, right-aligned) when `next` — where there is a grid to step on.
  */
+function groupByDay(list: Interval[]): Array<{ day: string; items: Array<{ s: Interval; i: number }> }> {
+  const out: Array<{ day: string; items: Array<{ s: Interval; i: number }> }> = [];
+  list.forEach((s, i) => {
+    const day = formatShortDay(s.start);
+    const last = out[out.length - 1];
+    if (last?.day === day) last.items.push({ s, i });
+    else out.push({ day, items: [{ s, i }] });
+  });
+  return out;
+}
+
 function SlotPanel({ slots, onPick, next }: { slots: Slots; onPick: (slot: Interval) => void; next: boolean }): ReactNode {
   const { status, slots: list, cursor } = slots;
+  const mobile = useMobile();
   return (
     <div className="flex flex-col gap-2" data-testid="find-slots">
       <div className="flex h-6 items-center justify-between gap-2">
@@ -394,7 +405,30 @@ function SlotPanel({ slots, onPick, next }: { slots: Slots; onPick: (slot: Inter
       {status === 'hours' ? <p className="text-caption text-muted">{t('fb.noSlots')}</p> : null}
       {status === 'fail' ? <p className="text-caption text-danger-text">{t('fb.failed')}</p> : null}
       {status === 'ok' && list.length === 0 ? <p className="text-caption text-muted">{t('fb.noSlots')}</p> : null}
-      {list.length ? (
+      {list.length && mobile ? (
+        // Phone: one card per day — the date is the primary line, the times (secondary) are chips under it.
+        <ul className="flex flex-col gap-2">
+          {groupByDay(list).map((g) => (
+            <li key={g.day} className="flex min-h-14 flex-col gap-1.5 rounded-[var(--radius-card)] bg-[var(--color-fill)] px-4 py-3" data-testid="find-day">
+              <span className="text-[15px] font-semibold first-letter:uppercase">{g.day}</span>
+              <div className="flex flex-wrap gap-2">
+                {g.items.map(({ s, i }) => (
+                  <button
+                    key={s.start}
+                    type="button"
+                    onClick={() => onPick(s)}
+                    aria-pressed={i === cursor}
+                    className={cx('h-9 rounded-full px-3 text-[13px] font-medium tabular-nums', i === cursor ? 'bg-accent-strong text-accent-fg' : 'bg-[var(--color-fill-hover)] text-fg')}
+                    data-testid="find-slot"
+                  >
+                    {formatTime(s.start)} – {formatTime(s.end)}
+                  </button>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : list.length ? (
         <ul className="flex flex-col gap-1.5">
           {list.map((s, i) => (
             <li key={s.start}>

@@ -54,22 +54,44 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
         {mobile ? null : <ViewSwitch boardId={boardId} />}
         {hasBit(perms, CREATE_TASKS) ? (
           <Tip label={t('boards.newTask')} shortcut="C">
-            <Button size="md" aria-label={t('boards.newTask')} className="ml-1 mobile:min-w-10 mobile:px-2.5" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
-              <Plus className="size-4" aria-hidden />
-              <span className="mobile:hidden">{t('boards.task')}</span>
-            </Button>
+            {mobile ? (
+              <button type="button" aria-label={t('boards.newTask')} className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-icon)] text-accent-text hover:bg-hover" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+                <Plus className="size-5" aria-hidden />
+              </button>
+            ) : (
+              <Button size="md" aria-label={t('boards.newTask')} className="ml-1" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+                <Plus className="size-4" aria-hidden />
+                <span>{t('boards.task')}</span>
+              </Button>
+            )}
           </Tip>
         ) : null}
         <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />
       </header>
-      <div className="flex h-10 min-w-0 items-center gap-1.5 overflow-x-auto px-3" data-testid="filter-row">
-        <FilterButton boardId={boardId} workspaceId={workspaceId} />
-        <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
-        <QuickChips boardId={boardId} />
-        <span className="flex-1" />
-        {mobile ? <ViewSwitch boardId={boardId} /> : null}
-        <DisplayMenu boardId={boardId} />
-      </div>
+      {mobile ? (
+        <>
+          <div className="flex h-11 items-center justify-between gap-2 px-4" data-testid="view-row">
+            <ViewSwitch boardId={boardId} />
+            <DisplayMenu boardId={boardId} />
+          </div>
+          <div className="relative">
+            <div className="flex h-11 min-w-0 items-center gap-1.5 overflow-x-auto pl-4 pr-8 [scrollbar-width:none]" data-testid="filter-row">
+              <FilterButton boardId={boardId} workspaceId={workspaceId} />
+              <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
+              <QuickChips boardId={boardId} />
+            </div>
+            <span className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--color-bg)] to-transparent" aria-hidden />
+          </div>
+        </>
+      ) : (
+        <div className="flex h-10 min-w-0 items-center gap-1.5 overflow-x-auto px-3" data-testid="filter-row">
+          <FilterButton boardId={boardId} workspaceId={workspaceId} />
+          <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
+          <QuickChips boardId={boardId} />
+          <span className="flex-1" />
+          <DisplayMenu boardId={boardId} />
+        </div>
+      )}
     </div>
   );
 }
