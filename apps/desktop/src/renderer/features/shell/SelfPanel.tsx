@@ -1,8 +1,12 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Settings } from 'lucide-react';
+import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { Avatar } from '../../components/Avatar';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { useMobile } from '../../lib/mobile';
+import { useHotkeyLabel } from '../../services/hotkeys';
+import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
@@ -12,13 +16,105 @@ import { PttReleaseDelay } from '../settings/PttReleaseDelay';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MenuSliderItem } from './MenuSliderItem';
 import { selectMicMode, swallowMenuKey } from './micMenu';
+import { STATUS_KEY, StatusMenu, useCustomStatusExpiry, useMyStatus } from './StatusMenu';
+import { AppSettingsWindow } from './lazyWindows';
 
-/*
- * The voice controls of the former self panel (docs/09 #6, #28): the mic / sound split buttons and
- * their device menus. The desktop shows them in the rail's profile menu (RailProfile) and the call
- * panel (VoiceBar); the phone in «Профиль» (PhoneProfile). The panel itself left the sidebar
- * (owner, 07.10).
+/**
+ * Self panel (docs/09 #6): avatar + status, name, mic / headphones with device pickers. The settings
+ * gear is in the title bar (docs/09 #102); only the phone drawer keeps it here.
  */
+export function SelfPanel(): ReactNode {
+  const me = useSession((s) => s.me);
+  const muted = useVoice((s) => s.muted);
+  const serverMuted = useVoice((s) => s.serverMuted);
+  const muteKeys = useHotkeyLabel('mute');
+  const deafenKeys = useHotkeyLabel('deafen');
+  const deafened = useVoice((s) => s.deafened);
+  const inVoice = useVoice((s) => s.roomId !== null);
+  const speaking = useVoice((s) => (me?.user ? (s.speaking[me.user.id] ?? false) : false));
+  const open = useUi((s) => s.openDialog);
+  const mobile = useMobile();
+  const status = useMyStatus();
+  useCustomStatusExpiry();
+  const user = me?.user;
+  if (!user) return null;
+  const statusName = t(STATUS_KEY[status] ?? 'presence.online');
+  const custom = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
+  // In a call the second line says so, with the speaker icon (Discord «In voice»); otherwise the
+  // custom status, else the presence. (The custom status is in the status menu and the members column.)
+  const voiceLine = inVoice;
+  const second = inVoice ? t('shell.inVoiceStatus') : custom || statusName;
+
+  return (
+    // Bottom island across the rail + room column (Discord 2x reference): 56 px, 32 px avatar centred
+    // on the rail's axis (8 + 8 + 4 + 16 = 36 px) with equal 12 px left / bottom padding in the plate's corner, 32 px avatar with a
+    // 12 px status dot overlapping it, 14 px semibold name / 13 px status
+    // that fades out when long; controls flush right (mic ▾ 44, headphones ▾ 44, 6 px apart, 10 px
+    // from the edge; + the gear 32 on the phone), so the name keeps the rest.
+    <div className="flex h-14 shrink-0 items-center gap-1 pl-2 pr-2.5">
+      <StatusMenu>
+        <button
+          type="button"
+          aria-label={`${t('shell.profile')}: ${user.displayName}, ${statusName}`}
+          className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+        >
+          {/* A flex box, not an inline span: no line-box descender space pushing the avatar up. */}
+          <span className="flex shrink-0">
+            <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} status={status} ring="var(--color-bg)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="fade-end block overflow-hidden whitespace-nowrap text-[14px] font-semibold leading-[18px] text-fg" title={user.displayName}>
+              {user.displayName}
+            </span>
+            {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
+                in the middle of its meaning; the row is full width, so short text is untouched. */}
+            <span className="fade-end flex min-w-0 items-center gap-1 text-[13px] leading-[18px] text-muted" title={second}>
+              {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
+              <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
+            </span>
+          </span>
+        </button>
+      </StatusMenu>
+
+      {/* The controls, 6 px apart. */}
+      <span className="flex shrink-0 items-center gap-1.5">
+        <SplitButton
+          label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
+          shortcut={muteKeys}
+          danger={muted}
+          onClick={() => voice.toggleMute()}
+          menuLabel={t('shell.micOptions')}
+          menu={<MicMenu />}
+        >
+          {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+        </SplitButton>
+        <SplitButton
+          label={deafened ? t('voice.undeafen') : t('voice.deafen')}
+          shortcut={deafenKeys}
+          danger={deafened}
+          onClick={() => voice.toggleDeafen()}
+          menuLabel={t('shell.outputOptions')}
+          menu={<DeviceMenu kind="audiooutput" />}
+        >
+          {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
+        </SplitButton>
+        {/* Phone: the drawer keeps the settings entry (the mobile top bar has no right cluster);
+            on the desktop / wide web the gear lives in the title bar (docs/09 #102). */}
+        {mobile ? (
+          <IconButton
+            className="size-8"
+            label={t('settings.title')}
+            onPointerEnter={() => void AppSettingsWindow.preload()}
+            onFocus={() => void AppSettingsWindow.preload()}
+            onClick={() => open({ kind: 'settings' })}
+          >
+            <Settings className="size-5" />
+          </IconButton>
+        ) : null}
+      </span>
+    </div>
+  );
+}
 
 /** Icon button + ▾ device picker, one hover group (Discord-like). */
 export function SplitButton({

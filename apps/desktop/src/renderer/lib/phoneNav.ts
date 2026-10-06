@@ -109,7 +109,7 @@ export function switchTab(nav: PhoneNav, tab: PhoneTab): PhoneNav {
   return nav.tab === tab && nav.stack.length === 0 ? nav : { ...nav, tab, stack: [] };
 }
 
-/** The tab a chat lives under: DMs and notes in «Личные», rooms in «Чаты». */
+/** The tab a chat lives under: DMs and notes in «Личные», rooms in «Команда». */
 export const tabOfChat = (s: Extract<PhoneScreen, { kind: 'room' | 'dm' }>): PhoneTab => (s.kind === 'dm' ? 'dms' : 'chats');
 
 /**

@@ -1326,7 +1326,6 @@ test('self-custom-status', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await win.getByRole('button', { name: /^Мой статус/ }).click();
-  await win.getByTestId('status-custom-sub').click(); // the profile menu's «Свой статус ›» (owner, 07.10)
   await win.getByTestId('status-custom').click();
   const dialog = win.getByRole('dialog', { name: 'Свой статус' });
   await expect(dialog).toBeVisible();
@@ -1356,7 +1355,6 @@ test('self-custom-status', async ({ open, win, mock, shot }) => {
 test('self-mic-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  await win.getByTestId('rail-profile').click(); // the profile menu (owner, 07.10) holds mic ▾
   await win.getByRole('button', { name: 'Выбор микрофона' }).click();
   const menu = win.getByTestId('mic-menu');
   await expect(menu).toBeVisible();
@@ -2123,7 +2121,7 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
   await sidebar.getByRole('button', { name: /^Переговорка/ }).first().click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const preview = win.getByTestId('voice-preview');
-  await expect(preview).toContainText('Вы не в голосе');
+  await expect(preview).not.toContainText('Вы не в голосе');
   await expect(preview.getByRole('button', { name: 'Войти в голос' })).toBeVisible();
   await expect(win.getByRole('region', { name: 'Голосовое подключение' })).toContainText('Созвон');
   await expect(win.getByText('Показываю экран с макетами')).toBeVisible();

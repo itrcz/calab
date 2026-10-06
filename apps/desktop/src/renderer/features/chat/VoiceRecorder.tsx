@@ -287,7 +287,7 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
             'relative grid size-9 mobile:size-11 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40',
             active
               ? 'bg-accent-strong text-accent-fg shadow-[var(--shadow-card)]'
-              : 'text-muted hover:bg-hover hover:text-fg',
+              : 'bg-hover text-muted hover:bg-[var(--color-fill-hover)] hover:text-fg',
           )}
         >
           {active && locked ? <ArrowUp className="size-5" strokeWidth={2.25} /> : <Mic className="size-5" />}

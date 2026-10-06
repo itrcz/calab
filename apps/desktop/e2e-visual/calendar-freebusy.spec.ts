@@ -12,7 +12,7 @@ import { AT_15, DAY, HOUR, expect, openDay, signIn, test } from './calendarWeb';
 const W = IDS.workspaces.main;
 const U = IDS.users;
 
-test('the rail’s «Календарь» opens today’s day view at once; «Чаты» goes back to the room; «Доски» turns the day off', async ({ page, mock }) => {
+test('the rail’s «Календарь» opens today’s day view at once; «Команда» goes back to the room; «Доски» turns the day off', async ({ page, mock }) => {
   await signIn(page, mock);
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
   const calendar = page.getByTestId('section-calendar');
@@ -25,7 +25,7 @@ test('the rail’s «Календарь» opens today’s day view at once; «Ч
   await expect(page.getByTestId('mini-calendar')).toBeVisible();
   await expect(calendar).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('section-header')).toContainText('Календарь');
-  // «Чаты» (ADR-0074): the room again, no day view, no mini month.
+  // «Команда» (ADR-0074): the room again, no day view, no mini month.
   await chats.click();
   await expect(chats).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('day-view')).toHaveCount(0);

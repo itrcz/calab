@@ -34,7 +34,7 @@ test('register → workspace → room → message → reload → voice', async (
   const rail = page.getByRole('navigation', { name: 'Разделы' });
   await expect(skip.or(rail)).toBeVisible({ timeout: 20_000 });
   if (await skip.isVisible()) await skip.click();
-  // READY is in before the non-waiting checks below: the rail's «Чаты» (some workspace) or the
+  // READY is in before the non-waiting checks below: the rail's «Команда» (some workspace) or the
   // welcome screen's «Создать пространство» (none yet).
   await expect(page.getByTestId('section-chats').or(page.getByRole('button', { name: 'Создать пространство' })).first()).toBeVisible();
 

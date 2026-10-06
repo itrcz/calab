@@ -89,7 +89,7 @@ async function openProfile(page: Page): Promise<void> {
   await expect(page.getByTestId('phone-profile')).toBeVisible();
 }
 
-/** «Чаты» → a room of the list (the whole row opens it). */
+/** «Команда» → a room of the list (the whole row opens it). */
 async function openRoom(page: Page, name: RegExp): Promise<void> {
   await tab(page, 'chats');
   await page.getByTestId('phone-room-list').getByRole('button', { name }).first().tap();
@@ -536,7 +536,7 @@ function seedCall(): void {
   mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.call, joinedAtMs: since + 60_000 });
 }
 
-// ADR-0073 §1, §3: the app opens on «Чаты» — the room list at full width (no workspace rail; the
+// ADR-0073 §1, §3: the app opens on «Команда» — the room list at full width (no workspace rail; the
 // workspace is the switcher in the header, owner 07.10) as a messenger's chats (68 px rows, the
 // voice room with people in green), the tab bar.
 test('m-home', async ({ page }) => {
@@ -817,7 +817,7 @@ test('m-menu-sub', async ({ page }) => {
   await page.touchscreen.tap(p.x + 4, p.y + p.height / 2);
   await expect(sub).toHaveCount(0);
   await expect(item).toBeVisible();
-  // Back: the sub-level first, then the menu, then nothing more (still the «Чаты» root).
+  // Back: the sub-level first, then the menu, then nothing more (still the «Команда» root).
   await item.tap();
   await expect(sub).toBeVisible();
   await page.goBack();

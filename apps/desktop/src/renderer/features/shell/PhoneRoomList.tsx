@@ -20,7 +20,7 @@ import { KnockBadge } from '../guests/KnockBadge';
 import { CallTimer, CategoryDialog, PeoplePill, RoomMenu, WorkspaceHeader } from './Sidebar';
 
 /**
- * «Чаты» on a phone (ADR-0073 §3): the workspace header (name and menu, «+»; the boards are the «Доски» tab) and
+ * «Команда» on a phone (ADR-0073 §3): the workspace header (name and menu, «+»; the boards are the «Доски» tab) and
  * the rooms as a messenger's chat list — 68 px rows, the whole row opens the room, a long press
  * opens the room menu, no «Войти» (the voice is entered inside the room, §4). Categories are
  * collapsible section headers (the desktop's collapse state). The desktop column (Sidebar) is not

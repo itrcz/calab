@@ -243,7 +243,7 @@ export const zhShell: DictShape<typeof enShell> = {
   // phone layout (ADR-0021)
   'mobile.back': '返回',
   'mobile.tabs': '分区',
-  'mobile.tabChats': '聊天',
+  'mobile.tabChats': '团队',
   'mobile.profile': '个人资料',
   'mobile.tabDms': '私信',
   'mobile.mic': '麦克风',

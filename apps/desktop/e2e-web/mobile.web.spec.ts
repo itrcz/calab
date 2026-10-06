@@ -117,7 +117,7 @@ test('phone: sign in → room list → message → voice → PTT hold', async ({
   test.setTimeout(120_000);
   await signIn(page);
 
-  // ADR-0073: the app opens on «Чаты» — the room list at full width, the tab bar at the bottom.
+  // ADR-0073: the app opens on «Команда» — the room list at full width, the tab bar at the bottom.
   const nav = page.getByTestId('phone-chats');
   await expect(nav).toBeVisible();
   await expect(page.getByTestId('phone-tabbar')).toBeVisible();

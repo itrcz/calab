@@ -124,7 +124,6 @@ test('custom status dialog', async ({ open, win }) => {
   await open();
   await general(win);
   await win.getByRole('button', { name: /^Мой статус/ }).click();
-  await win.getByTestId('status-custom-sub').click(); // the profile menu's «Свой статус ›» (owner, 07.10)
   await win.getByTestId('status-custom').click();
   const dialog = win.getByRole('dialog', { name: 'Свой статус' });
   await closeAtIconCentre(win, dialog, modalClose(dialog));

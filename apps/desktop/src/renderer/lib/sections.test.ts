@@ -38,7 +38,7 @@ describe('section memory', () => {
     expect(rememberSection(m, 'a', 'calendar')).toEqual({ a: 'calendar' });
     expect(rememberSection(m, 'b', 'chats')).toEqual({ a: 'boards', b: 'chats' });
   });
-  it('opens on the remembered section, «Чаты» by default and for guests', () => {
+  it('opens on the remembered section, «Команда» by default and for guests', () => {
     const m = { a: 'calendar' as const };
     expect(sectionFor(m, 'a', false)).toBe('calendar');
     expect(sectionFor(m, 'b', false)).toBe('chats');

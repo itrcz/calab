@@ -171,7 +171,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
         {creator ? (
           <>
             <Tip label={t('boards.cat.new')}>
-              <button type="button" aria-label={t('boards.cat.new')} onClick={() => setNewCat(true)} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-category-new">
+              <button type="button" aria-label={t('boards.cat.new')} onClick={() => setNewCat(true)} className="hidden size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg mobile:grid" data-testid="board-category-new">
                 <FolderPlus className="size-4" aria-hidden />
               </button>
             </Tip>
@@ -328,7 +328,7 @@ function CategoryNameInput({ name, onDone }: { name: string; onDone: (v: string 
 }
 
 /** «Новая категория» (CREATE_BOARDS): goes on top of the categories. */
-function NewCategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
+export function NewCategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const submit = async (): Promise<void> => {

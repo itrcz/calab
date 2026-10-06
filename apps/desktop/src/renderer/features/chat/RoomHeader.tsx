@@ -320,10 +320,6 @@ function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; ro
   };
   return (
     <div className="no-drag flex shrink-0 items-center gap-2" data-testid="voice-preview">
-      {mobile ? null : (
-        // Same height as the «Join voice» button next to it (Button size="sm", h-6).
-        <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-hover px-2.5 text-caption font-medium text-muted">{t('voicePreview.notInVoice')}</span>
-      )}
       {!canConnect ? null : mobile ? (
         <IconButton label={suspended ? t('suspended.voice') : t('voicePreview.join')} disabled={suspended} onClick={join} className="size-11 rounded-full text-ok">
           <Phone className="size-5" />

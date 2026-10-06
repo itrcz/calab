@@ -4,7 +4,7 @@ import { showsUnread } from '../stores/rooms';
 
 /**
  * The sections of the desktop rail (ADR-0074): the phone's tabs (ADR-0073) except «Профиль» —
- * «Чаты», «Личные», «Календарь», «Доски». Pure helpers: which section is on screen, the section
+ * «Команда», «Личные», «Календарь», «Доски». Pure helpers: which section is on screen, the section
  * remembered per workspace, the workspace the sections work in, and the rail / switcher badges.
  */
 export type Section = Exclude<PhoneTab, 'profile'>;
@@ -34,7 +34,7 @@ export function sectionFor(map: Readonly<Record<string, WsSection>>, wsId: strin
 }
 
 /**
- * The workspace «Чаты», «Календарь», «Доски» and the switcher title refer to: the open one; on
+ * The workspace «Команда», «Календарь», «Доски» and the switcher title refer to: the open one; on
  * «Личные» (or with nothing open) the last one used if it still exists, else the first one.
  */
 export function contextWorkspace(active: string | null, last: string | null, home: string, order: readonly string[], known: (id: string) => boolean): string | null {
@@ -64,7 +64,7 @@ function badgeOf(s: UnreadSource, match: (workspaceId: string) => boolean): Badg
   return mentions > 0 ? mentions : unread ? UNREAD_DOT : 0;
 }
 
-/** The rooms of one workspace: the «Чаты» section's badge and a switcher row's. */
+/** The rooms of one workspace: the «Команда» section's badge and a switcher row's. */
 export const workspaceBadge = (s: UnreadSource, wsId: string): Badge => badgeOf(s, (w) => w === wsId);
 
 /** Every workspace but `except` (the title's dot: something waits elsewhere). */

@@ -242,7 +242,7 @@ export const ruShell = {
   // phone layout (ADR-0021)
   'mobile.back': 'Назад',
   'mobile.tabs': 'Разделы',
-  'mobile.tabChats': 'Чаты',
+  'mobile.tabChats': 'Команда',
   'mobile.profile': 'Профиль',
   'mobile.tabDms': 'Личные',
   'mobile.mic': 'Микрофон',
