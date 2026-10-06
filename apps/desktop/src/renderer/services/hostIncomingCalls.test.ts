@@ -3,11 +3,13 @@ import { create } from '@bufbuild/protobuf';
 import { CallSchema, CallState } from '@calaba/protocol';
 import { HostIncomingController, installHostIncomingCalls, type IncomingCallApi } from './hostIncomingCalls';
 import { useSession } from '../stores/session';
+import { wakeGateway } from './gateway';
 import { ApiError } from '../lib/api/client';
 import type { HostCallsCapability, HostCallsState } from '../../shared/hostCalls';
 vi.stubGlobal('window',{addEventListener:vi.fn(),removeEventListener:vi.fn()});
 const auth=vi.hoisted(()=>({callback:()=>{}}));
 vi.mock('../platform',()=>({platform:{auth:{onLoggedOut:(cb:()=>void)=>{auth.callback=cb;return ()=>{};}}}}));
+vi.mock('./gateway',()=>({wakeGateway:vi.fn()}));
 vi.mock('./call',()=>({onCallRing:vi.fn(),ownsHostCall:vi.fn(),performHostCallAction:vi.fn(),setHostCallMuted:vi.fn(),setHostIncomingOwnership:vi.fn()}));
 const reference={binding:'11111111-1111-4111-8111-111111111111',eventId:'22222222-2222-4222-8222-222222222222',expiresAt:Date.now()+45000};
 const actionId='44444444-4444-4444-8444-444444444444';
@@ -141,5 +143,39 @@ it('fails foreign, unowned and expired microphone actions without ending the cal
  h.controller.accept({...state,actions:[{...control,actionId:'77777777-7777-4777-8777-777777777777',eventId:'foreign'}]});
  h.controller.accept({...state,actions:[{...control,actionId:'88888888-8888-4888-8888-888888888888',expiresAt:Date.now()-1}]});
  await h.controller.settled();expect(h.api.mute).not.toHaveBeenCalled();expect(h.api.release).not.toHaveBeenCalled();
+ h.controller.dispose();
+});
+
+it('syncs a web-button answer before media connects, only for the confirmed local owner',async()=>{
+ const h=harness();const syncAccepted=vi.fn();Object.assign(h.capability,{syncAccepted});
+ h.controller.update('session',true);await Promise.resolve();await h.controller.settled();
+ h.controller.sync('call','active','','connecting');expect(syncAccepted).not.toHaveBeenCalled();
+ vi.mocked(h.api.owns).mockReturnValue(true);
+ h.controller.sync('call','active','','connecting');expect(syncAccepted).toHaveBeenCalledWith(reference.eventId);
+ h.controller.dispose();
+});
+
+it('wakes a hidden disconnected gateway on fresh call actions without bypassing READY',async()=>{
+ vi.mocked(wakeGateway).mockClear();
+ const h=harness();h.controller.update('session',false);await Promise.resolve();await h.controller.settled();
+ expect(wakeGateway).toHaveBeenCalledOnce();expect(h.api.act).not.toHaveBeenCalled();
+ h.controller.accept(state);expect(wakeGateway).toHaveBeenCalledOnce();
+ h.controller.update('session',true);await h.controller.settled();
+ expect(h.api.act).toHaveBeenCalledOnce();h.controller.dispose();
+});
+
+it('replays an already connected web answer when its ring receipt resolves late',async()=>{
+ const h=harness();const syncAccepted=vi.fn();Object.assign(h.capability,{syncAccepted});
+ vi.mocked(h.capability.state).mockResolvedValue({...state,actions:[{...reference,actionId,action:'ring'}]});
+ let resolve!:(value:ReturnType<typeof create<typeof CallSchema>>)=>void;
+ vi.mocked(h.api.resolve).mockReturnValue(new Promise(done=>{resolve=done;}));
+ h.controller.update('session',true);await vi.waitFor(()=>expect(h.api.resolve).toHaveBeenCalledOnce());
+ vi.mocked(h.api.owns).mockReturnValue(true);
+ h.controller.sync('call','active','dm','connected',true);
+ expect(syncAccepted).not.toHaveBeenCalled();
+ resolve(create(CallSchema,{id:'call',dmRoomId:'dm',state:CallState.ACTIVE}));await h.controller.settled();
+ expect(syncAccepted).toHaveBeenCalledWith(reference.eventId);
+ expect(h.capability.sync).toHaveBeenCalledWith(reference.eventId,'connected');
+ expect(h.capability.syncMuted).toHaveBeenCalledWith(reference.eventId,true);
  h.controller.dispose();
 });

@@ -21,3 +21,6 @@ func calabCallerName(_ raw: Any?) -> String {
   let bounded = String(String.UnicodeScalarView(singleLine.unicodeScalars.prefix(80)))
   return bounded.isEmpty ? "Calab" : bounded
 }
+
+// The bridge timestamp is also exercised by the Swift -> shared TypeScript contract test.
+func calabCallMilliseconds(_ date: Date = Date()) -> Double { (date.timeIntervalSince1970 * 1000).rounded(.down) }
