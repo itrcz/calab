@@ -13,7 +13,6 @@ import {
   type RoomAdmission,
 } from '@calaba/protocol';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
-import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { t } from '../../../i18n';
 import { ApiError, body, call, callEmpty } from '../../../lib/api/client';
 import { errorText } from '../../../lib/api/errors';
@@ -113,20 +112,17 @@ export function onAdmissionEvent(e: DispatchEvent['event']): void {
     admissions({ type: 'request', admission: a });
     const key = knockKey(a.roomId, a.user?.id ?? '');
     const added = useAdmissions.getState().toasts !== before;
-    if (shownAtOnce(a)) {
+    if (forMe(a)) {
       if (added) announceKnock(a);
     } else if (useAdmissions.getState().toasts.includes(key)) {
-      // Not for me yet (every INVITE_GUESTS member receives the event): hold the toast back and
-      // escalate when nobody has decided for KNOCK_ESCALATE_MS.
+      // Not mine to decide: the row only (no toast, sound or notification), never escalated.
       admissions({ type: 'dismissToast', key });
-      armEscalation(a, key);
     }
     return;
   }
   if (e.case !== 'roomAdmissionDecided' || !e.value.admission) return;
   const a = e.value.admission;
   const me = myUserId();
-  clearEscalation(knockKey(a.roomId, a.user?.id ?? ''));
   const hidden = a.user?.id === me ? useAdmissions.getState().mine[a.roomId]?.hidden === true : false;
   admissions({ type: 'decided', admission: a, me });
   if (a.user?.id !== me) return;
@@ -212,48 +208,19 @@ useSession.subscribe((s, prev) => {
   if (s.status !== 'authed' && prev.status === 'authed') {
     useAdmissions.setState({ byRoom: {}, gone: {}, toasts: [], mine: {} });
     dismissed.clear();
-    for (const id of escalations.values()) window.clearTimeout(id);
-    escalations.clear();
   }
 });
 
-/** A knock nobody has decided for this long is shown to every decider who got the event. */
-export const KNOCK_ESCALATE_MS = 60_000;
-
 /**
- * Who sees the knock at once: the author of the link, a decider in the voice of that room, or a
- * decider with that room open. Everyone else only gets the room row counter and the waiting group.
+ * Whose knock this is to decide (ADR-0040 §3, amendment 2026-10-06; the server's knockAudience,
+ * gateway/knock.go, sends it to nobody else): the author of the link the guest came by, or me in
+ * the voice of that room. A room merely open, or INVITE_GUESTS alone, is not enough — and
+ * nothing escalates to other deciders later: a knock the server did not address to me is kept
+ * as a row (the room counter, the waiting group) without a toast, sound or notification.
  */
-function shownAtOnce(a: RoomAdmission): boolean {
+export function forMe(a: Pick<RoomAdmission, 'roomId' | 'inviteCreatedBy'>): boolean {
   if (a.inviteCreatedBy && a.inviteCreatedBy === myUserId()) return true;
-  if (useVoice.getState().roomId === a.roomId) return true;
-  const ui = useUi.getState();
-  return !!ui.activeWorkspaceId && ui.lastRoom[ui.activeWorkspaceId] === a.roomId;
-}
-
-const escalations = new Map<string, number>();
-
-function clearEscalation(key: string): void {
-  const id = escalations.get(key);
-  if (id === undefined) return;
-  window.clearTimeout(id);
-  escalations.delete(key);
-}
-
-function armEscalation(a: RoomAdmission, key: string): void {
-  if (escalations.has(key)) return;
-  const at = a.requestedAt ? timestampMs(a.requestedAt) : Date.now();
-  const id = window.setTimeout(
-    () => {
-      escalations.delete(key);
-      const still = useAdmissions.getState().byRoom[a.roomId]?.find((x) => x.user?.id === a.user?.id);
-      if (!still) return;
-      admissions({ type: 'showToast', key });
-      announceKnock(still);
-    },
-    Math.max(0, at + KNOCK_ESCALATE_MS - Date.now()),
-  );
-  escalations.set(key, id);
+  return useVoice.getState().roomId === a.roomId;
 }
 
 /** The knock title: «Гость «{name}» просит войти в «{room}»». */
@@ -302,7 +269,6 @@ export interface Decision {
  */
 export async function decide(roomId: string, userId: string, d: Decision): Promise<boolean> {
   const a = useAdmissions.getState().byRoom[roomId]?.find((x) => x.user?.id === userId);
-  clearEscalation(knockKey(roomId, userId));
   admissions({ type: 'take', roomId, userId });
   try {
     await admissionApi.decide(roomId, userId, {

@@ -90,7 +90,7 @@ describe('deciders', () => {
     svc.applyReadyAdmissions(create(ReadySchema, { workspaces: [create(WorkspaceSnapshotSchema, { admissions: [knock(RoomAdmissionStatus.PENDING, 'g0')] })] }));
     expect(played).not.toHaveBeenCalled();
     useRooms.getState().upsert(room);
-    useUi.setState({ activeWorkspaceId: 'ws', lastRoom: { ws: 'voice' } }); // the room is open: shown at once
+    useVoice.setState({ roomId: 'voice' }); // in the room's voice: mine to decide
     svc.onAdmissionEvent(requestEv('g1'));
     expect(played).toHaveBeenCalledWith('mention');
     expect(useAdmissions.getState().byRoom['voice']?.map((a) => a.user?.id)).toEqual(['g0', 'g1']);
@@ -125,7 +125,7 @@ describe('deciders', () => {
   });
 });
 
-describe('decider: who sees the knock toast at once (escalation after 60 s)', () => {
+describe('decider: whose knock it is (ADR-0040 §3 amendment: the link author or me in the voice of the room, nothing escalates)', () => {
   const DEC = 'dec-1';
   const req = (by: string): DispatchEvent['event'] => ({
     case: 'roomAdmissionRequest',
@@ -157,31 +157,37 @@ describe('decider: who sees the knock toast at once (escalation after 60 s)', ()
     expect(toasts()).toHaveLength(1);
   });
 
-  it('with the room open: at once', () => {
+  it('with the room merely open (not in its voice): the row only — no toast, no sound', () => {
     useUi.setState({ lastRoom: { ws: 'voice' } });
-    svc.onAdmissionEvent(req('someone'));
-    expect(toasts()).toHaveLength(1);
-  });
-
-  it('another decider: nothing, then once after 60 s of the server time', () => {
     svc.onAdmissionEvent(req('someone'));
     expect(toasts()).toEqual([]);
     expect(played).not.toHaveBeenCalled();
     expect(useAdmissions.getState().byRoom['voice']).toHaveLength(1);
-    vi.advanceTimersByTime(58_999);
-    expect(toasts()).toEqual([]);
-    vi.advanceTimersByTime(1);
-    expect(toasts()).toEqual(['voice:g-2']);
-    expect(played).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(120_000);
-    expect(played).toHaveBeenCalledTimes(1);
   });
 
-  it('decided before 60 s: never shown, the timer is gone', () => {
+  it('another decider: never — not after a minute, not after an hour (no timers armed)', () => {
+    svc.onAdmissionEvent(req('someone'));
+    expect(toasts()).toEqual([]);
+    expect(played).not.toHaveBeenCalled();
+    expect(useAdmissions.getState().byRoom['voice']).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(3_600_000);
+    expect(toasts()).toEqual([]);
+    expect(played).not.toHaveBeenCalled();
+  });
+
+  it('forMe: the author, or me in the voice of that room; nobody else', () => {
+    expect(svc.forMe({ roomId: 'voice', inviteCreatedBy: DEC })).toBe(true);
+    expect(svc.forMe({ roomId: 'voice', inviteCreatedBy: 'someone' })).toBe(false);
+    useVoice.setState({ roomId: 'voice' });
+    expect(svc.forMe({ roomId: 'voice', inviteCreatedBy: 'someone' })).toBe(true);
+    expect(svc.forMe({ roomId: 'other', inviteCreatedBy: 'someone' })).toBe(false);
+  });
+
+  it('decided by someone else: the row goes, nothing was ever shown', () => {
     svc.onAdmissionEvent(req('someone'));
     svc.onAdmissionEvent(decidedEv(RoomAdmissionStatus.ADMITTED, 'g-2'));
-    expect(vi.getTimerCount()).toBe(0);
-    vi.advanceTimersByTime(120_000);
+    expect(useAdmissions.getState().byRoom['voice'] ?? []).toHaveLength(0);
     expect(toasts()).toEqual([]);
     expect(played).not.toHaveBeenCalled();
   });
