@@ -17,7 +17,7 @@ type fakeStore struct {
 	access      map[key]sqlc.GetRoomAccessRow
 	boards      map[key]sqlc.GetBoardAccessRow
 	taskRooms   map[uuid.UUID]sqlc.GetTaskRoomRefRow
-	invites     map[key][2]bool // (task, user) → assignee, approver
+	invites     map[key][3]bool // (task, user) → assignee, approver, watcher
 	memberCalls int
 	accessCalls int
 	err         error
@@ -77,7 +77,7 @@ func (f *fakeStore) GetTaskRoomRef(_ context.Context, a sqlc.GetTaskRoomRefParam
 		return sqlc.GetTaskRoomRefRow{}, pgx.ErrNoRows
 	}
 	inv := f.invites[key{row.TaskID, a.UserID}]
-	row.Assignee, row.Approver = inv[0], inv[1]
+	row.Assignee, row.Approver, row.Watcher = inv[0], inv[1], inv[2]
 	return row, nil
 }
 
@@ -137,7 +137,7 @@ func TestResolverTaskRoom(t *testing.T) {
 		r.Invited = true
 		return r
 	}()
-	s.invites = map[key][2]bool{{task, other}: {false, true}}
+	s.invites = map[key][3]bool{{task, other}: {false, true, false}}
 	r = NewResolver(s)
 	if b, _ := r.Board(ctx, board, other); b.Bits != 0 || !b.TaskScoped {
 		t.Fatalf("invited on a private board: %+v", b)
@@ -150,12 +150,27 @@ func TestResolverTaskRoom(t *testing.T) {
 	if acc, _ := r.Room(ctx, room, other); acc.Bits != 0 {
 		t.Fatalf("archived task: the invitation must not count: %d", acc.Bits)
 	}
+	// ADR-0076: a restricted board is task-scoped for its invitees too, and a watcher sees the
+	// task room like an approver.
+	s.taskRooms[room] = sqlc.GetTaskRoomRefRow{TaskID: task, BoardID: board}
+	s.invites = map[key][3]bool{{task, other}: {false, false, true}}
 	restricted := access(true, false)
 	restricted.Invited, restricted.Restricted = true, true
 	s.boards[key{board, other}] = restricted
 	r = NewResolver(s)
+	if b, _ := r.Board(ctx, board, other); !b.TaskScoped || b.Bits != 0 {
+		t.Fatalf("restricted board, invited: %+v", b)
+	}
+	if acc, _ := r.Room(ctx, room, other); acc.Bits != ViewRoom|SendMessages|AttachFiles {
+		t.Fatalf("watcher of the task: %d", acc.Bits)
+	}
+	// A guest is never task-scoped.
+	guest := restricted
+	guest.Role = ptr("guest")
+	s.boards[key{board, other}] = guest
+	r = NewResolver(s)
 	if b, _ := r.Board(ctx, board, other); b.TaskScoped {
-		t.Fatalf("restricted board is never task-scoped: %+v", b)
+		t.Fatalf("guest task-scoped: %+v", b)
 	}
 	if TaskRoom(ViewBoard, false, false) != ViewRoom|SendMessages|AttachFiles || TaskRoom(CreateTasks, false, false) != 0 ||
 		TaskRoom(ViewBoard, false, true) != ViewRoom || !CommentsOff(1<<12) || CommentsOff(1<<9) {
