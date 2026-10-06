@@ -346,7 +346,7 @@ const MemberRow = memo(function MemberRow({
     activity = (
       <>
         <MonitorUp className="size-3.5 shrink-0 text-danger" aria-hidden />
-        <span className="truncate">{activityLabel}</span>
+        <span className="min-w-0 truncate">{activityLabel}</span>
       </>
     );
   } else if (line.activity === 'voice' && v) {
@@ -354,7 +354,7 @@ const MemberRow = memo(function MemberRow({
     activity = (
       <>
         <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden />
-        <span className="truncate">{activityLabel}</span>
+        <span className="min-w-0 truncate">{activityLabel}</span>
         {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
         {v.musician ? <MusicianIcon className="size-3.5" /> : null}
         <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} />
@@ -365,19 +365,19 @@ const MemberRow = memo(function MemberRow({
     activity = (
       <>
         <Phone className="size-3.5 shrink-0 text-ok" aria-hidden />
-        <span className="truncate">{activityLabel}</span>
+        <span className="min-w-0 truncate">{activityLabel}</span>
       </>
     );
   }
   const second: ReactNode = line.compact ? (
     <>
-      <span className="min-w-0 truncate" data-testid="member-custom-status">
+      <span className="min-w-0 max-w-[70%] shrink-0 truncate" data-testid="member-custom-status">
         {line.status}
       </span>
       <span aria-hidden className="shrink-0 text-faint">
         ·
       </span>
-      <span className="flex min-w-0 max-w-[55%] shrink-0 items-center gap-1" data-testid="member-activity">
+      <span className="flex min-w-0 flex-1 items-center gap-1" data-testid="member-activity">
         {activity}
       </span>
     </>
