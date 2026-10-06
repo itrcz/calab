@@ -461,6 +461,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err := guests.FillAdmissions(ctx, h.db.Q, uid, ready.Workspaces); err != nil {
 		return nil, err
 	}
+	narrowKnocks(uid, ready.Workspaces) // the knocks they are asked to decide (knockAudience)
 	// Meetings around now in the visible rooms (ADR-0038 §6): one query for all workspaces.
 	if err := calendar.FillActive(ctx, h.db.Q, uid, u.IsBot, ready.Workspaces, time.Now()); err != nil {
 		return nil, err

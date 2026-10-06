@@ -620,13 +620,24 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete,
 		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
 		h.routeCalendar(st, sessions, view, id, ev)
-	case *v1.DispatchEvent_RoomAdmissionRequest, *v1.DispatchEvent_RoomAdmissionDecided:
-		// Guest admission (ADR-0040): to the room's deciders — INVITE_GUESTS there (not guests), or the
-		// author of the link the guest came by. The guest gets DECIDED on their user channel.
+	case *v1.DispatchEvent_RoomAdmissionRequest:
+		// A knock (ADR-0040 §3, amendment 2026-10-06): only to the author of the link the guest
+		// came by and to deciders (INVITE_GUESTS there, not guests) who are in the room's voice
+		// right now — never to every INVITE_GUESTS member of the workspace (a temporary meeting
+		// room's knock used to wake every administrator). knockAudience is the one rule; READY
+		// (loadInto) narrows the snapshot's admissions by it too.
 		a := ev.GetRoomAdmissionRequest().GetAdmission()
-		if a == nil {
-			a = ev.GetRoomAdmissionDecided().GetAdmission()
+		rid, author := parseID(a.GetRoomId()), parseID(a.GetInviteCreatedBy())
+		for _, s := range sessions {
+			if knockAudience(st, rid, author, s.user) {
+				s.dispatchEnc(id, shared)
+			}
 		}
+	case *v1.DispatchEvent_RoomAdmissionDecided:
+		// The outcome goes to every decider — INVITE_GUESTS in the room (not guests) or the link's
+		// author — so a row they hold (READY, an earlier knock) clears; it carries no call to
+		// act. The guest gets DECIDED on their user channel.
+		a := ev.GetRoomAdmissionDecided().GetAdmission()
 		rid, author := parseID(a.GetRoomId()), parseID(a.GetInviteCreatedBy())
 		for _, s := range sessions {
 			if st.role(s.user) != perm.RoleGuest && (st.bits(rid, s.user).Has(perm.InviteGuests) || (author != uuid.Nil && s.user == author)) {
