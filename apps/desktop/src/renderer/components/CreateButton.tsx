@@ -4,7 +4,7 @@ import { Tip, cx } from './ui';
 
 /**
  * The section's «+» (docs/08, owner 07.10): one accent circle at the right end of a section header —
- * Чаты, Личные, Доски, Календарь, on the desktop column and on the phone tab root. Always the same
+ * Команда, Личные, Доски, Календарь, on the desktop column and on the phone tab root. Always the same
  * look and place; what it opens (a menu, a dialog) is the caller's. Desktop: 28 px disc in a 32 px
  * hit; phone: 36 px disc in a 44 px hit. `ref` + rest props land on the button, so it works as a
  * Radix `asChild` trigger.

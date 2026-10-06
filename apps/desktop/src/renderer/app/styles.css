@@ -401,6 +401,26 @@ body {
 .mat-toolbar {
   background: var(--color-toolbar);
 }
+/* Solid fade under the bottom island (docs/08 «Нижний островок»): the rail and the room / DM
+   column end in their own colour below and beside the island, so no scrolled row shows in the
+   margins around it. `--island-height` is published by BottomIsland on the shared parent; without
+   an island the fade collapses to 0. Plain gradient, no backdrop-filter; z 1 keeps it over the
+   list and under the island (z-sticky). */
+.island-fade {
+  position: relative;
+}
+.island-fade::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: calc(var(--island-height, -16px) + 16px);
+  background: linear-gradient(to top, var(--island-fade-color, var(--color-sidebar)) 70%, transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+.island-fade-rail {
+  --island-fade-color: var(--color-rail);
+}
 /* macOS pop-up button chevron (↕, 10 px, 8 px from the right edge). In CSS, not a Tailwind
    arbitrary value: the SVG has spaces, which a class attribute would split. */
 .select-chevron {
@@ -490,26 +510,13 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   -webkit-app-region: no-drag;
 }
 
-/* Native overlay scrollbars on macOS; thin neutral ones elsewhere. */
-:root:not(.mac) ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* No visible scrollbars anywhere (owner, 07.10): every scroll container still scrolls (wheel,
+   trackpad, touch, keyboard); nothing draws a bar and there is no JS scrollbar. */
+* {
+  scrollbar-width: none;
 }
-:root:not(.mac) ::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 8px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-/* Overlay-like: the thumb shows only while the scroller is hovered or scrolling ([data-scrolling],
-   set by the chat feed for 1 s), like macOS. The mac itself keeps the native overlay scrollbars. */
-:root:not(.mac) :hover::-webkit-scrollbar-thumb,
-:root:not(.mac) [data-scrolling]::-webkit-scrollbar-thumb {
-  background: var(--color-fill-hover);
-  background-clip: content-box;
-}
-:root:not(.mac) ::-webkit-scrollbar-track {
-  background: transparent;
+*::-webkit-scrollbar {
+  display: none;
 }
 
 /* Focus (docs/08 «Фокус», docs/09 #138): one ring, keyboard only. A mouse or touch press never

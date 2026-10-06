@@ -8,7 +8,7 @@ import { useWorkspaces } from './workspaces';
 
 /**
  * The desktop rail's memory (ADR-0074 §1): the section each workspace was left on and the last
- * workspace used — what «Чаты» / «Календарь» / «Доски» return to from «Личные». Persisted; written
+ * workspace used — what «Команда» / «Календарь» / «Доски» return to from «Личные». Persisted; written
  * by watching the state that already decides the content (no second source of truth), so every
  * entry point (⌘K, a board link, a reminder) is remembered too.
  */

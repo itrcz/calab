@@ -96,7 +96,7 @@ export function StatusMenu({
   align?: 'start' | 'end';
   /** Custom statuses in a submenu (the rail's profile menu). */
   compact?: boolean;
-  /** The rail's profile menu (RailProfile): mic / sound right under the header… */
+  /** The island's profile menu: mic / sound right under the header… */
   top?: ReactNode;
   /** …and «Настройки» / «Выйти» at the end. */
   bottom?: ReactNode;

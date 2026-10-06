@@ -107,8 +107,7 @@ import { openBoard } from '../../services/boards';
 import { useShallow } from 'zustand/react/shallow';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from './ColumnHeader';
-import { CallPanel } from './CallPanel';
-import { BoardsList } from '../boards/BoardsList';
+import { BoardsList, NewCategoryDialog } from '../boards/BoardsList';
 import { ProfileButton } from './PhoneProfile';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
@@ -193,14 +192,20 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const empty = groups.length === 0 && temps.length === 0;
 
   return (
-    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
+    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
       {calList ? <MiniCalendar workspaceId={workspaceId} /> : null}
       {boards ? <BoardsList workspaceId={workspaceId} /> : null}
       {boards || calList ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
-          <div ref={listRef} className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3 pt-1" data-testid="room-list">
+          {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
+          <div
+            ref={listRef}
+            className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-1"
+            style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
+            data-testid="room-list"
+          >
             {empty ? (
               <Empty
                 action={
@@ -272,9 +277,6 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
         </SidebarMenu>
       </SidebarDnd>
       )}
-      {/* In a call: the compact call panel at the column's foot (owner, 07.10) — not on the
-          Календарь / Доски columns (owner, 02.10: the user returns to «Чаты» to control the call). */}
-      {boards || calList ? null : <CallPanel />}
       {catDialog ? <CategoryDialog workspaceId={workspaceId} onClose={() => setCatDialog(false)} /> : null}
     </aside>
   );
@@ -377,7 +379,7 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
 
 /**
  * The column header on the desktop (ADR-0074 §3; owner 07.10, Codex reference): the section's
- * name large on the left («Чаты», «Календарь», «Доски»; the workspace switcher stays in the title
+ * name large on the left («Команда», «Календарь», «Доски»; the workspace switcher stays in the title
  * bar), then the quiet search and the section's «+»: the rooms' create menu, «Добавить
  * встречу» on the calendar, «Новая доска» on the boards (CREATE_BOARDS).
  * Primitive selectors only: switching the section re-renders the header, not the list.
@@ -387,9 +389,17 @@ function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; gue
   const calendarOn = useUi((s) => s.calDay !== null) && !guest && !boardsOn;
   const me = useSession((s) => s.me?.user?.id ?? '');
   const boardCreator = mayCreateBoards(useMemberRoles(workspaceId, me));
+  const [newCat, setNewCat] = useState(false);
   const add = boardsOn ? (
     boardCreator ? (
-      <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
+      <>
+        {/* «Новая категория»: quiet, left of the accent «+» (owner, 07.10). */}
+        <IconButton label={t('boards.cat.new')} onClick={() => setNewCat(true)} data-testid="board-category-new">
+          <FolderPlus className="size-[18px]" strokeWidth={1.75} aria-hidden />
+        </IconButton>
+        <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
+        {newCat ? <NewCategoryDialog workspaceId={workspaceId} onClose={() => setNewCat(false)} /> : null}
+      </>
     ) : null
   ) : calendarOn ? (
     <CreateButton label={t('shell.addMeeting')} data-testid="section-create-event" onClick={() => newEvent(workspaceId, nextQuarter())} />
@@ -1242,10 +1252,14 @@ const TextRoomRow = memo(function TextRoomRow({
               unread && !active && 'font-semibold',
             )}
           >
-            {/* A text room has no glyph — just the indent (owner, 07.10, Codex reference), so names line
-                up with the voice rooms'; a private one keeps a quiet lock in that slot. */}
+            {/* A quiet «#» (owner, 07.10): same size, weight and colour as the voice rooms' speaker; a
+                private room shows the lock in that slot. */}
             <span className="grid w-[18px] shrink-0 place-items-center">
-              {room.isPrivate ? <Lock className="size-3.5 text-faint" strokeWidth={1.75} aria-label={t('room.private')} role="img" /> : null}
+              {room.isPrivate ? (
+                <Lock className="size-4 text-faint" strokeWidth={1.75} aria-label={t('room.private')} role="img" />
+              ) : (
+                <Hash className="size-4 text-faint" strokeWidth={1.75} aria-hidden />
+              )}
             </span>
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}

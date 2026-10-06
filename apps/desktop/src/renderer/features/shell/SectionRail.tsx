@@ -19,14 +19,13 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { useHomeDrop } from '../notes/HomeDrop';
 import { WorkspaceAppsColumn } from '../webapps/AppRail';
 import { RailContextMenu } from './RailContextMenu';
-import { RailProfile } from './RailProfile';
 import { openSection } from './sectionNav';
 
 /** 40 px plate, radius 10 (docs/08, owner 07.10): no fill at rest, grey plate on hover and when active. */
 const tile = 'relative grid size-10 place-items-center rounded-[10px] transition-[background-color,color] duration-[var(--motion-fast)] ease-out';
 
 /**
- * The sections rail (ADR-0074 §1): 72 px, rail material — «Чаты» (the rooms of the context
+ * The sections rail (ADR-0074 §1): 72 px, rail material — «Команда» (the rooms of the context
  * workspace), «Личные» (DMs and notes), «Календарь», «Доски», then the workspace's web apps
  * (ADR-0050). The workspace itself is picked — and found, created — in the title bar's switcher
  * (WorkspaceSwitcher; «Найти пространство» left the rail 07.10). Re-renders: the rail reads two primitives (the section on screen and the
@@ -39,9 +38,13 @@ export function SectionRail(): ReactNode {
   const section = useSection(ws);
 
   return (
-    <div className="flex w-[var(--rail-width)] shrink-0 flex-col">
+    // The wrapper carries the island fade (styles.css `.island-fade`): a pseudo-element inside the
+    // scroller would scroll away with the icons.
+    <div className="island-fade island-fade-rail flex w-[var(--rail-width)] shrink-0 flex-col">
       <nav
-        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pb-3 pt-3"
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pt-3"
+        // The bottom island (AppShell) spans the rail too: the icons end above it.
+        style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
         aria-label={t('mobile.tabs')}
         data-testid="section-rail"
       >
@@ -52,10 +55,6 @@ export function SectionRail(): ReactNode {
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
       </nav>
-      {/* Me (owner, 07.10, Codex reference): the avatar at the rail's foot opens the profile menu. */}
-      <div className="flex shrink-0 justify-center pb-3 pt-1">
-        <RailProfile />
-      </div>
     </div>
   );
 }
@@ -77,7 +76,7 @@ const APPS_LINE = <div className="my-1 h-px w-8 shrink-0 bg-line" aria-hidden />
 interface TileProps {
   section: Section;
   icon: LucideIcon;
-  /** Accessible name: the label with its counter («Чаты, 2 упоминания»). */
+  /** Accessible name: the label with its counter («Команда, 2 упоминания»). */
   name: string;
   active: boolean;
   count?: number;
@@ -164,7 +163,7 @@ function Slot({ active, dot = false, children, ...rest }: { active: boolean; dot
 }
 
 /**
- * «Чаты»: the rooms of the context workspace. Its badge is that workspace's (mentions, else the
+ * «Команда»: the rooms of the context workspace. Its badge is that workspace's (mentions, else the
  * unread pill); the green speaker while I am in its voice. Right click — the workspace's menu
  * (mark read, invite, members, settings, leave; docs/09 #21), as on the old workspace icon.
  */

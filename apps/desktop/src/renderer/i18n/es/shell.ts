@@ -243,7 +243,7 @@ export const esShell: DictShape<typeof enShell> = {
   // phone layout (ADR-0021)
   'mobile.back': 'Atrás',
   'mobile.tabs': 'Secciones',
-  'mobile.tabChats': 'Chats',
+  'mobile.tabChats': 'Equipo',
   'mobile.profile': 'Perfil',
   'mobile.tabDms': 'Personal',
   'mobile.mic': 'Micrófono',

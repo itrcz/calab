@@ -48,12 +48,12 @@ const SWIPE_PX = 56;
 const EDGE_PX = 28;
 
 /**
- * Phone layout of the web client (ADR-0073, ≤ 768 px, lib/mobile.ts): root tabs «Чаты · Личные ·
+ * Phone layout of the web client (ADR-0073, ≤ 768 px, lib/mobile.ts): root tabs «Команда · Личные ·
  * Доски · Календарь» with a bottom tab bar, and screens pushed over them (a room, a DM, the members,
  * search results, a meeting, a board / task, the profile) without the tab bar, each with its «←» header. Only
  * the top screen is mounted; back = the browser history (services/phoneNav.ts): Android back, the
  * browser's back, «←» and a swipe from the left edge.
- *  - «Чаты»: the workspace rail (no «Личные» icon — it is a tab) and the room list on the rest;
+ *  - «Команда»: the workspace rail (no «Личные» icon — it is a tab) and the room list on the rest;
  *  - in voice, the call strip sits at the bottom: above the tab bar on a root, under the screen
  *    otherwise (MobileVoiceStrip).
  * iOS safe areas: the top inset on the shell, the bottom one on whatever is last (tab bar, strip
@@ -135,7 +135,7 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
   }
 }
 
-/** The workspace on «Чаты» / «Календарь»: the open one, unless it is «Личные». */
+/** The workspace on «Команда» / «Календарь»: the open one, unless it is «Личные». */
 function useRootWorkspace(): { ws: string | null; locked: boolean } {
   const wsId = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
   const has = useWorkspaces((s) => (wsId ? !!s.byId[wsId] : false));
@@ -143,7 +143,7 @@ function useRootWorkspace(): { ws: string | null; locked: boolean } {
   return { ws: wsId && (has || locked) ? wsId : null, locked };
 }
 
-/** «Чаты»: the room list at full width; the workspace is picked in its header (the switcher, ADR-0074). */
+/** «Команда»: the room list at full width; the workspace is picked in its header (the switcher, ADR-0074). */
 function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const { ws, locked } = useRootWorkspace();
   return (
@@ -153,7 +153,7 @@ function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   );
 }
 
-/** «Доски»: the boards of the open workspace (the one picked on «Чаты»); a board is a pushed screen. */
+/** «Доски»: the boards of the open workspace (the one picked on «Команда»); a board is a pushed screen. */
 function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const { ws, locked } = useRootWorkspace();
   const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
@@ -279,8 +279,8 @@ function MembersPage({ workspaceId, roomId }: { workspaceId: string; roomId: str
 // ---------------------------------------------------------------- tab bar
 
 /**
- * The bottom tab bar (ADR-0073 §1): «Чаты · Личные · Доски · Календарь», 56 px targets over the home
- * indicator, the unread count of rooms (mentions) on «Чаты», of DMs on «Личные» and of tasks on
+ * The bottom tab bar (ADR-0073 §1): «Команда · Личные · Доски · Календарь», 56 px targets over the home
+ * indicator, the unread count of rooms (mentions) on «Команда», of DMs on «Личные» and of tasks on
  * «Доски» (the open workspace's, as the old «Голос · Доски» switch showed). «Личные» only for
  * accounts with DMs, «Календарь» not for guests.
  */

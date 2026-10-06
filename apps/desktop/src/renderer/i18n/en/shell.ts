@@ -243,7 +243,7 @@ export const enShell: DictShape<typeof ruShell> = {
   // phone layout (ADR-0021)
   'mobile.back': 'Back',
   'mobile.tabs': 'Sections',
-  'mobile.tabChats': 'Chats',
+  'mobile.tabChats': 'Team',
   'mobile.profile': 'Profile',
   'mobile.tabDms': 'Personal',
   'mobile.mic': 'Microphone',

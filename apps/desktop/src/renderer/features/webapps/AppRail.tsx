@@ -1,10 +1,9 @@
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useSensor, useSensors, type DragMoveEvent, type DragStartEvent } from '@dnd-kit/core';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { ExternalLink, Pencil, RotateCw, Trash2 } from 'lucide-react';
+import { ExternalLink, Pencil, Plus, RotateCw, Trash2 } from 'lucide-react';
 import { memo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { confirmAction } from '../../components/Confirm';
-import { InlineAdd } from '../../components/CreateButton';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { mayManageIntegrations } from '../../lib/permissions';
@@ -98,8 +97,20 @@ function AppList({ wsId, ids, manage }: { wsId: string; ids: string[]; manage: b
         ) : null}
         {manage ? (
           // A list item itself (axe: a role=list holds only listitems).
+          // Same 40 px plate and 20 px icon as the section tabs (owner, 07.10), quiet.
           <div role="listitem" className="flex">
-          <InlineAdd label={ids.length >= 20 ? t('wapp.limit') : t('wapp.add')} aria-label={t('wapp.add')} disabled={ids.length >= 20} onClick={() => open({ kind: 'web-app', workspaceId: wsId })} data-testid="rail-app-add" />
+            <Tip label={ids.length >= 20 ? t('wapp.limit') : t('wapp.add')} side="right">
+              <button
+                type="button"
+                aria-label={t('wapp.add')}
+                disabled={ids.length >= 20}
+                onClick={() => open({ kind: 'web-app', workspaceId: wsId })}
+                className="grid size-10 place-items-center rounded-[10px] text-muted transition-[background-color,color] duration-[var(--motion-fast)] ease-out hover:bg-active hover:text-fg disabled:opacity-40"
+                data-testid="rail-app-add"
+              >
+                <Plus className="size-5" strokeWidth={1.75} aria-hidden />
+              </button>
+            </Tip>
           </div>
         ) : null}
       </div>

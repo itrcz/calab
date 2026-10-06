@@ -245,7 +245,7 @@ export function phoneBack(): void {
   else popTop();
 }
 
-/** A workspace to show on «Чаты» / «Календарь»: the open one, else the first in the rail. */
+/** A workspace to show on «Команда» / «Календарь»: the open one, else the first in the rail. */
 export function realWorkspace(): string | null {
   const active = useUi.getState().activeWorkspaceId;
   const ws = useWorkspaces.getState();
@@ -268,7 +268,7 @@ export function openTab(tab: PhoneTab): void {
     if (useUi.getState().activeWorkspaceId !== HOME) useUi.getState().setWorkspace(HOME);
     return;
   }
-  // «Чаты», «Доски», «Календарь»: a real workspace (not «Личные»).
+  // «Команда», «Доски», «Календарь»: a real workspace (not «Личные»).
   const ws = realWorkspace();
   if (ws && useUi.getState().activeWorkspaceId !== ws) useUi.getState().setWorkspace(ws);
   if (tab === 'calendar' && useUi.getState().calDay === null) {

@@ -23,7 +23,6 @@ import { applyChatDrop } from '../notes/dropActions';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { CallPanel } from '../shell/CallPanel';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { confirmDeleteDm } from './dmActions';
 import { BotBadge } from '../people/MemberBits';
@@ -45,7 +44,7 @@ export function DmSidebar(): ReactNode {
   const mobile = useMobile();
 
   return (
-    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
+    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
       {mobile ? (
         // Phone: the tab root has its title and «+» (MobileShell); this is the search field.
         <div className="flex h-16 shrink-0 items-center border-b border-line px-2.5">
@@ -64,7 +63,7 @@ export function DmSidebar(): ReactNode {
           <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />
         </ColumnHeader>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-5 pt-1 mobile:pt-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-1 mobile:pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         {/* «Заметки» (ADR-0039): my shelves above the DMs; guest accounts have none. */}
         {guest ? null : <NotesSection />}
         <div className="group/cat flex h-9 items-center pr-1 pt-2 mobile:h-11 mobile:pr-0 mobile:pt-0">
@@ -87,8 +86,6 @@ export function DmSidebar(): ReactNode {
         )}
         {archived.length > 0 ? <ArchiveSection list={archived} /> : null}
       </div>
-      {/* In a call (desktop): the call panel at the column's foot (owner, 07.10). */}
-      {mobile ? null : <CallPanel />}
     </aside>
   );
 }

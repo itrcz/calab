@@ -21,6 +21,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
+import { showBottomIsland } from '../../lib/webApps';
 import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
@@ -36,6 +37,7 @@ import { BoardsView } from '../boards/BoardsView';
 import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EventPanel } from '../calendar/EventCard';
+import { BottomIsland } from './BottomIsland';
 import { Sidebar } from './Sidebar';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { useArchiveView } from '../../stores/archiveView';
@@ -137,8 +139,8 @@ function ShellLayout(): ReactNode {
       <UpdateBar />
       {/* The rail sits on the window layer (same material as the title bar); the room column and
           the chat are one inset panel with a 12 px top-left corner and a quiet edge (docs/08
-          «Слои окна», owner 07.10). My profile is the rail's avatar; a call's panel sits at the
-          foot of the column (CallPanel) — nothing floats over the rail and the column. */}
+          «Слои окна», owner 07.10). The bottom island (me + the call) floats over the foot of the
+          rail and the column. */}
       <div className="mat-rail relative flex min-h-0 flex-1">
         <SectionRail />
         {!ready ? (
@@ -204,10 +206,18 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
+        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
   );
+}
+
+/**
+ * Web apps use the entire content area, including while a voice call continues.
+ */
+function IslandSlot({ appOpen, workTab }: { appOpen: boolean; workTab: boolean }): ReactNode {
+  return showBottomIsland(appOpen, workTab) ? <BottomIsland /> : null;
 }
 
 /**
