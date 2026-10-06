@@ -5,6 +5,7 @@ import { Check, Ellipsis, NotebookText, Plus, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { confirmAction } from '../../components/Confirm';
+import { InlineAdd } from '../../components/CreateButton';
 import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -48,17 +49,7 @@ export function NotesSection(): ReactNode {
         <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">
           {headerOver && firstEntry ? <span className="normal-case tracking-normal text-accent-text">{t('notes.saveTo', { name: shelfTitle(firstEntry) })}</span> : t('notes.section')}
         </h2>
-        <Tip label={t('notes.new')}>
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            aria-label={t('notes.new')}
-            data-testid="notes-new"
-            className="grid size-6 mobile:size-11 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-          >
-            <Plus className="size-4" aria-hidden />
-          </button>
-        </Tip>
+        <InlineAdd label={t('notes.new')} onClick={() => setCreating(true)} data-testid="notes-new" />
       </div>
       {list.length ? <ShelfList list={list} /> : null}
       {creating ? (

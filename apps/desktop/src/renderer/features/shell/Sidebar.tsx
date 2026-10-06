@@ -55,6 +55,7 @@ import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
+import { CreateButton, InlineAdd } from '../../components/CreateButton';
 import { Badge, Button, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
@@ -389,10 +390,10 @@ function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; gue
   const title = boardsOn ? t('shell.modeBoards') : calendarOn ? t('cal.open') : t('mobile.tabChats');
   const add = boardsOn ? (
     boardCreator ? (
-      <HeaderPlus label={t('boards.newBoard')} testId="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
+      <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
     ) : null
   ) : calendarOn ? (
-    <HeaderPlus label={t('shell.addMeeting')} testId="section-create-event" onClick={() => newEvent(workspaceId, nextQuarter())} />
+    <CreateButton label={t('shell.addMeeting')} data-testid="section-create-event" onClick={() => newEvent(workspaceId, nextQuarter())} />
   ) : (
     rooms
   );
@@ -401,23 +402,6 @@ function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; gue
       <h2 className="min-w-0 flex-1 truncate text-list font-semibold text-fg">{title}</h2>
       {add}
     </div>
-  );
-}
-
-/** The header's «+» for a single action (the rooms have a menu: CreateMenu). */
-function HeaderPlus({ label, testId, onClick }: { label: string; testId: string; onClick: () => void }): ReactNode {
-  return (
-    <Tip label={label}>
-      <button
-        type="button"
-        aria-label={label}
-        onClick={onClick}
-        data-testid={testId}
-        className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-      >
-        <Plus className="size-[18px]" aria-hidden />
-      </button>
-    </Tip>
   );
 }
 
@@ -454,18 +438,9 @@ function CreateMenu({
   const taskBoards = useBoards(useShallow((s) => (tasks ? workspaceBoards(s.boards, workspaceId).filter((b) => hasBit(b.permissions, CREATE_TASKS)).map((b) => b.id) : NO_BOARDS)));
   return (
     <Dropdown.Root modal={false}>
-      <Tip label={t('shell.create')}>
-        <Dropdown.Trigger asChild>
-          <button
-            type="button"
-            aria-label={t('shell.create')}
-            data-testid="sidebar-create"
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg mobile:tap-size"
-          >
-            <Plus className="size-[18px]" aria-hidden />
-          </button>
-        </Dropdown.Trigger>
-      </Tip>
+      <Dropdown.Trigger asChild>
+        <CreateButton label={t('shell.create')} data-testid="sidebar-create" />
+      </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content className={cx(menuBox, 'w-64')} sideOffset={4} align="end" collisionPadding={16}>
           {rooms ? (
@@ -623,16 +598,12 @@ function CategoryGroup({
         </button>
       )}
       {canManage && !editing ? (
-        <Tip label={t('room.create')}>
-          <button
-            type="button"
-            onClick={() => open({ kind: 'room-create', workspaceId, voice: false, categoryId: category.id })}
-            aria-label={t('shell.roomCreateIn', { name: category.name })}
-            className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/cat:opacity-100"
-          >
-            <Plus className="size-4" aria-hidden />
-          </button>
-        </Tip>
+        <InlineAdd
+          label={t('room.create')}
+          aria-label={t('shell.roomCreateIn', { name: category.name })}
+          onClick={() => open({ kind: 'room-create', workspaceId, voice: false, categoryId: category.id })}
+          className="opacity-0 focus-visible:opacity-100 group-hover/cat:opacity-100 mobile:opacity-100"
+        />
       ) : null}
     </div>
   );

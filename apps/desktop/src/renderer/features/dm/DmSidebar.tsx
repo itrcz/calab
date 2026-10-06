@@ -1,8 +1,9 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search, Plus } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Button, Tip, cx } from '../../components/ui';
+import { CreateButton } from '../../components/CreateButton';
+import { Button, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -39,34 +40,34 @@ export function DmSidebar(): ReactNode {
   const { main: list, archived } = useMemo(() => splitDms(byRoom, preview, current), [byRoom, preview, current]);
   const open = useUi((s) => s.openDialog);
   const guest = useSession((s) => s.me?.user?.isGuest ?? false);
+  const mobile = useMobile();
 
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
-      <div className="flex h-12 shrink-0 items-center border-b border-line px-2.5 mobile:h-16">
-        <button
-          type="button"
-          onClick={() => open({ kind: 'new-dm' })}
-          className="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2.5 mobile:tap-h text-left text-body text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
-        >
-          <Search className="size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{t('dm.find')}</span>
-        </button>
-      </div>
+      {mobile ? (
+        // Phone: the tab root has its title and «+» (MobileShell); this is the search field.
+        <div className="flex h-16 shrink-0 items-center border-b border-line px-2.5">
+          <button
+            type="button"
+            onClick={() => open({ kind: 'new-dm' })}
+            className="flex tap-h w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2.5 text-left text-body text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
+          >
+            <Search className="size-3.5 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{t('dm.find')}</span>
+          </button>
+        </div>
+      ) : (
+        // Desktop (ADR-0074 §3): the section's name and its «+».
+        <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2" data-testid="section-header">
+          <h2 className="min-w-0 flex-1 truncate text-list font-semibold text-fg">{t('dm.home')}</h2>
+          <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         {/* «Заметки» (ADR-0039): my shelves above the DMs; guest accounts have none. */}
         {guest ? null : <NotesSection />}
         <div className="group/cat flex h-7 items-center pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-0">
           <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('dm.list')}</h2>
-          <Tip label={t('dm.new')}>
-            <button
-              type="button"
-              onClick={() => open({ kind: 'new-dm' })}
-              aria-label={t('dm.new')}
-              className="grid size-6 mobile:size-11 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-            >
-              <Plus className="size-4" aria-hidden />
-            </button>
-          </Tip>
         </div>
         {list.length === 0 && archived.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-body text-muted" data-testid="dm-empty">

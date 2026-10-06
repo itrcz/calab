@@ -1,8 +1,9 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { CalendarDays, CalendarPlus, CalendarSearch, Ellipsis, ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
+import { CalendarDays, CalendarPlus, CalendarSearch, Ellipsis, ChevronLeft, ChevronRight, Link2, Pencil, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { CreateButton } from '../../components/CreateButton';
 import { Button, IconButton, Modal, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
@@ -225,11 +226,6 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
           <ChevronRight className="size-[18px]" />
         </IconButton>
         <span className="flex-1" />
-        {creatable ? (
-          <IconButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" className={cx(touch, 'text-accent-text')}>
-            <Plus className="size-5" />
-          </IconButton>
-        ) : null}
         <Dropdown.Root modal={false}>
           <Dropdown.Trigger asChild>
             <IconButton label={t('boards.more')} tip={false} className={cx(touch, 'relative data-[state=open]:bg-active')} data-testid="day-more">
@@ -258,6 +254,7 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
             </Dropdown.Content>
           </Dropdown.Portal>
         </Dropdown.Root>
+        {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : null}
         {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
       </header>
     );
@@ -285,7 +282,6 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
             {t('fb.find')}
           </Button>
           <Button size="sm" onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" title="N">
-            <Plus className="size-3.5" aria-hidden />
             {t('cal.newEvent')}
           </Button>
         </>

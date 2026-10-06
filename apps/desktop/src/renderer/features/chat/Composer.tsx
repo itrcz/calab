@@ -244,8 +244,10 @@ export function Composer({
       el.setSelectionRange(pendingCaret.current, pendingCaret.current);
       pendingCaret.current = null;
     }
+    // Empty: exactly the one-line min-height — a native placeholder that wraps (a long room name)
+    // must not inflate the field; the visible placeholder is the one-line stand-in below.
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, MAX_FIELD_H)}px`;
+    el.style.height = text === '' ? '0px' : `${Math.min(el.scrollHeight, MAX_FIELD_H)}px`;
     // Phone: a second line moves the text to a row of its own above the buttons. Sticky until the
     // field is empty again: at the full width the same text may fit one line, and that must not flip back.
     if (mobile) setMulti((was) => (text === '' ? false : was || el.scrollHeight > MULTILINE_PX));
@@ -460,9 +462,11 @@ export function Composer({
         <div
           data-focus-box
           className={cx(
-            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-focus',
+            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 mobile:rounded-[22px] shadow-[var(--shadow-card)] focus-within:border-focus',
             // Phone: one grid, [attach | text | sticker emoji]; a second line puts the text on its own row above them.
             'mobile:grid mobile:min-h-11 mobile:grid-cols-[auto_minmax(0,1fr)_auto] mobile:items-center mobile:px-0',
+            // Phone, two lines and more: a large radius that still reads as round (no corners).
+            multi && 'mobile:rounded-[26px]',
             voice.active && 'hidden',
           )}
         >
@@ -530,13 +534,16 @@ export function Composer({
               e.target.value = '';
             }}
           />
+          {/* Desktop: a wrapper for the field and its placeholder (a span: the layout invariants look for the field's closest div); phone: `contents`, the grid places them. */}
+          <span className="relative flex min-w-0 flex-1 items-end mobile:contents">
           <textarea
             ref={ref}
             value={text}
             rows={1}
             maxLength={MAX_CONTENT}
-            // Phone: the placeholder is drawn below (a native one wraps and inflates the field).
-            placeholder={mobile ? undefined : placeholder}
+            // The visible placeholder is drawn below (a native one wraps and inflates the field); this one
+            // stays for assistive tech and tests, transparent.
+            placeholder={placeholder}
             onChange={(e) => {
               setText(e.target.value);
               setCaret(e.target.selectionStart);
@@ -564,19 +571,20 @@ export function Composer({
             onPaste={onPaste}
             aria-label={placeholder}
             className={cx(
-              'selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint',
+              'selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-transparent',
               'mobile:min-h-11 mobile:py-3 mobile:row-start-1',
               mobile && multi ? 'mobile:col-span-3 mobile:col-start-1 mobile:px-3 mobile:pb-1' : 'mobile:col-start-2',
             )}
             style={{ maxHeight: MAX_FIELD_H }}
           />
-          {mobile && !text ? (
+          {!text ? (
             // The placeholder of a textarea wraps (a long room name made it four lines): a one-line,
-            // ellipsised stand-in in the same grid cell, transparent to touches.
-            <span aria-hidden className="pointer-events-none col-start-2 row-start-1 min-w-0 truncate px-1.5 text-list text-faint">
+            // ellipsised stand-in over the field (phone: in the same grid cell), transparent to touches.
+            <span aria-hidden className="pointer-events-none absolute inset-x-0 top-[9px] min-w-0 truncate px-1.5 text-list leading-5 text-faint mobile:static mobile:col-start-2 mobile:row-start-1">
               {placeholder}
             </span>
           ) : null}
+          </span>
           <div className={cx('contents mobile:col-start-3 mobile:flex mobile:items-center', multi ? 'mobile:row-start-2' : 'mobile:row-start-1')}>
             {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
             <EmojiPicker onPick={insert} label={t('chat.emoji')}>
