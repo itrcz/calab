@@ -172,3 +172,29 @@ func TestCustomStatusExpiry(t *testing.T) {
 		t.Fatalf("db not cleared: %q %q %v %v", text, emoji, exp, err)
 	}
 }
+
+// Bug 07.10 «В сети» shows away: a manual status chosen on a device that was AFK ends that
+// session's automatic idle, so clearing the manual status later shows ONLINE, not IDLE.
+func TestManualPresenceEndsSessionAfk(t *testing.T) {
+	o, bob, _, _ := setupTeam(t)
+	og, bg := dialGW(t), dialGW(t)
+	og.identify(o.token)
+	bg.identify(bob.token)
+	set := func(st v1.PresenceStatus, until *timestamppb.Timestamp) {
+		bg.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_PRESENCE_UPDATE,
+			Payload: &v1.GatewayFrame_SetPresence{SetPresence: &v1.SetPresence{Status: st, Until: until}}})
+	}
+	others := func(st v1.PresenceStatus) {
+		t.Helper()
+		og.wait("presence "+st.String(), func(e *v1.DispatchEvent) bool {
+			p := e.GetPresenceUpdate().GetPresence()
+			return p.GetUserId() == bob.id && p.GetStatus() == st
+		})
+	}
+	set(v1.PresenceStatus_PRESENCE_STATUS_IDLE, nil) // AFK on this device
+	others(v1.PresenceStatus_PRESENCE_STATUS_IDLE)
+	set(v1.PresenceStatus_PRESENCE_STATUS_DND, &timestamppb.Timestamp{})
+	others(v1.PresenceStatus_PRESENCE_STATUS_DND)
+	set(v1.PresenceStatus_PRESENCE_STATUS_ONLINE, &timestamppb.Timestamp{}) // «В сети»
+	others(v1.PresenceStatus_PRESENCE_STATUS_ONLINE)
+}

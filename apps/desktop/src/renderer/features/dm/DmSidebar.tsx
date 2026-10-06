@@ -3,7 +3,8 @@ import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search } from 
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { CreateButton } from '../../components/CreateButton';
-import { Button, CountBadge, cx } from '../../components/ui';
+import { StatusEmoji } from '../../components/StatusEmoji';
+import { Button, CountBadge, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -212,14 +213,19 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
           <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={32} presence />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className={cx('min-w-0 truncate text-list leading-5', !bot && 'flex-1', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
+              <span className={cx('min-w-0 truncate text-list leading-5', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
                 {name}
               </span>
               {bot ? (
                 <span className="flex min-w-0 flex-1 self-center">
                   <BotBadge />
                 </span>
-              ) : null}
+              ) : (
+                // The peer's custom status, compact (text in the tooltip); the rest of the line stays free.
+                <span className="flex min-w-0 flex-1 self-center">
+                  <StatusEmoji userId={peerId} />
+                </span>
+              )}
               <span className="shrink-0 text-micro text-faint">{time}</span>
             </span>
             <span className="flex min-w-0 items-center gap-2">

@@ -18,7 +18,7 @@ import { MutedByMe } from '../../components/SpeakerIdentity';
 import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { JustJoinedDot } from '../voice/JustJoinedDot';
 import { joinedAtMs } from '../../lib/justJoined';
-import { groupMembers, nameOf } from '../people/members';
+import { customStatusLine, groupMembers, memberActivity, memberSecondLine, nameOf } from '../people/members';
 import { openProfile as openFullProfile } from '../people/actions';
 import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
 import { cardDueAt, formatBirthdayShort, greetZone } from '../../lib/birthday';
@@ -335,35 +335,60 @@ const MemberRow = memo(function MemberRow({
   }, []);
   if (!u) return null;
   const name = nameOf(m);
-  const statusLine = [u.statusEmoji, u.statusText].filter(Boolean).join(' ');
-
-  // Second line: live voice activity first (it changes what you can do), then custom status.
-  let second: ReactNode = null;
-  if (v?.streaming)
-    second = (
+  // Second line (docs/08 «Колонка участников»): the custom status stays visible in voice — the
+  // live activity (stream / voice room / call) follows it compactly after «·»; one 16 px line
+  // either way, so the row height never changes.
+  const line = memberSecondLine(customStatusLine(u), memberActivity(v, onCall));
+  let activity: ReactNode = null;
+  let activityLabel = '';
+  if (line.activity === 'stream') {
+    activityLabel = t('people.streaming');
+    activity = (
       <>
         <MonitorUp className="size-3.5 shrink-0 text-danger" aria-hidden />
-        <span className="truncate">{t('people.streaming')}</span>
+        <span className="min-w-0 truncate">{activityLabel}</span>
       </>
     );
-  else if (v?.roomId)
-    second = (
+  } else if (line.activity === 'voice' && v) {
+    activityLabel = roomName ?? t('people.inVoice');
+    activity = (
       <>
         <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden />
-        <span className="truncate">{roomName ?? t('people.inVoice')}</span>
+        <span className="min-w-0 truncate">{activityLabel}</span>
         {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
         {v.musician ? <MusicianIcon className="size-3.5" /> : null}
         <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} />
       </>
     );
-  else if (onCall)
-    second = (
+  } else if (line.activity === 'call') {
+    activityLabel = t('call.onCall');
+    activity = (
       <>
         <Phone className="size-3.5 shrink-0 text-ok" aria-hidden />
-        <span className="truncate">{t('call.onCall')}</span>
+        <span className="min-w-0 truncate">{activityLabel}</span>
       </>
     );
-  else if (statusLine) second = <span className="truncate">{statusLine}</span>;
+  }
+  const second: ReactNode = line.compact ? (
+    <>
+      <span className="min-w-0 max-w-[70%] shrink-0 truncate" data-testid="member-custom-status">
+        {line.status}
+      </span>
+      <span aria-hidden className="shrink-0 text-faint">
+        ·
+      </span>
+      <span className="flex min-w-0 flex-1 items-center gap-1" data-testid="member-activity">
+        {activity}
+      </span>
+    </>
+  ) : line.status ? (
+    <span className="truncate" data-testid="member-custom-status">
+      {line.status}
+    </span>
+  ) : (
+    activity
+  );
+  const secondTitle = [line.status, activityLabel].filter(Boolean).join(' · ');
 
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
@@ -406,7 +431,11 @@ const MemberRow = memo(function MemberRow({
                 {u.isBot ? <BotBadge /> : null}
                 <MutedByMe userId={userId} className="size-3.5" />
               </span>
-              {second ? <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted">{second}</span> : null}
+              {second ? (
+                <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted" title={secondTitle}>
+                  {second}
+                </span>
+              ) : null}
             </span>
           </button>
         </Popover.Trigger>
