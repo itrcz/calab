@@ -47,7 +47,7 @@ for (const theme of THEMES) {
         expect(box?.y).toBe(0);
         // No traffic-light inset: the workspace menu sits at the left edge (docs/09 #140; no «‹ ›»).
         const title = bar.getByTestId('titlebar-title');
-        await expect(title).toHaveText('Команда Calab');
+        await expect(title).toContainText('Команда Calab');
         await expect(bar.getByRole('button', { name: 'Назад' })).toHaveCount(0);
         const box2 = await title.boundingBox();
         expect(box2?.x ?? 99, 'workspace menu at the left edge').toBeLessThanOrEqual(8);

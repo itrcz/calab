@@ -12,33 +12,33 @@ import { AT_15, DAY, HOUR, expect, openDay, signIn, test } from './calendarWeb';
 const W = IDS.workspaces.main;
 const U = IDS.users;
 
-test('the «Календарь» tab opens today’s day view at once; «Голос» goes back to the room; ←/→ switch tabs', async ({ page, mock }) => {
+test('the rail’s «Календарь» opens today’s day view at once; «Чаты» goes back to the room; «Доски» turns the day off', async ({ page, mock }) => {
   await signIn(page, mock);
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-  const tab = page.getByTestId('calendar-button');
-  const voice = page.getByTestId('mode-voice');
-  await expect(voice).toHaveAttribute('aria-selected', 'true');
-  await tab.click();
+  const calendar = page.getByTestId('section-calendar');
+  const chats = page.getByTestId('section-chats');
+  const boards = page.getByTestId('section-boards');
+  await expect(chats).toHaveAttribute('aria-current', 'page');
+  await calendar.click();
   await expect(page.getByTestId('day-view')).toBeVisible();
   await expect(page.getByTestId('day-view').getByRole('heading', { level: 1 })).toHaveText(/15 января/);
   await expect(page.getByTestId('mini-calendar')).toBeVisible();
-  await expect(tab).toHaveAttribute('aria-selected', 'true');
-  // Keyboard (docs/09 #140): ← from «Календарь» selects «Голос» — the room again.
-  await tab.focus();
-  await page.keyboard.press('ArrowLeft');
-  await expect(voice).toHaveAttribute('aria-selected', 'true');
-  await expect(voice).toBeFocused();
+  await expect(calendar).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('section-header')).toContainText('Календарь');
+  // «Чаты» (ADR-0074): the room again, no day view, no mini month.
+  await chats.click();
+  await expect(chats).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('day-view')).toHaveCount(0);
   await expect(page.getByTestId('mini-calendar')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-  // → twice: «Доски» (the calendar is off), then ← back to «Календарь» (the boards are off).
-  await page.keyboard.press('ArrowRight');
+  // The calendar, then «Доски» (the day goes off), then the calendar again (the boards go off).
+  await calendar.click();
   await expect(page.getByTestId('day-view')).toBeVisible();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.getByTestId('boards-button')).toHaveAttribute('aria-selected', 'true');
+  await boards.click();
+  await expect(boards).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('day-view')).toHaveCount(0);
-  await page.keyboard.press('ArrowLeft');
-  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await calendar.click();
+  await expect(calendar).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('day-view')).toBeVisible();
 });
 

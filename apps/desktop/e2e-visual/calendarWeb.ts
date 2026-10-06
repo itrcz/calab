@@ -48,7 +48,7 @@ export async function signIn(page: Page, mock: MockServer, path = '/', email = '
 /** The header icon → the mini month → NOW's day: the day view. */
 export async function openDay(page: Page, day = DAY): Promise<void> {
   const mini = page.getByTestId('mini-calendar');
-  if (!(await mini.isVisible())) await page.getByTestId('calendar-button').click();
+  if (!(await mini.isVisible())) await page.getByTestId('section-calendar').click();
   await mini.locator(`[data-cal-day="${day}"]`).click();
   await expect(page.getByTestId('day-view')).toBeVisible();
 }

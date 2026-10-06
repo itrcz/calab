@@ -1368,8 +1368,12 @@ test('self-mic-menu', async ({ open, win, mock, shot }) => {
 test('workspace-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
+  // The workspace switcher (ADR-0074 §2): every workspace, then create / find, then this one's items.
   await win.getByTestId('titlebar-title').click();
   await expect(win.getByRole('menu')).toBeVisible();
+  await expect(win.getByTestId('switcher-row')).toHaveCount(3);
+  await expect(win.getByTestId('switcher-row').first()).toHaveAttribute('aria-current', 'true');
+  await expect(win.getByRole('menuitem', { name: 'Создать пространство' })).toBeVisible();
   await checkpoint(shot, 'workspace-menu');
 });
 
@@ -3539,7 +3543,7 @@ function externalEvent(mock: MockServer): void {
 async function calendarDay(win: Page, mock: MockServer): Promise<void> {
   mock.setClock(NOW.getTime());
   seedDay(mock);
-  await win.getByTestId('calendar-button').click();
+  await win.getByTestId('section-calendar').click();
   await expect(win.getByTestId('mini-calendar')).toBeVisible();
 }
 
@@ -3549,7 +3553,7 @@ test('calendar-mini', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await calendarDay(win, mock);
   await expect(win.getByTestId('day-view')).toBeVisible();
-  await expect(win.getByTestId('calendar-count')).toHaveText('3');
+  await expect(win.getByTestId('section-calendar-count')).toHaveText('3');
   await expect(win.locator('[data-cal-day="2026-01-20"]')).toHaveAccessibleName(/есть встречи/);
   await checkpoint(shot, 'calendar-mini');
 });
@@ -3688,7 +3692,7 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
 /** Boards mode on «Разработка» (CAL, the mock's seeded board), the clock at NOW. */
 async function boardsMode(win: Page, mock: MockServer): Promise<void> {
   mock.setClock(NOW.getTime());
-  await win.getByTestId('boards-button').click();
+  await win.getByTestId('section-boards').click();
   await expect(win.getByTestId('kanban')).toBeVisible();
   await expect(win.getByTestId('task-card').filter({ hasText: 'CAL-3' })).toBeVisible();
 }

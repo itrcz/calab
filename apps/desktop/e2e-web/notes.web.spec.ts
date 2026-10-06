@@ -15,7 +15,7 @@ async function signIn(page: Page, email: string): Promise<void> {
   await page.getByLabel('Пароль', { exact: true }).fill('password123');
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   const skip = page.getByRole('button', { name: 'Пропустить настройку' });
-  const rail = page.getByRole('navigation', { name: 'Пространства' });
+  const rail = page.getByRole('navigation', { name: 'Разделы' });
   await expect(skip.or(rail)).toBeVisible({ timeout: 20_000 });
   if (await skip.isVisible()) await skip.click();
   await expect(rail).toBeVisible();
