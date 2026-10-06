@@ -462,7 +462,7 @@ function CreateMenu({
             type="button"
             aria-label={t('shell.create')}
             data-testid="sidebar-create"
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg mobile:tap-size"
           >
             <Plus className="size-[18px]" aria-hidden />
           </button>

@@ -475,7 +475,7 @@ function ColumnHeader({
       <span className="flex-1" />
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.columnMenu')} className="grid size-7 place-items-center mobile:size-10 rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="column-menu">
+          <button type="button" aria-label={t('boards.columnMenu')} className="grid size-7 place-items-center mobile:tap-size rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="column-menu">
             <Ellipsis className="size-4" aria-hidden />
           </button>
         </Dropdown.Trigger>
@@ -543,7 +543,7 @@ function ColumnHeader({
       </Dropdown.Root>
       {canCreate ? (
         <Tip label={t('boards.addTaskTo', { status: status.name })}>
-          <button type="button" onClick={onAdd} aria-label={t('boards.addTaskTo', { status: status.name })} className="grid size-7 place-items-center mobile:size-10 rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="column-add">
+          <button type="button" onClick={onAdd} aria-label={t('boards.addTaskTo', { status: status.name })} className="grid size-7 place-items-center mobile:tap-size rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="column-add">
             <Plus className="size-4" aria-hidden />
           </button>
         </Tip>

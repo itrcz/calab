@@ -76,7 +76,7 @@ function WideRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }
   // the room; search, notifications and members stay (pins show in the pinned bar, room settings in
   // the drawer's room menu), 40 px touch targets.
   const mobile = useMobile();
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
+  const touch = mobile ? 'size-11 rounded-full' : undefined;
   // Re-render (and re-measure) when «Войти в голос» appears or goes.
   const preview = useVoice((s) => voiceRoom && isVoicePreview(room, s.roomId));
   // «Видео · N» (ADR-0066 §3): a boolean here (re-measure when it appears), the count in the leaf.
@@ -151,7 +151,7 @@ function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers 
   const role = useMemberRoles(workspaceId, me);
   const join = useVoiceJoin(workspaceId, room, perms, people.length);
   const dial = preview && people.length === 0 && can(perms, 'CONNECT');
-  const touch = 'size-10 rounded-full';
+  const touch = 'size-11 rounded-full';
   const moreRef = useRef<HTMLButtonElement>(null);
   const openMore = (): void => {
     const el = moreRef.current;
@@ -325,7 +325,7 @@ function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; ro
         <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-hover px-2.5 text-caption font-medium text-muted">{t('voicePreview.notInVoice')}</span>
       )}
       {!canConnect ? null : mobile ? (
-        <IconButton label={suspended ? t('suspended.voice') : t('voicePreview.join')} disabled={suspended} onClick={join} className="size-10 rounded-full text-ok">
+        <IconButton label={suspended ? t('suspended.voice') : t('voicePreview.join')} disabled={suspended} onClick={join} className="size-11 rounded-full text-ok">
           <Phone className="size-5" />
         </IconButton>
       ) : (
@@ -367,7 +367,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
   // Phone layout (ADR-0021): the top bar — ☰ (DM list drawer) first, 40 px touch targets, pins
   // in the pinned bar.
   const mobile = useMobile();
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
+  const touch = mobile ? 'size-11 rounded-full' : undefined;
   return (
     <header
       className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-0.5 pr-1')}

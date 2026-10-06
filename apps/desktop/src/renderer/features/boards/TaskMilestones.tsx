@@ -210,7 +210,7 @@ const MilestoneRow = memo(function MilestoneRow({ taskId, id, canEdit }: { taskI
         disabled={!toggle}
         onClick={toggle}
         title={auto ? t('boards.ms.autoHint') : undefined}
-        className="grid size-5 shrink-0 place-items-center rounded-[var(--radius-icon)] enabled:hover:bg-hover disabled:cursor-default"
+        className="tap-hit grid size-5 shrink-0 place-items-center rounded-[var(--radius-icon)] enabled:hover:bg-hover disabled:cursor-default"
         data-testid="milestone-diamond"
       >
         <MilestoneDiamond state={state} />

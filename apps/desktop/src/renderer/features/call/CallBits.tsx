@@ -56,7 +56,7 @@ export function DmCallSlot({ roomId, peerId, className }: { roomId: string; peer
         <button
           type="button"
           onClick={() => void hangup()}
-          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-danger-fill px-3 mobile:h-10 mobile:px-4 text-body font-semibold text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-110"
+          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-danger-fill px-3 mobile:tap-h mobile:px-4 text-body font-semibold text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-110"
           data-testid="dm-call-hangup"
         >
           <Phone className="size-4 rotate-[135deg]" aria-hidden />

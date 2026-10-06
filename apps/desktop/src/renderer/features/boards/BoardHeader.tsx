@@ -55,7 +55,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
         {hasBit(perms, CREATE_TASKS) ? (
           <Tip label={t('boards.newTask')} shortcut="C">
             {mobile ? (
-              <button type="button" aria-label={t('boards.newTask')} className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-icon)] text-accent-text hover:bg-hover" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+              <button type="button" aria-label={t('boards.newTask')} className="grid size-11 shrink-0 place-items-center rounded-[var(--radius-icon)] text-accent-text hover:bg-hover" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
                 <Plus className="size-5" aria-hidden />
               </button>
             ) : (
@@ -329,7 +329,7 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
       {forms ? <BoardForms boardId={boardId} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="board-more">
+          <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:tap-size" data-testid="board-more">
             <Ellipsis className="size-[18px]" aria-hidden />
           </button>
         </Dropdown.Trigger>

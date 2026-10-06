@@ -42,11 +42,11 @@ export function DmSidebar(): ReactNode {
 
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
-      <div className="flex h-12 shrink-0 items-center border-b border-line px-2.5">
+      <div className="flex h-12 shrink-0 items-center border-b border-line px-2.5 mobile:h-16">
         <button
           type="button"
           onClick={() => open({ kind: 'new-dm' })}
-          className="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2.5 text-left text-body text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
+          className="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2.5 mobile:tap-h text-left text-body text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{t('dm.find')}</span>

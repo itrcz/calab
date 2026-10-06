@@ -109,7 +109,7 @@ export function ResendButton({ flow, className }: { flow: CodeFlowApi; className
       aria-busy={flow.state.busy === 'resend' || undefined}
       onClick={flow.resend}
       className={cx(
-        'shrink-0 whitespace-nowrap rounded-[var(--radius-control)] px-1 text-caption text-accent-text tabular-nums hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline mobile:min-h-10',
+        'shrink-0 whitespace-nowrap rounded-[var(--radius-control)] px-1 text-caption text-accent-text tabular-nums hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline mobile:tap-min-h',
         className,
       )}
     >
@@ -202,7 +202,7 @@ function VerifyBar(): ReactNode {
           flow.submit();
         }}
       >
-        <CodeInput flow={flow} inputRef={input} label={t('mail.code')} describedBy={noteId} className="h-6 w-[104px] text-caption mobile:h-10 mobile:flex-1" />
+        <CodeInput flow={flow} inputRef={input} label={t('mail.code')} describedBy={noteId} className="h-6 w-[104px] text-caption mobile:tap-h mobile:flex-1" />
         <Button type="submit" size="sm" busy={flow.state.busy === 'verify'}>
           {t('mail.confirm')}
         </Button>

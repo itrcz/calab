@@ -190,6 +190,7 @@ function AuthorTarget({ workspaceId, userId, name, className, children }: { work
         type="button"
         tabIndex={-1}
         aria-label={t('people.openProfile', { name })}
+        data-inline-target
         className={cx('inline-block cursor-pointer align-bottom', className)}
         onClick={(e) => {
           e.stopPropagation();
@@ -734,6 +735,7 @@ function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMe
         disabled={!canReact}
         aria-pressed={me}
         aria-label={t('chat.reactionLabel', { emoji, count })}
+        data-inline-target
         onClick={() => void toggleReaction(roomId, m, emoji)}
         className={cx(
           'inline-flex items-center gap-1 rounded-full leading-none transition-colors duration-[var(--motion-fast)]',
