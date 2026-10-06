@@ -79,7 +79,7 @@ export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; 
       <ContextMenu.Content className={menuBox} aria-label={t('chat.menu')} collisionPadding={menuPadding()}>
         {canSend ? (
           <>
-            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5" role="group" aria-label={t('chat.react')}>
+            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5 mobile:justify-between mobile:px-2" role="group" aria-label={t('chat.react')}>
               {QUICK_REACTIONS.map((e) => {
                 const mine = m.reactions.some((r) => r.emoji === e && r.me);
                 // Past the per-user limit (docs/09 #27): dimmed; a pick shows the hint instead.
@@ -94,7 +94,7 @@ export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; 
                       void toggleReaction(roomId, m, e);
                     }}
                     className={cx(
-                      'grid size-8 cursor-default place-items-center rounded-full text-title outline-none transition-transform duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
+                      'grid size-8 cursor-default place-items-center rounded-full text-title outline-none transition-transform mobile:size-11 duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
                       mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]',
                       blocked && 'opacity-40',
                     )}

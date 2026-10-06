@@ -72,7 +72,7 @@ export function EventPublicPage({ page }: { page: EventPage }): ReactNode {
   };
 
   return (
-    <div className="auth-backdrop flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+24px)]" data-testid="event-public">
+    <div className="auth-backdrop flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+24px)] mobile:pt-[calc(var(--safe-top)+16px)]" data-testid="event-public">
       <main className="my-auto flex w-full max-w-[480px] flex-col items-stretch">
         <div className="mb-5 flex justify-center">
           <Logo size={48} alt="Calab" />
@@ -93,7 +93,7 @@ export function EventPublicPage({ page }: { page: EventPage }): ReactNode {
         </div>
       </main>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
-      <AuthLegalFooter />
+      <AuthLegalFooter className="mobile:mt-6 mobile:shrink-0" />
     </div>
   );
 }

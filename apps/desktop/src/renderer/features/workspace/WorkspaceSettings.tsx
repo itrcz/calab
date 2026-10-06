@@ -193,7 +193,8 @@ export function WorkspaceSettingsDialog({
       title={entry.ws.name}
       titleIcon={<WorkspaceGlyph name={entry.ws.name} iconFileId={entry.ws.iconFileId} size={20} />}
       sections={sections}
-      initial={requested.tab ?? (admin ? 'general' : 'members')}
+      initial={requested.tab}
+      fallback={admin ? 'general' : 'members'}
       onClose={onClose}
     />
   );

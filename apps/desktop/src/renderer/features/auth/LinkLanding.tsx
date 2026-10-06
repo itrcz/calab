@@ -81,7 +81,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
   const hideAlways = notFound && alwaysAtNotFound === false;
 
   return (
-    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]" data-testid="link-landing">
+    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+24px)] mobile:pt-[calc(var(--safe-top)+16px)]" data-testid="link-landing">
       <main className="no-drag my-auto flex w-full max-w-[400px] flex-col items-stretch">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={56} alt="Calab" />
@@ -141,7 +141,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
           </div>
 
           {hideAlways ? null : (
-            <label className="flex cursor-default items-center justify-center gap-2 text-body text-muted">
+            <label className="flex cursor-default items-center justify-center gap-2 text-body text-muted mobile:min-h-11">
             <input
               type="checkbox"
               checked={always}
@@ -149,7 +149,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
                 setAlways(e.target.checked);
                 setAlwaysOpenInApp(e.target.checked);
               }}
-              className="size-3.5 accent-[var(--color-accent)]"
+              className="size-3.5 accent-[var(--color-accent)] mobile:size-5"
             />
             {t('landing.always')}
             </label>
@@ -157,7 +157,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
         </div>
       </main>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
-      <AuthLegalFooter />
+      <AuthLegalFooter className="mobile:mt-6 mobile:shrink-0" />
     </div>
   );
 }
