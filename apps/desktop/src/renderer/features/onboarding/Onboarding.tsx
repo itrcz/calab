@@ -21,6 +21,7 @@ import { CodeInput, CodeNote, ResendButton, useCodeAddress, useCodeFlow } from '
 import { asksToVerify, verifyReason } from '../auth/verifyAsk';
 import { InvitePreviewRow, useInviteJoin } from '../workspace/WorkspaceDialogs';
 import { joinPlaceholder } from '../../services/links';
+import { useMobile } from '../../lib/mobile';
 import { micStateAfterRequest, micStateOnArrival, nextStep, onboardingSteps, prevStep, resolveStep, type MicState, type Step } from './steps';
 
 /**
@@ -92,7 +93,7 @@ export function Onboarding(): ReactNode {
             />
           ))}
         </ol>
-        <div className="flex flex-col [@media(min-height:600px)]:min-h-[488px]" data-onb-card>
+        <div className="flex flex-col [@media(min-height:600px)]:min-h-[488px] mobile:min-h-0" data-onb-card>
           {step === 'verify' ? <VerifyStep nav={nav} /> : null}
           {step === 'mic' ? <MicStep nav={nav} onResult={setMicChecked} resumed={resumed === 'mic'} /> : null}
           {step === 'screen' ? <ScreenStep nav={nav} /> : null}
@@ -107,7 +108,7 @@ export function Onboarding(): ReactNode {
           onClick={finish}
           aria-hidden={step === 'done' || undefined}
           tabIndex={step === 'done' ? -1 : undefined}
-          className={cx('self-center rounded-[var(--radius-control)] px-2 py-1 text-caption mobile:min-h-10 mobile:px-3 text-muted hover:text-fg hover:underline', step === 'done' && 'invisible')}
+          className={cx('self-center rounded-[var(--radius-control)] px-2 py-1 text-caption mobile:px-3 text-muted hover:text-fg hover:underline mobile:min-h-11', step === 'done' && 'invisible')}
         >
           {t('onb.skipAll')}
         </button>
@@ -132,14 +133,14 @@ function StepFrame({
   back: (() => void) | null;
 }): ReactNode {
   return (
-    <section className="mat-popover flex min-h-[300px] flex-1 flex-col rounded-[var(--radius-panel)] p-6">
+    <section className="mat-popover flex min-h-[300px] flex-1 flex-col rounded-[var(--radius-panel)] p-6 mobile:min-h-0 mobile:p-5">
       <div className="flex shrink-0 flex-col items-center gap-3 text-center" data-onb-head>
         {illustration}
         <h1 className="text-large font-semibold">{title}</h1>
         <p className="max-w-[420px] text-body text-muted">{text}</p>
       </div>
       {/* Symmetric padding: the body's centre is the centre of the space between header and footer. */}
-      <div className="flex min-h-10 flex-1 flex-col justify-center py-5" data-onb-area>
+      <div className="flex min-h-10 flex-1 flex-col justify-center py-5 mobile:py-4" data-onb-area>
         {children ? (
           <div className="flex flex-col gap-3" data-onb-body>
             {children}
@@ -148,13 +149,14 @@ function StepFrame({
       </div>
       {/* Wraps on phones only: on desktop the longest step («Запросить доступ и открыть настройки»)
           fits the 520 px card in one row and must keep the Back/Continue coordinates. */}
-      <div className="flex shrink-0 items-center gap-2 mobile:flex-wrap" data-onb-footer>
+      {/* Phone: full-width 44 px buttons in one column — the main action first, «Позже» under it, «Назад» last. */}
+      <div className="flex shrink-0 items-center gap-2 mobile:flex-col-reverse mobile:items-stretch" data-onb-footer>
         {back ? (
           <Button variant="ghost" size="lg" onClick={back}>
             {t('onb.back')}
           </Button>
         ) : null}
-        <div className="ml-auto flex justify-end gap-2 mobile:flex-wrap">{actions}</div>
+        <div className="ml-auto flex justify-end gap-2 mobile:ml-0 mobile:flex-col-reverse mobile:[&>*]:w-full">{actions}</div>
       </div>
     </section>
   );
@@ -311,11 +313,12 @@ function VerifyStep({ nav }: { nav: Nav }): ReactNode {
 
 function ModeStep({ nav }: { nav: Nav }): ReactNode {
   const p = usePrefs();
+  const phone = useMobile();
   return (
     <StepFrame
       illustration={<Illustration icon={AudioWaveform} />}
       title={t('onb.modeTitle')}
-      text={t('onb.modeText')}
+      text={t(phone ? 'onb.modeTextPhone' : 'onb.modeText')}
       back={nav.back}
       actions={
         <Button size="lg" onClick={nav.next}>
@@ -333,7 +336,10 @@ function ModeStep({ nav }: { nav: Nav }): ReactNode {
             { value: 'ptt', label: t('voice.modePtt') },
           ]}
         />
-        {p.micMode === 'ptt' ? (
+        {p.micMode === 'ptt' && phone ? (
+          // Phone: the talk button lives in the call bar — there is no key to bind.
+          <p className="text-center text-body text-muted">{t('onb.pttPhone')}</p>
+        ) : p.micMode === 'ptt' ? (
           <div className="w-full rounded-[var(--radius-card)] bg-[var(--color-card)] p-3">
             <PttBinder compact />
           </div>
@@ -568,11 +574,12 @@ function DoneStep({ nav, onFinish, micChecked }: { nav: Nav; onFinish: () => voi
   const hasWs = useWorkspaces((s) => s.order.length > 0);
   const open = useUi((s) => s.openDialog);
   const summary = useSetupSummary(micChecked);
+  const phone = useMobile();
   return (
     <StepFrame
       illustration={<Logo size={64} />}
       title={t('onb.doneTitle')}
-      text={hasWs ? (micChecked ? t('onb.doneText') : t('onb.doneTextNoMic')) : micChecked ? t('onb.doneNoWs') : t('onb.doneNoWsNoMic')}
+      text={hasWs ? (micChecked ? t(phone ? 'onb.doneTextPhone' : 'onb.doneText') : t(phone ? 'onb.doneTextNoMicPhone' : 'onb.doneTextNoMic')) : micChecked ? t('onb.doneNoWs') : t('onb.doneNoWsNoMic')}
       back={nav.back}
       actions={
         hasWs ? (
@@ -633,6 +640,7 @@ function useSetupSummary(micChecked: boolean): SummaryRow[] {
   const notifyMentions = usePrefs((s) => s.notifyMentions);
   const os = useSession((s) => s.appInfo?.platform) ?? '';
   const mac = useIsMacDesktop();
+  const phone = useMobile();
   const [micLabel, setMicLabel] = useState<string | null>(null);
   const [screen, setScreen] = useState<PermissionStatus['screen'] | null>(null);
   useEffect(() => {
@@ -654,8 +662,8 @@ function useSetupSummary(micChecked: boolean): SummaryRow[] {
     },
     {
       label: t('onb.sumMode'),
-      value: mode === 'ptt' ? `${t('voice.modePtt')} · ${binding ? bindingLabel(binding, os) : t('onb.sumNoKey')}` : t('voice.modeVad'),
-      pending: mode === 'ptt' && !binding,
+      value: mode === 'ptt' ? (phone ? t('voice.modePtt') : `${t('voice.modePtt')} · ${binding ? bindingLabel(binding, os) : t('onb.sumNoKey')}`) : t('voice.modeVad'),
+      pending: mode === 'ptt' && !binding && !phone,
     },
   ];
   if (mac) rows.push({ label: t('onb.sumScreen'), value: screen === 'granted' ? t('onb.sumAllowed') : t('onb.sumLater'), pending: screen !== 'granted' });

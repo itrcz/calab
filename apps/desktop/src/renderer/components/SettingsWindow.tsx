@@ -1,11 +1,13 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { LucideIcon } from 'lucide-react';
-import { Lock, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lock, Search } from 'lucide-react';
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { t } from '../i18n';
+import { MOBILE_QUERY } from '../lib/phone';
+import { useMediaQuery } from '../lib/useMediaQuery';
 import { highlight, hintExcerpt, labelMatches, queryWords, searchSettings, type SettingsEntry } from './settingsSearch';
-import { CloseButton, cx } from './ui';
+import { CloseButton, IconButton, SheetHandle, cx } from './ui';
 
 export interface SettingsSection {
   id: string;
@@ -110,17 +112,27 @@ export function SettingsWindow({
   onClose,
   footer,
   titleIcon,
+  fallback,
 }: {
   title: string;
   /** Glyph before the title (room: # / speaker; workspace: its initials). */
   titleIcon?: ReactNode;
   sections: SettingsSection[];
+  /** Section opened first; on the phone it is opened straight away (no list). */
   initial?: string | undefined;
+  /** Section the desktop starts on when `initial` is absent; the phone starts on the list instead. */
+  fallback?: string | undefined;
   onClose: () => void;
   /** Extra items under the section list (e.g. «Выйти»). */
   footer?: ReactNode;
 }): ReactNode {
-  const [value, setValue] = useState(initial && sections.some((s) => s.id === initial) ? initial : (sections[0]?.id ?? ''));
+  // The phone layout's media query (lib/mobile.ts useMobile minus its platform check, which would pull the
+  // platform into this module: Electron's window is ≥ 960 px, the query never matches there).
+  const phone = useMediaQuery(MOBILE_QUERY);
+  const wanted = initial ?? fallback;
+  const [value, setValue] = useState(wanted && sections.some((s) => s.id === wanted) ? wanted : (sections[0]?.id ?? ''));
+  // Phone: the root is the list of sections (iOS Settings), a tap opens one full-screen with «← Title».
+  const [view, setView] = useState<'list' | 'section'>(initial && sections.some((s) => s.id === initial) ? 'section' : 'list');
   const [query, setQuery] = useState('');
   const [entries, setEntries] = useState<SettingsEntry[]>([]);
   const [hit, setHit] = useState<string | null>(null);
@@ -177,6 +189,7 @@ export function SettingsWindow({
   const openSection = (id: string): void => {
     setValue(id);
     setHit(null);
+    setView('section');
   };
   const goTo = (id: string): void => {
     setQuery('');
@@ -185,6 +198,7 @@ export function SettingsWindow({
   const jump = (e: SettingsEntry): void => {
     setValue(e.section);
     setHit(e.key);
+    setView('section');
   };
   const first = (): void => {
     const g = groups[0];
@@ -229,16 +243,23 @@ export function SettingsWindow({
           // Phone layout (ADR-0021): a full-height sheet; the section list becomes a row of pills on top.
         >
           <Tabs.Root value={tab} onValueChange={openSection} orientation="vertical" className="flex min-w-0 flex-1 mobile:flex-col">
-            <div className="mat-sheet-side flex w-[220px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[200px] mobile:max-h-[45%] mobile:w-full mobile:border-b mobile:border-r-0">
-              <DialogP.Title className="flex min-w-0 items-center gap-2 px-2 pt-2 text-body font-semibold text-fg">
-                {titleIcon}
-                <span className="min-w-0 truncate" title={title}>
-                  {title}
-                </span>
-              </DialogP.Title>
+            <div
+              data-phone-view={view}
+              className="mat-sheet-side flex w-[220px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[200px] mobile:min-h-0 mobile:w-full mobile:flex-1 mobile:gap-3 mobile:overflow-y-auto mobile:border-r-0 mobile:bg-[var(--color-sheet-pane)] mobile:p-4 mobile:pb-[calc(var(--safe-bottom)+16px)] mobile:pt-1 mobile:data-[phone-view=section]:hidden"
+            >
+              <SheetHandle />
+              <div className="flex items-center justify-between gap-2">
+                <DialogP.Title className="flex min-w-0 items-center gap-2 px-2 pt-2 text-body font-semibold text-fg mobile:px-0 mobile:pt-0 mobile:text-headline">
+                  {titleIcon}
+                  <span className="min-w-0 truncate" title={title}>
+                    {title}
+                  </span>
+                </DialogP.Title>
+                {phone ? <CloseButton label={t('settings.close')} onClick={onClose} size="md" className="mobile:size-11" /> : null}
+              </div>
               {searchable ? (
               <label className="relative flex items-center">
-                <Search className="pointer-events-none absolute left-2 size-3.5 text-muted" aria-hidden />
+                <Search className="pointer-events-none absolute left-2 size-3.5 text-muted mobile:left-3 mobile:size-4" aria-hidden />
                 <input
                   type="search"
                   role="searchbox"
@@ -258,12 +279,12 @@ export function SettingsWindow({
                       results.current?.querySelector<HTMLElement>('button')?.focus();
                     }
                   }}
-                  className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 mobile:h-10 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
+                  className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 text-body mobile:h-11 mobile:pl-9 mobile:text-[16px] text-fg shadow-[var(--shadow-card)] placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
                 />
               </label>
               ) : null}
               {searching ? (
-                <nav ref={results} aria-label={t('settings.searchResults')} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1" onKeyDown={arrowNav}>
+                <nav ref={results} aria-label={t('settings.searchResults')} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1 mobile:m-0 mobile:overflow-visible mobile:p-0" onKeyDown={arrowNav}>
                   {groups.length === 0 ? <p className="px-2 py-2 text-body text-muted">{t('settings.searchNone')}</p> : null}
                   {groups.map((g) => {
                     const s = sections.find((x) => x.id === g.section);
@@ -275,7 +296,7 @@ export function SettingsWindow({
                           onClick={() => openSection(s.id)}
                           aria-current={tab === s.id && !hit ? 'true' : undefined}
                           className={cx(
-                            'flex items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover',
+                            'flex items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover mobile:min-h-11',
                             s.badge ? 'min-h-8 py-1' : 'h-8',
                             tab === s.id && !hit ? 'bg-active' : '',
                             s.destructive ? 'text-danger-text' : 'text-fg',
@@ -293,7 +314,7 @@ export function SettingsWindow({
                             aria-current={hit === r.key ? 'true' : undefined}
                             title={r.hint ? `${r.label}\n${r.hint}` : r.label}
                             className={cx(
-                              'flex min-h-7 flex-col justify-center rounded-[var(--radius-row)] py-1 pl-[34px] pr-2 text-left text-body text-muted hover:bg-hover hover:text-fg',
+                              'flex min-h-7 flex-col justify-center rounded-[var(--radius-row)] py-1 pl-[34px] pr-2 text-left text-body text-muted hover:bg-hover hover:text-fg mobile:min-h-11',
                               hit === r.key ? 'bg-active text-fg' : '',
                             )}
                           >
@@ -313,33 +334,54 @@ export function SettingsWindow({
                   })}
                 </nav>
               ) : (
-                <Tabs.List aria-label={title} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1 mobile:flex-row mobile:gap-1.5 mobile:overflow-x-auto mobile:overflow-y-hidden">
+                <Tabs.List aria-label={title} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1 mobile:m-0 mobile:shrink-0 mobile:gap-0 mobile:divide-y mobile:divide-[var(--color-card-line)] mobile:overflow-hidden mobile:rounded-[var(--radius-card)] mobile:bg-[var(--color-card)] mobile:p-0">
                   {sections.map((s) => (
                     <Tabs.Trigger
                       key={s.id}
                       value={s.id}
+                      // Phone: a 52 px row of the list (the active state is the opened section, not shown).
+                      onClick={() => setView('section')}
                       className={cx(
-                        'group flex shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
+                        'group flex shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-[52px] mobile:w-full mobile:gap-3 mobile:rounded-none mobile:px-4 mobile:text-[16px]',
                         // A badged row takes a second line for its pill: the 200 px column has no room beside the label.
                         s.badge ? 'min-h-8 py-1 mobile:py-0' : 'h-8',
-                        'hover:bg-hover data-[state=active]:bg-accent-strong data-[state=active]:text-accent-fg data-[state=active]:hover:bg-accent-strong',
+                        'hover:bg-hover data-[state=active]:bg-accent-strong data-[state=active]:text-accent-fg data-[state=active]:hover:bg-accent-strong mobile:data-[state=active]:bg-transparent mobile:data-[state=active]:text-fg mobile:data-[state=active]:hover:bg-hover',
                         s.destructive ? 'text-danger-text' : 'text-fg',
                       )}
                     >
-                      <s.icon className="size-4 shrink-0" aria-hidden />
+                      <s.icon className="size-4 shrink-0 mobile:size-5" aria-hidden />
                       <SectionLabel label={s.label} badge={s.badge} />
-                          {s.locked ? <Lock className="ml-auto size-3.5 shrink-0" aria-label={t('identity.plan')} /> : null}
+                      {s.locked ? <Lock className="ml-auto size-3.5 shrink-0" aria-label={t('identity.plan')} /> : null}
+                      <ChevronRight className={cx('hidden size-4 shrink-0 text-faint mobile:block', s.locked ? 'ml-2' : 'ml-auto')} aria-hidden />
                     </Tabs.Trigger>
                   ))}
                 </Tabs.List>
               )}
-              {footer ? <div className="mt-auto flex flex-col gap-px border-t border-line pt-2 mobile:mt-0 mobile:flex-row mobile:flex-wrap mobile:gap-1.5">{footer}</div> : null}
+              {footer ? (
+                <div className="mt-auto flex flex-col gap-px border-t border-line pt-2 mobile:mt-0 mobile:shrink-0 mobile:gap-0 mobile:divide-y mobile:divide-[var(--color-card-line)] mobile:overflow-hidden mobile:rounded-[var(--radius-card)] mobile:border-t-0 mobile:bg-[var(--color-card)] mobile:pt-0">
+                  {footer}
+                </div>
+              ) : null}
             </div>
             {/* min-h-0: in the phone's column layout the pane must shrink so its section scrolls. */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]">
-              <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line pl-6 pr-3 mobile:pl-4">
-                <h2 className="truncate text-headline font-semibold">{current?.label}</h2>
-                <CloseButton label={t('settings.close')} onClick={onClose} className="mobile:size-10" />
+            <div data-phone-view={view} className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)] mobile:data-[phone-view=list]:hidden">
+              <SheetHandle />
+              <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line pl-6 pr-3 mobile:h-14 mobile:pl-2">
+                {phone ? (
+                  <IconButton
+                    label={t('onb.back')}
+                    tip={false}
+                    onClick={() => {
+                      setHit(null);
+                      setView('list');
+                    }}
+                    className="mobile:size-11"
+                  >
+                    <ChevronLeft className="size-6" aria-hidden />
+                  </IconButton>
+                ) : null}
+                <h2 className="min-w-0 flex-1 truncate text-headline font-semibold mobile:pr-11 mobile:text-center">{current?.label}</h2>
+                {phone ? null : <CloseButton label={t('settings.close')} onClick={onClose} />}
               </div>
               <div ref={panels} className="flex min-h-0 flex-1 flex-col">
                 {sections.map((s) => (
@@ -370,9 +412,9 @@ export function SettingsAction({ label, icon: Icon, onClick, destructive }: { la
     <button
       type="button"
       onClick={onClick}
-      className={cx('flex h-8 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover', destructive ? 'text-danger-text' : 'text-fg')}
+      className={cx('flex h-8 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover mobile:h-[52px] mobile:gap-3 mobile:rounded-none mobile:px-4 mobile:text-[16px]', destructive ? 'text-danger-text' : 'text-fg')}
     >
-      <Icon className="size-4 shrink-0" aria-hidden />
+      <Icon className="size-4 shrink-0 mobile:size-5" aria-hidden />
       {label}
     </button>
   );

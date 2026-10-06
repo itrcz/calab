@@ -553,6 +553,7 @@ export const en: Dict = {
   'onb.micDeniedWeb': 'Allow the microphone for this site in your browser settings (the icon left of the address).',
   'onb.modeTitle': 'How to turn on your mic',
   'onb.modeText': 'Voice activity turns the mic on when you speak. Push‑to‑talk — while you hold a key.',
+  'onb.modeTextPhone': 'Voice activity turns the mic on when you speak. Push‑to‑talk — while you hold the button.',
   'onb.vadText': 'You can fine-tune the sensitivity in settings.',
   'onb.inputNeeded': 'macOS: a key outside the window requires “Input Monitoring”.',
   'onb.inputOk': 'Input Monitoring allowed',
@@ -590,6 +591,9 @@ export const en: Dict = {
   'onb.doneText': 'Open a room on the left or join a voice room — your mic is ready.',
   'onb.doneNoWs': 'Create a workspace for your team or join one with an invite.',
   'onb.doneTextNoMic': 'Open a room on the left. You can test your mic later: Settings → Voice & devices.',
+  'onb.doneTextPhone': 'Open the room list or join a voice room — your mic is ready.',
+  'onb.doneTextNoMicPhone': 'Open the room list. You can test your mic later: Settings → Voice & devices.',
+  'onb.pttPhone': 'A button appears in a call: hold it to talk.',
   'onb.doneNoWsNoMic': 'Create a workspace for your team or join one with an invite. You can test your mic later in settings.',
   'onb.notifDenied': 'Notifications are blocked in system settings. You can turn them on there later.',
   'onb.notifDeniedWeb':

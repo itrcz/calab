@@ -553,6 +553,7 @@ export const es: Dict = {
   'onb.micDeniedWeb': 'Permite el micrófono para este sitio en los ajustes de tu navegador (el icono a la izquierda de la dirección).',
   'onb.modeTitle': 'Cómo activar tu micrófono',
   'onb.modeText': 'La activación por voz enciende el micrófono cuando hablas. Pulsar para hablar — mientras mantienes una tecla.',
+  'onb.modeTextPhone': 'La activación por voz enciende el micrófono cuando hablas. Pulsar para hablar — mientras mantienes el botón.',
   'onb.vadText': 'Puedes ajustar la sensibilidad en los ajustes.',
   'onb.inputNeeded': 'macOS: una tecla fuera de la ventana requiere «Monitoreo de entrada».',
   'onb.inputOk': 'Monitoreo de entrada permitido',
@@ -590,6 +591,9 @@ export const es: Dict = {
   'onb.doneText': 'Abre una sala a la izquierda o únete a una sala de voz — tu micrófono ya está listo.',
   'onb.doneNoWs': 'Crea un espacio para tu equipo o únete a uno con una invitación.',
   'onb.doneTextNoMic': 'Abre una sala a la izquierda. Puedes probar tu micrófono más tarde: Ajustes → Voz y dispositivos.',
+  'onb.doneTextPhone': 'Abre la lista de salas o únete a una sala de voz — tu micrófono ya está listo.',
+  'onb.doneTextNoMicPhone': 'Abre la lista de salas. Puedes probar tu micrófono más tarde: Ajustes → Voz y dispositivos.',
+  'onb.pttPhone': 'En la llamada aparece un botón: mantenlo pulsado para hablar.',
   'onb.doneNoWsNoMic': 'Crea un espacio para tu equipo o únete a uno con una invitación. Puedes probar tu micrófono más tarde en los ajustes.',
   'onb.notifDenied': 'Las notificaciones están bloqueadas en los ajustes del sistema. Puedes activarlas ahí más tarde.',
   'onb.notifDeniedWeb':

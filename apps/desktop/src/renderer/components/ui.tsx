@@ -66,6 +66,9 @@ export const Button = forwardRef<
             ? 'h-8 px-4 text-body mobile:h-11 mobile:px-5 mobile:text-[15px]'
             : 'h-7 px-3 text-body mobile:h-10 mobile:px-4 mobile:text-[15px]',
         VARIANTS[variant],
+        // Phone: a dimmed (opacity .4) label fell under 3:1 — a disabled button is a flat grey one with a readable label.
+        'mobile:disabled:text-[var(--color-label-secondary)] mobile:disabled:opacity-100',
+        (variant === 'primary' || variant === 'attention') && 'mobile:disabled:bg-[var(--color-fill-hover)]',
         className,
       )}
       {...rest}
@@ -491,7 +494,7 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
   return (
     // Phone layout: the control wraps under a long label instead of squeezing it (ADR-0021).
     <div className="flex min-h-10 items-center justify-between gap-4 px-3 py-2 mobile:flex-wrap mobile:gap-x-3 mobile:gap-y-2" data-settings-row>
-      <div className="flex min-w-0 flex-col" id={id}>
+      <div className="flex min-w-0 flex-col mobile:min-w-[8rem] mobile:flex-1" id={id}>
         {htmlFor ? (
           <label htmlFor={htmlFor} className="text-body" data-settings-label data-settings-hint={searchHint}>
             {label}
@@ -503,12 +506,18 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
         )}
         {hint ? <span className="text-caption text-faint">{hint}</span> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2 mobile:max-w-full mobile:shrink">{children}</div>
+      {/* Phone (ADR-0073 §6): a select / field takes its own full-width line under the label; a toggle or a button stays beside it. */}
+      <div className="flex shrink-0 items-center gap-2 mobile:max-w-full mobile:shrink mobile:has-[select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full mobile:[&_select]:w-full mobile:[&_textarea]:w-full mobile:[&_input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full">{children}</div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------- dialogs
+
+/** Grab handle at the top of a phone bottom sheet (ADR-0073 §6); decorative, invisible on desktop. */
+export function SheetHandle(): ReactNode {
+  return <div className="mx-auto mt-2 hidden h-1 w-9 shrink-0 rounded-full bg-[var(--color-label-tertiary)] opacity-50 mobile:block" aria-hidden data-testid="sheet-handle" />;
+}
 
 /**
  * Marks a scroll box with `data-scroll-top` / `data-scroll-bottom` while content is hidden past
@@ -605,7 +614,8 @@ export function Modal({
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
           )}
         >
-          <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5">
+          <SheetHandle />
+          <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5 mobile:px-4 mobile:pb-3 mobile:pt-3">
             {/* A flex sibling, never under the «×»: the title wraps before it (docs/09 #105). */}
             <div className="min-w-0 flex-1">
               <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
@@ -625,7 +635,7 @@ export function Modal({
           <div
             ref={fill ? undefined : trackScrollEdges}
             className={cx(
-              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
+              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 mobile:px-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
               fill && 'flex flex-col',
               !footer && 'pb-5',
             )}
@@ -633,7 +643,7 @@ export function Modal({
             {children}
           </div>
           {/* macOS order: secondary/cancel on the left of the primary action, primary rightmost. */}
-          {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 py-5">{footer}</div> : null}
+          {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 py-5 mobile:gap-3 mobile:px-4 mobile:py-4 mobile:[&>*]:flex-1">{footer}</div> : null}
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>

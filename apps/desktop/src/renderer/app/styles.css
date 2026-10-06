@@ -1190,12 +1190,27 @@ svg.lucide {
       var(--shadow-popover) !important;
     animation: calaba-sheet-up var(--motion) var(--ease);
   }
+  /* Grab handle (ADR-0073 §6) and the same side padding for every row of a menu sheet. */
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip, .no-sheet)::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 4px auto 8px;
+    border-radius: 2px;
+    background: var(--color-label-tertiary);
+    opacity: 0.5;
+  }
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip, .no-sheet) {
+    padding-inline: 8px !important;
+  }
   /* Touch targets: menu rows 44 px (HIG). */
   :root.web [data-radix-popper-content-wrapper] [role='menuitem'],
   :root.web [data-radix-popper-content-wrapper] [role='menuitemradio'],
   :root.web [data-radix-popper-content-wrapper] [role='menuitemcheckbox'] {
     min-height: 44px;
     font-size: 15px;
+    padding-inline: 12px;
   }
 }
 

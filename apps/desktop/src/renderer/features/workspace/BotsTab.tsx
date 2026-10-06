@@ -294,7 +294,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
           </span>
           <BotBadge />
         </div>
-        <div className="truncate text-caption text-muted" title={byline}>
+        <div className="truncate text-caption text-muted mobile:line-clamp-2 mobile:whitespace-normal" title={byline}>
           {byline}
         </div>
         {home ? <BotStatus bot={bot} revoked={revoked} /> : null}
@@ -302,7 +302,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
       <Dropdown.Root modal={false}>
         <Tip label={t('bots.actions', { name })}>
           <Dropdown.Trigger asChild>
-            <IconButton tip={false} label={t('bots.actions', { name })} data-testid="bot-actions">
+            <IconButton tip={false} label={t('bots.actions', { name })} data-testid="bot-actions" className="mobile:size-11">
               <Ellipsis className="size-4" />
             </IconButton>
           </Dropdown.Trigger>
@@ -384,9 +384,9 @@ function Line({ icon, tone, title, children }: { icon?: ReactNode; tone: 'ok' | 
   // Text colours ≥ 4.5:1 on the card in both themes; the yellow is the icon's only.
   const color = tone === 'ok' ? 'text-[var(--color-green-text)]' : tone === 'danger' ? 'text-danger-text' : tone === 'warn' ? 'text-muted [&>svg]:text-warn' : 'text-faint';
   return (
-    <div className={cx('flex min-w-0 items-center gap-1 text-caption', color)} title={title} data-testid="bot-status">
+    <div className={cx('flex min-w-0 items-center gap-1 text-caption mobile:items-start', color)} title={title} data-testid="bot-status">
       {icon}
-      <span className="truncate">{children}</span>
+      <span className="truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:break-words">{children}</span>
     </div>
   );
 }

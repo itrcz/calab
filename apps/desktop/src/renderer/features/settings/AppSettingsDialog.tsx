@@ -92,7 +92,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
   return (
     <SettingsWindow
       title={t('settings.title')}
-      initial={tab ?? 'general'}
+      initial={tab}
+      fallback="general"
       onClose={onClose}
       sections={sections.filter((section) => local || !['profile', 'sessions', 'calendar'].includes(section.id))}
       footer={
