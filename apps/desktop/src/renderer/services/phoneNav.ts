@@ -14,6 +14,7 @@ import {
   type PhoneScreen,
   type PhoneTab,
 } from '../lib/phoneNav';
+import { closeLayer } from '../lib/phoneMenus';
 import { setSettingsQuery } from '../lib/settingsQuery';
 import { useArchiveView } from '../stores/archiveView';
 import { useBoardsUi } from '../stores/boardsUi';
@@ -25,7 +26,8 @@ import { useWorkspaces } from '../stores/workspaces';
 
 /**
  * Phone navigation runtime (ADR-0073 §1–§2), installed by MobileShell while the phone layout is on:
- *  - the browser history holds one entry per pushed screen, plus one while a sheet / menu is open,
+ *  - the browser history holds one entry per pushed screen, plus one per open layer (a dialog, a menu
+ *    card, each sub-level of a menu),
  *    so Android back (the shell's WebView goBack), the browser's back and our edge swipe all arrive
  *    as `popstate` — which closes the sheet first, else pops the top screen;
  *  - the older per-feature flags (members overlay, search results, calendar event, find time,
@@ -61,8 +63,21 @@ function openOverlay(): Element | null {
   return null;
 }
 
+/** Open layers (each portal with an open sheet / menu / dialog: a sub-menu is one more). */
+function openLayers(): number {
+  const now = Date.now();
+  if (closing && closing.until < now) closing = null;
+  let n = 0;
+  for (const el of Array.from(document.body.children)) {
+    if (el.id === 'root') continue;
+    const hit = el.matches(OVERLAY) ? el : el.querySelector(OVERLAY);
+    if (hit && hit !== closing?.el) n += 1;
+  }
+  return n;
+}
+
 function target(): number {
-  return historyTarget(useUi.getState().phone.stack.length, openOverlay() !== null);
+  return historyTarget(useUi.getState().phone.stack.length, openLayers());
 }
 
 function sync(): void {
@@ -87,11 +102,13 @@ function schedule(): void {
   queueMicrotask(sync);
 }
 
-/** Esc to the topmost layer (Radix dismisses it; a modal that must not close ignores it). */
+/**
+ * Closes the topmost layer: a sub-menu back to its parent level, anything else by Esc (Radix
+ * dismisses it; a modal that must not close ignores it) — lib/phoneMenus.ts.
+ */
 function closeOverlay(el: Element): void {
   closing = { el, until: Date.now() + 600 };
-  const at = document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
-  at.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+  closeLayer(el);
   // Still open after its exit animation (a call screen answers only to its buttons): its history
   // entry comes back.
   window.setTimeout(() => {

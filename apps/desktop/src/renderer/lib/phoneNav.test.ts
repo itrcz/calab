@@ -114,11 +114,14 @@ describe('back and the browser history (ADR-0073 §2)', () => {
     expect(backStep({ overlay: true, depth: 0 })).toBe('overlay');
   });
 
-  it('needs one entry per screen and one for an open sheet', () => {
-    expect(historyTarget(0, false)).toBe(0);
-    expect(historyTarget(2, false)).toBe(2);
-    expect(historyTarget(0, true)).toBe(1);
-    expect(historyTarget(2, true)).toBe(3);
+  it('needs one entry per screen and one per open layer (a menu and its sub-levels)', () => {
+    expect(historyTarget(0, 0)).toBe(0);
+    expect(historyTarget(2, 0)).toBe(2);
+    expect(historyTarget(0, 1)).toBe(1);
+    expect(historyTarget(2, 1)).toBe(3);
+    // «+» → «Создать задачу ▸»: two cards, two backs before the screen.
+    expect(historyTarget(1, 2)).toBe(3);
+    expect(historyTarget(1, -1)).toBe(1);
   });
 
   it('plans pushes and back jumps', () => {
@@ -142,7 +145,7 @@ describe('settings screens (ADR-0073, owner 07.10)', () => {
     const n = openSettingsSection(nav({ stack: [{ kind: 'profile' }, list] }), 'voice');
     expect(n.stack).toEqual([{ kind: 'profile' }, list, { kind: 'settings', section: 'voice' }]);
     expect(popScreen(n).stack).toEqual([{ kind: 'profile' }, list]);
-    expect(historyTarget(n.stack.length, false)).toBe(3);
+    expect(historyTarget(n.stack.length, 0)).toBe(3);
   });
 
   it('the same section again does not grow the stack; another section is its own screen', () => {

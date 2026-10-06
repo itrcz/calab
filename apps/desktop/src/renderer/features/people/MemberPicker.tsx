@@ -75,7 +75,7 @@ export function PeoplePickRow({ item, active }: { item: PeoplePickItem; active: 
 }
 
 /**
- * «Добавить роль или участника», «Пригласить»…: the member picker as a popover (a bottom sheet on
+ * «Добавить роль или участника», «Пригласить»…: the member picker as a popover (a centred card on
  * the phone layout) over its trigger. Groups «Роли» / «Участники» come from the caller.
  */
 export function MemberPicker({

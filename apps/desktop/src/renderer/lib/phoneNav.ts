@@ -143,9 +143,10 @@ export function backStep(o: { overlay: boolean; depth: number }): BackStep {
 
 /**
  * The browser history entries the app needs above its base entry: one per pushed screen, plus one
- * while a sheet / menu is open (so «back» closes it, even on a tab root).
+ * per open layer — a dialog, a menu card and each of its sub-levels (owner 07.10: «back» walks a
+ * sub-menu back one level), so «back» closes the top one first, even on a tab root.
  */
-export const historyTarget = (depth: number, overlay: boolean): number => depth + (overlay ? 1 : 0);
+export const historyTarget = (depth: number, layers: number): number => depth + Math.max(0, layers);
 
 /** How to bring the history from `current` levels to `target`: push entries, or go back. */
 export type HistoryPlan = { push: number } | { go: number } | null;

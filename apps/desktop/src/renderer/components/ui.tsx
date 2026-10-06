@@ -515,11 +515,6 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
 
 // ---------------------------------------------------------------- dialogs
 
-/** Grab handle at the top of a phone bottom sheet (ADR-0073 §6); decorative, invisible on desktop. */
-export function SheetHandle(): ReactNode {
-  return <div className="mx-auto mt-2 hidden h-1 w-9 shrink-0 rounded-full bg-[var(--color-label-tertiary)] opacity-50 mobile:block" aria-hidden data-testid="sheet-handle" />;
-}
-
 /**
  * Marks a scroll box with `data-scroll-top` / `data-scroll-bottom` while content is hidden past
  * that edge (a dialog body, docs/09 #147). Attributes on the node — the dialog never re-renders
@@ -597,7 +592,7 @@ export function Modal({
             if (target && keepOpen?.(target)) e.preventDefault();
           }}
           onOpenAutoFocus={(e) => {
-            // Phones: the sheet itself takes the focus — no field focused (and no keyboard) until a tap.
+            // Phones: the dialog itself takes the focus — no field focused (and no keyboard) until a tap.
             if (!autoFocusAllowed()) {
               e.preventDefault();
               (e.currentTarget as HTMLElement | null)?.focus();
@@ -611,11 +606,10 @@ export function Modal({
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : medium ? 'max-w-[560px]' : 'max-w-[440px]',
             nonModal && 'no-drag shadow-[var(--shadow-popover)]',
-            // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
-            'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
+            // Phone (owner 07.10): a centred card above the keyboard, buttons full width (app/styles.css).
+            'phone-dialog',
           )}
         >
-          <SheetHandle />
           <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5 mobile:px-4 mobile:pb-3 mobile:pt-3">
             {/* A flex sibling, never under the «×»: the title wraps before it (docs/09 #105). */}
             <div className="min-w-0 flex-1">

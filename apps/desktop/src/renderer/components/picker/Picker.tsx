@@ -289,7 +289,7 @@ export function PickerPanel<T extends PickerItem>({
 
 /**
  * The picker as a popover under its trigger (Radix Popover). On the phone layout every
- * `mat-popover` becomes a bottom sheet (app/styles.css), so this one does too.
+ * `mat-popover` becomes a centred card (app/styles.css), so this one does too.
  */
 export function PickerPopover<T extends PickerItem>({
   children,

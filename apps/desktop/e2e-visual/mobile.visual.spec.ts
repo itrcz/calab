@@ -246,9 +246,9 @@ async function checkpoint(page: Page, name: string, opts: { main?: boolean; snap
     await page.screenshot({ path: join(dir, `${name}-${test.info().project.name}.png`) });
   }
   if (baseline() && opts.snapshot !== false) await expect.soft(page, `screenshot: ${name}`).toHaveScreenshot(`${name}.png`, { mask: opts.mask ?? [], maskColor: '#808080' });
-  // On a phone every modal is a bottom sheet or a side drawer (never centred), and «outside the
-  // window» is checked here with horizontal scrollers (the settings section pills) taken into account.
-  const generic = (await layoutProblems(page)).filter((p) => p.kind !== 'modal-off-centre' && p.kind !== 'offscreen').map((p) => `${p.kind}: ${p.detail}`);
+  // Dialogs are centred cards on a phone too (owner 07.10); «outside the window» is checked here with
+  // horizontal scrollers (the settings section pills) taken into account.
+  const generic = (await layoutProblems(page)).filter((p) => p.kind !== 'offscreen').map((p) => `${p.kind}: ${p.detail}`);
   expect.soft([...generic, ...(await mobileProblems(page, opts.main ?? false))], `layout invariants: ${name}`).toEqual([]);
   await expectAccessible(page, name);
 }
@@ -706,7 +706,7 @@ test('m-boards-kanban', async ({ page }) => {
   await checkpoint(page, 'm-boards-kanban');
 });
 
-// The composer's «Стикеры» panel as a bottom sheet (ADR-0030): the pack strip, my pack, «Эмоции»
+// The composer's «Стикеры» panel as a centred card (ADR-0030, owner 07.10): the pack strip, my pack, «Эмоции»
 // to add; animated stickers stand on their first frame (they play only on hover).
 test('m-sticker-picker', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -738,17 +738,112 @@ test('m-chat-sticker-suggest', async ({ page }) => {
   await expect(field).toHaveValue('');
 });
 
-test('m-sheet', async ({ page }) => {
+/**
+ * A menu / picker card (owner 07.10: no bottom sheets): centred on the screen (the top card of the
+ * stack), at most 360 px wide and 70 % of the screen tall, inside the safe area.
+ */
+async function expectCentredCard(page: Page, card: Locator): Promise<void> {
+  const r = await card.evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width, h: b.height, top: b.top, bottom: b.bottom };
+  });
+  const vp = page.viewportSize() ?? { width: 0, height: 0 };
+  expect.soft(Math.abs(r.x - vp.width / 2), 'card centred horizontally').toBeLessThanOrEqual(1);
+  expect.soft(Math.abs(r.y - vp.height / 2), 'card centred vertically').toBeLessThanOrEqual(1);
+  expect.soft(r.w, 'card width ≤ min(360, screen − 32)').toBeLessThanOrEqual(Math.min(360, vp.width - 32) + 0.5);
+  expect.soft(r.h, 'card height ≤ 70 % of the screen').toBeLessThanOrEqual(vp.height * 0.7 + 0.5);
+  expect.soft(r.top, 'card below the notch').toBeGreaterThanOrEqual(INSETS.top);
+  expect.soft(r.bottom, 'card above the home indicator').toBeLessThanOrEqual(vp.height - INSETS.bottom);
+}
+
+// Owner 07.10: menus are centred cards over a scrim, never bottom sheets — 📎 and a message's long-press menu.
+test('m-menu', async ({ page }) => {
   await signedInRoom(page);
   await page.getByRole('button', { name: 'Прикрепить файл' }).tap();
-  await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Камера' })).toBeVisible();
-  await checkpoint(page, 'm-sheet', { snapshot: false });
-  await page.keyboard.press('Escape');
+  const attach = page.getByRole('menu');
+  await expect(attach.getByRole('menuitem', { name: 'Камера' })).toBeVisible();
+  await expectCentredCard(page, attach);
+  await checkpoint(page, 'm-menu');
+  // A tap on the scrim closes the menu and reaches nothing under it.
+  await page.touchscreen.tap(20, 120);
+  await expect(attach).toHaveCount(0);
+  await expect(page.getByTestId('composer')).toBeVisible();
   // A long-press menu on a message.
   await feedToBottom(page);
   await page.getByText('Готово, выдал.').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
   await expect(page.getByRole('menu')).toBeVisible();
-  await checkpoint(page, 'm-message-menu', { snapshot: false });
+  await expectCentredCard(page, page.getByRole('menu'));
+  await checkpoint(page, 'm-message-menu');
+});
+
+// Owner 07.10: a sub-level («+» → «Создать задачу ▸») opens by a tap only — never on hover — as a
+// card over its parent, which zooms back, shifts left and dims; «‹ Создать задачу», a tap on the
+// parent card and back (Android / browser) each return one level.
+test('m-menu-sub', async ({ page }) => {
+  await signedIn(page);
+  await page.getByTestId('phone-room-list').getByTestId('sidebar-create').tap();
+  const item = page.getByTestId('sidebar-new-task');
+  const sub = page.getByTestId('sidebar-task-boards');
+  const parentWrap = page.locator('[data-radix-popper-content-wrapper]').filter({ has: item });
+  await expect(item).toBeVisible();
+  await expect(item).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(parentWrap).toHaveAttribute('data-pm-depth', '0');
+  // A hovering mouse (Chrome's device emulation) does not open it.
+  await item.hover();
+  await page.waitForTimeout(400);
+  await expect(sub).toHaveCount(0);
+  await item.tap();
+  await expect(sub).toBeVisible();
+  await expect(sub.locator('[role="menuitem"]:not([data-pm-back])')).toHaveCount(2);
+  await expect(sub.getByTestId('menu-back')).toHaveText('Создать задачу');
+  await expect(parentWrap).toHaveAttribute('data-pm-depth', '1');
+  await expectCentredCard(page, sub);
+  await checkpoint(page, 'm-menu-sub');
+  // «‹ Создать задачу»: one level back.
+  await sub.getByTestId('menu-back').tap();
+  await expect(sub).toHaveCount(0);
+  await expect(parentWrap).toHaveAttribute('data-pm-depth', '0');
+  // A tap on the parent card (its edge left of the sub-level) returns to it, and picks nothing.
+  await item.tap();
+  await expect(sub).toBeVisible();
+  const p = await parentWrap.locator(':scope > [role="menu"]').boundingBox();
+  if (!p) throw new Error('parent card has no box');
+  await page.touchscreen.tap(p.x + 4, p.y + p.height / 2);
+  await expect(sub).toHaveCount(0);
+  await expect(item).toBeVisible();
+  // Back: the sub-level first, then the menu, then nothing more (still the «Чаты» root).
+  await item.tap();
+  await expect(sub).toBeVisible();
+  await page.goBack();
+  await expect(sub).toHaveCount(0);
+  await expect(item).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+  // One frame mid-way into a sub-level (the run's reduced motion and stable mode lifted, the 150 ms
+  // stretched so the frame can be caught).
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.evaluate(() => {
+    document.documentElement.classList.remove('test-stable');
+    document.documentElement.style.setProperty('--motion-card', '4000ms');
+  });
+  await page.getByTestId('phone-room-list').getByTestId('sidebar-create').tap();
+  await expect(item).toBeVisible();
+  await page.evaluate(() => document.getAnimations().forEach((a) => a.finish()));
+  await item.tap();
+  await expect(sub).toBeVisible();
+  await page.evaluate(() =>
+    document.getAnimations().forEach((a) => {
+      a.pause();
+      a.currentTime = 1600;
+    }),
+  );
+  const dir = process.env['CALABA_MOBILE_SHOTS'];
+  if (dir) await page.screenshot({ path: join(dir, `m-menu-sub-mid-${test.info().project.name}.png`) });
+  await page.evaluate(() => {
+    document.getAnimations().forEach((a) => a.finish());
+    document.documentElement.style.removeProperty('--motion-card');
+  });
 });
 
 test('m-voice', async ({ page }) => {
@@ -781,7 +876,7 @@ test('m-voice', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Созвон' })).toBeVisible();
 });
 
-// Soundboard (ADR-0036): the strip's «Звуки» opens the island's panel as a bottom sheet (voice
+// Soundboard (ADR-0036): the strip's «Звуки» opens the island's panel as a centred card (voice
 // activation mode; in push-to-talk mode it is «Ещё → Звуки»).
 test('m-voice-soundboard', async ({ page }) => {
   mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
@@ -907,8 +1002,10 @@ test('m-dialog', async ({ page }) => {
   await signedIn(page);
   await page.getByTestId('phone-chats').getByRole('button', { name: 'Создать пространство' }).tap();
   await expect(page.getByRole('dialog', { name: 'Новое пространство' })).toBeVisible();
-  await expectNoFieldFocus(page, 'dialog sheet');
-  await checkpoint(page, 'm-dialog', { snapshot: false });
+  await expect(page.getByTestId('sheet-handle')).toHaveCount(0);
+  await expectNoFieldFocus(page, 'dialog');
+  // A centred card (owner 07.10), not a bottom sheet: the generic «modal centred» invariant checks it.
+  await checkpoint(page, 'm-dialog');
 });
 
 // ADR-0031: workspace settings → «Боты» as pushed screens — the create form wraps, the bot rows

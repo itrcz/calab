@@ -53,7 +53,8 @@ export function AchievementView({ req, onClose }: { req: ViewRequest; onClose: (
           }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-64px)] w-[calc(100vw-32px)] max-w-[360px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] text-body focus:outline-none',
-            'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-0 mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:pb-[var(--safe-bottom)]',
+            // Phone (owner 07.10): a centred card, not a bottom sheet (app/styles.css).
+            'phone-dialog',
           )}
         >
           <div className="min-h-0 flex-1 overflow-y-auto">
