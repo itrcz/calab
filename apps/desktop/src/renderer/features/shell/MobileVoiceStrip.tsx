@@ -91,9 +91,9 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
             onClick={() => (call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
           />
           <span className="pointer-events-none flex max-w-full items-center gap-1">
-            {/* A long status («Переподключение…») wraps (hyphenated) instead of being cut; the room
+            {/* A long status («Переподключение…») wraps by words (never hyphenated) instead of being cut; the room
                 name then gives way (line-clamp keeps the strip 56 px). */}
-            <span className={cx('line-clamp-2 min-w-0 break-words text-[12px] font-semibold leading-[15px] [hyphens:auto]', connected ? 'text-ok' : 'text-warn')} data-testid="mobile-voice-status">
+            <span className={cx('line-clamp-2 min-w-0 break-words text-[12px] font-semibold leading-[15px] [hyphens:none]', connected ? 'text-ok' : 'text-warn')} data-testid="mobile-voice-status">
               {phaseText}
             </span>
             {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer; a tap

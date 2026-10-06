@@ -75,10 +75,12 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
             <DisplayMenu boardId={boardId} />
           </div>
           <div className="relative">
-            <div className="flex h-11 min-w-0 items-center gap-1.5 overflow-x-auto pl-4 pr-8 [scrollbar-width:none]" data-testid="filter-row">
+            <div className="flex h-11 min-w-0 items-center gap-1.5 overflow-x-auto pl-4 [scrollbar-width:none]" data-testid="filter-row">
               <FilterButton boardId={boardId} workspaceId={workspaceId} />
               <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
               <QuickChips boardId={boardId} />
+              {/* A real end gap: WebKit drops the padding at the end of a flex scroller. */}
+              <span className="w-4 shrink-0" aria-hidden />
             </div>
             <span className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--color-bg)] to-transparent" aria-hidden />
           </div>

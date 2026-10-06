@@ -125,7 +125,7 @@ function RailItem({ id }: { id: string }): ReactNode {
       <span
         aria-hidden
         className={cx(
-          'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg transition-[height,opacity] duration-[var(--motion)] ease-out',
+          'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg mobile:hidden transition-[height,opacity] duration-[var(--motion)] ease-out',
           isActive && !appOpen ? 'h-10' : isActive ? 'h-5' : unread ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
         )}
       />
@@ -220,7 +220,7 @@ function HomeTile({
       <span
         aria-hidden
         className={cx(
-          'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg transition-[height,opacity] duration-[var(--motion)] ease-out',
+          'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg mobile:hidden transition-[height,opacity] duration-[var(--motion)] ease-out',
           isActive ? 'h-10' : unread ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
         )}
       />

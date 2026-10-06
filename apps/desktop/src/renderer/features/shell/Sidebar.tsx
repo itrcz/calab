@@ -728,7 +728,7 @@ const rowBox = 'group/row relative flex h-[34px] items-center rounded-[var(--rad
 
 function UnreadPill({ show }: { show: boolean }): ReactNode {
   // A whole 4 × 8 pill just inside the column (a half-dot on the seam read as a glitch).
-  return show ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg" /> : null;
+  return show ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg mobile:hidden" /> : null;
 }
 
 /**

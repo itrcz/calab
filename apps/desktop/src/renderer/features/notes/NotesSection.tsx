@@ -41,7 +41,7 @@ export function NotesSection(): ReactNode {
   return (
     <section className="mb-2" aria-label={t('notes.section')} data-testid="notes-section">
       <div
-        className={cx('group/cat flex h-7 items-center rounded-[var(--radius-row)] pr-1 pt-1', headerOver && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)]')}
+        className={cx('group/cat flex h-7 items-center rounded-[var(--radius-row)] pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-0', headerOver && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)]')}
         data-testid="notes-header"
         {...headerDrop}
       >
@@ -54,7 +54,7 @@ export function NotesSection(): ReactNode {
             onClick={() => setCreating(true)}
             aria-label={t('notes.new')}
             data-testid="notes-new"
-            className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+            className="grid size-6 mobile:size-11 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
           >
             <Plus className="size-4" aria-hidden />
           </button>
