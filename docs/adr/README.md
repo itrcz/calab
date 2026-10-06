@@ -76,3 +76,5 @@
 | [0069](0069-phone-session-activity.md) | iOS: status-only Live Activity через проверенный main-frame/origin/document канал общего веба | принято, устройство требует проверки |
 | [0070](0070-phone-message-notifications.md) | iOS: session-bound push сообщений, opaque tap и общий web notification service | принято, доставка требует проверки |
 | [0071](0071-phone-incoming-calls.md) | iOS: opt-in PushKit/CallKit и общий web call/RTC service | принято, locked answer/audio требуют проверки |
+
+| [0072](0072-phone-notification-previews.md) | Phone push: sender/message previews, caller name and order-independent CallKit answer readiness; shared web UI/auth/RTC retained | принято, device retest pending |

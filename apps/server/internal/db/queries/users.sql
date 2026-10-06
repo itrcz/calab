@@ -26,7 +26,8 @@ UPDATE users SET
     birthday_day    = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_day')::smallint ELSE birthday_day END,
     birthday_month  = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_month')::smallint ELSE birthday_month END,
     birthday_year   = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_year')::smallint ELSE birthday_year END,
-    birthday_hidden = coalesce(sqlc.narg('birthday_hidden')::boolean, birthday_hidden)
+    birthday_hidden = coalesce(sqlc.narg('birthday_hidden')::boolean, birthday_hidden),
+    hide_message_text_in_notifications = coalesce(sqlc.narg('hide_message_text_in_notifications')::boolean, hide_message_text_in_notifications)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 

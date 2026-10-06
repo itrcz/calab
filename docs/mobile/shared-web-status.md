@@ -1,5 +1,109 @@
 # Телефон: общий веб в оболочке — статус
 
+## R13: один личный предпросмотр (2026-10-06)
+
+- Последнее решение: [PR123](https://github.com/itrcz/calab/pull/123#issuecomment-6018296941).
+  Один общий переключатель «Предпросмотр сообщений», включён по умолчанию. Выключение
+  скрывает только текст; имя, аватар и название комнаты остаются. Звонки сохраняют
+  имя и аватар звонящего. Видимость на экране блокировки регулирует iOS.
+- Убраны принудительная настройка пространства, её API/UI, столбец из ещё не выпущенной
+  миграции 00070 и запрос общего пространства. Сохранены серверное применение личного
+  выбора на каждой отправке/повторе и совместимость со старыми настройками звука.
+- Проверено локально: root make lint (Go vet/integration vet, golangci, workspace ESLint),
+  make gen без drift, desktop typecheck, 40 locale/search tests, push unit/race
+  и все PG17 TestPush* integration/race (24.897 с). Два независимых security/protocol
+  review без blocker/major. Полный серверный набор выполняет CI на обновлённом PR.
+- На устройстве: не проверено. Остаются подписанная сборка с Communication Notifications,
+  avatars/grouping, iOS When Unlocked/Never, системный ответ/mute и locked/cold audio.
+  Эта правка не означает готовность к merge или новый deploy/install.
+
+## R12: замечания к PR (2026-10-06, политика заменена R13)
+
+- Реализовано: общий переключатель скрытия текста push и принудительное правило
+  пространства. Сервер проверяет настройки перед каждой отправкой/повтором; имена и
+  аватары остаются. Старые клиенты не сбрасывают выбор при замене настроек звука.
+  Для личных сообщений действует самое строгое правило общего пространства.
+- Исправлено: переход из доставленного сообщения после включения DND/отключения
+  уведомлений комнаты. Текущие права, сессия, удаление и срок остаются обязательными.
+- Проверено локально: PG17 push integration с race, повтор privacy-кейсов после
+  исправления тестового маршрута, push unit/race, desktop typecheck и locale/search
+  unit, root make lint. Два независимых security/protocol review без blocker/major.
+  Ручной QA общего интерфейса на 390/960 px: docs/mobile/qa (mock data, не устройство).
+  Требуется миграция 00070 и общий web/API release; итоговый PR CI отдельный gate.
+- На устройстве: новая версия пока не проверена. Требуются web/API release,
+  новые native signing profiles и контролируемая установка для проверки звонков/аватарок.
+
+## R11: аватарки и соседние сценарии уведомлений (2026-10-06)
+
+- Реализовано: avatar JPEG только текущего отправителя после проверки доступа; ограничение
+  размера и fallback на текст. Communication Notifications extension без сети/credentials;
+  группировка сообщений по чату, account-scoped person IDs. CallKit получает непустой handle
+  и incoming intent с картинкой, без ожидания загрузки или изменения звонка. Logout удаляет
+  donated interactions этого приложения.
+- Локально проверено: push unit/race и PG17 push integration, mobile unit/plugin tests,
+  typecheck, Swift payload tests. iOS Release собрана; NSE executable, entry point и
+  intent activity types присутствуют, native inputs без drift. Два независимых ревью
+  без blocker/major. Эта сборка ещё не подписана новым профилем и не установлена.
+- Проверка на телефоне: пока не выполнена. CallKit не предоставляет поле аватарки звонящего;
+  передача INPerson image не гарантирует фото на каждом системном экране iOS.
+- Осталось перед установкой: новая native сборка с Communication Notifications и отдельным
+  extension/profile, затем реальные previews/grouping, звонок и locked/cold audio.
+- Ограниченная ревизия: routing/expiry, отключённые уведомления/Focus, foreground без второго
+  звука, logout, accept/end/mute и старые payloads покрыты существующими и целевыми checks.
+  Badge unread counter, быстрый ответ из push и callback из системной истории ещё не реализованы;
+  отдельный API/состояние не добавлялись ради видимости готовности. Native Android incoming/push
+  и SSO остаются прежними отдельными gates полного продукта.
+
+## R10: стандартные сценарии после ревизии (2026-10-06)
+
+- **Реализовано:** системный mute/unmute через общий voice service и обратная синхронизация
+  с CallKit; действия ограничены текущим принятым звонком, сессией и document. Moderator mute
+  сохраняется, timeout одной команды не завершает разговор. Capability добавлена к bridge v1:
+  прежние host/web сохраняют answer/end, старый web не получает неизвестных mute actions.
+- **Реализовано:** новые message tap routes живут до семи дней после пяти минут dispatch,
+  только после подтверждения приёма provider; transport deadline не продлён. Retention
+  ограничен 2048 обычными receipts, старейшие завершённые сообщения уступают место новым.
+  Logout очищает доставленные уведомления приложения; reload не очищает. APNs registration
+  retry после ошибки разрешён на foreground/user trigger с cooldown 15 с, без polling.
+- **Проверено локально:** workspace tests (desktop 2610, mobile 110, protocol 439, bot 30,
+  два plugin tests), отдельные тесты совместимости; push unit/integration с race;
+  Swift retry policy, typecheck, web build без Electron, generation без drift.
+  Physical-iOS Release скомпилирована без ошибок и изменения native inputs.
+  Два независимых review приняли исправленную дельту без blocker/major.
+- **Осталось:** PR CI и согласованный web/API release, затем новая установка и одна device
+  проверка сценариев из `incoming-calls-testing.md` / `message-notifications-testing.md`.
+  Cold locked answer, системный mute и двустороннее audio на этой версии ещё не проверены.
+  Новых migrations, ключей или provider env для R09/R10 не требуется.
+
+## R09: исправления после первого push-теста (2026-10-06)
+
+- **Проверено владельцем на iPhone:** сообщения push доставляются, системный экран
+  входящего звонка появляется. Обнаружены generic text/name, сброс через 10–15 с после
+  системного ответа при desktop в комнате, возможный повторный ответ в приложении.
+  Это обновляет исторические R05–R07 отметки ниже; успешный locked answer ещё не доказан.
+- **Реализовано локально:** имя/текст APNs после текущей проверки доступа, имя CallKit;
+  независимые факты web connection / accept / audio activation; настройка voice audio
+  session перед CallKit fulfil; request budget начинается при выполнении очередного action; обе кнопки ответа используют
+  один общий запрос, ACTIVE требует подтверждённого ответа на accept текущего web document;
+  native deadline действует и при начатом из веба запросе.
+  Контракт: [ADR-0072](../adr/0072-phone-notification-previews.md). Без нового UI/auth/RTC.
+- **Проверено локально:** regression очереди воспроизведена на прежнем коде и проходит
+  после исправления; 49 targeted web/call unit; Swift readiness во всех шести порядках;
+  push provider units и PG17 push/identity + call integration; отдельный desktop-room →
+  phone-call handover, late desktop leave и прежние other-device сценарии проходят.
+  Physical-iOS Release собирается с APS development, PushKit и WidgetKit без input drift.
+- **Reviews:** два независимых security/protocol review; найденные major исправлены,
+  финальная дельта принята без blocker/major. Весь desktop unit: 2591; mobile 109,
+  protocol 439, bot SDK 30 и два plugin tests; targeted Go push/identity с race проходят.
+  `make lint`, typecheck и web build/bundle check проходят. Native сборка подписана
+  и проверена, 63 входных файла совпадают с текущими исходниками; пока не установлена.
+- **Осталось:** web/API release и установка новой native сборки; затем превью после
+  Face ID, системный answer без второго нажатия,
+  desktop-room handover, повторная блокировка и двусторонний звук дольше 30 с.
+  Cold terminated/locked web bootstrap остаётся отдельным непроверенным случаем.
+  Local build и server tests не заменяют device evidence.
+
+
 ## R07: интеграция с текущим main (2026-10-05)
 
 Ветка включает pinned main `969bd18fb873218e53518b09c6059c1e6c1c4630`.

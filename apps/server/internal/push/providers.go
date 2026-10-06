@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -28,8 +29,14 @@ func providerHTTP() *http.Client {
 	transport.MaxIdleConnsPerHost = 8
 	return &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 }
+func deliveryExpiry(p Payload) int64 {
+	if p.DeliveryExpiresAt > 0 {
+		return min(p.ExpiresAt, p.DeliveryExpiresAt)
+	}
+	return p.ExpiresAt
+}
 func routingValid(p Payload) bool {
-	if p.Version != 1 || !time.UnixMilli(p.ExpiresAt).After(time.Now()) {
+	if p.Version != 1 || !time.UnixMilli(deliveryExpiry(p)).After(time.Now()) {
 		return false
 	}
 	switch p.Kind {
@@ -105,15 +112,19 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 		pushType = "voip"
 	} else {
 		aps["alert"] = map[string]string{"title-loc-key": "CALAB_APP_NAME", "loc-key": "CALAB_NEW_NOTIFICATION"}
+		if p.Kind == "message" && p.Title != "" && p.Body != "" {
+			aps["alert"] = map[string]string{"title": previewLine(p.Title, 80), "body": previewLine(p.Body, 240), "subtitle": previewLine(p.Subtitle, 80)}
+		}
 		aps["category"] = "CALAB_OPEN"
+		if p.Kind == "message" && p.PersonID != "" && p.ConversationID != "" {
+			aps["mutable-content"] = 1
+			aps["thread-id"] = p.ConversationID
+		}
 		if !p.Silent {
 			aps["sound"] = "default"
 		}
 	}
-	body, err := json.Marshal(struct {
-		Payload
-		APS map[string]any `json:"aps"`
-	}{p, aps})
+	body, err := apnsBody(p, aps)
 	if err != nil {
 		return Result{}
 	}
@@ -131,7 +142,7 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	request.Header.Set("apns-push-type", pushType)
 	request.Header.Set("apns-priority", "10")
 	request.Header.Set("apns-id", p.EventID)
-	request.Header.Set("apns-expiration", strconv.FormatInt(p.ExpiresAt/1000, 10))
+	request.Header.Set("apns-expiration", strconv.FormatInt(deliveryExpiry(p)/1000, 10))
 	response, err := s.client.Do(request)
 	if err != nil {
 		return retryResult(p, 0, "")
@@ -139,7 +150,7 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 65536))
-		return Result{}
+		return Result{Accepted: true}
 	}
 	if response.StatusCode == 429 || response.StatusCode >= 500 {
 		return retryResult(p, response.StatusCode, response.Header.Get("Retry-After"))
@@ -279,7 +290,7 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 		}
 		data[key] = text
 	}
-	remaining := min(max(time.Until(time.UnixMilli(p.ExpiresAt)), 0), 10*time.Minute)
+	remaining := min(max(time.Until(time.UnixMilli(deliveryExpiry(p))), 0), 10*time.Minute)
 	if remaining <= 0 {
 		return Result{}
 	}
@@ -300,7 +311,7 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == 200 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 65536))
-		return Result{}
+		return Result{Accepted: true}
 	}
 	if response.StatusCode == 429 || response.StatusCode >= 500 {
 		return retryResult(p, response.StatusCode, response.Header.Get("Retry-After"))
@@ -335,4 +346,23 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 		}
 	}
 	return Result{}
+}
+
+// Optional pictures must never turn an otherwise valid alert into PayloadTooLarge.
+func apnsBody(p Payload, aps map[string]any) ([]byte, error) {
+	encode := func() ([]byte, error) {
+		return json.Marshal(struct {
+			Payload
+			APS map[string]any `json:"aps"`
+		}{p, aps})
+	}
+	body, err := encode()
+	if len(body) > 4096 || len(p.AvatarJPEG) > 2048 {
+		p.AvatarJPEG = ""
+		body, err = encode()
+	}
+	if len(body) > 4096 {
+		return nil, fmt.Errorf("push presentation exceeds APNs limit")
+	}
+	return body, err
 }

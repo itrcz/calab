@@ -1154,36 +1154,37 @@ type TaskSubscriber struct {
 }
 
 type User struct {
-	ID                uuid.UUID
-	Email             *string
-	PasswordHash      *string
-	DisplayName       string
-	AvatarFileID      *uuid.UUID
-	StatusText        string
-	Settings          []byte
-	CreatedAt         time.Time
-	DisabledAt        *time.Time
-	StatusEmoji       string
-	StatusExpiresAt   *time.Time
-	IsGuest           bool
-	GuestExpiresAt    *time.Time
-	Timezone          *string
-	EmailVerifiedAt   *time.Time
-	PendingEmail      *string
-	Locale            *string
-	PresenceStatus    *int16
-	PresenceUntil     *time.Time
-	IsBot             bool
-	BirthdayDay       *int16
-	BirthdayMonth     *int16
-	BirthdayYear      *int16
-	BirthdayHidden    bool
-	EventReminders    []int16
-	EventRemindersDnd bool
-	StorageQuotaBytes *int64
-	WorkStartMin      int16
-	WorkEndMin        int16
-	WorkDays          []int16
+	ID                             uuid.UUID
+	Email                          *string
+	PasswordHash                   *string
+	DisplayName                    string
+	AvatarFileID                   *uuid.UUID
+	StatusText                     string
+	Settings                       []byte
+	CreatedAt                      time.Time
+	DisabledAt                     *time.Time
+	StatusEmoji                    string
+	StatusExpiresAt                *time.Time
+	IsGuest                        bool
+	GuestExpiresAt                 *time.Time
+	Timezone                       *string
+	EmailVerifiedAt                *time.Time
+	PendingEmail                   *string
+	Locale                         *string
+	PresenceStatus                 *int16
+	PresenceUntil                  *time.Time
+	IsBot                          bool
+	BirthdayDay                    *int16
+	BirthdayMonth                  *int16
+	BirthdayYear                   *int16
+	BirthdayHidden                 bool
+	EventReminders                 []int16
+	EventRemindersDnd              bool
+	StorageQuotaBytes              *int64
+	WorkStartMin                   int16
+	WorkEndMin                     int16
+	WorkDays                       []int16
+	HideMessageTextInNotifications bool
 }
 
 type UserNote struct {

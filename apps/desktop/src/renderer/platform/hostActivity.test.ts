@@ -83,3 +83,13 @@ it('shares logout revoke before document rotation, preserves cold taps through p
  expect(listener).toHaveBeenCalledOnce();
  cap.notifications?.clear(); await expect(next).resolves.toMatchObject({permission:'unsupported'});
 });
+
+it.each([undefined,1])('negotiates optional system mute (%s) without changing the incoming-call bridge', muteVersion => {
+ const handlers=new Map<string,(event:CustomEvent<unknown>)=>void>();const send=vi.fn();
+ const bridge={version:1,callsVersion:1,callsMuteVersion:muteVersion,host:0,document:'document',send};
+ const cap=createHostCapabilities({CalabHostActivity:bridge,addEventListener:(name:string,cb:(event:CustomEvent<unknown>)=>void)=>handlers.set(name,cb)} as unknown as Window);
+ handlers.get('calab-host-activity-ready')?.({detail:{v:1,host:0,document:'document',capability:'notifications',calls:1}} as CustomEvent<unknown>);
+ expect(cap.incomingCalls).toBeDefined();
+ if(muteVersion===undefined)expect(cap.incomingCalls?.syncMuted).toBeUndefined();
+ else {cap.incomingCalls?.syncMuted?.('event',true);expect(JSON.parse(String(send.mock.lastCall?.[0]))).toMatchObject({operation:'sync',phase:'muted'});}
+});

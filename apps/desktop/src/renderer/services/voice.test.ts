@@ -745,6 +745,21 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().serverMuted).toBe(false);
   });
 
+  it('system mute is idempotent, closes capture immediately and cannot lift moderator mute', async () => {
+    await voice.join('A', 'ws');
+    expect(voice.setMuted(true)).toBe(true);
+    expect(FakeRoom.all[0]?.published[0]?.mediaStreamTrack.enabled).toBe(false);
+    expect(voice.setMuted(true)).toBe(true);
+    expect(useVoice.getState().muted).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(voice.setMuted(false)).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+    voice.reconcileSelfState({ roomId:'A', muted:true, deafened:false, serverMuted:true });
+    expect(voice.setMuted(false)).toBe(false);
+    expect(useVoice.getState().muted).toBe(true);
+  });
+
   it('mute → unmute in quick succession ends unmuted, as the UI shows (review L2)', async () => {
     await voice.join('A', 'ws');
     FakeLocalAudioTrack.lockMs = 50;

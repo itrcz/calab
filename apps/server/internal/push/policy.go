@@ -26,6 +26,12 @@ func dnd(u sqlc.User, now time.Time) bool {
 	return u.PresenceStatus != nil && v1.PresenceStatus(*u.PresenceStatus) == v1.PresenceStatus_PRESENCE_STATUS_DND && (u.PresenceUntil == nil || u.PresenceUntil.After(now))
 }
 func (s *Service) allowed(ctx context.Context, q *sqlc.Queries, u sqlc.User, session sqlc.Session, job sqlc.PushDelivery) (bool, bool, error) {
+	return s.allowedPolicy(ctx, q, u, session, job, false)
+}
+
+// Resolution may describe an already accepted call for same-device reconciliation.
+// Dispatch must still require RINGING; resolution alone never authorizes an accept.
+func (s *Service) allowedPolicy(ctx context.Context, q *sqlc.Queries, u sqlc.User, session sqlc.Session, job sqlc.PushDelivery, resolving bool) (bool, bool, error) {
 	now := time.Now()
 	quiet := dnd(u, now)
 	clock, err := q.IdentityDatabaseNow(ctx)
@@ -44,7 +50,7 @@ func (s *Service) allowed(ctx context.Context, q *sqlc.Queries, u sqlc.User, ses
 	}
 	switch job.Kind {
 	case messageKind:
-		if quiet {
+		if quiet && !resolving {
 			return false, false, nil
 		}
 		msg, err := q.GetMessage(ctx, job.ReferenceID)
@@ -81,6 +87,9 @@ func (s *Service) allowed(ctx context.Context, q *sqlc.Queries, u sqlc.User, ses
 		if err != nil {
 			return false, false, err
 		}
+		if resolving {
+			return !facts.Blocked, false, nil // delivery preferences do not revoke read access
+		}
 		return !facts.Blocked && notifications.Notifies(notifications.Facts{DM: acc.DM, Mention: facts.Mentioned, Room: notifications.LevelFromDB(facts.RoomLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT), Workspace: notifications.LevelFromDB(facts.WorkspaceLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS), RoomMuted: facts.RoomMuted, WorkspaceMuted: facts.WorkspaceMuted}), false, nil
 
 	case callKind:
@@ -91,7 +100,8 @@ func (s *Service) allowed(ctx context.Context, q *sqlc.Queries, u sqlc.User, ses
 		if err != nil {
 			return false, false, err
 		}
-		if !ok || call.ID != job.ReferenceID || call.Callee != u.ID || call.State != v1.CallState_CALL_STATE_RINGING || job.RoomID == nil || call.DM != *job.RoomID {
+		stateAllowed := call.State == v1.CallState_CALL_STATE_RINGING || (resolving && call.State == v1.CallState_CALL_STATE_ACTIVE)
+		if !ok || call.ID != job.ReferenceID || call.Callee != u.ID || !stateAllowed || job.RoomID == nil || call.DM != *job.RoomID {
 			return false, false, nil
 		}
 		peer, err := q.GetUser(ctx, call.Caller)

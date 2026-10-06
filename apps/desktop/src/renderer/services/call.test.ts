@@ -25,6 +25,7 @@ vi.mock('./voice', () => ({
   voice: {
     join: (r: string, w: string, o?: unknown) => join(r, w, o),
     leave: () => leave(),
+    setMuted: (muted: boolean) => { useVoice.setState({muted}); return true; },
     get takenOverRoom() {
       return voiceState.takenOverRoom;
     },
@@ -42,7 +43,7 @@ const openDm = vi.fn((_id: string) => undefined);
 vi.mock('./dms', () => ({ ensureDm: () => Promise.resolve('dm1'), openDm: (id: string) => openDm(id) }));
 vi.mock('../platform', () => ({ platform: { app: { attention: vi.fn() }, auth:{onLoggedOut:()=>()=>undefined} } }));
 
-const { applyCallEvent, accept, hangup, onCallRing, onCallState, onReadyCall, resumeCall, startCall, installCalls, performHostCallAction, setHostIncomingOwnership } = await import('./call');
+const { applyCallEvent, accept, hangup, onCallRing, onCallState, onReadyCall, resumeCall, startCall, installCalls, performHostCallAction, setHostCallMuted, ownsHostCall, resetCallsForTest, setHostIncomingOwnership } = await import('./call');
 const { useCall, setCall } = await import('../stores/call');
 const { useVoice } = await import('../stores/voice');
 const { useSession } = await import('../stores/session');
@@ -61,6 +62,7 @@ const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetCallsForTest();
   useSession.setState({ me: { user: { id: ME } } as never });
   setCall({ ...IDLE, peerId: '', since: null, collapsed: false, busy: false });
   useVoice.setState({ roomId: null, workspaceId: null, call: false });
@@ -180,13 +182,14 @@ describe('call service', () => {
 });
 
 
-it('host answer reuses call transition and refuses a different/answered-elsewhere call', async () => {
+it('host answer reuses its own accepted transition and refuses a different call', async () => {
  onCallRing(incoming(CallState.RINGING), undefined);
  expect(await performHostCallAction('foreign', 'answer')).toBe(false);
  act.mockResolvedValueOnce({ call: incoming(CallState.ACTIVE) });
  expect(await performHostCallAction('c1', 'answer')).toBe(true);
  expect(useCall.getState()).toMatchObject({phase:'active',own:'c1'});
- expect(await performHostCallAction('c1', 'answer')).toBe(false);
+ expect(await performHostCallAction('c1', 'answer')).toBe(true);
+ expect(act).toHaveBeenCalledTimes(1);
 });
 it('native-owned ringing uses CallKit sound without starting a second web ring', () => {
  setHostIncomingOwnership('c1',true);onCallRing(incoming(CallState.RINGING),undefined);
@@ -217,4 +220,76 @@ it('revoked authentication prevents a late accept while the old store is still a
  let current=true;const pending=performHostCallAction('c1','answer',undefined,()=>current,()=>current);
  current=false;finish({call:incoming(CallState.ACTIVE)});
  expect(await pending).toBe(false);expect(join).not.toHaveBeenCalled();expect(act).toHaveBeenCalledTimes(1);
+});
+
+for (const first of ['web','host']) {
+ it(`coalesces ${first}-first accept with system Answer into one request`,async()=>{
+  onCallRing(incoming(CallState.RINGING),undefined);
+  let finish:(value:unknown)=>void=()=>{};
+  act.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+  const one=first==='web' ? accept():performHostCallAction('c1','answer');
+  expect(ownsHostCall('c1')).toBe(true);
+  const two=first==='web' ? performHostCallAction('c1','answer'):accept();
+  expect(act).toHaveBeenCalledTimes(1);
+  finish({call:incoming(CallState.ACTIVE)});await Promise.all([one,two]);
+  expect(useCall.getState()).toMatchObject({phase:'active',own:'c1'});
+  expect(await performHostCallAction('c1','answer')).toBe(true);
+  expect(act).toHaveBeenCalledTimes(1);expect(join).toHaveBeenCalledTimes(1);
+ });
+}
+it('does not adopt ACTIVE from another device after our competing accept loses',async()=>{
+ onCallRing(incoming(CallState.RINGING),undefined);
+ let reject:(error:unknown)=>void=()=>{};
+ act.mockReturnValueOnce(new Promise((_resolve,fail)=>{reject=fail;}));
+ const web=accept();const native=performHostCallAction('c1','answer');
+ reject(new ApiError('ERROR_CODE_CONFLICT','answered elsewhere',409));
+ await web;expect(await native).toBe(false);expect(ownsHostCall('c1')).toBe(false);
+ expect(join).not.toHaveBeenCalled();
+});
+
+it('requires our successful accept response when competing ACTIVE overtakes a network failure',async()=>{
+ onCallRing(incoming(CallState.RINGING),undefined);
+ let reject:(error:unknown)=>void=()=>{};
+ act.mockReturnValueOnce(new Promise((_resolve,fail)=>{reject=fail;}));
+ const web=accept();const native=performHostCallAction('c1','answer');
+ onCallState(incoming(CallState.ACTIVE));
+ expect(join).not.toHaveBeenCalled();
+ reject(new Error('network failed'));await web;
+ expect(await native).toBe(false);expect(ownsHostCall('c1')).toBe(false);
+ expect(join).not.toHaveBeenCalled();expect(useCall.getState().phase).toBe('idle');
+});
+it('attaches native cancellation to a web-first accept and releases the wait before a late reply',async()=>{
+ useSession.setState({sessionId:'first'});onCallRing(incoming(CallState.RINGING),undefined);
+ let finish:(value:unknown)=>void=()=>{};
+ act.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+ const web=accept();const abort=new AbortController();
+ const native=performHostCallAction('c1','answer',abort.signal,()=>!abort.signal.aborted);
+ abort.abort();expect(await native).toBe(false);await web;
+ expect(join).not.toHaveBeenCalled();
+ act.mockResolvedValueOnce({call:incoming(CallState.ENDED)});
+ finish({call:incoming(CallState.ACTIVE)});await flush();
+ expect(join).not.toHaveBeenCalled();expect(act).toHaveBeenLastCalledWith('c1','hangup');
+ expect(useCall.getState().phase).toBe('idle');
+});
+
+it('clears optimistic ownership before a delayed competing ACTIVE after network failure',async()=>{
+ onCallRing(incoming(CallState.RINGING),undefined);
+ act.mockRejectedValueOnce(new Error('network failed'));
+ await accept();expect(useCall.getState().own).toBe(null);
+ onCallState(incoming(CallState.ACTIVE));
+ expect(join).not.toHaveBeenCalled();expect(ownsHostCall('c1')).toBe(false);
+ expect(useCall.getState().phase).toBe('idle');
+});
+
+it('system mute requires locally confirmed accept and the exact connected voice room',async()=>{
+ useSession.setState({sessionId:'mute-session'});
+ onCallRing(incoming(CallState.RINGING),undefined);
+ useVoice.setState({roomId:'dm1',call:true,phase:'connected',muted:false});
+ expect(setHostCallMuted('c1',true)).toBe(false);
+ act.mockResolvedValueOnce({call:incoming(CallState.ACTIVE)});await accept();
+ expect(setHostCallMuted('foreign',true)).toBe(false);
+ expect(setHostCallMuted('c1',true)).toBe(true);expect(useVoice.getState().muted).toBe(true);
+ useVoice.setState({roomId:'other',muted:false});expect(setHostCallMuted('c1',true)).toBe(false);
+ useVoice.setState({roomId:'dm1'});useSession.setState({sessionId:'new-session'});
+ expect(setHostCallMuted('c1',true)).toBe(false);expect(useVoice.getState().muted).toBe(false);
 });

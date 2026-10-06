@@ -225,7 +225,8 @@ func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
 	s = NormalizeSettings(proto.CloneOf(s))
 	// Meeting reminders live in their own columns (users.event_reminders*, ADR-0038 §5).
 	s.EventReminders, s.EventRemindersDnd = nil, false
-	s.WorkHours = nil // users.work_* columns (ADR-0041)
+	s.WorkHours = nil                        // users.work_* columns (ADR-0041)
+	s.HideMessageTextInNotifications = false // dedicated privacy column (ADR-0072)
 	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
 }
 
@@ -241,6 +242,7 @@ func Me(u sqlc.User) *v1.Me {
 		email = *u.Email
 	}
 	settings := Settings(u.Settings)
+	settings.HideMessageTextInNotifications = u.HideMessageTextInNotifications
 	settings.EventReminders = make([]uint32, 0, len(u.EventReminders))
 	for _, m := range u.EventReminders {
 		settings.EventReminders = append(settings.EventReminders, uint32(max(m, 0))) //nolint:gosec // ≤ 1440

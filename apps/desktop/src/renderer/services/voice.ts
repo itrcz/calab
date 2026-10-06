@@ -2427,6 +2427,14 @@ class VoiceEngine {
     this.moveTimer = null;
   }
 
+  /** Idempotent system controls reuse the same moderator/deafen/capture rules as the UI. */
+  setMuted(muted: boolean): boolean {
+    const v = useVoice.getState();
+    if ((v.muted || v.deafened || v.serverMuted) !== muted) this.toggleMute();
+    const next = useVoice.getState();
+    return (next.muted || next.deafened || next.serverMuted) === muted;
+  }
+
   toggleMute(): void {
     const v = useVoice.getState();
     // A moderator mute (VoiceState.server_muted) can't be lifted by the user: the server removed

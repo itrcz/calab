@@ -117,3 +117,31 @@ func TestCallOtherDeviceKeepsCall(t *testing.T) {
 		t.Fatalf("hangup from device 2: %v", end)
 	}
 }
+
+// A phone accepts a DM call while the same user's desktop is in a workspace room.
+// The desktop yields only its room connection; its late leave cannot end the phone call.
+func TestPhoneCallAnswerTakesOverDesktopRoom(t *testing.T) {
+	liveKitUp(t)
+	caller, desktop, _, wid := callTeam(t)
+	phone := secondDevice(t, desktop.user)
+	room := voiceRoom(t, owner(t), wid, "desktop room", 0)
+	desktopIdentity := joinVoice(t, desktop.user, wid, room)
+	dm := openDM(t, caller.user, desktop.id, 201).GetRoom().GetId()
+	incoming := startCall(t, caller.user, dm)
+	callAction(t, phone, 200, incoming.GetId(), "accept")
+	var joined v1.JoinVoiceResponse
+	phone.must(200, "POST", "/api/rooms/"+dm+"/join", nil, &joined)
+	desktop.g.wait("desktop room yielded to phone", voiceDisconnected(desktop.session, room))
+	webhook(t, whEvent("participant_joined", "dm:"+dm, joined.GetIdentity(), nil), "secret")
+	caller.g.wait("phone connected", func(e *v1.DispatchEvent) bool {
+		state := e.GetVoiceStateUpdate().GetState()
+		return state.GetUserId() == phone.id && state.GetRoomId() == dm && !state.GetPending()
+	})
+	desktop.must(204, "POST", "/api/rooms/"+room+"/voice/leave", nil, nil)
+	webhook(t, whEvent("participant_left", "ws_"+wid+"_room_"+room, desktopIdentity, nil), "secret")
+	caller.g.quiet("desktop leave ended phone call", 300*time.Millisecond, func(e *v1.DispatchEvent) bool {
+		return e.GetCallState() != nil && e.GetCallState().GetCall().GetId() == incoming.GetId() && e.GetCallState().GetCall().GetState() != v1.CallState_CALL_STATE_ACTIVE
+	})
+	phone.must(200, "POST", "/api/rooms/"+dm+"/stream/request", &v1.RequestStreamRequest{}, nil)
+	callAction(t, phone, 200, incoming.GetId(), "hangup")
+}

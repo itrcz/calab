@@ -22,6 +22,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/config"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -413,5 +414,167 @@ func TestFCMRefreshFailurePacesEveryConcurrentCaller(t *testing.T) {
 	}
 	if exchanges.Load() != 1 {
 		t.Fatal("concurrent callers retried shared quota-limited OAuth")
+	}
+}
+
+func TestAPNSMessagePreviewAndCallerPresentation(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"message", "call", "task"} {
+		t.Run(kind, func(t *testing.T) {
+			p := providerPayload()
+			p.Kind = kind
+			p.Title = "Илья"
+			if kind == "message" {
+				p.PersonID = strings.Repeat("a", 64)
+				p.ConversationID = strings.Repeat("b", 64)
+			}
+			recipient := sqlc.User{ID: uuid.New(), DisplayName: "Данис"}
+			p.Body = messagePreview("Привет, @"+recipient.ID.String(), recipient)
+			p.CallerName = ""
+			provider := v1.PushProvider_PUSH_PROVIDER_APNS
+			if kind == "call" {
+				provider = v1.PushProvider_PUSH_PROVIDER_VOIP
+				p.CallerName = "Илья"
+			}
+			sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development"}
+			called := false
+			sender.client = &http.Client{Transport: providerTransport(func(r *http.Request) (*http.Response, error) {
+				called = true
+				var wire map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := wire["ReferenceID"]; ok {
+					t.Fatal("internal reference exposed")
+				}
+				aps := wire["aps"].(map[string]any)
+				if kind == "call" {
+					if wire["callerName"] != "Илья" || aps["alert"] != nil {
+						t.Fatal("caller presentation missing or alert duplicated")
+					}
+				}
+				if kind == "message" {
+					if aps["mutable-content"] != float64(1) || aps["thread-id"] != p.ConversationID {
+						t.Fatal("missing communication extension/grouping")
+					}
+					a := aps["alert"].(map[string]any)
+					if a["title"] != "Илья" || a["body"] != "Привет, @Данис" || a["loc-key"] != nil {
+						t.Fatal("generic text replaced preview")
+					}
+				}
+				if kind == "task" && aps["alert"].(map[string]any)["loc-key"] != "CALAB_NEW_NOTIFICATION" {
+					t.Fatal("unrelated notification changed")
+				}
+				return providerResponse(200, "", http.Header{}), nil
+			})}
+			sender.Send(context.Background(), Endpoint{Token: "aabb", Provider: provider, AppID: sender.app, Environment: sender.environment}, p)
+			if !called {
+				t.Fatal("preview was not sent")
+			}
+		})
+	}
+}
+
+func TestMessageRouteRetentionDoesNotExtendAPNSDelivery(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := providerPayload()
+	payload.Kind = "message"
+	payload.DeliveryExpiresAt = payload.ExpiresAt
+	payload.ExpiresAt += int64(7 * 24 * time.Hour / time.Millisecond)
+	sent := 0
+	sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development"}
+	sender.client = &http.Client{Transport: providerTransport(func(r *http.Request) (*http.Response, error) {
+		sent++
+		if r.Header.Get("apns-expiration") != strconv.FormatInt(payload.DeliveryExpiresAt/1000, 10) {
+			t.Fatal("transport retained message for the navigation lifetime")
+		}
+		var data map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+			t.Fatal(err)
+		}
+		if int64(data["expiresAt"].(float64)) != payload.ExpiresAt {
+			t.Fatal("tap lost retained expiry")
+		}
+		if _, ok := data["DeliveryExpiresAt"]; ok {
+			t.Fatal("internal transport deadline leaked")
+		}
+		return providerResponse(200, "", http.Header{}), nil
+	})}
+	endpoint := Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: "aabb", AppID: sender.app, Environment: sender.environment}
+	if !sender.Send(context.Background(), endpoint, payload).Accepted {
+		t.Fatal("provider acceptance lost")
+	}
+	payload.DeliveryExpiresAt = time.Now().Add(-time.Second).UnixMilli()
+	if sender.Send(context.Background(), endpoint, payload).Accepted {
+		t.Fatal("expired no-send reported acceptance")
+	}
+	if sent != 1 {
+		t.Fatal("retained route authorized stale delivery")
+	}
+}
+
+func TestAPNSTerminalRejectionIsNotAcceptance(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development", client: &http.Client{Transport: providerTransport(func(_ *http.Request) (*http.Response, error) {
+		return providerResponse(400, `{"reason":"PayloadTooLarge"}`, http.Header{}), nil
+	})}}
+	p := providerPayload()
+	p.Kind = "message"
+	if sender.Send(context.Background(), Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: "aabb", AppID: sender.app, Environment: sender.environment}, p).Accepted {
+		t.Fatal("APNs rejection reported acceptance")
+	}
+}
+
+func TestAPNSHiddenMessageBodyRetainsSenderAndAvatar(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := providerPayload()
+	p.Kind = "message"
+	p.Title = "Sender"
+	p.Subtitle = "Room"
+	p.PersonID = presentationID(p.Binding, "sender")
+	p.ConversationID = presentationID(p.Binding, "room")
+	p.AvatarJPEG = "inline-test-avatar"
+	p.Body = attachmentPreview(sqlc.Message{Content: "private-caption"}, []sqlc.ListAttachmentsRow{{File: sqlc.File{Mime: "image/png", Name: "private-filename.png"}}}, nil)
+	sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development"}
+	called := false
+	sender.client = &http.Client{Transport: providerTransport(func(r *http.Request) (*http.Response, error) {
+		called = true
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "private-caption") || strings.Contains(string(raw), "private-filename") {
+			t.Fatal("hidden content serialized into APNs")
+		}
+		var wire struct {
+			AvatarJPEG string `json:"avatarJpeg"`
+			PersonID   string `json:"personId"`
+			APS        struct {
+				Alert map[string]string `json:"alert"`
+			} `json:"aps"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if wire.APS.Alert["body"] != "Photo" || wire.APS.Alert["title"] != "Sender" || wire.PersonID != p.PersonID || wire.AvatarJPEG != p.AvatarJPEG {
+			t.Fatal("hidden message lost safe presentation")
+		}
+		return providerResponse(200, "", http.Header{}), nil
+	})}
+	result := sender.Send(context.Background(), Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: "aabb", AppID: sender.app, Environment: sender.environment}, p)
+	if !called || !result.Accepted {
+		t.Fatal("hidden notification not accepted by test transport")
 	}
 }

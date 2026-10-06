@@ -23,16 +23,24 @@ import (
 	"github.com/google/uuid"
 )
 
-// Payload carries opaque routing references without contents, credentials or origins.
+// Payload carries opaque routing and authorized, bounded presentation (ADR-0072).
 type Payload struct {
-	Version     int    `json:"v"`
-	Binding     string `json:"binding"`
-	EventID     string `json:"eventId"`
-	Kind        string `json:"kind"`
-	ReferenceID string `json:"-"`
-	RoomID      string `json:"-"`
-	ExpiresAt   int64  `json:"expiresAt"`
-	Silent      bool   `json:"silent,omitempty"`
+	Version           int    `json:"v"`
+	Binding           string `json:"binding"`
+	EventID           string `json:"eventId"`
+	Kind              string `json:"kind"`
+	ReferenceID       string `json:"-"`
+	RoomID            string `json:"-"`
+	ExpiresAt         int64  `json:"expiresAt"`
+	DeliveryExpiresAt int64  `json:"-"`
+	Silent            bool   `json:"silent,omitempty"`
+	Title             string `json:"-"`
+	Body              string `json:"-"`
+	Subtitle          string `json:"-"`
+	CallerName        string `json:"callerName,omitempty"`
+	PersonID          string `json:"personId,omitempty"`
+	ConversationID    string `json:"conversationId,omitempty"`
+	AvatarJPEG        string `json:"avatarJpeg,omitempty"`
 }
 
 // Endpoint is the server-authorized transport destination for one registry version.
@@ -44,6 +52,7 @@ type Endpoint struct {
 // Result deliberately contains no raw response, token, origin or provider credential.
 type Result struct {
 	Retry, Invalid bool
+	Accepted       bool // Provider accepted the request; not proof of device delivery.
 	RetryAfter     time.Duration
 	InvalidBefore  *time.Time
 }
@@ -66,8 +75,9 @@ type CallStore interface {
 
 // Service owns session-bound endpoints and durable authorized routing/delivery.
 type Service struct {
-	Auth  *auth.Service
-	Calls CallStore
+	Auth    *auth.Service
+	Calls   CallStore
+	Avatars *Avatars
 	// DeviceLimit bounds endpoint registration/removal per user (each takes the global
 	// registry lock); ResolveLimit bounds notification-tap resolution. nil = none (tests).
 	DeviceLimit, ResolveLimit *redisx.RateLimiter
@@ -203,7 +213,10 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 			if err != nil {
 				return err
 			}
-			allowed, _, err := s.allowed(ctx, q, user, session, job)
+			allowed, _, err := s.allowedPolicy(ctx, q, user, session, job, true)
+			if db.IsNotFound(err) {
+				return httpx.NotFound("notification")
+			}
 			if err != nil {
 				return err
 			}
@@ -224,7 +237,7 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 				if err != nil {
 					return err
 				}
-				if !live || rec.ID != job.ReferenceID || rec.State != v1.CallState_CALL_STATE_RINGING {
+				if !live || rec.ID != job.ReferenceID || (rec.State != v1.CallState_CALL_STATE_RINGING && rec.State != v1.CallState_CALL_STATE_ACTIVE) {
 					return httpx.NotFound("call")
 				}
 				response.MessageId = ""

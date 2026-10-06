@@ -202,7 +202,7 @@ func (q *Queries) GuestHasOtherAccess(ctx context.Context, arg GuestHasOtherAcce
 }
 
 const listRoomPendingAdmissions = `-- name: ListRoomPendingAdmissions :many
-SELECT a.room_id, a.user_id, a.invite_id, a.status, a.requested_at, a.decided_by, a.decided_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, i.created_by AS invite_created_by
+SELECT a.room_id, a.user_id, a.invite_id, a.status, a.requested_at, a.decided_by, a.decided_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, i.created_by AS invite_created_by
 FROM room_admissions a
 JOIN users u ON u.id = a.user_id
 LEFT JOIN room_invites i ON i.id = a.invite_id
@@ -264,6 +264,7 @@ func (q *Queries) ListRoomPendingAdmissions(ctx context.Context, roomID uuid.UUI
 			&i.User.WorkStartMin,
 			&i.User.WorkEndMin,
 			&i.User.WorkDays,
+			&i.User.HideMessageTextInNotifications,
 			&i.InviteCreatedBy,
 		); err != nil {
 			return nil, err
@@ -326,7 +327,7 @@ func (q *Queries) ListUserAdmissions(ctx context.Context, userID uuid.UUID) ([]L
 }
 
 const listWorkspacesPendingAdmissions = `-- name: ListWorkspacesPendingAdmissions :many
-SELECT a.room_id, a.user_id, a.invite_id, a.status, a.requested_at, a.decided_by, a.decided_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, r.workspace_id AS workspace_id, i.created_by AS invite_created_by
+SELECT a.room_id, a.user_id, a.invite_id, a.status, a.requested_at, a.decided_by, a.decided_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, r.workspace_id AS workspace_id, i.created_by AS invite_created_by
 FROM room_admissions a
 JOIN users u ON u.id = a.user_id
 JOIN rooms r ON r.id = a.room_id AND r.archived_at IS NULL
@@ -390,6 +391,7 @@ func (q *Queries) ListWorkspacesPendingAdmissions(ctx context.Context, workspace
 			&i.User.WorkStartMin,
 			&i.User.WorkEndMin,
 			&i.User.WorkDays,
+			&i.User.HideMessageTextInNotifications,
 			&i.WorkspaceID,
 			&i.InviteCreatedBy,
 		); err != nil {
@@ -442,7 +444,7 @@ func (q *Queries) RemoveGuestMember(ctx context.Context, arg RemoveGuestMemberPa
 }
 
 const setGuestDisplayName = `-- name: SetGuestDisplayName :one
-UPDATE users SET display_name = $2 WHERE id = $1 AND is_guest RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+UPDATE users SET display_name = $2 WHERE id = $1 AND is_guest RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications
 `
 
 type SetGuestDisplayNameParams struct {
@@ -484,6 +486,7 @@ func (q *Queries) SetGuestDisplayName(ctx context.Context, arg SetGuestDisplayNa
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
 	)
 	return i, err
 }

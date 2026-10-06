@@ -122,3 +122,47 @@ binary. Для остановки calls выставить `PUSH_VOIP_ENABLED=fa
 убрать полный набор четырёх APNs credentials вместе. Не выполнять автоматический
 Goose Down: он удалит push registry/receipts и не решает image compatibility.
 Backup restore и повторный rollout требуют отдельного решения оператора.
+
+## Notification preview / system Answer update (ADR-0072)
+
+Deploy the matching web and API changes together through the normal release workflow.
+The original answer repair needs no provider keys or environment variables. The combined
+PR also requires migration 00070 for preview privacy and the R11 native profiles described below. Install the matching new phone host afterwards: it reads `callerName`,
+configures CallKit voice audio and retains readiness events arriving before answer fulfilment.
+The existing host can display the new APNs message previews; existing servers remain a generic
+fallback for new hosts. Full answer-race repair requires the updated web, API and host.
+Retest one system answer with desktop already in a room and >30 s locked two-way audio.
+
+The same repair adds optional call-bridge microphone controls, delivered-notification cleanup on
+logout and lifecycle-triggered APNs registration retry. Deploy web/API before installing the
+new host; web remains compatible with the installed v1 host. Existing message receipts keep
+their old expiry. New deliveries keep the five-minute transport limit and retain authenticated
+tap routes for up to seven additional days (at most 2048 ordinary receipts per endpoint).
+The retention change uses existing columns; no migration or provider configuration change.
+Follow the updated device checklists; cold locked answer remains an unverified acceptance gate.
+
+
+### R11 avatar follow-up
+
+The same PR adds inline sender avatars and per-conversation grouping. No additional server
+environment variable, migration or APNs key is required. Old phone builds show text normally.
+The new phone build adds the `CalabNotificationService` extension (`<bundle>.notifications`)
+and `com.apple.developer.usernotifications.communication` to the app/extension. Regenerate
+matching development profiles before signing; deploy web/API first, then install that build.
+This native signing requirement is additional to the R09/R10-only update described above.
+CallKit caller-photo rendering remains an explicit device check, not a server release claim.
+
+### PR review: privacy settings
+
+Apply migration `00070_push_preview_privacy.sql` with the API release, then deploy the
+matching shared web. Message preview defaults to on. Users can turn it off in Settings →
+Notifications. This hides text in room and direct-message pushes; sender name/avatar and
+room name remain, and calls retain caller name/avatar. There is no workspace override.
+Migration 00070 adds only the personal user column. The setting is enforced before
+sending to APNs/FCM; it works with the existing installed phone. Old clients changing
+audio settings do not reset it. New native installation is needed for avatars and call
+lifecycle repairs, not for this privacy switch. No new server environment/secret.
+
+Do not run Goose Down as a rollout shortcut: it discards privacy choices. A rollback to
+an API without this policy can send text again. Stop message push delivery first if
+rolling back the API, and have the operator explicitly assess the privacy impact.

@@ -98,6 +98,15 @@ func (s *Service) queueUser(ctx context.Context, userID uuid.UUID, job sqlc.Push
 			if err := q.CleanupPushDeviceDeliveries(ctx, device.ID); err != nil {
 				return err
 			}
+			duplicate, err := q.HasPushDelivery(ctx, sqlc.HasPushDeliveryParams{DeviceID: device.ID, EventKey: job.EventKey})
+			if err != nil || duplicate {
+				return err
+			}
+			if job.Kind == messageKind {
+				if err := q.TrimCompletedPushMessages(ctx, device.ID); err != nil {
+					return err
+				}
+			}
 			if job.Kind == callKind {
 				if err := q.DiscardPreviousPushCalls(ctx, sqlc.DiscardPreviousPushCallsParams{DeviceID: device.ID, ReferenceID: job.ReferenceID}); err != nil {
 					return err
@@ -107,7 +116,7 @@ func (s *Service) queueUser(ctx context.Context, userID uuid.UUID, job sqlc.Push
 			if err != nil || n > 0 {
 				return err
 			}
-			duplicate, err := q.HasPushDelivery(ctx, sqlc.HasPushDeliveryParams{DeviceID: device.ID, EventKey: job.EventKey})
+			duplicate, err = q.HasPushDelivery(ctx, sqlc.HasPushDeliveryParams{DeviceID: device.ID, EventKey: job.EventKey})
 			if err != nil {
 				return err
 			}
@@ -172,8 +181,9 @@ func (s *Service) Deliver(ctx context.Context) error {
 }
 func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 	return s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		retainMessage := false
 		complete := func() error {
-			_, err := q.CompletePushDelivery(ctx, sqlc.CompletePushDeliveryParams{ID: job.ID, LeaseID: job.LeaseID})
+			_, err := q.CompletePushDelivery(ctx, sqlc.CompletePushDeliveryParams{ID: job.ID, LeaseID: job.LeaseID, RetainMessage: retainMessage})
 			return err
 		}
 		candidate, err := q.GetPushDevice(ctx, job.DeviceID)
@@ -219,8 +229,15 @@ func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 			return complete()
 		}
 		payload := Payload{Version: 1, Binding: device.ID.String(), EventID: job.ID.String(), Kind: kindNames[job.Kind], ReferenceID: job.ReferenceID.String(), ExpiresAt: job.ExpiresAt.UnixMilli(), Silent: silent}
+		if job.Kind == messageKind {
+			payload.DeliveryExpiresAt = payload.ExpiresAt
+			payload.ExpiresAt = job.ExpiresAt.Add(7 * 24 * time.Hour).UnixMilli()
+		}
 		if job.RoomID != nil {
 			payload.RoomID = job.RoomID.String()
+		}
+		if err := s.presentation(ctx, q, user, job, &payload); err != nil {
+			return err
 		}
 		// Endpoint/version, session and freshly resolved access/settings stay bound in
 		// this transaction immediately before dispatch. No detached raw-event fanout.
@@ -237,6 +254,7 @@ func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 			_, err = q.RetryPushDelivery(ctx, sqlc.RetryPushDeliveryParams{ID: job.ID, LeaseID: job.LeaseID, NotBefore: time.Now().Add(delay)})
 			return err
 		}
+		retainMessage = result.Accepted && !result.Retry && !result.Invalid
 		return complete()
 	})
 }

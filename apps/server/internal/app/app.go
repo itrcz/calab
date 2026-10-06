@@ -227,6 +227,7 @@ func New(d Deps) *App {
 	// through SyncPublisher; everything else publishes through the same decorated publisher.
 	var rtcSvc *rtc.Service
 	pushSvc := push.New(d.DB, d.Push)
+	pushSvc.Avatars = push.NewAvatars(d.Blob)
 	base = push.Publisher{Publisher: base, S: pushSvc}
 	pub := base
 	if d.Config.LiveKitEnabled() {

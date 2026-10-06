@@ -2166,3 +2166,36 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
   All other server packages pass. Original full command remains exit 1 (timeout);
   this recovery does not claim an uninterrupted green run. GitHub CI uses app shards.
 - Two independent security/protocol reviews found no blocker/major.
+
+## Phone notification and answer regressions (ADR-0072)
+
+- `go test ./internal/push` in `apps/server`: bounded APNs sender/content/caller payloads and attachment labels.
+- PG17: `go test -tags integration ./internal/app -run '^(TestPush|TestCallFullCycle|TestPhoneCallAnswerTakesOverDesktopRoom|TestCallOtherDeviceKeepsCall|TestVoiceOtherDeviceTakesOver)'`.
+- `corepack pnpm -F @calaba/desktop exec vitest run src/renderer/services/hostIncomingCalls.test.ts src/renderer/services/call.test.ts src/renderer/lib/callModel.test.ts`.
+- macOS: `swiftc apps/mobile/modules/calab-session-activity/ios/CalabCallReadiness.swift apps/mobile/tests/CallReadinessTests.swift -o /tmp/calab-call-readiness-tests && /tmp/calab-call-readiness-tests`.
+- Baseline repairs: include `voice.test.ts`, `platform/hostActivity.test.ts` and mobile bridge tests; verify idempotent mute, immediate capture gate, ownership/moderator limits, optional mute-capability negotiation and no native-action echo.
+- `go test -race -p 1 -tags integration ./internal/app -run '^TestPush'`: retained late taps, deleted/revoked/expired references, bounded receipt admission and expired pending jobs. Provider units keep APNs/FCM transport deadlines short.
+- macOS: compile/run `CalabPushRetry.swift` with `apps/mobile/tests/PushRetryTests.swift`; verify cooldown and lifecycle-triggered recovery. Device logout vs reload notification cleanup and system microphone/audio are separate manual gates.
+- Device after web/API + host update: sender/text after Face ID; caller name; one system answer;
+  desktop in workspace room yields; bidirectional audio stays alive >30 s with phone locked.
+- Repeat warm/background and terminated launches separately; no generic claim of cold-call success.
+
+
+R11 communication presentation: `go test -race ./internal/push` covers bounded avatars,
+cache/fallback and APNs payload limits; `TestPushMessageFreshPermissionsPreviewAndDedupe`
+adds an uploaded private avatar to authorized delivery. Mobile plugin tests validate the
+new notification extension across prebuild/CocoaPods serialization. Compile/run
+`CalabCommunicationPayload.swift` with `tests/CommunicationPayloadTests.swift` for malformed,
+oversized and old payloads; compile the extension against the iOS SDK. Actual system avatar
+rendering, grouping and lock-screen preview policy require the device checklists.
+
+Message preview: `TestPushPreviewPrivacySettingsAndLegacyClients`,
+`TestPushPreviewPrivacyAtDispatchAndRetry`, `TestPushHiddenAttachmentCaptionAndFilename`,
+`TestPushDMPreviewIsPersonal` cover optional false, old clients, recipient isolation,
+dispatch/retry freshness and hidden caption/file names while retaining room/group identity.
+`TestAPNSHiddenMessageBodyRetainsSenderAndAvatar` inspects actual APNs HTTP JSON.
+`TestPushMutedDeliveredMessageStillResolves` separates delivery preferences from tap access.
+`TestPushIncomingVoIPCurrentRingSessionAndExpiry` retains caller name/avatar with message
+previews disabled. `TestAvatarWarmCacheSurvivesConcurrentColdLoad` exercises cache contention.
+Historical R12 layout captures in `docs/mobile/qa/` predate the personal-only setting; they
+are not current phone evidence. Visual suites remain disabled.

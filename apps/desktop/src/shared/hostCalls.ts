@@ -2,7 +2,7 @@ import { parsePushReference, type HostPushReference } from './hostActivity';
 
 export interface HostCallAction extends HostPushReference {
  actionId: string;
- action: 'ring' | 'answer' | 'end';
+ action: 'ring' | 'answer' | 'end' | 'mute' | 'unmute';
 }
 export interface HostCallsState {
  supported: boolean;
@@ -13,18 +13,19 @@ export interface HostCallsState {
  actions?: HostCallAction[];
  audioActive?: boolean;
 }
-export type HostCallResult = 'ringing' | 'accepted' | 'ended' | 'failed';
+export type HostCallResult = 'ringing' | 'accepted' | 'ended' | 'failed' | 'muted' | 'unmuted';
 export type HostCallsOperation =
  | { operation:'status' }
  | { operation:'bind'; binding:string; version:string; token:string }
  | { operation:'settle'; actionId:string; result:HostCallResult }
- | { operation:'sync'; eventId:string; phase:'connected'|'ended' };
+ | { operation:'sync'; eventId:string; phase:'connected'|'ended'|'muted'|'unmuted' };
 export interface HostCallsCapability {
  state:()=>Promise<HostCallsState>;
  subscribe:(listener:(state:HostCallsState)=>void)=>()=>void;
  bind:(binding:string,version:bigint,token:string)=>Promise<boolean>;
  settle:(actionId:string,result:HostCallResult)=>void;
  sync:(eventId:string,phase:'connected'|'ended')=>void;
+ syncMuted?:(eventId:string,muted:boolean)=>void;
  clear:(reason?:'logout')=>void;
 }
 const uuid = (value:unknown):value is string => typeof value==='string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) && value!=='00000000-0000-0000-0000-000000000000';
@@ -32,8 +33,8 @@ export function parseCallsOperation(value:Record<string,unknown>):HostCallsOpera
  const keys=Object.keys(value).sort().join(',');
  if(keys==='operation' && value.operation==='status')return {operation:'status'};
  if(keys==='binding,operation,token,version' && value.operation==='bind' && uuid(value.binding) && typeof value.version==='string' && /^[1-9][0-9]{0,18}$/.test(value.version) && typeof value.token==='string' && /^[0-9a-f]{32,512}$/i.test(value.token))return value as unknown as HostCallsOperation;
- if(keys==='actionId,operation,result' && value.operation==='settle' && uuid(value.actionId) && ['ringing','accepted','ended','failed'].includes(String(value.result)))return value as unknown as HostCallsOperation;
- if(keys==='eventId,operation,phase' && value.operation==='sync' && uuid(value.eventId) && ['connected','ended'].includes(String(value.phase)))return value as unknown as HostCallsOperation;
+ if(keys==='actionId,operation,result' && value.operation==='settle' && uuid(value.actionId) && ['ringing','accepted','ended','failed','muted','unmuted'].includes(String(value.result)))return value as unknown as HostCallsOperation;
+ if(keys==='eventId,operation,phase' && value.operation==='sync' && uuid(value.eventId) && ['connected','ended','muted','unmuted'].includes(String(value.phase)))return value as unknown as HostCallsOperation;
  return null;
 }
 export function parseCallsState(value:unknown):HostCallsState|null {
@@ -46,7 +47,7 @@ export function parseCallsState(value:unknown):HostCallsState|null {
  if(s.actions!==undefined && (!Array.isArray(s.actions) || s.actions.length>8 || s.actions.some(a=> {
   if(!a || typeof a!=='object' || Array.isArray(a))return true;
   const r=a as Record<string,unknown>;
-  return Object.keys(r).sort().join(',')!=='action,actionId,binding,eventId,expiresAt' || !uuid(r.actionId) || !['ring','answer','end'].includes(String(r.action)) || !parsePushReference({binding:r.binding,eventId:r.eventId,expiresAt:r.expiresAt}) || Number(r.expiresAt)>Date.now()+60_000;
+  return Object.keys(r).sort().join(',')!=='action,actionId,binding,eventId,expiresAt' || !uuid(r.actionId) || !['ring','answer','end','mute','unmute'].includes(String(r.action)) || !parsePushReference({binding:r.binding,eventId:r.eventId,expiresAt:r.expiresAt}) || Number(r.expiresAt)>Date.now()+60_000;
  })))return null;
  return value as HostCallsState;
 }

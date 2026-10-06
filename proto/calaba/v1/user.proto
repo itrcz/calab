@@ -60,6 +60,9 @@ message UserSettings {
   // Working hours (ADR-0041), read-only here like event_reminders: changed with
   // UpdateMeRequest.work_hours. Default 10:00–19:00 Mon–Fri in the user's zone.
   WorkHours work_hours = 9;
+  // Read-only here; changed by UpdateMeRequest.hide_message_text_in_notifications.
+  // Default false. Older audio-settings replacements must not reset privacy.
+  bool hide_message_text_in_notifications = 10;
 }
 
 // Working hours of a user (ADR-0041) in their profile zone (UTC without one): minutes from
@@ -126,6 +129,8 @@ message UpdateMeRequest {
   // Working hours (ADR-0041); unset = unchanged. Not for guests and bots (403); 422 for
   // start_min ≥ end_min, end_min > 1440, no days or a day outside 1..7.
   WorkHours work_hours = 10;
+  // Omitted = unchanged; hides authored message text in provider push payloads.
+  optional bool hide_message_text_in_notifications = 11;
 }
 
 message UpdateMeResponse {
