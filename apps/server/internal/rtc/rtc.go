@@ -56,7 +56,11 @@ type Service struct {
 	// IdentityAccess verifies the exact device principal and target at the DB source.
 	identityWake   chan struct{}
 	IdentityAccess func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error
-	identitySweep  identitySweepState
+	// IdentityAccessRoom is IdentityAccess for several devices of one room at once, one
+	// verdict per device in order (the sweep checks a room in a few statements instead of a
+	// few per device). nil: the sweep calls IdentityAccess per device.
+	IdentityAccessRoom func(ctx context.Context, ws, room uuid.UUID, people []IdentityKey) []error
+	identitySweep      identitySweepState
 	// noSFUMove is set once LiveKit answered MoveParticipant with "not implemented"
 	// (open-source LiveKit): moves then go the app-level way right away (ADR-0019).
 	noSFUMove atomic.Bool

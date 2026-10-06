@@ -9,6 +9,9 @@ RETURNING *;
 -- name: GetUser :one
 SELECT * FROM users WHERE id = $1;
 
+-- name: ListUsersByIDs :many
+SELECT * FROM users WHERE id = ANY(sqlc.arg('ids')::uuid[]);
+
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
 

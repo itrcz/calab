@@ -303,6 +303,62 @@ LEFT JOIN workspace_identity_grants gd ON gd.workspace_id=w.id AND gd.feature='d
 LEFT JOIN workspace_identity_grants go ON go.workspace_id=w.id AND go.feature='oauth_provider'
 WHERE s.id=sqlc.arg('session_id') AND s.user_id=sqlc.arg('user_id');
 
+-- name: GetIdentityGateStates :many
+-- GetIdentityGateState for several exact session/user pairs of one workspace in one snapshot
+-- (the RTC identity sweep checks a room in one call): the same columns; a pair without a live
+-- session row is absent. Keep the two in step; identitypolicy converts these rows to
+-- GetIdentityGateStateRow.
+SELECT sqlc.embed(s), u.is_guest, u.is_bot,
+(u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
+w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+(m.user_id IS NOT NULL)::boolean AS member,
+COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
+(COALESCE(x.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
+COALESCE(x.version,1)::bigint AS access_version,
+COALESCE(p.mode,'off')::text AS policy_mode, COALESCE(p.version,1)::bigint AS policy_version,
+COALESCE(p.entitlement_version,1)::bigint AS entitlement_version,
+COALESCE(p.assurance_max_age_seconds,3600)::integer AS max_age_seconds,
+COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()),false)::boolean AS business_eligible,
+wp.valid_until AS plan_valid_until,
+a.session_id AS assurance_session_id, a.user_id AS assurance_user_id, a.connection_id AS assurance_connection_id, a.identity_id AS assurance_identity_id,
+a.authenticated_at AS assurance_authenticated_at, a.valid_until AS assurance_valid_until, a.revoked_at AS assurance_revoked_at,
+COALESCE(a.policy_version,0)::bigint AS assurance_policy_version,COALESCE(a.access_version,0)::bigint AS assurance_access_version,
+COALESCE(a.connection_version,0)::bigint AS assurance_connection_version,COALESCE(a.identity_version,0)::bigint AS assurance_identity_version,
+COALESCE(a.entitlement_version,0)::bigint AS assurance_entitlement_version,COALESCE(a.session_version,0)::bigint AS assurance_session_version,
+COALESCE(c.id,'00000000-0000-0000-0000-000000000000'::uuid)::uuid AS connection_id,
+COALESCE(c.version,0)::bigint AS connection_version,
+COALESCE(c.status='active' AND c.disabled_at IS NULL,false)::boolean AS connection_enabled,
+COALESCE(c.tested_version=c.version,false)::boolean AS connection_tested,
+COALESCE(e.id,'00000000-0000-0000-0000-000000000000'::uuid)::uuid AS identity_id,
+COALESCE(e.version,0)::bigint AS identity_version,
+COALESCE(e.status='active' AND e.issuer=c.issuer,false)::boolean AS identity_active,
+(o.user_id IS NOT NULL)::boolean AS directory_required,
+COALESCE(o.status='active',false)::boolean AS directory_active,
+(d.disabled_at IS NULL AND d.last_success_at IS NOT NULL)::boolean AS directory_enabled,
+COALESCE(d.last_success_at + make_interval(secs=>d.max_staleness_seconds),'epoch'::timestamptz)::timestamptz AS directory_valid_until,
+EXISTS(SELECT FROM workspace_identity_recovery_codes r WHERE r.workspace_id=w.id AND r.owner_id=w.owner_id AND r.consumed_at IS NULL AND r.expires_at>clock_timestamp())::boolean AS recovery_ready,
+EXISTS(SELECT FROM product_admin_grants g WHERE g.user_id=u.id AND g.revoked_at IS NULL)::boolean AS product_admin_granted,
+gs.enabled AS sso_enabled, gs.source AS sso_source, gs.valid_until AS sso_valid_until, gs.revoked_at AS sso_revoked_at,COALESCE(gs.version,0)::bigint AS sso_version,
+gd.enabled AS directory_granted, gd.source AS directory_source, gd.valid_until AS directory_grant_valid_until,gd.revoked_at AS directory_revoked_at,COALESCE(gd.version,0)::bigint AS directory_grant_version,
+go.enabled AS oauth_enabled, go.source AS oauth_source,go.valid_until AS oauth_valid_until,go.revoked_at AS oauth_revoked_at,COALESCE(go.version,0)::bigint AS oauth_version
+FROM unnest(sqlc.arg('session_ids')::uuid[]) WITH ORDINALITY AS k(session_id, ord)
+JOIN unnest(sqlc.arg('user_ids')::uuid[]) WITH ORDINALITY AS ku(user_id, ord) ON ku.ord=k.ord
+JOIN sessions s ON s.id=k.session_id AND s.user_id=ku.user_id
+JOIN users u ON u.id=s.user_id JOIN workspaces w ON w.id=sqlc.arg('workspace_id')
+LEFT JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=u.id
+LEFT JOIN workspace_identity_access x ON x.workspace_id=w.id AND x.user_id=u.id
+LEFT JOIN workspace_identity_policies p ON p.workspace_id=w.id
+LEFT JOIN workspace_plans wp ON wp.workspace_id=w.id
+LEFT JOIN session_workspace_assurances a ON a.session_id=s.id AND a.workspace_id=w.id
+LEFT JOIN workspace_external_identities e ON e.workspace_id=w.id AND e.id=a.identity_id
+LEFT JOIN workspace_identity_connections c ON c.workspace_id=w.id AND c.id=e.connection_id
+LEFT JOIN workspace_directories d ON d.workspace_id=w.id
+LEFT JOIN directory_objects o ON o.workspace_id=w.id AND o.directory_id=d.id AND o.user_id=u.id
+LEFT JOIN workspace_identity_grants gs ON gs.workspace_id=w.id AND gs.feature='corporate_sso'
+LEFT JOIN workspace_identity_grants gd ON gd.workspace_id=w.id AND gd.feature='directory_sync'
+LEFT JOIN workspace_identity_grants go ON go.workspace_id=w.id AND go.feature='oauth_provider'
+ORDER BY k.ord;
+
 -- name: EnsureIdentityPolicy :one
 INSERT INTO workspace_identity_policies(workspace_id) VALUES($1)
 ON CONFLICT(workspace_id) DO UPDATE SET workspace_id=EXCLUDED.workspace_id RETURNING *;

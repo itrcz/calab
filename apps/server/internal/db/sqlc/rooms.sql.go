@@ -496,6 +496,107 @@ func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (G
 	return i, err
 }
 
+const getRoomAccesses = `-- name: GetRoomAccesses :many
+SELECT r.workspace_id,
+       r.type,
+       r.restricted,
+       m.role,
+       coalesce(mr.ids, '{}')::uuid[] AS role_ids,
+       coalesce(mr.positions, '{}')::integer[] AS role_positions,
+       coalesce(mr.perms, '{}')::bigint[] AS role_permissions,
+       coalesce(mr.allows, '{}')::bigint[] AS role_allows,
+       coalesce(mr.denies, '{}')::bigint[] AS role_denies,
+       uo.allow AS user_allow, uo.deny AS user_deny,
+       (CASE WHEN r.type IN ('dm', 'notes') THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
+             ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
+       (w.suspended_at IS NOT NULL)::boolean AS suspended,
+       (r.archived_at IS NOT NULL)::boolean AS archived,
+       (r.expires_at IS NOT NULL)::boolean AS temp,
+       r.created_by
+FROM rooms r
+CROSS JOIN unnest($1::uuid[]) WITH ORDINALITY AS k(user_id, ord)
+LEFT JOIN workspaces w ON w.id = r.workspace_id
+LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = k.user_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
+           array_agg(wr.position ORDER BY wr.position) AS positions,
+           array_agg(wr.permissions ORDER BY wr.position) AS perms,
+           array_agg(coalesce(ro.allow, 0) ORDER BY wr.position) AS allows,
+           array_agg(coalesce(ro.deny, 0) ORDER BY wr.position) AS denies
+    FROM member_roles x
+    JOIN workspace_roles wr ON wr.id = x.role_id
+    LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = wr.id::text
+    WHERE x.workspace_id = m.workspace_id AND x.user_id = m.user_id
+) mr ON true
+LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = k.user_id::text
+WHERE r.id = $2 AND (r.archived_at IS NULL OR r.expires_at IS NOT NULL)
+ORDER BY k.ord
+`
+
+type GetRoomAccessesParams struct {
+	UserIds []uuid.UUID
+	RoomID  uuid.UUID
+}
+
+type GetRoomAccessesRow struct {
+	WorkspaceID     *uuid.UUID
+	Type            string
+	Restricted      bool
+	Role            *string
+	RoleIds         []uuid.UUID
+	RolePositions   []int32
+	RolePermissions []int64
+	RoleAllows      []int64
+	RoleDenies      []int64
+	UserAllow       *int64
+	UserDeny        *int64
+	DmMembers       []uuid.UUID
+	Suspended       bool
+	Archived        bool
+	Temp            bool
+	CreatedBy       *uuid.UUID
+}
+
+// GetRoomAccess for several users at once (the RTC identity sweep checks a room in one call):
+// the same columns, one row per given user in their order, or no rows when GetRoomAccess finds
+// no room. Keep the two in step; perm converts these rows to GetRoomAccessRow.
+func (q *Queries) GetRoomAccesses(ctx context.Context, arg GetRoomAccessesParams) ([]GetRoomAccessesRow, error) {
+	rows, err := q.db.Query(ctx, getRoomAccesses, arg.UserIds, arg.RoomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetRoomAccessesRow{}
+	for rows.Next() {
+		var i GetRoomAccessesRow
+		if err := rows.Scan(
+			&i.WorkspaceID,
+			&i.Type,
+			&i.Restricted,
+			&i.Role,
+			&i.RoleIds,
+			&i.RolePositions,
+			&i.RolePermissions,
+			&i.RoleAllows,
+			&i.RoleDenies,
+			&i.UserAllow,
+			&i.UserDeny,
+			&i.DmMembers,
+			&i.Suspended,
+			&i.Archived,
+			&i.Temp,
+			&i.CreatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRoomForUpdate = `-- name: GetRoomForUpdate :one
 SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by FROM rooms WHERE id = $1 AND archived_at IS NULL FOR UPDATE
 `

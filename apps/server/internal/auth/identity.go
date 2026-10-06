@@ -42,6 +42,22 @@ func (s *Service) ResolvePrincipal(ctx context.Context, id Identity) (identitypo
 		return identitypolicy.Principal{UserID: id.UserID, SessionID: id.SessionID, Bot: true}, nil
 	}
 	row, err := s.db.Q.GetSession(ctx, id.SessionID)
+	return s.principalOf(id, row, err, func(user uuid.UUID) (sqlc.User, error) { return s.db.Q.GetUser(ctx, user) })
+}
+
+// ResolvePrincipalFrom is ResolvePrincipal over rows already read (the RTC sweep reads the
+// sessions and users of a whole room at once): session/sessionErr and user/userErr are what
+// GetSession(id.SessionID) and GetUser(id.UserID) returned.
+func (s *Service) ResolvePrincipalFrom(id Identity, session sqlc.Session, sessionErr error, user sqlc.User, userErr error) (identitypolicy.Principal, error) {
+	if id.IsBot {
+		return identitypolicy.Principal{UserID: id.UserID, SessionID: id.SessionID, Bot: true}, nil
+	}
+	return s.principalOf(id, session, sessionErr, func(uuid.UUID) (sqlc.User, error) { return user, userErr })
+}
+
+// principalOf: the single decision of ResolvePrincipal and ResolvePrincipalFrom. getUser is
+// called only for the session's own user, which must be id.UserID.
+func (s *Service) principalOf(id Identity, row sqlc.Session, err error, getUser func(uuid.UUID) (sqlc.User, error)) (identitypolicy.Principal, error) {
 	if db.IsNotFound(err) {
 		return identitypolicy.Principal{}, ErrSessionRevoked
 	}
@@ -52,7 +68,7 @@ func (s *Service) ResolvePrincipal(ctx context.Context, id Identity) (identitypo
 	if p.UserID != id.UserID || !identitypolicy.CheckSession(s.now(), p).Allowed {
 		return p, ErrSessionRevoked
 	}
-	u, err := s.db.Q.GetUser(ctx, p.UserID)
+	u, err := getUser(p.UserID)
 	if err != nil {
 		return p, err
 	}
@@ -364,6 +380,26 @@ func (s *Service) CheckWorkspaceDecisionInTx(ctx context.Context, q *sqlc.Querie
 
 func (s *Service) checkWorkspaceDecision(ctx context.Context, q *sqlc.Queries, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
 	state, err := identitypolicy.NewSQLLoader(q, s.entitlements).LoadIdentityState(ctx, id.SessionID, id.UserID, ws)
+	return s.decideWorkspace(ctx, q, id, ws, op, state, err, func() (time.Time, error) { return q.IdentityDatabaseNow(ctx) })
+}
+
+// IdentityStates loads the workspace identity state of several sessions in one statement (the
+// RTC sweep checks a room at once); see identitypolicy.SQLLoader.LoadIdentityStates.
+func (s *Service) IdentityStates(ctx context.Context, ws uuid.UUID, keys []identitypolicy.SessionKey) (map[identitypolicy.SessionKey]identitypolicy.State, error) {
+	return identitypolicy.NewSQLLoader(s.db.Q, s.entitlements).LoadIdentityStates(ctx, ws, keys)
+}
+
+// CheckWorkspaceState is CheckWorkspace of a non-bot identity (id.Principal resolved) over a
+// state already loaded: state/stateErr as LoadIdentityState returns them (pgx.ErrNoRows for a
+// pair IdentityStates left out), dbNow/dbNowErr as IdentityDatabaseNow does.
+func (s *Service) CheckWorkspaceState(ctx context.Context, id Identity, ws uuid.UUID, op identitypolicy.Operation, state identitypolicy.State, stateErr error, dbNow time.Time, dbNowErr error) error {
+	d, err := s.decideWorkspace(ctx, s.db.Q, id, ws, op, state, stateErr, func() (time.Time, error) { return dbNow, dbNowErr })
+	return IdentityError(id.Principal, d, err)
+}
+
+// decideWorkspace: the single decision of checkWorkspaceDecision and CheckWorkspaceState over
+// a loaded state. q answers only the rare missing-state follow-up.
+func (s *Service) decideWorkspace(ctx context.Context, q *sqlc.Queries, id Identity, ws uuid.UUID, op identitypolicy.Operation, state identitypolicy.State, err error, databaseNow func() (time.Time, error)) (identitypolicy.Decision, error) {
 	if err != nil {
 		if db.IsNotFound(err) {
 			if session, e := q.GetSession(ctx, id.SessionID); db.IsNotFound(e) || e == nil && session.UserID != id.UserID {
@@ -382,7 +418,7 @@ func (s *Service) checkWorkspaceDecision(ctx context.Context, q *sqlc.Queries, i
 	if state.Principal.SessionID != id.SessionID || state.Principal.UserID != id.UserID || state.WorkspaceID != ws {
 		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, identitypolicy.ErrDenied
 	}
-	now, err := q.IdentityDatabaseNow(ctx)
+	now, err := databaseNow()
 	if err != nil {
 		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, err
 	}

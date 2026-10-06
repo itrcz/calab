@@ -31,7 +31,7 @@ func (s *Service) checkIdentity(ctx context.Context, ws, room, user, session uui
 // checks inside the pool, where the wait eats their budget: with a remote database
 // (a few ms per round trip) the tail of a sweep timed out and was evicted after the
 // grace period (2026-10-06: 64 workers on a pool of 5). identityWorkers caps the
-// workers below the pool size, leaving a connection for requests.
+// workers below the pool size, leaving a connection for requests (none with a pool of 1).
 const (
 	identityRoomWorkers        = 8
 	identityParticipantWorkers = 8
@@ -43,6 +43,49 @@ func (s *Service) identityWorkers() int {
 		n = min(n, max(1, s.db.MaxConns()-1))
 	}
 	return n
+}
+
+// IdentityKey is one device in a room: the user and the session it joined with.
+type IdentityKey struct{ User, Session uuid.UUID }
+
+// With IdentityAccessRoom a worker checks up to identityRoomBatch devices of one room in one
+// call under identityRoomBudget (a few statements for the whole batch); without it one device
+// under identityPersonBudget.
+const (
+	identityRoomBatch    = 64
+	identityPersonBudget = 500 * time.Millisecond
+	identityRoomBudget   = time.Second
+)
+
+func (s *Service) identityBatch() int {
+	if s.IdentityAccessRoom != nil {
+		return identityRoomBatch
+	}
+	return 1
+}
+
+// checkIdentities returns one verdict per key, in order.
+func (s *Service) checkIdentities(ctx context.Context, ws, room uuid.UUID, keys []IdentityKey) []error {
+	if s.IdentityAccessRoom != nil {
+		gate, cancel := context.WithTimeout(ctx, identityRoomBudget)
+		defer cancel()
+		if out := s.IdentityAccessRoom(gate, ws, room, keys); len(out) == len(keys) {
+			return out
+		}
+		// A broken gate is undecided, not a denial: it must not empty the room.
+		out := make([]error, len(keys))
+		for i := range out {
+			out[i] = httpx.Unavailable(errors.New("rtc: identity gate returned a wrong number of verdicts"))
+		}
+		return out
+	}
+	out := make([]error, len(keys))
+	for i, k := range keys {
+		gate, cancel := context.WithTimeout(ctx, identityPersonBudget)
+		out[i] = s.checkIdentity(gate, ws, room, k.User, k.Session)
+		cancel()
+	}
+	return out
 }
 
 // A context-aware semaphore serializes sweeps without holding a mutex over I/O.
@@ -166,7 +209,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 	type participantJob struct {
 		room    string
 		ws, rid uuid.UUID
-		person  Participant
+		people  []Participant // one room's devices, at most identityBatch
 	}
 	var mu sync.Mutex
 	var firstErr error
@@ -216,46 +259,54 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return
 				}
-				uid, sid, ok := voice.ParseIdentity(job.person.Identity)
-				if !ok {
+				people := make([]Participant, 0, len(job.people))
+				keys := make([]IdentityKey, 0, len(job.people))
+				for _, person := range job.people {
+					if uid, sid, ok := voice.ParseIdentity(person.Identity); ok {
+						people = append(people, person)
+						keys = append(keys, IdentityKey{User: uid, Session: sid})
+					}
+				}
+				if len(keys) == 0 {
 					continue
 				}
-				gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-				err := s.checkIdentity(gate, job.ws, job.rid, uid, sid)
-				cancel()
-				runKey := job.room + "\x00" + job.person.Identity
-				if err == nil {
-					state.clearFailure(runKey)
-					continue
-				}
-				if ctx.Err() != nil {
-					return
-				}
-				if transientIdentityError(err) {
-					if !state.transientFailureExpired(runKey) {
-						slog.DebugContext(ctx, "RTC identity check undecided, keeping participant", "room", job.room, "err", err)
+				verdicts := s.checkIdentities(ctx, job.ws, job.rid, keys)
+				for i, person := range people {
+					uid, sid, err := keys[i].User, keys[i].Session, verdicts[i]
+					runKey := job.room + "\x00" + person.Identity
+					if err == nil {
+						state.clearFailure(runKey)
 						continue
 					}
-					slog.WarnContext(ctx, "RTC identity check undecided past grace, evicting", "room", job.room, "grace", identityTransientGrace, "err", err)
-				}
-				remove, done := context.WithTimeout(ctx, 2*time.Second)
-				err = s.lk.RemoveParticipant(remove, job.room, job.person.Identity)
-				done()
-				if err != nil && !IsNotFound(err) {
-					record(err)
-					continue
-				}
-				state.clearFailure(runKey)
-				// Redis is bookkeeping after authoritative SFU eviction, never its prerequisite.
-				if s.voice.C != nil {
-					clean, done := context.WithTimeout(ctx, 100*time.Millisecond)
-					_ = s.update(clean, job.ws, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
-						if cur != nil && cur.RoomID == job.rid {
-							return nil
+					if ctx.Err() != nil {
+						return
+					}
+					if transientIdentityError(err) {
+						if !state.transientFailureExpired(runKey) {
+							slog.DebugContext(ctx, "RTC identity check undecided, keeping participant", "room", job.room, "err", err)
+							continue
 						}
-						return cur
-					})
+						slog.WarnContext(ctx, "RTC identity check undecided past grace, evicting", "room", job.room, "grace", identityTransientGrace, "err", err)
+					}
+					remove, done := context.WithTimeout(ctx, 2*time.Second)
+					err = s.lk.RemoveParticipant(remove, job.room, person.Identity)
 					done()
+					if err != nil && !IsNotFound(err) {
+						record(err)
+						continue
+					}
+					state.clearFailure(runKey)
+					// Redis is bookkeeping after authoritative SFU eviction, never its prerequisite.
+					if s.voice.C != nil {
+						clean, done := context.WithTimeout(ctx, 100*time.Millisecond)
+						_ = s.update(clean, job.ws, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+							if cur != nil && cur.RoomID == job.rid {
+								return nil
+							}
+							return cur
+						})
+						done()
+					}
 				}
 			}
 		}()
@@ -265,6 +316,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 	// one per enumerator, instead of accumulating every room's participants.
 	groups := make([]roomParticipants, 0, identityRoomWorkers)
 	scheduled, pending := 0, 0
+	batch := s.identityBatch()
 	for scheduled < len(names) || pending > 0 || len(groups) > 0 {
 		if ctx.Err() != nil {
 			break
@@ -284,7 +336,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 		if len(groups) > 0 {
 			group := groups[0]
 			sendPerson = jobs
-			nextPerson = participantJob{group.room, group.ws, group.rid, group.people[0]}
+			nextPerson = participantJob{group.room, group.ws, group.rid, group.people[:min(batch, len(group.people))]}
 		}
 		select {
 		case sendRoom <- nextRoom:
@@ -298,7 +350,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 			}
 		case sendPerson <- nextPerson:
 			group := groups[0]
-			group.people = group.people[1:]
+			group.people = group.people[len(nextPerson.people):]
 			copy(groups, groups[1:])
 			groups[len(groups)-1] = roomParticipants{}
 			groups = groups[:len(groups)-1]

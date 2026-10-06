@@ -388,6 +388,61 @@ func (q *Queries) ListManualPresence(ctx context.Context) ([]ListManualPresenceR
 	return items, nil
 }
 
+const listUsersByIDs = `-- name: ListUsersByIDs :many
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days FROM users WHERE id = ANY($1::uuid[])
+`
+
+func (q *Queries) ListUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsersByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordHash,
+			&i.DisplayName,
+			&i.AvatarFileID,
+			&i.StatusText,
+			&i.Settings,
+			&i.CreatedAt,
+			&i.DisabledAt,
+			&i.StatusEmoji,
+			&i.StatusExpiresAt,
+			&i.IsGuest,
+			&i.GuestExpiresAt,
+			&i.Timezone,
+			&i.EmailVerifiedAt,
+			&i.PendingEmail,
+			&i.Locale,
+			&i.PresenceStatus,
+			&i.PresenceUntil,
+			&i.IsBot,
+			&i.BirthdayDay,
+			&i.BirthdayMonth,
+			&i.BirthdayYear,
+			&i.BirthdayHidden,
+			&i.EventReminders,
+			&i.EventRemindersDnd,
+			&i.StorageQuotaBytes,
+			&i.WorkStartMin,
+			&i.WorkEndMin,
+			&i.WorkDays,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockPasswordHash = `-- name: LockPasswordHash :one
 SELECT password_hash FROM users WHERE id = $1 FOR SHARE
 `

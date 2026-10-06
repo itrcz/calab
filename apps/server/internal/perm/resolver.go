@@ -28,6 +28,7 @@ var ErrArchived = fmt.Errorf("perm: room archived: %w", ErrNoRoom)
 type Store interface {
 	GetMemberAccess(ctx context.Context, arg sqlc.GetMemberAccessParams) (sqlc.GetMemberAccessRow, error)
 	GetRoomAccess(ctx context.Context, arg sqlc.GetRoomAccessParams) (sqlc.GetRoomAccessRow, error)
+	GetRoomAccesses(ctx context.Context, arg sqlc.GetRoomAccessesParams) ([]sqlc.GetRoomAccessesRow, error)
 	GetBoardAccess(ctx context.Context, arg sqlc.GetBoardAccessParams) (sqlc.GetBoardAccessRow, error)
 	GetTaskRoomRef(ctx context.Context, arg sqlc.GetTaskRoomRefParams) (sqlc.GetTaskRoomRefRow, error)
 }
@@ -163,49 +164,15 @@ func (r *Resolver) ReadRoom(ctx context.Context, roomID, userID uuid.UUID) (Room
 		row, err := r.store.GetRoomAccess(ctx, sqlc.GetRoomAccessParams{RoomID: roomID, UserID: userID})
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			acc = RoomAccess{}
+			acc, err = r.cacheRoom(ctx, roomID, userID, nil)
 		case err != nil:
 			return RoomAccess{}, fmt.Errorf("perm: load room access: %w", err)
-		case row.Type == "task":
-			if acc, err = r.taskRoom(ctx, roomID, userID); err != nil {
-				return RoomAccess{}, err
-			}
-		case row.Type == "dm" || row.Type == "notes":
-			if slices.Contains(row.DmMembers, userID) {
-				acc = RoomAccess{Bits: ComputeDM(true), DM: true, Notes: row.Type == "notes", Members: row.DmMembers}
-			}
-		case row.WorkspaceID != nil && row.Role != nil:
-			// The query returns the roles lowest position first, each with its override
-			// in this room (0/0 = none, which changes nothing).
-			m := Member{UserID: userID.String(), Role: Role(*row.Role), Roles: RoleList(row.RoleIds, row.RolePositions, row.RolePermissions)}
-			n := min(len(row.RoleAllows), len(row.RoleDenies))
-			ovs := make([]Override, n)
-			for i := range n {
-				ovs[i] = Override{Allow: Bits(uint64(row.RoleAllows[i])), Deny: Bits(uint64(row.RoleDenies[i]))} //nolint:gosec // bit mask round-trip
-			}
-			acc = RoomAccess{
-				WorkspaceID: *row.WorkspaceID,
-				Role:        m.Role,
-				Member:      m,
-				Bits:        ComputeOrdered(m.Raw(), ScopeOf(m, row.Restricted), ovs, override(row.UserAllow, row.UserDeny)),
-				Suspended:   row.Suspended,
-				Restricted:  row.Restricted,
-				Temp:        row.Temp,
-				Archived:    row.Archived,
-			}
-			if row.CreatedBy != nil {
-				acc.CreatedBy = *row.CreatedBy
-			}
+		default:
+			acc, err = r.cacheRoom(ctx, roomID, userID, &row)
 		}
-		if row.Archived && !row.Temp { // the query finds archived temporary rooms only
-			acc = RoomAccess{}
+		if err != nil {
+			return RoomAccess{}, err
 		}
-		r.mu.Lock()
-		r.rooms[k] = acc
-		if acc.WorkspaceID != uuid.Nil {
-			r.members[key{acc.WorkspaceID, userID}] = acc.Member
-		}
-		r.mu.Unlock()
 	}
 	if !acc.ok() {
 		return RoomAccess{}, ErrNoRoom
@@ -213,6 +180,91 @@ func (r *Resolver) ReadRoom(ctx context.Context, roomID, userID uuid.UUID) (Room
 	if err := CheckAccess(ctx, acc.WorkspaceID, userID); err != nil {
 		return RoomAccess{}, err
 	}
+	return acc, nil
+}
+
+// PrimeRoom loads the access of several users to one room in one statement into the cache;
+// ReadRoom then answers them without a query, exactly as if it had loaded each itself.
+// A failed load caches nothing: ReadRoom loads on its own. One user is left to ReadRoom: its
+// statement's plan is cached, the list one is planned on every call.
+func (r *Resolver) PrimeRoom(ctx context.Context, roomID uuid.UUID, userIDs []uuid.UUID) error {
+	if len(userIDs) < 2 {
+		return nil
+	}
+	rows, err := r.store.GetRoomAccesses(ctx, sqlc.GetRoomAccessesParams{RoomID: roomID, UserIds: userIDs})
+	if err != nil {
+		return fmt.Errorf("perm: load room access: %w", err)
+	}
+	// One row per user in their order, or none when GetRoomAccess finds no room.
+	if len(rows) != 0 && len(rows) != len(userIDs) {
+		return fmt.Errorf("perm: load room access: %d rows for %d users", len(rows), len(userIDs))
+	}
+	for i, userID := range userIDs {
+		r.mu.Lock()
+		_, cached := r.rooms[key{roomID, userID}]
+		r.mu.Unlock()
+		if cached {
+			continue
+		}
+		var row *sqlc.GetRoomAccessRow
+		if len(rows) > 0 {
+			one := sqlc.GetRoomAccessRow(rows[i]) // same columns: a column change in one query breaks this
+			row = &one
+		}
+		if _, err := r.cacheRoom(ctx, roomID, userID, row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cacheRoom maps a user's GetRoomAccess row (nil: the room was not found) to RoomAccess and
+// caches it.
+func (r *Resolver) cacheRoom(ctx context.Context, roomID, userID uuid.UUID, row *sqlc.GetRoomAccessRow) (RoomAccess, error) {
+	var acc RoomAccess
+	switch {
+	case row == nil:
+	case row.Type == "task":
+		var err error
+		if acc, err = r.taskRoom(ctx, roomID, userID); err != nil {
+			return RoomAccess{}, err
+		}
+	case row.Type == "dm" || row.Type == "notes":
+		if slices.Contains(row.DmMembers, userID) {
+			acc = RoomAccess{Bits: ComputeDM(true), DM: true, Notes: row.Type == "notes", Members: row.DmMembers}
+		}
+	case row.WorkspaceID != nil && row.Role != nil:
+		// The query returns the roles lowest position first, each with its override
+		// in this room (0/0 = none, which changes nothing).
+		m := Member{UserID: userID.String(), Role: Role(*row.Role), Roles: RoleList(row.RoleIds, row.RolePositions, row.RolePermissions)}
+		n := min(len(row.RoleAllows), len(row.RoleDenies))
+		ovs := make([]Override, n)
+		for i := range n {
+			ovs[i] = Override{Allow: Bits(uint64(row.RoleAllows[i])), Deny: Bits(uint64(row.RoleDenies[i]))} //nolint:gosec // bit mask round-trip
+		}
+		acc = RoomAccess{
+			WorkspaceID: *row.WorkspaceID,
+			Role:        m.Role,
+			Member:      m,
+			Bits:        ComputeOrdered(m.Raw(), ScopeOf(m, row.Restricted), ovs, override(row.UserAllow, row.UserDeny)),
+			Suspended:   row.Suspended,
+			Restricted:  row.Restricted,
+			Temp:        row.Temp,
+			Archived:    row.Archived,
+		}
+		if row.CreatedBy != nil {
+			acc.CreatedBy = *row.CreatedBy
+		}
+	}
+	if row != nil && row.Archived && !row.Temp { // the query finds archived temporary rooms only
+		acc = RoomAccess{}
+	}
+	r.mu.Lock()
+	r.rooms[key{roomID, userID}] = acc
+	if acc.WorkspaceID != uuid.Nil {
+		r.members[key{acc.WorkspaceID, userID}] = acc.Member
+	}
+	r.mu.Unlock()
 	return acc, nil
 }
 

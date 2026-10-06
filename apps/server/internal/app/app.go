@@ -278,63 +278,11 @@ func New(d Deps) *App {
 	}
 	if rtcSvc != nil {
 		rtcSvc.Revoked = authSvc.IsRevoked
+		gate := rtcIdentityGate{db: d.DB, auth: authSvc}
 		rtcSvc.IdentityAccess = func(ctx context.Context, ws, room, user, session uuid.UUID) error {
-			u, err := d.DB.Q.GetUser(ctx, user)
-			if err != nil {
-				return httpx.Unavailable(err)
-			}
-			id := auth.Identity{UserID: user, SessionID: session, IsBot: u.IsBot}
-			if u.IsBot {
-				bot, err := d.DB.Q.GetBotAuth(ctx, user)
-				if err != nil || bot.TokenID == nil || *bot.TokenID != session || len(bot.TokenHash) == 0 {
-					return httpx.Forbidden("bot session revoked")
-				}
-			}
-			if !u.IsBot {
-				p, err := authSvc.ResolvePrincipal(ctx, id)
-				if err != nil {
-					return httpx.Unavailable(err)
-				}
-				id.Principal = p
-			}
-			row, err := d.DB.Q.GetRoom(ctx, room)
-			if err != nil {
-				return httpx.Unavailable(err)
-			}
-			if u.DisabledAt != nil {
-				return httpx.Forbidden("account disabled")
-			}
-			if voice.IsDM(ws, room) {
-				if row.WorkspaceID != nil || row.Type != "dm" {
-					return httpx.Forbidden("voice scope mismatch")
-				}
-				if err := authSvc.CheckGlobal(ctx, id, identitypolicy.GlobalRead); err != nil {
-					return err
-				}
-			} else {
-				if row.WorkspaceID == nil || *row.WorkspaceID != ws {
-					return httpx.Forbidden("voice scope mismatch")
-				}
-				if err := auth.RecordMutationWorkspace(ctx, ws); err != nil {
-					return err
-				}
-				if err := authSvc.CheckWorkspace(ctx, id, ws, identitypolicy.RTC); err != nil {
-					return err
-				}
-			}
-			access, err := perm.NewResolver(d.DB.Q).ReadRoom(ctx, room, user)
-			if err != nil {
-				return err
-			}
-			required := perm.ViewRoom
-			if !voice.IsDM(ws, room) {
-				required |= perm.Connect
-			}
-			if !access.Bits.Has(required) {
-				return httpx.Forbidden("missing voice access")
-			}
-			return nil
+			return gate.check(ctx, ws, room, []rtc.IdentityKey{{User: user, Session: session}})[0]
 		}
+		rtcSvc.IdentityAccessRoom = gate.check
 	}
 	var egress rtc.Egress
 	if rtcSvc != nil {
