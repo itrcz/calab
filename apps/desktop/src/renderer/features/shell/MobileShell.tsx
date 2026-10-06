@@ -40,7 +40,6 @@ import { ScreenTransition } from './ScreenTransition';
 import { SettingsScreen } from './SettingsScreen';
 import { PhoneRoomList } from './PhoneRoomList';
 import { UpdateBar } from './UpdateBar';
-import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 /** A horizontal swipe longer than this (and mostly horizontal) is a swipe. */
 const SWIPE_PX = 56;
@@ -165,10 +164,9 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
     <section className="mat-sidebar flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
-      <header className="mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
-        <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+      <RootTitle title={t('shell.modeBoards')}>
         {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
-      </header>
+      </RootTitle>
       <BoardsList workspaceId={ws} />
     </section>
   );

@@ -55,11 +55,11 @@ export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; 
           data-testid={testId}
           className={cx(
             'group flex min-w-0 items-center gap-1 rounded-[var(--radius-row)] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active',
-            phone ? 'h-10 flex-1 gap-2 px-2 text-left text-headline' : 'no-drag h-7 max-w-[240px] px-2 text-body',
+            phone ? 'h-10 gap-2 px-2 text-left text-headline' : 'no-drag h-7 max-w-[240px] px-2 text-body',
           )}
         >
           {phone ? <WorkspaceIcon name={title} iconFileId={iconFileId} /> : null}
-          <span className={cx('min-w-0 truncate', phone && 'flex-1')}>{title}</span>
+          <span className="min-w-0 truncate">{title}</span>
           {others > 0 ? (
             <CountBadge count={others} data-testid="switcher-badge" aria-hidden />
           ) : others === UNREAD_DOT ? (
