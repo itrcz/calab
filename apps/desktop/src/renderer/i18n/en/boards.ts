@@ -71,7 +71,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.private': 'Private board',
   'boards.myOpen': 'My open tasks',
   'boards.scopedChip': 'My cards only',
-  'boards.scopedHint': 'You only see tasks where you are an assignee or an approver',
+  'boards.scopedHint': 'You only see tasks where you are an assignee, an approver or a watcher',
   'boards.cardOnly': 'will see only this task',
   'boards.cardOnlyHint': 'Cannot see this board: will get access to this task only',
   'boards.settings': 'Settings',

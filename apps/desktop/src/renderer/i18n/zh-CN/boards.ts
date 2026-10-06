@@ -71,7 +71,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.private': '私密看板',
   'boards.myOpen': '我的未完成任务',
   'boards.scopedChip': '仅我的卡片',
-  'boards.scopedHint': '你只能看到自己担任负责人或审批人的任务',
+  'boards.scopedHint': '你只能看到自己担任负责人、审批人或关注者的任务',
   'boards.cardOnly': '只能看到此任务',
   'boards.cardOnlyHint': '无权查看此看板：仅可访问此任务',
   'boards.settings': '设置',

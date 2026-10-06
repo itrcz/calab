@@ -71,7 +71,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.private': 'Tablero privado',
   'boards.myOpen': 'Mis tareas abiertas',
   'boards.scopedChip': 'Solo mis tarjetas',
-  'boards.scopedHint': 'Solo ves las tareas en las que eres responsable o aprobador',
+  'boards.scopedHint': 'Solo ves las tareas en las que eres responsable, aprobador u observador',
   'boards.cardOnly': 'solo verá esta tarea',
   'boards.cardOnlyHint': 'No ve este tablero: tendrá acceso solo a esta tarea',
   'boards.settings': 'Ajustes',

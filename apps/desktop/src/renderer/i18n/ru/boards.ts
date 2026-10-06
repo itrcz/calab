@@ -72,7 +72,7 @@ export const ruBoards = {
   'boards.private': 'Приватная доска',
   'boards.myOpen': 'Мои открытые задачи',
   'boards.scopedChip': 'Только мои карточки',
-  'boards.scopedHint': 'Вы видите только задачи, где вы исполнитель или согласующий',
+  'boards.scopedHint': 'Вы видите только задачи, где вы исполнитель, согласующий или наблюдатель',
   'boards.cardOnly': 'увидит только эту задачу',
   'boards.cardOnlyHint': 'Не видит эту доску: получит доступ только к этой задаче',
   'boards.settings': 'Настройки',
