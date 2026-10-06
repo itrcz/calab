@@ -1,6 +1,6 @@
 import { BoardFeature, TaskPriority } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { BadgeCheck, CalendarClock, Check, Diamond, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
+import { BadgeCheck, CalendarClock, CalendarPlus, Check, Diamond, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Modal, Toggle, cx } from '../../components/ui';
@@ -90,6 +90,7 @@ function Dialog({
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.NONE);
   const [assignees, setAssignees] = useState<AssigneeDraft[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
+  const [start, setStart] = useState('');
   const [due, setDue] = useState('');
   const [estimate, setEstimate] = useState(0);
   const [milestone, setMilestone] = useState('');
@@ -137,6 +138,7 @@ function Dialog({
       priority: on(BoardFeature.PRIORITY) ? priority : TaskPriority.NONE,
       assignees: draftsOf(assignees),
       labelIds: on(BoardFeature.LABELS) ? labels : [],
+      startOn: on(BoardFeature.START_DATE) ? start : '',
       dueOn: on(BoardFeature.DUE_DATE) ? due : '',
       estimate: on(BoardFeature.ESTIMATE) ? estimate : 0,
       milestoneId: on(BoardFeature.MILESTONES) ? milestone : '',
@@ -168,11 +170,12 @@ function Dialog({
       initialFocus={titleRef}
       footer={
         <>
-          <label className="mr-auto flex items-center gap-2 text-control text-muted">
+          <label className="mr-auto flex min-w-0 items-center gap-2 text-control text-muted">
             <Toggle label={t('boards.createMore')} checked={more} onChange={setMore} />
             {t('boards.createMore')}
           </label>
-          <Button variant="secondary" onClick={close}>
+          {/* Phone: the footer is one row; «×» closes, so «Отмена» gives its room to the toggle label. */}
+          <Button variant="secondary" onClick={close} className="mobile:hidden">
             {t('common.cancel')}
           </Button>
           <Button onClick={() => void submit()} busy={busy} disabled={!title.trim()} title={`${MOD}↩`} data-testid="create-task-submit">
@@ -292,9 +295,31 @@ function Dialog({
               </button>
             </LabelMenu>
           ) : null}
+          {on(BoardFeature.START_DATE) ? (
+            <DateMenu
+              value={start}
+              onPick={(d) => {
+                setStart(d);
+                // The server refuses a due date before the start (422): the later pick wins.
+                if (d && due && due < d) setDue('');
+              }}
+              title={t('boards.f.startOn')}
+            >
+              <button type="button" className={cx(chip, !start && 'text-muted')} data-testid="create-start">
+                <CalendarPlus className="size-3.5" aria-hidden /> {start ? formatDue(start, today) : t('boards.f.startOn')}
+              </button>
+            </DateMenu>
+          ) : null}
           {on(BoardFeature.DUE_DATE) ? (
-            <DateMenu value={due} onPick={setDue} title={t('boards.f.dueOn')}>
-              <button type="button" className={cx(chip, !due && 'text-muted')}>
+            <DateMenu
+              value={due}
+              onPick={(d) => {
+                setDue(d);
+                if (d && start && d < start) setStart('');
+              }}
+              title={t('boards.f.dueOn')}
+            >
+              <button type="button" className={cx(chip, !due && 'text-muted')} data-testid="create-due">
                 <CalendarClock className="size-3.5" aria-hidden /> {due ? formatDue(due, today) : t('boards.f.dueOn')}
               </button>
             </DateMenu>

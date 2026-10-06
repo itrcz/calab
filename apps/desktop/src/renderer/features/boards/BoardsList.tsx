@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import type { Board } from '@calaba/protocol';
+import { BoardFeature, type Board } from '@calaba/protocol';
 import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -33,6 +33,7 @@ import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { RestrictedMark } from '../workspace/AccessLevel';
 import { hasBit, MANAGE_BOARD } from './model';
+import { useFeatureOn } from './useBoardView';
 
 /**
  * The room column in boards mode (ADR-0042 §5, ADR-0058 §1): «Мои задачи» on top, the
@@ -398,6 +399,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
   const manage = hasBit(perms, MANAGE_BOARD);
   const [forms, setForms] = useState(false);
+  const formsOn = useFeatureOn(id, BoardFeature.FORMS);
   const archive = async (): Promise<void> => {
     if (await confirmAction(t('boards.archiveBoardTitle', { name }), t('boards.archiveBoardText'), t('boards.archiveBoard'))) void removeBoard(id, false);
   };
@@ -459,10 +461,14 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
               </Dropdown.Item>
               {manage ? (
                 <>
-                  <Dropdown.Separator className={menuSeparator} />
-                  <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
-                    <FileText className="size-4" aria-hidden /> {t('forms.title')}
-                  </Dropdown.Item>
+                  {formsOn ? (
+                    <>
+                      <Dropdown.Separator className={menuSeparator} />
+                      <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                        <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                      </Dropdown.Item>
+                    </>
+                  ) : null}
                   <Dropdown.Separator className={menuSeparator} />
                   <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
                     <Archive className="size-4" aria-hidden /> {t('boards.archive')}

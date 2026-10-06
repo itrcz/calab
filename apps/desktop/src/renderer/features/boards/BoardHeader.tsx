@@ -330,6 +330,7 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
   const mobile = useMobile();
   const showCompleted = useBoardsUi((s) => prefsOf(s, boardId).showCompleted);
   const [forms, setForms] = useState(false);
+  const formsOn = useFeatureOn(boardId, BoardFeature.FORMS);
   const archive = async (): Promise<void> => {
     const b = useBoards.getState().boards[boardId];
     if (!b) return;
@@ -373,10 +374,14 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
             </Dropdown.Item>
             {manage ? (
               <>
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
-                  <FileText className="size-4" aria-hidden /> {t('forms.title')}
-                </Dropdown.Item>
+                {formsOn ? (
+                  <>
+                    <Dropdown.Separator className={menuSeparator} />
+                    <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                      <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                    </Dropdown.Item>
+                  </>
+                ) : null}
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
                   <Archive className="size-4" aria-hidden /> {t('boards.archive')}

@@ -684,6 +684,19 @@ test('m-boards-list', async ({ page }) => {
   await checkpoint(page, 'm-boards-list');
 });
 
+// Owner 07.10: the create dialog has the start date (when the board's dates are on).
+test('m-boards-create', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('new-task').tap();
+  await expect(page.getByTestId('create-start')).toBeVisible();
+  await page.getByTestId('create-task-title').fill('Задача с датой начала');
+  await checkpoint(page, 'm-boards-create');
+});
+
 test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);

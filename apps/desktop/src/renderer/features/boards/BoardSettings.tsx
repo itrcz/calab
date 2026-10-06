@@ -5,6 +5,7 @@ import {
   BoardTemplate,
   BoardWebhookPauseReason,
   EstimateScale,
+  BoardFeature,
   PermissionTargetType,
   RoomPermissionOverrideSchema,
   WorkspaceRole,
@@ -99,8 +100,8 @@ function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string
     { id: 'milestones', label: t('boards.set.milestones'), icon: Diamond, content: <MilestonesTab board={board} /> },
     { id: 'access', label: t('boards.access'), icon: ShieldCheck, content: <AccessTab board={board} /> },
     // Automations (ADR-0060 §6): every manager of the board; Git also needs MANAGE_INTEGRATIONS.
-    { id: 'rules', label: t('rules.tab'), icon: Workflow, content: <RulesTab board={board} /> },
-    ...(integrations ? [{ id: 'git', label: t('git.tab'), icon: GitBranch, content: <GitTab board={board} /> }] : []),
+    ...(featureOn(board.disabledFeatures, BoardFeature.AUTOMATIONS) ? [{ id: 'rules', label: t('rules.tab'), icon: Workflow, content: <RulesTab board={board} /> }] : []),
+    ...(integrations && featureOn(board.disabledFeatures, BoardFeature.GIT_LINKS) ? [{ id: 'git', label: t('git.tab'), icon: GitBranch, content: <GitTab board={board} /> }] : []),
     ...(integrations ? [{ id: 'webhook', label: t('boards.set.webhook'), icon: Webhook, content: <WebhookTab board={board} /> }] : []),
     { id: 'danger', label: t('boards.set.danger'), icon: Archive, content: <DangerTab board={board} onDone={onClose} />, destructive: true },
   ];

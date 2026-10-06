@@ -3785,6 +3785,32 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'boards-settings');
 });
 
+/** Board settings, the features tab (owner 07.10): every optional feature has a switch, 16 in all. */
+test('boards-features', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Фичи' }).click();
+  await expect(win.getByTestId('board-features').getByRole('switch')).toHaveCount(16);
+  await checkpoint(shot, 'boards-features');
+});
+
+/** Create-task dialog (owner 07.10): the start date next to the due date. */
+test('boards-create', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.keyboard.press('c');
+  await expect(win.getByTestId('create-task')).toBeVisible();
+  await win.getByTestId('create-task-title').fill('Задача с датой начала');
+  await win.getByTestId('create-start').click();
+  await win.getByRole('button', { name: /Сегодня/ }).first().click();
+  await expect(win.getByTestId('create-start')).not.toContainText('Начало');
+  await checkpoint(shot, 'boards-create');
+});
+
 /** The timeline (3), month scale: today line, weekends, CAL-3 → CAL-4 late-blocker marker, «Без дат». */
 test('boards-timeline', async ({ open, win, mock, shot }) => {
   await open();

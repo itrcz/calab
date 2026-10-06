@@ -145,7 +145,7 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
           <TitleEditor task={task} canEdit={canEdit} />
           <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
           {/* Git links (ADR-0060 §4): under the attachments; its own subscriber, nothing when none. */}
-          <GitSection taskId={task.id} />
+          {on(BoardFeature.GIT_LINKS) ? <GitSection taskId={task.id} /> : null}
           <Properties task={task} canEdit={canEdit} perms={perms} scoped={scoped} disabled={disabled} />
           {/* Milestones inside the task (ADR-0063): top-level tasks only; their own subscriber. */}
           {on(BoardFeature.MILESTONES) && !task.parentId ? <TaskMilestones taskId={task.id} canEdit={canEdit} /> : null}

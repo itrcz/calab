@@ -212,7 +212,7 @@ export const TaskCard = memo(function TaskCard({
         ) : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
         {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
-        <GitBadge id={id} />
+        {on(BoardFeature.GIT_LINKS) ? <GitBadge id={id} /> : null}
         {on(BoardFeature.COMMENTS) && task.commentCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.comments')}>
             <MessageSquare className="size-3" aria-hidden />
