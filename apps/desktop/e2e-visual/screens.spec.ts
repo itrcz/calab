@@ -58,6 +58,7 @@ const KEY = new Set([
   'chat-context-menu',
   'room-notify-menu',
   'dm-list',
+  'nav-badges',
   'dm-archive',
   'dm-delete-confirm',
   'dm-chat',
@@ -688,6 +689,32 @@ test('dm-list', async ({ open, win, shot }) => {
   await expect(win.getByTestId('dm-pick')).toBeVisible();
   await settle(win);
   await checkpoint(shot, 'dm-list');
+});
+
+// Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; the rail tile and the DM rows.
+test('nav-badges', async ({ open, win, mock, shot }) => {
+  const burst = (roomId: string, authorId: string, n: number): void => {
+    for (let i = 0; i < n; i++) mock.injectMessage({ roomId, authorId, content: `Сообщение ${i + 1}` });
+  };
+  await open(DM_SEED);
+  const list = win.getByTestId('dm-list');
+  await expect(list.getByRole('button')).toHaveCount(3);
+  burst(IDS.dms.vera, IDS.users.vera, 1);
+  burst(IDS.dms.boris, IDS.users.boris, 9);
+  burst(IDS.dms.grigory, IDS.users.grigory, 99);
+  const badges = win.locator('[data-count-badge]');
+  await expect(badges.filter({ hasText: '99+' }).first()).toBeVisible();
+  await settle(win);
+  for (const b of await badges.all()) {
+    const box = await b.boundingBox();
+    const text = ((await b.textContent()) ?? '').trim();
+    if (!box) continue;
+    const label = `badge «${text}» ${box.width}x${box.height}`;
+    if (text.length <= 2) expect(Math.round(box.width), label).toBe(Math.round(box.height));
+    else expect(box.width, label).toBeGreaterThan(box.height);
+  }
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'nav-badges');
 });
 
 test('dm-archive', async ({ open, win, shot }) => {

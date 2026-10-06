@@ -55,7 +55,7 @@ import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { CreateButton, InlineAdd } from '../../components/CreateButton';
-import { Badge, Button, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
+import { Badge, Button, CountBadge, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, mayArrangeRooms, mayCreateBoards, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
@@ -1193,9 +1193,7 @@ const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: st
 export function MentionBadge({ n }: { n: number }): ReactNode {
   if (n <= 0) return null;
   return (
-    <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white group-hover/row:hidden" aria-label={plural('shell.unreadMentions', n)}>
-      {n > 99 ? '99+' : n}
-    </span>
+    <CountBadge count={n} className="group-hover/row:hidden" aria-label={plural('shell.unreadMentions', n)} />
   );
 }
 

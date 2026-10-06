@@ -917,6 +917,30 @@ test('m-dm-list', async ({ page }) => {
   await checkpoint(page, 'm-dm-list');
 });
 
+// Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; tab bar and DM rows.
+test('m-badges', async ({ page }) => {
+  const burst = (roomId: string, authorId: string, n: number): void => {
+    for (let i = 0; i < n; i++) mock.injectMessage({ roomId, authorId, content: `Сообщение ${i + 1}` });
+  };
+  burst(IDS.dms.vera, IDS.users.vera, 1);
+  burst(IDS.dms.boris, IDS.users.boris, 9);
+  burst(IDS.dms.grigory, IDS.users.grigory, 99);
+  await signedIn(page);
+  await tab(page, 'dms');
+  const badges = page.locator('[data-count-badge]');
+  await expect(badges.filter({ hasText: '99+' }).first()).toBeVisible();
+  await settle(page);
+  for (const b of await badges.all()) {
+    const box = await b.boundingBox();
+    const text = ((await b.textContent()) ?? '').trim();
+    if (!box) continue;
+    const label = `badge «${text}» ${box.width}x${box.height}`;
+    if (text.length <= 2) expect(Math.round(box.width), label).toBe(Math.round(box.height));
+    else expect(box.width, label).toBeGreaterThan(box.height);
+  }
+  await checkpoint(page, 'm-badges');
+});
+
 // «Заметки» (ADR-0039): the same section above the DMs on «Личные».
 test('m-notes', async ({ page }) => {
   const ideas = mock.addShelf(IDS.users.anna, 'Идеи', '💡');

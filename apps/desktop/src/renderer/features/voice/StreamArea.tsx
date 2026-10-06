@@ -3,7 +3,7 @@ import { Check, ChevronDown, Maximize2, MessageCircle, Minimize, Minimize2, Moni
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
-import { Badge, CloseButton, IconButton, Slider, cx } from '../../components/ui';
+import { Badge, CloseButton, CountBadge, IconButton, Slider, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { platform } from '../../platform';
 import { useMediaQuery } from '../../lib/useMediaQuery';
@@ -514,16 +514,12 @@ function ChatUnreadBadge(): ReactNode {
   const dot = useRooms((s) => (roomId ? showsUnread(roomId, s) : false));
   if (mentions > 0) {
     return (
-      <span aria-label={plural('shell.unreadMentions', mentions)} data-testid="stream-chat-unread" className="rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white">
-        {mentions > 99 ? '99+' : mentions}
-      </span>
+      <CountBadge count={mentions} aria-label={plural('shell.unreadMentions', mentions)} data-testid="stream-chat-unread" />
     );
   }
   if (unread > 0 && dot) {
     return (
-      <span aria-label={plural('stream.chatUnread', unread)} data-testid="stream-chat-unread" className="rounded-full bg-accent-strong px-1.5 text-micro font-semibold leading-4 text-accent-fg">
-        {unread > 99 ? '99+' : unread}
-      </span>
+      <CountBadge count={unread} tone="accent" aria-label={plural('stream.chatUnread', unread)} data-testid="stream-chat-unread" />
     );
   }
   return dot ? <span aria-label={t('ws.unread')} data-testid="stream-chat-unread" className="size-1.5 shrink-0 rounded-full bg-white" /> : null;

@@ -3,7 +3,7 @@ import { ChevronDown, Hash, Lock, Plus, Timer, Volume2 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
-import { Button, Empty, cx } from '../../components/ui';
+import { Button, CountBadge, Empty, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
 import { mayArrangeRooms, mayInviteMembers, mayManageRoomWith, mayRoomInvite, roomPerms } from '../../lib/permissions';
@@ -287,7 +287,7 @@ function StackAvatar({ workspaceId, userId, size, first }: { workspaceId: string
 /** The mention count (red), else an unread dot. */
 function Counter({ mentions, unread }: { mentions: number; unread: boolean }): ReactNode {
   if (mentions > 0) {
-    return <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-[18px] text-white" aria-hidden>{mentions > 99 ? '99+' : mentions}</span>;
+    return <CountBadge count={mentions} aria-hidden />;
   }
   return unread ? <span className="size-2.5 shrink-0 rounded-full bg-accent" aria-hidden /> : null;
 }

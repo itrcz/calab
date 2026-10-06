@@ -3,7 +3,7 @@ import { WorkspaceRole } from '@calaba/protocol';
 import { Check, ChevronDown, Compass, LockKeyhole, Plus, Volume2 } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
 import { MediaImg } from '../../components/MediaImg';
-import { cx } from '../../components/ui';
+import { CountBadge, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { workspaceInitials } from '../../lib/initials';
@@ -61,9 +61,7 @@ export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; 
           {phone ? <WorkspaceIcon name={title} iconFileId={iconFileId} /> : null}
           <span className={cx('min-w-0 truncate', phone && 'flex-1')}>{title}</span>
           {others > 0 ? (
-            <span className="min-w-4 shrink-0 rounded-full bg-danger-fill px-1 text-center text-micro font-bold leading-4 text-white" data-testid="switcher-badge" aria-hidden>
-              {others > 99 ? '99+' : others}
-            </span>
+            <CountBadge count={others} data-testid="switcher-badge" aria-hidden />
           ) : others === UNREAD_DOT ? (
             <span className="size-2 shrink-0 rounded-full bg-fg" data-testid="switcher-dot" aria-hidden />
           ) : null}
@@ -160,9 +158,7 @@ const SwitchRow = memo(function SwitchRow({ id, current }: { id: string; current
         </span>
       ) : null}
       {badge > 0 ? (
-        <span className="min-w-5 shrink-0 rounded-full bg-danger-fill px-1 text-center text-micro font-bold leading-4 text-white" aria-hidden>
-          {badge > 99 ? '99+' : badge}
-        </span>
+        <CountBadge count={badge} aria-hidden />
       ) : badge === UNREAD_DOT ? (
         <span className="size-2 shrink-0 rounded-full bg-current opacity-70" aria-hidden />
       ) : null}

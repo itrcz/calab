@@ -1,10 +1,10 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceRole } from '@calaba/protocol';
-import { CalendarDays, MessageCircle, MessagesSquare, SquareKanban } from 'lucide-react';
+import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
 import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
 import { PhoneHeader } from '../../components/PhoneHeader';
-import { Spinner, cx } from '../../components/ui';
+import { CountBadge, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
 import { isStandalone } from '../../lib/mobile';
@@ -294,10 +294,10 @@ function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
       data-testid="phone-tabbar"
       className="mat-toolbar flex shrink-0 border-t border-line pb-[var(--safe-bottom,0px)] [.kb-open_&]:hidden"
     >
-      <TabButton tab="chats" active={tab === 'chats'} label={t('mobile.tabChats')} icon={<MessagesSquare className="size-[22px]" strokeWidth={1.75} />} badge={<ChatsBadge />} />
-      {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={<MessageCircle className="size-[22px]" strokeWidth={1.75} />} badge={<DmsBadge />} /> : null}
-      <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={<SquareKanban className="size-[22px]" strokeWidth={1.75} />} badge={<BoardsBadge />} />
-      {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={<CalendarDays className="size-[22px]" strokeWidth={1.75} />} /> : null}
+      <TabButton tab="chats" active={tab === 'chats'} label={t('mobile.tabChats')} icon={tab === 'chats' ? <TeamActiveIcon className="size-7" /> : <TeamIdleIcon className="size-7" />} badge={<ChatsBadge />} />
+      {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={tab === 'dms' ? <PersonalActiveIcon className="size-7" /> : <PersonalIdleIcon className="size-7" />} badge={<DmsBadge />} /> : null}
+      <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={tab === 'boards' ? <BoardsActiveIcon className="size-7" /> : <BoardsIdleIcon className="size-7" />} badge={<BoardsBadge />} />
+      {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={tab === 'calendar' ? <CalendarActiveIcon className="size-7" /> : <CalendarIdleIcon className="size-7" />} /> : null}
       <TabButton tab="profile" active={tab === 'profile'} label={t('mobile.profile')} icon={<ProfileTabIcon active={tab === 'profile'} />} />
     </nav>
   );
@@ -324,9 +324,7 @@ const TabButton = memo(function TabButton({ tab, active, label, icon, badge }: {
 function TabBadge({ count, dot, label }: { count: number; dot: boolean; label: string }): ReactNode {
   if (count <= 0 && !dot) return null;
   return count > 0 ? (
-    <span role="img" aria-label={label} className="absolute -right-2.5 -top-1 min-w-[18px] rounded-full border-2 border-[var(--color-toolbar,var(--color-bg))] bg-danger-fill px-1 text-center text-micro font-bold leading-[14px] text-white">
-      {count > 99 ? '99+' : count}
-    </span>
+    <CountBadge count={count} phone ring="var(--color-toolbar,var(--color-bg))" role="img" aria-label={label} className="absolute -top-2 left-full -ml-2.5" />
   ) : (
     <span role="img" aria-label={label} className="absolute -right-1 -top-0.5 size-2.5 rounded-full border-2 border-[var(--color-toolbar,var(--color-bg))] bg-fg" />
   );
