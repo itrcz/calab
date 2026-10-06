@@ -12,7 +12,7 @@ import (
 
 // TestTaskScopedAccess: an assignee / approver from outside a board sees the board through
 // their own tasks only (ADR-0059): lists, tasks, comments, votes, search, unfurl, READY, the
-// gateway transitions; restricted boards, guests and bots stay out.
+// gateway transitions; guests and bots stay out (restricted boards open by card, ADR-0076).
 func TestTaskScopedAccess(t *testing.T) {
 	o, bob, ws, room := setupTeam(t)
 	wid := ws.GetId()
@@ -157,12 +157,14 @@ func TestTaskScopedAccess(t *testing.T) {
 	bt := createBot(t, o, wid, "scopebot")
 	o.must(422, "PUT", "/api/tasks/"+mine.GetId()+"/assignees", &v1.SetAssigneesRequest{Assignees: []*v1.TaskAssigneeInput{{UserId: bt.id}}}, nil)
 
-	// A restricted board: closed means closed — the scoped approver loses it, no new invitations.
+	// A restricted board (ADR-0076, superseding ADR-0059 §1): the scoped approver keeps the card,
+	// and an editor still invites people from outside.
 	restricted := true
 	o.must(200, "PATCH", "/api/boards/"+priv.GetId(), &v1.UpdateBoardRequest{Restricted: &restricted}, nil)
-	carol.must(404, "GET", "/api/tasks/"+other.GetId(), nil, nil)
-	if _, ok := listBoards(t, carol, wid)[priv.GetId()]; ok {
-		t.Fatal("restricted board listed for its scoped approver")
+	carol.must(200, "GET", "/api/tasks/"+other.GetId(), nil, nil)
+	if lb := listBoards(t, carol, wid)[priv.GetId()]; lb == nil || !lb.GetTaskScoped() {
+		t.Fatal("restricted board not listed for its scoped approver")
 	}
-	o.must(422, "PUT", "/api/tasks/"+mine.GetId()+"/assignees", &v1.SetAssigneesRequest{Assignees: []*v1.TaskAssigneeInput{{UserId: bob.id}}}, nil)
+	o.must(200, "PUT", "/api/tasks/"+mine.GetId()+"/assignees", &v1.SetAssigneesRequest{Assignees: []*v1.TaskAssigneeInput{{UserId: bob.id}}}, nil)
+	bob.must(200, "GET", "/api/tasks/"+mine.GetId(), nil, nil)
 }

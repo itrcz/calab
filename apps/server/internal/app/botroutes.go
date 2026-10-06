@@ -365,6 +365,8 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/tasks/{id}/relations":             botAllow,
 	"DELETE /api/tasks/{id}/relations":          botAllow,
 	"PUT /api/tasks/{id}/subscription":          botAllow,
+	"PUT /api/tasks/{id}/watchers":              botAllow, // ADR-0076: an editing bot adds watchers like people
+	"DELETE /api/tasks/{id}/watchers":           botAllow,
 	"PUT /api/tasks/{id}/read":                  botAllow,
 	"GET /api/tasks/{id}/activity":              botAllow,
 	"GET /api/t/{key}":                          botAllow,

@@ -299,6 +299,7 @@ PATCH · DELETE /api/checklists/{id}                  {title?, position?}; DELET
 POST   /api/checklists/{id}/items {text, position?}  201; ≤ 100 на чек-лист (409 CHECKLIST_ITEM_LIMIT)
 PATCH · DELETE /api/checklist-items/{id}             {text?, done?, position?, checklist_id?} (перенос внутри задачи); → TaskChecklistResponse
 POST   /api/checklist-items/{id}/convert             → 201 ConvertChecklistItemResponse {task, checklist, счётчики}: подзадача с текстом пункта, пункт удалён (фича SUBTASKS; задача сама не подзадача)
+PUT    /api/tasks/{id}/watchers {user_id}            наблюдатель (ADR-0076): редактор задачи; DELETE …/watchers?user_id= — редактор или сам
 PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read — снять «непрочитано»
 GET    /api/tasks/{id}/activity?before&limit         лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)

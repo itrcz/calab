@@ -10,6 +10,7 @@ import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { addDays, addMonths, dayKey, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
 import { MAX_APPROVERS } from '../../lib/boards/approvals';
+import { MAX_WATCHERS } from '../../lib/boards/watchers';
 import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { createLabel } from '../../services/boards';
@@ -246,7 +247,7 @@ export function AssigneeMenu({
       icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
       checked: value.includes(id),
       note: String(counts[id] ?? 0),
-      ...accessChoice(access.get(id), value.includes(id)),
+      ...accessChoice(access.get(id)),
     });
     const chosen = list.filter((m) => value.includes(m.user?.id ?? '')).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
     const others = list
@@ -309,7 +310,7 @@ export function ApproverMenu({
     });
     const person = (id: string, name: string, fileId: string): Choice => {
       const on = value.includes(id);
-      const acc = accessChoice(access.get(id), on);
+      const acc = accessChoice(access.get(id));
       return {
         ...acc,
         id,
@@ -350,6 +351,70 @@ export function ApproverMenu({
 }
 
 // ------------------------------------------------------------------ labels
+
+/**
+ * «+ Добавить» of «Наблюдатели» (ADR-0076 §7): every member of the workspace except guests (a bot
+ * only when it sees the board); those who do not see the board are marked «увидит только эту
+ * задачу». At most MAX_WATCHERS (the rest disabled once full). The server checks access.
+ */
+export function WatcherMenu({
+  workspaceId,
+  boardId,
+  value,
+  onToggle,
+  ...shell
+}: MenuShell & { workspaceId: string; boardId: string; value: readonly string[]; onToggle: (userId: string) => void }): ReactNode {
+  const [open, setOpen] = useOpen(shell);
+  // Only while open: a closed menu must not re-render on presence changes.
+  const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
+  const roles = useWorkspaces((s) => (open ? s.byId[workspaceId]?.roles : undefined));
+  const board = useBoards((s) => (open ? s.boards[boardId] : undefined));
+  const groups = useMemo((): Array<PickerGroup<Choice>> => {
+    const full = value.length >= MAX_WATCHERS;
+    const access = new Map<string, PickerAccess>();
+    const list = Object.values(members ?? {}).filter((m) => {
+      if (!m.user) return false;
+      const a = pickerAccess(board, roles ?? [], m);
+      access.set(m.user.id, a);
+      return a !== 'hidden' || value.includes(m.user.id);
+    });
+    const person = (id: string, name: string, fileId: string): Choice => {
+      const on = value.includes(id);
+      return {
+        ...accessChoice(access.get(id)),
+        id,
+        search: [name],
+        label: name,
+        icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
+        checked: on,
+        ...(full && !on ? { disabled: true, note: t('boards.watchersMax') } : {}),
+      };
+    };
+    const chosen = list.filter((m) => value.includes(m.user?.id ?? '')).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
+    const others = list
+      .filter((m) => !value.includes(m.user?.id ?? ''))
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+      .map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
+    return [
+      { id: 'chosen', label: '', items: chosen },
+      { id: 'members', label: t('boards.members'), items: others },
+    ];
+  }, [members, roles, board, value]);
+  return (
+    <ChoiceMenu
+      {...shell}
+      open={open}
+      onOpenChange={setOpen}
+      multi
+      width={340}
+      groups={groups}
+      onPick={(c) => onToggle(c.id)}
+      placeholder={t('boards.watcherMenu')}
+      label={t('boards.watchers')}
+      testId="watcher-menu"
+    />
+  );
+}
 
 export function LabelMenu({ boardId, value, onToggle, canCreate, ...shell }: MenuShell & { boardId: string; value: readonly string[]; onToggle: (labelId: string) => void; canCreate: boolean }): ReactNode {
   const labels = useBoards(useShallow((s) => s.boards[boardId]?.labels ?? NO_LABELS));

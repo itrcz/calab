@@ -70,6 +70,7 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { featureOn, type Disabled } from '../../lib/boards/features';
 import { ApprovalsSection } from './Approvals';
+import { WatchersSection } from './Watchers';
 import { GitSection } from './GitLinks';
 import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
@@ -449,6 +450,7 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
       ) : null}
       <Assignees task={task} canEdit={canEdit} req={req('assignee')} />
       {on(BoardFeature.APPROVALS) ? <ApprovalsSection task={task} canEdit={canEdit} perms={perms} /> : null}
+      <WatchersSection task={task} canEdit={canEdit} />
       {on(BoardFeature.LABELS) ? (
         <Prop label={t('boards.f.label')}>
           {mine.map((l) => (
@@ -1075,6 +1077,16 @@ export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>,
       const names = ids.map((u) => memberName(workspaceId, u)).join(', ');
       const required = Number(f?.['required'] ?? 0);
       return required > 0 && required < ids.length ? t('boards.act.approversQuorum', { names, n: required, m: ids.length }) : t('boards.act.approvers', { names });
+    }
+    case 'watchers': {
+      const was = Array.isArray(b?.['user_ids']) ? (b['user_ids'] as unknown[]).map(str) : [];
+      const now = Array.isArray(f?.['user_ids']) ? (f['user_ids'] as unknown[]).map(str) : [];
+      const added = now.filter((u) => !was.includes(u));
+      const removed = was.filter((u) => !now.includes(u));
+      const names = (ids: string[]): string => ids.map((u) => memberName(workspaceId, u)).join(', ');
+      if (added.length) return t('boards.act.watchersAdded', { names: names(added) });
+      if (removed.length) return t('boards.act.watchersRemoved', { names: names(removed) });
+      return t('boards.act.changed');
     }
     case 'approval': {
       const state = str(f?.['state']);

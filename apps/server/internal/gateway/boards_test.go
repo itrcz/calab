@@ -110,6 +110,13 @@ func TestTaskScopedTransitions(t *testing.T) {
 			[]string{"TaskDelete", "BoardDelete"}, nil},
 		{"guests are never task-scoped", func() map[uuid.UUID][]string { return update(task(t2, []uuid.UUID{guest}, nil, false)) },
 			nil, nil},
+		{"a watcher (ADR-0076): the board appears, then the task", func() map[uuid.UUID][]string {
+			x := task(t2, nil, nil, false)
+			x.WatcherIds = []string{carol.String(), guest.String()}
+			return update(x)
+		}, []string{"BoardCreate(scoped)", "TaskCreate"}, nil},
+		{"no longer a watcher: the task, then the board go", func() map[uuid.UUID][]string { return update(task(t2, nil, nil, false)) },
+			[]string{"TaskDelete", "BoardDelete"}, nil},
 	} {
 		got := c.run()
 		if !same(got[carol], c.carol) || !same(got[dave], c.dave) || got[guest] != nil {
@@ -141,21 +148,22 @@ func TestTaskScopedTransitions(t *testing.T) {
 		t.Fatalf("scoped form: %v", pb)
 	}
 
-	// The board closed (restricted): dave loses it; alice keeps her update.
+	// The board closed (restricted): ADR-0076 — dave keeps it through his card (no transition,
+	// the update as is), and the task room stays his.
 	closed := &v1.Board{Id: bid.String(), IsPrivate: true, Restricted: true, PermissionOverrides: board.GetPermissionOverrides()}
 	before := st.boardView(bid, dave)
 	st.setBoard(bid, closed)
-	if got := kinds(boardTransition(before, st.boardView(bid, dave), closed, wid, nil)); !same(got, []string{"BoardDelete"}) {
+	if got := kinds(boardTransition(before, st.boardView(bid, dave), closed, wid, nil)); len(got) != 0 {
 		t.Fatalf("restricted: dave gets %v", got)
 	}
-	if st.taskRoomBits(room1, dave) != 0 {
-		t.Fatal("restricted: no task room for dave")
+	if !st.boardView(bid, dave).scoped || st.taskRoomBits(room1, dave) == 0 {
+		t.Fatal("restricted: dave keeps the board and the task room through the card")
 	}
-	// Opened again: back (the invitation is still there).
+	// Opened again: nothing changes for dave.
 	before = st.boardView(bid, dave)
 	st.setBoard(bid, board)
-	if got := kinds(boardTransition(before, st.boardView(bid, dave), board, wid, nil)); !same(got, []string{"BoardCreate(scoped)"}) {
-		t.Fatalf("unrestricted: dave gets %v", got)
+	if !before.scoped || !st.boardView(bid, dave).scoped {
+		t.Fatal("unrestricted: dave still task-scoped")
 	}
 	// dave becomes a guest: the board goes.
 	before = st.boardView(bid, dave)

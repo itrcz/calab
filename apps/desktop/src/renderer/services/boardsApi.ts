@@ -37,6 +37,7 @@ import {
   SetTaskApproversRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
+  SetTaskWatcherRequestSchema,
   TaskActivityPageSchema,
   TaskApprovalRequestSchema,
   TaskFilterSchema,
@@ -178,6 +179,12 @@ export const boardsApi = {
       call('PUT', `/api/tasks/${taskId}/relations`, TaskResponseSchema, body(SetTaskRelationRequestSchema, { relatedId, kind })),
     removeRelation: (taskId: string, relatedId: string, kind: TaskRelationKind) =>
       call('DELETE', `/api/tasks/${taskId}/relations${qs({ related_id: relatedId, kind })}`, TaskResponseSchema),
+    /** ADR-0076: make a member a watcher (an editor of the task; 422 guest / bot without the board). */
+    addWatcher: (taskId: string, userId: string) =>
+      call('PUT', `/api/tasks/${taskId}/watchers`, TaskResponseSchema, body(SetTaskWatcherRequestSchema, { userId })),
+    /** ADR-0076: remove a watcher (an editor, or the watcher themselves — «Перестать наблюдать»). */
+    removeWatcher: (taskId: string, userId: string) =>
+      call('DELETE', `/api/tasks/${taskId}/watchers${qs({ user_id: userId })}`, TaskResponseSchema),
     /** muted false = subscribed with notifications, true = «Отписаться». */
     setSubscription: (taskId: string, muted: boolean) =>
       call('PUT', `/api/tasks/${taskId}/subscription`, TaskResponseSchema, body(SetTaskSubscriptionRequestSchema, { muted })),

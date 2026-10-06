@@ -178,27 +178,32 @@ func BenchmarkComputeIn50Roles100Rooms(b *testing.B) {
 	}
 }
 
-// ADR-0059 §2: the same table as taskPermissions in packages/protocol (permissions.test.ts).
+// ADR-0059 §2, ADR-0076 §3: the shared case table of taskPermissions in packages/protocol
+// (permissions.test.ts reads the same file).
 func TestTaskBits(t *testing.T) {
-	member := ViewBoard | CreateTasks
-	for _, c := range []struct {
-		name               string
-		acc                BoardAccess
-		assignee, approver bool
-		want               Bits
-	}{
-		{"viewer keeps the board bits", BoardAccess{Bits: member}, false, false, member},
-		{"viewer assigned keeps the board bits", BoardAccess{Bits: ViewBoard}, true, true, ViewBoard},
-		{"editor keeps EDIT_TASKS", BoardAccess{Bits: ViewBoard | EditTasks}, false, true, ViewBoard | EditTasks},
-		{"scoped assignee", BoardAccess{TaskScoped: true}, true, false, ViewBoard | CreateTasks},
-		{"scoped assignee and approver", BoardAccess{TaskScoped: true}, true, true, ViewBoard | CreateTasks},
-		{"scoped approver", BoardAccess{TaskScoped: true}, false, true, ViewBoard},
-		{"scoped, another task", BoardAccess{TaskScoped: true}, false, false, 0},
-		{"not scoped, assigned (restricted / guest / bot)", BoardAccess{}, true, true, 0},
-		{"no access", BoardAccess{}, false, false, 0},
-	} {
-		if got := TaskBits(c.acc, c.assignee, c.approver); got != c.want {
-			t.Errorf("%s: TaskBits = %d, want %d", c.name, got, c.want)
+	raw, err := os.ReadFile("../../../../proto/testdata/task_bits.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table struct {
+		Cases []struct {
+			Name                        string
+			Bits                        Bits
+			Scoped                      bool
+			Assignee, Approver, Watcher bool
+			Want                        Bits
+		}
+	}
+	if err := json.Unmarshal(raw, &table); err != nil {
+		t.Fatal(err)
+	}
+	if len(table.Cases) < 10 {
+		t.Fatalf("task_bits.json: %d cases", len(table.Cases))
+	}
+	for _, c := range table.Cases {
+		acc := BoardAccess{Bits: c.Bits, TaskScoped: c.Scoped}
+		if got := TaskBits(acc, c.Assignee, c.Approver, c.Watcher); got != c.Want {
+			t.Errorf("%s: TaskBits = %d, want %d", c.Name, got, c.Want)
 		}
 	}
 }

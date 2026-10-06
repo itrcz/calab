@@ -489,6 +489,32 @@ const BITS: ReadonlyArray<{ bit: bigint; label: 'boards.perm.view' | 'boards.per
 
 const key = (o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string => `${o.targetType}:${o.targetId}`;
 
+/**
+ * «Позванные по карточкам: N» on a closed board (ADR-0076): the members who see it only through
+ * cards they were invited to (assignee, approver, watcher). Its own fetch: nothing else re-renders.
+ */
+function TaskScopedCount({ boardId }: { boardId: string }): ReactNode {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    void boardsApi
+      .permissions(boardId)
+      .then((r) => live && setN(r.taskScopedCount))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [boardId]);
+  if (n === null) return null;
+  return (
+    <Tip label={t('boards.invitedByCardsHint')}>
+      <p className="mt-2 text-caption text-muted" tabIndex={0} data-testid="board-access-invited">
+        {t('boards.invitedByCards', { n })}
+      </p>
+    </Tip>
+  );
+}
+
 /** «Доступ» (the room access UI, ADR-0042 §2): targets on the left, the four board bits on the right. */
 function AccessTab({ board }: { board: Board }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[board.workspaceId]);
@@ -568,6 +594,7 @@ function AccessTab({ board }: { board: Board }): ReactNode {
       {/* ADR-0048: Все участники / По списку / По списку, без администраторов (this tab is MANAGE_BOARD's). */}
       <Card title={t('boards.access')} footer={board.isPrivate ? t('boards.set.privateHint') : undefined}>
         <AccessLevelPicker value={accessLevelOf(board)} disabled={busy} onChange={(to) => setLevel(to)} />
+        {restricted ? <TaskScopedCount boardId={board.id} /> : null}
       </Card>
       <div className="flex gap-4" data-testid="board-access">
         <div className="flex w-52 shrink-0 flex-col gap-0.5">

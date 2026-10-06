@@ -61,6 +61,7 @@ import {
   SetBoardPositionRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
+  SetTaskWatcherRequestSchema,
   TaskActivityPageSchema,
   TaskFilterSchema,
   TaskApprovalRequestSchema,
@@ -7113,6 +7114,14 @@ class MockImpl {
     this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
       const kind: TaskRelationKind = Number(q(c, 'kind'));
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
+    });
+    // ADR-0076: watchers.
+    this.boardRoute('PUT', '/api/tasks/:id/watchers', (c, me) => {
+      const r = parseBody(c, SetTaskWatcherRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setWatcher(c.params[0] ?? '', me, r.userId, true).task.id, me));
+    });
+    this.boardRoute('DELETE', '/api/tasks/:id/watchers', (c, me) => {
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setWatcher(c.params[0] ?? '', me, q(c, 'user_id'), false).task.id, me));
     });
     this.boardRoute('PUT', '/api/tasks/:id/subscription', (c, me) => {
       const r = parseBody(c, SetTaskSubscriptionRequestSchema);

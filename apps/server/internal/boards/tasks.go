@@ -155,8 +155,8 @@ func (s *Service) taskAccess(r *http.Request, dbtx sqlc.DBTX, id uuid.UUID, lock
 }
 
 // taskOf resolves the caller's access to task t: the board's access with Bits = perm.TaskBits
-// (ADR-0059 §2 — a task-scoped member has bits only on the live tasks they are an assignee or
-// an approver of); 404 when the task is hidden. acc.TaskScoped set = the bits come from the task.
+// (ADR-0059 §2, ADR-0076 — a task-scoped member has bits only on the live tasks they are an
+// assignee, an approver or a watcher of); 404 when the task is hidden. acc.TaskScoped set = the bits come from the task.
 func taskOf(r *http.Request, q *sqlc.Queries, t taskRow) (perm.BoardAccess, error) {
 	acc, err := board(r, t.BoardID, false)
 	if err != nil {
@@ -172,17 +172,19 @@ func taskOf(r *http.Request, q *sqlc.Queries, t taskRow) (perm.BoardAccess, erro
 	if err != nil {
 		return perm.BoardAccess{}, err
 	}
-	if acc.Bits = perm.TaskBits(acc, inv.Assignee, inv.Approver); acc.Bits == 0 {
+	if acc.Bits = perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher); acc.Bits == 0 {
 		return perm.BoardAccess{}, httpx.NotFound("task")
 	}
 	return acc, nil
 }
 
-// invitedCond is the SQL condition over tasks t "user is an assignee or an approver" (ADR-0059).
+// invitedCond is the SQL condition over tasks t "user is an assignee, an approver or a watcher"
+// (ADR-0059, ADR-0076).
 func invitedCond(a *Args, user uuid.UUID) string {
 	u := a.Add(user)
 	return "(EXISTS (SELECT 1 FROM task_assignees ia WHERE ia.task_id = t.id AND ia.user_id = " + u + ")" +
-		" OR EXISTS (SELECT 1 FROM task_approvers ip WHERE ip.task_id = t.id AND ip.user_id = " + u + "))"
+		" OR EXISTS (SELECT 1 FROM task_approvers ip WHERE ip.task_id = t.id AND ip.user_id = " + u + ")" +
+		" OR EXISTS (SELECT 1 FROM task_subscribers iw WHERE iw.task_id = t.id AND iw.user_id = " + u + " AND iw.watcher))"
 }
 
 // visibleTasks keeps the rows the viewer sees (order kept): tasks of live boards with
@@ -354,10 +356,11 @@ func (it boardItems) labelIDs(raw []string) ([]uuid.UUID, error) {
 	return out, nil
 }
 
-// assigneesIn validates a requested assignee list (ADR-0042 §1, ADR-0059): ≤ 10 members, not
-// guests — people who see the board or, unless the board is restricted, any other member (who
-// then sees the board through this task); bots only with VIEW_BOARD; exactly one lead (the
-// first when none is marked).
+// assigneesIn validates a requested assignee list (ADR-0042 §1, ADR-0059, ADR-0076): ≤ 10
+// members, not guests — people who see the board or any other member (who then sees the board
+// through this task; restricted boards too); bots only with VIEW_BOARD; exactly one lead (the
+// first when none is marked). The caller must be able to edit the task (requireEdit / a new
+// task of their own): only an editor opens a card to someone without board access.
 func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*v1.TaskAssigneeInput) ([]*v1.TaskAssigneeInput, error) {
 	if len(in) > MaxAssignees {
 		return nil, httpx.Validation("assignees", "at most 10 assignees")
@@ -399,9 +402,10 @@ func assigneesIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, in []*
 	return out, nil
 }
 
-// mayInvite reports whether user u may become an assignee or an approver of a task of the
-// board (ADR-0059 §3): a member who is not a guest and either sees the board or — a human, on a
-// board that is not restricted — will see it through the task. Bots need VIEW_BOARD.
+// mayInvite reports whether user u may become an assignee, an approver or a watcher of a task
+// of the board (ADR-0059 §3, ADR-0076 §2): a member who is not a guest and either sees the board
+// or — a human — will see it through the task (restricted boards too, ADR-0076). Bots need
+// VIEW_BOARD. Callers check that the inviter may edit the task.
 func mayInvite(ctx context.Context, q *sqlc.Queries, res *perm.Resolver, boardID, u uuid.UUID) (bool, error) {
 	acc, err := res.Board(ctx, boardID, u)
 	if errors.Is(err, perm.ErrNoBoard) {
@@ -416,7 +420,7 @@ func mayInvite(ctx context.Context, q *sqlc.Queries, res *perm.Resolver, boardID
 	if acc.Bits.Has(perm.ViewBoard) {
 		return true, nil
 	}
-	if acc.Restricted || acc.Archived {
+	if acc.Archived {
 		return false, nil
 	}
 	usr, err := q.GetUser(ctx, u)
@@ -889,7 +893,8 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		// The author subscribes; the approvers (first: their notice is mandatory), the assignees
-		// and the users @mentioned in the description are subscribed and notified.
+		// and the users @mentioned in the description are subscribed and notified. The author
+		// edits their new task: the mentioned become watchers (ADR-0076 §5).
 		if err := q.Subscribe(r.Context(), sqlc.SubscribeParams{TaskID: taskID, UserIds: []uuid.UUID{me}}); err != nil {
 			return err
 		}
@@ -897,6 +902,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		mentioned, _ := messages.ParseMentions(desc)
+		if _, err := mentionWatchers(r.Context(), q, t, me, true, mentioned, &c); err != nil {
+			return err
+		}
 		return s.notifyDirect(r.Context(), q, t, me, fresh, mentioned, uuid.Nil, &c)
 	})
 	if err != nil {
@@ -1471,6 +1479,11 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				if !slices.Contains(was, u) {
 					added = append(added, u)
 				}
+			}
+			// The caller edits the task (requireEdit above): the new mentions become watchers
+			// (ADR-0076 §5).
+			if _, err := mentionWatchers(r.Context(), q, t, me, true, added, &c); err != nil {
+				return err
 			}
 			if err := s.notifyDirect(r.Context(), q, t, me, nil, added, uuid.Nil, &c); err != nil {
 				return err

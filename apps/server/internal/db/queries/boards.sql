@@ -19,12 +19,15 @@ SELECT b.workspace_id,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        b.disabled_features,
-       -- ADR-0059: the user (a human) is an assignee or an approver of a live task of the board.
+       -- ADR-0059 / ADR-0076: the user (a human) is an assignee, an approver or a watcher of a
+       -- live task of the board.
        (NOT coalesce(u.is_bot, true) AND (
            EXISTS (SELECT 1 FROM task_assignees x JOIN tasks t ON t.id = x.task_id
                    WHERE x.user_id = sqlc.arg('user_id')::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
         OR EXISTS (SELECT 1 FROM task_approvers x JOIN tasks t ON t.id = x.task_id
                    WHERE x.user_id = sqlc.arg('user_id')::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+        OR EXISTS (SELECT 1 FROM task_subscribers x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = sqlc.arg('user_id')::uuid AND x.watcher AND t.board_id = b.id AND t.archived_at IS NULL)
        ))::boolean AS invited
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
@@ -45,42 +48,52 @@ LEFT JOIN board_permissions uo ON uo.board_id = b.id AND uo.target_type = 'user'
 WHERE b.id = sqlc.arg('board_id');
 
 -- name: GetTaskRoomRef :one
--- The task and board of a task room and whether the user is its assignee / approver
--- (perm.Resolver: RoomAccess.Task, ADR-0059).
+-- The task and board of a task room and whether the user is its assignee / approver / watcher
+-- (perm.Resolver: RoomAccess.Task, ADR-0059, ADR-0076).
 SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived,
        EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS assignee,
-       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS approver
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS approver,
+       EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id') AND x.watcher)::boolean AS watcher
 FROM tasks t WHERE t.room_id = sqlc.arg('room_id');
 
 -- name: GetTaskInvite :one
--- Whether the user is an assignee / approver of a task (ADR-0059: perm.TaskBits).
+-- Whether the user is an assignee / approver / watcher of a task (ADR-0059, ADR-0076:
+-- perm.TaskBits).
 SELECT EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id'))::boolean AS assignee,
-       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id'))::boolean AS approver;
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id'))::boolean AS approver,
+       EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id') AND x.watcher)::boolean AS watcher;
 
 -- name: ListTaskInvites :many
--- The tasks among ids where the user is an assignee or an approver (ADR-0059).
+-- The tasks among ids where the user is an assignee, an approver or a watcher (ADR-0059,
+-- ADR-0076).
 SELECT x.task_id FROM task_assignees x WHERE x.task_id = ANY(sqlc.arg('ids')::uuid[]) AND x.user_id = sqlc.arg('user_id')
 UNION
-SELECT a.task_id FROM task_approvers a WHERE a.task_id = ANY(sqlc.arg('ids')::uuid[]) AND a.user_id = sqlc.arg('user_id');
+SELECT a.task_id FROM task_approvers a WHERE a.task_id = ANY(sqlc.arg('ids')::uuid[]) AND a.user_id = sqlc.arg('user_id')
+UNION
+SELECT w.task_id FROM task_subscribers w WHERE w.task_id = ANY(sqlc.arg('ids')::uuid[]) AND w.user_id = sqlc.arg('user_id') AND w.watcher;
 
 -- name: ListInvitedTasks :many
--- The live tasks on live, non-restricted boards of a workspace where the user (a human) is an
--- assignee or an approver: the task-scoped boards of ADR-0059.
+-- The live tasks on live boards of a workspace where the user (a human) is an assignee, an
+-- approver or a watcher: the task-scoped boards of ADR-0059 (restricted ones too, ADR-0076).
 SELECT t.id, t.board_id
 FROM tasks t JOIN boards b ON b.id = t.board_id
-WHERE b.workspace_id = sqlc.arg('workspace_id') AND b.archived_at IS NULL AND NOT b.restricted AND t.archived_at IS NULL
+WHERE b.workspace_id = sqlc.arg('workspace_id') AND b.archived_at IS NULL AND t.archived_at IS NULL
   AND t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = sqlc.arg('user_id')
-               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = sqlc.arg('user_id'))
+               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = sqlc.arg('user_id')
+               UNION SELECT w.task_id FROM task_subscribers w WHERE w.user_id = sqlc.arg('user_id') AND w.watcher)
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = sqlc.arg('user_id') AND u.is_bot);
 
 -- name: ListWorkspaceTaskInvitees :many
--- The assignees and approvers (humans) of the live tasks on live boards of a workspace: the
--- gateway's invited map (ADR-0059).
-SELECT t.id AS task_id, t.board_id, x.user_id, bool_or(x.assignee)::boolean AS assignee, bool_or(NOT x.assignee)::boolean AS approver
+-- The assignees, approvers and watchers (humans) of the live tasks on live boards of a
+-- workspace: the gateway's invited map (ADR-0059, ADR-0076). how: 1 assignee, 2 approver,
+-- 3 watcher.
+SELECT t.id AS task_id, t.board_id, x.user_id,
+       bool_or(x.how = 1)::boolean AS assignee, bool_or(x.how = 2)::boolean AS approver, bool_or(x.how = 3)::boolean AS watcher
 FROM tasks t
 JOIN boards b ON b.id = t.board_id
-JOIN (SELECT a.task_id, a.user_id, true AS assignee FROM task_assignees a
-      UNION ALL SELECT p.task_id, p.user_id, false AS assignee FROM task_approvers p) x ON x.task_id = t.id
+JOIN (SELECT a.task_id, a.user_id, 1 AS how FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id, 2 AS how FROM task_approvers p
+      UNION ALL SELECT w.task_id, w.user_id, 3 AS how FROM task_subscribers w WHERE w.watcher) x ON x.task_id = t.id
 JOIN users u ON u.id = x.user_id AND NOT u.is_bot
 WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
 GROUP BY t.id, t.board_id, x.user_id;
@@ -460,6 +473,37 @@ SELECT * FROM task_subscribers WHERE task_id = $1;
 
 -- name: ListViewerSubscriptions :many
 SELECT * FROM task_subscribers WHERE user_id = $1 AND task_id = ANY(sqlc.arg('task_ids')::uuid[]);
+
+-- name: ListTaskWatchers :many
+-- The watchers of tasks (ADR-0076), in a stable order.
+SELECT task_id, user_id FROM task_subscribers WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[]) AND watcher
+ORDER BY task_id, user_id;
+
+-- name: AddTaskWatchers :exec
+-- Makes users watchers (and subscribers) of a task; an existing row keeps its muted flag.
+INSERT INTO task_subscribers (task_id, user_id, watcher) SELECT sqlc.arg('task_id'), unnest(sqlc.arg('user_ids')::uuid[]), true
+ON CONFLICT (task_id, user_id) DO UPDATE SET watcher = true;
+
+-- name: UnsetTaskWatcher :one
+-- Removes the watcher role (the subscription stays); false when the user was not a watcher.
+WITH upd AS (
+    UPDATE task_subscribers SET watcher = false WHERE task_id = sqlc.arg('task_id') AND user_id = sqlc.arg('user_id') AND watcher
+    RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM upd)::boolean;
+
+-- name: DeleteTaskSubscription :exec
+DELETE FROM task_subscribers WHERE task_id = $1 AND user_id = $2;
+
+-- name: ListBoardInvitees :many
+-- The humans who are assignees, approvers or watchers of the live tasks of a board (ADR-0076:
+-- «Позванные по карточкам» counts those of them without VIEW_BOARD).
+SELECT DISTINCT x.user_id FROM tasks t
+JOIN (SELECT a.task_id, a.user_id FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id FROM task_approvers p
+      UNION ALL SELECT w.task_id, w.user_id FROM task_subscribers w WHERE w.watcher) x ON x.task_id = t.id
+JOIN users u ON u.id = x.user_id AND NOT u.is_bot
+WHERE t.board_id = $1 AND t.archived_at IS NULL;
 
 -- name: Subscribe :exec
 -- Auto-subscription: keeps an existing row (a muted one stays muted).
