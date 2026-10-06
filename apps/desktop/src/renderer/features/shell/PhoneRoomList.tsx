@@ -8,21 +8,19 @@ import { plural, t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
 import { mayArrangeRooms, mayInviteMembers, mayManageRoomWith, mayRoomInvite, roomPerms } from '../../lib/permissions';
 import { sortTempRooms } from '../../lib/tempRooms';
-import { useBoardsUi } from '../../stores/boardsUi';
 import { useRoomPreview } from '../../stores/roomPreviews';
 import { groupRooms, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
-import { BoardsList } from '../boards/BoardsList';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { KnockBadge } from '../guests/KnockBadge';
 import { CallTimer, CategoryDialog, PeoplePill, RoomMenu, WorkspaceHeader } from './Sidebar';
 
 /**
- * «Чаты» on a phone (ADR-0073 §3): the workspace header (name and menu, «Голос · Доски», «+») and
+ * «Чаты» on a phone (ADR-0073 §3): the workspace header (name and menu, «+»; the boards are the «Доски» tab) and
  * the rooms as a messenger's chat list — 68 px rows, the whole row opens the room, a long press
  * opens the room menu, no «Войти» (the voice is entered inside the room, §4). Categories are
  * collapsible section headers (the desktop's collapse state). The desktop column (Sidebar) is not
@@ -34,14 +32,12 @@ import { CallTimer, CategoryDialog, PeoplePill, RoomMenu, WorkspaceHeader } from
  */
 export function PhoneRoomList({ workspaceId }: { workspaceId: string }): ReactNode {
   const exists = useWorkspaces((s) => !!s.byId[workspaceId]);
-  const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
-  const boards = useBoardsUi((s) => s.active) && !guest;
   const [catDialog, setCatDialog] = useState(false);
   if (!exists) return null;
   return (
     <aside className="mat-sidebar flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('room.list')} data-testid="phone-room-list">
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
-      {boards ? <BoardsList workspaceId={workspaceId} /> : <Rooms workspaceId={workspaceId} />}
+      <Rooms workspaceId={workspaceId} />
       {catDialog ? <CategoryDialog workspaceId={workspaceId} onClose={() => setCatDialog(false)} /> : null}
     </aside>
   );

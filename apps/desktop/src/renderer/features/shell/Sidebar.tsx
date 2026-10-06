@@ -108,6 +108,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { ModeTabs } from './ModeTabs';
 import { WorkspaceMenu } from './WorkspaceMenu';
 import { BoardsList } from '../boards/BoardsList';
+import { ProfileButton } from './PhoneProfile';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
@@ -338,37 +339,47 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
   const mobile = useMobile();
+  const guestUser = useSession((s) => s.me?.user?.isGuest === true);
   if (role === undefined) return null;
   const guest = role === WorkspaceRole.GUEST;
   // Invites: INVITE_MEMBERS (ADR-0043, the server's check), a custom role's included.
   const inviter = mayInviteMembers(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
 
-  return (
-    <>
-      {/* Phone: no window title bar — the workspace menu heads the drawer (docs/09 #140). */}
-      {mobile ? (
-        <div className="flex h-11 shrink-0 items-center border-b border-line px-2">
+  const create =
+    manageRooms || inviter || !guest ? (
+      <CreateMenu
+        workspaceId={workspaceId}
+        onCreateCategory={onCreateCategory}
+        rooms={manageRooms}
+        temp={mayCreateTempRooms(myRoles)}
+        invite={inviter}
+        meeting={!guest}
+        tasks={!guest}
+      />
+    ) : null;
+
+  // Phone (ADR-0073 §1): one row — the workspace menu and «+». No «Голос · Доски» switch (the boards
+  // are a tab) and no calendar one (a tab too). A guest account has no «Личные» tab: its profile
+  // button is here.
+  if (mobile) {
+    return (
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
+        <div className="min-w-0 flex-1">
           <WorkspaceMenu workspaceId={workspaceId} variant="drawer" />
         </div>
-      ) : null}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
-        {/* Guests have no calendar or boards: no tabs (docs/09 #140). */}
-        {/* Phone (ADR-0073): the calendar is a tab of the tab bar, here only «Голос · Доски». */}
-        {guest ? <div className="flex-1" /> : <ModeTabs workspaceId={workspaceId} calendar={!mobile} />}
-        {manageRooms || inviter || !guest ? (
-          <CreateMenu
-            workspaceId={workspaceId}
-            onCreateCategory={onCreateCategory}
-            rooms={manageRooms}
-            temp={mayCreateTempRooms(myRoles)}
-            invite={inviter}
-            meeting={!guest}
-            tasks={!guest}
-          />
-        ) : null}
+        {create}
+        {guestUser ? <ProfileButton tab="chats" /> : null}
       </div>
-    </>
+    );
+  }
+
+  return (
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
+      {/* Guests have no calendar or boards: no tabs (docs/09 #140). */}
+      {guest ? <div className="flex-1" /> : <ModeTabs workspaceId={workspaceId} calendar />}
+      {create}
+    </div>
   );
 }
 

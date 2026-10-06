@@ -121,9 +121,13 @@ function closeFlag(s: PhoneScreen, next: PhoneScreen | undefined): void {
     case 'archived':
       if (useArchiveView.getState().room) useArchiveView.getState().close();
       break;
+    case 'board':
+      // Back to the boards list: the boards mode (and a board's task) is off with the screen.
+      if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+      break;
     case 'room':
     case 'dm':
-    case 'board':
+    case 'profile':
       break;
   }
   // Back to a chat below: it is the open room again (the list's highlight, read state, links).
@@ -191,14 +195,19 @@ export function openTab(tab: PhoneTab): void {
   const ui = useUi.getState();
   ui.setPhone((n) => switchTab(n, tab));
   if (tab !== 'calendar' && ui.calDay !== null) useUi.getState().closeCalendar();
+  // A board / task screen goes with its tab's stack: the boards mode and the open task are off.
+  if (ui.phone.stack.some((x) => x.kind === 'board' || x.kind === 'task')) {
+    const bu = useBoardsUi.getState();
+    if (bu.taskId) bu.openTask(null);
+    if (bu.active) bu.setActive(false);
+  }
   if (tab === 'dms') {
     if (useUi.getState().activeWorkspaceId !== HOME) useUi.getState().setWorkspace(HOME);
     return;
   }
-  if (tab === 'chats' || tab === 'calendar') {
-    const ws = realWorkspace();
-    if (ws && useUi.getState().activeWorkspaceId !== ws) useUi.getState().setWorkspace(ws);
-  }
+  // «Чаты», «Доски», «Календарь»: a real workspace (not «Личные»).
+  const ws = realWorkspace();
+  if (ws && useUi.getState().activeWorkspaceId !== ws) useUi.getState().setWorkspace(ws);
   if (tab === 'calendar' && useUi.getState().calDay === null) {
     useFreeBusy.getState().setFind(null);
     useUi.getState().openCalendarDay(dayKey(Date.now()), null);
@@ -247,7 +256,7 @@ function installMirrors(): () => void {
     if (!s.active && prev.active) setPhone((n) => removeKind(removeKind(n, 'task'), 'board'));
     if (s.taskId !== prev.taskId) {
       const id = s.taskId;
-      if (id) setPhone((n) => pushOnTab(n, 'chats', { kind: 'task', id }));
+      if (id) setPhone((n) => pushOnTab(n, 'boards', { kind: 'task', id }));
       else setPhone((n) => removeKind(n, 'task'));
     }
   });

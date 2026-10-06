@@ -78,9 +78,16 @@ async function toRoot(page: Page): Promise<void> {
 }
 
 /** A tab of the bottom tab bar (its root). */
-async function tab(page: Page, name: 'chats' | 'dms' | 'calendar' | 'me'): Promise<void> {
+async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar'): Promise<void> {
   await toRoot(page);
   await page.getByTestId(`phone-tab-${name}`).tap();
+}
+
+/** «Личные» → the avatar button at the right of its header → «Профиль» (ADR-0073 §1). */
+async function openProfile(page: Page): Promise<void> {
+  await tab(page, 'dms');
+  await page.getByTestId('phone-profile-button').tap();
+  await expect(page.getByTestId('phone-profile')).toBeVisible();
 }
 
 /** «Чаты» → a room of the list (the whole row opens it). */
@@ -546,13 +553,31 @@ test('m-members-page', async ({ page }) => {
   await expect(page.getByTestId('composer')).toBeVisible();
 });
 
-// ADR-0073 §1: «Я» — the profile card, mic / sound, the settings entries, «Выйти».
-test('m-me', async ({ page }) => {
+// ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, opened by the avatar of «Личные») — the
+// profile card, mic / sound, the settings entries, «Выйти»; «←» returns to «Личные».
+test('m-profile', async ({ page }) => {
   await signedIn(page);
-  await tab(page, 'me');
-  await expect(page.getByTestId('phone-me-card')).toContainText('Анна');
-  await expect(page.getByTestId('phone-me-logout')).toBeVisible();
-  await checkpoint(page, 'm-me');
+  await openProfile(page);
+  await expect(page.getByTestId('phone-profile-card')).toContainText('Анна');
+  await expect(page.getByTestId('phone-profile-logout')).toBeVisible();
+  await checkpoint(page, 'm-profile');
+  await page.getByTestId('phone-back').tap();
+  await expect(page.getByTestId('phone-dms')).toBeVisible();
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+});
+
+// ADR-0073 §1 (owner 06.10): the «Доски» tab — the boards of the open workspace; a board is pushed
+// over it, the tab bar returns on «←».
+test('m-boards-tab', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'boards');
+  await expect(page.getByTestId('phone-boards')).toBeVisible();
+  await expect(page.getByTestId('boards-list')).toBeVisible();
+  await checkpoint(page, 'm-boards-tab');
+  await page.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
+  await page.getByTestId('phone-back').first().tap();
+  await expect(page.getByTestId('phone-boards')).toBeVisible();
 });
 
 // Calendar (ADR-0038 §7, ADR-0073): the «Календарь» tab → today, full screen; the meeting card is
@@ -604,13 +629,13 @@ test('m-calendar-public', async ({ page }) => {
   await checkpoint(page, 'm-calendar-public');
 });
 
-// Task boards on a phone (ADR-0042 §5): boards on the space screen, the list by default, the task full screen.
+// Task boards on a phone (ADR-0042 §5): the «Доски» tab, the list by default, the task full screen.
 test('m-boards-list', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
-  // «Доски» of the space screen (ADR-0073): the list in place of the rooms, a board is pushed.
-  const nav = page.getByTestId('phone-room-list');
-  await nav.getByTestId('boards-button').tap();
+  // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
   await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
   await expect(page.getByTestId('list-view')).toBeVisible();
@@ -620,9 +645,9 @@ test('m-boards-list', async ({ page }) => {
 test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
-  // «Доски» of the space screen (ADR-0073): the list in place of the rooms, a board is pushed.
-  const nav = page.getByTestId('phone-room-list');
-  await nav.getByTestId('boards-button').tap();
+  // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
   await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
   const panel = page.getByTestId('task-panel');
@@ -634,9 +659,9 @@ test('m-boards-task', async ({ page }) => {
 test('m-boards-kanban', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
-  // «Доски» of the space screen (ADR-0073): the list in place of the rooms, a board is pushed.
-  const nav = page.getByTestId('phone-room-list');
-  await nav.getByTestId('boards-button').tap();
+  // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
   await page.getByTestId('view-kanban').tap();
   const kanban = page.getByTestId('kanban');
@@ -693,8 +718,8 @@ test('m-sheet', async ({ page }) => {
 test('m-voice', async ({ page }) => {
   await signedIn(page);
   // Push-to-talk mode: the fullest strip (room line, mute, deafen, PTT hold, hang up).
-  await tab(page, 'me');
-  await page.getByTestId('phone-me-voice').tap();
+  await openProfile(page);
+  await page.getByTestId('phone-profile-voice').tap();
   const settings = page.getByRole('dialog', { name: 'Настройки' });
   await settings.getByRole('radio', { name: 'Push-to-talk' }).tap();
   await settings.getByRole('button', { name: 'Закрыть', exact: true }).tap();
@@ -817,13 +842,13 @@ test('m-call-incoming', async ({ page }) => {
 
 test('m-settings', async ({ page }) => {
   await signedIn(page);
-  await tab(page, 'me');
-  await page.getByTestId('phone-me-general').tap();
+  await openProfile(page);
+  await page.getByTestId('phone-profile-general').tap();
   const settings = page.getByRole('dialog', { name: 'Настройки' });
   await expect(settings).toBeVisible();
   await expectNoFieldFocus(page, 'settings');
   await checkpoint(page, 'm-settings');
-  // «Я → Основное» opens that section; «←» returns to the list of sections (ADR-0073 §6).
+  // «Профиль → Основное» opens that section; «←» returns to the list of sections (ADR-0073 §6).
   await settings.getByRole('button', { name: 'Назад' }).tap();
   await settings.getByRole('tab', { name: 'Голос и устройства' }).tap();
   await checkpoint(page, 'm-settings-voice', { snapshot: false });

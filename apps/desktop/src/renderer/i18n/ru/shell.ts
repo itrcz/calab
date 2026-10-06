@@ -241,7 +241,7 @@ export const ruShell = {
   'mobile.back': 'Назад',
   'mobile.tabs': 'Разделы',
   'mobile.tabChats': 'Чаты',
-  'mobile.tabMe': 'Я',
+  'mobile.profile': 'Профиль',
   'mobile.tabDms': 'Личные',
   'mobile.mic': 'Микрофон',
   'mobile.sound': 'Звук',

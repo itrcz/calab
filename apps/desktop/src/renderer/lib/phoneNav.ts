@@ -5,8 +5,8 @@
  * and with the older per-feature flags (members, search, calendar event, task…).
  */
 
-export type PhoneTab = 'chats' | 'dms' | 'calendar' | 'me';
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'calendar', 'me'];
+export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar';
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar'];
 
 /**
  * A pushed screen. Chats carry their ids (back from room B shows room A again); the other kinds
@@ -21,7 +21,9 @@ export type PhoneScreen =
   | { kind: 'findTime' }
   | { kind: 'board'; ws: string }
   | { kind: 'task'; id: string }
-  | { kind: 'archived'; room: string };
+  | { kind: 'archived'; room: string }
+  /** «Профиль» (the former «Я» tab): pushed over «Личные» by the avatar button. */
+  | { kind: 'profile' };
 
 export type ScreenKind = PhoneScreen['kind'];
 
@@ -65,6 +67,7 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.id === (b as typeof a).id;
     case 'search':
     case 'findTime':
+    case 'profile':
       return true;
   }
 }
