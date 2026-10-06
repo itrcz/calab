@@ -175,11 +175,6 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
                 <FolderPlus className="size-4" aria-hidden />
               </button>
             </Tip>
-            <Tip label={t('boards.newBoard')}>
-              <button type="button" aria-label={t('boards.newBoard')} onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-new">
-                <Plus className="size-4" aria-hidden />
-              </button>
-            </Tip>
           </>
         ) : null}
       </div>

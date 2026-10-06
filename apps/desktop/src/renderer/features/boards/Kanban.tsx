@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEv
 import { createPortal } from 'react-dom';
 import { Virtuoso } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
+import { InlineAdd } from '../../components/CreateButton';
 import { Button, Modal, Select, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { blockedStatusIds } from '../../lib/boards/approvals';
@@ -542,11 +543,7 @@ function ColumnHeader({
         </Dropdown.Portal>
       </Dropdown.Root>
       {canCreate ? (
-        <Tip label={t('boards.addTaskTo', { status: status.name })}>
-          <button type="button" onClick={onAdd} aria-label={t('boards.addTaskTo', { status: status.name })} className="grid size-7 place-items-center mobile:tap-size rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="column-add">
-            <Plus className="size-4" aria-hidden />
-          </button>
-        </Tip>
+        <InlineAdd label={t('boards.addTaskTo', { status: status.name })} onClick={onAdd} data-testid="column-add" />
       ) : null}
       {deleting ? <DeleteStatusDialog boardId={boardId} status={status} statuses={statuses} onClose={() => setDeleting(false)} /> : null}
     </div>

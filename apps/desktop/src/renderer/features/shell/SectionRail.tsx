@@ -21,9 +21,8 @@ import { WorkspaceAppsColumn } from '../webapps/AppRail';
 import { RailContextMenu } from './RailContextMenu';
 import { openSection } from './sectionNav';
 
-/** 48 px tile: squircle radius 16 → 12 on hover / active (the workspace tile's morph, 160 ms). */
-const tile =
-  'relative grid size-12 place-items-center rounded-[16px] transition-[border-radius,background-color,color] duration-[var(--motion)] ease-out hover:rounded-[12px]';
+/** 40 px plate, radius 10 (docs/08, owner 07.10): no fill at rest, grey plate on hover and when active. */
+const tile = 'relative grid size-10 place-items-center rounded-[10px] transition-[background-color,color] duration-[var(--motion-fast)] ease-out';
 
 /**
  * The sections rail (ADR-0074 §1): 72 px, rail material — «Чаты» (the rooms of the context
@@ -70,7 +69,7 @@ function useSection(ws: string | null): Section | null {
 }
 
 /** The hairline above the web apps: drawn by the apps column, only when it has something to show. */
-const APPS_LINE = <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />;
+const APPS_LINE = <div className="my-1 h-px w-8 shrink-0 bg-line" aria-hidden />;
 
 // ---------------------------------------------------------------- tiles
 
@@ -116,25 +115,25 @@ function TileButton({
       data-testid={testId}
       className={cx(
         tile,
-        active ? 'rounded-[12px] bg-accent-strong text-accent-fg' : 'bg-hover text-muted hover:bg-accent-strong hover:text-accent-fg',
+        active ? 'bg-hover text-fg' : 'text-muted hover:bg-active hover:text-fg',
         ring && 'ring-2 ring-accent',
       )}
     >
-      <Icon className="size-6" strokeWidth={1.75} aria-hidden />
+      <Icon className="size-5" strokeWidth={1.75} aria-hidden />
       {/* As on the workspace tiles before: «in voice» top-right (green), the count bottom-right. */}
       {inVoice ? (
         <span
-          className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full border-2 border-[var(--color-rail)] bg-ok-fill text-white"
+          className="absolute -bottom-0.5 -right-0.5 grid size-4 place-items-center rounded-full border-2 border-[var(--color-rail)] bg-ok-fill text-white"
           data-testid="rail-voice-badge"
           aria-hidden
         >
-          <Volume2 className="size-2.5" strokeWidth={2.75} />
+          <Volume2 className="size-2" strokeWidth={2.75} />
         </span>
       ) : null}
       {count > 0 ? (
         <span
           className={cx(
-            'absolute -bottom-1 -right-1 min-w-5 rounded-full border-[3px] border-[var(--color-rail)] px-1 text-center text-micro font-bold leading-[14px]',
+            'absolute -right-1 -top-1 min-w-4 rounded-full border-2 border-[var(--color-rail)] px-1 text-center text-micro font-bold leading-[12px]',
             tone === 'danger' ? 'bg-danger-fill text-white' : 'bg-accent-strong text-accent-fg',
           )}
           data-testid={`${testId}-count`}
@@ -147,7 +146,7 @@ function TileButton({
   );
 }
 
-/** The slot: the left pill (40 px active, 8 px unread, 20 px hover) and the tile. */
+/** The slot: the tile and, only while the section has unread without a count, the 8 px pill on the left edge. */
 function Slot({ active, dot = false, children, ...rest }: { active: boolean; dot?: boolean; children: ReactNode } & Record<`data-${string}`, unknown>): ReactNode {
   return (
     <div className="group relative flex w-full shrink-0 justify-center" {...rest}>
@@ -155,7 +154,7 @@ function Slot({ active, dot = false, children, ...rest }: { active: boolean; dot
         aria-hidden
         className={cx(
           'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg transition-[height,opacity] duration-[var(--motion)] ease-out',
-          active ? 'h-10' : dot ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
+          dot && !active ? 'h-2' : 'h-0 opacity-0',
         )}
       />
       {children}

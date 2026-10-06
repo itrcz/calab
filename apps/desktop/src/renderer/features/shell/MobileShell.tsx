@@ -2,6 +2,7 @@ import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceRole } from '@calaba/protocol';
 import { CalendarDays, MessageCircle, MessagesSquare, SquareKanban } from 'lucide-react';
 import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
+import { CreateButton } from '../../components/CreateButton';
 import { PhoneHeader } from '../../components/PhoneHeader';
 import { Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -16,7 +17,9 @@ import { useSearchPanel } from '../../stores/searchPanel';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { useBoardsUi } from '../../stores/boardsUi';
+import { mayCreateBoards } from '../../lib/permissions';
 import { useIdentity } from '../../stores/identity';
 import { accessLocked } from '../identity/model';
 import { WorkspaceLock } from '../identity/WorkspaceLock';
@@ -155,11 +158,14 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const { ws, locked } = useRootWorkspace();
   const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
   const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const creator = mayCreateBoards(useMemberRoles(ws ?? '', me));
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
     <section className="mat-sidebar flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
       <header className="mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
         <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+        {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
       </header>
       <BoardsList workspaceId={ws} />
     </section>
@@ -168,9 +174,12 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
 
 /** «Личные»: notes and DMs at full width; my avatar at the right opens «Профиль». */
 function DmsRoot(): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  const guest = useSession((s) => !!s.me?.user?.isGuest);
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ ['--sidebar-width' as string]: '100%' }} data-testid="phone-dms">
       <RootTitle title={t('dm.home')}>
+        {guest ? null : <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />}
         <ProfileButton tab="dms" />
       </RootTitle>
       <div className="flex min-h-0 flex-1">
@@ -284,10 +293,10 @@ function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
       data-testid="phone-tabbar"
       className="mat-toolbar flex shrink-0 border-t border-line pb-[var(--safe-bottom,0px)] [.kb-open_&]:hidden"
     >
-      <TabButton tab="chats" active={tab === 'chats'} label={t('mobile.tabChats')} icon={<MessagesSquare className="size-6" strokeWidth={1.75} />} badge={<ChatsBadge />} />
-      {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={<MessageCircle className="size-6" strokeWidth={1.75} />} badge={<DmsBadge />} /> : null}
-      <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={<SquareKanban className="size-6" strokeWidth={1.75} />} badge={<BoardsBadge />} />
-      {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={<CalendarDays className="size-6" strokeWidth={1.75} />} /> : null}
+      <TabButton tab="chats" active={tab === 'chats'} label={t('mobile.tabChats')} icon={<MessagesSquare className="size-[22px]" strokeWidth={1.75} />} badge={<ChatsBadge />} />
+      {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={<MessageCircle className="size-[22px]" strokeWidth={1.75} />} badge={<DmsBadge />} /> : null}
+      <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={<SquareKanban className="size-[22px]" strokeWidth={1.75} />} badge={<BoardsBadge />} />
+      {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={<CalendarDays className="size-[22px]" strokeWidth={1.75} />} /> : null}
     </nav>
   );
 }
@@ -299,7 +308,7 @@ const TabButton = memo(function TabButton({ tab, active, label, icon, badge }: {
       onClick={() => openTab(tab)}
       aria-current={active ? 'page' : undefined}
       data-testid={`phone-tab-${tab}`}
-      className={cx('relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-micro font-medium', active ? 'text-accent-text' : 'text-muted')}
+      className={cx('relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-micro font-medium', active ? 'text-fg' : 'text-muted')}
     >
       <span className="relative flex">
         {icon}
