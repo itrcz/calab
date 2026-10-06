@@ -149,7 +149,6 @@ function closeFlag(s: PhoneScreen, next: PhoneScreen | undefined): void {
       break;
     case 'room':
     case 'dm':
-    case 'profile':
       break;
   }
   // Back to a chat below: it is the open room again (the list's highlight, read state, links).
@@ -268,6 +267,8 @@ export function openTab(tab: PhoneTab): void {
     if (useUi.getState().activeWorkspaceId !== HOME) useUi.getState().setWorkspace(HOME);
     return;
   }
+  // «Профиль» is the account's, not a workspace's: the open workspace stays.
+  if (tab === 'profile') return;
   // «Чаты», «Доски», «Календарь»: a real workspace (not «Личные»).
   const ws = realWorkspace();
   if (ws && useUi.getState().activeWorkspaceId !== ws) useUi.getState().setWorkspace(ws);

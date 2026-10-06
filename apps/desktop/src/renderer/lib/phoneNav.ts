@@ -5,8 +5,8 @@
  * and with the older per-feature flags (members, search, calendar event, task…).
  */
 
-export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar';
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar'];
+export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'profile';
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'boards', 'calendar', 'profile'];
 
 /**
  * A pushed screen. Chats carry their ids (back from room B shows room A again); the other kinds
@@ -22,8 +22,6 @@ export type PhoneScreen =
   | { kind: 'board'; ws: string }
   | { kind: 'task'; id: string }
   | { kind: 'archived'; room: string }
-  /** «Профиль» (the former «Я» tab): pushed over «Личные» by the avatar button. */
-  | { kind: 'profile' }
   /**
    * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)
    * as a screen: `section` null = the list of sections (also the search), else that section.
@@ -75,7 +73,6 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.section === (b as typeof a).section;
     case 'search':
     case 'findTime':
-    case 'profile':
       return true;
   }
 }

@@ -41,16 +41,19 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
   const mobile = useMobile();
   return (
     <div className="shrink-0">
-      <header className="flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:gap-1 mobile:pl-0.5" data-testid="board-header">
+      {/* Phone: the standard PhoneHeader row — «‹» · emoji + title on the free width · «+» · «…», 44 px targets, 16 px gutter. */}
+      <header className={cx('flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:gap-0.5 mobile:pl-0.5 mobile:pr-1', mobile && 'mat-toolbar')} data-testid="board-header">
         {mobile ? <NavButton /> : null}
-        <span className="shrink-0 text-headline leading-none" aria-hidden>
-          {emoji || '📋'}
+        <span className="flex min-w-0 items-center gap-2 mobile:flex-1 mobile:pl-1.5">
+          <span className="shrink-0 text-headline leading-none" aria-hidden>
+            {emoji || '📋'}
+          </span>
+          <h1 className="min-w-0 truncate text-headline font-semibold mobile:text-list mobile:leading-5" title={name}>
+            {name}
+          </h1>
         </span>
-        <h1 className="min-w-0 truncate text-headline font-semibold mobile:text-list" title={name}>
-          {name}
-        </h1>
         {mobile ? null : <ViewsMenu boardId={boardId} />}
-        <span className="flex-1" />
+        {mobile ? null : <span className="flex-1" />}
         {mobile ? null : <ViewSwitch boardId={boardId} />}
         {hasBit(perms, CREATE_TASKS) ? (
           <Tip label={t('boards.newTask')} shortcut="C">
@@ -70,7 +73,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
       </header>
       {mobile ? (
         <>
-          <div className="flex h-11 items-center justify-between gap-2 px-4" data-testid="view-row">
+          <div className="flex h-12 items-center justify-between gap-2 pl-4 pr-1" data-testid="view-row">
             <ViewSwitch boardId={boardId} />
             <DisplayMenu boardId={boardId} />
           </div>
@@ -270,8 +273,8 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
   return (
     <Popover.Root modal={false}>
       <Popover.Trigger asChild>
-        <button type="button" aria-label={t('boards.display')} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="display-menu">
-          <SlidersHorizontal className="size-3.5" aria-hidden />
+        <button type="button" aria-label={t('boards.display')} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-11 mobile:justify-center mobile:px-0" data-testid="display-menu">
+          <SlidersHorizontal className="size-3.5 mobile:size-5" aria-hidden />
           <span className="mobile:hidden">{t('boards.display')}</span>
         </button>
       </Popover.Trigger>
@@ -329,8 +332,8 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
       {forms ? <BoardForms boardId={boardId} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:tap-size" data-testid="board-more">
-            <Ellipsis className="size-[18px]" aria-hidden />
+          <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-11" data-testid="board-more">
+            <Ellipsis className="size-[18px] mobile:size-5" aria-hidden />
           </button>
         </Dropdown.Trigger>
         <Dropdown.Portal>

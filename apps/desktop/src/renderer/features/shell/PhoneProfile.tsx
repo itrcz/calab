@@ -7,7 +7,6 @@ import { t, type MessageKey } from '../../i18n';
 import { voice } from '../../services/voice';
 import { logout } from '../../services/session';
 import { useSession } from '../../stores/session';
-import { pushOnTab } from '../../lib/phoneNav';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { localAuthority } from '../identity/model';
@@ -16,7 +15,7 @@ import { DeviceMenu, MicMenu } from './SelfPanel';
 import { STATUS_KEY, StatusMenu, useCustomStatusExpiry, useMyStatus } from './StatusMenu';
 
 /**
- * «Профиль» (ADR-0073 §1, the former «Я» tab; pushed over «Личные» by the avatar button): the profile card (avatar, name, status — the status menu on tap), the
+ * «Профиль» (ADR-0073 §1, the former «Я» tab; the fifth tab, my avatar): the profile card (avatar, name, status — the status menu on tap), the
  * microphone and the sound with their device menus (the self panel's, the desktop's bottom
  * island is not shown on a phone), the settings entries (each opens the settings at its section,
  * as the gear did) and «Выйти».
@@ -192,23 +191,14 @@ function DeviceTile({
 }
 
 
-/**
- * The avatar button of the «Личные» header (44 px, my avatar with the presence dot): opens
- * «Профиль». Also in the space header of a guest account, which has no «Личные» tab.
- */
-export function ProfileButton({ tab }: { tab: 'dms' | 'chats' }): ReactNode {
+/** The icon of the «Профиль» tab: my avatar with the presence dot (ring marks the open tab). */
+export function ProfileTabIcon({ active }: { active: boolean }): ReactNode {
   const user = useSession((s) => s.me?.user);
   const status = useMyStatus();
-  if (!user) return null;
+  if (!user) return <CircleUser className="size-[22px]" strokeWidth={1.75} aria-hidden />;
   return (
-    <button
-      type="button"
-      aria-label={`${t('mobile.profile')}: ${user.displayName}`}
-      onClick={() => useUi.getState().setPhone((n) => pushOnTab(n, tab, { kind: 'profile' }))}
-      className="grid size-11 shrink-0 place-items-center rounded-full active:bg-[var(--color-fill-hover)]"
-      data-testid="phone-profile-button"
-    >
-      <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} status={status} ring="var(--color-bg)" />
-    </button>
+    <span className={cx('flex size-[22px] rounded-full ring-2 ring-offset-0', active ? 'ring-fg' : 'ring-transparent')}>
+      <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={22} status={status} ring="var(--color-toolbar,var(--color-bg))" />
+    </span>
   );
 }

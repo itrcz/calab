@@ -3,11 +3,11 @@ import { isDm } from '../stores/dms';
 import { showsUnread } from '../stores/rooms';
 
 /**
- * The sections of the desktop rail (ADR-0074): the same four as the phone's tabs (ADR-0073) —
+ * The sections of the desktop rail (ADR-0074): the phone's tabs (ADR-0073) except «Профиль» —
  * «Чаты», «Личные», «Календарь», «Доски». Pure helpers: which section is on screen, the section
  * remembered per workspace, the workspace the sections work in, and the rail / switcher badges.
  */
-export type Section = PhoneTab;
+export type Section = Exclude<PhoneTab, 'profile'>;
 /** Sections that live inside a workspace («Личные» is the HOME pseudo-workspace). */
 export type WsSection = Exclude<Section, 'dms'>;
 

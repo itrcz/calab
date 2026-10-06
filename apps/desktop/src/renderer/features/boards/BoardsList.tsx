@@ -156,7 +156,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   return (
     <div
       ref={list}
-      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-1 mobile:pt-2"
+      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-1 mobile:px-0 mobile:pt-1"
       onClickCapture={(e) => {
         if (suppress.current) {
           e.stopPropagation();
@@ -166,7 +166,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       data-testid="boards-list"
     >
       <MyTasksRow workspaceId={workspaceId} />
-      <div className="flex h-9 items-center pl-2 pr-1 pt-2 mobile:h-7">
+      <div className="flex h-9 items-center pl-2 pr-1 pt-2 mobile:h-11 mobile:px-3">
         <h2 className={cx('min-w-0 flex-1 truncate', GROUP_LABEL)}>{t('boards.boards')}</h2>
         {creator ? (
           <>
@@ -178,7 +178,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
           </>
         ) : null}
       </div>
-      <div className="flex flex-col gap-px pt-0.5">
+      <div className="flex flex-col gap-px pt-0.5 mobile:gap-0 mobile:pt-0">
         {tokens.map((tok) => {
           const id = tok.slice(2);
           return tok.startsWith('h:') ? (
@@ -255,7 +255,7 @@ const CategoryHeader = memo(function CategoryHeader({
           aria-expanded={!collapsed}
           aria-label={collapsed ? t('shell.categoryExpand', { name }) : t('shell.categoryCollapse', { name })}
           title={name}
-          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-6 mobile:gap-0.5 mobile:pl-0.5', GROUP_LABEL)}
+          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-8 mobile:gap-1 mobile:pl-3', GROUP_LABEL)}
           data-testid="board-category-toggle"
         >
           {/* Phone: the chevron first, as before; desktop (owner, 07.10): after the name, on hover. */}
@@ -377,10 +377,10 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
       type="button"
       onClick={() => openBoard(workspaceId, MY_TASKS)}
       aria-current={active ? 'page' : undefined}
-      className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-8 mobile:rounded-[var(--radius-row)]', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
+      className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-[52px] mobile:gap-3 mobile:rounded-none mobile:px-3 mobile:text-body', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
       data-testid="my-tasks"
     >
-      <Inbox className="size-[18px] shrink-0" aria-hidden />
+      <Inbox className="size-[18px] shrink-0 mobile:size-6" aria-hidden />
       <span className="min-w-0 flex-1 truncate">{t('boards.myTasks')}</span>
       {unread > 0 ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-micro font-semibold tabular-nums text-accent-fg">{unread > 99 ? '99+' : unread}</span> : null}
     </button>
@@ -407,12 +407,12 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
       <div
         data-board-row={id}
         onPointerDown={(e) => onPointerDown(e, id)}
-        className={cx('group/board flex items-center rounded-[var(--radius-card)] pr-1 mobile:rounded-[var(--radius-row)]', scoped ? 'min-h-8 py-0.5' : 'h-9 mobile:h-8', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
+        className={cx('group/board flex items-center rounded-[var(--radius-card)] pr-1 mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-[52px]' : 'h-9 mobile:h-[52px]', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
-        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', scoped ? 'min-h-8 py-0.5' : 'h-9 mobile:h-8', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
-          <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
-            {emoji || <SquareKanban className="size-[18px]" />}
+        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-body', scoped ? 'min-h-8 py-0.5 mobile:min-h-[52px]' : 'h-9 mobile:h-[52px]', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+          <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:w-7 mobile:text-[22px]" aria-hidden>
+            {emoji || <SquareKanban className="size-[18px] mobile:size-6" />}
           </span>
           {scoped ? (
             <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
@@ -427,14 +427,14 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
           {restricted ? <RestrictedMark /> : null}
           {mine > 0 ? (
-            <span className="shrink-0 text-caption tabular-nums text-muted" title={t('boards.myOpen')}>
+            <span className="shrink-0 text-caption tabular-nums text-muted mobile:grid mobile:h-[22px] mobile:min-w-[22px] mobile:place-items-center mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:px-1.5 mobile:text-fg" title={t('boards.myOpen')}>
               {mine}
             </span>
           ) : null}
         </button>
         <Dropdown.Root modal={false}>
           <Dropdown.Trigger asChild>
-            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
+            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 mobile:size-11 mobile:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
               <Ellipsis className="size-4" aria-hidden />
             </button>
           </Dropdown.Trigger>

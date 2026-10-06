@@ -84,7 +84,7 @@ describe('phone navigation stack (ADR-0073 §1)', () => {
     expect(switchTab(root, 'boards')).toBe(root);
   });
 
-  it('a board or a task lives on «Доски»; the profile on «Личные»', () => {
+  it('a board or a task lives on «Доски»; the profile is a tab', () => {
     // From another tab: «tab root → screen» (a board link, a notification).
     const link = pushOnTab(openChat(nav(), room('a')), 'boards', { kind: 'board', ws: 'w' });
     expect(link).toMatchObject({ tab: 'boards', stack: [{ kind: 'board', ws: 'w' }] });
@@ -92,12 +92,11 @@ describe('phone navigation stack (ADR-0073 §1)', () => {
     const task = pushOnTab(link, 'boards', { kind: 'task', id: 't' });
     expect(task.stack.map((x) => x.kind)).toEqual(['board', 'task']);
     expect(popScreen(popScreen(task))).toMatchObject({ tab: 'boards', stack: [] });
-    // The profile is pushed over «Личные» and pops back to its root.
-    const dms = nav({ tab: 'dms' });
-    const profile = pushOnTab(dms, 'dms', { kind: 'profile' });
-    expect(profile).toMatchObject({ tab: 'dms', stack: [{ kind: 'profile' }] });
-    expect(pushScreen(profile, { kind: 'profile' })).toBe(profile);
-    expect(popScreen(profile)).toMatchObject({ tab: 'dms', stack: [] });
+    // The profile is a tab of its own (owner, 07.10): settings pushed from it pop back to its root.
+    const profile = switchTab(nav({ tab: 'dms' }), 'profile');
+    expect(profile).toMatchObject({ tab: 'profile', stack: [] });
+    const settings = pushOnTab(profile, 'profile', { kind: 'settings', section: 'voice' });
+    expect(popScreen(settings)).toMatchObject({ tab: 'profile', stack: [] });
   });
 
   it('popping the root does nothing', () => {
@@ -142,10 +141,10 @@ describe('settings screens (ADR-0073, owner 07.10)', () => {
   const list = { kind: 'settings' as const, section: null };
 
   it('a section is pushed over the list: back pops one screen at a time', () => {
-    const n = openSettingsSection(nav({ stack: [{ kind: 'profile' }, list] }), 'voice');
-    expect(n.stack).toEqual([{ kind: 'profile' }, list, { kind: 'settings', section: 'voice' }]);
-    expect(popScreen(n).stack).toEqual([{ kind: 'profile' }, list]);
-    expect(historyTarget(n.stack.length, 0)).toBe(3);
+    const n = openSettingsSection(nav({ stack: [list] }), 'voice');
+    expect(n.stack).toEqual([list, { kind: 'settings', section: 'voice' }]);
+    expect(popScreen(n).stack).toEqual([list]);
+    expect(historyTarget(n.stack.length, 0)).toBe(2);
   });
 
   it('the same section again does not grow the stack; another section is its own screen', () => {
@@ -155,12 +154,12 @@ describe('settings screens (ADR-0073, owner 07.10)', () => {
   });
 
   it('the settings screens go together when the window closes', () => {
-    const n = openSettingsSection(nav({ stack: [{ kind: 'profile' }, list] }), 'voice');
-    expect(removeKind(n, 'settings').stack).toEqual([{ kind: 'profile' }]);
+    const n = openSettingsSection(nav({ stack: [list] }), 'voice');
+    expect(removeKind(n, 'settings').stack).toEqual([]);
   });
 
   it('a section opened straight from the profile has no list under it', () => {
-    const n = pushScreen(nav({ stack: [{ kind: 'profile' }] }), { kind: 'settings', section: 'general' });
-    expect(popScreen(n).stack).toEqual([{ kind: 'profile' }]);
+    const n = pushScreen(nav({ stack: [] }), { kind: 'settings', section: 'general' });
+    expect(popScreen(n).stack).toEqual([]);
   });
 });
