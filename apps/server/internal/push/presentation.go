@@ -29,9 +29,6 @@ func (s *Service) presentation(ctx context.Context, q *sqlc.Queries, recipient s
 		if err != nil {
 			return err
 		}
-		if room.Type != "dm" || room.DmKey == nil {
-			payload.Subtitle = previewLine(room.Name, 80)
-		}
 		payload.PersonID = presentationID(payload.Binding, author.ID.String())
 		payload.ConversationID = presentationID(payload.Binding, message.RoomID.String())
 		payload.AvatarJPEG = s.avatar(ctx, q, author)
@@ -39,16 +36,10 @@ func (s *Service) presentation(ctx context.Context, q *sqlc.Queries, recipient s
 		if payload.Title == "" {
 			payload.Title = "Calab"
 		}
-		hide := recipient.HideMessageTextInNotifications
-		if !hide {
-			hide, err = q.PushWorkspaceHidesMessageText(ctx, sqlc.PushWorkspaceHidesMessageTextParams{
-				WorkspaceID: room.WorkspaceID, RecipientID: recipient.ID, AuthorID: author.ID,
-			})
-			if err != nil {
-				return err // privacy policy is mandatory, unlike the optional avatar
-			}
+		if room.Type != "dm" || room.DmKey == nil {
+			payload.Subtitle = previewLine(room.Name, 80)
 		}
-		if !hide {
+		if !recipient.HideMessageTextInNotifications {
 			payload.Body = messagePreview(message.Content, recipient)
 		}
 		if payload.Body == "" {

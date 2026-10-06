@@ -601,10 +601,11 @@ function NotificationsTab(): ReactNode {
 }
 
 function PushPrivacyCard(): ReactNode {
-  const me = useSession((s) => s.me);
+  const hidden = useSession((s) => s.me?.settings?.hideMessageTextInNotifications);
+  const eligible = useSession((s) => !!s.me?.settings && !s.me.user?.isGuest && !s.me.user?.isBot);
   const local = useSession((s) => localAuthority(s.authority));
   const [pending, setPending] = useState(false);
-  if (!local || !me?.settings || me.user?.isGuest || me.user?.isBot) return null;
+  if (!local || !eligible) return null;
   const save = async (hidden: boolean): Promise<void> => {
     setPending(true);
     try {
@@ -618,9 +619,9 @@ function PushPrivacyCard(): ReactNode {
   };
   return (
     <Card title={t('notify.mobilePush')}>
-      <Row label={t('notify.hideMessageText')} hint={t('notify.hideMessageTextHint')}>
-        <Toggle label={t('notify.hideMessageText')} checked={me.settings.hideMessageTextInNotifications}
-          disabled={pending} onChange={(v) => void save(v)} />
+      <Row label={t('notify.messagePreview')} hint={t('notify.messagePreviewHint')}>
+        <Toggle label={t('notify.messagePreview')} checked={hidden !== true}
+          disabled={pending} onChange={(v) => void save(!v)} />
       </Row>
     </Card>
   );

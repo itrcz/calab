@@ -493,7 +493,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	p := sqlc.UpdateWorkspaceParams{ID: wsID, HideMessageTextInNotifications: req.HideMessageTextInNotifications}
+	p := sqlc.UpdateWorkspaceParams{ID: wsID}
 	if req.Slug != nil {
 		if err := ValidateSlug(req.GetSlug()); err != nil {
 			return err

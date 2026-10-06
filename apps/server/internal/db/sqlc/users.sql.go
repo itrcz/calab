@@ -394,7 +394,7 @@ func (q *Queries) ListManualPresence(ctx context.Context) ([]ListManualPresenceR
 }
 
 const listUsersByIDs = `-- name: ListUsersByIDs :many
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days FROM users WHERE id = ANY($1::uuid[])
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications FROM users WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]User, error) {
@@ -437,6 +437,7 @@ func (q *Queries) ListUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]User, 
 			&i.WorkStartMin,
 			&i.WorkEndMin,
 			&i.WorkDays,
+			&i.HideMessageTextInNotifications,
 		); err != nil {
 			return nil, err
 		}

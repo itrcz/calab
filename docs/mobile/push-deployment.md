@@ -155,9 +155,10 @@ CallKit caller-photo rendering remains an explicit device check, not a server re
 ### PR review: privacy settings
 
 Apply migration `00070_push_preview_privacy.sql` with the API release, then deploy the
-matching shared web. Previews default to on. Users can hide message text in Settings →
-Notifications; workspace administrators can force hiding in workspace Basics, including
-DMs between members. Names/avatars remain visible. This policy is enforced before
+matching shared web. Message preview defaults to on. Users can turn it off in Settings →
+Notifications. This hides text in room and direct-message pushes; sender name/avatar and
+room name remain, and calls retain caller name/avatar. There is no workspace override.
+Migration 00070 adds only the personal user column. The setting is enforced before
 sending to APNs/FCM; it works with the existing installed phone. Old clients changing
 audio settings do not reset it. New native installation is needed for avatars and call
 lifecycle repairs, not for this privacy switch. No new server environment/secret.

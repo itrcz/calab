@@ -50,9 +50,6 @@ message Workspace {
   // PLACE_CALLS in a voice room they are in may call phone numbers from it.
   WorkspaceIdentityAccess identity_access = 16;
   bool sip_enabled = 15;
-  // Force message-text hiding in push for workspace rooms and DMs between members.
-  // Default false; sender identity remains visible (ADR-0072).
-  bool hide_message_text_in_notifications = 17;
 }
 
 message WorkspaceSuspension {
@@ -159,7 +156,6 @@ message UpdateWorkspaceRequest {
   optional bool allow_self_nickname = 8;
   optional uint32 default_camera_limit = 9; // 0..25 (0 = cameras off)
   optional TimeFormat time_format = 10; // AUTO|H24|H12 (UNSPECIFIED is 422)
-  optional bool hide_message_text_in_notifications = 11; // omitted = unchanged
 }
 
 message UpdateWorkspaceResponse {

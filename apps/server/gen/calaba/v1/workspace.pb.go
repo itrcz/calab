@@ -151,11 +151,8 @@ type Workspace struct {
 	// PLACE_CALLS in a voice room they are in may call phone numbers from it.
 	IdentityAccess *WorkspaceIdentityAccess `protobuf:"bytes,16,opt,name=identity_access,json=identityAccess,proto3" json:"identity_access,omitempty"`
 	SipEnabled     bool                     `protobuf:"varint,15,opt,name=sip_enabled,json=sipEnabled,proto3" json:"sip_enabled,omitempty"`
-	// Force message-text hiding in push for workspace rooms and DMs between members.
-	// Default false; sender identity remains visible (ADR-0072).
-	HideMessageTextInNotifications bool `protobuf:"varint,17,opt,name=hide_message_text_in_notifications,json=hideMessageTextInNotifications,proto3" json:"hide_message_text_in_notifications,omitempty"`
-	unknownFields                  protoimpl.UnknownFields
-	sizeCache                      protoimpl.SizeCache
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Workspace) Reset() {
@@ -296,13 +293,6 @@ func (x *Workspace) GetIdentityAccess() *WorkspaceIdentityAccess {
 func (x *Workspace) GetSipEnabled() bool {
 	if x != nil {
 		return x.SipEnabled
-	}
-	return false
-}
-
-func (x *Workspace) GetHideMessageTextInNotifications() bool {
-	if x != nil {
-		return x.HideMessageTextInNotifications
 	}
 	return false
 }
@@ -1044,20 +1034,19 @@ func (x *GetWorkspaceResponse) GetRole() WorkspaceRole {
 
 // PATCH /api/workspaces/{id} (MANAGE_WORKSPACE). Unset fields are left unchanged.
 type UpdateWorkspaceRequest struct {
-	state                          protoimpl.MessageState `protogen:"open.v1"`
-	Slug                           *string                `protobuf:"bytes,1,opt,name=slug,proto3,oneof" json:"slug,omitempty"`
-	Name                           *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Visibility                     *WorkspaceVisibility   `protobuf:"varint,3,opt,name=visibility,proto3,enum=calaba.v1.WorkspaceVisibility,oneof" json:"visibility,omitempty"`
-	IconFileId                     *string                `protobuf:"bytes,4,opt,name=icon_file_id,json=iconFileId,proto3,oneof" json:"icon_file_id,omitempty"`                                           // "" clears
-	DefaultAudioBitrateKbps        *uint32                `protobuf:"varint,5,opt,name=default_audio_bitrate_kbps,json=defaultAudioBitrateKbps,proto3,oneof" json:"default_audio_bitrate_kbps,omitempty"` // tiers 8|16|32|64 (24, 48: legacy)
-	DefaultMaxStreamPreset         *ScreenSharePreset     `protobuf:"varint,6,opt,name=default_max_stream_preset,json=defaultMaxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"default_max_stream_preset,omitempty"`
-	DefaultMaxStreams              *uint32                `protobuf:"varint,7,opt,name=default_max_streams,json=defaultMaxStreams,proto3,oneof" json:"default_max_streams,omitempty"` // 0..10
-	AllowSelfNickname              *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`
-	DefaultCameraLimit             *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"`                                          // 0..25 (0 = cameras off)
-	TimeFormat                     *TimeFormat            `protobuf:"varint,10,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat,oneof" json:"time_format,omitempty"`                                         // AUTO|H24|H12 (UNSPECIFIED is 422)
-	HideMessageTextInNotifications *bool                  `protobuf:"varint,11,opt,name=hide_message_text_in_notifications,json=hideMessageTextInNotifications,proto3,oneof" json:"hide_message_text_in_notifications,omitempty"` // omitted = unchanged
-	unknownFields                  protoimpl.UnknownFields
-	sizeCache                      protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Slug                    *string                `protobuf:"bytes,1,opt,name=slug,proto3,oneof" json:"slug,omitempty"`
+	Name                    *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Visibility              *WorkspaceVisibility   `protobuf:"varint,3,opt,name=visibility,proto3,enum=calaba.v1.WorkspaceVisibility,oneof" json:"visibility,omitempty"`
+	IconFileId              *string                `protobuf:"bytes,4,opt,name=icon_file_id,json=iconFileId,proto3,oneof" json:"icon_file_id,omitempty"`                                           // "" clears
+	DefaultAudioBitrateKbps *uint32                `protobuf:"varint,5,opt,name=default_audio_bitrate_kbps,json=defaultAudioBitrateKbps,proto3,oneof" json:"default_audio_bitrate_kbps,omitempty"` // tiers 8|16|32|64 (24, 48: legacy)
+	DefaultMaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,6,opt,name=default_max_stream_preset,json=defaultMaxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"default_max_stream_preset,omitempty"`
+	DefaultMaxStreams       *uint32                `protobuf:"varint,7,opt,name=default_max_streams,json=defaultMaxStreams,proto3,oneof" json:"default_max_streams,omitempty"` // 0..10
+	AllowSelfNickname       *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`
+	DefaultCameraLimit      *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"`  // 0..25 (0 = cameras off)
+	TimeFormat              *TimeFormat            `protobuf:"varint,10,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat,oneof" json:"time_format,omitempty"` // AUTO|H24|H12 (UNSPECIFIED is 422)
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *UpdateWorkspaceRequest) Reset() {
@@ -1158,13 +1147,6 @@ func (x *UpdateWorkspaceRequest) GetTimeFormat() TimeFormat {
 		return *x.TimeFormat
 	}
 	return TimeFormat_TIME_FORMAT_UNSPECIFIED
-}
-
-func (x *UpdateWorkspaceRequest) GetHideMessageTextInNotifications() bool {
-	if x != nil && x.HideMessageTextInNotifications != nil {
-		return *x.HideMessageTextInNotifications
-	}
-	return false
 }
 
 type UpdateWorkspaceResponse struct {
@@ -3794,7 +3776,7 @@ var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x18calaba/v1/identity.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xae\x06\n" +
+	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x18calaba/v1/identity.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xe2\x05\n" +
 	"\tWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x12\n" +
@@ -3820,8 +3802,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"timeFormat\x12K\n" +
 	"\x0fidentity_access\x18\x10 \x01(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\x12\x1f\n" +
 	"\vsip_enabled\x18\x0f \x01(\bR\n" +
-	"sipEnabled\x12J\n" +
-	"\"hide_message_text_in_notifications\x18\x11 \x01(\bR\x1ehideMessageTextInNotifications\"Y\n" +
+	"sipEnabled\"Y\n" +
 	"\x13WorkspaceSuspension\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xdc\x01\n" +
@@ -3882,7 +3863,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"workspaces\"x\n" +
 	"\x14GetWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12,\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xf4\x06\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xfc\x05\n" +
 	"\x16UpdateWorkspaceRequest\x12\x17\n" +
 	"\x04slug\x18\x01 \x01(\tH\x00R\x04slug\x88\x01\x01\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x01R\x04name\x88\x01\x01\x12C\n" +
@@ -3898,9 +3879,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x14default_camera_limit\x18\t \x01(\rH\bR\x12defaultCameraLimit\x88\x01\x01\x12;\n" +
 	"\vtime_format\x18\n" +
 	" \x01(\x0e2\x15.calaba.v1.TimeFormatH\tR\n" +
-	"timeFormat\x88\x01\x01\x12O\n" +
-	"\"hide_message_text_in_notifications\x18\v \x01(\bH\n" +
-	"R\x1ehideMessageTextInNotifications\x88\x01\x01B\a\n" +
+	"timeFormat\x88\x01\x01B\a\n" +
 	"\x05_slugB\a\n" +
 	"\x05_nameB\r\n" +
 	"\v_visibilityB\x0f\n" +
@@ -3910,8 +3889,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x14_default_max_streamsB\x16\n" +
 	"\x14_allow_self_nicknameB\x17\n" +
 	"\x15_default_camera_limitB\x0e\n" +
-	"\f_time_formatB%\n" +
-	"#_hide_message_text_in_notifications\"M\n" +
+	"\f_time_format\"M\n" +
 	"\x17UpdateWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\"\xcc\x01\n" +
 	"\x15JoinWorkspaceResponse\x122\n" +

@@ -30,9 +30,12 @@ The extension uses a bounded inline JPEG with no network, URLs or shared credent
 Old app versions ignore communication fields and display the original text alert.
 A new native target/profile is required; APNs server credentials do not change.
 
-Preview privacy (PR review): default permits text. Enable personal “Hide message text
-in notifications”, send a text and a captioned file: only New message / file kind remains,
-with sender identity. Disable it and enable the workspace rule: it still hides text in
-workspace rooms and DMs between members. Toggle from another device, check the next
-notification; already in-flight/accepted pushes cannot be recalled. Repeat with iOS Show
-Previews set to Never: device display privacy is separate from server payload privacy.
+Message preview (PR review): enabled by default, including sender/avatar and room name.
+Turn off Settings → Notifications → Message preview; send text and a captioned file:
+only New message / file kind remains, with the same sender/avatar, room and grouping.
+Calls still carry caller name/avatar. Restore the toggle and verify text returns in
+rooms and DMs. Change it from another device and check the next notification; in-flight
+or already accepted pushes cannot be recalled. On a signed Communication Notifications
+build check iOS Show Previews: When Unlocked (locked and Face ID unlocked) and Never.
+Check grouped notifications too: system display must respect the selected iOS policy.
+These phone observations remain required before merge; payload tests cannot prove them.

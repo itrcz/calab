@@ -2189,11 +2189,13 @@ new notification extension across prebuild/CocoaPods serialization. Compile/run
 oversized and old payloads; compile the extension against the iOS SDK. Actual system avatar
 rendering, grouping and lock-screen preview policy require the device checklists.
 
-R12 preview privacy: `TestPushPreviewPrivacySettingsAndLegacyClients`,
+Message preview: `TestPushPreviewPrivacySettingsAndLegacyClients`,
 `TestPushPreviewPrivacyAtDispatchAndRetry`, `TestPushHiddenAttachmentCaptionAndFilename`,
-`TestPushDMPrivacyUsesOnlySharedWorkspaces` cover optional false, old clients, authorization,
-shared-workspace precedence, dispatch/retry freshness and hidden caption/file names.
+`TestPushDMPreviewIsPersonal` cover optional false, old clients, recipient isolation,
+dispatch/retry freshness and hidden caption/file names while retaining room/group identity.
 `TestAPNSHiddenMessageBodyRetainsSenderAndAvatar` inspects actual APNs HTTP JSON.
 `TestPushMutedDeliveredMessageStillResolves` separates delivery preferences from tap access.
-Manual layout QA (mock data, not phone evidence): shared personal/workspace settings at
-390 and 960 px, captured in `docs/mobile/qa/`; visual suites remain disabled.
+`TestPushIncomingVoIPCurrentRingSessionAndExpiry` retains caller name/avatar with message
+previews disabled. `TestAvatarWarmCacheSurvivesConcurrentColdLoad` exercises cache contention.
+Historical R12 layout captures in `docs/mobile/qa/` predate the personal-only setting; they
+are not current phone evidence. Visual suites remain disabled.

@@ -3,7 +3,7 @@
 Accepted for local implementation, 2026-10-06. Amends ADR-0070/0071.
 
 Real iPhone push delivery is confirmed. The maintainer's PR123 review decision
-(2026-10-06) keeps message previews on by default with user and workspace opt-outs.
+(2026-10-06) keeps message previews on by default with one personal opt-out.
 The phone also needs the caller's name and one successful system-screen answer. The existing
 web renderer remains the only UI, auth, call-state and RTC implementation.
 
@@ -118,40 +118,42 @@ Check actual avatars/grouping and CallKit presentation on the device after rollo
 References: [Apple communication notifications](https://developer.apple.com/documentation/usernotifications/implementing-communication-notifications),
 [CXCallUpdate](https://developer.apple.com/documentation/callkit/cxcallupdate).
 
-## Review amendment: preview privacy, 2026-10-06
+## Review amendment: message preview, 2026-10-06
 
-Contract before implementation; source: [maintainer decision in PR123](https://github.com/itrcz/calab/pull/123#issuecomment-6014866771).
+Contract before implementation; source: [superseding maintainer decision in PR123](https://github.com/itrcz/calab/pull/123#issuecomment-6018296941).
+This replaces the earlier workspace-forced policy with a Telegram-like personal setting.
 
-- Previews stay on by default. The existing shared Settings → Notifications gains
-  “Hide message text in notifications”; workspace Basics gains the corresponding
-  forced policy for all members. No mobile-only UI. Only MANAGE_WORKSPACE may change
-  workspace policy; personal changes use authenticated PATCH /api/me.
-- Store both booleans in dedicated NOT NULL/default-false columns (migration 00070).
-  UserSettings exposes the personal value read-only; an optional top-level
-  UpdateMeRequest field changes it. Old clients replacing audio settings cannot
-  accidentally re-enable previews. Workspace PATCH also uses an optional field.
-  USER_UPDATE / WORKSPACE_UPDATE synchronize the choices across devices.
-- At each provider dispatch, after current authorization, suppress authored message
-  text if either recipient preference or room workspace policy is enabled. For
-  workspace-less direct/group messages, any workspace shared by sender and recipient
-  can enforce hiding (strictest shared policy wins). Read policy afresh on retries;
-  query failures stop delivery. Pending jobs store references, not preview snapshots.
-- Hidden payloads use only “New message” or attachment/sticker kind, never message
-  content, captions, filenames or a hidden copy in custom data / donated intents.
-  Sender name/avatar and conversation name remain visible: this is text privacy,
-  not anonymous notifications. Explain this beside both toggles. Calls are unchanged.
-- A dispatch whose policy read already completed is in flight; changing a preference
-  cannot recall that request or a payload already accepted by the provider. Subsequent
-  dispatch attempts and retries read the committed policy afresh.
-  iOS Show Previews separately controls lock-screen display and does not remove
-  plaintext from Apple. No new server secret or native build is needed for the policy.
-- Acceptance: defaults, true/false PATCH persistence, legacy settings preservation,
-  forbidden workspace update, personal/workspace precedence including DMs, enqueue
-  then hide and retry then hide, attachment-only fallback and serialized payload
-  absence. Required generation/lint/tests and two independent protocol/security
-  reviews precede PR update. Device acceptance remains separately unverified.
-
-- Minor review repair: tapping an already delivered message ignores current DND and
-  room/workspace delivery muting, while retaining live session, endpoint version,
-  expiry, block, message existence and room/identity access checks. Dispatch still
-  observes all notification preferences. Call resolution is unchanged.
+- Previews stay on by default. Shared Settings → Notifications has one “Message preview”
+  toggle. Turning it off hides message text in provider payloads. Sender name/avatar and
+  room name remain. Calls retain caller name/avatar regardless of this message preference.
+  iOS Show Previews (When Unlocked / Never) controls system display; we do not build a
+  separate lock-screen privacy system. Communication Notifications use the normal alert
+  and intent content, without a second alert or privacy-bypassing presentation.
+- Store the existing personal inverse boolean in a dedicated NOT NULL/default-false user
+  column (migration 00070). UserSettings exposes it read-only; an optional top-level
+  UpdateMeRequest field changes it through authenticated PATCH /api/me. Old clients
+  replacing audio settings cannot accidentally re-enable previews. USER_UPDATE synchronizes
+  the choice across devices. Remove the unreleased workspace column directly from 00070,
+  its proto/API/UI fields and policy query; existing workspace authorization is unchanged.
+- At every provider dispatch/retry, after current authorization, read the recipient's
+  current personal preference. Hidden payloads use only “New message” or attachment/sticker
+  kind, never message content, captions, filenames or a hidden copy in custom data or intents.
+  Pending jobs store references, not preview snapshots; user/policy read failure stops delivery.
+- A dispatch whose preference read already completed is in flight; a change cannot recall
+  that request or a payload already accepted by the provider. Apple receives plaintext preview
+  text unless the user disabled it. iOS hiding affects display, not provider access. Payload
+  encryption is a possible follow-up, out of scope. No new server secret or native build is
+  needed for this personal setting.
+- Acceptance: default on, explicit true/false persistence, legacy settings preservation,
+  recipient isolation, room/DM dispatch and retry freshness, hidden caption/file names,
+  retained sender/avatar/room/caller presentation and actual serialized payload absence.
+  Required generation/lint/tests and two independent protocol/security reviews precede
+  the PR update. Signed-phone checks for avatars/grouping and both iOS preview policies,
+  system answer/mute and locked/cold audio remain separately unverified.
+- Minor review repairs: cached avatars remain available during another cold conversion;
+  keep the existing bounded best-effort cold work. The settings component subscribes only
+  to fields it renders, and local tooling ignores stay outside the shared repository.
+- Tapping an already delivered message ignores current DND and room/workspace delivery
+  muting, while retaining live session, endpoint version, expiry, block, message existence
+  and room/identity access checks. Dispatch still observes notification preferences.
+  Call resolution is unchanged.

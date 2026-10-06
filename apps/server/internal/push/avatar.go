@@ -22,7 +22,8 @@ const maxAvatarBytes = 1536
 // A busy/cold/failed cache is optional presentation, not a reason to delay a call.
 type Avatars struct {
 	store blob.Store
-	mu    sync.Mutex
+	mu    sync.RWMutex
+	load  sync.Mutex
 	cache map[string]string
 }
 
@@ -39,13 +40,19 @@ func (a *Avatars) picture(ctx context.Context, f sqlc.File) string {
 
 // Separate the caller's latency budget from deterministic image/cache behavior.
 func (a *Avatars) pictureWithinBudget(ctx context.Context, f sqlc.File) string {
-	if a == nil || a.store == nil || f.ThumbnailKey == nil || !a.mu.TryLock() {
+	if a == nil || a.store == nil || f.ThumbnailKey == nil || ctx.Err() != nil {
 		return ""
 	}
-	defer a.mu.Unlock()
 	key := f.ID.String() + ":" + f.Sha256
-	if value, ok := a.cache[key]; ok {
+	if value := a.cached(key); value != "" {
 		return value
+	}
+	if !a.load.TryLock() {
+		return "" // cold work never queues behind another conversion
+	}
+	defer a.load.Unlock()
+	if value := a.cached(key); value != "" {
+		return value // another load completed between the first read and TryLock
 	}
 	r, meta, err := a.store.Get(ctx, *f.ThumbnailKey)
 	if err != nil {
@@ -83,6 +90,8 @@ func (a *Avatars) pictureWithinBudget(ctx context.Context, f sqlc.File) string {
 	if err != nil || encoded == "" || ctx.Err() != nil {
 		return ""
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if len(a.cache) >= 128 {
 		for old := range a.cache {
 			delete(a.cache, old)
@@ -91,6 +100,12 @@ func (a *Avatars) pictureWithinBudget(ctx context.Context, f sqlc.File) string {
 	}
 	a.cache[key] = encoded
 	return encoded
+}
+
+func (a *Avatars) cached(key string) string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.cache[key]
 }
 
 func (s *Service) avatar(ctx context.Context, q *sqlc.Queries, author sqlc.User) string {

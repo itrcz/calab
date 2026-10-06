@@ -16,11 +16,11 @@ import (
 )
 
 func TestPushPreviewPrivacySettingsAndLegacyClients(t *testing.T) {
-	o, bob, ws, _ := setupTeam(t)
+	_, bob, _, _ := setupTeam(t)
 	var current v1.GetMeResponse
 	bob.must(200, "GET", "/api/me", nil, &current)
-	if current.GetMe().GetSettings().GetHideMessageTextInNotifications() || ws.HideMessageTextInNotifications {
-		t.Fatal("new account/workspace must default to previews on")
+	if current.GetMe().GetSettings().GetHideMessageTextInNotifications() {
+		t.Fatal("new account must default to previews on")
 	}
 	var changed v1.UpdateMeResponse
 	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{HideMessageTextInNotifications: proto.Bool(true)}, &changed)
@@ -37,30 +37,19 @@ func TestPushPreviewPrivacySettingsAndLegacyClients(t *testing.T) {
 	if !other.GetMe().GetSettings().GetHideMessageTextInNotifications() {
 		t.Fatal("personal preference not persisted across sessions")
 	}
-	bob.must(403, "PATCH", "/api/workspaces/"+ws.Id, &v1.UpdateWorkspaceRequest{HideMessageTextInNotifications: proto.Bool(true)}, nil)
-	var workspace v1.UpdateWorkspaceResponse
-	o.must(200, "PATCH", "/api/workspaces/"+ws.Id, &v1.UpdateWorkspaceRequest{HideMessageTextInNotifications: proto.Bool(true)}, &workspace)
-	if !workspace.GetWorkspace().GetHideMessageTextInNotifications() {
-		t.Fatal("workspace policy not returned")
-	}
-	o.must(200, "PATCH", "/api/workspaces/"+ws.Id, &v1.UpdateWorkspaceRequest{Name: proto.String("Renamed")}, &workspace)
-	if !workspace.GetWorkspace().GetHideMessageTextInNotifications() {
-		t.Fatal("unrelated workspace update reset privacy")
-	}
 	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{HideMessageTextInNotifications: proto.Bool(false)}, &changed)
-	o.must(200, "PATCH", "/api/workspaces/"+ws.Id, &v1.UpdateWorkspaceRequest{HideMessageTextInNotifications: proto.Bool(false)}, &workspace)
-	if changed.GetMe().GetSettings().GetHideMessageTextInNotifications() || workspace.GetWorkspace().GetHideMessageTextInNotifications() {
+	if changed.GetMe().GetSettings().GetHideMessageTextInNotifications() {
 		t.Fatal("explicit false did not persist")
 	}
 }
 
 func TestPushPreviewPrivacyAtDispatchAndRetry(t *testing.T) {
-	for _, mode := range []string{"personal", "workspace", "dm-shared-workspace", "retry"} {
+	for _, mode := range []string{"room", "dm", "retry"} {
 		t.Run(mode, func(t *testing.T) {
 			s, server, rec := pushHarness(t)
-			o, bob, ws, room := setupTeam(t)
+			o, bob, _, room := setupTeam(t)
 			roomID := room.Id
-			if mode == "dm-shared-workspace" {
+			if mode == "dm" {
 				roomID = openDM(t, o, bob.id, 201).GetRoom().GetId()
 			}
 			pushAll(t, bob, roomID)
@@ -77,11 +66,7 @@ func TestPushPreviewPrivacyAtDispatchAndRetry(t *testing.T) {
 				}
 				rec.result = push.Result{Accepted: true}
 			}
-			if mode == "personal" || mode == "retry" {
-				bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{HideMessageTextInNotifications: proto.Bool(true)}, nil)
-			} else {
-				o.must(200, "PATCH", "/api/workspaces/"+ws.Id, &v1.UpdateWorkspaceRequest{HideMessageTextInNotifications: proto.Bool(true)}, nil)
-			}
+			bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{HideMessageTextInNotifications: proto.Bool(true)}, nil)
 			if mode == "retry" {
 				if _, err := testDB.Pool.Exec(context.Background(), "UPDATE push_deliveries SET not_before=now() WHERE reference_id=$1 AND delivered_at IS NULL", msg.Id); err != nil {
 					t.Fatal(err)
@@ -99,6 +84,13 @@ func TestPushPreviewPrivacyAtDispatchAndRetry(t *testing.T) {
 			last := sent[len(sent)-1]
 			if last.Body != "New message" || last.Title == "" {
 				t.Fatalf("hidden payload presentation %q / %q", last.Title, last.Body)
+			}
+			wantRoom := room.Name
+			if mode == "dm" {
+				wantRoom = ""
+			}
+			if last.Subtitle != wantRoom || len(last.PersonID) != 64 || len(last.ConversationID) != 64 {
+				t.Fatal("hiding message text changed sender, room or grouping")
 			}
 			raw, err := json.Marshal(last)
 			if err != nil {
@@ -170,13 +162,12 @@ func TestPushHiddenAttachmentCaptionAndFilename(t *testing.T) {
 	}
 }
 
-func TestPushDMPrivacyUsesOnlySharedWorkspaces(t *testing.T) {
+func TestPushDMPreviewIsPersonal(t *testing.T) {
 	s, server, rec := pushHarness(t)
 	o, bob, _, _ := setupTeam(t)
 	dm := openDM(t, o, bob.id, 201).GetRoom().GetId()
 	registerPush(t, server, bob, uuid.NewString(), uuid.NewString(), 200)
-	privateWS := createWorkspace(t, bob, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
-	bob.must(200, "PATCH", "/api/workspaces/"+privateWS.Id, &v1.UpdateWorkspaceRequest{HideMessageTextInNotifications: proto.Bool(true)}, nil)
+	o.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{HideMessageTextInNotifications: proto.Bool(true)}, nil)
 	send := func(body string) string {
 		t.Helper()
 		before := len(rec.sent())
@@ -189,12 +180,15 @@ func TestPushDMPrivacyUsesOnlySharedWorkspaces(t *testing.T) {
 		}
 		return sent[len(sent)-1].Body
 	}
-	if send("Visible outside unrelated space") != "Visible outside unrelated space" {
-		t.Fatal("unrelated workspace hid DM")
+	if send("Sender disabled their previews") != "Sender disabled their previews" {
+		t.Fatal("sender preference changed recipient preview")
 	}
-	// Now both share a strict space as well as their original permissive space.
-	o.must(200, "POST", "/api/invites/"+invite(t, bob, privateWS.Id)+"/join", nil, nil)
-	if send("Hidden under strict shared space") != "New message" {
-		t.Fatal("strictest shared policy did not win")
+	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{HideMessageTextInNotifications: proto.Bool(true)}, nil)
+	if send("Recipient disabled previews") != "New message" {
+		t.Fatal("recipient preference was not applied")
+	}
+	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{HideMessageTextInNotifications: proto.Bool(false)}, nil)
+	if send("Recipient restored previews") != "Recipient restored previews" {
+		t.Fatal("previews were not restored")
 	}
 }

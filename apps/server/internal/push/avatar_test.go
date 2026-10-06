@@ -133,3 +133,52 @@ func TestAvatarSlowStorageUsesTextFallback(t *testing.T) {
 		t.Fatal("avatar lookup did not enforce its short delivery budget")
 	}
 }
+
+// Hold one cold read open so cache behavior is tested without timing assumptions.
+type blockedAvatarStore struct {
+	blob.Store
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockedAvatarStore) Get(ctx context.Context, key string) (blob.ReadSeekCloser, blob.Meta, error) {
+	if key == "cold" {
+		close(s.started)
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return nil, blob.Meta{}, ctx.Err()
+		}
+	}
+	return s.Store.Get(ctx, key)
+}
+
+func TestAvatarWarmCacheSurvivesConcurrentColdLoad(t *testing.T) {
+	store := blobtest.New()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
+	store.Set("warm", buf.Bytes())
+	store.Set("cold", buf.Bytes())
+	blocked := &blockedAvatarStore{Store: store, started: make(chan struct{}), release: make(chan struct{})}
+	a := NewAvatars(blocked)
+	warmKey, coldKey := "warm", "cold"
+	warm := sqlc.File{ID: uuid.New(), ThumbnailKey: &warmKey}
+	cold := sqlc.File{ID: uuid.New(), ThumbnailKey: &coldKey}
+	want := a.pictureWithinBudget(t.Context(), warm)
+	if want == "" {
+		t.Fatal("warm avatar missing")
+	}
+	done := make(chan string, 1)
+	go func() { done <- a.pictureWithinBudget(t.Context(), cold) }()
+	<-blocked.started
+	// Unblock the worker even if an assertion below fails.
+	t.Cleanup(func() { close(blocked.release); <-done })
+	if got := a.picture(t.Context(), warm); got != want {
+		t.Fatal("cached avatar dropped while another thumbnail was loading")
+	}
+	if got := a.picture(t.Context(), cold); got != "" {
+		t.Fatal("cold lookup must not queue behind an active conversion")
+	}
+}

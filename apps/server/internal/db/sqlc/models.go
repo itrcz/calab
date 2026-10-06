@@ -1202,26 +1202,25 @@ type UserStickerPack struct {
 }
 
 type Workspace struct {
-	ID                             uuid.UUID
-	Slug                           string
-	Name                           string
-	IconFileID                     *uuid.UUID
-	Visibility                     string
-	OwnerID                        uuid.UUID
-	CreatedAt                      time.Time
-	DefaultAudioBitrateKbps        int32
-	DefaultMaxStreamPreset         string
-	DefaultMaxStreams              int32
-	StorageQuotaBytes              int64
-	StorageUsedBytes               int64
-	AllowSelfNickname              bool
-	DefaultCameraLimit             int32
-	SuspendedAt                    *time.Time
-	SuspendedReason                string
-	SuspendedBy                    *uuid.UUID
-	TimeFormat                     string
-	SipEnabled                     bool
-	HideMessageTextInNotifications bool
+	ID                      uuid.UUID
+	Slug                    string
+	Name                    string
+	IconFileID              *uuid.UUID
+	Visibility              string
+	OwnerID                 uuid.UUID
+	CreatedAt               time.Time
+	DefaultAudioBitrateKbps int32
+	DefaultMaxStreamPreset  string
+	DefaultMaxStreams       int32
+	StorageQuotaBytes       int64
+	StorageUsedBytes        int64
+	AllowSelfNickname       bool
+	DefaultCameraLimit      int32
+	SuspendedAt             *time.Time
+	SuspendedReason         string
+	SuspendedBy             *uuid.UUID
+	TimeFormat              string
+	SipEnabled              bool
 }
 
 type WorkspaceAdminLog struct {

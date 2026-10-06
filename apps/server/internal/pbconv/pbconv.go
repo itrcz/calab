@@ -302,21 +302,20 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		susp = &v1.WorkspaceSuspension{At: ts(*w.SuspendedAt), Reason: w.SuspendedReason}
 	}
 	return &v1.Workspace{
-		Suspension:                     susp,
-		Id:                             w.ID.String(),
-		Slug:                           w.Slug,
-		Name:                           w.Name,
-		IconFileId:                     idp(w.IconFileID),
-		Visibility:                     visibilityFromDB(w.Visibility),
-		OwnerId:                        w.OwnerID.String(),
-		CreatedAt:                      ts(w.CreatedAt),
-		MediaDefaults:                  WorkspaceDefaults(w),
-		StorageQuotaBytes:              uint64(max(w.StorageQuotaBytes, 0)),
-		StorageUsedBytes:               uint64(max(w.StorageUsedBytes, 0)),
-		AllowSelfNickname:              w.AllowSelfNickname,
-		TimeFormat:                     timeFormatFromDB(w.TimeFormat),
-		SipEnabled:                     w.SipEnabled,
-		HideMessageTextInNotifications: w.HideMessageTextInNotifications,
+		Suspension:        susp,
+		Id:                w.ID.String(),
+		Slug:              w.Slug,
+		Name:              w.Name,
+		IconFileId:        idp(w.IconFileID),
+		Visibility:        visibilityFromDB(w.Visibility),
+		OwnerId:           w.OwnerID.String(),
+		CreatedAt:         ts(w.CreatedAt),
+		MediaDefaults:     WorkspaceDefaults(w),
+		StorageQuotaBytes: uint64(max(w.StorageQuotaBytes, 0)),
+		StorageUsedBytes:  uint64(max(w.StorageUsedBytes, 0)),
+		AllowSelfNickname: w.AllowSelfNickname,
+		TimeFormat:        timeFormatFromDB(w.TimeFormat),
+		SipEnabled:        w.SipEnabled,
 	}
 }
 
