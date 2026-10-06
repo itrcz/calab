@@ -24,10 +24,17 @@ export function reasonKey(reason: IdentityAccessReason): MessageKey {
     case IdentityAccessReason.RECOVERY_ONLY:
       return 'identity.recoveryOnly';
     case IdentityAccessReason.DEPENDENCY_UNAVAILABLE:
-      return 'identity.unavailable';
+      return 'identity.checkUnavailable';
     default:
       return 'identity.required';
   }
+}
+/**
+ * Title of a workspace the client holds closed. A dependency outage (the server could not
+ * evaluate access, e.g. a DB timeout) is not a lock and must not read «workspace locked» (#115).
+ */
+export function lockTitleKey(reason: IdentityAccessReason | undefined): MessageKey {
+  return reason === IdentityAccessReason.DEPENDENCY_UNAVAILABLE ? 'identity.lockedUnavailable' : 'identity.locked';
 }
 export function consentHandle(url: string): string | null {
   const parsed = new URL(url);

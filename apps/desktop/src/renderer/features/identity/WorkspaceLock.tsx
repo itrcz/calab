@@ -9,7 +9,7 @@ import { ApiError } from '../../lib/api/client';
 import { useIdentity } from '../../stores/identity';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { localAuthority, reasonKey } from './model';
+import { localAuthority, lockTitleKey, reasonKey } from './model';
 import { identityApi } from './api';
 import { LocalReauth, SsoButton } from './SignIn';
 import { useIdentityAction } from './IdentitySettings';
@@ -29,7 +29,7 @@ export function WorkspaceLock({ workspaceId }: { workspaceId: string }): ReactNo
   return (
     <div className="mat-content flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto p-6">
       <div className="mx-auto flex w-full max-w-md flex-col gap-6" data-testid="workspace-identity-lock">
-        <h1 className="text-title font-semibold">{t('identity.locked')}</h1>
+        <h1 className="text-title font-semibold">{t(lockTitleKey(access?.reason))}</h1>
         <p className="text-body text-muted">{t(reasonKey(access?.reason ?? IdentityAccessReason.SSO_REQUIRED))}</p>
         <p className="break-all text-caption text-muted">{workspaceId}</p>
         {local ? (
@@ -129,18 +129,23 @@ export function WorkspaceLock({ workspaceId }: { workspaceId: string }): ReactNo
   );
 }
 export function LockedWorkspacePicker(): ReactNode {
+  // A primitive `id:reason|…` key: the picker re-renders only when the set or a reason changes.
   const ids = useIdentity((s) =>
-    Object.keys(s.access)
-      .filter((id) => s.access[id]?.reason !== IdentityAccessReason.ALLOWED)
+    Object.entries(s.access)
+      .filter(([, a]) => a.reason !== IdentityAccessReason.ALLOWED)
+      .map(([id, a]) => `${id}:${a.reason}`)
       .join('|'),
   );
   return ids ? (
     <div className="flex flex-col gap-3 p-4">
-      {ids.split('|').map((id) => (
-        <Button key={id} variant="secondary" onClick={() => useUi.getState().setWorkspace(id)}>
-          {t('identity.locked')} · {id.slice(0, 8)}
-        </Button>
-      ))}
+      {ids.split('|').map((entry) => {
+        const [id = '', reason] = entry.split(':');
+        return (
+          <Button key={id} variant="secondary" onClick={() => useUi.getState().setWorkspace(id)}>
+            {t(lockTitleKey(Number(reason)))} · {id.slice(0, 8)}
+          </Button>
+        );
+      })}
     </div>
   ) : null;
 }

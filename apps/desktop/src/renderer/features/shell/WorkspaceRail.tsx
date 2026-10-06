@@ -1,5 +1,5 @@
 import { useIdentity } from '../../stores/identity';
-import { localAuthority, accessLocked } from '../identity/model';
+import { localAuthority, accessLocked, lockTitleKey } from '../identity/model';
 import { LockKeyhole } from 'lucide-react';
 import { Compass, Plus, Volume2 } from 'lucide-react';
 import { Fragment, useMemo, useRef, type ReactNode } from 'react';
@@ -34,8 +34,9 @@ const tile =
 export function WorkspaceRail(): ReactNode {
   const local = useSession((s) => localAuthority(s.authority));
   const lockedIds = useIdentity((s) =>
-    Object.keys(s.access)
-      .filter((id) => accessLocked(s.access[id]))
+    Object.entries(s.access)
+      .filter(([, a]) => accessLocked(a))
+      .map(([id, a]) => `${id}:${a.reason}`)
       .join('|'),
   );
   const order = useWorkspaces((s) => s.order);
@@ -53,11 +54,18 @@ export function WorkspaceRail(): ReactNode {
       >
         {local ? <HomeItem /> : null}
         {lockedIds
-          ? lockedIds.split('|').map((id) => (
-              <RailAction key={id} label={t('identity.locked')} onClick={() => useUi.getState().setWorkspace(id)}>
-                <LockKeyhole className="size-5" />
-              </RailAction>
-            ))
+          ? lockedIds.split('|').map((entry) => {
+              const [id = '', reason] = entry.split(':');
+              return (
+                <RailAction
+                  key={id}
+                  label={t(lockTitleKey(Number(reason)))}
+                  onClick={() => useUi.getState().setWorkspace(id)}
+                >
+                  <LockKeyhole className="size-5" />
+                </RailAction>
+              );
+            })
           : null}
         <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />
         {order.map((id) => (

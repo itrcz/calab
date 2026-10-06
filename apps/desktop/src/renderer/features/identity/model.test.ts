@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { create } from '@bufbuild/protobuf';
 import { IdentityAccessReason, SessionAuthorityKind, SessionAuthoritySchema, WorkspaceIdentityAccessSchema } from '@calaba/protocol';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { accessLocked, consentHandle, localAuthority, reasonKey } from './model';
+import { accessLocked, consentHandle, localAuthority, lockTitleKey, reasonKey } from './model';
 describe('identity UX states', () => {
   it('only independently local sessions offer global controls, with legacy server compatibility', () => {
     expect(localAuthority(null)).toBe(true);
@@ -24,6 +24,12 @@ describe('identity UX states', () => {
     expect(reasonKey(IdentityAccessReason.ENTITLEMENT_REQUIRED)).toBe('identity.plan');
     expect(reasonKey(IdentityAccessReason.SCOPE_DENIED)).toBe('identity.scope');
     expect(reasonKey(IdentityAccessReason.RECOVERY_ONLY)).toBe('identity.recoveryOnly');
+  });
+  it('a dependency outage is not presented as a locked workspace (#115)', () => {
+    expect(lockTitleKey(IdentityAccessReason.DEPENDENCY_UNAVAILABLE)).toBe('identity.lockedUnavailable');
+    expect(reasonKey(IdentityAccessReason.DEPENDENCY_UNAVAILABLE)).toBe('identity.checkUnavailable');
+    for (const reason of [IdentityAccessReason.SSO_REQUIRED, IdentityAccessReason.SUSPENDED, IdentityAccessReason.DIRECTORY_DENIED, undefined])
+      expect(lockTitleKey(reason)).toBe('identity.locked');
   });
   it('only reads the opaque consent handle, rejecting duplicate or malformed inputs', () => {
     const handle = 'x'.repeat(43);
