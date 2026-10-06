@@ -262,6 +262,7 @@ import {
   CreateDmResponseSchema,
   UpdateDmStateRequestSchema,
   UpdateDmStateResponseSchema,
+  DmLastMessageSchema,
   DmSummarySchema,
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
@@ -363,6 +364,7 @@ import {
   UpdateRoleResponseSchema,
   type Role,
   type DispatchEvent,
+  type DmLastMessage,
   type DmSummary,
   type NotesShelf,
   type GatewayFrame,
@@ -1594,6 +1596,21 @@ class MockImpl {
       boards: boards.boards,
       unreadTaskIds: boards.unreadTaskIds,
       boardCategories: boards.boardCategories,
+      // ADR-0073 §5: the newest live message of every room, as the room-list preview (server: first 200 chars).
+      roomLastMessages: Object.fromEntries(
+        rooms.flatMap((r): [string, DmLastMessage][] => {
+          const last = this.visibleMessages(userId, r.id).at(-1);
+          if (!last) return [];
+          return [[r.id, create(DmLastMessageSchema, {
+            id: last.id,
+            authorId: last.authorId,
+            content: Array.from(last.content).slice(0, 200).join(''),
+            attachmentCount: last.attachments.length,
+            stickerEmoji: last.sticker?.emoji ?? '',
+            ...(last.createdAt ? { createdAt: last.createdAt } : {}),
+          })]];
+        }),
+      ),
     });
   }
 
