@@ -116,13 +116,15 @@ func TestTempRooms(t *testing.T) {
 		ev.GetStartsAt().AsTime().Minute()%5 != 0 || ev.GetStartsAt().AsTime().Before(time.Now().Add(-time.Minute)) {
 		t.Fatalf("private temp room: %v", priv)
 	}
-	for _, u := range []*user{bob, carol, o} {
+	for _, u := range []*user{bob, carol} {
 		if _, st := roomPerms(t, u, rp.GetId()); st != 200 {
 			t.Fatalf("%s must see the private room: %d", u.email, st)
 		}
 	}
-	if _, st := roomPerms(t, dave, rp.GetId()); st != 404 {
-		t.Fatalf("dave must not see the private room: %d", st)
+	for _, u := range []*user{dave, o} { // ADR-0078: not even the owner
+		if _, st := roomPerms(t, u, rp.GetId()); st != 404 {
+			t.Fatalf("%s must not see the private room: %d", u.email, st)
+		}
 	}
 	// A member joining by the link gets a personal allow (idempotently), a guest too.
 	var j v1.JoinRoomInviteResponse
@@ -266,9 +268,18 @@ func TestTempRooms(t *testing.T) {
 	if err := testDB.Pool.QueryRow(context.Background(), "SELECT revoked_at IS NOT NULL FROM room_invites WHERE code = $1", priv.GetInviteCode()).Scan(&revoked); err != nil || !revoked {
 		t.Fatalf("links revoked: %v %v", revoked, err)
 	}
-	// The archive list: MANAGE_ROOM only, with the message count.
+	// The archive list: MANAGE_ROOM only, with the message count; rooms the caller sees only —
+	// the owner does not see this private one (ADR-0078), carol does once she holds MANAGE_ROOM.
 	var arch v1.ListRoomsResponse
 	o.must(200, "GET", "/api/workspaces/"+wid+"/rooms?archived=1", nil, &arch)
+	if len(arch.GetRooms()) != 0 {
+		t.Fatalf("the owner's archive lists the private temp room: %v", arch.GetRooms())
+	}
+	rooms := newRole(t, o, wid, "rooms", perm.ManageRoom)
+	if st, _ := setMemberRoles(o, wid, carol.id, rooms.GetId()); st != 200 {
+		t.Fatalf("assign rooms: %d", st)
+	}
+	carol.must(200, "GET", "/api/workspaces/"+wid+"/rooms?archived=1", nil, &arch)
 	if len(arch.GetRooms()) != 1 || arch.GetRooms()[0].GetId() != rp.GetId() || arch.GetRooms()[0].GetMessageCount() != 2 ||
 		arch.GetRooms()[0].GetArchivedAt() == nil || arch.GetRooms()[0].GetCreatedBy() != bob.id {
 		t.Fatalf("archive: %v", arch.GetRooms())
