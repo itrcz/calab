@@ -352,6 +352,15 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 	ready.PendingAdmissions = filtered
 	s.mu.Lock()
 	s.attachLocked(c)
+	if s.broken.Load() {
+		// Events were lost for it before its socket was attached (requireResync found no
+		// socket to close): e.g. another IDENTIFY's workspace load failed and stateFailed
+		// dropped the state this READY relies on. Try again rather than go live without them.
+		// A requireResync after this point sees the socket and closes it.
+		s.mu.Unlock()
+		h.destroy(s, 4000, "try again")
+		return nil
+	}
 	s.ready = true
 	s.emit(uuid.New(), enc)
 	s.flushPending(nil)
