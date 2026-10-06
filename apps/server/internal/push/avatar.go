@@ -32,6 +32,13 @@ func NewAvatars(store blob.Store) *Avatars {
 }
 
 func (a *Avatars) picture(ctx context.Context, f sqlc.File) string {
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Millisecond)
+	defer cancel()
+	return a.pictureWithinBudget(ctx, f)
+}
+
+// Separate the caller's latency budget from deterministic image/cache behavior.
+func (a *Avatars) pictureWithinBudget(ctx context.Context, f sqlc.File) string {
 	if a == nil || a.store == nil || f.ThumbnailKey == nil || !a.mu.TryLock() {
 		return ""
 	}
@@ -40,8 +47,6 @@ func (a *Avatars) picture(ctx context.Context, f sqlc.File) string {
 	if value, ok := a.cache[key]; ok {
 		return value
 	}
-	ctx, cancel := context.WithTimeout(ctx, 40*time.Millisecond)
-	defer cancel()
 	r, meta, err := a.store.Get(ctx, *f.ThumbnailKey)
 	if err != nil {
 		return ""

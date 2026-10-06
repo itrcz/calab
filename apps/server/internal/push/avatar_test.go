@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/blob/blobtest"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/google/uuid"
@@ -34,7 +35,8 @@ func TestAvatarPrivateThumbnailBoundsCacheAndFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.Set(key, buf.Bytes())
-	value := a.picture(context.Background(), f)
+	// Conversion must be correct independently of a loaded CI runner's wall clock.
+	value := a.pictureWithinBudget(context.Background(), f)
 	raw, err := base64.StdEncoding.DecodeString(value)
 	if err != nil || len(raw) == 0 || len(raw) > maxAvatarBytes {
 		t.Fatalf("avatar not bounded JPEG: %d %v", len(raw), err)
@@ -107,5 +109,27 @@ func TestAPNSAvatarFallsBackBeforePayloadLimit(t *testing.T) {
 	}
 	if err = json.Unmarshal(body, &decoded); err != nil || decoded.AvatarJPEG != p.AvatarJPEG {
 		t.Fatal("ordinary avatar missing")
+	}
+}
+
+type waitingAvatarStore struct {
+	blob.Store
+	expired bool
+}
+
+func (s *waitingAvatarStore) Get(ctx context.Context, _ string) (blob.ReadSeekCloser, blob.Meta, error) {
+	if _, bounded := ctx.Deadline(); !bounded {
+		return nil, blob.Meta{}, errors.New("missing deadline")
+	}
+	<-ctx.Done()
+	s.expired = errors.Is(ctx.Err(), context.DeadlineExceeded)
+	return nil, blob.Meta{}, ctx.Err()
+}
+func TestAvatarSlowStorageUsesTextFallback(t *testing.T) {
+	store := &waitingAvatarStore{}
+	key := "avatar/slow"
+	f := sqlc.File{ID: uuid.New(), ThumbnailKey: &key}
+	if NewAvatars(store).picture(context.Background(), f) != "" || !store.expired {
+		t.Fatal("avatar lookup did not enforce its short delivery budget")
 	}
 }
