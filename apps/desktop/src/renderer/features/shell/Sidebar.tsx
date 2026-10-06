@@ -332,7 +332,7 @@ function SidebarMenu({ workspaceId, onCreateCategory, children }: { workspaceId:
 
 // ---------------------------------------------------------------- header
 
-function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: string; onCreateCategory: () => void }): ReactNode {
+export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: string; onCreateCategory: () => void }): ReactNode {
   // The role, not the whole entry (it changes on every voice state).
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const me = useSession((s) => s.me?.user?.id ?? '');
@@ -354,7 +354,8 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
       ) : null}
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
         {/* Guests have no calendar or boards: no tabs (docs/09 #140). */}
-        {guest ? <div className="flex-1" /> : <ModeTabs workspaceId={workspaceId} />}
+        {/* Phone (ADR-0073): the calendar is a tab of the tab bar, here only «Голос · Доски». */}
+        {guest ? <div className="flex-1" /> : <ModeTabs workspaceId={workspaceId} calendar={!mobile} />}
         {manageRooms || inviter || !guest ? (
           <CreateMenu
             workspaceId={workspaceId}
@@ -672,7 +673,7 @@ function CategoryNameEditor({ category, onDone }: { category: RoomCategory; onDo
 }
 
 /** Create a category (MANAGE_ROOM); renaming is inline in the header. */
-function CategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
+export function CategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -792,7 +793,7 @@ function dialFromRoomMenu(room: Room): Promise<void> {
  * The room menu (docs/09 #30): right click / long press on a room row, and the voice room's «…»
  * button (the same menu, opened at the button). Item set: lib/roomMenu.roomMenuGroups.
  */
-function RoomMenu({
+export function RoomMenu({
   room,
   children,
   canManage,
@@ -800,9 +801,15 @@ function RoomMenu({
   admin,
   inviteRoom,
   guest,
+  inside = false,
+  prepend,
 }: {
   room: Room;
   children: ReactNode;
+  /** Opened inside the room (the phone header's «…»): no «Открыть чат». */
+  inside?: boolean;
+  /** Items before the room menu's own (the phone header's «Поиск в комнате»). */
+  prepend?: ReactNode;
   canManage: boolean;
   canOrder: boolean;
   admin: boolean;
@@ -828,7 +835,7 @@ function RoomMenu({
   // Categories are read when the menu renders (it mounts on open), like RoomOrderItems.
   const groups = roomMenuGroups({
     voice: voiceRoom,
-    mobile,
+    mobile: mobile && !inside,
     guest,
     admin,
     inviteRoom,
@@ -951,6 +958,12 @@ function RoomMenu({
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={cx(menuBox, 'w-60')} collisionPadding={16} aria-label={t('roomMenu.moreOf', { name: room.name })}>
+          {prepend ? (
+            <>
+              {prepend}
+              <ContextMenu.Separator className={menuSeparator} />
+            </>
+          ) : null}
           {groups.map((g, i) => (
             <Fragment key={g.join()}>
               {i > 0 ? <ContextMenu.Separator className={menuSeparator} /> : null}
@@ -1156,7 +1169,7 @@ const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: st
   );
 });
 
-function MentionBadge({ n }: { n: number }): ReactNode {
+export function MentionBadge({ n }: { n: number }): ReactNode {
   if (n <= 0) return null;
   return (
     <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white group-hover/row:hidden" aria-label={plural('shell.unreadMentions', n)}>
@@ -1306,8 +1319,6 @@ function VoiceRoomRow({
       void voice.join(room.id, workspaceId);
       // Nothing open in this workspace yet: show the room's chat next to the call.
       if (!useUi.getState().lastRoom[workspaceId]) openRoom(workspaceId, room.id);
-      // The phone's drawer gives way to the call strip (the old click closed it by opening the room).
-      if (mobile) useUi.getState().setNavDrawer(false);
     }
   };
   const joinUi = joinButton({ inRoom, canConnect, canMove, people: people.length, limit, touch: mobile });
@@ -1521,7 +1532,7 @@ function TempGroup({ workspaceId, children }: { workspaceId: string; children: R
  * ~15° slanted divider (the right segment one step darker/lighter than the pill fill), red left
  * segment when full. The call timer stands apart from it (review: «02 | 04» read as noise).
  */
-function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
+export function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
   if (max <= 0) {
     return (
       <span

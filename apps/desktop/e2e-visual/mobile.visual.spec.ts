@@ -70,11 +70,31 @@ async function signedIn(page: Page, prefs: Record<string, unknown> = {}): Promis
   await expect(page.getByTestId('mobile-shell')).toBeVisible();
 }
 
+/** Back to the tab root (ADR-0073): «←» until the tab bar shows. */
+async function toRoot(page: Page): Promise<void> {
+  const back = page.getByTestId('phone-back');
+  for (let i = 0; i < 6 && (await back.count()) > 0; i++) await back.first().tap();
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+}
+
+/** A tab of the bottom tab bar (its root). */
+async function tab(page: Page, name: 'chats' | 'dms' | 'calendar' | 'me'): Promise<void> {
+  await toRoot(page);
+  await page.getByTestId(`phone-tab-${name}`).tap();
+}
+
+/** «Чаты» → a room of the list (the whole row opens it). */
 async function openRoom(page: Page, name: RegExp): Promise<void> {
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
-  await nav.getByRole('button', { name }).first().tap();
-  await expect(nav).toHaveCount(0);
+  await tab(page, 'chats');
+  await page.getByTestId('phone-room-list').getByRole('button', { name }).first().tap();
+  await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
+  await expect(page.getByTestId('composer')).toBeVisible();
+}
+
+/** Signed in, in the first room (the app opens on the room list). */
+async function signedInRoom(page: Page, prefs: Record<string, unknown> = {}): Promise<void> {
+  await signedIn(page, prefs);
+  await openRoom(page, /^общий/);
 }
 
 /**
@@ -254,13 +274,13 @@ test('m-onboarding', async ({ page }) => {
 // ---------------------------------------------------------------- the app
 
 test('m-chat', async ({ page }) => {
-  await signedIn(page);
+  await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   await expectNoFieldFocus(page, 'first room');
   await feedToBottom(page);
   await expect.soft(page.locator('html'), 'a Safari tab is not standalone').not.toHaveClass(/pwa-standalone/);
   await checkpoint(page, 'm-chat', { main: true });
-  // Switching rooms from the drawer does not focus the composer either.
+  // Switching rooms from the list does not focus the composer either.
   await openRoom(page, /^разработка/);
   await expectNoFieldFocus(page, 'room switch');
   // A long room name: the header's buttons keep their size and place.
@@ -281,7 +301,7 @@ test('m-chat', async ({ page }) => {
  */
 test('m-update-bar', async ({ page }) => {
   mock.state.serverVersion = '99.0.0';
-  await signedIn(page);
+  await signedInRoom(page);
   const bar = page.getByTestId('update-bar');
   await expect(bar).toContainText('Доступна версия 99.0.0');
   await expect(bar.getByRole('button', { name: 'Обновить страницу' })).toBeVisible();
@@ -312,7 +332,7 @@ async function expectFeedFits(page: Page): Promise<void> {
 // Issue #9: a portrait photo in a phone's bubble stays inside the 70 % lane (no sideways scroll of
 // the feed), proportions kept, no taller than 60 % of the screen.
 test('m-chat-image', async ({ page }) => {
-  await signedIn(page);
+  await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.portrait] });
   const img = page.getByRole('button', { name: 'Открыть изображение «IMG_2041.png»' });
@@ -336,7 +356,7 @@ test('m-chat-image', async ({ page }) => {
 // A done meeting recording on a phone (docs/09 #47): the card across the feed, the summary folded,
 // the actions wrap; 44 px targets; the REC circle plays (#88), no «Готово» row.
 test('m-chat-recording', async ({ page }) => {
-  await signedIn(page);
+  await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   await expect(page.locator('[data-message-id]').first()).toBeVisible();
   await feedToBottom(page);
@@ -373,7 +393,7 @@ test('m-chat-recording', async ({ page }) => {
 // Chat audio player on a phone (docs/08 «Медиа в чате»): the same player, 44 px targets; the web
 // client shows the size until the file is played (no download just for the duration).
 test('m-chat-audio', async ({ page }) => {
-  await signedIn(page);
+  await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: 'Джингл для релиза', attachments: [IDS.files.audio] });
   const player = page.getByTestId('audio-player');
@@ -391,7 +411,7 @@ test('m-chat-audio', async ({ page }) => {
 // Code blocks on a phone (docs/08 «Код в сообщениях»): the same block — language label, copy
 // always visible (no hover on touch), horizontal scroll inside the block, not the page.
 test('m-chat-code', async ({ page }) => {
-  await signedIn(page);
+  await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: CODE_FIXTURE.long });
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: CODE_FIXTURE.js });
@@ -407,7 +427,7 @@ test('m-chat-code', async ({ page }) => {
 // Voice message on a phone (docs/08 «Голосовые сообщения»): the bubble with 44 px targets and
 // the mic in the composer (empty field) instead of «send».
 test('m-chat-voice', async ({ page }) => {
-  await signedIn(page);
+  await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   await expect(page.getByTestId('voice-button')).toBeVisible();
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.voice] });
@@ -442,7 +462,7 @@ async function standalone(page: Page): Promise<void> {
 
 test('m-chat-standalone', async ({ page }) => {
   await standalone(page);
-  await signedIn(page);
+  await signedInRoom(page);
   await expect(page.getByTestId('composer')).toBeVisible();
   await expect(page.locator('html')).toHaveClass(/pwa-standalone/);
   await feedToBottom(page);
@@ -464,31 +484,82 @@ test('m-chat-empty', async ({ page }) => {
   await checkpoint(page, 'm-chat-empty', { snapshot: false });
 });
 
-test('m-drawer', async ({ page }) => {
+/** Борис and Вера talk in «Созвон» (since 25 minutes before the page clock). */
+function seedCall(): void {
+  const since = NOW.getTime() - 25 * 60_000;
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, joinedAtMs: since });
+  mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.call, joinedAtMs: since + 60_000 });
+}
+
+// ADR-0073 §1, §3: the app opens on «Чаты» — the rail, the room list as a messenger's chats (68 px
+// rows, the voice room with people in green), the tab bar.
+test('m-home', async ({ page }) => {
+  seedCall();
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await expect(page.getByTestId('mobile-nav')).toBeVisible();
-  await checkpoint(page, 'm-drawer');
+  const list = page.getByTestId('phone-room-list');
+  await expect(list.getByTestId('phone-room-row').first()).toBeVisible();
+  await expect(list.getByTestId('room-voice-line')).toContainText('Борис');
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+  await expect(page.getByTestId('room-join')).toHaveCount(0);
+  for (const row of await list.getByTestId('phone-room-row').all()) {
+    const box = await row.boundingBox();
+    expect(box && Math.round(box.height), 'a 68 px room row').toBe(68);
+  }
+  await checkpoint(page, 'm-home');
+  // A category collapses and expands from its header.
+  const cat = list.getByRole('button', { name: /^Свернуть / }).first();
+  if ((await cat.count()) > 0) {
+    await cat.tap();
+    await expect(list.getByRole('button', { name: /^Развернуть / }).first()).toBeVisible();
+    await list.getByRole('button', { name: /^Развернуть / }).first().tap();
+  }
 });
 
-test('m-members', async ({ page }) => {
+// ADR-0073 §4: people in the room's voice, I am not — the banner under the header with «Присоединиться».
+test('m-room-voice-banner', async ({ page }) => {
+  seedCall();
   await signedIn(page);
+  await openRoom(page, /^Созвон/);
+  const banner = page.getByTestId('room-voice-banner');
+  await expect(banner).toContainText('В голосе · 2');
+  const join = banner.getByTestId('room-voice-join');
+  const box = await join.boundingBox();
+  expect(box && Math.round(box.height), '44 px «Присоединиться»').toBeGreaterThanOrEqual(44);
+  await expect(page.getByTestId('room-header-join')).toHaveCount(0);
+  await checkpoint(page, 'm-room-voice-banner', { main: true });
+  // Back (the browser's, as Android back) returns to the list.
+  await page.goBack();
+  await expect(page.getByTestId('phone-room-list')).toBeVisible();
+});
+
+// ADR-0073 §1: the members are a screen of their own (the right drawer is gone); back → the room.
+test('m-members-page', async ({ page }) => {
+  await signedInRoom(page);
   await page.getByRole('button', { name: 'Участники' }).tap();
-  await expect(page.getByTestId('mobile-members').getByRole('complementary', { name: 'Участники' })).toBeVisible();
-  await checkpoint(page, 'm-members');
+  const members = page.getByTestId('members-page');
+  await expect(members.getByRole('complementary', { name: 'Участники' })).toBeVisible();
+  await checkpoint(page, 'm-members-page');
+  await page.getByTestId('phone-back').tap();
+  await expect(page.getByTestId('composer')).toBeVisible();
 });
 
-// Calendar (ADR-0038 §7): drawer → the header's calendar icon → a day, full screen; the meeting card
-// replaces it full screen (← back).
+// ADR-0073 §1: «Я» — the profile card, mic / sound, the settings entries, «Выйти».
+test('m-me', async ({ page }) => {
+  await signedIn(page);
+  await tab(page, 'me');
+  await expect(page.getByTestId('phone-me-card')).toContainText('Анна');
+  await expect(page.getByTestId('phone-me-logout')).toBeVisible();
+  await checkpoint(page, 'm-me');
+});
+
+// Calendar (ADR-0038 §7, ADR-0073): the «Календарь» tab → today, full screen; the meeting card is
+// pushed over it (← back).
 test('m-calendar-day', async ({ page }) => {
   mock.setClock(NOW.getTime());
   seedDay(mock);
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
-  // The icon opens today at once (ADR-0041 §3): the drawer closes.
-  await nav.getByTestId('calendar-button').tap();
-  await expect(nav).toHaveCount(0);
+  // «Календарь» is a tab (ADR-0073): today at once.
+  await tab(page, 'calendar');
   await expect(page.getByTestId('day-view')).toBeVisible();
   await expect(page.getByTestId('now-line')).toBeVisible();
   await checkpoint(page, 'm-calendar-day');
@@ -505,8 +576,7 @@ test('m-calendar-findtime', async ({ page }) => {
   mock.setClock(NOW.getTime());
   seedDay(mock);
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').getByTestId('calendar-button').tap();
+  await tab(page, 'calendar');
   await expect(page.getByTestId('day-view')).toBeVisible();
   await page.getByTestId('day-find').tap();
   const pane = page.getByTestId('find-time');
@@ -530,15 +600,15 @@ test('m-calendar-public', async ({ page }) => {
   await checkpoint(page, 'm-calendar-public');
 });
 
-// Task boards on a phone (ADR-0042 §5): boards in the drawer, the list by default, the task full screen.
+// Task boards on a phone (ADR-0042 §5): boards on the space screen, the list by default, the task full screen.
 test('m-boards-list', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
+  // «Доски» of the space screen (ADR-0073): the list in place of the rooms, a board is pushed.
+  const nav = page.getByTestId('phone-room-list');
   await nav.getByTestId('boards-button').tap();
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
-  await expect(nav).toHaveCount(0);
+  await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
   await expect(page.getByTestId('list-view')).toBeVisible();
   await checkpoint(page, 'm-boards-list');
 });
@@ -546,8 +616,8 @@ test('m-boards-list', async ({ page }) => {
 test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
+  // «Доски» of the space screen (ADR-0073): the list in place of the rooms, a board is pushed.
+  const nav = page.getByTestId('phone-room-list');
   await nav.getByTestId('boards-button').tap();
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
   await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
@@ -560,8 +630,8 @@ test('m-boards-task', async ({ page }) => {
 test('m-boards-kanban', async ({ page }) => {
   mock.setClock(NOW.getTime());
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
+  // «Доски» of the space screen (ADR-0073): the list in place of the rooms, a board is pushed.
+  const nav = page.getByTestId('phone-room-list');
   await nav.getByTestId('boards-button').tap();
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
   await page.getByTestId('view-kanban').tap();
@@ -575,7 +645,7 @@ test('m-boards-kanban', async ({ page }) => {
 // to add; animated stickers stand on their first frame (they play only on hover).
 test('m-sticker-picker', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await signedIn(page);
+  await signedInRoom(page);
   await page.getByTestId('sticker-button').tap();
   const panel = page.getByTestId('sticker-panel');
   await expect(panel.getByTestId('sticker-grid').locator('button[data-sticker-pick]')).toHaveCount(3);
@@ -591,7 +661,7 @@ test('m-sticker-picker', async ({ page }) => {
 test('m-chat-sticker-suggest', async ({ page }) => {
   mock.seedLaughStickers();
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await signedIn(page);
+  await signedInRoom(page);
   const field = page.getByRole('textbox', { name: /^Сообщение в/ });
   await field.fill('😂');
   const strip = page.getByTestId('sticker-suggest');
@@ -604,7 +674,7 @@ test('m-chat-sticker-suggest', async ({ page }) => {
 });
 
 test('m-sheet', async ({ page }) => {
-  await signedIn(page);
+  await signedInRoom(page);
   await page.getByRole('button', { name: 'Прикрепить файл' }).tap();
   await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Камера' })).toBeVisible();
   await checkpoint(page, 'm-sheet', { snapshot: false });
@@ -619,24 +689,31 @@ test('m-sheet', async ({ page }) => {
 test('m-voice', async ({ page }) => {
   await signedIn(page);
   // Push-to-talk mode: the fullest strip (room line, mute, deafen, PTT hold, hang up).
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Настройки', exact: true }).tap();
+  await tab(page, 'me');
+  await page.getByTestId('phone-me-voice').tap();
   const settings = page.getByRole('dialog', { name: 'Настройки' });
-  await settings.getByRole('tab', { name: 'Голос и устройства' }).tap();
   await settings.getByRole('radio', { name: 'Push-to-talk' }).tap();
   await settings.getByRole('button', { name: 'Закрыть', exact: true }).tap();
   await expect(settings).toHaveCount(0);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Войти в голос «Созвон»' }).tap();
+  // Nobody in «Созвон»: the handset in its header joins (ADR-0073 §4).
+  await openRoom(page, /^Созвон/);
+  await page.getByTestId('room-header-join').tap();
   const strip = page.getByTestId('mobile-voice-strip');
   await expect(strip.getByTestId('ptt-hold')).toBeVisible({ timeout: 30_000 });
-  // The voice room itself (the strip's room line): its chat, the composer, the strip under it.
-  await strip.getByRole('button', { name: /Созвон/ }).tap();
+  await expect(page.getByTestId('room-voice-banner')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Созвон' })).toBeVisible();
   await expectNoFieldFocus(page, 'voice room');
+  // The status is never cut («Переподк…»): it wraps instead.
+  const status = strip.getByTestId('mobile-voice-status');
+  expect(await status.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'voice status not truncated').toBe(true);
   await checkpoint(page, 'm-voice', { main: true });
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await checkpoint(page, 'm-voice-drawer', { snapshot: false });
+  // On the list the strip sits above the tab bar; a tap on it opens the call's room.
+  await toRoot(page);
+  await expect(strip).toBeVisible();
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+  await checkpoint(page, 'm-home-voice');
+  await strip.getByRole('button', { name: /Созвон/ }).tap();
+  await expect(page.getByRole('heading', { name: 'Созвон' })).toBeVisible();
 });
 
 // Soundboard (ADR-0036): the strip's «Звуки» opens the island's panel as a bottom sheet (voice
@@ -644,8 +721,8 @@ test('m-voice', async ({ page }) => {
 test('m-voice-soundboard', async ({ page }) => {
   mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Войти в голос «Созвон»' }).tap();
+  await openRoom(page, /^Созвон/);
+  await page.getByTestId('room-header-join').tap();
   const strip = page.getByTestId('mobile-voice-strip');
   await expect(strip.getByTestId('mobile-voice-more')).toBeEnabled({ timeout: 30_000 });
   await strip.getByTestId('mobile-voice-more').tap();
@@ -658,13 +735,13 @@ test('m-voice-soundboard', async ({ page }) => {
 
 test('m-dm-list', async ({ page }) => {
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
-  await nav.getByTestId('rail-home').getByRole('button').tap();
+  // «Личные» is a tab (ADR-0073): notes and DMs at full width.
+  await tab(page, 'dms');
+  const nav = page.getByTestId('phone-dms');
   const list = nav.getByTestId('dm-list');
   await expect(list.getByRole('button', { name: /Борис Петров/ })).toContainText('Закрепил, чтобы не потерялся');
   // docs/09 #51: a left swipe on Григорий's row reveals «В архив»; tapping it archives the DM
-  // («Архив — 1» at the bottom, collapsed). The drawer stays open (the row keeps the gesture).
+  // («Архив — 1» at the bottom, collapsed). The list stays (the row keeps the gesture).
   await swipeLeft(list.getByRole('button', { name: /Григорий/ }));
   await expect(nav).toBeVisible();
   await checkpoint(page, 'm-dm-swipe', { snapshot: false });
@@ -674,15 +751,14 @@ test('m-dm-list', async ({ page }) => {
   await checkpoint(page, 'm-dm-list');
 });
 
-// «Заметки» (ADR-0039): the same section above the DMs in the drawer.
+// «Заметки» (ADR-0039): the same section above the DMs on «Личные».
 test('m-notes', async ({ page }) => {
   const ideas = mock.addShelf(IDS.users.anna, 'Идеи', '💡');
   mock.addShelf(IDS.users.anna, 'Черновики', '');
   mock.injectMessage({ roomId: ideas, authorId: IDS.users.anna, content: 'Тёмная тема для лендинга' });
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
-  await nav.getByTestId('rail-home').getByRole('button').tap();
+  await tab(page, 'dms');
+  const nav = page.getByTestId('phone-dms');
   const shelves = nav.getByTestId('notes-shelf');
   await expect(shelves).toHaveCount(2);
   await expect(shelves.first()).toContainText('Тёмная тема для лендинга');
@@ -716,10 +792,8 @@ async function swipeLeft(target: Locator): Promise<void> {
 
 test('m-dm-chat', async ({ page }) => {
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
-  await nav.getByTestId('rail-home').getByRole('button').tap();
-  await nav.getByTestId('dm-list').getByRole('button', { name: /Борис Петров/ }).tap();
+  await tab(page, 'dms');
+  await page.getByTestId('phone-dms').getByTestId('dm-list').getByRole('button', { name: /Борис Петров/ }).tap();
   await expect(page.getByText('Анна, привет! Посмотришь PR с миграцией')).toBeVisible();
   await expectNoFieldFocus(page, 'dm open');
   await feedToBottom(page);
@@ -739,8 +813,8 @@ test('m-call-incoming', async ({ page }) => {
 
 test('m-settings', async ({ page }) => {
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Настройки', exact: true }).tap();
+  await tab(page, 'me');
+  await page.getByTestId('phone-me-general').tap();
   const settings = page.getByRole('dialog', { name: 'Настройки' });
   await expect(settings).toBeVisible();
   await expectNoFieldFocus(page, 'settings');
@@ -758,8 +832,7 @@ test('m-settings', async ({ page }) => {
 
 test('m-dialog', async ({ page }) => {
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Создать пространство' }).tap();
+  await page.getByTestId('phone-chats').getByRole('button', { name: 'Создать пространство' }).tap();
   await expect(page.getByRole('dialog', { name: 'Новое пространство' })).toBeVisible();
   await expectNoFieldFocus(page, 'dialog sheet');
   await checkpoint(page, 'm-dialog', { snapshot: false });
@@ -770,8 +843,7 @@ test('m-dialog', async ({ page }) => {
 test('m-settings-bots', async ({ page }) => {
   await signedIn(page);
   mock.seedBots();
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
+  await page.getByTestId('phone-room-list').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
   await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Боты' }).tap();
@@ -786,9 +858,8 @@ test('m-settings-bots', async ({ page }) => {
 // typed text (the field's phone padding used to override the caller's pl-7).
 test('m-room-new', async ({ page }) => {
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  // The room column's «+» (docs/09 #140: no longer in the workspace menu).
-  await page.getByTestId('mobile-nav').getByTestId('sidebar-create').tap();
+  // The space screen's «+» (docs/09 #140: no longer in the workspace menu).
+  await page.getByTestId('phone-room-list').getByTestId('sidebar-create').tap();
   await page.getByRole('menuitem', { name: 'Создать комнату' }).tap();
   const dialog = page.getByRole('dialog', { name: 'Новая комната' });
   await expect(dialog).toBeVisible();
@@ -808,9 +879,8 @@ test('m-room-new', async ({ page }) => {
 // docs/09 #55: «Пригласить» from a room's menu (long press) — the guest link first, as a sheet.
 test('m-room-invite', async ({ page }) => {
   await signedIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  const nav = page.getByTestId('mobile-nav');
-  await nav.locator('aside button', { hasText: 'общий' }).first().dispatchEvent('contextmenu', { clientX: 120, clientY: 300 });
+  const nav = page.getByTestId('phone-room-list');
+  await nav.getByTestId('phone-room-row').filter({ hasText: 'общий' }).first().dispatchEvent('contextmenu', { clientX: 120, clientY: 300 });
   await page.getByRole('menuitem', { name: 'Пригласить' }).tap();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByText('Пригласить гостя без регистрации')).toBeVisible();
@@ -846,7 +916,7 @@ test('m-keyboard', async ({ page }) => {
       vv.dispatchEvent(new Event('resize'));
     };
   });
-  await signedIn(page);
+  await signedInRoom(page);
   const keyboard = (px: number | null): Promise<void> => page.evaluate((h) => (window as unknown as KeyboardStub).__keyboard(h), px);
   const shellBottom = (): Promise<number> => page.getByTestId('mobile-shell').evaluate((el) => Math.round(el.getBoundingClientRect().bottom));
   const vh = page.viewportSize()?.height ?? 0;
@@ -878,7 +948,7 @@ test('m-keyboard', async ({ page }) => {
 
 test('m-chat-inline-buttons', async ({ page }) => {
   seedInlineButtons(mock);
-  await signedIn(page);
+  await signedInRoom(page);
   await feedToBottom(page);
   await expect(page.getByTestId('inline-keyboard')).toBeVisible();
   await checkpoint(page, 'm-chat-inline-buttons', { main: true });

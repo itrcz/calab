@@ -91,6 +91,8 @@ function AppList({ wsId, ids, manage }: { wsId: string; ids: string[]; manage: b
           <div aria-hidden className="pointer-events-none absolute left-1/2 z-10 h-0.5 w-8 -translate-x-1/2 rounded-full bg-accent" style={{ top: line - 1 }} data-testid="rail-apps-drop-line" />
         ) : null}
         {manage ? (
+          // A list item itself (axe: a role=list holds only listitems).
+          <div role="listitem" className="flex">
           <Tip label={ids.length >= 20 ? t('wapp.limit') : t('wapp.add')} side="right">
             <button
               type="button"
@@ -103,6 +105,7 @@ function AppList({ wsId, ids, manage }: { wsId: string; ids: string[]; manage: b
               <Plus className="size-4" strokeWidth={2} />
             </button>
           </Tip>
+          </div>
         ) : null}
       </div>
       {createPortal(

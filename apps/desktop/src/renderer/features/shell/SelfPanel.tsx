@@ -116,7 +116,7 @@ export function SelfPanel(): ReactNode {
 }
 
 /** Icon button + ▾ device picker, one hover group (Discord-like). */
-function SplitButton({
+export function SplitButton({
   label,
   shortcut,
   danger,
@@ -168,7 +168,7 @@ const DEFAULT_ID = '__default__';
  * голоса». While a key capture is armed the menu stays open (Esc cancels the capture, a click
  * outside is ignored) and keys go to the capture, not to the menu's typeahead / items.
  */
-function MicMenu(): ReactNode {
+export function MicMenu(): ReactNode {
   const cap = usePttCapture();
   const endedAt = useRef(0);
   const wasCapturing = useRef(false);
@@ -281,7 +281,7 @@ function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
 type ContentProps = ComponentPropsWithoutRef<typeof Dropdown.Content>;
 
 /** Device quick-picker: list of inputs/outputs (the mic menu puts «Режим» on top). */
-function DeviceMenu({
+export function DeviceMenu({
   kind,
   top,
   testId,
