@@ -125,6 +125,10 @@ bot_webhook_deliveries id (uuidv7 приложения = id в теле), bot_us
                     next_at, created_at, delivered_at?, failed_at?, error          — outbox webhook-ов ботов
 bot_blocks          user_id, bot_user_id, created_at   PK (user_id, bot_user_id) — человек заблокировал бота
 
+                    users += username? (citext, UNIQUE, [a-z0-9_]{3,32}; одно пространство имён с ботами — у
+                    аккаунта бота его bots.username, удалённый бот освобождает), phone? (≤ 32: +, цифры, пробелы,
+                    -(), не подтверждается) — ADR-0077, миграция 00072
+
 voice_states        (не в Postgres — в Redis, источник LiveKit webhooks)
                     ключ — сессия (LiveKit identity = <user_id>:<session_id>):
                     workspace_id → { session_id → { user_id, room_id, muted, deafened,

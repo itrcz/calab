@@ -115,7 +115,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `PUT /api/bots/me/commands` | replace the command list `{commands: [{name, description}]}` | bots only |
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | bots only |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | the bot's workspaces | member |
-| `GET /api/workspaces/{id}/members` | members (`WorkspaceMember`; bots have `user.isBot`) | member |
+| `GET /api/workspaces/{id}/members` | members (`WorkspaceMember`; bots have `user.isBot`; `user.username` is the nickname, ADR-0077). Bots never get people's email or phone — not over REST, the gateway or webhooks | member |
 | `GET /api/workspaces/{id}/members/{userId}` | a member's profile (ADR-0051; `@me` = the bot) → `{member, openTasks}`: name, nickname, roles, badge, status, time zone, birthday (a hidden one is not sent), open tasks they are assigned to — only from boards the bot sees (≤ 50). SDK `bot.members.get` | member |
 | `PATCH /api/workspaces/{id}/members/{userId} {nickname}` | rename a member (workspace nickname; `""` clears it). SDK `bot.members.setNickname` | `MANAGE_NICKNAMES` |
 | `GET /api/workspaces/{id}/badges` | member badges: `WorkspaceMember.badge_id` refers to them | member |
