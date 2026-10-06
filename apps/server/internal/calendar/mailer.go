@@ -50,8 +50,11 @@ func (s *Service) usableLink(ctx context.Context, b *bundle, a sqlc.EventAttende
 	return inv, err == nil && inv.RevokedAt == nil
 }
 
-// sendMails queues tmpl to the recipients among `to` (attendees of b).
+// sendMails queues tmpl to the recipients among `to` — narrowed by mailRecipients (recipients.go)
+// to attendees of b, without the organizer for a REQUEST and only the unanswered for an
+// invitation: no caller can mail a stranger or invite the organizer to their own meeting.
 func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, method string, to []sqlc.EventAttendee) {
+	to = mailRecipients(b, tmpl, to)
 	if !s.mail.Enabled() || len(to) == 0 {
 		return
 	}
