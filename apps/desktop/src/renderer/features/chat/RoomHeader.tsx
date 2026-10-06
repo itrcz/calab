@@ -210,14 +210,20 @@ interface VoiceJoin {
   label: string;
 }
 
+/** I am the workspace owner (the only one who may enter a full voice room). */
+function useIsWorkspaceOwner(workspaceId: string): boolean {
+  return useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+}
+
 /** «Войти в голос» of a room I read without being in its voice: the room row's rules (joinOutcome). */
 function useVoiceJoin(workspaceId: string, room: Room, perms: PermissionBits, people: number): VoiceJoin {
   const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
+  const owner = useIsWorkspaceOwner(workspaceId);
   return {
     disabled: suspended,
     label: suspended ? t('suspended.voice') : t('voicePreview.join'),
     run: () => {
-      const next = joinOutcome({ inRoom: false, canConnect: can(perms, 'CONNECT'), canMove: can(perms, 'MOVE_MEMBERS'), people, limit: room.userLimit });
+      const next = joinOutcome({ inRoom: false, canConnect: can(perms, 'CONNECT'), owner, people, limit: room.userLimit });
       if (next === 'full') toast.info(t('shell.roomFull'));
       else if (next === 'join') void voice.join(room.id, workspaceId);
     },
@@ -305,11 +311,12 @@ function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; ro
   const states = useVoiceStates(workspaceId);
   const mobile = useMobile();
   const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
+  const owner = useIsWorkspaceOwner(workspaceId);
   if (!preview) return null;
   const people = Object.values(states).filter((v) => v.roomId === room.id).length;
   const canConnect = can(perms, 'CONNECT');
   const join = (): void => {
-    const next = joinOutcome({ inRoom: false, canConnect, canMove: can(perms, 'MOVE_MEMBERS'), people, limit: room.userLimit });
+    const next = joinOutcome({ inRoom: false, canConnect, owner, people, limit: room.userLimit });
     if (next === 'full') toast.info(t('shell.roomFull'));
     else if (next === 'join') void voice.join(room.id, workspaceId);
   };

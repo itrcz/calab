@@ -214,7 +214,7 @@ export const Permission = {
   MANAGE_ROOM:      1n << 8n,   // название, права, удаление комнаты
   MANAGE_WORKSPACE: 1n << 9n,   // настройки, оформление, тариф, политика гостей, опасная зона (остальное вынесено: ADR-0043, ADR-0048)
   ADMINISTRATOR:    1n << 10n,  // всё, игнорирует deny
-  MOVE_MEMBERS:     1n << 11n,  // перемещать других между voice-комнатами, входить сверх user_limit
+  MOVE_MEMBERS:     1n << 11n,  // перемещать других между voice-комнатами
   MANAGE_NICKNAMES: 1n << 12n,  // менять ники других (только уровень workspace)
   MENTION_EVERYONE: 1n << 13n,  // @everyone / @here (у member по умолчанию нет)
   VIDEO:            1n << 14n,  // веб-камера в voice (у member по умолчанию есть)
@@ -316,7 +316,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   Self-hosted (Enterprise) — лимиты задаёт оператор своего сервера (`PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` / `PLAN_BUSINESS_LIMITS`: ключ `0` / `false` снимает лимит, например `{"caldav_disabled":false}` для Free; план пространства — через суперадмина). Индивидуальный (`custom`) берёт только записанные ключи: отсутствующие флаги = функция включена, кроме `board_webhooks_disabled` и `telephony_disabled` — без ключа они `true` (`plans.CustomBase`: функции Business не появляются у старой записи сами).
 - Функции по тарифу: `409 CONFLICT`, `reason = PLAN_LIMIT`, `used = limit = 0` и сообщение с названием функции (`plans.FeatureError`). Функции по тарифу — CalDAV (по человеку, см. ADR-0024 «Уточнение (30.09)»), режим музыканта (по пространству голосовой комнаты, в звонке один на один — по любому пространству человека; ADR-0052), чек-листы и вебхук доски (ADR-0058 §5), телефония SIP (по пространству; ADR-0046, пометка 02.10).
 - Сервер (`internal/plans`, кэш 30 с, сброс при изменении на всех инстансах через Redis `plans:changed`) применяет лимиты **для всех, включая владельца** (это не биты прав):
-  - вход в голосовую комнату (`/join`, webhook `participant_joined`, перемещение): мест `min(user_limit, room_members)`, pending-устройства и гости считаются; упор в лимит плана → `409 ROOM_FULL`, `reason = PLAN_LIMIT`, `used`/`limit`. `user_limit` комнаты по-прежнему не действует на `MOVE_MEMBERS`, лимит плана — действует;
+  - вход в голосовую комнату (`/join`, webhook `participant_joined`, перемещение): мест `min(user_limit, room_members)`, pending-устройства и гости считаются; упор в лимит плана → `409 ROOM_FULL`, `reason = PLAN_LIMIT`, `used`/`limit`. `user_limit` комнаты не действует только на **владельца пространства** (владелец, 07.10: админы и `MOVE_MEMBERS` тоже связаны лимитом; так же при перемещении в комнату), лимит плана — действует на всех;
   - стрим: пресет ≤ `min(max_stream_preset комнаты, stream_max_preset)`, стримов ≤ `min(max_streams, streams_per_room)` (и при выдаче слота, и в webhook), fps ≤ `stream_max_fps`; камера: пресет/fps ≤ `camera_max_*` (ответ `/camera/request`);
   - файлы: квота = `min(storage_quota_bytes, storage_mb MiB)`; превышение → `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты), `reason = PLAN_LIMIT`, если упёрлись в план;
   - участники, боты, стикерпаки, доски — одна проверка `plans.Service.Check` (advisory-lock + счётчик в транзакции добавления) → `409 CONFLICT`, `reason = PLAN_LIMIT`, `used`/`limit`. Место занимают участники без гостей, бот — тоже; проверка на ссылке-приглашении и email-приглашении (заранее), входе/регистрации по коду, открытом пространстве, добавлении по поиску, создании/добавлении бота, повышении гостя; авто-принятие email-приглашения при нехватке мест ждёт;

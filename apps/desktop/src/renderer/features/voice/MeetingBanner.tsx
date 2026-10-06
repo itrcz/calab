@@ -1,4 +1,4 @@
-import type { PermissionBits, Room } from '@calaba/protocol';
+import { WorkspaceRole, type PermissionBits, type Room } from '@calaba/protocol';
 import { Video } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '../../components/ui';
@@ -34,11 +34,12 @@ export function MeetingBanner({ workspaceId, room, perms }: { workspaceId: strin
   const preview = useVoice((s) => isVoicePreview(room, s.roomId));
   const key = useWorkspaces((s) => countKey(s, workspaceId, room.id));
   const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
+  const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
   const [people = 0, cameras = 0] = key.split(':').map(Number);
   if (!preview || cameras === 0) return null;
   const canConnect = can(perms, 'CONNECT');
   const join = (): void => {
-    const next = joinOutcome({ inRoom: false, canConnect, canMove: can(perms, 'MOVE_MEMBERS'), people, limit: room.userLimit });
+    const next = joinOutcome({ inRoom: false, canConnect, owner, people, limit: room.userLimit });
     if (next === 'full') toast.info(t('shell.roomFull'));
     else if (next === 'join') void voice.join(room.id, workspaceId, { video: true });
   };

@@ -260,6 +260,11 @@ export function mayMoveVoice(myRole: WorkspaceRole | undefined, targetRole: Work
   return voiceRank(myRole) >= 2 || mayModerateVoice(myRole, targetRole, self);
 }
 
+/** The workspace owner (built-in owner role): the only one who may enter or move into a full voice room. */
+export function isOwnerRoles(roles: readonly RoleBits[] | undefined): boolean {
+  return !!roles?.some((r) => r.builtin === WorkspaceRole.OWNER);
+}
+
 /** Drag a voice participant out of / into `room` (docs/09 #32): MOVE_MEMBERS in that room. */
 export function mayMoveMembersIn(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
   return can(roomPerms(roles, userId, room), 'MOVE_MEMBERS');

@@ -475,7 +475,7 @@ P0.5 (docs/09 #31–35):
 ```
 PATCH  /api/rooms/{id}                         + userLimit (0..99, только voice); POST …/rooms — + userLimit
 POST   /api/rooms/{id}/join                    409 ERROR_CODE_ROOM_FULL, если различных пользователей в комнате ≥ userLimit
-                                               (MOVE_MEMBERS — вход сверх лимита; второе устройство того же пользователя не считается)
+                                               (вход сверх лимита — только владелец пространства, 07.10; второе устройство того же пользователя не считается)
 POST   /api/rooms/{id}/voice/{userId}/move     MoveMemberRequest{targetRoomId} → 204   (MOVE_MEMBERS в обеих комнатах;
                                                у перемещаемого VIEW_ROOM+CONNECT в цели; лимит цели — кроме ADMINISTRATOR)
 GET    /api/workspaces/{id}/members/{userId}   → GetMemberResponse{member, openTasks} (ADR-0051; @me — сам): участник, гость — только
