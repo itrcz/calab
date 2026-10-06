@@ -211,6 +211,9 @@ func TestBoardFeatures(t *testing.T) {
 			func(x *v1.Task) bool { return x.GetAttachmentCount() == 1 }},
 		{f: v1.BoardFeature_BOARD_FEATURE_COMMENTS},
 		{f: v1.BoardFeature_BOARD_FEATURE_TIMELINE},
+		{f: v1.BoardFeature_BOARD_FEATURE_FORMS},
+		{f: v1.BoardFeature_BOARD_FEATURE_AUTOMATIONS},
+		{f: v1.BoardFeature_BOARD_FEATURE_GIT_LINKS},
 	}
 	if len(cases) != len(v1.BoardFeature_name)-1 {
 		t.Fatalf("%d cases for %d features", len(cases), len(v1.BoardFeature_name)-1)
