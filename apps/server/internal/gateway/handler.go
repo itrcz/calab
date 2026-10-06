@@ -200,6 +200,7 @@ func (h *Hub) loop(c *conn, s *Session) {
 				continue
 			}
 			if p.SetPresence.GetUntil() != nil {
+				h.sessionActive(s)
 				h.setManualPresence(s.user, p.SetPresence.GetStatus(), p.SetPresence.GetUntil())
 			} else {
 				h.setPresence(s, p.SetPresence.GetStatus())
@@ -793,6 +794,27 @@ func (h *Hub) setPresence(s *Session, st v1.PresenceStatus) {
 	defer cancel()
 	if err := h.pres.set(ctx, s.user, s.id, st, s.client); err == nil {
 		h.publishPresence(ctx, s.user)
+	}
+}
+
+// sessionActive ends the session's automatic AFK idle: choosing a manual status is input on
+// this device. Without it a stale idle (e.g. an older client that does not report «back»
+// after a manual choice) would show the user as away once the manual status is cleared.
+// Nothing is published here: setManualPresence announces the new aggregate.
+func (h *Hub) sessionActive(s *Session) {
+	s.mu.Lock()
+	idle := s.status == v1.PresenceStatus_PRESENCE_STATUS_IDLE
+	if idle {
+		s.status = v1.PresenceStatus_PRESENCE_STATUS_ONLINE
+	}
+	s.mu.Unlock()
+	if !idle {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := h.pres.set(ctx, s.user, s.id, v1.PresenceStatus_PRESENCE_STATUS_ONLINE, s.client); err != nil {
+		slog.Warn("gateway: session active", "err", err)
 	}
 }
 
