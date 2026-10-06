@@ -136,12 +136,17 @@ FROM (
 ) b;
 
 -- name: LastMessages :many
--- Newest live message per room: one backwards index probe per room (LATERAL … LIMIT 1),
--- independent of history size.
-SELECT r.id::uuid AS room_id, lm.id, lm.created_at
+-- Newest live message per room with its list preview (ADR-0073 §5; the same fields and
+-- 200-character cut as ListDMs): one backwards index probe per room (LATERAL … LIMIT 1),
+-- independent of history size, plus a primary-key probe for the attachment count and the
+-- sticker. Rooms without live messages have no row.
+SELECT r.id::uuid AS room_id, lm.id, lm.created_at, lm.author_id,
+       left(lm.content, 200)::text AS preview,
+       (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = lm.id)::integer AS attachments,
+       coalesce((SELECT st.emoji FROM stickers st WHERE st.id = lm.sticker_id), '')::text AS sticker_emoji
 FROM unnest(sqlc.arg('room_ids')::uuid[]) AS r(id)
 CROSS JOIN LATERAL (
-    SELECT m.id, m.created_at FROM messages m
+    SELECT m.id, m.created_at, m.author_id, m.content, m.sticker_id FROM messages m
     WHERE m.room_id = r.id AND m.deleted_at IS NULL
     ORDER BY m.id DESC
     LIMIT 1

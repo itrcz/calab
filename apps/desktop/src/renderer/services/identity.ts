@@ -12,6 +12,7 @@ import { useRooms } from '../stores/rooms';
 import { useMessages } from '../stores/messages';
 import { useTyping } from '../stores/typing';
 import { useReadReceipts } from '../stores/readReceipts';
+import { useRoomPreviews } from '../stores/roomPreviews';
 import { useInbox } from '../stores/inbox';
 import { useCalendar } from '../stores/calendar';
 import { useFreeBusy } from '../stores/freebusy';
@@ -81,6 +82,7 @@ export function applyIdentityAccess(access: WorkspaceIdentityAccess): void {
   useMessages.setState((s) => ({ rooms: withoutKeys(s.rooms, ids), pins: withoutKeys(s.pins, ids) }));
   useTyping.setState((s) => ({ rooms: withoutKeys(s.rooms, ids) }));
   useReadReceipts.setState((s) => ({ byRoom: withoutKeys(s.byRoom, ids) }));
+  useRoomPreviews.getState().drop(roomIds); // last-message texts of the room list (ADR-0073 §5)
   useInbox.getState().removeRooms((r) => !ids.has(r));
   useCalendar.setState((s) => ({
     occ: Object.fromEntries(Object.entries(s.occ).filter(([, v]) => v.workspaceId !== id)),
