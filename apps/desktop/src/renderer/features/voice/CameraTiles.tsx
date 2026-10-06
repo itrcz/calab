@@ -171,7 +171,7 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
   );
 }
 
-type TileProps = Omit<ComponentPropsWithoutRef<'button'>, 'style'> & {
+type TileProps = ComponentPropsWithoutRef<'button'> & {
   userId: string;
   wsId: string | null;
   video: boolean;
@@ -180,7 +180,12 @@ type TileProps = Omit<ComponentPropsWithoutRef<'button'>, 'style'> & {
   avatarSize: number;
   /** The layer this tile needs (a 16+ gallery page: medium). */
   quality?: ShownQuality;
-  /** Absolute position in the call area (primitives: a memo row gets no new objects). */
+  /**
+   * Absolute position in the call area (primitives: a memo row gets no new objects). Merged over
+   * `style`: the member menu's trigger (Radix Slot) injects its own `style` into the tile, which
+   * must not wipe the position (2.4.1: every positioned tile collapsed to 0×0 — an empty gallery
+   * and an empty large tile while the strip, positioned by class, still showed).
+   */
   x?: number;
   y?: number;
   w?: number;
@@ -189,7 +194,7 @@ type TileProps = Omit<ComponentPropsWithoutRef<'button'>, 'style'> & {
 
 /** One participant tile; a button (click = pin / unpin). */
 const Tile = memo(
-  forwardRef<HTMLButtonElement, TileProps>(function Tile({ userId, wsId, video, featured, small, avatarSize, quality, x, y, w, h, className, ...rest }, ref) {
+  forwardRef<HTMLButtonElement, TileProps>(function Tile({ userId, wsId, video, featured, small, avatarSize, quality, x, y, w, h, className, style, ...rest }, ref) {
     // Memo row: re-render on a language switch too (ADR-0022).
     useLocale();
     const name = useMemberName(wsId, userId);
@@ -213,8 +218,8 @@ const Tile = memo(
         title={focused ? t('video.unfocus') : t('video.focus')}
         onClick={() => voice.focusTile(userId)}
         className={cx('group/tile absolute overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-left', className)}
-        style={x !== undefined ? { left: x, top: y, width: w, height: h } : undefined}
         {...rest}
+        style={x !== undefined ? { ...style, left: x, top: y, width: w, height: h } : style}
       >
         {video && !saved ? (
           <CameraVideo userId={userId} wsId={wsId} avatarSize={avatarSize} fit={featured ? 'contain' : 'cover'} quality={quality} />
@@ -245,8 +250,8 @@ const Tile = memo(
   }),
 );
 
-/** Tile with the member's right-click menu (volume, «Не показывать видео», moderation). */
-function MemberTile(props: TileProps): ReactNode {
+/** Tile with the member's right-click menu (volume, «Не показывать видео», moderation). Exported for its test. */
+export function MemberTile(props: TileProps): ReactNode {
   const wsId = props.wsId;
   if (!wsId) return <Tile {...props} />;
   return (
@@ -402,7 +407,10 @@ const pagerBtn = 'absolute top-1/2 z-[1] grid size-8 -translate-y-1/2 place-item
 export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; wsId: string | null; top?: ReactNode; emptyFeed?: boolean }): ReactNode {
   useLocale();
   const people = useRoomPeople(wsId);
-  const focused = useVoice((s) => s.focusedTile);
+  const pin = useVoice((s) => s.focusedTile);
+  // A pin of someone not in this call (left, another room's sidebar click before the voice state
+  // arrived) is no pin: no «Открепить», no empty large tile (the layouts ignore it too).
+  const focused = pin !== null && people.some((p) => p.userId === pin) ? pin : null;
   const view = usePrefs((s) => s.callView);
   const hideSelf = usePrefs((s) => s.hideSelf);
   const hideNoVideo = usePrefs((s) => s.hideNoVideo);

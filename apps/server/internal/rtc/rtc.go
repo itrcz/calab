@@ -433,7 +433,35 @@ func (s *Service) publishVoice(ctx context.Context, wsID uuid.UUID, c voice.Chan
 		s.publishDMVoice(ctx, wsID, c) // a DM session: its scope id is the room id (dm.go)
 		return
 	}
-	if c.Changed() {
+	if !c.Changed() {
+		return
+	}
+	// The user's CURRENT state is read and published under the workspace voice lock. Each
+	// change used to publish its own snapshot after unlocking, so of two concurrent changes
+	// of one user (a webhook and a REST call, two API instances) the older snapshot could be
+	// published last and stick on every connected client: a person in the call missing from
+	// the room, or shown in the room they left, until their next change. Under the lock the
+	// last VOICE_STATE_UPDATE of a user always carries the latest state (a duplicate of an
+	// unchanged state is harmless: clients replace the user's entry). The caller must not
+	// hold the lock (it is not reentrant).
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second) // a client that went away must not make the others miss it
+	defer cancel()
+	err := s.voice.WithLock(lctx, wsID, func() error {
+		uid, err := uuid.Parse(c.After.GetUserId())
+		if err != nil {
+			return err
+		}
+		cur, err := s.voice.State(lctx, wsID, uid)
+		if err != nil {
+			return err
+		}
+		s.events.Workspace(lctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{
+			VoiceStateUpdate: &v1.VoiceStateUpdate{State: cur},
+		}})
+		return nil
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "publish voice state under the lock", "workspace", wsID, "user", c.After.GetUserId(), "err", err)
 		s.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{
 			VoiceStateUpdate: &v1.VoiceStateUpdate{State: c.After},
 		}})

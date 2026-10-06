@@ -14,6 +14,7 @@ import {
   type GalleryOpts,
   type Rect,
   type TilePerson,
+  visiblePeople,
 } from './tileLayout';
 
 const P = (userId: string, video = false): TilePerson => ({ userId, video });
@@ -367,5 +368,58 @@ describe('pipCamera', () => {
     expect(pipCamera(['me', 'a'], 'me', 'gone')).toBe('a');
     expect(pipCamera(['me'], 'me', null)).toBe('me');
     expect(pipCamera([], 'me', null)).toBeNull();
+  });
+});
+
+/**
+ * 2.4.1 (owner): a temporary room, three people with cameras, someone pinned from the sidebar —
+ * «Галерея» showed nothing, «Спикер» an empty large tile over a strip of two. The pure layouts
+ * must give every person a real, non-empty box (the render-side cause: CameraTiles.test.ts).
+ */
+describe('call view never empty (2.4.1)', () => {
+  const people = [P('nikolay', true), P('me', true), P('kliment', true)];
+  const pages = { me: 'me', size: 9, page: 0 } as const;
+
+  it('gallery: the pinned one first, then me, then the rest — all three on page 1, each with a visible box', () => {
+    const g = galleryLayout(people, { ...pages, pinned: 'nikolay' });
+    expect(g.tiles.map((t) => t.userId)).toEqual(['nikolay', 'me', 'kliment']);
+    const rects = gridTiles(g.tiles.length, 1096, 680, 8);
+    expect(rects).toHaveLength(3);
+    for (const r of rects) expect(r.w > 0 && r.h > 0).toBe(true);
+  });
+
+  it('speaker: the pinned one large in a real box, the other two in the strip', () => {
+    const s = speakerTiles(people, { pinned: 'nikolay', active: 'kliment', me: 'me' });
+    expect(s.featured).toBe('nikolay');
+    expect(s.strip.map((t) => t.userId)).toEqual(['me', 'kliment']);
+    const lay = speakerLayout(s.strip.length, 1096, 680, 8);
+    expect(lay.main.w > 0 && lay.main.h > 0).toBe(true);
+  });
+
+  it('a pin of someone not in the call (left, stale) is ignored: no empty large tile, nobody dropped', () => {
+    const g = galleryLayout(people, { ...pages, pinned: 'ghost' });
+    expect(g.tiles.map((t) => t.userId)).toEqual(['me', 'nikolay', 'kliment']);
+    const s = speakerTiles(people, { pinned: 'ghost', active: null, me: 'me' });
+    expect(s.featured).toBe('nikolay');
+    expect([s.featured, ...s.strip.map((t) => t.userId)].sort()).toEqual(['kliment', 'me', 'nikolay']);
+  });
+
+  it('«Скрыть участников без видео» with no camera left shows the avatars instead of nothing', () => {
+    const noCams = [P('a'), P('me', true), P('b')];
+    const o = { me: 'me', hideSelf: true, hideNoVideo: true };
+    expect(visiblePeople(noCams, null, o).map((p) => p.userId)).toEqual(['a', 'b']);
+    expect(galleryLayout(noCams, { ...pages, ...o, pinned: null }).tiles.map((t) => t.userId)).toEqual(['a', 'b']);
+    expect(speakerTiles(noCams, { ...o, pinned: null, active: null }).featured).toBe('a');
+    // Only me, hidden on purpose: empty — the «Вы» badge brings me back.
+    expect(visiblePeople([P('me', true)], null, o)).toEqual([]);
+    // Someone with a camera: the filter applies as usual.
+    expect(visiblePeople([P('a'), P('c', true), P('me', true)], null, o).map((p) => p.userId)).toEqual(['c']);
+  });
+
+  it('speaker in an area too low for a large tile: no negative box wins over the side strip', () => {
+    const lay = speakerLayout(2, 1000, 20, 8);
+    expect(lay.main.w).toBeGreaterThanOrEqual(0);
+    expect(lay.main.h).toBeGreaterThanOrEqual(0);
+    expect(lay.vertical).toBe(true);
   });
 });

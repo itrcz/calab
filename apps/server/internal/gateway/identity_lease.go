@@ -221,11 +221,15 @@ func (s *Session) preparationFailed(marker *pauseMark) {
 }
 
 // Called outside gateway locks when an event cannot fit the bounded preparation budget.
-func (s *Session) requireIdentityResync() {
+func (s *Session) requireIdentityResync() { s.requireResync("identity resync required") }
+
+// requireResync makes the session catch up with a full READY: events were lost for it. It is
+// no longer resumable and its socket (if any) closes with 4000. Called without s.mu held.
+func (s *Session) requireResync(why string) {
 	s.broken.Store(true)
 	s.mu.Lock()
 	if s.conn != nil {
-		s.conn.closeNow(4000, "identity resync required")
+		s.conn.closeNow(4000, why)
 	}
 	s.mu.Unlock()
 }

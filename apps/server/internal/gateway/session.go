@@ -391,8 +391,12 @@ func (s *Session) resumeMany(m *pauseMark, evs []pendingEvent) {
 		if p.mark == m {
 			s.paused--
 			if len(evs)+len(s.pending)-1 > bufferQueue {
+				// evs are dropped: the client must resync instead of living on without them.
 				evs = nil
 				s.broken.Store(true)
+				if s.conn != nil {
+					s.conn.closeNow(4000, "resync required")
+				}
 			}
 			rest := append([]pendingEvent{}, s.pending[i+1:]...)
 			s.pending = append(append(s.pending[:i], evs...), rest...)
