@@ -242,7 +242,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'mobile.back': '返回',
   'mobile.tabs': '分区',
   'mobile.tabChats': '聊天',
-  'mobile.tabMe': '我',
+  'mobile.profile': '个人资料',
   'mobile.tabDms': '私信',
   'mobile.mic': '麦克风',
   'mobile.sound': '声音',

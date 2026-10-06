@@ -165,10 +165,11 @@ test('phone: sign in → room list → message → voice → PTT hold', async ({
   await expectNoHorizontalScroll(page, 'voice');
   await expectAccessible(page, 'voice strip');
 
-  // Push-to-talk mode (settings sheet, from «Я») → the strip gets the hold button.
+  // Push-to-talk mode (settings sheet, from «Профиль») → the strip gets the hold button.
   await page.getByTestId('phone-back').tap();
-  await page.getByTestId('phone-tab-me').tap();
-  await page.getByTestId('phone-me-voice').tap();
+  await page.getByTestId('phone-tab-dms').tap();
+  await page.getByTestId('phone-profile-button').tap();
+  await page.getByTestId('phone-profile-voice').tap();
   const settings = page.getByRole('dialog', { name: 'Настройки' });
   await settings.getByRole('radio', { name: 'Push-to-talk' }).tap();
   await expect(settings.getByRole('radio', { name: 'Push-to-talk' })).toHaveAttribute('aria-checked', 'true');

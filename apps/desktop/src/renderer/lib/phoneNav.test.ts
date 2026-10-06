@@ -8,6 +8,7 @@ import {
   historyTarget,
   openChat,
   popScreen,
+  pushOnTab,
   pushScreen,
   removeKind,
   switchTab,
@@ -76,10 +77,26 @@ describe('phone navigation stack (ADR-0073 §1)', () => {
 
   it('a tab switch shows its root; tapping the open tab returns to its root', () => {
     const deep = openChat(nav(), room('a'));
-    expect(switchTab(deep, 'me')).toMatchObject({ tab: 'me', stack: [] });
+    expect(switchTab(deep, 'boards')).toMatchObject({ tab: 'boards', stack: [] });
     expect(switchTab(deep, 'chats')).toMatchObject({ tab: 'chats', stack: [] });
-    const root = nav({ tab: 'me' });
-    expect(switchTab(root, 'me')).toBe(root);
+    const root = nav({ tab: 'boards' });
+    expect(switchTab(root, 'boards')).toBe(root);
+  });
+
+  it('a board or a task lives on «Доски»; the profile on «Личные»', () => {
+    // From another tab: «tab root → screen» (a board link, a notification).
+    const link = pushOnTab(openChat(nav(), room('a')), 'boards', { kind: 'board', ws: 'w' });
+    expect(link).toMatchObject({ tab: 'boards', stack: [{ kind: 'board', ws: 'w' }] });
+    // On the tab: the task goes over the board, back returns to the board, then the list.
+    const task = pushOnTab(link, 'boards', { kind: 'task', id: 't' });
+    expect(task.stack.map((x) => x.kind)).toEqual(['board', 'task']);
+    expect(popScreen(popScreen(task))).toMatchObject({ tab: 'boards', stack: [] });
+    // The profile is pushed over «Личные» and pops back to its root.
+    const dms = nav({ tab: 'dms' });
+    const profile = pushOnTab(dms, 'dms', { kind: 'profile' });
+    expect(profile).toMatchObject({ tab: 'dms', stack: [{ kind: 'profile' }] });
+    expect(pushScreen(profile, { kind: 'profile' })).toBe(profile);
+    expect(popScreen(profile)).toMatchObject({ tab: 'dms', stack: [] });
   });
 
   it('popping the root does nothing', () => {

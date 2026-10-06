@@ -1,14 +1,14 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowLeft, CalendarDays, MessageCircle, MessagesSquare } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MessageCircle, MessagesSquare, SquareKanban } from 'lucide-react';
 import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
-import { Avatar } from '../../components/Avatar';
 import { IconButton, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
 import { isStandalone } from '../../lib/mobile';
 import { installPhoneNav, openTab, phoneBack } from '../../services/phoneNav';
 import { useArchiveView } from '../../stores/archiveView';
+import { unreadCount, useBoards } from '../../stores/boards';
 import { HOME, isDm } from '../../stores/dms';
 import { showsUnread, useRooms } from '../../stores/rooms';
 import { useSearchPanel } from '../../stores/searchPanel';
@@ -26,11 +26,12 @@ import { ArchivedChat } from '../chat/ArchivedChat';
 import { DmSidebar } from '../dm/DmSidebar';
 import { DayView } from '../calendar/DayView';
 import { EventPanel } from '../calendar/EventCard';
+import { BoardsList } from '../boards/BoardsList';
 import { BoardsView } from '../boards/BoardsView';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
-import { PhoneMe } from './PhoneMe';
+import { PhoneProfile, ProfileButton } from './PhoneProfile';
 import { PhoneRoomList } from './PhoneRoomList';
 import { UpdateBar } from './UpdateBar';
 import { WorkspaceRail } from './WorkspaceRail';
@@ -42,8 +43,8 @@ const EDGE_PX = 28;
 
 /**
  * Phone layout of the web client (ADR-0073, ≤ 768 px, lib/mobile.ts): root tabs «Чаты · Личные ·
- * Календарь · Я» with a bottom tab bar, and screens pushed over them (a room, a DM, the members,
- * search results, a meeting, a board / task) without the tab bar, each with its «←» header. Only
+ * Доски · Календарь» with a bottom tab bar, and screens pushed over them (a room, a DM, the members,
+ * search results, a meeting, a board / task, the profile) without the tab bar, each with its «←» header. Only
  * the top screen is mounted; back = the browser history (services/phoneNav.ts): Android back, the
  * browser's back, «←» and a swipe from the left edge.
  *  - «Чаты»: the workspace rail (no «Личные» icon — it is a tab) and the room list on the rest;
@@ -118,10 +119,10 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
       return <ChatsRoot welcome={welcome} />;
     case 'dms':
       return <DmsRoot />;
+    case 'boards':
+      return <BoardsRoot welcome={welcome} />;
     case 'calendar':
       return <CalendarRoot welcome={welcome} />;
-    case 'me':
-      return <PhoneMe />;
   }
 }
 
@@ -146,11 +147,27 @@ function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   );
 }
 
-/** «Личные»: notes and DMs at full width. */
+/** «Доски»: the boards of the open workspace (the one picked on «Чаты»); a board is a pushed screen. */
+function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
+  return (
+    <section className="mat-sidebar flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
+      <RootTitle title={name} />
+      <BoardsList workspaceId={ws} />
+    </section>
+  );
+}
+
+/** «Личные»: notes and DMs at full width; my avatar at the right opens «Профиль». */
 function DmsRoot(): ReactNode {
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ ['--sidebar-width' as string]: '100%' }} data-testid="phone-dms">
-      <RootTitle title={t('dm.home')} />
+      <RootTitle title={t('dm.home')}>
+        <ProfileButton tab="dms" />
+      </RootTitle>
       <div className="flex min-h-0 flex-1">
         <DmSidebar />
       </div>
@@ -202,6 +219,8 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <ActiveWorkspace>{(ws) => <BoardsView workspaceId={ws} wide={false} mobile />}</ActiveWorkspace>;
     case 'archived':
       return <ArchivedScreen />;
+    case 'profile':
+      return <ProfileScreen />;
   }
 }
 
@@ -218,6 +237,16 @@ function SearchScreen(): ReactNode {
 function ArchivedScreen(): ReactNode {
   const room = useArchiveView((s) => s.room);
   return room ? <ArchivedChat key={room.id} workspaceId={room.workspaceId} room={room} /> : null;
+}
+
+/** «Профиль»: the former «Я» tab, a screen over «Личные». */
+function ProfileScreen(): ReactNode {
+  return (
+    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="profile-page">
+      <PhoneHeader title={t('mobile.profile')} />
+      <PhoneProfile />
+    </section>
+  );
 }
 
 /** «Участники» of a room: a screen with the unified header (it was the right drawer). */
@@ -265,9 +294,10 @@ export function NavButton(): ReactNode {
 // ---------------------------------------------------------------- tab bar
 
 /**
- * The bottom tab bar (ADR-0073 §1): 4 tabs, 56 px targets over the home indicator, the unread
- * count of rooms (mentions) on «Чаты» and of DMs on «Личные». «Личные» only for accounts with DMs,
- * «Календарь» not for guests.
+ * The bottom tab bar (ADR-0073 §1): «Чаты · Личные · Доски · Календарь», 56 px targets over the home
+ * indicator, the unread count of rooms (mentions) on «Чаты», of DMs on «Личные» and of tasks on
+ * «Доски» (the open workspace's, as the old «Голос · Доски» switch showed). «Личные» only for
+ * accounts with DMs, «Календарь» not for guests.
  */
 function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
   const dms = useSession((s) => !s.me?.user?.isGuest);
@@ -280,8 +310,8 @@ function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
     >
       <TabButton tab="chats" active={tab === 'chats'} label={t('mobile.tabChats')} icon={<MessagesSquare className="size-6" strokeWidth={1.75} />} badge={<ChatsBadge />} />
       {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={<MessageCircle className="size-6" strokeWidth={1.75} />} badge={<DmsBadge />} /> : null}
+      <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={<SquareKanban className="size-6" strokeWidth={1.75} />} badge={<BoardsBadge />} />
       {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={<CalendarDays className="size-6" strokeWidth={1.75} />} /> : null}
-      <TabButton tab="me" active={tab === 'me'} label={t('mobile.tabMe')} icon={<MeIcon active={tab === 'me'} />} />
     </nav>
   );
 }
@@ -303,16 +333,6 @@ const TabButton = memo(function TabButton({ tab, active, label, icon, badge }: {
     </button>
   );
 });
-
-function MeIcon({ active }: { active: boolean }): ReactNode {
-  const me = useSession((s) => s.me?.user);
-  if (!me) return null;
-  return (
-    <span className={cx('flex rounded-full', active && 'outline outline-2 outline-offset-1 outline-accent')}>
-      <Avatar userId={me.id} name={me.displayName} fileId={me.avatarFileId || undefined} size={24} />
-    </span>
-  );
-}
 
 function TabBadge({ count, dot, label }: { count: number; dot: boolean; label: string }): ReactNode {
   if (count <= 0 && !dot) return null;
@@ -337,6 +357,15 @@ function ChatsBadge(): ReactNode {
   });
   const dot = useRooms((s) => count === 0 && Object.values(s.byId).some((r) => r.workspaceId !== '' && !isDm(r) && showsUnread(r.id, s)));
   return <TabBadge count={count} dot={dot} label={count > 0 ? plural('shell.unreadMentions', count) : t('ws.unread')} />;
+}
+
+/** Unread tasks of the open workspace (the number the boards icon of the old switch showed). */
+function BoardsBadge(): ReactNode {
+  const open = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
+  const first = useWorkspaces((s) => s.order[0] ?? null);
+  const wsId = open ?? first;
+  const count = useBoards((s) => (wsId ? unreadCount(s, wsId) : 0));
+  return <TabBadge count={count} dot={false} label={plural('boards.unreadCount', count)} />;
 }
 
 /** Unread DM messages: every one counts (docs/05), as on the rail's «Личные». */

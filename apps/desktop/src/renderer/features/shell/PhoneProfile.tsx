@@ -7,6 +7,7 @@ import { t, type MessageKey } from '../../i18n';
 import { voice } from '../../services/voice';
 import { logout } from '../../services/session';
 import { useSession } from '../../stores/session';
+import { pushOnTab } from '../../lib/phoneNav';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { localAuthority } from '../identity/model';
@@ -15,12 +16,12 @@ import { DeviceMenu, MicMenu } from './SelfPanel';
 import { STATUS_KEY, StatusMenu, useCustomStatusExpiry, useMyStatus } from './StatusMenu';
 
 /**
- * «Я» (ADR-0073 §1): the profile card (avatar, name, status — the status menu on tap), the
+ * «Профиль» (ADR-0073 §1, the former «Я» tab; pushed over «Личные» by the avatar button): the profile card (avatar, name, status — the status menu on tap), the
  * microphone and the sound with their device menus (the self panel's, the desktop's bottom
  * island is not shown on a phone), the settings entries (each opens the settings at its section,
  * as the gear did) and «Выйти».
  */
-export function PhoneMe(): ReactNode {
+export function PhoneProfile(): ReactNode {
   const user = useSession((s) => s.me?.user);
   const local = useSession((s) => localAuthority(s.authority));
   const guest = useSession((s) => s.me?.user?.isGuest === true);
@@ -43,13 +44,13 @@ export function PhoneMe(): ReactNode {
   ];
   const preload = (): void => void AppSettingsWindow.preload();
   return (
-    <div className="mat-content min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4" data-testid="phone-me">
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4" data-testid="phone-profile">
       <StatusMenu>
         <button
           type="button"
           aria-label={`${t('shell.profile')}: ${user.displayName}, ${statusName}`}
           className="flex w-full min-w-0 items-center gap-4 rounded-[var(--radius-panel)] bg-[var(--color-fill)] p-4 text-left active:bg-[var(--color-fill-hover)] data-[state=open]:bg-[var(--color-fill-hover)]"
-          data-testid="phone-me-card"
+          data-testid="phone-profile-card"
         >
           <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={64} status={status} ring="var(--color-bg)" />
           <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -76,7 +77,7 @@ export function PhoneMe(): ReactNode {
                 onPointerDown={preload}
                 onClick={() => open({ kind: 'settings', tab: e.id })}
                 className="flex h-12 w-full min-w-0 items-center gap-3 px-4 text-left text-list active:bg-[var(--color-fill-hover)]"
-                data-testid={`phone-me-${e.id}`}
+                data-testid={`phone-profile-${e.id}`}
               >
                 <e.icon className="size-5 shrink-0 text-muted" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{t(e.label)}</span>
@@ -99,7 +100,7 @@ export function PhoneMe(): ReactNode {
         type="button"
         onClick={() => void logout()}
         className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-panel)] bg-[var(--color-fill)] text-list font-medium text-danger-text active:bg-[var(--color-fill-hover)]"
-        data-testid="phone-me-logout"
+        data-testid="phone-profile-logout"
       >
         <LogOut className="size-5" aria-hidden />
         {t('settings.logout')}
@@ -125,7 +126,7 @@ function MicTile(): ReactNode {
       onToggle={() => voice.toggleMute()}
       menuLabel={t('shell.micOptions')}
       menu={<MicMenu />}
-      testId="phone-me-mic"
+      testId="phone-profile-mic"
     />
   );
 }
@@ -143,7 +144,7 @@ function SoundTile(): ReactNode {
       onToggle={() => voice.toggleDeafen()}
       menuLabel={t('shell.outputOptions')}
       menu={<DeviceMenu kind="audiooutput" />}
-      testId="phone-me-sound"
+      testId="phone-profile-sound"
     />
   );
 }
@@ -190,3 +191,24 @@ function DeviceTile({
   );
 }
 
+
+/**
+ * The avatar button of the «Личные» header (44 px, my avatar with the presence dot): opens
+ * «Профиль». Also in the space header of a guest account, which has no «Личные» tab.
+ */
+export function ProfileButton({ tab }: { tab: 'dms' | 'chats' }): ReactNode {
+  const user = useSession((s) => s.me?.user);
+  const status = useMyStatus();
+  if (!user) return null;
+  return (
+    <button
+      type="button"
+      aria-label={`${t('mobile.profile')}: ${user.displayName}`}
+      onClick={() => useUi.getState().setPhone((n) => pushOnTab(n, tab, { kind: 'profile' }))}
+      className="grid size-11 shrink-0 place-items-center rounded-full active:bg-[var(--color-fill-hover)]"
+      data-testid="phone-profile-button"
+    >
+      <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} status={status} ring="var(--color-bg)" />
+    </button>
+  );
+}

@@ -381,8 +381,8 @@ export async function loadMyTasks(workspaceId: string, scope: TaskScope): Promis
 /** Opens a board of the active workspace (boards mode on). */
 export function openBoard(workspaceId: string, boardId: string): void {
   useBoardsUi.getState().openBoard(workspaceId, boardId);
-  // A phone (ADR-0073 §1): the board is a screen pushed over «Чаты».
-  if (useUi.getState().phone.on) useUi.getState().setPhone((n) => pushOnTab(n, 'chats', { kind: 'board', ws: workspaceId }));
+  // A phone (ADR-0073 §1): the board is a screen pushed over «Доски».
+  if (useUi.getState().phone.on) useUi.getState().setPhone((n) => pushOnTab(n, 'boards', { kind: 'board', ws: workspaceId }));
   if (boardId !== MY_TASKS) {
     void ensureBoardTasks(boardId);
   }

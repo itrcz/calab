@@ -242,7 +242,7 @@ export const esShell: DictShape<typeof enShell> = {
   'mobile.back': 'Atrás',
   'mobile.tabs': 'Secciones',
   'mobile.tabChats': 'Chats',
-  'mobile.tabMe': 'Yo',
+  'mobile.profile': 'Perfil',
   'mobile.tabDms': 'Personal',
   'mobile.mic': 'Micrófono',
   'mobile.sound': 'Sonido',

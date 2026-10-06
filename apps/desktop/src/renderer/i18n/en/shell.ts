@@ -242,7 +242,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'mobile.back': 'Back',
   'mobile.tabs': 'Sections',
   'mobile.tabChats': 'Chats',
-  'mobile.tabMe': 'Me',
+  'mobile.profile': 'Profile',
   'mobile.tabDms': 'Personal',
   'mobile.mic': 'Microphone',
   'mobile.sound': 'Sound',
