@@ -737,6 +737,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// Only the author's own text invites by mention (ADR-0076 §5): the @mentions of a quoted
+	// message were written by someone else and must not open the card to those people.
+	own := desc
 	var fromMsg *uuid.UUID
 	if req.GetFromMessageId() != "" {
 		if desc, fromMsg, err = s.quoteMessage(r, req.GetFromMessageId(), desc); err != nil {
@@ -894,7 +897,7 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		}
 		// The author subscribes; the approvers (first: their notice is mandatory), the assignees
 		// and the users @mentioned in the description are subscribed and notified. The author
-		// edits their new task: the mentioned become watchers (ADR-0076 §5).
+		// edits their new task: those they @mention themselves become watchers (ADR-0076 §5).
 		if err := q.Subscribe(r.Context(), sqlc.SubscribeParams{TaskID: taskID, UserIds: []uuid.UUID{me}}); err != nil {
 			return err
 		}
@@ -902,7 +905,8 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		mentioned, _ := messages.ParseMentions(desc)
-		if _, err := mentionWatchers(r.Context(), q, t, me, true, mentioned, &c); err != nil {
+		invited, _ := messages.ParseMentions(own)
+		if _, err := mentionWatchers(r.Context(), q, t, me, true, invited, &c); err != nil {
 			return err
 		}
 		return s.notifyDirect(r.Context(), q, t, me, fresh, mentioned, uuid.Nil, &c)

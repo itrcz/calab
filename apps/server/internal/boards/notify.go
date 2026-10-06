@@ -211,7 +211,8 @@ func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Me
 			return err
 		}
 		mentioned, _ := messages.ParseMentions(msg.Content)
-		if len(mentioned) > 0 {
+		// A forwarded message carries someone else's text: its @mentions notify, never invite.
+		if len(mentioned) > 0 && msg.ForwardedFrom == nil {
 			editor, err := authorEdits(ctx, q, t, msg.AuthorID)
 			if err != nil {
 				return err

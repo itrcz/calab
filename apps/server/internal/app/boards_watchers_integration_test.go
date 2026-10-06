@@ -186,3 +186,34 @@ func TestTaskWatchers(t *testing.T) {
 	eve.must(404, "GET", "/api/tasks/"+a.GetId(), nil, nil)
 	o.must(409, "PUT", "/api/tasks/"+a.GetId()+"/watchers", &v1.SetTaskWatcherRequest{UserId: carol.id}, nil)
 }
+
+// TestTaskWatchersQuotedMentions (ADR-0076 §5, review): only the editor's own words invite by
+// mention. The @mentions of a quoted message («Создать задачу из сообщения») or of a message
+// forwarded into the task room were written by someone else: they notify those who already see
+// the task, they never open a closed card.
+func TestTaskWatchersQuotedMentions(t *testing.T) {
+	o, bob, ws, room := setupTeam(t)
+	wid := ws.GetId()
+	carol := register(t, invite(t, o, wid))
+	priv := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Цитаты", Key: "QTE", IsPrivate: true}, 201)
+	restricted := true
+	o.must(200, "PATCH", "/api/boards/"+priv.GetId(), &v1.UpdateBoardRequest{Restricted: &restricted}, nil)
+
+	m := send(t, bob, room.GetId(), "кто посмотрит? @"+carol.id, uniq("q"))
+	a := createTask(t, o, priv.GetId(), &v1.CreateTaskRequest{Title: "из сообщения", FromMessageId: m.GetId(),
+		Description: "смотри @" + bob.id}, 201)
+	if ws := watchersOf(t, o, a.GetId()); slices.Contains(ws, carol.id) || !slices.Contains(ws, bob.id) {
+		t.Fatalf("watchers %v: the quoted mention invited, or the author's own did not", ws)
+	}
+	carol.must(404, "GET", "/api/tasks/"+a.GetId(), nil, nil)
+	bob.must(200, "GET", "/api/tasks/"+a.GetId(), nil, nil)
+
+	// A forward by an editor into the task room: the forwarded text's mention does not invite.
+	m2 := send(t, bob, room.GetId(), "ещё раз @"+carol.id, uniq("q"))
+	forwardMsg(t, o, room.GetId(), m2.GetId(), a.GetRoomId(), 201)
+	time.Sleep(300 * time.Millisecond)
+	if slices.Contains(watchersOf(t, o, a.GetId()), carol.id) {
+		t.Fatal("a forwarded mention made a watcher")
+	}
+	carol.must(404, "GET", "/api/tasks/"+a.GetId(), nil, nil)
+}
