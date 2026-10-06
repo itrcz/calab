@@ -176,9 +176,9 @@ func approverProto(a sqlc.TaskApprover) *v1.TaskApprover {
 		DecidedAt: tsp(a.DecidedAt), AddedBy: idp(a.AddedBy), AddedAt: timestamppb.New(a.AddedAt)}
 }
 
-// approversIn validates a requested approver list (ADR-0049 §1, ADR-0059): ≤ 10 distinct
-// members, not guests nor bots, who see the board or — unless it is restricted — will see it
-// through the task; required 0 = all, else ≤ their number.
+// approversIn validates a requested approver list (ADR-0049 §1, ADR-0059, ADR-0076): ≤ 10
+// distinct members, not guests nor bots, who see the board or will see it through the task
+// (restricted boards too); required 0 = all, else ≤ their number.
 func approversIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, raw []string, required uint32, field, reqField string) ([]uuid.UUID, int16, error) {
 	if len(raw) > MaxApprovers {
 		return nil, 0, httpx.Validation(field, "at most 10 approvers")

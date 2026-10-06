@@ -1151,6 +1151,7 @@ type TaskSubscriber struct {
 	Muted      bool
 	NotifiedAt *time.Time
 	SeenAt     *time.Time
+	Watcher    bool
 }
 
 type User struct {

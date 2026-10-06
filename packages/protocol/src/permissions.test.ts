@@ -248,33 +248,30 @@ describe('roles (ADR-0026)', () => {
     expect(taskRoomPermissions(VIEW_BOARD | EDIT_TASKS, false, true)).toBe(VIEW_ROOM | MANAGE_MESSAGES);
     expect(vectors.filter((v) => v.taskRoom).length).toBeGreaterThanOrEqual(8);
   });
-  // ADR-0059 §2: the same table as perm.TestTaskBits in Go.
-  it('task bits for task-scoped boards (ADR-0059)', () => {
-    const { VIEW_BOARD, CREATE_TASKS, EDIT_TASKS } = PERMISSION_BITS;
-    const member = VIEW_BOARD | CREATE_TASKS;
+  // ADR-0059 §2, ADR-0076 §3: the shared case table of perm.TestTaskBits in Go.
+  it('task bits for task-scoped boards (ADR-0059, ADR-0076)', () => {
     const me = 'u1';
-    const task = (assignee: boolean, approver: boolean, archived = false) => ({
+    const task = (assignee: boolean, approver: boolean, watcher: boolean, archived = false) => ({
       assignees: assignee ? [create(TaskAssigneeSchema, { userId: me })] : [create(TaskAssigneeSchema, { userId: 'u2' })],
       approvers: approver ? [create(TaskApproverSchema, { userId: me })] : [],
+      watcherIds: watcher ? ['u3', me] : ['u3'],
       archivedAt: archived ? create(TimestampSchema, { seconds: 1n }) : undefined,
     });
-    const cases: [string, { permissions: bigint; taskScoped: boolean }, boolean, boolean, bigint][] = [
-      ['viewer keeps the board bits', { permissions: member, taskScoped: false }, false, false, member],
-      ['viewer assigned keeps the board bits', { permissions: VIEW_BOARD, taskScoped: false }, true, true, VIEW_BOARD],
-      ['editor keeps EDIT_TASKS', { permissions: VIEW_BOARD | EDIT_TASKS, taskScoped: false }, false, true, VIEW_BOARD | EDIT_TASKS],
-      ['scoped assignee', { permissions: 0n, taskScoped: true }, true, false, VIEW_BOARD | CREATE_TASKS],
-      ['scoped assignee and approver', { permissions: 0n, taskScoped: true }, true, true, VIEW_BOARD | CREATE_TASKS],
-      ['scoped approver', { permissions: 0n, taskScoped: true }, false, true, VIEW_BOARD],
-      ['scoped, another task', { permissions: 0n, taskScoped: true }, false, false, 0n],
-      ['not scoped, assigned (restricted / guest / bot)', { permissions: 0n, taskScoped: false }, true, true, 0n],
-      ['no access', { permissions: 0n, taskScoped: false }, false, false, 0n],
-    ];
-    for (const [name, board, assignee, approver, want] of cases) {
-      expect(taskPermissions(board, task(assignee, approver), me), name).toBe(want);
+    const table = JSON.parse(readFileSync(new URL('../../../proto/testdata/task_bits.json', import.meta.url), 'utf8')) as {
+      cases: { name: string; bits: number; scoped: boolean; assignee: boolean; approver: boolean; watcher: boolean; want: number }[];
+    };
+    expect(table.cases.length).toBeGreaterThanOrEqual(10);
+    for (const c of table.cases) {
+      const board = { permissions: BigInt(c.bits), taskScoped: c.scoped };
+      expect(taskPermissions(board, task(c.assignee, c.approver, c.watcher), me), c.name).toBe(BigInt(c.want));
     }
     // An archived task: the invitation no longer counts (the server passes live flags only).
-    expect(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, true, true), me)).toBe(0n);
-    expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, false), me))).toBe(
+    expect(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, true, true, true), me)).toBe(0n);
+    expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, false, false), me))).toBe(
+      PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES,
+    );
+    // A watcher comments and reads, never moderates.
+    expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(false, false, true), me))).toBe(
       PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES,
     );
   });

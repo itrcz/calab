@@ -49,8 +49,9 @@ func actsOf(acts []sqlc.TaskActivity, taskID uuid.UUID) []sqlc.TaskActivity {
 	return out
 }
 
-// sees keeps the users who see the task (ADR-0059: perm.TaskBits ≠ 0 — the board's viewers and,
-// on a task-scoped board, the task's own assignees and approvers while it is live).
+// sees keeps the users who see the task (ADR-0059, ADR-0076: perm.TaskBits ≠ 0 — the board's
+// viewers and, on a task-scoped board, the task's own assignees, approvers and watchers while
+// it is live).
 func sees(ctx context.Context, q *sqlc.Queries, t taskRow, users []uuid.UUID) ([]uuid.UUID, error) {
 	res := perm.NewResolver(q)
 	out := make([]uuid.UUID, 0, len(users))
@@ -73,7 +74,7 @@ func sees(ctx context.Context, q *sqlc.Queries, t taskRow, users []uuid.UUID) ([
 		if err != nil {
 			return nil, err
 		}
-		if perm.TaskBits(acc, inv.Assignee, inv.Approver) != 0 {
+		if perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher) != 0 {
 			out = append(out, u)
 		}
 	}

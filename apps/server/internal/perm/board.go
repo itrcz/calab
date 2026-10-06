@@ -90,18 +90,20 @@ func ComputeBoardRoles(roles []RoleBits, sc BoardScope, roleOvs map[string]Overr
 	return ComputeBoard(m.Raw(), sc, ovs, userOv)
 }
 
-// TaskBits is the caller's bits on one task (ADR-0059 §2): a viewer of the board keeps the
-// board's bits; on a task-scoped board an assignee gets VIEW_BOARD | CREATE_TASKS (works on the
-// task like a member on their assigned task: canEdit, never a new task — createTask checks the
-// board's bits) and an approver VIEW_BOARD (view, comment, vote); anyone else 0 (404).
-// assignee / approver must be on a live task. Mirror of taskPermissions in packages/protocol.
-func TaskBits(acc BoardAccess, assignee, approver bool) Bits {
+// TaskBits is the caller's bits on one task (ADR-0059 §2, ADR-0076 §3): a viewer of the board
+// keeps the board's bits; on a task-scoped board an assignee gets VIEW_BOARD | CREATE_TASKS
+// (works on the task like a member on their assigned task: canEdit, never a new task —
+// createTask checks the board's bits), an approver or a watcher VIEW_BOARD (view, comment,
+// subscribe; an approver also votes); anyone else 0 (404). assignee / approver / watcher must
+// be on a live task. Mirror of taskPermissions in packages/protocol; the shared case table is
+// proto/testdata/task_bits.json.
+func TaskBits(acc BoardAccess, assignee, approver, watcher bool) Bits {
 	switch {
 	case acc.Bits.Has(ViewBoard):
 		return acc.Bits
 	case acc.TaskScoped && assignee:
 		return ViewBoard | CreateTasks
-	case acc.TaskScoped && approver:
+	case acc.TaskScoped && (approver || watcher):
 		return ViewBoard
 	}
 	return 0
