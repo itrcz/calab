@@ -379,3 +379,4 @@ identify the sender only; add accurate recipient/group metadata when defining th
 system communication experience. Quick reply, unread icon badge and call-history callback
 remain separate shared-state features. System full-screen CallKit caller-photo rendering
 must be recorded on supported iOS versions; INPerson donation alone is not proof.
+- 2026-10-07 · 3.0 телефон · переход экранов (ScreenTransition) · лента сообщений комнаты пустая во время въезда (250 мс), сообщения появляются в конце; рендерить ленту сразу или держать снимок. Minor.
