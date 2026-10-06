@@ -4,21 +4,17 @@
  * rail) and the room column over it; the content stays opaque. One rule for main (the effect
  * view) and the renderer (the `vibrancy` root class), so both sides agree.
  *
- * Off — solid materials, as everywhere else — when:
+ * Always on on macOS — no user setting, «Слабый компьютер» does not switch it off (owner 07.10).
+ * Solid materials, as everywhere else, only when:
  * - not macOS (Windows/Linux and the web never get it);
- * - the user turned «Прозрачность окна» off (AppSettings.windowTranslucency);
  * - the system asks for less transparency (Accessibility → Reduce transparency);
- * - «Слабый компьютер» is on (docs/09 #44, docs/14);
  * - visual tests (screenshots must not depend on the desktop behind the window).
  */
 export interface WindowMaterialEnv {
   platform: string;
-  /** AppSettings.windowTranslucency; undefined (old settings file) = on. */
-  translucency: boolean | undefined;
   reducedTransparency: boolean;
-  lowEnd: boolean;
   visualTest: boolean;
 }
 
 export const vibrancyWanted = (env: WindowMaterialEnv): boolean =>
-  env.platform === 'darwin' && env.translucency !== false && !env.reducedTransparency && !env.lowEnd && !env.visualTest;
+  env.platform === 'darwin' && !env.reducedTransparency && !env.visualTest;
