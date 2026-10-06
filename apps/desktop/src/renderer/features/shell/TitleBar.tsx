@@ -62,7 +62,7 @@ export function TitleBar(): ReactNode {
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
           // Quiet (owner, 07.10): a hairline pill, the fill only on hover.
-          className="flex h-7 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+          className="flex h-7 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-icon)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>
