@@ -26,10 +26,24 @@ func (s *Service) checkIdentity(ctx context.Context, ws, room, user, session uui
 	return s.IdentityAccess(ctx, ws, room, user, session)
 }
 
+// Each gate check runs several sequential queries on the shared DB pool, and its budget
+// starts before the first one. More workers than free pool connections only queue the
+// checks inside the pool, where the wait eats their budget: with a remote database
+// (a few ms per round trip) the tail of a sweep timed out and was evicted after the
+// grace period (2026-10-06: 64 workers on a pool of 5). identityWorkers caps the
+// workers below the pool size, leaving a connection for requests.
 const (
 	identityRoomWorkers        = 8
-	identityParticipantWorkers = 64
+	identityParticipantWorkers = 8
 )
+
+func (s *Service) identityWorkers() int {
+	n := identityParticipantWorkers
+	if s.db != nil && s.db.Pool != nil {
+		n = min(n, max(1, int(s.db.Pool.Config().MaxConns)-1))
+	}
+	return n
+}
 
 // A context-aware semaphore serializes sweeps without holding a mutex over I/O.
 // Its owner also owns the cursor, including when a sweep exhausts its budget.
@@ -194,7 +208,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 	}
 	jobs := make(chan participantJob)
 	var enforcement sync.WaitGroup
-	for range identityParticipantWorkers {
+	for range s.identityWorkers() {
 		enforcement.Add(1)
 		go func() {
 			defer enforcement.Done()

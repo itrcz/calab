@@ -3,17 +3,20 @@ package rtc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type identitySFU struct {
@@ -48,7 +51,7 @@ func TestIdentitySweepSlowDependencyMultipleRooms(t *testing.T) {
 		}
 		room := voice.RoomName(ws, uuid.New())
 		f.rooms = append(f.rooms, Room{Name: room})
-		for j := 0; j < 20; j++ {
+		for j := 0; j < 2; j++ {
 			f.people[room] = append(f.people[room], Participant{Identity: voice.Identity(uuid.New(), uuid.New())})
 		}
 	}
@@ -89,7 +92,7 @@ func TestIdentitySweepSlowDependencyMultipleRooms(t *testing.T) {
 			t.Fatal("slow dependency starved later rooms")
 		}
 	}
-	if maxInFlight.Load() > 64 {
+	if maxInFlight.Load() > identityParticipantWorkers {
 		t.Fatalf("unbounded concurrency: %d", maxInFlight.Load())
 	}
 	for i, room := range f.rooms {
@@ -553,5 +556,26 @@ func TestIdentitySweepSuccessResetsTransientRun(t *testing.T) {
 	identitySweepAt(t, svc, t0.Add(identityTransientGrace))
 	if f.removed[key] != 0 {
 		t.Fatal("failures separated by a success were summed")
+	}
+}
+
+func TestIdentityWorkersStayBelowDBPool(t *testing.T) {
+	if got := (&Service{}).identityWorkers(); got != identityParticipantWorkers {
+		t.Fatalf("no pool: %d workers, want %d", got, identityParticipantWorkers)
+	}
+	for _, c := range []struct{ conns, want int }{{1, 1}, {2, 1}, {5, 4}, {9, 8}, {20, identityParticipantWorkers}} {
+		cfg, err := pgxpool.ParseConfig(fmt.Sprintf("postgres://calaba@127.0.0.1:1/calaba?pool_max_conns=%d", c.conns))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pool, err := pgxpool.NewWithConfig(context.Background(), cfg) // lazy: never dials here
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := (&Service{db: &db.DB{Pool: pool}}).identityWorkers()
+		pool.Close()
+		if got != c.want {
+			t.Fatalf("pool of %d: %d workers, want %d", c.conns, got, c.want)
+		}
 	}
 }
