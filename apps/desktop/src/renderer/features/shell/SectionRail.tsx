@@ -1,7 +1,17 @@
 import { WorkspaceRole } from '@calaba/protocol';
-import { CalendarDays, MessageCircle, MessagesSquare, SquareKanban, Volume2, type LucideIcon } from 'lucide-react';
+import { Volume2 } from 'lucide-react';
 import { memo, useRef, type ComponentPropsWithRef, type ReactNode } from 'react';
-import { Tip, cx } from '../../components/ui';
+import {
+  BoardsActiveIcon,
+  BoardsIdleIcon,
+  CalendarActiveIcon,
+  CalendarIdleIcon,
+  PersonalActiveIcon,
+  PersonalIdleIcon,
+  TeamActiveIcon,
+  TeamIdleIcon,
+} from '../../assets/nav/icons';
+import { CountBadge, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { localAuthority } from '../identity/model';
 import { currentSection, dmBadge, UNREAD_DOT, workspaceBadge, type Badge, type Section } from '../../lib/sections';
@@ -42,7 +52,7 @@ export function SectionRail(): ReactNode {
     // scroller would scroll away with the icons.
     <div className="island-fade island-fade-rail flex w-[var(--rail-width)] shrink-0 flex-col">
       <nav
-        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pt-3"
+        className="flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto overflow-x-hidden pt-3"
         // The bottom island (AppShell) spans the rail too: the icons end above it.
         style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
         aria-label={t('mobile.tabs')}
@@ -73,9 +83,22 @@ const APPS_LINE = <div className="my-1 h-px w-8 shrink-0 bg-line" aria-hidden />
 
 // ---------------------------------------------------------------- tiles
 
+type NavIcon = (p: { className?: string }) => ReactNode;
+type NavIcons = readonly [idle: NavIcon, active: NavIcon];
+const TEAM: NavIcons = [TeamIdleIcon, TeamActiveIcon];
+const PERSONAL: NavIcons = [PersonalIdleIcon, PersonalActiveIcon];
+const CALENDAR: NavIcons = [CalendarIdleIcon, CalendarActiveIcon];
+const BOARDS: NavIcons = [BoardsIdleIcon, BoardsActiveIcon];
+
+function NavIcon({ icons, active, className }: { icons: NavIcons; active: boolean; className: string }): ReactNode {
+  const Icon = icons[active ? 1 : 0];
+  return <Icon className={className} />;
+}
+
 interface TileProps {
   section: Section;
-  icon: LucideIcon;
+  /** The owner's pair (assets/nav): outline at rest, filled while the section is open; same 44 box, no shift. */
+  icons: NavIcons;
   /** Accessible name: the label with its counter («Команда, 2 упоминания»). */
   name: string;
   active: boolean;
@@ -92,7 +115,7 @@ interface TileProps {
  */
 function TileButton({
   section,
-  icon: Icon,
+  icons,
   name,
   active,
   count = 0,
@@ -119,7 +142,7 @@ function TileButton({
         ring && 'ring-2 ring-accent',
       )}
     >
-      <Icon className="size-5" strokeWidth={1.75} aria-hidden />
+      <NavIcon icons={icons} active={active} className="size-6" />
       {/* As on the workspace tiles before: «in voice» top-right (green), the count bottom-right. */}
       {inVoice ? (
         <span
@@ -131,16 +154,7 @@ function TileButton({
         </span>
       ) : null}
       {count > 0 ? (
-        <span
-          className={cx(
-            'absolute -right-1 -top-1 min-w-4 rounded-full border-2 border-[var(--color-rail)] px-1 text-center text-micro font-bold leading-[12px]',
-            tone === 'danger' ? 'bg-danger-fill text-white' : 'bg-accent-strong text-accent-fg',
-          )}
-          data-testid={`${testId}-count`}
-          aria-hidden
-        >
-          {count > 99 ? '99+' : count}
-        </span>
+        <CountBadge count={count} tone={tone} ring="var(--color-rail)" className="absolute -right-1.5 -top-1.5" data-testid={`${testId}-count`} aria-hidden />
       ) : null}
     </button>
   );
@@ -178,7 +192,7 @@ const ChatsTile = memo(function ChatsTile({ ws, active }: { ws: string; active: 
   return (
     <Slot active={active} dot={badge === UNREAD_DOT}>
       <RailContextMenu workspaceId={ws} tip={label}>
-        <TileButton section="chats" icon={MessagesSquare} name={name} active={active} count={Math.max(0, badge)} inVoice={inVoice} testId="section-chats" />
+        <TileButton section="chats" icons={TEAM} name={name} active={active} count={Math.max(0, badge)} inVoice={inVoice} testId="section-chats" />
       </RailContextMenu>
     </Slot>
   );
@@ -207,7 +221,7 @@ function DmsTileBody({ active }: { active: boolean }): ReactNode {
       <div ref={ref} className="flex" {...home.handlers}>
         {home.flyout}
         <Tip label={label} side="right">
-          <TileButton section="dms" icon={MessageCircle} name={name} active={active} count={count} testId="section-dms" ring={home.over} />
+          <TileButton section="dms" icons={PERSONAL} name={name} active={active} count={count} testId="section-dms" ring={home.over} />
         </Tip>
       </div>
     </Slot>
@@ -222,7 +236,7 @@ const CalendarTile = memo(function CalendarTile({ active }: { active: boolean })
   return (
     <Slot active={active}>
       <Tip label={label} side="right">
-        <TileButton section="calendar" icon={CalendarDays} name={today > 0 ? plural('cal.todayCount', today) : label} active={active} count={today} tone="accent" testId="section-calendar" />
+        <TileButton section="calendar" icons={CALENDAR} name={today > 0 ? plural('cal.todayCount', today) : label} active={active} count={today} tone="accent" testId="section-calendar" />
       </Tip>
     </Slot>
   );
@@ -236,7 +250,7 @@ const BoardsTile = memo(function BoardsTile({ ws, active }: { ws: string; active
   return (
     <Slot active={active}>
       <Tip label={label} side="right">
-        <TileButton section="boards" icon={SquareKanban} name={unread > 0 ? plural('boards.unreadCount', unread) : label} active={active} count={unread} tone="accent" testId="section-boards" />
+        <TileButton section="boards" icons={BOARDS} name={unread > 0 ? plural('boards.unreadCount', unread) : label} active={active} count={unread} tone="accent" testId="section-boards" />
       </Tip>
     </Slot>
   );

@@ -4,7 +4,7 @@ import type { Message } from '@calaba/protocol';
 import { memo, useCallback, useEffect, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
-import { Empty, Spinner, Tip, cx } from '../../components/ui';
+import { CountBadge, Empty, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
@@ -73,14 +73,7 @@ function InboxBadge(): ReactNode {
   const total = useRooms((s) => inboxBadgeCount({ items, loaded, hasMore }, s.readState, s.mentions, s.byId));
   if (total <= 0) return null;
   return (
-    <span
-      data-testid="inbox-badge"
-      role="status"
-      aria-label={`${t('shell.inbox')}: ${total}`}
-      className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger-fill px-1 text-center text-[10px] font-semibold leading-4 text-white"
-    >
-      {total > 99 ? '99+' : total}
-    </span>
+    <CountBadge count={total} data-testid="inbox-badge" role="status" aria-label={`${t('shell.inbox')}: ${total}`} className="absolute -right-1 -top-1" />
   );
 }
 

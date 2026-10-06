@@ -5,7 +5,7 @@ import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight,
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, Input, Modal, Tip, cx } from '../../components/ui';
+import { Button, CountBadge, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { mayCreateBoards } from '../../lib/permissions';
 import { boardLayout, layoutTokens } from '../../lib/boards/categories';
@@ -382,7 +382,7 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
     >
       <Inbox className="size-[18px] shrink-0 mobile:size-6" aria-hidden />
       <span className="min-w-0 flex-1 truncate">{t('boards.myTasks')}</span>
-      {unread > 0 ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-micro font-semibold tabular-nums text-accent-fg">{unread > 99 ? '99+' : unread}</span> : null}
+      {unread > 0 ? <CountBadge count={unread} tone="accent" /> : null}
     </button>
   );
 }

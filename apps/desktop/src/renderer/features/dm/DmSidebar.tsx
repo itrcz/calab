@@ -3,7 +3,7 @@ import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search } from 
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { CreateButton } from '../../components/CreateButton';
-import { Button, cx } from '../../components/ui';
+import { Button, CountBadge, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -224,11 +224,7 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
             </span>
             <span className="flex min-w-0 items-center gap-2">
               <span className={cx('min-w-0 flex-1 truncate text-caption leading-4', unread && !active ? 'text-fg' : 'text-muted')}>{line}</span>
-              {count > 0 ? (
-                <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white" aria-hidden>
-                  {count > 99 ? '99+' : count}
-                </span>
-              ) : null}
+              {count > 0 ? <CountBadge count={count} aria-hidden /> : null}
             </span>
           </span>
         </button>

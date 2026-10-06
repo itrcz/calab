@@ -3,7 +3,7 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
@@ -29,6 +29,54 @@ const twMerge = extendTailwindMerge({
 
 export function cx(...c: Array<string | false | null | undefined>): string {
   return twMerge(c.filter(Boolean).join(' '));
+}
+
+/**
+ * The count badge (owner, 07.10): unread / mention / task counters everywhere. Height H (18 px, 20 on
+ * the phone) and min-width = H, so 1 and 2 digits are a true circle; 3+ characters («99+») grow into
+ * a pill. `ring` adds the cutout against the background (rail, tab bar): the border sits outside the
+ * H box (box is H + 4), so the circle inside stays H. `phone` pins the 20 px size (the phone tab bar).
+ */
+const BADGE_TONE = {
+  danger: 'bg-danger-fill text-white',
+  accent: 'bg-accent-strong text-accent-fg',
+} as const;
+
+export function CountBadge({
+  count,
+  tone = 'danger',
+  ring,
+  phone = false,
+  className,
+  ...rest
+}: {
+  count: number;
+  tone?: keyof typeof BADGE_TONE;
+  /** CSS colour of the cutout ring (a `var(...)`), none when omitted. */
+  ring?: string;
+  /** Always the phone size (20 px) instead of the `mobile:` breakpoint switch. */
+  phone?: boolean;
+  className?: string;
+} & Omit<HTMLAttributes<HTMLSpanElement>, 'children' | 'className'> &
+  Record<`data-${string}`, unknown>): ReactNode {
+  const text = count > 99 ? '99+' : String(count);
+  return (
+    <span
+      data-count-badge=""
+      {...rest}
+      style={ring ? { borderColor: ring } : undefined}
+      className={cx(
+        'inline-grid shrink-0 place-items-center rounded-full text-center text-micro font-bold leading-none tabular-nums',
+        ring && 'border-2',
+        phone ? (ring ? 'h-6 min-w-6' : 'h-5 min-w-5') : ring ? 'h-[22px] min-w-[22px] mobile:h-6 mobile:min-w-6' : 'h-[18px] min-w-[18px] mobile:h-5 mobile:min-w-5',
+        text.length > 2 && 'px-1.5',
+        BADGE_TONE[tone],
+        className,
+      )}
+    >
+      {text}
+    </span>
+  );
 }
 
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
