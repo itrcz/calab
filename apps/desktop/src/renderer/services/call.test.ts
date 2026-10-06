@@ -25,6 +25,7 @@ vi.mock('./voice', () => ({
   voice: {
     join: (r: string, w: string, o?: unknown) => join(r, w, o),
     leave: () => leave(),
+    setMuted: (muted: boolean) => { useVoice.setState({muted}); return true; },
     get takenOverRoom() {
       return voiceState.takenOverRoom;
     },
@@ -42,7 +43,7 @@ const openDm = vi.fn((_id: string) => undefined);
 vi.mock('./dms', () => ({ ensureDm: () => Promise.resolve('dm1'), openDm: (id: string) => openDm(id) }));
 vi.mock('../platform', () => ({ platform: { app: { attention: vi.fn() }, auth:{onLoggedOut:()=>()=>undefined} } }));
 
-const { applyCallEvent, accept, hangup, onCallRing, onCallState, onReadyCall, resumeCall, startCall, installCalls, performHostCallAction, ownsHostCall, resetCallsForTest, setHostIncomingOwnership } = await import('./call');
+const { applyCallEvent, accept, hangup, onCallRing, onCallState, onReadyCall, resumeCall, startCall, installCalls, performHostCallAction, setHostCallMuted, ownsHostCall, resetCallsForTest, setHostIncomingOwnership } = await import('./call');
 const { useCall, setCall } = await import('../stores/call');
 const { useVoice } = await import('../stores/voice');
 const { useSession } = await import('../stores/session');
@@ -278,4 +279,17 @@ it('clears optimistic ownership before a delayed competing ACTIVE after network 
  onCallState(incoming(CallState.ACTIVE));
  expect(join).not.toHaveBeenCalled();expect(ownsHostCall('c1')).toBe(false);
  expect(useCall.getState().phase).toBe('idle');
+});
+
+it('system mute requires locally confirmed accept and the exact connected voice room',async()=>{
+ useSession.setState({sessionId:'mute-session'});
+ onCallRing(incoming(CallState.RINGING),undefined);
+ useVoice.setState({roomId:'dm1',call:true,phase:'connected',muted:false});
+ expect(setHostCallMuted('c1',true)).toBe(false);
+ act.mockResolvedValueOnce({call:incoming(CallState.ACTIVE)});await accept();
+ expect(setHostCallMuted('foreign',true)).toBe(false);
+ expect(setHostCallMuted('c1',true)).toBe(true);expect(useVoice.getState().muted).toBe(true);
+ useVoice.setState({roomId:'other',muted:false});expect(setHostCallMuted('c1',true)).toBe(false);
+ useVoice.setState({roomId:'dm1'});useSession.setState({sessionId:'new-session'});
+ expect(setHostCallMuted('c1',true)).toBe(false);expect(useVoice.getState().muted).toBe(false);
 });

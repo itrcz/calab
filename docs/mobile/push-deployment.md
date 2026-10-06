@@ -132,3 +132,11 @@ configures CallKit voice audio and retains readiness events arriving before answ
 The existing host can display the new APNs message previews; existing servers remain a generic
 fallback for new hosts. Full answer-race repair requires the updated web, API and host.
 Retest one system answer with desktop already in a room and >30 s locked two-way audio.
+
+The same repair adds optional call-bridge microphone controls, delivered-notification cleanup on
+logout and lifecycle-triggered APNs registration retry. Deploy web/API before installing the
+new host; web remains compatible with the installed v1 host. Existing message receipts keep
+their old expiry. New deliveries keep the five-minute transport limit and retain authenticated
+tap routes for up to seven additional days (at most 2048 ordinary receipts per endpoint).
+The retention change uses existing columns; no migration or provider configuration change.
+Follow the updated device checklists; cold locked answer remains an unverified acceptance gate.

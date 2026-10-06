@@ -2173,6 +2173,9 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - PG17: `go test -tags integration ./internal/app -run '^(TestPush|TestCallFullCycle|TestPhoneCallAnswerTakesOverDesktopRoom|TestCallOtherDeviceKeepsCall|TestVoiceOtherDeviceTakesOver)'`.
 - `corepack pnpm -F @calaba/desktop exec vitest run src/renderer/services/hostIncomingCalls.test.ts src/renderer/services/call.test.ts src/renderer/lib/callModel.test.ts`.
 - macOS: `swiftc apps/mobile/modules/calab-session-activity/ios/CalabCallReadiness.swift apps/mobile/tests/CallReadinessTests.swift -o /tmp/calab-call-readiness-tests && /tmp/calab-call-readiness-tests`.
+- Baseline repairs: include `voice.test.ts`, `platform/hostActivity.test.ts` and mobile bridge tests; verify idempotent mute, immediate capture gate, ownership/moderator limits, optional mute-capability negotiation and no native-action echo.
+- `go test -race -p 1 -tags integration ./internal/app -run '^TestPush'`: retained late taps, deleted/revoked/expired references, bounded receipt admission and expired pending jobs. Provider units keep APNs/FCM transport deadlines short.
+- macOS: compile/run `CalabPushRetry.swift` with `apps/mobile/tests/PushRetryTests.swift`; verify cooldown and lifecycle-triggered recovery. Device logout vs reload notification cleanup and system microphone/audio are separate manual gates.
 - Device after web/API + host update: sender/text after Face ID; caller name; one system answer;
   desktop in workspace room yields; bidirectional audio stays alive >30 s with phone locked.
 - Repeat warm/background and terminated launches separately; no generic claim of cold-call success.

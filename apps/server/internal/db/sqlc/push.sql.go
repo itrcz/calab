@@ -189,16 +189,19 @@ func (q *Queries) CleanupPushIntents(ctx context.Context) (int64, error) {
 }
 
 const completePushDelivery = `-- name: CompletePushDelivery :execrows
-UPDATE push_deliveries SET delivered_at = now(), lease_id = NULL, lease_until = NULL WHERE id = $1 AND lease_id = $2
+UPDATE push_deliveries SET delivered_at = now(), lease_id = NULL, lease_until = NULL,
+expires_at = CASE WHEN kind=1 AND $3::boolean THEN expires_at + interval '7 days' ELSE expires_at END
+WHERE id = $1 AND lease_id = $2 AND delivered_at IS NULL
 `
 
 type CompletePushDeliveryParams struct {
-	ID      uuid.UUID
-	LeaseID *uuid.UUID
+	ID            uuid.UUID
+	LeaseID       *uuid.UUID
+	RetainMessage bool
 }
 
 func (q *Queries) CompletePushDelivery(ctx context.Context, arg CompletePushDeliveryParams) (int64, error) {
-	result, err := q.db.Exec(ctx, completePushDelivery, arg.ID, arg.LeaseID)
+	result, err := q.db.Exec(ctx, completePushDelivery, arg.ID, arg.LeaseID, arg.RetainMessage)
 	if err != nil {
 		return 0, err
 	}
@@ -1120,4 +1123,17 @@ func (q *Queries) RotatePushDevice(ctx context.Context, arg RotatePushDevicePara
 		&i.ExpiresAt,
 	)
 	return i, err
+}
+
+const trimCompletedPushMessages = `-- name: TrimCompletedPushMessages :exec
+DELETE FROM push_deliveries WHERE id IN (
+ SELECT p.id FROM push_deliveries p WHERE p.device_id=$1 AND p.kind=1 AND p.delivered_at IS NOT NULL
+ ORDER BY p.expires_at,p.id LIMIT greatest((SELECT count(*) FROM push_deliveries d WHERE d.device_id=$1 AND d.kind<>2)-2047,0)
+)
+`
+
+// Caller holds endpoint lock. Reserve one ordinary slot; never evict pending jobs/calls.
+func (q *Queries) TrimCompletedPushMessages(ctx context.Context, deviceID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, trimCompletedPushMessages, deviceID)
+	return err
 }

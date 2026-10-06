@@ -54,6 +54,12 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   private var ends: [UUID: CXEndCallAction] = [:]
   private var deadlines: [UUID: Task<Void, Never>] = [:]
   private var readiness = CalabCallReadiness()
+  private let callController = CXCallController()
+  private var muteActions: [UUID: CXSetMutedCallAction] = [:]
+  private var muteDeadlines: [UUID: Task<Void, Never>] = [:]
+  private var muteTransactions: [UUID: UUID] = [:]
+  private var nativeMuted: [UUID: Bool] = [:]
+  private var desiredMuted: [UUID: Bool] = [:]
   private let storage = UserDefaults.standard
   private let bindingKey = "CalabVoIPBinding"
   private var environment: String? {
@@ -131,6 +137,9 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     deadlines.removeValue(forKey: id)?.cancel()
     answers.removeValue(forKey: id)?.fail(); ends.removeValue(forKey: id)?.fail()
     readiness.remove(id)
+    for (actionID, action) in Array(muteActions) where action.callUUID == id { finishMute(actionID, success: false) }
+    muteTransactions = muteTransactions.filter { $0.value != id }
+    nativeMuted.removeValue(forKey: id); desiredMuted.removeValue(forKey: id)
     actions = actions.filter { $0.value["eventId"] as? String != id.uuidString.lowercased() }
     if calls.removeValue(forKey: id) != nil { provider?.reportCall(with: id, endedAt: Date(), reason: reason) }
     reports.remove(id)
@@ -181,6 +190,11 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     }
   }
   func settle(_ doc: String, _ actionID: String, _ result: String) {
+    if current(doc), let id = UUID(uuidString: actionID), let action = muteActions[id] {
+      let expected = action.isMuted ? "muted" : "unmuted"
+      finishMute(id, success: result == expected && (actions[actionID]?["expiresAt"] as? Double ?? 0) > now)
+      return
+    }
     guard current(doc), let action = actions.removeValue(forKey: actionID), let raw = action["eventId"] as? String, let id = UUID(uuidString: raw), calls[id] != nil,
       (action["expiresAt"] as? Double ?? 0) > now else { return }
     switch (action["action"] as? String, result) {
@@ -201,6 +215,9 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   }
   func sync(_ doc: String, _ event: String, _ phase: String) {
     guard current(doc), let id = UUID(uuidString: event), calls[id] != nil else { return }
+    if phase == "muted" || phase == "unmuted" {
+      desiredMuted[id] = phase == "muted"; syncMute(id); return
+    }
     if phase == "ended" { end(id, .remoteEnded) }
     if phase == "connected" {
       readiness.connected.insert(id); cancelReadyDeadlines()
@@ -208,6 +225,48 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   }
   private func cancelReadyDeadlines() {
     for id in readiness.ready { deadlines.removeValue(forKey: id)?.cancel() }
+  }
+  private func finishMute(_ actionID: UUID, success: Bool) {
+    muteDeadlines.removeValue(forKey: actionID)?.cancel()
+    actions.removeValue(forKey: actionID.uuidString.lowercased())
+    guard let action = muteActions.removeValue(forKey: actionID) else { return }
+    if success { nativeMuted[action.callUUID] = action.isMuted; action.fulfill() }
+    else { action.fail() }
+    syncMute(action.callUUID)
+  }
+  /** App-originated transactions acknowledge already-applied media, without a feedback loop. */
+  private func syncMute(_ id: UUID) {
+    guard calls[id] != nil, readiness.accepted.contains(id), let muted = desiredMuted[id],
+      nativeMuted[id, default: false] != muted,
+      !muteActions.values.contains(where: { $0.callUUID == id }),
+      !muteTransactions.values.contains(id) else { return }
+    let action = CXSetMutedCallAction(call: id, muted: muted)
+    muteTransactions[action.uuid] = id
+    callController.request(CXTransaction(action: action)) { error in
+      if error != nil { Task { @MainActor in self.muteTransactions.removeValue(forKey: action.uuid) } }
+    }
+  }
+  nonisolated func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
+    MainActor.assumeIsolated {
+      let id = action.callUUID
+      if self.muteTransactions.removeValue(forKey: action.uuid) != nil {
+        if self.calls[id] != nil && self.readiness.accepted.contains(id) && self.desiredMuted[id] == action.isMuted {
+          self.nativeMuted[id] = action.isMuted; action.fulfill()
+        } else { action.fail() }
+        self.syncMute(id); return
+      }
+      guard self.calls[id] != nil, self.readiness.accepted.contains(id), self.desiredMuted[id] != nil,
+        !self.muteActions.values.contains(where: { $0.callUUID == id }), !self.muteTransactions.values.contains(id), self.actions.count < 8,
+        let call = self.calls[id] else { action.fail(); return }
+      self.muteActions[action.uuid] = action
+      self.actions[action.uuid.uuidString.lowercased()] = ["binding": call["binding"]!, "eventId": id.uuidString.lowercased(),
+        "expiresAt": self.now + 10000, "actionId": action.uuid.uuidString.lowercased(), "action": action.isMuted ? "mute" : "unmute"]
+      self.muteDeadlines[action.uuid] = Task { @MainActor in
+        do { try await Task.sleep(for: .seconds(10)) } catch { return }
+        self.finishMute(action.uuid, success: false)
+      }
+      self.changed()
+    }
   }
   nonisolated func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
     MainActor.assumeIsolated {
@@ -243,7 +302,12 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     }
   }
   nonisolated func provider(_ provider: CXProvider, timedOutPerforming action: CXAction) {
-    MainActor.assumeIsolated { if let action = action as? CXCallAction { self.end(action.callUUID, .failed, notifyWeb: true); self.changed() } }
+    MainActor.assumeIsolated {
+      if let action = action as? CXSetMutedCallAction {
+        self.muteTransactions.removeValue(forKey: action.uuid)
+        self.finishMute(action.uuid, success: false)
+      } else if let action = action as? CXCallAction { self.end(action.callUUID, .failed, notifyWeb: true); self.changed() }
+    }
   }
   nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
     MainActor.assumeIsolated {

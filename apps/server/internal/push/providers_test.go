@@ -470,3 +470,59 @@ func TestAPNSMessagePreviewAndCallerPresentation(t *testing.T) {
 		})
 	}
 }
+
+func TestMessageRouteRetentionDoesNotExtendAPNSDelivery(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := providerPayload()
+	payload.Kind = "message"
+	payload.DeliveryExpiresAt = payload.ExpiresAt
+	payload.ExpiresAt += int64(7 * 24 * time.Hour / time.Millisecond)
+	sent := 0
+	sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development"}
+	sender.client = &http.Client{Transport: providerTransport(func(r *http.Request) (*http.Response, error) {
+		sent++
+		if r.Header.Get("apns-expiration") != strconv.FormatInt(payload.DeliveryExpiresAt/1000, 10) {
+			t.Fatal("transport retained message for the navigation lifetime")
+		}
+		var data map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+			t.Fatal(err)
+		}
+		if int64(data["expiresAt"].(float64)) != payload.ExpiresAt {
+			t.Fatal("tap lost retained expiry")
+		}
+		if _, ok := data["DeliveryExpiresAt"]; ok {
+			t.Fatal("internal transport deadline leaked")
+		}
+		return providerResponse(200, "", http.Header{}), nil
+	})}
+	endpoint := Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: "aabb", AppID: sender.app, Environment: sender.environment}
+	if !sender.Send(context.Background(), endpoint, payload).Accepted {
+		t.Fatal("provider acceptance lost")
+	}
+	payload.DeliveryExpiresAt = time.Now().Add(-time.Second).UnixMilli()
+	if sender.Send(context.Background(), endpoint, payload).Accepted {
+		t.Fatal("expired no-send reported acceptance")
+	}
+	if sent != 1 {
+		t.Fatal("retained route authorized stale delivery")
+	}
+}
+
+func TestAPNSTerminalRejectionIsNotAcceptance(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development", client: &http.Client{Transport: providerTransport(func(_ *http.Request) (*http.Response, error) {
+		return providerResponse(400, `{"reason":"PayloadTooLarge"}`, http.Header{}), nil
+	})}}
+	p := providerPayload()
+	p.Kind = "message"
+	if sender.Send(context.Background(), Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: "aabb", AppID: sender.app, Environment: sender.environment}, p).Accepted {
+		t.Fatal("APNs rejection reported acceptance")
+	}
+}

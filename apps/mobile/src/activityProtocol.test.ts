@@ -76,3 +76,13 @@ it('bounds pending native call actions and accepts only opaque unexpired referen
   {supported:true,actions:[{...action,action:'nativeLogin'}]},
   {supported:false,actions:[action]}])expect(parseCallsState(value)).toBeNull();
 });
+
+it('validates optional microphone sync and bounded native mute actions under the same document',()=>{
+ const p=new ActivityProtocol(0);p.accept(hello());
+ const value={v:1,type:'calls',host:0,document,seq:1,request:1,operation:'sync',eventId:other,phase:'muted'};
+ expect(p.accept(JSON.stringify(value))).toMatchObject({operation:'sync',phase:'muted'});
+ expect(p.accept(JSON.stringify({...value,seq:2,document:other}))).toBeNull();
+ const action={binding:document,eventId:other,expiresAt:Date.now()+10000,actionId:document,action:'mute'};
+ expect(parseCallsState({supported:true,actions:[action]})).toMatchObject({actions:[action]});
+ expect(parseCallsState({supported:true,actions:[{...action,muted:'yes'}]})).toBeNull();
+});

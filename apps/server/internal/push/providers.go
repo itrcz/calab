@@ -28,8 +28,14 @@ func providerHTTP() *http.Client {
 	transport.MaxIdleConnsPerHost = 8
 	return &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 }
+func deliveryExpiry(p Payload) int64 {
+	if p.DeliveryExpiresAt > 0 {
+		return min(p.ExpiresAt, p.DeliveryExpiresAt)
+	}
+	return p.ExpiresAt
+}
 func routingValid(p Payload) bool {
-	if p.Version != 1 || !time.UnixMilli(p.ExpiresAt).After(time.Now()) {
+	if p.Version != 1 || !time.UnixMilli(deliveryExpiry(p)).After(time.Now()) {
 		return false
 	}
 	switch p.Kind {
@@ -134,7 +140,7 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	request.Header.Set("apns-push-type", pushType)
 	request.Header.Set("apns-priority", "10")
 	request.Header.Set("apns-id", p.EventID)
-	request.Header.Set("apns-expiration", strconv.FormatInt(p.ExpiresAt/1000, 10))
+	request.Header.Set("apns-expiration", strconv.FormatInt(deliveryExpiry(p)/1000, 10))
 	response, err := s.client.Do(request)
 	if err != nil {
 		return retryResult(p, 0, "")
@@ -142,7 +148,7 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 65536))
-		return Result{}
+		return Result{Accepted: true}
 	}
 	if response.StatusCode == 429 || response.StatusCode >= 500 {
 		return retryResult(p, response.StatusCode, response.Header.Get("Retry-After"))
@@ -282,7 +288,7 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 		}
 		data[key] = text
 	}
-	remaining := min(max(time.Until(time.UnixMilli(p.ExpiresAt)), 0), 10*time.Minute)
+	remaining := min(max(time.Until(time.UnixMilli(deliveryExpiry(p))), 0), 10*time.Minute)
 	if remaining <= 0 {
 		return Result{}
 	}
@@ -303,7 +309,7 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == 200 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 65536))
-		return Result{}
+		return Result{Accepted: true}
 	}
 	if response.StatusCode == 429 || response.StatusCode >= 500 {
 		return retryResult(p, response.StatusCode, response.Header.Get("Retry-After"))

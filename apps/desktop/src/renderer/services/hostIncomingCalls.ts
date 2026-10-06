@@ -6,7 +6,7 @@ import { platform } from '../platform';
 import { useSession } from '../stores/session';
 import { useCall } from '../stores/call';
 import { useVoice } from '../stores/voice';
-import { onCallRing, ownsHostCall, performHostCallAction, setHostIncomingOwnership } from './call';
+import { onCallRing, ownsHostCall, performHostCallAction, setHostCallMuted, setHostIncomingOwnership } from './call';
 
 export interface IncomingCallApi {
  capabilities:(signal:AbortSignal)=>Promise<{appId:string;environment:string}[]>;
@@ -16,6 +16,7 @@ export interface IncomingCallApi {
  owns:(callId:string)=>boolean;
  act:(callId:string,action:'answer'|'end',signal:AbortSignal,isCurrent:()=>boolean,isSessionCurrent:()=>boolean)=>Promise<boolean>;
  release:(callId:string)=>void;
+ mute:(callId:string,muted:boolean)=>boolean;
 }
 const api:IncomingCallApi={
  capabilities:async(signal)=>(await call('GET','/api/me/push-capabilities',PushCapabilitiesResponseSchema,undefined,signal)).providers.filter(p=>p.provider===PushProvider.VOIP),
@@ -26,6 +27,7 @@ const api:IncomingCallApi={
  ring(value){setHostIncomingOwnership(value.id,true);if(value.state===CallState.RINGING)onCallRing(value,undefined); },
  act:performHostCallAction,
  owns:ownsHostCall,
+ mute:setHostCallMuted,
  release:id=>setHostIncomingOwnership(id,false),
 };
 
@@ -72,7 +74,7 @@ export class HostIncomingController {
     if(await this.capability.bind(endpoint.id,endpoint.version,token) && revision===this.revision)this.fingerprint=fingerprint;
    }).catch(()=>undefined);
   }
-  for(const action of [...(state.actions??[])].sort((a,b)=>['ring','answer','end'].indexOf(a.action)-['ring','answer','end'].indexOf(b.action)))if(!this.handled.has(action.actionId) && !this.queued.has(action.actionId))this.queued.set(action.actionId,action);
+  for(const action of [...(state.actions??[])].sort((a,b)=>['ring','answer','mute','unmute','end'].indexOf(a.action)-['ring','answer','mute','unmute','end'].indexOf(b.action)))if(!this.handled.has(action.actionId) && !this.queued.has(action.actionId))this.queued.set(action.actionId,action);
   this.drain();
  }
  private drain():void {
@@ -118,6 +120,14 @@ export class HostIncomingController {
   try{
    if(!current()){if(revision===this.revision)this.capability.settle(action.actionId,'failed');return;}
    let route=this.routes.get(action.eventId);
+   if(action.action==='mute' || action.action==='unmute'){
+    // An ongoing call outlives its ring receipt. Only this document's accepted route may
+    // control its microphone; never resolve a fresh receipt or create ownership here.
+    const muted=action.action==='mute';
+    const success=!!route && this.api.owns(route.callId) && this.api.mute(route.callId,muted);
+    this.capability.settle(action.actionId,success ? muted ? 'muted':'unmuted':'failed');
+    return;
+   }
    if(action.action!=='end' || !route){
     const value=await this.resolve(action,signal,current);
     if(!current())return;
@@ -132,11 +142,13 @@ export class HostIncomingController {
    if(!success || action.action==='end'){this.api.release(route.callId);this.routes.delete(action.eventId);}
   }catch{if(revision===this.revision){this.capability.settle(action.actionId,'failed');const route=this.routes.get(action.eventId);if(route)this.api.release(route.callId);this.routes.delete(action.eventId);}}
  }
- sync(callId:string|null,phase:string,voiceRoom:string|null,voiceStatus:string):void {
+ sync(callId:string|null,phase:string,voiceRoom:string|null,voiceStatus:string,muted=false):void {
   for(const [event,route] of this.routes){
    if(callId!==route.callId || phase==='idle'){
     this.capability.sync(event,'ended');this.api.release(route.callId);this.routes.delete(event);
-   }else if(phase==='active' && voiceRoom===route.roomId && voiceStatus==='connected')this.capability.sync(event,'connected');
+   }else if(phase==='active' && voiceRoom===route.roomId && voiceStatus==='connected'){
+    this.capability.sync(event,'connected');this.capability.syncMuted?.(event,muted);
+   }
   }
  }
  async settled():Promise<void>{await this.registration;await Promise.all(this.work);}
@@ -157,7 +169,7 @@ export function installHostIncomingCalls(capability=platform.incomingCalls, inco
   if(s.status==='anon'){if(!anonymousCleared)controller.revoke();anonymousCleared=true;return;}
   anonymousCleared=false;controller.update(s.sessionId && s.sessionId!==revokedSession ? s.sessionId:null,s.ready && s.gateway==='ready');
  };
- const sync=(force=false)=>{const c=useCall.getState();const v=useVoice.getState();const next=JSON.stringify([c.call?.id,c.phase,v.roomId,v.phase]);if(!force && next===previousSync)return;previousSync=next;controller.sync(c.call?.id??null,c.phase,v.roomId,v.phase);};
+ const sync=(force=false)=>{const c=useCall.getState();const v=useVoice.getState();const muted=v.muted||v.deafened||v.serverMuted;const next=JSON.stringify([c.call?.id,c.phase,v.roomId,v.phase,muted]);if(!force && next===previousSync)return;previousSync=next;controller.sync(c.call?.id??null,c.phase,v.roomId,v.phase,muted);};
  const subs=[useSession.subscribe(update),useCall.subscribe(()=>sync()),useVoice.subscribe(()=>sync()),capability.subscribe(s=>{controller.accept(s);sync(true);}),platform.auth.onLoggedOut(()=>{revokedSession=useSession.getState().sessionId;controller.revoke();})];
  const pagehide=()=>controller.dispose();window.addEventListener('pagehide',pagehide);update();
  return ()=>{for(const sub of subs)sub();window.removeEventListener('pagehide',pagehide);controller.dispose();};

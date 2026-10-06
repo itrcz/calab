@@ -2,7 +2,7 @@ import { parseCallsState, type HostCallsCapability, type HostCallsOperation, typ
 import { parseNotificationState, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
 export interface HostActivityBridge {
-  version: number; host: number; document: string; notificationsVersion?: number; callsVersion?: number;
+  version: number; host: number; document: string; notificationsVersion?: number; callsVersion?: number; callsMuteVersion?: number;
   rotateDocument(): void;
   send(data: string): void;
 }
@@ -99,6 +99,7 @@ export function createHostCapabilities(win: Window = window): {
       subscribe(listener){callListeners.add(listener);return ()=>callListeners.delete(listener);},
       settle(actionId,result){if(ready)send('calls',{request:++requestId,operation:'settle',actionId,result});},
       sync(eventId,phase){if(ready)send('calls',{request:++requestId,operation:'sync',eventId,phase});},
+      ...(bridge.callsMuteVersion===1 ? {syncMuted(eventId:string,muted:boolean){if(ready)send('calls',{request:++requestId,operation:'sync',eventId,phase:muted?'muted':'unmuted'});}} : {}),
       clear:revoke,
     } satisfies HostCallsCapability}: {}),
     sessionActivity: {

@@ -1,5 +1,26 @@
 # Телефон: общий веб в оболочке — статус
 
+## R10: стандартные сценарии после ревизии (2026-10-06)
+
+- **Реализовано:** системный mute/unmute через общий voice service и обратная синхронизация
+  с CallKit; действия ограничены текущим принятым звонком, сессией и document. Moderator mute
+  сохраняется, timeout одной команды не завершает разговор. Capability добавлена к bridge v1:
+  прежние host/web сохраняют answer/end, старый web не получает неизвестных mute actions.
+- **Реализовано:** новые message tap routes живут до семи дней после пяти минут dispatch,
+  только после подтверждения приёма provider; transport deadline не продлён. Retention
+  ограничен 2048 обычными receipts, старейшие завершённые сообщения уступают место новым.
+  Logout очищает доставленные уведомления приложения; reload не очищает. APNs registration
+  retry после ошибки разрешён на foreground/user trigger с cooldown 15 с, без polling.
+- **Проверено локально:** workspace tests (desktop 2610, mobile 110, protocol 439, bot 30,
+  два plugin tests), отдельные тесты совместимости; push unit/integration с race;
+  Swift retry policy, typecheck, web build без Electron, generation без drift.
+  Physical-iOS Release скомпилирована без ошибок и изменения native inputs.
+  Два независимых review приняли исправленную дельту без blocker/major.
+- **Осталось:** PR CI и согласованный web/API release, затем новая установка и одна device
+  проверка сценариев из `incoming-calls-testing.md` / `message-notifications-testing.md`.
+  Cold locked answer, системный mute и двустороннее audio на этой версии ещё не проверены.
+  Новых migrations, ключей или provider env для R09/R10 не требуется.
+
 ## R09: исправления после первого push-теста (2026-10-06)
 
 - **Проверено владельцем на iPhone:** сообщения push доставляются, системный экран

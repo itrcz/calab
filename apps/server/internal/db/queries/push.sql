@@ -83,7 +83,9 @@ AND u.disabled_at IS NULL AND NOT u.is_guest AND NOT u.is_bot
 FOR UPDATE OF p, d FOR SHARE OF s;
 
 -- name: CompletePushDelivery :execrows
-UPDATE push_deliveries SET delivered_at = now(), lease_id = NULL, lease_until = NULL WHERE id = $1 AND lease_id = $2;
+UPDATE push_deliveries SET delivered_at = now(), lease_id = NULL, lease_until = NULL,
+expires_at = CASE WHEN kind=1 AND sqlc.arg(retain_message)::boolean THEN expires_at + interval '7 days' ELSE expires_at END
+WHERE id = $1 AND lease_id = $2 AND delivered_at IS NULL;
 
 -- name: RetryPushDelivery :execrows
 UPDATE push_deliveries SET lease_id = NULL, lease_until = NULL, not_before = $3
@@ -133,6 +135,13 @@ SELECT * FROM push_devices WHERE id=$1;
 -- name: CleanupPushDeviceDeliveries :exec
 -- Endpoint lock is held; expired receipts never grow admission storage indefinitely.
 DELETE FROM push_deliveries WHERE device_id=$1 AND expires_at<=now();
+
+-- name: TrimCompletedPushMessages :exec
+-- Caller holds endpoint lock. Reserve one ordinary slot; never evict pending jobs/calls.
+DELETE FROM push_deliveries WHERE id IN (
+ SELECT p.id FROM push_deliveries p WHERE p.device_id=$1 AND p.kind=1 AND p.delivered_at IS NOT NULL
+ ORDER BY p.expires_at,p.id LIMIT greatest((SELECT count(*) FROM push_deliveries d WHERE d.device_id=$1 AND d.kind<>2)-2047,0)
+);
 
 -- name: DiscardPreviousPushCalls :exec
 -- Current CallStore authorizes only this genuine live call for the callee. Old

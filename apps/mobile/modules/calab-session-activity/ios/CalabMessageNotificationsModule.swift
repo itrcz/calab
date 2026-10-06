@@ -41,7 +41,7 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
   private weak var owner: AnyObject?
   private var document: String?
   private var token: String?
-  private var failed = false
+  private var registrationRetry = CalabPushRetry()
   private var pendingTap: [String: Any]?
   private var observers: [NSObjectProtocol] = []
   private var waiters: [UUID: (String, CheckedContinuation<String?, Never>)] = [:]
@@ -70,7 +70,13 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
       }
     })
     observers.append(NotificationCenter.default.addObserver(forName: NSNotification.Name("CalabHostSessionCleared"), object: nil, queue: .main) { notice in
-      MainActor.assumeIsolated { if let view = notice.object as AnyObject?, self.owner === view { self.pendingTap = nil } }
+      MainActor.assumeIsolated {
+        if let view = notice.object as AnyObject?, self.owner === view {
+          self.pendingTap = nil
+          // UserNotifications scopes this to Calab. Reload only invalidates the document.
+          self.center.removeAllDeliveredNotifications()
+        }
+      }
     })
     observers.append(NotificationCenter.default.addObserver(forName: NSNotification.Name("CalabHostDocumentInvalidated"), object: nil, queue: .main) { notice in
       MainActor.assumeIsolated {
@@ -83,6 +89,7 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
   private func current(_ document: String) -> Bool { owner != nil && self.document == document }
   func state(document: String, requestPermission: Bool) async -> [String: Any] {
     guard current(document), configured else { return ["permission": "unsupported"] }
+    if requestPermission { registrationRetry.retry(at: Date()) }
     var settings = await center.notificationSettings()
     guard current(document), configured else { return ["permission": "unsupported"] }
     if requestPermission && settings.authorizationStatus == .notDetermined {
@@ -109,7 +116,7 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
     pendingTap = nil
   }
   private func deviceToken(_ document: String) async -> String? {
-    guard current(document), configured, !failed else { return nil }
+    guard current(document), configured, registrationRetry.canAttempt else { return nil }
     if let token { return token }
     return await withCheckedContinuation { continuation in
       let id = UUID()
@@ -131,7 +138,7 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
     guard configured else { return }
     let value = data.map { String(format: "%02x", $0) }.joined()
     let changed = token != nil && token != value
-    token = value; failed = false; finishToken(value)
+    token = value; registrationRetry.succeeded(); finishToken(value)
     if changed, let document, current(document) {
       Task { let value = await self.state(document: document, requestPermission: false)
         if self.current(document) { self.emit?(document, value) }
@@ -140,11 +147,12 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
   }
   func refresh() {
     guard let document, current(document) else { return }
+    registrationRetry.retry(at: Date())
     Task { let state = await self.state(document: document, requestPermission: false)
       if self.current(document) { self.emit?(document, state) }
     }
   }
-  func registrationFailed() { failed = true; token = nil; finishToken(nil) }
+  func registrationFailed() { registrationRetry.failed(at: Date()); token = nil; finishToken(nil) }
   // The common renderer owns foreground sounds/alerts, so remote APNs never duplicates them.
   nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
     completionHandler([])

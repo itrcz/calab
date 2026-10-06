@@ -11,4 +11,4 @@
 9. Cancel/answer elsewhere/expired/DND/disabled/no workspace/no DM access после ring не дают принять или повторно звонить.
 10. Late accept после timeout/logout/account switch: нет RTC join; cleanup не затрагивает новый аккаунт/новый звонок.
 11. Logout/revocation/cold anonymous page очищают binding; reload сохраняет ring, старые document callbacks отвергаются.
-12. CallKit audio activation, mute/deafen, speaker/Bluetooth, возврат/повторная блокировка; затем message cold tap и скачивание.
+12. CallKit audio activation и двусторонний звук ≥60 с под блокировкой; speaker/Bluetooth и обычный телефонный звонок/возврат. Системный mute/unmute меняет общий микрофон, кнопка в app обновляет системный экран; отказ/timeout mute не завершает разговор, moderator mute не снимается. Старые host/web сохраняют answer/end; system mute доступен после sync от нового web.

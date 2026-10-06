@@ -25,17 +25,18 @@ import (
 
 // Payload carries opaque routing and authorized, bounded presentation (ADR-0072).
 type Payload struct {
-	Version     int    `json:"v"`
-	Binding     string `json:"binding"`
-	EventID     string `json:"eventId"`
-	Kind        string `json:"kind"`
-	ReferenceID string `json:"-"`
-	RoomID      string `json:"-"`
-	ExpiresAt   int64  `json:"expiresAt"`
-	Silent      bool   `json:"silent,omitempty"`
-	Title       string `json:"-"`
-	Body        string `json:"-"`
-	CallerName  string `json:"callerName,omitempty"`
+	Version           int    `json:"v"`
+	Binding           string `json:"binding"`
+	EventID           string `json:"eventId"`
+	Kind              string `json:"kind"`
+	ReferenceID       string `json:"-"`
+	RoomID            string `json:"-"`
+	ExpiresAt         int64  `json:"expiresAt"`
+	DeliveryExpiresAt int64  `json:"-"`
+	Silent            bool   `json:"silent,omitempty"`
+	Title             string `json:"-"`
+	Body              string `json:"-"`
+	CallerName        string `json:"callerName,omitempty"`
 }
 
 // Endpoint is the server-authorized transport destination for one registry version.
@@ -47,6 +48,7 @@ type Endpoint struct {
 // Result deliberately contains no raw response, token, origin or provider credential.
 type Result struct {
 	Retry, Invalid bool
+	Accepted       bool // Provider accepted the request; not proof of device delivery.
 	RetryAfter     time.Duration
 	InvalidBefore  *time.Time
 }
@@ -207,6 +209,9 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 				return err
 			}
 			allowed, _, err := s.allowedPolicy(ctx, q, user, session, job, true)
+			if db.IsNotFound(err) {
+				return httpx.NotFound("notification")
+			}
 			if err != nil {
 				return err
 			}

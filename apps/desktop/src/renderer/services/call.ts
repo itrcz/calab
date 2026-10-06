@@ -200,6 +200,14 @@ export function ownsHostCall(id: string): boolean {
       (accepting?.id === id && accepting.session === session && !accepting.abort.signal.aborted));
 }
 
+/** System microphone controls cannot accept a call or affect another room/device. */
+export function setHostCallMuted(id: string, muted: boolean): boolean {
+  const c = useCall.getState();
+  const v = useVoice.getState();
+  if (!ownsHostCall(id) || c.phase !== 'active' || !v.call || v.phase !== 'connected' || v.roomId !== c.call?.dmRoomId) return false;
+  return voice.setMuted(muted);
+}
+
 function attachHostAnswer(pending: AcceptOperation, host?: HostActionContext): void {
   if (!host || pending.host) return;
   pending.host = host;

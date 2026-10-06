@@ -37,7 +37,7 @@ func (r *pushRecorder) sent() []push.Payload {
 }
 func pushHarness(t *testing.T) (*push.Service, *httptest.Server, *pushRecorder) {
 	t.Helper()
-	rec := &pushRecorder{}
+	rec := &pushRecorder{result: push.Result{Accepted: true}}
 	a := app.New(app.Deps{Config: testCfg, DB: testDB, Redis: testRedis, Events: events.Nop{}, Blob: testStore, LiveKit: lkRec, Push: map[v1.PushProvider]push.Provider{v1.PushProvider_PUSH_PROVIDER_FCM: {AppID: "ru.calab.test", Environment: "production", Sender: rec}}})
 	server := httptest.NewServer(a.Handler)
 	t.Cleanup(server.Close)
@@ -309,5 +309,88 @@ SELECT NULL,$1||g,1,gen_random_uuid(),now()+interval '5 minutes',now() FROM gene
 	var queued int
 	if err := testDB.Pool.QueryRow(context.Background(), "SELECT count(*) FROM push_intents WHERE recipient_id=$1 AND event_key=$2", bob.id, "message:"+msg.Id).Scan(&queued); err != nil || queued != 1 {
 		t.Fatalf("pending intent dropped behind completed rows: queued=%d err=%v", queued, err)
+	}
+}
+
+func TestPushMessageTapRetentionAndBoundedAdmission(t *testing.T) {
+	s, server, rec := pushHarness(t)
+	o, bob, ws, room := setupTeam(t)
+	pushAll(t, bob, room.Id)
+	endpoint := registerPush(t, server, bob, uuid.NewString(), uuid.NewString(), 200)
+	msg := dmPost(t, o, room.Id, "read this later")
+	s.Observe(context.Background(), uuid.Nil, pushMessage(msg))
+	deliverPush(t, s)
+	receipt := rec.sent()[0]
+	if receipt.ExpiresAt-receipt.DeliveryExpiresAt != int64(7*24*time.Hour/time.Millisecond) || receipt.DeliveryExpiresAt > time.Now().Add(5*time.Minute).UnixMilli() {
+		t.Fatal("delivery and navigation deadlines were not separated")
+	}
+	// Advance this receipt past the old five-minute window, without changing test wall time.
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE push_deliveries SET expires_at=expires_at-interval '10 minutes' WHERE id=$1", receipt.EventID); err != nil {
+		t.Fatal(err)
+	}
+	request := &v1.ResolvePushRequest{Binding: receipt.Binding, EventId: receipt.EventID}
+	pushHTTP(t, server, bob, 200, "POST", "/api/me/push-resolve", request, &v1.ResolvePushResponse{})
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE messages SET deleted_at=now() WHERE id=$1", msg.Id); err != nil {
+		t.Fatal(err)
+	}
+	pushHTTP(t, server, bob, 404, "POST", "/api/me/push-resolve", request, nil)
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE messages SET deleted_at=NULL WHERE id=$1", msg.Id); err != nil {
+		t.Fatal(err)
+	}
+	// Fill retained receipts to the existing cap. A new message evicts only the oldest delivered receipt.
+	if _, err := testDB.Pool.Exec(context.Background(), `INSERT INTO push_deliveries(device_id,device_version,event_key,kind,reference_id,room_id,expires_at,delivered_at)
+ SELECT device_id,device_version,'retained:'||n,kind,reference_id,room_id,now()+interval '6 days',now()
+ FROM push_deliveries CROSS JOIN generate_series(1,2047) n WHERE id=$1`, receipt.EventID); err != nil {
+		t.Fatal(err)
+	}
+	fresh := dmPost(t, o, room.Id, "new delivery after receipt cap")
+	s.Observe(context.Background(), uuid.Nil, pushMessage(fresh))
+	deliverPush(t, s)
+	if len(rec.sent()) != 2 {
+		t.Fatal("retained receipts blocked fresh delivery")
+	}
+	var count int
+	if err := testDB.Pool.QueryRow(context.Background(), "SELECT count(*) FROM push_deliveries WHERE device_id=$1", endpoint.Id).Scan(&count); err != nil || count != 2048 {
+		t.Fatalf("receipt storage escaped its bound: %d %v", count, err)
+	}
+	// Still require current workspace access even for a retained, correctly bound tap.
+	if _, err := testDB.Pool.Exec(context.Background(), "DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2", ws.Id, bob.id); err != nil {
+		t.Fatal(err)
+	}
+	pushHTTP(t, server, bob, 404, "POST", "/api/me/push-resolve", request, nil)
+}
+
+func TestPushExpiredPendingMessageIsNotRetainedOrSent(t *testing.T) {
+	s, server, rec := pushHarness(t)
+	o, bob, _, room := setupTeam(t)
+	pushAll(t, bob, room.Id)
+	registerPush(t, server, bob, uuid.NewString(), uuid.NewString(), 200)
+	msg := dmPost(t, o, room.Id, "too late to deliver")
+	s.Observe(context.Background(), uuid.Nil, pushMessage(msg))
+	routePush(t, s)
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE push_deliveries SET expires_at=now()-interval '1 second'"); err != nil {
+		t.Fatal(err)
+	}
+	deliverPush(t, s)
+	if len(rec.sent()) != 0 {
+		t.Fatal("expired pending message reached provider")
+	}
+}
+
+func TestPushRejectedMessageDoesNotRetainNavigation(t *testing.T) {
+	s, server, rec := pushHarness(t)
+	rec.result = push.Result{}
+	o, bob, _, room := setupTeam(t)
+	pushAll(t, bob, room.Id)
+	registerPush(t, server, bob, uuid.NewString(), uuid.NewString(), 200)
+	msg := dmPost(t, o, room.Id, "provider rejected this message")
+	s.Observe(context.Background(), uuid.Nil, pushMessage(msg))
+	deliverPush(t, s)
+	var expiry time.Time
+	if err := testDB.Pool.QueryRow(context.Background(), "SELECT expires_at FROM push_deliveries WHERE id=$1", rec.sent()[0].EventID).Scan(&expiry); err != nil {
+		t.Fatal(err)
+	}
+	if expiry.After(time.Now().Add(5 * time.Minute)) {
+		t.Fatal("rejected message retained a navigation slot")
 	}
 }
