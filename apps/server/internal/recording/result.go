@@ -403,6 +403,20 @@ func (s *Service) transcript(w http.ResponseWriter, r *http.Request) error {
 
 func ms(sec float64) uint32 { return uint32(math.Round(finite(sec) * 1000)) } //nolint:gosec // finite() bounds it
 
+// mayDeleteOthers: whether acc may delete a recording someone else started — MANAGE_MESSAGES in
+// the room, or the owner / workspace-level MANAGE_RECORDINGS (not guests). ADR-0078: in a private
+// temporary room the owner and MANAGE_RECORDINGS (which the owner and admins hold through
+// ADMINISTRATOR) count for nothing, only the room's bits do.
+func mayDeleteOthers(acc perm.RoomAccess) bool {
+	if acc.Bits.Has(perm.ManageMessages) {
+		return true
+	}
+	if acc.PrivateTemp || acc.Role == perm.RoleGuest {
+		return false
+	}
+	return acc.Role == perm.RoleOwner || acc.Member.Workspace().Has(perm.ManageRecordings)
+}
+
 var errStillRecording = httpx.Conflict("the meeting is still being recorded: stop the recording first")
 
 // remove: DELETE /api/rooms/{id}/recordings/{rid} (docs/09 #50): who started it, the owner,
@@ -415,9 +429,7 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	}
 	me := uid(r)
 	starter := rec.StartedBy != nil && *rec.StartedBy == me
-	owner := acc.Role == perm.RoleOwner && !acc.PrivateTemp // ADR-0078: the owner counts as anyone in a private temporary room
-	if !starter && !owner && !acc.Bits.Has(perm.ManageMessages) &&
-		(acc.Role == perm.RoleGuest || !acc.Member.Workspace().Has(perm.ManageRecordings)) {
+	if !starter && !mayDeleteOthers(acc) {
 		return httpx.Forbidden("only who started the recording, the owner, MANAGE_MESSAGES or MANAGE_RECORDINGS")
 	}
 	if rec.Status == "pending" || rec.Status == "recording" {
