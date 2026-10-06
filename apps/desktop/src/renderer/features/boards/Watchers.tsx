@@ -71,7 +71,7 @@ const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounde
 const WatcherChip = memo(function WatcherChip({ workspaceId, taskId, userId, removable }: { workspaceId: string; taskId: string; userId: string; removable: boolean }): ReactNode {
   const name = useMemberName(workspaceId, userId);
   return (
-    <span className="group/w inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-line pl-0.5 pr-2 mobile:h-8" data-testid="watcher-chip" data-user={userId}>
+    <span className="group/w inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-full border border-line pl-0.5 pr-2 mobile:h-8 mobile:max-w-full" data-testid="watcher-chip" data-user={userId}>
       <ProfileTarget userId={userId} name={name} workspaceId={workspaceId} tabbable className="inline-flex min-w-0 items-center gap-1.5 rounded-full text-left">
         <MemberAvatar workspaceId={workspaceId} userId={userId} size={22} />
         <span className="min-w-0 truncate text-control">{name}</span>
