@@ -42,7 +42,7 @@ import { Sidebar } from './Sidebar';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { useArchiveView } from '../../stores/archiveView';
 import { TitleBar } from './TitleBar';
-import { WorkspaceRail } from './WorkspaceRail';
+import { SectionRail } from './SectionRail';
 import { AppScreen } from '../webapps/AppScreen';
 import { installWebApps } from '../../services/webApps';
 import { useOpenApp } from '../../stores/webApps';
@@ -140,7 +140,7 @@ function ShellLayout(): ReactNode {
       {/* The rail sits on the window layer (same material as the title bar); the room column and
           the chat are one «island» with a 12 px top-left corner and a hairline edge (docs/09 v0.2). */}
       <div className="mat-rail relative flex min-h-0 flex-1">
-        <WorkspaceRail />
+        <SectionRail />
         {!ready ? (
           <div className="mat-content grid flex-1 place-items-center mobile:px-6">
             <div className="flex flex-col items-center gap-3 text-body text-muted">

@@ -34,6 +34,9 @@ export const esShell: DictShape<typeof enShell> = {
   // workspace rail
   'shell.home': 'Espacios',
   'shell.explore': 'Explorar',
+  'shell.findWorkspace': 'Buscar un espacio',
+  'shell.wsSwitcher': 'Cambiar de espacio',
+  'shell.otherUnread': 'Hay mensajes sin leer en otros espacios',
   'shell.inVoice': 'Estás en voz',
   'shell.unreadMentions': { one: '{n} mención', many: '{n} menciones', other: '{n} menciones' },
 

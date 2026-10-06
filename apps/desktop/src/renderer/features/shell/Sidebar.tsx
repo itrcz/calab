@@ -58,7 +58,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, mayArrangeRooms, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayCreateBoards, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
 import { expiresMs, extendTo, formatRemaining, isExpiring, sortTempRooms } from '../../lib/tempRooms';
 import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom } from '../../services/tempRooms';
 import { useCalendar } from '../../stores/calendar';
@@ -105,7 +105,6 @@ import { MiniCalendar } from '../calendar/MiniCalendar';
 import { CREATE_TASKS, hasBit } from '../boards/model';
 import { openBoard } from '../../services/boards';
 import { useShallow } from 'zustand/react/shallow';
-import { ModeTabs } from './ModeTabs';
 import { WorkspaceMenu } from './WorkspaceMenu';
 import { BoardsList } from '../boards/BoardsList';
 import { ProfileButton } from './PhoneProfile';
@@ -145,7 +144,7 @@ interface DropRoom {
 }
 
 /**
- * Room column (docs/09 #4, P1 #19): the header with the «Голос · Календарь · Доски» tabs and «+» (#135, #140); rooms as one flat
+ * Room column (docs/09 #4, P1 #19): the header with the section name (ADR-0074) and «+» (#135); rooms as one flat
  * list in `position` order, then user categories (collapsible) — no built-in sections. Rooms and
  * categories are dragged to a new place with MANAGE_ROOM (accent line, Esc cancels); voice
  * participants between voice rooms with MOVE_MEMBERS. Then the voice panel and the self panel.
@@ -374,12 +373,53 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
     );
   }
 
+  // Desktop (ADR-0074 §3): the section is picked on the rail; the header names it, and «+» is the
+  // section's create action. Guests have no calendar or boards (the rail hides them).
+  return <SectionHeader workspaceId={workspaceId} guest={guest} rooms={create} />;
+}
+
+/**
+ * The column header on the desktop (ADR-0074 §3): the section's name and its «+» — the rooms'
+ * create menu, «Добавить встречу» on the calendar, «Новая доска» on the boards (CREATE_BOARDS).
+ * Primitive selectors only: switching the section re-renders the header, not the list.
+ */
+function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; guest: boolean; rooms: ReactNode }): ReactNode {
+  const boardsOn = useBoardsUi((s) => s.active) && !guest;
+  const calendarOn = useUi((s) => s.calDay !== null) && !guest && !boardsOn;
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const boardCreator = mayCreateBoards(useMemberRoles(workspaceId, me));
+  const title = boardsOn ? t('shell.modeBoards') : calendarOn ? t('cal.open') : t('mobile.tabChats');
+  const add = boardsOn ? (
+    boardCreator ? (
+      <HeaderPlus label={t('boards.newBoard')} testId="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
+    ) : null
+  ) : calendarOn ? (
+    <HeaderPlus label={t('shell.addMeeting')} testId="section-create-event" onClick={() => newEvent(workspaceId, nextQuarter())} />
+  ) : (
+    rooms
+  );
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
-      {/* Guests have no calendar or boards: no tabs (docs/09 #140). */}
-      {guest ? <div className="flex-1" /> : <ModeTabs workspaceId={workspaceId} calendar />}
-      {create}
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2" data-testid="section-header">
+      <h2 className="min-w-0 flex-1 truncate text-list font-semibold text-fg">{title}</h2>
+      {add}
     </div>
+  );
+}
+
+/** The header's «+» for a single action (the rooms have a menu: CreateMenu). */
+function HeaderPlus({ label, testId, onClick }: { label: string; testId: string; onClick: () => void }): ReactNode {
+  return (
+    <Tip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        data-testid={testId}
+        className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+      >
+        <Plus className="size-[18px]" aria-hidden />
+      </button>
+    </Tip>
   );
 }
 

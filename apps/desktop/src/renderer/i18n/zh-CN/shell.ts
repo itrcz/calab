@@ -34,6 +34,9 @@ export const zhShell: DictShape<typeof enShell> = {
   // workspace rail
   'shell.home': '工作区',
   'shell.explore': '发现',
+  'shell.findWorkspace': '查找工作区',
+  'shell.wsSwitcher': '切换工作区',
+  'shell.otherUnread': '其他工作区有未读消息',
   'shell.inVoice': '你正在语音中',
   'shell.unreadMentions': { other: '{n}条提及' },
 

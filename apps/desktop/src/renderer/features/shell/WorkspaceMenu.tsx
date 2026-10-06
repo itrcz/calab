@@ -20,8 +20,8 @@ import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMe
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 
 /**
- * The workspace menu (docs/09 #140): the workspace name with «⌄» — on the left of the window title
- * bar (desktop, where «‹ ›» were), at the top of the phone's drawer and in the phone's top bar. «Пригласить» and
+ * The workspace menu (docs/09 #140): the workspace name with «⌄» — its items also close the desktop title
+ * bar's workspace switcher (ADR-0074); the phone's list header and top bar. «Пригласить» and
  * «Настройки пространства» (any settings right, ADR-0048), «Участники», «Уведомления» ▸, «Скрывать без
  * уведомлений», «Покинуть» (disabled for the owner, with the reason). Creating rooms and
  * categories lives in the room column's «+». Selectors: the name and the role only (the entry
@@ -57,7 +57,7 @@ export function WorkspaceMenu({ workspaceId, variant, testId }: { workspaceId: s
 }
 
 /** The items: mounted only while the menu is open (Radix), so the role subscriptions cost nothing at rest. */
-function WorkspaceMenuItems({ workspaceId, name, owner }: { workspaceId: string; name: string; owner: boolean }): ReactNode {
+export function WorkspaceMenuItems({ workspaceId, name, owner }: { workspaceId: string; name: string; owner: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const hideMuted = useUi((s) => s.hideMuted);
   const setHideMuted = useUi((s) => s.setHideMuted);

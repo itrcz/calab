@@ -32,6 +32,9 @@ export const ruShell = {
   // workspace rail
   'shell.home': 'Пространства',
   'shell.explore': 'Обзор',
+  'shell.findWorkspace': 'Найти пространство',
+  'shell.wsSwitcher': 'Сменить пространство',
+  'shell.otherUnread': 'Есть непрочитанное в других пространствах',
   'shell.inVoice': 'Вы в голосе',
   'shell.unreadMentions': { one: '{n} упоминание', few: '{n} упоминания', many: '{n} упоминаний', other: '{n} упоминания' },
 

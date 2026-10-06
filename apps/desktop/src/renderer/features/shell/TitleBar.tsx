@@ -9,20 +9,19 @@ import { usePrefs } from '../../stores/prefs';
 import { HOME } from '../../stores/dms';
 import { selectUpdatePending, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
 import { titleSlot } from '../../lib/webApps';
 import { useOpenApp, useWebApps } from '../../stores/webApps';
 import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
 import { AppSettingsWindow } from './lazyWindows';
 import { InboxButton } from './InboxPopover';
-import { WorkspaceMenu } from './WorkspaceMenu';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 /**
  * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
  * Left: 80 px kept empty for the macOS traffic lights (hiddenInset at 12,12), then the current
- * workspace's name with «⌄» — the workspace menu (docs/09 #140; it replaced the «‹ ›» history
- * buttons, whose shortcuts stay); «Calab» when no workspace is open («Личные», before READY).
+ * workspace's name with «⌄» — the workspace switcher (ADR-0074 §2; it replaced the «‹ ›» history
+ * buttons, whose shortcuts stay); «Calab ⌄» before any workspace exists.
  * Right: search (opens the quick switcher), mentions, settings, shortcuts help; on Windows the
  * native caption buttons (Window Controls Overlay) take the space given by env(titlebar-area-*).
  * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
@@ -79,13 +78,11 @@ export function TitleBar(): ReactNode {
 }
 
 /**
- * The open workspace's menu trigger (its own leaf: the name and the role are its only
- * subscriptions), or «Calab» without a workspace.
+ * The workspace switcher (ADR-0074 §2; its own leaf), or the name of a web app that fills the
+ * screen (ADR-0050 «Уточнение»: plain text, no menu — the rail's sections lead back).
  */
 function TitleBarWorkspace(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
-  const known = useWorkspaces((s) => !!wsId && wsId !== HOME && !!s.byId[wsId]);
-  // A web app fills the screen (ADR-0050 «Уточнение»): its name, plain text, no menu.
   const openId = useOpenApp(wsId && wsId !== HOME ? wsId : null);
   const appName = useWebApps((s) => (openId ? s.byId[openId]?.name : undefined));
   const slot = titleSlot(appName);
@@ -96,14 +93,7 @@ function TitleBarWorkspace(): ReactNode {
       </div>
     );
   }
-  if (!known || !wsId) {
-    return (
-      <div className="px-2 text-body font-semibold text-fg" data-testid="titlebar-title">
-        Calab
-      </div>
-    );
-  }
-  return <WorkspaceMenu workspaceId={wsId} variant="titlebar" testId="titlebar-title" />;
+  return <WorkspaceSwitcher testId="titlebar-title" />;
 }
 
 /**
