@@ -4,7 +4,7 @@ import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { CreateButton } from '../../components/CreateButton';
 import { StatusEmoji } from '../../components/StatusEmoji';
-import { Button, CountBadge, Tip, cx } from '../../components/ui';
+import { Button, CountBadge, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, useTimeFormat } from '../../lib/format';
