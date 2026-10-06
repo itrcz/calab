@@ -57,7 +57,7 @@ import { hideTip, showTip } from './tipOverlay';
 import { parseTipPayload } from './tipOverlayPolicy';
 import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
-import { getMainWindow, isOwnPage, isShown } from './windows';
+import { applyWindowMaterial, getMainWindow, isOwnPage, isShown } from './windows';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
@@ -131,6 +131,7 @@ function parseSettings(v: unknown): Partial<AppSettings> {
   if (r['autoUpdate'] !== undefined) out.autoUpdate = Boolean(r['autoUpdate']);
   if (r['autoCheckUpdates'] !== undefined) out.autoCheckUpdates = Boolean(r['autoCheckUpdates']);
   if (r['closeToTray'] !== undefined) out.closeToTray = Boolean(r['closeToTray']);
+  if (r['windowTranslucency'] !== undefined) out.windowTranslucency = Boolean(r['windowTranslucency']);
   return out;
 }
 
@@ -228,6 +229,7 @@ export function registerIpc(): void {
     const patch = parseSettings(a);
     const next = updateSettings(patch);
     if (patch.autoUpdate !== undefined || patch.autoCheckUpdates !== undefined) updateSettingsChanged();
+    if (patch.windowTranslucency !== undefined) applyWindowMaterial();
     reloadIfServerChanged();
     return next;
   });

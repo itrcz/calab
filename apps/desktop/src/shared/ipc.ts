@@ -293,6 +293,11 @@ export interface AppSettings {
    * false — quit (asks during a call). macOS ignores it: the close button always hides (docs/09 #31).
    */
   closeToTray: boolean;
+  /**
+   * macOS «Прозрачность окна» (default on, ADR-0075): native vibrancy behind the title bar, the
+   * section rail and the room column. Off → solid materials. Ignored on Windows/Linux.
+   */
+  windowTranslucency: boolean;
   /** Main-owned: the one-time «Calab продолжает работать в трее» was shown. Not settable by the renderer. */
   trayHintShown: boolean;
 }

@@ -496,6 +496,8 @@ export const zhCN: Dict = {
   'sessions.logoutAllText': '其他设备需要重新登录，此设备将保持登录状态。',
   'app.autostart': '开机自动启动',
   'app.autostartDev': '仅在打包后的应用中生效',
+  'app.translucency': '窗口半透明',
+  'app.translucencyHint': '侧边栏和标题栏像原生 macOS 应用一样透出桌面。在系统设置中开启“降低透明度”时自动关闭',
   'app.onClose': '关闭窗口时',
   'app.onCloseHint': '最小化后 Calab 仍保持语音连接并响应按键通话',
   'app.onCloseTray': '最小化到托盘',

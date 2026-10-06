@@ -192,7 +192,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const empty = groups.length === 0 && temps.length === 0;
 
   return (
-    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
+    <aside className="mat-sidebar mat-sidebar-window island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
       {calList ? <MiniCalendar workspaceId={workspaceId} /> : null}
       {boards ? <BoardsList workspaceId={workspaceId} /> : null}

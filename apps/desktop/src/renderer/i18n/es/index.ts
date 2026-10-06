@@ -497,6 +497,8 @@ export const es: Dict = {
   'sessions.logoutAllText': 'Los otros dispositivos deberán iniciar sesión de nuevo. Este dispositivo seguirá conectado.',
   'app.autostart': 'Iniciar al arrancar el sistema',
   'app.autostartDev': 'Solo funciona en la app empaquetada',
+  'app.translucency': 'Transparencia de la ventana',
+  'app.translucencyHint': 'Las barras laterales y la barra de título dejan ver el escritorio, como en macOS. Se desactiva con «Reducir transparencia» en Ajustes del Sistema',
   'app.onClose': 'Al cerrar la ventana',
   'app.onCloseHint': 'Calab minimizado sigue en la voz y atiende el push-to-talk',
   'app.onCloseTray': 'Minimizar a la bandeja',

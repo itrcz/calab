@@ -80,4 +80,4 @@
 | [0072](0072-phone-notification-previews.md) | Phone push: sender/message previews, caller name and order-independent CallKit answer readiness; shared web UI/auth/RTC retained | принято, device retest pending |
 | [0073](0073-mobile-navigation.md) | Телефон: стек экранов + вкладки «Чаты · Личные · Календарь · Я», «назад» через history, строка комнаты как чат в Telegram (превью в READY), вход в голос внутри комнаты; шторки удалены | принято |
 | [0074](0074-desktop-section-rail.md) | Десктоп: рейл — разделы «Чаты · Личные · Календарь · Доски · приложения», пространство выбирается заголовком сверху (лист с бейджами); как вкладки телефона | принято, реализовано (десктоп, 07.10) |
-| [0075](0075-macos-native-vibrancy.md) | Исключение из запрета стекла: нативное `vibrancy` окна Electron на macOS за рейлом/колонкой/тайтлбаром, всегда включено; CSS `backdrop-filter` по-прежнему запрещён | принято |
+| [0075](0075-macos-native-vibrancy.md) | Исключение из запрета стекла: нативное `vibrancy` окна Electron на macOS за рейлом/колонкой/тайтлбаром, всегда включено; CSS `backdrop-filter` по-прежнему запрещён | принято, реализовано (07.10) |
