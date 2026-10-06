@@ -110,6 +110,9 @@ function relayout(): void {
     wrap.toggleAttribute('data-pm-base', pose.base);
     wrap.toggleAttribute('data-pm-sub', pose.header);
     if (pose.header) ensureHeader(card);
+    // A card scrolls inside (max height); its items are tabindex=-1 (roving focus), so the card itself
+    // must be keyboard-reachable to scroll (axe scrollable-region-focusable).
+    if (card.getAttribute('tabindex') !== '0') card.setAttribute('tabindex', '0');
     poseObserver?.observe(card, { attributes: true, attributeFilter: ['data-state'] });
   });
   // A card on its way out (exit animation) keeps the top pose; one no longer open drops its marks.
