@@ -29,9 +29,10 @@ const tile =
  * Workspace rail (docs/09 #2): 72 px, rail material. Left pill = state (8 px unread, 20 px
  * hover, 40 px active), red mention badge, green speaker where I am in voice; tooltips on the
  * right; «+» (create) and «Обзор» (join / discover) at the bottom of the list. On top —
- * «Личные» (ADR-0020, Discord Home): the DM list, with the unread DM messages as its badge.
+ * «Личные» (ADR-0020, Discord Home): the DM list, with the unread DM messages as its badge (`home`;
+ * the phone has it in the tab bar).
  */
-export function WorkspaceRail(): ReactNode {
+export function WorkspaceRail({ home = true }: { home?: boolean } = {}): ReactNode {
   const local = useSession((s) => localAuthority(s.authority));
   const lockedIds = useIdentity((s) =>
     Object.entries(s.access)
@@ -52,7 +53,8 @@ export function WorkspaceRail(): ReactNode {
         style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
         aria-label={t('ws.list')}
       >
-        {local ? <HomeItem /> : null}
+        {/* Phone (ADR-0073): «Личные» is a tab of the tab bar, not a rail icon. */}
+        {local && home ? <HomeItem /> : null}
         {lockedIds
           ? lockedIds.split('|').map((entry) => {
               const [id = '', reason] = entry.split(':');

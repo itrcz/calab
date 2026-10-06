@@ -51,7 +51,7 @@ const useMode = (): Mode => {
  * Not for guests (the caller). Primitive selectors only — a mode switch re-renders this strip,
  * not the room list.
  */
-export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: string }): ReactNode {
+export const ModeTabs = memo(function ModeTabs({ workspaceId, calendar = true }: { workspaceId: string; calendar?: boolean }): ReactNode {
   // memo + props without the language: subscribe, or a live language switch leaves the old labels.
   useLocale();
   const mode = useMode();
@@ -92,12 +92,14 @@ export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: s
     return () => ro.disconnect();
   }, [mode]);
   const onKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
-    const at = MODES.indexOf((e.target as HTMLElement).dataset.mode as Mode);
+    const modes = calendar ? MODES : MODES.filter((m) => m !== 'calendar');
+    const n = modes.length;
+    const at = modes.indexOf((e.target as HTMLElement).dataset.mode as Mode);
     if (at < 0) return;
-    const next = e.key === 'ArrowRight' ? (at + 1) % 3 : e.key === 'ArrowLeft' ? (at + 2) % 3 : e.key === 'Home' ? 0 : e.key === 'End' ? 2 : -1;
+    const next = e.key === 'ArrowRight' ? (at + 1) % n : e.key === 'ArrowLeft' ? (at + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
     if (next < 0) return;
     e.preventDefault();
-    const m = MODES[next] ?? 'voice';
+    const m = modes[next] ?? 'voice';
     const list = e.currentTarget;
     const focus = (): void => list.querySelector<HTMLElement>(`[data-mode="${m}"]`)?.focus();
     showMode(m);
@@ -106,7 +108,7 @@ export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: s
     window.setTimeout(() => {
       if (!list.contains(document.activeElement)) focus();
     }, 0);
-  }, []);
+  }, [calendar]);
   return (
     <div
       ref={trackRef}
@@ -118,6 +120,7 @@ export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: s
     >
       <div ref={pillRef} aria-hidden className="mode-pill" style={{ visibility: 'hidden' }} data-testid="mode-pill" />
       <ModeTab mode="voice" selected={mode === 'voice'} icon={Volume2} label={t('shell.modeVoice')} count={0} countLabel="" testId="mode-voice" />
+      {calendar ? (
       <ModeTab
         mode="calendar"
         selected={mode === 'calendar'}
@@ -129,6 +132,7 @@ export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: s
         testId="calendar-button"
         countTestId="calendar-count"
       />
+      ) : null}
       <ModeTab
         mode="boards"
         selected={mode === 'boards'}

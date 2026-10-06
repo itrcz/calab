@@ -111,55 +111,20 @@ function ShellLayout(): ReactNode {
 
   if (!onboarded && local) return <OnboardingLazy.Component />;
   if (mobile) {
-    // Phone layout (ADR-0021): one column — the chat full screen, the rail + rooms and the members
-    // list in drawers, the voice strip at the bottom.
-    // «Личные» (ADR-0020): the DM list in the drawer, the open DM full screen.
-    const ws = home ? HOME : (hasWs || locked) && wsId ? wsId : null;
+    // Phone layout (ADR-0073): tabs and a stack of screens; the shell decides what is on screen.
     return (
-      <MobileShell workspaceId={ws} roomId={home ? dmId : ws ? roomId : undefined} showReconnect={showReconnect}>
-        {!ready ? (
-          <div className="grid flex-1 place-items-center">
-            <div className="flex flex-col items-center gap-3 text-body text-muted">
-              <Spinner className="size-6" />
-              {t('gateway.connecting')}
+      <>
+        <MobileShell
+          showReconnect={showReconnect}
+          welcome={
+            <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
+              <LockedWorkspacePicker />
+              <Welcome />
             </div>
-          </div>
-        ) : locked && wsId ? (
-          <WorkspaceLock workspaceId={wsId} />
-        ) : searchOpen ? (
-          // A phone: the results full screen; opening a hit closes them.
-          <SearchResultsPanel key={searchSeq} page />
-        ) : home ? (
-          dmId ? (
-            <ChatPane key={dmId} workspaceId="" roomId={dmId} />
-          ) : (
-            <DmPick />
-          )
-        ) : ws ? (
-          boards ? (
-            <BoardsView workspaceId={ws} wide={false} mobile />
-          ) : calDay ? (
-            // Calendar on a phone (ADR-0038 §7): the day full screen, a meeting full screen over it.
-            calEvent ? (
-              <EventPanel occ={calEvent} page />
-            ) : (
-              <DayView workspaceId={ws} />
-            )
-          ) : archived ? (
-            <ArchivedChat key={archived.id} workspaceId={ws} room={archived} />
-          ) : roomId ? (
-            <ChatPane key={roomId} workspaceId={ws} roomId={roomId} />
-          ) : (
-            <NoRoom workspaceId={ws} />
-          )
-        ) : (
-          <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
-            <LockedWorkspacePicker />
-            <Welcome />
-          </div>
-        )}
+          }
+        />
         {ready ? <CreateTaskDialog /> : null}
-      </MobileShell>
+      </>
     );
   }
 
