@@ -75,14 +75,12 @@ test('pointer focus leaves no outline, Tab shows the ring', async ({ open, win }
   await clickNoOutline(win, win.locator('aside').getByRole('button', { name: /разработка/ }).first());
   await tabShowsRing(win);
 
-  // Island mic, then its ▾ menu trigger (Radix hands focus back to it on close).
-  await clickNoOutline(win, win.getByRole('button', { name: /^(Выключить|Включить) микрофон$/ }));
-  await tabShowsRing(win);
-  const micMenu = win.getByRole('button', { name: 'Выбор микрофона' });
-  await micMenu.click();
-  await expect(win.getByRole('menu')).toBeVisible();
-  await clickNoOutline(win, micMenu);
-  await expect(win.getByRole('menu')).toBeHidden();
+  // The rail's avatar → the profile menu (owner, 07.10); Radix hands focus back to it on close.
+  const avatar = win.getByTestId('rail-profile');
+  await avatar.click();
+  await expect(win.getByTestId('status-menu')).toBeVisible();
+  await clickNoOutline(win, avatar);
+  await expect(win.getByTestId('status-menu')).toBeHidden();
   await tabShowsRing(win);
 
   // Composer send.

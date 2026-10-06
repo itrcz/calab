@@ -20,6 +20,7 @@ import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { useChatDrop } from '../chat/useChatDrop';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { GROUP_LABEL, ROW_HOVER } from '../shell/ColumnHeader';
 import { applyChatDrop } from './dropActions';
 
 /**
@@ -42,11 +43,11 @@ export function NotesSection(): ReactNode {
   return (
     <section className="mb-2" aria-label={t('notes.section')} data-testid="notes-section">
       <div
-        className={cx('group/cat flex h-7 items-center rounded-[var(--radius-row)] pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-0', headerOver && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)]')}
+        className={cx('group/cat flex h-8 items-center rounded-[var(--radius-row)] pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-0', headerOver && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)]')}
         data-testid="notes-header"
         {...headerDrop}
       >
-        <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">
+        <h2 className={cx('min-w-0 flex-1 truncate pl-2', GROUP_LABEL)}>
           {headerOver && firstEntry ? <span className="normal-case tracking-normal text-accent-text">{t('notes.saveTo', { name: shelfTitle(firstEntry) })}</span> : t('notes.section')}
         </h2>
         <InlineAdd label={t('notes.new')} onClick={() => setCreating(true)} data-testid="notes-new" />
@@ -201,8 +202,8 @@ const ShelfRow = memo(function ShelfRow({ entry, canDrag }: { entry: ShelfEntry;
         data-testid="notes-shelf"
         data-over={over || undefined}
         className={cx(
-          'group/row relative flex h-[46px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]',
-          over ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]' : active ? 'bg-active' : 'hover:bg-hover',
+          'group/row relative flex h-[46px] items-center rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)] mobile:rounded-[var(--radius-row)]',
+          over ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]' : active ? 'bg-active' : ROW_HOVER,
           isDragging && 'opacity-40',
         )}
         {...drop}

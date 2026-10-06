@@ -18,15 +18,15 @@ import { InboxButton } from './InboxPopover';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 /**
- * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
- * Left: 80 px kept empty for the macOS traffic lights (hiddenInset at 12,12), then the current
- * workspace's name with «⌄» — the workspace switcher (ADR-0074 §2; it replaced the «‹ ›» history
- * buttons, whose shortcuts stay); «Calab ⌄» before any workspace exists.
- * Right: search (opens the quick switcher), mentions, settings, shortcuts help; on Windows the
- * native caption buttons (Window Controls Overlay) take the space given by env(titlebar-area-*).
- * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
- * drag region; while the room header shows its own search field the pill hides (otherwise it
- * stays: ⌘K must remain discoverable).
+ * Window title bar (docs/09 #1; owner 07.10 — a taller, airier bar): 46 px across the whole window,
+ * drag region in Electron. Left: only Electron on macOS keeps 80 px empty for the traffic lights
+ * (hiddenInset at 16,16 — centred in the bar); the web and Windows / Linux start at the normal
+ * 8 px padding. Then the current workspace's name with «⌄» — the workspace switcher (ADR-0074 §2;
+ * it replaced the «‹ ›» history buttons, whose shortcuts stay); «Calab ⌄» before any workspace
+ * exists. No room / chat title here (owner, 07.10).
+ * Right: search (opens the quick switcher), mentions, settings, shortcuts help — quiet; on Windows
+ * the native caption buttons (Window Controls Overlay) take the space given by env(titlebar-area-*).
+ * Web (docs/09 #46): a 38 px toolbar — no window chrome, so no reserved inset and no drag region.
  */
 export function TitleBar(): ReactNode {
   const os = useSession((s) => s.appInfo?.platform);
@@ -49,9 +49,9 @@ export function TitleBar(): ReactNode {
       // Windows (WCO): keep clear of the native caption buttons; 0 elsewhere (none on the web).
       style={web ? undefined : { paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' }}
     >
-      <div className={cx('flex min-w-0 items-center', web && 'pl-1')}>
-        {/* macOS traffic lights live here — nothing is drawn under them. The web has no window chrome. */}
-        {web ? null : <div className={cx('shrink-0', mac ? 'w-[80px]' : 'w-1')} aria-hidden />}
+      <div className={cx('flex min-w-0 items-center', !mac && 'pl-2')}>
+        {/* macOS traffic lights live here — nothing is drawn under them (Electron on macOS only). */}
+        {mac ? <div className="w-[80px] shrink-0" aria-hidden /> : null}
         <TitleBarWorkspace />
       </div>
 
@@ -61,7 +61,8 @@ export function TitleBar(): ReactNode {
           type="button"
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
-          className="flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
+          // Quiet (owner, 07.10): a hairline pill, the fill only on hover.
+          className="flex h-7 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>

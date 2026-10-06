@@ -1326,6 +1326,7 @@ test('self-custom-status', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await win.getByRole('button', { name: /^Мой статус/ }).click();
+  await win.getByTestId('status-custom-sub').click(); // the profile menu's «Свой статус ›» (owner, 07.10)
   await win.getByTestId('status-custom').click();
   const dialog = win.getByRole('dialog', { name: 'Свой статус' });
   await expect(dialog).toBeVisible();
@@ -1355,6 +1356,7 @@ test('self-custom-status', async ({ open, win, mock, shot }) => {
 test('self-mic-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
+  await win.getByTestId('rail-profile').click(); // the profile menu (owner, 07.10) holds mic ▾
   await win.getByRole('button', { name: 'Выбор микрофона' }).click();
   const menu = win.getByTestId('mic-menu');
   await expect(menu).toBeVisible();

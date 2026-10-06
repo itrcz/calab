@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appDropAt, appInitial, coversContent, moveApp, showBottomIsland, TIP_TEXT_MAX, tipOverApp, tipText, titleSlot, visibleViewRect, type OverlayNode } from './webApps';
-
-describe('showBottomIsland', () => {
-  it('is hidden whenever an app is open, regardless of voice state', () => {
-    expect(showBottomIsland(false)).toBe(true);
-    expect(showBottomIsland(true)).toBe(false);
-  });
-  it('is hidden on the Calendar / Boards tabs, call or not', () => {
-    expect(showBottomIsland(false, true)).toBe(false);
-    expect(showBottomIsland(true, true)).toBe(false);
-  });
-});
+import { appDropAt, appInitial, coversContent, moveApp, TIP_TEXT_MAX, tipOverApp, tipText, titleSlot, visibleViewRect, type OverlayNode } from './webApps';
 
 describe('titleSlot', () => {
   it('shows the app name while an app is open, else the workspace switcher', () => {

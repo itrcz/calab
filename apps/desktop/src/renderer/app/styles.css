@@ -71,7 +71,11 @@
   --color-fill: rgb(118 118 128 / 24%);
   --color-fill-hover: rgb(118 118 128 / 32%);
   --color-selection: rgb(255 255 255 / 10%);
+  /* sidebar rows (docs/08 «Колонка», owner 07.10): hover is a fainter plate than the selection */
+  --color-row-hover: rgb(255 255 255 / 5%);
   --color-separator: rgb(255 255 255 / 8%);
+  /* the inset panel's edge against the window layer: quieter than a separator */
+  --color-panel-edge: rgb(255 255 255 / 6%);
   --color-border-popover: rgb(255 255 255 / 8%);
   --color-label: #ececf0;
   /* ≥ 4.5:1 also on hover/selected rows and settings cards (fill over the sheet, ≈ #3e3e43),
@@ -207,9 +211,9 @@
 
   /* ---- layout ---- */
   --rail-width: 72px;
-  --titlebar-height: 38px;
+  --titlebar-height: 46px;
   /* web (docs/09 #46): no window chrome to share the bar with — a compact toolbar */
-  --titlebar-height-web: 30px;
+  --titlebar-height-web: 38px;
   --sidebar-width: 256px;
   --composer-height: 64px;
 
@@ -229,7 +233,9 @@
   --color-fill: rgb(118 118 128 / 12%);
   --color-fill-hover: rgb(118 118 128 / 20%);
   --color-selection: rgb(0 0 0 / 7%);
+  --color-row-hover: rgb(0 0 0 / 4%);
   --color-separator: rgb(0 0 0 / 9%);
+  --color-panel-edge: rgb(0 0 0 / 7%);
   --color-border-popover: rgb(0 0 0 / 6%);
   --color-label: #1d1d1f;
   --color-label-secondary: #4d4d52;
@@ -300,6 +306,8 @@
   --color-elev: var(--color-bg-elevated);
   --color-hover: var(--color-fill);
   --color-active: var(--color-selection);
+  --color-row-hover: var(--color-row-hover);
+  --color-panel-edge: var(--color-panel-edge);
   --color-input: var(--color-fill);
   --color-line: var(--color-separator);
   --color-fg: var(--color-label);
@@ -392,26 +400,6 @@ body {
 }
 .mat-toolbar {
   background: var(--color-toolbar);
-}
-/* Solid fade under the bottom island (docs/08 «Нижний островок»): the rail and the room / DM
-   column end in their own colour below and beside the island, so no scrolled row shows in the
-   8 px margins around it. `--island-height` is published by BottomIsland on the shared parent;
-   without an island the fade collapses to 0. Plain gradient, no backdrop-filter; z 1 keeps it
-   over the list and under the island (z-sticky). */
-.island-fade {
-  position: relative;
-}
-.island-fade::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 0 0;
-  height: calc(var(--island-height, -16px) + 16px);
-  background: linear-gradient(to top, var(--island-fade-color, var(--color-sidebar)) 70%, transparent);
-  pointer-events: none;
-  z-index: 1;
-}
-.island-fade-rail {
-  --island-fade-color: var(--color-rail);
 }
 /* macOS pop-up button chevron (↕, 10 px, 8 px from the right edge). In CSS, not a Tailwind
    arbitrary value: the SVG has spaces, which a class attribute would split. */
