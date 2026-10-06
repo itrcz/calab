@@ -491,7 +491,8 @@ type BlockDown = (e: ReactPointerEvent<HTMLElement>, key: string, mode: 'move' |
 /** How a block looks: my answer tints it (declined — faded, no answer yet — dashed), selected — filled. */
 function blockTone(status: AttendeeStatus, selected: boolean): string {
   if (selected) return 'bg-accent-strong text-accent-fg border-accent-strong';
-  if (status === AttendeeStatus.DECLINED) return 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg))] text-muted border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)]';
+  // Declined: already `muted` — the time line's extra opacity-80 would drop it below 4.5:1 (4.48 in light).
+  if (status === AttendeeStatus.DECLINED) return 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg))] text-muted border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] [&_.opacity-80]:opacity-100';
   if (status === AttendeeStatus.PENDING) return 'bg-[color-mix(in_srgb,var(--color-accent)_12%,var(--color-bg))] text-fg border-accent border-dashed';
   return 'bg-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-bg))] text-fg border-accent';
 }

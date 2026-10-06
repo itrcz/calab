@@ -3,6 +3,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Bar } from '../../components/Bar';
+import { PHONE_TITLE, PhoneBack } from '../../components/PhoneHeader';
 import { Avatar } from '../../components/Avatar';
 import { Button, IconButton, Input, Modal, Segmented, Spinner, Toggle, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
@@ -97,16 +98,20 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
 
   return (
     <section ref={section} className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('fb.find')} data-testid="find-time">
-      {/* Phone: the header's one control is ✕ — no nav button next to it (it would be hamburger + ✕). */}
-      <Bar className="gap-3 pl-4 pr-2">
-        <h1 className="shrink-0 text-list font-semibold">{t('fb.find')}</h1>
+      {/* Phone: a pushed screen (ADR-0073) — the one «‹» on the left (popping it turns «find» off,
+          services/phoneNav closeFlag), no ✕. */}
+      <Bar className={mobile ? undefined : 'gap-3 pl-4 pr-2'}>
+        {mobile ? <PhoneBack /> : null}
+        <h1 className={mobile ? PHONE_TITLE : 'shrink-0 text-list font-semibold'}>{t('fb.find')}</h1>
         {/* Phone: the list covers two weeks from today — no day to page through. */}
         {mobile ? null : <DayNav day={day} today={today} setDay={ctl.setDay} />}
         <span className="flex-1" />
         {!mobile && !wide ? <SlotsPopover slots={slots} onPick={pick} /> : null}
-        <IconButton label={t('fb.closeFind')} shortcut="Esc" onClick={close} data-testid="find-close">
-          <X className="size-[18px]" />
-        </IconButton>
+        {mobile ? null : (
+          <IconButton label={t('fb.closeFind')} shortcut="Esc" onClick={close} data-testid="find-close">
+            <X className="size-[18px]" />
+          </IconButton>
+        )}
       </Bar>
       <FindControls ctl={ctl} wrap={mobile} />
       <NoCommonHours ctl={ctl} slots={slots} />
