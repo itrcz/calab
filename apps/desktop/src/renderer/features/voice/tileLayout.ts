@@ -85,9 +85,16 @@ export interface Gallery {
 
 const NO_SPOKE: ReadonlyMap<string, number> = new Map();
 
-/** Everyone the view shows: minus me with «Скрыть себя», minus people without video with «Скрыть участников без видео»; the pinned one always. */
-function visiblePeople(people: readonly TilePerson[], pinned: string | null, o: { me?: string; hideSelf?: boolean; hideNoVideo?: boolean }): TilePerson[] {
-  return people.filter((p) => p.userId === pinned || !((o.hideSelf === true && p.userId === o.me) || (o.hideNoVideo === true && !p.video)));
+/**
+ * Everyone the view shows: minus me with «Скрыть себя», minus people without video with «Скрыть
+ * участников без видео»; the pinned one always. «Без видео» never empties the view while someone
+ * else is in the call (nobody has a camera left: their avatars show). Only me with «Скрыть себя»
+ * stays empty on purpose — the «Вы» badge shows me again.
+ */
+export function visiblePeople(people: readonly TilePerson[], pinned: string | null, o: { me?: string; hideSelf?: boolean; hideNoVideo?: boolean }): TilePerson[] {
+  const self = (p: TilePerson): boolean => o.hideSelf === true && p.userId === o.me;
+  const shown = people.filter((p) => p.userId === pinned || !(self(p) || (o.hideNoVideo === true && !p.video)));
+  return shown.length > 0 || o.hideNoVideo !== true ? shown : people.filter((p) => !self(p));
 }
 
 const present = (id: string | null | undefined): id is string => id !== null && id !== undefined;
@@ -352,7 +359,9 @@ export function speakerLayout(n: number, width: number, height: number, gap = 8)
   };
   const a = side();
   const b = below();
-  return a.main.w * a.main.h >= b.main.w * b.main.h ? a : b;
+  // A side that leaves no room has a negative box: its area counts as 0, not (−w)·(−h) > 0.
+  const area = (l: SpeakerLayout): number => Math.max(0, l.main.w) * Math.max(0, l.main.h);
+  return area(a) >= area(b) ? a : b;
 }
 
 /**
