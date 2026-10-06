@@ -41,7 +41,7 @@ export const RoomEventBadge = memo(function RoomEventBadge({ roomId, variant, co
           data-testid="room-event-badge"
           className={cx(
             'no-drag flex min-w-0 items-center gap-1 rounded-full text-caption font-medium text-accent-text transition-colors duration-[var(--motion-fast)] hover:bg-hover',
-            variant === 'row' ? 'ml-[26px] mr-2 h-5 max-w-[calc(100%-34px)] px-1.5' : compact ? 'size-10 shrink-0 justify-center' : 'h-7 max-w-[40%] shrink px-2',
+            variant === 'row' ? 'ml-[26px] mr-2 h-5 max-w-[calc(100%-34px)] px-1.5' : compact ? 'size-9 shrink-0 justify-center rounded-[var(--radius-bar)] bar-hit' : 'h-7 max-w-[40%] shrink px-2',
           )}
         >
           <CalendarDays className={compact ? 'size-5 shrink-0' : 'size-3.5 shrink-0'} aria-hidden />

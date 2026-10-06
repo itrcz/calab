@@ -12,6 +12,7 @@ import { useChatView } from '../chat/chatView';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { PinsButton } from '../chat/RoomHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { Bar, BAR_GROUP } from '../../components/Bar';
 import { NavButton } from '../../components/PhoneHeader';
 
 /**
@@ -29,18 +30,14 @@ export function NotesHeader({ room }: { room: Room }): ReactNode {
   const [emojiOpen, setEmojiOpen] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const mobile = useMobile();
-  const touch = mobile ? 'size-11 rounded-full' : undefined;
   const remove = async (): Promise<void> => {
     if (await confirmAction(t('notes.deleteTitle', { name }), t('notes.deleteConfirm'), t('common.delete'))) await deleteShelf(room.id);
   };
   return (
-    <header
-      className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-3 pr-2', mobile && 'gap-1 pl-0.5 pr-1')}
-      data-testid="notes-header-bar"
-    >
+    <Bar className="drag sticky top-0 z-[var(--z-sticky)] gap-2 pl-3 pr-2" data-testid="notes-header-bar">
       {mobile ? <NavButton /> : null}
       <EmojiPicker key={emojiOpen} label={t('notes.changeEmoji')} closeOnPick side="bottom" defaultOpen={emojiOpen > 0} onPick={(e) => void updateShelf(room.id, { emoji: e })}>
-        <button type="button" aria-label={t('notes.changeEmoji')} className="no-drag grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] text-[18px] leading-none hover:bg-hover">
+        <button type="button" aria-label={t('notes.changeEmoji')} className="no-drag grid size-8 shrink-0 place-items-center rounded-[var(--radius-bar)] text-[18px] leading-none hover:bg-hover mobile:size-9 mobile:bar-hit">
           {emoji || <NotebookText className="size-[18px] text-accent-text" strokeWidth={1.75} aria-hidden />}
         </button>
       </EmojiPicker>
@@ -64,15 +61,15 @@ export function NotesHeader({ room }: { room: Room }): ReactNode {
         <Lock className="size-3.5 shrink-0" aria-hidden />
         <span className="truncate">{t('notes.private')}</span>
       </span>
-      <div className={cx('no-drag flex shrink-0 items-center gap-0.5', mobile && 'ml-auto')}>
-        <IconButton label={t('notes.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
+      <div className={cx('no-drag', BAR_GROUP, mobile && 'ml-auto')}>
+        <IconButton label={t('notes.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
           <Search className="size-[18px]" />
         </IconButton>
         {mobile ? null : <PinsButton workspaceId="" roomId={room.id} canManage />}
         <Dropdown.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
           <Tip label={t('notes.more')}>
             <Dropdown.Trigger asChild>
-              <IconButton tip={false} label={t('notes.more')} active={menuOpen} className={touch} data-testid="notes-actions">
+              <IconButton tip={false} label={t('notes.more')} active={menuOpen} data-testid="notes-actions">
                 <Ellipsis className="size-[18px]" />
               </IconButton>
             </Dropdown.Trigger>
@@ -98,7 +95,7 @@ export function NotesHeader({ room }: { room: Room }): ReactNode {
           </Dropdown.Portal>
         </Dropdown.Root>
       </div>
-    </header>
+    </Bar>
   );
 }
 

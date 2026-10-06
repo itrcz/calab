@@ -3,6 +3,7 @@ import { WorkspaceRole } from '@calaba/protocol';
 import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
 import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
+import { Bar } from '../../components/Bar';
 import { PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
 import { CountBadge, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -213,11 +214,11 @@ function ProfileRoot(): ReactNode {
 /** The title of a tab root without its own header (iOS large-title look, one line). */
 export function RootTitle({ title, search = false, children }: { title: string; search?: boolean; children?: ReactNode }): ReactNode {
   return (
-    <header className="mat-toolbar flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-4 pr-2">
+    <Bar>
       <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{title}</h1>
       {search ? <PhoneSearchButton /> : null}
       {children}
-    </header>
+    </Bar>
   );
 }
 

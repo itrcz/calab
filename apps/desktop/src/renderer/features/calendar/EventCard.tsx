@@ -1,6 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
+import { Bar, BAR_GROUP } from '../../components/Bar';
 import { PhoneBack } from '../../components/PhoneHeader';
 import { Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
@@ -130,23 +131,21 @@ export function EventCard({
 
   return (
     <div {...drop.props} className={cx('relative flex min-h-0 flex-1 flex-col', drop.over && 'outline outline-2 -outline-offset-2 outline-accent')} data-testid="event-card">
-      <div className={cx('flex items-start gap-2', variant === 'popover' ? 'px-3 pt-3' : variant === 'page' ? 'mat-toolbar h-12 shrink-0 items-center gap-0.5 border-b border-line pl-0.5 pr-1' : 'px-4 pt-4')}>
-        {variant === 'page' ? (
-          <>
-            <PhoneBack />
-            <span className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('cal.card')}</span>
+      {variant === 'page' ? (
+        <Bar>
+          <PhoneBack />
+          <span className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('cal.card')}</span>
+          <div className={BAR_GROUP}>{tools}</div>
+        </Bar>
+      ) : (
+        <div className={cx('flex items-start gap-2', variant === 'popover' ? 'px-3 pt-3' : 'px-4 pt-4')}>
+          {title}
+          <span className="-mr-1 -mt-0.5 flex shrink-0 items-center">
             {tools}
-          </>
-        ) : (
-          <>
-            {title}
-            <span className="-mr-1 -mt-0.5 flex shrink-0 items-center">
-              {tools}
-              {onClose ? <CloseButton label={t('cal.closeCard')} onClick={onClose} /> : null}
-            </span>
-          </>
-        )}
-      </div>
+            {onClose ? <CloseButton label={t('cal.closeCard')} onClick={onClose} /> : null}
+          </span>
+        </div>
+      )}
       <div className={cx('min-h-0 flex-1 overflow-y-auto', variant === 'popover' ? 'px-3 pb-3' : 'px-4 pb-4', variant === 'page' && 'pt-4')}>
         {variant === 'page' ? <div className="mb-1">{title}</div> : null}
         <Line icon={<Clock className="size-4" aria-hidden />}>

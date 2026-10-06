@@ -24,6 +24,7 @@ import { myUserId } from '../../stores/session';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { Bar } from '../../components/Bar';
 import { NavButton, PhoneSearchButton } from '../../components/PhoneHeader';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
@@ -212,25 +213,24 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
     // Phone: a compact «‹ 15 янв. ›» group, «+» as a plain header icon, the rest («Сегодня», «Люди»,
     // «Подобрать время») behind «…» — the header keeps room for the shell's nav button.
     const title = dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day));
-    const touch = 'size-11 rounded-full';
     return (
-      <header className="mat-toolbar flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-0.5 pr-2">
+      <Bar>
         <NavButton />
-        <IconButton label={t('cal.prevDay')} tip={false} onClick={() => open(addDays(day, -1))} className={touch}>
+        <IconButton label={t('cal.prevDay')} tip={false} onClick={() => open(addDays(day, -1))}>
           <ChevronLeft className="size-[18px]" />
         </IconButton>
         <h1 className="min-w-[64px] truncate text-center text-list font-semibold first-letter:uppercase" aria-live="polite">
           {title}
         </h1>
-        <IconButton label={t('cal.nextDay')} tip={false} onClick={() => open(addDays(day, 1))} className={touch}>
+        <IconButton label={t('cal.nextDay')} tip={false} onClick={() => open(addDays(day, 1))}>
           <ChevronRight className="size-[18px]" />
         </IconButton>
         <span className="flex-1" />
         <Dropdown.Root modal={false}>
           <Dropdown.Trigger asChild>
-            <IconButton label={t('boards.more')} tip={false} className={cx(touch, 'relative data-[state=open]:bg-active')} data-testid="day-more">
+            <IconButton label={t('boards.more')} tip={false} className="relative data-[state=open]:bg-active" data-testid="day-more">
               <Ellipsis className="size-[18px]" />
-              {people > 0 ? <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-accent-strong" aria-hidden /> : null}
+              {people > 0 ? <span className="absolute right-1 top-1 size-2 rounded-full bg-accent-strong" aria-hidden /> : null}
             </IconButton>
           </Dropdown.Trigger>
           <Dropdown.Portal>
@@ -257,11 +257,11 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
         <PhoneSearchButton />
         {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : null}
         {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
-      </header>
+      </Bar>
     );
   }
   return (
-    <header className="mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2">
+    <Bar className="gap-1 pl-3 pr-2">
       <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => open(addDays(day, -1))}>
         <ChevronLeft className="size-[18px]" />
       </IconButton>
@@ -287,7 +287,7 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
           </Button>
         </>
       ) : null}
-    </header>
+    </Bar>
   );
 }
 

@@ -7,6 +7,13 @@
   --control-h-phone: 44px;
   --control-h-phone-compact: 36px;
   --control-px-phone: 14px;
+  /* Header bars (owner, 07.10; docs/08 «Шапки»): every control in a bar has the CreateButton's visual
+     size (36 on the phone, 32 on the desktop) and one plate shape; the 44 px hit area is the control
+     grown by --bar-hit-pad through ::before. */
+  --bar-ctl-h-phone: 36px;
+  --bar-ctl-h: 32px;
+  --bar-hit-pad: 4px;
+  --radius-bar: 10px;
 }
 @utility tap-h {
   height: var(--control-h-phone);
@@ -23,6 +30,15 @@
 }
 @utility tap-h-compact {
   height: var(--control-h-phone-compact);
+}
+/* A header-bar control: its visual box is --bar-ctl-h-phone, its 44 px target is the box + 4 px on every side. */
+@utility bar-hit {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--bar-hit-pad));
+  }
 }
 @utility tap-px {
   padding-inline: var(--control-px-phone);
@@ -1308,15 +1324,28 @@ svg.lucide {
       [role='menuitemradio'],
       [role='menuitemcheckbox'],
       [role='option']
-    ):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .sr-only) {
+    ):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit, .sr-only) {
     min-height: var(--control-h-phone);
   }
   /* a checkbox / radio row: the whole label is the target */
   :root.web :where(label:has(> input[type='checkbox'], > input[type='radio'])) {
     min-height: var(--control-h-phone);
   }
-  :root.web :where(button):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit) {
+  :root.web :where(button):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit) {
     min-width: var(--control-h-phone);
+  }
+  /* Header bars: whatever a bar holds is one visual height (--bar-ctl-h-phone) with a 44 px target
+     (the safety net behind `Bar` / IconButton `bar`; docs/08 «Шапки»). */
+  :root.web [data-bar] :is(button, a[href]):not([data-bar-skip], [data-inline-target]) {
+    position: relative;
+    height: var(--bar-ctl-h-phone);
+    min-height: var(--bar-ctl-h-phone);
+    min-width: var(--bar-ctl-h-phone);
+  }
+  :root.web [data-bar] :is(button, a[href]):not([data-bar-skip], [data-inline-target])::before {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--bar-hit-pad));
   }
   /* A small visual (switch track, checkbox glyph) keeps its look; its touch target is a 44×44 square
      centred on it (`::before`, also what e2e-visual/mobile.visual.spec.ts measures). */

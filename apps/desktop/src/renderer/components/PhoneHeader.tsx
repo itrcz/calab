@@ -4,17 +4,18 @@ import { t } from '../i18n';
 import { phoneBack } from '../services/phoneNav';
 import { useSearchPanel } from '../stores/searchPanel';
 import { useUi } from '../stores/ui';
+import { Bar, BAR_GROUP } from './Bar';
 import { IconButton } from './ui';
 
 /**
- * The one «back» of every pushed phone screen (ADR-0073 §1, owner 07.10): an iOS chevron, a 44×44
- * hit area, always at the same place of the header (`pl-0.5`). It pops exactly one screen
+ * The one «back» of every pushed phone screen (ADR-0073 §1, owner 07.10): an iOS chevron on the bar plate (36 px, 44×44
+ * hit area), always at the same place of the header. It pops exactly one screen
  * (services/phoneNav.ts phoneBack: through the history, as Android back and the edge swipe do).
  */
 export function PhoneBack(): ReactNode {
   return (
-    <IconButton tip={false} label={t('mobile.back')} onClick={phoneBack} className="size-11 shrink-0 rounded-full text-accent-text hover:text-accent-text" data-testid="phone-back">
-      <ChevronLeft className="size-7" strokeWidth={2.25} aria-hidden />
+    <IconButton tip={false} label={t('mobile.back')} onClick={phoneBack} bar className="text-accent-text hover:text-accent-text" data-testid="phone-back">
+      <ChevronLeft className="size-6" strokeWidth={2.25} aria-hidden />
     </IconButton>
   );
 }
@@ -33,7 +34,7 @@ export function PhoneSearchButton(): ReactNode {
   const root = useUi((s) => s.phone.stack.length === 0);
   if (!root) return null;
   return (
-    <IconButton tip={false} label={t('common.search')} onClick={() => useSearchPanel.getState().show('', 'all', 'messages')} className="size-11 shrink-0 rounded-full" data-testid="phone-search">
+    <IconButton tip={false} label={t('common.search')} onClick={() => useSearchPanel.getState().show('', 'all', 'messages')} bar data-testid="phone-search">
       <Search className="size-5" aria-hidden />
     </IconButton>
   );
@@ -48,13 +49,13 @@ export const PHONE_TITLE = 'min-w-0 truncate text-list font-semibold leading-5';
  */
 export function PhoneHeader({ title, subtitle, children }: { title: ReactNode; subtitle?: string; children?: ReactNode }): ReactNode {
   return (
-    <header className="mat-toolbar flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-0.5 pr-1" data-testid="phone-header">
+    <Bar data-testid="phone-header">
       <PhoneBack />
       <div className="flex min-w-0 flex-1 flex-col justify-center">
         <h1 className={PHONE_TITLE}>{title}</h1>
         {subtitle ? <span className="min-w-0 truncate text-caption leading-4 text-muted">{subtitle}</span> : null}
       </div>
-      {children ? <div className="flex shrink-0 items-center gap-0.5">{children}</div> : null}
-    </header>
+      {children ? <div className={BAR_GROUP}>{children}</div> : null}
+    </Bar>
   );
 }

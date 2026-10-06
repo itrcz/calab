@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { cx } from '../../components/ui';
+import { BarContext, cx } from '../../components/ui';
 
 /**
  * The desktop sidebar column's header (docs/08 «Колонка», owner 07.10, Codex reference): one 48 px
@@ -11,10 +11,12 @@ import { cx } from '../../components/ui';
  */
 export function ColumnHeader({ title, children }: { title: ReactNode; children?: ReactNode }): ReactNode {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-0.5 pl-2 pr-2" data-testid="section-header">
-      <div className="flex min-w-0 flex-1 items-center">{title}</div>
-      {children}
-    </div>
+    <BarContext.Provider value>
+      <div className="flex h-12 shrink-0 items-center gap-0.5 pl-2 pr-2" data-testid="section-header">
+        <div className="flex min-w-0 flex-1 items-center">{title}</div>
+        {children}
+      </div>
+    </BarContext.Provider>
   );
 }
 

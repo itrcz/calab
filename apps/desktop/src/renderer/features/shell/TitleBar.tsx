@@ -106,7 +106,7 @@ function SettingsButton(): ReactNode {
   const update = useSession(selectUpdatePending);
   return (
     <IconButton
-      size="sm"
+      bar
       label={update ? t('update.settingsDot') : t('settings.title')}
       onPointerEnter={() => void AppSettingsWindow.preload()}
       onFocus={() => void AppSettingsWindow.preload()}
@@ -133,7 +133,7 @@ function HelpButton(): ReactNode {
           <button
             type="button"
             aria-label={t('shell.help')}
-            className="grid size-7 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+            className="grid size-7 place-items-center rounded-[var(--radius-bar)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
           >
             <CircleHelp className="size-[18px]" aria-hidden />
           </button>

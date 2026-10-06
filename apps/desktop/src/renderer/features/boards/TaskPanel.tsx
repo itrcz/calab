@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ProfileTarget } from '../../components/ProfileTarget';
+import { Bar } from '../../components/Bar';
 import { PhoneBack } from '../../components/PhoneHeader';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, CloseButton, IconButton, Segmented, Spinner, Tip, cx } from '../../components/ui';
@@ -166,7 +167,7 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
   const me = myUserId();
   const subscribed = task.subscribed && !task.muted;
   return (
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2 mobile:pl-0.5" data-testid="task-panel-header">
+    <Bar plain className="gap-1 pl-2 pr-2" data-testid="task-panel-header">
       {mobile ? (
         <PhoneBack />
       ) : null}
@@ -176,18 +177,18 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
         {task.key}
       </button>
       <span className="flex-1" />
-      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className={cx('mobile:tap-size', subscribed && 'mobile:bg-transparent mobile:text-accent-text')} data-testid="panel-subscribe">
+      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className={cx(subscribed && 'mobile:bg-transparent mobile:text-accent-text')} data-testid="panel-subscribe">
         {/* phone: the state is the icon (filled accent bell), not a grey plate */}
         {subscribed ? <Bell className="size-4 mobile:size-5 mobile:fill-current" aria-hidden /> : <BellOff className="size-4 mobile:size-5" aria-hidden />}
       </IconButton>
-      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)} className="mobile:tap-size">
+      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)}>
         <Link2 className="size-4" aria-hidden />
       </IconButton>
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:tap-size" data-testid="panel-more">
+          <IconButton tip={false} label={t('boards.more')} className="data-[state=open]:bg-active" data-testid="panel-more">
             <Ellipsis className="size-4" aria-hidden />
-          </button>
+          </IconButton>
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
@@ -232,7 +233,7 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
         </IconButton>
       ) : null}
       {!mobile ? <CloseButton onClick={onClose} /> : null}
-    </header>
+    </Bar>
   );
 }
 
