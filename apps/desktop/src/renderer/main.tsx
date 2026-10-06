@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { log } from './lib/log';
 import { installSheetGuard, installVisualViewport, registerServiceWorker } from './lib/mobile';
+import { installPhoneMenus } from './lib/phoneMenus';
+import { t } from './i18n';
 import { isWeb, platform } from './platform';
 import { installPopoverScroll } from './lib/popoverScroll';
 import { installWindowVisibility } from './lib/windowVisibility';
@@ -56,6 +58,7 @@ if (isWeb) {
   document.documentElement.classList.add('web');
   installVisualViewport();
   installSheetGuard();
+  installPhoneMenus({ backLabel: () => t('mobile.back') });
   registerServiceWorker();
 }
 

@@ -16,7 +16,7 @@ import { useMemberName } from '../../stores/workspaces';
 
 /*
  * Soundboard (ADR-0036 §3, docs/08 «Саундборд»; Discord's soundboard): the «Звуки» button in the
- * voice island (and in the phone's call strip), a popover — a bottom sheet on a phone — with
+ * voice island (and in the phone's call strip), a popover — a centred card on a phone — with
  * search and the sections «Избранное», «Часто используемые», «Звуки пространства», «Стандартные»;
  * tiles of emoji + name, two a row. A click plays to everyone in the call (then every tile locks
  * for 2 s), ▶ on a tile plays it only for me, ☆ stars it. The chip «🥁 Ba dum tss · Илья» under

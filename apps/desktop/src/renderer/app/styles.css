@@ -1020,14 +1020,24 @@ svg.lucide {
 
 
 /* ---- mobile web (ADR-0021, stage A): phone layout at ≤ 768 px, web build only ---- */
-@keyframes calaba-sheet-up {
+/* Phone cards (menus, pickers, dialogs — owner 07.10): a short fade + scale in and out; a sub-level
+   comes in from a little to the right and settles over the level it opened from. */
+@keyframes calaba-card-in {
   from {
-    transform: translateY(24px);
+    transform: scale(0.96);
     opacity: 0;
   }
+}
+@keyframes calaba-card-sub-in {
+  from {
+    transform: translateX(24px) scale(0.98);
+    opacity: 0;
+  }
+}
+@keyframes calaba-card-out {
   to {
-    transform: none;
-    opacity: 1;
+    transform: scale(0.96);
+    opacity: 0;
   }
 }
 @keyframes calaba-drawer-left {
@@ -1054,9 +1064,6 @@ svg.lucide {
     opacity: 1;
   }
 }
-@utility anim-sheet {
-  animation: calaba-sheet-up var(--motion) var(--ease);
-}
 .anim-drawer-left {
   animation: calaba-drawer-left var(--motion) var(--ease);
 }
@@ -1082,6 +1089,11 @@ svg.lucide {
     --safe-right: env(safe-area-inset-right, 0px);
     /* the drawer (rail + room column) and the members drawer */
     --mobile-drawer-width: min(328px, calc(100vw - 48px));
+    /* centred menu / picker cards and dialogs (owner 07.10): width, height caps, open / close */
+    --phone-card-w: min(360px, calc(100vw - 32px));
+    --phone-card-max-h: min(calc(var(--app-height) * 0.7), calc(var(--app-height) - 2 * max(var(--safe-top), var(--safe-bottom)) - 16px));
+    --phone-dialog-max-h: calc(var(--app-height) - 2 * max(var(--safe-top), var(--safe-bottom)) - 16px);
+    --motion-card: 150ms;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
@@ -1134,45 +1146,130 @@ svg.lucide {
   :root.web .tip {
     display: none;
   }
-  /* Menus and popovers become bottom sheets: full width, anchored to the bottom edge above the
-     home indicator, a scrim behind (the 100vmax spread shadow; a tap on it dismisses through
-     Radix's outside-press). Positioning is Radix's inline style, hence !important. With the
-     on-screen keyboard up the sheet sits on top of it (--kb-inset), never under it. */
-  :root.web [data-radix-popper-content-wrapper]:has(> .mat-popover:not(.tip, .no-sheet)) {
+  /* Menus, context menus, popovers and small pickers are centred cards (owner 07.10: «отказался бы от
+     панелей снизу, а сделал их по центру»; docs/08 «Мобильный веб»). The popper wrapper spans the
+     screen above the keyboard (--kb-inset) and centres its card; the bottom card's wrapper is the
+     scrim itself — a tap on it is outside the menu (Radix dismisses it) and never reaches the app
+     under it. Positioning is Radix's inline style, hence !important. The stack of levels
+     (data-pm-*: depth 0 = the top card, data-pm-base = the bottom one) is kept by lib/phoneMenus.ts. */
+  :root.web [data-radix-popper-content-wrapper]:has(> .mat-popover:not(.tip)) {
     position: fixed !important;
-    inset: auto 0 var(--kb-inset) 0 !important;
+    inset: 0 0 var(--kb-inset) 0 !important;
     transform: none !important;
     min-width: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-scrim);
     z-index: var(--z-modal-popover) !important;
+    animation: calaba-fade var(--motion-card) var(--ease);
   }
-  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip, .no-sheet) {
-    width: 100% !important;
+  /* A sub-level (and anything opened over a card) adds no scrim of its own and lets taps through to
+     the card beneath; a closing card's scrim goes at once. */
+  :root.web [data-radix-popper-content-wrapper][data-pm-depth]:not([data-pm-base]),
+  :root.web [data-radix-popper-content-wrapper]:has(> .mat-popover[data-state='closed']) {
+    background: transparent;
+    pointer-events: none;
+    animation: none;
+  }
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip) {
+    position: relative;
+    width: var(--phone-card-w) !important;
     max-width: none !important;
     min-width: 0 !important;
-    max-height: min(85dvh, calc(var(--app-height) - var(--safe-top) - 24px)) !important;
+    max-height: var(--phone-card-max-h) !important;
     overflow-y: auto;
-    border-radius: 16px 16px 0 0 !important;
-    border-bottom: 0;
-    padding-bottom: calc(var(--safe-bottom) + 8px) !important;
+    overscroll-behavior: contain;
+    border-radius: var(--radius-panel) !important;
+    padding-inline: 6px !important;
     background: var(--color-popover-solid);
-    box-shadow:
-      0 0 0 100vmax var(--color-scrim),
-      var(--shadow-popover) !important;
-    animation: calaba-sheet-up var(--motion) var(--ease);
+    box-shadow: var(--shadow-popover) !important;
+    pointer-events: auto;
+    transform-origin: center;
+    animation: calaba-card-in var(--motion-card) var(--ease);
+    /* the level beneath zooms back / forward when a sub-level opens or closes — open/close only */
+    transition:
+      transform var(--motion-card) var(--ease),
+      filter var(--motion-card) var(--ease);
   }
-  /* Grab handle (ADR-0073 §6) and the same side padding for every row of a menu sheet. */
-  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip, .no-sheet)::before {
-    content: '';
-    display: block;
-    width: 36px;
-    height: 4px;
-    margin: 4px auto 8px;
-    border-radius: 2px;
-    background: var(--color-label-tertiary);
-    opacity: 0.5;
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover[role='menu']:not(.tip) {
+    padding-block: 6px !important;
   }
-  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip, .no-sheet) {
-    padding-inline: 8px !important;
+  :root.web [data-radix-popper-content-wrapper][data-pm-sub] > .mat-popover {
+    padding-top: 0 !important;
+    animation-name: calaba-card-sub-in;
+  }
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover[data-state='closed']:not(.tip) {
+    animation: calaba-card-out var(--motion-card) var(--ease) forwards;
+  }
+  /* The levels under the top card: zoomed back, shifted left, dimmed (a solid material, no blur);
+     a tap on one returns to it (lib/phoneMenus.ts), so its rows take no taps of their own. */
+  :root.web [data-pm-depth='1'] > .mat-popover {
+    transform: translateX(-24px) scale(0.94);
+    filter: brightness(0.62);
+  }
+  :root.web [data-pm-depth='2'] > .mat-popover {
+    transform: translateX(-48px) scale(0.88);
+    filter: brightness(0.5);
+  }
+  :root.web [data-pm-depth='3'] > .mat-popover {
+    transform: translateX(-72px) scale(0.82);
+    filter: brightness(0.4);
+  }
+  :root.web [data-pm-depth]:not([data-pm-depth='0']) > .mat-popover > * {
+    pointer-events: none;
+  }
+  /* «‹ <parent item>» at the top of a sub-level (injected by lib/phoneMenus.ts): back one level. */
+  :root.web [data-radix-popper-content-wrapper] .pm-back[role='menuitem'] {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    width: calc(100% + 12px);
+    min-height: var(--control-h-phone);
+    align-items: center;
+    gap: 2px;
+    margin: 0 -6px 4px;
+    padding: 0 12px 0 4px;
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-popover-solid);
+    color: var(--color-accent-text);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+    text-align: left;
+  }
+  :root.web [data-radix-popper-content-wrapper] .pm-back > svg {
+    flex: none;
+  }
+  :root.web [data-radix-popper-content-wrapper] .pm-back > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-fg);
+  }
+  /* Dialogs (forms, confirmations, the profile card): a centred card too, never a bottom sheet;
+     centred above the keyboard, clear of the notch and the home indicator (Modal in
+     components/ui.tsx, ProfileDialog, AchievementView). The `-translate-*-1/2` stay from desktop. */
+  :root.web .phone-dialog {
+    top: calc(50% - var(--kb-inset) / 2);
+    width: calc(100vw - 32px);
+    max-height: var(--phone-dialog-max-h);
+    animation: calaba-card-in var(--motion-card) var(--ease);
+  }
+  /* «Слабый компьютер» and reduced motion: the cards just appear and go (an exit animation of 0 ms
+     would still hold the unmount for its animationend), the level beneath swaps instantly. */
+  @media (prefers-reduced-motion: reduce) {
+    :root.web [data-radix-popper-content-wrapper] > .mat-popover[data-state='closed']:not(.tip) {
+      animation: none;
+    }
+  }
+  :root.web[data-low-end='true'] [data-radix-popper-content-wrapper],
+  :root.web[data-low-end='true'] [data-radix-popper-content-wrapper] > .mat-popover,
+  :root.web[data-low-end='true'] .phone-dialog {
+    animation: none !important;
+    transition: none !important;
   }
   /* Touch-size safety net (owner, 07.10; docs/08 «Размеры контролов на телефоне»). The primitives in
      components/ui.tsx carry the 44 px themselves (`mobile:tap-*`); this zero-specificity floor catches
@@ -1218,11 +1315,11 @@ svg.lucide {
   :root.web .tap-inert :is(button, a) {
     pointer-events: none;
   }
-  /* Touch targets: menu rows 44 px (HIG). */
+  /* Touch targets: menu rows 44 px (HIG, --control-h-phone). */
   :root.web [data-radix-popper-content-wrapper] [role='menuitem'],
   :root.web [data-radix-popper-content-wrapper] [role='menuitemradio'],
   :root.web [data-radix-popper-content-wrapper] [role='menuitemcheckbox'] {
-    min-height: 44px;
+    min-height: var(--control-h-phone);
     font-size: 15px;
     padding-inline: 12px;
   }

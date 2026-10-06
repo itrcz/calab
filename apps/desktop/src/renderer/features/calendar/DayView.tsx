@@ -345,7 +345,7 @@ function ConnectControl(): ReactNode {
   );
 }
 
-/** Phone: the filter as a bottom sheet with the chips. */
+/** Phone: the filter as a centred dialog card with the chips. */
 function PeopleSheet({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
   const people = useFreeBusy(selectPeople(workspaceId));
   const dispatch = useFreeBusy((s) => s.dispatchPeople);

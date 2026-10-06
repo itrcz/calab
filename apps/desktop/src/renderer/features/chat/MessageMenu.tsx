@@ -79,8 +79,9 @@ export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; 
       <ContextMenu.Content className={menuBox} aria-label={t('chat.menu')} collisionPadding={menuPadding()}>
         {canSend ? (
           <>
-            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5 mobile:justify-between mobile:px-2" role="group" aria-label={t('chat.react')}>
-              {QUICK_REACTIONS.map((e) => {
+            {/* Phone card (≤ 360 px): eight 44 px targets edge to edge; the narrowest phones (card < 352 px) drop the last one. */}
+            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5 mobile:-mx-1.5 mobile:justify-between mobile:gap-0 mobile:px-0" role="group" aria-label={t('chat.react')}>
+              {QUICK_REACTIONS.map((e, i) => {
                 const mine = m.reactions.some((r) => r.emoji === e && r.me);
                 // Past the per-user limit (docs/09 #27): dimmed; a pick shows the hint instead.
                 const blocked = !canToggleReaction(m.reactions, e);
@@ -97,6 +98,7 @@ export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; 
                       'grid size-8 cursor-default place-items-center rounded-full text-title outline-none transition-transform mobile:size-11 duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
                       mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]',
                       blocked && 'opacity-40',
+                      i === QUICK_REACTIONS.length - 1 && 'mobile:max-[383px]:hidden',
                     )}
                   >
                     {e}
