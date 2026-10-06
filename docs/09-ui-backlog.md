@@ -379,3 +379,9 @@ identify the sender only; add accurate recipient/group metadata when defining th
 system communication experience. Quick reply, unread icon badge and call-history callback
 remain separate shared-state features. System full-screen CallKit caller-photo rendering
 must be recorded on supported iOS versions; INPerson donation alone is not proof.
+
+### Desktop section rail follow-ups (ADR-0074, 07.10)
+
+- «Доски»: the column header «+» (new board) duplicates the «+» beside «ДОСКИ» inside the shared BoardsList (phone uses it too) — drop one.
+- The workspace switcher has no drag-reorder (the old rail had none either); the order is the server order.
+- Pre-existing, not ADR-0074: the visual mock opens «Маркетинг» first (boards-list, boards-kanban, boards-flow expect CAL); calendar-day «editing a selected meeting» drags a room from the list, which the calendar section hides since 02.10.
