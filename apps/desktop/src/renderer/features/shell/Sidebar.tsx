@@ -1337,11 +1337,7 @@ function VoiceRoomRow({
   const join = (): void => {
     const next = joinOutcome({ inRoom, canConnect, owner, people: people.length, limit });
     if (next === 'full') toast.info(t('shell.roomFull'));
-    else if (next === 'join') {
-      void voice.join(room.id, workspaceId);
-      // Nothing open in this workspace yet: show the room's chat next to the call.
-      if (!useUi.getState().lastRoom[workspaceId]) openRoom(workspaceId, room.id);
-    }
+    else if (next === 'join') void voice.join(room.id, workspaceId); // voice.join opens the room's chat
   };
   const joinUi = joinButton({ inRoom, canConnect, owner, people: people.length, limit, touch: mobile });
 
