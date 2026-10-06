@@ -123,18 +123,18 @@ function CreateCard({ workspaceId, full, onIssued }: { workspaceId: string; full
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder={t('bots.namePlaceholder')} aria-label={t('bots.name')} className="w-60" data-testid="bot-name" />
         </Row>
         <Row label={t('bots.username')} hint={t('bots.usernameHint')}>
-          <span className="relative flex w-60 items-center">
-            <span className="pointer-events-none absolute left-2.5 text-body text-faint" aria-hidden>
-              @
-            </span>
+          {/* «@» through the field's `icon` slot (as the profile nick): its padding follows the phone's
+              wider field, a hand-placed «@» overlapped the text there. */}
+          <span className="flex w-60 items-center mobile:w-full">
             <Input
+              icon={<span className="text-body leading-none">@</span>}
               value={username}
               onChange={(e) => setUsername(normalizeUsername(e.target.value))}
               maxLength={32}
               placeholder="weather_bot"
               aria-label={t('bots.username')}
               aria-invalid={username !== '' && !validBotUsername(uname)}
-              className="w-full pl-6 font-mono"
+              className="w-full font-mono"
               spellCheck={false}
               autoCapitalize="off"
               data-testid="bot-username"

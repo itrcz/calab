@@ -216,13 +216,15 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
               <span className={cx('min-w-0 truncate text-list leading-5', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
                 {name}
               </span>
+              {/* grow + shrink-0: the badge / status keeps its width and the name truncates; with min-w-0
+                  flex-1 it collapsed to 0 and the emoji was drawn over the time. */}
               {bot ? (
-                <span className="flex min-w-0 flex-1 self-center">
+                <span className="flex shrink-0 grow self-center">
                   <BotBadge />
                 </span>
               ) : (
                 // The peer's custom status, compact (text in the tooltip); the rest of the line stays free.
-                <span className="flex min-w-0 flex-1 self-center">
+                <span className="flex shrink-0 grow self-center">
                   <StatusEmoji userId={peerId} />
                 </span>
               )}
