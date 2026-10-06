@@ -19,9 +19,13 @@ import (
 // is visible to the sender in the room; other nicks stay text.
 
 var (
-	// The "@" starts at a non-word boundary ("mail@x" is no mention); the name is checked
-	// against the nickname rules (users.ValidateUsername) by the lookup itself.
-	nickRE = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_.@-])@([A-Za-z][A-Za-z0-9_]{2,31})`)
+	// The "@" starts at a non-word boundary ("mail@x" is no mention, nor is a path such as
+	// "medium.com/@x"); the name is checked against the nickname rules
+	// (users.ValidateUsername) by the lookup itself.
+	nickRE = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_.@/-])@([A-Za-z][A-Za-z0-9_]{2,31})`)
+	// Links are masked before the scan: "https://youtube.com/@x" must stay a working link and
+	// must not mention, notify or (in a task room) invite a member whose nickname is x.
+	urlRE = regexp.MustCompile(`(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)[^\s<>]+`)
 	// A @<uuid> mention whose first group looks like a name ("@abcdef12-…") is not a nick.
 	uuidHeadRE = regexp.MustCompile(`^(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 )
@@ -32,11 +36,11 @@ type nickSpan struct {
 	name    string // lower case
 }
 
-// literalNicks finds the @nick tokens outside code blocks and spans (at most maxMentions
+// literalNicks finds the @nick tokens outside code blocks, spans and links (at most maxMentions
 // distinct names).
 func literalNicks(content string) []nickSpan {
 	blank := func(m string) string { return strings.Repeat(" ", len(m)) }
-	masked := codeSpanRE.ReplaceAllStringFunc(codeBlockRE.ReplaceAllStringFunc(content, blank), blank)
+	masked := urlRE.ReplaceAllStringFunc(codeSpanRE.ReplaceAllStringFunc(codeBlockRE.ReplaceAllStringFunc(content, blank), blank), blank)
 	var out []nickSpan
 	seen := map[string]bool{}
 	for _, m := range nickRE.FindAllStringSubmatchIndex(masked, -1) {
