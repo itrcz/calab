@@ -96,6 +96,10 @@ enum ErrorCode {
   ERROR_CODE_IDENTITY_NOT_LINKED = 65;
   ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE = 66;
   ERROR_CODE_RECENT_AUTH_REQUIRED = 67;
+  // 409: PATCH /api/me {username} — the nickname belongs to someone else (ADR-0077).
+  ERROR_CODE_USERNAME_TAKEN = 68;
+  // 422: PATCH /api/me {username} — bad format or a reserved nickname (ADR-0077).
+  ERROR_CODE_USERNAME_INVALID = 69;
 }
 
 // Error body of every non-2xx REST response.

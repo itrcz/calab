@@ -292,7 +292,10 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		if err := s.checkPlan(r.Context(), q, wsID); err != nil {
 			return err
 		}
-		u, err := q.CreateBotUser(r.Context(), sqlc.CreateBotUserParams{DisplayName: name, Settings: settings})
+		u, err := q.CreateBotUser(r.Context(), sqlc.CreateBotUserParams{DisplayName: name, Settings: settings, Username: username})
+		if db.UniqueViolation(err) != "" { // a person's nickname (ADR-0077: one namespace)
+			return httpx.Conflict("username is taken")
+		}
 		if err != nil {
 			return err
 		}
@@ -551,6 +554,9 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if err := q.DeleteBot(r.Context(), b.UserID); err != nil {
+			return err
+		}
+		if err := q.ClearUsername(r.Context(), b.UserID); err != nil { // frees it (ADR-0077)
 			return err
 		}
 		return q.DisableUser(r.Context(), b.UserID)

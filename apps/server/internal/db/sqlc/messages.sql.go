@@ -735,7 +735,7 @@ func (q *Queries) ListPins(ctx context.Context, roomID uuid.UUID) ([]Message, er
 }
 
 const listReactionUsers = `-- name: ListReactionUsers :many
-SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone
 FROM message_reactions mr JOIN users u ON u.id = mr.user_id
 WHERE mr.message_id = $1 AND mr.emoji = $2
   AND mr.user_id > coalesce($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
@@ -803,6 +803,8 @@ func (q *Queries) ListReactionUsers(ctx context.Context, arg ListReactionUsersPa
 			&i.User.WorkEndMin,
 			&i.User.WorkDays,
 			&i.User.HideMessageTextInNotifications,
+			&i.User.Username,
+			&i.User.Phone,
 		); err != nil {
 			return nil, err
 		}

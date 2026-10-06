@@ -118,6 +118,10 @@ const (
 	ErrorCode_ERROR_CODE_IDENTITY_NOT_LINKED             ErrorCode = 65
 	ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE ErrorCode = 66
 	ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED            ErrorCode = 67
+	// 409: PATCH /api/me {username} — the nickname belongs to someone else (ADR-0077).
+	ErrorCode_ERROR_CODE_USERNAME_TAKEN ErrorCode = 68
+	// 422: PATCH /api/me {username} — bad format or a reserved nickname (ADR-0077).
+	ErrorCode_ERROR_CODE_USERNAME_INVALID ErrorCode = 69
 )
 
 // Enum value maps for ErrorCode.
@@ -177,6 +181,8 @@ var (
 		65: "ERROR_CODE_IDENTITY_NOT_LINKED",
 		66: "ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE",
 		67: "ERROR_CODE_RECENT_AUTH_REQUIRED",
+		68: "ERROR_CODE_USERNAME_TAKEN",
+		69: "ERROR_CODE_USERNAME_INVALID",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":                     0,
@@ -233,6 +239,8 @@ var (
 		"ERROR_CODE_IDENTITY_NOT_LINKED":             65,
 		"ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE": 66,
 		"ERROR_CODE_RECENT_AUTH_REQUIRED":            67,
+		"ERROR_CODE_USERNAME_TAKEN":                  68,
+		"ERROR_CODE_USERNAME_INVALID":                69,
 	}
 )
 
@@ -647,7 +655,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xb5\r\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xf5\r\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -703,7 +711,9 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\"ERROR_CODE_IDENTITY_CONFIG_CHANGED\x10@\x12\"\n" +
 	"\x1eERROR_CODE_IDENTITY_NOT_LINKED\x10A\x12.\n" +
 	"*ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE\x10B\x12#\n" +
-	"\x1fERROR_CODE_RECENT_AUTH_REQUIRED\x10CB\x99\x01\n" +
+	"\x1fERROR_CODE_RECENT_AUTH_REQUIRED\x10C\x12\x1d\n" +
+	"\x19ERROR_CODE_USERNAME_TAKEN\x10D\x12\x1f\n" +
+	"\x1bERROR_CODE_USERNAME_INVALID\x10EB\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

@@ -1185,6 +1185,8 @@ type User struct {
 	WorkEndMin                     int16
 	WorkDays                       []int16
 	HideMessageTextInNotifications bool
+	Username                       *string
+	Phone                          *string
 }
 
 type UserNote struct {
