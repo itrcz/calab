@@ -261,7 +261,7 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 		full bool
 		c    voice.Change
 	)
-	adm := admissionFor(room, acc.Role == perm.RoleOwner)
+	adm := admissionFor(room, limitExempt(acc))
 	err = s.voice.WithLock(ctx, wid, func() error {
 		if adm.active() {
 			if err := s.admit(ctx, wid, rid, uid, adm); err != nil {

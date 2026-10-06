@@ -95,7 +95,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if !movedDst.Bits.Has(perm.ViewRoom | perm.Connect) {
 		return httpx.Forbidden("the member cannot connect to the target room")
 	}
-	if adm := admissionFor(dst, actorDst.Role == perm.RoleOwner); adm.active() {
+	if adm := admissionFor(dst, limitExempt(actorDst)); adm.active() {
 		if err := s.admit(r.Context(), dst.WorkspaceID, dstID, target, adm); err != nil {
 			return err
 		}

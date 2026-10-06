@@ -158,6 +158,12 @@ func (a admission) active() bool { return a.room > 0 || a.plan > 0 }
 // admissionFor builds the check for a user joining room; exempt skips the room's user_limit.
 // Only the workspace owner is exempt (owner, 07.10: admins and MOVE_MEMBERS holders are
 // not), and never from the plan limit.
+// limitExempt: whether acc skips the room's user_limit — the workspace owner, except in a
+// private temporary room, where the owner counts as anyone (ADR-0078).
+func limitExempt(acc perm.RoomAccess) bool {
+	return acc.Role == perm.RoleOwner && !acc.PrivateTemp
+}
+
 func admissionFor(room wsRoom, exempt bool) admission {
 	a := admission{plan: int(room.Plan.RoomMembers)}
 	if room.UserLimit > 0 && !exempt {
@@ -225,7 +231,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	id := auth.MustFromContext(r.Context())
 	identity := voice.Identity(id.UserID, id.SessionID)
 	name := voice.RoomName(room.WorkspaceID, room.ID)
-	adm := admissionFor(room, acc.Role == perm.RoleOwner)
+	adm := admissionFor(room, limitExempt(acc))
 	if adm.active() { // early answer without LiveKit; repeated atomically with the write below
 		if err := s.admit(r.Context(), room.WorkspaceID, room.ID, id.UserID, adm); err != nil {
 			return err
