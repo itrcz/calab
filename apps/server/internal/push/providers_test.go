@@ -427,6 +427,10 @@ func TestAPNSMessagePreviewAndCallerPresentation(t *testing.T) {
 			p := providerPayload()
 			p.Kind = kind
 			p.Title = "Илья"
+			if kind == "message" {
+				p.PersonID = strings.Repeat("a", 64)
+				p.ConversationID = strings.Repeat("b", 64)
+			}
 			recipient := sqlc.User{ID: uuid.New(), DisplayName: "Данис"}
 			p.Body = messagePreview("Привет, @"+recipient.ID.String(), recipient)
 			p.CallerName = ""
@@ -453,6 +457,9 @@ func TestAPNSMessagePreviewAndCallerPresentation(t *testing.T) {
 					}
 				}
 				if kind == "message" {
+					if aps["mutable-content"] != float64(1) || aps["thread-id"] != p.ConversationID {
+						t.Fatal("missing communication extension/grouping")
+					}
 					a := aps["alert"].(map[string]any)
 					if a["title"] != "Илья" || a["body"] != "Привет, @Данис" || a["loc-key"] != nil {
 						t.Fatal("generic text replaced preview")

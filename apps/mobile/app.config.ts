@@ -57,6 +57,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     './plugins/withSessionActivity',
+    './plugins/withCommunicationNotifications',
     // iOS 27 SDK apps without the UIKit scene lifecycle trap at launch. Expo's supported SDK 57
     // opt-in: a scene manifest plus ExpoAppSceneDelegate, which owns the window and starts React.
     ['expo-build-properties', { ios: { enableSceneSupport: true } }],

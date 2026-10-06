@@ -2,6 +2,8 @@ package push
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"regexp"
 	"strings"
 	"unicode"
@@ -23,6 +25,16 @@ func (s *Service) presentation(ctx context.Context, q *sqlc.Queries, recipient s
 		if err != nil {
 			return err
 		}
+		room, err := q.GetRoom(ctx, message.RoomID)
+		if err != nil {
+			return err
+		}
+		if room.Type != "dm" || room.DmKey == nil {
+			payload.Subtitle = previewLine(room.Name, 80)
+		}
+		payload.PersonID = presentationID(payload.Binding, author.ID.String())
+		payload.ConversationID = presentationID(payload.Binding, message.RoomID.String())
+		payload.AvatarJPEG = s.avatar(ctx, q, author)
 		payload.Title = previewLine(author.DisplayName, 80)
 		if payload.Title == "" {
 			payload.Title = "Calab"
@@ -45,6 +57,8 @@ func (s *Service) presentation(ctx context.Context, q *sqlc.Queries, recipient s
 			if err != nil {
 				return err
 			}
+			payload.PersonID = presentationID(payload.Binding, caller.ID.String())
+			payload.AvatarJPEG = s.avatar(ctx, q, caller)
 			payload.CallerName = previewLine(caller.DisplayName, 80)
 		}
 	}
@@ -115,4 +129,10 @@ func attachmentPreview(message sqlc.Message, attachments []sqlc.ListAttachmentsR
 		return label("File", "Файл")
 	}
 	return label("New message", "Новое сообщение")
+}
+
+// Scope OS contact/conversation suggestions to this registered account binding.
+func presentationID(binding, id string) string {
+	sum := sha256.Sum256([]byte(binding + ":" + id))
+	return hex.EncodeToString(sum[:])
 }

@@ -75,6 +75,7 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
           self.pendingTap = nil
           // UserNotifications scopes this to Calab. Reload only invalidates the document.
           self.center.removeAllDeliveredNotifications()
+          CalabCommunication.clear()
         }
       }
     })

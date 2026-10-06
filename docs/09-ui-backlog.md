@@ -370,3 +370,12 @@
 - (05.10, мобильное видео) e2e мобильного видео нет (полоса: камера, переключение камеры, показ экрана скрыт, «Во весь экран» на iPhone) — нужны фейк-камера в WebKit/Chromium-мобайл и тесты на реальном устройстве.
 - (05.10, ревью доступа) «×» у человека в доступе комнаты/доски снимает его override сразу, без подтверждения и без «отменить»; на закрытой доске можно одним кликом снять свой личный allow (как и раньше переключателями) — подумать о подтверждении для себя.
 - (06.10, ревью drag-out картинок) Linux: `webContents.startDrag` возвращается сразу, флаг `lib/dragOut.ts` гаснет через 1 с — сброс своей картинки обратно в чат позже 1 с загрузит её заново. Веб: если кэш медиа вытеснит blob во время drag, `DownloadURL` не сработает. Другие зоны сброса (стикеры, заметки, календарь) `dragOutActive()` не проверяют. Minor.
+
+
+### Phone communication presentation follow-up (ADR-0072)
+
+R11 supplies a sender avatar and room subtitle. Group communication intents currently
+identify the sender only; add accurate recipient/group metadata when defining the full
+system communication experience. Quick reply, unread icon badge and call-history callback
+remain separate shared-state features. System full-screen CallKit caller-photo rendering
+must be recorded on supported iOS versions; INPerson donation alone is not proof.

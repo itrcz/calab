@@ -2179,3 +2179,12 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Device after web/API + host update: sender/text after Face ID; caller name; one system answer;
   desktop in workspace room yields; bidirectional audio stays alive >30 s with phone locked.
 - Repeat warm/background and terminated launches separately; no generic claim of cold-call success.
+
+
+R11 communication presentation: `go test -race ./internal/push` covers bounded avatars,
+cache/fallback and APNs payload limits; `TestPushMessageFreshPermissionsPreviewAndDedupe`
+adds an uploaded private avatar to authorized delivery. Mobile plugin tests validate the
+new notification extension across prebuild/CocoaPods serialization. Compile/run
+`CalabCommunicationPayload.swift` with `tests/CommunicationPayloadTests.swift` for malformed,
+oversized and old payloads; compile the extension against the iOS SDK. Actual system avatar
+rendering, grouping and lock-screen preview policy require the device checklists.

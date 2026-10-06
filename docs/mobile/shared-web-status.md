@@ -1,5 +1,26 @@
 # Телефон: общий веб в оболочке — статус
 
+## R11: аватарки и соседние сценарии уведомлений (2026-10-06)
+
+- Реализовано: avatar JPEG только текущего отправителя после проверки доступа; ограничение
+  размера и fallback на текст. Communication Notifications extension без сети/credentials;
+  группировка сообщений по чату, account-scoped person IDs. CallKit получает непустой handle
+  и incoming intent с картинкой, без ожидания загрузки или изменения звонка. Logout удаляет
+  donated interactions этого приложения.
+- Локально проверено: push unit/race и PG17 push integration, mobile unit/plugin tests,
+  typecheck, Swift payload tests. iOS Release собрана; NSE executable, entry point и
+  intent activity types присутствуют, native inputs без drift. Два независимых ревью
+  без blocker/major. Эта сборка ещё не подписана новым профилем и не установлена.
+- Проверка на телефоне: пока не выполнена. CallKit не предоставляет поле аватарки звонящего;
+  передача INPerson image не гарантирует фото на каждом системном экране iOS.
+- Осталось перед установкой: новая native сборка с Communication Notifications и отдельным
+  extension/profile, затем реальные previews/grouping, звонок и locked/cold audio.
+- Ограниченная ревизия: routing/expiry, отключённые уведомления/Focus, foreground без второго
+  звука, logout, accept/end/mute и старые payloads покрыты существующими и целевыми checks.
+  Badge unread counter, быстрый ответ из push и callback из системной истории ещё не реализованы;
+  отдельный API/состояние не добавлялись ради видимости готовности. Native Android incoming/push
+  и SSO остаются прежними отдельными gates полного продукта.
+
 ## R10: стандартные сценарии после ревизии (2026-10-06)
 
 - **Реализовано:** системный mute/unmute через общий voice service и обратная синхронизация

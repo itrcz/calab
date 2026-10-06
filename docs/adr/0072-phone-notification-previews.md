@@ -79,3 +79,39 @@ late message tap plus revoked/deleted/expired references, short provider TTL and
 native logout/reload isolation and registration retry policy; required lint/typecheck/generation
 and targeted race integration; native compile. Real locked/cold answer/audio remains a device
 gate after the matching web/API release and phone installation.
+
+## Communication presentation, 2026-10-06
+
+Owner requested avatars and a bounded audit of adjacent notification/call behavior in PR123.
+
+- Keep the existing access checks, renderer, routes and credentials. Presentation gains
+  binding-scoped opaque person/conversation identifiers and an optional inline JPEG avatar.
+  The server reads only the current author's avatar after dispatch authorization, from the
+  existing private blob store. No public avatar URL, new endpoint, shared login/keychain,
+  or notification-extension network access. Thumbnails are at most 64 px / 1536 bytes;
+  bounded cache and best-effort work must not hold up delivery. Invalid/missing avatars
+  fall back to the sender's name. Provider serialization stays below APNs size limits.
+- APNs message alerts opt into the standard notification service extension and group by
+  conversation (`thread-id`) and include the authorized room/group name as a bounded subtitle. The extension donates INSendMessageIntent and updates the
+  notification with its sender image. It preserves routing, sound, expiry and category,
+  completes exactly once, and returns the original alert on unsupported/malformed data.
+  Native communication presentation is additive; old builds still display text alerts.
+- Calls report to CallKit immediately, with a nonempty generic handle matching the donated
+  INPerson identifier. INStartCallIntent carries the caller image without delaying ringing
+  or changing audio/answer ownership. CXCallUpdate has no per-caller image property: donation
+  does not guarantee a profile photo on every system call screen. Do not write Contacts,
+  add a duplicate alert, or replace CallKit to imitate one. Actual rendering is a device gate.
+- Explicit logout also deletes this app's donated interactions. No outgoing-message/call
+  donations, Siri calling handler, quick reply, badge counter or Focus bypass is introduced.
+  These require separate shared-state/lifecycle contracts; an incomplete counter or action
+  would be misleading. The adjacent repair is stable conversation grouping and CallKit handle.
+- Native configuration adds Communication Notifications and a notification service target
+  to push-enabled builds. A matching development profile and new signed phone build are
+  required; existing APNs credentials and server schema/config stay unchanged.
+
+Acceptance: avatar bounds/cache/malformed input and missing blob; payload byte limit and
+stable account-scoped grouping; authorization remains ahead of presentation; extension
+idempotent project generation; native compile; text-only fallback and logout cleanup.
+Check actual avatars/grouping and CallKit presentation on the device after rollout.
+References: [Apple communication notifications](https://developer.apple.com/documentation/usernotifications/implementing-communication-notifications),
+[CXCallUpdate](https://developer.apple.com/documentation/callkit/cxcallupdate).

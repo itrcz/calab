@@ -12,3 +12,20 @@
 10. Tap через 10 минут открывает правильный чат; отправка старого сообщения ограничена 5 минутами. Route хранится до 7 дней после dispatch deadline, максимум 2048 обычных receipts; expired/deleted/foreign/no-access tap не маршрутизируется.
 11. Logout/account switch очищает endpoint/tap и уже доставленные уведомления Calab; reload их сохраняет. Задержанные callbacks прежней сессии не открывают экран.
 12. Временная ошибка регистрации APNs: возврат в app через 15 секунд повторяет попытку без нового permission prompt; частые status probes не запускают retry. Token rotation идемпотентна.
+
+
+## Communication presentation (R11)
+
+After installing a build containing CalabNotificationService and the Communication
+Notifications entitlement, send a DM from a user with an avatar while the phone is locked.
+After Face ID, verify the sender picture/name and preview; repeat with no avatar and after
+changing the avatar. No-avatar/failing-thumbnail messages must still arrive with text.
+Send several messages in one chat and another chat: Notification Center groups the two
+conversations separately. Opening any entry must retain its original authenticated route.
+Repeat with Show Previews = Never and with Focus enabled: respect the OS settings.
+Logout removes app notifications and donated communication interactions; reload does not.
+Do not claim that logout recalls an already in-flight APNs alert or donation.
+
+The extension uses a bounded inline JPEG with no network, URLs or shared credentials.
+Old app versions ignore communication fields and display the original text alert.
+A new native target/profile is required; APNs server credentials do not change.

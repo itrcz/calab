@@ -4,6 +4,7 @@ package app_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/app"
@@ -92,6 +93,9 @@ func TestPushMessageFreshPermissionsPreviewAndDedupe(t *testing.T) {
 	o, bob, ws, room := setupTeam(t)
 	pushAll(t, bob, room.Id)
 	endpoint := registerPush(t, server, bob, uuid.NewString(), "delivery-token", 200)
+	if status, _, _ := upload(t, o, "/api/me/avatar", "avatar.png", pngBytes(64, 64)); status != 200 {
+		t.Fatalf("avatar upload: %d", status)
+	}
 	msg := dmPost(t, o, room.Id, "message before edit")
 	s.Observe(context.Background(), uuid.Nil, pushMessage(msg))
 	routePush(t, s)
@@ -109,8 +113,12 @@ func TestPushMessageFreshPermissionsPreviewAndDedupe(t *testing.T) {
 	if len(sent) != 1 || sent[0].Binding != endpoint.Id || sent[0].ReferenceID != msg.Id {
 		t.Fatal("delivery binding mismatch")
 	}
-	if sent[0].Title != "Илья" || sent[0].Body != "Привет после правки" {
+	if sent[0].Title != "Илья" || sent[0].Body != "Привет после правки" || sent[0].Subtitle != room.Name {
 		t.Fatal("preview did not use current authorized sender/message")
+	}
+	avatar, avatarErr := base64.StdEncoding.DecodeString(sent[0].AvatarJPEG)
+	if avatarErr != nil || len(avatar) == 0 || len(avatar) > 1536 || len(sent[0].PersonID) != 64 || len(sent[0].ConversationID) != 64 {
+		t.Fatal("authorized avatar and scoped communication identity missing")
 	}
 	body, _ := json.Marshal(sent[0])
 	for _, private := range []string{"message before edit", "delivery-token", o.id, bob.id, "http", "authorization"} {

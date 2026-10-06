@@ -36,7 +36,11 @@ type Payload struct {
 	Silent            bool   `json:"silent,omitempty"`
 	Title             string `json:"-"`
 	Body              string `json:"-"`
+	Subtitle          string `json:"-"`
 	CallerName        string `json:"callerName,omitempty"`
+	PersonID          string `json:"personId,omitempty"`
+	ConversationID    string `json:"conversationId,omitempty"`
+	AvatarJPEG        string `json:"avatarJpeg,omitempty"`
 }
 
 // Endpoint is the server-authorized transport destination for one registry version.
@@ -71,8 +75,9 @@ type CallStore interface {
 
 // Service owns session-bound endpoints and durable authorized routing/delivery.
 type Service struct {
-	Auth  *auth.Service
-	Calls CallStore
+	Auth    *auth.Service
+	Calls   CallStore
+	Avatars *Avatars
 	// DeviceLimit bounds endpoint registration/removal per user (each takes the global
 	// registry lock); ResolveLimit bounds notification-tap resolution. nil = none (tests).
 	DeviceLimit, ResolveLimit *redisx.RateLimiter

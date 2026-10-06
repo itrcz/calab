@@ -140,3 +140,14 @@ their old expiry. New deliveries keep the five-minute transport limit and retain
 tap routes for up to seven additional days (at most 2048 ordinary receipts per endpoint).
 The retention change uses existing columns; no migration or provider configuration change.
 Follow the updated device checklists; cold locked answer remains an unverified acceptance gate.
+
+
+### R11 avatar follow-up
+
+The same PR adds inline sender avatars and per-conversation grouping. No additional server
+environment variable, migration or APNs key is required. Old phone builds show text normally.
+The new phone build adds the `CalabNotificationService` extension (`<bundle>.notifications`)
+and `com.apple.developer.usernotifications.communication` to the app/extension. Regenerate
+matching development profiles before signing; deploy web/API first, then install that build.
+This native signing requirement is additional to the R09/R10-only update described above.
+CallKit caller-photo rendering remains an explicit device check, not a server release claim.

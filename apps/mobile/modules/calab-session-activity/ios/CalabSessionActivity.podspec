@@ -13,5 +13,5 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
   s.source_files = '*.swift'
   s.resources = '*.lproj/*.strings'
-  s.frameworks = 'ActivityKit', 'UserNotifications', 'PushKit', 'CallKit', 'AVFAudio'
+  s.frameworks = 'ActivityKit', 'UserNotifications', 'PushKit', 'CallKit', 'AVFAudio', 'Intents', 'ImageIO'
 end

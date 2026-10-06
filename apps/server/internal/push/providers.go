@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -112,17 +113,18 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	} else {
 		aps["alert"] = map[string]string{"title-loc-key": "CALAB_APP_NAME", "loc-key": "CALAB_NEW_NOTIFICATION"}
 		if p.Kind == "message" && p.Title != "" && p.Body != "" {
-			aps["alert"] = map[string]string{"title": previewLine(p.Title, 80), "body": previewLine(p.Body, 240)}
+			aps["alert"] = map[string]string{"title": previewLine(p.Title, 80), "body": previewLine(p.Body, 240), "subtitle": previewLine(p.Subtitle, 80)}
 		}
 		aps["category"] = "CALAB_OPEN"
+		if p.Kind == "message" && p.PersonID != "" && p.ConversationID != "" {
+			aps["mutable-content"] = 1
+			aps["thread-id"] = p.ConversationID
+		}
 		if !p.Silent {
 			aps["sound"] = "default"
 		}
 	}
-	body, err := json.Marshal(struct {
-		Payload
-		APS map[string]any `json:"aps"`
-	}{p, aps})
+	body, err := apnsBody(p, aps)
 	if err != nil {
 		return Result{}
 	}
@@ -344,4 +346,23 @@ func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 		}
 	}
 	return Result{}
+}
+
+// Optional pictures must never turn an otherwise valid alert into PayloadTooLarge.
+func apnsBody(p Payload, aps map[string]any) ([]byte, error) {
+	encode := func() ([]byte, error) {
+		return json.Marshal(struct {
+			Payload
+			APS map[string]any `json:"aps"`
+		}{p, aps})
+	}
+	body, err := encode()
+	if len(body) > 4096 || len(p.AvatarJPEG) > 2048 {
+		p.AvatarJPEG = ""
+		body, err = encode()
+	}
+	if len(body) > 4096 {
+		return nil, fmt.Errorf("push presentation exceeds APNs limit")
+	}
+	return body, err
 }

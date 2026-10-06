@@ -169,12 +169,15 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
       // Still invoke the required OS report for this receipt using its existing UUID.
       // CallKit rejects the duplicate; it cannot create/end a second phantom call.
       let update = CXCallUpdate(); update.localizedCallerName = calabCallerName(raw["callerName"])
+      update.remoteHandle = CXHandle(type: .generic, value: CalabCommunicationPayload(raw)?.personID ?? id.uuidString.lowercased())
       provider.reportNewIncomingCall(with: id, update: update) { _ in completion.finish() }
       return
     }
     guard calls.isEmpty, let ticket = try? reports.begin(id, bindingID, 0) else { generic(completion); return }
     calls[id] = ["binding": bindingID, "expiresAt": expiry.doubleValue]
-    let update = CXCallUpdate(); update.localizedCallerName = calabCallerName(raw["callerName"]); update.hasVideo = false
+    let update = CXCallUpdate(); update.localizedCallerName = calabCallerName(raw["callerName"])
+    update.remoteHandle = CXHandle(type: .generic, value: CalabCommunicationPayload(raw)?.personID ?? id.uuidString.lowercased())
+    update.hasVideo = false
     update.supportsHolding = false; update.supportsGrouping = false; update.supportsUngrouping = false; update.supportsDTMF = false
     // DND is enforced by the OS and current web/server policy; no custom ringtone override.
     provider.reportNewIncomingCall(with: id, update: update) { error in
@@ -184,6 +187,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
           if error == nil { provider.reportCall(with: id, endedAt: Date(), reason: .failed) }; return
         }
         guard error == nil, self.calls[id] != nil, self.binding?["id"] as? String == bindingID, expiry.doubleValue > self.now else { self.end(id, .failed); return }
+        CalabCommunication.call(raw, name: calabCallerName(raw["callerName"]))
         self.deadline(id, milliseconds: expiry.doubleValue - self.now)
         self.enqueue(id, "ring", expires: expiry.doubleValue)
       }
