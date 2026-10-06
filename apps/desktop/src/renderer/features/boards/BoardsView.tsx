@@ -24,6 +24,7 @@ import { TaskPanel } from './TaskPanel';
 import { Timeline } from './Timeline';
 import { useBoardHotkeys } from './useBoardHotkeys';
 import { CreateButton } from '../../components/CreateButton';
+import { Bar } from '../../components/Bar';
 import { NavButton } from '../../components/PhoneHeader';
 import { useMobile } from '../../lib/mobile';
 import { useViewKind } from './useBoardView';
@@ -146,7 +147,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   }, [groups]);
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2 mobile:gap-1 mobile:pl-0.5" data-testid="my-tasks-header">
+      <Bar plain className="gap-2 pl-4 pr-2" data-testid="my-tasks-header">
         {mobile ? <NavButton /> : null}
         <Inbox className="size-[18px] text-muted" aria-hidden />
         <h1 className="min-w-0 flex-1 truncate text-headline font-semibold mobile:text-list">{t('boards.myTasks')}</h1>
@@ -175,7 +176,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
             </Dropdown.Portal>
           </Dropdown.Root>
         ) : null}
-      </header>
+      </Bar>
       <div className="flex h-10 shrink-0 items-center px-3">
         <Segmented value={scope} options={SCOPES.map((s) => ({ value: s.value, label: t(s.label) }))} onChange={setScope} label={t('boards.myTasks')} />
       </div>

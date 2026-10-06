@@ -3,7 +3,7 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
@@ -127,10 +127,14 @@ export const Button = forwardRef<
   );
 });
 
+/** True inside a header bar (components/Bar.tsx): its IconButtons take the bar plate (docs/08 «Шапки»). */
+export const BarContext = createContext(false);
+
 export const IconButton = forwardRef<
   HTMLButtonElement,
-  ButtonHTMLAttributes<HTMLButtonElement> & { label: string; shortcut?: string; active?: boolean; danger?: boolean; tip?: boolean; size?: 'sm' | 'md' }
->(function IconButton({ label, shortcut, active, danger, tip = true, size = 'md', className, children, ...rest }, ref) {
+  ButtonHTMLAttributes<HTMLButtonElement> & { label: string; shortcut?: string; active?: boolean; danger?: boolean; tip?: boolean; size?: 'sm' | 'md'; bar?: boolean }
+>(function IconButton({ label, shortcut, active, danger, tip = true, size = 'md', bar: barProp, className, children, ...rest }, ref) {
+  const bar = useContext(BarContext) && barProp !== false ? true : !!barProp;
   const btn = (
     <button
       ref={ref}
@@ -138,9 +142,12 @@ export const IconButton = forwardRef<
       aria-label={label}
       aria-pressed={active}
       className={cx(
-        'inline-grid shrink-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
+        'inline-grid shrink-0 place-items-center transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
+        // `bar` (docs/08 «Шапки»): one rounded-square plate, one size per bar — 32 px on the desktop,
+        // the CreateButton's 36 px on the phone with the 44 px target grown by ::before.
+        bar ? 'size-8 rounded-[var(--radius-bar)] active:bg-active mobile:size-9 mobile:bar-hit' : 'rounded-[var(--radius-icon)]',
         // Phone: a 44×44 hit area whatever the glyph size.
-        size === 'sm' ? 'size-7 mobile:tap-size' : 'size-8 mobile:tap-size',
+        bar ? null : size === 'sm' ? 'size-7 mobile:tap-size' : 'size-8 mobile:tap-size',
         danger ? 'text-danger hover:bg-hover' : active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
         className,
       )}

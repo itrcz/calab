@@ -69,6 +69,7 @@ import { KnockBadge } from '../guests/KnockBadge';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
+import { Bar, BAR_GROUP } from '../../components/Bar';
 import { PhoneSearchButton } from '../../components/PhoneHeader';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
@@ -359,13 +360,13 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
   // are a tab) and no calendar one (a tab too). The profile is the last tab.
   if (mobile) {
     return (
-      <div className="mat-toolbar flex h-12 shrink-0 items-center justify-between gap-1 border-b border-line pl-2 pr-2">
+      <Bar className="justify-between">
         <WorkspaceSwitcher phone testId="phone-ws-switcher" />
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className={BAR_GROUP}>
           <PhoneSearchButton />
           {create}
         </div>
-      </div>
+      </Bar>
     );
   }
 

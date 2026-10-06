@@ -39,7 +39,7 @@ export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; 
   const label = [title, others > 0 ? plural('shell.unreadMentions', others) : others === UNREAD_DOT ? t('shell.otherUnread') : ''].filter(Boolean).join(', ');
   if (single) {
     return (
-      <div className="flex h-10 min-w-0 flex-1 items-center gap-2 px-2 text-headline font-semibold text-fg" data-testid={testId}>
+      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 px-2 text-headline font-semibold text-fg" data-testid={testId}>
         <WorkspaceIcon name={title} iconFileId={iconFileId} />
         <h1 className="min-w-0 truncate">{title}</h1>
       </div>
@@ -55,7 +55,7 @@ export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; 
           data-testid={testId}
           className={cx(
             'group flex min-w-0 items-center gap-1 rounded-[var(--radius-row)] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active',
-            phone ? 'h-10 gap-2 px-2 text-left text-headline' : 'no-drag h-7 max-w-[240px] px-2 text-body',
+            phone ? 'h-9 gap-2 rounded-[var(--radius-bar)] px-2 text-left text-headline bar-hit' : 'no-drag h-7 max-w-[240px] px-2 text-body',
           )}
         >
           {phone ? <WorkspaceIcon name={title} iconFileId={iconFileId} /> : null}

@@ -160,7 +160,15 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
       for (const bar of bars) {
         if (!visible(bar)) continue;
         const buttons = [...bar.querySelectorAll('button, a[href]')].filter(visible);
-        const rects = buttons.map((b) => b.getBoundingClientRect());
+        // A header-bar control (`[data-bar]`, docs/08 «Шапки»): its target is the visual box grown by the ::before pad.
+        const rects = buttons.map((b) => {
+          const r = b.getBoundingClientRect();
+          if (!b.closest('[data-bar]')) return r;
+          const pc = getComputedStyle(b, '::before');
+          const w = parseFloat(pc.width) || r.width;
+          const h = parseFloat(pc.height) || r.height;
+          return new DOMRect(r.x - (w - r.width) / 2, r.y - (h - r.height) / 2, w, h);
+        });
         buttons.forEach((b, i) => {
           const r = rects[i];
           if (!r) return;
@@ -204,7 +212,7 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
         let r = box.getBoundingClientRect();
         if (r.width < 1 || r.height < 1) continue;
         // `.tap-hit`: a small visual with a centred ::before hit square (docs/08) — measure the square
-        if (el.matches('.tap-hit')) {
+        if (el.matches('.tap-hit') || el.closest('[data-bar]')) {
           const pc = getComputedStyle(el, '::before');
           r = new DOMRect(r.x, r.y, parseFloat(pc.width) || 0, parseFloat(pc.height) || 0);
         }
@@ -212,6 +220,22 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
           const name = el.getAttribute('aria-label') ?? el.getAttribute('placeholder') ?? el.textContent.trim().slice(0, 24);
           out.push(`small target: <${tag}${el.getAttribute('role') ? ` role=${el.getAttribute('role')}` : ''}> «${name}» ${Math.round(r.width)}×${Math.round(r.height)} @${Math.round(r.left)},${Math.round(r.top)}`);
         }
+      }
+      // Header bars (owner, 07.10; docs/08 «Шапки»): every visible control of a bar has the same visual
+      // height (±1 px) — the CreateButton's disc, --bar-ctl-h-phone — whatever it is (back, switcher,
+      // search, «+», «…», arrows, text buttons). Segmented groups opt out with data-bar-skip.
+      const refH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-ctl-h-phone')) || 36;
+      for (const bar of document.querySelectorAll('[data-bar]')) {
+        if (!visible(bar)) continue;
+        const ctls = [...bar.querySelectorAll('button, a[href], [role="button"], [role="tab"], [role="radio"], input, select')].filter(
+          (c) => visible(c) && !c.closest('[data-bar-skip]') && getComputedStyle(c).pointerEvents !== 'none',
+        );
+        for (const c of ctls) {
+          const h = c.getBoundingClientRect().height;
+          if (Math.abs(h - refH) > 1) out.push(`header control height ${Math.round(h * 10) / 10} ≠ ${refH}: «${c.getAttribute('aria-label') ?? c.textContent.trim().slice(0, 24)}» in ${bar.getAttribute('data-testid') ?? bar.tagName.toLowerCase()}`);
+        }
+        const bh = bar.getBoundingClientRect().height;
+        if (bar.tagName === 'HEADER' && Math.abs(bh - 48) > 1) out.push(`header bar height ${Math.round(bh)} ≠ 48 (${bar.getAttribute('data-testid') ?? ''})`);
       }
       if (main) {
         const composer = document.querySelector('[data-testid="composer"]');
@@ -718,6 +742,10 @@ test('m-boards-kanban', async ({ page }) => {
   await tab(page, 'boards');
   const nav = page.getByTestId('phone-boards');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  // The view choice is a radio group in the header «…» (owner 07.10), not a switcher row.
+  await expect(page.getByTestId('view-switch')).toHaveCount(0);
+  await page.getByTestId('board-more').tap();
+  await checkpoint(page, 'm-boards-more', { snapshot: false });
   await page.getByTestId('view-kanban').tap();
   const kanban = page.getByTestId('kanban');
   await expect(kanban.getByTestId('kanban-column').first()).toBeVisible();
