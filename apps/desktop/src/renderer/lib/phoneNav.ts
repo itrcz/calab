@@ -23,7 +23,13 @@ export type PhoneScreen =
   | { kind: 'task'; id: string }
   | { kind: 'archived'; room: string }
   /** «Профиль» (the former «Я» tab): pushed over «Личные» by the avatar button. */
-  | { kind: 'profile' };
+  | { kind: 'profile' }
+  /**
+   * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)
+   * as a screen: `section` null = the list of sections (also the search), else that section.
+   * The list → section hop is one more screen, so back returns to the list.
+   */
+  | { kind: 'settings'; section: string | null };
 
 export type ScreenKind = PhoneScreen['kind'];
 
@@ -65,6 +71,8 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.ws === (b as typeof a).ws;
     case 'task':
       return a.id === (b as typeof a).id;
+    case 'settings':
+      return a.section === (b as typeof a).section;
     case 'search':
     case 'findTime':
     case 'profile':
@@ -80,6 +88,11 @@ export function pushScreen(nav: PhoneNav, s: PhoneScreen): PhoneNav {
   const at = nav.stack.findIndex((x) => sameScreen(x, s));
   if (at >= 0) return at === nav.stack.length - 1 ? nav : { ...nav, stack: nav.stack.slice(0, at + 1) };
   return { ...nav, stack: [...nav.stack, s].slice(-MAX_DEPTH) };
+}
+
+/** A settings section picked on the list: pushed over the list (a screen of its own). */
+export function openSettingsSection(nav: PhoneNav, section: string): PhoneNav {
+  return pushScreen(nav, { kind: 'settings', section });
 }
 
 export function popScreen(nav: PhoneNav, n = 1): PhoneNav {

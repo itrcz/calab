@@ -22,7 +22,7 @@ import { hasBit, CREATE_TASKS } from './model';
 import { TaskPanel } from './TaskPanel';
 import { Timeline } from './Timeline';
 import { useBoardHotkeys } from './useBoardHotkeys';
-import { NavButton } from '../shell/MobileShell';
+import { NavButton } from '../../components/PhoneHeader';
 import { useMobile } from '../../lib/mobile';
 import { useViewKind } from './useBoardView';
 
@@ -143,10 +143,10 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   }, [groups]);
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2 mobile:pl-1" data-testid="my-tasks-header">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2 mobile:gap-1 mobile:pl-0.5" data-testid="my-tasks-header">
         {mobile ? <NavButton /> : null}
         <Inbox className="size-[18px] text-muted" aria-hidden />
-        <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{t('boards.myTasks')}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-headline font-semibold mobile:text-list">{t('boards.myTasks')}</h1>
         {boards.length ? (
           <Dropdown.Root modal={false}>
             <Dropdown.Trigger asChild>

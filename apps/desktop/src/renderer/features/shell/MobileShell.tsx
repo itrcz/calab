@@ -1,8 +1,9 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowLeft, CalendarDays, MessageCircle, MessagesSquare, SquareKanban } from 'lucide-react';
+import { CalendarDays, MessageCircle, MessagesSquare, SquareKanban } from 'lucide-react';
 import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
-import { IconButton, Spinner, cx } from '../../components/ui';
+import { PhoneHeader } from '../../components/PhoneHeader';
+import { Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
 import { isStandalone } from '../../lib/mobile';
@@ -32,6 +33,8 @@ import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
 import { PhoneProfile, ProfileButton } from './PhoneProfile';
+import { ScreenTransition } from './ScreenTransition';
+import { SettingsScreen } from './SettingsScreen';
 import { PhoneRoomList } from './PhoneRoomList';
 import { UpdateBar } from './UpdateBar';
 import { WorkspaceRail } from './WorkspaceRail';
@@ -59,6 +62,7 @@ export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean
   const tab = useUi((s) => s.phone.tab);
   const top = useUi((s) => topScreen(s.phone));
   const on = useUi((s) => s.phone.on);
+  const depth = useUi((s) => s.phone.stack.length);
   useEffect(() => installPhoneNav(), []);
   const root = !top;
   const strip = ready && inVoice;
@@ -82,19 +86,21 @@ export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean
       <UpdateBar />
       <VerifyBanner />
       <SuspendedBanner />
-      <main className="mat-content relative flex min-h-0 flex-1 flex-col">
-        {!on ? null : !ready ? (
-          <div className="grid flex-1 place-items-center">
-            <div className="flex flex-col items-center gap-3 text-body text-muted">
-              <Spinner className="size-6" />
-              {t('gateway.connecting')}
+      <main className="mat-content relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <ScreenTransition depth={depth}>
+          {!on ? null : !ready ? (
+            <div className="grid flex-1 place-items-center">
+              <div className="flex flex-col items-center gap-3 text-body text-muted">
+                <Spinner className="size-6" />
+                {t('gateway.connecting')}
+              </div>
             </div>
-          </div>
-        ) : top ? (
-          <PushedScreen screen={top} />
-        ) : (
-          <TabRoot tab={tab} welcome={welcome} />
-        )}
+          ) : top ? (
+            <PushedScreen screen={top} />
+          ) : (
+            <TabRoot tab={tab} welcome={welcome} />
+          )}
+        </ScreenTransition>
       </main>
       {strip ? <MobileVoiceStrip aboveTabs={root} /> : null}
       {root && ready ? <TabBar tab={tab} /> : null}
@@ -221,6 +227,8 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <ArchivedScreen />;
     case 'profile':
       return <ProfileScreen />;
+    case 'settings':
+      return <SettingsScreen section={screen.section} />;
   }
 }
 
@@ -257,37 +265,6 @@ function MembersPage({ workspaceId, roomId }: { workspaceId: string; roomId: str
       <PhoneHeader title={t('shell.members')} subtitle={roomName} />
       <MembersPanel workspaceId={workspaceId} drawer />
     </section>
-  );
-}
-
-/**
- * The header of a pushed screen (ADR-0073 §1): «←» · the title on all the free width (a second
- * line optional) · up to two icons and «…» (`children`).
- */
-export function PhoneHeader({ title, subtitle, children }: { title: ReactNode; subtitle?: string; children?: ReactNode }): ReactNode {
-  return (
-    <header className="mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-1 pr-1">
-      <NavButton />
-      <div className="flex min-w-0 flex-1 flex-col justify-center pl-1">
-        <h1 className="min-w-0 truncate text-list font-semibold leading-5">{title}</h1>
-        {subtitle ? <span className="min-w-0 truncate text-caption leading-4 text-muted">{subtitle}</span> : null}
-      </div>
-      {children ? <div className="flex shrink-0 items-center gap-0.5">{children}</div> : null}
-    </header>
-  );
-}
-
-/**
- * «←» of a pushed screen (the headers of the room, DM, notes, board, meeting… render it on a
- * phone); nothing on a tab root.
- */
-export function NavButton(): ReactNode {
-  const depth = useUi((s) => s.phone.stack.length);
-  if (depth === 0) return null;
-  return (
-    <IconButton tip={false} label={t('mobile.back')} onClick={phoneBack} className="size-10 shrink-0 rounded-full" data-testid="phone-back">
-      <ArrowLeft className="size-5" />
-    </IconButton>
   );
 }
 

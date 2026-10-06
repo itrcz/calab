@@ -14,6 +14,7 @@ import {
   type PhoneScreen,
   type PhoneTab,
 } from '../lib/phoneNav';
+import { setSettingsQuery } from '../lib/settingsQuery';
 import { useArchiveView } from '../stores/archiveView';
 import { useBoardsUi } from '../stores/boardsUi';
 import { HOME } from '../stores/dms';
@@ -125,6 +126,10 @@ function closeFlag(s: PhoneScreen, next: PhoneScreen | undefined): void {
       // Back to the boards list: the boards mode (and a board's task) is off with the screen.
       if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
       break;
+    case 'settings':
+      // The last settings screen closes its window; the list under a section stays.
+      if (next?.kind !== 'settings') closeSettingsSource();
+      break;
     case 'room':
     case 'dm':
     case 'profile':
@@ -140,6 +145,47 @@ function closeFlag(s: PhoneScreen, next: PhoneScreen | undefined): void {
       restoring = false;
     }
   }
+}
+
+const SETTINGS_DIALOGS = ['settings', 'workspace-settings', 'room-settings'];
+/** Identity of the open settings window (its kind and target), null when none: a change replaces the screens. */
+function settingsKey(dialog: ReturnType<typeof useUi.getState>['dialog'], board: ReturnType<typeof useBoardsUi.getState>['settingsFor']): string | null {
+  if (dialog && SETTINGS_DIALOGS.includes(dialog.kind)) {
+    const d = dialog as { kind: string; workspaceId?: string; roomId?: string; tab?: string };
+    return `${d.kind}|${d.workspaceId ?? ''}|${d.roomId ?? ''}|${d.tab ?? ''}`;
+  }
+  if (board?.boardId) return `board|${board.boardId}|${board.tab ?? ''}`;
+  return null;
+}
+const settingsTab = (dialog: ReturnType<typeof useUi.getState>['dialog'], board: ReturnType<typeof useBoardsUi.getState>['settingsFor']): string | null =>
+  (dialog && SETTINGS_DIALOGS.includes(dialog.kind) ? (dialog as { tab?: string }).tab : board?.tab) ?? null;
+
+let settingsShown: string | null = null;
+
+/**
+ * A settings window opened (or changed) anywhere pushes its screen (the list of sections, or the
+ * requested one); closed — the screens go. Every entry point (the profile, the workspace and room
+ * menus, a board) keeps calling openDialog / openSettings.
+ */
+function syncSettings(): void {
+  const key = settingsKey(useUi.getState().dialog, useBoardsUi.getState().settingsFor);
+  if (key === settingsShown) return;
+  settingsShown = key;
+  setSettingsQuery('');
+  if (key === null) {
+    setPhone((n) => removeKind(n, 'settings'));
+    return;
+  }
+  const section = settingsTab(useUi.getState().dialog, useBoardsUi.getState().settingsFor);
+  setPhone((n) => pushScreen(removeKind(n, 'settings'), { kind: 'settings', section }));
+}
+
+/** The settings window behind the screen is closed (back from it): dialog and board settings alike. */
+function closeSettingsSource(): void {
+  const ui = useUi.getState();
+  if (ui.dialog && SETTINGS_DIALOGS.includes(ui.dialog.kind)) ui.openDialog(null);
+  const bu = useBoardsUi.getState();
+  if (bu.settingsFor?.boardId) bu.openSettings(null);
 }
 
 /** Drops the top screen (one «back»). */
@@ -247,6 +293,7 @@ function installMirrors(): () => void {
       if (s.membersOverlay && ws && ws !== HOME && room) setPhone((n) => pushScreen(n, { kind: 'members', ws, room }));
       else if (!s.membersOverlay) setPhone((n) => removeKind(n, 'members'));
     }
+    if (s.dialog !== prev.dialog) syncSettings();
   });
   const offSearch = useSearchPanel.subscribe((s, prev) => {
     if (s.open && (!prev.open || s.seq !== prev.seq)) setPhone((n) => pushScreen(n, { kind: 'search' }));
@@ -254,6 +301,7 @@ function installMirrors(): () => void {
   });
   const offBoards = useBoardsUi.subscribe((s, prev) => {
     if (!s.active && prev.active) setPhone((n) => removeKind(removeKind(n, 'task'), 'board'));
+    if (s.settingsFor !== prev.settingsFor) syncSettings();
     if (s.taskId !== prev.taskId) {
       const id = s.taskId;
       if (id) setPhone((n) => pushOnTab(n, 'boards', { kind: 'task', id }));
@@ -292,6 +340,7 @@ export function installPhoneNav(): () => void {
   ui.setPhone(() => ({ on: true, tab: initialTab(), stack: [] }));
   hDepth = 0;
   pendingGo = null;
+  settingsShown = null;
   try {
     history.replaceState({ ...(history.state as object | null), calabaNav: 0 }, '');
   } catch {

@@ -1,7 +1,8 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
-import { ArrowLeft, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
+import { PhoneBack } from '../../components/PhoneHeader';
+import { Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
@@ -129,13 +130,11 @@ export function EventCard({
 
   return (
     <div {...drop.props} className={cx('relative flex min-h-0 flex-1 flex-col', drop.over && 'outline outline-2 -outline-offset-2 outline-accent')} data-testid="event-card">
-      <div className={cx('flex items-start gap-2', variant === 'popover' ? 'px-3 pt-3' : variant === 'page' ? 'mat-toolbar h-12 shrink-0 items-center border-b border-line px-1' : 'px-4 pt-4')}>
+      <div className={cx('flex items-start gap-2', variant === 'popover' ? 'px-3 pt-3' : variant === 'page' ? 'mat-toolbar h-12 shrink-0 items-center gap-0.5 border-b border-line pl-0.5 pr-1' : 'px-4 pt-4')}>
         {variant === 'page' ? (
           <>
-            <IconButton label={t('cal.back')} onClick={onClose} className="size-10 rounded-full">
-              <ArrowLeft className="size-5" />
-            </IconButton>
-            <span className="min-w-0 flex-1 truncate text-list font-semibold">{t('cal.card')}</span>
+            <PhoneBack />
+            <span className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('cal.card')}</span>
             {tools}
           </>
         ) : (

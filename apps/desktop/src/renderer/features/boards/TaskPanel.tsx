@@ -3,7 +3,6 @@ import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type Room, type Task, type TaskActivity } from '@calaba/protocol';
 import {
   Archive,
-  ArrowLeft,
   Cog,
   Bell,
   BellOff,
@@ -22,6 +21,7 @@ import {
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ProfileTarget } from '../../components/ProfileTarget';
+import { PhoneBack } from '../../components/PhoneHeader';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, CloseButton, IconButton, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -166,11 +166,9 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
   const me = myUserId();
   const subscribed = task.subscribed && !task.muted;
   return (
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2" data-testid="task-panel-header">
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2 mobile:pl-0.5" data-testid="task-panel-header">
       {mobile ? (
-        <IconButton label={t('shell.back')} onClick={onClose} className="mobile:size-10">
-          <ArrowLeft className="size-5" aria-hidden />
-        </IconButton>
+        <PhoneBack />
       ) : null}
       <span className="min-w-0 truncate pl-2 text-caption text-muted">{boardName}</span>
       <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />

@@ -720,9 +720,9 @@ test('m-voice', async ({ page }) => {
   // Push-to-talk mode: the fullest strip (room line, mute, deafen, PTT hold, hang up).
   await openProfile(page);
   await page.getByTestId('phone-profile-voice').tap();
-  const settings = page.getByRole('dialog', { name: 'Настройки' });
+  const settings = page.getByTestId('settings-page');
   await settings.getByRole('radio', { name: 'Push-to-talk' }).tap();
-  await settings.getByRole('button', { name: 'Закрыть', exact: true }).tap();
+  await page.getByTestId('phone-back').tap();
   await expect(settings).toHaveCount(0);
   // Nobody in «Созвон»: the handset in its header joins (ADR-0073 §4).
   await openRoom(page, /^Созвон/);
@@ -844,21 +844,27 @@ test('m-settings', async ({ page }) => {
   await signedIn(page);
   await openProfile(page);
   await page.getByTestId('phone-profile-general').tap();
-  const settings = page.getByRole('dialog', { name: 'Настройки' });
+  // «Профиль → Основное» is a screen of the stack (no sheet, no grab handle): the standard header,
+  // «‹» pops it back to the profile (ADR-0073, owner 07.10).
+  const settings = page.getByTestId('settings-page');
   await expect(settings).toBeVisible();
+  await expect(page.getByTestId('sheet-handle')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expectNoFieldFocus(page, 'settings');
   await checkpoint(page, 'm-settings');
-  // «Профиль → Основное» opens that section; «←» returns to the list of sections (ADR-0073 §6).
-  await settings.getByRole('button', { name: 'Назад' }).tap();
-  await settings.getByRole('tab', { name: 'Голос и устройства' }).tap();
+  await page.getByTestId('phone-back').tap();
+  await expect(settings).toHaveCount(0);
+  await expect(page.getByTestId('phone-profile')).toBeVisible();
+  await page.getByTestId('phone-profile-voice').tap();
+  await expect(settings).toBeVisible();
   await checkpoint(page, 'm-settings-voice', { snapshot: false });
-  // The section scrolls inside the sheet (its last control can be reached).
+  // The section scrolls on its screen (its last control can be reached).
   const panel = settings.locator('[data-settings-panel="voice"]');
   const fits = await panel.evaluate((el) => {
     el.scrollTop = el.scrollHeight;
     return el.getBoundingClientRect().bottom <= innerHeight + 1 && el.scrollTop > 0;
   });
-  expect(fits, 'settings section scrolls inside the sheet').toBe(true);
+  expect(fits, 'settings section scrolls on its screen').toBe(true);
 });
 
 test('m-dialog', async ({ page }) => {
@@ -869,20 +875,58 @@ test('m-dialog', async ({ page }) => {
   await checkpoint(page, 'm-dialog', { snapshot: false });
 });
 
-// ADR-0031: workspace settings → «Боты» as a phone sheet — the create form wraps, the bot rows
+// ADR-0031: workspace settings → «Боты» as pushed screens — the create form wraps, the bot rows
 // keep «…» in reach, the webhook error line truncates.
 test('m-settings-bots', async ({ page }) => {
   await signedIn(page);
   mock.seedBots();
   await page.getByTestId('phone-room-list').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
   await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
-  const dialog = page.getByRole('dialog');
+  // The list of sections is a screen, a section is one more screen over it; «‹» pops one at a time.
+  const dialog = page.getByTestId('settings-page');
+  await expect(dialog.getByRole('tab', { name: 'Боты' })).toBeVisible();
+  await checkpoint(page, 'm-settings-list', { snapshot: false });
   await dialog.getByRole('tab', { name: 'Боты' }).tap();
   await expect(dialog.getByTestId('bot-row')).toHaveCount(2);
   await expectNoFieldFocus(page, 'bots');
   // The list, not the form: the rows are what the phone shot is about.
   await dialog.getByTestId('bot-row').last().scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-settings-bots');
+  await page.getByTestId('phone-back').tap();
+  await expect(dialog.getByRole('tab', { name: 'Боты' })).toBeVisible();
+  await page.getByTestId('phone-back').tap();
+  await expect(dialog).toHaveCount(0);
+});
+
+// ADR-0073 (owner 07.10): a pushed screen slides in from the right, a pop slides it out; the copy of
+// the outgoing screen is removed when the animation ends (only the top screen stays mounted). The
+// run's reduced-motion default is lifted here; the animations are paused mid-way for the shot.
+test('m-screen-slide', async ({ page }) => {
+  await signedIn(page);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const ghost = page.locator('[data-screen-ghost]');
+  const midFrame = async (name: string): Promise<void> => {
+    await expect(ghost).toHaveCount(1);
+    await page.evaluate(() =>
+      document.getAnimations().forEach((a) => {
+        a.pause();
+        a.currentTime = 125;
+      }),
+    );
+    const dir = process.env['CALABA_MOBILE_SHOTS'];
+    if (dir) await page.screenshot({ path: join(dir, `${name}-${test.info().project.name}.png`) });
+    await page.evaluate(() => document.getAnimations().forEach((a) => a.finish()));
+    await expect(ghost).toHaveCount(0);
+  };
+  await page.getByTestId('phone-room-list').getByRole('button', { name: /^общий/ }).first().tap();
+  await midFrame('m-screen-push-mid');
+  await expect(page.getByTestId('composer')).toBeVisible();
+  await page.getByTestId('phone-back').tap();
+  await midFrame('m-screen-pop-mid');
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+  // Back stays one screen per tap while the pop is still running.
+  await page.getByTestId('phone-room-list').getByRole('button', { name: /^общий/ }).first().tap();
+  await expect(page.getByTestId('composer')).toBeVisible();
 });
 
 // Issue #10: «Новая комната» on a phone — the room-type glyph inside «Название» keeps clear of the
@@ -907,13 +951,14 @@ test('m-room-new', async ({ page }) => {
   await checkpoint(page, 'm-room-new');
 });
 
-// docs/09 #55: «Пригласить» from a room's menu (long press) — the guest link first, as a sheet.
+// docs/09 #55: «Пригласить» from a room's menu (long press) — the guest link first, on a settings screen.
 test('m-room-invite', async ({ page }) => {
   await signedIn(page);
   const nav = page.getByTestId('phone-room-list');
   await nav.getByTestId('phone-room-row').filter({ hasText: 'общий' }).first().dispatchEvent('contextmenu', { clientX: 120, clientY: 300 });
   await page.getByRole('menuitem', { name: 'Пригласить' }).tap();
-  const dialog = page.getByRole('dialog');
+  // «Приглашения» of the workspace settings: a screen of the stack, not a sheet (ADR-0073, owner 07.10).
+  const dialog = page.getByTestId('settings-page');
   await expect(dialog.getByText('Пригласить гостя без регистрации')).toBeVisible();
   await expect(dialog.getByRole('textbox', { name: 'Ссылка для гостей' })).toHaveValue(/\/r\/general-guest-link$/);
   await expectNoFieldFocus(page, 'room invite');
