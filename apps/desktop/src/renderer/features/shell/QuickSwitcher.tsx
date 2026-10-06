@@ -8,7 +8,7 @@ import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { voice } from '../../services/voice';
-import { can, roomPerms } from '../../lib/permissions';
+import { can, isOwnerRoles, roomPerms } from '../../lib/permissions';
 import { joinOutcome } from '../../lib/voiceEntry';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -397,7 +397,7 @@ function rowKindNow(it: Item): SwitcherRowKind {
   return rowKind(it, canConnectNow(it), it.kind === 'member' && canDmNow(it.member.workspaceId, it.member.user?.id ?? ''), person !== '' && canCallNow(person));
 }
 
-/** The sidebar row's «Войти» on a voice room (joinOutcome: CONNECT, the user limit, MOVE_MEMBERS). */
+/** The sidebar row's «Войти» on a voice room (joinOutcome: CONNECT, the user limit, owner-only over it). */
 function joinVoice(r: Room): void {
   const entry = useWorkspaces.getState().byId[r.workspaceId];
   const me = useSession.getState().me?.user?.id ?? '';
@@ -406,7 +406,7 @@ function joinVoice(r: Room): void {
   const next = joinOutcome({
     inRoom: useVoice.getState().roomId === r.id,
     canConnect: can(perms, 'CONNECT'),
-    canMove: can(perms, 'MOVE_MEMBERS'),
+    owner: isOwnerRoles(rolesOf(entry, me)),
     people,
     limit: r.userLimit,
   });

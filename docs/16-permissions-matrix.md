@@ -72,7 +72,7 @@
 
 | Действие | Бит | Сервер | Клиент |
 |---|---|---|---|
-| Войти в голос | `VIEW_ROOM` + `CONNECT` room; сверх `user_limit` — `MOVE_MEMBERS` | `rtc.join` | `joinOutcome` |
+| Войти в голос | `VIEW_ROOM` + `CONNECT` room; сверх `user_limit` — только владелец пространства (07.10) | `rtc.join` | `joinOutcome` |
 | Голос звонка DM (`POST /api/rooms/{dm}/join`) | участник ACTIVE-звонка этой DM, иначе `409 CALL_NOT_ACTIVE`; grant фиксированный | `rtc.joinDM`, `dmParticipantJoined` | — |
 | Микрофон | `SPEAK` room, не замьючен модератором | grant `microphone` | `canSpeak` |
 | Экран / камера | `STREAM` / `VIDEO` room (+ слот, лимит камер) | `/stream/request`, `/camera/request`, grant | `voiceCaps` |

@@ -58,7 +58,7 @@ import { CreateButton, InlineAdd } from '../../components/CreateButton';
 import { Badge, Button, CountBadge, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, mayArrangeRooms, mayCreateBoards, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
+import { can, isOwnerRoles, mayArrangeRooms, mayCreateBoards, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
 import { expiresMs, extendTo, formatRemaining, isExpiring, sortTempRooms } from '../../lib/tempRooms';
 import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom } from '../../services/tempRooms';
 import { useCalendar } from '../../stores/calendar';
@@ -141,6 +141,8 @@ interface DragCategory {
 }
 type DragData = DragMember | DragRoom | DragCategory;
 interface DropRoom {
+  /** The target is at its user limit and I am not the owner (owner, 07.10): the drop is refused. */
+  full: boolean;
   roomId: string;
   canMove: boolean;
 }
@@ -1305,6 +1307,7 @@ function VoiceRoomRow({
   // The room's phone line (ADR-0046): one more row under the people, drawn from the SipCall.
   const sipLine = useSipCalls((s) => !!s.byRoom[room.id]);
   const canMove = mayMoveMembersIn(role, me, room);
+  const owner = isOwnerRoles(role);
   // A temporary room (ADR-0044): its creator manages it too; it sits in «Временные», not in the
   // reorder layout (no drop slot).
   const expires = expiresMs(room);
@@ -1315,7 +1318,7 @@ function VoiceRoomRow({
   const limit = room.userLimit;
   // Unlike the click guard (joinOutcome: never blocks re-entering my own room), the invite row (docs/09 #10) hides whenever the room is actually at its limit, me included.
   const atCapacity = limit > 0 && people.length >= limit;
-  const { setNodeRef, isOver, active: dragging } = useDroppable({ id: `room:${room.id}`, data: { roomId: room.id, canMove } satisfies DropRoom });
+  const { setNodeRef, isOver, active: dragging } = useDroppable({ id: `room:${room.id}`, data: { roomId: room.id, canMove, full: limit > 0 && people.length >= limit && !owner } satisfies DropRoom });
   const dragData = dragging?.data.current as DragData | undefined;
   // Only a participant drag highlights a room (a dragged room shows the accent line instead).
   const dropOk = isOver && canMove && dragData?.type === 'member' && dragData.fromRoomId !== room.id;
@@ -1332,7 +1335,7 @@ function VoiceRoomRow({
   // The row opens the room's chat and never joins (owner, 02.10); «Войти» is the one way into the voice.
   const click = (): void => openRoom(workspaceId, room.id);
   const join = (): void => {
-    const next = joinOutcome({ inRoom, canConnect, canMove, people: people.length, limit });
+    const next = joinOutcome({ inRoom, canConnect, owner, people: people.length, limit });
     if (next === 'full') toast.info(t('shell.roomFull'));
     else if (next === 'join') {
       void voice.join(room.id, workspaceId);
@@ -1340,7 +1343,7 @@ function VoiceRoomRow({
       if (!useUi.getState().lastRoom[workspaceId]) openRoom(workspaceId, room.id);
     }
   };
-  const joinUi = joinButton({ inRoom, canConnect, canMove, people: people.length, limit, touch: mobile });
+  const joinUi = joinButton({ inRoom, canConnect, owner, people: people.length, limit, touch: mobile });
 
   return (
     <div
@@ -1831,7 +1834,7 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
     const d = e.active.data.current as DragData | undefined;
     if (d?.type !== 'member') return;
     const over = e.over?.data.current as DropRoom | undefined;
-    setBlocked(!!over && over.roomId !== d.fromRoomId && !over.canMove);
+    setBlocked(!!over && over.roomId !== d.fromRoomId && (!over.canMove || over.full));
   };
   const onEnd = (e: DragEndEvent): void => {
     const d = e.active.data.current as DragData | undefined;
@@ -1853,6 +1856,10 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
     if (!d || !over || over.roomId === d.fromRoomId) return;
     if (!over.canMove) {
       toast.info(t('shell.moveNotAllowed'));
+      return;
+    }
+    if (over.full) {
+      toast.info(t('shell.roomFull'));
       return;
     }
     // The moved member needs VIEW_ROOM + CONNECT in the target (server moveMember).
