@@ -2,7 +2,7 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, CalendarEventAttendeeSchema, CalendarEventCountsSchema, CalendarEventSchema, EventRepeat, type CalendarEvent } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { applyCreate, applyDelete, busyDays, dayKeys, applyRsvp, involvedIndexes, applyUpdate, keysIn, myStatusOf, occKey, replaceWindow, roomMeeting, withActive, withoutActive } from './events';
+import { applyCreate, applyDelete, awaitsAnswer, busyDays, dayKeys, applyRsvp, involvedIndexes, applyUpdate, isInvitee, keysIn, myStatusOf, occKey, replaceWindow, roomMeeting, withActive, withoutActive } from './events';
 import { dayKey } from './time';
 
 const H = 3_600_000;
@@ -165,5 +165,25 @@ describe('calendar scope: mine / «Люди» (docs/09 #140)', () => {
     expect(busyDays(m, 'ws', from, from + 24 * H, undefined, undefined, ME)).toContain(day);
     expect(busyDays(map(organized), 'ws', from, from + 24 * H, undefined, new Set([BOB]), ME)).toEqual([]);
     expect(busyDays(m, 'ws', from, from + 24 * H, undefined, new Set([BOB]), ME)).toContain(day);
+  });
+});
+
+describe('isInvitee / awaitsAnswer (ADR-0038 «Кому уходит приглашение»)', () => {
+  it('an explicit attendee row that is not the organizer', () => {
+    const e = ev('a', T0);
+    expect(isInvitee(e, ME)).toBe(true);
+    expect(awaitsAnswer(e, ME)).toBe(true);
+    expect(awaitsAnswer({ ...e, myStatus: AttendeeStatus.ACCEPTED }, ME)).toBe(false);
+  });
+  it('never the organizer, even with a row of their own', () => {
+    const e = ev('a', T0);
+    expect(isInvitee(e, BOB)).toBe(false);
+    expect(awaitsAnswer(e, BOB)).toBe(false);
+  });
+  it('never someone who only sees the meeting (a viewer of its room), whatever my_status says', () => {
+    const e = ev('a', T0, { roomId: 'r1' });
+    expect(isInvitee(e, 'u-viewer')).toBe(false);
+    expect(awaitsAnswer({ ...e, myStatus: AttendeeStatus.PENDING }, 'u-viewer')).toBe(false);
+    expect(isInvitee(e, '')).toBe(false);
   });
 });

@@ -7,7 +7,7 @@ import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
 import { Button, CloseButton, IconButton, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
-import { keyEventId, myStatusOf, occKey } from '../../lib/calendar/events';
+import { isInvitee, keyEventId, myStatusOf, occKey } from '../../lib/calendar/events';
 import { eventSpan, formatWhen } from '../../lib/calendar/time';
 import { fmt } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
@@ -102,7 +102,8 @@ export function EventCard({
   const organizerAvatar = useWorkspaces((s) => s.byId[ev.workspaceId]?.members[ev.organizerId]?.user?.avatarFileId ?? '');
   const editable = !guest && canEditEvent(ev);
   const mine = myStatusOf(ev, me);
-  const attending = !guest && ev.attendees.some((a) => a.userId === me) && ev.organizerId !== me;
+  // RSVP only for an invitee (lib/calendar/events.ts isInvitee): a viewer of the room is not one.
+  const attending = !guest && isInvitee(ev, me);
   const [transcript, setTranscript] = useState(false);
   const drop = useDropTarget(key, editable);
   const externals = ev.attendees.filter((a) => !a.userId);

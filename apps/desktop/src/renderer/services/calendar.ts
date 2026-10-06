@@ -23,6 +23,7 @@ import {
   applyDelete,
   applyRsvp,
   applyUpdate,
+  isInvitee,
   keyEventId,
   occKey,
   replaceWindow,
@@ -424,9 +425,10 @@ export function eventOf(key: string): CalendarEvent | undefined {
   return s.occ[key] ?? s.series[keyEventId(key)];
 }
 
-/** «Приму / Отклоню / Может быть»: my row changes at once, back on an error. */
+/** «Приму / Отклоню / Может быть»: my row changes at once, back on an error. Invitees only. */
 export async function answer(ev: CalendarEvent, status: AttendeeStatus): Promise<void> {
   const me = myUserId();
+  if (!isInvitee(ev, me)) return;
   const mine = ev.attendees.find((a) => a.userId === me);
   if (!mine) return;
   const before = mine.status;

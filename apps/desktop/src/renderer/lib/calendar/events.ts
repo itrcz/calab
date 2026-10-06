@@ -40,6 +40,20 @@ export function involvesAny(ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>
 
 export const isAttendee =(ev: Pick<CalendarEvent, 'attendees'>, me: string): boolean => ev.attendees.some((a) => a.userId === me);
 
+/**
+ * The invitation rule (ADR-0038 amendment «Кому уходит приглашение»), the client's half of the
+ * invariant the server holds for mail (calendar/recipients.go): I am invited only by an explicit
+ * attendee row of mine on a meeting I do not organize — never by a meeting I merely see because
+ * its room is visible to me (EVENT_* reaches every viewer of the room), never by my own meeting,
+ * and never through `my_status` alone. Everything that offers Accept / Decline checks this and
+ * nothing else; guests have no calendar (the caller checks the role).
+ */
+export const isInvitee = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, me: string): boolean => !!me && ev.organizerId !== me && isAttendee(ev, me);
+
+/** An invitee who has not answered: the only state in which anything may read as an invitation. */
+export const awaitsAnswer = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees' | 'myStatus'>, me: string): boolean =>
+  isInvitee(ev, me) && myStatusOf(ev, me) === AttendeeStatus.PENDING;
+
 /** My meetings (docs/09 #140): I organize it or I am on its attendee list. `mine` '' = no filter. */
 export const isMine = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, mine: string): boolean => !mine || ev.organizerId === mine || isAttendee(ev, mine);
 
