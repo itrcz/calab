@@ -374,7 +374,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
       data-testid="dm-header"
     >
       {mobile ? <NavButton /> : null}
-      <ProfileTarget userId={peerId} name={name} tabbable className={cx('no-drag flex shrink-0 rounded-full', mobile && 'size-10 items-center justify-center')}>
+      <ProfileTarget userId={peerId} name={name} tabbable className={cx('no-drag flex shrink-0 rounded-full', mobile && 'size-11 items-center justify-center')}>
         <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence ring="var(--color-bg)" />
       </ProfileTarget>
       <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', roleTextClass(shared?.role), mobile && 'max-w-none shrink')} title={name}>

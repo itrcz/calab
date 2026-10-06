@@ -79,6 +79,8 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.pinned': 'Pinned',
   'chat.pinnedOne': 'Pinned message',
   'chat.pinnedN': 'Pinned message {n} of {total}',
+  'chat.pinnedShortOne': 'Pinned',
+  'chat.pinnedShortN': 'Pinned {n}/{total}',
   'chat.noPins': 'No pinned messages',
   // room notifications (bell menu)
   'chat.notify': 'Notifications',

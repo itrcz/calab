@@ -77,6 +77,8 @@ export const ruChat = {
   'chat.pinned': 'Закреплённые',
   'chat.pinnedOne': 'Закреплённое сообщение',
   'chat.pinnedN': 'Закреплённое сообщение {n} из {total}',
+  'chat.pinnedShortOne': 'Закреплено',
+  'chat.pinnedShortN': 'Закреплено {n}/{total}',
   'chat.noPins': 'Закреплённых сообщений нет',
   // room notifications (bell menu)
   'chat.notify': 'Уведомления',

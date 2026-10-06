@@ -255,7 +255,7 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
   ) : null;
 
   const button = (
-    <div className="relative mb-0.5 shrink-0">
+    <div className="relative mb-0.5 shrink-0 mobile:mb-0">
       {active ? (
         // Level halo behind the button.
         <span
@@ -284,7 +284,7 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
             else if (!active && e.detail === 0) start(true);
           }}
           className={cx(
-            'relative grid size-9 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40',
+            'relative grid size-9 mobile:size-11 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40',
             active
               ? 'bg-accent-strong text-accent-fg shadow-[var(--shadow-card)]'
               : 'text-muted hover:bg-hover hover:text-fg',

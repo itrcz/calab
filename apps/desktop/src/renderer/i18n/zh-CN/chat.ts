@@ -79,6 +79,8 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.pinned': '置顶消息',
   'chat.pinnedOne': '置顶消息',
   'chat.pinnedN': '置顶消息 {n}/{total}',
+  'chat.pinnedShortOne': '置顶',
+  'chat.pinnedShortN': '置顶 {n}/{total}',
   'chat.noPins': '暂无置顶消息',
   // room notifications (bell menu)
   'chat.notify': '通知',
