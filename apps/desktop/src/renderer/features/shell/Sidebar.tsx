@@ -341,18 +341,15 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
   const mobile = useMobile();
   if (role === undefined) return null;
   const guest = role === WorkspaceRole.GUEST;
-  // Invites: INVITE_MEMBERS (ADR-0043, the server's check), a custom role's included.
-  const inviter = mayInviteMembers(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
 
   const create =
-    manageRooms || inviter || !guest ? (
+    manageRooms || !guest ? (
       <CreateMenu
         workspaceId={workspaceId}
         onCreateCategory={onCreateCategory}
         rooms={manageRooms}
         temp={mayCreateTempRooms(myRoles)}
-        invite={inviter}
         meeting={!guest}
         tasks={!guest}
       />
@@ -425,7 +422,6 @@ function CreateMenu({
   onCreateCategory,
   rooms,
   temp,
-  invite,
   meeting,
   tasks,
 }: {
@@ -434,7 +430,6 @@ function CreateMenu({
   rooms: boolean;
   /** CREATE_TEMP_ROOMS (ADR-0044): «Временная комната». */
   temp: boolean;
-  invite: boolean;
   meeting: boolean;
   tasks: boolean;
 }): ReactNode {
@@ -458,12 +453,14 @@ function CreateMenu({
               </Dropdown.Item>
             </>
           ) : null}
-          {rooms && (temp || meeting || invite || taskBoards.length > 0) ? <Dropdown.Separator className={menuSeparator} /> : null}
+          {rooms && (temp || meeting || taskBoards.length > 0) ? <Dropdown.Separator className={menuSeparator} /> : null}
           {temp ? (
             <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'temp-room-create', workspaceId })} data-testid="sidebar-new-temp">
               <Timer className="size-4" /> {t('temp.create')}
             </Dropdown.Item>
           ) : null}
+          {/* «Временная комната» stands apart: a divider on both sides (owner 07.10). */}
+          {temp && (meeting || taskBoards.length > 0) ? <Dropdown.Separator className={menuSeparator} /> : null}
           {meeting ? (
             <Dropdown.Item className={menuItem} onSelect={() => newEvent(workspaceId, nextQuarter())} data-testid="sidebar-new-event">
               <CalendarPlus className="size-4" /> {t('shell.addMeeting')}
@@ -489,11 +486,6 @@ function CreateMenu({
                 </Dropdown.SubContent>
               </Dropdown.Portal>
             </Dropdown.Sub>
-          ) : null}
-          {invite ? (
-            <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })} data-testid="sidebar-invite">
-              <UserPlus className="size-4" /> {t('shell.inviteToWorkspace')}
-            </Dropdown.Item>
           ) : null}
         </Dropdown.Content>
       </Dropdown.Portal>
