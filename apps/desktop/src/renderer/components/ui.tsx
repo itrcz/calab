@@ -322,7 +322,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   if (!icon) return field;
   return (
     <span className="relative flex w-full min-w-0 items-center">
-      <span className="pointer-events-none absolute left-2 grid w-4 place-items-center text-muted mobile:left-3" aria-hidden>
+      <span className="pointer-events-none absolute left-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center text-muted mobile:left-3.5 [&>svg]:size-4" aria-hidden>
         {icon}
       </span>
       {field}
