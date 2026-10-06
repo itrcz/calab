@@ -40,7 +40,7 @@ const (
 func (s *Service) identityWorkers() int {
 	n := identityParticipantWorkers
 	if s.db != nil && s.db.Pool != nil {
-		n = min(n, max(1, int(s.db.Pool.Config().MaxConns)-1))
+		n = min(n, max(1, s.db.MaxConns()-1))
 	}
 	return n
 }
