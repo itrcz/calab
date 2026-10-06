@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { NotificationLevel, WorkspaceRole } from '@calaba/protocol';
-import { Bell, BellOff, Check, ChevronDown, ChevronRight, LogOut, Settings, UserPlus, Users } from 'lucide-react';
+import { NotificationLevel } from '@calaba/protocol';
+import { Bell, BellOff, Check, ChevronRight, LogOut, Settings, UserPlus, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
@@ -15,47 +15,18 @@ import { useRooms, workspaceNotify, workspaceTaskLevel } from '../../stores/room
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { useMemberRoles } from '../../stores/workspaces';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 
 /**
- * The workspace menu (docs/09 #140): the workspace name with «⌄» — its items also close the desktop title
- * bar's workspace switcher (ADR-0074); the phone's list header and top bar. «Пригласить» and
+ * The workspace menu items (docs/09 #140), the tail of the workspace switcher (ADR-0074 §2; the
+ * phone's header is the same switcher). «Пригласить» and
  * «Настройки пространства» (any settings right, ADR-0048), «Участники», «Уведомления» ▸, «Скрывать без
  * уведомлений», «Покинуть» (disabled for the owner, with the reason). Creating rooms and
  * categories lives in the room column's «+». Selectors: the name and the role only (the entry
  * changes on every voice state).
  */
-export function WorkspaceMenu({ workspaceId, variant, testId }: { workspaceId: string; variant: 'titlebar' | 'drawer' | 'topbar'; testId?: string }): ReactNode {
-  const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name);
-  const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
-  if (name === undefined) return null;
-  return (
-    <Dropdown.Root modal={false}>
-      <Dropdown.Trigger asChild>
-        <button
-          type="button"
-          title={name}
-          data-testid={testId}
-          className={cx(
-            'group flex min-w-0 items-center gap-1 rounded-[var(--radius-row)] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active',
-            variant === 'titlebar' ? 'no-drag h-7 max-w-[220px] px-2 text-body' : variant === 'topbar' ? 'h-10 px-2 text-list' : 'h-8 w-full px-2 text-left text-list',
-          )}
-        >
-          <span className={cx('min-w-0 truncate', variant === 'drawer' && 'flex-1')}>{name}</span>
-          <ChevronDown className="size-4 shrink-0 text-muted transition-transform duration-[var(--motion-fast)] group-data-[state=open]:rotate-180" aria-hidden />
-        </button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="start" collisionPadding={16}>
-          <WorkspaceMenuItems workspaceId={workspaceId} name={name} owner={role === WorkspaceRole.OWNER} />
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
-  );
-}
-
 /** The items: mounted only while the menu is open (Radix), so the role subscriptions cost nothing at rest. */
 export function WorkspaceMenuItems({ workspaceId, name, owner }: { workspaceId: string; name: string; owner: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);

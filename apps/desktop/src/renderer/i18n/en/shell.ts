@@ -33,7 +33,6 @@ export const enShell: DictShape<typeof ruShell> = {
 
   // workspace rail
   'shell.home': 'Workspaces',
-  'shell.explore': 'Explore',
   'shell.findWorkspace': 'Find a workspace',
   'shell.wsSwitcher': 'Switch workspace',
   'shell.otherUnread': 'Unread in other workspaces',

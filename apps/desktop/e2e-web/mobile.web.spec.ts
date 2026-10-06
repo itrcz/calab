@@ -117,12 +117,14 @@ test('phone: sign in → room list → message → voice → PTT hold', async ({
   test.setTimeout(120_000);
   await signIn(page);
 
-  // ADR-0073: the app opens on «Чаты» — the rail and the room list, the tab bar at the bottom.
+  // ADR-0073: the app opens on «Чаты» — the room list at full width, the tab bar at the bottom.
   const nav = page.getByTestId('phone-chats');
   await expect(nav).toBeVisible();
   await expect(page.getByTestId('phone-tabbar')).toBeVisible();
   await expect(page.getByTestId('titlebar')).toHaveCount(0);
-  await expect(nav.getByRole('navigation', { name: 'Пространства' })).toBeVisible();
+  // Owner 07.10: no workspace rail — the header's switcher picks the workspace.
+  await expect(page.getByRole('navigation', { name: 'Пространства' })).toHaveCount(0);
+  await expect(nav.getByTestId('phone-ws-switcher')).toBeVisible();
   await expectNoHorizontalScroll(page, 'room list');
   await expectAccessible(page, 'room list');
   await shot(page, 'mobile-home');
@@ -226,9 +228,10 @@ test('phone: dialogs and menus are bottom sheets', async ({ page }) => {
   await expect(page.getByTestId('composer-camera-input')).toHaveAttribute('capture', 'environment');
   await page.keyboard.press('Escape');
 
-  // A modal (create workspace from the rail) → bottom sheet.
+  // A modal (create workspace from the switcher) → bottom sheet.
   await page.getByTestId('phone-back').tap();
-  await page.getByTestId('phone-chats').getByRole('button', { name: 'Создать пространство' }).tap();
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Создать пространство' }).tap();
   const dialog = page.getByRole('dialog', { name: 'Новое пространство' });
   await expect(dialog).toBeVisible();
   const d = await dialog.boundingBox();

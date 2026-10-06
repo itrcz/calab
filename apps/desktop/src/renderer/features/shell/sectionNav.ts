@@ -1,5 +1,6 @@
 import { WorkspaceRole } from '@calaba/protocol';
 import { dayKey } from '../../lib/calendar/time';
+import { MOBILE_QUERY } from '../../lib/phone';
 import { sectionFor, type Section, type WsSection } from '../../lib/sections';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { HOME } from '../../stores/dms';
@@ -34,6 +35,9 @@ export function showMode(mode: Mode): void {
   if (boards.active !== (mode === 'boards')) boards.setActive(mode === 'boards');
 }
 
+/** The phone layout (the web build at ≤ 768 px) — lib/mobile.ts without the platform import (unit tests run in Node). */
+const onPhone = (): boolean => typeof window !== 'undefined' && document.documentElement.classList.contains('web') && window.matchMedia(MOBILE_QUERY).matches;
+
 const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', boards: 'boards' };
 
 const isGuest = (wsId: string): boolean => useWorkspaces.getState().byId[wsId]?.role === WorkspaceRole.GUEST;
@@ -60,9 +64,16 @@ export function openSection(section: Section): void {
 
 /**
  * A workspace picked in the title bar's switcher (or by ⌘1…⌘9): it opens on the section it was
- * left on (ADR-0074 §1 «Раздел помнится для каждого пространства»).
+ * left on (ADR-0074 §1 «Раздел помнится для каждого пространства»); on the phone — on the same tab.
  */
 export function openWorkspace(id: string): void {
+  // Phone (ADR-0073, no rail): the tab stays (chats / boards / calendar of the new workspace); a
+  // guest workspace has no boards or calendar — its rooms.
+  if (onPhone()) {
+    useUi.getState().setWorkspace(id);
+    if (isGuest(id)) showMode('voice');
+    return;
+  }
   const target = sectionFor(useSections.getState().of, id, isGuest(id));
   useUi.getState().setWorkspace(id);
   showMode(MODE[target]);
