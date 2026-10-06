@@ -578,6 +578,7 @@ test('m-calendar-findtime', async ({ page }) => {
   await signedIn(page);
   await tab(page, 'calendar');
   await expect(page.getByTestId('day-view')).toBeVisible();
+  await page.getByTestId('day-more').tap();
   await page.getByTestId('day-find').tap();
   const pane = page.getByTestId('find-time');
   await pane.getByTestId('find-people-add').tap();

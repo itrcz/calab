@@ -178,8 +178,9 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
         {task.key}
       </button>
       <span className="flex-1" />
-      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className="mobile:size-10" data-testid="panel-subscribe">
-        {subscribed ? <Bell className="size-4" aria-hidden /> : <BellOff className="size-4" aria-hidden />}
+      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className={cx('mobile:size-10', subscribed && 'mobile:bg-transparent mobile:text-accent-text')} data-testid="panel-subscribe">
+        {/* phone: the state is the icon (filled accent bell), not a grey plate */}
+        {subscribed ? <Bell className="size-4 mobile:size-5 mobile:fill-current" aria-hidden /> : <BellOff className="size-4 mobile:size-5" aria-hidden />}
       </IconButton>
       <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)} className="mobile:size-10">
         <Link2 className="size-4" aria-hidden />
@@ -405,8 +406,8 @@ function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit
 
 function Prop({ label, children, testId }: { label: string; children: ReactNode; testId?: string }): ReactNode {
   return (
-    <div className="flex min-h-8 items-start gap-3" data-testid={testId}>
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-[88px]">{label}</span>
+    <div className="flex min-h-8 items-start gap-3 mobile:flex-col mobile:gap-0.5 mobile:py-1" data-testid={testId}>
+      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{label}</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">{children}</div>
     </div>
   );
@@ -620,9 +621,9 @@ function Assignees({ task, canEdit, req }: { task: Task; canEdit: boolean; req: 
     void setAssignees(task.id, addAssignee(drafts, userId));
   };
   return (
-    <div className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)]', over && 'ring-2 ring-accent')} onDragOver={onDragOver} onDragLeave={() => setOver(false)} onDrop={onDrop} data-testid="prop-assignees">
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-[88px]">{t('boards.assignees')}</span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+    <div className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)] mobile:flex-col mobile:gap-0.5 mobile:py-1', over && 'ring-2 ring-accent')} onDragOver={onDragOver} onDragLeave={() => setOver(false)} onDrop={onDrop} data-testid="prop-assignees">
+      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{t('boards.assignees')}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 mobile:w-full mobile:gap-1.5">
         {task.assignees.map((a) => (
           <AssigneeRow key={a.userId} task={task} userId={a.userId} lead={a.isLead} note={a.note} canEdit={canEdit} />
         ))}
@@ -656,10 +657,10 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
     if (v.trim() !== note) void setAssignees(task.id, setNote(drafts, userId, v));
   };
   return (
-    <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="assignee-row" data-user={userId}>
-      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex min-w-0 max-w-[40%] shrink items-center gap-2 rounded-[var(--radius-control)] text-left">
+    <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)] mobile:grid mobile:grid-cols-[minmax(0,1fr)_auto_auto] mobile:gap-x-1 mobile:px-0" data-testid="assignee-row" data-user={userId}>
+      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex min-w-0 max-w-[40%] shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full">
         <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
-        <span className="min-w-0 truncate text-control font-medium">{name}</span>
+        <span className="min-w-0 truncate text-control font-medium mobile:text-[15px] mobile:font-semibold">{name}</span>
       </ProfileTarget>
       <Tip label={lead ? t('boards.lead') : t('boards.makeLead')}>
         <button
@@ -690,7 +691,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
         }}
         placeholder={canEdit ? t('boards.notePlaceholder') : ''}
         aria-label={t('boards.noteOf', { name })}
-        className="selectable h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg"
+        className="selectable mobile:order-last h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg mobile:col-span-3 mobile:ml-7 mobile:h-8 mobile:min-w-0 mobile:px-0 mobile:text-[13px]"
         data-testid="assignee-note"
       />
       {canEdit ? (
