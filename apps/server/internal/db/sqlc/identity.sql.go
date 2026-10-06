@@ -1340,6 +1340,228 @@ func (q *Queries) GetIdentityGateState(ctx context.Context, arg GetIdentityGateS
 	return i, err
 }
 
+const getIdentityGateStates = `-- name: GetIdentityGateStates :many
+SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
+(u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
+w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+(m.user_id IS NOT NULL)::boolean AS member,
+COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
+(COALESCE(x.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
+COALESCE(x.version,1)::bigint AS access_version,
+COALESCE(p.mode,'off')::text AS policy_mode, COALESCE(p.version,1)::bigint AS policy_version,
+COALESCE(p.entitlement_version,1)::bigint AS entitlement_version,
+COALESCE(p.assurance_max_age_seconds,3600)::integer AS max_age_seconds,
+COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()),false)::boolean AS business_eligible,
+wp.valid_until AS plan_valid_until,
+a.session_id AS assurance_session_id, a.user_id AS assurance_user_id, a.connection_id AS assurance_connection_id, a.identity_id AS assurance_identity_id,
+a.authenticated_at AS assurance_authenticated_at, a.valid_until AS assurance_valid_until, a.revoked_at AS assurance_revoked_at,
+COALESCE(a.policy_version,0)::bigint AS assurance_policy_version,COALESCE(a.access_version,0)::bigint AS assurance_access_version,
+COALESCE(a.connection_version,0)::bigint AS assurance_connection_version,COALESCE(a.identity_version,0)::bigint AS assurance_identity_version,
+COALESCE(a.entitlement_version,0)::bigint AS assurance_entitlement_version,COALESCE(a.session_version,0)::bigint AS assurance_session_version,
+COALESCE(c.id,'00000000-0000-0000-0000-000000000000'::uuid)::uuid AS connection_id,
+COALESCE(c.version,0)::bigint AS connection_version,
+COALESCE(c.status='active' AND c.disabled_at IS NULL,false)::boolean AS connection_enabled,
+COALESCE(c.tested_version=c.version,false)::boolean AS connection_tested,
+COALESCE(e.id,'00000000-0000-0000-0000-000000000000'::uuid)::uuid AS identity_id,
+COALESCE(e.version,0)::bigint AS identity_version,
+COALESCE(e.status='active' AND e.issuer=c.issuer,false)::boolean AS identity_active,
+(o.user_id IS NOT NULL)::boolean AS directory_required,
+COALESCE(o.status='active',false)::boolean AS directory_active,
+(d.disabled_at IS NULL AND d.last_success_at IS NOT NULL)::boolean AS directory_enabled,
+COALESCE(d.last_success_at + make_interval(secs=>d.max_staleness_seconds),'epoch'::timestamptz)::timestamptz AS directory_valid_until,
+EXISTS(SELECT FROM workspace_identity_recovery_codes r WHERE r.workspace_id=w.id AND r.owner_id=w.owner_id AND r.consumed_at IS NULL AND r.expires_at>clock_timestamp())::boolean AS recovery_ready,
+EXISTS(SELECT FROM product_admin_grants g WHERE g.user_id=u.id AND g.revoked_at IS NULL)::boolean AS product_admin_granted,
+gs.enabled AS sso_enabled, gs.source AS sso_source, gs.valid_until AS sso_valid_until, gs.revoked_at AS sso_revoked_at,COALESCE(gs.version,0)::bigint AS sso_version,
+gd.enabled AS directory_granted, gd.source AS directory_source, gd.valid_until AS directory_grant_valid_until,gd.revoked_at AS directory_revoked_at,COALESCE(gd.version,0)::bigint AS directory_grant_version,
+go.enabled AS oauth_enabled, go.source AS oauth_source,go.valid_until AS oauth_valid_until,go.revoked_at AS oauth_revoked_at,COALESCE(go.version,0)::bigint AS oauth_version
+FROM unnest($1::uuid[]) WITH ORDINALITY AS k(session_id, ord)
+JOIN unnest($2::uuid[]) WITH ORDINALITY AS ku(user_id, ord) ON ku.ord=k.ord
+JOIN sessions s ON s.id=k.session_id AND s.user_id=ku.user_id
+JOIN users u ON u.id=s.user_id JOIN workspaces w ON w.id=$3
+LEFT JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=u.id
+LEFT JOIN workspace_identity_access x ON x.workspace_id=w.id AND x.user_id=u.id
+LEFT JOIN workspace_identity_policies p ON p.workspace_id=w.id
+LEFT JOIN workspace_plans wp ON wp.workspace_id=w.id
+LEFT JOIN session_workspace_assurances a ON a.session_id=s.id AND a.workspace_id=w.id
+LEFT JOIN workspace_external_identities e ON e.workspace_id=w.id AND e.id=a.identity_id
+LEFT JOIN workspace_identity_connections c ON c.workspace_id=w.id AND c.id=e.connection_id
+LEFT JOIN workspace_directories d ON d.workspace_id=w.id
+LEFT JOIN directory_objects o ON o.workspace_id=w.id AND o.directory_id=d.id AND o.user_id=u.id
+LEFT JOIN workspace_identity_grants gs ON gs.workspace_id=w.id AND gs.feature='corporate_sso'
+LEFT JOIN workspace_identity_grants gd ON gd.workspace_id=w.id AND gd.feature='directory_sync'
+LEFT JOIN workspace_identity_grants go ON go.workspace_id=w.id AND go.feature='oauth_provider'
+ORDER BY k.ord
+`
+
+type GetIdentityGateStatesParams struct {
+	SessionIds  []uuid.UUID
+	UserIds     []uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+type GetIdentityGateStatesRow struct {
+	Session                     Session
+	IsGuest                     bool
+	IsBot                       bool
+	UserDisabled                bool
+	WorkspaceID                 uuid.UUID
+	WorkspaceSuspended          bool
+	Member                      bool
+	BuiltinRole                 string
+	Suspended                   bool
+	AccessVersion               int64
+	PolicyMode                  string
+	PolicyVersion               int64
+	EntitlementVersion          int64
+	MaxAgeSeconds               int32
+	BusinessEligible            bool
+	PlanValidUntil              *time.Time
+	AssuranceSessionID          *uuid.UUID
+	AssuranceUserID             *uuid.UUID
+	AssuranceConnectionID       *uuid.UUID
+	AssuranceIdentityID         *uuid.UUID
+	AssuranceAuthenticatedAt    *time.Time
+	AssuranceValidUntil         *time.Time
+	AssuranceRevokedAt          *time.Time
+	AssurancePolicyVersion      int64
+	AssuranceAccessVersion      int64
+	AssuranceConnectionVersion  int64
+	AssuranceIdentityVersion    int64
+	AssuranceEntitlementVersion int64
+	AssuranceSessionVersion     int64
+	ConnectionID                uuid.UUID
+	ConnectionVersion           int64
+	ConnectionEnabled           bool
+	ConnectionTested            bool
+	IdentityID                  uuid.UUID
+	IdentityVersion             int64
+	IdentityActive              bool
+	DirectoryRequired           bool
+	DirectoryActive             bool
+	DirectoryEnabled            bool
+	DirectoryValidUntil         time.Time
+	RecoveryReady               bool
+	ProductAdminGranted         bool
+	SsoEnabled                  *bool
+	SsoSource                   *string
+	SsoValidUntil               *time.Time
+	SsoRevokedAt                *time.Time
+	SsoVersion                  int64
+	DirectoryGranted            *bool
+	DirectorySource             *string
+	DirectoryGrantValidUntil    *time.Time
+	DirectoryRevokedAt          *time.Time
+	DirectoryGrantVersion       int64
+	OauthEnabled                *bool
+	OauthSource                 *string
+	OauthValidUntil             *time.Time
+	OauthRevokedAt              *time.Time
+	OauthVersion                int64
+}
+
+// GetIdentityGateState for several exact session/user pairs of one workspace in one snapshot
+// (the RTC identity sweep checks a room in one call): the same columns; a pair without a live
+// session row is absent. Keep the two in step; identitypolicy converts these rows to
+// GetIdentityGateStateRow.
+func (q *Queries) GetIdentityGateStates(ctx context.Context, arg GetIdentityGateStatesParams) ([]GetIdentityGateStatesRow, error) {
+	rows, err := q.db.Query(ctx, getIdentityGateStates, arg.SessionIds, arg.UserIds, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetIdentityGateStatesRow{}
+	for rows.Next() {
+		var i GetIdentityGateStatesRow
+		if err := rows.Scan(
+			&i.Session.ID,
+			&i.Session.UserID,
+			&i.Session.RefreshTokenHash,
+			&i.Session.PrevRefreshTokenHash,
+			&i.Session.RotatedAt,
+			&i.Session.DeviceName,
+			&i.Session.Ip,
+			&i.Session.UserAgent,
+			&i.Session.CreatedAt,
+			&i.Session.LastSeenAt,
+			&i.Session.ExpiresAt,
+			&i.Session.RevokedAt,
+			&i.Session.RefreshGen,
+			&i.Session.RefreshUsedAt,
+			&i.Session.ReplaySeal,
+			&i.Session.RevokedReason,
+			&i.Session.AuthorityKind,
+			&i.Session.AuthorityWorkspaceID,
+			&i.Session.AuthorityConnectionID,
+			&i.Session.LocalAuthenticatedAt,
+			&i.Session.RecoveryAuthenticatedAt,
+			&i.Session.AuthorityVersion,
+			&i.IsGuest,
+			&i.IsBot,
+			&i.UserDisabled,
+			&i.WorkspaceID,
+			&i.WorkspaceSuspended,
+			&i.Member,
+			&i.BuiltinRole,
+			&i.Suspended,
+			&i.AccessVersion,
+			&i.PolicyMode,
+			&i.PolicyVersion,
+			&i.EntitlementVersion,
+			&i.MaxAgeSeconds,
+			&i.BusinessEligible,
+			&i.PlanValidUntil,
+			&i.AssuranceSessionID,
+			&i.AssuranceUserID,
+			&i.AssuranceConnectionID,
+			&i.AssuranceIdentityID,
+			&i.AssuranceAuthenticatedAt,
+			&i.AssuranceValidUntil,
+			&i.AssuranceRevokedAt,
+			&i.AssurancePolicyVersion,
+			&i.AssuranceAccessVersion,
+			&i.AssuranceConnectionVersion,
+			&i.AssuranceIdentityVersion,
+			&i.AssuranceEntitlementVersion,
+			&i.AssuranceSessionVersion,
+			&i.ConnectionID,
+			&i.ConnectionVersion,
+			&i.ConnectionEnabled,
+			&i.ConnectionTested,
+			&i.IdentityID,
+			&i.IdentityVersion,
+			&i.IdentityActive,
+			&i.DirectoryRequired,
+			&i.DirectoryActive,
+			&i.DirectoryEnabled,
+			&i.DirectoryValidUntil,
+			&i.RecoveryReady,
+			&i.ProductAdminGranted,
+			&i.SsoEnabled,
+			&i.SsoSource,
+			&i.SsoValidUntil,
+			&i.SsoRevokedAt,
+			&i.SsoVersion,
+			&i.DirectoryGranted,
+			&i.DirectorySource,
+			&i.DirectoryGrantValidUntil,
+			&i.DirectoryRevokedAt,
+			&i.DirectoryGrantVersion,
+			&i.OauthEnabled,
+			&i.OauthSource,
+			&i.OauthValidUntil,
+			&i.OauthRevokedAt,
+			&i.OauthVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getIdentityGrant = `-- name: GetIdentityGrant :one
 SELECT workspace_id, feature, enabled, source, valid_until, revoked_at, version, updated_by, updated_at FROM workspace_identity_grants WHERE workspace_id = $1 AND feature = $2
 `

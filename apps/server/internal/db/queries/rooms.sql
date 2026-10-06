@@ -101,6 +101,45 @@ LEFT JOIN LATERAL (
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = sqlc.arg('user_id')::text
 WHERE r.id = sqlc.arg('room_id') AND (r.archived_at IS NULL OR r.expires_at IS NOT NULL);
 
+-- name: GetRoomAccesses :many
+-- GetRoomAccess for several users at once (the RTC identity sweep checks a room in one call):
+-- the same columns, one row per given user in their order, or no rows when GetRoomAccess finds
+-- no room. Keep the two in step; perm converts these rows to GetRoomAccessRow.
+SELECT r.workspace_id,
+       r.type,
+       r.restricted,
+       m.role,
+       coalesce(mr.ids, '{}')::uuid[] AS role_ids,
+       coalesce(mr.positions, '{}')::integer[] AS role_positions,
+       coalesce(mr.perms, '{}')::bigint[] AS role_permissions,
+       coalesce(mr.allows, '{}')::bigint[] AS role_allows,
+       coalesce(mr.denies, '{}')::bigint[] AS role_denies,
+       uo.allow AS user_allow, uo.deny AS user_deny,
+       (CASE WHEN r.type IN ('dm', 'notes') THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
+             ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
+       (w.suspended_at IS NOT NULL)::boolean AS suspended,
+       (r.archived_at IS NOT NULL)::boolean AS archived,
+       (r.expires_at IS NOT NULL)::boolean AS temp,
+       r.created_by
+FROM rooms r
+CROSS JOIN unnest(sqlc.arg('user_ids')::uuid[]) WITH ORDINALITY AS k(user_id, ord)
+LEFT JOIN workspaces w ON w.id = r.workspace_id
+LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = k.user_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
+           array_agg(wr.position ORDER BY wr.position) AS positions,
+           array_agg(wr.permissions ORDER BY wr.position) AS perms,
+           array_agg(coalesce(ro.allow, 0) ORDER BY wr.position) AS allows,
+           array_agg(coalesce(ro.deny, 0) ORDER BY wr.position) AS denies
+    FROM member_roles x
+    JOIN workspace_roles wr ON wr.id = x.role_id
+    LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = wr.id::text
+    WHERE x.workspace_id = m.workspace_id AND x.user_id = m.user_id
+) mr ON true
+LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = k.user_id::text
+WHERE r.id = sqlc.arg('room_id') AND (r.archived_at IS NULL OR r.expires_at IS NOT NULL)
+ORDER BY k.ord;
+
 -- name: CreateCategory :one
 INSERT INTO room_categories (workspace_id, name, position)
 VALUES (sqlc.arg('workspace_id'), sqlc.arg('name'),

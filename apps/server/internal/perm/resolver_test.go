@@ -3,6 +3,7 @@ package perm
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -41,6 +42,25 @@ func (f *fakeStore) GetRoomAccess(_ context.Context, a sqlc.GetRoomAccessParams)
 		return sqlc.GetRoomAccessRow{}, pgx.ErrNoRows
 	}
 	return row, nil
+}
+
+// GetRoomAccesses answers like the query: one row per user in order (a user without a stored
+// row gets the empty row of a non-member), or none when no user has a row (no room).
+func (f *fakeStore) GetRoomAccesses(_ context.Context, a sqlc.GetRoomAccessesParams) ([]sqlc.GetRoomAccessesRow, error) {
+	f.accessCalls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	rows, found := make([]sqlc.GetRoomAccessesRow, len(a.UserIds)), false
+	for i, u := range a.UserIds {
+		if row, ok := f.access[key{a.RoomID, u}]; ok {
+			rows[i], found = sqlc.GetRoomAccessesRow(row), true
+		}
+	}
+	if !found {
+		return nil, nil
+	}
+	return rows, nil
 }
 
 func (f *fakeStore) GetBoardAccess(_ context.Context, a sqlc.GetBoardAccessParams) (sqlc.GetBoardAccessRow, error) {
@@ -295,5 +315,41 @@ func TestResolverRestricted(t *testing.T) {
 	}
 	if acc, err := r.Room(ctx, room, ownerU); err != nil || acc.Bits != All {
 		t.Fatalf("owner: %+v %v", acc, err)
+	}
+}
+
+func TestPrimeRoomAnswersLikeReadRoom(t *testing.T) {
+	ws, room := uuid.New(), uuid.New()
+	member, outsider, archived := uuid.New(), uuid.New(), uuid.New()
+	rows := map[key]sqlc.GetRoomAccessRow{
+		{room, member}:   {WorkspaceID: &ws, Type: "voice", Role: ptr("member")},
+		{room, archived}: {WorkspaceID: &ws, Type: "voice", Role: ptr("member"), Archived: true},
+	}
+	users := []uuid.UUID{member, outsider, archived}
+	single := NewResolver(&fakeStore{access: rows})
+	primedStore := &fakeStore{access: rows}
+	primed := NewResolver(primedStore)
+	if err := primed.PrimeRoom(context.Background(), room, users); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range users {
+		want, wantErr := single.ReadRoom(context.Background(), room, u)
+		got, gotErr := primed.ReadRoom(context.Background(), room, u)
+		if !reflect.DeepEqual(got, want) || !errors.Is(gotErr, wantErr) {
+			t.Fatalf("user %s: primed %+v/%v, single %+v/%v", u, got, gotErr, want, wantErr)
+		}
+	}
+	if primedStore.accessCalls != 1 {
+		t.Fatalf("primed resolver queried %d times, want 1", primedStore.accessCalls)
+	}
+	// A failed prime caches nothing: ReadRoom then loads the user itself.
+	failing := &fakeStore{access: rows, err: errors.New("db down")}
+	r := NewResolver(failing)
+	if err := r.PrimeRoom(context.Background(), room, users); err == nil {
+		t.Fatal("prime over a failing store succeeded")
+	}
+	failing.err = nil
+	if acc, err := r.ReadRoom(context.Background(), room, member); err != nil || acc.WorkspaceID != ws {
+		t.Fatalf("after a failed prime: %+v %v", acc, err)
 	}
 }
