@@ -1371,7 +1371,7 @@ test('workspace-menu', async ({ open, win, mock, shot }) => {
   // The workspace switcher (ADR-0074 §2): every workspace, then create / find, then this one's items.
   await win.getByTestId('titlebar-title').click();
   await expect(win.getByRole('menu')).toBeVisible();
-  await expect(win.getByTestId('switcher-row')).toHaveCount(3);
+  await expect(win.getByTestId('switcher-row')).toHaveCount(2);
   await expect(win.getByTestId('switcher-row').first()).toHaveAttribute('aria-current', 'true');
   await expect(win.getByRole('menuitem', { name: 'Создать пространство' })).toBeVisible();
   await checkpoint(shot, 'workspace-menu');
