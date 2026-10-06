@@ -4851,8 +4851,10 @@ func (x *SetTaskRelationRequest) GetKind() TaskRelationKind {
 
 // PUT /api/tasks/{id}/watchers → TaskResponse (ADR-0076): makes user_id a watcher (and a
 // subscriber), by whoever may edit the task (403 otherwise). A member of the workspace, not a
-// guest nor a bot (422 "userId"); one who does not see the board then sees this task. Adding a
-// watcher twice is a no-op. Journal "watchers" {"user_ids": [...]} before and after.
+// guest; a bot only one who sees the board (422 "userId"); a human who does not see the board
+// then sees this task. ≤ 50 watchers (409). Adding a watcher twice is a no-op. Journal
+// "watchers" {"user_ids": [...]} before and after. An @mention by whoever may edit the task
+// (description, comment) makes the mentioned humans watchers too.
 // DELETE /api/tasks/{id}/watchers?user_id= → TaskResponse removes one: by whoever may edit the
 // task, or the watcher themselves («Перестать наблюдать»). The subscription goes too when the
 // user no longer sees the task; their access goes unless another basis is left (a role on the

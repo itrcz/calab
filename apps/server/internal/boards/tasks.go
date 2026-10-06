@@ -893,7 +893,8 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		// The author subscribes; the approvers (first: their notice is mandatory), the assignees
-		// and the users @mentioned in the description are subscribed and notified.
+		// and the users @mentioned in the description are subscribed and notified. The author
+		// edits their new task: the mentioned become watchers (ADR-0076 §5).
 		if err := q.Subscribe(r.Context(), sqlc.SubscribeParams{TaskID: taskID, UserIds: []uuid.UUID{me}}); err != nil {
 			return err
 		}
@@ -901,6 +902,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		mentioned, _ := messages.ParseMentions(desc)
+		if _, err := mentionWatchers(r.Context(), q, t, me, true, mentioned, &c); err != nil {
+			return err
+		}
 		return s.notifyDirect(r.Context(), q, t, me, fresh, mentioned, uuid.Nil, &c)
 	})
 	if err != nil {
@@ -1475,6 +1479,11 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				if !slices.Contains(was, u) {
 					added = append(added, u)
 				}
+			}
+			// The caller edits the task (requireEdit above): the new mentions become watchers
+			// (ADR-0076 §5).
+			if _, err := mentionWatchers(r.Context(), q, t, me, true, added, &c); err != nil {
+				return err
 			}
 			if err := s.notifyDirect(r.Context(), q, t, me, nil, added, uuid.Nil, &c); err != nil {
 				return err
