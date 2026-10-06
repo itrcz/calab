@@ -139,8 +139,8 @@ export function SplitButton({
     // inside it on both ends (docs/09 #102); the ▾ is always visible — the device menu is one click away.
     // Keyboard focus: one ring around the whole pill (a half-pill outline reads as broken, docs/09
     // #138); the focused half takes the stronger fill so it's clear which one Enter presses.
-    <div className="group/split flex h-8 shrink-0 items-center rounded-[var(--radius-icon)] outline-offset-2 outline-focus transition-colors duration-[var(--motion-fast)] hover:bg-hover has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-solid" data-focus-box>
-      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-8 w-[26px] rounded-r-none pl-1.5 hover:bg-transparent focus-visible:bg-[var(--color-fill-hover)] focus-visible:outline-none">
+    <div className="group/split flex size-10 shrink-0 items-center rounded-[var(--radius-icon)] outline-offset-2 outline-focus transition-colors duration-[var(--motion-fast)] hover:bg-hover has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-solid" data-focus-box>
+      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-10 w-7 rounded-r-none pl-1 hover:bg-transparent focus-visible:bg-[var(--color-fill-hover)] focus-visible:outline-none">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -149,7 +149,7 @@ export function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="grid h-8 w-[18px] place-items-center rounded-r-[var(--radius-icon)] pl-0.5 pr-1.5 text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg focus-visible:bg-[var(--color-fill-hover)] focus-visible:text-fg focus-visible:outline-none data-[state=open]:text-fg"
+            className="grid h-10 w-3 place-items-center rounded-r-[var(--radius-icon)] pr-0.5 text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg focus-visible:bg-[var(--color-fill-hover)] focus-visible:text-fg focus-visible:outline-none data-[state=open]:text-fg"
           >
             <ChevronDown className="size-2.5 shrink-0" strokeWidth={2.75} aria-hidden />
           </button>
