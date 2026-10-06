@@ -243,7 +243,9 @@ async function openSettingsTab(page: Page, opener: () => Promise<void>, index: n
 /** In «Переговорка» (dev LiveKit), muted (the fake mic beeps), signal bars steady «good». */
 async function inVoice(page: Page, mock: MockServer): Promise<void> {
   await mainWindow(page, mock);
+  // 3.0: a click on a voice room opens it; the voice is joined from its header («Войти в голос»).
   await page.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
+  await page.getByRole('region', { name: 'Переговорка' }).getByRole('button', { name: 'Войти в голос', exact: true }).click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press(`${MOD}+Shift+m`);
   await expect(page.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
