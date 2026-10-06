@@ -79,6 +79,8 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.pinned': 'Fijados',
   'chat.pinnedOne': 'Mensaje fijado',
   'chat.pinnedN': 'Mensaje fijado {n} de {total}',
+  'chat.pinnedShortOne': 'Fijado',
+  'chat.pinnedShortN': 'Fijado {n}/{total}',
   'chat.noPins': 'No hay mensajes fijados',
   // room notifications (bell menu)
   'chat.notify': 'Notificaciones',

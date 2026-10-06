@@ -44,7 +44,7 @@ export function StickerButton({ place, onSend }: { place: StickerPlace; onSend: 
     <Popover.Root open={open} onOpenChange={setOpen} modal={false}>
       <Tip label={t('stk.tabStickers')}>
         <Popover.Trigger asChild>
-          <IconButton tip={false} label={t('stk.tabStickers')} className="mb-1 rounded-full" data-testid="sticker-button">
+          <IconButton tip={false} label={t('stk.tabStickers')} className="mb-1 rounded-full mobile:mb-0 mobile:size-11" data-testid="sticker-button">
             <StickerIcon className="size-5" />
           </IconButton>
         </Popover.Trigger>
@@ -57,7 +57,7 @@ export function StickerButton({ place, onSend }: { place: StickerPlace; onSend: 
           collisionPadding={16}
           aria-label={t('stk.tabStickers')}
           data-testid="sticker-panel"
-          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(520px,var(--radix-popover-content-available-height))] w-[460px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(75dvh,560px)]"
+          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(520px,var(--radix-popover-content-available-height))] w-[460px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-auto mobile:max-h-[min(75dvh,560px)] mobile:min-h-[340px]"
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <StickerPanel
@@ -296,7 +296,7 @@ function useWindowWidth(on: boolean): number {
 
 function Grid({ stickers, onSend, cell, img, preview }: { stickers: readonly Sticker[]; onSend: (s: Sticker, keepOpen: boolean) => void; cell: number; img: number; preview: boolean }): ReactNode {
   return (
-    <div className="grid grid-cols-4">
+    <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] justify-items-center">
       {stickers.map((s, i) => (
         <Tile key={`${s.id}-${i}`} sticker={s} first={i === 0} cell={cell} img={img} preview={preview} onPick={(keep) => onSend(s, keep)} />
       ))}

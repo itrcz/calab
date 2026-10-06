@@ -111,7 +111,9 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
         )}
       >
         {!own ? (
-          <div className="w-9 shrink-0 self-end">
+          // Phone: under a bubble with inline buttons the avatar stays beside the bubble itself (top),
+          // not at the bottom of the buttons where it reads as a stray one.
+          <div className={cx('w-9 shrink-0 self-end', !!m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' && 'mobile:self-start')}>
             {meta.last ? (
               <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="rounded-full">
                 <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} />

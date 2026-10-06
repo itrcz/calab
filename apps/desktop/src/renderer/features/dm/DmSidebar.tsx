@@ -55,14 +55,14 @@ export function DmSidebar(): ReactNode {
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         {/* «Заметки» (ADR-0039): my shelves above the DMs; guest accounts have none. */}
         {guest ? null : <NotesSection />}
-        <div className="group/cat flex h-7 items-center pr-1 pt-1">
+        <div className="group/cat flex h-7 items-center pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-0">
           <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('dm.list')}</h2>
           <Tip label={t('dm.new')}>
             <button
               type="button"
               onClick={() => open({ kind: 'new-dm' })}
               aria-label={t('dm.new')}
-              className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+              className="grid size-6 mobile:size-11 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
             >
               <Plus className="size-4" aria-hidden />
             </button>
@@ -95,12 +95,12 @@ function ArchiveSection({ list }: { list: DmEntry[] }): ReactNode {
   const label = t('dm.archiveSection', { n: list.length });
   return (
     <section className="mt-2" aria-label={label} data-testid="dm-archive">
-      <div className="flex h-7 items-center pr-1 pt-1">
+      <div className="flex h-7 items-center pr-1 pt-1 mobile:h-11 mobile:pt-0">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left mobile:h-11 mobile:gap-1 mobile:pl-1.5 text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
         >
           <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', !expanded && '-rotate-90')} strokeWidth={2.25} aria-hidden />
           <span className="truncate">{label}</span>
@@ -166,7 +166,7 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
         {...swipe.handlers}
         {...drop}
       >
-        {unread && !active ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg" /> : null}
+        {unread && !active ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg mobile:hidden" /> : null}
         {shifted ? (
           <button
             type="button"

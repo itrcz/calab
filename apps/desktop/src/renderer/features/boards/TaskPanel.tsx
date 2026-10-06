@@ -675,6 +675,9 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
           <Crown className="size-3.5" aria-hidden />
         </button>
       </Tip>
+      {/* Phone: the field must be 16 px (iOS zooms into smaller ones), so at rest a 13 px secondary
+          text of the same value is drawn over it; focusing shows the real field. */}
+      <div className="contents mobile:relative mobile:order-last mobile:col-span-3 mobile:ml-7 mobile:block">
       <input
         value={v}
         readOnly={!canEdit}
@@ -691,9 +694,13 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
         }}
         placeholder={canEdit ? t('boards.notePlaceholder') : ''}
         aria-label={t('boards.noteOf', { name })}
-        className="selectable mobile:order-last h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg mobile:col-span-3 mobile:ml-7 mobile:h-8 mobile:min-w-0 mobile:px-0 mobile:text-[13px]"
+        className="selectable peer h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg mobile:h-8 mobile:w-full mobile:min-w-0 mobile:px-0 mobile:text-transparent mobile:caret-[var(--color-label-secondary)] mobile:placeholder:text-transparent mobile:focus:text-fg"
         data-testid="assignee-note"
       />
+      <span aria-hidden className="pointer-events-none absolute inset-0 hidden items-center truncate text-[13px] leading-8 text-muted mobile:flex mobile:peer-focus:hidden">
+        {v || (canEdit ? <span className="text-faint">{t('boards.notePlaceholder')}</span> : null)}
+      </span>
+      </div>
       {canEdit ? (
         <button type="button" aria-label={t('boards.removeAssignee', { name })} onClick={() => void setAssignees(task.id, removeAssignee(drafts, userId))} className="grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100">
           <X className="size-3.5" aria-hidden />

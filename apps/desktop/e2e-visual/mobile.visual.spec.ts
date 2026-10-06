@@ -415,6 +415,9 @@ test('m-chat-code', async ({ page }) => {
   await expect(page.getByTestId('composer')).toBeVisible();
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: CODE_FIXTURE.long });
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: CODE_FIXTURE.js });
+  // The feed is virtualised: the 420-line log (the first message) fills the viewport, the js message
+  // below it is in the DOM only once the feed is scrolled to the bottom — scroll first, then look for it.
+  await feedToBottom(page);
   await expect(page.getByText('Вот обработчик для поиска:')).toBeAttached();
   await feedToBottom(page);
   const js = page.getByTestId('code-block').last();

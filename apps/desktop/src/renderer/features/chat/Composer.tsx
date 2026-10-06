@@ -43,6 +43,8 @@ import { loadDraft, saveDraft } from './drafts';
 const NO_MENTIONS: ReadonlyMap<string, string> = new Map();
 /** Field grows up to 6 lines (15 px text on a 20 px line — integer line boxes keep layout pixel-exact). */
 const MAX_FIELD_H = 6 * 20 + 16;
+/** Phone: the field is taller than this (one 44 px line + slack) → the multiline layout. */
+const MULTILINE_PX = 52;
 
 export function toOutgoing(f: File): OutgoingFile {
   const name = f.name || `image-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
@@ -73,6 +75,7 @@ export function Composer({
   const imageInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const mobile = useMobile();
+  const [multi, setMulti] = useState(false);
   const pendingCaret = useRef<number | null>(null);
   // docs/09 #149: a file staged from outside the field (drag-and-drop above all) leaves it
   // unfocused — Enter then does nothing until a click. `files` only grows on staging, never on
@@ -243,7 +246,10 @@ export function Composer({
     }
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, MAX_FIELD_H)}px`;
-  }, [text]);
+    // Phone: a second line moves the text to a row of its own above the buttons. Sticky until the
+    // field is empty again: at the full width the same text may fit one line, and that must not flip back.
+    if (mobile) setMulti((was) => (text === '' ? false : was || el.scrollHeight > MULTILINE_PX));
+  }, [text, mobile, multi]);
 
   const cancelEdit = (): void => setEditing(null);
 
@@ -439,7 +445,7 @@ export function Composer({
   ) : null;
 
   return (
-    <div className="px-4 pb-3 pt-2 mobile:px-2 mobile:pb-2">
+    <div className="px-4 pb-3 pt-2 mobile:px-2 mobile:pb-2 mobile:pt-3">
       {bar}
       {files.length > 0 && !editMsg ? <AttachmentGrid files={files} setFiles={setFiles} /> : null}
       <div className="relative flex items-end gap-2">
@@ -455,6 +461,8 @@ export function Composer({
           data-focus-box
           className={cx(
             'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-focus',
+            // Phone: one grid, [attach | text | sticker emoji]; a second line puts the text on its own row above them.
+            'mobile:grid mobile:min-h-11 mobile:grid-cols-[auto_minmax(0,1fr)_auto] mobile:items-center mobile:px-0',
             voice.active && 'hidden',
           )}
         >
@@ -462,7 +470,7 @@ export function Composer({
             <Dropdown.Root modal={false}>
               <Tip label={t('chat.attach')}>
                 <Dropdown.Trigger asChild>
-                  <IconButton tip={false} label={t('chat.attach')} className="mb-1 rounded-full" disabled={files.length >= MAX_ATTACHMENTS}>
+                  <IconButton tip={false} label={t('chat.attach')} className={cx('mb-1 rounded-full mobile:mb-0 mobile:size-11', multi && 'mobile:row-start-2')} disabled={files.length >= MAX_ATTACHMENTS}>
                     <Paperclip className="size-5" />
                   </IconButton>
                 </Dropdown.Trigger>
@@ -485,7 +493,7 @@ export function Composer({
               </Dropdown.Portal>
             </Dropdown.Root>
           ) : (
-            <span className="w-2" />
+            <span className="w-2 mobile:hidden" />
           )}
           <input
             ref={fileInput}
@@ -527,7 +535,8 @@ export function Composer({
             value={text}
             rows={1}
             maxLength={MAX_CONTENT}
-            placeholder={placeholder}
+            // Phone: the placeholder is drawn below (a native one wraps and inflates the field).
+            placeholder={mobile ? undefined : placeholder}
             onChange={(e) => {
               setText(e.target.value);
               setCaret(e.target.selectionStart);
@@ -554,15 +563,28 @@ export function Composer({
             onKeyDown={onKey}
             onPaste={onPaste}
             aria-label={placeholder}
-            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint"
+            className={cx(
+              'selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint',
+              'mobile:min-h-11 mobile:py-3 mobile:row-start-1',
+              mobile && multi ? 'mobile:col-span-3 mobile:col-start-1 mobile:px-3 mobile:pb-1' : 'mobile:col-start-2',
+            )}
             style={{ maxHeight: MAX_FIELD_H }}
           />
-          {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
-          <EmojiPicker onPick={insert} label={t('chat.emoji')}>
-            <IconButton tip={false} label={t('chat.emoji')} className="mb-1 rounded-full">
-              <Smile className="size-5" />
-            </IconButton>
-          </EmojiPicker>
+          {mobile && !text ? (
+            // The placeholder of a textarea wraps (a long room name made it four lines): a one-line,
+            // ellipsised stand-in in the same grid cell, transparent to touches.
+            <span aria-hidden className="pointer-events-none col-start-2 row-start-1 min-w-0 truncate px-1.5 text-list text-faint">
+              {placeholder}
+            </span>
+          ) : null}
+          <div className={cx('contents mobile:col-start-3 mobile:flex mobile:items-center', multi ? 'mobile:row-start-2' : 'mobile:row-start-1')}>
+            {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
+            <EmojiPicker onPick={insert} label={t('chat.emoji')}>
+              <IconButton tip={false} label={t('chat.emoji')} className="mb-1 rounded-full mobile:mb-0 mobile:size-11">
+                <Smile className="size-5" />
+              </IconButton>
+            </EmojiPicker>
+          </div>
         </div>
         {showMic ? (
           voice.button
@@ -572,7 +594,7 @@ export function Composer({
               type="button"
               onClick={send}
               aria-label={editMsg ? t('common.save') : t('chat.send')}
-              className="anim-pop mb-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-accent-strong text-accent-fg shadow-[var(--shadow-card)] hover:brightness-110 active:brightness-95"
+              className="anim-pop mb-0.5 grid size-9 shrink-0 mobile:mb-0 mobile:size-11 place-items-center rounded-full bg-accent-strong text-accent-fg shadow-[var(--shadow-card)] hover:brightness-110 active:brightness-95"
             >
               {editMsg ? <Check className="size-5" strokeWidth={2.25} /> : <ArrowUp className="size-5" strokeWidth={2.25} />}
             </button>
