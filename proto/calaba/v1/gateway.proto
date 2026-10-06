@@ -394,6 +394,12 @@ message WorkspaceSnapshot {
   // Board categories of the workspace (ADR-0058 §1), by position; empty for guests. Changes
   // come as BOARD_CATEGORY_CREATE / UPDATE / DELETE.
   repeated BoardCategory board_categories = 20;
+  // The newest live message of each room in `rooms` (ADR-0073 §5: the phone room list shows
+  // «author: text · time» without fetching every room's history), room_id -> preview in the
+  // DmLastMessage shape. A room of `rooms` without an entry has no live messages. Rooms are
+  // already filtered by VIEW_ROOM, which is the right to read their history. Clients keep it
+  // up to date with MESSAGE_CREATE / UPDATE / DELETE.
+  map<string, DmLastMessage> room_last_messages = 21;
 }
 
 message Ready {
@@ -498,7 +504,8 @@ message NotesShelf {
   DmLastMessage last_message = 3; // the newest live message for the list preview; unset = none
 }
 
-// Preview of a DM's newest live message (DmSummary.last_message, NotesShelf.last_message).
+// Preview of a room's newest live message (DmSummary.last_message, NotesShelf.last_message,
+// WorkspaceSnapshot.room_last_messages).
 message DmLastMessage {
   string id = 1;
   string author_id = 2;

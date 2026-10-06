@@ -67,14 +67,28 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("PUT /api/rooms/{id}/notifications", wrap(httpx.HandlerFunc(h.setNotifications)))
 }
 
-// Visible returns the workspace's rooms that userID can see (VIEW_ROOM), in display order.
-func Visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member) ([]*v1.Room, error) {
-	return visible(ctx, q, ws, m, true)
+// Visible returns the workspace's rooms that userID can see (VIEW_ROOM), in display order,
+// with their newest live message as a list preview (WorkspaceSnapshot.room_last_messages,
+// ADR-0073 §5): room id -> preview, rooms without live messages absent. VIEW_ROOM is also the
+// right to read a room's history (ReadAccess), so every visible room gets its preview.
+func Visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member) ([]*v1.Room, map[string]*v1.DmLastMessage, error) {
+	var last map[string]*v1.DmLastMessage
+	rs, err := visible(ctx, q, ws, m, &last)
+	return rs, last, err
+}
+
+// lastMessage converts a LastMessagesRow to the list preview (same shape as a DM's).
+func lastMessage(l sqlc.LastMessagesRow) *v1.DmLastMessage {
+	return &v1.DmLastMessage{
+		Id: l.ID.String(), AuthorId: l.AuthorID.String(), Content: l.Preview,
+		AttachmentCount: uint32(max(l.Attachments, 0)), CreatedAt: timestamppb.New(l.CreatedAt), //nolint:gosec // 0..20
+		StickerEmoji: l.StickerEmoji,
+	}
 }
 
 // VisibleIDs returns the ids of rooms userID can see (no last-message lookup).
 func VisibleIDs(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member) ([]uuid.UUID, error) {
-	rs, err := visible(ctx, q, ws, m, false)
+	rs, err := visible(ctx, q, ws, m, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +102,7 @@ func VisibleIDs(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.
 // VisibleBits returns the member's effective bits in every room they can see (ADR-0038: which
 // meetings they see and may edit), without the last-message lookup.
 func VisibleBits(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member) (map[uuid.UUID]perm.Bits, error) {
-	rs, err := visible(ctx, q, ws, m, false)
+	rs, err := visible(ctx, q, ws, m, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +113,9 @@ func VisibleBits(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm
 	return out, nil
 }
 
-func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member, withLast bool) ([]*v1.Room, error) {
+// visible lists the rooms m can see; with last set it also fills Room.last_message_* and
+// *last with the previews (one LastMessages query for all the rooms).
+func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member, last *map[string]*v1.DmLastMessage) ([]*v1.Room, error) {
 	rows, err := q.ListRooms(ctx, ws.ID)
 	if err != nil {
 		return nil, err
@@ -123,21 +139,22 @@ func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Mem
 		out = append(out, pbconv.Room(r, defaults, ovs))
 		ids = append(ids, r.ID)
 	}
-	if withLast && len(ids) > 0 {
-		last, err := q.LastMessages(ctx, ids)
+	if last != nil && len(ids) > 0 {
+		rows, err := q.LastMessages(ctx, ids)
 		if err != nil {
 			return nil, err
 		}
-		byID := make(map[string]sqlc.LastMessagesRow, len(last))
-		for _, l := range last {
-			byID[l.RoomID.String()] = l
+		byID := make(map[string]*v1.DmLastMessage, len(rows))
+		for _, l := range rows {
+			byID[l.RoomID.String()] = lastMessage(l)
 		}
 		for _, r := range out {
 			if l, ok := byID[r.GetId()]; ok {
-				r.LastMessageId = l.ID.String()
-				r.LastMessageAt = timestamppb.New(l.CreatedAt)
+				r.LastMessageId = l.GetId()
+				r.LastMessageAt = l.GetCreatedAt()
 			}
 		}
+		*last = byID
 	}
 	return out, nil
 }
@@ -408,7 +425,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rooms, err := Visible(r.Context(), h.db.Q, ws, m)
+	rooms, _, err := Visible(r.Context(), h.db.Q, ws, m)
 	if err != nil {
 		return err
 	}

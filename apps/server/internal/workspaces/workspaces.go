@@ -177,7 +177,7 @@ func requireInvite(r *http.Request) (uuid.UUID, perm.Role, error) {
 // the plan from pl (nil = unset). Voice states and presences are filled in by the gateway.
 func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.Workspace, userID uuid.UUID, me perm.Member) (*v1.WorkspaceSnapshot, error) {
 	role := me.Role
-	rs, err := rooms.Visible(ctx, q, ws, me)
+	rs, lastMessages, err := rooms.Visible(ctx, q, ws, me)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +277,8 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
 		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
-		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps), BoardCategories: boardCats}, nil
+		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps), BoardCategories: boardCats,
+		RoomLastMessages: lastMessages}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.
