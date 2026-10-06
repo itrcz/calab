@@ -63,6 +63,9 @@ func Connect(ctx context.Context, url string) (*DB, error) {
 // Close closes the pool.
 func (d *DB) Close() { d.Pool.Close() }
 
+// MaxConns is the pool's connection limit (pool_max_conns in DATABASE_URL, default 20).
+func (d *DB) MaxConns() int { return int(d.Pool.Config().MaxConns) }
+
 // Tx runs fn in a transaction; it commits when fn returns nil and rolls back otherwise.
 func (d *DB) Tx(ctx context.Context, fn func(q *sqlc.Queries) error) error {
 	return d.TxRaw(ctx, func(q *sqlc.Queries, _ pgx.Tx) error { return fn(q) })
