@@ -363,7 +363,9 @@ func New(d Deps) *App {
 	ah.Public(mux)
 	ah.Private(mux, private)
 	pushSvc.Routes(mux, private)
-	users.NewHandlers(d.DB, pub, hub).Routes(mux, private)
+	userHandlers := users.NewHandlers(d.DB, pub, hub)
+	userHandlers.UsernameLimit = redisx.NewRateLimiter(d.Redis, "rl:username-check:", 30, 30) // ADR-0077: 30 at once, then one per 2 s
+	userHandlers.Routes(mux, private)
 	workspaces.NewHandlers(d.DB, pub, d.Blob, workspaces.Limits{
 		MaxOwned:      d.Config.MaxWorkspacesPerUser,
 		Quota:         d.Config.DefaultWorkspaceQuotaBytes,

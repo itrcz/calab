@@ -25,6 +25,6 @@ func Publish(ctx context.Context, q *sqlc.Queries, pub events.Publisher, u sqlc.
 		return
 	}
 	if len(wids) > 0 {
-		pub.Workspaces(ctx, wids, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{User: pbconv.User(u)}}})
+		pub.Workspaces(ctx, wids, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{User: pbconv.UserEvent(u)}}}) // contacts: stripped by the gateway per workspace and recipient (ADR-0077)
 	}
 }

@@ -143,13 +143,18 @@ export interface MentionCandidate {
   name: string;
   /** Other names the member is found by (profile name when a nickname is set). */
   alt: string[];
+  /** Global nickname without «@» (ADR-0077): found by it too, shown as `@nick`; never inserted. */
+  nick?: string;
 }
 
-/** Candidates for a query: a word of the name (or of an alt name) starts with it; best first. */
+/**
+ * Candidates for a query: a word of the name (or of an alt name) or the nickname starts with it;
+ * best first.
+ */
 export function filterCandidates(query: string, list: readonly MentionCandidate[], limit = 8): MentionCandidate[] {
   const q = query.trim().toLowerCase();
   const score = (c: MentionCandidate): number => {
-    const names = [c.name, ...c.alt].map((n) => n.toLowerCase());
+    const names = [c.name, ...c.alt, ...(c.nick ? [c.nick] : [])].map((n) => n.toLowerCase());
     if (!q) return 1;
     if (names.some((n) => n.startsWith(q))) return 2;
     if (names.some((n) => n.split(/[\s._-]+/).some((w) => w.startsWith(q)))) return 1;

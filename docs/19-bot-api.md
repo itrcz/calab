@@ -113,7 +113,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `PUT /api/bots/me/commands` | заменить список команд `{commands: [{name, description}]}` | только боты |
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | только боты |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | пространства бота | участник |
-| `GET /api/workspaces/{id}/members` | участники (`WorkspaceMember`, у ботов `user.isBot`) | участник |
+| `GET /api/workspaces/{id}/members` | участники (`WorkspaceMember`, у ботов `user.isBot`; `user.username` — ник, ADR-0077). Почту и телефон людей боты не получают нигде — ни в REST, ни в gateway, ни в webhook | участник |
 | `GET /api/workspaces/{id}/members/{userId}` | профиль участника (ADR-0051; `@me` — сам бот) → `{member, openTasks}`: имя, ник, роли, бейдж, статус, часовой пояс, день рождения (скрытый не отдаётся), открытые задачи, где он исполнитель, — только с досок, которые видит бот (≤ 50). SDK `bot.members.get` | участник |
 | `PATCH /api/workspaces/{id}/members/{userId} {nickname}` | переименовать участника (ник в пространстве; `""` — снять). SDK `bot.members.setNickname` | `MANAGE_NICKNAMES` |
 | `GET /api/workspaces/{id}/badges` | бейджи участников (docs/09 #82): `WorkspaceMember.badge_id` ссылается на них | участник |

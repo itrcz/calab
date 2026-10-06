@@ -949,6 +949,10 @@ test('members-profile', async ({ open, win, mock, shot }) => {
   await expect(card).toBeVisible();
   // docs/09 #108: the badge inline after the name (no text line), its name as the tooltip.
   await expect(card.locator('h3 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
+  // ADR-0077: @nick under the name; email and phone of a colleague with «Скопировать».
+  await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
+  await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
+  await expect(card.getByTestId('profile-phone')).toContainText('+7 912 555-02-02');
   await badgesLoaded(win);
   await checkpoint(shot, 'members-profile');
 });
@@ -1046,6 +1050,8 @@ test('profile-dialog', async ({ open, win, mock, shot }) => {
   await expect(dialog.locator('h2 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
   // docs/09 #143: the app of the member's latest session under the local time.
   await expect(dialog.getByTestId('client-version')).toHaveText('Calab 1.1.0 · macOS');
+  // ADR-0077: «Контакты» — email and phone.
+  await expect(dialog.getByTestId('profile-contacts')).toContainText('boris@calaba.test');
   await badgesLoaded(win);
   const note = dialog.getByTestId('profile-note');
   await expect(note).toBeEditable();

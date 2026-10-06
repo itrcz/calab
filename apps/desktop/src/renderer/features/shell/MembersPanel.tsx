@@ -385,9 +385,12 @@ const MemberRow = memo(function MemberRow({
     <span className="truncate" data-testid="member-custom-status">
       {line.status}
     </span>
-  ) : (
+  ) : activity ? (
     activity
-  );
+  ) : u.username && !u.isBot ? (
+    // The nickname (ADR-0077) when nothing more current is to be said.
+    <span className="truncate">@{u.username}</span>
+  ) : null;
   const secondTitle = [line.status, activityLabel].filter(Boolean).join(' · ');
 
   return (

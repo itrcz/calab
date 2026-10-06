@@ -24,6 +24,7 @@ import { openProfile } from './actions';
 import { LocalTime } from './LocalTime';
 import { BirthdayInfo } from './Birthday';
 import { ProfileCardAchievements } from './ProfileAchievements';
+import { ProfileContacts, UserHandle } from './ProfileContacts';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -92,6 +93,8 @@ export function ProfileCard({
               {u.displayName}
             </div>
           ) : null}
+          {/* The nickname (ADR-0077); a bot's username is BotHandle below. */}
+          {u.isBot ? null : <UserHandle userId={userId} />}
           {/* A bot (ADR-0031): its @username instead of presence (bots are never «в сети» as people). */}
           {u.isBot ? (
             <BotHandle botUserId={userId} />
@@ -143,6 +146,7 @@ export function ProfileCard({
           {t(ROLE_KEY[m.role])}
         </dd>
         <ProfileCardAchievements workspaceId={workspaceId} userId={userId} />
+        {u.isBot ? null : <ProfileContacts userId={userId} variant="row" />}
         {u.isBot ? null : <LocalTime userId={userId} variant="row" />}
         {u.isBot ? null : <BirthdayInfo userId={userId} variant="row" />}
         {v?.roomId ? (

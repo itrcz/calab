@@ -40,7 +40,7 @@ export function useMentionables(workspaceId: string, room: Room, me: string): Me
       if (u.id === me || !can(roomPerms(roles, u.id, room), 'VIEW_ROOM')) continue;
       if (isGuest(m)) out.guests.add(u.id);
       out.roles.set(u.id, { role: m.role, custom: customLook(roles) });
-      out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [] });
+      out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [], ...(u.username ? { nick: u.username } : {}) });
     }
     return out;
   }, [members, wsRoles, me, room]);
@@ -104,6 +104,8 @@ export function MentionPopover({
                   <RoleMark role={o.role} custom={o.custom} tone={active ? 'inherit' : 'role'} />
                   {users[o.c.id]?.isBot ? <BotBadge tone={active ? 'inherit' : 'neutral'} /> : null}
                   {o.c.alt[0] ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>{o.c.alt[0]}</span> : null}
+                  {/* The nickname (ADR-0077): found by it, the name is what gets inserted. */}
+                  {o.c.nick ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>@{o.c.nick}</span> : null}
                   {o.guest ? (
                     <span className={cx('ml-auto shrink-0 text-micro', active ? 'text-accent-fg' : 'text-muted')}>{t('chat.mentionGuest')}</span>
                   ) : null}

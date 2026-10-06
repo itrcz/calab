@@ -68,10 +68,23 @@ interface WorkspacesState {
 }
 
 /**
+ * Contacts (ADR-0077) arrive only where the server may show them, judged per workspace: a User
+ * without email says nothing about them (a guest's view of the same person in another workspace,
+ * an event that does not carry them). Such a copy keeps the contacts already known; a User with
+ * email replaces them (a cleared phone included). Who sees them is decided when shown
+ * (features/people/contacts.ts).
+ */
+export function keepContacts(prev: User | undefined, next: User): User {
+  if (next.email || !prev || (!prev.email && !prev.phone)) return next;
+  return { ...next, email: prev.email, emailVerified: prev.emailVerified, phone: prev.phone };
+}
+
+/**
  * A user object lives in `users` and, per workspace, inside `members[id].user` (READY snapshots);
  * the member list renders the latter, so a profile / custom status change has to reach both.
  */
-const withUser = (s: WorkspacesState, u: User): Partial<WorkspacesState> => {
+const withUser = (s: WorkspacesState, next: User): Partial<WorkspacesState> => {
+  const u = keepContacts(s.users[next.id], next);
   const byId = { ...s.byId };
   let touched = false;
   for (const [wsId, e] of Object.entries(byId)) {
@@ -106,8 +119,9 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       const users = { ...s.users };
       for (const m of snap.members) {
         if (!m.user) continue;
-        members[m.user.id] = m;
-        users[m.user.id] = m.user;
+        const u = keepContacts(users[m.user.id], m.user);
+        members[u.id] = u === m.user ? m : { ...m, user: u };
+        users[u.id] = u;
       }
       const voice: Record<string, VoiceState> = {};
       for (const v of snap.voiceStates) if (v.roomId) voice[v.userId] = v;
@@ -131,9 +145,10 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
   upsertMember: (m) =>
     set((s) => {
       if (!m.user) return {};
-      const user = m.user;
+      const user = keepContacts(s.users[m.user.id], m.user);
+      const member = user === m.user ? m : { ...m, user };
       return {
-        ...withEntry(s, m.workspaceId, (e) => ({ ...e, members: { ...e.members, [user.id]: m } })),
+        ...withEntry(s, m.workspaceId, (e) => ({ ...e, members: { ...e.members, [user.id]: member } })),
         users: { ...s.users, [user.id]: user },
       };
     }),

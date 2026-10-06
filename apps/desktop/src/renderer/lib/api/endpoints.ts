@@ -95,6 +95,7 @@ import {
   UpdateMemberBirthdayRequestSchema,
   UpdateMemberBirthdayResponseSchema,
   UpdateMeResponseSchema,
+  UsernameAvailabilityResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
   ListRolesResponseSchema,
@@ -230,6 +231,9 @@ export const api = {
     get: () => call('GET', '/api/me', GetMeResponseSchema),
     update: (init: MessageInitShape<typeof UpdateMeRequestSchema>) =>
       call('PATCH', '/api/me', UpdateMeResponseSchema, body(UpdateMeRequestSchema, init)),
+    /** ADR-0077: whether I may take the nickname now (a hint; PATCH /api/me decides). Rate limited. */
+    usernameAvailable: (name: string) =>
+      call('GET', `/api/usernames/${encodeURIComponent(name)}/available`, UsernameAvailabilityResponseSchema),
     sessions: () => call('GET', '/api/me/sessions', ListSessionsResponseSchema),
     revokeSession: (id: string) => callEmpty('DELETE', `/api/me/sessions/${id}`),
     /** 204; every other session is revoked, this one stays. 403 INVALID_CREDENTIALS = wrong current password. */

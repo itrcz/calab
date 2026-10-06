@@ -68,7 +68,7 @@ func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvi
 const createGuestUser = `-- name: CreateGuestUser :one
 INSERT INTO users (email, password_hash, display_name, settings, is_guest, guest_expires_at)
 VALUES (NULL, NULL, $1, $2, true, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone
 `
 
 type CreateGuestUserParams struct {
@@ -112,6 +112,8 @@ func (q *Queries) CreateGuestUser(ctx context.Context, arg CreateGuestUserParams
 		&i.WorkEndMin,
 		&i.WorkDays,
 		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
 	)
 	return i, err
 }

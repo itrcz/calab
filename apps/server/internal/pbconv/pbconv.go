@@ -164,6 +164,7 @@ func User(u sqlc.User) *v1.User {
 		IsGuest:      u.IsGuest,
 		Timezone:     deref(u.Timezone),
 		IsBot:        u.IsBot,
+		Username:     deref(u.Username), // public (ADR-0077); contacts: WithContacts
 	}
 	if !u.BirthdayHidden { // a hidden birthday goes to its owner only (Me)
 		out.Birthday = Birthday(u.BirthdayDay, u.BirthdayMonth, u.BirthdayYear)
@@ -253,7 +254,7 @@ func Me(u sqlc.User) *v1.Me {
 	for _, d := range u.WorkDays {
 		settings.WorkHours.Days = append(settings.WorkHours.Days, uint32(max(d, 0))) //nolint:gosec // 1..7
 	}
-	me := &v1.Me{User: User(u), Email: email, Settings: settings,
+	me := &v1.Me{User: WithContacts(User(u), u), Email: email, Settings: settings,
 		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
 		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing
 	if u.PendingEmail != nil {

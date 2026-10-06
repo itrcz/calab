@@ -54,6 +54,8 @@ export function PhoneProfile(): ReactNode {
           <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={64} status={status} ring="var(--color-bg)" />
           <span className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="line-clamp-2 break-words text-headline font-semibold">{user.displayName}</span>
+            {/* The nickname (ADR-0077). */}
+            {user.username ? <span className="truncate text-body text-muted">@{user.username}</span> : null}
             <span className="fade-end overflow-hidden whitespace-nowrap text-body text-muted">{custom || statusName}</span>
           </span>
           <ChevronDown className="size-5 shrink-0 text-muted" aria-hidden />

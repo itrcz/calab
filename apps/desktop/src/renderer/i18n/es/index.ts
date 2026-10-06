@@ -30,6 +30,7 @@ import { esSounds } from './sounds';
 import { esBots } from './bots';
 import { esGuests } from './guests';
 import { esTemp } from './temp';
+import { esContacts } from './contacts';
 import { esSip } from './sip';
 import { esWebApps } from './webapps';
 
@@ -47,6 +48,7 @@ export const es: Dict = {
   ...esBots,
   ...esGuests,
   ...esTemp,
+  ...esContacts,
   ...esSip,
   ...esWebApps,
   ...esDm,
