@@ -407,7 +407,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
       <div
         data-board-row={id}
         onPointerDown={(e) => onPointerDown(e, id)}
-        className={cx('group/board flex items-center rounded-[var(--radius-card)] pr-1 mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-[52px]' : 'h-9 mobile:h-[52px]', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
+        className={cx('group/board relative flex items-center rounded-[var(--radius-card)] pr-1 mobile:static mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-[52px]' : 'h-9 mobile:h-[52px]', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
         <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-body', scoped ? 'min-h-8 py-0.5 mobile:min-h-[52px]' : 'h-9 mobile:h-[52px]', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
@@ -427,7 +427,10 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
           {restricted ? <RestrictedMark /> : null}
           {mine > 0 ? (
-            <span className="shrink-0 text-caption tabular-nums text-muted mobile:grid mobile:h-[22px] mobile:min-w-[22px] mobile:place-items-center mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:px-1.5 mobile:text-fg" title={t('boards.myOpen')}>
+            <span
+              className="pointer-events-none absolute right-1 top-1/2 grid h-6 min-w-6 -translate-y-1/2 place-items-center rounded-[var(--radius-icon)] bg-[var(--color-fill)] px-1.5 text-caption tabular-nums text-muted group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:h-[22px] mobile:min-w-[22px] mobile:translate-y-0 mobile:rounded-full mobile:px-1.5 mobile:text-fg mobile:group-hover/board:opacity-100"
+              title={t('boards.myOpen')}
+            >
               {mine}
             </span>
           ) : null}

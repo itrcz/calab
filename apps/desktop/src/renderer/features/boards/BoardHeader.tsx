@@ -62,7 +62,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
                 <Plus className="size-5" aria-hidden />
               </button>
             ) : (
-              <Button size="md" aria-label={t('boards.newTask')} className="ml-1" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+              <Button size="md" aria-label={t('boards.newTask')} className="ml-1 h-7" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
                 <Plus className="size-4" aria-hidden />
                 <span>{t('boards.task')}</span>
               </Button>
@@ -108,7 +108,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
   // TIMELINE off (ADR-0058 §3): no «Таймлайн» (a saved timeline view opens as the list).
   const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
   return (
-        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex shrink-0 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
+        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex h-7 shrink-0 items-center rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
           {KINDS.filter((k) => timeline || k.kind !== 'timeline').map((k) => (
             <Tip key={k.kind} label={t(k.label)} shortcut={k.key}>
               <button
@@ -332,7 +332,7 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
       {forms ? <BoardForms boardId={boardId} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-11" data-testid="board-more">
+          <button type="button" aria-label={t('boards.more')} className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-11" data-testid="board-more">
             <Ellipsis className="size-[18px] mobile:size-5" aria-hidden />
           </button>
         </Dropdown.Trigger>

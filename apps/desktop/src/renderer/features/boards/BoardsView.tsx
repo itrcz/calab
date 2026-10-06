@@ -7,7 +7,8 @@ import { t } from '../../i18n';
 import { mayCreateBoards } from '../../lib/permissions';
 import { ensureBoardTasks, loadBoard, loadMyTasks, useTaskDetails } from '../../services/boards';
 import type { TaskScope } from '../../services/boardsApi';
-import { useBoards, workspaceBoards } from '../../stores/boards';
+import { boardLayout } from '../../lib/boards/categories';
+import { useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
@@ -30,7 +31,8 @@ import { useViewKind } from './useBoardView';
 export function useActiveBoard(workspaceId: string): string {
   const remembered = useBoardsUi((s) => s.boardOf[workspaceId]);
   const exists = useBoards((s) => (remembered && remembered !== MY_TASKS ? !!s.boards[remembered] && !s.boards[remembered].archivedAt : false));
-  const first = useBoards((s) => workspaceBoards(s.boards, workspaceId)[0]?.id ?? '');
+  // The first in the sidebar order (uncategorised, then by category), not the first by raw position (positions are per category).
+  const first = useBoards((s) => boardLayout(workspaceBoards(s.boards, workspaceId), workspaceCategories(s.categories, workspaceId), false).find((c) => c.rooms.length)?.rooms[0] ?? '');
   if (remembered === MY_TASKS) return MY_TASKS;
   if (remembered && exists) return remembered;
   return first || MY_TASKS;
