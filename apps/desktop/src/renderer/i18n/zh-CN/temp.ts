@@ -20,7 +20,7 @@ export const zhTemp = {
   'temp.visAll': '所有成员',
   'temp.visSelected': '仅所选成员',
   'temp.visAllHint': '空间的所有成员都能看到此房间。',
-  'temp.visSelectedHint': '仅你、所选成员以及通过链接加入的人。',
+  'temp.visSelectedHint': '只有你和所选成员能看到此房间——管理员也看不到',
   'temp.guests': '允许访客通过链接加入',
   'temp.guestsHint': '客户和合作伙伴无需注册即可加入。',
   'temp.guestsNoRight': '链接仅限空间成员：拥有“邀请访客”权限的人才能邀请访客。',

@@ -25,7 +25,8 @@ import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/m
  * room's `allow VIEW_ROOM` overrides for people and roles, edited in place. On the third level admins
  * see the room only when they are on the list; the owner always does. Whoever manages the room
  * (MANAGE_ROOM, a temporary room's creator) changes it; the server checks everything. A permanent
- * room's privacy is fixed at creation (PATCH is_private: temporary rooms only).
+ * room's privacy is fixed at creation (PATCH is_private: temporary rooms only). A private temporary
+ * room (ADR-0078) has no bypass: no owner row, no roles in the list — only people and its creator.
  */
 
 const VIEW = PERMISSION_BITS.VIEW_ROOM;
@@ -42,23 +43,24 @@ export function RoomAccessCard({ room, manage }: { room: Room; manage: boolean }
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
 
+  const privateTemp = room.isPrivate && !!room.expiresAt;
   const listed = useMemo(() => room.permissionOverrides.filter((o) => (o.allow & VIEW) === VIEW), [room.permissionOverrides]);
   const wsRoles = useMemo(() => entry?.roles ?? [], [entry?.roles]);
 
   const pickGroups = useMemo((): Array<PickerGroup<PeoplePickItem>> => {
     const inList = new Set(listed.map((o) => `${o.targetType}:${o.targetId}`));
     const roles: RolePickItem[] = wsRoles
-      .filter((r) => listableRole(r.builtin) && !inList.has(`${PermissionTargetType.ROLE}:${r.id}`))
+      .filter((r) => !privateTemp && listableRole(r.builtin) && !inList.has(`${PermissionTargetType.ROLE}:${r.id}`))
       .map((r) => ({ kind: 'role', id: `role:${r.id}`, roleId: r.id, role: r.builtin, color: r.color, label: roleName(r), note: '', search: [roleName(r), r.name] }));
     const people = memberItems(Object.values(entry?.members ?? {}), {
       roles: wsRoles,
-      exclude: new Set([ownerId, ...listed.filter((o) => o.targetType === PermissionTargetType.USER).map((o) => o.targetId)]),
+      exclude: new Set([...(privateTemp ? [] : [ownerId]), ...listed.filter((o) => o.targetType === PermissionTargetType.USER).map((o) => o.targetId)]),
     });
     return [
       { id: 'roles', label: t('picker.roles'), items: roles },
       { id: 'members', label: t('picker.members'), items: people },
     ];
-  }, [entry?.members, listed, ownerId, wsRoles]);
+  }, [entry?.members, listed, ownerId, privateTemp, wsRoles]);
 
   const run = (p: Promise<unknown>): void => {
     setBusy(true);
@@ -92,6 +94,7 @@ export function RoomAccessCard({ room, manage }: { room: Room; manage: boolean }
     else setView(PermissionTargetType.USER, item.userId, true);
   };
 
+  // ADR-0078: a private temporary room has no bypass — the owner sees it only from the list.
   const owner = entry?.members[ownerId];
   const ownerName = owner ? memberName(room.workspaceId, ownerId) : '';
   return (
@@ -101,11 +104,12 @@ export function RoomAccessCard({ room, manage }: { room: Room; manage: boolean }
         onChange={setLevel}
         disabled={!canEdit || busy}
         allLocked={room.expiresAt ? undefined : 'access.permanentRoom'}
+        temp={!!room.expiresAt}
       />
       {room.isPrivate ? (
         <div className="flex flex-col px-3 py-2" data-testid="room-who-sees">
           <span className="pb-1 text-caption font-medium text-muted">{t('room.whoSees')}</span>
-          {owner ? (
+          {owner && !privateTemp ? (
             <div className="flex min-h-9 items-center gap-2.5">
               <Avatar userId={ownerId} name={ownerName} fileId={owner.user?.avatarFileId || undefined} size={24} />
               <span className="min-w-0 flex-1 truncate text-body">{ownerName}</span>
