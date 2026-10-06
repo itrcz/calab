@@ -410,6 +410,7 @@ const getRoomAccess = `-- name: GetRoomAccess :one
 SELECT r.workspace_id,
        r.type,
        r.restricted,
+       r.is_private,
        m.role,
        coalesce(mr.ids, '{}')::uuid[] AS role_ids,
        coalesce(mr.positions, '{}')::integer[] AS role_positions,
@@ -450,6 +451,7 @@ type GetRoomAccessRow struct {
 	WorkspaceID     *uuid.UUID
 	Type            string
 	Restricted      bool
+	IsPrivate       bool
 	Role            *string
 	RoleIds         []uuid.UUID
 	RolePositions   []int32
@@ -479,6 +481,7 @@ func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (G
 		&i.WorkspaceID,
 		&i.Type,
 		&i.Restricted,
+		&i.IsPrivate,
 		&i.Role,
 		&i.RoleIds,
 		&i.RolePositions,
@@ -500,6 +503,7 @@ const getRoomAccesses = `-- name: GetRoomAccesses :many
 SELECT r.workspace_id,
        r.type,
        r.restricted,
+       r.is_private,
        m.role,
        coalesce(mr.ids, '{}')::uuid[] AS role_ids,
        coalesce(mr.positions, '{}')::integer[] AS role_positions,
@@ -542,6 +546,7 @@ type GetRoomAccessesRow struct {
 	WorkspaceID     *uuid.UUID
 	Type            string
 	Restricted      bool
+	IsPrivate       bool
 	Role            *string
 	RoleIds         []uuid.UUID
 	RolePositions   []int32
@@ -573,6 +578,7 @@ func (q *Queries) GetRoomAccesses(ctx context.Context, arg GetRoomAccessesParams
 			&i.WorkspaceID,
 			&i.Type,
 			&i.Restricted,
+			&i.IsPrivate,
 			&i.Role,
 			&i.RoleIds,
 			&i.RolePositions,

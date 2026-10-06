@@ -415,7 +415,8 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	}
 	me := uid(r)
 	starter := rec.StartedBy != nil && *rec.StartedBy == me
-	if !starter && acc.Role != perm.RoleOwner && !acc.Bits.Has(perm.ManageMessages) &&
+	owner := acc.Role == perm.RoleOwner && !acc.PrivateTemp // ADR-0078: the owner counts as anyone in a private temporary room
+	if !starter && !owner && !acc.Bits.Has(perm.ManageMessages) &&
 		(acc.Role == perm.RoleGuest || !acc.Member.Workspace().Has(perm.ManageRecordings)) {
 		return httpx.Forbidden("only who started the recording, the owner, MANAGE_MESSAGES or MANAGE_RECORDINGS")
 	}

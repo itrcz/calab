@@ -293,13 +293,13 @@ func TestComputeInPrivateRoom(t *testing.T) {
 		{TargetType: "role", TargetID: memberID, Override: Override{Deny: ViewRoom}},
 		{TargetType: "user", TargetID: u, Override: Override{Allow: ViewRoom}},
 	}
-	if ComputeIn(roles.Member(uuid.NewString(), RoleMember, []string{memberID}), false, ovs) != 0 {
+	if ComputeIn(roles.Member(uuid.NewString(), RoleMember, []string{memberID}), RoomFlags{}, ovs) != 0 {
 		t.Fatal("private room visible to other members")
 	}
-	if !ComputeIn(roles.Member(u, RoleMember, []string{memberID}), false, ovs).Has(ViewRoom) {
+	if !ComputeIn(roles.Member(u, RoleMember, []string{memberID}), RoomFlags{}, ovs).Has(ViewRoom) {
 		t.Fatal("private room hidden from allowed user")
 	}
-	if got := ComputeIn(roles.Member(u, RoleGuest, []string{guestID, "unknown"}), false, ovs); got != ViewRoom|Connect|Speak {
+	if got := ComputeIn(roles.Member(u, RoleGuest, []string{guestID, "unknown"}), RoomFlags{}, ovs); got != ViewRoom|Connect|Speak {
 		t.Fatalf("guest with user allow: %d", got)
 	}
 }
@@ -330,6 +330,60 @@ func TestResolverRestricted(t *testing.T) {
 	}
 	if acc, err := r.Room(ctx, room, ownerU); err != nil || acc.Bits != All {
 		t.Fatalf("owner: %+v %v", acc, err)
+	}
+}
+
+// ADR-0078: a private temporary room (live or archived) has no bypass — neither the admin nor
+// the owner sees it; its creator does without a personal allow, a guest creator never.
+func TestResolverPrivateTemp(t *testing.T) {
+	ws, room := uuid.New(), uuid.New()
+	adminU, ownerU, creatorU, chosenU := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	adminR, ownerR, memberR := uuid.New(), uuid.New(), uuid.New()
+	row := func(role string, top uuid.UUID, pos int32, perms Bits, userAllow Bits, archived bool) sqlc.GetRoomAccessRow {
+		r := sqlc.GetRoomAccessRow{
+			WorkspaceID: &ws, Type: "voice", Role: ptr(role), IsPrivate: true, Temp: true, CreatedBy: &creatorU, Archived: archived,
+			RoleIds: []uuid.UUID{memberR, top}, RolePositions: []int32{PosMember, pos},
+			RolePermissions: []int64{i64(RoleDefaults[RoleMember]), i64(perms)},
+			RoleAllows:      []int64{0, 0}, RoleDenies: []int64{int64(ViewRoom), 0},
+		}
+		if userAllow != 0 {
+			r.UserAllow, r.UserDeny = ptr(i64(userAllow)), ptr(int64(0))
+		}
+		return r
+	}
+	s := &fakeStore{access: map[key]sqlc.GetRoomAccessRow{
+		{room, adminU}:   row("admin", adminR, PosAdmin, Administrator, 0, false),
+		{room, ownerU}:   row("owner", ownerR, PosOwner, Administrator, 0, true),
+		{room, creatorU}: row("member", uuid.New(), PosCustom, 0, 0, false),
+		{room, chosenU}:  row("admin", adminR, PosAdmin, Administrator, ViewRoom|Connect, false),
+	}}
+	r := NewResolver(s)
+	ctx := context.Background()
+	if acc, err := r.Room(ctx, room, adminU); err != nil || acc.Bits != 0 || !acc.PrivateTemp {
+		t.Fatalf("admin: %+v %v", acc, err)
+	}
+	if acc, err := r.ReadRoom(ctx, room, ownerU); err != nil || acc.Bits != 0 {
+		t.Fatalf("owner, archived room: %+v %v", acc, err)
+	}
+	if acc, err := r.Room(ctx, room, creatorU); err != nil || acc.Bits != RoleDefaults[RoleMember] {
+		t.Fatalf("creator: %+v %v", acc, err)
+	}
+	if acc, err := r.Room(ctx, room, chosenU); err != nil || acc.Bits != RoleDefaults[RoleMember] {
+		t.Fatalf("chosen admin: %+v %v, want the member's bits", acc, err)
+	}
+	// A guest is never the creator (ADR-0044), whatever created_by says.
+	guest := Member{UserID: creatorU.String(), Role: RoleGuest, Roles: []RoleBits{{ID: "g", Permissions: RoleDefaults[RoleGuest]}}}
+	if got := ComputeIn(guest, RoomFlags{PrivateTemp: true, CreatedBy: creatorU}, nil); got != 0 {
+		t.Fatalf("guest creator: %d", got)
+	}
+	// A public temporary room keeps the admin's bypass.
+	admin := Member{UserID: adminU.String(), Role: RoleAdmin, Roles: []RoleBits{{ID: "a", Position: PosAdmin, Permissions: Administrator}}}
+	if got := ComputeIn(admin, Flags(false, false, true, &creatorU), nil); got != All {
+		t.Fatalf("admin in a public temporary room: %d", got)
+	}
+	// A private permanent room too (ADR-0008).
+	if got := ComputeIn(admin, Flags(false, true, false, &creatorU), nil); got != All {
+		t.Fatalf("admin in a private permanent room: %d", got)
 	}
 }
 

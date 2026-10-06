@@ -255,7 +255,11 @@ export const Permission = {
 
 ```
 base   = OR(roles[].permissions)                     (права пространства; без переопределений)
-if room.restricted:                                   (ADR-0029, ADR-0048)
+if room.is_private && room.expires_at:                (ADR-0078: приватная временная, живая и в архиве)
+    base &= ~(ADMINISTRATOR | VIEW_ROOM)              (обхода нет ни у кого, даже у владельца;
+                                                       allow ролей VIEW_ROOM не даёт — только личное;
+                                                       создатель после всех шагов получает VIEW_ROOM)
+elif room.restricted:                                 (ADR-0029, ADR-0048)
     if owner → all;  base &= ~(ADMINISTRATOR | VIEW_ROOM)   (админы — как участники; впускает только переопределение)
 elif base & ADMINISTRATOR → all                      (owner/admin: переопределения, в т.ч. deny, не действуют)
 perms  = base
@@ -270,6 +274,8 @@ if !(perms & VIEW_ROOM) → 0
 Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для своих ролей или конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
 
 **Закрытые комнаты и доски (ADR-0029 → ADR-0048).** Приватная комната с `rooms.restricted = true` или приватная доска с `boards.restricted = true` (CHECK: только при `is_private`): `ADMINISTRATOR` обхода не даёт, а `VIEW_ROOM` / `VIEW_BOARD` из прав ролей снимается — впускает только `allow` в переопределении этого объекта (по роли или лично); впущенный получает свои права ролей (кроме `ADMINISTRATOR`) плюс переопределения. Биты пространства (`MANAGE_*`, `VIEW_JOURNALS`, `MANAGE_RECORDINGS` …) объект не открывают. Владелец (встроенная роль `owner`, её держит только `owner_id`) — всё всегда; суперадмин продукта — без обхода; гость на закрытой доске — никогда. Ставит и снимает `MANAGE_ROOM` / `MANAGE_BOARD` на объекте (`PATCH /api/rooms/{id}` / `PATCH /api/boards/{id} {restricted}`; создатель временной комнаты и доски — тоже); закрывший (не владелец) получает личное `allow VIEW_* | MANAGE_*`, чтобы не запереть себя; владелец открывает всегда. Чужим — 404 везде (списки, поиск, упоминания, уведомления, календарь, задачи, журналы, экспорт, записи, файлы). Роль, открывающую закрытый объект, не-владелец, который его не видит, выдать/снять/переставить не может (`403 OWNER_ONLY`, `restrictedGuard`). `computePermissions({..., restricted, owner})` / `board: {private, guest, restricted, owner}`, векторы в `proto/testdata/permissions.json`.
+
+**Приватная временная комната (ADR-0078).** `is_private` и `expires_at` (живая или архивная): видят только создатель (не гость), люди с личным `allow VIEW_ROOM` (выбранные в диалоге или в «Доступ») и вошедшие по ссылке (тот же личный allow). `ADMINISTRATOR`, владелец и биты пространства (`MANAGE_ROOM`, `MUTE_MEMBERS`, `MOVE_MEMBERS` …) доступа не дают; выбранный админ — как участник. Все пути (READY, списки, архив, поиск, календарь, записи, превью, пуши, шлюз, голос и LiveKit-grant, модерация, боты) считают через ту же функцию: `computePermissions({..., privateTemp, creator})` / `computeMemberRoomPermissions(..., tempRoomScope(room))`, Go — `perm.RoomFlags` в `ComputeIn` и `RoomAccess.PrivateTemp`; векторы `privateTemp` в `proto/testdata/permissions.json`.
 
 **DM (ADR-0020).** Роли и overrides не применяются: `computePermissions({dm: {participant}})` (Go: `perm.ComputeDM`) даёт участнику фиксированный набор `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES` (= 7), остальным — 0 (тест-векторы `roomType: "dm"` в `proto/testdata/permissions.json`). Остальные пункты ADR ложатся на правила, а не на биты: чтение истории — `VIEW_ROOM`, реакции — `SEND_MESSAGES`, правка/удаление своих сообщений — право автора везде, закреп в DM разрешён обоим участникам по типу комнаты. `MANAGE_MESSAGES`, `MENTION_EVERYONE`, модерации и голоса в DM нет.
 

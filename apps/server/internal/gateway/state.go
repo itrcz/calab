@@ -114,11 +114,7 @@ func (s *wsState) delRoom(id uuid.UUID) {
 func (s *wsState) guestRooms() []perm.GuestRoom {
 	out := make([]perm.GuestRoom, 0, len(s.rooms))
 	for id, r := range s.rooms {
-		gr := perm.GuestRoom{ID: id, Restricted: r.GetRestricted(), Overrides: s.targets[id]}
-		if c, err := uuid.Parse(r.GetCreatedBy()); err == nil {
-			gr.CreatedBy = c
-		}
-		out = append(out, gr)
+		out = append(out, perm.GuestRoom{ID: id, Flags: pbconv.RoomFlags(r), Overrides: s.targets[id]})
 	}
 	return out
 }
@@ -207,10 +203,10 @@ func (s *wsState) loadedAuthors(rooms []uuid.UUID, rows []sqlc.ListRoomAuthorsRo
 }
 
 // sameVisibility reports whether replacing room id with r cannot change who sees what:
-// the room exists and keeps its overrides, category and restricted flag (review B2, ADR-0029).
+// the room exists and keeps its overrides, category and flags (review B2, ADR-0029, ADR-0078).
 func (s *wsState) sameVisibility(id uuid.UUID, r *v1.Room) bool {
 	old := s.rooms[id]
-	if old == nil || old.GetCategoryId() != r.GetCategoryId() || old.GetRestricted() != r.GetRestricted() || len(old.GetPermissionOverrides()) != len(r.GetPermissionOverrides()) {
+	if old == nil || old.GetCategoryId() != r.GetCategoryId() || pbconv.RoomFlags(old) != pbconv.RoomFlags(r) || len(old.GetPermissionOverrides()) != len(r.GetPermissionOverrides()) {
 		return false
 	}
 	for i, o := range old.GetPermissionOverrides() {
@@ -303,7 +299,7 @@ func (s *wsState) bits(roomID, userID uuid.UUID) perm.Bits {
 	if !ok {
 		t = pbconv.ProtoOverrideTargets(s.rooms[roomID].GetPermissionOverrides())
 	}
-	return perm.ComputeIn(m, s.rooms[roomID].GetRestricted(), t)
+	return perm.ComputeIn(m, pbconv.RoomFlags(s.rooms[roomID]), t)
 }
 
 func (s *wsState) canView(roomID, userID uuid.UUID) bool {

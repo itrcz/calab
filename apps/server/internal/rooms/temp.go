@@ -344,7 +344,7 @@ func (h *Handlers) listArchived(w http.ResponseWriter, r *http.Request, wsID uui
 	out := &v1.ListRoomsResponse{Rooms: make([]*v1.Room, 0, len(rows))}
 	for _, row := range rows {
 		ovs := byRoom[row.Room.ID]
-		if !perm.ComputeIn(m, row.Room.Restricted, pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
+		if !perm.ComputeIn(m, perm.FlagsOf(row.Room), pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
 			continue
 		}
 		pb := pbconv.Room(row.Room, defaults, ovs)

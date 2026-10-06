@@ -18,6 +18,7 @@ import {
   computeMemberBoardPermissions,
   computeMemberRoomPermissions,
   computePermissions,
+  tempRoomScope,
   computeRoomPermissions,
   memberRoles,
   workspacePermissions,
@@ -38,6 +39,9 @@ interface Vector {
   // ADR-0029: a restricted room and whether the member is the workspace owner.
   restricted?: boolean;
   owner?: boolean;
+  // ADR-0078: a private temporary room and whether the member created it.
+  privateTemp?: boolean;
+  creator?: boolean;
   // ADR-0042: a board vector.
   board?: { private: boolean; guest?: boolean; restricted?: boolean; owner?: boolean };
   // ADR-0042 / ADR-0058 §3: a task room vector (taskRoomPermissions from the board bits).
@@ -134,6 +138,8 @@ describe('computePermissions (shared vectors)', () => {
             userOverride: toOv(v.userOverride),
             restricted: v.restricted,
             owner: v.owner,
+            privateTemp: v.privateTemp,
+            creator: v.creator,
           }),
         ).toBe(BigInt(v.expected));
         // The same through Room.permissionOverrides.
@@ -157,14 +163,16 @@ describe('computePermissions (shared vectors)', () => {
               ]
             : []),
         ];
-        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false)).toBe(
+        // A temporary room: private per the vector, created by u1 (the member) or someone else.
+        const temp = v.privateTemp !== undefined ? { private: v.privateTemp, createdBy: v.creator ? 'u1' : 'u2' } : undefined;
+        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false, temp)).toBe(
           BigInt(v.expected),
         );
         // The owner is recognized by the built-in owner role as well.
         const withBuiltin = roles.map((r) =>
           r.id === 'owner' && v.owner ? { ...r, builtin: WorkspaceRole.OWNER } : r,
         );
-        expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted)).toBe(BigInt(v.expected));
+        expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted, undefined, temp)).toBe(BigInt(v.expected));
         if (v.expectedWorkspace !== undefined) expect(workspacePermissions(roles)).toBe(BigInt(v.expectedWorkspace));
         return;
       }
@@ -274,5 +282,21 @@ describe('roles (ADR-0026)', () => {
     expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(false, false, true), me))).toBe(
       PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES,
     );
+  });
+  // ADR-0078: the room's flags from a Room; a guest is never the creator (Go: perm.ScopeOf).
+  it('private temporary rooms (ADR-0078)', () => {
+    const expiresAt = create(TimestampSchema, { seconds: 1n });
+    expect(tempRoomScope({ isPrivate: true, expiresAt, createdBy: 'u1' })).toEqual({ private: true, createdBy: 'u1' });
+    expect(tempRoomScope({ isPrivate: true, expiresAt: undefined, createdBy: 'u1' })).toBeUndefined();
+    const guest = [{ id: 'g', position: 0, permissions: ROLE_DEFAULTS[WorkspaceRole.GUEST], builtin: WorkspaceRole.GUEST }];
+    const member = [{ id: 'm', position: 1, permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER], builtin: WorkspaceRole.MEMBER }];
+    const temp = { private: true, createdBy: 'u1' };
+    expect(computeMemberRoomPermissions(guest, 'u1', [], false, false, temp)).toBe(0n);
+    expect(computeMemberRoomPermissions(member, 'u1', [], false, false, temp)).toBe(ROLE_DEFAULTS[WorkspaceRole.MEMBER]);
+    expect(computeMemberRoomPermissions(member, 'u2', [], false, false, temp)).toBe(0n);
+    // The owner's built-in role gives nothing; a public temporary room keeps the bypass.
+    const owner = [{ id: 'o', position: 1001, permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.OWNER }];
+    expect(computeMemberRoomPermissions(owner, 'u2', [], true, undefined, temp)).toBe(0n);
+    expect(computeMemberRoomPermissions(owner, 'u2', [], false, undefined, { private: false, createdBy: 'u1' })).toBe(ALL_PERMISSIONS);
   });
 });

@@ -350,6 +350,7 @@ import {
   WorkspaceSnapshotSchema,
   WorkspaceVisibility,
   computeMemberRoomPermissions,
+  tempRoomScope,
   computePermissions,
   has,
   workspacePermissions,
@@ -1261,7 +1262,7 @@ class MockImpl {
     const m = this.member(room.workspaceId, userId);
     // ADR-0029: in a restricted room admins count as members; the owner (owner_id) has everything.
     const owner = this.state.workspaces.get(room.workspaceId)?.ownerId === userId;
-    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides, room.restricted, owner) : 0n;
+    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides, room.restricted, owner, tempRoomScope(room)) : 0n;
   }
 
   /** The other participant of a DM room, or null when `userId` is not in it (or it is no DM). */
