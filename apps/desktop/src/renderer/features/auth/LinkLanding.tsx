@@ -117,7 +117,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
                 </Button>
                 <a
                   href="/download/"
-                  className="inline-flex h-9 w-full items-center justify-center rounded-[var(--radius-control)] bg-hover text-body font-medium text-fg transition-[background-color] duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)]"
+                  className="inline-flex h-9 w-full items-center justify-center rounded-[var(--radius-control)] mobile:tap-h bg-hover text-body font-medium text-fg transition-[background-color] duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)]"
                 >
                   {t('landing.download')}
                 </a>
@@ -133,7 +133,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
                 <Button variant="secondary" className={btn} onClick={continueInBrowser}>
                   {t('landing.browser')}
                 </Button>
-                <a href="/download/" className="mt-1 self-center rounded-[var(--radius-control)] px-1 text-body text-accent-text hover:underline">
+                <a href="/download/" className="mt-1 inline-flex self-center items-center mobile:tap-min-h rounded-[var(--radius-control)] px-1 text-body text-accent-text hover:underline">
                   {t('landing.download')}
                 </a>
               </>

@@ -45,7 +45,7 @@ export function PinnedBar({ workspaceId, roomId }: { workspaceId: string; roomId
         jump(roomId, m.id);
         setI((v) => v + 1);
       }}
-      className="mat-toolbar flex h-11 w-full shrink-0 items-center gap-3 border-b border-line px-4 text-left hover:bg-hover mobile:h-10 mobile:gap-2.5"
+      className="mat-toolbar flex h-11 w-full shrink-0 items-center gap-3 border-b border-line px-4 text-left hover:bg-hover mobile:tap-h mobile:gap-2.5"
     >
       <span className="flex h-7 w-[3px] shrink-0 flex-col gap-px mobile:h-5" aria-hidden>
         {pins.slice(0, 4).map((p, j) => (

@@ -250,7 +250,7 @@ export function PickerPanel<T extends PickerItem>({
           placeholder={placeholder}
           autoComplete="off"
           spellCheck={false}
-          className="selectable h-8 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-8 pr-2 text-body text-fg placeholder:text-faint mobile:h-10 mobile:text-[16px] [&::-webkit-search-cancel-button]:hidden"
+          className="selectable h-8 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-8 pr-2 text-body text-fg placeholder:text-faint mobile:tap-h mobile:text-[16px] [&::-webkit-search-cancel-button]:hidden"
         />
       </div>
       <div

@@ -142,7 +142,7 @@ function Card({ data: d, saved, busy, onAnswer }: { data: EventRsvpTokenResponse
         {d.organizerEmail ? (
           <>
             {t('cal.organizer')}:{' '}
-            <a href={`mailto:${d.organizerEmail}`} className="text-accent-text underline underline-offset-2">
+            <a href={`mailto:${d.organizerEmail}`} data-inline-target className="text-accent-text underline underline-offset-2">
               {d.organizerName}
             </a>
             {d.workspaceName ? ` · ${d.workspaceName}` : ''}

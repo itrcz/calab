@@ -520,7 +520,7 @@ const FeedOverlays = memo(function FeedOverlays({
           type="button"
           onClick={toBottom}
           aria-label={unread ? t('chat.toBottomUnread', { n: unread }) : t('chat.toBottom')}
-          className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-10 place-items-center rounded-full text-muted hover:text-fg"
+          className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-11 place-items-center rounded-full text-muted hover:text-fg"
         >
           <ArrowDown className="size-5" />
           {unread ? (

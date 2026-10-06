@@ -283,7 +283,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             stop(e);
             useBoardsUi.getState().toggleSelected(id);
           }}
-          className={cx('grid size-4 shrink-0 place-items-center rounded-[4px] border', selected ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-[var(--color-fill-hover)]', !selected && !selecting && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
+          className={cx('tap-hit grid size-4 shrink-0 place-items-center rounded-[4px] border', selected ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-[var(--color-fill-hover)]', !selected && !selecting && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
           data-testid="row-select"
         >
           {selected ? <Check className="size-3" aria-hidden /> : null}

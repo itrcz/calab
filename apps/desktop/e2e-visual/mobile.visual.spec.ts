@@ -156,7 +156,7 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
         const r = shell.getBoundingClientRect();
         if (Math.abs(r.top) > 1 || Math.abs(r.bottom - H) > 1) out.push(`shell ${Math.round(r.top)}..${Math.round(r.bottom)} ≠ viewport 0..${H}`);
       }
-      // Touch targets in the bars: ≥ 40×40 and no two overlapping.
+      // Touch targets in the bars: ≥ 44×44 and no two overlapping.
       const bars = [...document.querySelectorAll('[data-testid="mobile-shell"] header, [data-testid="mobile-voice-strip"], [data-testid="dm-header"]')];
       for (const bar of bars) {
         if (!visible(bar)) continue;
@@ -166,8 +166,8 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
           const r = rects[i];
           if (!r) return;
           const name = b.getAttribute('aria-label') ?? b.textContent.trim().slice(0, 24);
-          // A text button (the strip's room line) is as tall as its bar; icon buttons are ≥ 40×40.
-          if (r.height < 39.5 || r.width < 39.5) out.push(`small target in ${bar.tagName.toLowerCase()}: «${name}» ${Math.round(r.width)}×${Math.round(r.height)}`);
+          // A text button (the strip's room line) is as tall as its bar; icon buttons are ≥ 44×44.
+          if (r.height < 43.5 || r.width < 43.5) out.push(`small target in ${bar.tagName.toLowerCase()}: «${name}» ${Math.round(r.width)}×${Math.round(r.height)}`);
           if (r.left < -0.5 || r.right > W + 0.5) out.push(`target outside the screen: «${name}» ${Math.round(r.left)}..${Math.round(r.right)}`);
           for (let j = i + 1; j < rects.length; j++) {
             const o = rects[j];
@@ -177,6 +177,42 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
             if (ix > 0.5 && iy > 0.5) out.push(`overlapping targets: «${name}» and «${buttons[j]?.getAttribute('aria-label') ?? ''}»`);
           }
         });
+      }
+      // Touch targets everywhere (owner, 07.10; docs/08 «Размеры контролов на телефоне»): every visible
+      // interactive element is ≥ 44 px on its short side (≥ 44 tall for rows / fields, ≥ 44×44 for icon
+      // buttons). A checkbox / radio is measured by its label (the row is the target); a `.tap-hit` control by its ::before square.
+      // Allowlist = only things that sit inside running text or are not a control of their own.
+      const TARGET = 44;
+      const INTERACTIVE = 'button, a[href], input, select, textarea, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="switch"], [role="checkbox"], [role="radio"], [role="option"]';
+      const ALLOW: Array<[string, string]> = [
+        ['[data-inline-target]', 'a link inside a sentence of body text (e.g. the organizer mailto in «Организатор: …»), marked in code'],
+        ['[data-message-id] a[href]', 'links in message text and link-preview titles: inline in running text; the row itself is the tap / long-press target'],
+        ['[data-message-id] button[data-profile-user], [data-message-id] [data-inline-target]', 'author avatar / name and reaction chips in a feed message: dense by design (Telegram-like), the message row is the target; chips keep >= 8 px gaps'],
+        ['input[type="file"], input[type="range"], input[aria-hidden="true"]', 'native input hidden behind a custom control, or a slider whose thumb row is the target'],
+        ['.sr-only', 'visually hidden helpers'],
+      ];
+      const seen = new Set<Element>();
+      for (const el of document.querySelectorAll(INTERACTIVE)) {
+        if (seen.has(el) || !visible(el)) continue;
+        // not a target at all: the pointer goes through it to the element under it (.tap-inert kanban-card chips)
+        if (getComputedStyle(el).pointerEvents === 'none') continue;
+        seen.add(el);
+        if (ALLOW.some(([sel]) => el.matches(sel))) continue;
+        if (el.closest('[data-allow-small-target]')) continue;
+        const tag = el.tagName.toLowerCase();
+        let box: Element = el;
+        if (tag === 'input' && ['checkbox', 'radio'].includes((el as HTMLInputElement).type)) box = el.closest('label') ?? el;
+        let r = box.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        // `.tap-hit`: a small visual with a centred ::before hit square (docs/08) — measure the square
+        if (el.matches('.tap-hit')) {
+          const pc = getComputedStyle(el, '::before');
+          r = new DOMRect(r.x, r.y, parseFloat(pc.width) || 0, parseFloat(pc.height) || 0);
+        }
+        if (r.height < TARGET - 0.5 || r.width < TARGET - 0.5) {
+          const name = el.getAttribute('aria-label') ?? el.getAttribute('placeholder') ?? el.textContent.trim().slice(0, 24);
+          out.push(`small target: <${tag}${el.getAttribute('role') ? ` role=${el.getAttribute('role')}` : ''}> «${name}» ${Math.round(r.width)}×${Math.round(r.height)} @${Math.round(r.left)},${Math.round(r.top)}`);
+        }
       }
       if (main) {
         const composer = document.querySelector('[data-testid="composer"]');

@@ -56,7 +56,7 @@ export function CustomStatusDialog({ open, onClose }: { open: boolean; onClose: 
                 type="button"
                 aria-label={t('presence.emoji')}
                 data-testid="custom-status-emoji"
-                className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--color-fill)] text-[16px] hover:bg-[var(--color-fill-hover)] mobile:size-10"
+                className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--color-fill)] text-[16px] hover:bg-[var(--color-fill-hover)] mobile:tap-size"
               >
                 {emoji || <Smile className="size-4 text-muted" aria-hidden />}
               </button>

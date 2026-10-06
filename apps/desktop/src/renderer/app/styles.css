@@ -1,5 +1,33 @@
 @import 'tailwindcss';
 
+/* Phone touch sizes (owner, 07.10; docs/08 «Размеры контролов на телефоне»): defined once here, used via
+   `mobile:tap-*` utilities by the primitives in components/ui.tsx. 44 px = the target of any control;
+   36 px only for a compact inline chip that sits in a >= 44 px row whose whole row is the target. */
+:root {
+  --control-h-phone: 44px;
+  --control-h-phone-compact: 36px;
+  --control-px-phone: 14px;
+}
+@utility tap-h {
+  height: var(--control-h-phone);
+}
+@utility tap-min-h {
+  min-height: var(--control-h-phone);
+}
+@utility tap-min-w {
+  min-width: var(--control-h-phone);
+}
+@utility tap-size {
+  width: var(--control-h-phone);
+  height: var(--control-h-phone);
+}
+@utility tap-h-compact {
+  height: var(--control-h-phone-compact);
+}
+@utility tap-px {
+  padding-inline: var(--control-px-phone);
+}
+
 /* Phone layout of the web client (ADR-0021, lib/mobile.ts): `mobile:` utilities apply only on the
    web build at ≤ 768 px — the Electron app (≥ 960 px windows) never matches. */
 @custom-variant mobile {
@@ -1203,6 +1231,50 @@ svg.lucide {
   }
   :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip, .no-sheet) {
     padding-inline: 8px !important;
+  }
+  /* Touch-size safety net (owner, 07.10; docs/08 «Размеры контролов на телефоне»). The primitives in
+     components/ui.tsx carry the 44 px themselves (`mobile:tap-*`); this zero-specificity floor catches
+     hand-rolled controls that bypass them, so no button, field, select or tab is shorter than
+     --control-h-phone (a button is also at least as wide). Opt out only for things that sit inside
+     running text or a dense feed row: `data-inline-target` (the row is the target). */
+  :root.web :where(
+      button,
+      select,
+      textarea,
+      input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='hidden']),
+      [role='tab'],
+      [role='menuitem'],
+      [role='menuitemradio'],
+      [role='menuitemcheckbox'],
+      [role='option']
+    ):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .sr-only) {
+    min-height: var(--control-h-phone);
+  }
+  /* a checkbox / radio row: the whole label is the target */
+  :root.web :where(label:has(> input[type='checkbox'], > input[type='radio'])) {
+    min-height: var(--control-h-phone);
+  }
+  :root.web :where(button):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit) {
+    min-width: var(--control-h-phone);
+  }
+  /* A small visual (switch track, checkbox glyph) keeps its look; its touch target is a 44×44 square
+     centred on it (`::before`, also what e2e-visual/mobile.visual.spec.ts measures). */
+  :root.web .tap-hit {
+    position: relative;
+  }
+  :root.web .tap-hit::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--control-h-phone);
+    height: var(--control-h-phone);
+    transform: translate(-50%, -50%);
+  }
+  /* A kanban card is one target (it opens the task); its quick-edit chips are not separate targets on a
+     phone — a 20 px avatar stack inside a card only invites mis-taps. The fields are edited in the task. */
+  :root.web .tap-inert :is(button, a) {
+    pointer-events: none;
   }
   /* Touch targets: menu rows 44 px (HIG). */
   :root.web [data-radix-popper-content-wrapper] [role='menuitem'],

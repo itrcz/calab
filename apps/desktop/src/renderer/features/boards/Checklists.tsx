@@ -257,7 +257,7 @@ const ItemRow = memo(function ItemRow({ taskId, checklistId, itemId, canEdit, su
         disabled={!canEdit}
         onClick={() => void toggleChecklistItem(taskId, itemId, !item.done)}
         className={cx(
-          'mt-[3px] grid size-4 shrink-0 place-items-center rounded-[4px] border transition-colors duration-[var(--motion-fast)] disabled:cursor-default',
+          'tap-hit mt-[3px] grid size-4 shrink-0 place-items-center rounded-[4px] border transition-colors duration-[var(--motion-fast)] disabled:cursor-default',
           item.done ? 'border-accent bg-accent text-accent-fg' : 'border-[var(--color-fill-hover)] hover:border-accent',
         )}
         data-testid="checklist-check"

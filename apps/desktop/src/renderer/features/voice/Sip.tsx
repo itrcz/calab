@@ -209,7 +209,7 @@ function SipCallLine({ workspaceId, call }: { workspaceId: string; call: LiveSip
           label={t('sip.row.hangup')}
           size="sm"
           danger
-          className="mobile:size-10"
+          className="mobile:tap-size"
           data-testid="sip-hangup"
           onClick={() => void hangUpSipCall(call.roomId, call.id)}
         >

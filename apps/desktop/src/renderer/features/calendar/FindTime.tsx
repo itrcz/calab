@@ -103,7 +103,7 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
         {mobile ? null : <DayNav day={day} today={today} setDay={ctl.setDay} />}
         <span className="flex-1" />
         {!mobile && !wide ? <SlotsPopover slots={slots} onPick={pick} /> : null}
-        <IconButton label={t('fb.closeFind')} shortcut="Esc" onClick={close} className={mobile ? 'size-10 rounded-full' : undefined} data-testid="find-close">
+        <IconButton label={t('fb.closeFind')} shortcut="Esc" onClick={close} className={mobile ? 'size-11 rounded-full' : undefined} data-testid="find-close">
           <X className="size-[18px]" />
         </IconButton>
       </header>

@@ -24,7 +24,7 @@ import { useCameraToggle } from './VoiceBar';
 import { TempExpiry } from '../voice/TempExpiry';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
-const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
+const round = 'grid size-11 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
 const idle = 'bg-[var(--color-fill)] text-fg active:bg-[var(--color-fill-hover)]';
 const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-danger';
 
@@ -172,7 +172,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
   const micMode = usePrefs((s) => s.micMode);
   const openDialog = useUi((s) => s.openDialog);
   const soundsPicked = useRef(false);
-  const radio = cx(menuItem, 'relative h-10 pl-8');
+  const radio = cx(menuItem, 'relative h-11 pl-8');
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -191,12 +191,12 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
           onCloseAutoFocus={(e) => (soundsPicked.current ? e.preventDefault() : undefined)}
         >
           {cameraItem ? (
-            <Dropdown.Item className={cx(menuItem, 'h-10', cam.disabled && 'opacity-40')} data-testid="mobile-voice-camera" onSelect={cam.click}>
+            <Dropdown.Item className={cx(menuItem, 'h-11', cam.disabled && 'opacity-40')} data-testid="mobile-voice-camera" onSelect={cam.click}>
               {cam.on ? <Video className="size-4" aria-hidden /> : <VideoOff className="size-4" aria-hidden />} {cam.label}
             </Dropdown.Item>
           ) : null}
           {canFlip && cam.on ? (
-            <Dropdown.Item className={cx(menuItem, 'h-10')} data-testid="mobile-voice-flip" onSelect={() => voice.camera.flip()}>
+            <Dropdown.Item className={cx(menuItem, 'h-11')} data-testid="mobile-voice-flip" onSelect={() => voice.camera.flip()}>
               <SwitchCamera className="size-4" aria-hidden /> {t('video.flip')}
             </Dropdown.Item>
           ) : null}
@@ -204,7 +204,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
           {onSounds ? (
             <>
               <Dropdown.Item
-                className={cx(menuItem, 'h-10')}
+                className={cx(menuItem, 'h-11')}
                 data-testid="mobile-voice-sounds"
                 onSelect={() => {
                   soundsPicked.current = true;
@@ -235,7 +235,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
             </Dropdown.RadioItem>
           </Dropdown.RadioGroup>
           <Dropdown.Separator className={menuSeparator} />
-          <Dropdown.Item className={cx(menuItem, 'h-10')} onSelect={() => openDialog({ kind: 'settings', tab: 'voice' })}>
+          <Dropdown.Item className={cx(menuItem, 'h-11')} onSelect={() => openDialog({ kind: 'settings', tab: 'voice' })}>
             <Settings className="size-4" aria-hidden /> {t('shell.voiceSettings')}
           </Dropdown.Item>
         </Dropdown.Content>
@@ -306,7 +306,7 @@ function PttHoldButton({ disabled }: { disabled: boolean }): ReactNode {
       onKeyUp={(e) => onKey(e, false)}
       onContextMenu={(e) => e.preventDefault()}
       className={cx(
-        'grid size-10 shrink-0 touch-none select-none place-items-center rounded-full transition-colors duration-[var(--motion-fast)]',
+        'grid size-11 shrink-0 touch-none select-none place-items-center rounded-full transition-colors duration-[var(--motion-fast)]',
         held ? 'bg-ok-fill text-white' : 'bg-accent-strong text-accent-fg',
         disabled && 'opacity-40',
       )}

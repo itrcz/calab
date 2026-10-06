@@ -177,7 +177,7 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
                 placeholder={t('admin.search')}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:h-10 [&::-webkit-search-cancel-button]:hidden"
+                className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:tap-h [&::-webkit-search-cancel-button]:hidden"
               />
             </label>
             <div role="listbox" aria-label={t('admin.title')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1" data-testid="admin-list">

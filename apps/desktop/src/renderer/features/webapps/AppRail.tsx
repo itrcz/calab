@@ -99,7 +99,7 @@ function AppList({ wsId, ids, manage }: { wsId: string; ids: string[]; manage: b
               aria-label={t('wapp.add')}
               disabled={ids.length >= 20}
               onClick={() => open({ kind: 'web-app', workspaceId: wsId })}
-              className="grid size-6 place-items-center rounded-[8px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg disabled:opacity-40"
+              className="grid size-6 place-items-center rounded-[8px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg disabled:opacity-40 mobile:tap-size"
               data-testid="rail-app-add"
             >
               <Plus className="size-4" strokeWidth={2} />

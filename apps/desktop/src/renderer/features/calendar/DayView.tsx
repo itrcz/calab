@@ -211,7 +211,7 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
     // Phone: a compact «‹ 15 янв. ›» group, «+» as a plain header icon, the rest («Сегодня», «Люди»,
     // «Подобрать время») behind «…» — the header keeps room for the shell's nav button.
     const title = dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day));
-    const touch = 'size-10 rounded-full';
+    const touch = 'size-11 rounded-full';
     return (
       <header className="mat-toolbar flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-1 pr-2">
         <NavButton />

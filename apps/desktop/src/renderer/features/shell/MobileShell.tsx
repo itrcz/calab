@@ -285,7 +285,7 @@ export function NavButton(): ReactNode {
   const depth = useUi((s) => s.phone.stack.length);
   if (depth === 0) return null;
   return (
-    <IconButton tip={false} label={t('mobile.back')} onClick={phoneBack} className="size-10 shrink-0 rounded-full" data-testid="phone-back">
+    <IconButton tip={false} label={t('mobile.back')} onClick={phoneBack} className="size-11 shrink-0 rounded-full" data-testid="phone-back">
       <ArrowLeft className="size-5" />
     </IconButton>
   );

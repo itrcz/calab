@@ -110,7 +110,7 @@ function Section({ id, title, keep, children }: { id: string; title: string; kee
         onClick={() => toggle(id)}
         aria-expanded={!collapsed}
         aria-label={collapsed ? t('shell.categoryExpand', { name: title }) : t('shell.categoryCollapse', { name: title })}
-        className="flex h-10 w-full min-w-0 items-center gap-1 px-3 pt-2 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted"
+        className="flex h-11 w-full min-w-0 items-center gap-1 px-3 pt-2 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted"
       >
         <ChevronDown className={cx('size-3.5 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
         <span className="truncate">{title}</span>

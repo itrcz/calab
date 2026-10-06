@@ -29,7 +29,7 @@ export function NotesHeader({ room }: { room: Room }): ReactNode {
   const [emojiOpen, setEmojiOpen] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const mobile = useMobile();
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
+  const touch = mobile ? 'size-11 rounded-full' : undefined;
   const remove = async (): Promise<void> => {
     if (await confirmAction(t('notes.deleteTitle', { name }), t('notes.deleteConfirm'), t('common.delete'))) await deleteShelf(room.id);
   };

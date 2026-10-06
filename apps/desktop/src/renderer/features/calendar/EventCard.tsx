@@ -132,7 +132,7 @@ export function EventCard({
       <div className={cx('flex items-start gap-2', variant === 'popover' ? 'px-3 pt-3' : variant === 'page' ? 'mat-toolbar h-12 shrink-0 items-center border-b border-line px-1' : 'px-4 pt-4')}>
         {variant === 'page' ? (
           <>
-            <IconButton label={t('cal.back')} onClick={onClose} className="size-10 rounded-full">
+            <IconButton label={t('cal.back')} onClick={onClose} className="size-11 rounded-full">
               <ArrowLeft className="size-5" />
             </IconButton>
             <span className="min-w-0 flex-1 truncate text-list font-semibold">{t('cal.card')}</span>
@@ -264,7 +264,7 @@ export function RsvpButtons({
               aria-pressed={on}
               onClick={() => (onAnswer ? onAnswer(r.status) : ev && void answer(ev, r.status))}
               className={cx(
-                'inline-flex h-7 min-w-0 items-center justify-center gap-1 truncate rounded-full px-1 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:h-10',
+                'inline-flex h-7 min-w-0 items-center justify-center gap-1 truncate rounded-full px-1 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:tap-h',
                 on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-[var(--color-fill)]',
               )}
             >
@@ -320,7 +320,7 @@ function AttendeeRow({ workspaceId, a, organizer }: { workspaceId: string; a: Ca
   const name = useMemberName(workspaceId, a.userId);
   const avatar = useWorkspaces((s) => (a.userId ? (s.byId[workspaceId]?.members[a.userId]?.user?.avatarFileId ?? '') : ''));
   return (
-    <li className="flex h-8 items-center gap-2 mobile:h-auto mobile:min-h-10 mobile:py-1" data-testid="event-attendee">
+    <li className="flex h-8 items-center gap-2 mobile:h-auto mobile:tap-min-h mobile:py-1" data-testid="event-attendee">
       {a.userId ? (
         <ProfileTarget userId={a.userId} name={name} workspaceId={workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
           <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />

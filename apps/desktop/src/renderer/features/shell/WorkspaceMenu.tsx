@@ -40,7 +40,7 @@ export function WorkspaceMenu({ workspaceId, variant, testId }: { workspaceId: s
           data-testid={testId}
           className={cx(
             'group flex min-w-0 items-center gap-1 rounded-[var(--radius-row)] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active',
-            variant === 'titlebar' ? 'no-drag h-7 max-w-[220px] px-2 text-body' : variant === 'topbar' ? 'h-10 px-2 text-list' : 'h-8 w-full px-2 text-left text-list',
+            variant === 'titlebar' ? 'no-drag h-7 max-w-[220px] px-2 text-body' : variant === 'topbar' ? 'h-10 px-2 text-list' : 'h-8 w-full px-2 text-left text-list mobile:tap-h',
           )}
         >
           <span className={cx('min-w-0 truncate', variant === 'drawer' && 'flex-1')}>{name}</span>

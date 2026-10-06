@@ -168,26 +168,26 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2" data-testid="task-panel-header">
       {mobile ? (
-        <IconButton label={t('shell.back')} onClick={onClose} className="mobile:size-10">
+        <IconButton label={t('shell.back')} onClick={onClose} className="mobile:tap-size">
           <ArrowLeft className="size-5" aria-hidden />
         </IconButton>
       ) : null}
       <span className="min-w-0 truncate pl-2 text-caption text-muted">{boardName}</span>
       <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
-      <button type="button" onClick={() => copyTaskLink(task.key)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption font-medium tabular-nums text-fg hover:bg-hover mobile:h-10" title={t('boards.copyLink')} data-testid="panel-key">
+      <button type="button" onClick={() => copyTaskLink(task.key)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption font-medium tabular-nums text-fg hover:bg-hover mobile:tap-h" title={t('boards.copyLink')} data-testid="panel-key">
         {task.key}
       </button>
       <span className="flex-1" />
-      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className={cx('mobile:size-10', subscribed && 'mobile:bg-transparent mobile:text-accent-text')} data-testid="panel-subscribe">
+      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className={cx('mobile:tap-size', subscribed && 'mobile:bg-transparent mobile:text-accent-text')} data-testid="panel-subscribe">
         {/* phone: the state is the icon (filled accent bell), not a grey plate */}
         {subscribed ? <Bell className="size-4 mobile:size-5 mobile:fill-current" aria-hidden /> : <BellOff className="size-4 mobile:size-5" aria-hidden />}
       </IconButton>
-      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)} className="mobile:size-10">
+      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)} className="mobile:tap-size">
         <Link2 className="size-4" aria-hidden />
       </IconButton>
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="panel-more">
+          <button type="button" aria-label={t('boards.more')} className="grid size-8 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:tap-size" data-testid="panel-more">
             <Ellipsis className="size-4" aria-hidden />
           </button>
         </Dropdown.Trigger>
