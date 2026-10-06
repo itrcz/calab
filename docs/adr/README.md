@@ -78,3 +78,4 @@
 | [0071](0071-phone-incoming-calls.md) | iOS: opt-in PushKit/CallKit и общий web call/RTC service | принято, locked answer/audio требуют проверки |
 
 | [0072](0072-phone-notification-previews.md) | Phone push: sender/message previews, caller name and order-independent CallKit answer readiness; shared web UI/auth/RTC retained | принято, device retest pending |
+| [0073](0073-mobile-navigation.md) | Телефон: стек экранов + вкладки «Чаты · Личные · Календарь · Я», «назад» через history, строка комнаты как чат в Telegram (превью в READY), вход в голос внутри комнаты; шторки удалены | принято |
