@@ -533,3 +533,48 @@ func TestAPNSTerminalRejectionIsNotAcceptance(t *testing.T) {
 		t.Fatal("APNs rejection reported acceptance")
 	}
 }
+
+func TestAPNSHiddenMessageBodyRetainsSenderAndAvatar(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := providerPayload()
+	p.Kind = "message"
+	p.Title = "Sender"
+	p.Subtitle = "Room"
+	p.PersonID = presentationID(p.Binding, "sender")
+	p.ConversationID = presentationID(p.Binding, "room")
+	p.AvatarJPEG = "inline-test-avatar"
+	p.Body = attachmentPreview(sqlc.Message{Content: "private-caption"}, []sqlc.ListAttachmentsRow{{File: sqlc.File{Mime: "image/png", Name: "private-filename.png"}}}, nil)
+	sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development"}
+	called := false
+	sender.client = &http.Client{Transport: providerTransport(func(r *http.Request) (*http.Response, error) {
+		called = true
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "private-caption") || strings.Contains(string(raw), "private-filename") {
+			t.Fatal("hidden content serialized into APNs")
+		}
+		var wire struct {
+			AvatarJPEG string `json:"avatarJpeg"`
+			PersonID   string `json:"personId"`
+			APS        struct {
+				Alert map[string]string `json:"alert"`
+			} `json:"aps"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if wire.APS.Alert["body"] != "Photo" || wire.APS.Alert["title"] != "Sender" || wire.PersonID != p.PersonID || wire.AvatarJPEG != p.AvatarJPEG {
+			t.Fatal("hidden message lost safe presentation")
+		}
+		return providerResponse(200, "", http.Header{}), nil
+	})}
+	result := sender.Send(context.Background(), Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: "aabb", AppID: sender.app, Environment: sender.environment}, p)
+	if !called || !result.Accepted {
+		t.Fatal("hidden notification not accepted by test transport")
+	}
+}

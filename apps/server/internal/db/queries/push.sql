@@ -203,3 +203,15 @@ SELECT EXISTS(SELECT 1 FROM push_deliveries WHERE device_id=$1 AND event_key=$2)
 SELECT p.* FROM push_deliveries p JOIN push_devices d ON d.id=p.device_id AND d.version=p.device_version
 WHERE p.id=$1 AND d.id=$2 AND d.user_id=$3 AND d.session_id=$4
 AND p.kind IN (1,2) AND p.expires_at>now() AND d.expires_at>now() AND p.delivered_at IS NOT NULL;
+
+-- name: PushWorkspaceHidesMessageText :one
+-- A DM has no owning workspace: the strictest workspace shared by both people wins.
+SELECT EXISTS (
+    SELECT 1 FROM workspaces w WHERE w.hide_message_text_in_notifications AND (
+        w.id = sqlc.narg('workspace_id')::uuid OR (
+            sqlc.narg('workspace_id')::uuid IS NULL AND
+            EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = w.id AND m.user_id = sqlc.arg('recipient_id')) AND
+            EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = w.id AND m.user_id = sqlc.arg('author_id'))
+        )
+    )
+)::boolean;

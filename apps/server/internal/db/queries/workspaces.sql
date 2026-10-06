@@ -37,7 +37,8 @@ UPDATE workspaces SET
     default_max_streams        = coalesce(sqlc.narg('default_max_streams'), default_max_streams),
     default_camera_limit       = coalesce(sqlc.narg('default_camera_limit'), default_camera_limit),
     allow_self_nickname        = coalesce(sqlc.narg('allow_self_nickname'), allow_self_nickname),
-    time_format                = coalesce(sqlc.narg('time_format'), time_format)
+    time_format                = coalesce(sqlc.narg('time_format'), time_format),
+    hide_message_text_in_notifications = coalesce(sqlc.narg('hide_message_text_in_notifications')::boolean, hide_message_text_in_notifications)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 

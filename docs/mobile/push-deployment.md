@@ -126,8 +126,8 @@ Backup restore и повторный rollout требуют отдельного
 ## Notification preview / system Answer update (ADR-0072)
 
 Deploy the matching web and API changes together through the normal release workflow.
-No additional migration, provider keys, environment variables or Apple capability changes
-are required. Install the matching new phone host afterwards: it reads `callerName`,
+The original answer repair needs no provider keys or environment variables. The combined
+PR also requires migration 00070 for preview privacy and the R11 native profiles described below. Install the matching new phone host afterwards: it reads `callerName`,
 configures CallKit voice audio and retains readiness events arriving before answer fulfilment.
 The existing host can display the new APNs message previews; existing servers remain a generic
 fallback for new hosts. Full answer-race repair requires the updated web, API and host.
@@ -151,3 +151,17 @@ and `com.apple.developer.usernotifications.communication` to the app/extension. 
 matching development profiles before signing; deploy web/API first, then install that build.
 This native signing requirement is additional to the R09/R10-only update described above.
 CallKit caller-photo rendering remains an explicit device check, not a server release claim.
+
+### PR review: privacy settings
+
+Apply migration `00070_push_preview_privacy.sql` with the API release, then deploy the
+matching shared web. Previews default to on. Users can hide message text in Settings →
+Notifications; workspace administrators can force hiding in workspace Basics, including
+DMs between members. Names/avatars remain visible. This policy is enforced before
+sending to APNs/FCM; it works with the existing installed phone. Old clients changing
+audio settings do not reset it. New native installation is needed for avatars and call
+lifecycle repairs, not for this privacy switch. No new server environment/secret.
+
+Do not run Goose Down as a rollout shortcut: it discards privacy choices. A rollback to
+an API without this policy can send text again. Stop message push delivery first if
+rolling back the API, and have the operator explicitly assess the privacy impact.

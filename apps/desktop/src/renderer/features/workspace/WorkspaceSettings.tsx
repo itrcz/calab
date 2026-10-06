@@ -284,6 +284,10 @@ function GeneralTab({
             onChange={(v) => void patchWorkspace(workspaceId, { allowSelfNickname: v }).catch((x: unknown) => toast.error(err(x)))}
           />
         </Row>
+        <Row label={t('notify.hideMessageText')} hint={t('ws.hideMessageTextHint')}>
+          <Toggle label={t('notify.hideMessageText')} checked={ws.hideMessageTextInNotifications}
+            onChange={(v) => void patchWorkspace(workspaceId, { hideMessageTextInNotifications: v }).catch((x: unknown) => toast.error(err(x)))} />
+        </Row>
         <Row label={t('ws.timeFormat')} hint={t('ws.timeFormatHint')}>
           <Segmented<TimeFormatPref>
             label={t('ws.timeFormat')}

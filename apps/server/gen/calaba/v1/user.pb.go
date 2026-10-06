@@ -287,9 +287,12 @@ type UserSettings struct {
 	EventRemindersDnd bool `protobuf:"varint,8,opt,name=event_reminders_dnd,json=eventRemindersDnd,proto3" json:"event_reminders_dnd,omitempty"`
 	// Working hours (ADR-0041), read-only here like event_reminders: changed with
 	// UpdateMeRequest.work_hours. Default 10:00–19:00 Mon–Fri in the user's zone.
-	WorkHours     *WorkHours `protobuf:"bytes,9,opt,name=work_hours,json=workHours,proto3" json:"work_hours,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	WorkHours *WorkHours `protobuf:"bytes,9,opt,name=work_hours,json=workHours,proto3" json:"work_hours,omitempty"`
+	// Read-only here; changed by UpdateMeRequest.hide_message_text_in_notifications.
+	// Default false. Older audio-settings replacements must not reset privacy.
+	HideMessageTextInNotifications bool `protobuf:"varint,10,opt,name=hide_message_text_in_notifications,json=hideMessageTextInNotifications,proto3" json:"hide_message_text_in_notifications,omitempty"`
+	unknownFields                  protoimpl.UnknownFields
+	sizeCache                      protoimpl.SizeCache
 }
 
 func (x *UserSettings) Reset() {
@@ -384,6 +387,13 @@ func (x *UserSettings) GetWorkHours() *WorkHours {
 		return x.WorkHours
 	}
 	return nil
+}
+
+func (x *UserSettings) GetHideMessageTextInNotifications() bool {
+	if x != nil {
+		return x.HideMessageTextInNotifications
+	}
+	return false
 }
 
 // Working hours of a user (ADR-0041) in their profile zone (UTC without one): minutes from
@@ -680,9 +690,11 @@ type UpdateMeRequest struct {
 	EventReminders *EventReminderSettings `protobuf:"bytes,9,opt,name=event_reminders,json=eventReminders,proto3" json:"event_reminders,omitempty"`
 	// Working hours (ADR-0041); unset = unchanged. Not for guests and bots (403); 422 for
 	// start_min ≥ end_min, end_min > 1440, no days or a day outside 1..7.
-	WorkHours     *WorkHours `protobuf:"bytes,10,opt,name=work_hours,json=workHours,proto3" json:"work_hours,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	WorkHours *WorkHours `protobuf:"bytes,10,opt,name=work_hours,json=workHours,proto3" json:"work_hours,omitempty"`
+	// Omitted = unchanged; hides authored message text in provider push payloads.
+	HideMessageTextInNotifications *bool `protobuf:"varint,11,opt,name=hide_message_text_in_notifications,json=hideMessageTextInNotifications,proto3,oneof" json:"hide_message_text_in_notifications,omitempty"`
+	unknownFields                  protoimpl.UnknownFields
+	sizeCache                      protoimpl.SizeCache
 }
 
 func (x *UpdateMeRequest) Reset() {
@@ -783,6 +795,13 @@ func (x *UpdateMeRequest) GetWorkHours() *WorkHours {
 		return x.WorkHours
 	}
 	return nil
+}
+
+func (x *UpdateMeRequest) GetHideMessageTextInNotifications() bool {
+	if x != nil && x.HideMessageTextInNotifications != nil {
+		return *x.HideMessageTextInNotifications
+	}
+	return false
 }
 
 type UpdateMeResponse struct {
@@ -1492,7 +1511,7 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x03day\x18\x01 \x01(\rR\x03day\x12\x14\n" +
 	"\x05month\x18\x02 \x01(\rR\x05month\x12\x17\n" +
 	"\x04year\x18\x03 \x01(\rH\x00R\x04year\x88\x01\x01B\a\n" +
-	"\x05_year\"\xc3\x03\n" +
+	"\x05_year\"\x8f\x04\n" +
 	"\fUserSettings\x12+\n" +
 	"\x11noise_suppression\x18\x01 \x01(\bR\x10noiseSuppression\x120\n" +
 	"\x14unstable_network_red\x18\x02 \x01(\bR\x12unstableNetworkRed\x12$\n" +
@@ -1504,7 +1523,9 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x0fevent_reminders\x18\a \x03(\rR\x0eeventReminders\x12.\n" +
 	"\x13event_reminders_dnd\x18\b \x01(\bR\x11eventRemindersDnd\x123\n" +
 	"\n" +
-	"work_hours\x18\t \x01(\v2\x14.calaba.v1.WorkHoursR\tworkHoursB\x15\n" +
+	"work_hours\x18\t \x01(\v2\x14.calaba.v1.WorkHoursR\tworkHours\x12J\n" +
+	"\"hide_message_text_in_notifications\x18\n" +
+	" \x01(\bR\x1ehideMessageTextInNotificationsB\x15\n" +
 	"\x13_audio_bitrate_kbps\"U\n" +
 	"\tWorkHours\x12\x1b\n" +
 	"\tstart_min\x18\x01 \x01(\rR\bstartMin\x12\x17\n" +
@@ -1523,7 +1544,7 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x06locale\x18\a \x01(\tR\x06locale\x12'\n" +
 	"\x0fbirthday_hidden\x18\b \x01(\bR\x0ebirthdayHidden\".\n" +
 	"\rGetMeResponse\x12\x1d\n" +
-	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"\xce\x04\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"\xc6\x05\n" +
 	"\x0fUpdateMeRequest\x12&\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\vdisplayName\x88\x01\x01\x12$\n" +
 	"\vstatus_text\x18\x02 \x01(\tH\x01R\n" +
@@ -1537,14 +1558,16 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x0fevent_reminders\x18\t \x01(\v2 .calaba.v1.EventReminderSettingsR\x0eeventReminders\x123\n" +
 	"\n" +
 	"work_hours\x18\n" +
-	" \x01(\v2\x14.calaba.v1.WorkHoursR\tworkHoursB\x0f\n" +
+	" \x01(\v2\x14.calaba.v1.WorkHoursR\tworkHours\x12O\n" +
+	"\"hide_message_text_in_notifications\x18\v \x01(\bH\aR\x1ehideMessageTextInNotifications\x88\x01\x01B\x0f\n" +
 	"\r_display_nameB\x0e\n" +
 	"\f_status_textB\x11\n" +
 	"\x0f_avatar_file_idB\v\n" +
 	"\t_settingsB\v\n" +
 	"\t_timezoneB\t\n" +
 	"\a_localeB\x12\n" +
-	"\x10_birthday_hidden\"1\n" +
+	"\x10_birthday_hiddenB%\n" +
+	"#_hide_message_text_in_notifications\"1\n" +
 	"\x10UpdateMeResponse\x12\x1d\n" +
 	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"e\n" +
 	"\x15ChangePasswordRequest\x12)\n" +

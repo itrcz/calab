@@ -816,7 +816,7 @@ func (q *Queries) SetCalDavSynced(ctx context.Context, arg SetCalDavSyncedParams
 const setUserWorkHours = `-- name: SetUserWorkHours :one
 
 UPDATE users SET work_start_min = $2, work_end_min = $3, work_days = $4 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications
 `
 
 type SetUserWorkHoursParams struct {
@@ -866,6 +866,7 @@ func (q *Queries) SetUserWorkHours(ctx context.Context, arg SetUserWorkHoursPara
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
 	)
 	return i, err
 }

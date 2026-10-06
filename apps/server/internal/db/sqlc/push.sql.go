@@ -917,6 +917,32 @@ func (q *Queries) PushMessageFacts(ctx context.Context, arg PushMessageFactsPara
 	return i, err
 }
 
+const pushWorkspaceHidesMessageText = `-- name: PushWorkspaceHidesMessageText :one
+SELECT EXISTS (
+    SELECT 1 FROM workspaces w WHERE w.hide_message_text_in_notifications AND (
+        w.id = $1::uuid OR (
+            $1::uuid IS NULL AND
+            EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = w.id AND m.user_id = $2) AND
+            EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = w.id AND m.user_id = $3)
+        )
+    )
+)::boolean
+`
+
+type PushWorkspaceHidesMessageTextParams struct {
+	WorkspaceID *uuid.UUID
+	RecipientID uuid.UUID
+	AuthorID    uuid.UUID
+}
+
+// A DM has no owning workspace: the strictest workspace shared by both people wins.
+func (q *Queries) PushWorkspaceHidesMessageText(ctx context.Context, arg PushWorkspaceHidesMessageTextParams) (bool, error) {
+	row := q.db.QueryRow(ctx, pushWorkspaceHidesMessageText, arg.WorkspaceID, arg.RecipientID, arg.AuthorID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const queuePushDelivery = `-- name: QueuePushDelivery :execrows
 INSERT INTO push_deliveries (device_id, device_version, event_key, kind, reference_id, room_id, expires_at, actor_id, notice_kind, context_id, occurrence_at, reminder_minutes)
 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12

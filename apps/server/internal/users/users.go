@@ -83,11 +83,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
 		return err
-	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil) {
+	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil) {
 		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
 	}
 	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil ||
-		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil) {
+		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil) {
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -148,6 +148,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	p.BirthdayHidden = req.BirthdayHidden
+	p.HideMessageTextInNotifications = req.HideMessageTextInNotifications
 	if req.Settings != nil {
 		st := req.GetSettings()
 		if st.AudioBitrateKbps != nil && !rooms.ValidAudioBitrate(st.GetAudioBitrateKbps()) {

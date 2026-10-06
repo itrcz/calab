@@ -144,7 +144,7 @@ func (q *Queries) IsBanned(ctx context.Context, arg IsBannedParams) (bool, error
 }
 
 const listBans = `-- name: ListBans :many
-SELECT b.workspace_id, b.user_id, b.email, b.reason, b.banned_by, b.created_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days
+SELECT b.workspace_id, b.user_id, b.email, b.reason, b.banned_by, b.created_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications
 FROM workspace_bans b
 JOIN users u ON u.id = b.user_id
 WHERE b.workspace_id = $1
@@ -202,6 +202,7 @@ func (q *Queries) ListBans(ctx context.Context, workspaceID uuid.UUID) ([]ListBa
 			&i.User.WorkStartMin,
 			&i.User.WorkEndMin,
 			&i.User.WorkDays,
+			&i.User.HideMessageTextInNotifications,
 		); err != nil {
 			return nil, err
 		}
@@ -236,7 +237,7 @@ SET suspended_at     = $1,
     suspended_reason = $2,
     suspended_by     = $3
 WHERE id = $4
-RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, hide_message_text_in_notifications
 `
 
 type SetWorkspaceSuspensionParams struct {
@@ -275,6 +276,7 @@ func (q *Queries) SetWorkspaceSuspension(ctx context.Context, arg SetWorkspaceSu
 		&i.SuspendedBy,
 		&i.TimeFormat,
 		&i.SipEnabled,
+		&i.HideMessageTextInNotifications,
 	)
 	return i, err
 }

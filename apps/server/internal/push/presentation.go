@@ -39,7 +39,18 @@ func (s *Service) presentation(ctx context.Context, q *sqlc.Queries, recipient s
 		if payload.Title == "" {
 			payload.Title = "Calab"
 		}
-		payload.Body = messagePreview(message.Content, recipient)
+		hide := recipient.HideMessageTextInNotifications
+		if !hide {
+			hide, err = q.PushWorkspaceHidesMessageText(ctx, sqlc.PushWorkspaceHidesMessageTextParams{
+				WorkspaceID: room.WorkspaceID, RecipientID: recipient.ID, AuthorID: author.ID,
+			})
+			if err != nil {
+				return err // privacy policy is mandatory, unlike the optional avatar
+			}
+		}
+		if !hide {
+			payload.Body = messagePreview(message.Content, recipient)
+		}
 		if payload.Body == "" {
 			attachments, err := q.ListAttachments(ctx, []uuid.UUID{message.ID})
 			if err != nil {

@@ -24,3 +24,4 @@ apps/desktop/dist-release/
 
 # raw landing/README captures (apps/desktop/e2e-marketing/landing.spec.ts), cropped into public/screens
 apps/landing/shots/
+.gstack/

@@ -1154,36 +1154,37 @@ type TaskSubscriber struct {
 }
 
 type User struct {
-	ID                uuid.UUID
-	Email             *string
-	PasswordHash      *string
-	DisplayName       string
-	AvatarFileID      *uuid.UUID
-	StatusText        string
-	Settings          []byte
-	CreatedAt         time.Time
-	DisabledAt        *time.Time
-	StatusEmoji       string
-	StatusExpiresAt   *time.Time
-	IsGuest           bool
-	GuestExpiresAt    *time.Time
-	Timezone          *string
-	EmailVerifiedAt   *time.Time
-	PendingEmail      *string
-	Locale            *string
-	PresenceStatus    *int16
-	PresenceUntil     *time.Time
-	IsBot             bool
-	BirthdayDay       *int16
-	BirthdayMonth     *int16
-	BirthdayYear      *int16
-	BirthdayHidden    bool
-	EventReminders    []int16
-	EventRemindersDnd bool
-	StorageQuotaBytes *int64
-	WorkStartMin      int16
-	WorkEndMin        int16
-	WorkDays          []int16
+	ID                             uuid.UUID
+	Email                          *string
+	PasswordHash                   *string
+	DisplayName                    string
+	AvatarFileID                   *uuid.UUID
+	StatusText                     string
+	Settings                       []byte
+	CreatedAt                      time.Time
+	DisabledAt                     *time.Time
+	StatusEmoji                    string
+	StatusExpiresAt                *time.Time
+	IsGuest                        bool
+	GuestExpiresAt                 *time.Time
+	Timezone                       *string
+	EmailVerifiedAt                *time.Time
+	PendingEmail                   *string
+	Locale                         *string
+	PresenceStatus                 *int16
+	PresenceUntil                  *time.Time
+	IsBot                          bool
+	BirthdayDay                    *int16
+	BirthdayMonth                  *int16
+	BirthdayYear                   *int16
+	BirthdayHidden                 bool
+	EventReminders                 []int16
+	EventRemindersDnd              bool
+	StorageQuotaBytes              *int64
+	WorkStartMin                   int16
+	WorkEndMin                     int16
+	WorkDays                       []int16
+	HideMessageTextInNotifications bool
 }
 
 type UserNote struct {
@@ -1201,25 +1202,26 @@ type UserStickerPack struct {
 }
 
 type Workspace struct {
-	ID                      uuid.UUID
-	Slug                    string
-	Name                    string
-	IconFileID              *uuid.UUID
-	Visibility              string
-	OwnerID                 uuid.UUID
-	CreatedAt               time.Time
-	DefaultAudioBitrateKbps int32
-	DefaultMaxStreamPreset  string
-	DefaultMaxStreams       int32
-	StorageQuotaBytes       int64
-	StorageUsedBytes        int64
-	AllowSelfNickname       bool
-	DefaultCameraLimit      int32
-	SuspendedAt             *time.Time
-	SuspendedReason         string
-	SuspendedBy             *uuid.UUID
-	TimeFormat              string
-	SipEnabled              bool
+	ID                             uuid.UUID
+	Slug                           string
+	Name                           string
+	IconFileID                     *uuid.UUID
+	Visibility                     string
+	OwnerID                        uuid.UUID
+	CreatedAt                      time.Time
+	DefaultAudioBitrateKbps        int32
+	DefaultMaxStreamPreset         string
+	DefaultMaxStreams              int32
+	StorageQuotaBytes              int64
+	StorageUsedBytes               int64
+	AllowSelfNickname              bool
+	DefaultCameraLimit             int32
+	SuspendedAt                    *time.Time
+	SuspendedReason                string
+	SuspendedBy                    *uuid.UUID
+	TimeFormat                     string
+	SipEnabled                     bool
+	HideMessageTextInNotifications bool
 }
 
 type WorkspaceAdminLog struct {

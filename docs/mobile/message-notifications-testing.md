@@ -29,3 +29,10 @@ Do not claim that logout recalls an already in-flight APNs alert or donation.
 The extension uses a bounded inline JPEG with no network, URLs or shared credentials.
 Old app versions ignore communication fields and display the original text alert.
 A new native target/profile is required; APNs server credentials do not change.
+
+Preview privacy (PR review): default permits text. Enable personal “Hide message text
+in notifications”, send a text and a captioned file: only New message / file kind remains,
+with sender identity. Disable it and enable the workspace rule: it still hides text in
+workspace rooms and DMs between members. Toggle from another device, check the next
+notification; already in-flight/accepted pushes cannot be recalled. Repeat with iOS Show
+Previews set to Never: device display privacy is separate from server payload privacy.

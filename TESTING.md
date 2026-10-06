@@ -2188,3 +2188,12 @@ new notification extension across prebuild/CocoaPods serialization. Compile/run
 `CalabCommunicationPayload.swift` with `tests/CommunicationPayloadTests.swift` for malformed,
 oversized and old payloads; compile the extension against the iOS SDK. Actual system avatar
 rendering, grouping and lock-screen preview policy require the device checklists.
+
+R12 preview privacy: `TestPushPreviewPrivacySettingsAndLegacyClients`,
+`TestPushPreviewPrivacyAtDispatchAndRetry`, `TestPushHiddenAttachmentCaptionAndFilename`,
+`TestPushDMPrivacyUsesOnlySharedWorkspaces` cover optional false, old clients, authorization,
+shared-workspace precedence, dispatch/retry freshness and hidden caption/file names.
+`TestAPNSHiddenMessageBodyRetainsSenderAndAvatar` inspects actual APNs HTTP JSON.
+`TestPushMutedDeliveredMessageStillResolves` separates delivery preferences from tap access.
+Manual layout QA (mock data, not phone evidence): shared personal/workspace settings at
+390 and 960 px, captured in `docs/mobile/qa/`; visual suites remain disabled.

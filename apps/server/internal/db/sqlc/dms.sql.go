@@ -180,7 +180,7 @@ func (q *Queries) IsAvatar(ctx context.Context, avatarFileID *uuid.UUID) (bool, 
 }
 
 const listDMCandidates = `-- name: ListDMCandidates :many
-SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days FROM users u
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications FROM users u
 WHERE u.id <> $1 AND NOT u.is_guest AND u.disabled_at IS NULL
   AND EXISTS (
     SELECT 1 FROM workspace_members a
@@ -242,6 +242,7 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 			&i.WorkStartMin,
 			&i.WorkEndMin,
 			&i.WorkDays,
+			&i.HideMessageTextInNotifications,
 		); err != nil {
 			return nil, err
 		}
@@ -255,7 +256,7 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 
 const listDMs = `-- name: ListDMs :many
 SELECT r.id AS room_id, r.created_at AS room_created_at,
-       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days,
+       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications,
        rs.last_read_message_id,
        (lm.id IS NOT NULL)::boolean AS has_messages,
        coalesce(lm.id, r.id)::uuid AS last_message_id,
@@ -372,6 +373,7 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.User.WorkStartMin,
 			&i.User.WorkEndMin,
 			&i.User.WorkDays,
+			&i.User.HideMessageTextInNotifications,
 			&i.LastReadMessageID,
 			&i.HasMessages,
 			&i.LastMessageID,

@@ -593,9 +593,36 @@ function NotificationsTab(): ReactNode {
           </Button>
         </Row>
       </Card>
+      <PushPrivacyCard />
       <RemindersCard />
       <SoundSettings />
     </>
+  );
+}
+
+function PushPrivacyCard(): ReactNode {
+  const me = useSession((s) => s.me);
+  const local = useSession((s) => localAuthority(s.authority));
+  const [pending, setPending] = useState(false);
+  if (!local || !me?.settings || me.user?.isGuest || me.user?.isBot) return null;
+  const save = async (hidden: boolean): Promise<void> => {
+    setPending(true);
+    try {
+      const response = await api.me.update({ hideMessageTextInNotifications: hidden });
+      if (response.me) useSession.getState().set({ me: response.me });
+    } catch (e) {
+      toast.fail(e, t('err.ctx.save'));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Card title={t('notify.mobilePush')}>
+      <Row label={t('notify.hideMessageText')} hint={t('notify.hideMessageTextHint')}>
+        <Toggle label={t('notify.hideMessageText')} checked={me.settings.hideMessageTextInNotifications}
+          disabled={pending} onChange={(v) => void save(v)} />
+      </Row>
+    </Card>
   );
 }
 

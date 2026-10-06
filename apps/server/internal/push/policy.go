@@ -50,7 +50,7 @@ func (s *Service) allowedPolicy(ctx context.Context, q *sqlc.Queries, u sqlc.Use
 	}
 	switch job.Kind {
 	case messageKind:
-		if quiet {
+		if quiet && !resolving {
 			return false, false, nil
 		}
 		msg, err := q.GetMessage(ctx, job.ReferenceID)
@@ -86,6 +86,9 @@ func (s *Service) allowedPolicy(ctx context.Context, q *sqlc.Queries, u sqlc.Use
 		facts, err := q.PushMessageFacts(ctx, sqlc.PushMessageFactsParams{MessageID: msg.ID, UserID: u.ID, RoomID: msg.RoomID, WorkspaceID: optionalID(acc.WorkspaceID)})
 		if err != nil {
 			return false, false, err
+		}
+		if resolving {
+			return !facts.Blocked, false, nil // delivery preferences do not revoke read access
 		}
 		return !facts.Blocked && notifications.Notifies(notifications.Facts{DM: acc.DM, Mention: facts.Mentioned, Room: notifications.LevelFromDB(facts.RoomLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT), Workspace: notifications.LevelFromDB(facts.WorkspaceLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS), RoomMuted: facts.RoomMuted, WorkspaceMuted: facts.WorkspaceMuted}), false, nil
 
