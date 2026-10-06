@@ -34,12 +34,17 @@ function useManageApps(wsId: string): boolean {
  * and a small «+» (24 px, muted) for MANAGE_INTEGRATIONS. Subscribes by workspace id, so switching
  * workspaces re-renders two columns, not the rail.
  */
-export function WorkspaceAppsColumn({ wsId }: { wsId: string }): ReactNode {
+export function WorkspaceAppsColumn({ wsId, lead }: { wsId: string; lead?: ReactNode }): ReactNode {
   const active = useUi((s) => s.activeWorkspaceId === wsId);
   const ids = useWorkspaceAppIds(wsId);
   const manage = useManageApps(wsId);
   if (!active || (!ids.length && !manage)) return null;
-  return <AppList wsId={wsId} ids={ids} manage={manage} />;
+  return (
+    <>
+      {lead}
+      <AppList wsId={wsId} ids={ids} manage={manage} />
+    </>
+  );
 }
 
 function AppList({ wsId, ids, manage }: { wsId: string; ids: string[]; manage: boolean }): ReactNode {

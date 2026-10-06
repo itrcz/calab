@@ -380,3 +380,9 @@ system communication experience. Quick reply, unread icon badge and call-history
 remain separate shared-state features. System full-screen CallKit caller-photo rendering
 must be recorded on supported iOS versions; INPerson donation alone is not proof.
 - 2026-10-07 · 3.0 телефон · переход экранов (ScreenTransition) · лента сообщений комнаты пустая во время въезда (250 мс), сообщения появляются в конце; рендерить ленту сразу или держать снимок. Minor.
+
+### Desktop section rail follow-ups (ADR-0074, 07.10)
+
+- «Доски»: the column header «+» (new board) duplicates the «+» beside «ДОСКИ» inside the shared BoardsList (phone uses it too) — drop one.
+- The workspace switcher has no drag-reorder (the old rail had none either); the order is the server order.
+- Pre-existing, not ADR-0074: the visual mock opens «Маркетинг» first (boards-list, boards-kanban, boards-flow expect CAL); calendar-day «editing a selected meeting» drags a room from the list, which the calendar section hides since 02.10.
