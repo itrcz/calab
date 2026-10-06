@@ -247,6 +247,7 @@ var identityRoutes = map[string]identityScope{
 	"PATCH /api/dms/{id}/state":                                           scopeGlobal,
 	"PATCH /api/events/{id}":                                              scopeEvent,
 	"PATCH /api/me":                                                       scopeGlobal,
+	"GET /api/usernames/{name}/available":                                 scopeGlobal,
 	"PATCH /api/me/caldav":                                                scopeGlobal,
 	"PATCH /api/me/email":                                                 scopeGlobal,
 	"PATCH /api/me/password":                                              scopeGlobal,

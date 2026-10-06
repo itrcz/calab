@@ -102,6 +102,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/auth/verify":                                botDeny,
 	"GET /api/me":                                          botAllow,
 	"PATCH /api/me":                                        botAllow, // display name and avatar only (users.update)
+	"GET /api/usernames/{name}/available":                  botDeny,  // people's nicknames (ADR-0077)
 	"PATCH /api/me/status":                                 botDeny,
 	"POST /api/me/avatar":                                  botAllow,
 	"GET /api/users/{id}/note":                             botDeny,

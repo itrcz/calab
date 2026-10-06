@@ -41,6 +41,10 @@ type Handlers struct {
 	db     *db.DB
 	events events.Publisher
 	status StatusNotifier
+	// UsernameLimit bounds GET /api/usernames/{name}/available per user (ADR-0077).
+	UsernameLimit interface {
+		Take(ctx context.Context, key string) error
+	}
 }
 
 // NewHandlers creates the /api/me handlers.
@@ -53,6 +57,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("GET /api/me", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/me", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("PATCH /api/me/status", wrap(httpx.HandlerFunc(h.updateStatus)))
+	mux.Handle("GET /api/usernames/{name}/available", wrap(httpx.HandlerFunc(h.usernameAvailable)))
 	mux.Handle("GET /api/users/{id}/note", wrap(httpx.HandlerFunc(h.getNote)))
 	mux.Handle("PUT /api/users/{id}/note", wrap(httpx.HandlerFunc(h.putNote)))
 	mux.Handle("DELETE /api/users/{id}/note", wrap(httpx.HandlerFunc(h.deleteNote)))
@@ -83,11 +88,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
 		return err
-	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil) {
+	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil ||
+		req.Phone != nil || req.Username != nil) {
 		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
 	}
 	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil ||
-		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil) {
+		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil ||
+		req.Phone != nil || req.Username != nil) { // a bot's username is its bot username (ADR-0077)
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -147,6 +154,23 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	if req.Phone != nil { // ADR-0077: informational, not verified
+		phone, err := NormalizePhone(req.GetPhone())
+		if err != nil {
+			return err
+		}
+		p.SetPhone = true
+		if phone != "" {
+			p.Phone = &phone
+		}
+	}
+	if req.Username != nil { // ADR-0077: global, unique (the index decides races)
+		name, err := usernameColumn(req.GetUsername())
+		if err != nil {
+			return err
+		}
+		p.SetUsername, p.Username = true, name
+	}
 	p.BirthdayHidden = req.BirthdayHidden
 	p.HideMessageTextInNotifications = req.HideMessageTextInNotifications
 	if req.Settings != nil {
@@ -179,6 +203,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("avatarFileId", "file not found")
 	}
+	if isUsernameConflict(err) {
+		return errUsernameTaken()
+	}
 	if err != nil {
 		return err
 	}
@@ -201,7 +228,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil || req.Timezone != nil ||
-		req.Birthday != nil || req.BirthdayHidden != nil
+		req.Birthday != nil || req.BirthdayHidden != nil || req.Phone != nil || req.Username != nil
 	profile.Publish(r.Context(), h.db.Q, h.events, u, public)
 	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
 	return nil
