@@ -222,7 +222,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	}
 	bits := make(map[string]uint64, len(rs))
 	for _, r := range rs {
-		bits[r.GetId()] = uint64(perm.ComputeIn(me, r.GetRestricted(), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
+		bits[r.GetId()] = uint64(perm.ComputeIn(me, pbconv.RoomFlags(r), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
 	}
 	cats, err := q.ListCategories(ctx, ws.ID)
 	if err != nil {

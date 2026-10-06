@@ -672,6 +672,16 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 // MessageKindSystem is messages.kind of a system message (ADR-0025).
 const MessageKindSystem = "system"
 
+// RoomFlags returns the permission flags of a wire room for perm.ComputeIn (restricted,
+// ADR-0029; private temporary and its creator, ADR-0078).
+func RoomFlags(r *v1.Room) perm.RoomFlags {
+	f := perm.RoomFlags{Restricted: r.GetRestricted(), PrivateTemp: r.GetIsPrivate() && r.GetExpiresAt() != nil}
+	if id, err := uuid.Parse(r.GetCreatedBy()); err == nil {
+		f.CreatedBy = id
+	}
+	return f
+}
+
 // ProtoOverrideTargets converts wire overrides for perm.ComputeIn.
 func ProtoOverrideTargets(ovs []*v1.RoomPermissionOverride) []perm.OverrideTarget {
 	out := make([]perm.OverrideTarget, 0, len(ovs))

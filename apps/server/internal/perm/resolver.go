@@ -51,6 +51,10 @@ type RoomAccess struct {
 	Suspended bool
 	// Restricted: the room is restricted (ADR-0029): ADMINISTRATOR gives no bypass in it.
 	Restricted bool
+	// PrivateTemp: a private temporary room (ADR-0078): nobody bypasses it — workspace-level
+	// rights (ADMINISTRATOR, the owner, MANAGE_ROOM / MUTE_MEMBERS / MOVE_MEMBERS of the roles)
+	// never reach into it; only Bits do.
+	PrivateTemp bool
 	// Task: the hidden comment room of a task (ADR-0042); Bits come from the board
 	// (TaskRoom), room overrides do not apply. TaskID / BoardID name them.
 	Task    bool
@@ -246,9 +250,10 @@ func (r *Resolver) cacheRoom(ctx context.Context, roomID, userID uuid.UUID, row 
 			WorkspaceID: *row.WorkspaceID,
 			Role:        m.Role,
 			Member:      m,
-			Bits:        ComputeOrdered(m.Raw(), ScopeOf(m, row.Restricted), ovs, override(row.UserAllow, row.UserDeny)),
+			Bits:        ComputeOrdered(m.Raw(), ScopeOf(m, Flags(row.Restricted, row.IsPrivate, row.Temp, row.CreatedBy)), ovs, override(row.UserAllow, row.UserDeny)),
 			Suspended:   row.Suspended,
 			Restricted:  row.Restricted,
+			PrivateTemp: row.IsPrivate && row.Temp,
 			Temp:        row.Temp,
 			Archived:    row.Archived,
 		}

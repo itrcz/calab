@@ -645,14 +645,17 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 		return nil, err
 	}
 	var closed []uuid.UUID
+	flags := map[uuid.UUID]perm.RoomFlags{}
 	for _, room := range rs {
 		if room.Restricted {
 			closed = append(closed, room.ID)
+			flags[room.ID] = perm.FlagsOf(room)
 		}
 	}
 	for _, a := range archived {
 		if a.Room.Restricted {
 			closed = append(closed, a.Room.ID)
+			flags[a.Room.ID] = perm.FlagsOf(a.Room)
 		}
 	}
 	if len(closed) > 0 {
@@ -672,7 +675,7 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 			}
 			seen := map[uuid.UUID]bool{}
 			for id, m := range members {
-				if perm.ComputeIn(m, true, ovs).Has(perm.ViewRoom) {
+				if perm.ComputeIn(m, flags[rid], ovs).Has(perm.ViewRoom) {
 					seen[id] = true
 				}
 			}

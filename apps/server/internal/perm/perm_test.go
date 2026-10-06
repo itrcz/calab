@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 type vectorRole struct {
@@ -28,6 +30,9 @@ type vector struct {
 	Restricted  bool `json:"restricted"`
 	Owner       bool `json:"owner"`
 	Participant bool `json:"participant"`
+	// ADR-0078: a private temporary room and whether the member created it.
+	PrivateTemp bool `json:"privateTemp"`
+	Creator     bool `json:"creator"`
 	// ADR-0042: a board vector (ComputeBoard with the board's overrides).
 	// ADR-0048: restricted / owner on a board.
 	Board *struct {
@@ -105,11 +110,16 @@ func TestComputeVectors(t *testing.T) {
 			for i, r := range v.Roles {
 				roles[i] = RoleBits(r)
 			}
-			if got := ComputeRoles(roles, Scope{Restricted: v.Restricted, Owner: v.Owner}, v.RoleOverrides, v.UserOverride); got != v.Expected {
+			sc := Scope{Restricted: v.Restricted, Owner: v.Owner, PrivateTemp: v.PrivateTemp, Creator: v.Creator}
+			if got := ComputeRoles(roles, sc, v.RoleOverrides, v.UserOverride); got != v.Expected {
 				t.Errorf("%s: ComputeRoles got %d want %d", v.Name, got, v.Expected)
 			}
 			// The same rule through a member and the room's override list (gateway, snapshots).
-			const uid = "u1"
+			const uid = "00000000-0000-0000-0000-0000000000a1"
+			flags := RoomFlags{Restricted: v.Restricted, PrivateTemp: v.PrivateTemp, CreatedBy: uuid.MustParse("00000000-0000-0000-0000-0000000000b2")}
+			if v.Creator {
+				flags.CreatedBy = uuid.MustParse(uid)
+			}
 			var ovs []OverrideTarget
 			for id, o := range v.RoleOverrides {
 				ovs = append(ovs, OverrideTarget{TargetType: "role", TargetID: id, Override: o})
@@ -122,7 +132,7 @@ func TestComputeVectors(t *testing.T) {
 				role = RoleOwner
 			}
 			m := NewMember(uid, role, roles)
-			if got := ComputeIn(m, v.Restricted, ovs); got != v.Expected {
+			if got := ComputeIn(m, flags, ovs); got != v.Expected {
 				t.Errorf("%s: ComputeIn got %d want %d", v.Name, got, v.Expected)
 			}
 			if v.ExpectedWorkspace != nil && m.Workspace() != *v.ExpectedWorkspace {
@@ -173,7 +183,7 @@ func BenchmarkComputeIn50Roles100Rooms(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, ovs := range rooms {
-			_ = ComputeIn(m, false, ovs)
+			_ = ComputeIn(m, RoomFlags{}, ovs)
 		}
 	}
 }
