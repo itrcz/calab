@@ -34,8 +34,8 @@ const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-da
  * push-to-talk hold button (PTT mic mode), the camera, «Ещё» (soundboard, mic mode switch) and
  * hang up. Devices are on the «Я» tab (ADR-0073). On a tab root it sits above the tab bar
  * (`aboveTabs`: no home-indicator inset of its own), on a pushed screen at the bottom.
- * 16 px from the screen edges; the status may take two lines next to a 28 px avatar, so
- * «Переподключение…» is never cut to «Переподк…».
+ * 16 px from the screen edges; the status may take two lines next to a 28 px avatar (hyphenated if one
+ * word doesn't fit), so «Переподключение…» is never cut to «Переподк…».
  * Room for five 40 px buttons next to the avatar and the status text: the camera takes the place
  * of the soundboard button (now «Ещё → Звуки»); in push-to-talk mode (the PTT button is the fifth)
  * the camera is «Ещё → Камера» too.
@@ -91,9 +91,11 @@ export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean })
             onClick={() => (call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
           />
           <span className="pointer-events-none flex max-w-full items-center gap-1">
-            {/* A long status («Переподключение…») wraps by words (never hyphenated) instead of being cut; the room
-                name then gives way (line-clamp keeps the strip 56 px). */}
-            <span className={cx('line-clamp-2 min-w-0 break-words text-[12px] font-semibold leading-[15px] [hyphens:none]', connected ? 'text-ok' : 'text-warn')} data-testid="mobile-voice-status">
+            {/* A long status («Переподключение…») wraps instead of being cut; the room name then gives way
+                (line-clamp keeps the strip 56 px). A single word wider than the slot (≈ 75–90 px between the
+                avatar and five buttons: «Подключение…») is hyphenated by the document language
+                («Подклю-чение…»), not broken at an arbitrary letter. */}
+            <span className={cx('line-clamp-2 min-w-0 break-words text-[12px] font-semibold leading-[15px] [hyphens:auto]', connected ? 'text-ok' : 'text-warn')} data-testid="mobile-voice-status">
               {phaseText}
             </span>
             {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer; a tap
