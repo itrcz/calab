@@ -22,6 +22,7 @@ import { hasBit, CREATE_TASKS } from './model';
 import { TaskPanel } from './TaskPanel';
 import { Timeline } from './Timeline';
 import { useBoardHotkeys } from './useBoardHotkeys';
+import { CreateButton } from '../../components/CreateButton';
 import { NavButton } from '../../components/PhoneHeader';
 import { useMobile } from '../../lib/mobile';
 import { useViewKind } from './useBoardView';
@@ -150,9 +151,13 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
         {boards.length ? (
           <Dropdown.Root modal={false}>
             <Dropdown.Trigger asChild>
-              <Button aria-label={t('boards.newTask')} className="mobile:min-w-10" data-testid="my-new-task">
-                <Plus className="size-4" aria-hidden /> <span className="mobile:hidden">{t('boards.task')}</span>
-              </Button>
+              {mobile ? (
+                <CreateButton label={t('boards.newTask')} tip={false} data-testid="my-new-task" />
+              ) : (
+                <Button aria-label={t('boards.newTask')} data-testid="my-new-task">
+                  <Plus className="size-4" aria-hidden /> <span>{t('boards.task')}</span>
+                </Button>
+              )}
             </Dropdown.Trigger>
             <Dropdown.Portal>
               <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="end">

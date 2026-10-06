@@ -3,7 +3,7 @@ import { WorkspaceRole } from '@calaba/protocol';
 import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
 import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
 import { CreateButton } from '../../components/CreateButton';
-import { PhoneHeader } from '../../components/PhoneHeader';
+import { PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
 import { CountBadge, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
@@ -74,7 +74,7 @@ export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean
 
   return (
     <div
-      className="mat-rail relative flex h-full flex-col overflow-hidden pl-[var(--safe-left)] pr-[var(--safe-right)] pt-[var(--safe-top)]"
+      className="mat-content relative flex h-full flex-col overflow-hidden pl-[var(--safe-left)] pr-[var(--safe-right)] pt-[var(--safe-top)]"
       data-layout="mobile"
       data-testid="mobile-shell"
       data-phone-tab={root ? tab : undefined}
@@ -163,8 +163,8 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const creator = mayCreateBoards(useMemberRoles(ws ?? '', me));
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
-    <section className="mat-sidebar flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
-      <RootTitle title={t('shell.modeBoards')}>
+    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
+      <RootTitle title={t('shell.modeBoards')} search>
         {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
       </RootTitle>
       <BoardsList workspaceId={ws} />
@@ -178,7 +178,7 @@ function DmsRoot(): ReactNode {
   const guest = useSession((s) => !!s.me?.user?.isGuest);
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ ['--sidebar-width' as string]: '100%' }} data-testid="phone-dms">
-      <RootTitle title={t('dm.home')}>
+      <RootTitle title={t('dm.home')} search>
         {guest ? null : <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />}
       </RootTitle>
       <div className="flex min-h-0 flex-1">
@@ -211,10 +211,11 @@ function ProfileRoot(): ReactNode {
 }
 
 /** The title of a tab root without its own header (iOS large-title look, one line). */
-export function RootTitle({ title, children }: { title: string; children?: ReactNode }): ReactNode {
+export function RootTitle({ title, search = false, children }: { title: string; search?: boolean; children?: ReactNode }): ReactNode {
   return (
-    <header className="mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-4 pr-2">
+    <header className="mat-toolbar flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-4 pr-2">
       <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{title}</h1>
+      {search ? <PhoneSearchButton /> : null}
       {children}
     </header>
   );
