@@ -21,6 +21,7 @@ import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
 import { Avatar } from '../../components/Avatar';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { useDms } from '../../stores/dms';
 import { useNotes } from '../../stores/notes';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
@@ -572,7 +573,9 @@ function DmHistoryStart({ roomId }: { roomId: string }): ReactNode {
   const avatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
   return (
     <div className="flex flex-col items-center px-4 pb-2 pt-8 text-center">
-      <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={56} />
+      <ProfileTarget userId={peerId} name={name} tabbable className="rounded-full">
+        <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={56} />
+      </ProfileTarget>
       <div className="mt-2 text-headline font-semibold">{name}</div>
       <div className="text-body text-muted">{t('dm.welcomeText', { name })}</div>
     </div>

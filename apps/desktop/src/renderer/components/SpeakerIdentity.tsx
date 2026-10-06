@@ -3,6 +3,7 @@ import { VolumeX } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { usePrefs } from '../stores/prefs';
 import { Avatar } from './Avatar';
+import { ProfileTarget } from './ProfileTarget';
 import { cx } from './ui';
 import { t } from '../i18n';
 import { hasRoleMark, roleTextClass } from '../features/people/MemberBits';
@@ -54,10 +55,14 @@ export function SpeakerIdentity({
     <>
       {pending ? (
         <span className="flex shrink-0" title={t('voice.pendingMember')} data-pending="true">
-          <Avatar userId={userId} name={name} fileId={fileId} size={size} connecting ringInside />
+          <ProfileTarget userId={userId} name={name} workspaceId={workspaceId} tabbable className="flex shrink-0 rounded-full">
+            <Avatar userId={userId} name={name} fileId={fileId} size={size} connecting ringInside />
+          </ProfileTarget>
         </span>
       ) : (
-        <Avatar userId={userId} name={name} fileId={fileId} size={size} speaking={talking} ringInside />
+        <ProfileTarget userId={userId} name={name} workspaceId={workspaceId} tabbable className="flex shrink-0 rounded-full">
+          <Avatar userId={userId} name={name} fileId={fileId} size={size} speaking={talking} ringInside />
+        </ProfileTarget>
       )}
       <span className="flex min-w-0 flex-1 items-center gap-1">
         <span data-testid="speaker-name" className={cx('min-w-0 truncate transition-colors duration-100', speakerNameClass(talking && !pending, role))}>

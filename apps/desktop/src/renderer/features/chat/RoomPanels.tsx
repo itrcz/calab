@@ -13,6 +13,7 @@ import { memberName, useMemberName, useMemberRoles, useWorkspaces } from '../../
 import { isDm, useDms } from '../../stores/dms';
 import { isNotes, useNotes } from '../../stores/notes';
 import { Avatar } from '../../components/Avatar';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { useChatView } from './chatView';
 import { previewPartsOf } from './mentionText';
 import { PreviewRuns } from './PreviewRuns';
@@ -202,7 +203,9 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
   const title = dm ? peerName : notes ? room.name : voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name });
   const badge = (size: number, icon: string): ReactNode =>
     dm ? (
-      <Avatar userId={peerId} name={peerName} fileId={peerAvatar || undefined} size={size} />
+      <ProfileTarget userId={peerId} name={peerName} tabbable className="rounded-full">
+        <Avatar userId={peerId} name={peerName} fileId={peerAvatar || undefined} size={size} />
+      </ProfileTarget>
     ) : notes ? (
       <span className="grid shrink-0 place-items-center rounded-[var(--radius-card)] bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] leading-none text-accent-text" style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}>
         {shelfEmoji || <NotebookText className={icon} strokeWidth={size > 40 ? 1.5 : 1.75} aria-hidden />}

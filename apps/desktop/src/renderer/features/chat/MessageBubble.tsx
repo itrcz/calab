@@ -32,6 +32,7 @@ import { PreviewRuns } from './PreviewRuns';
 import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { automationCardOf, birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
 import { AutomationCardView } from '../boards/AutomationCard';
 import { RecordingCardView } from './RecordingCard';
@@ -66,9 +67,11 @@ function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; 
   const label = useMentionLabel(workspaceId, v);
   const mine = !own && (v === me || v === 'everyone' || v === 'here');
   return (
-    <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : 'bg-accent/15 text-accent-text')} data-mention={v}>
-      {label}
-    </span>
+    <ProfileTarget userId={v} name={label} workspaceId={workspaceId} className="inline text-left align-baseline">
+      <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : 'bg-accent/15 text-accent-text')} data-mention={v}>
+        {label}
+      </span>
+    </ProfileTarget>
   );
 }
 
@@ -177,7 +180,8 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
  * menu); out of the Tab order — the feed's keyboard path is the message itself.
  */
 function AuthorTarget({ workspaceId, userId, name, className, children }: { workspaceId: string; userId: string; name: string; className?: string; children: ReactNode }): ReactNode {
-  if (!workspaceId) return children;
+  // A DM has no workspace and no member menu: the profile still opens (a shared workspace's card).
+  if (!workspaceId) return <ProfileTarget userId={userId} name={name} className={className}>{children}</ProfileTarget>;
   return (
     <MemberContextMenu workspaceId={workspaceId} userId={userId}>
       <button

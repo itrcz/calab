@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, CloseButton, IconButton, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -656,8 +657,10 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
   };
   return (
     <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="assignee-row" data-user={userId}>
-      <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
-      <span className="min-w-0 max-w-[40%] shrink truncate text-control font-medium">{name}</span>
+      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex min-w-0 max-w-[40%] shrink items-center gap-2 rounded-[var(--radius-control)] text-left">
+        <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
+        <span className="min-w-0 truncate text-control font-medium">{name}</span>
+      </ProfileTarget>
       <Tip label={lead ? t('boards.lead') : t('boards.makeLead')}>
         <button
           type="button"
@@ -978,9 +981,18 @@ function ActivityRow({ a, task, className }: { a: TaskActivity; task: Task; clas
   const rule = !a.actorId && !!a.ruleId;
   return (
     <div className={cx('flex items-start gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind} data-rule={rule || undefined}>
-      {rule ? <RuleActor boardId={task.boardId} ruleId={a.ruleId} /> : <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />}
+      {rule ? <RuleActor boardId={task.boardId} ruleId={a.ruleId} /> : (
+        <ProfileTarget userId={a.actorId} name={name} workspaceId={task.workspaceId} tabbable className="shrink-0 rounded-full">
+          <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />
+        </ProfileTarget>
+      )}
       <span className="min-w-0 flex-1">
-        {rule ? null : <span className="font-medium text-fg">{name}</span>} {text}
+        {rule ? null : (
+          <ProfileTarget userId={a.actorId} name={name} workspaceId={task.workspaceId} tabbable className="rounded-[var(--radius-control)] text-left font-medium text-fg hover:underline">
+            {name}
+          </ProfileTarget>
+        )}{' '}
+        {text}
       </span>
       {at ? <span className="shrink-0 tabular-nums text-faint" title={fmt.full(at)}>{fmt.time(at)}</span> : null}
     </div>

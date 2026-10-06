@@ -4,6 +4,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Video, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
@@ -252,7 +253,9 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
       data-testid="dm-header"
     >
       {mobile ? <NavButton /> : null}
-      <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence ring="var(--color-bg)" />
+      <ProfileTarget userId={peerId} name={name} tabbable className="no-drag flex shrink-0 rounded-full">
+        <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence ring="var(--color-bg)" />
+      </ProfileTarget>
       <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', roleTextClass(shared?.role), mobile && 'max-w-none shrink')} title={name}>
         {name}
       </h1>

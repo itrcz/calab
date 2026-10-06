@@ -4,6 +4,7 @@ import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEven
 import { ArrowLeft, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { Button, CloseButton, IconButton, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { keyEventId, myStatusOf, occKey } from '../../lib/calendar/events';
@@ -167,8 +168,10 @@ export function EventCard({
           </Line>
         ) : null}
         <div className="mt-2 flex items-center gap-2">
-          <Avatar userId={ev.organizerId} name={organizer} {...(organizerAvatar ? { fileId: organizerAvatar } : {})} size={20} />
-          <span className="min-w-0 truncate text-body">{organizer}</span>
+          <ProfileTarget userId={ev.organizerId} name={organizer} workspaceId={ev.workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
+            <Avatar userId={ev.organizerId} name={organizer} {...(organizerAvatar ? { fileId: organizerAvatar } : {})} size={20} />
+            <span className="min-w-0 truncate text-body">{organizer}</span>
+          </ProfileTarget>
           <span className="shrink-0 text-caption text-muted">{t('cal.organizer')}</span>
         </div>
 
@@ -317,13 +320,16 @@ function AttendeeRow({ workspaceId, a, organizer }: { workspaceId: string; a: Ca
   return (
     <li className="flex h-8 items-center gap-2" data-testid="event-attendee">
       {a.userId ? (
-        <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
+        <ProfileTarget userId={a.userId} name={name} workspaceId={workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
+          <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
+          <span className="min-w-0 truncate text-body">{name}</span>
+        </ProfileTarget>
       ) : (
         <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-fill)]" title={t('cal.external')}>
           <Mail className="size-3 text-muted" aria-label={t('cal.external')} role="img" />
         </span>
       )}
-      <span className="min-w-0 truncate text-body">{a.userId ? name : a.email}</span>
+      {a.userId ? null : <span className="min-w-0 truncate text-body">{a.email}</span>}
       {!a.required ? <span className="shrink-0 text-caption text-muted">{t('cal.optional')}</span> : null}
       {organizer ? <span className="shrink-0 text-caption text-muted">· {t('cal.organizer').toLowerCase()}</span> : null}
       <span className="flex-1" />
