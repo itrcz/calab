@@ -35,7 +35,7 @@ import { BoardsView } from '../boards/BoardsView';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
-import { PhoneProfile, ProfileButton } from './PhoneProfile';
+import { PhoneProfile, ProfileTabIcon } from './PhoneProfile';
 import { ScreenTransition } from './ScreenTransition';
 import { SettingsScreen } from './SettingsScreen';
 import { PhoneRoomList } from './PhoneRoomList';
@@ -49,7 +49,7 @@ const EDGE_PX = 28;
 
 /**
  * Phone layout of the web client (ADR-0073, ≤ 768 px, lib/mobile.ts): root tabs «Чаты · Личные ·
- * Доски · Календарь» with a bottom tab bar, and screens pushed over them (a room, a DM, the members,
+ * Доски · Календарь · Профиль» with a bottom tab bar, and screens pushed over them (a room, a DM, the members,
  * search results, a meeting, a board / task, the profile) without the tab bar, each with its «←» header. Only
  * the top screen is mounted; back = the browser history (services/phoneNav.ts): Android back, the
  * browser's back, «←» and a swipe from the left edge.
@@ -132,6 +132,8 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
       return <BoardsRoot welcome={welcome} />;
     case 'calendar':
       return <CalendarRoot welcome={welcome} />;
+    case 'profile':
+      return <ProfileRoot />;
   }
 }
 
@@ -172,7 +174,7 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   );
 }
 
-/** «Личные»: notes and DMs at full width; my avatar at the right opens «Профиль». */
+/** «Личные»: notes and DMs at full width. */
 function DmsRoot(): ReactNode {
   const open = useUi((s) => s.openDialog);
   const guest = useSession((s) => !!s.me?.user?.isGuest);
@@ -180,7 +182,6 @@ function DmsRoot(): ReactNode {
     <div className="flex min-h-0 flex-1 flex-col" style={{ ['--sidebar-width' as string]: '100%' }} data-testid="phone-dms">
       <RootTitle title={t('dm.home')}>
         {guest ? null : <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />}
-        <ProfileButton tab="dms" />
       </RootTitle>
       <div className="flex min-h-0 flex-1">
         <DmSidebar />
@@ -199,6 +200,16 @@ function CalendarRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   }, [ws, day]);
   if (!ws) return welcome;
   return day ? <DayView workspaceId={ws} /> : <div className="flex-1" />;
+}
+
+/** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
+function ProfileRoot(): ReactNode {
+  return (
+    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="profile-page">
+      <RootTitle title={t('mobile.profile')} />
+      <PhoneProfile />
+    </section>
+  );
 }
 
 /** The title of a tab root without its own header (iOS large-title look, one line). */
@@ -233,8 +244,6 @@ function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
       return <ActiveWorkspace>{(ws) => <BoardsView workspaceId={ws} wide={false} mobile />}</ActiveWorkspace>;
     case 'archived':
       return <ArchivedScreen />;
-    case 'profile':
-      return <ProfileScreen />;
     case 'settings':
       return <SettingsScreen section={screen.section} />;
   }
@@ -255,15 +264,7 @@ function ArchivedScreen(): ReactNode {
   return room ? <ArchivedChat key={room.id} workspaceId={room.workspaceId} room={room} /> : null;
 }
 
-/** «Профиль»: the former «Я» tab, a screen over «Личные». */
-function ProfileScreen(): ReactNode {
-  return (
-    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="profile-page">
-      <PhoneHeader title={t('mobile.profile')} />
-      <PhoneProfile />
-    </section>
-  );
-}
+
 
 /** «Участники» of a room: a screen with the unified header (it was the right drawer). */
 function MembersPage({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
@@ -279,10 +280,10 @@ function MembersPage({ workspaceId, roomId }: { workspaceId: string; roomId: str
 // ---------------------------------------------------------------- tab bar
 
 /**
- * The bottom tab bar (ADR-0073 §1): «Чаты · Личные · Доски · Календарь», 56 px targets over the home
+ * The bottom tab bar (ADR-0073 §1): «Чаты · Личные · Доски · Календарь · Профиль» (my avatar), 56 px targets over the home
  * indicator, the unread count of rooms (mentions) on «Чаты», of DMs on «Личные» and of tasks on
  * «Доски» (the open workspace's, as the old «Голос · Доски» switch showed). «Личные» only for
- * accounts with DMs, «Календарь» not for guests.
+ * accounts with DMs, «Календарь» not for guests; «Профиль» for everyone (a guest signs out there).
  */
 function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
   const dms = useSession((s) => !s.me?.user?.isGuest);
@@ -297,6 +298,7 @@ function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
       {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={<MessageCircle className="size-[22px]" strokeWidth={1.75} />} badge={<DmsBadge />} /> : null}
       <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={<SquareKanban className="size-[22px]" strokeWidth={1.75} />} badge={<BoardsBadge />} />
       {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={<CalendarDays className="size-[22px]" strokeWidth={1.75} />} /> : null}
+      <TabButton tab="profile" active={tab === 'profile'} label={t('mobile.profile')} icon={<ProfileTabIcon active={tab === 'profile'} />} />
     </nav>
   );
 }

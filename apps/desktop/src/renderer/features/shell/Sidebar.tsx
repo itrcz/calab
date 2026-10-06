@@ -109,7 +109,6 @@ import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from './ColumnHeader';
 import { CallPanel } from './CallPanel';
 import { BoardsList } from '../boards/BoardsList';
-import { ProfileButton } from './PhoneProfile';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
@@ -337,7 +336,6 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
   const mobile = useMobile();
-  const guestUser = useSession((s) => s.me?.user?.isGuest === true);
   if (role === undefined) return null;
   const guest = role === WorkspaceRole.GUEST;
   // Invites: INVITE_MEMBERS (ADR-0043, the server's check), a custom role's included.
@@ -358,14 +356,12 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
     ) : null;
 
   // Phone (ADR-0073 §1): one row — the workspace switcher (ADR-0074 §2, no rail) and «+». No «Голос · Доски» switch (the boards
-  // are a tab) and no calendar one (a tab too). A guest account has no «Личные» tab: its profile
-  // button is here.
+  // are a tab) and no calendar one (a tab too). The profile is the last tab.
   if (mobile) {
     return (
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
         <WorkspaceSwitcher phone testId="phone-ws-switcher" />
         {create}
-        {guestUser ? <ProfileButton tab="chats" /> : null}
       </div>
     );
   }

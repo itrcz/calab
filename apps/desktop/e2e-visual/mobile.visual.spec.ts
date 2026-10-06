@@ -78,15 +78,14 @@ async function toRoot(page: Page): Promise<void> {
 }
 
 /** A tab of the bottom tab bar (its root). */
-async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar'): Promise<void> {
+async function tab(page: Page, name: 'chats' | 'dms' | 'boards' | 'calendar' | 'profile'): Promise<void> {
   await toRoot(page);
   await page.getByTestId(`phone-tab-${name}`).tap();
 }
 
-/** «Личные» → the avatar button at the right of its header → «Профиль» (ADR-0073 §1). */
+/** The «Профиль» tab: my avatar at the right end of the tab bar (ADR-0073 §1, owner 07.10). */
 async function openProfile(page: Page): Promise<void> {
-  await tab(page, 'dms');
-  await page.getByTestId('phone-profile-button').tap();
+  await tab(page, 'profile');
   await expect(page.getByTestId('phone-profile')).toBeVisible();
 }
 
@@ -592,17 +591,21 @@ test('m-members-page', async ({ page }) => {
   await expect(page.getByTestId('composer')).toBeVisible();
 });
 
-// ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, opened by the avatar of «Личные») — the
-// profile card, mic / sound, the settings entries, «Выйти»; «←» returns to «Личные».
+// ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the
+// profile card, mic / sound, the settings entries, «Выйти».
 test('m-profile', async ({ page }) => {
   await signedIn(page);
   await openProfile(page);
   await expect(page.getByTestId('phone-profile-card')).toContainText('Анна');
   await expect(page.getByTestId('phone-profile-logout')).toBeVisible();
   await checkpoint(page, 'm-profile');
-  await page.getByTestId('phone-back').tap();
-  await expect(page.getByTestId('phone-dms')).toBeVisible();
+  // A tab root: the tab bar stays, no «←»; the avatar button is gone from «Личные».
   await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+  await expect(page.getByTestId('phone-back')).toHaveCount(0);
+  await expect(page.getByTestId('phone-tab-profile')).toHaveAttribute('aria-current', 'page');
+  await page.getByTestId('phone-tab-dms').tap();
+  await expect(page.getByTestId('phone-dms')).toBeVisible();
+  await expect(page.getByTestId('phone-profile-button')).toHaveCount(0);
 });
 
 // ADR-0073 §1 (owner 06.10): the «Доски» tab — the boards of the open workspace; a board is pushed

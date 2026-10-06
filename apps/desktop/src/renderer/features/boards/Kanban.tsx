@@ -278,7 +278,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
   return (
     <div
       ref={scroller}
-      className="relative flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-3 pt-3 mobile:snap-x mobile:snap-mandatory mobile:px-3"
+      className="relative flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-3 pt-3 mobile:snap-x mobile:snap-mandatory mobile:scroll-px-4 mobile:px-4"
       onClickCapture={onClickCapture}
       data-testid="kanban"
     >
@@ -388,7 +388,7 @@ const KanbanColumn = memo(function KanbanColumn({
   return (
     <section
       className={cx(
-        'flex w-[280px] shrink-0 flex-col rounded-[var(--radius-panel)] bg-[color-mix(in_srgb,var(--color-fill)_45%,transparent)] transition-opacity duration-[var(--motion-fast)] mobile:w-[85vw] mobile:snap-start',
+        'flex w-[280px] shrink-0 flex-col rounded-[var(--radius-panel)] bg-[color-mix(in_srgb,var(--color-fill)_45%,transparent)] transition-opacity duration-[var(--motion-fast)] mobile:w-[min(85vw,320px)] mobile:snap-start',
         (columnDragging || blocked) && 'opacity-40',
       )}
       data-column={status.id}
