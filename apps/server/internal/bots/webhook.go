@@ -248,6 +248,7 @@ func eventWithoutEmails(ev *v1.DispatchEvent) *v1.DispatchEvent {
 }
 
 func (s *Service) onWorkspaceEvent(ctx context.Context, wsID uuid.UUID, ev *v1.DispatchEvent) {
+	ev = pbconv.StripEvent(ev) // bots never get people's email / phone (ADR-0077)
 	view := workspaceView(wsID, ev)
 	if view == nil {
 		return
