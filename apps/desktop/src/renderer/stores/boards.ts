@@ -136,7 +136,7 @@ export function workspaceBoards(boards: Readonly<Record<string, Board>>, workspa
  * The viewer's bits on a task (ADR-0059): a primitive, so a selector built on it re-renders only
  * when the bits change. Use inside `useBoards(...)` or with `getState()` (hotkeys, bulk actions).
  */
-export function taskPermsOf(s: Pick<BoardsData, 'boards'>, task: Pick<Task, 'boardId' | 'assignees' | 'approvers' | 'archivedAt'>, me: string): bigint {
+export function taskPermsOf(s: Pick<BoardsData, 'boards'>, task: Pick<Task, 'boardId' | 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt'>, me: string): bigint {
   return taskBits(s.boards[task.boardId], task, me);
 }
 
