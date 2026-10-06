@@ -1,5 +1,5 @@
 import { WorkspaceRole } from '@calaba/protocol';
-import { CalendarDays, Compass, MessageCircle, MessagesSquare, SquareKanban, Volume2, type LucideIcon } from 'lucide-react';
+import { CalendarDays, MessageCircle, MessagesSquare, SquareKanban, Volume2, type LucideIcon } from 'lucide-react';
 import { memo, useRef, type ComponentPropsWithRef, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
@@ -28,8 +28,8 @@ const tile =
 /**
  * The sections rail (ADR-0074 §1): 72 px, rail material — «Чаты» (the rooms of the context
  * workspace), «Личные» (DMs and notes), «Календарь», «Доски», then the workspace's web apps
- * (ADR-0050), «Найти пространство» at the bottom. The workspace itself is picked in the title bar
- * (WorkspaceSwitcher). Re-renders: the rail reads two primitives (the section on screen and the
+ * (ADR-0050). The workspace itself is picked — and found, created — in the title bar's switcher
+ * (WorkspaceSwitcher; «Найти пространство» left the rail 07.10). Re-renders: the rail reads two primitives (the section on screen and the
  * context workspace); each tile subscribes to its own counter, so a new message re-renders one tile.
  */
 export function SectionRail(): ReactNode {
@@ -55,8 +55,6 @@ export function SectionRail(): ReactNode {
         {ws && !guestWs ? <BoardsTile ws={ws} active={section === 'boards'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
-        <div className="flex-1" aria-hidden />
-        {local ? <FindTile /> : null}
       </nav>
     </div>
   );
@@ -244,24 +242,3 @@ const BoardsTile = memo(function BoardsTile({ ws, active }: { ws: string; active
     </Slot>
   );
 });
-
-/** «Найти пространство»: join by an invite or browse the open ones. */
-function FindTile(): ReactNode {
-  const open = useUi((s) => s.openDialog);
-  const label = t('shell.findWorkspace');
-  return (
-    <div className="group relative flex w-full shrink-0 justify-center">
-      <Tip label={label} side="right">
-        <button
-          type="button"
-          onClick={() => open({ kind: 'join-workspace' })}
-          aria-label={label}
-          data-testid="section-find"
-          className={cx(tile, 'bg-hover text-muted hover:bg-accent-strong hover:text-accent-fg active:bg-accent-strong active:text-accent-fg')}
-        >
-          <Compass className="size-6" strokeWidth={1.75} aria-hidden />
-        </button>
-      </Tip>
-    </div>
-  );
-}

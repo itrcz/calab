@@ -37,7 +37,7 @@ import { ScreenTransition } from './ScreenTransition';
 import { SettingsScreen } from './SettingsScreen';
 import { PhoneRoomList } from './PhoneRoomList';
 import { UpdateBar } from './UpdateBar';
-import { WorkspaceRail } from './WorkspaceRail';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 /** A horizontal swipe longer than this (and mostly horizontal) is a swipe. */
 const SWIPE_PX = 56;
@@ -140,15 +140,12 @@ function useRootWorkspace(): { ws: string | null; locked: boolean } {
   return { ws: wsId && (has || locked) ? wsId : null, locked };
 }
 
-/** «Чаты»: the rail of workspaces (vertical, as on the desktop) and the room list on the rest. */
+/** «Чаты»: the room list at full width; the workspace is picked in its header (the switcher, ADR-0074). */
 function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   const { ws, locked } = useRootWorkspace();
   return (
-    <div className="mat-rail flex min-h-0 flex-1" data-testid="phone-chats">
-      <WorkspaceRail home={false} />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line">
-        {locked && ws ? <WorkspaceLock workspaceId={ws} /> : ws ? <PhoneRoomList workspaceId={ws} /> : welcome}
-      </div>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-chats">
+      {locked && ws ? <WorkspaceLock workspaceId={ws} /> : ws ? <PhoneRoomList workspaceId={ws} /> : welcome}
     </div>
   );
 }
@@ -161,7 +158,9 @@ function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
     <section className="mat-sidebar flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
-      <RootTitle title={name} />
+      <header className="mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
+        <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+      </header>
       <BoardsList workspaceId={ws} />
     </section>
   );

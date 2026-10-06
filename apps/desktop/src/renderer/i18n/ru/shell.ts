@@ -31,7 +31,6 @@ export const ruShell = {
 
   // workspace rail
   'shell.home': 'Пространства',
-  'shell.explore': 'Обзор',
   'shell.findWorkspace': 'Найти пространство',
   'shell.wsSwitcher': 'Сменить пространство',
   'shell.otherUnread': 'Есть непрочитанное в других пространствах',

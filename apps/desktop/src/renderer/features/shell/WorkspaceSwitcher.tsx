@@ -28,12 +28,23 @@ import { WorkspaceMenuItems } from './WorkspaceMenu';
  * count) beside the name while other workspaces have unread. «Calab» before any workspace exists.
  * At rest the trigger reads the name and one primitive badge; the rows mount only while it is open.
  */
-export function WorkspaceSwitcher({ testId }: { testId?: string }): ReactNode {
+export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; phone?: boolean }): ReactNode {
   const ws = useContextWorkspace();
   const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
+  const iconFileId = useWorkspaces((s) => (ws ? (s.byId[ws]?.ws.iconFileId ?? '') : ''));
+  // A guest sees one workspace: nothing to switch, no menu (ADR-0073, owner 07.10).
+  const single = useWorkspaces((s) => phone && s.order.length <= 1 && (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
   const others = useRooms((s) => otherWorkspacesBadge(s, ws));
   const title = name ?? 'Calab';
   const label = [title, others > 0 ? plural('shell.unreadMentions', others) : others === UNREAD_DOT ? t('shell.otherUnread') : ''].filter(Boolean).join(', ');
+  if (single) {
+    return (
+      <div className="flex h-10 min-w-0 flex-1 items-center gap-2 px-2 text-headline font-semibold text-fg" data-testid={testId}>
+        <WorkspaceIcon name={title} iconFileId={iconFileId} />
+        <h1 className="min-w-0 truncate">{title}</h1>
+      </div>
+    );
+  }
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -42,9 +53,13 @@ export function WorkspaceSwitcher({ testId }: { testId?: string }): ReactNode {
           title={t('shell.wsSwitcher')}
           aria-label={label}
           data-testid={testId}
-          className="no-drag group flex h-7 min-w-0 max-w-[240px] items-center gap-1 rounded-[var(--radius-row)] px-2 text-body font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+          className={cx(
+            'group flex min-w-0 items-center gap-1 rounded-[var(--radius-row)] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active',
+            phone ? 'h-10 flex-1 gap-2 px-2 text-left text-headline' : 'no-drag h-7 max-w-[240px] px-2 text-body',
+          )}
         >
-          <span className="min-w-0 truncate">{title}</span>
+          {phone ? <WorkspaceIcon name={title} iconFileId={iconFileId} /> : null}
+          <span className={cx('min-w-0 truncate', phone && 'flex-1')}>{title}</span>
           {others > 0 ? (
             <span className="min-w-4 shrink-0 rounded-full bg-danger-fill px-1 text-center text-micro font-bold leading-4 text-white" data-testid="switcher-badge" aria-hidden>
               {others > 99 ? '99+' : others}
@@ -137,9 +152,7 @@ const SwitchRow = memo(function SwitchRow({ id, current }: { id: string; current
       aria-current={current ? 'true' : undefined}
       data-testid="switcher-row"
     >
-      <span className="grid size-6 shrink-0 place-items-center overflow-hidden rounded-[7px] bg-hover text-micro font-semibold text-fg">
-        {iconFileId ? <MediaImg path={thumbnailPath(iconFileId)} alt="" draggable={false} className="size-full object-cover" /> : <span aria-hidden>{workspaceInitials(name)}</span>}
-      </span>
+      <WorkspaceIcon name={name} iconFileId={iconFileId} />
       <span className={cx('min-w-0 flex-1 truncate', badge !== 0 && 'font-semibold')}>{name}</span>
       {inVoice ? (
         <span className="grid size-4 shrink-0 place-items-center rounded-full bg-ok-fill text-white" data-testid="switcher-voice" aria-hidden>
@@ -157,3 +170,12 @@ const SwitchRow = memo(function SwitchRow({ id, current }: { id: string; current
     </Dropdown.Item>
   );
 });
+
+/** The workspace's picture (or its initials): 24 px square, the same in the list and on the phone's header. */
+function WorkspaceIcon({ name, iconFileId }: { name: string; iconFileId: string }): ReactNode {
+  return (
+    <span className="grid size-6 shrink-0 place-items-center overflow-hidden rounded-[7px] bg-hover text-micro font-semibold text-fg">
+      {iconFileId ? <MediaImg path={thumbnailPath(iconFileId)} alt="" draggable={false} className="size-full object-cover" /> : <span aria-hidden>{workspaceInitials(name)}</span>}
+    </span>
+  );
+}

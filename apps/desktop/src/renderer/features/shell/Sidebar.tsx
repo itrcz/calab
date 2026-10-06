@@ -105,7 +105,7 @@ import { MiniCalendar } from '../calendar/MiniCalendar';
 import { CREATE_TASKS, hasBit } from '../boards/model';
 import { openBoard } from '../../services/boards';
 import { useShallow } from 'zustand/react/shallow';
-import { WorkspaceMenu } from './WorkspaceMenu';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { BoardsList } from '../boards/BoardsList';
 import { ProfileButton } from './PhoneProfile';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -358,15 +358,13 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
       />
     ) : null;
 
-  // Phone (ADR-0073 §1): one row — the workspace menu and «+». No «Голос · Доски» switch (the boards
+  // Phone (ADR-0073 §1): one row — the workspace switcher (ADR-0074 §2, no rail) and «+». No «Голос · Доски» switch (the boards
   // are a tab) and no calendar one (a tab too). A guest account has no «Личные» tab: its profile
   // button is here.
   if (mobile) {
     return (
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
-        <div className="min-w-0 flex-1">
-          <WorkspaceMenu workspaceId={workspaceId} variant="drawer" />
-        </div>
+        <WorkspaceSwitcher phone testId="phone-ws-switcher" />
         {create}
         {guestUser ? <ProfileButton tab="chats" /> : null}
       </div>

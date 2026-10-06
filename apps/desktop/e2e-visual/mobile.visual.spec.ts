@@ -537,8 +537,9 @@ function seedCall(): void {
   mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.call, joinedAtMs: since + 60_000 });
 }
 
-// ADR-0073 §1, §3: the app opens on «Чаты» — the rail, the room list as a messenger's chats (68 px
-// rows, the voice room with people in green), the tab bar.
+// ADR-0073 §1, §3: the app opens on «Чаты» — the room list at full width (no workspace rail; the
+// workspace is the switcher in the header, owner 07.10) as a messenger's chats (68 px rows, the
+// voice room with people in green), the tab bar.
 test('m-home', async ({ page }) => {
   seedCall();
   await signedIn(page);
@@ -547,6 +548,8 @@ test('m-home', async ({ page }) => {
   await expect(list.getByTestId('room-voice-line')).toContainText('Борис');
   await expect(page.getByTestId('phone-tabbar')).toBeVisible();
   await expect(page.getByTestId('room-join')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Пространства' })).toHaveCount(0);
+  await expect(page.getByTestId('phone-ws-switcher')).toContainText('Команда Calab');
   for (const row of await list.getByTestId('phone-room-row').all()) {
     const box = await row.boundingBox();
     expect(box && Math.round(box.height), 'a 68 px room row').toBe(68);
@@ -903,9 +906,25 @@ test('m-settings', async ({ page }) => {
   expect(fits, 'settings section scrolls on its screen').toBe(true);
 });
 
+// Owner 07.10: no workspace rail — the header's «Команда Calab ⌄» opens the switcher (the desktop's
+// list: workspaces with a badge / «в голосе» / check, «Создать» / «Найти», the workspace's items).
+test('m-ws-switcher', async ({ page }) => {
+  await signedIn(page);
+  await page.getByTestId('phone-ws-switcher').tap();
+  const menu = page.getByTestId('workspace-switcher');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByTestId('switcher-row').first()).toBeVisible();
+  expect(await menu.getByTestId('switcher-row').count(), 'two workspaces').toBeGreaterThanOrEqual(2);
+  await expect(menu.getByRole('menuitem', { name: 'Создать пространство' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Найти пространство' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Настройки', exact: true })).toBeVisible();
+  await checkpoint(page, 'm-ws-switcher');
+});
+
 test('m-dialog', async ({ page }) => {
   await signedIn(page);
-  await page.getByTestId('phone-chats').getByRole('button', { name: 'Создать пространство' }).tap();
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Создать пространство' }).tap();
   await expect(page.getByRole('dialog', { name: 'Новое пространство' })).toBeVisible();
   await expectNoFieldFocus(page, 'dialog sheet');
   await checkpoint(page, 'm-dialog', { snapshot: false });
@@ -916,7 +935,7 @@ test('m-dialog', async ({ page }) => {
 test('m-settings-bots', async ({ page }) => {
   await signedIn(page);
   mock.seedBots();
-  await page.getByTestId('phone-room-list').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
+  await page.getByTestId('phone-ws-switcher').tap();
   await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
   // The list of sections is a screen, a section is one more screen over it; «‹» pops one at a time.
   const dialog = page.getByTestId('settings-page');
