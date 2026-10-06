@@ -258,11 +258,13 @@ func TestSearchTasks(t *testing.T) {
 	wantHits(t, "title typo", hits(t, bob, q("презинтацию")+scope, stTasks), tOpen.GetId())
 	wantHits(t, "title prefix", hits(t, bob, q("презент")+scope, stTasks), tOpen.GetId())
 
-	// Restricted: the scoped access ends.
+	// Restricted (ADR-0076): the card stays found; unassigned, the scoped access ends.
 	restricted := true
 	o.must(200, "PATCH", "/api/boards/"+priv.GetId(), &v1.UpdateBoardRequest{Restricted: &restricted}, nil)
-	wantHits(t, "restricted tasks", hits(t, bob, q(w)+scope, stTasks), tOpen.GetId())
-	wantHits(t, "restricted comments", hits(t, bob, q(w)+scope, stTaskComments), cOpen.GetId())
+	wantHits(t, "restricted tasks", hits(t, bob, q(w)+scope, stTasks), tOpen.GetId(), tMine.GetId())
+	o.must(200, "PUT", "/api/tasks/"+tMine.GetId()+"/assignees", &v1.SetAssigneesRequest{}, nil)
+	wantHits(t, "unassigned tasks", hits(t, bob, q(w)+scope, stTasks), tOpen.GetId())
+	wantHits(t, "unassigned comments", hits(t, bob, q(w)+scope, stTaskComments), cOpen.GetId())
 
 	// Guests: no boards.
 	gus := register(t, invite(t, o, wid))
