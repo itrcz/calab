@@ -19,6 +19,7 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { useHomeDrop } from '../notes/HomeDrop';
 import { WorkspaceAppsColumn } from '../webapps/AppRail';
 import { RailContextMenu } from './RailContextMenu';
+import { RailProfile } from './RailProfile';
 import { openSection } from './sectionNav';
 
 /** 40 px plate, radius 10 (docs/08, owner 07.10): no fill at rest, grey plate on hover and when active. */
@@ -37,14 +38,10 @@ export function SectionRail(): ReactNode {
   const guestWs = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
   const section = useSection(ws);
 
-  // The wrapper carries the island fade (styles.css `.island-fade`): a pseudo-element inside the
-  // scroller would scroll away with the icons.
   return (
-    <div className="island-fade island-fade-rail flex w-[var(--rail-width)] shrink-0 flex-col">
+    <div className="flex w-[var(--rail-width)] shrink-0 flex-col">
       <nav
-        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pt-3"
-        // The bottom island (AppShell) spans the rail too: the icons end above it.
-        style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pb-3 pt-3"
         aria-label={t('mobile.tabs')}
         data-testid="section-rail"
       >
@@ -55,6 +52,10 @@ export function SectionRail(): ReactNode {
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
       </nav>
+      {/* Me (owner, 07.10, Codex reference): the avatar at the rail's foot opens the profile menu. */}
+      <div className="flex shrink-0 justify-center pb-3 pt-1">
+        <RailProfile />
+      </div>
     </div>
   );
 }

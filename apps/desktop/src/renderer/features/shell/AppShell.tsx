@@ -21,7 +21,6 @@ import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
-import { showBottomIsland } from '../../lib/webApps';
 import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
@@ -37,7 +36,6 @@ import { BoardsView } from '../boards/BoardsView';
 import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EventPanel } from '../calendar/EventCard';
-import { BottomIsland } from './BottomIsland';
 import { Sidebar } from './Sidebar';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { useArchiveView } from '../../stores/archiveView';
@@ -138,7 +136,9 @@ function ShellLayout(): ReactNode {
       {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
       <UpdateBar />
       {/* The rail sits on the window layer (same material as the title bar); the room column and
-          the chat are one «island» with a 12 px top-left corner and a hairline edge (docs/09 v0.2). */}
+          the chat are one inset panel with a 12 px top-left corner and a quiet edge (docs/08
+          «Слои окна», owner 07.10). My profile is the rail's avatar; a call's panel sits at the
+          foot of the column (CallPanel) — nothing floats over the rail and the column. */}
       <div className="mat-rail relative flex min-h-0 flex-1">
         <SectionRail />
         {!ready ? (
@@ -152,7 +152,7 @@ function ShellLayout(): ReactNode {
           <WorkspaceLock workspaceId={wsId} />
         ) : home ? (
           // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <DmSidebar />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
@@ -163,7 +163,7 @@ function ShellLayout(): ReactNode {
         ) : hasWs && wsId && appId ? (
           <AppScreen key={appId} appId={appId} />
         ) : hasWs && wsId ? (
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
@@ -204,18 +204,10 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
   );
-}
-
-/**
- * Web apps use the entire content area, including while a voice call continues.
- */
-function IslandSlot({ appOpen, workTab }: { appOpen: boolean; workTab: boolean }): ReactNode {
-  return showBottomIsland(appOpen, workTab) ? <BottomIsland /> : null;
 }
 
 /**

@@ -83,7 +83,24 @@ function customChoices(recent: readonly StatusChoice[], current: { emoji: string
  * current one (click = edit, × = clear), presets and up to 3 recent ones (one click), «Задать
  * свой…» | «Редактировать профиль» (+ admin).
  */
-export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
+export function StatusMenu({
+  children,
+  side = 'top',
+  align = 'start',
+  compact = false,
+  top,
+  bottom,
+}: {
+  children: ReactNode;
+  side?: 'top' | 'right';
+  align?: 'start' | 'end';
+  /** Custom statuses in a submenu (the rail's profile menu). */
+  compact?: boolean;
+  /** The rail's profile menu (RailProfile): mic / sound right under the header… */
+  top?: ReactNode;
+  /** …and «Настройки» / «Выйти» at the end. */
+  bottom?: ReactNode;
+}): ReactNode {
   const local = useSession((s) => localAuthority(s.authority));
   const me = useSession((s) => s.me);
   const chosen = usePrefs((s) => s.presence);
@@ -95,7 +112,8 @@ export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
   const [custom, setCustom] = useState(false);
   const user = me?.user;
   if (!user) return null;
-  if (!local) return <>{children}</>;
+  // Another identity provider's account (ADR-0035): no status rows; the profile menu keeps its own items.
+  if (!local && !top && !bottom) return <>{children}</>;
   const customText = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
   const customUntil = user.statusText && user.statusExpiresAt ? timestampMs(user.statusExpiresAt) : null;
   const choices = customChoices(recent, { emoji: user.statusEmoji, text: user.statusText });
@@ -110,14 +128,62 @@ export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
     return null;
   };
 
+  // «Свой статус»: the current one (edit / clear), presets and recent ones, «Задать свой…».
+  const customRows = (
+    <>
+      {customText ? (
+        <div className="flex items-center gap-1" data-testid="status-current">
+          <Dropdown.Item
+            className={cx(row, 'min-w-0 flex-1')}
+            onSelect={() => setCustom(true)}
+            title={t('presence.editStatus')}
+            aria-label={`${t('presence.editStatus')}: ${customText}`}
+          >
+            <span className="grid w-4 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+              {user.statusEmoji || <Smile className="size-4 opacity-70" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{user.statusText}</span>
+              {customUntil !== null ? <span className="block truncate text-caption opacity-70">{untilLabel(customUntil)}</span> : null}
+            </span>
+          </Dropdown.Item>
+          <Dropdown.Item
+            className={cx(menuItem, 'w-7 shrink-0 justify-center px-0 text-muted')}
+            onSelect={() => void saveCustomStatus({ text: '', emoji: '', expiresInSeconds: 0 })}
+            aria-label={t('presence.clearStatus')}
+            title={t('presence.clearStatus')}
+            data-testid="status-clear"
+          >
+            <X className="size-4" aria-hidden />
+          </Dropdown.Item>
+        </div>
+      ) : null}
+      {choices.map((c) => (
+        <Dropdown.Item key={c.id} className={menuItem} onSelect={() => void applyCustomStatus(c)} data-testid={`status-choice-${c.id}`}>
+          <span className="grid w-4 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+            {c.emoji || <Smile className="size-4 opacity-70" />}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{c.text}</span>
+          <span className="shrink-0 text-caption opacity-70">{t(AFTER_SHORT[c.after])}</span>
+        </Dropdown.Item>
+      ))}
+      <Dropdown.Item className={menuItem} onSelect={() => setCustom(true)} data-testid="status-custom">
+        <span className="grid w-4 shrink-0 place-items-center" aria-hidden>
+          <Pencil className="size-3.5 opacity-70" />
+        </span>
+        {t('presence.custom')}
+      </Dropdown.Item>
+    </>
+  );
+
   return (
     <>
       <Dropdown.Root modal={false} open={open} onOpenChange={setOpen}>
         <Dropdown.Trigger asChild>{children}</Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content
-            side="top"
-            align="start"
+            side={side}
+            align={align}
             sideOffset={8}
             collisionPadding={16}
             aria-label={t('presence.change')}
@@ -136,112 +202,101 @@ export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
                 <span className="block truncate text-caption text-muted">{me.email}</span>
               </span>
             </div>
-            <Dropdown.Separator className={menuSeparator} />
+            {top}
+            {local ? (
+              <>
+                <Dropdown.Separator className={menuSeparator} />
 
-            <Dropdown.Item className={row} onSelect={() => pick(PresenceStatus.ONLINE)} data-testid="status-online">
-              <span className="grid w-4 place-items-center">
-                <StatusGlyph status={PresenceStatus.ONLINE} ring={MENU_SURFACE} />
-              </span>
-              <span className="min-w-0 flex-1">
-                {t('presence.online')}
-                {/* «В сети» chosen, but the server made me idle (AFK): say why the dot is yellow. */}
-                {chosen === PresenceStatus.ONLINE && status === PresenceStatus.IDLE ? (
-                  <span className="block truncate text-caption opacity-70">{t('presence.autoIdle')}</span>
-                ) : null}
-              </span>
-              {chosen === PresenceStatus.ONLINE ? <Check className="size-4" aria-hidden /> : null}
-            </Dropdown.Item>
-            <Dropdown.Separator className={menuSeparator} />
-
-            {TIMED.map(({ s, hint }) => {
-              const note = caption(s) ?? (hint ? t(hint) : null);
-              return (
-                <Dropdown.Sub key={s}>
-                  <Dropdown.SubTrigger
-                    className={cx(row, 'data-[state=open]:bg-[var(--color-fill-hover)]')}
-                    data-testid={`status-${s}`}
-                    // A mouse click on the row itself = «Навсегда» (Discord); touch opens the submenu.
-                    onClick={(e) => {
-                      if ((e.nativeEvent as PointerEvent).pointerType === 'mouse') pick(s);
-                    }}
-                  >
-                    <span className="grid w-4 place-items-center self-start pt-[5px]">
-                      <StatusGlyph status={s} ring={MENU_SURFACE} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block">{t(STATUS_KEY[s] ?? 'presence.online')}</span>
-                      {note ? <span className="block truncate text-caption opacity-70">{note}</span> : null}
-                    </span>
-                    {chosen === s ? <Check className="size-4" aria-hidden /> : null}
-                    <ChevronRight className="size-4 opacity-70" aria-hidden />
-                  </Dropdown.SubTrigger>
-                  <Dropdown.Portal>
-                    <Dropdown.SubContent className={cx(menuBox, 'min-w-44')} sideOffset={6} alignOffset={-4} collisionPadding={16}>
-                      {PRESENCE_DURATIONS.map((d) => (
-                        <Dropdown.Item key={d.key} className={menuItem} onSelect={() => pick(s, d.ms)}>
-                          {t(d.key)}
-                        </Dropdown.Item>
-                      ))}
-                    </Dropdown.SubContent>
-                  </Dropdown.Portal>
-                </Dropdown.Sub>
-              );
-            })}
-            <Dropdown.Separator className={menuSeparator} />
-
-            <Dropdown.Label className={menuLabel}>{t('presence.customTitle')}</Dropdown.Label>
-            {customText ? (
-              <div className="flex items-center gap-1" data-testid="status-current">
-                <Dropdown.Item
-                  className={cx(row, 'min-w-0 flex-1')}
-                  onSelect={() => setCustom(true)}
-                  title={t('presence.editStatus')}
-                  aria-label={`${t('presence.editStatus')}: ${customText}`}
-                >
-                  <span className="grid w-4 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
-                    {user.statusEmoji || <Smile className="size-4 opacity-70" />}
+                <Dropdown.Item className={row} onSelect={() => pick(PresenceStatus.ONLINE)} data-testid="status-online">
+                  <span className="grid w-4 place-items-center">
+                    <StatusGlyph status={PresenceStatus.ONLINE} ring={MENU_SURFACE} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate">{user.statusText}</span>
-                    {customUntil !== null ? <span className="block truncate text-caption opacity-70">{untilLabel(customUntil)}</span> : null}
+                    {t('presence.online')}
+                    {/* «В сети» chosen, but the server made me idle (AFK): say why the dot is yellow. */}
+                    {chosen === PresenceStatus.ONLINE && status === PresenceStatus.IDLE ? (
+                      <span className="block truncate text-caption opacity-70">{t('presence.autoIdle')}</span>
+                    ) : null}
                   </span>
+                  {chosen === PresenceStatus.ONLINE ? <Check className="size-4" aria-hidden /> : null}
                 </Dropdown.Item>
-                <Dropdown.Item
-                  className={cx(menuItem, 'w-7 shrink-0 justify-center px-0 text-muted')}
-                  onSelect={() => void saveCustomStatus({ text: '', emoji: '', expiresInSeconds: 0 })}
-                  aria-label={t('presence.clearStatus')}
-                  title={t('presence.clearStatus')}
-                  data-testid="status-clear"
-                >
-                  <X className="size-4" aria-hidden />
+                <Dropdown.Separator className={menuSeparator} />
+
+                {TIMED.map(({ s, hint }) => {
+                  const note = caption(s) ?? (hint ? t(hint) : null);
+                  return (
+                    <Dropdown.Sub key={s}>
+                      <Dropdown.SubTrigger
+                        className={cx(row, 'data-[state=open]:bg-[var(--color-fill-hover)]')}
+                        data-testid={`status-${s}`}
+                        // A mouse click on the row itself = «Навсегда» (Discord); touch opens the submenu.
+                        onClick={(e) => {
+                          if ((e.nativeEvent as PointerEvent).pointerType === 'mouse') pick(s);
+                        }}
+                      >
+                        <span className="grid w-4 place-items-center self-start pt-[5px]">
+                          <StatusGlyph status={s} ring={MENU_SURFACE} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block">{t(STATUS_KEY[s] ?? 'presence.online')}</span>
+                          {note ? <span className="block truncate text-caption opacity-70">{note}</span> : null}
+                        </span>
+                        {chosen === s ? <Check className="size-4" aria-hidden /> : null}
+                        <ChevronRight className="size-4 opacity-70" aria-hidden />
+                      </Dropdown.SubTrigger>
+                      <Dropdown.Portal>
+                        <Dropdown.SubContent className={cx(menuBox, 'min-w-44')} sideOffset={6} alignOffset={-4} collisionPadding={16}>
+                          {PRESENCE_DURATIONS.map((d) => (
+                            <Dropdown.Item key={d.key} className={menuItem} onSelect={() => pick(s, d.ms)}>
+                              {t(d.key)}
+                            </Dropdown.Item>
+                          ))}
+                        </Dropdown.SubContent>
+                      </Dropdown.Portal>
+                    </Dropdown.Sub>
+                  );
+                })}
+                <Dropdown.Separator className={menuSeparator} />
+
+                {compact ? (
+                  // The rail's profile menu (owner, 07.10): the custom statuses behind one row, so the
+                  // menu fits a 600 px window with the voice row, «Настройки» and «Выйти».
+                  <Dropdown.Sub>
+                    <Dropdown.SubTrigger className={cx(row, 'data-[state=open]:bg-[var(--color-fill-hover)]')} data-testid="status-custom-sub">
+                      <span className="grid w-4 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+                        {user.statusEmoji || <Smile className="size-4 opacity-70" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block">{t('presence.customTitle')}</span>
+                        {customText ? <span className="block truncate text-caption opacity-70">{customText}</span> : null}
+                      </span>
+                      <ChevronRight className="size-4 opacity-70" aria-hidden />
+                    </Dropdown.SubTrigger>
+                    <Dropdown.Portal>
+                      <Dropdown.SubContent className={cx(menuBox, 'w-72')} sideOffset={6} alignOffset={-4} collisionPadding={16}>
+                        {customRows}
+                      </Dropdown.SubContent>
+                    </Dropdown.Portal>
+                  </Dropdown.Sub>
+                ) : (
+                  <>
+                    <Dropdown.Label className={menuLabel}>{t('presence.customTitle')}</Dropdown.Label>
+                    {customRows}
+                  </>
+                )}
+                <Dropdown.Separator className={menuSeparator} />
+                <Dropdown.Item className={menuItem} onSelect={() => openDialog({ kind: 'settings', tab: 'profile' })}>
+                  {t('shell.editProfile')}
                 </Dropdown.Item>
-              </div>
+                {/* Product superadmin (SUPERADMIN_EMAILS, ADR-0024): plans of every workspace. */}
+                {me.isSuperadmin ? (
+                  <Dropdown.Item className={menuItem} onSelect={() => openDialog({ kind: 'admin' })}>
+                    {t('admin.title')}
+                  </Dropdown.Item>
+                ) : null}
+              </>
             ) : null}
-            {choices.map((c) => (
-              <Dropdown.Item key={c.id} className={menuItem} onSelect={() => void applyCustomStatus(c)} data-testid={`status-choice-${c.id}`}>
-                <span className="grid w-4 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
-                  {c.emoji || <Smile className="size-4 opacity-70" />}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{c.text}</span>
-                <span className="shrink-0 text-caption opacity-70">{t(AFTER_SHORT[c.after])}</span>
-              </Dropdown.Item>
-            ))}
-            <Dropdown.Item className={menuItem} onSelect={() => setCustom(true)} data-testid="status-custom">
-              <span className="grid w-4 shrink-0 place-items-center" aria-hidden>
-                <Pencil className="size-3.5 opacity-70" />
-              </span>
-              {t('presence.custom')}
-            </Dropdown.Item>
-            <Dropdown.Separator className={menuSeparator} />
-            <Dropdown.Item className={menuItem} onSelect={() => openDialog({ kind: 'settings', tab: 'profile' })}>
-              {t('shell.editProfile')}
-            </Dropdown.Item>
-            {/* Product superadmin (SUPERADMIN_EMAILS, ADR-0024): plans of every workspace. */}
-            {me.isSuperadmin ? (
-              <Dropdown.Item className={menuItem} onSelect={() => openDialog({ kind: 'admin' })}>
-                {t('admin.title')}
-              </Dropdown.Item>
-            ) : null}
+            {bottom}
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>

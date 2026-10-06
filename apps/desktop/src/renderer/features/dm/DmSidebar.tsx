@@ -23,6 +23,8 @@ import { applyChatDrop } from '../notes/dropActions';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { CallPanel } from '../shell/CallPanel';
+import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { confirmDeleteDm } from './dmActions';
 import { BotBadge } from '../people/MemberBits';
 import { SWIPE_ACTION_PX, useRowSwipe } from './rowSwipe';
@@ -43,7 +45,7 @@ export function DmSidebar(): ReactNode {
   const mobile = useMobile();
 
   return (
-    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
+    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
       {mobile ? (
         // Phone: the tab root has its title and «+» (MobileShell); this is the search field.
         <div className="flex h-16 shrink-0 items-center border-b border-line px-2.5">
@@ -57,17 +59,16 @@ export function DmSidebar(): ReactNode {
           </button>
         </div>
       ) : (
-        // Desktop (ADR-0074 §3): the section's name and its «+».
-        <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2" data-testid="section-header">
-          <h2 className="min-w-0 flex-1 truncate text-list font-semibold text-fg">{t('dm.home')}</h2>
+        // Desktop (ADR-0074 §3; owner 07.10): the column header pattern — «Личные» large, search, «+».
+        <ColumnHeader title={<ColumnTitle>{t('mobile.tabDms')}</ColumnTitle>}>
           <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />
-        </div>
+        </ColumnHeader>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-5 pt-1 mobile:pt-2">
         {/* «Заметки» (ADR-0039): my shelves above the DMs; guest accounts have none. */}
         {guest ? null : <NotesSection />}
-        <div className="group/cat flex h-7 items-center pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-0">
-          <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('dm.list')}</h2>
+        <div className="group/cat flex h-9 items-center pr-1 pt-2 mobile:h-11 mobile:pr-0 mobile:pt-0">
+          <h2 className={cx('min-w-0 flex-1 truncate pl-2', GROUP_LABEL)}>{t('dm.list')}</h2>
         </div>
         {list.length === 0 && archived.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-body text-muted" data-testid="dm-empty">
@@ -86,6 +87,8 @@ export function DmSidebar(): ReactNode {
         )}
         {archived.length > 0 ? <ArchiveSection list={archived} /> : null}
       </div>
+      {/* In a call (desktop): the call panel at the column's foot (owner, 07.10). */}
+      {mobile ? null : <CallPanel />}
     </aside>
   );
 }
@@ -93,18 +96,25 @@ export function DmSidebar(): ReactNode {
 /** «Архив — N» (docs/09 #51): collapsed by default; a DM returns by its menu or a new message. */
 function ArchiveSection({ list }: { list: DmEntry[] }): ReactNode {
   const [expanded, setExpanded] = useState(false);
+  const mobile = useMobile();
   const label = t('dm.archiveSection', { n: list.length });
   return (
     <section className="mt-2" aria-label={label} data-testid="dm-archive">
-      <div className="flex h-7 items-center pr-1 pt-1 mobile:h-11 mobile:pt-0">
+      <div className="group/cat flex h-9 items-center pr-1 pt-2 mobile:h-11 mobile:pt-0">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left mobile:h-11 mobile:gap-1 mobile:pl-1.5 text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          className={cx(
+            'flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-11 mobile:pl-1.5',
+            GROUP_LABEL,
+          )}
         >
-          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', !expanded && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          {mobile ? (
+            <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', !expanded && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          ) : null}
           <span className="truncate">{label}</span>
+          {mobile ? null : <GroupChevron collapsed={!expanded} />}
         </button>
       </div>
       {expanded ? (
@@ -153,21 +163,29 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   const bright = active || unread;
   const archived = entry.archivedAt > 0;
   // Phone (docs/09 #51): swipe left for «Архив» / «Вернуть из архива».
-  const swipe = useRowSwipe(useMobile());
+  const phone = useMobile();
+  const swipe = useRowSwipe(phone);
   const shifted = swipe.offset !== 0;
   return (
     <DmMenu roomId={roomId} unread={unread} archived={archived}>
       <li
         className={cx(
-          'group/row relative flex h-[46px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]',
-          over ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]' : active ? 'bg-active' : 'hover:bg-hover',
+          'group/row relative flex items-center transition-colors duration-[var(--motion-fast)]',
+          // Desktop (owner, 07.10): 48 px, radius 8, the column's row plates; the phone keeps its row.
+          phone ? 'h-[46px] rounded-[var(--radius-row)]' : 'h-12 rounded-[var(--radius-card)]',
+          over
+            ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]'
+            : active
+              ? ROW_SELECTED
+              : phone
+                ? 'hover:bg-hover'
+                : ROW_HOVER,
         )}
         data-testid="dm-row"
         data-over={over || undefined}
         {...swipe.handlers}
         {...drop}
       >
-        {unread && !active ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg mobile:hidden" /> : null}
         {shifted ? (
           <button
             type="button"

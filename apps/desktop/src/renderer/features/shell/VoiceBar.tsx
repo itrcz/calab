@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ChevronDown, ChevronRight, Ellipsis, Eye, Guitar, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, SwitchCamera, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Ellipsis, Eye, Guitar, HeadphoneOff, Headphones, Loader2, Lock, MessageCircle, Mic, MicOff, MonitorUp, MonitorX, Phone, Settings, SwitchCamera, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
@@ -32,6 +32,8 @@ import { useBackgroundList, useMemberName, useWorkspaces } from '../../stores/wo
 import { dmPeer } from '../../stores/dms';
 import { openDm } from '../../services/dms';
 import { NoiseButton } from './NoisePopover';
+import { useHotkeyLabel } from '../../services/hotkeys';
+import { DeviceMenu, MicMenu } from './SelfPanel';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
 import { PRESET_LABEL, viewersText } from '../voice/streamFormat';
 import { CAMERA_PRESETS, allowedCameraPreset, cameraPresetLock, type CameraPreset } from '../../lib/plan';
@@ -195,6 +197,111 @@ function PanelButton({
         {children}
       </button>
     </Tip>
+  );
+}
+
+/**
+ * A toggle with its ▾ menu in one tile (the camera button's shape): mic and sound in the call
+ * panel (owner, 07.10). Off — the red tint (docs/08 «Кнопки микрофона и звука»); right-click on the
+ * toggle opens the menu too.
+ */
+function SplitTile({
+  label,
+  shortcut,
+  off,
+  onClick,
+  menuLabel: menuName,
+  menu,
+  testId,
+  children,
+}: {
+  label: string;
+  shortcut: string;
+  off: boolean;
+  onClick: () => void;
+  menuLabel: string;
+  menu: ReactNode;
+  testId: string;
+  children: ReactNode;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const part = off ? 'hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]' : 'hover:bg-[var(--color-fill-hover)]';
+  return (
+    <div className={cx('flex h-9 min-w-0 overflow-hidden rounded-[var(--radius-icon)]', off ? 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-danger' : 'bg-[var(--color-fill)] text-fg')}>
+      <Tip label={label} shortcut={shortcut}>
+        <button
+          type="button"
+          aria-label={label}
+          aria-pressed={off}
+          data-testid={testId}
+          onClick={onClick}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setOpen(true);
+          }}
+          className={cx('grid min-w-0 flex-1 place-items-center transition-colors duration-[var(--motion-fast)]', part)}
+        >
+          {children}
+        </button>
+      </Tip>
+      <Dropdown.Root modal={false} open={open} onOpenChange={setOpen}>
+        <Tip label={menuName}>
+          <Dropdown.Trigger asChild>
+            <button
+              type="button"
+              aria-label={menuName}
+              className={cx(
+                'grid w-4 shrink-0 place-items-center pr-0.5 transition-colors duration-[var(--motion-fast)] data-[state=open]:text-fg',
+                off ? 'text-danger' : 'text-muted hover:text-fg',
+                part,
+              )}
+            >
+              <ChevronDown className="size-3" strokeWidth={2.5} aria-hidden />
+            </button>
+          </Dropdown.Trigger>
+        </Tip>
+        <Dropdown.Portal>{menu}</Dropdown.Portal>
+      </Dropdown.Root>
+    </div>
+  );
+}
+
+/** Mute / unmute (docs/08: a click while deafened brings both back) and the mic menu. */
+function MicTile(): ReactNode {
+  const muted = useVoice((s) => s.muted);
+  const serverMuted = useVoice((s) => s.serverMuted);
+  const keys = useHotkeyLabel('mute');
+  return (
+    <SplitTile
+      label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
+      shortcut={keys}
+      off={muted}
+      onClick={() => voice.toggleMute()}
+      menuLabel={t('shell.micOptions')}
+      menu={<MicMenu />}
+      testId="call-mic"
+    >
+      {muted ? <MicOff className="size-5" aria-hidden /> : <Mic className="size-5" aria-hidden />}
+    </SplitTile>
+  );
+}
+
+/** Deafen / undeafen and the output menu (devices, volume). */
+function SoundTile(): ReactNode {
+  const deafened = useVoice((s) => s.deafened);
+  const keys = useHotkeyLabel('deafen');
+  return (
+    <SplitTile
+      label={deafened ? t('voice.undeafen') : t('voice.deafen')}
+      shortcut={keys}
+      off={deafened}
+      onClick={() => voice.toggleDeafen()}
+      menuLabel={t('shell.outputOptions')}
+      menu={<DeviceMenu kind="audiooutput" />}
+      testId="call-sound"
+    >
+      {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
+    </SplitTile>
   );
 }
 
@@ -609,7 +716,8 @@ export function VoiceBar(): ReactNode {
   const musicianAllowed = useMusicianAllowed();
   // camera + more, plus «Показать экран» (not on a phone browser) and «Звуки» (not in a one-to-one call).
   const screenCapture = platform.canShareScreen();
-  const cols = 2 + (screenCapture || myStream ? 1 : 0) + (call ? 0 : 1);
+  // + mic and sound (owner, 07.10: the self panel left the sidebar; in a call they live here).
+  const cols = 4 + (screenCapture || myStream ? 1 : 0) + (call ? 0 : 1);
   const anyVideo = useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
   const stage = useVoice((s) => s.stage);
   const videoPip = useVoice((s) => s.videoPip);
@@ -634,10 +742,10 @@ export function VoiceBar(): ReactNode {
       {/* Header (Discord): signal in a 36 px square (click = connection details), «Голос
           подключён» 14 px semibold green + «Комната / Пространство» 13 px muted, then noise suppression (popover, docs/09
           #12) and the red hang-up. */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <QualityButton phase={phase} />
         <div className="min-w-0 flex-1" aria-live="polite">
-          <div className={cx('truncate text-[14px] font-semibold leading-[18px]', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
+          <div className={cx('truncate text-[13px] font-semibold leading-[18px]', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
           <button type="button" className="block max-w-full truncate text-left text-[13px] leading-[18px] text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
             {full}
           </button>
@@ -658,11 +766,11 @@ export function VoiceBar(): ReactNode {
 
       {/* A recording (docs/09 #30): the red «● Запись · 12:34» pill on a line under the header,
           aligned with its text (36 px square + 8 px); who started it — in the tooltip. */}
-      <RecordingPill roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />
+      <RecordingPill roomId={roomId} workspaceId={wsId} className="mt-1 pl-[42px]" />
       {/* A temporary room closing within 10 minutes (ADR-0044): «⏱ 9 мин» and «Продлить». */}
-      {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />}
+      {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} className="mt-1 pl-[42px]" />}
       {/* Soundboard (ADR-0036): «🥁 Ba dum tss · Илья» for 2 s after a sound played in the call. */}
-      {call ? null : <SoundChip className="mt-1 pl-11" />}
+      {call ? null : <SoundChip className="mt-1 pl-[42px]" />}
 
       {phase === 'reconnecting' || phase === 'blocked' ? (
         // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it
@@ -692,7 +800,9 @@ export function VoiceBar(): ReactNode {
       {/* Equal 36 px buttons 10 px apart across the island (docs/09 #12): camera ▾, screen,
           sounds (ADR-0036; not in a one-to-one call), more. Noise suppression lives in the
           header's popover and in Settings. */}
-      <div className={cx('mt-2 grid gap-2.5', cols === 2 ? 'grid-cols-2' : cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}>
+      <div className={cx('mt-2 grid gap-1.5', cols === 4 ? 'grid-cols-4' : 'grid-cols-3')}>
+        <MicTile />
+        <SoundTile />
         <CameraButton roomId={roomId} />
         {/* A phone browser has no getDisplayMedia: no button rather than one that always fails. */}
         {!myStream && !screenCapture ? null : myStream ? (

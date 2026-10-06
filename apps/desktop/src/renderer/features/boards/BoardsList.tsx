@@ -29,6 +29,7 @@ import { unreadCount, useBoards, workspaceBoards, workspaceCategories } from '..
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
+import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { RestrictedMark } from '../workspace/AccessLevel';
 import { hasBit, MANAGE_BOARD } from './model';
@@ -155,8 +156,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   return (
     <div
       ref={list}
-      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pt-2"
-      style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
+      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-1 mobile:pt-2"
       onClickCapture={(e) => {
         if (suppress.current) {
           e.stopPropagation();
@@ -166,8 +166,8 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       data-testid="boards-list"
     >
       <MyTasksRow workspaceId={workspaceId} />
-      <div className="flex h-7 items-center pl-2 pr-1 pt-2">
-        <h2 className="min-w-0 flex-1 truncate text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('boards.boards')}</h2>
+      <div className="flex h-9 items-center pl-2 pr-1 pt-2 mobile:h-7">
+        <h2 className={cx('min-w-0 flex-1 truncate', GROUP_LABEL)}>{t('boards.boards')}</h2>
         {creator ? (
           <>
             <Tip label={t('boards.cat.new')}>
@@ -255,11 +255,13 @@ const CategoryHeader = memo(function CategoryHeader({
           aria-expanded={!collapsed}
           aria-label={collapsed ? t('shell.categoryExpand', { name }) : t('shell.categoryCollapse', { name })}
           title={name}
-          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-6 mobile:gap-0.5 mobile:pl-0.5', GROUP_LABEL)}
           data-testid="board-category-toggle"
         >
-          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          {/* Phone: the chevron first, as before; desktop (owner, 07.10): after the name, on hover. */}
+          <ChevronDown className={cx('hidden size-3 shrink-0 transition-transform duration-[var(--motion-fast)] mobile:block', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
           <span className="truncate">{name}</span>
+          <GroupChevron collapsed={collapsed} className="mobile:hidden" />
         </button>
       )}
     </div>
@@ -375,7 +377,7 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
       type="button"
       onClick={() => openBoard(workspaceId, MY_TASKS)}
       aria-current={active ? 'page' : undefined}
-      className={cx('flex h-8 w-full items-center gap-2 rounded-[var(--radius-row)] px-2 text-left text-list', active ? 'bg-active font-medium text-fg' : 'text-muted hover:bg-hover hover:text-fg')}
+      className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-8 mobile:rounded-[var(--radius-row)]', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
       data-testid="my-tasks"
     >
       <Inbox className="size-[18px] shrink-0" aria-hidden />
@@ -405,10 +407,10 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
       <div
         data-board-row={id}
         onPointerDown={(e) => onPointerDown(e, id)}
-        className={cx('group/board flex items-center rounded-[var(--radius-row)] pr-1', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'bg-active' : 'hover:bg-hover', dragging && 'opacity-40')}
+        className={cx('group/board flex items-center rounded-[var(--radius-card)] pr-1 mobile:rounded-[var(--radius-row)]', scoped ? 'min-h-8 py-0.5' : 'h-9 mobile:h-8', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
-        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', scoped ? 'min-h-8 py-0.5' : 'h-8', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', scoped ? 'min-h-8 py-0.5' : 'h-9 mobile:h-8', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
           <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
             {emoji || <SquareKanban className="size-[18px]" />}
           </span>
@@ -530,7 +532,7 @@ function ArchivedBoards({ workspaceId, live }: { workspaceId: string; live: numb
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex h-7 w-full items-center gap-1 rounded-[var(--radius-row)] pl-1 pr-2 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted hover:bg-hover hover:text-fg"
+        className={cx('flex h-7 w-full items-center gap-1 rounded-[var(--radius-row)] pl-1 pr-2 text-left hover:bg-hover hover:text-fg', GROUP_LABEL)}
         data-testid="boards-archive-toggle"
       >
         <ChevronRight className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', open && 'rotate-90')} aria-hidden />

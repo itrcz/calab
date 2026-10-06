@@ -25,7 +25,6 @@ import {
   Check,
   CalendarPlus,
   CheckCheck,
-  ChevronDown,
   CircleDot,
   CircleStop,
   Phone,
@@ -107,6 +106,8 @@ import { CREATE_TASKS, hasBit } from '../boards/model';
 import { openBoard } from '../../services/boards';
 import { useShallow } from 'zustand/react/shallow';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from './ColumnHeader';
+import { CallPanel } from './CallPanel';
 import { BoardsList } from '../boards/BoardsList';
 import { ProfileButton } from './PhoneProfile';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -192,20 +193,14 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const empty = groups.length === 0 && temps.length === 0;
 
   return (
-    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
+    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
       {calList ? <MiniCalendar workspaceId={workspaceId} /> : null}
       {boards ? <BoardsList workspaceId={workspaceId} /> : null}
       {boards || calList ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
-          {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
-          <div
-            ref={listRef}
-            className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2"
-            style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
-            data-testid="room-list"
-          >
+          <div ref={listRef} className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3 pt-1" data-testid="room-list">
             {empty ? (
               <Empty
                 action={
@@ -277,6 +272,9 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
         </SidebarMenu>
       </SidebarDnd>
       )}
+      {/* In a call: the compact call panel at the column's foot (owner, 07.10) — not on the
+          Календарь / Доски columns (owner, 02.10: the user returns to «Чаты» to control the call). */}
+      {boards || calList ? null : <CallPanel />}
       {catDialog ? <CategoryDialog workspaceId={workspaceId} onClose={() => setCatDialog(false)} /> : null}
     </aside>
   );
@@ -378,8 +376,10 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
 }
 
 /**
- * The column header on the desktop (ADR-0074 §3): the section's name and its «+» — the rooms'
- * create menu, «Добавить встречу» on the calendar, «Новая доска» on the boards (CREATE_BOARDS).
+ * The column header on the desktop (ADR-0074 §3; owner 07.10, Codex reference): the section's
+ * name large on the left («Чаты», «Календарь», «Доски»; the workspace switcher stays in the title
+ * bar), then the quiet search and the section's «+»: the rooms' create menu, «Добавить
+ * встречу» on the calendar, «Новая доска» on the boards (CREATE_BOARDS).
  * Primitive selectors only: switching the section re-renders the header, not the list.
  */
 function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; guest: boolean; rooms: ReactNode }): ReactNode {
@@ -387,7 +387,6 @@ function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; gue
   const calendarOn = useUi((s) => s.calDay !== null) && !guest && !boardsOn;
   const me = useSession((s) => s.me?.user?.id ?? '');
   const boardCreator = mayCreateBoards(useMemberRoles(workspaceId, me));
-  const title = boardsOn ? t('shell.modeBoards') : calendarOn ? t('cal.open') : t('mobile.tabChats');
   const add = boardsOn ? (
     boardCreator ? (
       <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} />
@@ -397,12 +396,8 @@ function SectionHeader({ workspaceId, guest, rooms }: { workspaceId: string; gue
   ) : (
     rooms
   );
-  return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2" data-testid="section-header">
-      <h2 className="min-w-0 flex-1 truncate text-list font-semibold text-fg">{title}</h2>
-      {add}
-    </div>
-  );
+  const title = boardsOn ? t('shell.modeBoards') : calendarOn ? t('cal.open') : t('mobile.tabChats');
+  return <ColumnHeader title={<ColumnTitle>{title}</ColumnTitle>}>{add}</ColumnHeader>;
 }
 
 /**
@@ -552,7 +547,7 @@ function CategoryGroup({
     data: { type: 'category', categoryId: category?.id ?? '', name: category?.name ?? '' } satisfies DragCategory,
     disabled: !category || !canDrag || editing,
   });
-  if (!category) return <div className="mb-2 flex flex-col gap-px">{children}</div>;
+  if (!category) return <div className="mb-1 flex flex-col gap-px">{children}</div>;
 
   const visible = collapsed
     ? children.filter((c) => {
@@ -578,7 +573,7 @@ function CategoryGroup({
       ref={setDragRef}
       {...(canDrag && !editing ? dragListeners : {})}
       data-cat-header={category.id}
-      className="group/cat flex h-7 items-center pr-1 pt-1"
+      className="group/cat flex h-9 items-center pr-1 pt-2"
     >
       {editing ? (
         <CategoryNameEditor category={category} onDone={() => setEditing(false)} />
@@ -590,11 +585,11 @@ function CategoryGroup({
           onDoubleClick={canManage ? () => setEditing(true) : undefined}
           aria-expanded={!collapsed}
           aria-label={collapsed ? t('shell.categoryExpand', { name: category.name }) : t('shell.categoryCollapse', { name: category.name })}
-          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg', GROUP_LABEL)}
           title={category.name}
         >
-          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
           <span className="truncate">{category.name}</span>
+          <GroupChevron collapsed={collapsed} />
         </button>
       )}
       {canManage && !editing ? (
@@ -639,7 +634,7 @@ function CategoryGroup({
       ) : (
         header
       )}
-      {visible.length ? <div className="mt-0.5 flex flex-col gap-px">{visible}</div> : null}
+      {visible.length ? <div className="flex flex-col gap-px">{visible}</div> : null}
     </section>
   );
 }
@@ -687,7 +682,7 @@ function CategoryNameEditor({ category, onDone }: { category: RoomCategory; onDo
           onDone();
         }
       }}
-      className="h-6 min-w-0 flex-1 rounded-[4px] bg-[var(--color-fill)] px-1.5 text-micro font-semibold uppercase tracking-[0.04em] text-fg outline-none ring-1 ring-accent"
+      className="h-7 min-w-0 flex-1 rounded-[var(--radius-row)] bg-[var(--color-fill)] px-2 text-[13px] font-medium text-fg outline-none ring-1 ring-accent"
     />
   );
 }
@@ -743,25 +738,25 @@ export function CategoryDialog({ workspaceId, onClose }: { workspaceId: string; 
 
 // ---------------------------------------------------------------- room rows
 
-/** Row shell shared by text and voice rooms: 34 px, hover background, unread pill, hover actions. */
-const rowBox = 'group/row relative flex h-[34px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]';
-
-function UnreadPill({ show }: { show: boolean }): ReactNode {
-  // A whole 4 × 8 pill just inside the column (a half-dot on the seam read as a glitch).
-  return show ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg mobile:hidden" /> : null;
-}
+/**
+ * Row shell shared by text and voice rooms (owner, 07.10, Codex reference): 36 px, radius 8, a soft
+ * grey plate when selected and a fainter one on hover; unread is the bold name (+ the mention badge),
+ * no pills or borders; hover actions.
+ */
+const rowBox = 'group/row relative flex h-9 items-center rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)]';
 
 /**
  * Text room hover actions (invite, settings — no «chat»: the row itself opens it). Same 18 px
  * icons / 2 px gap as the voice rooms' CardActions, so the two lists don't look inconsistent
  * (owner, Discord reference); by permission, no reserved space when one is missing.
  */
-function RoomActions({ room, canInvite, canSettings, active }: { room: Room; canInvite: boolean; canSettings: boolean; active: boolean }): ReactNode {
+function RoomActions({ room, canInvite, canSettings }: { room: Room; canInvite: boolean; canSettings: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
   if (!canInvite && !canSettings) return null;
   const btn = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
   return (
-    <span className={cx('shrink-0 items-center gap-0.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
+    // Hover / focus only, the selected row too (owner, 07.10): the list stays quiet at rest.
+    <span className="hidden shrink-0 items-center gap-0.5 group-has-[:focus-visible]/row:flex group-hover/row:flex">
       {canInvite ? (
         <Tip label={t('shell.invite')}>
           <button
@@ -1144,7 +1139,7 @@ function CardActions({ room }: { room: Room }): ReactNode {
     e.currentTarget.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom + 4 }));
   };
   return (
-    <span className="hidden shrink-0 items-center gap-0.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
+    <span className="hidden shrink-0 items-center gap-0.5 group-has-[:focus-visible]/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
       <Tip label={t('roomMenu.more')}>
         <button type="button" className={btn} aria-label={t('roomMenu.moreOf', { name: room.name })} aria-haspopup="menu" data-testid="room-more" onClick={openMenu}>
           <Ellipsis className="size-[18px]" aria-hidden />
@@ -1181,7 +1176,7 @@ const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: st
     );
   }
   return (
-    <span className={cx('inline-flex shrink-0', !always && 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only')}>
+    <span className={cx('inline-flex shrink-0', !always && 'sr-only group-has-[:focus-visible]/row:not-sr-only group-hover/row:not-sr-only')}>
       <Button size="sm" aria-label={label} data-testid="room-join" onClick={onJoin} className="h-5 px-2 text-micro mobile:h-6">
         {t('shell.joinVoiceShort')}
       </Button>
@@ -1236,8 +1231,7 @@ const TextRoomRow = memo(function TextRoomRow({
   return (
     <div ref={setNodeRef} {...(canDrag ? listeners : {})} {...msgDrop} data-room-slot={room.id} data-slot-category={container} className={cx(isDragging && 'opacity-40')}>
       <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} inviteRoom={mayRoomInvite(perms)} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
-        <div className={cx(rowBox, msgOver ? MSG_DROP : active ? 'bg-active' : 'hover:bg-hover')} data-over={msgOver || undefined}>
-          <UnreadPill show={unread && !active} />
+        <div className={cx(rowBox, msgOver ? MSG_DROP : active ? ROW_SELECTED : ROW_HOVER)} data-over={msgOver || undefined}>
           <button
             type="button"
             onClick={() => openRoom(workspaceId, room.id)}
@@ -1248,11 +1242,11 @@ const TextRoomRow = memo(function TextRoomRow({
               unread && !active && 'font-semibold',
             )}
           >
-            {room.isPrivate ? (
-              <Lock className="size-[18px] shrink-0 text-muted" aria-label={t('room.private')} />
-            ) : (
-              <Hash className="size-[18px] shrink-0 text-muted" aria-hidden />
-            )}
+            {/* A text room has no glyph — just the indent (owner, 07.10, Codex reference), so names line
+                up with the voice rooms'; a private one keeps a quiet lock in that slot. */}
+            <span className="grid w-[18px] shrink-0 place-items-center">
+              {room.isPrivate ? <Lock className="size-3.5 text-faint" strokeWidth={1.75} aria-label={t('room.private')} role="img" /> : null}
+            </span>
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
             </span>
@@ -1261,7 +1255,7 @@ const TextRoomRow = memo(function TextRoomRow({
           <span className="flex shrink-0 items-center gap-1 pr-2.5">
             <KnockBadge roomId={room.id} />
             <MentionBadge n={mentions} />
-            <RoomActions room={room} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} active={active} />
+            <RoomActions room={room} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} />
           </span>
         </div>
       </RoomMenu>
@@ -1374,11 +1368,10 @@ function VoiceRoomRow({
             className={cx(
               // pl-2 = the plain row's: the name starts at 32 px in both, where the participants' avatars start.
               card ? 'group/row relative flex flex-col gap-0.5 rounded-[var(--radius-card)] py-2 pl-2 pr-2.5' : rowBox,
-              card ? (active ? 'bg-active' : 'bg-hover') : active ? 'bg-active' : 'hover:bg-hover',
+              card ? (active ? ROW_SELECTED : 'bg-row-hover') : active ? ROW_SELECTED : ROW_HOVER,
             )}
             data-testid={card ? 'voice-room-card' : undefined}
           >
-            <UnreadPill show={unread && !active} />
             <div className={card ? 'flex h-5 min-w-0 items-center' : 'contents'}>
               <button
                 type="button"
@@ -1394,13 +1387,13 @@ function VoiceRoomRow({
                   unread && !active && 'font-semibold',
                 )}
               >
-                <span className="relative inline-flex shrink-0">
+                <span className="relative grid w-[18px] shrink-0 place-items-center">
                   {connecting ? (
-                    <Loader2 className="size-[18px] animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
+                    <Loader2 className="size-4 animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
                   ) : temp ? (
                     <TempIcon expires={expires} inRoom={inRoom} />
                   ) : (
-                    <Volume2 className={cx('size-[18px]', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
+                    <Volume2 className={cx('size-4', inRoom ? 'text-ok' : 'text-faint')} strokeWidth={1.75} aria-hidden />
                   )}
                   {/* Private (Discord): a small lock badge on the speaker icon, not a separate icon
                       competing with the card actions for space on the right. */}
@@ -1421,12 +1414,14 @@ function VoiceRoomRow({
                 <MentionBadge n={mentions} />
                 {/* Hover / focus swaps the timer and N/M for the actions (Discord; «чат» is always there,
                     docs/09 #14), so the name keeps ≥ 120 px. On the card the timer stays green on the name line. */}
-                <span className={cx('flex items-center gap-2', 'group-focus-within/row:hidden group-hover/row:hidden group-data-[state=open]/row:hidden')}>
+                <span className={cx('flex items-center gap-2', 'group-has-[:focus-visible]/row:hidden group-hover/row:hidden group-data-[state=open]/row:hidden')}>
                   {/* REC (docs/09 #30): on a plain row just the dot before the call timer (the name keeps
                       its width); the card shows «● REC 12:34» on its status line, right under the timer. */}
                   {card ? null : <RoomRecBadge roomId={room.id} compact />}
-                  {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom ? 'text-[var(--color-green-text)]' : 'text-fg') : undefined} /> : null}
-                  {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
+                  {people.length ? (
+                    <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom ? 'text-[var(--color-green-text)]' : 'text-fg') : 'text-micro text-muted'} />
+                  ) : null}
+                  {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} quiet /> : null}
                 </span>
                 {/* The «…» action whether the room is active (card) or not, on hover
                     (owner, Discord reference): no separate action set for either. */}
@@ -1446,7 +1441,7 @@ function VoiceRoomRow({
       {/* A meeting here within 15 minutes / now (ADR-0038 §6): «Планёрка в 15:00» → its card. */}
       <RoomEventBadge roomId={room.id} variant="row" />
       {people.length > 0 || sipLine ? (
-        <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
+        <ul className="flex flex-col gap-px pb-1" aria-label={room.name}>
           {people.map((v) => (
             <VoiceMember
               key={v.userId}
@@ -1528,19 +1523,19 @@ function TempGroup({ workspaceId, children }: { workspaceId: string; children: R
     : children;
   return (
     <section className="mb-1" aria-label={title} data-testid="temp-group">
-      <div className="flex h-7 items-center pr-1 pt-1">
+      <div className="group/cat flex h-9 items-center pr-1 pt-2">
         <button
           type="button"
           onClick={() => toggle(key)}
           aria-expanded={!collapsed}
           aria-label={collapsed ? t('shell.categoryExpand', { name: title }) : t('shell.categoryCollapse', { name: title })}
-          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg', GROUP_LABEL)}
         >
-          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
           <span className="truncate">{title}</span>
+          <GroupChevron collapsed={collapsed} />
         </button>
       </div>
-      {visible.length ? <div className="mt-0.5 flex flex-col gap-px">{visible}</div> : null}
+      {visible.length ? <div className="flex flex-col gap-px">{visible}</div> : null}
     </section>
   );
 }
@@ -1552,12 +1547,16 @@ function TempGroup({ workspaceId, children }: { workspaceId: string; children: R
  * ~15° slanted divider (the right segment one step darker/lighter than the pill fill), red left
  * segment when full. The call timer stands apart from it (review: «02 | 04» read as noise).
  */
-export function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
+export function PeoplePill({ n, max, quiet = false }: { n: number; max: number; quiet?: boolean }): ReactNode {
   if (max <= 0) {
     return (
       <span
-        // Primary text on the fill: muted grey fell under 4.5:1 on the selected card (axe).
-        className="flex items-center gap-0.5 rounded-full bg-[var(--color-fill)] py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4 text-fg"
+        // Primary text on the fill: muted grey fell under 4.5:1 on the selected card (axe). `quiet`
+        // (the desktop list, owner 07.10): no fill, secondary text — ≥ 4.5:1 on the row plates.
+        className={cx(
+          'flex items-center gap-0.5 rounded-full py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4',
+          quiet ? 'text-muted' : 'bg-[var(--color-fill)] text-fg',
+        )}
         aria-label={t('shell.peopleIn', { n })}
         role="img"
         data-testid="room-limit"
@@ -1572,7 +1571,7 @@ export function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
     <span
       // Compact, like Discord's own (owner comparison): 18 px tall, 11 px tabular-nums, 6 px
       // segment padding — «02 ⁄ 04» lands ~46–50 px wide at 1x.
-      className="flex h-[18px] items-center overflow-hidden rounded-full bg-[var(--color-fill)] text-micro font-medium tabular-nums"
+      className={cx('flex h-[18px] items-center overflow-hidden rounded-full text-micro font-medium tabular-nums', quiet ? 'bg-row-hover' : 'bg-[var(--color-fill)]')}
       aria-label={t('shell.userLimit', { n, max })}
       role="img"
       data-testid="room-limit"
@@ -1580,12 +1579,15 @@ export function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
       {/* bg-danger-fill + text-white (the same solid pairing as the mention badge below), not
           text-danger-text on the ambient fill: that read 3.64 on axe (< 4.5) — the accent-on-tint
           color only works on the plain window background it was tuned for. */}
-      <span className={cx('flex h-full items-center px-1.5', full ? 'bg-danger-fill text-white' : 'text-fg')}>{pad2(n)}</span>
+      <span className={cx('flex h-full items-center px-1.5', full ? 'bg-danger-fill text-white' : quiet ? 'text-muted' : 'text-fg')}>{pad2(n)}</span>
       {/* clip-path skews the segment's left edge ~15° (6 px over the 18 px pill height), rather
           than a separate divider element, so the angled boundary always matches the pill height.
           text-fg, not text-muted: muted grey on --color-fill-hover fails 4.5:1 (axe), same reason
           the no-limit pill above uses text-fg on the plainer --color-fill. */}
-      <span className="flex h-full items-center bg-[var(--color-fill-hover)] px-1.5 text-fg" style={{ clipPath: 'polygon(6px 0, 100% 0, 100% 100%, 0 100%)' }}>
+      <span
+        className={cx('flex h-full items-center px-1.5', quiet ? 'bg-[var(--color-fill)] text-muted' : 'bg-[var(--color-fill-hover)] text-fg')}
+        style={{ clipPath: 'polygon(6px 0, 100% 0, 100% 100%, 0 100%)' }}
+      >
         {pad2(max)}
       </span>
     </span>
@@ -1661,7 +1663,8 @@ function VoiceMember({
       className={cx(
         // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
         // the room name starts (8 + 18 + 6 = 32 px), 8 px to the 14 px name.
-        'group/member relative flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        // Lighter than the rooms (owner, 07.10): 26 px rows, 20 px avatars, 13 px muted names.
+        'group/member relative flex h-[26px] items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-[13px] leading-[18px] transition-colors duration-[var(--motion-fast)] hover:bg-row-hover',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
@@ -1671,7 +1674,7 @@ function VoiceMember({
     >
       {/* «Только вошёл»: 6 px dot 4 px left of the 24 px avatar (32 px), outside the flex flow. */}
       <JustJoinedDot joinedAt={joinedAtMs(state.joinedAt)} className="absolute left-[22px] top-1/2 -translate-y-1/2" />
-      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} role={role} workspaceId={workspaceId} />
+      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={20} talking={talking} pending={connectingRing} suffix={tz} role={role} workspaceId={workspaceId} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}
@@ -1870,8 +1873,7 @@ function DragChip({ data }: { data: DragData }): ReactNode {
   const user = useWorkspaces((s) => (data.type === 'member' ? s.users[data.userId] : undefined));
   if (data.type === 'category') {
     return (
-      <div className="mat-popover flex h-7 w-max max-w-[220px] items-center gap-1 rounded-[var(--radius-row)] px-2 text-micro font-semibold uppercase tracking-[0.04em] text-fg">
-        <ChevronDown className="size-3 shrink-0" strokeWidth={2.25} aria-hidden />
+      <div className="mat-popover flex h-7 w-max max-w-[220px] items-center gap-1 rounded-[var(--radius-row)] px-2 text-[13px] font-medium text-fg">
         <span className="truncate">{data.name}</span>
       </div>
     );

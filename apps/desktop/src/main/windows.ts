@@ -76,21 +76,21 @@ export const webPreferences = {
 } as const;
 
 /** Height of the renderer's title bar (docs/09 #1; --titlebar-height in styles.css). */
-const TITLEBAR_HEIGHT = 38;
+const TITLEBAR_HEIGHT = 46;
 
 /**
  * Window chrome per platform (docs/09 #1):
- * - macOS: `hiddenInset`, traffic lights at (12, 12) — vertically centred in the 38 px bar; the
- *   renderer keeps the first 80 px of the bar empty for them.
+ * - macOS: `hiddenInset`, traffic lights at (16, 16) — vertically centred in the 46 px bar (owner,
+ *   07.10: a taller, airier bar); the renderer keeps the first 80 px of the bar empty for them.
  * - Windows: `hidden` + Window Controls Overlay — the native min/max/close buttons sit in our
- *   own 38 px bar (like Discord/VS Code), so the chrome is one row instead of an OS caption plus
+ *   own 46 px bar (like Discord/VS Code), so the chrome is one row instead of an OS caption plus
  *   our bar. The renderer reserves their width via `env(titlebar-area-*)`; colours follow the theme.
  * - Linux: the standard frame. WCO buttons there are Chromium-drawn (not the GTK/KDE theme),
  *   and client-side decorations misbehave under tiling WMs and some compositors — the native
  *   frame is the predictable choice; our bar then is just a toolbar below it.
  */
 function chrome(): Partial<Electron.BrowserWindowConstructorOptions> {
-  if (process.platform === 'darwin') return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
+  if (process.platform === 'darwin') return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } };
   if (process.platform === 'win32') return { titleBarStyle: 'hidden', titleBarOverlay: overlayColors() };
   return { titleBarStyle: 'default' };
 }
