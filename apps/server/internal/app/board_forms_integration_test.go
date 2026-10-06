@@ -124,3 +124,24 @@ func TestBoardFormsBotAndLimits(t *testing.T) {
 		t.Fatalf("tasks after deletion: %d %v", count, err)
 	}
 }
+
+// FORMS off (owner 07.10): creating is 409 FEATURE_DISABLED and an existing form stops opening
+// (404) until the feature is switched back on; the form itself is kept.
+func TestBoardFormsFeatureOff(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	b := createBoard(t, o, ws.Id, &v1.CreateBoardRequest{Name: "FormsOff"}, 201)
+	path := "/api/boards/" + b.Id + "/forms"
+	var fr v1.BoardFormResponse
+	o.must(201, "POST", path, &v1.CreateBoardFormRequest{Definition: formFixture(b)}, &fr)
+	code := fr.Form.Url[strings.LastIndex(fr.Form.Url, "/")+1:]
+	anon := &client{t: t}
+	anon.must(200, "GET", "/api/public/forms/"+code, nil, nil)
+	setBoardFeatures(t, b.Id, 1<<uint(v1.BoardFeature_BOARD_FEATURE_FORMS))
+	o.must(409, "POST", path, &v1.CreateBoardFormRequest{Definition: formFixture(b)}, nil)
+	if reason, _ := errReason(o.client); reason != "FEATURE_DISABLED" {
+		t.Fatalf("reason %q", reason)
+	}
+	anon.must(404, "GET", "/api/public/forms/"+code, nil, nil)
+	setBoardFeatures(t, b.Id, 0)
+	anon.must(200, "GET", "/api/public/forms/"+code, nil, nil)
+}

@@ -314,6 +314,9 @@ const (
 	BoardFeature_BOARD_FEATURE_ATTACHMENTS BoardFeature = 11 // attachments of the description
 	BoardFeature_BOARD_FEATURE_COMMENTS    BoardFeature = 12 // the task room is read-only (like an archived task)
 	BoardFeature_BOARD_FEATURE_TIMELINE    BoardFeature = 13 // the timeline view (client only)
+	BoardFeature_BOARD_FEATURE_FORMS       BoardFeature = 14 // intake forms: creating / editing, and opening one
+	BoardFeature_BOARD_FEATURE_AUTOMATIONS BoardFeature = 15 // rules: creating / enabling / testing; enabled rules pause
+	BoardFeature_BOARD_FEATURE_GIT_LINKS   BoardFeature = 16 // the Git section and badge of a task (client only)
 )
 
 // Enum value maps for BoardFeature.
@@ -333,6 +336,9 @@ var (
 		11: "BOARD_FEATURE_ATTACHMENTS",
 		12: "BOARD_FEATURE_COMMENTS",
 		13: "BOARD_FEATURE_TIMELINE",
+		14: "BOARD_FEATURE_FORMS",
+		15: "BOARD_FEATURE_AUTOMATIONS",
+		16: "BOARD_FEATURE_GIT_LINKS",
 	}
 	BoardFeature_value = map[string]int32{
 		"BOARD_FEATURE_UNSPECIFIED": 0,
@@ -349,6 +355,9 @@ var (
 		"BOARD_FEATURE_ATTACHMENTS": 11,
 		"BOARD_FEATURE_COMMENTS":    12,
 		"BOARD_FEATURE_TIMELINE":    13,
+		"BOARD_FEATURE_FORMS":       14,
+		"BOARD_FEATURE_AUTOMATIONS": 15,
+		"BOARD_FEATURE_GIT_LINKS":   16,
 	}
 )
 
@@ -8883,7 +8892,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x1aBOARD_TEMPLATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15BOARD_TEMPLATE_SIMPLE\x10\x01\x12\x1e\n" +
 	"\x1aBOARD_TEMPLATE_DEVELOPMENT\x10\x02\x12\x18\n" +
-	"\x14BOARD_TEMPLATE_EMPTY\x10\x03*\xa2\x03\n" +
+	"\x14BOARD_TEMPLATE_EMPTY\x10\x03*\xf7\x03\n" +
 	"\fBoardFeature\x12\x1d\n" +
 	"\x19BOARD_FEATURE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16BOARD_FEATURE_ESTIMATE\x10\x01\x12\x1c\n" +
@@ -8899,7 +8908,10 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x12\x1d\n" +
 	"\x19BOARD_FEATURE_ATTACHMENTS\x10\v\x12\x1a\n" +
 	"\x16BOARD_FEATURE_COMMENTS\x10\f\x12\x1a\n" +
-	"\x16BOARD_FEATURE_TIMELINE\x10\r*\x83\x01\n" +
+	"\x16BOARD_FEATURE_TIMELINE\x10\r\x12\x17\n" +
+	"\x13BOARD_FEATURE_FORMS\x10\x0e\x12\x1d\n" +
+	"\x19BOARD_FEATURE_AUTOMATIONS\x10\x0f\x12\x1b\n" +
+	"\x17BOARD_FEATURE_GIT_LINKS\x10\x10*\x83\x01\n" +
 	"\rEstimateScale\x12\x1e\n" +
 	"\x1aESTIMATE_SCALE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18ESTIMATE_SCALE_FIBONACCI\x10\x01\x12\x19\n" +

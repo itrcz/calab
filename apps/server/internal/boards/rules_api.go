@@ -358,6 +358,9 @@ func (s *Service) createRule(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := requireFeature(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_AUTOMATIONS, "rules", true); err != nil {
+		return err
+	}
 	in, err := s.validateRule(r, s.db.Q, b, req.GetName(), req.GetTrigger(), req.GetCondition(), req.GetActions())
 	if err != nil {
 		return err
@@ -434,6 +437,10 @@ func (s *Service) updateRule(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Switching a rule off (or moving it) keeps it as stored: a rule whose status, label or room
 	// is gone can always be stopped. Anything else — switching on included — is validated again.
+	editing := req.Name != nil || req.Trigger != nil || req.Condition != nil || req.GetClearCondition() || req.GetSetActions()
+	if err := requireFeature(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_AUTOMATIONS, "rules", editing || (enabled && !cur.Enabled)); err != nil {
+		return err
+	}
 	in := ruleInput{name: cur.Name, kind: cur.TriggerKind, trigger: cur.Trigger, cond: cur.Condition, actions: cur.Actions}
 	if enabled || req.Name != nil || req.Trigger != nil || req.Condition != nil || req.GetClearCondition() || req.GetSetActions() {
 		if in, err = s.validateRule(r, s.db.Q, b, name, tr, cond, acts); err != nil {
@@ -520,6 +527,9 @@ func (s *Service) testRule(w http.ResponseWriter, r *http.Request) error {
 	}
 	b, err := s.db.Q.GetBoard(r.Context(), cur.BoardID)
 	if err != nil {
+		return err
+	}
+	if err := requireFeature(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_AUTOMATIONS, "rules", true); err != nil {
 		return err
 	}
 	env := s.env(r)

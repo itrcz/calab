@@ -21,7 +21,7 @@ import (
 func anonymousForm(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/api/public/forms/") }
 
 func (s *Service) formAccess(r *http.Request, q *sqlc.Queries, row sqlc.BoardForm, b sqlc.Board) (*v1.BoardFormDefinition, error) {
-	if b.ArchivedAt != nil {
+	if b.ArchivedAt != nil || Disabled(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_FORMS) {
 		return nil, httpx.NotFound("form")
 	}
 	ws, err := q.GetWorkspace(r.Context(), b.WorkspaceID)

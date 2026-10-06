@@ -84,6 +84,9 @@ enum BoardFeature {
   BOARD_FEATURE_ATTACHMENTS = 11; // attachments of the description
   BOARD_FEATURE_COMMENTS = 12;   // the task room is read-only (like an archived task)
   BOARD_FEATURE_TIMELINE = 13;   // the timeline view (client only)
+  BOARD_FEATURE_FORMS = 14;      // intake forms: creating / editing, and opening one
+  BOARD_FEATURE_AUTOMATIONS = 15; // rules: creating / enabling / testing; enabled rules pause
+  BOARD_FEATURE_GIT_LINKS = 16;  // the Git section and badge of a task (client only)
 }
 
 // The scale of Task.estimate (ADR-0058 §3). Writes outside the scale are 422 (field

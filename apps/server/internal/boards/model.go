@@ -64,7 +64,7 @@ const (
 // ---- board features (ADR-0058 §3) ----
 
 // featureBit is the bit of a feature in boards.disabled_features (bit = the enum value).
-func featureBit(f v1.BoardFeature) int64 { return 1 << uint(f) } //nolint:gosec // 1..13
+func featureBit(f v1.BoardFeature) int64 { return 1 << uint(f) } //nolint:gosec // 1..16
 
 // Disabled reports whether feature f is switched off in a disabled_features mask.
 func Disabled(mask int64, f v1.BoardFeature) bool { return mask&featureBit(f) != 0 }

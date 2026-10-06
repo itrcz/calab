@@ -3,8 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { FEATURES, estimateName, featureOn, fieldOff, groupOn, isSized, scaleValues, sortOn, withFeature } from './features';
 
 describe('board features (ADR-0058 §3)', () => {
-  it('lists all 13 features once, in enum order', () => {
-    expect(FEATURES.map((f) => f.feature)).toEqual(Array.from({ length: 13 }, (_, i) => i + 1));
+  it('lists all 16 features once, in enum order', () => {
+    expect(FEATURES.map((f) => f.feature)).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+  });
+
+  it('every optional feature is switchable, including forms, automations and Git links (owner 07.10)', () => {
+    const listed = FEATURES.map((f) => f.feature);
+    for (const f of [BoardFeature.START_DATE, BoardFeature.FORMS, BoardFeature.AUTOMATIONS, BoardFeature.GIT_LINKS]) {
+      expect(listed).toContain(f);
+      expect(featureOn(withFeature(undefined, f, false), f)).toBe(false);
+      expect(featureOn(withFeature([f], f, true), f)).toBe(true);
+    }
+    // Every enum member (but UNSPECIFIED) is offered: a feature added to the proto cannot be forgotten.
+    const all = Object.values(BoardFeature).filter((v): v is BoardFeature => typeof v === 'number' && v !== BoardFeature.UNSPECIFIED);
+    expect([...listed].sort((a, b) => a - b)).toEqual([...all].sort((a, b) => a - b));
   });
 
   it('stores the disabled set ascending without duplicates (empty = all on)', () => {

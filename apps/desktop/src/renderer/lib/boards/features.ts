@@ -30,6 +30,9 @@ export const FEATURES: readonly FeatureDef[] = [
   { feature: BoardFeature.ATTACHMENTS, label: 'boards.feat.attachments', hint: 'boards.feat.attachmentsHint' },
   { feature: BoardFeature.COMMENTS, label: 'boards.feat.comments', hint: 'boards.feat.commentsHint' },
   { feature: BoardFeature.TIMELINE, label: 'boards.feat.timeline', hint: 'boards.feat.timelineHint' },
+  { feature: BoardFeature.FORMS, label: 'boards.feat.forms', hint: 'boards.feat.formsHint' },
+  { feature: BoardFeature.AUTOMATIONS, label: 'boards.feat.automations', hint: 'boards.feat.automationsHint' },
+  { feature: BoardFeature.GIT_LINKS, label: 'boards.feat.gitLinks', hint: 'boards.feat.gitLinksHint' },
 ];
 
 /** Disabled features of a board (Board.disabled_features); empty = all on. */
