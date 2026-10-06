@@ -94,6 +94,18 @@ describe('filters', () => {
     expect(filterCandidates('zz', list)).toEqual([]);
   });
 
+  it('finds by the nickname too and still inserts the name (ADR-0077)', () => {
+    const nicks = [...list, { id: 'u-ivan', name: 'Иван Петров', alt: [], nick: 'vanya_p' }];
+    const found = filterCandidates('vany', nicks);
+    expect(found.map((c) => c.id)).toEqual(['u-ivan']);
+    expect(found[0]?.name).toBe('Иван Петров');
+    expect(filterCandidates('VANYA_P', nicks).map((c) => c.id)).toEqual(['u-ivan']);
+    // By name as before, the nickname does not hide them.
+    expect(filterCandidates('иван', nicks).map((c) => c.id)).toEqual(['u-ivan']);
+    // The picked name goes over the wire as @<user_id>.
+    expect(toWire('@Иван Петров привет', new Map([['Иван Петров', 'u-ivan']]))).toBe('@u-ivan привет');
+  });
+
   it('special mentions by English and Russian words', () => {
     expect(filterSpecial('')).toEqual(['everyone', 'here']);
     expect(filterSpecial('все')).toEqual(['everyone']);

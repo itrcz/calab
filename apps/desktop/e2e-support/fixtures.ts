@@ -592,11 +592,14 @@ interface UserSpec {
   avatar?: string;
   /** IANA zone (User.timezone); the visual tests run in Europe/Moscow. */
   timezone?: string;
+  /** ADR-0077: nickname and phone (only for people with a status: member rows keep their second line). */
+  username?: string;
+  phone?: string;
 }
 
 const USERS: UserSpec[] = [
-  { key: 'anna', n: 1, name: 'Анна Смирнова', email: 'owner@calaba.test', status: 'В фокусе до 18:00' },
-  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне', timezone: 'Asia/Yekaterinburg' },
+  { key: 'anna', n: 1, name: 'Анна Смирнова', email: 'owner@calaba.test', status: 'В фокусе до 18:00', username: 'anna', phone: '+7 916 555-01-01' },
+  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне', timezone: 'Asia/Yekaterinburg', username: 'boris_p', phone: '+7 912 555-02-02' },
   { key: 'vera', n: 3, name: 'Вера Ким', email: 'vera@calaba.test', status: '', avatar: IDS.files.veraAvatar },
   {
     key: 'grigory',
@@ -803,6 +806,9 @@ export function buildState(scenario: Scenario): MockState {
         timezone: u.timezone ?? '',
         createdAt: created,
         isGuest: u.key === 'dina', // guest account from a room link (ADR-0016)
+        // ADR-0077: contacts as the server shows them to colleagues (the mock does not strip them;
+        // the client shows them by its own rule), the nickname to everyone.
+        ...(scenario === 'data' && u.key !== 'dina' ? { email: u.email, emailVerified: true, phone: u.phone ?? '', username: u.username ?? '' } : {}),
       }),
       email: u.email,
       password: PASSWORD,

@@ -59,6 +59,8 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_WORKSPACE_SUSPENDED: { key: 'err.suspended' },
   ERROR_CODE_BANNED: { key: 'err.banned' },
   ERROR_CODE_ROOM_ARCHIVED: { key: 'temp.archived' },
+  ERROR_CODE_USERNAME_TAKEN: { key: 'profile.username.taken' },
+  ERROR_CODE_USERNAME_INVALID: { key: 'profile.username.invalid' },
 };
 
 const IMAGE_ERR: Record<ImageError['reason'], MessageKey> = {
@@ -78,6 +80,7 @@ const FIELD: Record<string, MessageKey> = {
   content: 'err.field.content',
   topic: 'err.field.topic',
   statusText: 'err.field.status',
+  phone: 'profile.phone.invalid',
   text: 'err.field.status',
   userLimit: 'err.field.userLimit',
   maxUses: 'err.field.maxUses',

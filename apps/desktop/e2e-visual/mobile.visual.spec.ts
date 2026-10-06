@@ -591,6 +591,31 @@ test('m-members-page', async ({ page }) => {
   await expect(page.getByTestId('composer')).toBeVisible();
 });
 
+// ADR-0077: a colleague's card — @nick under the name, email and phone with «Скопировать», the phone
+// a tel: link. Review shot only (no baseline).
+test('m-profile-member', async ({ page }) => {
+  await signedInRoom(page);
+  await page.getByRole('button', { name: 'Участники' }).tap();
+  await page.getByTestId('members-page').getByRole('button', { name: /Борис Петров/ }).tap();
+  const card = page.getByRole('dialog', { name: 'Борис Петров' });
+  await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
+  await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
+  await expect(card.getByRole('link', { name: '+7 912 555-02-02' })).toHaveAttribute('href', 'tel:+79125550202');
+  await checkpoint(page, 'm-profile-member', { snapshot: false });
+});
+
+// ADR-0077: «Профиль» settings — the nickname with its availability line, the phone. Review shot only.
+test('m-settings-profile', async ({ page }) => {
+  await signedIn(page);
+  await openProfile(page);
+  await page.getByTestId('phone-profile-profile').tap();
+  const settings = page.getByTestId('settings-page');
+  await expect(settings.getByTestId('username-input')).toHaveValue('anna');
+  await settings.getByTestId('username-input').fill('boris_p');
+  await expect(settings.getByTestId('username-hint')).toHaveText('Этот ник уже занят');
+  await checkpoint(page, 'm-settings-profile', { snapshot: false });
+});
+
 // ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the
 // profile card, mic / sound, the settings entries, «Выйти».
 test('m-profile', async ({ page }) => {

@@ -29,6 +29,7 @@ import { ruSounds } from './sounds';
 import { ruBots } from './bots';
 import { ruGuests } from './guests';
 import { ruTemp } from './temp';
+import { ruContacts } from './contacts';
 import { ruSip } from './sip';
 import { ruWebApps } from './webapps';
 
@@ -46,6 +47,7 @@ export const ru = {
   ...ruBots,
   ...ruGuests,
   ...ruTemp,
+  ...ruContacts,
   ...ruSip,
   ...ruWebApps,
   ...ruDm,

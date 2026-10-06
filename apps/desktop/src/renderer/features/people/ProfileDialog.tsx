@@ -16,6 +16,7 @@ import { LocalTime } from './LocalTime';
 import { ClientVersion } from './ClientVersion';
 import { BirthdayInfo } from './Birthday';
 import { ProfileDialogAchievements } from './ProfileAchievements';
+import { ProfileContacts, UserHandle } from './ProfileContacts';
 import { isGuest, rolesOf, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { useSession } from '../../stores/session';
 import { canEditMemberBirthday } from './members';
@@ -162,7 +163,7 @@ export function ProfileDialog({
                   {u.displayName}
                 </div>
               ) : null}
-              {u.isBot ? <BotHandle botUserId={userId} /> : null}
+              {u.isBot ? <BotHandle botUserId={userId} /> : <UserHandle userId={userId} className="text-body" />}
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
               {onCall ? (
                 // ADR-0034: in a one-to-one call now (with whom is not disclosed).
@@ -213,6 +214,9 @@ export function ProfileDialog({
                   <BotAvatarControls workspaceId={workspaceId} botUserId={userId} />
                 </div>
               ) : null}
+
+              {/* Email and phone (ADR-0077): colleagues only. */}
+              {u.isBot ? null : <ProfileContacts userId={userId} variant="section" />}
 
               {registered || joined ? (
                 <Section title={t('people.profile.memberSince')}>

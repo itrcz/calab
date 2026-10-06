@@ -310,6 +310,7 @@ import {
   UpdateCategoryResponseSchema,
   UpdateMeRequestSchema,
   UpdateMeResponseSchema,
+  UsernameAvailabilityResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberBirthdayRequestSchema,
   UpdateMemberBirthdayResponseSchema,
@@ -874,6 +875,15 @@ function mailLocale(tag: string): string | null {
   if (/^es\b/.test(l)) return 'es';
   if (/^en\b/.test(l)) return 'en';
   return null;
+}
+
+const RESERVED_USERNAMES = new Set(['here', 'everyone', 'channel', 'all', 'admin', 'support', 'calab', 'system', 'bot']);
+
+/** ADR-0077: a normalized nickname ('' clears), null when the server would refuse it. */
+function mockUsername(raw: string): string | null {
+  const n = raw.trim().replace(/^@/, '').toLowerCase();
+  if (n === '') return '';
+  return /^[a-z][a-z0-9_]{2,31}$/.test(n) && !RESERVED_USERNAMES.has(n) ? n : null;
 }
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
@@ -2811,6 +2821,20 @@ class MockImpl {
       }
       if (b.statusText !== undefined) u.user.statusText = b.statusText;
       if (b.timezone !== undefined) u.user.timezone = b.timezone;
+      // ADR-0077 (the server's rules, users/contacts.go).
+      if (b.username !== undefined) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('not for guests and bots');
+        const name = mockUsername(b.username);
+        if (name === null) throw new HttpError(422, ErrorCode.USERNAME_INVALID, 'bad username', 'username');
+        if (name && [...s().users.values()].some((x) => x !== u && x.user.username === name)) throw new HttpError(409, ErrorCode.USERNAME_TAKEN, 'username is taken', 'username');
+        u.user.username = name;
+      }
+      if (b.phone !== undefined) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('not for guests and bots');
+        const p = b.phone.trim().replace(/\s+/g, ' ');
+        if (p && (p.length > 32 || !/^\+?[0-9() -]+$/.test(p) || p.replace(/\D/g, '').length < 3)) throw invalid('phone', 'bad phone');
+        u.user.phone = p;
+      }
       if (b.birthday) {
         // docs/09 #76 (the server checks the date too); day = month = 0 clears.
         const { day, month, year } = b.birthday;
@@ -2849,6 +2873,18 @@ class MockImpl {
       }
       this.emitUserUpdate(u);
       sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
+    });
+
+    // ADR-0077: a hint for the profile form (the caller's own nickname is available).
+    this.route('GET', '/api/usernames/:name/available', (c) => {
+      const me = this.auth(c).user;
+      const name = mockUsername(decodeURIComponent(c.params[0] ?? ''));
+      const taken = name !== null && [...s().users.values()].some((x) => x !== me && x.user.username === name);
+      sendMsg(c.res, 200, UsernameAvailabilityResponseSchema, {
+        username: name ?? '',
+        available: name !== null && name !== '' && !taken,
+        reason: name === null || name === '' ? ErrorCode.USERNAME_INVALID : taken ? ErrorCode.USERNAME_TAKEN : ErrorCode.UNSPECIFIED,
+      });
     });
 
     this.route('PATCH', '/api/me/status', (c) => {

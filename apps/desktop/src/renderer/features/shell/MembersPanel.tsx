@@ -364,6 +364,8 @@ const MemberRow = memo(function MemberRow({
       </>
     );
   else if (statusLine) second = <span className="truncate">{statusLine}</span>;
+  // The nickname (ADR-0077) when nothing more current is to be said.
+  else if (u.username && !u.isBot) second = <span className="truncate">@{u.username}</span>;
 
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
