@@ -154,7 +154,7 @@ function TileButton({
         </span>
       ) : null}
       {count > 0 ? (
-        <CountBadge count={count} tone={tone} ring="var(--color-rail)" className="absolute -right-1.5 -top-1.5" data-testid={`${testId}-count`} aria-hidden />
+        <CountBadge count={count} tone={tone} className="absolute -right-1.5 -top-1.5" data-testid={`${testId}-count`} aria-hidden />
       ) : null}
     </button>
   );
