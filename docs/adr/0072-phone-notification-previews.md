@@ -157,3 +157,16 @@ This replaces the earlier workspace-forced policy with a Telegram-like personal 
   muting, while retaining live session, endpoint version, expiry, block, message existence
   and room/identity access checks. Dispatch still observes notification preferences.
   Call resolution is unchanged.
+
+## Signed-build correction, 2026-10-06
+
+The first signed R11 build exposed an invalid capability request on the notification
+service extension. Xcode provisions Communication Notifications for the containing app
+but rejects that entitlement for the NSE App ID. Follow Apple's
+[communication notification sample](https://developer.apple.com/documentation/usernotifications/handling-communication-notifications-and-focus-status-updates):
+keep the communication grant and supported intent types on the app; use an ordinary
+NSE profile without this app-only entitlement. The extension still donates the incoming
+intent and updates notification content. No payload, credentials, routing or audio change.
+Regression acceptance: repeated prebuild keeps the app grant and omits it from the NSE;
+a signed build embeds valid profiles for app and both extensions; device install/launch.
+Real avatar/grouping and locked-call/audio acceptance remains a separate phone check.
