@@ -410,10 +410,10 @@ body {
  * else. Text ≥ 4.5:1. Tokens stay solid: other `var(--color-rail)` users are unaffected.
  */
 :root.vibrancy {
-  --vibrancy-rail: rgb(23 23 25 / 86%);
+  --vibrancy-rail: rgb(23 23 25 / 76%);
 }
 :root.vibrancy[data-theme='light'] {
-  --vibrancy-rail: rgb(240 240 244 / 86%);
+  --vibrancy-rail: rgb(240 240 244 / 76%);
 }
 :root.vibrancy body {
   background: transparent;
