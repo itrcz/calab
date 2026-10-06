@@ -110,7 +110,9 @@ export function PhoneProfile(): ReactNode {
   );
 }
 
-const tile = 'flex h-16 min-w-0 flex-1 items-center gap-3 rounded-l-[var(--radius-panel)] pl-4 text-left';
+// pl-3 / gap-2: at 375 px a half-width tile next to its 44 px ▾ leaves ~79 px for the title — «Микрофон»
+// fits whole (with pl-4 / gap-3 it was cut to «Микро…»).
+const tile = 'flex h-16 min-w-0 flex-1 items-center gap-2 rounded-l-[var(--radius-panel)] pl-3 text-left';
 
 /** Microphone: the tile toggles mute, ▾ opens the mode and the input devices (the self panel's menu). */
 function MicTile(): ReactNode {
@@ -197,10 +199,14 @@ function DeviceTile({
 export function ProfileTabIcon({ active }: { active: boolean }): ReactNode {
   const user = useSession((s) => s.me?.user);
   const status = useMyStatus();
-  if (!user) return <CircleUser className="size-[22px]" strokeWidth={1.75} aria-hidden />;
+  // A 28 px box like the other tab icons (size-7): the 22 px avatar centred in it keeps the label
+  // on the same baseline as its neighbours.
+  if (!user) return <span className="flex size-7 items-center justify-center"><CircleUser className="size-[22px]" strokeWidth={1.75} aria-hidden /></span>;
   return (
-    <span className={cx('flex size-[22px] rounded-full ring-2 ring-offset-0', active ? 'ring-fg' : 'ring-transparent')}>
-      <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={22} status={status} ring="var(--color-toolbar,var(--color-bg))" />
+    <span className="flex size-7 items-center justify-center">
+      <span className={cx('flex size-[22px] rounded-full ring-2 ring-offset-0', active ? 'ring-fg' : 'ring-transparent')}>
+        <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={22} status={status} ring="var(--color-toolbar,var(--color-bg))" />
+      </span>
     </span>
   );
 }

@@ -44,7 +44,9 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
   // Phone: the view choice and «Отображение» live in «…» (owner 07.10); the popover is anchored under the header.
   const [displayOpen, setDisplayOpen] = useState(false);
   return (
-    <div className="relative shrink-0">
+    // @container: at the minimum window (960 → ~650 px for the board) the view switch drops its labels
+    // (icons + tooltips) so the board name is not cut to «Раз…».
+    <div className="@container relative shrink-0">
       {/* Phone: the standard PhoneHeader row — «‹» · emoji + title on the free width · «+» · «…», 44 px targets, 16 px gutter. */}
       <Bar plain={!mobile} className="gap-2 pl-4 pr-2" data-testid="board-header">
         {mobile ? <NavButton /> : null}
@@ -125,7 +127,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
                 data-testid={`view-${k.kind}`}
               >
                 <k.icon className="size-3.5" aria-hidden />
-                <span>{t(k.label)}</span>
+                <span className="hidden @[720px]:inline">{t(k.label)}</span>
               </button>
             </Tip>
           ))}
