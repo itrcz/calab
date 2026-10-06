@@ -823,6 +823,8 @@ test('m-settings', async ({ page }) => {
   await expect(settings).toBeVisible();
   await expectNoFieldFocus(page, 'settings');
   await checkpoint(page, 'm-settings');
+  // «Я → Основное» opens that section; «←» returns to the list of sections (ADR-0073 §6).
+  await settings.getByRole('button', { name: 'Назад' }).tap();
   await settings.getByRole('tab', { name: 'Голос и устройства' }).tap();
   await checkpoint(page, 'm-settings-voice', { snapshot: false });
   // The section scrolls inside the sheet (its last control can be reached).
