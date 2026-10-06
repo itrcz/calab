@@ -1,4 +1,4 @@
-import type { DmSummary } from '@calaba/protocol';
+import type { DmSummary, Message } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
@@ -13,6 +13,7 @@ import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
 import { useReadReceipts } from '../stores/readReceipts';
+import { useRoomPreviews } from '../stores/roomPreviews';
 
 /**
  * Direct messages (ADR-0020, docs/05 «Личные сообщения»): the DM room goes into the rooms store
@@ -190,6 +191,11 @@ export function refreshDms(): Promise<void> {
 
 const previewLoading = new Set<string>();
 
+/** A store holding list previews by room (DMs, notes shelves, workspace rooms). */
+interface PreviewStore {
+  getState: () => { preview: Record<string, unknown>; setPreview: (roomId: string, m: Message | null) => void };
+}
+
 /**
  * The previewed last message of a DM was deleted: the next newest one comes from the loaded
  * chat when it has the end of the history, else from one GET …/messages?limit=1. Every other
@@ -197,7 +203,18 @@ const previewLoading = new Set<string>();
  */
 export async function refreshDmPreview(roomId: string): Promise<void> {
   // A notes shelf (ADR-0039) keeps its preview the same way.
-  const store = useDms.getState().byRoom[roomId] ? useDms : useNotes;
+  await refreshPreview(useDms.getState().byRoom[roomId] ? useDms : useNotes, roomId);
+}
+
+/**
+ * A workspace room's previewed last message was deleted (ADR-0073 §5): as refreshDmPreview. The
+ * other previews come with WorkspaceSnapshot.room_last_messages.
+ */
+export async function refreshRoomPreview(roomId: string): Promise<void> {
+  await refreshPreview(useRoomPreviews, roomId);
+}
+
+async function refreshPreview(store: PreviewStore, roomId: string): Promise<void> {
   if (store.getState().preview[roomId] !== undefined || previewLoading.has(roomId)) return;
   const loaded = useMessages.getState().rooms[roomId];
   if (loaded?.loaded && !loaded.hasMoreAfter) {
@@ -211,7 +228,7 @@ export async function refreshDmPreview(roomId: string): Promise<void> {
     // A live message may have landed meanwhile: it is the newer preview then.
     if (store.getState().preview[roomId] === undefined) store.getState().setPreview(roomId, res.messages[0] ?? null);
   } catch (e) {
-    log.warn('dm preview failed', roomId, e);
+    log.warn('preview failed', roomId, e);
   } finally {
     previewLoading.delete(roomId);
   }

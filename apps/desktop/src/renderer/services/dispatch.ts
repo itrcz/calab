@@ -19,6 +19,7 @@ import { useArchiveView } from '../stores/archiveView';
 import { toast } from '../stores/toasts';
 import { mayMentionAll } from '../lib/permissions';
 import { useReadReceipts } from '../stores/readReceipts';
+import { useRoomPreviews } from '../stores/roomPreviews';
 import { useRooms } from '../stores/rooms';
 import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
@@ -29,7 +30,7 @@ import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
 import { queryClient } from '../lib/queryClient';
 import { bansKey } from '../lib/moderation';
-import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
+import { applyDm, applyDmState, refreshDmPreview, refreshDms, refreshRoomPreview } from './dms';
 import { applyShelf, applyShelves, dropShelf } from './notes';
 import { useNotes } from '../stores/notes';
 import { loadMentions } from './mentions';
@@ -108,6 +109,7 @@ export function removeRoom(workspaceId: string, roomId: string): void {
   useRooms.getState().remove(roomId);
   useWorkspaces.getState().clearRoomVoice(workspaceId, roomId);
   useMessages.getState().unload(roomId);
+  useRoomPreviews.getState().drop([roomId]);
   dropRecordings((r) => r === roomId);
   dropSipCalls((r) => r === roomId);
   useInbox.getState().removeRooms((id) => id !== roomId);
@@ -165,6 +167,8 @@ export function applyDispatch(ev: DispatchEvent): void {
         applySnapshotApps(snap);
         applySnapshotBoards(snap);
       }
+      // Room list previews (ADR-0073 §5): one set for all the workspaces.
+      useRoomPreviews.getState().setAll(r.workspaces);
       // Task rooms (ADR-0042) are not in READY: the open ones come back before stale windows go.
       restoreTaskRooms();
       // DMs (ADR-0020): rooms without a workspace; their read states are in read_states below.
@@ -238,6 +242,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWorkspaces.getState().applySnapshot(snap);
       useRooms.getState().upsertMany(snap.rooms);
       for (const room of snap.rooms) if (room.lastMessageId) useRooms.getState().setLastMessage(room.id, room.lastMessageId);
+      useRoomPreviews.getState().applySnapshot(snap);
       applySnapshotExtras(snap);
       applySnapshotSounds(snap);
       applySnapshotApps(snap);
@@ -287,6 +292,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'workspaceDelete': {
       const id = e.value.workspaceId;
+      useRoomPreviews.getState().drop(Object.values(useRooms.getState().byId).flatMap((r) => (r.workspaceId === id ? [r.id] : [])));
       useWorkspaces.getState().remove(id);
       useRooms.getState().removeWorkspace(id);
       useSounds.getState().dropWorkspace(id);
@@ -408,6 +414,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         useMessages.getState().upsert(e.value.message);
         useDms.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
         useNotes.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
+        useRoomPreviews.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
         onMessageEdited(e.value.message, e.value.workspaceId);
       }
       return;
@@ -423,6 +430,11 @@ export function applyDispatch(ev: DispatchEvent): void {
       useDms.getState().onChanged(roomId, messageId, null);
       useNotes.getState().onChanged(roomId, messageId, null);
       if ((useDms.getState().byRoom[roomId] || useNotes.getState().byRoom[roomId]) && previewUnknown(roomId)) void refreshDmPreview(roomId);
+      // A workspace room's previewed message (ADR-0073 §5): the next newest one is fetched lazily.
+      if (useRoomPreviews.getState().preview[roomId]?.messageId === messageId) {
+        useRoomPreviews.getState().onChanged(roomId, messageId, null);
+        void refreshRoomPreview(roomId);
+      }
       return;
     }
     case 'messageReactionAdd':
@@ -596,6 +608,9 @@ function onMessage(m: Message, workspaceId: string): void {
   if (!workspaceId && !useRooms.getState().byId[m.roomId]) void refreshDms();
   useDms.getState().onMessage(m);
   useNotes.getState().onMessage(m);
+  // Room list preview (ADR-0073 §5): known workspace rooms only, not task comments.
+  const room = workspaceId ? useRooms.getState().byId[m.roomId] : undefined;
+  if (room && !isTaskRoom(room)) useRoomPreviews.getState().onMessage(m);
   if (!firstSeen(m.id)) return; // duplicate: no second badge / sound / notification
   const rooms = useRooms.getState();
   // A comment of a task (ADR-0042): task rooms are hidden — no room badges or chat sounds; the
