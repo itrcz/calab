@@ -1324,6 +1324,27 @@ export class BoardsMock {
     return t;
   }
 
+  /**
+   * PUT / DELETE /tasks/{id}/watchers (ADR-0076): an editor adds or removes anyone; a watcher removes
+   * themselves. Guests are refused (422).
+   */
+  setWatcher(id: string, userId: string, target: string, on: boolean): TaskRec {
+    const { t, p } = this.taskFor(id, userId);
+    if (t.task.archivedAt) throw conflict('the task is archived');
+    if (!(target === userId && !on) && !this.canEdit(t.task, userId, p)) throw forbidden('cannot edit this task');
+    const m = this.host.member(t.task.workspaceId, target);
+    if (on && (!m || m.role === WorkspaceRole.GUEST)) throw invalid('userId', 'the user does not see this board');
+    const before = { user_ids: [...t.task.watcherIds] };
+    const has = t.task.watcherIds.includes(target);
+    if (has === on) return t;
+    t.task.watcherIds = on ? [...t.task.watcherIds, target].sort() : t.task.watcherIds.filter((u) => u !== target);
+    if (on && !t.subscribers.has(target)) t.subscribers.set(target, false);
+    t.task.updatedAt = this.host.tick();
+    this.journal(t, userId, 'watchers', before, { user_ids: [...t.task.watcherIds] });
+    this.emitTask(t, 'taskUpdate');
+    return t;
+  }
+
   /** POST /tasks/{id}/approval: the caller's own vote. */
   vote(id: string, userId: string, decision: TaskApprovalDecision, comment: string): TaskRec {
     const { t } = this.taskFor(id, userId);
@@ -1601,6 +1622,8 @@ export class BoardsMock {
       // ADR-0049: CAL-6 — Анна approved, Борис has not yet (the card shows ✓ 1/2). Last, so the
       // ids and times of the other fixtures stay as they were.
       this.vote(review.task.id, anna, TaskApprovalDecision.APPROVE, '');
+      // ADR-0076: CAL-3 is watched by Вера and Григорий («Наблюдатели» in the panel).
+      t3.task.watcherIds = [vera, grigory].sort();
       // Unread: CAL-3 for Анна (Борис commented), nothing else.
       review.unread.clear();
       t3.unread.add(anna);
