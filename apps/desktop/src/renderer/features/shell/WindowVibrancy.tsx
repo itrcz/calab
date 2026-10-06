@@ -12,17 +12,13 @@ import { useSession } from '../../stores/session';
  */
 export function WindowVibrancy(): null {
   const os = useSession((s) => s.appInfo?.platform);
-  const translucency = useSession((s) => s.settings?.windowTranslucency);
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
   const reducedTransparency = useMediaQuery('(prefers-reduced-transparency: reduce)');
   const on =
     platform.kind === 'electron' &&
     vibrancyWanted({
       platform: os ?? '',
-      // Settings not loaded yet: main applies the stored value already; wait rather than flash.
-      translucency: translucency ?? false,
       reducedTransparency,
-      lowEnd: document.documentElement.dataset['lowEnd'] === 'true',
       visualTest,
     });
   useEffect(() => {

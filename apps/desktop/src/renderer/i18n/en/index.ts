@@ -497,8 +497,6 @@ export const en: Dict = {
   'sessions.logoutAllText': 'Other devices will need to sign in again. This device stays signed in.',
   'app.autostart': 'Launch at login',
   'app.autostartDev': 'Works only in the packaged app',
-  'app.translucency': 'Window translucency',
-  'app.translucencyHint': 'The sidebars and title bar let the desktop show through, like native macOS apps. Off automatically with Reduce transparency in System Settings',
   'app.onClose': 'When closing the window',
   'app.onCloseHint': 'Minimized Calab stays in voice and keeps listening for push-to-talk',
   'app.onCloseTray': 'Minimize to tray',

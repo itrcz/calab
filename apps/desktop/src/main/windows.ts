@@ -6,7 +6,6 @@ import { API_SCHEME, IPC } from '../shared/ipc';
 import { vibrancyWanted } from '../shared/windowMaterial';
 import { isAppSession } from './appSessions';
 import { windowIconPath } from './icons';
-import { getSettings } from './settings';
 import { mainStrings } from './strings';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -22,15 +21,13 @@ const CLEAR_BG = '#00000000';
 /**
  * macOS native vibrancy (ADR-0075): the one exception to the glass ban — no CSS backdrop-filter,
  * the system's NSVisualEffectView blends the desktop behind the window in WindowServer. The same
- * rule as the renderer's `vibrancy` root class (shared/windowMaterial.ts); «Слабый компьютер» is
- * a renderer pref not built yet (docs/09 #44) — when it is, it switches windowTranslucency off.
+ * rule as the renderer's `vibrancy` root class (shared/windowMaterial.ts). Always on: no user
+ * setting, «Слабый компьютер» does not switch it off (owner 07.10).
  */
 function vibrancyOn(): boolean {
   return vibrancyWanted({
     platform: process.platform,
-    translucency: getSettings().windowTranslucency,
     reducedTransparency: nativeTheme.prefersReducedTransparency,
-    lowEnd: false,
     visualTest: VISUAL_TEST,
   });
 }
@@ -294,12 +291,6 @@ function applyMaterial(win: BrowserWindow): void {
   if (vibrancyState.get(win) !== on) win.setVibrancy(on ? 'sidebar' : null, { animationDuration: 0 });
   vibrancyState.set(win, on);
   win.setBackgroundColor(on ? CLEAR_BG : windowBg());
-}
-
-/** Re-apply the window material after «Прозрачность окна» changed (IPC appSetSettings). */
-export function applyWindowMaterial(): void {
-  const win = getMainWindow();
-  if (win) applyMaterial(win);
 }
 
 export function getMainWindow(): BrowserWindow | null {

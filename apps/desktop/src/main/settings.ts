@@ -24,7 +24,6 @@ const DEFAULTS = (): AppSettings => ({
   autoUpdate: true,
   autoCheckUpdates: true,
   closeToTray: true,
-  windowTranslucency: true,
   trayHintShown: false,
 });
 
@@ -43,6 +42,8 @@ export function getSettings(): AppSettings {
     // first run or corrupt file → defaults
   }
   cache = { ...DEFAULTS(), ...stored };
+  // Retired setting (ADR-0075: vibrancy is always on): drop it from old files.
+  delete (cache as unknown as Record<string, unknown>)['windowTranslucency'];
   // Explicit env wins over a stored value (tests, staging builds).
   if (process.env['CALABA_SERVER_URL']) cache.serverUrl = defaultServerUrl();
   return cache;

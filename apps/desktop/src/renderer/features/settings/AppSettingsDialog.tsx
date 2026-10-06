@@ -870,15 +870,14 @@ function GeneralTab(): ReactNode {
   const desktop = platform.kind === 'electron';
   return (
     <>
-      <ThemeCard translucency={desktop && info?.platform === 'darwin' ? (settings?.windowTranslucency ?? true) : null} save={save} />
+      <ThemeCard />
       <LanguageCard />
       {desktop ? <DesktopAppCards info={info} settings={settings} save={save} /> : null}
     </>
   );
 }
 
-/** `translucency`: macOS desktop only (ADR-0075) — the «Прозрачность окна» switch; null hides it. */
-function ThemeCard({ translucency, save }: { translucency: boolean | null; save: (patch: Partial<AppSettings>) => Promise<void> }): ReactNode {
+function ThemeCard(): ReactNode {
   const theme = usePrefs((s) => s.theme);
   const set = usePrefs((s) => s.setPrefs);
   return (
@@ -895,15 +894,6 @@ function ThemeCard({ translucency, save }: { translucency: boolean | null; save:
           ]}
         />
       </Row>
-      {translucency !== null ? (
-        <Row label={t('app.translucency')} hint={t('app.translucencyHint')}>
-          <Toggle
-            label={t('app.translucency')}
-            checked={translucency}
-            onChange={(v) => void save({ windowTranslucency: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
-          />
-        </Row>
-      ) : null}
     </Card>
   );
 }
