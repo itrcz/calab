@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/google/uuid"
 )
@@ -38,6 +39,19 @@ func (s *Service) presentation(ctx context.Context, q *sqlc.Queries, recipient s
 		}
 		if room.Type != "dm" || room.DmKey == nil {
 			payload.Subtitle = previewLine(room.Name, 80)
+		}
+
+		system, err := messageSystem(message)
+		if err != nil {
+			return err
+		}
+		if card := system.GetCall(); card != nil && card.Outcome == v1.CallOutcome_CALL_OUTCOME_MISSED {
+			payload.MissedCall = true
+			payload.Body = "Missed call"
+			if recipient.Locale != nil && strings.HasPrefix(strings.ToLower(*recipient.Locale), "ru") {
+				payload.Body = "Пропущенный звонок"
+			}
+			return nil
 		}
 		if !recipient.HideMessageTextInNotifications {
 			payload.Body = messagePreview(message.Content, recipient)

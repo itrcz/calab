@@ -25,6 +25,7 @@ import (
 
 // Payload carries opaque routing and authorized, bounded presentation (ADR-0072).
 type Payload struct {
+	MissedCall        bool   `json:"missedCall,omitempty"`
 	Version           int    `json:"v"`
 	Binding           string `json:"binding"`
 	EventID           string `json:"eventId"`

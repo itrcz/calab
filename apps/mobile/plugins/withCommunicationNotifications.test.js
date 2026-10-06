@@ -10,6 +10,7 @@ const withCommunicationNotifications = require('./withCommunicationNotifications
 
 const expoRequire = createRequire(require.resolve('expo/config-plugins'));
 const xcode = expoRequire('xcode');
+const plist = expoRequire('@expo/plist').default;
 const mobileRoot = path.dirname(require.resolve('../package.json'));
 const unquote = (value) => String(value ?? '').replaceAll('"', '');
 const entries = (section) => Object.entries(section).filter(([key]) => !key.endsWith('_comment'));
@@ -92,5 +93,28 @@ test('CocoaPods xcodeproj serialization keeps one extension on the next prebuild
     const project = xcode.project(path.join(native.projectPath, 'project.pbxproj'));
     project.parseSync();
     assertExtensionGraph(project, native.ios);
+  }
+});
+
+// Apple permits Communication Notifications on the containing app, not the NSE App ID.
+// Requesting it on the extension makes automatic provisioning reject the signed build.
+test('communication grant stays on app while NSE can use an ordinary profile', async (t) => {
+  const config = withCommunicationNotifications({ name: 'Calab', slug: 'calab', ios: {
+    bundleIdentifier: 'test.calab', entitlements: { 'aps-environment': 'development' },
+  } });
+  const result = await config.mods.ios.entitlements({
+    ...config,
+    modResults: { 'aps-environment': 'development' },
+    modRequest: { projectRoot: mobileRoot, platform: 'ios', modName: 'entitlements' },
+  });
+  assert.equal(result.modResults['com.apple.developer.usernotifications.communication'], true);
+  assert.equal(result.modResults['aps-environment'], 'development');
+  const native = fixture(t);
+  for (let run = 0; run < 2; run++) {
+    await applyPlugin(native);
+    const entitlements = plist.parse(fs.readFileSync(path.join(native.ios,
+      'CalabNotificationService/CalabNotificationService.entitlements'), 'utf8'));
+    assert.equal(entitlements['com.apple.developer.usernotifications.communication'], undefined,
+      'notification service profile cannot carry the app-only communication grant');
   }
 });

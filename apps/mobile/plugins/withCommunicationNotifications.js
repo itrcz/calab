@@ -25,8 +25,10 @@ module.exports = (config) => {
       const directory = source === 'NotificationService.swift' ? 'notifications' : 'modules/calab-session-activity/ios';
       fs.copyFileSync(path.join(mod.modRequest.projectRoot, directory, source), path.join(destination, source));
     }
+    // Communication Notifications belongs to the containing app, as in Apple's sample.
+    // The NSE uses its ordinary profile; requesting this grant there blocks signing.
     fs.writeFileSync(path.join(destination, `${TARGET}.entitlements`), `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict><key>com.apple.developer.usernotifications.communication</key><true/></dict></plist>\n`);
+<plist version="1.0"><dict/></plist>\n`);
     fs.writeFileSync(path.join(destination, `${TARGET}-Info.plist`), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>

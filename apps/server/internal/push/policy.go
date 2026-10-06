@@ -13,6 +13,7 @@ import (
 	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -59,6 +60,16 @@ func (s *Service) allowedPolicy(ctx context.Context, q *sqlc.Queries, u sqlc.Use
 		}
 		if msg.DeletedAt != nil || msg.AuthorID == u.ID || job.RoomID == nil || msg.RoomID != *job.RoomID {
 			return false, false, nil
+		}
+
+		if !resolving && msg.Kind == "system" {
+			system, err := messageSystem(msg)
+			if err != nil {
+				return false, false, err
+			}
+			if card := system.GetCall(); card != nil && card.Outcome != v1.CallOutcome_CALL_OUTCOME_MISSED {
+				return false, false, nil
+			}
 		}
 		workspace, err := q.GetIdentityRoomParent(ctx, msg.RoomID)
 		if err != nil {
@@ -153,4 +164,16 @@ func (s *Service) endpointAllows(ctx context.Context, q *sqlc.Queries, userID uu
 	}
 	facts, err := q.PushMessageFacts(ctx, sqlc.PushMessageFactsParams{MessageID: job.ReferenceID, UserID: userID, RoomID: *job.RoomID, WorkspaceID: optionalID(acc.WorkspaceID)})
 	return acc.DM || facts.Mentioned, err
+}
+
+// Read the current persisted system card; event data is not send-time authority.
+func messageSystem(m sqlc.Message) (*v1.SystemMessage, error) {
+	if m.Kind != "system" {
+		return nil, nil
+	}
+	var value v1.SystemMessage
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(m.Payload, &value); err != nil {
+		return nil, err
+	}
+	return &value, nil
 }

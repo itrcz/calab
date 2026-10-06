@@ -37,6 +37,9 @@ func eventJob(event *v1.DispatchEvent) (sqlc.PushDelivery, bool) {
 		if message == nil {
 			return job, false
 		}
+		if card := message.GetSystem().GetCall(); card != nil && card.Outcome != v1.CallOutcome_CALL_OUTCOME_MISSED {
+			return job, false
+		}
 		job.Kind = messageKind
 		job.ReferenceID, _ = uuid.Parse(message.Id)
 		room, _ := uuid.Parse(message.RoomId)

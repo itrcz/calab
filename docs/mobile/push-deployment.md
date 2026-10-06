@@ -147,8 +147,9 @@ Follow the updated device checklists; cold locked answer remains an unverified a
 The same PR adds inline sender avatars and per-conversation grouping. No additional server
 environment variable, migration or APNs key is required. Old phone builds show text normally.
 The new phone build adds the `CalabNotificationService` extension (`<bundle>.notifications`)
-and `com.apple.developer.usernotifications.communication` to the app/extension. Regenerate
-matching development profiles before signing; deploy web/API first, then install that build.
+and `com.apple.developer.usernotifications.communication` to the containing app only.
+The notification extension uses an ordinary profile without this app-only entitlement.
+Regenerate matching development profiles before signing; deploy web/API first, then install that build.
 This native signing requirement is additional to the R09/R10-only update described above.
 CallKit caller-photo rendering remains an explicit device check, not a server release claim.
 

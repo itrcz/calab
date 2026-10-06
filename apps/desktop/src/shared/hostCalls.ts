@@ -18,13 +18,14 @@ export type HostCallsOperation =
  | { operation:'status' }
  | { operation:'bind'; binding:string; version:string; token:string }
  | { operation:'settle'; actionId:string; result:HostCallResult }
- | { operation:'sync'; eventId:string; phase:'connected'|'ended'|'muted'|'unmuted' };
+ | { operation:'sync'; eventId:string; phase:'connected'|'ended'|'muted'|'unmuted'|'accepted' };
 export interface HostCallsCapability {
  state:()=>Promise<HostCallsState>;
  subscribe:(listener:(state:HostCallsState)=>void)=>()=>void;
  bind:(binding:string,version:bigint,token:string)=>Promise<boolean>;
  settle:(actionId:string,result:HostCallResult)=>void;
  sync:(eventId:string,phase:'connected'|'ended')=>void;
+ syncAccepted?:(eventId:string)=>void;
  syncMuted?:(eventId:string,muted:boolean)=>void;
  clear:(reason?:'logout')=>void;
 }
@@ -34,7 +35,7 @@ export function parseCallsOperation(value:Record<string,unknown>):HostCallsOpera
  if(keys==='operation' && value.operation==='status')return {operation:'status'};
  if(keys==='binding,operation,token,version' && value.operation==='bind' && uuid(value.binding) && typeof value.version==='string' && /^[1-9][0-9]{0,18}$/.test(value.version) && typeof value.token==='string' && /^[0-9a-f]{32,512}$/i.test(value.token))return value as unknown as HostCallsOperation;
  if(keys==='actionId,operation,result' && value.operation==='settle' && uuid(value.actionId) && ['ringing','accepted','ended','failed','muted','unmuted'].includes(String(value.result)))return value as unknown as HostCallsOperation;
- if(keys==='eventId,operation,phase' && value.operation==='sync' && uuid(value.eventId) && ['connected','ended','muted','unmuted'].includes(String(value.phase)))return value as unknown as HostCallsOperation;
+ if(keys==='eventId,operation,phase' && value.operation==='sync' && uuid(value.eventId) && ['connected','ended','muted','unmuted','accepted'].includes(String(value.phase)))return value as unknown as HostCallsOperation;
  return null;
 }
 export function parseCallsState(value:unknown):HostCallsState|null {

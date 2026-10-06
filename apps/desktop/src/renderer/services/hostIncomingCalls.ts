@@ -1,6 +1,7 @@
 import { CallState, PushProvider, PushCapabilitiesResponseSchema, RegisterPushDeviceRequestSchema, RegisterPushDeviceResponseSchema, ResolvePushRequestSchema, ResolvePushResponseSchema, type Call } from '@calaba/protocol';
 import type { HostCallAction, HostCallsCapability, HostCallsState } from '../../shared/hostCalls';
 import type { HostPushReference } from '../../shared/hostActivity';
+import { wakeGateway } from './gateway';
 import { ApiError, body, call } from '../lib/api/client';
 import { platform } from '../platform';
 import { useSession } from '../stores/session';
@@ -44,6 +45,7 @@ export class HostIncomingController {
  private queued=new Map<string,HostCallAction>();
  private handled=new Set<string>();
  private routes=new Map<string,{callId:string;roomId:string;expiresAt:number}>();
+ private latestSync:[string|null,string,string|null,string,boolean]|null=null;
  private deadline:ReturnType<typeof setTimeout>|undefined;
  constructor(private readonly capability:HostCallsCapability,private readonly api:IncomingCallApi){}
  update(session:string|null,ready:boolean):void {
@@ -54,7 +56,7 @@ export class HostIncomingController {
   this.drain();
  }
  revoke():void {
-  this.abort.abort();this.abort=new AbortController();this.revision++;this.session=null;this.ready=false;this.fingerprint='';
+  this.abort.abort();this.abort=new AbortController();this.revision++;this.session=null;this.ready=false;this.fingerprint='';this.latestSync=null;
   for(const route of this.routes.values())this.api.release(route.callId);
   this.routes.clear();this.queued.clear();this.handled.clear();clearTimeout(this.deadline);
   this.capability.clear('logout');
@@ -74,7 +76,10 @@ export class HostIncomingController {
     if(await this.capability.bind(endpoint.id,endpoint.version,token) && revision===this.revision)this.fingerprint=fingerprint;
    }).catch(()=>undefined);
   }
-  for(const action of [...(state.actions??[])].sort((a,b)=>['ring','answer','mute','unmute','end'].indexOf(a.action)-['ring','answer','mute','unmute','end'].indexOf(b.action)))if(!this.handled.has(action.actionId) && !this.queued.has(action.actionId))this.queued.set(action.actionId,action);
+  for(const action of [...(state.actions??[])].sort((a,b)=>['ring','answer','mute','unmute','end'].indexOf(a.action)-['ring','answer','mute','unmute','end'].indexOf(b.action)))if(!this.handled.has(action.actionId) && !this.queued.has(action.actionId)){
+   this.queued.set(action.actionId,action);
+   if(action.expiresAt>Date.now() && (action.action==='ring' || action.action==='answer'))wakeGateway('incoming-call');
+  }
   this.drain();
  }
  private drain():void {
@@ -133,6 +138,7 @@ export class HostIncomingController {
     if(!current())return;
     if(!value || (value.state!==CallState.RINGING && !(value.state===CallState.ACTIVE && this.api.owns(value.id))))throw new Error('call unavailable');
     route={callId:value.id,roomId:value.dmRoomId,expiresAt:action.expiresAt};this.routes.set(action.eventId,route);this.api.ring(value);
+    if(this.latestSync)this.sync(...this.latestSync);
    }
    if(!current()){if(revision===this.revision)this.capability.settle(action.actionId,'failed');return;}
    if(action.action==='ring'){this.capability.settle(action.actionId,'ringing');return;}
@@ -143,17 +149,21 @@ export class HostIncomingController {
   }catch{if(revision===this.revision){this.capability.settle(action.actionId,'failed');const route=this.routes.get(action.eventId);if(route)this.api.release(route.callId);this.routes.delete(action.eventId);}}
  }
  sync(callId:string|null,phase:string,voiceRoom:string|null,voiceStatus:string,muted=false):void {
+  this.latestSync=[callId,phase,voiceRoom,voiceStatus,muted];
   for(const [event,route] of this.routes){
    if(callId!==route.callId || phase==='idle'){
     this.capability.sync(event,'ended');this.api.release(route.callId);this.routes.delete(event);
-   }else if(phase==='active' && voiceRoom===route.roomId && voiceStatus==='connected'){
-    this.capability.sync(event,'connected');this.capability.syncMuted?.(event,muted);
+   }else if(phase==='active' && this.api.owns(route.callId)){
+    this.capability.syncAccepted?.(event);
+    if(voiceRoom===route.roomId && voiceStatus==='connected'){
+     this.capability.sync(event,'connected');this.capability.syncMuted?.(event,muted);
+    }
    }
   }
  }
  async settled():Promise<void>{await this.registration;await Promise.all(this.work);}
  dispose():void{
-  this.abort.abort();this.revision++;this.session=null;this.ready=false;clearTimeout(this.deadline);
+  this.abort.abort();this.revision++;this.session=null;this.ready=false;this.latestSync=null;clearTimeout(this.deadline);
   for(const route of this.routes.values())this.api.release(route.callId);
   this.routes.clear();this.queued.clear();this.capability.clear();
  }
