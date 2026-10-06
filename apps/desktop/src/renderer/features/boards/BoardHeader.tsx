@@ -19,6 +19,7 @@ import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
 import { useBoardScoped } from './useTaskPerms';
+import { CreateButton } from '../../components/CreateButton';
 import { NavButton } from '../../components/PhoneHeader';
 import { useMobile } from '../../lib/mobile';
 
@@ -42,7 +43,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
   return (
     <div className="shrink-0">
       {/* Phone: the standard PhoneHeader row — «‹» · emoji + title on the free width · «+» · «…», 44 px targets, 16 px gutter. */}
-      <header className={cx('flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:gap-0.5 mobile:pl-0.5 mobile:pr-1', mobile && 'mat-toolbar')} data-testid="board-header">
+      <header className={cx('flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:gap-0.5 mobile:pl-0.5 mobile:pr-2', mobile && 'mat-toolbar')} data-testid="board-header">
         {mobile ? <NavButton /> : null}
         <span className="flex min-w-0 items-center gap-2 mobile:flex-1 mobile:pl-1.5">
           <span className="shrink-0 text-headline leading-none" aria-hidden>
@@ -55,21 +56,21 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
         {mobile ? null : <ViewsMenu boardId={boardId} />}
         {mobile ? null : <span className="flex-1" />}
         {mobile ? null : <ViewSwitch boardId={boardId} />}
+        {/* Phone: «…» then the accent «+» in the corner (the universal CreateButton); desktop: «+ Задача», then «…». */}
+        {mobile ? <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} /> : null}
         {hasBit(perms, CREATE_TASKS) ? (
-          <Tip label={t('boards.newTask')} shortcut="C">
-            {mobile ? (
-              <button type="button" aria-label={t('boards.newTask')} className="grid size-11 shrink-0 place-items-center rounded-[var(--radius-icon)] text-accent-text hover:bg-hover" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
-                <Plus className="size-5" aria-hidden />
-              </button>
-            ) : (
+          mobile ? (
+            <CreateButton label={t('boards.newTask')} tip={false} onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task" />
+          ) : (
+            <Tip label={t('boards.newTask')} shortcut="C">
               <Button size="md" aria-label={t('boards.newTask')} className="ml-1" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
                 <Plus className="size-4" aria-hidden />
                 <span>{t('boards.task')}</span>
               </Button>
-            )}
-          </Tip>
+            </Tip>
+          )
         ) : null}
-        <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />
+        {mobile ? null : <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />}
       </header>
       {mobile ? (
         <>
@@ -108,7 +109,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
   // TIMELINE off (ADR-0058 §3): no «Таймлайн» (a saved timeline view opens as the list).
   const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
   return (
-        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex shrink-0 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
+        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex shrink-0 items-center rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
           {KINDS.filter((k) => timeline || k.kind !== 'timeline').map((k) => (
             <Tip key={k.kind} label={t(k.label)} shortcut={k.key}>
               <button
@@ -118,12 +119,12 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
                 aria-label={t(k.label)}
                 onClick={() => setPrefs(boardId, { kind: k.kind })}
                 className={cx(
-                  'inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:px-2',
+                  'inline-flex h-6 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:h-9 mobile:w-12 mobile:px-0',
                   kind === k.kind ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
                 )}
                 data-testid={`view-${k.kind}`}
               >
-                <k.icon className="size-3.5" aria-hidden />
+                <k.icon className="size-3.5 mobile:size-5" aria-hidden />
                 <span className="mobile:hidden">{t(k.label)}</span>
               </button>
             </Tip>
@@ -270,6 +271,9 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
   const disabled = useDisabledFeatures(boardId);
   const set = (p: Partial<BoardPrefs>): void => useBoardsUi.getState().setPrefs(boardId, p);
   const sel = 'h-7 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-control text-fg';
+  const mobile = useMobile();
+  // Phone: «Показывать завершённые» lives in «…»; the popover is for the list's grouping / sort and hidden columns only.
+  if (mobile && kind !== 'list' && !prefs.hidden.length) return null;
   return (
     <Popover.Root modal={false}>
       <Popover.Trigger asChild>
@@ -304,10 +308,12 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
               </label>
             </>
           ) : null}
-          <div className="flex items-center justify-between gap-3">
-            <span>{t('boards.showCompleted')}</span>
-            <Toggle label={t('boards.showCompleted')} checked={prefs.showCompleted} onChange={(v) => set({ showCompleted: v })} />
-          </div>
+          {mobile ? null : (
+            <div className="flex items-center justify-between gap-3">
+              <span>{t('boards.showCompleted')}</span>
+              <Toggle label={t('boards.showCompleted')} checked={prefs.showCompleted} onChange={(v) => set({ showCompleted: v })} />
+            </div>
+          )}
           {prefs.hidden.length ? (
             <button type="button" className="self-start text-caption text-accent-text hover:underline" onClick={() => set({ hidden: [] })}>
               {t('boards.showHidden', { n: prefs.hidden.length })}
@@ -321,6 +327,8 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
 
 function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; workspaceId: string; manage: boolean }): ReactNode {
   const ctx = useMatchCtx(boardId);
+  const mobile = useMobile();
+  const showCompleted = useBoardsUi((s) => prefsOf(s, boardId).showCompleted);
   const [forms, setForms] = useState(false);
   const archive = async (): Promise<void> => {
     const b = useBoards.getState().boards[boardId];
@@ -346,6 +354,14 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
                 <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId, workspaceId, tab: 'access' })}>
                   <Shield className="size-4" aria-hidden /> {t('boards.access')}
                 </Dropdown.Item>
+                <Dropdown.Separator className={menuSeparator} />
+              </>
+            ) : null}
+            {mobile ? (
+              <>
+                <Dropdown.CheckboxItem className={menuItem} checked={showCompleted} onCheckedChange={(v) => useBoardsUi.getState().setPrefs(boardId, { showCompleted: v })} data-testid="show-completed">
+                  {showCompleted ? <Check className="size-4" aria-hidden /> : <span className="size-4" />} {t('boards.showCompleted')}
+                </Dropdown.CheckboxItem>
                 <Dropdown.Separator className={menuSeparator} />
               </>
             ) : null}

@@ -35,7 +35,7 @@ export function PhoneRoomList({ workspaceId }: { workspaceId: string }): ReactNo
   const [catDialog, setCatDialog] = useState(false);
   if (!exists) return null;
   return (
-    <aside className="mat-sidebar flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('room.list')} data-testid="phone-room-list">
+    <aside className="mat-content flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('room.list')} data-testid="phone-room-list">
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
       <Rooms workspaceId={workspaceId} />
       {catDialog ? <CategoryDialog workspaceId={workspaceId} onClose={() => setCatDialog(false)} /> : null}

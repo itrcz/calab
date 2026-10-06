@@ -1,7 +1,8 @@
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { t } from '../i18n';
 import { phoneBack } from '../services/phoneNav';
+import { useSearchPanel } from '../stores/searchPanel';
 import { useUi } from '../stores/ui';
 import { IconButton } from './ui';
 
@@ -22,6 +23,20 @@ export function PhoneBack(): ReactNode {
 export function NavButton(): ReactNode {
   const depth = useUi((s) => s.phone.stack.length);
   return depth === 0 ? null : <PhoneBack />;
+}
+
+/**
+ * The magnifier left of the «+» on a tab root (owner, 08.10): opens the search screen (the pushed
+ * `search` screen; the store's `show` with an empty query, everywhere). Nothing on a pushed screen.
+ */
+export function PhoneSearchButton(): ReactNode {
+  const root = useUi((s) => s.phone.stack.length === 0);
+  if (!root) return null;
+  return (
+    <IconButton tip={false} label={t('common.search')} onClick={() => useSearchPanel.getState().show('', 'all', 'messages')} className="size-11 shrink-0 rounded-full" data-testid="phone-search">
+      <Search className="size-5" aria-hidden />
+    </IconButton>
+  );
 }
 
 /** The title of a pushed phone screen: the same style everywhere (ADR-0073 §1). */
