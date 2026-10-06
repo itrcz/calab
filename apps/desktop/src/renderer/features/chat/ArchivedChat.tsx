@@ -7,7 +7,7 @@ import { useMobile } from '../../lib/mobile';
 import { openRoom } from '../../services/chat';
 import { useArchiveView } from '../../stores/archiveView';
 import { useMessages } from '../../stores/messages';
-import { NavButton } from '../shell/MobileShell';
+import { NavButton } from '../../components/PhoneHeader';
 import { MessageList } from './MessageList';
 
 /** Reading only: no reply, reaction, pin or send action is offered (they would get 410 anyway). */
@@ -28,7 +28,7 @@ export function ArchivedChat({ workspaceId, room }: { workspaceId: string; room:
   }, [room.id]);
   return (
     <section data-toast-anchor className="mat-content relative flex min-w-0 flex-1 flex-col" aria-label={room.name} data-testid="archived-chat">
-      <header className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-1 pr-1')}>
+      <header className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-0.5 pr-1')}>
         {mobile ? <NavButton /> : null}
         <Timer className="size-5 shrink-0 text-faint" aria-hidden />
         <h1 className="min-w-0 flex-1 truncate text-list font-semibold" title={room.name}>

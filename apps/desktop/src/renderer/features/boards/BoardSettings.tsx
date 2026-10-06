@@ -20,6 +20,7 @@ import { PlanLock } from '../../components/PlanLock';
 import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
+import { useUi } from '../../stores/ui';
 import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
@@ -74,11 +75,14 @@ import { Dot, PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss } f
  * «Доступ» (as a room's: roles and people, allow / deny of the four board bits, private board),
  * «Архив и удаление» (delete asks for the key). The create dialog picks a status template.
  */
-export function BoardSettingsHost(): ReactNode {
+export function BoardSettingsHost({ screen = false }: { screen?: boolean }): ReactNode {
   const req = useBoardsUi((s) => s.settingsFor);
+  const phone = useUi((s) => s.phone.on);
   const close = (): void => useBoardsUi.getState().openSettings(null);
   if (!req) return null;
   if (!req.boardId) return <CreateBoardDialog workspaceId={req.workspaceId} onClose={close} />;
+  // On the phone the settings are a screen of their own (features/shell/SettingsScreen.tsx).
+  if (phone && !screen) return null;
   return <BoardSettings boardId={req.boardId} tab={req.tab} onClose={close} />;
 }
 

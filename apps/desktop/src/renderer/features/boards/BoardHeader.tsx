@@ -19,7 +19,7 @@ import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
 import { useBoardScoped } from './useTaskPerms';
-import { NavButton } from '../shell/MobileShell';
+import { NavButton } from '../../components/PhoneHeader';
 import { useMobile } from '../../lib/mobile';
 
 const KINDS: ReadonlyArray<{ kind: ViewKind; label: 'boards.view.kanban' | 'boards.view.list' | 'boards.view.timeline'; icon: typeof Columns3; key: string }> = [
@@ -41,12 +41,12 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
   const mobile = useMobile();
   return (
     <div className="shrink-0">
-      <header className="flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:pl-1" data-testid="board-header">
+      <header className="flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:gap-1 mobile:pl-0.5" data-testid="board-header">
         {mobile ? <NavButton /> : null}
         <span className="shrink-0 text-headline leading-none" aria-hidden>
           {emoji || '📋'}
         </span>
-        <h1 className="min-w-0 truncate text-headline font-semibold" title={name}>
+        <h1 className="min-w-0 truncate text-headline font-semibold mobile:text-list" title={name}>
           {name}
         </h1>
         {mobile ? null : <ViewsMenu boardId={boardId} />}

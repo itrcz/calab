@@ -13,7 +13,7 @@ import { can, mayInviteMembers, mayManageRoomWith, mayPin, mayRoomInvite } from 
 import { setPinned } from '../../services/chat';
 import { setRoomNotifications } from '../../services/mentions';
 import { useMobile } from '../../lib/mobile';
-import { NavButton } from '../shell/MobileShell';
+import { NavButton } from '../../components/PhoneHeader';
 import { effectiveNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
@@ -89,7 +89,7 @@ function WideRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }
       className={cx(
         'mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-line pl-4 pr-2',
         fit.tight && !mobile && 'gap-1 pl-3 pr-1',
-        mobile && 'gap-1 pl-1 pr-1',
+        mobile && 'gap-1 pl-0.5 pr-1',
       )}
     >
       {mobile ? <NavButton /> : null}
@@ -162,7 +162,7 @@ function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers 
   const searchLabel = t('chat.searchInRoom', { room: roomLabel(room) });
   return (
     <>
-      <header className="mat-toolbar sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-1 overflow-hidden border-b border-line pl-1 pr-1" data-testid="room-header">
+      <header className="mat-toolbar sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-1 overflow-hidden border-b border-line pl-0.5 pr-1" data-testid="room-header">
         <NavButton />
         <h1 data-header-name className="min-w-0 flex-1 truncate pl-1 text-list font-semibold" title={room.name}>
           {room.name}
@@ -370,7 +370,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
   const touch = mobile ? 'size-10 rounded-full' : undefined;
   return (
     <header
-      className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1.5 pl-1 pr-1')}
+      className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-0.5 pr-1')}
       data-testid="dm-header"
     >
       {mobile ? <NavButton /> : null}

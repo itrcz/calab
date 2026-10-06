@@ -41,6 +41,8 @@ export default defineConfig({
       testMatch: /mobile\.web\.spec\.ts/,
       use: {
         ...devices[device],
+        // The screen slide (ScreenTransition) is off: every tap lands on the final screen.
+        reducedMotion: 'reduce' as const,
         browserName: 'chromium' as const,
         channel: 'chromium',
         launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'] },
@@ -50,7 +52,7 @@ export default defineConfig({
     ...(['iPhone 14', 'iPhone SE (3rd gen)'] as const).map((device) => ({
       name: `webkit-${device.toLowerCase().replace(/[()]/g, '').replace(/ /g, '-')}`,
       testMatch: /mobile\.web\.spec\.ts/,
-      use: { ...devices[device], browserName: 'webkit' as const },
+      use: { ...devices[device], reducedMotion: 'reduce' as const, browserName: 'webkit' as const },
     })),
   ],
 });

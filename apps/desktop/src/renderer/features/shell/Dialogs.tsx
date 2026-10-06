@@ -18,17 +18,20 @@ import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/Workspa
 import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
 import { useSession } from '../../stores/session';
 import { EventDialog } from '../calendar/EventDialog';
+import { SETTINGS_DIALOG_KINDS } from './SettingsScreen';
 import { AppDialog } from '../webapps/AppDialog';
 
 const RecordingResult = lazy(() => import('../chat/RecordingResult'));
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
+  const phone = useUi((s) => s.phone.on);
   const local = useSession((s) => localAuthority(s.authority));
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   const close = (): void => useUi.getState().openDialog(null);
   let node: ReactNode = null;
-  if (d) {
+  // Settings windows are screens of the phone stack (SettingsScreen), not dialogs.
+  if (d && !(phone && SETTINGS_DIALOG_KINDS.includes(d.kind))) {
     if (!local && ['create-workspace', 'join-workspace', 'profile', 'admin', 'new-dm'].includes(d.kind)) return null;
     switch (d.kind) {
       case 'create-workspace':

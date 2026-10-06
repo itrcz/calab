@@ -7,6 +7,7 @@ import {
   historyPlan,
   historyTarget,
   openChat,
+  openSettingsSection,
   popScreen,
   pushOnTab,
   pushScreen,
@@ -131,5 +132,32 @@ describe('back and the browser history (ADR-0073 §2)', () => {
     expect(depthOfState(null)).toBe(0);
     expect(depthOfState({ other: 1 })).toBe(0);
     expect(depthOfState({ calabaNav: -1 })).toBe(0);
+  });
+});
+
+describe('settings screens (ADR-0073, owner 07.10)', () => {
+  const list = { kind: 'settings' as const, section: null };
+
+  it('a section is pushed over the list: back pops one screen at a time', () => {
+    const n = openSettingsSection(nav({ stack: [{ kind: 'profile' }, list] }), 'voice');
+    expect(n.stack).toEqual([{ kind: 'profile' }, list, { kind: 'settings', section: 'voice' }]);
+    expect(popScreen(n).stack).toEqual([{ kind: 'profile' }, list]);
+    expect(historyTarget(n.stack.length, false)).toBe(3);
+  });
+
+  it('the same section again does not grow the stack; another section is its own screen', () => {
+    const a = openSettingsSection(nav({ stack: [list] }), 'voice');
+    expect(openSettingsSection(a, 'voice')).toBe(a);
+    expect(openSettingsSection(a, 'about').stack).toHaveLength(3);
+  });
+
+  it('the settings screens go together when the window closes', () => {
+    const n = openSettingsSection(nav({ stack: [{ kind: 'profile' }, list] }), 'voice');
+    expect(removeKind(n, 'settings').stack).toEqual([{ kind: 'profile' }]);
+  });
+
+  it('a section opened straight from the profile has no list under it', () => {
+    const n = pushScreen(nav({ stack: [{ kind: 'profile' }] }), { kind: 'settings', section: 'general' });
+    expect(popScreen(n).stack).toEqual([{ kind: 'profile' }]);
   });
 });

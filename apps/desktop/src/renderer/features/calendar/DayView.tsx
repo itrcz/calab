@@ -23,7 +23,7 @@ import { myUserId } from '../../stores/session';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { NavButton } from '../shell/MobileShell';
+import { NavButton } from '../../components/PhoneHeader';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
 import { useDayDrag } from './dragState';
@@ -213,7 +213,7 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
     const title = dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day));
     const touch = 'size-10 rounded-full';
     return (
-      <header className="mat-toolbar flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-1 pr-2">
+      <header className="mat-toolbar flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-0.5 pr-2">
         <NavButton />
         <IconButton label={t('cal.prevDay')} tip={false} onClick={() => open(addDays(day, -1))} className={touch}>
           <ChevronLeft className="size-[18px]" />

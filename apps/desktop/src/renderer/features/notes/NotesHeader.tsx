@@ -12,7 +12,7 @@ import { useChatView } from '../chat/chatView';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { PinsButton } from '../chat/RoomHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { NavButton } from '../shell/MobileShell';
+import { NavButton } from '../../components/PhoneHeader';
 
 /**
  * A notes shelf's header (ADR-0039): its emoji (click — another one), the name (click «⋯ →
@@ -35,7 +35,7 @@ export function NotesHeader({ room }: { room: Room }): ReactNode {
   };
   return (
     <header
-      className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-3 pr-2', mobile && 'gap-1.5 pl-1 pr-1')}
+      className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-3 pr-2', mobile && 'gap-1 pl-0.5 pr-1')}
       data-testid="notes-header-bar"
     >
       {mobile ? <NavButton /> : null}
