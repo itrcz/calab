@@ -105,6 +105,9 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 		pushType = "voip"
 	} else {
 		aps["alert"] = map[string]string{"title-loc-key": "CALAB_APP_NAME", "loc-key": "CALAB_NEW_NOTIFICATION"}
+		if p.Kind == "message" && p.Title != "" && p.Body != "" {
+			aps["alert"] = map[string]string{"title": previewLine(p.Title, 80), "body": previewLine(p.Body, 240)}
+		}
 		aps["category"] = "CALAB_OPEN"
 		if !p.Silent {
 			aps["sound"] = "default"

@@ -53,9 +53,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   private var answers: [UUID: CXAnswerCallAction] = [:]
   private var ends: [UUID: CXEndCallAction] = [:]
   private var deadlines: [UUID: Task<Void, Never>] = [:]
-  private var accepted = Set<UUID>()
-  private var media = Set<UUID>()
-  private var audioActive = false
+  private var readiness = CalabCallReadiness()
   private let storage = UserDefaults.standard
   private let bindingKey = "CalabVoIPBinding"
   private var environment: String? {
@@ -89,7 +87,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
         guard let view = notice.object as AnyObject?, self.owner === view else { return }
         self.owner = nil; self.document = nil
         // Reload preserves an incoming receipt; accepted media cannot survive a dead document.
-        for id in Array(self.accepted) { self.end(id, .failed) }
+        for id in Array(self.readiness.accepted) { self.end(id, .failed) }
       }
     })
     guard configured else { return }
@@ -102,7 +100,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   private func current(_ doc: String) -> Bool { owner != nil && document == doc }
   func state(_ doc: String) -> [String: Any] {
     guard current(doc), configured, registry != nil, provider != nil else { return ["supported": false] }
-    var value: [String: Any] = ["supported": true, "audioActive": audioActive, "actions": Array(actions.values).filter { ($0["expiresAt"] as? Double ?? 0) > now }]
+    var value: [String: Any] = ["supported": true, "audioActive": readiness.audioActive, "actions": Array(actions.values).filter { ($0["expiresAt"] as? Double ?? 0) > now }]
     if let token, let app = Bundle.main.bundleIdentifier, let environment {
       value["token"] = token; value["appId"] = app; value["environment"] = environment; value["installationId"] = installation
     }
@@ -132,7 +130,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     let call = calls[id]
     deadlines.removeValue(forKey: id)?.cancel()
     answers.removeValue(forKey: id)?.fail(); ends.removeValue(forKey: id)?.fail()
-    accepted.remove(id); media.remove(id)
+    readiness.remove(id)
     actions = actions.filter { $0.value["eventId"] as? String != id.uuidString.lowercased() }
     if calls.removeValue(forKey: id) != nil { provider?.reportCall(with: id, endedAt: Date(), reason: reason) }
     reports.remove(id)
@@ -161,13 +159,13 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     if let existing = calls[id], existing["binding"] as? String == bindingID {
       // Still invoke the required OS report for this receipt using its existing UUID.
       // CallKit rejects the duplicate; it cannot create/end a second phantom call.
-      let update = CXCallUpdate(); update.localizedCallerName = "Calab"
+      let update = CXCallUpdate(); update.localizedCallerName = calabCallerName(raw["callerName"])
       provider.reportNewIncomingCall(with: id, update: update) { _ in completion.finish() }
       return
     }
     guard calls.isEmpty, let ticket = try? reports.begin(id, bindingID, 0) else { generic(completion); return }
     calls[id] = ["binding": bindingID, "expiresAt": expiry.doubleValue]
-    let update = CXCallUpdate(); update.localizedCallerName = "Calab"; update.hasVideo = false
+    let update = CXCallUpdate(); update.localizedCallerName = calabCallerName(raw["callerName"]); update.hasVideo = false
     update.supportsHolding = false; update.supportsGrouping = false; update.supportsUngrouping = false; update.supportsDTMF = false
     // DND is enforced by the OS and current web/server policy; no custom ringtone override.
     provider.reportNewIncomingCall(with: id, update: update) { error in
@@ -189,7 +187,13 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     case ("ring", "ringing"): break
     case ("answer", "accepted"):
       guard let answer = answers.removeValue(forKey: id) else { end(id, .failed); return }
-      accepted.insert(id); answer.fulfill(); deadline(id, milliseconds: 15000)
+      // Configure, but let CallKit activate. WebKit still owns capture and playback.
+      do { try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP]) }
+      catch { answer.fail(); end(id, .failed, notifyWeb: true); changed(); return }
+      readiness.accepted.insert(id)
+      deadline(id, milliseconds: 15000)
+      answer.fulfill()
+      cancelReadyDeadlines()
     case ("end", "ended"):
       ends.removeValue(forKey: id)?.fulfill(); end(id, .remoteEnded)
     default: end(id, .failed)
@@ -198,9 +202,12 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   func sync(_ doc: String, _ event: String, _ phase: String) {
     guard current(doc), let id = UUID(uuidString: event), calls[id] != nil else { return }
     if phase == "ended" { end(id, .remoteEnded) }
-    if phase == "connected", accepted.contains(id) {
-      media.insert(id); if audioActive { deadlines.removeValue(forKey: id)?.cancel() }
+    if phase == "connected" {
+      readiness.connected.insert(id); cancelReadyDeadlines()
     }
+  }
+  private func cancelReadyDeadlines() {
+    for id in readiness.ready { deadlines.removeValue(forKey: id)?.cancel() }
   }
   nonisolated func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
     MainActor.assumeIsolated {
@@ -220,7 +227,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
       self.receive(payload.dictionaryPayload, completion: once)
     }
   }
-  nonisolated func providerDidReset(_ provider: CXProvider) { MainActor.assumeIsolated { self.endAll(notifyWeb: true); self.audioActive = false; self.changed() } }
+  nonisolated func providerDidReset(_ provider: CXProvider) { MainActor.assumeIsolated { self.endAll(notifyWeb: true); self.readiness.audioActive = false; self.changed() } }
   nonisolated func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
     MainActor.assumeIsolated {
       guard self.calls[action.callUUID] != nil, self.answers[action.callUUID] == nil else { action.fail(); return }
@@ -240,10 +247,10 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   }
   nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
     MainActor.assumeIsolated {
-      self.audioActive = true; for id in self.media { self.deadlines.removeValue(forKey: id)?.cancel() }; self.changed()
+      self.readiness.audioActive = true; self.cancelReadyDeadlines(); self.changed()
     }
   }
   nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-    MainActor.assumeIsolated { self.audioActive = false; self.changed() }
+    MainActor.assumeIsolated { self.readiness.audioActive = false; self.changed() }
   }
 }

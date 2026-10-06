@@ -80,6 +80,9 @@ func TestPushIncomingVoIPCurrentRingSessionAndExpiry(t *testing.T) {
 		a.Push.Observe(context.Background(), uuid.MustParse(callee.id), &v1.DispatchEvent{Event: &v1.DispatchEvent_CallRing{CallRing: &v1.CallRing{Call: r.Proto()}}})
 		return r
 	}
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE users SET display_name='Илья' WHERE id=$1", caller.id); err != nil {
+		t.Fatal(err)
+	}
 	ring := start()
 	routePush(t, a.Push)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -102,6 +105,9 @@ func TestPushIncomingVoIPCurrentRingSessionAndExpiry(t *testing.T) {
 		t.Fatal("message prefs suppressed a live incoming call")
 	}
 	receipt := rec.sent()[0]
+	if receipt.CallerName != "Илья" {
+		t.Fatal("caller name missing from authorized VoIP push")
+	}
 	encoded, _ := json.Marshal(receipt)
 	for _, private := range []string{ring.ID.String(), dm, caller.id, callee.id, request.Token} {
 		if strings.Contains(string(encoded), private) {
@@ -117,7 +123,13 @@ func TestPushIncomingVoIPCurrentRingSessionAndExpiry(t *testing.T) {
 	pushHTTP(t, server, other.user, 404, "POST", "/api/me/push-resolve", resolve, nil)
 	second := secondDevice(t, callee.user)
 	pushHTTP(t, server, second, 404, "POST", "/api/me/push-resolve", resolve, nil)
-	callAction(t, caller.user, 200, ring.ID.String(), "cancel")
+	callAction(t, callee.user, 200, ring.ID.String(), "accept")
+	pushHTTP(t, server, callee.user, 200, "POST", "/api/me/push-resolve", resolve, &response)
+	if response.Call.GetState() != v1.CallState_CALL_STATE_ACTIVE {
+		t.Fatal("delivered receipt cannot reconcile an already accepted call")
+	}
+	pushHTTP(t, server, second, 404, "POST", "/api/me/push-resolve", resolve, nil)
+	callAction(t, callee.user, 200, ring.ID.String(), "hangup")
 	pushHTTP(t, server, callee.user, 404, "POST", "/api/me/push-resolve", resolve, nil)
 	suppressed := start()
 	routePush(t, a.Push)

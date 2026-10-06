@@ -87,24 +87,33 @@ func pushAll(t *testing.T, u *user, room string) {
 		t.Fatal(err)
 	}
 }
-func TestPushMessageFreshPermissionsMinimalPayloadAndDedupe(t *testing.T) {
+func TestPushMessageFreshPermissionsPreviewAndDedupe(t *testing.T) {
 	s, server, rec := pushHarness(t)
 	o, bob, ws, room := setupTeam(t)
 	pushAll(t, bob, room.Id)
 	endpoint := registerPush(t, server, bob, uuid.NewString(), "delivery-token", 200)
-	msg := dmPost(t, o, room.Id, "private message text must stay off provider")
+	msg := dmPost(t, o, room.Id, "message before edit")
 	s.Observe(context.Background(), uuid.Nil, pushMessage(msg))
 	routePush(t, s)
 	if pushPending(t) != 1 {
 		t.Fatal("authorized routing did not enqueue")
+	}
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE messages SET content='Привет после правки' WHERE id=$1", msg.Id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE users SET display_name='Илья' WHERE id=$1", o.id); err != nil {
+		t.Fatal(err)
 	}
 	deliverPush(t, s)
 	sent := rec.sent()
 	if len(sent) != 1 || sent[0].Binding != endpoint.Id || sent[0].ReferenceID != msg.Id {
 		t.Fatal("delivery binding mismatch")
 	}
+	if sent[0].Title != "Илья" || sent[0].Body != "Привет после правки" {
+		t.Fatal("preview did not use current authorized sender/message")
+	}
 	body, _ := json.Marshal(sent[0])
-	for _, private := range []string{"private message text", "delivery-token", o.id, bob.id, "http", "authorization"} {
+	for _, private := range []string{"message before edit", "delivery-token", o.id, bob.id, "http", "authorization"} {
 		if strings.Contains(string(body), private) {
 			t.Fatalf("payload exposed %s", private)
 		}

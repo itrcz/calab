@@ -122,3 +122,13 @@ binary. Для остановки calls выставить `PUSH_VOIP_ENABLED=fa
 убрать полный набор четырёх APNs credentials вместе. Не выполнять автоматический
 Goose Down: он удалит push registry/receipts и не решает image compatibility.
 Backup restore и повторный rollout требуют отдельного решения оператора.
+
+## Notification preview / system Answer update (ADR-0072)
+
+Deploy the matching web and API changes together through the normal release workflow.
+No additional migration, provider keys, environment variables or Apple capability changes
+are required. Install the matching new phone host afterwards: it reads `callerName`,
+configures CallKit voice audio and retains readiness events arriving before answer fulfilment.
+The existing host can display the new APNs message previews; existing servers remain a generic
+fallback for new hosts. Full answer-race repair requires the updated web, API and host.
+Retest one system answer with desktop already in a room and >30 s locked two-way audio.

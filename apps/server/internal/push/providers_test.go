@@ -22,6 +22,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/config"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -413,5 +414,59 @@ func TestFCMRefreshFailurePacesEveryConcurrentCaller(t *testing.T) {
 	}
 	if exchanges.Load() != 1 {
 		t.Fatal("concurrent callers retried shared quota-limited OAuth")
+	}
+}
+
+func TestAPNSMessagePreviewAndCallerPresentation(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"message", "call", "task"} {
+		t.Run(kind, func(t *testing.T) {
+			p := providerPayload()
+			p.Kind = kind
+			p.Title = "Илья"
+			recipient := sqlc.User{ID: uuid.New(), DisplayName: "Данис"}
+			p.Body = messagePreview("Привет, @"+recipient.ID.String(), recipient)
+			p.CallerName = ""
+			provider := v1.PushProvider_PUSH_PROVIDER_APNS
+			if kind == "call" {
+				provider = v1.PushProvider_PUSH_PROVIDER_VOIP
+				p.CallerName = "Илья"
+			}
+			sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "development"}
+			called := false
+			sender.client = &http.Client{Transport: providerTransport(func(r *http.Request) (*http.Response, error) {
+				called = true
+				var wire map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := wire["ReferenceID"]; ok {
+					t.Fatal("internal reference exposed")
+				}
+				aps := wire["aps"].(map[string]any)
+				if kind == "call" {
+					if wire["callerName"] != "Илья" || aps["alert"] != nil {
+						t.Fatal("caller presentation missing or alert duplicated")
+					}
+				}
+				if kind == "message" {
+					a := aps["alert"].(map[string]any)
+					if a["title"] != "Илья" || a["body"] != "Привет, @Данис" || a["loc-key"] != nil {
+						t.Fatal("generic text replaced preview")
+					}
+				}
+				if kind == "task" && aps["alert"].(map[string]any)["loc-key"] != "CALAB_NEW_NOTIFICATION" {
+					t.Fatal("unrelated notification changed")
+				}
+				return providerResponse(200, "", http.Header{}), nil
+			})}
+			sender.Send(context.Background(), Endpoint{Token: "aabb", Provider: provider, AppID: sender.app, Environment: sender.environment}, p)
+			if !called {
+				t.Fatal("preview was not sent")
+			}
+		})
 	}
 }

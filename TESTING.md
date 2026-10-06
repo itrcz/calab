@@ -2166,3 +2166,13 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
   All other server packages pass. Original full command remains exit 1 (timeout);
   this recovery does not claim an uninterrupted green run. GitHub CI uses app shards.
 - Two independent security/protocol reviews found no blocker/major.
+
+## Phone notification and answer regressions (ADR-0072)
+
+- `go test ./internal/push` in `apps/server`: bounded APNs sender/content/caller payloads and attachment labels.
+- PG17: `go test -tags integration ./internal/app -run '^(TestPush|TestCallFullCycle|TestPhoneCallAnswerTakesOverDesktopRoom|TestCallOtherDeviceKeepsCall|TestVoiceOtherDeviceTakesOver)'`.
+- `corepack pnpm -F @calaba/desktop exec vitest run src/renderer/services/hostIncomingCalls.test.ts src/renderer/services/call.test.ts src/renderer/lib/callModel.test.ts`.
+- macOS: `swiftc apps/mobile/modules/calab-session-activity/ios/CalabCallReadiness.swift apps/mobile/tests/CallReadinessTests.swift -o /tmp/calab-call-readiness-tests && /tmp/calab-call-readiness-tests`.
+- Device after web/API + host update: sender/text after Face ID; caller name; one system answer;
+  desktop in workspace room yields; bidirectional audio stays alive >30 s with phone locked.
+- Repeat warm/background and terminated launches separately; no generic claim of cold-call success.

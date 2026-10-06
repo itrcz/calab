@@ -8,13 +8,13 @@ import type { HostCallsCapability, HostCallsState } from '../../shared/hostCalls
 vi.stubGlobal('window',{addEventListener:vi.fn(),removeEventListener:vi.fn()});
 const auth=vi.hoisted(()=>({callback:()=>{}}));
 vi.mock('../platform',()=>({platform:{auth:{onLoggedOut:(cb:()=>void)=>{auth.callback=cb;return ()=>{};}}}}));
-vi.mock('./call',()=>({onCallRing:vi.fn(),performHostCallAction:vi.fn(),setHostIncomingOwnership:vi.fn()}));
+vi.mock('./call',()=>({onCallRing:vi.fn(),ownsHostCall:vi.fn(),performHostCallAction:vi.fn(),setHostIncomingOwnership:vi.fn()}));
 const reference={binding:'11111111-1111-4111-8111-111111111111',eventId:'22222222-2222-4222-8222-222222222222',expiresAt:Date.now()+45000};
 const actionId='44444444-4444-4444-8444-444444444444';
 const state:HostCallsState={supported:true,token:'aa'.repeat(32),appId:'test.calab.app',environment:'development',installationId:'33333333-3333-4333-8333-333333333333',actions:[{...reference,actionId,action:'answer'}]};
 function harness(){
  const capability:HostCallsCapability={state:vi.fn().mockResolvedValue(state),subscribe:()=>()=>{},bind:vi.fn().mockResolvedValue(true),settle:vi.fn(),sync:vi.fn(),clear:vi.fn()};
- const api:IncomingCallApi={capabilities:vi.fn().mockResolvedValue([{appId:state.appId,environment:state.environment}]),register:vi.fn().mockResolvedValue({id:reference.binding,version:1n}),resolve:vi.fn().mockResolvedValue(create(CallSchema,{id:'call',state:CallState.RINGING})),ring:vi.fn(),act:vi.fn().mockResolvedValue(true),release:vi.fn()};
+ const api:IncomingCallApi={capabilities:vi.fn().mockResolvedValue([{appId:state.appId,environment:state.environment}]),register:vi.fn().mockResolvedValue({id:reference.binding,version:1n}),resolve:vi.fn().mockResolvedValue(create(CallSchema,{id:'call',state:CallState.RINGING})),ring:vi.fn(),owns:vi.fn().mockReturnValue(false),act:vi.fn().mockResolvedValue(true),release:vi.fn()};
  const controller=new HostIncomingController(capability,api);return {capability,api,controller};
 }
 describe('authenticated shared-web incoming action boundary',()=>{
@@ -81,5 +81,40 @@ it('bounds unavailable-receipt retries and does not retry an auth denial', async
   const denied=harness();vi.mocked(denied.api.resolve).mockRejectedValue(new ApiError('ERROR_CODE_UNAUTHORIZED','revoked',401));
   denied.controller.update('session',true);await vi.advanceTimersByTimeAsync(0);await denied.controller.settled();
   expect(denied.api.resolve).toHaveBeenCalledOnce();expect(denied.api.act).not.toHaveBeenCalled();denied.controller.dispose();
+ }finally{vi.useRealTimers();}
+});
+
+it('gives an answer its request budget after a slow ring resolve, within the native deadline', async()=>{
+ vi.useFakeTimers();try{
+  const h=harness();const now=Date.now();
+  const ring={...reference,expiresAt:now+45000,action:'ring' as const,actionId:'55555555-5555-4555-8555-555555555555'};
+  const answer={...reference,expiresAt:now+10000,action:'answer' as const,actionId};
+  vi.mocked(h.capability.state).mockResolvedValue({...state,actions:[ring,answer]});
+  vi.mocked(h.api.resolve).mockImplementation(()=>new Promise(resolve=>setTimeout(()=>resolve(create(CallSchema,{id:'call',state:CallState.RINGING})),4000)));
+  h.controller.update('session',true);
+  await vi.advanceTimersByTimeAsync(8100);await h.controller.settled();
+  expect(h.api.act).toHaveBeenCalledOnce();expect(h.capability.settle).toHaveBeenCalledWith(actionId,'accepted');
+  h.controller.dispose();
+ }finally{vi.useRealTimers();}
+});
+
+it('reconciles an authenticated ACTIVE receipt only with the common local accept owner',async()=>{
+ const h=harness();vi.mocked(h.api.resolve).mockResolvedValue(create(CallSchema,{id:'call',state:CallState.ACTIVE}));
+ vi.mocked(h.api.owns).mockReturnValue(true);h.controller.update('session',true);
+ await Promise.resolve();await h.controller.settled();
+ expect(h.api.act).toHaveBeenCalledOnce();expect(h.capability.settle).toHaveBeenCalledWith(actionId,'accepted');
+ h.controller.dispose();
+});
+it('never grants a fresh request window to an answer that expired behind ring',async()=>{
+ vi.useFakeTimers();try{
+  const h=harness();const now=Date.now();
+  vi.mocked(h.capability.state).mockResolvedValue({...state,actions:[
+   {...reference,expiresAt:now+45000,action:'ring',actionId:'55555555-5555-4555-8555-555555555555'},
+   {...reference,expiresAt:now+2000,action:'answer',actionId},
+  ]});
+  vi.mocked(h.api.resolve).mockImplementation(()=>new Promise(resolve=>setTimeout(()=>resolve(create(CallSchema,{id:'call',state:CallState.RINGING})),4000)));
+  h.controller.update('session',true);await vi.advanceTimersByTimeAsync(4100);await h.controller.settled();
+  expect(h.api.act).not.toHaveBeenCalled();expect(h.capability.settle).toHaveBeenCalledWith(actionId,'failed');
+  h.controller.dispose();
  }finally{vi.useRealTimers();}
 });

@@ -6,13 +6,14 @@ import { platform } from '../platform';
 import { useSession } from '../stores/session';
 import { useCall } from '../stores/call';
 import { useVoice } from '../stores/voice';
-import { onCallRing, performHostCallAction, setHostIncomingOwnership } from './call';
+import { onCallRing, ownsHostCall, performHostCallAction, setHostIncomingOwnership } from './call';
 
 export interface IncomingCallApi {
  capabilities:(signal:AbortSignal)=>Promise<{appId:string;environment:string}[]>;
  register:(state:HostCallsState,signal:AbortSignal)=>Promise<{id:string;version:bigint}>;
  resolve:(reference:HostPushReference,signal:AbortSignal)=>Promise<Call|undefined>;
  ring:(call:Call)=>void;
+ owns:(callId:string)=>boolean;
  act:(callId:string,action:'answer'|'end',signal:AbortSignal,isCurrent:()=>boolean,isSessionCurrent:()=>boolean)=>Promise<boolean>;
  release:(callId:string)=>void;
 }
@@ -22,8 +23,9 @@ const api:IncomingCallApi={
   provider:PushProvider.VOIP,appId:s.appId??'',environment:s.environment??'',installationId:s.installationId??'',token:s.token??'',callsEnabled:true,notificationsEnabled:false,mentionsEnabled:false,allEnabled:false,
  }),signal),
  resolve:async(reference,signal)=>(await call('POST','/api/me/push-resolve',ResolvePushResponseSchema,body(ResolvePushRequestSchema,reference),signal)).call,
- ring(value){setHostIncomingOwnership(value.id,true);onCallRing(value,undefined);},
+ ring(value){setHostIncomingOwnership(value.id,true);if(value.state===CallState.RINGING)onCallRing(value,undefined); },
  act:performHostCallAction,
+ owns:ownsHostCall,
  release:id=>setHostIncomingOwnership(id,false),
 };
 
@@ -81,9 +83,15 @@ export class HostIncomingController {
    this.queued.delete(id);this.handled.add(id);
    if(this.handled.size>128)this.handled.delete(this.handled.values().next().value as string);
    const revision=this.revision;
-   const bounded=new AbortController();const abort=()=>bounded.abort();this.abort.signal.addEventListener('abort',abort,{once:true});
-   const timer=setTimeout(()=>bounded.abort(),Math.min(6000,action.expiresAt-Date.now()));
-   const job=(this.eventWork.get(action.eventId) ?? Promise.resolve()).then(()=>this.perform(action,revision,bounded.signal)).finally(()=>{clearTimeout(timer);this.abort.signal.removeEventListener('abort',abort);this.work.delete(job);if(this.eventWork.get(action.eventId)===job)this.eventWork.delete(action.eventId);});
+   const parent=this.abort.signal;
+   const job=(this.eventWork.get(action.eventId) ?? Promise.resolve()).then(async()=>{
+    // Ring and answer share a receipt and run serially. Start the request budget only
+    // when this action runs, while retaining the native action's absolute expiry.
+    const bounded=new AbortController();const abort=()=>bounded.abort();parent.addEventListener('abort',abort,{once:true});
+    if(parent.aborted)bounded.abort();
+    const timer=setTimeout(abort,Math.max(0,Math.min(6000,action.expiresAt-Date.now())));
+    try{await this.perform(action,revision,bounded.signal);}finally{clearTimeout(timer);parent.removeEventListener('abort',abort);}
+   }).finally(()=>{this.work.delete(job);if(this.eventWork.get(action.eventId)===job)this.eventWork.delete(action.eventId);});
    this.work.add(job);this.eventWork.set(action.eventId,job);
   }
   if(this.queued.size){const next=Math.min(...Array.from(this.queued.values(),a=>a.expiresAt));this.deadline=setTimeout(()=>this.drain(),Math.max(1,next-Date.now()));}
@@ -113,7 +121,7 @@ export class HostIncomingController {
    if(action.action!=='end' || !route){
     const value=await this.resolve(action,signal,current);
     if(!current())return;
-    if(!value || value.state!==CallState.RINGING)throw new Error('call unavailable');
+    if(!value || (value.state!==CallState.RINGING && !(value.state===CallState.ACTIVE && this.api.owns(value.id))))throw new Error('call unavailable');
     route={callId:value.id,roomId:value.dmRoomId,expiresAt:action.expiresAt};this.routes.set(action.eventId,route);this.api.ring(value);
    }
    if(!current()){if(revision===this.revision)this.capability.settle(action.actionId,'failed');return;}

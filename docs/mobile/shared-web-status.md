@@ -1,5 +1,34 @@
 # Телефон: общий веб в оболочке — статус
 
+## R09: исправления после первого push-теста (2026-10-06)
+
+- **Проверено владельцем на iPhone:** сообщения push доставляются, системный экран
+  входящего звонка появляется. Обнаружены generic text/name, сброс через 10–15 с после
+  системного ответа при desktop в комнате, возможный повторный ответ в приложении.
+  Это обновляет исторические R05–R07 отметки ниже; успешный locked answer ещё не доказан.
+- **Реализовано локально:** имя/текст APNs после текущей проверки доступа, имя CallKit;
+  независимые факты web connection / accept / audio activation; настройка voice audio
+  session перед CallKit fulfil; request budget начинается при выполнении очередного action; обе кнопки ответа используют
+  один общий запрос, ACTIVE требует подтверждённого ответа на accept текущего web document;
+  native deadline действует и при начатом из веба запросе.
+  Контракт: [ADR-0072](../adr/0072-phone-notification-previews.md). Без нового UI/auth/RTC.
+- **Проверено локально:** regression очереди воспроизведена на прежнем коде и проходит
+  после исправления; 49 targeted web/call unit; Swift readiness во всех шести порядках;
+  push provider units и PG17 push/identity + call integration; отдельный desktop-room →
+  phone-call handover, late desktop leave и прежние other-device сценарии проходят.
+  Physical-iOS Release собирается с APS development, PushKit и WidgetKit без input drift.
+- **Reviews:** два независимых security/protocol review; найденные major исправлены,
+  финальная дельта принята без blocker/major. Весь desktop unit: 2591; mobile 109,
+  protocol 439, bot SDK 30 и два plugin tests; targeted Go push/identity с race проходят.
+  `make lint`, typecheck и web build/bundle check проходят. Native сборка подписана
+  и проверена, 63 входных файла совпадают с текущими исходниками; пока не установлена.
+- **Осталось:** web/API release и установка новой native сборки; затем превью после
+  Face ID, системный answer без второго нажатия,
+  desktop-room handover, повторная блокировка и двусторонний звук дольше 30 с.
+  Cold terminated/locked web bootstrap остаётся отдельным непроверенным случаем.
+  Local build и server tests не заменяют device evidence.
+
+
 ## R07: интеграция с текущим main (2026-10-05)
 
 Ветка включает pinned main `969bd18fb873218e53518b09c6059c1e6c1c4630`.

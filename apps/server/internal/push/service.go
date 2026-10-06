@@ -23,7 +23,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Payload carries opaque routing references without contents, credentials or origins.
+// Payload carries opaque routing and authorized, bounded presentation (ADR-0072).
 type Payload struct {
 	Version     int    `json:"v"`
 	Binding     string `json:"binding"`
@@ -33,6 +33,9 @@ type Payload struct {
 	RoomID      string `json:"-"`
 	ExpiresAt   int64  `json:"expiresAt"`
 	Silent      bool   `json:"silent,omitempty"`
+	Title       string `json:"-"`
+	Body        string `json:"-"`
+	CallerName  string `json:"callerName,omitempty"`
 }
 
 // Endpoint is the server-authorized transport destination for one registry version.
@@ -203,7 +206,7 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 			if err != nil {
 				return err
 			}
-			allowed, _, err := s.allowed(ctx, q, user, session, job)
+			allowed, _, err := s.allowedPolicy(ctx, q, user, session, job, true)
 			if err != nil {
 				return err
 			}
@@ -224,7 +227,7 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 				if err != nil {
 					return err
 				}
-				if !live || rec.ID != job.ReferenceID || rec.State != v1.CallState_CALL_STATE_RINGING {
+				if !live || rec.ID != job.ReferenceID || (rec.State != v1.CallState_CALL_STATE_RINGING && rec.State != v1.CallState_CALL_STATE_ACTIVE) {
 					return httpx.NotFound("call")
 				}
 				response.MessageId = ""

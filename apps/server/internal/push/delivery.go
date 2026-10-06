@@ -222,6 +222,9 @@ func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 		if job.RoomID != nil {
 			payload.RoomID = job.RoomID.String()
 		}
+		if err := s.presentation(ctx, q, user, job, &payload); err != nil {
+			return err
+		}
 		// Endpoint/version, session and freshly resolved access/settings stay bound in
 		// this transaction immediately before dispatch. No detached raw-event fanout.
 		result := provider.Sender.Send(ctx, Endpoint{Provider: v1.PushProvider(device.Provider), Token: device.Token, AppID: device.AppID, Environment: device.Environment}, payload)
