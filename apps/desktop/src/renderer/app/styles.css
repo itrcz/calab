@@ -49,8 +49,10 @@
  * Design tokens (docs/08-design.md): macOS / Apple HIG. Components use only these
  * variables (through the Tailwind theme below) — no raw colours or sizes.
  * Dark is the default; light via <html data-theme="light">. Every material is a solid
- * colour — no backdrop-filter, no window vibrancy (docs/08 «Материалы», docs/09 #65): the
- * compositor would re-blur what is behind on every frame of an animation or video.
+ * colour — no backdrop-filter (docs/08 «Материалы», docs/09 #65): the compositor would re-blur
+ * what is behind on every frame of an animation or video. The one exception is native macOS
+ * window vibrancy (ADR-0075, `:root.vibrancy` below): WindowServer blends the desktop behind the
+ * window, only under the title bar, the section rail and the room column; content stays opaque.
  */
 :root {
   /* ---- colour: neutral cool grey scale + one accent + semantics ---- */
@@ -397,6 +399,37 @@ body {
 }
 .mat-rail {
   background: var(--color-rail);
+}
+/*
+ * macOS native vibrancy (ADR-0075): <html class="vibrancy"> is set by WindowVibrancy while the
+ * desktop shell is up on macOS with «Прозрачность окна» on (not with Reduce transparency, «Слабый
+ * компьютер» or in visual tests). Main has put an NSVisualEffectView (`sidebar`, follows the key
+ * state) behind a clear page: the body stops painting, the window layer (title bar, section rail)
+ * and the room column (`mat-sidebar-window`) become tints over the native material, everything
+ * else keeps its solid material. The tints keep each theme's tone order (rail darker than the
+ * column) and text ≥ 4.5:1 — the dark material stays dark, the light one light, whatever is behind.
+ * Tokens stay solid: badge rings and other `var(--color-rail)` users are unaffected.
+ */
+:root.vibrancy {
+  --vibrancy-rail: rgb(23 23 25 / 60%);
+  --vibrancy-sidebar: rgb(255 255 255 / 3%);
+}
+:root.vibrancy[data-theme='light'] {
+  --vibrancy-rail: rgb(232 232 236 / 50%);
+  --vibrancy-sidebar: rgb(255 255 255 / 35%);
+}
+:root.vibrancy body {
+  background: transparent;
+}
+:root.vibrancy .mat-rail {
+  background: var(--vibrancy-rail);
+}
+:root.vibrancy .mat-sidebar-window {
+  background: var(--vibrancy-sidebar);
+}
+/* A solid fade would be a slab on the translucent column: rows simply pass under the island. */
+:root.vibrancy .mat-rail .island-fade::after {
+  content: none;
 }
 .mat-toolbar {
   background: var(--color-toolbar);

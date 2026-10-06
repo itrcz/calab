@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME, IPC } from '../shared/ipc';
+import { vibrancyWanted } from '../shared/windowMaterial';
 import { isAppSession } from './appSessions';
 import { windowIconPath } from './icons';
+import { getSettings } from './settings';
 import { mainStrings } from './strings';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -13,6 +15,31 @@ const RENDERER_HTML = join(here, '../renderer/index.html');
 /** The window layer (--color-rail in styles.css): the opaque window background per theme. */
 const WINDOW_BG = { dark: '#171719', light: '#e8e8ec' } as const;
 const windowBg = (): string => (nativeTheme.shouldUseDarkColors ? WINDOW_BG.dark : WINDOW_BG.light);
+const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
+/** Fully clear: the NSVisualEffectView behind the page shows wherever the page doesn't paint. */
+const CLEAR_BG = '#00000000';
+
+/**
+ * macOS native vibrancy (ADR-0075): the one exception to the glass ban — no CSS backdrop-filter,
+ * the system's NSVisualEffectView blends the desktop behind the window in WindowServer. The same
+ * rule as the renderer's `vibrancy` root class (shared/windowMaterial.ts); «Слабый компьютер» is
+ * a renderer pref not built yet (docs/09 #44) — when it is, it switches windowTranslucency off.
+ */
+function vibrancyOn(): boolean {
+  return vibrancyWanted({
+    platform: process.platform,
+    translucency: getSettings().windowTranslucency,
+    reducedTransparency: nativeTheme.prefersReducedTransparency,
+    lowEnd: false,
+    visualTest: VISUAL_TEST,
+  });
+}
+
+/** Material options at creation: `sidebar` vibrancy dimmed with the window's key state, or solid. */
+function material(): Partial<Electron.BrowserWindowConstructorOptions> {
+  if (!vibrancyOn()) return { backgroundColor: windowBg() };
+  return { vibrancy: 'sidebar', visualEffectState: 'followWindow', backgroundColor: CLEAR_BG };
+}
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -117,21 +144,24 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 600,
     title: 'Calab',
-    // Opaque, no vibrancy (docs/08 «Материалы», docs/09 #65): the compositor would re-blur the
-    // desktop behind the window on every frame. The colour follows the theme (below).
+    // Not `transparent`: the window stays a normal opaque-shaped NSWindow. Solid background
+    // (docs/08 «Материалы») everywhere except macOS with native vibrancy (ADR-0075), where the
+    // renderer paints opaque content and tints only the window layer. Follows the theme (below).
     transparent: false,
-    backgroundColor: windowBg(),
+    ...material(),
     show: false,
     ...chrome(),
     ...windowIcon(),
     webPreferences: { ...webPreferences },
   });
   if (state?.maximized) win.maximize();
+  vibrancyState.set(win, process.platform === 'darwin' && vibrancyOn());
   // The renderer's theme drives nativeTheme.themeSource (IPC appSetTheme): recolour the window
   // background (seen while resizing and before the first paint) and the Windows caption buttons.
+  // nativeTheme 'updated' also fires when Accessibility → Reduce transparency flips.
   const recolor = (): void => {
     if (win.isDestroyed()) return;
-    win.setBackgroundColor(windowBg());
+    applyMaterial(win);
     if (process.platform === 'win32') win.setTitleBarOverlay(overlayColors());
   };
   nativeTheme.on('updated', recolor);
@@ -250,6 +280,26 @@ export function installWebContentsGuards(): void {
 /** On screen: shown and not minimized (macOS occlusion by other windows is not reported). */
 export function isShown(win: BrowserWindow): boolean {
   return win.isVisible() && !win.isMinimized();
+}
+
+const vibrancyState = new WeakMap<BrowserWindow, boolean>();
+
+function applyMaterial(win: BrowserWindow): void {
+  if (process.platform !== 'darwin') {
+    win.setBackgroundColor(windowBg());
+    return;
+  }
+  const on = vibrancyOn();
+  // Theme updates don't touch the effect view (it follows the appearance itself): only a flip does.
+  if (vibrancyState.get(win) !== on) win.setVibrancy(on ? 'sidebar' : null, { animationDuration: 0 });
+  vibrancyState.set(win, on);
+  win.setBackgroundColor(on ? CLEAR_BG : windowBg());
+}
+
+/** Re-apply the window material after «Прозрачность окна» changed (IPC appSetSettings). */
+export function applyWindowMaterial(): void {
+  const win = getMainWindow();
+  if (win) applyMaterial(win);
 }
 
 export function getMainWindow(): BrowserWindow | null {

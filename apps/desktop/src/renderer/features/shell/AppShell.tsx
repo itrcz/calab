@@ -38,6 +38,7 @@ import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
+import { WindowVibrancy } from './WindowVibrancy';
 import { Sidebar } from './Sidebar';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { useArchiveView } from '../../stores/archiveView';
@@ -130,6 +131,7 @@ function ShellLayout(): ReactNode {
 
   return (
     <div className="flex h-full flex-col" style={{ ['--sidebar-width' as string]: `${width}px` }}>
+      <WindowVibrancy />
       <TitleBar />
       {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
       <VerifyBanner />

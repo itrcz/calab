@@ -24,6 +24,7 @@ const DEFAULTS = (): AppSettings => ({
   autoUpdate: true,
   autoCheckUpdates: true,
   closeToTray: true,
+  windowTranslucency: true,
   trayHintShown: false,
 });
 

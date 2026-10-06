@@ -44,7 +44,7 @@ export function DmSidebar(): ReactNode {
   const mobile = useMobile();
 
   return (
-    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
+    <aside className="mat-sidebar mat-sidebar-window island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
       {mobile ? (
         // Phone: the tab root has its title and «+» (MobileShell); this is the search field.
         <div className="flex h-16 shrink-0 items-center border-b border-line px-2.5">
