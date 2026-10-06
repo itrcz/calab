@@ -125,6 +125,14 @@ function inRoom(mock: MockServer, k: PersonKey, extra: { camera?: boolean; strea
   mock.setVoiceState({ userId: IDS.users[k], roomId: IDS.rooms.meeting, joinedAtMs: NOW.getTime() - 14 * 60_000, ...extra });
 }
 
+/** 3.0: the rail's «Календарь» tile → the mini month → today's day view. */
+async function openDay(page: Page): Promise<void> {
+  const mini = page.getByTestId('mini-calendar');
+  if (!(await mini.isVisible())) await page.getByTestId('section-calendar').click();
+  await mini.locator('[data-cal-day="2026-01-15"]').click();
+  await expect(page.getByTestId('day-view')).toBeVisible();
+}
+
 async function speaking(page: Page, ids: string[]): Promise<void> {
   await page.evaluate((list) => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.(list), ids);
 }
@@ -224,10 +232,8 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
   // Today's day view with the planning meeting's card open.
   async calendar(ctx) {
     const { page, c } = ctx;
-    await openRoom(ctx, c.rooms.general);
+    await openDay(page);
     await setLocale(page, ctx.short);
-    await page.getByTestId('calendar-button').click();
-    await expect(page.getByTestId('day-view')).toBeVisible();
     await page.getByTestId('event-block').filter({ hasText: c.calendar.planning }).first().click();
     await expect(page.getByTestId('event-panel').getByTestId('event-title')).toHaveText(c.calendar.planning);
     await setLocale(page, ctx.short);
@@ -237,10 +243,8 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
   // «Подобрать время» with Борис and Вера: busy columns, green windows, «Ближайшие окна».
   async findtime(ctx) {
     const { page, c } = ctx;
-    await openRoom(ctx, c.rooms.general);
+    await openDay(page);
     await setLocale(page, ctx.short);
-    await page.getByTestId('calendar-button').click();
-    await expect(page.getByTestId('day-view')).toBeVisible();
     await page.getByTestId('day-find').click();
     const pane = page.getByTestId('find-time');
     await pane.getByTestId('find-people-add').click();
@@ -357,7 +361,7 @@ async function boards(ctx: Ctx): Promise<string> {
   await openRoom(ctx, ctx.c.rooms.general);
   // Board chips format dates once per mount: the language first, then the board.
   await setLocale(ctx.page, ctx.short);
-  await ctx.page.getByTestId('boards-button').click();
+  await ctx.page.getByTestId('section-boards').click();
   await expect(ctx.page.getByTestId('kanban')).toBeVisible();
   await expect(ctx.page.getByTestId('task-card').first()).toBeVisible();
   return key;
