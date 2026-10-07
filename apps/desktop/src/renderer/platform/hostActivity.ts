@@ -8,6 +8,11 @@ export interface HostActivityBridge {
 }
 declare global { interface Window { CalabHostActivity?: HostActivityBridge } }
 
+// Native audioConnect may wait ~10 s for CallKit activation plus its own 15 s connect
+// deadline (ADR-0079); the web side must outlive that worst case (25 s) with slack.
+const AUDIO_CONNECT_TIMEOUT_MS = 30_000;
+const CALLS_REQUEST_TIMEOUT_MS = 10_000;
+
 /** One document/sequence authority for both optional capabilities; old hosts keep v1 activity. */
 export function createHostCapabilities(win: Window = window): {
   sessionActivity?: SessionActivityCapability; notifications?: HostNotificationsCapability; incomingCalls?: HostCallsCapability;
@@ -88,7 +93,7 @@ export function createHostCapabilities(win: Window = window): {
   });
   const requestCall=(operation:HostCallsOperation)=>new Promise<{state:HostCallsState;bound?:boolean}>(resolve=>{
     const request=++requestId;
-    const timer=setTimeout(()=>{callsPending.delete(request);resolve({state:{supported:false}});},10_000);
+    const timer=setTimeout(()=>{callsPending.delete(request);resolve({state:{supported:false}});},operation.operation==='audioConnect'?AUDIO_CONNECT_TIMEOUT_MS:CALLS_REQUEST_TIMEOUT_MS);
     callsPending.set(request,{operation,resolve,timer});
     if(ready)send('calls',{request,...operation});else send('hello');
   });

@@ -239,7 +239,7 @@ function Host({ origin }: { origin: string }) {
         mixedContentMode="never"
         allowsInlineMediaPlayback
         // A CallKit answer is a native gesture; async RTC audio has no web playback gesture.
-        mediaPlaybackRequiresUserAction={false}
+        mediaPlaybackRequiresUserAction={!callAudioEnabled}
         allowsBackForwardNavigationGestures={false}
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}

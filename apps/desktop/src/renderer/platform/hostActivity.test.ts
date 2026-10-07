@@ -103,3 +103,36 @@ it.each([undefined,1])('negotiates web-answer sync (%s), never sending it to old
  if(answerVersion===undefined)expect(calls?.syncAccepted).toBeUndefined();
  else {expect(calls?.syncAccepted).toBeTypeOf('function');calls?.syncAccepted?.('event');expect(JSON.parse(String(send.mock.lastCall?.[0]))).toMatchObject({operation:'sync',phase:'accepted'});}
 });
+
+describe('native audio connect timeout', () => {
+ const media={eventId:'11111111-1111-4111-8111-111111111111',connectionId:'22222222-2222-4222-8222-222222222222',phase:'connected',microphoneReady:true,muted:false,canSpeak:true,speakers:[]};
+ const setup=()=>{
+  const handlers=new Map<string,(event:CustomEvent<unknown>)=>void>();const send=vi.fn();
+  const bridge={version:1,callsVersion:1,callsAudioVersion:1,host:0,document:'document',send};
+  const cap=createHostCapabilities({CalabHostActivity:bridge,addEventListener:(name:string,cb:(event:CustomEvent<unknown>)=>void)=>handlers.set(name,cb)} as unknown as Window);
+  handlers.get('calab-host-activity-ready')?.({detail:{v:1,host:0,document:'document',capability:'notifications',calls:1}} as CustomEvent<unknown>);
+  const reply=()=>{const request=(JSON.parse(String(send.mock.lastCall?.[0])) as {request:number}).request;handlers.get('calab-host-calls')?.({detail:{v:1,host:0,document:'document',request,state:{supported:true,media}}} as CustomEvent<unknown>);};
+  return {cap,reply};
+ };
+ it('accepts a native reply that arrives after 12 s', async () => {
+  vi.useFakeTimers();
+  try {
+   const {cap,reply}=setup();
+   const p=cap.incomingCalls?.audio?.connect({} as never);
+   await vi.advanceTimersByTimeAsync(12_000);reply();
+   await expect(p).resolves.toMatchObject({phase:'connected'});
+  } finally {vi.useRealTimers();}
+ });
+ it('fails cleanly once the audioConnect limit passes, while status keeps 10 s', async () => {
+  vi.useFakeTimers();
+  try {
+   const {cap}=setup();
+   const p=cap.incomingCalls?.audio?.connect({} as never);
+   const st=cap.incomingCalls?.state();
+   await vi.advanceTimersByTimeAsync(10_000);
+   await expect(st).resolves.toMatchObject({supported:false});
+   await vi.advanceTimersByTimeAsync(20_000);
+   await expect(p).resolves.toBeNull();
+  } finally {vi.useRealTimers();}
+ });
+});

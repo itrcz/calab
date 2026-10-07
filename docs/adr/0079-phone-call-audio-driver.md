@@ -62,7 +62,9 @@ voice processing supplies AEC/NS/AGC and native remote output (the native except
 to ADR-0004's browser `<audio>` rule). Mute keeps the track published; deafen also
 mutes output. Server publish-permission revocation cannot be lifted by UI unmute.
 
-The existing 15-second native readiness deadline remains. Connected means RTC,
+The existing 15-second native readiness deadline remains (after up to ~10 s of CallKit
+activation wait); the web-side `audioConnect` request therefore waits 30 s, other host
+call requests 10 s. Connected means RTC,
 required mic publication and CallKit audio activation, not just a signaling socket.
 Perceptual audio still needs a real-device test. End and mute work through the
 existing shared call state; native termination always releases its own media.
