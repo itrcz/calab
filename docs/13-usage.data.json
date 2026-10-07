@@ -137,60 +137,16 @@
   },
   "Macbooks-Virtual-Machine.local": {
    "total": {
-    "in": 12786,
-    "cache_r": 1029566271,
-    "cache_w": 17786406,
-    "out": 1079225,
-    "n": 4678
+    "in": 0,
+    "cache_r": 0,
+    "cache_w": 0,
+    "out": 0,
+    "n": 0
    },
-   "per_day": {
-    "2026-10-03": {
-     "in": 11664,
-     "cache_r": 852481652,
-     "cache_w": 17175092,
-     "out": 785172,
-     "n": 4193
-    },
-    "2026-10-02": {
-     "in": 1122,
-     "cache_r": 177084619,
-     "cache_w": 611314,
-     "out": 294053,
-     "n": 485
-    }
-   },
-   "per_model": {
-    "claude-opus-5-5": {
-     "in": 8684,
-     "cache_r": 967533756,
-     "cache_w": 16452111,
-     "out": 889979,
-     "n": 4232
-    },
-    "claude-fable-5-1": {
-     "in": 3494,
-     "cache_r": 39228953,
-     "cache_w": 368922,
-     "out": 154339,
-     "n": 139
-    },
-    "<synthetic>": {
-     "in": 0,
-     "cache_r": 0,
-     "cache_w": 0,
-     "out": 0,
-     "n": 4
-    },
-    "claude-sonnet-5-5": {
-     "in": 608,
-     "cache_r": 22803562,
-     "cache_w": 965373,
-     "out": 34907,
-     "n": 303
-    }
-   },
-   "tmin": "2026-10-02T10:31:43.192000+00:00",
-   "tmax": "2026-10-03T23:18:59.448000+00:00"
+   "per_day": {},
+   "per_model": {},
+   "tmin": null,
+   "tmax": null
   },
   "Awesomes-MacBook-Air.local": {
    "total": {
