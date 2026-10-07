@@ -216,14 +216,15 @@ export class GatewayClient {
    * heartbeat ACK overdue); a quiet but possibly healthy socket gets a probe heartbeat that
    * must be ACKed within ACK_TIMEOUT_MS.
    */
-  wake(): void {
+  wake(reason: 'visibility' | 'incoming-call' = 'visibility'): void {
     if (this.stopped) return;
     if (this.parked) {
       // Evicted by the tab cap while hidden: reconnect only once the tab is shown (an `online`
-      // event in a background tab must not evict another tab in turn).
-      if (this.deps.isHidden?.()) return;
+      // event in a background tab must not evict another tab in turn). A fresh
+      // native incoming call is an explicit foreground-equivalent reason to reconnect.
+      if (this.deps.isHidden?.() && reason !== 'incoming-call') return;
       this.parked = false;
-      this.reconnectNow('wake: evicted tab is shown, reconnecting', false);
+      this.reconnectNow(`wake: evicted tab ${reason}, reconnecting`, false);
       return;
     }
     const now = Date.now();
@@ -236,7 +237,7 @@ export class GatewayClient {
       this.reconnectNow(`wake: ${why}, reconnecting now`, mayReset);
     };
     if (!ws) {
-      if (mayReset) reconnect('no socket');
+      if (mayReset || reason === 'incoming-call') reconnect('no socket');
       return;
     }
     if (ws.readyState > OPEN) {

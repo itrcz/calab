@@ -19,7 +19,7 @@ import (
 const maxAvatarBytes = 1536
 
 // Avatars reuses private upload thumbnails. It never fetches user-controlled URLs.
-// A busy/cold/failed cache is optional presentation, not a reason to delay a call.
+// One bounded cold lookup; contention and unavailable storage fall back to text.
 type Avatars struct {
 	store blob.Store
 	mu    sync.RWMutex
@@ -33,7 +33,7 @@ func NewAvatars(store blob.Store) *Avatars {
 }
 
 func (a *Avatars) picture(ctx context.Context, f sqlc.File) string {
-	ctx, cancel := context.WithTimeout(ctx, 40*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 	return a.pictureWithinBudget(ctx, f)
 }

@@ -2199,3 +2199,14 @@ dispatch/retry freshness and hidden caption/file names while retaining room/grou
 previews disabled. `TestAvatarWarmCacheSurvivesConcurrentColdLoad` exercises cache contention.
 Historical R12 layout captures in `docs/mobile/qa/` predate the personal-only setting; they
 are not current phone evidence. Visual suites remain disabled.
+
+
+### R15 iOS system answer / call history notifications
+
+1. Mobile `src/callWire.test.ts`: compile the production Swift clock and pass serialized actions through the real strict TS parser (requires Swift; otherwise explicitly skipped).
+2. Desktop `hostIncomingCalls`, `platform/hostActivity`, `lib/gateway/client`: web/system answer race, late ring resolve, old host, local ownership, revocation, hidden parking.
+3. Go `internal/push` race tests plus PG17 `TestPushCallHistory*` and all existing `TestPush*`: only MISSED alerts, persisted outcome recheck, private history resolve, cold avatars and APNs bounds.
+4. iOS Release compile: both app and notification extension; preserve app Communication Notifications grant and ordinary extension profile.
+5. After matching web/API + host rollout: one system answer while foreground, locked/warm and cold; >60s two-way audio, mute, hangup, computer logged in/in voice.
+6. Check message avatar/Face ID preview; real missed call has caller and proper label, decline/cancel/end do not create generic New message. Tap opens the existing DM history.
+7. Inspect only lifecycle logs if a step fails; no tokens, names, text or full push payloads. Passing source checks is not device acceptance.

@@ -170,3 +170,31 @@ intent and updates notification content. No payload, credentials, routing or aud
 Regression acceptance: repeated prebuild keeps the app grant and omits it from the NSE;
 a signed build embeds valid profiles for app and both extensions; device install/launch.
 Real avatar/grouping and locked-call/audio acceptance remains a separate phone check.
+
+## System answer and notification corrections, 2026-10-07
+
+Implementation contract, following real-device failures; no UI or auth/media duplication.
+
+- Native action timestamps use integer Unix milliseconds, including answer/end/mute and
+  timeout cleanup. Keep strict shared validation and existing deadlines. Exercise actual
+  Swift serialization against the shared parser, not only synthetic JavaScript fixtures.
+- Optional `callsAnswerVersion: 1` permits the already authenticated, locally owned web
+  accept to request a CallKit answer transaction. System and web answers converge on the
+  same common accept operation; deduplicate transactions, retain deadline/session checks,
+  and never infer ownership from another device's ACTIVE event. Old hosts omit the capability.
+- A newly received ring/answer wakes the existing gateway once; it still waits for current
+  auth/bootstrap readiness. No polling or removal of access/READY gates. Log only lifecycle
+  stages and booleans, never tokens, payloads or names. Cold locked media stays a device gate.
+- Follow the existing common call-history policy: only MISSED generates a message-provider
+  notification, labelled Missed call, with an optional `missedCall` presentation hint for an incoming-call
+  intent in the existing notification extension (ordinary APNs alert, never another VoIP ring). CANCELLED/DECLINED/ENDED/BUSY remain in shared history
+  without a generic message alert. Recheck this at dispatch for already queued receipts;
+  preserve authenticated routing to the original call card, DND and notification preferences.
+- Keep avatar preparation bounded and cache-backed, with a 500 ms cold-read budget (previously 40 ms);
+  retain inline image bounds and APNs size fallback. Notification content updating is
+  independent of intent donation success, with an explicit sender image and safe diagnostics.
+  No network/credentials in the extension, contacts writes or promised CallKit caller photo.
+- Acceptance: focused native/shared contract, answer ownership/revocation/compatibility,
+  missed-call policy/provider and cold avatar tests; required lint/types, targeted PG17 race
+  integration, independent security/protocol reviews and native compile. Actual locked/cold
+  two-way audio, avatar rendering and delivery require the matching installed/server versions.

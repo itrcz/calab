@@ -2,6 +2,7 @@ import ExpoModulesCore
 import PushKit
 import CallKit
 import AVFAudio
+import OSLog
 
 public class CalabIncomingCallsModule: Module {
   public func definition() -> ModuleDefinition {
@@ -54,6 +55,8 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   private var ends: [UUID: CXEndCallAction] = [:]
   private var deadlines: [UUID: Task<Void, Never>] = [:]
   private var readiness = CalabCallReadiness()
+  private var answerTransactions = Set<UUID>()
+  private let logger = Logger(subsystem: "Calab", category: "incoming-calls")
   private let callController = CXCallController()
   private var muteActions: [UUID: CXSetMutedCallAction] = [:]
   private var muteDeadlines: [UUID: Task<Void, Never>] = [:]
@@ -71,7 +74,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     if let id = storage.string(forKey: "CalabPushInstallation"), UUID(uuidString: id) != nil { return id }
     let id = UUID().uuidString.lowercased(); storage.set(id, forKey: "CalabPushInstallation"); return id
   }
-  private var now: Double { Date().timeIntervalSince1970 * 1000 }
+  private var now: Double { calabCallMilliseconds() }
   private var binding: [String: Any]? {
     guard let b = storage.dictionary(forKey: bindingKey), (b["expires"] as? Double ?? 0) > now else { storage.removeObject(forKey: bindingKey); return nil }
     return b
@@ -118,25 +121,29 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     storage.set(["id": id, "version": version, "token": value, "expires": now + 28 * 86400000], forKey: bindingKey)
     return true
   }
-  private func changed() { if let document, current(document) { emit?(document, state(document)) } }
+  private func changed() {
+    logger.info("call bridge event; document=\(self.document != nil) emitter=\(self.emit != nil)")
+    if let document, current(document) { emit?(document, state(document)) }
+  }
   private func enqueue(_ id: UUID, _ action: String, expires: Double) {
     guard let call = calls[id], actions.count < 8 else { end(id, .failed); return }
     let actionID = UUID().uuidString.lowercased()
     actions[actionID] = ["binding": call["binding"]!, "eventId": id.uuidString.lowercased(), "expiresAt": expires, "actionId": actionID, "action": action]
+    logger.info("call action queued: \(action, privacy: .public)")
     changed()
   }
   private func deadline(_ id: UUID, milliseconds: Double) {
     deadlines[id]?.cancel()
     deadlines[id] = Task { @MainActor in
       do { try await Task.sleep(for: .milliseconds(max(1, milliseconds))) } catch { return }
-      self.end(id, .failed, notifyWeb: true); self.changed()
+      self.logger.error("call deadline expired"); self.end(id, .failed, notifyWeb: true); self.changed()
     }
   }
   private func end(_ id: UUID, _ reason: CXCallEndedReason, notifyWeb: Bool = false) {
     let call = calls[id]
     deadlines.removeValue(forKey: id)?.cancel()
     answers.removeValue(forKey: id)?.fail(); ends.removeValue(forKey: id)?.fail()
-    readiness.remove(id)
+    readiness.remove(id); answerTransactions.remove(id)
     for (actionID, action) in Array(muteActions) where action.callUUID == id { finishMute(actionID, success: false) }
     muteTransactions = muteTransactions.filter { $0.value != id }
     nativeMuted.removeValue(forKey: id); desiredMuted.removeValue(forKey: id)
@@ -201,6 +208,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     }
     guard current(doc), let action = actions.removeValue(forKey: actionID), let raw = action["eventId"] as? String, let id = UUID(uuidString: raw), calls[id] != nil,
       (action["expiresAt"] as? Double ?? 0) > now else { return }
+    logger.info("call action settled: \(result, privacy: .public)")
     switch (action["action"] as? String, result) {
     case ("ring", "ringing"): break
     case ("answer", "accepted"):
@@ -219,6 +227,23 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   }
   func sync(_ doc: String, _ event: String, _ phase: String) {
     guard current(doc), let id = UUID(uuidString: event), calls[id] != nil else { return }
+    if phase == "accepted" {
+      // Web already proved its own REST accept. A system transaction converges on
+      // the same answer delegate/settle path without another business-state owner.
+      guard !readiness.accepted.contains(id), answers[id] == nil,
+        answerTransactions.insert(id).inserted else { return }
+      let answer = CXAnswerCallAction(call: id)
+      callController.request(CXTransaction(action: answer)) { error in
+        if error != nil { Task { @MainActor in
+          self.answerTransactions.remove(id)
+          if self.calls[id] != nil && self.answers[id] == nil && !self.readiness.accepted.contains(id) {
+            self.logger.error("web answer transaction failed")
+            self.end(id, .failed, notifyWeb: true); self.changed()
+          }
+        } }
+      }
+      return
+    }
     if phase == "muted" || phase == "unmuted" {
       desiredMuted[id] = phase == "muted"; syncMute(id); return
     }
@@ -293,7 +318,9 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   nonisolated func providerDidReset(_ provider: CXProvider) { MainActor.assumeIsolated { self.endAll(notifyWeb: true); self.readiness.audioActive = false; self.changed() } }
   nonisolated func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
     MainActor.assumeIsolated {
-      guard self.calls[action.callUUID] != nil, self.answers[action.callUUID] == nil else { action.fail(); return }
+      self.answerTransactions.remove(action.callUUID)
+      self.logger.info("system answer received")
+      guard self.calls[action.callUUID] != nil, self.answers[action.callUUID] == nil, !self.readiness.accepted.contains(action.callUUID) else { action.fail(); return }
       self.answers[action.callUUID] = action; self.deadline(action.callUUID, milliseconds: 10000)
       self.enqueue(action.callUUID, "answer", expires: self.now + 10000)
     }
@@ -315,6 +342,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   }
   nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
     MainActor.assumeIsolated {
+      self.logger.info("CallKit audio activated")
       self.readiness.audioActive = true; self.cancelReadyDeadlines(); self.changed()
     }
   }
