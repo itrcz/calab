@@ -2,8 +2,9 @@
 
 -- name: CreateBotUser :one
 -- A bot account: no email or password, "verified" (nothing to verify; DMs need it).
-INSERT INTO users (email, password_hash, display_name, settings, is_bot, email_verified_at)
-VALUES (NULL, NULL, $1, $2, true, now())
+-- Its users.username is the bot username (ADR-0077: one namespace with people's nicknames).
+INSERT INTO users (email, password_hash, display_name, settings, is_bot, email_verified_at, username)
+VALUES (NULL, NULL, $1, $2, true, now(), sqlc.arg('username')::citext)
 RETURNING *;
 
 -- name: CreateBot :one
@@ -60,6 +61,10 @@ RETURNING *;
 
 -- name: DeleteBot :exec
 DELETE FROM bots WHERE user_id = $1;
+
+-- name: ClearUsername :exec
+-- A deleted bot frees its username (ADR-0077).
+UPDATE users SET username = NULL WHERE id = $1;
 
 -- name: DisableUser :exec
 UPDATE users SET disabled_at = coalesce(disabled_at, now()) WHERE id = $1;

@@ -27,9 +27,9 @@ type BoardAccess struct {
 	// DisabledFeatures: boards.disabled_features, the BoardFeature bit mask switched off
 	// (ADR-0058 §3; bit = the enum value).
 	DisabledFeatures int64
-	// TaskScoped (ADR-0059): Bits = 0, yet the member (a human, not a guest) is an assignee or an
-	// approver of a live task of this live, non-restricted board — they see the board through
-	// those tasks only (TaskBits).
+	// TaskScoped (ADR-0059, ADR-0076): Bits = 0, yet the member (a human, not a guest) is an
+	// assignee, an approver or a watcher of a live task of this live board (restricted or not,
+	// ADR-0076 §2) — they see the board through those tasks only (TaskBits).
 	TaskScoped bool
 }
 
@@ -61,7 +61,7 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 				Private: row.IsPrivate, Restricted: row.Restricted, Archived: row.Archived, Suspended: row.Suspended,
 				DisabledFeatures: row.DisabledFeatures,
 			}
-			acc.TaskScoped = row.Invited && acc.Bits == 0 && !row.Restricted && m.Role != RoleGuest && !row.Archived
+			acc.TaskScoped = row.Invited && acc.Bits == 0 && m.Role != RoleGuest && !row.Archived
 		}
 		r.mu.Lock()
 		r.boards[k] = acc
@@ -81,7 +81,7 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 
 // taskRoom resolves a task's comment room from its board (ADR-0042 §1): no access on an
 // archived board or without the task's bits (TaskBits: VIEW_BOARD, or invited on a live task of
-// a task-scoped board, ADR-0059).
+// a task-scoped board, ADR-0059 / ADR-0076).
 func (r *Resolver) taskRoom(ctx context.Context, roomID, userID uuid.UUID) (RoomAccess, error) {
 	ref, err := r.store.GetTaskRoomRef(ctx, sqlc.GetTaskRoomRefParams{RoomID: roomID, UserID: userID})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -98,7 +98,7 @@ func (r *Resolver) taskRoom(ctx context.Context, roomID, userID uuid.UUID) (Room
 		return RoomAccess{}, err
 	}
 	live := !ref.TaskArchived // invitations count on live tasks only
-	bits := TaskRoom(TaskBits(b, live && ref.Assignee, live && ref.Approver), ref.TaskArchived, CommentsOff(b.DisabledFeatures))
+	bits := TaskRoom(TaskBits(b, live && ref.Assignee, live && ref.Approver, live && ref.Watcher), ref.TaskArchived, CommentsOff(b.DisabledFeatures))
 	if b.Archived || bits == 0 {
 		// A member who cannot see the board: the room exists but shows nothing (404 upstream).
 		return RoomAccess{WorkspaceID: b.WorkspaceID, Role: b.Role, Member: b.Member, Task: true, TaskID: ref.TaskID, BoardID: ref.BoardID}, nil

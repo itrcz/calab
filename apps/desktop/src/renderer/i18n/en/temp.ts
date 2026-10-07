@@ -20,7 +20,7 @@ export const enTemp = {
   'temp.visAll': 'All members',
   'temp.visSelected': 'Only selected',
   'temp.visAllHint': 'Every member of the workspace sees the room.',
-  'temp.visSelectedHint': 'Only you, the people you pick and whoever joins by the link.',
+  'temp.visSelectedHint': 'Only you and the people you pick will see the room — not even admins',
   'temp.guests': 'Let guests in by link',
   'temp.guestsHint': 'Clients and partners join without signing up.',
   'temp.guestsNoRight': 'The link will be for workspace members only: guests are invited by those with the «Invite guests» right.',

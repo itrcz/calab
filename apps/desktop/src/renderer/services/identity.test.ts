@@ -30,6 +30,7 @@ const { useIdentity } = await import('../stores/identity');
 const { useWorkspaces } = await import('../stores/workspaces');
 const { useRooms } = await import('../stores/rooms');
 const { useMessages } = await import('../stores/messages');
+const { useRoomPreviews } = await import('../stores/roomPreviews');
 const { useCalendar } = await import('../stores/calendar');
 const { useVoice } = await import('../stores/voice');
 const { useUi } = await import('../stores/ui');
@@ -46,12 +47,14 @@ function seedWorkspace(id: string): void {
   useMessages
     .getState()
     .setWindow(`room-${id}`, [create(MessageSchema, { id: `msg-${id}`, roomId: `room-${id}`, content: `protected-${id}` })], false, false);
+  useRoomPreviews.getState().setPreview(`room-${id}`, create(MessageSchema, { id: `msg-${id}`, roomId: `room-${id}`, content: `protected-${id}` }));
 }
 beforeEach(() => {
   vi.clearAllMocks();
   useWorkspaces.getState().reset();
   useRooms.getState().reset();
   useMessages.getState().reset();
+  useRoomPreviews.getState().reset();
   useCalendar.getState().reset();
   useIdentity.getState().reset();
   queryClient.clear();
@@ -78,6 +81,8 @@ describe('workspace identity cache boundary', () => {
     expect(draftMentions.has('room-a')).toBe(false);
     expect(drafts.get('room-b')).toBe('other draft');
     expect(useMessages.getState().rooms['room-a']).toBeUndefined();
+    expect(useRoomPreviews.getState().preview['room-a']).toBeUndefined();
+    expect(useRoomPreviews.getState().preview['room-b']?.content).toBe('protected-b');
     expect(useRooms.getState().byId['room-a']).toBeUndefined();
     expect(useWorkspaces.getState().byId['a']).toBeUndefined();
     expect(useWorkspaces.getState().users['user-a']).toBeUndefined();

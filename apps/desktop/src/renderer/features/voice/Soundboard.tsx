@@ -16,7 +16,7 @@ import { useMemberName } from '../../stores/workspaces';
 
 /*
  * Soundboard (ADR-0036 §3, docs/08 «Саундборд»; Discord's soundboard): the «Звуки» button in the
- * voice island (and in the phone's call strip), a popover — a bottom sheet on a phone — with
+ * voice island (and in the phone's call strip), a popover — a centred card on a phone — with
  * search and the sections «Избранное», «Часто используемые», «Звуки пространства», «Стандартные»;
  * tiles of emoji + name, two a row. A click plays to everyone in the call (then every tile locks
  * for 2 s), ▶ on a tile plays it only for me, ☆ stars it. The chip «🥁 Ba dum tss · Илья» under
@@ -133,7 +133,9 @@ function SoundboardPanel({ onSettings }: { onSettings: () => void }): ReactNode 
         {sections.map((sec) => (
           <section key={sec.id} aria-label={t(SECTION_TITLE[sec.id])}>
             <h3 className="pb-1.5 pt-3 text-micro font-semibold uppercase tracking-wide text-muted">{t(SECTION_TITLE[sec.id])}</h3>
-            <div className="grid grid-cols-2 gap-1.5">
+            {/* Phone: one column — ▶ and ☆ are 44 px targets there, two columns left the name ~40 px
+                and the ▶ was drawn over it. */}
+            <div className="grid grid-cols-2 gap-1.5 mobile:grid-cols-1">
               {sec.sounds.map((s) => (
                 <SoundTile key={s.id} sound={s} favorite={fav.has(s.id)} locked={locked} />
               ))}
@@ -155,7 +157,7 @@ const SoundTile = memo(function SoundTile({ sound, favorite, locked }: { sound: 
         onClick={locked ? undefined : () => void pressSound(sound.id)}
         title={sound.name}
         className={cx(
-          'flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-card)] bg-[var(--color-fill)] pl-2.5 text-left text-body text-fg transition-colors duration-[var(--motion-fast)] group-focus-within:pr-14 group-hover:pr-14 mobile:pr-14',
+          'flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-card)] bg-[var(--color-fill)] pl-2.5 text-left text-body text-fg transition-colors duration-[var(--motion-fast)] group-focus-within:pr-14 group-hover:pr-14 mobile:pr-24',
           // The name keeps the width the ▶ / ☆ buttons do not need: they show on hover (a starred one keeps its ★).
           favorite ? 'pr-8' : 'pr-2.5',
           locked ? 'cursor-default opacity-50' : 'hover:bg-[var(--color-fill-hover)] active:bg-[var(--color-fill-hover)]',
@@ -171,7 +173,7 @@ const SoundTile = memo(function SoundTile({ sound, favorite, locked }: { sound: 
           type="button"
           aria-label={t('snd.preview', { name: sound.name })}
           onClick={() => previewSound(sound.id)}
-          className="grid size-6 place-items-center rounded-full text-muted opacity-0 transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 mobile:opacity-100"
+          className="grid size-6 place-items-center rounded-full text-muted opacity-0 mobile:size-11 transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 mobile:opacity-100"
         >
           <Play className="size-3.5" aria-hidden />
         </button>
@@ -181,7 +183,7 @@ const SoundTile = memo(function SoundTile({ sound, favorite, locked }: { sound: 
           aria-pressed={favorite}
           onClick={() => toggleFavorite(sound.id)}
           className={cx(
-            'grid size-6 place-items-center rounded-full transition-opacity duration-[var(--motion-fast)] hover:bg-hover focus-visible:opacity-100',
+            'grid size-6 place-items-center rounded-full transition-opacity mobile:size-11 duration-[var(--motion-fast)] hover:bg-hover focus-visible:opacity-100',
             favorite ? 'text-warn' : 'text-muted opacity-0 hover:text-fg group-hover:opacity-100 mobile:opacity-100',
           )}
         >

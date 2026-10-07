@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME, IPC } from '../shared/ipc';
+import { vibrancyWanted } from '../shared/windowMaterial';
 import { isAppSession } from './appSessions';
 import { windowIconPath } from './icons';
 import { mainStrings } from './strings';
@@ -13,6 +14,29 @@ const RENDERER_HTML = join(here, '../renderer/index.html');
 /** The window layer (--color-rail in styles.css): the opaque window background per theme. */
 const WINDOW_BG = { dark: '#171719', light: '#e8e8ec' } as const;
 const windowBg = (): string => (nativeTheme.shouldUseDarkColors ? WINDOW_BG.dark : WINDOW_BG.light);
+const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
+/** Fully clear: the NSVisualEffectView behind the page shows wherever the page doesn't paint. */
+const CLEAR_BG = '#00000000';
+
+/**
+ * macOS native vibrancy (ADR-0075): the one exception to the glass ban — no CSS backdrop-filter,
+ * the system's NSVisualEffectView blends the desktop behind the window in WindowServer. The same
+ * rule as the renderer's `vibrancy` root class (shared/windowMaterial.ts). Always on: no user
+ * setting, «Слабый компьютер» does not switch it off (owner 07.10).
+ */
+function vibrancyOn(): boolean {
+  return vibrancyWanted({
+    platform: process.platform,
+    reducedTransparency: nativeTheme.prefersReducedTransparency,
+    visualTest: VISUAL_TEST,
+  });
+}
+
+/** Material options at creation: `sidebar` vibrancy dimmed with the window's key state, or solid. */
+function material(): Partial<Electron.BrowserWindowConstructorOptions> {
+  if (!vibrancyOn()) return { backgroundColor: windowBg() };
+  return { vibrancy: 'sidebar', visualEffectState: 'followWindow', backgroundColor: CLEAR_BG };
+}
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -76,21 +100,21 @@ export const webPreferences = {
 } as const;
 
 /** Height of the renderer's title bar (docs/09 #1; --titlebar-height in styles.css). */
-const TITLEBAR_HEIGHT = 38;
+const TITLEBAR_HEIGHT = 46;
 
 /**
  * Window chrome per platform (docs/09 #1):
- * - macOS: `hiddenInset`, traffic lights at (12, 12) — vertically centred in the 38 px bar; the
- *   renderer keeps the first 80 px of the bar empty for them.
+ * - macOS: `hiddenInset`, traffic lights at (16, 16) — vertically centred in the 46 px bar (owner,
+ *   07.10: a taller, airier bar); the renderer keeps the first 80 px of the bar empty for them.
  * - Windows: `hidden` + Window Controls Overlay — the native min/max/close buttons sit in our
- *   own 38 px bar (like Discord/VS Code), so the chrome is one row instead of an OS caption plus
+ *   own 46 px bar (like Discord/VS Code), so the chrome is one row instead of an OS caption plus
  *   our bar. The renderer reserves their width via `env(titlebar-area-*)`; colours follow the theme.
  * - Linux: the standard frame. WCO buttons there are Chromium-drawn (not the GTK/KDE theme),
  *   and client-side decorations misbehave under tiling WMs and some compositors — the native
  *   frame is the predictable choice; our bar then is just a toolbar below it.
  */
 function chrome(): Partial<Electron.BrowserWindowConstructorOptions> {
-  if (process.platform === 'darwin') return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
+  if (process.platform === 'darwin') return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } };
   if (process.platform === 'win32') return { titleBarStyle: 'hidden', titleBarOverlay: overlayColors() };
   return { titleBarStyle: 'default' };
 }
@@ -117,21 +141,24 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 600,
     title: 'Calab',
-    // Opaque, no vibrancy (docs/08 «Материалы», docs/09 #65): the compositor would re-blur the
-    // desktop behind the window on every frame. The colour follows the theme (below).
+    // Not `transparent`: the window stays a normal opaque-shaped NSWindow. Solid background
+    // (docs/08 «Материалы») everywhere except macOS with native vibrancy (ADR-0075), where the
+    // renderer paints opaque content and tints only the window layer. Follows the theme (below).
     transparent: false,
-    backgroundColor: windowBg(),
+    ...material(),
     show: false,
     ...chrome(),
     ...windowIcon(),
     webPreferences: { ...webPreferences },
   });
   if (state?.maximized) win.maximize();
+  vibrancyState.set(win, process.platform === 'darwin' && vibrancyOn());
   // The renderer's theme drives nativeTheme.themeSource (IPC appSetTheme): recolour the window
   // background (seen while resizing and before the first paint) and the Windows caption buttons.
+  // nativeTheme 'updated' also fires when Accessibility → Reduce transparency flips.
   const recolor = (): void => {
     if (win.isDestroyed()) return;
-    win.setBackgroundColor(windowBg());
+    applyMaterial(win);
     if (process.platform === 'win32') win.setTitleBarOverlay(overlayColors());
   };
   nativeTheme.on('updated', recolor);
@@ -250,6 +277,20 @@ export function installWebContentsGuards(): void {
 /** On screen: shown and not minimized (macOS occlusion by other windows is not reported). */
 export function isShown(win: BrowserWindow): boolean {
   return win.isVisible() && !win.isMinimized();
+}
+
+const vibrancyState = new WeakMap<BrowserWindow, boolean>();
+
+function applyMaterial(win: BrowserWindow): void {
+  if (process.platform !== 'darwin') {
+    win.setBackgroundColor(windowBg());
+    return;
+  }
+  const on = vibrancyOn();
+  // Theme updates don't touch the effect view (it follows the appearance itself): only a flip does.
+  if (vibrancyState.get(win) !== on) win.setVibrancy(on ? 'sidebar' : null, { animationDuration: 0 });
+  vibrancyState.set(win, on);
+  win.setBackgroundColor(on ? CLEAR_BG : windowBg());
 }
 
 export function getMainWindow(): BrowserWindow | null {

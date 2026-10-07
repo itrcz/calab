@@ -76,6 +76,6 @@ test('a guest of the room: the meeting badge and its card, counts without the li
   await expect(card.getByTestId('event-edit')).toHaveCount(0);
   await page.keyboard.press('Escape');
   // No calendar for a guest; the room row carries the badge.
-  await expect(page.getByTestId('calendar-button')).toHaveCount(0);
+  await expect(page.getByTestId('section-calendar')).toHaveCount(0);
   await expect(page.locator('aside').getByTestId('room-event-badge')).toHaveText('Планёрка в 13:40');
 });

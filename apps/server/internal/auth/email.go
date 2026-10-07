@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/pbconv"
+	"github.com/calaba/calaba/server/internal/profile"
 )
 
 // Email codes (ADR-0023): 6 digits, 10 minutes, 5 attempts, a new one at most every 60 s.
@@ -295,7 +296,8 @@ func (s *Service) VerifyEmail(ctx context.Context, userID uuid.UUID, code string
 // verified announces the (newly) verified account to its devices and runs the
 // auto-join of pending email invitations.
 func (s *Service) verified(ctx context.Context, u sqlc.User) []uuid.UUID {
-	s.events.User(ctx, u.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: pbconv.Me(u)}}})
+	// Colleagues see the address and its verified mark (ADR-0077): USER_UPDATE to the workspaces.
+	profile.Publish(ctx, s.db.Q, s.events, u, true)
 	if s.OnEmailVerified != nil {
 		return s.OnEmailVerified(ctx, u)
 	}

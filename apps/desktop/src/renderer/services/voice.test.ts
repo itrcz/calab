@@ -342,6 +342,17 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState()).toMatchObject({ joining: null, roomId: 'B', phase: 'connected' });
   });
 
+  it('a user join opens the room chat (issue #127); a resumed join and a DM call do not', async () => {
+    const { useUi } = await import('../stores/ui');
+    useUi.getState().openRoom('ws', 'chat');
+    await voice.join('A', 'ws', { resumed: true });
+    expect(useUi.getState().lastRoom['ws']).toBe('chat');
+    await voice.join('A', 'ws');
+    expect(useUi.getState().lastRoom['ws']).toBe('A');
+    await voice.join('dm', '', { call: true });
+    expect(useUi.getState().lastRoom['ws']).toBe('A');
+  });
+
   it('optimistic join rolled back: a failed /join takes me out of the room with a toast', async () => {
     joinVoice.mockRejectedValueOnce(new Error('503'));
     const p = voice.join('A', 'ws');

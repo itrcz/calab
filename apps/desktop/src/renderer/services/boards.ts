@@ -1,3 +1,4 @@
+import { pushOnTab } from '../lib/phoneNav';
 import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampNow } from '@bufbuild/protobuf/wkt';
 import {
@@ -35,6 +36,7 @@ import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { approvedCount, blockedStatusIds, quorumOf, rejecters } from '../lib/boards/approvals';
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
+import { toggleWatcher } from '../lib/boards/watchers';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
 import { countItems, itemPosition, toggledItem, withItem } from '../lib/boards/checklists';
@@ -380,8 +382,8 @@ export async function loadMyTasks(workspaceId: string, scope: TaskScope): Promis
 /** Opens a board of the active workspace (boards mode on). */
 export function openBoard(workspaceId: string, boardId: string): void {
   useBoardsUi.getState().openBoard(workspaceId, boardId);
-  // A phone: the pick closes the drawer (one layer at a time, ADR-0021).
-  if (useUi.getState().navDrawer) useUi.getState().setNavDrawer(false);
+  // A phone (ADR-0073 §1): the board is a screen pushed over «Доски».
+  if (useUi.getState().phone.on) useUi.getState().setPhone((n) => pushOnTab(n, 'boards', { kind: 'board', ws: workspaceId }));
   if (boardId !== MY_TASKS) {
     void ensureBoardTasks(boardId);
   }
@@ -732,6 +734,29 @@ export async function moveTaskToBoard(taskId: string, boardId: string): Promise<
     }
   } catch (e) {
     fail(e);
+  }
+}
+
+// ------------------------------------------------------------------ watchers (ADR-0076)
+
+/**
+ * Add or remove a watcher (optimistic on Task.watcherIds). Removing myself from a card I see only
+ * as its watcher closes it: the server follows with TASK_DELETE.
+ */
+export async function setWatcher(taskId: string, userId: string, on: boolean): Promise<void> {
+  const prev = useBoards.getState().tasks[taskId];
+  if (!prev) return;
+  if (prev.watcherIds.includes(userId) === on) return;
+  useBoards.getState().upsertTask({ ...prev, watcherIds: toggleWatcher(prev.watcherIds, userId) });
+  try {
+    const r = on ? await boardsApi.tasks.addWatcher(taskId, userId) : await boardsApi.tasks.removeWatcher(taskId, userId);
+    if (r.task) useBoards.getState().upsertTask(r.task);
+  } catch (e) {
+    const cur = useBoards.getState().tasks[taskId];
+    if (cur) useBoards.getState().upsertTask({ ...cur, watcherIds: prev.watcherIds });
+    if (e instanceof ApiError && e.status === 422) toast.error(t('boards.err.watcher'));
+    else if (e instanceof ApiError && e.status === 409) toast.error(prev.archivedAt ? t('boards.err.archivedTask') : t('boards.err.watchersMax'));
+    else fail(e, prev);
   }
 }
 

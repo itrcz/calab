@@ -794,6 +794,19 @@ describe('GatewayClient tabs of one auth session (#40)', () => {
     expect(identifyOf(s2)?.tabId).toBe('tab-1');
   });
 
+  it('a genuine incoming call wakes a parked hidden host without changing ordinary tab wake', async () => {
+    const w = webTab(true);
+    w.client.start();
+    const first = await handshake(w);
+    first.deliver(ready(1));
+    first.serverClose(GatewayCloseCode.SESSION_EVICTED, 'evicted by a newer tab');
+    w.client.wake();
+    expect(w.sockets).toHaveLength(1);
+    w.client.wake('incoming-call');
+    expect(w.sockets).toHaveLength(2);
+    expect((await handshake(w)).ops()).toContain(GatewayOpcode.IDENTIFY);
+  });
+
   it('4011 evicted while visible: slow backoff that READY does not reset', async () => {
     const w = webTab(false);
     w.client.start();

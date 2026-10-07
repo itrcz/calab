@@ -93,3 +93,13 @@ it.each([undefined,1])('negotiates optional system mute (%s) without changing th
  if(muteVersion===undefined)expect(cap.incomingCalls?.syncMuted).toBeUndefined();
  else {cap.incomingCalls?.syncMuted?.('event',true);expect(JSON.parse(String(send.mock.lastCall?.[0]))).toMatchObject({operation:'sync',phase:'muted'});}
 });
+
+it.each([undefined,1])('negotiates web-answer sync (%s), never sending it to old hosts', answerVersion => {
+ const handlers=new Map<string,(event:CustomEvent<unknown>)=>void>();const send=vi.fn();
+ const bridge={version:1,callsVersion:1,callsAnswerVersion:answerVersion,host:0,document:'document',send};
+ const cap=createHostCapabilities({CalabHostActivity:bridge,addEventListener:(name:string,cb:(event:CustomEvent<unknown>)=>void)=>handlers.set(name,cb)} as unknown as Window);
+ handlers.get('calab-host-activity-ready')?.({detail:{v:1,host:0,document:'document',capability:'notifications',calls:1}} as CustomEvent<unknown>);
+ const calls=cap.incomingCalls;
+ if(answerVersion===undefined)expect(calls?.syncAccepted).toBeUndefined();
+ else {expect(calls?.syncAccepted).toBeTypeOf('function');calls?.syncAccepted?.('event');expect(JSON.parse(String(send.mock.lastCall?.[0]))).toMatchObject({operation:'sync',phase:'accepted'});}
+});

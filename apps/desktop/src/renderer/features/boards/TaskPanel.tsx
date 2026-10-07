@@ -3,7 +3,6 @@ import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type Room, type Task, type TaskActivity } from '@calaba/protocol';
 import {
   Archive,
-  ArrowLeft,
   Cog,
   Bell,
   BellOff,
@@ -22,6 +21,8 @@ import {
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ProfileTarget } from '../../components/ProfileTarget';
+import { Bar } from '../../components/Bar';
+import { PhoneBack } from '../../components/PhoneHeader';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, CloseButton, IconButton, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -69,6 +70,7 @@ import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { featureOn, type Disabled } from '../../lib/boards/features';
 import { ApprovalsSection } from './Approvals';
+import { WatchersSection } from './Watchers';
 import { GitSection } from './GitLinks';
 import { Checklists } from './Checklists';
 import { MilestoneDiamond, TaskMilestones } from './TaskMilestones';
@@ -145,7 +147,7 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
           <TitleEditor task={task} canEdit={canEdit} />
           <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
           {/* Git links (ADR-0060 §4): under the attachments; its own subscriber, nothing when none. */}
-          <GitSection taskId={task.id} />
+          {on(BoardFeature.GIT_LINKS) ? <GitSection taskId={task.id} /> : null}
           <Properties task={task} canEdit={canEdit} perms={perms} scoped={scoped} disabled={disabled} />
           {/* Milestones inside the task (ADR-0063): top-level tasks only; their own subscriber. */}
           {on(BoardFeature.MILESTONES) && !task.parentId ? <TaskMilestones taskId={task.id} canEdit={canEdit} /> : null}
@@ -166,29 +168,28 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
   const me = myUserId();
   const subscribed = task.subscribed && !task.muted;
   return (
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2" data-testid="task-panel-header">
+    <Bar plain className="gap-1 pl-2 pr-2" data-testid="task-panel-header">
       {mobile ? (
-        <IconButton label={t('shell.back')} onClick={onClose} className="mobile:size-10">
-          <ArrowLeft className="size-5" aria-hidden />
-        </IconButton>
+        <PhoneBack />
       ) : null}
       <span className="min-w-0 truncate pl-2 text-caption text-muted">{boardName}</span>
       <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
-      <button type="button" onClick={() => copyTaskLink(task.key)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption font-medium tabular-nums text-fg hover:bg-hover mobile:h-10" title={t('boards.copyLink')} data-testid="panel-key">
+      <button type="button" onClick={() => copyTaskLink(task.key)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption font-medium tabular-nums text-fg hover:bg-hover mobile:tap-h" title={t('boards.copyLink')} data-testid="panel-key">
         {task.key}
       </button>
       <span className="flex-1" />
-      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className="mobile:size-10" data-testid="panel-subscribe">
-        {subscribed ? <Bell className="size-4" aria-hidden /> : <BellOff className="size-4" aria-hidden />}
+      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className={cx(subscribed && 'mobile:bg-transparent mobile:text-accent-text')} data-testid="panel-subscribe">
+        {/* phone: the state is the icon (filled accent bell), not a grey plate */}
+        {subscribed ? <Bell className="size-4 mobile:size-5 mobile:fill-current" aria-hidden /> : <BellOff className="size-4 mobile:size-5" aria-hidden />}
       </IconButton>
-      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)} className="mobile:size-10">
+      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)}>
         <Link2 className="size-4" aria-hidden />
       </IconButton>
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="panel-more">
+          <IconButton tip={false} label={t('boards.more')} className="data-[state=open]:bg-active" data-testid="panel-more">
             <Ellipsis className="size-4" aria-hidden />
-          </button>
+          </IconButton>
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
@@ -233,7 +234,7 @@ function PanelHeader({ task, boardName, perms, scoped, onClose, wide, mobile }: 
         </IconButton>
       ) : null}
       {!mobile ? <CloseButton onClick={onClose} /> : null}
-    </header>
+    </Bar>
   );
 }
 
@@ -405,8 +406,8 @@ function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit
 
 function Prop({ label, children, testId }: { label: string; children: ReactNode; testId?: string }): ReactNode {
   return (
-    <div className="flex min-h-8 items-start gap-3" data-testid={testId}>
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-[88px]">{label}</span>
+    <div className="flex min-h-8 items-start gap-3 mobile:flex-col mobile:gap-0.5 mobile:py-1" data-testid={testId}>
+      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{label}</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">{children}</div>
     </div>
   );
@@ -449,6 +450,7 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
       ) : null}
       <Assignees task={task} canEdit={canEdit} req={req('assignee')} />
       {on(BoardFeature.APPROVALS) ? <ApprovalsSection task={task} canEdit={canEdit} perms={perms} /> : null}
+      <WatchersSection task={task} canEdit={canEdit} />
       {on(BoardFeature.LABELS) ? (
         <Prop label={t('boards.f.label')}>
           {mine.map((l) => (
@@ -620,9 +622,9 @@ function Assignees({ task, canEdit, req }: { task: Task; canEdit: boolean; req: 
     void setAssignees(task.id, addAssignee(drafts, userId));
   };
   return (
-    <div className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)]', over && 'ring-2 ring-accent')} onDragOver={onDragOver} onDragLeave={() => setOver(false)} onDrop={onDrop} data-testid="prop-assignees">
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-[88px]">{t('boards.assignees')}</span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+    <div className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)] mobile:flex-col mobile:gap-0.5 mobile:py-1', over && 'ring-2 ring-accent')} onDragOver={onDragOver} onDragLeave={() => setOver(false)} onDrop={onDrop} data-testid="prop-assignees">
+      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{t('boards.assignees')}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 mobile:w-full mobile:gap-1.5">
         {task.assignees.map((a) => (
           <AssigneeRow key={a.userId} task={task} userId={a.userId} lead={a.isLead} note={a.note} canEdit={canEdit} />
         ))}
@@ -656,10 +658,10 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
     if (v.trim() !== note) void setAssignees(task.id, setNote(drafts, userId, v));
   };
   return (
-    <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="assignee-row" data-user={userId}>
-      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex min-w-0 max-w-[40%] shrink items-center gap-2 rounded-[var(--radius-control)] text-left">
+    <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)] mobile:grid mobile:grid-cols-[minmax(0,1fr)_auto_auto] mobile:gap-x-1 mobile:px-0" data-testid="assignee-row" data-user={userId}>
+      <ProfileTarget userId={userId} name={name} workspaceId={task.workspaceId} tabbable className="inline-flex min-w-0 max-w-[40%] shrink items-center gap-2 rounded-[var(--radius-control)] text-left mobile:max-w-full">
         <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
-        <span className="min-w-0 truncate text-control font-medium">{name}</span>
+        <span className="min-w-0 truncate text-control font-medium mobile:text-[15px] mobile:font-semibold">{name}</span>
       </ProfileTarget>
       <Tip label={lead ? t('boards.lead') : t('boards.makeLead')}>
         <button
@@ -674,6 +676,9 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
           <Crown className="size-3.5" aria-hidden />
         </button>
       </Tip>
+      {/* Phone: the field must be 16 px (iOS zooms into smaller ones), so at rest a 13 px secondary
+          text of the same value is drawn over it; focusing shows the real field. */}
+      <div className="contents mobile:relative mobile:order-last mobile:col-span-3 mobile:ml-7 mobile:block">
       <input
         value={v}
         readOnly={!canEdit}
@@ -690,9 +695,13 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
         }}
         placeholder={canEdit ? t('boards.notePlaceholder') : ''}
         aria-label={t('boards.noteOf', { name })}
-        className="selectable h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg"
+        className="selectable peer h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg mobile:h-8 mobile:w-full mobile:min-w-0 mobile:px-0 mobile:text-transparent mobile:caret-[var(--color-label-secondary)] mobile:placeholder:text-transparent mobile:focus:text-fg"
         data-testid="assignee-note"
       />
+      <span aria-hidden className="pointer-events-none absolute inset-0 hidden items-center truncate text-[13px] leading-8 text-muted mobile:flex mobile:peer-focus:hidden">
+        {v || (canEdit ? <span className="text-faint">{t('boards.notePlaceholder')}</span> : null)}
+      </span>
+      </div>
       {canEdit ? (
         <button type="button" aria-label={t('boards.removeAssignee', { name })} onClick={() => void setAssignees(task.id, removeAssignee(drafts, userId))} className="grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg group-hover/as:opacity-100 focus-visible:opacity-100">
           <X className="size-3.5" aria-hidden />
@@ -1068,6 +1077,16 @@ export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>,
       const names = ids.map((u) => memberName(workspaceId, u)).join(', ');
       const required = Number(f?.['required'] ?? 0);
       return required > 0 && required < ids.length ? t('boards.act.approversQuorum', { names, n: required, m: ids.length }) : t('boards.act.approvers', { names });
+    }
+    case 'watchers': {
+      const was = Array.isArray(b?.['user_ids']) ? (b['user_ids'] as unknown[]).map(str) : [];
+      const now = Array.isArray(f?.['user_ids']) ? (f['user_ids'] as unknown[]).map(str) : [];
+      const added = now.filter((u) => !was.includes(u));
+      const removed = was.filter((u) => !now.includes(u));
+      const names = (ids: string[]): string => ids.map((u) => memberName(workspaceId, u)).join(', ');
+      if (added.length) return t('boards.act.watchersAdded', { names: names(added) });
+      if (removed.length) return t('boards.act.watchersRemoved', { names: names(removed) });
+      return t('boards.act.changed');
     }
     case 'approval': {
       const state = str(f?.['state']);

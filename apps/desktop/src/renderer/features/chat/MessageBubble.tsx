@@ -111,7 +111,9 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
         )}
       >
         {!own ? (
-          <div className="w-9 shrink-0 self-end">
+          // Phone: under a bubble with inline buttons the avatar stays beside the bubble itself (top),
+          // not at the bottom of the buttons where it reads as a stray one.
+          <div className={cx('w-9 shrink-0 self-end', !!m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' && 'mobile:self-start')}>
             {meta.last ? (
               <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="rounded-full">
                 <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} />
@@ -188,6 +190,7 @@ function AuthorTarget({ workspaceId, userId, name, className, children }: { work
         type="button"
         tabIndex={-1}
         aria-label={t('people.openProfile', { name })}
+        data-inline-target
         className={cx('inline-block cursor-pointer align-bottom', className)}
         onClick={(e) => {
           e.stopPropagation();
@@ -732,6 +735,7 @@ function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMe
         disabled={!canReact}
         aria-pressed={me}
         aria-label={t('chat.reactionLabel', { emoji, count })}
+        data-inline-target
         onClick={() => void toggleReaction(roomId, m, emoji)}
         className={cx(
           'inline-flex items-center gap-1 rounded-full leading-none transition-colors duration-[var(--motion-fast)]',

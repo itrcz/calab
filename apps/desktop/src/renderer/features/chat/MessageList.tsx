@@ -505,6 +505,8 @@ const FeedOverlays = memo(function FeedOverlays({
             'pointer-events-none absolute inset-x-0 z-[var(--z-sticky)] flex justify-center transition-opacity duration-[var(--motion)] ease-out',
             mini ? (showBanner ? 'top-[5.25rem] mobile:top-[5.5rem]' : 'top-[3.25rem] mobile:top-14') : showBanner ? 'top-10' : 'top-2',
             scrolling ? 'opacity-100' : 'opacity-0',
+            // Phone: shown only while scrolling — never a static pill over messages / link previews.
+            'mobile:data-[idle]:hidden',
           )}
           data-idle={scrolling ? undefined : ''}
         >
@@ -518,7 +520,7 @@ const FeedOverlays = memo(function FeedOverlays({
           type="button"
           onClick={toBottom}
           aria-label={unread ? t('chat.toBottomUnread', { n: unread }) : t('chat.toBottom')}
-          className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-10 place-items-center rounded-full text-muted hover:text-fg"
+          className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-11 place-items-center rounded-full text-muted hover:text-fg"
         >
           <ArrowDown className="size-5" />
           {unread ? (

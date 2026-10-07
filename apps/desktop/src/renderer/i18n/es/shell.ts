@@ -33,7 +33,9 @@ export const esShell: DictShape<typeof enShell> = {
 
   // workspace rail
   'shell.home': 'Espacios',
-  'shell.explore': 'Explorar',
+  'shell.findWorkspace': 'Buscar un espacio',
+  'shell.wsSwitcher': 'Cambiar de espacio',
+  'shell.otherUnread': 'Hay mensajes sin leer en otros espacios',
   'shell.inVoice': 'Estás en voz',
   'shell.unreadMentions': { one: '{n} mención', many: '{n} menciones', other: '{n} menciones' },
 
@@ -239,9 +241,19 @@ export const esShell: DictShape<typeof enShell> = {
   'mediaErr.voice.movedStream': '{text}; se detuvo la pantalla compartida',
   'mediaErr.voice.modMuted': 'Un moderador te silenció',
   // phone layout (ADR-0021)
-  'mobile.openNav': 'Salas y espacios',
-  'mobile.closeNav': 'Cerrar panel',
-  'mobile.closeMembers': 'Cerrar lista de miembros',
+  'mobile.back': 'Atrás',
+  'mobile.tabs': 'Secciones',
+  'mobile.tabChats': 'Equipo',
+  'mobile.profile': 'Perfil',
+  'mobile.tabDms': 'Personal',
+  'mobile.mic': 'Micrófono',
+  'mobile.sound': 'Sonido',
+  'mobile.on': 'Activado',
+  'mobile.off': 'Desactivado',
+  'mobile.inVoice': 'En voz · {n}',
+  'mobile.joinVoice': 'Unirse',
+  'mobile.notifyOn': 'Activar notificaciones',
+  'mobile.notifyOff': 'Desactivar notificaciones',
   'mobile.voiceStrip': 'Llamada de voz',
   'mobile.ptt': 'Mantén pulsado para hablar',
   'mobile.pttOn': 'En el aire',

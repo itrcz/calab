@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/blob/blobtest"
@@ -180,5 +181,36 @@ func TestAvatarWarmCacheSurvivesConcurrentColdLoad(t *testing.T) {
 	}
 	if got := a.picture(t.Context(), cold); got != "" {
 		t.Fatal("cold lookup must not queue behind an active conversion")
+	}
+}
+
+// An ordinary remote object-store round trip exceeds 40ms even for a tiny image.
+type delayedAvatarStore struct{ blob.Store }
+
+func (s delayedAvatarStore) Get(ctx context.Context, key string) (blob.ReadSeekCloser, blob.Meta, error) {
+	select {
+	case <-time.After(80 * time.Millisecond):
+	case <-ctx.Done():
+		return nil, blob.Meta{}, ctx.Err()
+	}
+	return s.Store.Get(ctx, key)
+}
+func TestAvatarColdRemoteReadIsNotPermanentlyDiscarded(t *testing.T) {
+	store := blobtest.New()
+	var imageBytes bytes.Buffer
+	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
+	store.Set("avatar", imageBytes.Bytes())
+	key := "avatar"
+	f := sqlc.File{ID: uuid.New(), ThumbnailKey: &key}
+	a := NewAvatars(delayedAvatarStore{Store: store})
+	first := a.picture(t.Context(), f)
+	if first == "" {
+		t.Fatal("normal cold read lost avatar before it could warm the cache")
+	}
+	store.Fail(errors.New("offline"))
+	if a.picture(t.Context(), f) != first {
+		t.Fatal("warm avatar unavailable after storage failure")
 	}
 }

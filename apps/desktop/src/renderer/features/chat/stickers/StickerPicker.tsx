@@ -18,7 +18,7 @@ import { searchEmoji } from '../emoji';
 import { StickerImage } from './StickerImage';
 
 const COLS = 4;
-/** Desktop tiles: 4 × 104 px (Telegram Desktop); phones: the sheet's width / 4. */
+/** Desktop tiles: 4 × 104 px (Telegram Desktop); phones: the card's width / 4. */
 const CELL = 104;
 /** The sticker sits in its tile with this inset on every side. */
 const INSET = 6;
@@ -36,7 +36,7 @@ const COVER = 36;
  * scrolls to the pack, the pack under the top edge is highlighted), 4 large tiles a row (a 200 px preview over the hovered one). A click
  * sends at once and closes the panel; Shift+click sends and keeps it open. Animated stickers
  * stand on their first frame and play only on hover / focus (docs/14). On a phone the popover
- * is a bottom sheet (app/styles.css).
+ * is a centred card (app/styles.css `--phone-card-w`).
  */
 export function StickerButton({ place, onSend }: { place: StickerPlace; onSend: (s: Sticker) => void }): ReactNode {
   const [open, setOpen] = useState(false);
@@ -44,7 +44,7 @@ export function StickerButton({ place, onSend }: { place: StickerPlace; onSend: 
     <Popover.Root open={open} onOpenChange={setOpen} modal={false}>
       <Tip label={t('stk.tabStickers')}>
         <Popover.Trigger asChild>
-          <IconButton tip={false} label={t('stk.tabStickers')} className="mb-1 rounded-full" data-testid="sticker-button">
+          <IconButton tip={false} label={t('stk.tabStickers')} className="mb-1 rounded-full mobile:mb-0 mobile:size-11" data-testid="sticker-button">
             <StickerIcon className="size-5" />
           </IconButton>
         </Popover.Trigger>
@@ -57,7 +57,7 @@ export function StickerButton({ place, onSend }: { place: StickerPlace; onSend: 
           collisionPadding={16}
           aria-label={t('stk.tabStickers')}
           data-testid="sticker-panel"
-          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(520px,var(--radix-popover-content-available-height))] w-[460px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(75dvh,560px)]"
+          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(520px,var(--radix-popover-content-available-height))] w-[460px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-auto mobile:max-h-[min(75dvh,560px)] mobile:min-h-[340px]"
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <StickerPanel
@@ -82,7 +82,7 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
   const recentIds = useStickers((s) => s.recent);
   const byId = useWorkspaces((s) => s.byId);
   const mobile = useMobile();
-  const sheetWidth = useWindowWidth(mobile);
+  const cardWidth = useCardWidth(mobile);
   const [q, setQ] = useState('');
   const [active, setActive] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -134,8 +134,8 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
     next?.focus();
     next?.scrollIntoView({ block: 'nearest' });
   };
-  // The sheet spans the screen on a phone: its width over 4 columns.
-  const cell = mobile ? Math.max(56, Math.floor((sheetWidth - GRID_PAD) / COLS)) : CELL;
+  // The phone card (min(360, screen − 32)): its width over 4 columns.
+  const cell = mobile ? Math.max(56, Math.floor((cardWidth - GRID_PAD) / COLS)) : CELL;
   const size = { cell, img: cell - 2 * INSET, preview: !mobile };
   const grid = (list: readonly Sticker[]): ReactNode => <Grid stickers={list} onSend={onSend} {...size} />;
 
@@ -281,12 +281,13 @@ function Section({ id, label, cell, lazyRows, children }: { id: string; label: s
   );
 }
 
-/** The window's width while `on` (the phone sheet spans it); 0 otherwise. */
-function useWindowWidth(on: boolean): number {
-  const [w, setW] = useState(() => (on && typeof window !== 'undefined' ? window.innerWidth : 0));
+/** The phone card's width (app/styles.css `--phone-card-w`: min(360, window − 32)) while `on`; 0 otherwise. */
+const phoneCardWidth = (): number => Math.min(360, window.innerWidth - 32);
+function useCardWidth(on: boolean): number {
+  const [w, setW] = useState(() => (on && typeof window !== 'undefined' ? phoneCardWidth() : 0));
   useEffect(() => {
     if (!on) return;
-    const sync = (): void => setW(window.innerWidth);
+    const sync = (): void => setW(phoneCardWidth());
     sync();
     window.addEventListener('resize', sync);
     return () => window.removeEventListener('resize', sync);
@@ -296,7 +297,7 @@ function useWindowWidth(on: boolean): number {
 
 function Grid({ stickers, onSend, cell, img, preview }: { stickers: readonly Sticker[]; onSend: (s: Sticker, keepOpen: boolean) => void; cell: number; img: number; preview: boolean }): ReactNode {
   return (
-    <div className="grid grid-cols-4">
+    <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] justify-items-center">
       {stickers.map((s, i) => (
         <Tile key={`${s.id}-${i}`} sticker={s} first={i === 0} cell={cell} img={img} preview={preview} onPick={(keep) => onSend(s, keep)} />
       ))}

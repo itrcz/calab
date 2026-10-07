@@ -184,6 +184,14 @@ export interface ComputePermissionsInput {
   /** The user is the workspace owner (Workspace.owner_id; holder of the built-in owner role). */
   owner?: boolean | undefined;
   /**
+   * A private temporary room (Room.isPrivate && Room.expiresAt, live or archived; ADR-0078):
+   * nobody bypasses it — not ADMINISTRATOR, not the owner — the roles' VIEW_ROOM is dropped and
+   * role overrides cannot grant it: only the user's own override does, or being its `creator`.
+   */
+  privateTemp?: boolean | undefined;
+  /** The user created this temporary room (Room.createdBy) and is not a guest (ADR-0044). */
+  creator?: boolean | undefined;
+  /**
    * Set for a task board (ADR-0042): the overrides are the board's and touch only
    * BOARD_ONLY_PERMISSIONS; a private board (Board.isPrivate) drops the roles' VIEW_BOARD
    * first; without VIEW_BOARD nothing; a guest (highest built-in role GUEST) gets nothing.
@@ -234,6 +242,9 @@ function overrideOf(ovs: ComputePermissionsInput['roleOverrides'], id: string): 
  * dropped: only an allow override lets anyone in), then each role's
  * room override lowest position first (deny, then allow: the most senior role wins), then the
  * user's own override; without VIEW_ROOM nothing. Overrides only touch ROOM_ONLY_PERMISSIONS.
+ * A private temporary room (`privateTemp`, ADR-0078) has no bypass at all — not even the owner's:
+ * ADMINISTRATOR and the roles' VIEW_ROOM are dropped, role overrides do not grant VIEW_ROOM, only
+ * the user's own override does, and the `creator` always has it.
  * Used by the client for UI; mirrored in Go (apps/server/internal/perm). Pure.
  */
 export function computePermissions(input: ComputePermissionsInput): PermissionBits {
@@ -267,6 +278,19 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
     if (input.board.private) perms &= ~VIEW_BOARD;
     return applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
   }
+  if (input.privateTemp) {
+    perms &= ~(ADMINISTRATOR | VIEW_ROOM);
+    return applyOverrides(
+      perms,
+      roles,
+      roleOverrides,
+      input.userOverride,
+      ROOM_ONLY_PERMISSIONS,
+      VIEW_ROOM,
+      ROOM_ONLY_PERMISSIONS & ~VIEW_ROOM,
+      input.creator ? VIEW_ROOM : 0n,
+    );
+  }
   if (input.restricted) {
     if (input.owner) return ALL_PERMISSIONS;
     perms &= ~(ADMINISTRATOR | VIEW_ROOM);
@@ -278,8 +302,8 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
 }
 
 /**
- * Each role's override lowest position first (deny, then allow), then the user's own, limited to
- * `mask`; without `view` nothing.
+ * Each role's override lowest position first (deny, then allow; limited to `roleMask`), then the
+ * user's own (limited to `mask`), then `always` is added; without `view` nothing.
  */
 function applyOverrides(
   start: PermissionBits,
@@ -288,20 +312,23 @@ function applyOverrides(
   userOverride: OverrideBits | undefined,
   mask: PermissionBits,
   view: PermissionBits,
+  roleMask: PermissionBits = mask,
+  always: PermissionBits = 0n,
 ): PermissionBits {
   let perms = start;
   const ordered = [...roles].sort((a, b) => a.position - b.position);
   for (const r of ordered) {
     const o = overrideOf(roleOverrides, r.id);
     if (o) {
-      perms &= ~(o.deny & mask);
-      perms |= o.allow & mask;
+      perms &= ~(o.deny & roleMask);
+      perms |= o.allow & roleMask;
     }
   }
   if (userOverride) {
     perms &= ~(userOverride.deny & mask);
     perms |= userOverride.allow & mask;
   }
+  perms |= always;
   if (!(perms & view)) return 0n;
   return perms;
 }
@@ -346,22 +373,52 @@ export function taskRoomPermissions(board: PermissionBits, archived = false, com
 }
 
 /**
- * The viewer's bits on one task (Go: perm.TaskBits, ADR-0059 §2). A viewer of the board keeps
- * `board.permissions`; on a task-scoped board (`board.taskScoped`, permissions 0) an assignee of a
- * live task gets VIEW_BOARD | CREATE_TASKS (edits the task like a member their assigned task; never
- * creates tasks — that takes the board's bits), an approver VIEW_BOARD (view, comment, vote);
- * anything else 0. Feed the result to taskRoomPermissions for the task's comment room.
+ * The viewer's bits on one task (Go: perm.TaskBits, ADR-0059 §2, ADR-0076 §3). A viewer of the
+ * board keeps `board.permissions`; on a task-scoped board (`board.taskScoped`, permissions 0) an
+ * assignee of a live task gets VIEW_BOARD | CREATE_TASKS (edits the task like a member their
+ * assigned task; never creates tasks — that takes the board's bits), an approver or a watcher
+ * VIEW_BOARD (view, comment, subscribe; an approver also votes); anything else 0. Feed the result
+ * to taskRoomPermissions for the task's comment room. Shared case table:
+ * proto/testdata/task_bits.json.
  */
 export function taskPermissions(
   board: Pick<Board, 'permissions' | 'taskScoped'>,
-  task: Pick<Task, 'assignees' | 'approvers' | 'archivedAt'>,
+  task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt'>,
   me: string,
 ): PermissionBits {
   if (board.permissions & VIEW_BOARD) return board.permissions;
   if (!board.taskScoped || task.archivedAt) return 0n; // invitations count on live tasks only
   if (task.assignees.some((a) => a.userId === me)) return VIEW_BOARD | PERMISSION_BITS.CREATE_TASKS;
-  if (task.approvers.some((a) => a.userId === me)) return VIEW_BOARD;
+  if (task.approvers.some((a) => a.userId === me) || task.watcherIds.includes(me)) return VIEW_BOARD;
   return 0n;
+}
+
+/** A temporary room as computeMemberRoomPermissions needs it (ADR-0044, ADR-0078). */
+export interface TempRoomScope {
+  /** Room.isPrivate: only its creator and people with a personal allow see it, admins included. */
+  private: boolean;
+  /** Room.createdBy ('' when unknown). */
+  createdBy: string;
+}
+
+/** The temporary-room scope of a room (undefined for a permanent one: no Room.expiresAt). */
+export function tempRoomScope(room: {
+  isPrivate: boolean;
+  expiresAt?: unknown;
+  createdBy: string;
+}): TempRoomScope | undefined {
+  return room.expiresAt ? { private: room.isPrivate, createdBy: room.createdBy } : undefined;
+}
+
+/** Whether the member's highest built-in role is GUEST (no built-in role above it among `roles`). */
+function guestOnly(roles: readonly Pick<RoleBits, 'builtin'>[]): boolean {
+  return (
+    roles.some((r) => r.builtin === WorkspaceRole.GUEST) &&
+    !roles.some(
+      (r) =>
+        r.builtin === WorkspaceRole.MEMBER || r.builtin === WorkspaceRole.ADMIN || r.builtin === WorkspaceRole.OWNER,
+    )
+  );
 }
 
 /** The member's roles among the workspace's (WorkspaceMember.roleIds → WorkspaceSnapshot.roles). */
@@ -373,7 +430,8 @@ export function memberRoles<R extends RoleBits>(all: readonly R[], roleIds: read
 /**
  * Effective permissions of a member with `roles` in a room, given Room.permissionOverrides and
  * Room.restricted (ADR-0029). The owner is recognized by the built-in owner role among `roles`
- * unless `owner` is given.
+ * unless `owner` is given. `temp`: the room is temporary (Room.expiresAt) — `private` is
+ * Room.isPrivate (ADR-0078: no bypass), `createdBy` Room.createdBy; see tempRoomScope.
  */
 export function computeMemberRoomPermissions(
   roles: readonly RoleBits[],
@@ -381,6 +439,7 @@ export function computeMemberRoomPermissions(
   overrides: readonly RoomPermissionOverride[],
   restricted = false,
   owner: boolean = holdsOwnerRole(roles),
+  temp?: TempRoomScope | undefined,
 ): PermissionBits {
   const roleOverrides = new Map<string, OverrideBits>();
   // First match per target, like Go perm.ComputeIn (the server never stores duplicates).
@@ -393,6 +452,8 @@ export function computeMemberRoomPermissions(
     userOverride: overrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
     restricted,
     owner,
+    privateTemp: temp?.private ?? false,
+    creator: !!temp?.createdBy && temp.createdBy === userId && !guestOnly(roles),
   });
 }
 

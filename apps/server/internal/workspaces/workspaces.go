@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -177,7 +178,7 @@ func requireInvite(r *http.Request) (uuid.UUID, perm.Role, error) {
 // the plan from pl (nil = unset). Voice states and presences are filled in by the gateway.
 func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.Workspace, userID uuid.UUID, me perm.Member) (*v1.WorkspaceSnapshot, error) {
 	role := me.Role
-	rs, err := rooms.Visible(ctx, q, ws, me)
+	rs, lastMessages, err := rooms.Visible(ctx, q, ws, me)
 	if err != nil {
 		return nil, err
 	}
@@ -214,15 +215,23 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			return nil, err
 		}
 	}
+	// Contacts (ADR-0077) by the viewer's own row: a bot's READY (bot API) never has them.
+	viewerBot := false
+	for _, m := range ms {
+		if m.User.ID == userID {
+			viewerBot = m.User.IsBot
+			break
+		}
+	}
 	members := make([]*v1.WorkspaceMember, 0, len(ms))
 	for _, m := range ms {
 		if allowed == nil || allowed[m.User.ID] {
-			members = append(members, pbconv.Member(m.WorkspaceMember, m.User, m.RoleIds))
+			members = append(members, pbconv.MemberFor(m.WorkspaceMember, m.User, m.RoleIds, role, viewerBot))
 		}
 	}
 	bits := make(map[string]uint64, len(rs))
 	for _, r := range rs {
-		bits[r.GetId()] = uint64(perm.ComputeIn(me, r.GetRestricted(), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
+		bits[r.GetId()] = uint64(perm.ComputeIn(me, pbconv.RoomFlags(r), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
 	}
 	cats, err := q.ListCategories(ctx, ws.ID)
 	if err != nil {
@@ -277,7 +286,8 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
 		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
-		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps), BoardCategories: boardCats}, nil
+		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps), BoardCategories: boardCats,
+		RoomLastMessages: lastMessages}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.
@@ -300,6 +310,9 @@ func AnnounceJoin(ctx context.Context, q *sqlc.Queries, pl *plans.Service, pub e
 	u, err := q.GetUser(ctx, m.UserID)
 	if err == nil {
 		if pb, err := MemberPB(ctx, q, m, u); err == nil {
+			if m.Role != string(perm.RoleGuest) { // contacts for colleagues; the gateway strips them per recipient (ADR-0077)
+				pbconv.WithContacts(pb.User, u)
+			}
 			pub.Workspace(ctx, ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
 				WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pb},
 			}})
@@ -982,9 +995,10 @@ func (h *Handlers) listMembers(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	out := &v1.ListMembersResponse{Members: make([]*v1.WorkspaceMember, 0, len(rows))}
+	bot := auth.MustFromContext(r.Context()).IsBot
 	for _, m := range rows {
 		if allowed == nil || allowed[m.User.ID] {
-			out.Members = append(out.Members, pbconv.Member(m.WorkspaceMember, m.User, m.RoleIds))
+			out.Members = append(out.Members, pbconv.MemberFor(m.WorkspaceMember, m.User, m.RoleIds, role, bot))
 		}
 	}
 	httpx.Write(w, http.StatusOK, out)
@@ -1025,6 +1039,9 @@ func (h *Handlers) getMember(w http.ResponseWriter, r *http.Request) error {
 	pb, err := MemberPB(r.Context(), h.db.Q, m, u)
 	if err != nil {
 		return err
+	}
+	if pbconv.ContactsVisible(role, auth.MustFromContext(r.Context()).IsBot, perm.Role(m.Role), u) { // ADR-0077
+		pbconv.WithContacts(pb.User, u)
 	}
 	me, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, uid(r))
 	if err != nil {
@@ -1242,8 +1259,12 @@ func (h *Handlers) promote(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// A guest became a colleague: the event carries the contacts (the gateway strips them per
+	// recipient, ADR-0077); the response stays public (the caller may be a bot).
+	ev := proto.CloneOf(pb)
+	pbconv.WithContacts(ev.User, u)
 	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberUpdate{
-		WorkspaceMemberUpdate: &v1.WorkspaceMemberUpdate{Member: pb},
+		WorkspaceMemberUpdate: &v1.WorkspaceMemberUpdate{Member: ev},
 	}})
 	httpx.Write(w, http.StatusOK, &v1.UpdateMemberResponse{Member: pb})
 	return nil

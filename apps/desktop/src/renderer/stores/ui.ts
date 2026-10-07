@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { emptyHistory, pushLoc, step, type History, type Loc } from '../lib/roomHistory';
+import { emptyPhoneNav, openChat, visibleRoom, type PhoneNav } from '../lib/phoneNav';
 import { HOME } from './dms';
 import { RoomType } from '@calaba/protocol';
 import { useRooms } from './rooms';
@@ -74,9 +75,12 @@ interface UiState {
   /** Narrow window (< MEMBERS_COLUMN_MIN): the members list floats over the chat; not persisted. */
   membersOverlay: boolean;
   setMembersOverlay: (open: boolean) => void;
-  /** Phone layout (ADR-0021): the rail + room column slide in from the left; not persisted. */
-  navDrawer: boolean;
-  setNavDrawer: (open: boolean) => void;
+  /**
+   * Phone layout (ADR-0073): the tab and the stack of pushed screens; not persisted. Kept in step
+   * with the browser history and the feature flags by services/phoneNav.ts.
+   */
+  phone: PhoneNav;
+  setPhone: (update: (nav: PhoneNav) => PhoneNav) => void;
   /** Reply target per room. */
   replyTo: Record<string, string | undefined>;
   editing: string | null;
@@ -139,7 +143,12 @@ export const useUi = create<UiState>()(
       dialog: null,
       membersPanel: true,
       membersOverlay: false,
-      navDrawer: false,
+      phone: emptyPhoneNav(),
+      setPhone: (update) =>
+        set((s) => {
+          const phone = update(s.phone);
+          return phone === s.phone ? {} : { phone };
+        }),
       replyTo: {},
       editing: null,
       sidebarWidth: SIDEBAR_DEFAULT,
@@ -159,7 +168,7 @@ export const useUi = create<UiState>()(
       openCalendarDay: (day, eventKey) =>
         set((s) => {
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
-          return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), navDrawer: false, membersOverlay: false, editing: null };
+          return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), membersOverlay: false, editing: null };
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
       closeCalendar: () => set({ calDay: null, calEvent: null }),
@@ -187,7 +196,8 @@ export const useUi = create<UiState>()(
           lastRoom: { ...s.lastRoom, [wsId]: roomId },
           editing: null,
           membersOverlay: false,
-          navDrawer: false,
+          // Phone (ADR-0073 §1): the room / DM is pushed over its tab's root.
+          phone: s.phone.on ? openChat(s.phone, wsId === HOME ? { kind: 'dm', room: roomId } : { kind: 'room', ws: wsId, room: roomId }) : s.phone,
           history: pushLoc(s.history, here(s), { ws: wsId, room: roomId }),
           };
         }),
@@ -201,11 +211,9 @@ export const useUi = create<UiState>()(
           else collapsed[id] = true;
           return { collapsed };
         }),
-      // A dialog opened from the phone drawer replaces it (one layer at a time, ADR-0021).
-      openDialog: (dialog) => set(dialog ? { dialog, navDrawer: false } : { dialog }),
+      openDialog: (dialog) => set({ dialog }),
       toggleMembers: () => set((s) => ({ membersPanel: !s.membersPanel })),
-      setMembersOverlay: (membersOverlay) => set(membersOverlay ? { membersOverlay, navDrawer: false } : { membersOverlay }),
-      setNavDrawer: (navDrawer) => set(navDrawer ? { navDrawer, membersOverlay: false } : { navDrawer }),
+      setMembersOverlay: (membersOverlay) => set({ membersOverlay }),
       setReply: (roomId, messageId) => set((s) => ({ replyTo: { ...s.replyTo, [roomId]: messageId } })),
       setEditing: (editing) => set({ editing }),
     }),
@@ -260,14 +268,15 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
     lastRoom: room ? { ...s.lastRoom, [ws]: room } : s.lastRoom,
     editing: null,
     membersOverlay: false,
-    navDrawer: false,
   };
 }
 
 export const canGoBack = (s: UiState): boolean => s.history.back.length > 0;
 export const canGoForward = (s: UiState): boolean => s.history.forward.length > 0;
 
+/** The room on screen: on a phone only while its screen is on top (the room list shows none). */
 export function activeRoomId(): string | null {
   const s = useUi.getState();
+  if (s.phone.on) return visibleRoom(s.phone);
   return s.activeWorkspaceId ? (s.lastRoom[s.activeWorkspaceId] ?? null) : null;
 }

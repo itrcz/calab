@@ -1,5 +1,49 @@
 @import 'tailwindcss';
 
+/* Phone touch sizes (owner, 07.10; docs/08 «Размеры контролов на телефоне»): defined once here, used via
+   `mobile:tap-*` utilities by the primitives in components/ui.tsx. 44 px = the target of any control;
+   36 px only for a compact inline chip that sits in a >= 44 px row whose whole row is the target. */
+:root {
+  --control-h-phone: 44px;
+  --control-h-phone-compact: 36px;
+  --control-px-phone: 14px;
+  /* Header bars (owner, 07.10; docs/08 «Шапки»): every control in a bar has the CreateButton's visual
+     size (36 on the phone, 32 on the desktop) and one plate shape; the 44 px hit area is the control
+     grown by --bar-hit-pad through ::before. */
+  --bar-ctl-h-phone: 36px;
+  --bar-ctl-h: 32px;
+  --bar-hit-pad: 4px;
+  --radius-bar: 10px;
+}
+@utility tap-h {
+  height: var(--control-h-phone);
+}
+@utility tap-min-h {
+  min-height: var(--control-h-phone);
+}
+@utility tap-min-w {
+  min-width: var(--control-h-phone);
+}
+@utility tap-size {
+  width: var(--control-h-phone);
+  height: var(--control-h-phone);
+}
+@utility tap-h-compact {
+  height: var(--control-h-phone-compact);
+}
+/* A header-bar control: its visual box is --bar-ctl-h-phone, its 44 px target is the box + 4 px on every side. */
+@utility bar-hit {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--bar-hit-pad));
+  }
+}
+@utility tap-px {
+  padding-inline: var(--control-px-phone);
+}
+
 /* Phone layout of the web client (ADR-0021, lib/mobile.ts): `mobile:` utilities apply only on the
    web build at ≤ 768 px — the Electron app (≥ 960 px windows) never matches. */
 @custom-variant mobile {
@@ -21,8 +65,10 @@
  * Design tokens (docs/08-design.md): macOS / Apple HIG. Components use only these
  * variables (through the Tailwind theme below) — no raw colours or sizes.
  * Dark is the default; light via <html data-theme="light">. Every material is a solid
- * colour — no backdrop-filter, no window vibrancy (docs/08 «Материалы», docs/09 #65): the
- * compositor would re-blur what is behind on every frame of an animation or video.
+ * colour — no backdrop-filter (docs/08 «Материалы», docs/09 #65): the compositor would re-blur
+ * what is behind on every frame of an animation or video. The one exception is native macOS
+ * window vibrancy (ADR-0075, `:root.vibrancy` below): WindowServer blends the desktop behind the
+ * window, only under the title bar and the section rail; the room column and content stay opaque.
  */
 :root {
   /* ---- colour: neutral cool grey scale + one accent + semantics ---- */
@@ -43,7 +89,11 @@
   --color-fill: rgb(118 118 128 / 24%);
   --color-fill-hover: rgb(118 118 128 / 32%);
   --color-selection: rgb(255 255 255 / 10%);
+  /* sidebar rows (docs/08 «Колонка», owner 07.10): hover is a fainter plate than the selection */
+  --color-row-hover: rgb(255 255 255 / 5%);
   --color-separator: rgb(255 255 255 / 8%);
+  /* the inset panel's edge against the window layer: quieter than a separator */
+  --color-panel-edge: rgb(255 255 255 / 6%);
   --color-border-popover: rgb(255 255 255 / 8%);
   --color-label: #ececf0;
   /* ≥ 4.5:1 also on hover/selected rows and settings cards (fill over the sheet, ≈ #3e3e43),
@@ -105,14 +155,6 @@
   /* segmented control: the selected segment is raised and lighter (also in dark) */
   --color-segment-on: rgb(255 255 255 / 16%);
   --shadow-segment: 0 1px 1px rgb(0 0 0 / 25%);
-  /* workspace mode switcher (docs/08): a solid track darker than the sidebar with a 1px inner
-     border, an elevated pill, a hover fill for the inactive segments. All opaque/flat. */
-  --color-mode-track: #121214;
-  --color-mode-track-line: rgb(255 255 255 / 9%);
-  --color-mode-pill: #4a4a50;
-  --color-mode-pill-line: rgb(255 255 255 / 14%);
-  --color-mode-hover: rgb(255 255 255 / 9%);
-  --color-mode-idle: #b4b4bc; /* inactive icon: 8.9:1 on the track */
   /* avatar identity colours (white initials, ≥ 4.5:1) */
   --avatar-1: #0063cc;
   --avatar-2: #1f7a34;
@@ -184,15 +226,12 @@
   --motion-fast: 120ms;
   --motion: 160ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
-  /* the mode switcher's sliding pill (docs/08): ease-out, no overshoot */
-  --motion-pill: 220ms;
-  --ease-pill: cubic-bezier(0.25, 1, 0.3, 1);
 
   /* ---- layout ---- */
   --rail-width: 72px;
-  --titlebar-height: 38px;
+  --titlebar-height: 46px;
   /* web (docs/09 #46): no window chrome to share the bar with — a compact toolbar */
-  --titlebar-height-web: 30px;
+  --titlebar-height-web: 38px;
   --sidebar-width: 256px;
   --composer-height: 64px;
 
@@ -212,7 +251,9 @@
   --color-fill: rgb(118 118 128 / 12%);
   --color-fill-hover: rgb(118 118 128 / 20%);
   --color-selection: rgb(0 0 0 / 7%);
+  --color-row-hover: rgb(0 0 0 / 4%);
   --color-separator: rgb(0 0 0 / 9%);
+  --color-panel-edge: rgb(0 0 0 / 7%);
   --color-border-popover: rgb(0 0 0 / 6%);
   --color-label: #1d1d1f;
   --color-label-secondary: #4d4d52;
@@ -253,12 +294,6 @@
   --color-card-line: rgb(0 0 0 / 8%);
   --color-segment-on: #ffffff;
   --shadow-segment: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 1px 2px rgb(0 0 0 / 12%);
-  --color-mode-track: #e0e0e6;
-  --color-mode-track-line: rgb(0 0 0 / 10%);
-  --color-mode-pill: #ffffff;
-  --color-mode-pill-line: rgb(0 0 0 / 8%);
-  --color-mode-hover: rgb(0 0 0 / 7%);
-  --color-mode-idle: #55555d; /* 5.6:1 on the track */
   /* lighter than the sidebars (HIG: content is the brightest layer) */
   --color-feed: #eef0f3;
   --color-bubble-in: #ffffff;
@@ -289,6 +324,8 @@
   --color-elev: var(--color-bg-elevated);
   --color-hover: var(--color-fill);
   --color-active: var(--color-selection);
+  --color-row-hover: var(--color-row-hover);
+  --color-panel-edge: var(--color-panel-edge);
   --color-input: var(--color-fill);
   --color-line: var(--color-separator);
   --color-fg: var(--color-label);
@@ -379,14 +416,39 @@ body {
 .mat-rail {
   background: var(--color-rail);
 }
+/*
+ * macOS native vibrancy (ADR-0075): <html class="vibrancy"> is set by WindowVibrancy while the
+ * desktop shell is up on macOS with «Прозрачность окна» on (not with Reduce transparency, «Слабый
+ * компьютер» or in visual tests). Main has put an NSVisualEffectView (`sidebar`, follows the key
+ * state) behind a clear page: the body stops painting, the window layer (title bar, section rail)
+ * becomes a calm ~86 % tint over the native material (dark darker, light lighter, so red badges do not
+ * pop); the room / DM column (`mat-sidebar-window`) is SOLID again (owner 07.10), as is everything
+ * else. Text ≥ 4.5:1. Tokens stay solid: other `var(--color-rail)` users are unaffected.
+ */
+:root.vibrancy {
+  --vibrancy-rail: rgb(23 23 25 / 76%);
+}
+:root.vibrancy[data-theme='light'] {
+  --vibrancy-rail: rgb(240 240 244 / 76%);
+}
+:root.vibrancy body {
+  background: transparent;
+}
+:root.vibrancy .mat-rail {
+  background: var(--vibrancy-rail);
+}
+/* The section rail's own fade would be a slab on the translucent rail: rows pass under the island. */
+:root.vibrancy .island-fade-rail::after {
+  content: none;
+}
 .mat-toolbar {
   background: var(--color-toolbar);
 }
 /* Solid fade under the bottom island (docs/08 «Нижний островок»): the rail and the room / DM
    column end in their own colour below and beside the island, so no scrolled row shows in the
-   8 px margins around it. `--island-height` is published by BottomIsland on the shared parent;
-   without an island the fade collapses to 0. Plain gradient, no backdrop-filter; z 1 keeps it
-   over the list and under the island (z-sticky). */
+   margins around it. `--island-height` is published by BottomIsland on the shared parent; without
+   an island the fade collapses to 0. Plain gradient, no backdrop-filter; z 1 keeps it over the
+   list and under the island (z-sticky). */
 .island-fade {
   position: relative;
 }
@@ -491,26 +553,13 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   -webkit-app-region: no-drag;
 }
 
-/* Native overlay scrollbars on macOS; thin neutral ones elsewhere. */
-:root:not(.mac) ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* No visible scrollbars anywhere (owner, 07.10): every scroll container still scrolls (wheel,
+   trackpad, touch, keyboard); nothing draws a bar and there is no JS scrollbar. */
+* {
+  scrollbar-width: none;
 }
-:root:not(.mac) ::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 8px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-/* Overlay-like: the thumb shows only while the scroller is hovered or scrolling ([data-scrolling],
-   set by the chat feed for 1 s), like macOS. The mac itself keeps the native overlay scrollbars. */
-:root:not(.mac) :hover::-webkit-scrollbar-thumb,
-:root:not(.mac) [data-scrolling]::-webkit-scrollbar-thumb {
-  background: var(--color-fill-hover);
-  background-clip: content-box;
-}
-:root:not(.mac) ::-webkit-scrollbar-track {
-  background: transparent;
+*::-webkit-scrollbar {
+  display: none;
 }
 
 /* Focus (docs/08 «Фокус», docs/09 #138): one ring, keyboard only. A mouse or touch press never
@@ -859,47 +908,6 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   color: var(--color-label);
 }
 
-/* Mode switcher pill: slides by transform + width on a mode change only (the component sets
-   data-glide after the first measure); none with reduced motion (the global rule below zeroes the
-   duration) or in the «слабый компьютер» mode. */
-.mode-pill {
-  position: absolute;
-  inset-block: 2px;
-  left: 0;
-  contain: layout paint;
-  border-radius: calc(var(--radius-control) - 2px);
-  background: var(--color-mode-pill);
-  box-shadow:
-    inset 0 0 0 1px var(--color-mode-pill-line),
-    var(--shadow-segment);
-  pointer-events: none;
-}
-.mode-pill[data-glide='true'] {
-  transition:
-    transform var(--motion-pill) var(--ease-pill),
-    width var(--motion-pill) var(--ease-pill);
-}
-.mode-label {
-  animation: calaba-mode-label var(--motion-pill) var(--ease-pill) both;
-}
-@keyframes calaba-mode-label {
-  from {
-    opacity: 0;
-  }
-  40% {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-:root[data-low-end='true'] .mode-pill[data-glide='true'] {
-  transition: none;
-}
-:root[data-low-end='true'] .mode-label {
-  animation: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1050,14 +1058,24 @@ svg.lucide {
 
 
 /* ---- mobile web (ADR-0021, stage A): phone layout at ≤ 768 px, web build only ---- */
-@keyframes calaba-sheet-up {
+/* Phone cards (menus, pickers, dialogs — owner 07.10): a short fade + scale in and out; a sub-level
+   comes in from a little to the right and settles over the level it opened from. */
+@keyframes calaba-card-in {
   from {
-    transform: translateY(24px);
+    transform: scale(0.96);
     opacity: 0;
   }
+}
+@keyframes calaba-card-sub-in {
+  from {
+    transform: translateX(24px) scale(0.98);
+    opacity: 0;
+  }
+}
+@keyframes calaba-card-out {
   to {
-    transform: none;
-    opacity: 1;
+    transform: scale(0.96);
+    opacity: 0;
   }
 }
 @keyframes calaba-drawer-left {
@@ -1084,9 +1102,6 @@ svg.lucide {
     opacity: 1;
   }
 }
-@utility anim-sheet {
-  animation: calaba-sheet-up var(--motion) var(--ease);
-}
 .anim-drawer-left {
   animation: calaba-drawer-left var(--motion) var(--ease);
 }
@@ -1112,6 +1127,11 @@ svg.lucide {
     --safe-right: env(safe-area-inset-right, 0px);
     /* the drawer (rail + room column) and the members drawer */
     --mobile-drawer-width: min(328px, calc(100vw - 48px));
+    /* centred menu / picker cards and dialogs (owner 07.10): width, height caps, open / close */
+    --phone-card-w: min(360px, calc(100vw - 32px));
+    --phone-card-max-h: min(calc(var(--app-height) * 0.7), calc(var(--app-height) - 2 * max(var(--safe-top), var(--safe-bottom)) - 16px));
+    --phone-dialog-max-h: calc(var(--app-height) - 2 * max(var(--safe-top), var(--safe-bottom)) - 16px);
+    --motion-card: 150ms;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
@@ -1164,38 +1184,195 @@ svg.lucide {
   :root.web .tip {
     display: none;
   }
-  /* Menus and popovers become bottom sheets: full width, anchored to the bottom edge above the
-     home indicator, a scrim behind (the 100vmax spread shadow; a tap on it dismisses through
-     Radix's outside-press). Positioning is Radix's inline style, hence !important. With the
-     on-screen keyboard up the sheet sits on top of it (--kb-inset), never under it. */
-  :root.web [data-radix-popper-content-wrapper]:has(> .mat-popover:not(.tip, .no-sheet)) {
+  /* Menus, context menus, popovers and small pickers are centred cards (owner 07.10: «отказался бы от
+     панелей снизу, а сделал их по центру»; docs/08 «Мобильный веб»). The popper wrapper spans the
+     screen above the keyboard (--kb-inset) and centres its card; the bottom card's wrapper is the
+     scrim itself — a tap on it is outside the menu (Radix dismisses it) and never reaches the app
+     under it. Positioning is Radix's inline style, hence !important. The stack of levels
+     (data-pm-*: depth 0 = the top card, data-pm-base = the bottom one) is kept by lib/phoneMenus.ts. */
+  :root.web [data-radix-popper-content-wrapper]:has(> .mat-popover:not(.tip)) {
     position: fixed !important;
-    inset: auto 0 var(--kb-inset) 0 !important;
+    inset: 0 0 var(--kb-inset) 0 !important;
     transform: none !important;
     min-width: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-scrim);
     z-index: var(--z-modal-popover) !important;
+    animation: calaba-fade var(--motion-card) var(--ease);
   }
-  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip, .no-sheet) {
-    width: 100% !important;
+  /* A sub-level (and anything opened over a card) adds no scrim of its own and lets taps through to
+     the card beneath; a closing card's scrim goes at once. */
+  :root.web [data-radix-popper-content-wrapper][data-pm-depth]:not([data-pm-base]),
+  :root.web [data-radix-popper-content-wrapper]:has(> .mat-popover[data-state='closed']) {
+    background: transparent;
+    pointer-events: none;
+    animation: none;
+  }
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover:not(.tip) {
+    position: relative;
+    width: var(--phone-card-w) !important;
     max-width: none !important;
     min-width: 0 !important;
-    max-height: min(85dvh, calc(var(--app-height) - var(--safe-top) - 24px)) !important;
+    max-height: var(--phone-card-max-h) !important;
     overflow-y: auto;
-    border-radius: 16px 16px 0 0 !important;
-    border-bottom: 0;
-    padding-bottom: calc(var(--safe-bottom) + 8px) !important;
+    overscroll-behavior: contain;
+    border-radius: var(--radius-panel) !important;
+    padding-inline: 6px !important;
     background: var(--color-popover-solid);
-    box-shadow:
-      0 0 0 100vmax var(--color-scrim),
-      var(--shadow-popover) !important;
-    animation: calaba-sheet-up var(--motion) var(--ease);
+    box-shadow: var(--shadow-popover) !important;
+    pointer-events: auto;
+    transform-origin: center;
+    animation: calaba-card-in var(--motion-card) var(--ease);
+    /* the level beneath zooms back / forward when a sub-level opens or closes — open/close only */
+    transition:
+      transform var(--motion-card) var(--ease),
+      filter var(--motion-card) var(--ease);
   }
-  /* Touch targets: menu rows 44 px (HIG). */
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover[role='menu']:not(.tip) {
+    padding-block: 6px !important;
+  }
+  :root.web [data-radix-popper-content-wrapper][data-pm-sub] > .mat-popover {
+    padding-top: 0 !important;
+    animation-name: calaba-card-sub-in;
+  }
+  :root.web [data-radix-popper-content-wrapper] > .mat-popover[data-state='closed']:not(.tip) {
+    animation: calaba-card-out var(--motion-card) var(--ease) forwards;
+  }
+  /* The levels under the top card: zoomed back, shifted left, dimmed (a solid material, no blur);
+     a tap on one returns to it (lib/phoneMenus.ts), so its rows take no taps of their own. */
+  :root.web [data-pm-depth='1'] > .mat-popover {
+    transform: translateX(-24px) scale(0.94);
+    filter: brightness(0.62);
+  }
+  :root.web [data-pm-depth='2'] > .mat-popover {
+    transform: translateX(-48px) scale(0.88);
+    filter: brightness(0.5);
+  }
+  :root.web [data-pm-depth='3'] > .mat-popover {
+    transform: translateX(-72px) scale(0.82);
+    filter: brightness(0.4);
+  }
+  :root.web [data-pm-depth]:not([data-pm-depth='0']) > .mat-popover > * {
+    pointer-events: none;
+  }
+  /* «‹ <parent item>» at the top of a sub-level (injected by lib/phoneMenus.ts): back one level. */
+  :root.web [data-radix-popper-content-wrapper] .pm-back[role='menuitem'] {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    width: calc(100% + 12px);
+    min-height: var(--control-h-phone);
+    align-items: center;
+    gap: 2px;
+    margin: 0 -6px 4px;
+    padding: 0 12px 0 4px;
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-popover-solid);
+    color: var(--color-accent-text);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+    text-align: left;
+  }
+  :root.web [data-radix-popper-content-wrapper] .pm-back > svg {
+    flex: none;
+  }
+  :root.web [data-radix-popper-content-wrapper] .pm-back > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-fg);
+  }
+  /* Dialogs (forms, confirmations, the profile card): a centred card too, never a bottom sheet;
+     centred above the keyboard, clear of the notch and the home indicator (Modal in
+     components/ui.tsx, ProfileDialog, AchievementView). The `-translate-*-1/2` stay from desktop. */
+  :root.web .phone-dialog {
+    top: calc(50% - var(--kb-inset) / 2);
+    width: calc(100vw - 32px);
+    max-height: var(--phone-dialog-max-h);
+    animation: calaba-card-in var(--motion-card) var(--ease);
+  }
+  /* «Слабый компьютер» and reduced motion: the cards just appear and go (an exit animation of 0 ms
+     would still hold the unmount for its animationend), the level beneath swaps instantly. */
+  @media (prefers-reduced-motion: reduce) {
+    :root.web [data-radix-popper-content-wrapper] > .mat-popover[data-state='closed']:not(.tip) {
+      animation: none;
+    }
+  }
+  :root.web[data-low-end='true'] [data-radix-popper-content-wrapper],
+  :root.web[data-low-end='true'] [data-radix-popper-content-wrapper] > .mat-popover,
+  :root.web[data-low-end='true'] .phone-dialog {
+    animation: none !important;
+    transition: none !important;
+  }
+  /* Touch-size safety net (owner, 07.10; docs/08 «Размеры контролов на телефоне»). The primitives in
+     components/ui.tsx carry the 44 px themselves (`mobile:tap-*`); this zero-specificity floor catches
+     hand-rolled controls that bypass them, so no button, field, select or tab is shorter than
+     --control-h-phone (a button is also at least as wide). Opt out only for things that sit inside
+     running text or a dense feed row: `data-inline-target` (the row is the target). */
+  :root.web :where(
+      button,
+      select,
+      textarea,
+      input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='hidden']),
+      [role='tab'],
+      [role='menuitem'],
+      [role='menuitemradio'],
+      [role='menuitemcheckbox'],
+      [role='option']
+    ):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit, .sr-only) {
+    min-height: var(--control-h-phone);
+  }
+  /* a checkbox / radio row: the whole label is the target */
+  :root.web :where(label:has(> input[type='checkbox'], > input[type='radio'])) {
+    min-height: var(--control-h-phone);
+  }
+  :root.web :where(button):not([data-inline-target], [data-message-id] [data-profile-user], .tap-inert *, .tap-hit, .bar-hit) {
+    min-width: var(--control-h-phone);
+  }
+  /* Header bars: whatever a bar holds is one visual height (--bar-ctl-h-phone) with a 44 px target
+     (the safety net behind `Bar` / IconButton `bar`; docs/08 «Шапки»). */
+  :root.web [data-bar] :is(button, a[href]):not([data-bar-skip], [data-inline-target]) {
+    position: relative;
+    height: var(--bar-ctl-h-phone);
+    min-height: var(--bar-ctl-h-phone);
+    min-width: var(--bar-ctl-h-phone);
+  }
+  :root.web [data-bar] :is(button, a[href]):not([data-bar-skip], [data-inline-target])::before {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--bar-hit-pad));
+  }
+  /* A small visual (switch track, checkbox glyph) keeps its look; its touch target is a 44×44 square
+     centred on it (`::before`, also what e2e-visual/mobile.visual.spec.ts measures). */
+  :root.web .tap-hit {
+    position: relative;
+  }
+  :root.web .tap-hit::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--control-h-phone);
+    height: var(--control-h-phone);
+    transform: translate(-50%, -50%);
+  }
+  /* A kanban card is one target (it opens the task); its quick-edit chips are not separate targets on a
+     phone — a 20 px avatar stack inside a card only invites mis-taps. The fields are edited in the task. */
+  :root.web .tap-inert :is(button, a) {
+    pointer-events: none;
+  }
+  /* Touch targets: menu rows 44 px (HIG, --control-h-phone). */
   :root.web [data-radix-popper-content-wrapper] [role='menuitem'],
   :root.web [data-radix-popper-content-wrapper] [role='menuitemradio'],
   :root.web [data-radix-popper-content-wrapper] [role='menuitemcheckbox'] {
-    min-height: 44px;
+    min-height: var(--control-h-phone);
     font-size: 15px;
+    padding-inline: 12px;
   }
 }
 

@@ -31,19 +31,20 @@ test('register → workspace → room → message → reload → voice', async (
   // First run: onboarding (docs/08) — skip it, it has its own visual tests. (Builds from
   // before the onboarding go straight to the main window.)
   const skip = page.getByRole('button', { name: 'Пропустить настройку' });
-  await expect(skip.or(page.getByRole('button', { name: 'Создать пространство' }).first())).toBeVisible({ timeout: 20_000 });
+  const rail = page.getByRole('navigation', { name: 'Разделы' });
+  await expect(skip.or(rail)).toBeVisible({ timeout: 20_000 });
   if (await skip.isVisible()) await skip.click();
-  // The shell (rail + its workspaces, rendered together after READY) must be up before the
-  // non-waiting count() below, or a skipped onboarding would look like «no E2E workspace yet».
-  await expect(page.getByRole('button', { name: 'Создать пространство' }).first()).toBeVisible();
+  // READY is in before the non-waiting checks below: the rail's «Команда» (some workspace) or the
+  // welcome screen's «Создать пространство» (none yet).
+  await expect(page.getByTestId('section-chats').or(page.getByRole('button', { name: 'Создать пространство' })).first()).toBeVisible();
 
   // Idempotent on a shared account (the stand limits workspace creation, 3/hour): reuse the
   // «E2E web» workspace and its rooms when they exist, create them only when missing.
-  // The rail's actions render before its workspace items (an item waits for its workspace data),
-  // so give an existing «E2E web» a bounded moment to appear before deciding to create one —
-  // creating needlessly hits the rate limit on the stand.
-  const rail = page.getByRole('navigation', { name: 'Пространства' });
-  const existing = rail.getByRole('button', { name: /^E2E web\b/ });
+  // Workspaces are picked in the title bar's switcher (ADR-0074); give an existing «E2E web» a
+  // bounded moment to appear before deciding to create one — creating needlessly hits the rate
+  // limit on the stand.
+  await page.getByTestId('titlebar-title').click();
+  const existing = page.getByRole('menuitem', { name: /^E2E web\b/ });
   const found = await existing
     .first()
     .waitFor({ state: 'visible', timeout: 5_000 })
@@ -51,12 +52,12 @@ test('register → workspace → room → message → reload → voice', async (
   if (found) {
     await existing.first().click();
   } else {
-    await page.getByRole('button', { name: 'Создать пространство' }).first().click();
+    await page.getByRole('menuitem', { name: 'Создать пространство' }).click();
     await page.getByLabel('Название').fill('E2E web');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
   }
-  // The selected workspace is named in the title bar since 1.2.0 (docs/09 #140: the column header
-  // shows the mode tabs instead): wait for it before looking at the rooms.
+  // The selected workspace is named in the title bar (the switcher, ADR-0074): wait for it before
+  // looking at the rooms.
   await expect(page.getByTestId('titlebar-title')).toContainText(/E2E web/, { timeout: 15_000 });
   const rooms = page.locator('aside').first();
   const general = rooms.getByRole('button', { name: /^общий(,|$)/ });

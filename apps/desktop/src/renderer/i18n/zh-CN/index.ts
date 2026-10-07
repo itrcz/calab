@@ -30,6 +30,7 @@ import { zhSounds } from './sounds';
 import { zhBots } from './bots';
 import { zhGuests } from './guests';
 import { zhTemp } from './temp';
+import { zhContacts } from './contacts';
 import { zhSip } from './sip';
 import { zhWebApps } from './webapps';
 
@@ -47,6 +48,7 @@ export const zhCN: Dict = {
   ...zhBots,
   ...zhGuests,
   ...zhTemp,
+  ...zhContacts,
   ...zhSip,
   ...zhWebApps,
   ...zhDm,
@@ -552,6 +554,7 @@ export const zhCN: Dict = {
   'onb.micDeniedWeb': '请在浏览器设置中允许该网站使用麦克风（地址栏左侧的图标）。',
   'onb.modeTitle': '如何开启麦克风',
   'onb.modeText': '语音激活模式：说话时自动开启麦克风。按键说话模式：按住按键时开启。',
+  'onb.modeTextPhone': '语音激活模式：说话时自动开启麦克风。按键说话模式：按住按钮时开启。',
   'onb.vadText': '灵敏度可在设置中微调。',
   'onb.inputNeeded': 'macOS：窗口外使用按键需要"输入监控"权限。',
   'onb.inputOk': '输入监控权限已授予',
@@ -589,6 +592,9 @@ export const zhCN: Dict = {
   'onb.doneText': '打开左侧的房间，或加入语音房间——你的麦克风已准备就绪。',
   'onb.doneNoWs': '为你的团队创建工作区，或通过邀请加入一个。',
   'onb.doneTextNoMic': '打开左侧的房间。你可以稍后在"设置 → 语音与设备"中测试麦克风。',
+  'onb.doneTextPhone': '打开房间列表，或加入语音房间——你的麦克风已准备就绪。',
+  'onb.doneTextNoMicPhone': '打开房间列表。你可以稍后在“设置 → 语音与设备”中测试麦克风。',
+  'onb.pttPhone': '通话中会出现一个按钮：按住它即可说话。',
   'onb.doneNoWsNoMic': '为你的团队创建工作区，或通过邀请加入一个。你可以稍后在设置中测试麦克风。',
   'onb.notifDenied': '系统设置中已阻止通知，你可以稍后在那里开启。',
   'onb.notifDeniedWeb':

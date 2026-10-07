@@ -123,18 +123,18 @@ function CreateCard({ workspaceId, full, onIssued }: { workspaceId: string; full
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder={t('bots.namePlaceholder')} aria-label={t('bots.name')} className="w-60" data-testid="bot-name" />
         </Row>
         <Row label={t('bots.username')} hint={t('bots.usernameHint')}>
-          <span className="relative flex w-60 items-center">
-            <span className="pointer-events-none absolute left-2.5 text-body text-faint" aria-hidden>
-              @
-            </span>
+          {/* «@» through the field's `icon` slot (as the profile nick): its padding follows the phone's
+              wider field, a hand-placed «@» overlapped the text there. */}
+          <span className="flex w-60 items-center mobile:w-full">
             <Input
+              icon={<span className="text-body leading-none">@</span>}
               value={username}
               onChange={(e) => setUsername(normalizeUsername(e.target.value))}
               maxLength={32}
               placeholder="weather_bot"
               aria-label={t('bots.username')}
               aria-invalid={username !== '' && !validBotUsername(uname)}
-              className="w-full pl-6 font-mono"
+              className="w-full font-mono"
               spellCheck={false}
               autoCapitalize="off"
               data-testid="bot-username"
@@ -294,7 +294,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
           </span>
           <BotBadge />
         </div>
-        <div className="truncate text-caption text-muted" title={byline}>
+        <div className="truncate text-caption text-muted mobile:line-clamp-2 mobile:whitespace-normal" title={byline}>
           {byline}
         </div>
         {home ? <BotStatus bot={bot} revoked={revoked} /> : null}
@@ -302,7 +302,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
       <Dropdown.Root modal={false}>
         <Tip label={t('bots.actions', { name })}>
           <Dropdown.Trigger asChild>
-            <IconButton tip={false} label={t('bots.actions', { name })} data-testid="bot-actions">
+            <IconButton tip={false} label={t('bots.actions', { name })} data-testid="bot-actions" className="mobile:size-11">
               <Ellipsis className="size-4" />
             </IconButton>
           </Dropdown.Trigger>
@@ -384,9 +384,9 @@ function Line({ icon, tone, title, children }: { icon?: ReactNode; tone: 'ok' | 
   // Text colours ≥ 4.5:1 on the card in both themes; the yellow is the icon's only.
   const color = tone === 'ok' ? 'text-[var(--color-green-text)]' : tone === 'danger' ? 'text-danger-text' : tone === 'warn' ? 'text-muted [&>svg]:text-warn' : 'text-faint';
   return (
-    <div className={cx('flex min-w-0 items-center gap-1 text-caption', color)} title={title} data-testid="bot-status">
+    <div className={cx('flex min-w-0 items-center gap-1 text-caption mobile:items-start', color)} title={title} data-testid="bot-status">
       {icon}
-      <span className="truncate">{children}</span>
+      <span className="truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:break-words">{children}</span>
     </div>
   );
 }

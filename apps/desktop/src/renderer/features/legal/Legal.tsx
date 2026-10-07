@@ -94,12 +94,14 @@ export function AuthLegalFooter({ className }: { className?: string } = {}): Rea
   return (
     <footer className={cx("flex flex-col items-center gap-0.5 text-center", className)}>
       <Attribution />
-      <p className="text-caption text-muted">
-        <button type="button" onClick={() => setDoc('license')} className="hover:text-fg hover:underline">
+      <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-caption text-muted mobile:flex-col mobile:gap-0">
+        <button type="button" onClick={() => setDoc('license')} className="hover:text-fg hover:underline mobile:py-0.5">
           {t('legal.footerLicense')}
         </button>
-        {' · '}
-        <button type="button" onClick={() => setDoc('thirdParty')} className="hover:text-fg hover:underline">
+        <span aria-hidden className="mobile:hidden">
+          ·
+        </span>
+        <button type="button" onClick={() => setDoc('thirdParty')} className="hover:text-fg hover:underline mobile:py-0.5">
           {t('legal.thirdParty')}
         </button>
       </p>

@@ -33,7 +33,9 @@ export const zhShell: DictShape<typeof enShell> = {
 
   // workspace rail
   'shell.home': '工作区',
-  'shell.explore': '发现',
+  'shell.findWorkspace': '查找工作区',
+  'shell.wsSwitcher': '切换工作区',
+  'shell.otherUnread': '其他工作区有未读消息',
   'shell.inVoice': '你正在语音中',
   'shell.unreadMentions': { other: '{n}条提及' },
 
@@ -239,9 +241,19 @@ export const zhShell: DictShape<typeof enShell> = {
   'mediaErr.voice.movedStream': '{text}；屏幕共享已停止',
   'mediaErr.voice.modMuted': '版主已将你静音',
   // phone layout (ADR-0021)
-  'mobile.openNav': '房间与工作区',
-  'mobile.closeNav': '关闭面板',
-  'mobile.closeMembers': '关闭成员列表',
+  'mobile.back': '返回',
+  'mobile.tabs': '分区',
+  'mobile.tabChats': '团队',
+  'mobile.profile': '个人资料',
+  'mobile.tabDms': '私信',
+  'mobile.mic': '麦克风',
+  'mobile.sound': '声音',
+  'mobile.on': '已开启',
+  'mobile.off': '已关闭',
+  'mobile.inVoice': '语音中 · {n}',
+  'mobile.joinVoice': '加入',
+  'mobile.notifyOn': '开启通知',
+  'mobile.notifyOff': '关闭通知',
   'mobile.voiceStrip': '语音通话',
   'mobile.ptt': '按住说话',
   'mobile.pttOn': '通话中',

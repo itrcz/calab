@@ -61,6 +61,7 @@ import {
   SetBoardPositionRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
+  SetTaskWatcherRequestSchema,
   TaskActivityPageSchema,
   TaskFilterSchema,
   TaskApprovalRequestSchema,
@@ -262,6 +263,7 @@ import {
   CreateDmResponseSchema,
   UpdateDmStateRequestSchema,
   UpdateDmStateResponseSchema,
+  DmLastMessageSchema,
   DmSummarySchema,
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
@@ -309,6 +311,7 @@ import {
   UpdateCategoryResponseSchema,
   UpdateMeRequestSchema,
   UpdateMeResponseSchema,
+  UsernameAvailabilityResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberBirthdayRequestSchema,
   UpdateMemberBirthdayResponseSchema,
@@ -347,6 +350,7 @@ import {
   WorkspaceSnapshotSchema,
   WorkspaceVisibility,
   computeMemberRoomPermissions,
+  tempRoomScope,
   computePermissions,
   has,
   workspacePermissions,
@@ -363,6 +367,7 @@ import {
   UpdateRoleResponseSchema,
   type Role,
   type DispatchEvent,
+  type DmLastMessage,
   type DmSummary,
   type NotesShelf,
   type GatewayFrame,
@@ -874,6 +879,15 @@ function mailLocale(tag: string): string | null {
   return null;
 }
 
+const RESERVED_USERNAMES = new Set(['here', 'everyone', 'channel', 'all', 'admin', 'support', 'calab', 'system', 'bot']);
+
+/** ADR-0077: a normalized nickname ('' clears), null when the server would refuse it. */
+function mockUsername(raw: string): string | null {
+  const n = raw.trim().replace(/^@/, '').toLowerCase();
+  if (n === '') return '';
+  return /^[a-z][a-z0-9_]{2,31}$/.test(n) && !RESERVED_USERNAMES.has(n) ? n : null;
+}
+
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
 /** ADR-0044: an archived temporary room — anything but its history. */
@@ -1248,7 +1262,7 @@ class MockImpl {
     const m = this.member(room.workspaceId, userId);
     // ADR-0029: in a restricted room admins count as members; the owner (owner_id) has everything.
     const owner = this.state.workspaces.get(room.workspaceId)?.ownerId === userId;
-    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides, room.restricted, owner) : 0n;
+    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides, room.restricted, owner, tempRoomScope(room)) : 0n;
   }
 
   /** The other participant of a DM room, or null when `userId` is not in it (or it is no DM). */
@@ -1594,6 +1608,21 @@ class MockImpl {
       boards: boards.boards,
       unreadTaskIds: boards.unreadTaskIds,
       boardCategories: boards.boardCategories,
+      // ADR-0073 §5: the newest live message of every room, as the room-list preview (server: first 200 chars).
+      roomLastMessages: Object.fromEntries(
+        rooms.flatMap((r): [string, DmLastMessage][] => {
+          const last = this.visibleMessages(userId, r.id).at(-1);
+          if (!last) return [];
+          return [[r.id, create(DmLastMessageSchema, {
+            id: last.id,
+            authorId: last.authorId,
+            content: Array.from(last.content).slice(0, 200).join(''),
+            attachmentCount: last.attachments.length,
+            stickerEmoji: last.sticker?.emoji ?? '',
+            ...(last.createdAt ? { createdAt: last.createdAt } : {}),
+          })]];
+        }),
+      ),
     });
   }
 
@@ -2794,6 +2823,20 @@ class MockImpl {
       }
       if (b.statusText !== undefined) u.user.statusText = b.statusText;
       if (b.timezone !== undefined) u.user.timezone = b.timezone;
+      // ADR-0077 (the server's rules, users/contacts.go).
+      if (b.username !== undefined) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('not for guests and bots');
+        const name = mockUsername(b.username);
+        if (name === null) throw new HttpError(422, ErrorCode.USERNAME_INVALID, 'bad username', 'username');
+        if (name && [...s().users.values()].some((x) => x !== u && x.user.username === name)) throw new HttpError(409, ErrorCode.USERNAME_TAKEN, 'username is taken', 'username');
+        u.user.username = name;
+      }
+      if (b.phone !== undefined) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('not for guests and bots');
+        const p = b.phone.trim().replace(/\s+/g, ' ');
+        if (p && (p.length > 32 || !/^\+?[0-9() -]+$/.test(p) || p.replace(/\D/g, '').length < 3)) throw invalid('phone', 'bad phone');
+        u.user.phone = p;
+      }
       if (b.birthday) {
         // docs/09 #76 (the server checks the date too); day = month = 0 clears.
         const { day, month, year } = b.birthday;
@@ -2832,6 +2875,18 @@ class MockImpl {
       }
       this.emitUserUpdate(u);
       sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
+    });
+
+    // ADR-0077: a hint for the profile form (the caller's own nickname is available).
+    this.route('GET', '/api/usernames/:name/available', (c) => {
+      const me = this.auth(c).user;
+      const name = mockUsername(decodeURIComponent(c.params[0] ?? ''));
+      const taken = name !== null && [...s().users.values()].some((x) => x !== me && x.user.username === name);
+      sendMsg(c.res, 200, UsernameAvailabilityResponseSchema, {
+        username: name ?? '',
+        available: name !== null && name !== '' && !taken,
+        reason: name === null || name === '' ? ErrorCode.USERNAME_INVALID : taken ? ErrorCode.USERNAME_TAKEN : ErrorCode.UNSPECIFIED,
+      });
     });
 
     this.route('PATCH', '/api/me/status', (c) => {
@@ -7096,6 +7151,14 @@ class MockImpl {
     this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
       const kind: TaskRelationKind = Number(q(c, 'kind'));
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
+    });
+    // ADR-0076: watchers.
+    this.boardRoute('PUT', '/api/tasks/:id/watchers', (c, me) => {
+      const r = parseBody(c, SetTaskWatcherRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setWatcher(c.params[0] ?? '', me, r.userId, true).task.id, me));
+    });
+    this.boardRoute('DELETE', '/api/tasks/:id/watchers', (c, me) => {
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setWatcher(c.params[0] ?? '', me, q(c, 'user_id'), false).task.id, me));
     });
     this.boardRoute('PUT', '/api/tasks/:id/subscription', (c, me) => {
       const r = parseBody(c, SetTaskSubscriptionRequestSchema);

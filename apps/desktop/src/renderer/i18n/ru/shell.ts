@@ -31,7 +31,9 @@ export const ruShell = {
 
   // workspace rail
   'shell.home': 'Пространства',
-  'shell.explore': 'Обзор',
+  'shell.findWorkspace': 'Найти пространство',
+  'shell.wsSwitcher': 'Сменить пространство',
+  'shell.otherUnread': 'Есть непрочитанное в других пространствах',
   'shell.inVoice': 'Вы в голосе',
   'shell.unreadMentions': { one: '{n} упоминание', few: '{n} упоминания', many: '{n} упоминаний', other: '{n} упоминания' },
 
@@ -238,9 +240,19 @@ export const ruShell = {
   'mediaErr.voice.movedStream': '{text}; стрим остановлен',
   'mediaErr.voice.modMuted': 'Модератор выключил вам микрофон',
   // phone layout (ADR-0021)
-  'mobile.openNav': 'Комнаты и пространства',
-  'mobile.closeNav': 'Закрыть панель',
-  'mobile.closeMembers': 'Закрыть список участников',
+  'mobile.back': 'Назад',
+  'mobile.tabs': 'Разделы',
+  'mobile.tabChats': 'Команда',
+  'mobile.profile': 'Профиль',
+  'mobile.tabDms': 'Личные',
+  'mobile.mic': 'Микрофон',
+  'mobile.sound': 'Звук',
+  'mobile.on': 'Включён',
+  'mobile.off': 'Выключен',
+  'mobile.inVoice': 'В голосе · {n}',
+  'mobile.joinVoice': 'Присоединиться',
+  'mobile.notifyOn': 'Включить уведомления',
+  'mobile.notifyOff': 'Выключить уведомления',
   'mobile.voiceStrip': 'Голосовой звонок',
   'mobile.ptt': 'Удерживайте, чтобы говорить',
   'mobile.pttOn': 'В эфире',

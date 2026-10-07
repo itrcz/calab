@@ -379,3 +379,18 @@ identify the sender only; add accurate recipient/group metadata when defining th
 system communication experience. Quick reply, unread icon badge and call-history callback
 remain separate shared-state features. System full-screen CallKit caller-photo rendering
 must be recorded on supported iOS versions; INPerson donation alone is not proof.
+- 2026-10-07 · 3.0 телефон · переход экранов (ScreenTransition) · лента сообщений комнаты пустая во время въезда (250 мс), сообщения появляются в конце; рендерить ленту сразу или держать снимок. Minor.
+
+### Desktop section rail follow-ups (ADR-0074, 07.10)
+
+- «Доски»: the column header «+» (new board) duplicates the «+» beside «ДОСКИ» inside the shared BoardsList (phone uses it too) — drop one.
+- The workspace switcher has no drag-reorder (the old rail had none either); the order is the server order.
+- Pre-existing, not ADR-0074: the visual mock opens «Маркетинг» first (boards-list, boards-kanban, boards-flow expect CAL); calendar-day «editing a selected meeting» drags a room from the list, which the calendar section hides since 02.10.
+
+### UI review 3.0 (minor, 06.10)
+
+- Calendar event card: the trash icon of «Отменить встречу» looks smaller than the pencil of «Изменить» (both `size-3.5`, the Trash2 glyph is lighter) — align the two button icons.
+- Room voice banner (phone): the banner overlays the top of the «Это начало комнаты» icon when the feed is short — pad the feed under the banner.
+- Voice room row: the limit pill renders «02 / 04» (zero-padded `pad2`) on phone and desktop; check with the owner whether leading zeros are wanted outside the Discord-style segmented pill.
+- Desktop visual spec is stale in places after 3.0: `settings-stickers*` look for a «Стикеры» tab (now inside «Библиотека»), `sidebar-create-menu` expects «Создать комнату» in the create menu, `dm-chat` waits for `aside` on the DM screen; voice screens need the dev LiveKit reachable (`livekit-server --dev --node-ip 127.0.0.1` locally — with a VPN interface the signal start hung ~60 s).
+- Profile dialog (desktop, 960): opened scrolled past the header in `profile-dialog` (starts at «UTC+5 · 15:30»); check the initial scroll position.

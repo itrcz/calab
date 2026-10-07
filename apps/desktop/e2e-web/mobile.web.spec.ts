@@ -107,28 +107,31 @@ async function touchHold(page: Page, selector: string): Promise<{ move(x: number
   };
 }
 
-test('phone: sign in → rooms drawer → message → voice → PTT hold', async ({ page, browserName }) => {
+/** The app opens on the room list (ADR-0073): «общий» from it. */
+async function openGeneral(page: Page): Promise<void> {
+  await page.getByTestId('phone-room-list').getByRole('button', { name: /^общий/ }).first().tap();
+  await expect(page.getByTestId('composer')).toBeVisible();
+}
+
+test('phone: sign in → room list → message → voice → PTT hold', async ({ page, browserName }) => {
   test.setTimeout(120_000);
   await signIn(page);
 
-  // One column: the chat full screen, the room column closed (in a drawer).
-  const header = page.locator('header').filter({ has: page.getByRole('button', { name: 'Комнаты и пространства' }) });
-  await expect(header).toBeVisible();
-  await expect(page.getByTestId('mobile-nav')).toHaveCount(0);
-  await expect(page.getByTestId('titlebar')).toHaveCount(0);
-  await expectNoHorizontalScroll(page, 'chat');
-
-  // ☰ → rail + rooms; pick «общий» → the drawer closes on the room.
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).tap();
-  const nav = page.getByTestId('mobile-nav');
+  // ADR-0073: the app opens on «Команда» — the room list at full width, the tab bar at the bottom.
+  const nav = page.getByTestId('phone-chats');
   await expect(nav).toBeVisible();
-  await expect(nav.getByRole('navigation', { name: 'Пространства' })).toBeVisible();
-  await expectNoHorizontalScroll(page, 'drawer');
-  await expectAccessible(page, 'drawer');
-  await shot(page, 'mobile-drawer');
-  await nav.getByRole('button', { name: /^общий/ }).first().tap();
-  await expect(nav).toHaveCount(0);
+  await expect(page.getByTestId('phone-tabbar')).toBeVisible();
+  await expect(page.getByTestId('titlebar')).toHaveCount(0);
+  // Owner 07.10: no workspace rail — the header's switcher picks the workspace.
+  await expect(page.getByRole('navigation', { name: 'Пространства' })).toHaveCount(0);
+  await expect(nav.getByTestId('phone-ws-switcher')).toBeVisible();
+  await expectNoHorizontalScroll(page, 'room list');
+  await expectAccessible(page, 'room list');
+  await shot(page, 'mobile-home');
+  // The whole row opens the room (pushed: «←», no tab bar).
+  await nav.getByTestId('phone-room-list').getByRole('button', { name: /^общий/ }).first().tap();
   await expect(page.getByRole('heading', { name: 'общий', exact: true })).toBeVisible();
+  await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
 
   // Composer: 16 px field (no iOS zoom), send with the round button.
   const box = page.getByPlaceholder('Сообщение в #общий');
@@ -143,38 +146,39 @@ test('phone: sign in → rooms drawer → message → voice → PTT hold', async
   await expectNoHorizontalScroll(page, 'chat after send');
   await shot(page, 'mobile-chat');
 
-  // Members: the right drawer.
+  // Members: a screen of their own; the browser's back (Android back) returns to the room.
   await page.getByRole('button', { name: 'Участники' }).tap();
-  const members = page.getByTestId('mobile-members');
+  const members = page.getByTestId('members-page');
   await expect(members.getByRole('complementary', { name: 'Участники' })).toBeVisible();
   await expectAccessible(page, 'members');
-  await page.keyboard.press('Escape');
+  await page.goBack();
   await expect(members).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'общий', exact: true })).toBeVisible();
 
-  // Voice: join «Созвон» from the drawer → the compact strip at the bottom.
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Войти в голос «Созвон»' }).tap();
+  // Voice: «←» to the list, «Созвон» → the handset in its header → the compact strip at the bottom.
+  await page.getByTestId('phone-back').tap();
+  await nav.getByTestId('phone-room-list').getByRole('button', { name: /^Созвон/ }).first().tap();
+  await page.getByTestId('room-header-join').tap();
   const strip = page.getByTestId('mobile-voice-strip');
   await expect(strip.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId('mobile-nav')).toHaveCount(0);
   const stripBox = await strip.boundingBox();
   const vh = page.viewportSize()?.height ?? 0;
   expect(stripBox && stripBox.y + stripBox.height, 'strip at the bottom edge').toBeGreaterThan(vh - 80);
   await expectNoHorizontalScroll(page, 'voice');
   await expectAccessible(page, 'voice strip');
 
-  // Push-to-talk mode (settings sheet, from the drawer's self panel) → the strip gets the hold button.
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Настройки', exact: true }).tap();
-  const settings = page.getByRole('dialog', { name: 'Настройки' });
-  await settings.getByRole('tab', { name: 'Голос и устройства' }).tap();
+  // Push-to-talk mode (a settings screen, from «Профиль») → the strip gets the hold button.
+  await page.getByTestId('phone-back').tap();
+  await page.getByTestId('phone-tab-dms').tap();
+  await page.getByTestId('phone-profile-button').tap();
+  await page.getByTestId('phone-profile-voice').tap();
+  const settings = page.getByTestId('settings-page');
   await settings.getByRole('radio', { name: 'Push-to-talk' }).tap();
   await expect(settings.getByRole('radio', { name: 'Push-to-talk' })).toHaveAttribute('aria-checked', 'true');
   await expectNoHorizontalScroll(page, 'settings');
   await shot(page, 'mobile-settings');
-  await settings.getByRole('button', { name: 'Закрыть', exact: true }).tap();
+  await page.getByTestId('phone-back').tap();
   await expect(settings).toHaveCount(0);
-  await expect(page.getByTestId('mobile-nav'), 'a dialog replaces the drawer').toHaveCount(0);
 
   // PTT: held = on air; sliding the finger off keeps it (pointer capture); lifting ends it.
   const ptt = '[data-testid="ptt-hold"]';
@@ -212,6 +216,7 @@ test('phone: sign in → rooms drawer → message → voice → PTT hold', async
 
 test('phone: dialogs and menus are bottom sheets', async ({ page }) => {
   await signIn(page);
+  await page.getByTestId('phone-room-list').getByRole('button', { name: /^общий/ }).first().tap();
   // Attach menu (📎) → a sheet across the bottom, with the camera capture item.
   await page.getByRole('button', { name: 'Прикрепить файл' }).tap();
   const menu = page.getByRole('menu');
@@ -223,9 +228,10 @@ test('phone: dialogs and menus are bottom sheets', async ({ page }) => {
   await expect(page.getByTestId('composer-camera-input')).toHaveAttribute('capture', 'environment');
   await page.keyboard.press('Escape');
 
-  // A modal (create workspace from the drawer) → bottom sheet.
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).tap();
-  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Создать пространство' }).tap();
+  // A modal (create workspace from the switcher) → bottom sheet.
+  await page.getByTestId('phone-back').tap();
+  await page.getByTestId('phone-ws-switcher').tap();
+  await page.getByRole('menuitem', { name: 'Создать пространство' }).tap();
   const dialog = page.getByRole('dialog', { name: 'Новое пространство' });
   await expect(dialog).toBeVisible();
   const d = await dialog.boundingBox();
@@ -235,32 +241,31 @@ test('phone: dialogs and menus are bottom sheets', async ({ page }) => {
   await shot(page, 'mobile-sheet');
 });
 
-test('phone: «Личные» — the DM list in the drawer, the DM full screen (ADR-0020)', async ({ page }) => {
+test('phone: «Личные» — the DM list on its tab, the DM full screen (ADR-0020, ADR-0073)', async ({ page }) => {
   await signIn(page);
-  await page.getByRole('button', { name: 'Комнаты и пространства' }).tap();
-  const nav = page.getByTestId('mobile-nav');
-  await nav.getByTestId('rail-home').getByRole('button').tap();
-  // The drawer stays open on the DM list (like switching a workspace), the previews come with READY.
+  await page.getByTestId('phone-tab-dms').tap();
+  const nav = page.getByTestId('phone-dms');
+  // The previews come with READY.
   const list = nav.getByTestId('dm-list');
   await expect(list).toBeVisible();
   const boris = list.getByRole('button', { name: /Борис Петров/ });
   await expect(boris).toContainText('Закрепил, чтобы не потерялся');
-  await expectNoHorizontalScroll(page, 'dm drawer');
-  await expectAccessible(page, 'dm drawer');
-  await shot(page, 'mobile-dm-drawer');
+  await expectNoHorizontalScroll(page, 'dm list');
+  await expectAccessible(page, 'dm list');
+  await shot(page, 'mobile-dm-list');
   await boris.tap();
   await expect(nav).toHaveCount(0);
   const header = page.getByTestId('dm-header');
   await expect(header).toContainText('Борис Петров');
-  // ☰ in the DM header brings the DM list back; no members drawer in a DM.
-  await expect(header.getByRole('button', { name: 'Комнаты и пространства' })).toBeVisible();
+  // «←» in the DM header returns to the DM list; no members in a DM.
+  await expect(header.getByTestId('phone-back')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Написать @Борис Петров' })).toBeVisible();
   // Wait for the fixture's message history to render (not just the welcome/composer) before the shot.
   await expect(page.getByText('Анна, привет! Посмотришь PR с миграцией')).toBeVisible();
   await expectNoHorizontalScroll(page, 'dm chat');
   await shot(page, 'mobile-dm-chat');
-  await header.getByRole('button', { name: 'Комнаты и пространства' }).tap();
-  await expect(page.getByTestId('mobile-nav').getByTestId('dm-list')).toBeVisible();
+  await header.getByTestId('phone-back').tap();
+  await expect(page.getByTestId('phone-dms').getByTestId('dm-list')).toBeVisible();
 });
 
 test('phone: onboarding and the join card fit the screen', async ({ page }) => {
@@ -332,6 +337,7 @@ async function bottomOf(page: Page): Promise<{ vh: number; edge: number; gap: nu
 
 test('phone: a Safari tab — the shell is the viewport, no standalone handling', async ({ page }) => {
   await signIn(page);
+  await openGeneral(page);
   const b = await bottomOf(page);
   expect(b.standalone).toBe(false);
   expect(b.app).toBe('');
@@ -349,6 +355,7 @@ test('phone: home-screen app (standalone) — no band under the composer', async
   // The whole screen is the viewport (no toolbars): the composer ends at the bottom edge.
   await page.setViewportSize(screen);
   await signIn(page);
+  await openGeneral(page);
   const b = await bottomOf(page);
   expect(b.standalone).toBe(true);
   expect(b.app).toBe('');
@@ -371,6 +378,7 @@ test('phone: home-screen app (standalone) — no band under the composer', async
     const short = await ctx.newPage();
     await emulateStandalone(short);
     await signIn(short);
+    await openGeneral(short);
     await expect.poll(async () => (await bottomOf(short)).app).toBe(`${screen.height}px`);
     const s = await bottomOf(short);
     expect(Math.abs(s.shell - screen.height)).toBeLessThanOrEqual(1);

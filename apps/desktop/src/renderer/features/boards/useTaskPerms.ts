@@ -7,7 +7,7 @@ import { myUserId } from '../../stores/session';
  * cards, rows and the timeline. A bigint is a primitive: the component re-renders only when the
  * bits change, not on every board / task update.
  */
-export function useTaskPerms(task: Pick<Task, 'boardId' | 'assignees' | 'approvers' | 'archivedAt'> | undefined): bigint {
+export function useTaskPerms(task: Pick<Task, 'boardId' | 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt'> | undefined): bigint {
   const me = myUserId();
   return useBoards((s) => (task ? taskPermsOf(s, task, me) : 0n));
 }

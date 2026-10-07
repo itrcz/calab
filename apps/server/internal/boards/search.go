@@ -21,8 +21,8 @@ import (
 type Visible struct {
 	// Full: the live boards with VIEW_BOARD, with the member's bits.
 	Full map[uuid.UUID]perm.Bits
-	// Scoped: the task-scoped boards — live, not restricted, without VIEW_BOARD, where the
-	// member (a human, not a guest) is invited on a live task; Invited: those tasks.
+	// Scoped: the task-scoped boards — live, without VIEW_BOARD, where the member (a human, not
+	// a guest) is invited (assignee, approver, watcher) on a live task; Invited: those tasks.
 	Scoped  map[uuid.UUID]bool
 	Invited map[uuid.UUID]bool
 	viewer  uuid.UUID

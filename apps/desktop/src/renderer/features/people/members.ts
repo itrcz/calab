@@ -260,3 +260,24 @@ export function memberActions(c: MenuContext): MenuActions {
 export function hasAnyAction(a: MenuActions): boolean {
   return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.grantAchievement || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick || a.ban;
 }
+
+/** A user's custom status as one line («🍔 на обеде»); '' = none. */
+export const customStatusLine = (u: { statusEmoji?: string; statusText?: string } | undefined): string =>
+  [u?.statusEmoji, u?.statusText].filter(Boolean).join(' ');
+
+/** Live activity on a member row's second line, besides the custom status. */
+export type MemberActivity = 'stream' | 'voice' | 'call' | null;
+
+export function memberActivity(v: { roomId?: string; streaming?: boolean } | undefined, onCall: boolean): MemberActivity {
+  if (v?.roomId) return v.streaming ? 'stream' : 'voice';
+  return onCall ? 'call' : null;
+}
+
+/**
+ * Members column, second line (docs/08 «Колонка участников»): the custom status and the live
+ * activity share one 16 px line — the status first (what the person chose to say), the
+ * activity compact after a «·» (icon + short label); either alone takes the whole line.
+ */
+export function memberSecondLine(status: string, activity: MemberActivity): { status: string; activity: MemberActivity; compact: boolean } {
+  return { status, activity, compact: status !== '' && activity !== null };
+}

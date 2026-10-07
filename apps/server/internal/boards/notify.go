@@ -49,8 +49,9 @@ func actsOf(acts []sqlc.TaskActivity, taskID uuid.UUID) []sqlc.TaskActivity {
 	return out
 }
 
-// sees keeps the users who see the task (ADR-0059: perm.TaskBits ≠ 0 — the board's viewers and,
-// on a task-scoped board, the task's own assignees and approvers while it is live).
+// sees keeps the users who see the task (ADR-0059, ADR-0076: perm.TaskBits ≠ 0 — the board's
+// viewers and, on a task-scoped board, the task's own assignees, approvers and watchers while
+// it is live).
 func sees(ctx context.Context, q *sqlc.Queries, t taskRow, users []uuid.UUID) ([]uuid.UUID, error) {
 	res := perm.NewResolver(q)
 	out := make([]uuid.UUID, 0, len(users))
@@ -73,7 +74,7 @@ func sees(ctx context.Context, q *sqlc.Queries, t taskRow, users []uuid.UUID) ([
 		if err != nil {
 			return nil, err
 		}
-		if perm.TaskBits(acc, inv.Assignee, inv.Approver) != 0 {
+		if perm.TaskBits(acc, inv.Assignee, inv.Approver, inv.Watcher) != 0 {
 			out = append(out, u)
 		}
 	}
@@ -189,9 +190,10 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 }
 
 // TaskHook runs after a comment is posted (or forwarded) into a task room (messages.Handlers
-// .TaskHook): the author subscribes, @mentioned users who see the board are subscribed and
-// notified, the other subscribers get a COMMENT notice by their levels, and the board gets
-// TASK_UPDATE (comment_count).
+// .TaskHook): the author subscribes; when the author may edit the task the @mentioned members
+// become watchers (ADR-0076 §5); the mentioned who see the task are subscribed and notified,
+// the other subscribers get a COMMENT notice by their levels, and the board gets TASK_UPDATE
+// (comment_count).
 func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message) {
 	// The comment is committed: finish even if the client goes away.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -209,6 +211,16 @@ func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Me
 			return err
 		}
 		mentioned, _ := messages.ParseMentions(msg.Content)
+		// A forwarded message carries someone else's text: its @mentions notify, never invite.
+		if len(mentioned) > 0 && msg.ForwardedFrom == nil {
+			editor, err := authorEdits(ctx, q, t, msg.AuthorID)
+			if err != nil {
+				return err
+			}
+			if _, err := mentionWatchers(ctx, q, t, msg.AuthorID, editor, mentioned, &c); err != nil {
+				return err
+			}
+		}
 		if err := s.notifyDirect(ctx, q, t, msg.AuthorID, nil, mentioned, msg.ID, &c); err != nil {
 			return err
 		}

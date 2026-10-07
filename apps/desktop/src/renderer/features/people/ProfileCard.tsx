@@ -24,6 +24,7 @@ import { openProfile } from './actions';
 import { LocalTime } from './LocalTime';
 import { BirthdayInfo } from './Birthday';
 import { ProfileCardAchievements } from './ProfileAchievements';
+import { ProfileContacts, UserHandle } from './ProfileContacts';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -74,7 +75,7 @@ export function ProfileCard({
   const presence = status !== undefined ? PRESENCE_KEY[status] : undefined;
   const statusLine = [u.statusEmoji, u.statusText].filter(Boolean).join(' ');
   return (
-    <div className="flex w-72 flex-col gap-3 p-4">
+    <div className="flex w-72 flex-col gap-3 p-4 mobile:w-full">
       <div className="flex items-center gap-3">
         <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={56} presence speaking={speaking && !v?.muted} ring="var(--color-popover-solid)" />
         <div className="min-w-0 flex-1">
@@ -92,6 +93,8 @@ export function ProfileCard({
               {u.displayName}
             </div>
           ) : null}
+          {/* The nickname (ADR-0077); a bot's username is BotHandle below. */}
+          {u.isBot ? null : <UserHandle userId={userId} />}
           {/* A bot (ADR-0031): its @username instead of presence (bots are never «в сети» as people). */}
           {u.isBot ? (
             <BotHandle botUserId={userId} />
@@ -137,12 +140,15 @@ export function ProfileCard({
           ) : null}
         </div>
       ) : null}
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-line pt-3 text-caption">
+      {/* Phone (ADR-0073 §6): label over value on the full width — next to a 44 px «Скопировать» a value
+          column beside the labels left ~80 px and broke a mail address / number mid-word. */}
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-line pt-3 text-caption mobile:grid-cols-1 mobile:gap-y-0 mobile:[&>dt:not(:first-child)]:mt-2.5">
         <dt className="text-muted">{t('people.profile.role')}</dt>
         <dd className="flex min-w-0 items-center gap-1.5">
           {t(ROLE_KEY[m.role])}
         </dd>
         <ProfileCardAchievements workspaceId={workspaceId} userId={userId} />
+        {u.isBot ? null : <ProfileContacts userId={userId} variant="row" />}
         {u.isBot ? null : <LocalTime userId={userId} variant="row" />}
         {u.isBot ? null : <BirthdayInfo userId={userId} variant="row" />}
         {v?.roomId ? (

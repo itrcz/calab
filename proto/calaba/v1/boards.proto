@@ -84,6 +84,9 @@ enum BoardFeature {
   BOARD_FEATURE_ATTACHMENTS = 11; // attachments of the description
   BOARD_FEATURE_COMMENTS = 12;   // the task room is read-only (like an archived task)
   BOARD_FEATURE_TIMELINE = 13;   // the timeline view (client only)
+  BOARD_FEATURE_FORMS = 14;      // intake forms: creating / editing, and opening one
+  BOARD_FEATURE_AUTOMATIONS = 15; // rules: creating / enabling / testing; enabled rules pause
+  BOARD_FEATURE_GIT_LINKS = 16;  // the Git section and badge of a task (client only)
 }
 
 // The scale of Task.estimate (ADR-0058 §3). Writes outside the scale are 422 (field
@@ -238,10 +241,10 @@ message Board {
   repeated BoardFeature disabled_features = 26;
   // The estimate scale (ADR-0058 §3); the server always sends a concrete value.
   EstimateScale estimate_scale = 27;
-  // Task-scoped access (ADR-0059): the recipient sees the board only through its tasks - those
-  // where they are an assignee or an approver; permissions = 0 (task bits come from
-  // taskPermissions), permission_overrides empty, open_tasks 0. Never on a restricted board,
-  // never for guests or bots.
+  // Task-scoped access (ADR-0059, ADR-0076): the recipient sees the board only through its
+  // tasks - those where they are an assignee, an approver or a watcher; permissions = 0 (task
+  // bits come from taskPermissions), permission_overrides empty, open_tasks 0. Restricted
+  // boards too (ADR-0076); never for guests or bots.
   bool task_scoped = 28;
   // Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
   // created or deleted).
@@ -258,8 +261,8 @@ message TaskAssignee {
 
 // Requested assignee (POST /tasks, PUT /tasks/{id}/assignees).
 message TaskAssigneeInput {
-  // A member of the workspace, not a guest; on a restricted board only one who sees it; a bot
-  // only one who sees the board (ADR-0059).
+  // A member of the workspace, not a guest (one who does not see the board then sees this task,
+  // ADR-0059 / ADR-0076); a bot only one who sees the board.
   string user_id = 1;
   bool is_lead = 2;
   string note = 3;
@@ -369,13 +372,17 @@ message Task {
   // A subtask's milestone: one of its parent's milestones (ADR-0063); reset when the parent
   // changes. Empty = none.
   string task_milestone_id = 46;
+  // Watchers (ADR-0076): members who see the card - an explicit role, always also subscribed.
+  // A watcher who does not see the board sees this task (VIEW_BOARD on it: view, comment,
+  // subscribe). Sorted by user id. See PUT / DELETE /api/tasks/{id}/watchers.
+  repeated string watcher_ids = 47;
 }
 
 // One entry of the task journal (ADR-0042 §1): written on every change, never edited.
 // kind: "created" | "status" | "assignees" | "priority" | "labels" | "dates" | "estimate" |
 // "parent" | "milestone" | "relation" | "title" | "description" | "archived" | "restored" |
 // "moved_board" | "attachments" | "approvers" | "approval" | "approvals_reset" | "checklist" |
-// "git" | "milestones" (ADR-0063, see TaskMilestoneResponse). before / after
+// "git" | "milestones" (ADR-0063, see TaskMilestoneResponse) | "watchers" (ADR-0076). before / after
 // hold the changed fields (e.g. {"status_id": "…", "status_type": "started"},
 // {"assignees": [{"user_id": …}]}). Approvals (ADR-0049): "approvers" — {"user_ids": […],
 // "required": n} before and after; "approval" — after {"user_id", "state": "pending" |
@@ -549,6 +556,9 @@ message SetBoardPermissionsRequest {
 message BoardPermissionsResponse {
   repeated RoomPermissionOverride overrides = 1;
   Board board = 2;
+  // Members who see the board only through its cards (ADR-0059 / ADR-0076: assignees,
+  // approvers, watchers of live tasks without VIEW_BOARD) - «Позванные по карточкам: N».
+  uint32 task_scoped_count = 3;
 }
 
 // POST /api/boards/{id}/statuses (MANAGE_BOARD, ≤ 20) → BoardResponse.
@@ -689,8 +699,8 @@ message SetAssigneesRequest {
 // votes; removed ones lose them; new ones start PENDING, are subscribed and notified
 // (APPROVAL_REQUESTED). Journal "approvers".
 message SetTaskApproversRequest {
-  // Members of the workspace, not guests nor bots; on a restricted board only those who see it
-  // (ADR-0059).
+  // Members of the workspace, not guests nor bots (one who does not see the board then sees this
+  // task, ADR-0059 / ADR-0076).
   repeated string user_ids = 1;
   uint32 required = 2;
 }
@@ -716,6 +726,20 @@ message TaskApprovalRequest {
 message SetTaskRelationRequest {
   string related_id = 1;
   TaskRelationKind kind = 2;
+}
+
+// PUT /api/tasks/{id}/watchers → TaskResponse (ADR-0076): makes user_id a watcher (and a
+// subscriber), by whoever may edit the task (403 otherwise). A member of the workspace, not a
+// guest; a bot only one who sees the board (422 "userId"); a human who does not see the board
+// then sees this task. ≤ 50 watchers (409). Adding a watcher twice is a no-op. Journal
+// "watchers" {"user_ids": [...]} before and after. An @mention by whoever may edit the task
+// (description, comment) makes the mentioned humans watchers too.
+// DELETE /api/tasks/{id}/watchers?user_id= → TaskResponse removes one: by whoever may edit the
+// task, or the watcher themselves («Перестать наблюдать»). The subscription goes too when the
+// user no longer sees the task; their access goes unless another basis is left (a role on the
+// board, assignee, approver). Neither works on an archived task (409).
+message SetTaskWatcherRequest {
+  string user_id = 1;
 }
 
 // PUT /api/tasks/{id}/subscription (VIEW_BOARD) → TaskResponse. muted false = subscribed with

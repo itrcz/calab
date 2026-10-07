@@ -58,6 +58,7 @@ const KEY = new Set([
   'chat-context-menu',
   'room-notify-menu',
   'dm-list',
+  'nav-badges',
   'dm-archive',
   'dm-delete-confirm',
   'dm-chat',
@@ -242,7 +243,9 @@ async function openSettingsTab(page: Page, opener: () => Promise<void>, index: n
 /** In «Переговорка» (dev LiveKit), muted (the fake mic beeps), signal bars steady «good». */
 async function inVoice(page: Page, mock: MockServer): Promise<void> {
   await mainWindow(page, mock);
+  // 3.0: a click on a voice room opens it; the voice is joined from its header («Войти в голос»).
   await page.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
+  await page.getByRole('region', { name: 'Переговорка' }).getByRole('button', { name: 'Войти в голос', exact: true }).click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press(`${MOD}+Shift+m`);
   await expect(page.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
@@ -690,6 +693,32 @@ test('dm-list', async ({ open, win, shot }) => {
   await checkpoint(shot, 'dm-list');
 });
 
+// Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; the rail tile and the DM rows.
+test('nav-badges', async ({ open, win, mock, shot }) => {
+  const burst = (roomId: string, authorId: string, n: number): void => {
+    for (let i = 0; i < n; i++) mock.injectMessage({ roomId, authorId, content: `Сообщение ${i + 1}` });
+  };
+  await open(DM_SEED);
+  const list = win.getByTestId('dm-list');
+  await expect(list.getByRole('button')).toHaveCount(3);
+  burst(IDS.dms.vera, IDS.users.vera, 1);
+  burst(IDS.dms.boris, IDS.users.boris, 9);
+  burst(IDS.dms.grigory, IDS.users.grigory, 99);
+  const badges = win.locator('[data-count-badge]');
+  await expect(badges.filter({ hasText: '99+' }).first()).toBeVisible();
+  await settle(win);
+  for (const b of await badges.all()) {
+    const box = await b.boundingBox();
+    const text = ((await b.textContent()) ?? '').trim();
+    if (!box) continue;
+    const label = `badge «${text}» ${box.width}x${box.height}`;
+    if (text.length <= 2) expect(Math.round(box.width), label).toBe(Math.round(box.height));
+    else expect(box.width, label).toBeGreaterThan(box.height);
+  }
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'nav-badges');
+});
+
 test('dm-archive', async ({ open, win, shot }) => {
   await open(DM_SEED);
   const archive = await archiveGrigory(win, await dmHome(win));
@@ -922,6 +951,10 @@ test('members-profile', async ({ open, win, mock, shot }) => {
   await expect(card).toBeVisible();
   // docs/09 #108: the badge inline after the name (no text line), its name as the tooltip.
   await expect(card.locator('h3 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
+  // ADR-0077: @nick under the name; email and phone of a colleague with «Скопировать».
+  await expect(card.getByTestId('user-handle')).toHaveText('@boris_p');
+  await expect(card.getByTestId('profile-email')).toContainText('boris@calaba.test');
+  await expect(card.getByTestId('profile-phone')).toContainText('+7 912 555-02-02');
   await badgesLoaded(win);
   await checkpoint(shot, 'members-profile');
 });
@@ -1019,6 +1052,8 @@ test('profile-dialog', async ({ open, win, mock, shot }) => {
   await expect(dialog.locator('h2 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
   // docs/09 #143: the app of the member's latest session under the local time.
   await expect(dialog.getByTestId('client-version')).toHaveText('Calab 1.1.0 · macOS');
+  // ADR-0077: «Контакты» — email and phone.
+  await expect(dialog.getByTestId('profile-contacts')).toContainText('boris@calaba.test');
   await badgesLoaded(win);
   const note = dialog.getByTestId('profile-note');
   await expect(note).toBeEditable();
@@ -1368,8 +1403,12 @@ test('self-mic-menu', async ({ open, win, mock, shot }) => {
 test('workspace-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
+  // The workspace switcher (ADR-0074 §2): every workspace, then create / find, then this one's items.
   await win.getByTestId('titlebar-title').click();
   await expect(win.getByRole('menu')).toBeVisible();
+  await expect(win.getByTestId('switcher-row')).toHaveCount(2);
+  await expect(win.getByTestId('switcher-row').first()).toHaveAttribute('aria-current', 'true');
+  await expect(win.getByRole('menuitem', { name: 'Создать пространство' })).toBeVisible();
   await checkpoint(shot, 'workspace-menu');
 });
 
@@ -2117,7 +2156,7 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
   await sidebar.getByRole('button', { name: /^Переговорка/ }).first().click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const preview = win.getByTestId('voice-preview');
-  await expect(preview).toContainText('Вы не в голосе');
+  await expect(preview).not.toContainText('Вы не в голосе');
   await expect(preview.getByRole('button', { name: 'Войти в голос' })).toBeVisible();
   await expect(win.getByRole('region', { name: 'Голосовое подключение' })).toContainText('Созвон');
   await expect(win.getByText('Показываю экран с макетами')).toBeVisible();
@@ -3539,7 +3578,7 @@ function externalEvent(mock: MockServer): void {
 async function calendarDay(win: Page, mock: MockServer): Promise<void> {
   mock.setClock(NOW.getTime());
   seedDay(mock);
-  await win.getByTestId('calendar-button').click();
+  await win.getByTestId('section-calendar').click();
   await expect(win.getByTestId('mini-calendar')).toBeVisible();
 }
 
@@ -3549,7 +3588,7 @@ test('calendar-mini', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await calendarDay(win, mock);
   await expect(win.getByTestId('day-view')).toBeVisible();
-  await expect(win.getByTestId('calendar-count')).toHaveText('3');
+  await expect(win.getByTestId('section-calendar-count')).toHaveText('3');
   await expect(win.locator('[data-cal-day="2026-01-20"]')).toHaveAccessibleName(/есть встречи/);
   await checkpoint(shot, 'calendar-mini');
 });
@@ -3688,7 +3727,7 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
 /** Boards mode on «Разработка» (CAL, the mock's seeded board), the clock at NOW. */
 async function boardsMode(win: Page, mock: MockServer): Promise<void> {
   mock.setClock(NOW.getTime());
-  await win.getByTestId('boards-button').click();
+  await win.getByTestId('section-boards').click();
   await expect(win.getByTestId('kanban')).toBeVisible();
   await expect(win.getByTestId('task-card').filter({ hasText: 'CAL-3' })).toBeVisible();
 }
@@ -3752,6 +3791,32 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await win.getByRole('tab', { name: 'Статусы' }).click();
   await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
   await checkpoint(shot, 'boards-settings');
+});
+
+/** Board settings, the features tab (owner 07.10): every optional feature has a switch, 16 in all. */
+test('boards-features', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Фичи' }).click();
+  await expect(win.getByTestId('board-features').getByRole('switch')).toHaveCount(16);
+  await checkpoint(shot, 'boards-features');
+});
+
+/** Create-task dialog (owner 07.10): the start date next to the due date. */
+test('boards-create', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.keyboard.press('c');
+  await expect(win.getByTestId('create-task')).toBeVisible();
+  await win.getByTestId('create-task-title').fill('Задача с датой начала');
+  await win.getByTestId('create-start').click();
+  await win.getByRole('button', { name: /Сегодня/ }).first().click();
+  await expect(win.getByTestId('create-start')).not.toContainText('Начало');
+  await checkpoint(shot, 'boards-create');
 });
 
 /** The timeline (3), month scale: today line, weekends, CAL-3 → CAL-4 late-blocker marker, «Без дат». */

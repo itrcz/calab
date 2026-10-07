@@ -4,7 +4,7 @@ import { useUi } from '../stores/ui';
 import { setVoice, useVoice } from '../stores/voice';
 import { isVoicePreview, joinButton, joinOutcome } from './voiceEntry';
 
-const base = { inRoom: false, canConnect: true, canMove: false, people: 0, limit: 0 };
+const base = { inRoom: false, canConnect: true, owner: false, people: 0, limit: 0 };
 
 describe('joinOutcome', () => {
   it('joins a room with space', () => {
@@ -15,9 +15,9 @@ describe('joinOutcome', () => {
     expect(joinOutcome({ ...base, inRoom: true, people: 4, limit: 4 })).toBe('none');
     expect(joinOutcome({ ...base, canConnect: false })).toBe('none');
   });
-  it('a full room says so, unless I may move members', () => {
+  it('a full room says so, unless I am the workspace owner (admins and moderators are bound too, 07.10)', () => {
     expect(joinOutcome({ ...base, people: 4, limit: 4 })).toBe('full');
-    expect(joinOutcome({ ...base, people: 4, limit: 4, canMove: true })).toBe('join');
+    expect(joinOutcome({ ...base, people: 4, limit: 4, owner: true })).toBe('join');
   });
 });
 
@@ -41,14 +41,14 @@ describe('voice room chat without voice (docs/09 #14)', () => {
 });
 
 describe('row «Войти» visibility', () => {
-  const base = { inRoom: false, canConnect: true, canMove: false, people: 2, limit: 4, touch: false };
+  const base = { inRoom: false, canConnect: true, owner: false, people: 2, limit: 4, touch: false };
   it('is hover-only on desktop even with people, always on touch', () => {
     expect(joinButton(base)).toEqual({ shown: true, always: false });
     expect(joinButton({ ...base, touch: true })).toEqual({ shown: true, always: true });
   });
-  it('is hidden in a full room, unless I may move members', () => {
+  it('is hidden in a full room, unless I am the workspace owner', () => {
     expect(joinButton({ ...base, people: 4 }).shown).toBe(false);
-    expect(joinButton({ ...base, people: 4, canMove: true }).shown).toBe(true);
+    expect(joinButton({ ...base, people: 4, owner: true }).shown).toBe(true);
     expect(joinButton({ ...base, people: 9, limit: 0 }).shown).toBe(true);
   });
   it('is hidden when already in the room or without CONNECT', () => {

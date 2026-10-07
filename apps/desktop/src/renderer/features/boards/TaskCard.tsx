@@ -131,7 +131,7 @@ export const TaskCard = memo(function TaskCard({
       onDragLeave={() => setDropOver(false)}
       onDrop={onDrop}
       className={cx(
-        'group/card relative flex cursor-default select-none flex-col gap-1.5 rounded-[var(--radius-card)] border bg-elev px-3 py-2.5 text-left transition-[border-color,opacity] duration-[var(--motion-fast)]',
+        'group/card tap-inert relative flex cursor-default select-none flex-col gap-1.5 rounded-[var(--radius-card)] border bg-elev px-3 py-2.5 text-left transition-[border-color,opacity] duration-[var(--motion-fast)]',
         open || focused ? 'border-accent' : selected ? 'border-[color-mix(in_srgb,var(--color-accent)_60%,transparent)]' : 'border-line hover:border-[var(--color-fill-hover)]',
         selected && 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg-elevated))]',
         dragging && 'opacity-40',
@@ -212,7 +212,7 @@ export const TaskCard = memo(function TaskCard({
         ) : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
         {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
-        <GitBadge id={id} />
+        {on(BoardFeature.GIT_LINKS) ? <GitBadge id={id} /> : null}
         {on(BoardFeature.COMMENTS) && task.commentCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.comments')}>
             <MessageSquare className="size-3" aria-hidden />

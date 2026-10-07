@@ -1,4 +1,5 @@
 import { localAuthority } from '../features/identity/model';
+import { openWorkspace } from '../features/shell/sectionNav';
 import { isMenuAction, type MenuAction, type MenuState } from '../../shared/menu';
 import { cameraBlock } from '../lib/media/cameraLogic';
 import { mayArrangeRooms, mayInviteMembers } from '../lib/permissions';
@@ -86,7 +87,8 @@ export function runMenuAction(a: MenuAction): void {
   if (!st.signedIn) return;
   if (a.startsWith('workspace:')) {
     const id = a.slice('workspace:'.length);
-    if (st.workspaces.some((w) => w.id === id)) ui.setWorkspace(id);
+    // ⌘1…⌘9: the workspace on the section it was left on (ADR-0074 §2).
+    if (st.workspaces.some((w) => w.id === id)) openWorkspace(id);
     return;
   }
   const v = st.voice;

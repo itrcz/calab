@@ -3,7 +3,13 @@
 // proto/testdata/permissions.json. Keep them in sync.
 package perm
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/google/uuid"
+
+	"github.com/calaba/calaba/server/internal/db/sqlc"
+)
 
 // Bits is a permission bit mask (see docs/04-data-model.md).
 type Bits uint64
@@ -168,33 +174,75 @@ func (m Member) Has(id string) bool {
 	return false
 }
 
-// Scope carries the room-level inputs of the rule besides the overrides (ADR-0029).
+// Scope carries the room-level inputs of the rule besides the overrides (ADR-0029, ADR-0078).
 type Scope struct {
 	// Restricted: rooms.restricted — ADMINISTRATOR gives no bypass in the room and VIEW_ROOM
 	// comes only from an override (ADR-0029, ADR-0048).
 	Restricted bool
 	// Owner: the user is the workspace owner (workspaces.owner_id, the holder of the built-in
-	// owner role): everything, always, restricted or not.
+	// owner role): everything, always, restricted or not — except in a PrivateTemp room.
 	Owner bool
+	// PrivateTemp: a private temporary room (is_private and expires_at set, live or archived;
+	// ADR-0078). Nobody bypasses it — not ADMINISTRATOR, not the owner — and VIEW_ROOM comes only
+	// from the user's own override (people chosen in the dialog or in «Доступ», whoever entered
+	// by the room's link) or from being its Creator.
+	PrivateTemp bool
+	// Creator: the user created this temporary room and is a member, not a guest (ADR-0044); in
+	// a PrivateTemp room they always keep VIEW_ROOM.
+	Creator bool
 }
 
-// ScopeOf returns the scope of member m in a room with the given restricted flag.
-func ScopeOf(m Member, restricted bool) Scope {
-	return Scope{Restricted: restricted, Owner: m.Role == RoleOwner}
+// RoomFlags are a room's own inputs of the rule besides its overrides.
+type RoomFlags struct {
+	Restricted  bool      // rooms.restricted (ADR-0029)
+	PrivateTemp bool      // is_private AND expires_at IS NOT NULL (ADR-0078)
+	CreatedBy   uuid.UUID // rooms.created_by; uuid.Nil when unknown
 }
 
-// ComputeOrdered is the one room-permission rule (ADR-0026, ADR-0029, ADR-0048): raw = OR of
-// the member's roles' permissions (not expanded). In a restricted room the owner gets
-// everything, ADMINISTRATOR is dropped (admins count as plain members) and so is the roles'
-// VIEW_ROOM: only an allow override on the room lets anyone in; elsewhere ADMINISTRATOR means
-// everything, overrides ignored. Then each role's override in the room lowest position first
-// (deny, then allow; the most senior role wins), then the user's own override; without
-// VIEW_ROOM nothing. Overrides only touch RoomOnly bits: the workspace-level ones
-// (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS,
-// CREATE_TEMP_ROOMS, the ADR-0048 bits) are neither granted nor taken away per room, whatever
-// is stored. roleOvs are in the order of the roles; a zero Override is "none".
+// Flags builds RoomFlags from a room's columns: restricted, is_private, whether expires_at is
+// set (a temporary room) and created_by (may be nil).
+func Flags(restricted, private, temp bool, createdBy *uuid.UUID) RoomFlags {
+	f := RoomFlags{Restricted: restricted, PrivateTemp: private && temp}
+	if createdBy != nil {
+		f.CreatedBy = *createdBy
+	}
+	return f
+}
+
+// FlagsOf returns the flags of a room row.
+func FlagsOf(r sqlc.Room) RoomFlags {
+	return Flags(r.Restricted, r.IsPrivate, r.ExpiresAt != nil, r.CreatedBy)
+}
+
+// ScopeOf returns the scope of member m in a room with flags f.
+func ScopeOf(m Member, f RoomFlags) Scope {
+	return Scope{
+		Restricted:  f.Restricted,
+		Owner:       m.Role == RoleOwner,
+		PrivateTemp: f.PrivateTemp,
+		Creator:     f.CreatedBy != uuid.Nil && m.UserID == f.CreatedBy.String() && m.Role != RoleGuest && m.Role != "",
+	}
+}
+
+// ComputeOrdered is the one room-permission rule (ADR-0026, ADR-0029, ADR-0048, ADR-0078): raw
+// = OR of the member's roles' permissions (not expanded). In a private temporary room nobody
+// has a bypass: ADMINISTRATOR and the roles' VIEW_ROOM are dropped, the owner counts as anyone
+// else, role overrides do not grant VIEW_ROOM — only the user's own override does — and the
+// room's creator always has it. In a restricted room the owner gets everything, ADMINISTRATOR
+// is dropped (admins count as plain members) and so is the roles' VIEW_ROOM: only an allow
+// override on the room lets anyone in; elsewhere ADMINISTRATOR means everything, overrides
+// ignored. Then each role's override in the room lowest position first (deny, then allow; the
+// most senior role wins), then the user's own override; without VIEW_ROOM nothing. Overrides
+// only touch RoomOnly bits: the workspace-level ones (ADMINISTRATOR, MANAGE_WORKSPACE,
+// MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS, CREATE_TEMP_ROOMS, the ADR-0048 bits) are
+// neither granted nor taken away per room, whatever is stored. roleOvs are in the order of the
+// roles; a zero Override is "none".
 func ComputeOrdered(raw Bits, sc Scope, roleOvs []Override, userOv *Override) Bits {
+	roleMask := RoomOnly
 	switch {
+	case sc.PrivateTemp:
+		raw &^= Administrator | ViewRoom
+		roleMask &^= ViewRoom
 	case sc.Restricted && sc.Owner:
 		return All
 	case sc.Restricted:
@@ -204,12 +252,15 @@ func ComputeOrdered(raw Bits, sc Scope, roleOvs []Override, userOv *Override) Bi
 	}
 	p := raw
 	for _, o := range roleOvs {
-		p &^= o.Deny & RoomOnly
-		p |= o.Allow & RoomOnly
+		p &^= o.Deny & roleMask
+		p |= o.Allow & roleMask
 	}
 	if userOv != nil {
 		p &^= userOv.Deny & RoomOnly
 		p |= userOv.Allow & RoomOnly
+	}
+	if sc.PrivateTemp && sc.Creator {
+		p |= ViewRoom
 	}
 	if p&ViewRoom == 0 {
 		return 0

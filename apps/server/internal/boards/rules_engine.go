@@ -206,6 +206,9 @@ func (e *engine) board(id uuid.UUID) (*boardRules, error) {
 	if err != nil || b.ArchivedAt != nil {
 		return nil, err
 	}
+	if Disabled(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_AUTOMATIONS) {
+		return nil, nil // the board switched automations off: its rules pause, nothing is deleted
+	}
 	if ok, err := e.s.automationsAllowed(e.ctx, b.WorkspaceID); err != nil || !ok {
 		return nil, err
 	}

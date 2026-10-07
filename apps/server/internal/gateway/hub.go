@@ -352,11 +352,28 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	sessions := h.inWorkspace(wid)
 	shared := newScopedEnc(wid, ev)
 	view := func(rid, uid uuid.UUID) bool { return st.bits(rid, uid).Has(perm.ViewRoom) }
+	// Contacts (ADR-0077): USER_UPDATE / WORKSPACE_MEMBER_* may carry the subject's email and
+	// phone; a recipient that may not see them here gets the event without them, under its
+	// own id (dedup must not let a stripped copy from this workspace suppress the full one
+	// from a workspace the two share as colleagues).
+	var bare *encEvent
+	bareID := uuid.Nil
+	withContacts := pbconv.StripEvent(ev) != ev
+	deliver := func(s *Session, subject uuid.UUID) {
+		if withContacts && contactsHidden(st, s, subject) {
+			if bare == nil {
+				bare, bareID = newScopedEnc(wid, pbconv.StripEvent(ev)), strippedID(id)
+			}
+			s.dispatchEnc(bareID, bare)
+			return
+		}
+		s.dispatchEnc(id, shared)
+	}
 	// about(subject): deliver to everyone except guests who share no room with subject.
 	about := func(subject uuid.UUID) {
 		for _, s := range sessions {
 			if !st.hiddenFrom(s.user, subject) {
-				s.dispatchEnc(id, shared)
+				deliver(s, subject)
 			}
 		}
 	}
@@ -1479,3 +1496,15 @@ func withoutCommand(ev *v1.DispatchEvent) *v1.DispatchEvent {
 	m.Command = nil
 	return &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{MessageCreate: &v1.MessageCreate{WorkspaceId: mc.GetWorkspaceId(), Message: m}}}
 }
+
+// contactsHidden reports whether recipient s may not see subject's contacts in this
+// workspace (pbconv.ContactsVisible, ADR-0077): a bot session, or a guest / non-member on
+// either side. st.mu is held.
+func contactsHidden(st *wsState, s *Session, subject uuid.UUID) bool {
+	member := func(r perm.Role) bool { return r != "" && r != perm.RoleGuest }
+	return s.bot || !member(st.role(s.user)) || !member(st.role(subject))
+}
+
+// strippedID is the event id of the contact-less copy of event id (stable, so its copies
+// from several workspaces still count once).
+func strippedID(id uuid.UUID) uuid.UUID { return uuid.NewSHA1(id, []byte("calaba:contacts-stripped")) }

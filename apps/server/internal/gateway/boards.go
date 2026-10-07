@@ -15,10 +15,10 @@ import (
 
 // Task boards in the workspace state (ADR-0042 §4): the live boards with their overrides and
 // the comment room of every task, so board and task events and the messages of task rooms are
-// filtered per recipient without DB queries, like rooms. Task-scoped access (ADR-0059): the
-// humans invited (assignees, approvers) on the live tasks and, per user, on how many live tasks
-// of each board they are invited — a member without VIEW_BOARD sees a non-restricted board
-// while that count is > 0, and of it only those tasks.
+// filtered per recipient without DB queries, like rooms. Task-scoped access (ADR-0059,
+// ADR-0076): the humans invited (assignees, approvers, watchers) on the live tasks and, per
+// user, on how many live tasks of each board they are invited — a member without VIEW_BOARD
+// sees the board (restricted or not) while that count is > 0, and of it only those tasks.
 
 type taskRoom struct {
 	board    uuid.UUID
@@ -26,12 +26,14 @@ type taskRoom struct {
 	archived bool
 }
 
-// invite is how a user is on a task (ADR-0059): an assignee, an approver or both.
+// invite is how a user is on a task (ADR-0059, ADR-0076): an assignee, an approver, a watcher
+// or several.
 type invite uint8
 
 const (
 	invAssignee invite = 1 << iota
 	invApprover
+	invWatcher
 )
 
 // boardState is the boards part of wsState (mu of the workspace held).
@@ -132,6 +134,9 @@ func (b *boardState) invitesOf(t *v1.Task) map[uuid.UUID]invite {
 	for _, a := range t.GetApprovers() {
 		add(a.GetUserId(), invApprover)
 	}
+	for _, w := range t.GetWatcherIds() {
+		add(w, invWatcher)
+	}
 	return out
 }
 
@@ -199,6 +204,9 @@ func loadBoards(ctx context.Context, q *sqlc.Queries, wid uuid.UUID, st *wsState
 		if x.Approver {
 			byTask[x.TaskID][x.UserID] |= invApprover
 		}
+		if x.Watcher {
+			byTask[x.TaskID][x.UserID] |= invWatcher
+		}
 		boardOf[x.TaskID] = x.BoardID
 	}
 	for tid, m := range byTask {
@@ -230,8 +238,8 @@ func (v boardView) access() perm.BoardAccess {
 }
 
 // boardView: a member's view of a live board (mu held) — boardVisible of ADR-0059 §3:
-// VIEW_BOARD, or invited on a live task of a board that is not restricted and not a guest
-// (bots are never invited).
+// VIEW_BOARD, or invited on a live task of the board (restricted too, ADR-0076) and not a
+// guest (bots are never invited).
 func (s *wsState) boardView(boardID, userID uuid.UUID) boardView {
 	bits := s.boardBits(boardID, userID)
 	if bits.Has(perm.ViewBoard) {
@@ -239,7 +247,7 @@ func (s *wsState) boardView(boardID, userID uuid.UUID) boardView {
 	}
 	b := s.boards[boardID]
 	m, ok := s.members[userID]
-	if b == nil || !ok || b.GetRestricted() || m.Role == perm.RoleGuest || s.scoped[userID][boardID] == 0 {
+	if b == nil || !ok || m.Role == perm.RoleGuest || s.scoped[userID][boardID] == 0 {
 		return boardView{}
 	}
 	return boardView{scoped: true}
@@ -252,7 +260,7 @@ func (s *wsState) taskBits(boardID, taskID, userID uuid.UUID) perm.Bits {
 	if v.scoped && s.taskBoard[taskID] == boardID {
 		inv = s.invited[taskID][userID]
 	}
-	return perm.TaskBits(v.access(), inv&invAssignee != 0, inv&invApprover != 0)
+	return perm.TaskBits(v.access(), inv&invAssignee != 0, inv&invApprover != 0, inv&invWatcher != 0)
 }
 
 // taskRoomBits: a member's bits in a task's comment room (0 = not a task room of a live board);

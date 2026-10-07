@@ -9,25 +9,24 @@ import { usePrefs } from '../../stores/prefs';
 import { HOME } from '../../stores/dms';
 import { selectUpdatePending, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
 import { titleSlot } from '../../lib/webApps';
 import { useOpenApp, useWebApps } from '../../stores/webApps';
 import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
 import { AppSettingsWindow } from './lazyWindows';
 import { InboxButton } from './InboxPopover';
-import { WorkspaceMenu } from './WorkspaceMenu';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 /**
- * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
- * Left: 80 px kept empty for the macOS traffic lights (hiddenInset at 12,12), then the current
- * workspace's name with «⌄» — the workspace menu (docs/09 #140; it replaced the «‹ ›» history
- * buttons, whose shortcuts stay); «Calab» when no workspace is open («Личные», before READY).
- * Right: search (opens the quick switcher), mentions, settings, shortcuts help; on Windows the
- * native caption buttons (Window Controls Overlay) take the space given by env(titlebar-area-*).
- * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
- * drag region; while the room header shows its own search field the pill hides (otherwise it
- * stays: ⌘K must remain discoverable).
+ * Window title bar (docs/09 #1; owner 07.10 — a taller, airier bar): 46 px across the whole window,
+ * drag region in Electron. Left: only Electron on macOS keeps 80 px empty for the traffic lights
+ * (hiddenInset at 16,16 — centred in the bar); the web and Windows / Linux start at the normal
+ * 8 px padding. Then the current workspace's name with «⌄» — the workspace switcher (ADR-0074 §2;
+ * it replaced the «‹ ›» history buttons, whose shortcuts stay); «Calab ⌄» before any workspace
+ * exists. No room / chat title here (owner, 07.10).
+ * Right: search (opens the quick switcher), mentions, settings, shortcuts help — quiet; on Windows
+ * the native caption buttons (Window Controls Overlay) take the space given by env(titlebar-area-*).
+ * Web (docs/09 #46): a 38 px toolbar — no window chrome, so no reserved inset and no drag region.
  */
 export function TitleBar(): ReactNode {
   const os = useSession((s) => s.appInfo?.platform);
@@ -50,9 +49,9 @@ export function TitleBar(): ReactNode {
       // Windows (WCO): keep clear of the native caption buttons; 0 elsewhere (none on the web).
       style={web ? undefined : { paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' }}
     >
-      <div className={cx('flex min-w-0 items-center', web && 'pl-1')}>
-        {/* macOS traffic lights live here — nothing is drawn under them. The web has no window chrome. */}
-        {web ? null : <div className={cx('shrink-0', mac ? 'w-[80px]' : 'w-1')} aria-hidden />}
+      <div className={cx('flex min-w-0 items-center', !mac && 'pl-2')}>
+        {/* macOS traffic lights live here — nothing is drawn under them (Electron on macOS only). */}
+        {mac ? <div className="w-[80px] shrink-0" aria-hidden /> : null}
         <TitleBarWorkspace />
       </div>
 
@@ -62,7 +61,8 @@ export function TitleBar(): ReactNode {
           type="button"
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
-          className="flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
+          // Quiet (owner, 07.10): a hairline pill, the fill only on hover.
+          className="flex h-7 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-icon)] border border-line px-2.5 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>
@@ -79,13 +79,11 @@ export function TitleBar(): ReactNode {
 }
 
 /**
- * The open workspace's menu trigger (its own leaf: the name and the role are its only
- * subscriptions), or «Calab» without a workspace.
+ * The workspace switcher (ADR-0074 §2; its own leaf), or the name of a web app that fills the
+ * screen (ADR-0050 «Уточнение»: plain text, no menu — the rail's sections lead back).
  */
 function TitleBarWorkspace(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
-  const known = useWorkspaces((s) => !!wsId && wsId !== HOME && !!s.byId[wsId]);
-  // A web app fills the screen (ADR-0050 «Уточнение»): its name, plain text, no menu.
   const openId = useOpenApp(wsId && wsId !== HOME ? wsId : null);
   const appName = useWebApps((s) => (openId ? s.byId[openId]?.name : undefined));
   const slot = titleSlot(appName);
@@ -96,14 +94,7 @@ function TitleBarWorkspace(): ReactNode {
       </div>
     );
   }
-  if (!known || !wsId) {
-    return (
-      <div className="px-2 text-body font-semibold text-fg" data-testid="titlebar-title">
-        Calab
-      </div>
-    );
-  }
-  return <WorkspaceMenu workspaceId={wsId} variant="titlebar" testId="titlebar-title" />;
+  return <WorkspaceSwitcher testId="titlebar-title" />;
 }
 
 /**
@@ -115,7 +106,7 @@ function SettingsButton(): ReactNode {
   const update = useSession(selectUpdatePending);
   return (
     <IconButton
-      size="sm"
+      bar
       label={update ? t('update.settingsDot') : t('settings.title')}
       onPointerEnter={() => void AppSettingsWindow.preload()}
       onFocus={() => void AppSettingsWindow.preload()}
@@ -142,7 +133,7 @@ function HelpButton(): ReactNode {
           <button
             type="button"
             aria-label={t('shell.help')}
-            className="grid size-7 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+            className="grid size-7 place-items-center rounded-[var(--radius-bar)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
           >
             <CircleHelp className="size-[18px]" aria-hidden />
           </button>

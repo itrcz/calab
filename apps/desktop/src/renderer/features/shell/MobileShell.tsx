@@ -1,70 +1,85 @@
 import { ReconnectBanner } from './ReconnectBanner';
-import * as DialogP from '@radix-ui/react-dialog';
-import { Menu } from 'lucide-react';
-import { useRef, type ReactNode, type TouchEvent } from 'react';
-import { IconButton } from '../../components/ui';
-import { t } from '../../i18n';
+import { WorkspaceRole } from '@calaba/protocol';
+import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon } from '../../assets/nav/icons';
+import { memo, useEffect, useRef, type ReactNode, type TouchEvent } from 'react';
+import { CreateButton } from '../../components/CreateButton';
+import { Bar } from '../../components/Bar';
+import { PhoneHeader, PhoneSearchButton } from '../../components/PhoneHeader';
+import { CountBadge, Spinner, cx } from '../../components/ui';
+import { plural, t } from '../../i18n';
+import { topScreen, type PhoneScreen, type PhoneTab } from '../../lib/phoneNav';
+import { isStandalone } from '../../lib/mobile';
+import { installPhoneNav, openTab, phoneBack } from '../../services/phoneNav';
+import { useArchiveView } from '../../stores/archiveView';
+import { unreadCount, useBoards } from '../../stores/boards';
+import { HOME, isDm } from '../../stores/dms';
+import { showsUnread, useRooms } from '../../stores/rooms';
+import { useSearchPanel } from '../../stores/searchPanel';
 import { useSession } from '../../stores/session';
-import { HOME } from '../../stores/dms';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { useWorkspaces } from '../../stores/workspaces';
-import { DmSidebar } from '../dm/DmSidebar';
-import { BottomIsland } from './BottomIsland';
-import { MembersPanel } from './MembersPanel';
-import { MobileVoiceStrip } from './MobileVoiceStrip';
-import { Sidebar } from './Sidebar';
-import { WorkspaceRail } from './WorkspaceRail';
+import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { useBoardsUi } from '../../stores/boardsUi';
+import { mayCreateBoards } from '../../lib/permissions';
+import { useIdentity } from '../../stores/identity';
+import { accessLocked } from '../identity/model';
+import { WorkspaceLock } from '../identity/WorkspaceLock';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { ChatPane } from '../chat/ChatPane';
+import { ArchivedChat } from '../chat/ArchivedChat';
+import { DmSidebar } from '../dm/DmSidebar';
+import { DayView } from '../calendar/DayView';
+import { EventPanel } from '../calendar/EventCard';
+import { BoardsList } from '../boards/BoardsList';
+import { BoardsView } from '../boards/BoardsView';
+import { SearchResultsPanel } from '../search/SearchResultsPanel';
+import { MembersPanel } from './MembersPanel';
+import { MobileVoiceStrip } from './MobileVoiceStrip';
+import { PhoneProfile, ProfileTabIcon } from './PhoneProfile';
+import { ScreenTransition } from './ScreenTransition';
+import { SettingsScreen } from './SettingsScreen';
+import { PhoneRoomList } from './PhoneRoomList';
 import { UpdateBar } from './UpdateBar';
-import { WorkspaceMenu } from './WorkspaceMenu';
 
-/** A horizontal swipe longer than this (and mostly horizontal) opens / closes a drawer. */
+/** A horizontal swipe longer than this (and mostly horizontal) is a swipe. */
 const SWIPE_PX = 56;
-/** An opening swipe starts this close to the left edge. */
+/** A «back» swipe starts this close to the left edge. */
 const EDGE_PX = 28;
 
 /**
- * Phone layout of the web client (ADR-0021, stage A; ≤ 768 px, lib/mobile.ts). `workspaceId` may be
- * HOME («Личные», ADR-0020): the drawer holds the DM list, a DM has no members drawer.
- *  - one column: the room (its header is the top bar, with ☰) full screen, above the keyboard
- *    (the shell is `--app-height` = the visual viewport tall, lib/mobile.ts);
- *  - the rail + room column + the desktop bottom island (full voice panel, self panel) are a
- *    drawer from the left: ☰ or an edge swipe opens it, a swipe back / the scrim / Esc / picking a
- *    room closes it;
- *  - the members list is a drawer from the right (the header's «Участники»);
- *  - in voice, the compact voice strip sits at the bottom (MobileVoiceStrip).
- * iOS safe areas: the top inset on the shell, the bottom one on whatever is last (strip or composer).
+ * Phone layout of the web client (ADR-0073, ≤ 768 px, lib/mobile.ts): root tabs «Чаты · Личные ·
+ * Доски · Календарь · Профиль» with a bottom tab bar, and screens pushed over them (a room, a DM, the members,
+ * search results, a meeting, a board / task, the profile) without the tab bar, each with its «←» header. Only
+ * the top screen is mounted; back = the browser history (services/phoneNav.ts): Android back, the
+ * browser's back, «←» and a swipe from the left edge.
+ *  - «Команда»: the workspace rail (no «Личные» icon — it is a tab) and the room list on the rest;
+ *  - in voice, the call strip sits at the bottom: above the tab bar on a root, under the screen
+ *    otherwise (MobileVoiceStrip).
+ * iOS safe areas: the top inset on the shell, the bottom one on whatever is last (tab bar, strip
+ * or composer).
  */
-export function MobileShell({
-  workspaceId,
-  roomId,
-  showReconnect,
-  children,
-}: {
-  workspaceId: string | null;
-  roomId: string | undefined;
-  showReconnect: boolean;
-  children: ReactNode;
-}): ReactNode {
+export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean; welcome: ReactNode }): ReactNode {
   const ready = useSession((s) => s.ready);
   const inVoice = useVoice((s) => s.roomId !== null);
-  const drawer = useUi((s) => s.navDrawer);
-  const setDrawer = useUi((s) => s.setNavDrawer);
-  const members = useUi((s) => s.membersOverlay);
-  const setMembers = useUi((s) => s.setMembersOverlay);
-  const strip = ready && !!workspaceId && inVoice;
-  const chat = ready && !!workspaceId && !!roomId;
+  const tab = useUi((s) => s.phone.tab);
+  const top = useUi((s) => topScreen(s.phone));
+  const on = useUi((s) => s.phone.on);
+  const depth = useUi((s) => s.phone.stack.length);
+  useEffect(() => installPhoneNav(), []);
+  const root = !top;
+  const strip = ready && inVoice;
   const swipe = useSwipe((dir, fromEdge) => {
-    if (dir === 'right' && fromEdge) setDrawer(true);
+    if (dir === 'right' && fromEdge && !nativeBackSwipe() && useUi.getState().phone.stack.length > 0) phoneBack();
   });
 
   return (
     <div
-      className="mat-rail relative flex h-full flex-col overflow-hidden pl-[var(--safe-left)] pr-[var(--safe-right)] pt-[var(--safe-top)]"
+      className="mat-content relative flex h-full flex-col overflow-hidden pl-[var(--safe-left)] pr-[var(--safe-right)] pt-[var(--safe-top)]"
       data-layout="mobile"
       data-testid="mobile-shell"
+      data-phone-tab={root ? tab : undefined}
+      data-phone-screen={top?.kind}
       // The composer carries the bottom safe-area inset unless the voice strip is below it.
       style={{ ['--composer-safe' as string]: strip ? '0px' : 'var(--safe-bottom, 0px)' }}
       {...swipe}
@@ -74,109 +89,281 @@ export function MobileShell({
       <UpdateBar />
       <VerifyBanner />
       <SuspendedBanner />
-      <main className="mat-content relative flex min-h-0 flex-1 flex-col">
-        {chat ? null : <MobileTopBar workspaceId={workspaceId} />}
-        {children}
+      <main className="mat-content relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <ScreenTransition depth={depth}>
+          {!on ? null : !ready ? (
+            <div className="grid flex-1 place-items-center">
+              <div className="flex flex-col items-center gap-3 text-body text-muted">
+                <Spinner className="size-6" />
+                {t('gateway.connecting')}
+              </div>
+            </div>
+          ) : top ? (
+            <PushedScreen screen={top} />
+          ) : (
+            <TabRoot tab={tab} welcome={welcome} />
+          )}
+        </ScreenTransition>
       </main>
-      {strip ? <MobileVoiceStrip /> : null}
-
-      {ready && workspaceId ? <NavDrawer workspaceId={workspaceId} open={drawer} onOpenChange={setDrawer} /> : null}
-      {chat && workspaceId && workspaceId !== HOME ? <MembersDrawer workspaceId={workspaceId} open={members} onOpenChange={setMembers} /> : null}
+      {strip ? <MobileVoiceStrip aboveTabs={root} /> : null}
+      {root && ready ? <TabBar tab={tab} /> : null}
     </div>
   );
 }
 
-/** Top bar without a room (connecting, welcome, empty workspace): ☰ + the workspace name. */
-function MobileTopBar({ workspaceId }: { workspaceId: string | null }): ReactNode {
-  const name = useWorkspaces((s) => (workspaceId === HOME ? t('dm.home') : workspaceId ? s.byId[workspaceId]?.ws.name : undefined));
+/**
+ * iOS Safari in a tab has its own edge swipe back (it fires popstate): ours would go back twice.
+ * The home-screen app and the Calab app's WebView (no «Safari/» in its UA) have none.
+ */
+function nativeBackSwipe(): boolean {
+  const ua = navigator.userAgent;
+  return /iP(hone|ad|od)/.test(ua) && /Safari\//.test(ua) && !isStandalone();
+}
+
+// ---------------------------------------------------------------- tab roots
+
+function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): ReactNode {
+  switch (tab) {
+    case 'chats':
+      return <ChatsRoot welcome={welcome} />;
+    case 'dms':
+      return <DmsRoot />;
+    case 'boards':
+      return <BoardsRoot welcome={welcome} />;
+    case 'calendar':
+      return <CalendarRoot welcome={welcome} />;
+    case 'profile':
+      return <ProfileRoot />;
+  }
+}
+
+/** The workspace on «Команда» / «Календарь»: the open one, unless it is «Личные». */
+function useRootWorkspace(): { ws: string | null; locked: boolean } {
+  const wsId = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
+  const has = useWorkspaces((s) => (wsId ? !!s.byId[wsId] : false));
+  const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
+  return { ws: wsId && (has || locked) ? wsId : null, locked };
+}
+
+/** «Команда»: the room list at full width; the workspace is picked in its header (the switcher, ADR-0074). */
+function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
   return (
-    <header className="mat-toolbar flex h-12 shrink-0 items-center gap-2 border-b border-line px-2">
-      {workspaceId ? <NavButton /> : <span className="w-2" />}
-      {/* A workspace: its name is the workspace menu, as in the desktop title bar (docs/09 #140). */}
-      {workspaceId && workspaceId !== HOME && name !== undefined ? (
-        <WorkspaceMenu workspaceId={workspaceId} variant="topbar" />
-      ) : (
-        <h1 className="min-w-0 truncate text-list font-semibold">{name ?? 'Calab'}</h1>
-      )}
-    </header>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-chats">
+      {locked && ws ? <WorkspaceLock workspaceId={ws} /> : ws ? <PhoneRoomList workspaceId={ws} /> : welcome}
+    </div>
   );
 }
 
-/** ☰ — opens the rail + room column drawer (the room header and the top bar). */
-export function NavButton(): ReactNode {
-  const setDrawer = useUi((s) => s.setNavDrawer);
-  const open = useUi((s) => s.navDrawer);
+/** «Доски»: the boards of the open workspace (the one picked on «Команда»); a board is a pushed screen. */
+function BoardsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws, locked } = useRootWorkspace();
+  const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
+  const guest = useWorkspaces((s) => (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const creator = mayCreateBoards(useMemberRoles(ws ?? '', me));
+  if (!ws || locked || guest || name === undefined) return <div className="flex min-h-0 flex-1 flex-col" data-testid="phone-boards-empty">{welcome}</div>;
   return (
-    <IconButton tip={false} label={t('mobile.openNav')} aria-expanded={open} onClick={() => setDrawer(true)} className="size-10 shrink-0 rounded-full">
-      <Menu className="size-5" />
-    </IconButton>
+    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="phone-boards">
+      <RootTitle title={t('shell.modeBoards')} search>
+        {creator ? <CreateButton label={t('boards.newBoard')} data-testid="section-create-board" onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId: ws })} /> : null}
+      </RootTitle>
+      <BoardsList workspaceId={ws} />
+    </section>
   );
 }
 
-/** Left drawer: the desktop rail + room column + bottom island, at phone width. */
-function NavDrawer({ workspaceId, open, onOpenChange }: { workspaceId: string; open: boolean; onOpenChange: (o: boolean) => void }): ReactNode {
-  const swipe = useSwipe((dir) => {
-    if (dir === 'left') onOpenChange(false);
+/** «Личные»: notes and DMs at full width. */
+function DmsRoot(): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  const guest = useSession((s) => !!s.me?.user?.isGuest);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" style={{ ['--sidebar-width' as string]: '100%' }} data-testid="phone-dms">
+      <RootTitle title={t('dm.home')} search>
+        {guest ? null : <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />}
+      </RootTitle>
+      <div className="flex min-h-0 flex-1">
+        <DmSidebar />
+      </div>
+    </div>
+  );
+}
+
+/** «Календарь»: the day of the open workspace (guests have none: no tab). */
+function CalendarRoot({ welcome }: { welcome: ReactNode }): ReactNode {
+  const { ws } = useRootWorkspace();
+  const day = useUi((s) => s.calDay);
+  useEffect(() => {
+    // The tab without a day (a stale state): today.
+    if (ws && day === null) openTab('calendar');
+  }, [ws, day]);
+  if (!ws) return welcome;
+  return day ? <DayView workspaceId={ws} /> : <div className="flex-1" />;
+}
+
+/** «Профиль» (owner, 07.10: the fifth tab, my avatar): the profile card, the sound, the settings, sign out. */
+function ProfileRoot(): ReactNode {
+  return (
+    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="profile-page">
+      <RootTitle title={t('mobile.profile')} />
+      <PhoneProfile />
+    </section>
+  );
+}
+
+/** The title of a tab root without its own header (iOS large-title look, one line). */
+export function RootTitle({ title, search = false, children }: { title: string; search?: boolean; children?: ReactNode }): ReactNode {
+  return (
+    <Bar>
+      <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{title}</h1>
+      {search ? <PhoneSearchButton /> : null}
+      {children}
+    </Bar>
+  );
+}
+
+// ---------------------------------------------------------------- pushed screens
+
+function PushedScreen({ screen }: { screen: PhoneScreen }): ReactNode {
+  switch (screen.kind) {
+    case 'room':
+      return <ChatPane key={screen.room} workspaceId={screen.ws} roomId={screen.room} />;
+    case 'dm':
+      return <ChatPane key={screen.room} workspaceId="" roomId={screen.room} />;
+    case 'members':
+      return <MembersPage workspaceId={screen.ws} roomId={screen.room} />;
+    case 'search':
+      return <SearchScreen />;
+    case 'event':
+      return <EventPanel occ={screen.key} page />;
+    case 'findTime':
+      return <ActiveWorkspace>{(ws) => <DayView workspaceId={ws} />}</ActiveWorkspace>;
+    case 'board':
+      return <BoardsView workspaceId={screen.ws} wide={false} mobile />;
+    case 'task':
+      return <ActiveWorkspace>{(ws) => <BoardsView workspaceId={ws} wide={false} mobile />}</ActiveWorkspace>;
+    case 'archived':
+      return <ArchivedScreen />;
+    case 'settings':
+      return <SettingsScreen section={screen.section} />;
+  }
+}
+
+function ActiveWorkspace({ children }: { children: (ws: string) => ReactNode }): ReactNode {
+  const ws = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
+  return ws ? children(ws) : null;
+}
+
+function SearchScreen(): ReactNode {
+  const seq = useSearchPanel((s) => s.seq);
+  return <SearchResultsPanel key={seq} page />;
+}
+
+function ArchivedScreen(): ReactNode {
+  const room = useArchiveView((s) => s.room);
+  return room ? <ArchivedChat key={room.id} workspaceId={room.workspaceId} room={room} /> : null;
+}
+
+
+
+/** «Участники» of a room: a screen with the unified header (it was the right drawer). */
+function MembersPage({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
+  const roomName = useRooms((s) => s.byId[roomId]?.name ?? '');
+  return (
+    <section className="mat-content flex min-h-0 flex-1 flex-col" data-testid="members-page">
+      <PhoneHeader title={t('shell.members')} subtitle={roomName} />
+      <MembersPanel workspaceId={workspaceId} drawer />
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- tab bar
+
+/**
+ * The bottom tab bar (ADR-0073 §1): «Чаты · Личные · Доски · Календарь · Профиль» (my avatar), 56 px targets over the home
+ * indicator, the unread count of rooms (mentions) on «Команда», of DMs on «Личные» and of tasks on
+ * «Доски» (the open workspace's, as the old «Голос · Доски» switch showed). «Личные» only for
+ * accounts with DMs, «Календарь» not for guests; «Профиль» for everyone (a guest signs out there).
+ */
+function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
+  const dms = useSession((s) => !s.me?.user?.isGuest);
+  const calendar = useWorkspaces((s) => s.order.some((id) => s.byId[id] && s.byId[id].role !== WorkspaceRole.GUEST));
+  return (
+    <nav
+      aria-label={t('mobile.tabs')}
+      data-testid="phone-tabbar"
+      className="mat-toolbar flex shrink-0 border-t border-line pb-[var(--safe-bottom,0px)] [.kb-open_&]:hidden"
+    >
+      <TabButton tab="chats" active={tab === 'chats'} label={t('mobile.tabChats')} icon={tab === 'chats' ? <TeamActiveIcon className="size-7" /> : <TeamIdleIcon className="size-7" />} badge={<ChatsBadge />} />
+      {dms ? <TabButton tab="dms" active={tab === 'dms'} label={t('mobile.tabDms')} icon={tab === 'dms' ? <PersonalActiveIcon className="size-7" /> : <PersonalIdleIcon className="size-7" />} badge={<DmsBadge />} /> : null}
+      <TabButton tab="boards" active={tab === 'boards'} label={t('shell.modeBoards')} icon={tab === 'boards' ? <BoardsActiveIcon className="size-7" /> : <BoardsIdleIcon className="size-7" />} badge={<BoardsBadge />} />
+      {calendar ? <TabButton tab="calendar" active={tab === 'calendar'} label={t('cal.open')} icon={tab === 'calendar' ? <CalendarActiveIcon className="size-7" /> : <CalendarIdleIcon className="size-7" />} /> : null}
+      <TabButton tab="profile" active={tab === 'profile'} label={t('mobile.profile')} icon={<ProfileTabIcon active={tab === 'profile'} />} />
+    </nav>
+  );
+}
+
+const TabButton = memo(function TabButton({ tab, active, label, icon, badge }: { tab: PhoneTab; active: boolean; label: string; icon: ReactNode; badge?: ReactNode }): ReactNode {
+  return (
+    <button
+      type="button"
+      onClick={() => openTab(tab)}
+      aria-current={active ? 'page' : undefined}
+      data-testid={`phone-tab-${tab}`}
+      className={cx('relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-micro font-medium', active ? 'text-fg' : 'text-muted')}
+    >
+      <span className="relative flex">
+        {icon}
+        {badge}
+      </span>
+      <span className="max-w-full truncate px-1">{label}</span>
+    </button>
+  );
+});
+
+function TabBadge({ count, dot, label }: { count: number; dot: boolean; label: string }): ReactNode {
+  if (count <= 0 && !dot) return null;
+  return count > 0 ? (
+    <CountBadge count={count} phone ring="var(--color-toolbar,var(--color-bg))" role="img" aria-label={label} className="absolute -top-2 left-full -ml-2.5" />
+  ) : (
+    <span role="img" aria-label={label} className="absolute -right-1 -top-0.5 size-2.5 rounded-full border-2 border-[var(--color-toolbar,var(--color-bg))] bg-fg" />
+  );
+}
+
+/** Mentions across the workspaces' rooms (primitive selectors: re-renders only on a change). */
+function ChatsBadge(): ReactNode {
+  const count = useRooms((s) => {
+    let n = 0;
+    for (const id in s.mentions) {
+      const r = s.byId[id];
+      if (r && !isDm(r) && r.workspaceId !== '') n += s.mentions[id] ?? 0;
+    }
+    return n;
   });
-  return (
-    <DialogP.Root open={open} onOpenChange={onOpenChange}>
-      <DialogP.Portal>
-        <DialogP.Overlay className="no-drag anim-fade fixed inset-0 z-[var(--z-modal)] bg-scrim" />
-        <DialogP.Content
-          aria-modal="true"
-          aria-describedby={undefined}
-          data-testid="mobile-nav"
-          onOpenAutoFocus={(e) => {
-            // Focus the panel itself: no focus ring on the first workspace after a tap.
-            e.preventDefault();
-            (e.currentTarget as HTMLElement | null)?.focus();
-          }}
-          className="mat-rail anim-drawer-left fixed inset-y-0 left-0 z-[var(--z-modal)] flex w-[var(--mobile-drawer-width)] flex-col pb-[var(--safe-bottom)] pl-[var(--safe-left)] pt-[var(--safe-top)] shadow-[var(--shadow-popover)] focus:outline-none"
-          style={{ ['--sidebar-width' as string]: 'calc(var(--mobile-drawer-width) - var(--rail-width))' }}
-          {...swipe}
-        >
-          <DialogP.Title className="sr-only">{t('mobile.openNav')}</DialogP.Title>
-          {/* The bottom island measures itself onto this box (--island-height): rail and rooms end above it. */}
-          <div className="relative flex min-h-0 flex-1">
-            <WorkspaceRail />
-            <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line">
-              {workspaceId === HOME ? <DmSidebar /> : <Sidebar workspaceId={workspaceId} />}
-            </div>
-            <BottomIsland />
-          </div>
-        </DialogP.Content>
-      </DialogP.Portal>
-    </DialogP.Root>
-  );
+  const dot = useRooms((s) => count === 0 && Object.values(s.byId).some((r) => r.workspaceId !== '' && !isDm(r) && showsUnread(r.id, s)));
+  return <TabBadge count={count} dot={dot} label={count > 0 ? plural('shell.unreadMentions', count) : t('ws.unread')} />;
 }
 
-/** Right drawer: the members list. */
-function MembersDrawer({ workspaceId, open, onOpenChange }: { workspaceId: string; open: boolean; onOpenChange: (o: boolean) => void }): ReactNode {
-  const swipe = useSwipe((dir) => {
-    if (dir === 'right') onOpenChange(false);
-  });
-  return (
-    <DialogP.Root open={open} onOpenChange={onOpenChange}>
-      <DialogP.Portal>
-        <DialogP.Overlay className="no-drag anim-fade fixed inset-0 z-[var(--z-modal)] bg-scrim" />
-        <DialogP.Content
-          aria-modal="true"
-          aria-describedby={undefined}
-          data-testid="mobile-members"
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            (e.currentTarget as HTMLElement | null)?.focus();
-          }}
-          className="mat-sidebar anim-drawer-right fixed inset-y-0 right-0 z-[var(--z-modal)] flex w-[min(300px,calc(100vw-64px))] flex-col pr-[var(--safe-right)] pt-[var(--safe-top)] shadow-[var(--shadow-popover)] focus:outline-none"
-          {...swipe}
-        >
-          <DialogP.Title className="sr-only">{t('shell.members')}</DialogP.Title>
-          <MembersPanel workspaceId={workspaceId} drawer />
-        </DialogP.Content>
-      </DialogP.Portal>
-    </DialogP.Root>
-  );
+/** Unread tasks of the open workspace (the number the boards icon of the old switch showed). */
+function BoardsBadge(): ReactNode {
+  const open = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
+  const first = useWorkspaces((s) => s.order[0] ?? null);
+  const wsId = open ?? first;
+  const count = useBoards((s) => (wsId ? unreadCount(s, wsId) : 0));
+  return <TabBadge count={count} dot={false} label={plural('boards.unreadCount', count)} />;
 }
+
+/** Unread DM messages: every one counts (docs/05), as on the rail's «Личные». */
+function DmsBadge(): ReactNode {
+  const count = useRooms((s) => {
+    let n = 0;
+    for (const id in s.mentions) if (isDm(s.byId[id])) n += s.mentions[id] ?? 0;
+    return n;
+  });
+  return <TabBadge count={count} dot={false} label={t('dm.homeUnread', { n: count })} />;
+}
+
+// ---------------------------------------------------------------- swipe
 
 type SwipeDir = 'left' | 'right';
 

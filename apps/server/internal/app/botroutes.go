@@ -102,6 +102,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/auth/verify":                                botDeny,
 	"GET /api/me":                                          botAllow,
 	"PATCH /api/me":                                        botAllow, // display name and avatar only (users.update)
+	"GET /api/usernames/{name}/available":                  botDeny,  // people's nicknames (ADR-0077)
 	"PATCH /api/me/status":                                 botDeny,
 	"POST /api/me/avatar":                                  botAllow,
 	"GET /api/users/{id}/note":                             botDeny,
@@ -365,6 +366,8 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/tasks/{id}/relations":             botAllow,
 	"DELETE /api/tasks/{id}/relations":          botAllow,
 	"PUT /api/tasks/{id}/subscription":          botAllow,
+	"PUT /api/tasks/{id}/watchers":              botAllow, // ADR-0076: an editing bot adds watchers like people
+	"DELETE /api/tasks/{id}/watchers":           botAllow,
 	"PUT /api/tasks/{id}/read":                  botAllow,
 	"GET /api/tasks/{id}/activity":              botAllow,
 	"GET /api/t/{key}":                          botAllow,

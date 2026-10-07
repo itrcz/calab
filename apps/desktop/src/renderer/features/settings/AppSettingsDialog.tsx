@@ -34,12 +34,14 @@ import { selectUpdatePending, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
+import { useWorkspaces } from '../../stores/workspaces';
 import { ChangeEmailDialog, ChangePasswordDialog } from './CredentialDialogs';
 import { LicenseCard } from '../legal/Legal';
 import { HotkeyRow } from './HotkeyRow';
 import { SettingsFooter } from './SettingsFooter';
 import { EchoCard } from './EchoCard';
 import { CommitInput } from './CommitInput';
+import { PhoneRow, UsernameRow } from './ContactSettings';
 import { MicMeter } from './MicMeter';
 import { BoardHotkeysList } from '../boards/HotkeysSheet';
 import { PttBinder } from './PttBinder';
@@ -92,7 +94,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
   return (
     <SettingsWindow
       title={t('settings.title')}
-      initial={tab ?? 'general'}
+      initial={tab}
+      fallback="general"
       onClose={onClose}
       sections={sections.filter((section) => local || !['profile', 'sessions', 'calendar'].includes(section.id))}
       footer={
@@ -115,6 +118,8 @@ function ProfileTab(): ReactNode {
   const update = async (init: Parameters<typeof api.me.update>[0]): Promise<void> => {
     const r = await api.me.update(init);
     if (r.me) useSession.getState().set({ me: r.me });
+    // My own card and rows read `users` (ADR-0077: nickname, phone) before USER_UPDATE comes back.
+    if (r.me?.user) useWorkspaces.getState().upsertUser(r.me.user);
   };
   const setAvatar = async (f: File): Promise<void> => {
     await uploadAvatar(f, f.name);
@@ -139,6 +144,9 @@ function ProfileTab(): ReactNode {
         <Row label={t('profile.status')}>
           <CommitInput label={t('profile.status')} value={u.statusText} maxLength={128} placeholder={t('profile.statusPh')} onCommit={(v) => update({ statusText: v })} />
         </Row>
+        {/* ADR-0077: guest accounts have neither (server: 403). */}
+        {u.isGuest ? null : <UsernameRow value={u.username} onSave={(username) => update({ username })} />}
+        {u.isGuest ? null : <PhoneRow value={u.phone} onSave={(phone) => update({ phone })} />}
         {/* Guests have no password of their own (server: 403 FORBIDDEN): no rows to change it. */}
         <Row
           label={t('profile.email')}

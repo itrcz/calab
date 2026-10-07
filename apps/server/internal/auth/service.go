@@ -445,7 +445,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		ids, err := s.db.Q.ListMemberRoleIDs(ctx, sqlc.ListMemberRoleIDsParams{WorkspaceID: joined.WorkspaceID, UserID: joined.UserID})
 		if err == nil {
 			s.events.Workspace(ctx, joined.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
-				WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(*joined, user, ids)},
+				WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.MemberEvent(*joined, user, ids)}, // gateway strips contacts per recipient
 			}})
 		}
 	}

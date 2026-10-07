@@ -4,6 +4,7 @@ import {
   RoomType,
   computeMemberRoomPermissions,
   computePermissions,
+  tempRoomScope,
   WorkspaceRole,
   has,
   workspacePermissions,
@@ -25,7 +26,8 @@ export function roomPerms(roles: readonly RoleBits[] | undefined, userId: string
   if (room?.type === RoomType.DM || room?.type === RoomType.NOTES) return computePermissions({ dm: { participant: true } });
   if (!room || !roles || roles.length === 0) return 0n;
   // ADR-0029: in a restricted room admins count as members; the owner (built-in owner role) has all.
-  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted);
+  // ADR-0078: a private temporary room has no bypass at all (not even the owner).
+  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted, undefined, tempRoomScope(room));
 }
 
 /** Workspace-level permissions (no room overrides): the OR of the member's roles. */
@@ -258,6 +260,11 @@ export function mayModerateVoice(myRole: WorkspaceRole | undefined, targetRole: 
  */
 export function mayMoveVoice(myRole: WorkspaceRole | undefined, targetRole: WorkspaceRole | undefined, self: boolean): boolean {
   return voiceRank(myRole) >= 2 || mayModerateVoice(myRole, targetRole, self);
+}
+
+/** The workspace owner (built-in owner role): the only one who may enter or move into a full voice room. */
+export function isOwnerRoles(roles: readonly RoleBits[] | undefined): boolean {
+  return !!roles?.some((r) => r.builtin === WorkspaceRole.OWNER);
 }
 
 /** Drag a voice participant out of / into `room` (docs/09 #32): MOVE_MEMBERS in that room. */

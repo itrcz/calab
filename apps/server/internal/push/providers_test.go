@@ -578,3 +578,44 @@ func TestAPNSHiddenMessageBodyRetainsSenderAndAvatar(t *testing.T) {
 		t.Fatal("hidden notification not accepted by test transport")
 	}
 }
+
+func TestAPNSMissedCallIsAnAlertWithCommunicationPresentation(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := providerPayload()
+	payload.Kind = "message"
+	payload.MissedCall = true
+	payload.Title = "Caller"
+	payload.Body = "Missed call"
+	payload.PersonID = strings.Repeat("a", 64)
+	payload.ConversationID = strings.Repeat("b", 64)
+	sender := &apnsSender{key: key, team: "TEAM", keyID: "KEY", app: "ru.calab.test", environment: "production"}
+	sends := 0
+	sender.client = &http.Client{Transport: providerTransport(func(r *http.Request) (*http.Response, error) {
+		sends++
+		if r.Header.Get("apns-push-type") != "alert" || r.Header.Get("apns-topic") != sender.app {
+			t.Fatal("missed call must not ring as a new VoIP call")
+		}
+		var body struct {
+			Payload
+			APS map[string]any `json:"aps"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if !body.MissedCall || body.Kind != "message" || body.APS["mutable-content"] != float64(1) || body.APS["thread-id"] != payload.ConversationID {
+			t.Fatal("lost missed-call decoration or routing")
+		}
+		alert := body.APS["alert"].(map[string]any)
+		if alert["body"] != "Missed call" {
+			t.Fatal("generic message replaced call outcome")
+		}
+		return providerResponse(200, "", http.Header{}), nil
+	})}
+	result := sender.Send(t.Context(), Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: "aabb", AppID: sender.app, Environment: sender.environment}, payload)
+	if !result.Accepted || sends != 1 {
+		t.Fatal("missed call not dispatched")
+	}
+}

@@ -24,7 +24,7 @@ import { useCameraToggle } from './VoiceBar';
 import { TempExpiry } from '../voice/TempExpiry';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
-const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
+const round = 'grid size-11 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
 const idle = 'bg-[var(--color-fill)] text-fg active:bg-[var(--color-fill-hover)]';
 const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-danger';
 
@@ -32,12 +32,15 @@ const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-da
  * Phone voice strip (ADR-0021, Discord mobile): one 56 px solid bar at the bottom of the screen
  * while in voice — «Голос подключён · Комната» (tap = open the voice room), mute, deafen, the
  * push-to-talk hold button (PTT mic mode), the camera, «Ещё» (soundboard, mic mode switch) and
- * hang up. The rest of the panel (stream, devices) stays in the navigation drawer's bottom island.
+ * hang up. Devices are on the «Я» tab (ADR-0073). On a tab root it sits above the tab bar
+ * (`aboveTabs`: no home-indicator inset of its own), on a pushed screen at the bottom.
+ * 16 px from the screen edges; the status may take two lines next to a 28 px avatar (hyphenated if one
+ * word doesn't fit), so «Переподключение…» is never cut to «Переподк…».
  * Room for five 40 px buttons next to the avatar and the status text: the camera takes the place
  * of the soundboard button (now «Ещё → Звуки»); in push-to-talk mode (the PTT button is the fifth)
  * the camera is «Ещё → Камера» too.
  */
-export function MobileVoiceStrip(): ReactNode {
+export function MobileVoiceStrip({ aboveTabs = false }: { aboveTabs?: boolean }): ReactNode {
   const roomId = useVoice((s) => s.roomId);
   const wsId = useVoice((s) => s.workspaceId);
   const phase = useVoice((s) => s.phase);
@@ -65,17 +68,17 @@ export function MobileVoiceStrip(): ReactNode {
   // While the PTT button is held the status line says so (the button itself is a 40 px circle).
   const phaseText = connected && ptt && onAir ? t('mobile.pttOn') : connected ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : phase === 'blocked' ? t('voice.blocked') : t('voice.connecting');
   return (
-    <div className="shrink-0 px-2 pb-[calc(var(--safe-bottom,0px)+8px)] pt-1 [.kb-open_&]:hidden" data-testid="mobile-voice-strip">
-      <div role="region" aria-label={t('mobile.voiceStrip')} className="mat-toolbar flex h-14 items-center gap-1.5 rounded-[var(--radius-panel)] pl-3 pr-2 shadow-[var(--shadow-island)]">
+    <div className={cx('shrink-0 px-4 pt-1 [.kb-open_&]:hidden', aboveTabs ? 'pb-2' : 'pb-[calc(var(--safe-bottom,0px)+8px)]')} data-testid="mobile-voice-strip">
+      <div role="region" aria-label={t('mobile.voiceStrip')} className="mat-toolbar flex h-14 items-center gap-1 rounded-[var(--radius-panel)] pl-2 pr-1.5 shadow-[var(--shadow-island)]">
         {me ? (
           <span
-            className="mr-1 flex shrink-0"
+            className="mr-0.5 flex shrink-0"
             data-speaking={(speaking && !muted && !connectingRing) || undefined}
             data-pending={connectingRing || undefined}
             title={connectingRing ? t('voice.pendingMember') : undefined}
             data-testid="mobile-voice-avatar"
           >
-            <Avatar userId={me.id} name={me.displayName} fileId={me.avatarFileId || undefined} size={32} speaking={speaking && !muted} connecting={connectingRing} />
+            <Avatar userId={me.id} name={me.displayName} fileId={me.avatarFileId || undefined} size={28} speaking={speaking && !muted} connecting={connectingRing} />
           </span>
         ) : null}
         {/* The whole text block opens the room (a full-size button under the text); the REC dot
@@ -88,13 +91,19 @@ export function MobileVoiceStrip(): ReactNode {
             onClick={() => (call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
           />
           <span className="pointer-events-none flex max-w-full items-center gap-1">
-            <span className={cx('min-w-0 truncate text-[13px] font-semibold leading-[18px]', connected ? 'text-ok' : 'text-warn')}>{phaseText}</span>
+            {/* A long status («Переподключение…») wraps instead of being cut; the room name then gives way
+                (line-clamp keeps the strip 56 px). A single word wider than the slot (≈ 75–90 px between the
+                avatar and five buttons: «Подключение…») is hyphenated by the document language
+                («Подклю-чение…»), not broken at an arbitrary letter. */}
+            <span className={cx('line-clamp-2 min-w-0 break-words text-[12px] font-semibold leading-[15px] [hyphens:auto]', connected ? 'text-ok' : 'text-warn')} data-testid="mobile-voice-status">
+              {phaseText}
+            </span>
             {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer; a tap
                 opens «Идёт запись · 12:34» / «Остановить запись» (docs/09 #64). */}
             {recording ? <MobileRecDot roomId={roomId} workspaceId={wsId} rec={recording} className="pointer-events-auto -my-1 relative" /> : null}
             {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} compact />}
           </span>
-          <span className="pointer-events-none max-w-full truncate text-caption text-muted">{call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}</span>
+          <span className="pointer-events-none max-w-full truncate text-[12px] leading-[15px] text-muted">{call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}</span>
         </div>
         <button
           type="button"
@@ -165,7 +174,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
   const micMode = usePrefs((s) => s.micMode);
   const openDialog = useUi((s) => s.openDialog);
   const soundsPicked = useRef(false);
-  const radio = cx(menuItem, 'relative h-10 pl-8');
+  const radio = cx(menuItem, 'relative h-11 pl-8');
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -184,12 +193,12 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
           onCloseAutoFocus={(e) => (soundsPicked.current ? e.preventDefault() : undefined)}
         >
           {cameraItem ? (
-            <Dropdown.Item className={cx(menuItem, 'h-10', cam.disabled && 'opacity-40')} data-testid="mobile-voice-camera" onSelect={cam.click}>
+            <Dropdown.Item className={cx(menuItem, 'h-11', cam.disabled && 'opacity-40')} data-testid="mobile-voice-camera" onSelect={cam.click}>
               {cam.on ? <Video className="size-4" aria-hidden /> : <VideoOff className="size-4" aria-hidden />} {cam.label}
             </Dropdown.Item>
           ) : null}
           {canFlip && cam.on ? (
-            <Dropdown.Item className={cx(menuItem, 'h-10')} data-testid="mobile-voice-flip" onSelect={() => voice.camera.flip()}>
+            <Dropdown.Item className={cx(menuItem, 'h-11')} data-testid="mobile-voice-flip" onSelect={() => voice.camera.flip()}>
               <SwitchCamera className="size-4" aria-hidden /> {t('video.flip')}
             </Dropdown.Item>
           ) : null}
@@ -197,7 +206,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
           {onSounds ? (
             <>
               <Dropdown.Item
-                className={cx(menuItem, 'h-10')}
+                className={cx(menuItem, 'h-11')}
                 data-testid="mobile-voice-sounds"
                 onSelect={() => {
                   soundsPicked.current = true;
@@ -228,7 +237,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
             </Dropdown.RadioItem>
           </Dropdown.RadioGroup>
           <Dropdown.Separator className={menuSeparator} />
-          <Dropdown.Item className={cx(menuItem, 'h-10')} onSelect={() => openDialog({ kind: 'settings', tab: 'voice' })}>
+          <Dropdown.Item className={cx(menuItem, 'h-11')} onSelect={() => openDialog({ kind: 'settings', tab: 'voice' })}>
             <Settings className="size-4" aria-hidden /> {t('shell.voiceSettings')}
           </Dropdown.Item>
         </Dropdown.Content>
@@ -299,7 +308,7 @@ function PttHoldButton({ disabled }: { disabled: boolean }): ReactNode {
       onKeyUp={(e) => onKey(e, false)}
       onContextMenu={(e) => e.preventDefault()}
       className={cx(
-        'grid size-10 shrink-0 touch-none select-none place-items-center rounded-full transition-colors duration-[var(--motion-fast)]',
+        'grid size-11 shrink-0 touch-none select-none place-items-center rounded-full transition-colors duration-[var(--motion-fast)]',
         held ? 'bg-ok-fill text-white' : 'bg-accent-strong text-accent-fg',
         disabled && 'opacity-40',
       )}

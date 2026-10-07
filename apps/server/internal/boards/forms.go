@@ -138,6 +138,9 @@ func (s *Service) createForm(w http.ResponseWriter, r *http.Request) error {
 		if err := formManager(r.Context(), q, id, uid(r)); err != nil {
 			return err
 		}
+		if err := requireFeature(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_FORMS, "definition", true); err != nil {
+			return err
+		}
 		l, err := s.formPlan(r.Context(), b.WorkspaceID)
 		if err != nil {
 			return err
@@ -193,6 +196,9 @@ func (s *Service) updateForm(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if err := formManager(r.Context(), q, id, uid(r)); err != nil {
+			return err
+		}
+		if err := requireFeature(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_FORMS, "definition", true); err != nil {
 			return err
 		}
 		if _, err := s.formPlan(r.Context(), b.WorkspaceID); err != nil {

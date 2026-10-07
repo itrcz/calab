@@ -26,17 +26,18 @@ const TOTAL = 4000;
 const id = (n: number): string => `m${String(n).padStart(6, '0')}`;
 const all = Array.from({ length: TOTAL }, (_, n) => create(MessageSchema, { id: id(n), roomId: R, authorId: 'u', content: id(n) }));
 
+/** Position of `cursor` in `all` (ids are fixed-width, so the number is the index). */
+const at = (cursor: string): number => Number(cursor.slice(1));
+
 /** The server's cursor pagination (internal/messages): before → newest first, after → oldest first. */
 function serve(_roomId: string, p: Params): Promise<Page> {
   const limit = p.limit ?? 50;
   if (p.after !== undefined) {
-    const after = p.after;
-    const rest = all.filter((m) => m.id > after);
-    return Promise.resolve({ messages: rest.slice(0, limit), hasMore: rest.length > limit });
+    const from = at(p.after) + 1;
+    return Promise.resolve({ messages: all.slice(from, from + limit), hasMore: TOTAL - from > limit });
   }
-  const before = p.before;
-  const older = before === undefined ? all : all.filter((m) => m.id < before);
-  return Promise.resolve({ messages: older.slice(-limit).reverse(), hasMore: older.length > limit });
+  const end = p.before === undefined ? TOTAL : at(p.before);
+  return Promise.resolve({ messages: all.slice(Math.max(0, end - limit), end).reverse(), hasMore: end > limit });
 }
 
 const st = () => useMessages.getState().rooms[R];
@@ -46,15 +47,19 @@ function virtual(): Map<string, number> {
   const r = st();
   return new Map(r?.items.map((c, i) => [c.key, r.base + i]) ?? []);
 }
+// One assertion per page, not per row: ~1500 shared rows × 160 pages were ~240k expect() calls,
+// which made the test take seconds and time out under a loaded full-suite run.
 function expectAnchored(before: Map<string, number>): void {
   const after = virtual();
   let shared = 0;
+  const moved: string[] = [];
   for (const [k, v] of before) {
     const w = after.get(k);
     if (w === undefined) continue;
     shared++;
-    expect(w, k).toBe(v);
+    if (w !== v && moved.length < 5) moved.push(`${k}: ${v} → ${w}`);
   }
+  expect(moved).toEqual([]);
   expect(shared).toBeGreaterThan(0);
 }
 

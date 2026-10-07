@@ -173,7 +173,8 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
       title={room.name}
       titleIcon={<Glyph className="size-4 shrink-0 text-muted" aria-hidden />}
       sections={sections}
-      initial={tab ?? sections[0]?.id ?? 'general'}
+      initial={tab}
+      fallback={sections[0]?.id ?? 'general'}
       onClose={onClose}
     />
   );

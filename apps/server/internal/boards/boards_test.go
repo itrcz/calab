@@ -242,21 +242,21 @@ func TestReorder(t *testing.T) {
 // Board features (ADR-0058 §3): the stored mask round-trips, unknown values are 422, the check
 // passes clearing / repeats and refuses a new value with reason FEATURE_DISABLED and the field.
 func TestFeatureMask(t *testing.T) {
-	all := make([]v1.BoardFeature, 0, 13)
-	for f := v1.BoardFeature_BOARD_FEATURE_ESTIMATE; f <= v1.BoardFeature_BOARD_FEATURE_TIMELINE; f++ {
+	all := make([]v1.BoardFeature, 0, 16)
+	for f := v1.BoardFeature_BOARD_FEATURE_ESTIMATE; f <= v1.BoardFeature_BOARD_FEATURE_GIT_LINKS; f++ {
 		all = append(all, f)
 	}
 	m, err := FeatureMask(all)
-	if err != nil || m != 0x3FFE {
+	if err != nil || m != 0x1FFFE {
 		t.Fatalf("mask %x %v", m, err)
 	}
-	if got := FeaturesProto(m); len(got) != 13 || got[0] != v1.BoardFeature_BOARD_FEATURE_ESTIMATE || got[12] != v1.BoardFeature_BOARD_FEATURE_TIMELINE {
+	if got := FeaturesProto(m); len(got) != 16 || got[0] != v1.BoardFeature_BOARD_FEATURE_ESTIMATE || got[15] != v1.BoardFeature_BOARD_FEATURE_GIT_LINKS {
 		t.Fatalf("features %v", got)
 	}
 	if FeaturesProto(0) != nil {
 		t.Fatal("no features")
 	}
-	for _, bad := range []v1.BoardFeature{0, 14, 99} {
+	for _, bad := range []v1.BoardFeature{0, 17, 99} {
 		if _, err := FeatureMask([]v1.BoardFeature{bad}); err == nil {
 			t.Fatalf("feature %d accepted", bad)
 		}

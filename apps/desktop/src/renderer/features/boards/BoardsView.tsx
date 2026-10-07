@@ -7,7 +7,8 @@ import { t } from '../../i18n';
 import { mayCreateBoards } from '../../lib/permissions';
 import { ensureBoardTasks, loadBoard, loadMyTasks, useTaskDetails } from '../../services/boards';
 import type { TaskScope } from '../../services/boardsApi';
-import { useBoards, workspaceBoards } from '../../stores/boards';
+import { boardLayout } from '../../lib/boards/categories';
+import { useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
@@ -22,7 +23,9 @@ import { hasBit, CREATE_TASKS } from './model';
 import { TaskPanel } from './TaskPanel';
 import { Timeline } from './Timeline';
 import { useBoardHotkeys } from './useBoardHotkeys';
-import { NavButton } from '../shell/MobileShell';
+import { CreateButton } from '../../components/CreateButton';
+import { Bar } from '../../components/Bar';
+import { NavButton } from '../../components/PhoneHeader';
 import { useMobile } from '../../lib/mobile';
 import { useViewKind } from './useBoardView';
 
@@ -30,7 +33,8 @@ import { useViewKind } from './useBoardView';
 export function useActiveBoard(workspaceId: string): string {
   const remembered = useBoardsUi((s) => s.boardOf[workspaceId]);
   const exists = useBoards((s) => (remembered && remembered !== MY_TASKS ? !!s.boards[remembered] && !s.boards[remembered].archivedAt : false));
-  const first = useBoards((s) => workspaceBoards(s.boards, workspaceId)[0]?.id ?? '');
+  // The first in the sidebar order (uncategorised, then by category), not the first by raw position (positions are per category).
+  const first = useBoards((s) => boardLayout(workspaceBoards(s.boards, workspaceId), workspaceCategories(s.categories, workspaceId), false).find((c) => c.rooms.length)?.rooms[0] ?? '');
   if (remembered === MY_TASKS) return MY_TASKS;
   if (remembered && exists) return remembered;
   return first || MY_TASKS;
@@ -143,16 +147,20 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   }, [groups]);
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2 mobile:pl-1" data-testid="my-tasks-header">
+      <Bar plain className="gap-2 pl-4 pr-2" data-testid="my-tasks-header">
         {mobile ? <NavButton /> : null}
         <Inbox className="size-[18px] text-muted" aria-hidden />
-        <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{t('boards.myTasks')}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-headline font-semibold mobile:text-list">{t('boards.myTasks')}</h1>
         {boards.length ? (
           <Dropdown.Root modal={false}>
             <Dropdown.Trigger asChild>
-              <Button aria-label={t('boards.newTask')} className="mobile:min-w-10" data-testid="my-new-task">
-                <Plus className="size-4" aria-hidden /> <span className="mobile:hidden">{t('boards.task')}</span>
-              </Button>
+              {mobile ? (
+                <CreateButton label={t('boards.newTask')} tip={false} data-testid="my-new-task" />
+              ) : (
+                <Button aria-label={t('boards.newTask')} data-testid="my-new-task">
+                  <Plus className="size-4" aria-hidden /> <span>{t('boards.task')}</span>
+                </Button>
+              )}
             </Dropdown.Trigger>
             <Dropdown.Portal>
               <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="end">
@@ -168,7 +176,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
             </Dropdown.Portal>
           </Dropdown.Root>
         ) : null}
-      </header>
+      </Bar>
       <div className="flex h-10 shrink-0 items-center px-3">
         <Segmented value={scope} options={SCOPES.map((s) => ({ value: s.value, label: t(s.label) }))} onChange={setScope} label={t('boards.myTasks')} />
       </div>

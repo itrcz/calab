@@ -3,6 +3,8 @@ import { Paperclip, Search } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, CloseButton, Input, Select, Spinner, cx } from '../../components/ui';
+import { Bar } from '../../components/Bar';
+import { PhoneBack } from '../../components/PhoneHeader';
 import { getLocale, t } from '../../i18n';
 import { log } from '../../lib/log';
 import { NO_FILTERS, panelRequest, paramsKey, type PanelFilters, type Period, type RoomKindOf } from '../../lib/search/query';
@@ -196,6 +198,12 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
     useSearchPanel.getState().setScope(scopeParam(v, activeWs));
   };
 
+  const resetButton = (
+    <button type="button" aria-label={t('search.panel.reset')} className="shrink-0 rounded-full px-1.5 text-caption text-accent-text hover:underline" onClick={() => setFilters(NO_FILTERS)}>
+      {t('search.panel.resetShort')}
+    </button>
+  );
+
   return (
     <aside
       aria-label={t('search.panel.title')}
@@ -211,16 +219,21 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
             : 'mat-sidebar flex w-[340px] shrink-0 flex-col border-l border-line'
       }
     >
-      <div className="flex shrink-0 flex-col gap-2 border-b border-line px-3 pb-2 pt-3">
-        <div className="flex items-center gap-1">
-          <h2 className="min-w-0 flex-1 truncate pl-1 text-headline font-semibold">{t('search.panel.title')}</h2>
-          {anyFilter ? (
-            <button type="button" aria-label={t('search.panel.reset')} className="shrink-0 rounded-full px-1.5 text-caption text-accent-text hover:underline" onClick={() => setFilters(NO_FILTERS)}>
-              {t('search.panel.resetShort')}
-            </button>
-          ) : null}
-          <CloseButton label={t('search.panel.close')} onClick={close} />
-        </div>
+      {page ? (
+        <Bar>
+          <PhoneBack />
+          <h2 className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('search.panel.title')}</h2>
+          {anyFilter ? resetButton : null}
+        </Bar>
+      ) : null}
+      <div className={cx('flex shrink-0 flex-col gap-2 border-b border-line px-3 pb-2', page ? 'pt-2' : 'pt-3')}>
+        {page ? null : (
+          <div className="flex items-center gap-1">
+            <h2 className="min-w-0 flex-1 truncate pl-1 font-semibold text-headline">{t('search.panel.title')}</h2>
+            {anyFilter ? resetButton : null}
+            <CloseButton label={t('search.panel.close')} onClick={close} />
+          </div>
+        )}
         <Input
           icon={<Search className="size-3.5" aria-hidden />}
           value={draft}

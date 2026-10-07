@@ -1151,6 +1151,7 @@ type TaskSubscriber struct {
 	Muted      bool
 	NotifiedAt *time.Time
 	SeenAt     *time.Time
+	Watcher    bool
 }
 
 type User struct {
@@ -1185,6 +1186,8 @@ type User struct {
 	WorkEndMin                     int16
 	WorkDays                       []int16
 	HideMessageTextInNotifications bool
+	Username                       *string
+	Phone                          *string
 }
 
 type UserNote struct {

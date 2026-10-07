@@ -13,6 +13,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addTaskWatchers = `-- name: AddTaskWatchers :exec
+INSERT INTO task_subscribers (task_id, user_id, watcher) SELECT $1, unnest($2::uuid[]), true
+ON CONFLICT (task_id, user_id) DO UPDATE SET watcher = true
+`
+
+type AddTaskWatchersParams struct {
+	TaskID  uuid.UUID
+	UserIds []uuid.UUID
+}
+
+// Makes users watchers (and subscribers) of a task; an existing row keeps its muted flag.
+func (q *Queries) AddTaskWatchers(ctx context.Context, arg AddTaskWatchersParams) error {
+	_, err := q.db.Exec(ctx, addTaskWatchers, arg.TaskID, arg.UserIds)
+	return err
+}
+
 const archiveTasks = `-- name: ArchiveTasks :many
 UPDATE tasks SET archived_at = now(), updated_at = now()
 WHERE id = ANY($1::uuid[]) AND archived_at IS NULL
@@ -633,6 +649,20 @@ func (q *Queries) DeleteTaskRelation(ctx context.Context, arg DeleteTaskRelation
 	return result.RowsAffected(), nil
 }
 
+const deleteTaskSubscription = `-- name: DeleteTaskSubscription :exec
+DELETE FROM task_subscribers WHERE task_id = $1 AND user_id = $2
+`
+
+type DeleteTaskSubscriptionParams struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) DeleteTaskSubscription(ctx context.Context, arg DeleteTaskSubscriptionParams) error {
+	_, err := q.db.Exec(ctx, deleteTaskSubscription, arg.TaskID, arg.UserID)
+	return err
+}
+
 const detachSubtasks = `-- name: DetachSubtasks :exec
 UPDATE tasks SET parent_id = NULL, task_milestone_id = NULL, updated_at = now() WHERE parent_id = $1
 `
@@ -809,12 +839,15 @@ SELECT b.workspace_id,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
        b.disabled_features,
-       -- ADR-0059: the user (a human) is an assignee or an approver of a live task of the board.
+       -- ADR-0059 / ADR-0076: the user (a human) is an assignee, an approver or a watcher of a
+       -- live task of the board.
        (NOT coalesce(u.is_bot, true) AND (
            EXISTS (SELECT 1 FROM task_assignees x JOIN tasks t ON t.id = x.task_id
                    WHERE x.user_id = $1::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
         OR EXISTS (SELECT 1 FROM task_approvers x JOIN tasks t ON t.id = x.task_id
                    WHERE x.user_id = $1::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+        OR EXISTS (SELECT 1 FROM task_subscribers x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = $1::uuid AND x.watcher AND t.board_id = b.id AND t.archived_at IS NULL)
        ))::boolean AS invited
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
@@ -990,7 +1023,8 @@ func (q *Queries) GetTaskByNumber(ctx context.Context, arg GetTaskByNumberParams
 
 const getTaskInvite = `-- name: GetTaskInvite :one
 SELECT EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = $1 AND x.user_id = $2)::boolean AS assignee,
-       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = $1 AND x.user_id = $2)::boolean AS approver
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = $1 AND x.user_id = $2)::boolean AS approver,
+       EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = $1 AND x.user_id = $2 AND x.watcher)::boolean AS watcher
 `
 
 type GetTaskInviteParams struct {
@@ -1001,13 +1035,15 @@ type GetTaskInviteParams struct {
 type GetTaskInviteRow struct {
 	Assignee bool
 	Approver bool
+	Watcher  bool
 }
 
-// Whether the user is an assignee / approver of a task (ADR-0059: perm.TaskBits).
+// Whether the user is an assignee / approver / watcher of a task (ADR-0059, ADR-0076:
+// perm.TaskBits).
 func (q *Queries) GetTaskInvite(ctx context.Context, arg GetTaskInviteParams) (GetTaskInviteRow, error) {
 	row := q.db.QueryRow(ctx, getTaskInvite, arg.TaskID, arg.UserID)
 	var i GetTaskInviteRow
-	err := row.Scan(&i.Assignee, &i.Approver)
+	err := row.Scan(&i.Assignee, &i.Approver, &i.Watcher)
 	return i, err
 }
 
@@ -1053,7 +1089,8 @@ func (q *Queries) GetTaskLevel(ctx context.Context, arg GetTaskLevelParams) ([]G
 const getTaskRoomRef = `-- name: GetTaskRoomRef :one
 SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived,
        EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS assignee,
-       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS approver
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = $1)::boolean AS approver,
+       EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = t.id AND x.user_id = $1 AND x.watcher)::boolean AS watcher
 FROM tasks t WHERE t.room_id = $2
 `
 
@@ -1068,10 +1105,11 @@ type GetTaskRoomRefRow struct {
 	TaskArchived bool
 	Assignee     bool
 	Approver     bool
+	Watcher      bool
 }
 
-// The task and board of a task room and whether the user is its assignee / approver
-// (perm.Resolver: RoomAccess.Task, ADR-0059).
+// The task and board of a task room and whether the user is its assignee / approver / watcher
+// (perm.Resolver: RoomAccess.Task, ADR-0059, ADR-0076).
 func (q *Queries) GetTaskRoomRef(ctx context.Context, arg GetTaskRoomRefParams) (GetTaskRoomRefRow, error) {
 	row := q.db.QueryRow(ctx, getTaskRoomRef, arg.UserID, arg.RoomID)
 	var i GetTaskRoomRefRow
@@ -1081,6 +1119,7 @@ func (q *Queries) GetTaskRoomRef(ctx context.Context, arg GetTaskRoomRefParams) 
 		&i.TaskArchived,
 		&i.Assignee,
 		&i.Approver,
+		&i.Watcher,
 	)
 	return i, err
 }
@@ -1476,6 +1515,37 @@ func (q *Queries) ListBoardActivity(ctx context.Context, arg ListBoardActivityPa
 	return items, nil
 }
 
+const listBoardInvitees = `-- name: ListBoardInvitees :many
+SELECT DISTINCT x.user_id FROM tasks t
+JOIN (SELECT a.task_id, a.user_id FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id FROM task_approvers p
+      UNION ALL SELECT w.task_id, w.user_id FROM task_subscribers w WHERE w.watcher) x ON x.task_id = t.id
+JOIN users u ON u.id = x.user_id AND NOT u.is_bot
+WHERE t.board_id = $1 AND t.archived_at IS NULL
+`
+
+// The humans who are assignees, approvers or watchers of the live tasks of a board (ADR-0076:
+// «Позванные по карточкам» counts those of them without VIEW_BOARD).
+func (q *Queries) ListBoardInvitees(ctx context.Context, boardID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listBoardInvitees, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBoardLabels = `-- name: ListBoardLabels :many
 SELECT id, board_id, name, color, position FROM board_labels WHERE board_id = ANY($1::uuid[]) ORDER BY board_id, position, id
 `
@@ -1700,9 +1770,10 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 const listInvitedTasks = `-- name: ListInvitedTasks :many
 SELECT t.id, t.board_id
 FROM tasks t JOIN boards b ON b.id = t.board_id
-WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND NOT b.restricted AND t.archived_at IS NULL
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
   AND t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = $2
-               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = $2)
+               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = $2
+               UNION SELECT w.task_id FROM task_subscribers w WHERE w.user_id = $2 AND w.watcher)
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = $2 AND u.is_bot)
 `
 
@@ -1716,8 +1787,8 @@ type ListInvitedTasksRow struct {
 	BoardID uuid.UUID
 }
 
-// The live tasks on live, non-restricted boards of a workspace where the user (a human) is an
-// assignee or an approver: the task-scoped boards of ADR-0059.
+// The live tasks on live boards of a workspace where the user (a human) is an assignee, an
+// approver or a watcher: the task-scoped boards of ADR-0059 (restricted ones too, ADR-0076).
 func (q *Queries) ListInvitedTasks(ctx context.Context, arg ListInvitedTasksParams) ([]ListInvitedTasksRow, error) {
 	rows, err := q.db.Query(ctx, listInvitedTasks, arg.WorkspaceID, arg.UserID)
 	if err != nil {
@@ -1893,6 +1964,8 @@ const listTaskInvites = `-- name: ListTaskInvites :many
 SELECT x.task_id FROM task_assignees x WHERE x.task_id = ANY($1::uuid[]) AND x.user_id = $2
 UNION
 SELECT a.task_id FROM task_approvers a WHERE a.task_id = ANY($1::uuid[]) AND a.user_id = $2
+UNION
+SELECT w.task_id FROM task_subscribers w WHERE w.task_id = ANY($1::uuid[]) AND w.user_id = $2 AND w.watcher
 `
 
 type ListTaskInvitesParams struct {
@@ -1900,7 +1973,8 @@ type ListTaskInvitesParams struct {
 	UserID uuid.UUID
 }
 
-// The tasks among ids where the user is an assignee or an approver (ADR-0059).
+// The tasks among ids where the user is an assignee, an approver or a watcher (ADR-0059,
+// ADR-0076).
 func (q *Queries) ListTaskInvites(ctx context.Context, arg ListTaskInvitesParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, listTaskInvites, arg.Ids, arg.UserID)
 	if err != nil {
@@ -2031,7 +2105,7 @@ func (q *Queries) ListTaskRoomMessages(ctx context.Context, arg ListTaskRoomMess
 
 const listTaskSubscribers = `-- name: ListTaskSubscribers :many
 
-SELECT task_id, user_id, muted, notified_at, seen_at FROM task_subscribers WHERE task_id = $1
+SELECT task_id, user_id, muted, notified_at, seen_at, watcher FROM task_subscribers WHERE task_id = $1
 `
 
 // ---- subscriptions, notifications ----
@@ -2050,6 +2124,7 @@ func (q *Queries) ListTaskSubscribers(ctx context.Context, taskID uuid.UUID) ([]
 			&i.Muted,
 			&i.NotifiedAt,
 			&i.SeenAt,
+			&i.Watcher,
 		); err != nil {
 			return nil, err
 		}
@@ -2061,8 +2136,39 @@ func (q *Queries) ListTaskSubscribers(ctx context.Context, taskID uuid.UUID) ([]
 	return items, nil
 }
 
+const listTaskWatchers = `-- name: ListTaskWatchers :many
+SELECT task_id, user_id FROM task_subscribers WHERE task_id = ANY($1::uuid[]) AND watcher
+ORDER BY task_id, user_id
+`
+
+type ListTaskWatchersRow struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+}
+
+// The watchers of tasks (ADR-0076), in a stable order.
+func (q *Queries) ListTaskWatchers(ctx context.Context, taskIds []uuid.UUID) ([]ListTaskWatchersRow, error) {
+	rows, err := q.db.Query(ctx, listTaskWatchers, taskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTaskWatchersRow{}
+	for rows.Next() {
+		var i ListTaskWatchersRow
+		if err := rows.Scan(&i.TaskID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listViewerSubscriptions = `-- name: ListViewerSubscriptions :many
-SELECT task_id, user_id, muted, notified_at, seen_at FROM task_subscribers WHERE user_id = $1 AND task_id = ANY($2::uuid[])
+SELECT task_id, user_id, muted, notified_at, seen_at, watcher FROM task_subscribers WHERE user_id = $1 AND task_id = ANY($2::uuid[])
 `
 
 type ListViewerSubscriptionsParams struct {
@@ -2085,6 +2191,7 @@ func (q *Queries) ListViewerSubscriptions(ctx context.Context, arg ListViewerSub
 			&i.Muted,
 			&i.NotifiedAt,
 			&i.SeenAt,
+			&i.Watcher,
 		); err != nil {
 			return nil, err
 		}
@@ -2129,11 +2236,13 @@ func (q *Queries) ListWorkspaceBoardOverrides(ctx context.Context, workspaceID u
 }
 
 const listWorkspaceTaskInvitees = `-- name: ListWorkspaceTaskInvitees :many
-SELECT t.id AS task_id, t.board_id, x.user_id, bool_or(x.assignee)::boolean AS assignee, bool_or(NOT x.assignee)::boolean AS approver
+SELECT t.id AS task_id, t.board_id, x.user_id,
+       bool_or(x.how = 1)::boolean AS assignee, bool_or(x.how = 2)::boolean AS approver, bool_or(x.how = 3)::boolean AS watcher
 FROM tasks t
 JOIN boards b ON b.id = t.board_id
-JOIN (SELECT a.task_id, a.user_id, true AS assignee FROM task_assignees a
-      UNION ALL SELECT p.task_id, p.user_id, false AS assignee FROM task_approvers p) x ON x.task_id = t.id
+JOIN (SELECT a.task_id, a.user_id, 1 AS how FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id, 2 AS how FROM task_approvers p
+      UNION ALL SELECT w.task_id, w.user_id, 3 AS how FROM task_subscribers w WHERE w.watcher) x ON x.task_id = t.id
 JOIN users u ON u.id = x.user_id AND NOT u.is_bot
 WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
 GROUP BY t.id, t.board_id, x.user_id
@@ -2145,10 +2254,12 @@ type ListWorkspaceTaskInviteesRow struct {
 	UserID   uuid.UUID
 	Assignee bool
 	Approver bool
+	Watcher  bool
 }
 
-// The assignees and approvers (humans) of the live tasks on live boards of a workspace: the
-// gateway's invited map (ADR-0059).
+// The assignees, approvers and watchers (humans) of the live tasks on live boards of a
+// workspace: the gateway's invited map (ADR-0059, ADR-0076). how: 1 assignee, 2 approver,
+// 3 watcher.
 func (q *Queries) ListWorkspaceTaskInvitees(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceTaskInviteesRow, error) {
 	rows, err := q.db.Query(ctx, listWorkspaceTaskInvitees, workspaceID)
 	if err != nil {
@@ -2164,6 +2275,7 @@ func (q *Queries) ListWorkspaceTaskInvitees(ctx context.Context, workspaceID uui
 			&i.UserID,
 			&i.Assignee,
 			&i.Approver,
+			&i.Watcher,
 		); err != nil {
 			return nil, err
 		}
@@ -2535,7 +2647,7 @@ func (q *Queries) SetDefaultBoardStatus(ctx context.Context, arg SetDefaultBoard
 const setSubscription = `-- name: SetSubscription :one
 INSERT INTO task_subscribers (task_id, user_id, muted) VALUES ($1, $2, $3)
 ON CONFLICT (task_id, user_id) DO UPDATE SET muted = EXCLUDED.muted
-RETURNING task_id, user_id, muted, notified_at, seen_at
+RETURNING task_id, user_id, muted, notified_at, seen_at, watcher
 `
 
 type SetSubscriptionParams struct {
@@ -2553,6 +2665,7 @@ func (q *Queries) SetSubscription(ctx context.Context, arg SetSubscriptionParams
 		&i.Muted,
 		&i.NotifiedAt,
 		&i.SeenAt,
+		&i.Watcher,
 	)
 	return i, err
 }
@@ -2775,6 +2888,27 @@ func (q *Queries) UnreadTaskIDs(ctx context.Context, arg UnreadTaskIDsParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const unsetTaskWatcher = `-- name: UnsetTaskWatcher :one
+WITH upd AS (
+    UPDATE task_subscribers SET watcher = false WHERE task_id = $1 AND user_id = $2 AND watcher
+    RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM upd)::boolean
+`
+
+type UnsetTaskWatcherParams struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+}
+
+// Removes the watcher role (the subscription stays); false when the user was not a watcher.
+func (q *Queries) UnsetTaskWatcher(ctx context.Context, arg UnsetTaskWatcherParams) (bool, error) {
+	row := q.db.QueryRow(ctx, unsetTaskWatcher, arg.TaskID, arg.UserID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const updateBoard = `-- name: UpdateBoard :one

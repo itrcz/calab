@@ -38,11 +38,12 @@ import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
+import { WindowVibrancy } from './WindowVibrancy';
 import { Sidebar } from './Sidebar';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { useArchiveView } from '../../stores/archiveView';
 import { TitleBar } from './TitleBar';
-import { WorkspaceRail } from './WorkspaceRail';
+import { SectionRail } from './SectionRail';
 import { AppScreen } from '../webapps/AppScreen';
 import { installWebApps } from '../../services/webApps';
 import { useOpenApp } from '../../stores/webApps';
@@ -111,60 +112,26 @@ function ShellLayout(): ReactNode {
 
   if (!onboarded && local) return <OnboardingLazy.Component />;
   if (mobile) {
-    // Phone layout (ADR-0021): one column — the chat full screen, the rail + rooms and the members
-    // list in drawers, the voice strip at the bottom.
-    // «Личные» (ADR-0020): the DM list in the drawer, the open DM full screen.
-    const ws = home ? HOME : (hasWs || locked) && wsId ? wsId : null;
+    // Phone layout (ADR-0073): tabs and a stack of screens; the shell decides what is on screen.
     return (
-      <MobileShell workspaceId={ws} roomId={home ? dmId : ws ? roomId : undefined} showReconnect={showReconnect}>
-        {!ready ? (
-          <div className="grid flex-1 place-items-center">
-            <div className="flex flex-col items-center gap-3 text-body text-muted">
-              <Spinner className="size-6" />
-              {t('gateway.connecting')}
+      <>
+        <MobileShell
+          showReconnect={showReconnect}
+          welcome={
+            <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
+              <LockedWorkspacePicker />
+              <Welcome />
             </div>
-          </div>
-        ) : locked && wsId ? (
-          <WorkspaceLock workspaceId={wsId} />
-        ) : searchOpen ? (
-          // A phone: the results full screen; opening a hit closes them.
-          <SearchResultsPanel key={searchSeq} page />
-        ) : home ? (
-          dmId ? (
-            <ChatPane key={dmId} workspaceId="" roomId={dmId} />
-          ) : (
-            <DmPick />
-          )
-        ) : ws ? (
-          boards ? (
-            <BoardsView workspaceId={ws} wide={false} mobile />
-          ) : calDay ? (
-            // Calendar on a phone (ADR-0038 §7): the day full screen, a meeting full screen over it.
-            calEvent ? (
-              <EventPanel occ={calEvent} page />
-            ) : (
-              <DayView workspaceId={ws} />
-            )
-          ) : archived ? (
-            <ArchivedChat key={archived.id} workspaceId={ws} room={archived} />
-          ) : roomId ? (
-            <ChatPane key={roomId} workspaceId={ws} roomId={roomId} />
-          ) : (
-            <NoRoom workspaceId={ws} />
-          )
-        ) : (
-          <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
-            <LockedWorkspacePicker />
-            <Welcome />
-          </div>
-        )}
+          }
+        />
         {ready ? <CreateTaskDialog /> : null}
-      </MobileShell>
+      </>
     );
   }
 
   return (
     <div className="flex h-full flex-col" style={{ ['--sidebar-width' as string]: `${width}px` }}>
+      <WindowVibrancy />
       <TitleBar />
       {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
       <VerifyBanner />
@@ -173,9 +140,11 @@ function ShellLayout(): ReactNode {
       {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
       <UpdateBar />
       {/* The rail sits on the window layer (same material as the title bar); the room column and
-          the chat are one «island» with a 12 px top-left corner and a hairline edge (docs/09 v0.2). */}
+          the chat are one inset panel with a 12 px top-left corner and a quiet edge (docs/08
+          «Слои окна», owner 07.10). The bottom island (me + the call) floats over the foot of the
+          rail and the column. */}
       <div className="mat-rail relative flex min-h-0 flex-1">
-        <WorkspaceRail />
+        <SectionRail />
         {!ready ? (
           <div className="mat-content grid flex-1 place-items-center mobile:px-6">
             <div className="flex flex-col items-center gap-3 text-body text-muted">
@@ -187,7 +156,7 @@ function ShellLayout(): ReactNode {
           <WorkspaceLock workspaceId={wsId} />
         ) : home ? (
           // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <DmSidebar />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
@@ -198,7 +167,7 @@ function ShellLayout(): ReactNode {
         ) : hasWs && wsId && appId ? (
           <AppScreen key={appId} appId={appId} />
         ) : hasWs && wsId ? (
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">

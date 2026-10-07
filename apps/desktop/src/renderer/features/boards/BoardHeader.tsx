@@ -5,7 +5,7 @@ import { Archive, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, Ga
 import { BoardFeature } from '@calaba/protocol';
 import { useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, Input, Modal, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Field, IconButton, Input, Modal, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { groupOn, sortOn } from '../../lib/boards/features';
 import { filterKey, fromTaskFilter } from '../../lib/boards/filter';
@@ -19,7 +19,9 @@ import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
 import { useBoardScoped } from './useTaskPerms';
-import { NavButton } from '../shell/MobileShell';
+import { CreateButton } from '../../components/CreateButton';
+import { Bar } from '../../components/Bar';
+import { NavButton } from '../../components/PhoneHeader';
 import { useMobile } from '../../lib/mobile';
 
 const KINDS: ReadonlyArray<{ kind: ViewKind; label: 'boards.view.kanban' | 'boards.view.list' | 'boards.view.timeline'; icon: typeof Columns3; key: string }> = [
@@ -39,37 +41,65 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
   const manage = hasBit(perms, MANAGE_BOARD);
   const mobile = useMobile();
+  // Phone: the view choice and «Отображение» live in «…» (owner 07.10); the popover is anchored under the header.
+  const [displayOpen, setDisplayOpen] = useState(false);
   return (
-    <div className="shrink-0">
-      <header className="flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:pl-1" data-testid="board-header">
+    // @container: at the minimum window (960 → ~650 px for the board) the view switch drops its labels
+    // (icons + tooltips) so the board name is not cut to «Раз…».
+    <div className="@container relative shrink-0">
+      {/* Phone: the standard PhoneHeader row — «‹» · emoji + title on the free width · «+» · «…», 44 px targets, 16 px gutter. */}
+      <Bar plain={!mobile} className="gap-2 pl-4 pr-2" data-testid="board-header">
         {mobile ? <NavButton /> : null}
-        <span className="shrink-0 text-headline leading-none" aria-hidden>
-          {emoji || '📋'}
+        <span className="flex min-w-0 items-center gap-2 mobile:flex-1 mobile:pl-1.5">
+          <span className="shrink-0 text-headline leading-none" aria-hidden>
+            {emoji || '📋'}
+          </span>
+          <h1 className="min-w-0 truncate text-headline font-semibold mobile:text-list mobile:leading-5" title={name}>
+            {name}
+          </h1>
         </span>
-        <h1 className="min-w-0 truncate text-headline font-semibold" title={name}>
-          {name}
-        </h1>
         {mobile ? null : <ViewsMenu boardId={boardId} />}
-        <span className="flex-1" />
+        {mobile ? null : <span className="flex-1" />}
         {mobile ? null : <ViewSwitch boardId={boardId} />}
+        {/* Phone: «…» then the accent «+» in the corner (the universal CreateButton); desktop: «+ Задача», then «…». */}
+        {mobile ? <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} onDisplay={() => setDisplayOpen(true)} /> : null}
         {hasBit(perms, CREATE_TASKS) ? (
-          <Tip label={t('boards.newTask')} shortcut="C">
-            <Button size="md" aria-label={t('boards.newTask')} className="ml-1 mobile:min-w-10 mobile:px-2.5" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
-              <Plus className="size-4" aria-hidden />
-              <span className="mobile:hidden">{t('boards.task')}</span>
-            </Button>
-          </Tip>
+          mobile ? (
+            <CreateButton label={t('boards.newTask')} tip={false} onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task" />
+          ) : (
+            <Tip label={t('boards.newTask')} shortcut="C">
+              <Button size="md" aria-label={t('boards.newTask')} className="ml-1 h-7" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+                <Plus className="size-4" aria-hidden />
+                <span>{t('boards.task')}</span>
+              </Button>
+            </Tip>
+          )
         ) : null}
-        <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />
-      </header>
-      <div className="flex h-10 min-w-0 items-center gap-1.5 overflow-x-auto px-3" data-testid="filter-row">
-        <FilterButton boardId={boardId} workspaceId={workspaceId} />
-        <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
-        <QuickChips boardId={boardId} />
-        <span className="flex-1" />
-        {mobile ? <ViewSwitch boardId={boardId} /> : null}
-        <DisplayMenu boardId={boardId} />
-      </div>
+        {mobile ? null : <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />}
+      </Bar>
+      {mobile ? (
+        <>
+          <DisplayMenu boardId={boardId} open={displayOpen} onOpenChange={setDisplayOpen} />
+          <div className="relative">
+            <div className="flex h-12 min-w-0 items-center gap-1.5 overflow-x-auto pl-4 [scrollbar-width:none]" data-testid="filter-row">
+              <FilterButton boardId={boardId} workspaceId={workspaceId} />
+              <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
+              <QuickChips boardId={boardId} />
+              {/* A real end gap: WebKit drops the padding at the end of a flex scroller. */}
+              <span className="w-4 shrink-0" aria-hidden />
+            </div>
+            <span className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--color-bg)] to-transparent" aria-hidden />
+          </div>
+        </>
+      ) : (
+        <div className="flex h-10 min-w-0 items-center gap-1.5 overflow-x-auto px-3" data-testid="filter-row">
+          <FilterButton boardId={boardId} workspaceId={workspaceId} />
+          <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
+          <QuickChips boardId={boardId} />
+          <span className="flex-1" />
+          <DisplayMenu boardId={boardId} />
+        </div>
+      )}
     </div>
   );
 }
@@ -81,7 +111,7 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
   // TIMELINE off (ADR-0058 §3): no «Таймлайн» (a saved timeline view opens as the list).
   const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
   return (
-        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex shrink-0 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
+        <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex h-7 shrink-0 items-center rounded-[var(--radius-control)] bg-hover p-0.5 " data-testid="view-switch">
           {KINDS.filter((k) => timeline || k.kind !== 'timeline').map((k) => (
             <Tip key={k.kind} label={t(k.label)} shortcut={k.key}>
               <button
@@ -91,13 +121,13 @@ function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
                 aria-label={t(k.label)}
                 onClick={() => setPrefs(boardId, { kind: k.kind })}
                 className={cx(
-                  'inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:px-2',
+                  'inline-flex h-6 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)]',
                   kind === k.kind ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
                 )}
                 data-testid={`view-${k.kind}`}
               >
                 <k.icon className="size-3.5" aria-hidden />
-                <span className="mobile:hidden">{t(k.label)}</span>
+                <span className="hidden @[720px]:inline">{t(k.label)}</span>
               </button>
             </Tip>
           ))}
@@ -237,20 +267,34 @@ const SORTS: ReadonlyArray<{ v: SortBy; label: 'boards.sort.manual' | 'boards.so
 ];
 
 /** «Отображение»: grouping and sort (the list), «Показывать завершённые». */
-function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
+/** Whether «Отображение» has anything to show on a phone (the list's grouping / sort, hidden columns). */
+function useHasDisplay(boardId: string): boolean {
+  const hidden = useBoardsUi((s) => prefsOf(s, boardId).hidden.length);
+  return useViewKind(boardId) === 'list' || hidden > 0;
+}
+
+/** `open` / `onOpenChange` (phone): opened from the «…» menu, anchored under the header instead of a trigger. */
+function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: boolean; onOpenChange?: (o: boolean) => void }): ReactNode {
   const prefs = useBoardsUi((s) => prefsOf(s, boardId));
   const kind = useViewKind(boardId);
   const disabled = useDisabledFeatures(boardId);
   const set = (p: Partial<BoardPrefs>): void => useBoardsUi.getState().setPrefs(boardId, p);
   const sel = 'h-7 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-control text-fg';
+  const mobile = useMobile();
+  // Phone: «Показывать завершённые» lives in «…»; the popover is for the list's grouping / sort and hidden columns only.
+  if (mobile && kind !== 'list' && !prefs.hidden.length) return null;
   return (
-    <Popover.Root modal={false}>
-      <Popover.Trigger asChild>
-        <button type="button" aria-label={t('boards.display')} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="display-menu">
-          <SlidersHorizontal className="size-3.5" aria-hidden />
-          <span className="mobile:hidden">{t('boards.display')}</span>
-        </button>
-      </Popover.Trigger>
+    <Popover.Root modal={false} open={open} onOpenChange={onOpenChange}>
+      {open === undefined ? (
+        <Popover.Trigger asChild>
+          <button type="button" aria-label={t('boards.display')} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="display-menu">
+            <SlidersHorizontal className="size-3.5" aria-hidden />
+            <span>{t('boards.display')}</span>
+          </button>
+        </Popover.Trigger>
+      ) : (
+        <Popover.Anchor className="absolute right-3 top-12 size-0" />
+      )}
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={4} collisionPadding={8} className="mat-popover anim-in z-[var(--z-popover)] flex w-[280px] flex-col gap-3 rounded-[var(--radius-card)] p-3 text-body">
           {kind === 'list' ? (
@@ -277,10 +321,12 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
               </label>
             </>
           ) : null}
-          <div className="flex items-center justify-between gap-3">
-            <span>{t('boards.showCompleted')}</span>
-            <Toggle label={t('boards.showCompleted')} checked={prefs.showCompleted} onChange={(v) => set({ showCompleted: v })} />
-          </div>
+          {mobile ? null : (
+            <div className="flex items-center justify-between gap-3">
+              <span>{t('boards.showCompleted')}</span>
+              <Toggle label={t('boards.showCompleted')} checked={prefs.showCompleted} onChange={(v) => set({ showCompleted: v })} />
+            </div>
+          )}
           {prefs.hidden.length ? (
             <button type="button" className="self-start text-caption text-accent-text hover:underline" onClick={() => set({ hidden: [] })}>
               {t('boards.showHidden', { n: prefs.hidden.length })}
@@ -292,9 +338,15 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
   );
 }
 
-function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; workspaceId: string; manage: boolean }): ReactNode {
+function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: string; workspaceId: string; manage: boolean; onDisplay?: () => void }): ReactNode {
+  const kind = useViewKind(boardId);
+  const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
+  const hasDisplay = useHasDisplay(boardId);
   const ctx = useMatchCtx(boardId);
+  const mobile = useMobile();
+  const showCompleted = useBoardsUi((s) => prefsOf(s, boardId).showCompleted);
   const [forms, setForms] = useState(false);
+  const formsOn = useFeatureOn(boardId, BoardFeature.FORMS);
   const archive = async (): Promise<void> => {
     const b = useBoards.getState().boards[boardId];
     if (!b) return;
@@ -305,9 +357,9 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
       {forms ? <BoardForms boardId={boardId} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="board-more">
-            <Ellipsis className="size-[18px]" aria-hidden />
-          </button>
+          <IconButton bar tip={false} label={t('boards.more')} className="data-[state=open]:bg-active" data-testid="board-more">
+            <Ellipsis className="size-[18px] mobile:size-5" aria-hidden />
+          </IconButton>
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
@@ -322,6 +374,29 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
                 <Dropdown.Separator className={menuSeparator} />
               </>
             ) : null}
+            {mobile ? (
+              <>
+                <Dropdown.Label className={menuLabel}>{t('boards.view.label')}</Dropdown.Label>
+                <Dropdown.RadioGroup value={kind} onValueChange={(v) => useBoardsUi.getState().setPrefs(boardId, { kind: v as ViewKind })}>
+                  {KINDS.filter((k) => timeline || k.kind !== 'timeline').map((k) => (
+                    <Dropdown.RadioItem key={k.kind} value={k.kind} className={menuItem} data-testid={`view-${k.kind}`}>
+                      <k.icon className="size-4" aria-hidden /> <span className="flex-1">{t(k.label)}</span>
+                      {kind === k.kind ? <Check className="size-4" aria-hidden /> : null}
+                    </Dropdown.RadioItem>
+                  ))}
+                </Dropdown.RadioGroup>
+                {hasDisplay ? (
+                  <Dropdown.Item className={menuItem} onSelect={() => onDisplay?.()} data-testid="display-menu">
+                    <SlidersHorizontal className="size-4" aria-hidden /> {t('boards.display')}
+                  </Dropdown.Item>
+                ) : null}
+                <Dropdown.Separator className={menuSeparator} />
+                <Dropdown.CheckboxItem className={menuItem} checked={showCompleted} onCheckedChange={(v) => useBoardsUi.getState().setPrefs(boardId, { showCompleted: v })} data-testid="show-completed">
+                  {showCompleted ? <Check className="size-4" aria-hidden /> : <span className="size-4" />} {t('boards.showCompleted')}
+                </Dropdown.CheckboxItem>
+                <Dropdown.Separator className={menuSeparator} />
+              </>
+            ) : null}
             <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(boardId), t('boards.linkCopied'))}>
               <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
             </Dropdown.Item>
@@ -330,10 +405,14 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
             </Dropdown.Item>
             {manage ? (
               <>
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
-                  <FileText className="size-4" aria-hidden /> {t('forms.title')}
-                </Dropdown.Item>
+                {formsOn ? (
+                  <>
+                    <Dropdown.Separator className={menuSeparator} />
+                    <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                      <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                    </Dropdown.Item>
+                  </>
+                ) : null}
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
                   <Archive className="size-4" aria-hidden /> {t('boards.archive')}

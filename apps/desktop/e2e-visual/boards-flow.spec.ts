@@ -25,7 +25,7 @@ test('boards: kanban → create → drag → assignees → comment → filter �
   await signIn(page, mock);
 
   // Boards mode: the header icon; the column lists boards, the centre is the first board.
-  await page.getByTestId('boards-button').click();
+  await page.getByTestId('section-boards').click();
   await expect(page.getByTestId('boards-list')).toBeVisible();
   await expect(page.getByTestId('board-row')).toHaveCount(2);
   const kanban = page.getByTestId('kanban');

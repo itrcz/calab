@@ -578,7 +578,7 @@ func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (
 		byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
 	}
 	for _, room := range rooms {
-		if perm.ComputeIn(m, room.Restricted, pbconv.OverrideTargets(byRoom[room.ID])).Has(perm.ViewRoom | perm.AttachFiles) {
+		if perm.ComputeIn(m, perm.FlagsOf(room), pbconv.OverrideTargets(byRoom[room.ID])).Has(perm.ViewRoom | perm.AttachFiles) {
 			return true, nil
 		}
 	}

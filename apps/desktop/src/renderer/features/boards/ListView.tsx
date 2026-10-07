@@ -270,7 +270,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         data-key={task.key}
         onClick={(e) => onClick(id, e)}
         className={cx(
-          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control',
+          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control mobile:h-auto mobile:min-h-14 mobile:flex-wrap mobile:content-center mobile:gap-y-0 mobile:py-2',
           selected ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)]' : focused ? 'bg-active' : 'hover:bg-[color-mix(in_srgb,var(--color-fill)_50%,transparent)]',
         )}
       >
@@ -283,7 +283,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             stop(e);
             useBoardsUi.getState().toggleSelected(id);
           }}
-          className={cx('grid size-4 shrink-0 place-items-center rounded-[4px] border', selected ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-[var(--color-fill-hover)]', !selected && !selecting && 'opacity-0 group-hover/row:opacity-100')}
+          className={cx('tap-hit grid size-4 shrink-0 place-items-center rounded-[4px] border', selected ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-[var(--color-fill-hover)]', !selected && !selecting && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
           data-testid="row-select"
         >
           {selected ? <Check className="size-3" aria-hidden /> : null}
@@ -301,7 +301,25 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
           </button>
         </StatusMenu>
-        <span className={cx('min-w-0 flex-1 truncate', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
+        <span className={cx('min-w-0 flex-1 truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:[overflow-wrap:anywhere]', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
+        {/* Placed here for the phone (end of the title line); `order-last` keeps it rightmost on desktop. */}
+        <AssigneeMenu
+          workspaceId={workspaceId}
+          boardId={boardId}
+          value={task.assignees.map((a) => a.userId)}
+          onToggle={(u) => void setAssignees(id, toggleAssignee(draftsOf(task.assignees), u))}
+          onNone={() => void setAssignees(id, [])}
+          align="end"
+          {...req('assignee')}
+        >
+          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:hover:bg-transparent order-last mobile:order-none" aria-label={t('boards.f.assignee')}>
+            {task.assignees[0] ? <MemberAvatar workspaceId={workspaceId} userId={task.assignees[0].userId} size={20} /> : <UserRound className="size-4 text-faint" aria-hidden />}
+            {task.assignees.length > 1 ? <span className="pl-0.5 text-micro text-muted">+{task.assignees.length - 1}</span> : null}
+          </button>
+        </AssigneeMenu>
+        {/* phone: the meta (badges, date) wraps under the title, aligned with it */}
+        <span className="hidden h-0 basis-full mobile:block" aria-hidden />
+        <span className="hidden w-[56px] shrink-0 mobile:block" aria-hidden />
         {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} compact /> : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
         {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
@@ -331,7 +349,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
               type="button"
               onClick={stop}
               disabled={!canEdit}
-              className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100')}
+              className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover mobile:w-auto mobile:justify-start', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
               aria-label={t('boards.f.dueOn')}
             >
               <CalendarClock className="size-3 shrink-0" aria-hidden />
@@ -339,20 +357,6 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             </button>
           </DateMenu>
         ) : null}
-        <AssigneeMenu
-          workspaceId={workspaceId}
-          boardId={boardId}
-          value={task.assignees.map((a) => a.userId)}
-          onToggle={(u) => void setAssignees(id, toggleAssignee(draftsOf(task.assignees), u))}
-          onNone={() => void setAssignees(id, [])}
-          align="end"
-          {...req('assignee')}
-        >
-          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:hover:bg-transparent" aria-label={t('boards.f.assignee')}>
-            {task.assignees[0] ? <MemberAvatar workspaceId={workspaceId} userId={task.assignees[0].userId} size={20} /> : <UserRound className="size-4 text-faint" aria-hidden />}
-            {task.assignees.length > 1 ? <span className="pl-0.5 text-micro text-muted">+{task.assignees.length - 1}</span> : null}
-          </button>
-        </AssigneeMenu>
       </div>
     </TaskContextMenu>
   );

@@ -1,6 +1,7 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "calaba/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
 // Public profile, visible to members of shared workspaces.
@@ -22,6 +23,19 @@ message User {
   // Birthday (docs/09 #76); unset = not given, or hidden by its owner (Me.birthday_hidden):
   // a hidden birthday is sent to nobody but the owner (in Me.user).
   Birthday birthday = 11;
+  // Contacts (ADR-0077): filled only for a viewer who shares a workspace with the user where
+  // neither of them is a guest; never for guests, bots or bot viewers (bot API, webhooks).
+  // Workspace-scoped payloads (READY snapshot, members, WORKSPACE_MEMBER_*, USER_UPDATE)
+  // decide by that workspace alone: a User without email says nothing about the contacts,
+  // so clients keep the ones they already have. Never used for authentication or invitations.
+  string email = 12;
+  // false = the address is not confirmed (ADR-0065): show it marked "not verified".
+  bool email_verified = 13;
+  // Informational, unverified phone ("+7 999 123-45-67"); empty = not given or not visible.
+  string phone = 14;
+  // Global nickname (ADR-0077), lower case, without "@"; empty = none. Public: everyone who
+  // sees the user sees it, guests too. Bots carry their bot username.
+  string username = 15;
 }
 
 // A birthday: day and month always, the year only if the user gave it. 29 February is valid
@@ -131,6 +145,23 @@ message UpdateMeRequest {
   WorkHours work_hours = 10;
   // Omitted = unchanged; hides authored message text in provider push payloads.
   optional bool hide_message_text_in_notifications = 11;
+  // Phone (ADR-0077): up to 32 characters of "+", digits, spaces and "-()" ("" clears);
+  // 422 VALIDATION (field "phone") otherwise. Not for guests (403) and bots (403).
+  optional string phone = 12;
+  // Nickname (ADR-0077): 3..32 of a-z, 0-9, "_", starting with a letter (a leading "@" and
+  // upper case are accepted and normalized); "" clears it. 422 USERNAME_INVALID: bad format or
+  // a reserved name; 409 USERNAME_TAKEN: someone (a person or a bot) has it. Not for guests
+  // and bots (403).
+  optional string username = 13;
+}
+
+// GET /api/usernames/{name}/available → whether the caller may take the nickname now (the
+// caller's own nickname is available). Rate limited (429). A hint only: PATCH /api/me decides.
+message UsernameAvailabilityResponse {
+  bool available = 1;
+  // Why not: USERNAME_INVALID (format or reserved) or USERNAME_TAKEN; UNSPECIFIED when available.
+  ErrorCode reason = 2;
+  string username = 3; // the normalized name that was checked
 }
 
 message UpdateMeResponse {

@@ -159,7 +159,7 @@ function LoginScreen(): ReactNode {
       return true;
     };
     return (
-      <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]">
+      <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+24px)] mobile:pt-[calc(var(--safe-top)+16px)]">
         <div className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
           <div className="mb-6 flex flex-col items-center text-center">
             <Logo size={72} className="mb-3" />
@@ -186,16 +186,16 @@ function LoginScreen(): ReactNode {
             }}
           />
         </div>
-        <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2" />
+        <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2 mobile:gap-0" />
       </div>
     );
   }
 
   return (
-    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]">
+    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+24px)] mobile:pt-[calc(var(--safe-top)+16px)]">
       <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <Logo size={72} className="mb-3" />
+        <div className="mb-6 flex flex-col items-center text-center mobile:mb-4">
+          <Logo size={72} className="mb-3 mobile:mb-2 mobile:size-14" />
           <h1 className="text-body text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</h1>
         </div>
         <div className="mat-popover flex flex-col gap-5 rounded-[var(--radius-panel)] p-6">
@@ -349,7 +349,7 @@ function LoginScreen(): ReactNode {
         ) : null}
       </form>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
-      <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2" />
+      <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2 mobile:gap-0" />
     </div>
   );
 }

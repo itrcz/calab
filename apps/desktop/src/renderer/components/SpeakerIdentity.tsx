@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { usePrefs } from '../stores/prefs';
 import { Avatar } from './Avatar';
 import { ProfileTarget } from './ProfileTarget';
+import { StatusEmoji } from './StatusEmoji';
 import { cx } from './ui';
 import { t } from '../i18n';
 import { hasRoleMark, roleTextClass } from '../features/people/MemberBits';
@@ -75,6 +76,8 @@ export function SpeakerIdentity({
           <span className="inline-flex h-[14px] shrink-0 items-center rounded-full bg-hover px-1 text-[9px] font-medium leading-none tabular-nums text-muted">{suffix}</span>
         ) : null}
         <BirthdayMark userId={userId} />
+        {/* Custom status in voice too (07.10): the emoji, the text in the tooltip. */}
+        <StatusEmoji userId={userId} />
       </span>
       <MutedByMe userId={userId} />
     </>

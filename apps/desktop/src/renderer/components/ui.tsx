@@ -3,7 +3,7 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
@@ -29,6 +29,54 @@ const twMerge = extendTailwindMerge({
 
 export function cx(...c: Array<string | false | null | undefined>): string {
   return twMerge(c.filter(Boolean).join(' '));
+}
+
+/**
+ * The count badge (owner, 07.10): unread / mention / task counters everywhere. Height H (18 px, 20 on
+ * the phone) and min-width = H, so 1 and 2 digits are a true circle; 3+ characters («99+») grow into
+ * a pill. `ring` adds the cutout against the background (rail, tab bar): the border sits outside the
+ * H box (box is H + 4), so the circle inside stays H. `phone` pins the 20 px size (the phone tab bar).
+ */
+const BADGE_TONE = {
+  danger: 'bg-danger-fill text-white',
+  accent: 'bg-accent-strong text-accent-fg',
+} as const;
+
+export function CountBadge({
+  count,
+  tone = 'danger',
+  ring,
+  phone = false,
+  className,
+  ...rest
+}: {
+  count: number;
+  tone?: keyof typeof BADGE_TONE;
+  /** CSS colour of the cutout ring (a `var(...)`), none when omitted. */
+  ring?: string;
+  /** Always the phone size (20 px) instead of the `mobile:` breakpoint switch. */
+  phone?: boolean;
+  className?: string;
+} & Omit<HTMLAttributes<HTMLSpanElement>, 'children' | 'className'> &
+  Record<`data-${string}`, unknown>): ReactNode {
+  const text = count > 99 ? '99+' : String(count);
+  return (
+    <span
+      data-count-badge=""
+      {...rest}
+      style={ring ? { borderColor: ring } : undefined}
+      className={cx(
+        'inline-grid shrink-0 place-items-center rounded-full text-center text-micro font-bold leading-none tabular-nums',
+        ring && 'border-2',
+        phone ? (ring ? 'h-6 min-w-6' : 'h-5 min-w-5') : ring ? 'h-[22px] min-w-[22px] mobile:h-6 mobile:min-w-6' : 'h-[18px] min-w-[18px] mobile:h-5 mobile:min-w-5',
+        text.length > 2 && 'px-1.5',
+        BADGE_TONE[tone],
+        className,
+      )}
+    >
+      {text}
+    </span>
+  );
 }
 
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
@@ -59,13 +107,16 @@ export const Button = forwardRef<
       aria-busy={busy || undefined}
       className={cx(
         'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] font-medium transition-[filter,background-color] duration-[var(--motion-fast)] disabled:cursor-default disabled:opacity-40',
-        // Phone layout (ADR-0021): 40 px touch targets, same pill shape.
+        // Phone layout (ADR-0021, docs/08): every size is a 44 px touch target (--control-h-phone), same pill shape.
         size === 'sm'
-          ? 'h-6 px-2 text-caption mobile:h-8 mobile:px-3'
+          ? 'h-6 px-2 text-caption mobile:tap-h mobile:tap-px mobile:text-[15px]'
           : size === 'lg'
-            ? 'h-8 px-4 text-body mobile:h-11 mobile:px-5 mobile:text-[15px]'
-            : 'h-7 px-3 text-body mobile:h-10 mobile:px-4 mobile:text-[15px]',
+            ? 'h-8 px-4 text-body mobile:tap-h mobile:px-5 mobile:text-[15px]'
+            : 'h-7 px-3 text-body mobile:tap-h mobile:tap-px mobile:text-[15px]',
         VARIANTS[variant],
+        // Phone: a dimmed (opacity .4) label fell under 3:1 — a disabled button is a flat grey one with a readable label.
+        'mobile:disabled:text-[var(--color-label-secondary)] mobile:disabled:opacity-100',
+        (variant === 'primary' || variant === 'attention') && 'mobile:disabled:bg-[var(--color-fill-hover)]',
         className,
       )}
       {...rest}
@@ -76,10 +127,14 @@ export const Button = forwardRef<
   );
 });
 
+/** True inside a header bar (components/Bar.tsx): its IconButtons take the bar plate (docs/08 «Шапки»). */
+export const BarContext = createContext(false);
+
 export const IconButton = forwardRef<
   HTMLButtonElement,
-  ButtonHTMLAttributes<HTMLButtonElement> & { label: string; shortcut?: string; active?: boolean; danger?: boolean; tip?: boolean; size?: 'sm' | 'md' }
->(function IconButton({ label, shortcut, active, danger, tip = true, size = 'md', className, children, ...rest }, ref) {
+  ButtonHTMLAttributes<HTMLButtonElement> & { label: string; shortcut?: string; active?: boolean; danger?: boolean; tip?: boolean; size?: 'sm' | 'md'; bar?: boolean }
+>(function IconButton({ label, shortcut, active, danger, tip = true, size = 'md', bar: barProp, className, children, ...rest }, ref) {
+  const bar = useContext(BarContext) && barProp !== false ? true : !!barProp;
   const btn = (
     <button
       ref={ref}
@@ -87,8 +142,12 @@ export const IconButton = forwardRef<
       aria-label={label}
       aria-pressed={active}
       className={cx(
-        'inline-grid shrink-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
-        size === 'sm' ? 'size-7' : 'size-8',
+        'inline-grid shrink-0 place-items-center transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
+        // `bar` (docs/08 «Шапки»): one rounded-square plate, one size per bar — 32 px on the desktop,
+        // the CreateButton's 36 px on the phone with the 44 px target grown by ::before.
+        bar ? 'size-8 rounded-[var(--radius-bar)] active:bg-active mobile:size-9 mobile:bar-hit' : 'rounded-[var(--radius-icon)]',
+        // Phone: a 44×44 hit area whatever the glyph size.
+        bar ? null : size === 'sm' ? 'size-7 mobile:tap-size' : 'size-8 mobile:tap-size',
         danger ? 'text-danger hover:bg-hover' : active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
         className,
       )}
@@ -260,7 +319,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       // Phones: a field is focused only by a tap (iOS would scroll to it and raise the keyboard).
       autoFocus={autoFocus && autoFocusAllowed()}
       className={cx(
-        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
+        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:tap-h mobile:tap-px text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
         icon ? 'pl-7 mobile:pl-9' : null,
         className,
       )}
@@ -270,7 +329,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   if (!icon) return field;
   return (
     <span className="relative flex w-full min-w-0 items-center">
-      <span className="pointer-events-none absolute left-2 grid w-4 place-items-center text-muted mobile:left-3" aria-hidden>
+      <span className="pointer-events-none absolute left-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center text-muted mobile:left-3.5 [&>svg]:size-4" aria-hidden>
         {icon}
       </span>
       {field}
@@ -307,7 +366,7 @@ export const PasswordInput = forwardRef<
         title={toggle.label}
         data-testid="password-toggle"
         disabled={rest.disabled}
-        className="absolute right-0 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-[var(--radius-control)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg disabled:opacity-40 mobile:size-10"
+        className="absolute right-0 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-[var(--radius-control)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg disabled:opacity-40 mobile:tap-size"
         // Keep the caret in the field on a click; Tab still reaches the button.
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
@@ -328,7 +387,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
       className={cx(
         // macOS pop-up button: no native chevron; our own ↕ chevron (10 px) sits 8 px from the right edge,
         // the text keeps clear of it (pr-7) and long values end with an ellipsis.
-        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] disabled:opacity-50 disabled:hover:bg-elev',
+        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 mobile:tap-h mobile:pl-3.5 mobile:pr-9 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] disabled:opacity-50 disabled:hover:bg-elev',
         'select-chevron',
         className,
       )}
@@ -364,7 +423,7 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
       disabled={disabled}
       onCheckedChange={onChange}
       aria-label={label}
-      className="relative h-[22px] w-[38px] shrink-0 rounded-full bg-[var(--color-fill-hover)] transition-colors duration-[var(--motion-fast)] data-[state=checked]:bg-accent disabled:opacity-40"
+      className="tap-hit relative h-[22px] w-[38px] shrink-0 rounded-full bg-[var(--color-fill-hover)] transition-colors duration-[var(--motion-fast)] data-[state=checked]:bg-accent disabled:opacity-40"
     >
       <SwitchP.Thumb className="block size-[18px] translate-x-[2px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/30%)] transition-transform duration-[var(--motion-fast)] data-[state=checked]:translate-x-[18px]" />
     </SwitchP.Root>
@@ -374,7 +433,7 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
 /** Row with a toggle (used in dialogs). */
 export function Switch({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: ReactNode; disabled?: boolean }): ReactNode {
   return (
-    <div className={cx('flex items-start justify-between gap-4 py-1', disabled && 'opacity-50')} data-settings-row>
+    <div className={cx('flex items-start justify-between gap-4 py-1 mobile:tap-min-h mobile:items-center', disabled && 'opacity-50')} data-settings-row>
       <span className="flex min-w-0 flex-col">
         <span className="text-body" data-settings-label data-settings-hint={typeof hint === 'string' ? hint : undefined}>
           {label}
@@ -411,7 +470,7 @@ export function Segmented<T extends string>({
             // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
             // segment (macOS), in dark too — not a darker «pressed» one. Focus ring at offset 0: it
             // fills the track's 2 px padding instead of spilling onto the neighbours.
-            'h-6 whitespace-nowrap rounded-full px-3 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
+            'h-6 whitespace-nowrap rounded-full px-3 mobile:tap-h mobile:px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
             value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >
@@ -490,8 +549,8 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
   const searchHint = typeof hint === 'string' ? hint : undefined;
   return (
     // Phone layout: the control wraps under a long label instead of squeezing it (ADR-0021).
-    <div className="flex min-h-10 items-center justify-between gap-4 px-3 py-2 mobile:flex-wrap mobile:gap-x-3 mobile:gap-y-2" data-settings-row>
-      <div className="flex min-w-0 flex-col" id={id}>
+    <div className="flex min-h-10 items-center justify-between gap-4 px-3 py-2 mobile:tap-min-h mobile:flex-wrap mobile:gap-x-3 mobile:gap-y-2" data-settings-row>
+      <div className="flex min-w-0 flex-col mobile:min-w-[8rem] mobile:flex-1" id={id}>
         {htmlFor ? (
           <label htmlFor={htmlFor} className="text-body" data-settings-label data-settings-hint={searchHint}>
             {label}
@@ -503,7 +562,8 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
         )}
         {hint ? <span className="text-caption text-faint">{hint}</span> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2 mobile:max-w-full mobile:shrink">{children}</div>
+      {/* Phone (ADR-0073 §6): a select / field takes its own full-width line under the label; a toggle or a button stays beside it. */}
+      <div className="flex shrink-0 items-center gap-2 mobile:max-w-full mobile:shrink mobile:has-[select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full mobile:[&_select]:w-full mobile:[&_textarea]:w-full mobile:[&_input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=button])]:w-full">{children}</div>
     </div>
   );
 }
@@ -587,7 +647,7 @@ export function Modal({
             if (target && keepOpen?.(target)) e.preventDefault();
           }}
           onOpenAutoFocus={(e) => {
-            // Phones: the sheet itself takes the focus — no field focused (and no keyboard) until a tap.
+            // Phones: the dialog itself takes the focus — no field focused (and no keyboard) until a tap.
             if (!autoFocusAllowed()) {
               e.preventDefault();
               (e.currentTarget as HTMLElement | null)?.focus();
@@ -601,11 +661,11 @@ export function Modal({
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : medium ? 'max-w-[560px]' : 'max-w-[440px]',
             nonModal && 'no-drag shadow-[var(--shadow-popover)]',
-            // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
-            'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
+            // Phone (owner 07.10): a centred card above the keyboard, buttons full width (app/styles.css).
+            'phone-dialog',
           )}
         >
-          <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5">
+          <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-5 mobile:px-4 mobile:pb-3 mobile:pt-3">
             {/* A flex sibling, never under the «×»: the title wraps before it (docs/09 #105). */}
             <div className="min-w-0 flex-1">
               <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
@@ -625,7 +685,7 @@ export function Modal({
           <div
             ref={fill ? undefined : trackScrollEdges}
             className={cx(
-              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
+              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 mobile:px-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
               fill && 'flex flex-col',
               !footer && 'pb-5',
             )}
@@ -633,7 +693,7 @@ export function Modal({
             {children}
           </div>
           {/* macOS order: secondary/cancel on the left of the primary action, primary rightmost. */}
-          {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 py-5">{footer}</div> : null}
+          {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 py-5 mobile:gap-3 mobile:px-4 mobile:py-4 mobile:[&>*]:flex-1">{footer}</div> : null}
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>
@@ -714,7 +774,7 @@ export function Stepper({
     if (next !== value) onCommit(next);
   };
   return (
-    <span className="inline-flex h-7 w-20 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-line bg-elev shadow-[var(--shadow-card)] has-[:focus-visible]:border-focus" data-focus-box>
+    <span className="inline-flex h-7 w-20 shrink-0 items-stretch mobile:tap-h mobile:w-44 overflow-hidden rounded-[var(--radius-control)] border border-line bg-elev shadow-[var(--shadow-card)] has-[:focus-visible]:border-focus" data-focus-box>
       <input
         ref={input}
         id={id}
@@ -747,11 +807,11 @@ export function Stepper({
           }
         }}
       />
-      <span className="flex w-5 flex-col border-l border-line">
-        <button type="button" tabIndex={-1} aria-label={t('common.increase', { label })} title={t('common.more')} disabled={value >= max} onClick={() => step(1)} className="grid flex-1 place-items-center text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
+      <span className="flex w-5 flex-col border-l border-line mobile:w-[88px] mobile:flex-row">
+        <button type="button" tabIndex={-1} aria-label={t('common.increase', { label })} title={t('common.more')} disabled={value >= max} onClick={() => step(1)} className="grid flex-1 place-items-center text-muted hover:bg-hover hover:text-fg disabled:opacity-40 mobile:w-11">
           <ChevronUp className="size-3" aria-hidden />
         </button>
-        <button type="button" tabIndex={-1} aria-label={t('common.decrease', { label })} title={t('common.less')} disabled={value <= min} onClick={() => step(-1)} className="grid flex-1 place-items-center border-t border-line text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
+        <button type="button" tabIndex={-1} aria-label={t('common.decrease', { label })} title={t('common.less')} disabled={value <= min} onClick={() => step(-1)} className="grid flex-1 place-items-center border-t border-line text-muted hover:bg-hover hover:text-fg disabled:opacity-40 mobile:w-11 mobile:border-l mobile:border-t-0">
           <ChevronDown className="size-3" aria-hidden />
         </button>
       </span>

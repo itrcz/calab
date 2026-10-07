@@ -1,7 +1,9 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
-import { ArrowLeft, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
+import { Bar, BAR_GROUP } from '../../components/Bar';
+import { PhoneBack } from '../../components/PhoneHeader';
+import { Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
@@ -129,25 +131,21 @@ export function EventCard({
 
   return (
     <div {...drop.props} className={cx('relative flex min-h-0 flex-1 flex-col', drop.over && 'outline outline-2 -outline-offset-2 outline-accent')} data-testid="event-card">
-      <div className={cx('flex items-start gap-2', variant === 'popover' ? 'px-3 pt-3' : variant === 'page' ? 'mat-toolbar h-12 shrink-0 items-center border-b border-line px-1' : 'px-4 pt-4')}>
-        {variant === 'page' ? (
-          <>
-            <IconButton label={t('cal.back')} onClick={onClose} className="size-10 rounded-full">
-              <ArrowLeft className="size-5" />
-            </IconButton>
-            <span className="min-w-0 flex-1 truncate text-list font-semibold">{t('cal.card')}</span>
+      {variant === 'page' ? (
+        <Bar>
+          <PhoneBack />
+          <span className="min-w-0 flex-1 truncate text-list font-semibold leading-5">{t('cal.card')}</span>
+          <div className={BAR_GROUP}>{tools}</div>
+        </Bar>
+      ) : (
+        <div className={cx('flex items-start gap-2', variant === 'popover' ? 'px-3 pt-3' : 'px-4 pt-4')}>
+          {title}
+          <span className="-mr-1 -mt-0.5 flex shrink-0 items-center">
             {tools}
-          </>
-        ) : (
-          <>
-            {title}
-            <span className="-mr-1 -mt-0.5 flex shrink-0 items-center">
-              {tools}
-              {onClose ? <CloseButton label={t('cal.closeCard')} onClick={onClose} /> : null}
-            </span>
-          </>
-        )}
-      </div>
+            {onClose ? <CloseButton label={t('cal.closeCard')} onClick={onClose} /> : null}
+          </span>
+        </div>
+      )}
       <div className={cx('min-h-0 flex-1 overflow-y-auto', variant === 'popover' ? 'px-3 pb-3' : 'px-4 pb-4', variant === 'page' && 'pt-4')}>
         {variant === 'page' ? <div className="mb-1">{title}</div> : null}
         <Line icon={<Clock className="size-4" aria-hidden />}>
@@ -171,7 +169,7 @@ export function EventCard({
         <div className="mt-2 flex items-center gap-2">
           <ProfileTarget userId={ev.organizerId} name={organizer} workspaceId={ev.workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
             <Avatar userId={ev.organizerId} name={organizer} {...(organizerAvatar ? { fileId: organizerAvatar } : {})} size={20} />
-            <span className="min-w-0 truncate text-body">{organizer}</span>
+            <span className="min-w-0 truncate text-body mobile:line-clamp-2 mobile:whitespace-normal">{organizer}</span>
           </ProfileTarget>
           <span className="shrink-0 text-caption text-muted">{t('cal.organizer')}</span>
         </div>
@@ -200,8 +198,8 @@ export function EventCard({
         {ev.roomId && externals.length > 0 && !ev.guestLinks && !guest ? <p className="mt-2 text-caption text-muted">{t('cal.noGuestLinks')}</p> : null}
       </div>
       {editable ? (
-        <div className={cx('flex shrink-0 flex-wrap items-center gap-2 border-t border-line', variant === 'popover' ? 'px-3 py-2' : 'px-4 py-3')}>
-          <Button size="sm" variant="secondary" onClick={() => editEvent(key)} data-testid="event-edit">
+        <div className={cx('flex shrink-0 flex-wrap items-center gap-2 border-t border-line mobile:grid mobile:grid-cols-2 mobile:pb-[calc(var(--safe-bottom)+12px)]', variant === 'popover' ? 'px-3 py-2' : 'px-4 py-3')}>
+          <Button size="sm" variant="secondary" className="mobile:h-11 mobile:w-full" onClick={() => editEvent(key)} data-testid="event-edit">
             <Pencil className="size-3.5" aria-hidden />
             {t('cal.edit')}
           </Button>
@@ -264,11 +262,12 @@ export function RsvpButtons({
               aria-pressed={on}
               onClick={() => (onAnswer ? onAnswer(r.status) : ev && void answer(ev, r.status))}
               className={cx(
-                'h-7 min-w-0 truncate rounded-full px-1 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:h-9',
+                'inline-flex h-7 min-w-0 items-center justify-center gap-1 truncate rounded-full px-1 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:tap-h',
                 on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-[var(--color-fill)]',
               )}
             >
-              {t(r.key)}
+              {on ? <Check className="hidden size-3.5 shrink-0 mobile:block" aria-hidden /> : null}
+              <span className="truncate">{t(r.key)}</span>
             </button>
           );
         })}
@@ -319,18 +318,19 @@ function AttendeeRow({ workspaceId, a, organizer }: { workspaceId: string; a: Ca
   const name = useMemberName(workspaceId, a.userId);
   const avatar = useWorkspaces((s) => (a.userId ? (s.byId[workspaceId]?.members[a.userId]?.user?.avatarFileId ?? '') : ''));
   return (
-    <li className="flex h-8 items-center gap-2" data-testid="event-attendee">
+    <li className="flex h-8 items-center gap-2 mobile:h-auto mobile:tap-min-h mobile:py-1" data-testid="event-attendee">
       {a.userId ? (
         <ProfileTarget userId={a.userId} name={name} workspaceId={workspaceId} tabbable className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] text-left">
           <Avatar userId={a.userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
-          <span className="min-w-0 truncate text-body">{name}</span>
+          {/* phone: a long name wraps to two lines instead of an ellipsis */}
+          <span className="min-w-0 truncate text-body mobile:line-clamp-2 mobile:whitespace-normal mobile:[overflow-wrap:anywhere]">{name}</span>
         </ProfileTarget>
       ) : (
         <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--color-fill)]" title={t('cal.external')}>
           <Mail className="size-3 text-muted" aria-label={t('cal.external')} role="img" />
         </span>
       )}
-      {a.userId ? null : <span className="min-w-0 truncate text-body">{a.email}</span>}
+      {a.userId ? null : <span className="min-w-0 truncate text-body mobile:line-clamp-2 mobile:whitespace-normal mobile:[overflow-wrap:anywhere]">{a.email}</span>}
       {!a.required ? <span className="shrink-0 text-caption text-muted">{t('cal.optional')}</span> : null}
       {organizer ? <span className="shrink-0 text-caption text-muted">· {t('cal.organizer').toLowerCase()}</span> : null}
       <span className="flex-1" />
@@ -343,7 +343,7 @@ function AttendeeRow({ workspaceId, a, organizer }: { workspaceId: string; a: Ca
 function CancelButton({ ev, occ }: { ev: CalendarEvent; occ: string }): ReactNode {
   if (ev.repeat === EventRepeat.UNSPECIFIED) {
     return (
-      <Button size="sm" variant="destructive" onClick={() => void cancelWithConfirm(occ)} data-testid="event-cancel">
+      <Button size="sm" variant="destructive" className="mobile:h-11 mobile:w-full" onClick={() => void cancelWithConfirm(occ)} data-testid="event-cancel">
         <Trash2 className="size-3.5" aria-hidden />
         {t('cal.cancel')}
       </Button>
@@ -352,7 +352,7 @@ function CancelButton({ ev, occ }: { ev: CalendarEvent; occ: string }): ReactNod
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
-        <Button size="sm" variant="destructive" data-testid="event-cancel">
+        <Button size="sm" variant="destructive" className="mobile:h-11 mobile:w-full" data-testid="event-cancel">
           <Trash2 className="size-3.5" aria-hidden />
           {t('cal.cancel')}
         </Button>

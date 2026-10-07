@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEv
 import { createPortal } from 'react-dom';
 import { Virtuoso } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
+import { InlineAdd } from '../../components/CreateButton';
 import { Button, Modal, Select, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { blockedStatusIds } from '../../lib/boards/approvals';
@@ -277,7 +278,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
   return (
     <div
       ref={scroller}
-      className="relative flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-3 pt-3 mobile:snap-x mobile:snap-mandatory mobile:px-3"
+      className="relative flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-3 pt-3 mobile:snap-x mobile:snap-mandatory mobile:scroll-px-4 mobile:px-4"
       onClickCapture={onClickCapture}
       data-testid="kanban"
     >
@@ -387,7 +388,7 @@ const KanbanColumn = memo(function KanbanColumn({
   return (
     <section
       className={cx(
-        'flex w-[280px] shrink-0 flex-col rounded-[var(--radius-panel)] bg-[color-mix(in_srgb,var(--color-fill)_45%,transparent)] transition-opacity duration-[var(--motion-fast)] mobile:w-[calc(100vw-48px)] mobile:snap-start',
+        'flex w-[280px] shrink-0 flex-col rounded-[var(--radius-panel)] bg-[color-mix(in_srgb,var(--color-fill)_45%,transparent)] transition-opacity duration-[var(--motion-fast)] mobile:w-[min(85vw,320px)] mobile:snap-start',
         (columnDragging || blocked) && 'opacity-40',
       )}
       data-column={status.id}
@@ -475,7 +476,7 @@ function ColumnHeader({
       <span className="flex-1" />
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.columnMenu')} className="grid size-7 place-items-center mobile:size-10 rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="column-menu">
+          <button type="button" aria-label={t('boards.columnMenu')} className="grid size-7 place-items-center mobile:tap-size rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="column-menu">
             <Ellipsis className="size-4" aria-hidden />
           </button>
         </Dropdown.Trigger>
@@ -542,11 +543,7 @@ function ColumnHeader({
         </Dropdown.Portal>
       </Dropdown.Root>
       {canCreate ? (
-        <Tip label={t('boards.addTaskTo', { status: status.name })}>
-          <button type="button" onClick={onAdd} aria-label={t('boards.addTaskTo', { status: status.name })} className="grid size-7 place-items-center mobile:size-10 rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="column-add">
-            <Plus className="size-4" aria-hidden />
-          </button>
-        </Tip>
+        <InlineAdd label={t('boards.addTaskTo', { status: status.name })} onClick={onAdd} data-testid="column-add" />
       ) : null}
       {deleting ? <DeleteStatusDialog boardId={boardId} status={status} statuses={statuses} onClose={() => setDeleting(false)} /> : null}
     </div>

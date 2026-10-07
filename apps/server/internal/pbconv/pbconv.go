@@ -164,6 +164,7 @@ func User(u sqlc.User) *v1.User {
 		IsGuest:      u.IsGuest,
 		Timezone:     deref(u.Timezone),
 		IsBot:        u.IsBot,
+		Username:     deref(u.Username), // public (ADR-0077); contacts: WithContacts
 	}
 	if !u.BirthdayHidden { // a hidden birthday goes to its owner only (Me)
 		out.Birthday = Birthday(u.BirthdayDay, u.BirthdayMonth, u.BirthdayYear)
@@ -253,7 +254,7 @@ func Me(u sqlc.User) *v1.Me {
 	for _, d := range u.WorkDays {
 		settings.WorkHours.Days = append(settings.WorkHours.Days, uint32(max(d, 0))) //nolint:gosec // 1..7
 	}
-	me := &v1.Me{User: User(u), Email: email, Settings: settings,
+	me := &v1.Me{User: WithContacts(User(u), u), Email: email, Settings: settings,
 		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
 		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing
 	if u.PendingEmail != nil {
@@ -671,6 +672,16 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 
 // MessageKindSystem is messages.kind of a system message (ADR-0025).
 const MessageKindSystem = "system"
+
+// RoomFlags returns the permission flags of a wire room for perm.ComputeIn (restricted,
+// ADR-0029; private temporary and its creator, ADR-0078).
+func RoomFlags(r *v1.Room) perm.RoomFlags {
+	f := perm.RoomFlags{Restricted: r.GetRestricted(), PrivateTemp: r.GetIsPrivate() && r.GetExpiresAt() != nil}
+	if id, err := uuid.Parse(r.GetCreatedBy()); err == nil {
+		f.CreatedBy = id
+	}
+	return f
+}
 
 // ProtoOverrideTargets converts wire overrides for perm.ComputeIn.
 func ProtoOverrideTargets(ovs []*v1.RoomPermissionOverride) []perm.OverrideTarget {

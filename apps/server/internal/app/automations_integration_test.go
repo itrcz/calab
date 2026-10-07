@@ -154,6 +154,12 @@ func TestBoardRules(t *testing.T) {
 	if reason, _ := errReason(o.client); reason != "FEATURE_DISABLED" {
 		t.Fatalf("due trigger reason %q", reason)
 	}
+	// AUTOMATIONS off (owner 07.10): creating a rule is 409 FEATURE_DISABLED.
+	setBoardFeatures(t, b.GetId(), 1<<uint(v1.BoardFeature_BOARD_FEATURE_AUTOMATIONS))
+	o.must(409, "POST", rules, valid, nil)
+	if reason, _ := errReason(o.client); reason != "FEATURE_DISABLED" {
+		t.Fatalf("automations reason %q", reason)
+	}
 	setBoardFeatures(t, b.GetId(), 0)
 
 	// Events 92 / 93 to the board's viewers, BOARD_UPDATE with rules_count.

@@ -1,8 +1,10 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search, Plus } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Button, Tip, cx } from '../../components/ui';
+import { CreateButton } from '../../components/CreateButton';
+import { StatusEmoji } from '../../components/StatusEmoji';
+import { Button, CountBadge, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -22,6 +24,7 @@ import { applyChatDrop } from '../notes/dropActions';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { confirmDeleteDm } from './dmActions';
 import { BotBadge } from '../people/MemberBits';
 import { SWIPE_ACTION_PX, useRowSwipe } from './rowSwipe';
@@ -39,34 +42,33 @@ export function DmSidebar(): ReactNode {
   const { main: list, archived } = useMemo(() => splitDms(byRoom, preview, current), [byRoom, preview, current]);
   const open = useUi((s) => s.openDialog);
   const guest = useSession((s) => s.me?.user?.isGuest ?? false);
+  const mobile = useMobile();
 
   return (
-    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
-      <div className="flex h-12 shrink-0 items-center border-b border-line px-2.5">
-        <button
-          type="button"
-          onClick={() => open({ kind: 'new-dm' })}
-          className="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2.5 text-left text-body text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
-        >
-          <Search className="size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{t('dm.find')}</span>
-        </button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
+    <aside className={cx('island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col', mobile ? 'mat-content' : 'mat-sidebar mat-sidebar-window')} aria-label={t('dm.list')}>
+      {mobile ? (
+        // Phone: the tab root has its title and «+» (MobileShell); this is the search field.
+        <div className="flex h-16 shrink-0 items-center border-b border-line px-2.5">
+          <button
+            type="button"
+            onClick={() => open({ kind: 'new-dm' })}
+            className="flex tap-h w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2.5 text-left text-body text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
+          >
+            <Search className="size-3.5 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{t('dm.find')}</span>
+          </button>
+        </div>
+      ) : (
+        // Desktop (ADR-0074 §3; owner 07.10): the column header pattern — «Личные» large, search, «+».
+        <ColumnHeader title={<ColumnTitle>{t('mobile.tabDms')}</ColumnTitle>}>
+          <CreateButton label={t('dm.new')} data-testid="section-create-dm" onClick={() => open({ kind: 'new-dm' })} />
+        </ColumnHeader>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-1 mobile:pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         {/* «Заметки» (ADR-0039): my shelves above the DMs; guest accounts have none. */}
         {guest ? null : <NotesSection />}
-        <div className="group/cat flex h-7 items-center pr-1 pt-1">
-          <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('dm.list')}</h2>
-          <Tip label={t('dm.new')}>
-            <button
-              type="button"
-              onClick={() => open({ kind: 'new-dm' })}
-              aria-label={t('dm.new')}
-              className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-            >
-              <Plus className="size-4" aria-hidden />
-            </button>
-          </Tip>
+        <div className="group/cat flex h-9 items-center pr-1 pt-2 mobile:h-11 mobile:pr-0 mobile:pt-0">
+          <h2 className={cx('min-w-0 flex-1 truncate pl-2', GROUP_LABEL)}>{t('dm.list')}</h2>
         </div>
         {list.length === 0 && archived.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-body text-muted" data-testid="dm-empty">
@@ -92,18 +94,25 @@ export function DmSidebar(): ReactNode {
 /** «Архив — N» (docs/09 #51): collapsed by default; a DM returns by its menu or a new message. */
 function ArchiveSection({ list }: { list: DmEntry[] }): ReactNode {
   const [expanded, setExpanded] = useState(false);
+  const mobile = useMobile();
   const label = t('dm.archiveSection', { n: list.length });
   return (
     <section className="mt-2" aria-label={label} data-testid="dm-archive">
-      <div className="flex h-7 items-center pr-1 pt-1">
+      <div className="group/cat flex h-9 items-center pr-1 pt-2 mobile:h-11 mobile:pt-0">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          className={cx(
+            'flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-11 mobile:pl-1.5',
+            GROUP_LABEL,
+          )}
         >
-          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', !expanded && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          {mobile ? (
+            <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', !expanded && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          ) : null}
           <span className="truncate">{label}</span>
+          {mobile ? null : <GroupChevron collapsed={!expanded} />}
         </button>
       </div>
       {expanded ? (
@@ -152,21 +161,29 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   const bright = active || unread;
   const archived = entry.archivedAt > 0;
   // Phone (docs/09 #51): swipe left for «Архив» / «Вернуть из архива».
-  const swipe = useRowSwipe(useMobile());
+  const phone = useMobile();
+  const swipe = useRowSwipe(phone);
   const shifted = swipe.offset !== 0;
   return (
     <DmMenu roomId={roomId} unread={unread} archived={archived}>
       <li
         className={cx(
-          'group/row relative flex h-[46px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]',
-          over ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]' : active ? 'bg-active' : 'hover:bg-hover',
+          'group/row relative flex items-center transition-colors duration-[var(--motion-fast)]',
+          // Desktop (owner, 07.10): 48 px, radius 8, the column's row plates; the phone keeps its row.
+          phone ? 'h-[46px] rounded-[var(--radius-row)]' : 'h-12 rounded-[var(--radius-card)]',
+          over
+            ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]'
+            : active
+              ? ROW_SELECTED
+              : phone
+                ? 'hover:bg-hover'
+                : ROW_HOVER,
         )}
         data-testid="dm-row"
         data-over={over || undefined}
         {...swipe.handlers}
         {...drop}
       >
-        {unread && !active ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg" /> : null}
         {shifted ? (
           <button
             type="button"
@@ -196,23 +213,26 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
           <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={32} presence />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className={cx('min-w-0 truncate text-list leading-5', !bot && 'flex-1', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
+              <span className={cx('min-w-0 truncate text-list leading-5', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
                 {name}
               </span>
+              {/* grow + shrink-0: the badge / status keeps its width and the name truncates; with min-w-0
+                  flex-1 it collapsed to 0 and the emoji was drawn over the time. */}
               {bot ? (
-                <span className="flex min-w-0 flex-1 self-center">
+                <span className="flex shrink-0 grow self-center">
                   <BotBadge />
                 </span>
-              ) : null}
+              ) : (
+                // The peer's custom status, compact (text in the tooltip); the rest of the line stays free.
+                <span className="flex shrink-0 grow self-center">
+                  <StatusEmoji userId={peerId} />
+                </span>
+              )}
               <span className="shrink-0 text-micro text-faint">{time}</span>
             </span>
             <span className="flex min-w-0 items-center gap-2">
               <span className={cx('min-w-0 flex-1 truncate text-caption leading-4', unread && !active ? 'text-fg' : 'text-muted')}>{line}</span>
-              {count > 0 ? (
-                <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white" aria-hidden>
-                  {count > 99 ? '99+' : count}
-                </span>
-              ) : null}
+              {count > 0 ? <CountBadge count={count} aria-hidden /> : null}
             </span>
           </span>
         </button>

@@ -5,6 +5,7 @@ import {
   BoardTemplate,
   BoardWebhookPauseReason,
   EstimateScale,
+  BoardFeature,
   PermissionTargetType,
   RoomPermissionOverrideSchema,
   WorkspaceRole,
@@ -20,6 +21,7 @@ import { PlanLock } from '../../components/PlanLock';
 import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
+import { useUi } from '../../stores/ui';
 import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
@@ -74,11 +76,14 @@ import { Dot, PALETTE, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon, colorCss } f
  * «Доступ» (as a room's: roles and people, allow / deny of the four board bits, private board),
  * «Архив и удаление» (delete asks for the key). The create dialog picks a status template.
  */
-export function BoardSettingsHost(): ReactNode {
+export function BoardSettingsHost({ screen = false }: { screen?: boolean }): ReactNode {
   const req = useBoardsUi((s) => s.settingsFor);
+  const phone = useUi((s) => s.phone.on);
   const close = (): void => useBoardsUi.getState().openSettings(null);
   if (!req) return null;
   if (!req.boardId) return <CreateBoardDialog workspaceId={req.workspaceId} onClose={close} />;
+  // On the phone the settings are a screen of their own (features/shell/SettingsScreen.tsx).
+  if (phone && !screen) return null;
   return <BoardSettings boardId={req.boardId} tab={req.tab} onClose={close} />;
 }
 
@@ -95,8 +100,8 @@ function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string
     { id: 'milestones', label: t('boards.set.milestones'), icon: Diamond, content: <MilestonesTab board={board} /> },
     { id: 'access', label: t('boards.access'), icon: ShieldCheck, content: <AccessTab board={board} /> },
     // Automations (ADR-0060 §6): every manager of the board; Git also needs MANAGE_INTEGRATIONS.
-    { id: 'rules', label: t('rules.tab'), icon: Workflow, content: <RulesTab board={board} /> },
-    ...(integrations ? [{ id: 'git', label: t('git.tab'), icon: GitBranch, content: <GitTab board={board} /> }] : []),
+    ...(featureOn(board.disabledFeatures, BoardFeature.AUTOMATIONS) ? [{ id: 'rules', label: t('rules.tab'), icon: Workflow, content: <RulesTab board={board} /> }] : []),
+    ...(integrations && featureOn(board.disabledFeatures, BoardFeature.GIT_LINKS) ? [{ id: 'git', label: t('git.tab'), icon: GitBranch, content: <GitTab board={board} /> }] : []),
     ...(integrations ? [{ id: 'webhook', label: t('boards.set.webhook'), icon: Webhook, content: <WebhookTab board={board} /> }] : []),
     { id: 'danger', label: t('boards.set.danger'), icon: Archive, content: <DangerTab board={board} onDone={onClose} />, destructive: true },
   ];
@@ -484,6 +489,32 @@ const BITS: ReadonlyArray<{ bit: bigint; label: 'boards.perm.view' | 'boards.per
 
 const key = (o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string => `${o.targetType}:${o.targetId}`;
 
+/**
+ * «Позванные по карточкам: N» on a closed board (ADR-0076): the members who see it only through
+ * cards they were invited to (assignee, approver, watcher). Its own fetch: nothing else re-renders.
+ */
+function TaskScopedCount({ boardId }: { boardId: string }): ReactNode {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    void boardsApi
+      .permissions(boardId)
+      .then((r) => live && setN(r.taskScopedCount))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [boardId]);
+  if (n === null) return null;
+  return (
+    <Tip label={t('boards.invitedByCardsHint')}>
+      <p className="mt-2 text-caption text-muted" tabIndex={0} data-testid="board-access-invited">
+        {t('boards.invitedByCards', { n })}
+      </p>
+    </Tip>
+  );
+}
+
 /** «Доступ» (the room access UI, ADR-0042 §2): targets on the left, the four board bits on the right. */
 function AccessTab({ board }: { board: Board }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[board.workspaceId]);
@@ -563,6 +594,7 @@ function AccessTab({ board }: { board: Board }): ReactNode {
       {/* ADR-0048: Все участники / По списку / По списку, без администраторов (this tab is MANAGE_BOARD's). */}
       <Card title={t('boards.access')} footer={board.isPrivate ? t('boards.set.privateHint') : undefined}>
         <AccessLevelPicker value={accessLevelOf(board)} disabled={busy} onChange={(to) => setLevel(to)} />
+        {restricted ? <TaskScopedCount boardId={board.id} /> : null}
       </Card>
       <div className="flex gap-4" data-testid="board-access">
         <div className="flex w-52 shrink-0 flex-col gap-0.5">

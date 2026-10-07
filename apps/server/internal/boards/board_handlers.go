@@ -615,7 +615,16 @@ func (s *Service) getPermissions(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.BoardPermissionsResponse{Overrides: b.GetPermissionOverrides(), Board: b})
+	return writePermissions(w, r, s.db.Q, id, b)
+}
+
+// writePermissions answers GET / PUT permissions with the task-scoped count (ADR-0076).
+func writePermissions(w http.ResponseWriter, r *http.Request, q *sqlc.Queries, id uuid.UUID, b *v1.Board) error {
+	n, err := taskScopedCount(r.Context(), q, id)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.BoardPermissionsResponse{Overrides: b.GetPermissionOverrides(), Board: b, TaskScopedCount: n})
 	return nil
 }
 
@@ -664,8 +673,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 	if err == nil {
 		b.Permissions = uint64(fresh.Bits)
 	}
-	httpx.Write(w, http.StatusOK, &v1.BoardPermissionsResponse{Overrides: b.GetPermissionOverrides(), Board: b})
-	return nil
+	return writePermissions(w, r, s.db.Q, id, b)
 }
 
 // validateOverrides checks board override targets and bits like room overrides (rooms): role

@@ -248,11 +248,12 @@ export function useCameraToggle(roomId: string): { label: string; disabled: bool
 function CameraButton({ roomId }: { roomId: string }): ReactNode {
   const { label, disabled, on, busy, click } = useCameraToggle(roomId);
   const [menu, setMenu] = useState(false);
-  // One 56×40 split button: the camera toggle and a 20 px ▾ (the full 40 px height) with a
-  // hairline between them; right-click on the toggle opens the device menu too.
+  // One split tile: the toggle's icon is centred in the whole tile (so the icons of the row sit
+  // on one even grid with the plain buttons), the ▾ (16 px) over its right edge; right-click on
+  // the toggle opens the device menu too.
   const part = on ? 'hover:bg-white/15' : 'hover:bg-[var(--color-fill-hover)]';
   return (
-    <div className={cx('flex h-9 min-w-0 overflow-hidden rounded-[var(--radius-icon)]', on ? 'bg-accent-strong text-white' : 'bg-[var(--color-fill)] text-fg')}>
+    <div className={cx('relative h-9 min-w-0 overflow-hidden rounded-[var(--radius-icon)]', on ? 'bg-accent-strong text-white' : 'bg-[var(--color-fill)] text-fg')}>
       <Tip label={label}>
         <button
           type="button"
@@ -265,12 +266,11 @@ function CameraButton({ roomId }: { roomId: string }): ReactNode {
             e.preventDefault();
             setMenu(true);
           }}
-          className={cx('grid min-w-0 flex-1 place-items-center transition-colors duration-[var(--motion-fast)]', disabled ? 'cursor-default opacity-40' : part)}
+          className={cx('grid size-full place-items-center transition-colors duration-[var(--motion-fast)]', disabled ? 'cursor-default opacity-40' : part)}
         >
           {busy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : on ? <Video className="size-5" aria-hidden /> : <VideoOff className="size-5" aria-hidden />}
         </button>
       </Tip>
-      <span aria-hidden className={cx('my-2 w-px shrink-0', on ? 'bg-white/30' : 'bg-[var(--color-fill-hover)]')} />
       <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
         <Tip label={t('video.options')}>
           <Dropdown.Trigger asChild>
@@ -278,12 +278,12 @@ function CameraButton({ roomId }: { roomId: string }): ReactNode {
               type="button"
               aria-label={t('video.options')}
               className={cx(
-                'grid w-5 shrink-0 place-items-center transition-colors duration-[var(--motion-fast)]',
+                'absolute inset-y-0 right-0 grid w-4 place-items-center transition-colors duration-[var(--motion-fast)]',
                 on ? 'text-white/85 hover:text-white data-[state=open]:bg-white/15' : 'text-muted hover:text-fg data-[state=open]:bg-[var(--color-fill-hover)] data-[state=open]:text-fg',
                 part,
               )}
             >
-              <ChevronDown className="size-3.5" strokeWidth={2.25} aria-hidden />
+              <ChevronDown className="size-3" strokeWidth={2.25} aria-hidden />
             </button>
           </Dropdown.Trigger>
         </Tip>

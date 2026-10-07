@@ -78,7 +78,6 @@ export function installHotkeys(): () => void {
       // The floating members panel is a layer too (dialogs/menus close themselves).
       const ui = useUi.getState();
       if (ui.membersOverlay && !ui.dialog && !e.defaultPrevented) ui.setMembersOverlay(false);
-      if (ui.navDrawer && !ui.dialog && !e.defaultPrevented) ui.setNavDrawer(false);
       return;
     }
     if (isNavBack(e)) {

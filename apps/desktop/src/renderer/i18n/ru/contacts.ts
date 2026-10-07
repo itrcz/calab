@@ -1,0 +1,22 @@
+/** Russian UI strings — contacts and nickname in the profile (ADR-0077). */
+export const ruContacts = {
+  'people.contacts.title': 'Контакты',
+  'people.contacts.email': 'Почта',
+  'people.contacts.phone': 'Телефон',
+  'people.contacts.unverified': 'не подтверждена',
+  'people.contacts.copyWhat': 'Скопировать: {what}',
+  'people.contacts.copied': 'Скопировано',
+  'people.contacts.copyFailed': 'Не удалось скопировать',
+  'profile.username': 'Ник',
+  'profile.username.hint': 'Для упоминаний через @, один на все пространства',
+  'profile.username.placeholder': 'ivan_petrov',
+  'profile.username.checking': 'Проверяем…',
+  'profile.username.free': 'Ник свободен',
+  'profile.username.taken': 'Этот ник уже занят',
+  'profile.username.invalid': 'От 3 до 32 латинских букв, цифр и _, начиная с буквы',
+  'profile.username.reserved': 'Этот ник зарезервирован',
+  'profile.phone': 'Телефон',
+  'profile.phone.hint': 'Видят коллеги по пространствам, не подтверждается',
+  'profile.phone.placeholder': '+7 999 123-45-67',
+  'profile.phone.invalid': 'Только цифры, +, пробелы, скобки и дефис — до 32 символов',
+} as const;

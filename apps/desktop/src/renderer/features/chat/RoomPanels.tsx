@@ -45,18 +45,22 @@ export function PinnedBar({ workspaceId, roomId }: { workspaceId: string; roomId
         jump(roomId, m.id);
         setI((v) => v + 1);
       }}
-      className="mat-toolbar flex h-11 w-full shrink-0 items-center gap-3 border-b border-line px-4 text-left hover:bg-hover"
+      className="mat-toolbar flex h-11 w-full shrink-0 items-center gap-3 border-b border-line px-4 text-left hover:bg-hover mobile:tap-h mobile:gap-2.5"
     >
-      <span className="flex h-7 w-[3px] shrink-0 flex-col gap-px" aria-hidden>
+      <span className="flex h-7 w-[3px] shrink-0 flex-col gap-px mobile:h-5" aria-hidden>
         {pins.slice(0, 4).map((p, j) => (
           <span key={p.id} className={j === Math.min(idx, 3) ? 'flex-1 rounded-full bg-accent' : 'flex-1 rounded-full bg-[color-mix(in_srgb,var(--color-accent)_35%,transparent)]'} />
         ))}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-body font-semibold text-accent-text">
+      <span className="min-w-0 flex-1 mobile:flex mobile:items-baseline mobile:gap-2">
+        <span className="block text-body font-semibold text-accent-text mobile:hidden">
           {pins.length > 1 ? t('chat.pinnedN', { n: idx + 1, total: pins.length }) : t('chat.pinnedOne')}
         </span>
-        <span className="block truncate text-body text-fg">
+        {/* Phone (ADR-0073): one 40 px row — a small title and the text on a single line, fading out at the end. */}
+        <span className="hidden shrink-0 text-caption font-semibold text-accent-text mobile:block">
+          {pins.length > 1 ? t('chat.pinnedShortN', { n: idx + 1, total: pins.length }) : t('chat.pinnedShortOne')}
+        </span>
+        <span className="block truncate text-body text-fg mobile:min-w-0 mobile:flex-1 mobile:overflow-hidden mobile:text-clip mobile:whitespace-nowrap mobile:[mask-image:linear-gradient(to_right,#000_calc(100%-32px),transparent)]">
           <span className="text-muted">{memberName(workspaceId, m.authorId)}: </span>
           {text}
         </span>

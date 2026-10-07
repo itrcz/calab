@@ -1,0 +1,22 @@
+/** Simplified Chinese UI strings — contacts and nickname in the profile (ADR-0077). Same keys as ru/contacts.ts. */
+export const zhContacts = {
+  'people.contacts.title': '联系方式',
+  'people.contacts.email': '邮箱',
+  'people.contacts.phone': '电话',
+  'people.contacts.unverified': '未验证',
+  'people.contacts.copyWhat': '复制：{what}',
+  'people.contacts.copied': '已复制',
+  'people.contacts.copyFailed': '无法复制',
+  'profile.username': '用户名',
+  'profile.username.hint': '用于 @ 提及，所有空间通用',
+  'profile.username.placeholder': 'ivan_petrov',
+  'profile.username.checking': '正在检查…',
+  'profile.username.free': '用户名可用',
+  'profile.username.taken': '该用户名已被占用',
+  'profile.username.invalid': '3–32 个拉丁字母、数字或 _，以字母开头',
+  'profile.username.reserved': '该用户名为保留名称',
+  'profile.phone': '电话',
+  'profile.phone.hint': '空间同事可见，不做验证',
+  'profile.phone.placeholder': '+86 138 0000 0000',
+  'profile.phone.invalid': '只能包含数字、+、空格、括号和连字符，最多 32 个字符',
+};

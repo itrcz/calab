@@ -1,18 +1,20 @@
 import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Message, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Video, Volume2 } from 'lucide-react';
+import * as ContextMenu from '@radix-ui/react-context-menu';
+import { Bell, BellOff, BellRing, Ellipsis, Hash, Phone, Pin, PinOff, Search, SlidersHorizontal, Timer, Users, Video, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
 import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
-import { can, mayPin } from '../../lib/permissions';
+import { can, mayInviteMembers, mayManageRoomWith, mayPin, mayRoomInvite } from '../../lib/permissions';
 import { setPinned } from '../../services/chat';
 import { setRoomNotifications } from '../../services/mentions';
 import { useMobile } from '../../lib/mobile';
-import { NavButton } from '../shell/MobileShell';
+import { Bar, BAR_GROUP } from '../../components/Bar';
+import { NavButton } from '../../components/PhoneHeader';
 import { effectiveNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
@@ -25,10 +27,13 @@ import { useDms } from '../../stores/dms';
 import { DmActionsMenu } from '../dm/DmActionsMenu';
 import { DmCallSlot, OnCallMark } from '../call/CallBits';
 import { useCall } from '../../stores/call';
-import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useMemberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { useSession } from '../../stores/session';
+import { CallTimer, RoomMenu } from '../shell/Sidebar';
+import { AvatarStack, useRoomPeople } from '../shell/PhoneRoomList';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
-import { menuBox } from '../shell/menu';
+import { menuBox, menuItem } from '../shell/menu';
 import { RoleMark, roleTextClass, useSharedRole } from '../people/MemberBits';
 import { LEVEL_LABEL, NotifyMenuItems, mutedText, type LevelOption } from './NotifyMenu';
 import { previewPartsOf } from './mentionText';
@@ -47,19 +52,20 @@ const NO_PINS: never[] = [];
  * title bar only (docs/09 #53). It never spills out of the chat column (it used to paint over the
  * members column): the spacing tightens first, then the name truncates.
  */
-export function RoomHeader({
-  workspaceId,
-  room,
-  perms,
-  membersOpen,
-  toggleMembers,
-}: {
+export function RoomHeader(props: RoomHeaderProps): ReactNode {
+  // Phone (ADR-0073 §1, §4): its own header and the voice banner under it.
+  return useMobile() ? <PhoneRoomHeader {...props} /> : <WideRoomHeader {...props} />;
+}
+
+interface RoomHeaderProps {
   workspaceId: string;
   room: Room;
   perms: PermissionBits;
   membersOpen: boolean;
   toggleMembers: () => void;
-}): ReactNode {
+}
+
+function WideRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }: RoomHeaderProps): ReactNode {
   const openDialog = useUi((s) => s.openDialog);
   const typing = useTypingText(workspaceId, room.id);
   const searchOpen = useChatView((s) => s.searchRoom === room.id);
@@ -71,7 +77,6 @@ export function RoomHeader({
   // the room; search, notifications and members stay (pins show in the pinned bar, room settings in
   // the drawer's room menu), 40 px touch targets.
   const mobile = useMobile();
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
   // Re-render (and re-measure) when «Войти в голос» appears or goes.
   const preview = useVoice((s) => voiceRoom && isVoicePreview(room, s.roomId));
   // «Видео · N» (ADR-0066 §3): a boolean here (re-measure when it appears), the count in the leaf.
@@ -79,13 +84,9 @@ export function RoomHeader({
   const [fit, headerEl] = useHeaderFit(!mobile);
 
   return (
-    <header
+    <Bar
       ref={headerEl}
-      className={cx(
-        'mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-line pl-4 pr-2',
-        fit.tight && !mobile && 'gap-1 pl-3 pr-1',
-        mobile && 'gap-1 pl-1 pr-1',
-      )}
+      className={cx('drag sticky top-0 z-[var(--z-sticky)] min-w-0 gap-2 overflow-hidden pl-4 pr-2', fit.tight && !mobile && 'gap-1 pl-3 pr-1')}
     >
       {mobile ? <NavButton /> : null}
       <Icon className="size-5 shrink-0 text-faint" aria-hidden />
@@ -108,24 +109,145 @@ export function RoomHeader({
       ) : (
         <div data-header-fill className="flex-1" />
       )}
-      <div className="no-drag flex shrink-0 items-center gap-0.5">
+      <div className={cx('no-drag', BAR_GROUP)}>
         {/* ADR-0046: «Позвонить на номер» — in this room's call, PLACE_CALLS, telephony on (phone: the members drawer). */}
         {voiceRoom && !mobile ? <SipDialButton workspaceId={workspaceId} roomId={room.id} variant="header" /> : null}
-        <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
+        <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
           <Search className="size-[18px]" />
         </IconButton>
         {mobile ? null : <PinsButton workspaceId={workspaceId} roomId={room.id} canManage={mayPin(perms, room)} />}
-        <NotifyButton roomId={room.id} className={touch} />
+        <NotifyButton roomId={room.id} />
         {can(perms, 'MANAGE_ROOM') && !mobile ? (
           <IconButton label={t('room.settings')} onClick={() => openDialog({ kind: 'room-settings', roomId: room.id })}>
             <SlidersHorizontal className="size-[18px]" />
           </IconButton>
         ) : null}
-        <IconButton label={t('shell.members')} active={membersOpen} onClick={toggleMembers} className={touch}>
+        <IconButton label={t('shell.members')} active={membersOpen} onClick={toggleMembers}>
           <Users className="size-[18px]" />
         </IconButton>
       </div>
-    </header>
+    </Bar>
+  );
+}
+
+/**
+ * The room header on a phone (ADR-0073 §1, §4): «←» · the name on all the free width · two icons ·
+ * «…» (the room menu, with «Поиск в комнате» on top when search is not an icon). The icons: a
+ * voice room nobody is in yet — the handset (join); otherwise search; and the members. People in
+ * this room's voice while I am not: the banner under the header (PhoneVoiceBanner).
+ */
+function PhoneRoomHeader({ workspaceId, room, perms, membersOpen, toggleMembers }: RoomHeaderProps): ReactNode {
+  const searchOpen = useChatView((s) => s.searchRoom === room.id);
+  const setSearch = useChatView((s) => s.setSearch);
+  const voiceRoom = room.type === RoomType.VOICE;
+  const preview = useVoice((s) => voiceRoom && isVoicePreview(room, s.roomId));
+  const people = useRoomPeople(workspaceId, voiceRoom ? room.id : '');
+  const videoButton = useVoice((s) => voiceRoom && hasHiddenVideo(s, room.id));
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const role = useMemberRoles(workspaceId, me);
+  const join = useVoiceJoin(workspaceId, room, perms, people.length);
+  const dial = preview && people.length === 0 && can(perms, 'CONNECT');
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const openMore = (): void => {
+    const el = moreRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom + 4 }));
+  };
+  const searchLabel = t('chat.searchInRoom', { room: roomLabel(room) });
+  return (
+    <>
+      <Bar className="sticky top-0 z-[var(--z-sticky)] min-w-0 overflow-hidden" data-testid="room-header">
+        <NavButton />
+        <h1 data-header-name className="min-w-0 flex-1 truncate text-list font-semibold" title={room.name}>
+          {room.name}
+        </h1>
+        {voiceRoom ? <RoomEventBadge roomId={room.id} variant="header" compact /> : null}
+        {videoButton ? <VideoButton roomId={room.id} compact /> : null}
+        <div className={BAR_GROUP}>
+          {dial ? (
+            <IconButton tip={false} label={join.label} disabled={join.disabled} onClick={join.run} className="text-ok" data-testid="room-header-join">
+              <Phone className="size-5" />
+            </IconButton>
+          ) : (
+            <IconButton tip={false} label={searchLabel} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
+              <Search className="size-[18px]" />
+            </IconButton>
+          )}
+          <IconButton tip={false} label={t('shell.members')} active={membersOpen} onClick={toggleMembers}>
+            <Users className="size-[18px]" />
+          </IconButton>
+          <RoomMenu
+            room={room}
+            inside
+            canManage={mayManageRoomWith(perms, role, me, room)}
+            canOrder={false}
+            admin={mayInviteMembers(role)}
+            inviteRoom={mayRoomInvite(perms)}
+            guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}
+            prepend={
+              dial ? (
+                <ContextMenu.Item className={menuItem} onSelect={() => setSearch(room.id)}>
+                  <Search className="size-4" /> {searchLabel}
+                </ContextMenu.Item>
+              ) : undefined
+            }
+          >
+            <IconButton ref={moreRef} tip={false} label={t('roomMenu.moreOf', { name: room.name })} aria-haspopup="menu" onClick={openMore} data-testid="room-header-more">
+              <Ellipsis className="size-5" />
+            </IconButton>
+          </RoomMenu>
+        </div>
+      </Bar>
+      {preview && people.length > 0 ? <PhoneVoiceBanner workspaceId={workspaceId} roomId={room.id} people={people} join={join} /> : null}
+    </>
+  );
+}
+
+interface VoiceJoin {
+  run: () => void;
+  disabled: boolean;
+  label: string;
+}
+
+/** I am the workspace owner (the only one who may enter a full voice room). */
+function useIsWorkspaceOwner(workspaceId: string): boolean {
+  return useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+}
+
+/** «Войти в голос» of a room I read without being in its voice: the room row's rules (joinOutcome). */
+function useVoiceJoin(workspaceId: string, room: Room, perms: PermissionBits, people: number): VoiceJoin {
+  const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
+  const owner = useIsWorkspaceOwner(workspaceId);
+  return {
+    disabled: suspended,
+    label: suspended ? t('suspended.voice') : t('voicePreview.join'),
+    run: () => {
+      const next = joinOutcome({ inRoom: false, canConnect: can(perms, 'CONNECT'), owner, people, limit: room.userLimit });
+      if (next === 'full') toast.info(t('shell.roomFull'));
+      else if (next === 'join') void voice.join(room.id, workspaceId);
+    },
+  };
+}
+
+/**
+ * People are talking in this room and I am not with them (ADR-0073 §4): their avatars, «В голосе ·
+ * 2 · 25:00» and «Присоединиться» (44 px), under the room header. In the call it goes away (the
+ * call strip is at the bottom).
+ */
+function PhoneVoiceBanner({ workspaceId, roomId, people, join }: { workspaceId: string; roomId: string; people: string[]; join: VoiceJoin }): ReactNode {
+  return (
+    <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-[color-mix(in_srgb,var(--color-ok)_10%,var(--color-bg))] pl-4 pr-2" data-testid="room-voice-banner">
+      <AvatarStack workspaceId={workspaceId} people={people} size={28} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-caption font-semibold leading-4 text-[var(--color-green-text)]">{t('mobile.inVoice', { n: people.length })}</span>
+        <CallTimer roomId={roomId} className="text-caption leading-4 text-muted" />
+      </span>
+      <Button size="lg" onClick={join.run} disabled={join.disabled} className="rounded-full mobile:px-4" data-testid="room-voice-join">
+        <Phone className="size-4" aria-hidden />
+        {t('mobile.joinVoice')}
+      </Button>
+    </div>
   );
 }
 
@@ -189,22 +311,19 @@ function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; ro
   const states = useVoiceStates(workspaceId);
   const mobile = useMobile();
   const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
+  const owner = useIsWorkspaceOwner(workspaceId);
   if (!preview) return null;
   const people = Object.values(states).filter((v) => v.roomId === room.id).length;
   const canConnect = can(perms, 'CONNECT');
   const join = (): void => {
-    const next = joinOutcome({ inRoom: false, canConnect, canMove: can(perms, 'MOVE_MEMBERS'), people, limit: room.userLimit });
+    const next = joinOutcome({ inRoom: false, canConnect, owner, people, limit: room.userLimit });
     if (next === 'full') toast.info(t('shell.roomFull'));
     else if (next === 'join') void voice.join(room.id, workspaceId);
   };
   return (
     <div className="no-drag flex shrink-0 items-center gap-2" data-testid="voice-preview">
-      {mobile ? null : (
-        // Same height as the «Join voice» button next to it (Button size="sm", h-6).
-        <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-hover px-2.5 text-caption font-medium text-muted">{t('voicePreview.notInVoice')}</span>
-      )}
       {!canConnect ? null : mobile ? (
-        <IconButton label={suspended ? t('suspended.voice') : t('voicePreview.join')} disabled={suspended} onClick={join} className="size-10 rounded-full text-ok">
+        <IconButton label={suspended ? t('suspended.voice') : t('voicePreview.join')} disabled={suspended} onClick={join} className="text-ok">
           <Phone className="size-5" />
         </IconButton>
       ) : (
@@ -246,14 +365,10 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
   // Phone layout (ADR-0021): the top bar — ☰ (DM list drawer) first, 40 px touch targets, pins
   // in the pinned bar.
   const mobile = useMobile();
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
   return (
-    <header
-      className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1.5 pl-1 pr-1')}
-      data-testid="dm-header"
-    >
+    <Bar className="drag sticky top-0 z-[var(--z-sticky)] gap-2 pl-4 pr-2" data-testid="dm-header">
       {mobile ? <NavButton /> : null}
-      <ProfileTarget userId={peerId} name={name} tabbable className="no-drag flex shrink-0 rounded-full">
+      <ProfileTarget userId={peerId} name={name} tabbable className={cx('no-drag flex shrink-0 rounded-full', mobile && 'size-9 items-center justify-center bar-hit')}>
         <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence ring="var(--color-bg)" />
       </ProfileTarget>
       <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', roleTextClass(shared?.role), mobile && 'max-w-none shrink')} title={name}>
@@ -276,17 +391,18 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
           </span>
         )}
       </span>
-      <div className={cx('no-drag flex shrink-0 items-center gap-0.5', (mobile || inCall) && 'ml-auto')}>
-        <IconButton label={t('dm.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
+      <div className={cx('no-drag', BAR_GROUP, (mobile || inCall) && 'ml-auto')}>
+        <IconButton label={t('dm.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
           <Search className="size-[18px]" />
         </IconButton>
         {mobile ? null : <PinsButton workspaceId="" roomId={room.id} canManage />}
-        <NotifyButton roomId={room.id} className={touch} />
+        {/* Phone (ADR-0073 §1): two icons and «⋯» — the notifications are an item of «⋯». */}
+        {mobile ? null : <NotifyButton roomId={room.id} />}
         {/* ADR-0034: the phone left of «⋯»; in this DM's call — «Звонок · 00:42» + «Завершить». */}
-        <DmCallSlot roomId={room.id} peerId={peerId} className={touch} />
-        <DmActionsMenu roomId={room.id} className={touch} />
+        <DmCallSlot roomId={room.id} peerId={peerId} />
+        <DmActionsMenu roomId={room.id} notify={mobile} />
       </div>
-    </header>
+    </Bar>
   );
 }
 

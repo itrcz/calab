@@ -16,6 +16,7 @@ import { LocalTime } from './LocalTime';
 import { ClientVersion } from './ClientVersion';
 import { BirthdayInfo } from './Birthday';
 import { ProfileDialogAchievements } from './ProfileAchievements';
+import { ProfileContacts, UserHandle } from './ProfileContacts';
 import { isGuest, rolesOf, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { useSession } from '../../stores/session';
 import { canEditMemberBirthday } from './members';
@@ -135,7 +136,8 @@ export function ProfileDialog({
           }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-64px)] w-[calc(100vw-32px)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] text-body focus:outline-none',
-            'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-0 mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:pb-[var(--safe-bottom)]',
+            // Phone (owner 07.10): a centred card, not a bottom sheet (app/styles.css).
+            'phone-dialog',
           )}
         >
           {/* Banner and body scroll together: the avatar overlaps the banner edge and must not be
@@ -161,7 +163,7 @@ export function ProfileDialog({
                   {u.displayName}
                 </div>
               ) : null}
-              {u.isBot ? <BotHandle botUserId={userId} /> : null}
+              {u.isBot ? <BotHandle botUserId={userId} /> : <UserHandle userId={userId} className="text-body" />}
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
               {onCall ? (
                 // ADR-0034: in a one-to-one call now (with whom is not disclosed).
@@ -212,6 +214,9 @@ export function ProfileDialog({
                   <BotAvatarControls workspaceId={workspaceId} botUserId={userId} />
                 </div>
               ) : null}
+
+              {/* Email and phone (ADR-0077): colleagues only. */}
+              {u.isBot ? null : <ProfileContacts userId={userId} variant="section" />}
 
               {registered || joined ? (
                 <Section title={t('people.profile.memberSince')}>

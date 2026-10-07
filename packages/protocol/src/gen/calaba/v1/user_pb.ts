@@ -4,6 +4,8 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ErrorCode } from "./common_pb.js";
+import { file_calaba_v1_common } from "./common_pb.js";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIq0CCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJEg4KBmlzX2JvdBgKIAEoCBIlCghiaXJ0aGRheRgLIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheSJCCghCaXJ0aGRheRILCgNkYXkYASABKA0SDQoFbW9udGgYAiABKA0SEQoEeWVhchgDIAEoDUgAiAEBQgcKBV95ZWFyIuUCCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQESFwoPZXZlbnRfcmVtaW5kZXJzGAcgAygNEhsKE2V2ZW50X3JlbWluZGVyc19kbmQYCCABKAgSKAoKd29ya19ob3VycxgJIAEoCzIULmNhbGFiYS52MS5Xb3JrSG91cnMSKgoiaGlkZV9tZXNzYWdlX3RleHRfaW5fbm90aWZpY2F0aW9ucxgKIAEoCEIVChNfYXVkaW9fYml0cmF0ZV9rYnBzIj0KCVdvcmtIb3VycxIRCglzdGFydF9taW4YASABKA0SDwoHZW5kX21pbhgCIAEoDRIMCgRkYXlzGAMgAygNIjUKFUV2ZW50UmVtaW5kZXJTZXR0aW5ncxIPCgdtaW51dGVzGAEgAygNEgsKA2RuZBgCIAEoCCLMAQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncxIVCg1pc19zdXBlcmFkbWluGAQgASgIEhYKDmVtYWlsX3ZlcmlmaWVkGAUgASgIEhUKDXBlbmRpbmdfZW1haWwYBiABKAkSDgoGbG9jYWxlGAcgASgJEhcKD2JpcnRoZGF5X2hpZGRlbhgIIAEoCCIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIq4ECg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBEhUKCHRpbWV6b25lGAUgASgJSASIAQESEwoGbG9jYWxlGAYgASgJSAWIAQESJQoIYmlydGhkYXkYByABKAsyEy5jYWxhYmEudjEuQmlydGhkYXkSHAoPYmlydGhkYXlfaGlkZGVuGAggASgISAaIAQESOQoPZXZlbnRfcmVtaW5kZXJzGAkgASgLMiAuY2FsYWJhLnYxLkV2ZW50UmVtaW5kZXJTZXR0aW5ncxIoCgp3b3JrX2hvdXJzGAogASgLMhQuY2FsYWJhLnYxLldvcmtIb3VycxIvCiJoaWRlX21lc3NhZ2VfdGV4dF9pbl9ub3RpZmljYXRpb25zGAsgASgISAeIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5nc0ILCglfdGltZXpvbmVCCQoHX2xvY2FsZUISChBfYmlydGhkYXlfaGlkZGVuQiUKI19oaWRlX21lc3NhZ2VfdGV4dF9pbl9ub3RpZmljYXRpb25zIi0KEFVwZGF0ZU1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIkEKEkNoYW5nZUVtYWlsUmVxdWVzdBIRCgluZXdfZW1haWwYASABKAkSGAoQY3VycmVudF9wYXNzd29yZBgCIAEoCSJOChNVcGRhdGVTdGF0dXNSZXF1ZXN0EgwKBHRleHQYASABKAkSDQoFZW1vamkYAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgNIlwKCFVzZXJOb3RlEhIKCnN1YmplY3RfaWQYASABKAkSDAoEdGV4dBgCIAEoCRIuCgp1cGRhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIiChJQdXRVc2VyTm90ZVJlcXVlc3QSDAoEdGV4dBgBIAEoCSI1ChBVc2VyTm90ZVJlc3BvbnNlEiEKBG5vdGUYASABKAsyEy5jYWxhYmEudjEuVXNlck5vdGUiRwoVTGlzdEJpcnRoZGF5c1Jlc3BvbnNlEi4KCWJpcnRoZGF5cxgBIAMoCzIbLmNhbGFiYS52MS5VcGNvbWluZ0JpcnRoZGF5IlsKEFVwY29taW5nQmlydGhkYXkSDwoHdXNlcl9pZBgBIAEoCRIlCghiaXJ0aGRheRgCIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheRIPCgdpbl9kYXlzGAMgASgNIkQKG1VwZGF0ZU1lbWJlckJpcnRoZGF5UmVxdWVzdBIlCghiaXJ0aGRheRgBIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheSJLChxVcGRhdGVNZW1iZXJCaXJ0aGRheVJlc3BvbnNlEisKCGJpcnRoZGF5GAEgASgLMhkuY2FsYWJhLnYxLk1lbWJlckJpcnRoZGF5IlgKDk1lbWJlckJpcnRoZGF5Eg8KB3VzZXJfaWQYASABKAkSJQoIYmlydGhkYXkYAiABKAsyEy5jYWxhYmEudjEuQmlydGhkYXkSDgoGaGlkZGVuGAMgASgIIksKG0xpc3RNZW1iZXJCaXJ0aGRheXNSZXNwb25zZRIsCgliaXJ0aGRheXMYASADKAsyGS5jYWxhYmEudjEuTWVtYmVyQmlydGhkYXkqUAoHTWljTW9kZRIYChRNSUNfTU9ERV9VTlNQRUNJRklFRBAAEhAKDE1JQ19NT0RFX1ZBRBABEhkKFU1JQ19NT0RFX1BVU0hfVE9fVEFMSxACQpcBCg1jb20uY2FsYWJhLnYxQglVc2VyUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIvUCCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJEg4KBmlzX2JvdBgKIAEoCBIlCghiaXJ0aGRheRgLIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheRINCgVlbWFpbBgMIAEoCRIWCg5lbWFpbF92ZXJpZmllZBgNIAEoCBINCgVwaG9uZRgOIAEoCRIQCgh1c2VybmFtZRgPIAEoCSJCCghCaXJ0aGRheRILCgNkYXkYASABKA0SDQoFbW9udGgYAiABKA0SEQoEeWVhchgDIAEoDUgAiAEBQgcKBV95ZWFyIuUCCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQESFwoPZXZlbnRfcmVtaW5kZXJzGAcgAygNEhsKE2V2ZW50X3JlbWluZGVyc19kbmQYCCABKAgSKAoKd29ya19ob3VycxgJIAEoCzIULmNhbGFiYS52MS5Xb3JrSG91cnMSKgoiaGlkZV9tZXNzYWdlX3RleHRfaW5fbm90aWZpY2F0aW9ucxgKIAEoCEIVChNfYXVkaW9fYml0cmF0ZV9rYnBzIj0KCVdvcmtIb3VycxIRCglzdGFydF9taW4YASABKA0SDwoHZW5kX21pbhgCIAEoDRIMCgRkYXlzGAMgAygNIjUKFUV2ZW50UmVtaW5kZXJTZXR0aW5ncxIPCgdtaW51dGVzGAEgAygNEgsKA2RuZBgCIAEoCCLMAQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncxIVCg1pc19zdXBlcmFkbWluGAQgASgIEhYKDmVtYWlsX3ZlcmlmaWVkGAUgASgIEhUKDXBlbmRpbmdfZW1haWwYBiABKAkSDgoGbG9jYWxlGAcgASgJEhcKD2JpcnRoZGF5X2hpZGRlbhgIIAEoCCIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIvAECg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBEhUKCHRpbWV6b25lGAUgASgJSASIAQESEwoGbG9jYWxlGAYgASgJSAWIAQESJQoIYmlydGhkYXkYByABKAsyEy5jYWxhYmEudjEuQmlydGhkYXkSHAoPYmlydGhkYXlfaGlkZGVuGAggASgISAaIAQESOQoPZXZlbnRfcmVtaW5kZXJzGAkgASgLMiAuY2FsYWJhLnYxLkV2ZW50UmVtaW5kZXJTZXR0aW5ncxIoCgp3b3JrX2hvdXJzGAogASgLMhQuY2FsYWJhLnYxLldvcmtIb3VycxIvCiJoaWRlX21lc3NhZ2VfdGV4dF9pbl9ub3RpZmljYXRpb25zGAsgASgISAeIAQESEgoFcGhvbmUYDCABKAlICIgBARIVCgh1c2VybmFtZRgNIAEoCUgJiAEBQg8KDV9kaXNwbGF5X25hbWVCDgoMX3N0YXR1c190ZXh0QhEKD19hdmF0YXJfZmlsZV9pZEILCglfc2V0dGluZ3NCCwoJX3RpbWV6b25lQgkKB19sb2NhbGVCEgoQX2JpcnRoZGF5X2hpZGRlbkIlCiNfaGlkZV9tZXNzYWdlX3RleHRfaW5fbm90aWZpY2F0aW9uc0IICgZfcGhvbmVCCwoJX3VzZXJuYW1lImkKHFVzZXJuYW1lQXZhaWxhYmlsaXR5UmVzcG9uc2USEQoJYXZhaWxhYmxlGAEgASgIEiQKBnJlYXNvbhgCIAEoDjIULmNhbGFiYS52MS5FcnJvckNvZGUSEAoIdXNlcm5hbWUYAyABKAkiLQoQVXBkYXRlTWVSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZSJHChVDaGFuZ2VQYXNzd29yZFJlcXVlc3QSGAoQY3VycmVudF9wYXNzd29yZBgBIAEoCRIUCgxuZXdfcGFzc3dvcmQYAiABKAkiQQoSQ2hhbmdlRW1haWxSZXF1ZXN0EhEKCW5ld19lbWFpbBgBIAEoCRIYChBjdXJyZW50X3Bhc3N3b3JkGAIgASgJIk4KE1VwZGF0ZVN0YXR1c1JlcXVlc3QSDAoEdGV4dBgBIAEoCRINCgVlbW9qaRgCIAEoCRIaChJleHBpcmVzX2luX3NlY29uZHMYAyABKA0iXAoIVXNlck5vdGUSEgoKc3ViamVjdF9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJEi4KCnVwZGF0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIiIKElB1dFVzZXJOb3RlUmVxdWVzdBIMCgR0ZXh0GAEgASgJIjUKEFVzZXJOb3RlUmVzcG9uc2USIQoEbm90ZRgBIAEoCzITLmNhbGFiYS52MS5Vc2VyTm90ZSJHChVMaXN0QmlydGhkYXlzUmVzcG9uc2USLgoJYmlydGhkYXlzGAEgAygLMhsuY2FsYWJhLnYxLlVwY29taW5nQmlydGhkYXkiWwoQVXBjb21pbmdCaXJ0aGRheRIPCgd1c2VyX2lkGAEgASgJEiUKCGJpcnRoZGF5GAIgASgLMhMuY2FsYWJhLnYxLkJpcnRoZGF5Eg8KB2luX2RheXMYAyABKA0iRAobVXBkYXRlTWVtYmVyQmlydGhkYXlSZXF1ZXN0EiUKCGJpcnRoZGF5GAEgASgLMhMuY2FsYWJhLnYxLkJpcnRoZGF5IksKHFVwZGF0ZU1lbWJlckJpcnRoZGF5UmVzcG9uc2USKwoIYmlydGhkYXkYASABKAsyGS5jYWxhYmEudjEuTWVtYmVyQmlydGhkYXkiWAoOTWVtYmVyQmlydGhkYXkSDwoHdXNlcl9pZBgBIAEoCRIlCghiaXJ0aGRheRgCIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheRIOCgZoaWRkZW4YAyABKAgiSwobTGlzdE1lbWJlckJpcnRoZGF5c1Jlc3BvbnNlEiwKCWJpcnRoZGF5cxgBIAMoCzIZLmNhbGFiYS52MS5NZW1iZXJCaXJ0aGRheSpQCgdNaWNNb2RlEhgKFE1JQ19NT0RFX1VOU1BFQ0lGSUVEEAASEAoMTUlDX01PREVfVkFEEAESGQoVTUlDX01PREVfUFVTSF9UT19UQUxLEAJClwEKDWNvbS5jYWxhYmEudjFCCVVzZXJQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -90,6 +92,39 @@ export type User = Message<"calaba.v1.User"> & {
    * @generated from field: calaba.v1.Birthday birthday = 11;
    */
   birthday?: Birthday | undefined;
+
+  /**
+   * Contacts (ADR-0077): filled only for a viewer who shares a workspace with the user where
+   * neither of them is a guest; never for guests, bots or bot viewers (bot API, webhooks).
+   * Workspace-scoped payloads (READY snapshot, members, WORKSPACE_MEMBER_*, USER_UPDATE)
+   * decide by that workspace alone: a User without email says nothing about the contacts,
+   * so clients keep the ones they already have. Never used for authentication or invitations.
+   *
+   * @generated from field: string email = 12;
+   */
+  email: string;
+
+  /**
+   * false = the address is not confirmed (ADR-0065): show it marked "not verified".
+   *
+   * @generated from field: bool email_verified = 13;
+   */
+  emailVerified: boolean;
+
+  /**
+   * Informational, unverified phone ("+7 999 123-45-67"); empty = not given or not visible.
+   *
+   * @generated from field: string phone = 14;
+   */
+  phone: string;
+
+  /**
+   * Global nickname (ADR-0077), lower case, without "@"; empty = none. Public: everyone who
+   * sees the user sees it, guests too. Bots carry their bot username.
+   *
+   * @generated from field: string username = 15;
+   */
+  username: string;
 };
 
 /**
@@ -454,6 +489,24 @@ export type UpdateMeRequest = Message<"calaba.v1.UpdateMeRequest"> & {
    * @generated from field: optional bool hide_message_text_in_notifications = 11;
    */
   hideMessageTextInNotifications?: boolean | undefined;
+
+  /**
+   * Phone (ADR-0077): up to 32 characters of "+", digits, spaces and "-()" ("" clears);
+   * 422 VALIDATION (field "phone") otherwise. Not for guests (403) and bots (403).
+   *
+   * @generated from field: optional string phone = 12;
+   */
+  phone?: string | undefined;
+
+  /**
+   * Nickname (ADR-0077): 3..32 of a-z, 0-9, "_", starting with a letter (a leading "@" and
+   * upper case are accepted and normalized); "" clears it. 422 USERNAME_INVALID: bad format or
+   * a reserved name; 409 USERNAME_TAKEN: someone (a person or a bot) has it. Not for guests
+   * and bots (403).
+   *
+   * @generated from field: optional string username = 13;
+   */
+  username?: string | undefined;
 };
 
 /**
@@ -462,6 +515,40 @@ export type UpdateMeRequest = Message<"calaba.v1.UpdateMeRequest"> & {
  */
 export const UpdateMeRequestSchema: GenMessage<UpdateMeRequest> = /*@__PURE__*/
   messageDesc(file_calaba_v1_user, 7);
+
+/**
+ * GET /api/usernames/{name}/available → whether the caller may take the nickname now (the
+ * caller's own nickname is available). Rate limited (429). A hint only: PATCH /api/me decides.
+ *
+ * @generated from message calaba.v1.UsernameAvailabilityResponse
+ */
+export type UsernameAvailabilityResponse = Message<"calaba.v1.UsernameAvailabilityResponse"> & {
+  /**
+   * @generated from field: bool available = 1;
+   */
+  available: boolean;
+
+  /**
+   * Why not: USERNAME_INVALID (format or reserved) or USERNAME_TAKEN; UNSPECIFIED when available.
+   *
+   * @generated from field: calaba.v1.ErrorCode reason = 2;
+   */
+  reason: ErrorCode;
+
+  /**
+   * the normalized name that was checked
+   *
+   * @generated from field: string username = 3;
+   */
+  username: string;
+};
+
+/**
+ * Describes the message calaba.v1.UsernameAvailabilityResponse.
+ * Use `create(UsernameAvailabilityResponseSchema)` to create a new message.
+ */
+export const UsernameAvailabilityResponseSchema: GenMessage<UsernameAvailabilityResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 8);
 
 /**
  * @generated from message calaba.v1.UpdateMeResponse
@@ -478,7 +565,7 @@ export type UpdateMeResponse = Message<"calaba.v1.UpdateMeResponse"> & {
  * Use `create(UpdateMeResponseSchema)` to create a new message.
  */
 export const UpdateMeResponseSchema: GenMessage<UpdateMeResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 8);
+  messageDesc(file_calaba_v1_user, 9);
 
 /**
  * PATCH /api/me/password → 204. The current password is required; every other session of
@@ -506,7 +593,7 @@ export type ChangePasswordRequest = Message<"calaba.v1.ChangePasswordRequest"> &
  * Use `create(ChangePasswordRequestSchema)` to create a new message.
  */
 export const ChangePasswordRequestSchema: GenMessage<ChangePasswordRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 9);
+  messageDesc(file_calaba_v1_user, 10);
 
 /**
  * PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices).
@@ -534,7 +621,7 @@ export type ChangeEmailRequest = Message<"calaba.v1.ChangeEmailRequest"> & {
  * Use `create(ChangeEmailRequestSchema)` to create a new message.
  */
 export const ChangeEmailRequestSchema: GenMessage<ChangeEmailRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 10);
+  messageDesc(file_calaba_v1_user, 11);
 
 /**
  * PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
@@ -570,7 +657,7 @@ export type UpdateStatusRequest = Message<"calaba.v1.UpdateStatusRequest"> & {
  * Use `create(UpdateStatusRequestSchema)` to create a new message.
  */
 export const UpdateStatusRequestSchema: GenMessage<UpdateStatusRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 11);
+  messageDesc(file_calaba_v1_user, 12);
 
 /**
  * Private note about another user ("Note (only visible to you)", docs/09 item 20). Only the
@@ -606,7 +693,7 @@ export type UserNote = Message<"calaba.v1.UserNote"> & {
  * Use `create(UserNoteSchema)` to create a new message.
  */
 export const UserNoteSchema: GenMessage<UserNote> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 12);
+  messageDesc(file_calaba_v1_user, 13);
 
 /**
  * @generated from message calaba.v1.PutUserNoteRequest
@@ -625,7 +712,7 @@ export type PutUserNoteRequest = Message<"calaba.v1.PutUserNoteRequest"> & {
  * Use `create(PutUserNoteRequestSchema)` to create a new message.
  */
 export const PutUserNoteRequestSchema: GenMessage<PutUserNoteRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 13);
+  messageDesc(file_calaba_v1_user, 14);
 
 /**
  * @generated from message calaba.v1.UserNoteResponse
@@ -642,7 +729,7 @@ export type UserNoteResponse = Message<"calaba.v1.UserNoteResponse"> & {
  * Use `create(UserNoteResponseSchema)` to create a new message.
  */
 export const UserNoteResponseSchema: GenMessage<UserNoteResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 14);
+  messageDesc(file_calaba_v1_user, 15);
 
 /**
  * GET /api/workspaces/{id}/birthdays?days=7 (a member, not a guest): members whose birthday is
@@ -663,7 +750,7 @@ export type ListBirthdaysResponse = Message<"calaba.v1.ListBirthdaysResponse"> &
  * Use `create(ListBirthdaysResponseSchema)` to create a new message.
  */
 export const ListBirthdaysResponseSchema: GenMessage<ListBirthdaysResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 15);
+  messageDesc(file_calaba_v1_user, 16);
 
 /**
  * @generated from message calaba.v1.UpcomingBirthday
@@ -692,7 +779,7 @@ export type UpcomingBirthday = Message<"calaba.v1.UpcomingBirthday"> & {
  * Use `create(UpcomingBirthdaySchema)` to create a new message.
  */
 export const UpcomingBirthdaySchema: GenMessage<UpcomingBirthday> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 16);
+  messageDesc(file_calaba_v1_user, 17);
 
 /**
  * PATCH /api/workspaces/{id}/members/{userId}/birthday (docs/09 #77): an admin sets or clears
@@ -717,7 +804,7 @@ export type UpdateMemberBirthdayRequest = Message<"calaba.v1.UpdateMemberBirthda
  * Use `create(UpdateMemberBirthdayRequestSchema)` to create a new message.
  */
 export const UpdateMemberBirthdayRequestSchema: GenMessage<UpdateMemberBirthdayRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 17);
+  messageDesc(file_calaba_v1_user, 18);
 
 /**
  * @generated from message calaba.v1.UpdateMemberBirthdayResponse
@@ -734,7 +821,7 @@ export type UpdateMemberBirthdayResponse = Message<"calaba.v1.UpdateMemberBirthd
  * Use `create(UpdateMemberBirthdayResponseSchema)` to create a new message.
  */
 export const UpdateMemberBirthdayResponseSchema: GenMessage<UpdateMemberBirthdayResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 18);
+  messageDesc(file_calaba_v1_user, 19);
 
 /**
  * A member's birthday as an admin sees it: hidden ones too, marked.
@@ -767,7 +854,7 @@ export type MemberBirthday = Message<"calaba.v1.MemberBirthday"> & {
  * Use `create(MemberBirthdaySchema)` to create a new message.
  */
 export const MemberBirthdaySchema: GenMessage<MemberBirthday> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 19);
+  messageDesc(file_calaba_v1_user, 20);
 
 /**
  * GET /api/workspaces/{id}/members/birthdays (MANAGE_NICKNAMES, docs/09 #77, the table
@@ -788,7 +875,7 @@ export type ListMemberBirthdaysResponse = Message<"calaba.v1.ListMemberBirthdays
  * Use `create(ListMemberBirthdaysResponseSchema)` to create a new message.
  */
 export const ListMemberBirthdaysResponseSchema: GenMessage<ListMemberBirthdaysResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 20);
+  messageDesc(file_calaba_v1_user, 21);
 
 /**
  * @generated from enum calaba.v1.MicMode

@@ -452,6 +452,15 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 	if err := taskMilestones(ctx, q, ids, out, idx); err != nil {
 		return nil, err
 	}
+	// Watchers (ADR-0076): every task form carries them — the gateway routes by them.
+	ws, err := q.ListTaskWatchers(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range ws {
+		t := out[idx[w.TaskID]]
+		t.WatcherIds = append(t.WatcherIds, w.UserID.String())
+	}
 	if viewer != uuid.Nil {
 		subs, err := q.ListViewerSubscriptions(ctx, sqlc.ListViewerSubscriptionsParams{UserID: viewer, TaskIds: ids})
 		if err != nil {

@@ -88,7 +88,7 @@ func (s *Service) SweepRules(ctx context.Context) (int, error) {
 			if err != nil {
 				return total, err
 			}
-			if ok && b.ArchivedAt == nil {
+			if ok && b.ArchivedAt == nil && !Disabled(b.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_AUTOMATIONS) {
 				boardsOK[b.ID] = &b
 			}
 		}

@@ -447,6 +447,12 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	content := req.GetContent()
+	if sticker == nil {
+		if content, err = resolveNicks(r.Context(), h.db.Q, content, acc, uid(r)); err != nil { // ADR-0077
+			return err
+		}
+	}
 	var replyTo *uuid.UUID
 	if s := req.GetReplyToId(); s != "" {
 		id, err := uuid.Parse(s)
@@ -492,7 +498,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		}
 		var err error
 		params := sqlc.InsertMessageParams{
-			RoomID: roomID, AuthorID: uid(r), Content: req.GetContent(), ReplyToID: replyTo, Nonce: nonce, InlineKeyboard: keyboard,
+			RoomID: roomID, AuthorID: uid(r), Content: content, ReplyToID: replyTo, Nonce: nonce, InlineKeyboard: keyboard,
 		}
 		if sticker != nil {
 			params.StickerID = &sticker.Sticker.ID
@@ -625,6 +631,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	// attachments" needs the attachment count and is checked in the transaction.
 	if utf8.RuneCountInString(req.GetContent()) > MaxContent {
 		return httpx.Validation("content", "content must be at most 4000 characters")
+	}
+	if content != nil {
+		resolved, err := resolveNicks(r.Context(), h.db.Q, *content, acc, uid(r)) // ADR-0077
+		if err != nil {
+			return err
+		}
+		content = &resolved
 	}
 	var out []*v1.Message
 	var edited sqlc.Message

@@ -27,9 +27,26 @@ UPDATE users SET
     birthday_month  = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_month')::smallint ELSE birthday_month END,
     birthday_year   = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_year')::smallint ELSE birthday_year END,
     birthday_hidden = coalesce(sqlc.narg('birthday_hidden')::boolean, birthday_hidden),
-    hide_message_text_in_notifications = coalesce(sqlc.narg('hide_message_text_in_notifications')::boolean, hide_message_text_in_notifications)
+    hide_message_text_in_notifications = coalesce(sqlc.narg('hide_message_text_in_notifications')::boolean, hide_message_text_in_notifications),
+    phone          = CASE WHEN sqlc.arg('set_phone')::boolean THEN sqlc.narg('phone')::text ELSE phone END,
+    username       = CASE WHEN sqlc.arg('set_username')::boolean THEN sqlc.narg('username')::citext ELSE username END
 WHERE id = sqlc.arg('id')
 RETURNING *;
+
+-- name: UsernameOwner :one
+-- ADR-0077: who holds a nickname (people and bots share the namespace); no rows = free.
+SELECT id FROM users WHERE username = $1;
+
+-- name: ResolveUsernames :many
+-- ADR-0077: literal @nick mentions → live accounts (the caller checks visibility).
+SELECT id, username::text AS username FROM users
+WHERE username = ANY(sqlc.arg('names')::citext[]) AND disabled_at IS NULL;
+
+-- name: ResolveMemberUsernames :many
+-- ADR-0077: literal @nick mentions → live members of a workspace.
+SELECT u.id, u.username::text AS username FROM users u
+JOIN workspace_members m ON m.user_id = u.id AND m.workspace_id = sqlc.arg('workspace_id')
+WHERE u.username = ANY(sqlc.arg('names')::citext[]) AND u.disabled_at IS NULL;
 
 -- name: LockRegistration :exec
 -- Serializes the first-user bootstrap check (see auth.Register).

@@ -1,5 +1,41 @@
 # Телефон: общий веб в оболочке — статус
 
+## R15: системный ответ и уведомления, 2026-10-07
+
+- **Реализовано:** целые миллисекунды во всех native call actions; совместимый optional
+  web-answer sync через CallKit; восстановление уже принятого звонка при позднем ring resolve;
+  пробуждение parked gateway по новому входящему без обхода auth/READY.
+- **Реализовано:** generic push для непропущенных исходов исключён на enqueue и dispatch;
+  MISSED получает подпись пропущенного и communication call intent с прежним tap в историю.
+  Avatar cold budget 500 мс, sender image и независимое от donation обновление notification.
+- **Проверено локально:** Swift JSON → реальный TS parser, scoped answer/gateway regressions,
+  push race units и PG17 push/call/device-takeover integration; типы mobile/desktop,
+  обязательный `make lint`, 2652 desktop + 111 mobile тестов и 5 plugin tests; web bundle;
+  iPhone arm64 Release с нулевым изменением входных файлов во время сборки.
+  Независимые protocol/security review не оставили blocker/major.
+- **На устройстве:** исходная доставка sender/body/caller name подтверждена владельцем до R15.
+  Эта версия пока не установлена; реальные avatars и foreground/locked/cold answer с минутой
+  двустороннего звука, mute и компьютер в комнате остаются непроверенными.
+- **Следующий шаг:** согласованное обновление web/API и native build; схема и provider config
+  прежние. Изменения пока локальные. Cold PushKit может не поднять Expo scene/WebKit;
+  безопасные lifecycle logs помогают проверить эту отдельную границу, но не доказывают её.
+
+
+## R14: обновление установлено на iPhone (2026-10-06)
+
+- Общий web/API 2.4.3 с PR123 проверен на обоих production origins. Native Release
+  собрана от того же тега с исправлением подписи NSE: Communication Notifications
+  остаётся у приложения, расширение использует обычный профиль (ADR-0072).
+- Проверено: 110 mobile unit и 5 plugin tests, mobile typecheck, root `make lint`,
+  два независимых review без blocker/major, signed Release без drift исходников.
+  Подпись и профили приложения и обоих расширений действительны для устройства.
+- На устройстве: обновление установлено поверх прежнего приложения без удаления;
+  запуск подтверждён, процесс Calab остаётся активным после запуска.
+- Осталось проверить на устройстве: отправитель/текст/аватар и группировка push,
+  личный предпросмотр и настройки iOS, системный ответ/mute, locked/cold audio,
+  входящий звонок при активном голосовом подключении на компьютере. Установка
+  не является подтверждением этих сценариев. Новые серверные настройки не нужны.
+
 ## R13: один личный предпросмотр (2026-10-06)
 
 - Последнее решение: [PR123](https://github.com/itrcz/calab/pull/123#issuecomment-6018296941).

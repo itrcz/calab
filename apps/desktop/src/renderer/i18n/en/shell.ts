@@ -33,7 +33,9 @@ export const enShell: DictShape<typeof ruShell> = {
 
   // workspace rail
   'shell.home': 'Workspaces',
-  'shell.explore': 'Explore',
+  'shell.findWorkspace': 'Find a workspace',
+  'shell.wsSwitcher': 'Switch workspace',
+  'shell.otherUnread': 'Unread in other workspaces',
   'shell.inVoice': 'You’re in voice',
   'shell.unreadMentions': { one: '{n} mention', other: '{n} mentions' },
 
@@ -239,9 +241,19 @@ export const enShell: DictShape<typeof ruShell> = {
   'mediaErr.voice.movedStream': '{text}; screen share stopped',
   'mediaErr.voice.modMuted': 'A moderator muted you',
   // phone layout (ADR-0021)
-  'mobile.openNav': 'Rooms and workspaces',
-  'mobile.closeNav': 'Close panel',
-  'mobile.closeMembers': 'Close member list',
+  'mobile.back': 'Back',
+  'mobile.tabs': 'Sections',
+  'mobile.tabChats': 'Team',
+  'mobile.profile': 'Profile',
+  'mobile.tabDms': 'Personal',
+  'mobile.mic': 'Microphone',
+  'mobile.sound': 'Sound',
+  'mobile.on': 'On',
+  'mobile.off': 'Off',
+  'mobile.inVoice': 'In voice · {n}',
+  'mobile.joinVoice': 'Join',
+  'mobile.notifyOn': 'Turn on notifications',
+  'mobile.notifyOff': 'Turn off notifications',
   'mobile.voiceStrip': 'Voice call',
   'mobile.ptt': 'Hold to talk',
   'mobile.pttOn': 'On air',

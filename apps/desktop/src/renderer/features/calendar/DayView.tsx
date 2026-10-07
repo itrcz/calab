@@ -1,7 +1,9 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
-import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import { CalendarDays, CalendarPlus, CalendarSearch, Ellipsis, ChevronLeft, ChevronRight, Link2, Pencil, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { CreateButton } from '../../components/CreateButton';
 import { Button, IconButton, Modal, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
@@ -22,7 +24,8 @@ import { myUserId } from '../../stores/session';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { NavButton } from '../shell/MobileShell';
+import { Bar } from '../../components/Bar';
+import { NavButton, PhoneSearchButton } from '../../components/PhoneHeader';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
 import { useDayDrag } from './dragState';
@@ -206,56 +209,85 @@ function DropCursor(): ReactNode {
 function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { workspaceId: string; day: string; today: string; creatable: boolean; mobile: boolean; people: number }): ReactNode {
   const open = useUi((s) => s.openCalendarDay);
   const [sheet, setSheet] = useState(false);
-  // Phone: «15 янв.» leaves room for «Люди», «Подобрать время» and «+» (the weekday is in the grid's context).
-  const title = mobile ? dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day)) : formatLongDay(dayStart(day));
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
+  if (mobile) {
+    // Phone: a compact «‹ 15 янв. ›» group, «+» as a plain header icon, the rest («Сегодня», «Люди»,
+    // «Подобрать время») behind «…» — the header keeps room for the shell's nav button.
+    const title = dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day));
+    return (
+      <Bar>
+        <NavButton />
+        <IconButton label={t('cal.prevDay')} tip={false} onClick={() => open(addDays(day, -1))}>
+          <ChevronLeft className="size-[18px]" />
+        </IconButton>
+        <h1 className="min-w-[64px] truncate text-center text-list font-semibold first-letter:uppercase" aria-live="polite">
+          {title}
+        </h1>
+        <IconButton label={t('cal.nextDay')} tip={false} onClick={() => open(addDays(day, 1))}>
+          <ChevronRight className="size-[18px]" />
+        </IconButton>
+        <span className="flex-1" />
+        <Dropdown.Root modal={false}>
+          <Dropdown.Trigger asChild>
+            <IconButton label={t('boards.more')} tip={false} className="relative data-[state=open]:bg-active" data-testid="day-more">
+              <Ellipsis className="size-[18px]" />
+              {people > 0 ? <span className="absolute right-1 top-1 size-2 rounded-full bg-accent-strong" aria-hidden /> : null}
+            </IconButton>
+          </Dropdown.Trigger>
+          <Dropdown.Portal>
+            <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
+              {day !== today ? (
+                <Dropdown.Item className={menuItem} onSelect={() => open(today)} data-testid="day-today">
+                  <CalendarDays className="size-4" aria-hidden /> {t('cal.today')}
+                </Dropdown.Item>
+              ) : null}
+              {creatable ? (
+                <>
+                  <Dropdown.Item className={menuItem} onSelect={() => setSheet(true)} data-testid="day-people">
+                    <Users className="size-4" aria-hidden /> <span className="flex-1">{t('fb.filter')}</span>
+                    {people > 0 ? <span className="text-caption tabular-nums text-muted">{people}</span> : null}
+                  </Dropdown.Item>
+                  <Dropdown.Item className={menuItem} onSelect={() => startFind(workspaceId)} data-testid="day-find">
+                    <CalendarSearch className="size-4" aria-hidden /> {t('fb.find')}
+                  </Dropdown.Item>
+                </>
+              ) : null}
+            </Dropdown.Content>
+          </Dropdown.Portal>
+        </Dropdown.Root>
+        <PhoneSearchButton />
+        {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : null}
+        {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
+      </Bar>
+    );
+  }
   return (
-    <header className={cx('mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2', mobile && 'pl-1')}>
-      {mobile ? <NavButton /> : null}
-      <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => open(addDays(day, -1))} className={touch}>
+    <Bar className="gap-1 pl-3 pr-2">
+      <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => open(addDays(day, -1))}>
         <ChevronLeft className="size-[18px]" />
       </IconButton>
-      <IconButton label={t('cal.nextDay')} shortcut="→" onClick={() => open(addDays(day, 1))} className={touch}>
+      <IconButton label={t('cal.nextDay')} shortcut="→" onClick={() => open(addDays(day, 1))}>
         <ChevronRight className="size-[18px]" />
       </IconButton>
       <h1 className="ml-1 min-w-0 flex-1 truncate text-list font-semibold first-letter:uppercase" aria-live="polite">
-        {title}
+        {formatLongDay(dayStart(day))}
       </h1>
       {day !== today ? (
-        <Button variant="secondary" size={mobile ? 'md' : 'sm'} onClick={() => open(today)} title="T">
+        <Button variant="secondary" size="sm" onClick={() => open(today)} title="T">
           {t('cal.today')}
         </Button>
       ) : null}
-      {creatable && mobile ? (
-        // Phone: «Люди» and «Подобрать время» as icons; the filter is a sheet (ADR-0041 §3).
+      {creatable ? (
         <>
-          <IconButton label={t('fb.filter')} tip={false} onClick={() => setSheet(true)} className={cx(touch, 'relative')} active={people > 0} data-testid="day-people">
-            <Users className="size-[18px]" />
-            {people > 0 ? <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-micro font-semibold tabular-nums text-accent-fg">{people}</span> : null}
-          </IconButton>
-          <IconButton label={t('fb.find')} tip={false} onClick={() => startFind(workspaceId)} className={touch} data-testid="day-find">
-            <CalendarSearch className="size-[18px]" />
-          </IconButton>
+          <Button variant="secondary" size="sm" onClick={() => startFind(workspaceId)} data-testid="day-find">
+            <CalendarSearch className="size-3.5" aria-hidden />
+            {t('fb.find')}
+          </Button>
+          <Button size="sm" onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" title="N">
+            {t('cal.newEvent')}
+          </Button>
         </>
-      ) : creatable ? (
-        <Button variant="secondary" size="sm" onClick={() => startFind(workspaceId)} data-testid="day-find">
-          <CalendarSearch className="size-3.5" aria-hidden />
-          {t('fb.find')}
-        </Button>
       ) : null}
-      {creatable && mobile ? (
-        // Phone: a 40 px round «+» (the header keeps room for the date).
-        <IconButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" className="size-10 rounded-full bg-accent-strong text-accent-fg hover:bg-accent-strong hover:text-accent-fg">
-          <Plus className="size-5" />
-        </IconButton>
-      ) : creatable ? (
-        <Button size="sm" onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" title="N">
-          <Plus className="size-3.5" aria-hidden />
-          {t('cal.newEvent')}
-        </Button>
-      ) : null}
-      {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
-    </header>
+    </Bar>
   );
 }
 
@@ -310,7 +342,7 @@ function ConnectControl(): ReactNode {
   );
 }
 
-/** Phone: the filter as a bottom sheet with the chips. */
+/** Phone: the filter as a centred dialog card with the chips. */
 function PeopleSheet({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
   const people = useFreeBusy(selectPeople(workspaceId));
   const dispatch = useFreeBusy((s) => s.dispatchPeople);
@@ -459,7 +491,8 @@ type BlockDown = (e: ReactPointerEvent<HTMLElement>, key: string, mode: 'move' |
 /** How a block looks: my answer tints it (declined — faded, no answer yet — dashed), selected — filled. */
 function blockTone(status: AttendeeStatus, selected: boolean): string {
   if (selected) return 'bg-accent-strong text-accent-fg border-accent-strong';
-  if (status === AttendeeStatus.DECLINED) return 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg))] text-muted border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)]';
+  // Declined: already `muted` — the time line's extra opacity-80 would drop it below 4.5:1 (4.48 in light).
+  if (status === AttendeeStatus.DECLINED) return 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg))] text-muted border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] [&_.opacity-80]:opacity-100';
   if (status === AttendeeStatus.PENDING) return 'bg-[color-mix(in_srgb,var(--color-accent)_12%,var(--color-bg))] text-fg border-accent border-dashed';
   return 'bg-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-bg))] text-fg border-accent';
 }
@@ -531,7 +564,8 @@ const EventBlock = memo(function EventBlock({
             <p className={cx('truncate text-caption font-semibold', status === AttendeeStatus.DECLINED && !selected && 'line-through')}>{ev.title}</p>
             <p className="truncate text-caption opacity-80">
               {time}
-              {roomName ? ` · ${roomName}` : ''}
+              {/* phone: side-by-side events are narrow — the full time stays, the room name goes */}
+              {roomName ? <span className={cx(cols > 1 && 'mobile:hidden')}>{` · ${roomName}`}</span> : null}
             </p>
             {px > 70 && ev.repeat !== EventRepeat.UNSPECIFIED ? <Repeat className="mt-0.5 size-3 opacity-70" aria-hidden /> : null}
           </>

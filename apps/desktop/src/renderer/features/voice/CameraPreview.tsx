@@ -126,7 +126,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
                 aria-label={t('video.flip')}
                 data-testid="camera-preview-flip"
                 onClick={() => voice.camera.flip()}
-                className="absolute right-2 top-2 grid size-10 place-items-center rounded-full bg-black/50 text-white active:bg-black/70"
+                className="absolute right-2 top-2 grid size-11 place-items-center rounded-full bg-black/50 text-white active:bg-black/70"
               >
                 <SwitchCamera className="size-5" aria-hidden />
               </button>
