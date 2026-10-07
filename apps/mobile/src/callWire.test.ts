@@ -24,4 +24,4 @@ it.skipIf(!swiftAvailable)('accepts every real Swift action timestamp through th
     clock.mockRestore();
     rmSync(dir, { recursive: true, force: true });
   }
-}, 30_000);
+}, 180_000); // cold swiftc on CI runners takes ~30 s+
