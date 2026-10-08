@@ -24,6 +24,7 @@ it.skipIf(spawnSync('swiftc', ['--version']).status !== 0)('validates Expo input
     ]);
     const result = execFileSync(binary, { encoding: 'utf8' });
     expect(result).toContain('PASS: native bridged bitrate validation');
+    expect(result).toContain('PASS: connecting cue respects activation, deafen, remote audio and termination');
     expect(result).toContain('PASS: early system mute, late controls, acknowledgement and call isolation');
   } finally {
     rmSync(dir, { recursive: true, force: true });

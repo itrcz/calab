@@ -1,5 +1,29 @@
 # Телефон: общий веб в оболочке — статус
 
+## R19 final polish: bounded connecting cue
+
+- **Implemented locally:** quiet native connecting pulse after CallKit activation
+  and native transport selection. It stops on remote audio, deafen, end/failure,
+  before microphone capture, or after 10 seconds. It cannot reactivate from late
+  controls; cue failure never fails the call. No UI clone, new API or media join
+  before answer.
+- **Checked:** 118 mobile tests plus 6 plugin tests, typecheck, lint, signed iPhone
+  Release and strict code signing. Independent review found no blocker/major.
+  Fresh main remains the branch base; no conflicts at this checkpoint.
+- **Pending on device:** new cue audibility and a bounded early-mute/unmute/hangup
+  call, including sampled resumed microphone audio after unmute. Earlier locked
+  warm/cold, repeated incoming and early-end results remain evidence for the
+  unchanged paths; they do not verify the new cue.
+- **Latency decision:** 5.680/7.427/8.052 s are isolated answer-to-subscription
+  samples, including startup of both endpoints, not a proven iPhone-only defect.
+  In the last cold test, the caller itself began producing tone roughly 6.3 s
+  after answer (cross-device UTC alignment, not calibrated acoustic timing).
+  No speedup claimed. RTC URL arrives only with the authorized join; early
+  prewarming/persisted endpoint discovery and pre-answer RTC remain deferred.
+  Reliability and understandable waiting take priority over a call-protocol rewrite.
+- **Release boundary:** local only; no server change or publication. Opt-in scope
+  and the remaining device gates below still apply; not READY_TO_SHIP.
+
 ## R19: system controls and measured startup, 2026-10-08
 
 - **Implemented locally:** native system mute stops capture immediately and latches

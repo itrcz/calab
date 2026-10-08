@@ -82,6 +82,21 @@ Participant removal retains the existing shared takeover grace; duplicate identi
 leaves locally, and network loss uses the existing rejoin policy. Native failure
 cleanup has a 15-second fallback if the shared document stops responding.
 
+## Bounded startup polish
+
+A native incoming call may play a quiet local connecting cue only after this
+transport is selected and CallKit activates audio. It does not activate a session,
+request permission or publish audio. Remote audio subscription, deafen, system end,
+reload and failure stop the cue. It also stops before microphone capture starts,
+so the local signal cannot become outgoing call audio. Later state/control updates
+cannot restart a finished cue; a new call resets that latch. An independent
+10-second cue-only deadline bounds it even when no peer publishes audio; this
+expiry does not end the call. Shared call UI and REST permissions are unchanged.
+
+Evaluate network prewarming independently; no persisted token, pre-answer room join
+or new server contract is authorized by this polish. Keep a prewarm only if it can
+run safely before a needed connection, without delaying answer or starting capture.
+
 ## Gates and rollout
 
 Regression tests cover envelope boundaries, stale connection/document events,
