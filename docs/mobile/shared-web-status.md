@@ -10,10 +10,16 @@
 - **Checked:** 118 mobile tests plus 6 plugin tests, typecheck, lint, signed iPhone
   Release and strict code signing. Independent review found no blocker/major.
   Fresh main remains the branch base; no conflicts at this checkpoint.
-- **Pending on device:** new cue audibility and a bounded early-mute/unmute/hangup
-  call, including sampled resumed microphone audio after unmute. Earlier locked
-  warm/cold, repeated incoming and early-end results remain evidence for the
-  unchanged paths; they do not verify the new cue.
+- **Latest device result:** on the clean signed Release, the owner confirmed
+  audible sound and manual hangup. The caller sent its synthetic tone throughout;
+  received microphone packets and audio energy stopped increasing during the
+  mute window, then resumed with nonzero input after unmute. The peer closed on
+  owner hangup. This verifies the bounded mute/unmute/end scenario, not speech
+  quality or the earliest pre-publication mute. The owner ended this call before
+  60 seconds of audio; earlier sustained-call evidence remains separate.
+- **Pending on device:** distinguish the new short connecting cue from the remote
+  steady tone. Earlier locked warm/cold, repeated incoming and early-end results
+  remain evidence for unchanged paths; they do not verify the new cue.
 - **Latency decision:** 5.680/7.427/8.052 s are isolated answer-to-subscription
   samples, including startup of both endpoints, not a proven iPhone-only defect.
   In the last cold test, the caller itself began producing tone roughly 6.3 s
@@ -56,7 +62,7 @@
   iPhone Release; focused Swift/wire delta checks after review corrections.
   Read-only Opus 5.5 consultation/review informed the mute/end race fixes. This
   revision remains local. Timing probes are excluded from publishable source.
-- **Remaining device gates:** early mute, resumed microphone RTP after unmute,
+- **Remaining device gates:** earliest pre-publication mute,
   in-app answer, desktop takeover, reconnect,
   speakerphone/AEC, Bluetooth and permission denial. The historical pre-answer
   flash remains unconfirmed. Not READY_TO_SHIP.
