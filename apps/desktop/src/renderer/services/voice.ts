@@ -1,3 +1,6 @@
+import { useCall } from '../stores/call';
+import { HostCallAudioSession } from '../lib/media/hostCallAudio';
+import { audioUUID, type HostAudioControls } from '../../shared/hostCallAudio';
 import { SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceDisconnected, type VoiceMoved, VoiceDisconnectReason } from '@calaba/protocol';
 import {
   ConnectionState,
@@ -45,7 +48,7 @@ import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
@@ -179,6 +182,8 @@ const setLink = (p: Partial<VoiceLink>): void => setVoice({ link: { ...useVoice.
 
 class VoiceEngine {
   private room: Room | null = null;
+  private nativeAudio: HostCallAudioSession | null = null;
+  private nativeCallEvent: string | undefined;
   private roomId: string | null = null;
   private joinSeq = 0;
   private mic: MicPipeline | null = null;
@@ -396,7 +401,7 @@ class VoiceEngine {
    * voice activation only. `resumed`: back into the seat left by a reload / update restart
    * (services/resumeVoice.ts) — the «reconnect» cue instead of «join».
    */
-  async join(roomId: string, workspaceId: string, opts: { call?: boolean; resumed?: boolean; video?: boolean } = {}): Promise<void> {
+  async join(roomId: string, workspaceId: string, opts: { call?: boolean; resumed?: boolean; video?: boolean; nativeCallEvent?: string } = {}): Promise<void> {
     // A suspended workspace has no calls (docs/09 #32): say so instead of a 403 toast.
     if (useWorkspaces.getState().byId[workspaceId]?.ws.suspension) {
       toast.info(t('suspended.voice'));
@@ -421,8 +426,8 @@ class VoiceEngine {
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
     // call is still being torn down; connect() takes over with phase 'connecting'.
-    if (!(this.roomId === roomId && this.room)) setVoice({ joining: { roomId, workspaceId } });
-    await this.connect(roomId, workspaceId, false, undefined, undefined, opts.call === true);
+    if (!(this.roomId === roomId && (this.room || this.nativeAudio))) setVoice({ joining: { roomId, workspaceId } });
+    await this.connect(roomId, workspaceId, false, undefined, undefined, opts.call === true, opts.nativeCallEvent);
   }
 
   /**
@@ -477,12 +482,12 @@ class VoiceEngine {
    * `keepServerMuted`: the moderator mute to carry over the teardown (a rejoin or a move's /join
    * fallback); teardown resets it, and until the new grant arrives the UI would show «not muted».
    */
-  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean, call?: boolean): Promise<void> {
+  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean, call?: boolean, nativeCallEvent?: string): Promise<void> {
     if (this.roomId === roomId && this.roomAlive()) return;
     const attempt: ConnectAttempt = { stage: 'teardown', since: Date.now() };
     this.attempt = attempt;
     try {
-      await this.connectOnce(attempt, roomId, workspaceId, quiet, moved, keepServerMuted, call);
+      await this.connectOnce(attempt, roomId, workspaceId, quiet, moved, keepServerMuted, call, nativeCallEvent);
     } finally {
       if (this.attempt === attempt) this.attempt = null;
     }
@@ -494,6 +499,7 @@ class VoiceEngine {
    */
   private roomAlive(): boolean {
     const room = this.room;
+    if (this.nativeAudio) return this.nativeAudio.alive;
     if (!room) return false;
     if (room.state === ConnectionState.Connected || room.state === ConnectionState.Reconnecting || room.state === ConnectionState.SignalReconnecting) return true;
     return this.attempt !== null && Date.now() - this.attempt.since < CONNECT_STUCK_MS;
@@ -507,6 +513,7 @@ class VoiceEngine {
     moved?: MoveCreds,
     keepServerMuted?: boolean,
     call?: boolean,
+    nativeCallEvent?: string,
   ): Promise<void> {
     // The intent token is taken *before* the teardown (which awaits a network disconnect):
     // a leave() or a newer join during that window bumps it, and this call bails out, so the
@@ -525,10 +532,10 @@ class VoiceEngine {
       }
       if (intent !== this.intentSeq) return;
     }
-    if (this.room) await this.teardown(false, quiet);
+    if (this.room || this.nativeAudio) await this.teardown(false, quiet);
     if (intent !== this.intentSeq) return;
     // A fresh join decides the mic mode (a call: voice only); a reconnect / move keeps it.
-    if (call !== undefined) this.setCallMode(call);
+    if (call !== undefined) { this.setCallMode(call); this.nativeCallEvent = call ? nativeCallEvent : undefined; }
     const seq = ++this.joinSeq;
     this.roomId = roomId;
     // A new call (not a reconnect of this one) may warn about echo again.
@@ -571,6 +578,51 @@ class VoiceEngine {
       this.lastJoin = { url: res.url, token: res.token };
       setLink({ rtcHost: hostOfUrl(res.url) });
       this.audioBitrateKbps = res.media?.audioBitrateKbps || 32;
+      const nativeCapability = platform.incomingCalls?.audio;
+      if (this.callMode && this.nativeCallEvent && nativeCapability) {
+        attempt.stage = 'signal';
+        const session = new HostCallAudioSession(nativeCapability, {
+          eventId: this.nativeCallEvent, connectionId: crypto.randomUUID(), roomId,
+          url: res.url, token: res.token, relayOnly: useSession.getState().appInfo?.forceRelay === true,
+          bitrate: Math.min(64, Math.max(8, this.micTier().kbps)) * 1000,
+          canSpeak: res.canSpeak, controls: this.nativeControls(),
+        }, state => {
+          if (seq !== this.joinSeq || this.nativeAudio !== session) return;
+          if (state.phase === 'failed' || state.phase === 'ended') {
+            // Reuse the web engine's seat ownership rules: an SFU removal can precede
+            // the gateway takeover event. Never hang up the call on the new device.
+            if (state.error === 'removed') {
+              this.clearRemoved();
+              this.removed = { roomId, timer: window.setTimeout(() => {
+                this.removed = null;
+                if (this.nativeAudio === session) void this.leave(false);
+              }, REMOVED_GRACE_MS) };
+            } else if (state.error === 'duplicate') {
+              this.takenOverRoom = roomId;
+              void this.leave(false, false);
+            } else if (state.error === 'network') {
+              void this.rejoin();
+            } else void this.leave(false);
+            return;
+          }
+          if (state.phase === 'connected' || state.phase === 'reconnecting') {
+            setVoice({ phase: state.phase, canSpeak: state.canSpeak,
+              speaking: Object.fromEntries(state.speakers.map(id => [id, true])) });
+          }
+        });
+        this.nativeAudio = session;
+        // Settings may have left a mic test running before the system answer.
+        this.micTesting = false;
+        this.stopMicPipeline();
+        // The local audio proof has no native video transport; never start a second web room.
+        setVoice({ canSpeak: res.canSpeak, canStream: false, canVideo: false });
+        await session.start();
+        if (seq !== this.joinSeq || this.nativeAudio !== session) { session.stop(); return; }
+        setLink({ attempts: 0, lastError: null, blockedHost: null });
+        session.control(this.nativeControls());
+        this.pushSelfState(); this.syncTray();
+        return;
+      }
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -746,7 +798,7 @@ class VoiceEngine {
         if (gen !== this.rejoinGen) return;
         await this.connect(roomId, wsId, true, undefined, serverMuted);
         if (gen !== this.rejoinGen) return;
-        if (this.room) {
+        if (this.room || this.nativeAudio?.connected) {
           if (stream) toast.info(t('mediaErr.stream.restart'));
           // The camera comes back by itself (a new capture, no preview); start() explains a failure.
           if (camera) void this.camera.start();
@@ -835,7 +887,7 @@ class VoiceEngine {
     const intent = this.intentSeq;
     await this.teardown(false, true);
     if (intent !== this.intentSeq) return; // the user left or clicked elsewhere meanwhile
-    await this.connect(roomId, workspaceId, false, undefined, serverMuted, call);
+    await this.connect(roomId, workspaceId, false, undefined, serverMuted, call, this.nativeCallEvent);
   }
 
   /**
@@ -845,11 +897,11 @@ class VoiceEngine {
    */
   private onReconnectStuck(ms: number): void {
     const v = useVoice.getState();
-    const st = this.room && this.roomId === v.roomId ? this.room.state : null;
+    const st = this.seatView().livekit;
     const attempt = this.attempt;
     const verdict = reconnectVerdict({
       loop: this.rejoinRoomId !== null && (attempt === null || Date.now() - attempt.since < RECONNECT_STUCK_MS),
-      livekit: st === ConnectionState.Connected ? 'connected' : st === ConnectionState.Reconnecting || st === ConnectionState.SignalReconnecting ? 'reconnecting' : 'none',
+      livekit: st,
       ms,
     });
     if (verdict === 'wait') {
@@ -866,7 +918,7 @@ class VoiceEngine {
     const reason = t('voice.stuck.reconnect');
     if (this.stuckRetries === 0) {
       this.stuckRetries = 1;
-      log.warn(`voice: reconnecting to ${v.roomId} for ${secs} s without progress (LiveKit ${st ?? 'none'}, stage ${attempt?.stage ?? 'none'}), resetting and rejoining with a fresh token`);
+      log.warn(`voice: reconnecting to ${v.roomId} for ${secs} s without progress (LiveKit ${st}, stage ${attempt?.stage ?? 'none'}), resetting and rejoining with a fresh token`);
       setLink({ lastError: t('voice.stuck.retry', { reason, s: secs }) });
       this.watchdog.rearm();
       this.resetConnection();
@@ -939,7 +991,7 @@ class VoiceEngine {
   private seatView(): SeatView {
     const v = useVoice.getState();
     const room = this.room;
-    const st = room && this.roomId === v.roomId ? room.state : null;
+    const st = this.nativeAudio?.state?.phase === 'connected' ? ConnectionState.Connected : this.nativeAudio?.state?.phase === 'reconnecting' ? ConnectionState.Reconnecting : room && this.roomId === v.roomId ? room.state : null;
     return {
       seatRoom: v.roomId,
       // A join / switch / leave / move in progress settles the server by itself.
@@ -967,8 +1019,10 @@ class VoiceEngine {
       case 'watch': {
         // LiveKit is resuming by itself: a moment for it, then a fresh token instead.
         const room = this.room;
+        const native = this.nativeAudio;
         await new Promise((r) => setTimeout(r, SEAT_RECONNECT_GRACE_MS));
-        if (room && this.room === room && room.state !== ConnectionState.Connected && !this.rejoinRoomId) {
+        if (((room && this.room === room && room.state !== ConnectionState.Connected) ||
+          (native && this.nativeAudio === native && !native.connected)) && !this.rejoinRoomId) {
           log.info('voice: LiveKit still reconnecting after the gateway is back, rejoining');
           void this.rejoin();
           return;
@@ -1002,8 +1056,8 @@ class VoiceEngine {
    */
   private async reassertSeat(roomId: string, strays: string[]): Promise<void> {
     for (const r of strays) await this.leaveStray(r);
-    const room = this.room;
-    const same = (): boolean => this.room === room && this.roomId === roomId;
+    const room = this.room; const native = this.nativeAudio;
+    const same = (): boolean => this.room === room && this.nativeAudio === native && this.roomId === roomId;
     await this.settleSeatRequests();
     if (!same()) return;
     let res: Awaited<ReturnType<typeof api.voice.join>>;
@@ -1186,6 +1240,7 @@ class VoiceEngine {
 
   private async doTeardown(sound: boolean, keepSeat: boolean): Promise<void> {
     this.joinSeq++;
+    this.nativeAudio?.stop(); this.nativeAudio = null;
     this.endPttTail();
     this.resetSpeaking();
     this.active.reset();
@@ -1825,7 +1880,19 @@ class VoiceEngine {
     for (const el of track.detach()) el.remove();
   }
 
+  private nativeControls(): HostAudioControls {
+    const v = useVoice.getState(); const p = prefs();
+    const call = useCall.getState().call;
+    const ids = call ? [call.callerId, call.calleeId] : [];
+    const userVolumes = Object.fromEntries(ids.filter(audioUUID).map(id => {
+      const audio = remoteAudio({ ...p, deafened: v.deafened, userId: id, stream: false, streamVolume: {} });
+      return [id, audio.muted ? 0 : audio.volume];
+    }));
+    return { muted: v.muted || v.serverMuted, deafened: v.deafened, volume: Math.max(0,Math.min(1,p.outputVolume)), userVolumes };
+  }
+
   private applyVolumes(): void {
+    this.nativeAudio?.control(this.nativeControls());
     this.audioOut.applyAll();
   }
 
@@ -1852,6 +1919,7 @@ class VoiceEngine {
 
   /** Mic test in settings (works outside a call too). */
   async startMicTest(): Promise<void> {
+    if (this.nativeAudio) return; // Native CallKit audio is the sole capture owner.
     this.micTesting = true;
     await this.ensureMic();
     this.applyDenoise();
@@ -2205,6 +2273,7 @@ class VoiceEngine {
    *    The track stays published, so opening is instant.
    */
   private applyTransmit(): void {
+    if (this.nativeAudio) { this.nativeAudio.control(this.nativeControls()); return; }
     const t = this.micTrack;
     const d = this.decision();
     // Closing is the latency-critical edge (PTT key-up): silence the sender first, synchronously —
@@ -2475,7 +2544,7 @@ class VoiceEngine {
 
   /** Optimistic voice state for everyone (docs/05: PATCH /api/voice/self). */
   private pushSelfState(): void {
-    if (!this.room) return;
+    if (!this.room && !this.nativeAudio) return;
     const v = useVoice.getState();
     const musician = prefs().musicianMode;
     void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician }).catch((e: unknown) => {
@@ -2492,7 +2561,7 @@ class VoiceEngine {
   /** Server view of our voice state differs from local (e.g. PATCH raced the join) → push again. */
   reconcileSelfState(s: { roomId: string; muted: boolean; deafened: boolean; serverMuted?: boolean; musician?: boolean }): void {
     const v = useVoice.getState();
-    if (!this.room || s.roomId !== this.roomId) {
+    if ((!this.room && !this.nativeAudio) || s.roomId !== this.roomId) {
       // Not where I am connected (docs/09 #71): the server may have lost this device.
       if (this.room && this.roomId) this.scheduleSelfCheck();
       return;

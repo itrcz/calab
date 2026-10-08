@@ -43,12 +43,12 @@ export class ActivityProtocol {
 }
 
 /** Declaration only, main frame only. Native validation is the actual authority boundary. */
-export function activityBootstrap(host: number): string {
+export function activityBootstrap(host: number, nativeAudio = false): string {
   return `(() => {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
     let documentId = crypto.randomUUID();
     Object.defineProperty(window, 'CalabHostActivity', { configurable: false, writable: false,
-      value: Object.freeze({version: 1, notificationsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, host: ${String(host)}, get document() { return documentId; },
+      value: Object.freeze({version: 1, notificationsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''} host: ${String(host)}, get document() { return documentId; },
         rotateDocument: () => { documentId = crypto.randomUUID(); },
         send: (data) => window.ReactNativeWebView.postMessage(data)}) });
   })(); true;`;

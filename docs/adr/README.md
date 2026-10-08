@@ -1,5 +1,7 @@
 # ADR — Architecture Decision Records
 
+Latest local device proof: [0079: iOS native call audio](0079-phone-call-audio-driver.md).
+
 Одно решение — один файл. Формат: Контекст → Решение → Последствия. Дата в шапке. Пересмотр — новым ADR со ссылкой на старый.
 
 | # | Решение | Статус |

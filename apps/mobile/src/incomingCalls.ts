@@ -1,7 +1,10 @@
 import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
+import type { HostAudioOperation } from '../../desktop/src/shared/hostCallAudio';
 import { parseCallsState, type HostCallsState, type HostCallsOperation } from '../../desktop/src/shared/hostCalls';
 interface NativeCalls {
+ callAudioEnabled?:boolean;
+ audioOperation(document:string,operation:HostAudioOperation):Promise<void>;
  callsState(document:string):Promise<unknown>;
  bindCalls(document:string,binding:string,version:string,token:string):Promise<boolean>;
  settleCall(document:string,actionId:string,result:string):Promise<void>;
@@ -9,9 +12,11 @@ interface NativeCalls {
  addListener(name:'onCallsChanged',callback:(value:{document:string;state:unknown})=>void):{remove():void};
 }
 const native=Platform.OS==='ios' ? requireOptionalNativeModule<NativeCalls>('CalabIncomingCalls'):null;
+export const callAudioEnabled=native?.callAudioEnabled===true;
 export async function callsOperation(document:string,operation:HostCallsOperation):Promise<{state:HostCallsState;bound?:boolean}> {
  try {
   let bound:boolean|undefined;
+  if(operation.operation==='audioConnect' || operation.operation==='audioControl' || operation.operation==='audioDisconnect')await native?.audioOperation(document,operation);
   if(operation.operation==='bind')bound=await native?.bindCalls(document,operation.binding,operation.version,operation.token) ?? false;
   if(operation.operation==='settle')await native?.settleCall(document,operation.actionId,operation.result);
   if(operation.operation==='sync')await native?.syncCall(document,operation.eventId,operation.phase);

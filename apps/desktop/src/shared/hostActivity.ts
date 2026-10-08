@@ -19,7 +19,7 @@ export type HostActivityMessage =
   | { v: 1; type: 'notifications'; host: number; document: string; seq: number; request: number; operation: 'status' | 'request' | 'clear' | 'ack'; eventId?: string }
   | { v: 1; type: 'activity'; host: number; document: string; seq: number; snapshot: SessionActivitySnapshot };
 
-export const HOST_ACTIVITY_MAX_LENGTH = 2048;
+export const HOST_ACTIVITY_MAX_LENGTH = 8192;
 export const HOST_ACTIVITY_HEARTBEAT_MS = 30_000;
 export const HOST_ACTIVITY_LEASE_SECONDS = 90;
 
@@ -37,6 +37,13 @@ function counter(value: unknown): value is number {
 
 export function parseHostActivityMessage(raw: string): HostActivityMessage | null {
   if (raw.length > HOST_ACTIVITY_MAX_LENGTH) return null;
+  // Also runs inside the native JS host: do not require a browser encoding global.
+  let bytes = 0;
+  for (const char of raw) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code <= 0x7f ? 1 : code <= 0x7ff ? 2 : code <= 0xffff ? 3 : 4;
+    if (bytes > HOST_ACTIVITY_MAX_LENGTH) return null;
+  }
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return null; }
   if (!record(value) || value.v !== 1 || !counter(value.host) || typeof value.document !== 'string' ||

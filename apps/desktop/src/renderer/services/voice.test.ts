@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VoiceDisconnectReason } from '@calaba/protocol';
+import type { HostCallAudioCapability, HostAudioConnect, HostAudioState } from '../../shared/hostCallAudio';
 
 /**
  * VoiceEngine with LiveKit, the API and the mic pipeline mocked (review test gaps: H1 room
@@ -263,9 +264,11 @@ vi.mock('./mediaErrors', () => ({
 }));
 /** platform.ptt.setBinding: the binding the engine asks main for (null = unbound). */
 const setBinding = vi.fn((_b: unknown) => Promise.resolve({}));
+const nativeHost = vi.hoisted(() => ({ audio: undefined as HostCallAudioCapability | undefined }));
 vi.mock('../platform', () => ({
   platform: {
     kind: 'web',
+    get incomingCalls() { return { audio: nativeHost.audio }; },
     ptt: { onEvent: () => () => undefined, setBinding: (b: unknown) => setBinding(b) },
     tray: { setState: () => undefined },
     system: { metrics: () => Promise.resolve({ rendererCpu: null }) },
@@ -287,6 +290,7 @@ beforeEach(async () => {
   FakeLocalAudioTrack.failReplace = false;
   FakeRoom.disconnectGate = null;
   FakeRoom.onConnect = null;
+  nativeHost.audio = undefined;
   pipelines.length = 0;
   gate = null;
   gone.clear();
@@ -314,6 +318,88 @@ afterEach(() => {
 const settle = async (): Promise<void> => {
   await vi.advanceTimersByTimeAsync(0);
 };
+
+describe('native incoming call transport', () => {
+  const eventId = '11111111-1111-4111-8111-111111111111';
+  function host() {
+    let input: HostAudioConnect;
+    let listener: (s: HostAudioState) => void = () => undefined;
+    const connected = (): HostAudioState => ({ eventId, connectionId: input.connectionId, phase: 'connected', microphoneReady: true, muted: false, canSpeak: true, speakers: [] });
+    const disconnect = vi.fn(), control = vi.fn();
+    const capability: HostCallAudioCapability = {
+      connect: value => { input = value; return Promise.resolve(connected()); }, control, disconnect,
+      subscribe: fn => { listener = fn; return () => { listener = () => undefined; }; },
+    };
+    nativeHost.audio = capability;
+    return { capability, disconnect, control, input: () => input, emit: (s: Partial<HostAudioState>) => listener({ ...connected(), ...s }) };
+  }
+  it('uses one native room and preserves normal output volume without starting WebKit capture', async () => {
+    const h = host();
+    usePrefs.setState({ outputVolume: 0.75 });
+    await voice.join('dm', '', { call: true, nativeCallEvent: eventId });
+    expect(useVoice.getState()).toMatchObject({ roomId: 'dm', phase: 'connected', canVideo: false, canStream: false });
+    expect(h.input().controls.volume).toBe(0.75);
+    expect(FakeRoom.all).toHaveLength(0); expect(pipelines).toHaveLength(0);
+    await voice.leave();
+    expect(h.disconnect).toHaveBeenCalledWith(eventId, h.input().connectionId);
+    expect(useVoice.getState().phase).toBe('idle');
+  });
+  it('does not create a second WebKit microphone from settings during a native call', async () => {
+    host();
+    await voice.join('dm', '', { call: true, nativeCallEvent: eventId });
+    await voice.startMicTest();
+    expect(pipelines).toHaveLength(0);
+  });
+  it('keeps an already connected native call settled when join is requested again', async () => {
+    host();
+    await voice.join('dm', '', { call: true, nativeCallEvent: eventId });
+    await voice.join('dm', '', { call: true, nativeCallEvent: eventId });
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', joining: null });
+    expect(joinVoice).toHaveBeenCalledOnce();
+  });
+  it('keeps ordinary rooms and calls without a native event on the existing web engine', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    await voice.join('dm', '', { call: true });
+    expect(FakeRoom.all).toHaveLength(2);
+    expect(h.input()).toBeUndefined();
+  });
+  it('sends shared mute/deafen settings to native audio and cannot lift moderator mute', async () => {
+    const h = host();
+    await voice.join('dm', '', { call: true, nativeCallEvent: eventId });
+    voice.toggleMute();
+    expect(h.control.mock.lastCall?.[2]).toMatchObject({ muted: true, deafened: false });
+    voice.toggleDeafen();
+    expect(h.control.mock.lastCall?.[2]).toMatchObject({ muted: true, deafened: true });
+    useVoice.setState({ muted: true, serverMuted: true, deafened: false });
+    expect(voice.setMuted(false)).toBe(false);
+    expect(useVoice.getState().muted).toBe(true);
+  });
+  it('rejoins a lost native call with a fresh connection without starting a second retry after success', async () => {
+    const h = host();
+    await voice.join('dm', '', { call: true, nativeCallEvent: eventId });
+    const first = h.input().connectionId;
+    h.emit({ phase: 'failed', error: 'network' });
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(useVoice.getState().phase).toBe('connected');
+    expect(h.input().connectionId).not.toBe(first);
+    expect(FakeRoom.all).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+  });
+  it('lets the server takeover event win before treating native participant removal as a hangup', async () => {
+    const h = host();
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ sessionId: 'mine' });
+    await voice.join('dm', '', { call: true, nativeCallEvent: eventId });
+    h.emit({ phase: 'failed', error: 'removed' });
+    await settle();
+    expect(useVoice.getState().roomId).toBe('dm');
+    expect(voice.onServerDisconnect({ roomId: 'dm', sessionId: 'mine', reason: VoiceDisconnectReason.OTHER_DEVICE })).toBe(true);
+    await settle();
+    expect(voice.takenOverRoom).toBe('dm'); expect(useVoice.getState().phase).toBe('idle');
+  });
+});
 
 describe('VoiceEngine', () => {
   it('join A → join B connects to B (review H1)', async () => {
