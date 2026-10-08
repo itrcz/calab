@@ -1,10 +1,19 @@
+import Foundation
+
+func calabCallAudioBitrate(_ value: Any?) -> Int? {
+  // Expo's JSI dictionaries contain Double for JS numbers. Do not truncate a
+  // fractional input or relax the shared protocol's integer/range validation.
+  let bitrate = (value as? Int) ?? (value as? Double).flatMap(Int.init(exactly:))
+  guard let bitrate, (8000...64000).contains(bitrate) else { return nil }
+  return bitrate
+}
+
 #if canImport(LiveKitClient)
 import LiveKitClient
 #elseif canImport(LiveKit)
 import LiveKit
 #endif
 #if canImport(LiveKitClient) || canImport(LiveKit)
-import Foundation
 import AVFAudio
 import UIKit
 
@@ -66,7 +75,7 @@ final class CalabCallAudio: NSObject, RoomDelegate {
       let url = input["url"] as? String, url.count <= 1024, let endpoint = URLComponents(string: url),
       endpoint.scheme == "wss", endpoint.host?.isEmpty == false, endpoint.user == nil, endpoint.password == nil, endpoint.fragment == nil,
       let token = input["token"] as? String, !token.isEmpty, token.count <= 4096,
-      let bitrate = input["bitrate"] as? Int, (8000...64000).contains(bitrate),
+      let bitrate = calabCallAudioBitrate(input["bitrate"]),
       let initial = input["controls"] as? [String: Any] else { return }
     if event == id && connection == next { return }
     stop()
