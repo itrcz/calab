@@ -17,16 +17,23 @@
   muted; system unmute acknowledged; owner hangup stopped media in 3 ms and ended
   the caller session. The owner ended too soon after unmute for the 3-second
   observer to independently sample resumed microphone RTP.
-- **Measured, still open:** warm answer-to-remote-subscription 5.680 s, cold 7.427 s.
-  Cold stages: document granted 1.491 s, REST accepted 3.397 s, CallKit activated
-  3.681 s, RTC connected 5.764 s, microphone published 6.482 s. These are single
-  samples, not a latency distribution or proof of improvement yet.
+- **Final-delta device pair:** process absence was verified before the first locked
+  incoming. It established native audio; a second incoming reached the same phone
+  after hangup. On the second call, the owner ended 1.816 s after answer, before
+  audio activation; the later activation did not start native media or restore
+  the call, and the caller session closed.
+- **Measured, still open:** warm answer-to-remote-subscription 5.680 s; cold samples
+  7.427 s before and 8.052 s after parallel subscription. The latter subscribed
+  before microphone publication completed (8.141 s), so the serialization was
+  removed, but end-to-end improvement is not demonstrated. Latest cold stages:
+  document granted 1.452 s, REST accepted 3.350 s, audioConnect received 4.149 s,
+  RTC connect 4.173–7.038 s. These are individual samples, not a distribution.
 - **Verification:** 118 mobile tests, 6 plugin tests, mobile typecheck/lint, signed
   iPhone Release; focused Swift/wire delta checks after review corrections.
   Read-only Opus 5.5 consultation/review informed the mute/end race fixes. This
   revision remains local. Timing probes are excluded from publishable source.
-- **Remaining device gates:** final-delta cold/repeated incoming, early mute/end,
-  resumed microphone RTP after unmute, in-app answer, desktop takeover, reconnect,
+- **Remaining device gates:** early mute, resumed microphone RTP after unmute,
+  in-app answer, desktop takeover, reconnect,
   speakerphone/AEC, Bluetooth and permission denial. The historical pre-answer
   flash remains unconfirmed. Not READY_TO_SHIP.
 
