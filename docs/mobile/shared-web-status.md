@@ -1,5 +1,15 @@
 # Телефон: общий веб в оболочке — статус
 
+## Native mobile commercial UI (2026-10-08)
+
+The shared web client suppresses sales contact actions and the purchase/pricing card
+when the existing native `sessionActivity` host capability is present. Ordinary web
+and desktop clients retain their purchase links. Plan status, usage, feature locks
+and server entitlement enforcement are unchanged. Passive limit hints do not repeat
+a contact-sales instruction. This is a web-client change and needs web deployment;
+it does not require a new iPhone binary.
+
+
 ## R19 final polish: bounded connecting cue
 
 - **Implemented locally:** quiet native connecting pulse after CallKit activation

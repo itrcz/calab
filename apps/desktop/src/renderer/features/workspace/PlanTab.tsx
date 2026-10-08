@@ -8,7 +8,7 @@ import { audioTierLabel } from '../../lib/audioTierLabel';
 import { fmt } from '../../lib/format';
 import { PLAN_LABEL, atLimit, contactHref, countText, planKind, planUsage, storageText, videoLimitText } from '../../lib/plan';
 import { platform } from '../../platform';
-import { openPlanContact, planContact } from '../../services/plan';
+import { openPlanContact, planContact, planOffersAllowed } from '../../services/plan';
 import { loadWorkspaceStickers } from '../../services/stickers';
 import { useSession } from '../../stores/session';
 import { useStickers } from '../../stores/stickers';
@@ -135,7 +135,7 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
  */
 export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
-  const contact = useSession((s) => contactHref(s.planContact));
+  const contact = useSession((s) => (planOffersAllowed() ? contactHref(s.planContact) : null));
   const packs = useStickers((s) => s.byWorkspace[workspaceId]?.length);
   useEffect(() => {
     void loadWorkspaceStickers(workspaceId);
@@ -149,7 +149,7 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
     Object.values(entry.members).map((m) => ({ guest: m.role === WorkspaceRole.GUEST, bot: !!m.user?.isBot })),
   );
   const rows = limitRows(plan.limits, usage, entry.ws.storageUsedBytes, packs);
-  const pricing = import.meta.env.VITE_PRICING_URL;
+  const pricing = planOffersAllowed() ? import.meta.env.VITE_PRICING_URL : undefined;
   return (
     <>
       <Card title={t('plan.card.current')}>
