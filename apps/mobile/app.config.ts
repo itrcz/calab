@@ -29,8 +29,8 @@ const config: ExpoConfig = {
   version: '0.1.0',
   platforms: ['ios', 'android'],
   orientation: 'portrait',
-  // The web client's 512 px icon (apps/desktop/build/icons); a 1024 px store icon is a release task.
-  icon: '../desktop/build/icons/web/icon-512.png',
+  // Existing Calab mark, full-bleed RGB at store resolution; iOS applies its own corner mask.
+  icon: './assets/icon-1024.png',
   backgroundColor: '#1c1c1e',
   userInterfaceStyle: 'automatic',
   ios: {

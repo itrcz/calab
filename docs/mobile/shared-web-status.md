@@ -1,5 +1,12 @@
 # Телефон: общий веб в оболочке — статус
 
+## TestFlight app icon (2026-10-08)
+
+The mobile host uses the existing Calab mark at 1024 × 1024, with an opaque
+full-bleed background and no pre-rounded corners. It is derived from the shared
+`apps/desktop/build/icons/src/icon_other.svg`; the glyph and gradient are unchanged.
+The icon is packaged into a new iOS build and reaches TestFlight through that build.
+
 ## Native mobile commercial UI (2026-10-08)
 
 The shared web client suppresses sales contact actions and the purchase/pricing card
