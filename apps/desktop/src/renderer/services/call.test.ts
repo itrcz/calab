@@ -197,6 +197,16 @@ it('native-owned ringing uses CallKit sound without starting a second web ring',
  setHostIncomingOwnership('c1',false);
  expect(startRing).toHaveBeenCalledWith('call-incoming');
 });
+it('carries the authenticated native event into the common voice join', async () => {
+ const eventId='11111111-1111-4111-8111-111111111111';
+ setHostIncomingOwnership('c1',true,eventId);
+ try {
+  onCallRing(incoming(CallState.RINGING),undefined);
+  act.mockResolvedValueOnce({call:incoming(CallState.ACTIVE)});
+  expect(await performHostCallAction('c1','answer')).toBe(true);
+  expect(join).toHaveBeenCalledWith('dm1','',{call:true,resumed:false,nativeCallEvent:eventId});
+ } finally {setHostIncomingOwnership('c1',false);}
+});
 
 it('a successful accept arriving after native expiry never joins and retires only its call', async () => {
  useSession.setState({sessionId:'first'});onCallRing(incoming(CallState.RINGING),undefined);

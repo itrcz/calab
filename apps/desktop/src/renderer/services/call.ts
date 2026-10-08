@@ -78,8 +78,10 @@ function effects(prev: CallModel, next: CallModel, peerId: string, resumed: bool
 let ended: Call | null = null;
 
 const hostIncoming = new Set<string>();
-export function setHostIncomingOwnership(id: string, owned: boolean): void {
+const hostAudioEvents = new Map<string,string>();
+export function setHostIncomingOwnership(id: string, owned: boolean, eventId?: string): void {
   if (owned) hostIncoming.add(id); else hostIncoming.delete(id);
+  if (owned && eventId) hostAudioEvents.set(id,eventId); else if (!owned) hostAudioEvents.delete(id);
   syncRing(useCall.getState());
 }
 
@@ -340,7 +342,7 @@ export function callErrorText(e: unknown): string {
 // ---------------------------------------------------------------- voice
 
 function joinCallVoice(call: Call, resumed: boolean): void {
-  void voice.join(call.dmRoomId, '', { call: true, resumed });
+  void voice.join(call.dmRoomId, '', { call: true, resumed, ...(hostAudioEvents.has(call.id) ? {nativeCallEvent: hostAudioEvents.get(call.id)} : {}) });
 }
 
 /**

@@ -46,3 +46,17 @@ Also check cancellation, duplicate delivery and a subsequent successful call;
 configuration refresh must not create another call or lose its completion callback.
 This native-only change requires a new phone build, not a web/API deployment.
 Device acceptance of the new build is pending; local compilation does not prove it.
+
+## Optional native call audio proof (R18)
+
+Build with `CALAB_IOS_NATIVE_CALL_AUDIO=1` in addition to incoming calls and APS.
+The matching shared web adapter must be deployed or served by an explicitly
+configured preview; the existing API/schema stay unchanged. Default builds and
+ordinary web/desktop calls retain the current transport (ADR-0079).
+
+Run the R17 device cases again, with one native RTC participant and no WebKit mic
+capture for the incoming call. Prove 60 seconds of two-way speech, initial mute,
+system/app mute and deafen, end during connect, a second call, desktop takeover,
+Bluetooth/interruption, denied microphone permission and logout/reload cleanup.
+Verify room sessions still use the existing web engine. Camera/screen media and
+musician mode are outside this opt-in audio proof; it is not full mobile parity.

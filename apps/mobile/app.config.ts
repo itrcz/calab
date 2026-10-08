@@ -17,6 +17,8 @@ const pushEnvironment = env('CALAB_IOS_PUSH_ENVIRONMENT');
 if (pushEnvironment && !['development', 'production'].includes(pushEnvironment)) throw new Error('CALAB_IOS_PUSH_ENVIRONMENT must be development or production');
 const incomingCalls = env('CALAB_IOS_INCOMING_CALLS') === '1';
 if (incomingCalls && !pushEnvironment) throw new Error('CALAB_IOS_INCOMING_CALLS requires CALAB_IOS_PUSH_ENVIRONMENT');
+const nativeCallAudio = env('CALAB_IOS_NATIVE_CALL_AUDIO') === '1';
+if (nativeCallAudio && !incomingCalls) throw new Error('CALAB_IOS_NATIVE_CALL_AUDIO requires incoming calls');
 const owner = env('CALAB_EXPO_OWNER');
 const projectId = env('CALAB_EAS_PROJECT_ID');
 
@@ -39,6 +41,7 @@ const config: ExpoConfig = {
     infoPlist: {
       ...(pushEnvironment ? { CalabMessagePushEnvironment: pushEnvironment } : {}),
       ...(incomingCalls ? { CalabIncomingCallsEnabled: true } : {}),
+      ...(nativeCallAudio ? { CalabCallAudioEnabled: true } : {}),
       // WKWebView terminates the app if the page asks for these without a usage string.
       NSMicrophoneUsageDescription: 'Calab uses the microphone when you join a voice room or a call.',
       NSCameraUsageDescription: 'Calab uses the camera for video in calls and to take photos for messages.',
@@ -57,6 +60,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     './plugins/withSessionActivity',
+    './plugins/withCallAudio',
     './plugins/withCommunicationNotifications',
     // iOS 27 SDK apps without the UIKit scene lifecycle trap at launch. Expo's supported SDK 57
     // opt-in: a scene manifest plus ExpoAppSceneDelegate, which owns the window and starts React.

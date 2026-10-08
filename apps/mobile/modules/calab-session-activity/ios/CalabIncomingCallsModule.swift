@@ -8,6 +8,10 @@ public class CalabIncomingCallsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("CalabIncomingCalls")
     Events("onCallsChanged")
+    Constants(["callAudioEnabled": calabCallAudioEnabled])
+    AsyncFunction("audioOperation") { (document: String, operation: [String: Any]) in
+      await CalabIncomingCalls.shared.audioOperation(document, operation)
+    }
     OnCreate {
       Task { @MainActor in
         CalabIncomingCalls.shared.install()
@@ -23,6 +27,14 @@ public class CalabIncomingCallsModule: Module {
     AsyncFunction("settleCall") { (document: String, action: String, result: String) in await CalabIncomingCalls.shared.settle(document, action, result) }
     AsyncFunction("syncCall") { (document: String, event: String, phase: String) in await CalabIncomingCalls.shared.sync(document, event, phase) }
   }
+}
+
+private var calabCallAudioEnabled: Bool {
+  #if canImport(LiveKitClient) || canImport(LiveKit)
+  return Bundle.main.object(forInfoDictionaryKey: "CalabCallAudioEnabled") as? Bool == true
+  #else
+  return false
+  #endif
 }
 
 /** Register before a React scene exists; cold Host startup stays Expo's responsibility. */
@@ -55,6 +67,9 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   private var ends: [UUID: CXEndCallAction] = [:]
   private var deadlines: [UUID: Task<Void, Never>] = [:]
   private var readiness = CalabCallReadiness()
+  #if canImport(LiveKitClient) || canImport(LiveKit)
+  private var media: CalabCallAudio?
+  #endif
   private var answerTransactions = Set<UUID>()
   private let logger = Logger(subsystem: "Calab", category: "incoming-calls")
   private let callController = CXCallController()
@@ -94,22 +109,64 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     observers.append(NotificationCenter.default.addObserver(forName: NSNotification.Name("CalabHostDocumentInvalidated"), object: nil, queue: .main) { notice in
       MainActor.assumeIsolated {
         guard let view = notice.object as AnyObject?, self.owner === view else { return }
+        self.stopMedia()
         self.owner = nil; self.document = nil
         // Reload preserves an incoming receipt; accepted media cannot survive a dead document.
         for id in Array(self.readiness.accepted) { self.end(id, .failed) }
       }
     })
     guard configured else { return }
+    #if canImport(LiveKitClient) || canImport(LiveKit)
+    if calabCallAudioEnabled {
+      let audio = CalabCallAudio()
+      audio.authorized = { [weak self] doc, id in
+        guard let self else { return false }
+        return self.current(doc) && self.calls[id] != nil && (self.readiness.accepted.contains(id) || self.answers[id] != nil)
+      }
+      audio.active = { [weak self, weak audio] in
+        guard let self, let id = audio?.eventID else { return false }
+        return self.readiness.audioActive && self.readiness.accepted.contains(id)
+      }
+      audio.changed = { [weak self, weak audio] in
+        guard let self else { return }
+        if let audio, audio.ready, let id = audio.eventID {
+          self.readiness.connected.insert(id); self.cancelReadyDeadlines()
+        }
+        self.changed()
+      }
+      audio.failed = { [weak self] id in self?.end(id,.failed,notifyWeb:true); self?.changed() }
+      do { try audio.prepare(); media = audio } catch { logger.error("native call audio unavailable") }
+    }
+    #endif
     let config = CXProviderConfiguration()
     config.supportsVideo = false; config.maximumCallsPerCallGroup = 1; config.maximumCallGroups = 1
     config.supportedHandleTypes = [.generic]; config.includesCallsInRecents = false
     let p = CXProvider(configuration: config); p.setDelegate(self, queue: .main); provider = p
     let r = PKPushRegistry(queue: .main); r.delegate = self; registry = r; r.desiredPushTypes = [.voIP]
   }
+  func audioOperation(_ doc: String, _ operation: [String: Any]) async {
+    guard current(doc), calabCallAudioEnabled else { return }
+    #if canImport(LiveKitClient) || canImport(LiveKit)
+    switch operation["operation"] as? String {
+    case "audioConnect": await media?.connect(document: doc, input: operation)
+    case "audioControl": media?.control(doc,operation)
+    case "audioDisconnect": media?.disconnect(doc,operation)
+    default: return
+    }
+    #endif
+  }
+  private func stopMedia(_ id: UUID? = nil) {
+    #if canImport(LiveKitClient) || canImport(LiveKit)
+    if id == nil || media?.eventID == id { media?.stop() }
+    #endif
+  }
   private func current(_ doc: String) -> Bool { owner != nil && document == doc }
   func state(_ doc: String) -> [String: Any] {
     guard current(doc), configured, registry != nil, provider != nil else { return ["supported": false] }
     var value: [String: Any] = ["supported": true, "audioActive": readiness.audioActive, "actions": Array(actions.values).filter { ($0["expiresAt"] as? Double ?? 0) > now }]
+    #if canImport(LiveKitClient) || canImport(LiveKit)
+    if let snapshot = media?.snapshot(for: doc) { value["media"] = snapshot }
+    #endif
     if let token, let app = Bundle.main.bundleIdentifier, let environment {
       value["token"] = token; value["appId"] = app; value["environment"] = environment; value["installationId"] = installation
     }
@@ -142,6 +199,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   }
   private func end(_ id: UUID, _ reason: CXCallEndedReason, notifyWeb: Bool = false) {
     let call = calls[id]
+    stopMedia(id)
     deadlines.removeValue(forKey: id)?.cancel()
     answers.removeValue(forKey: id)?.fail(); ends.removeValue(forKey: id)?.fail()
     readiness.remove(id); answerTransactions.remove(id)
@@ -224,7 +282,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     case ("ring", "ringing"): break
     case ("answer", "accepted"):
       guard let answer = answers.removeValue(forKey: id) else { end(id, .failed); return }
-      // Configure, but let CallKit activate. WebKit still owns capture and playback.
+      // Configure, but let CallKit activate. The selected transport owns media.
       do { try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP]) }
       catch { answer.fail(); end(id, .failed, notifyWeb: true); changed(); return }
       readiness.accepted.insert(id)
@@ -260,6 +318,9 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     }
     if phase == "ended" { end(id, .remoteEnded) }
     if phase == "connected" {
+      #if canImport(LiveKitClient) || canImport(LiveKit)
+      if media?.eventID == id && media?.ready != true { return }
+      #endif
       readiness.connected.insert(id); cancelReadyDeadlines()
     }
   }
@@ -339,6 +400,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
     MainActor.assumeIsolated {
       guard self.calls[action.callUUID] != nil else { action.fulfill(); return }
+      self.stopMedia(action.callUUID)
       self.ends[action.callUUID] = action; self.deadline(action.callUUID, milliseconds: 10000)
       self.enqueue(action.callUUID, "end", expires: self.now + 10000)
     }
@@ -354,10 +416,18 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
     MainActor.assumeIsolated {
       self.logger.info("CallKit audio activated")
+      #if canImport(LiveKitClient) || canImport(LiveKit)
+      self.media?.activate(true)
+      #endif
       self.readiness.audioActive = true; self.cancelReadyDeadlines(); self.changed()
     }
   }
   nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-    MainActor.assumeIsolated { self.readiness.audioActive = false; self.changed() }
+    MainActor.assumeIsolated {
+      #if canImport(LiveKitClient) || canImport(LiveKit)
+      self.media?.activate(false)
+      #endif
+      self.readiness.audioActive = false; self.changed()
+    }
   }
 }

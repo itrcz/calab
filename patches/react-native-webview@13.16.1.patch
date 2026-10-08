@@ -279,7 +279,7 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 +      !frame.isMainFrame || !RNCFrameHasOrigin(frame, origin) || !RNCUrlHasOrigin(frame.request.URL, origin) ||
 +      !RNCUrlHasOrigin(_webView.URL, origin) || ![message.body isKindOfClass:NSString.class]) return;
 +  NSString *raw = message.body;
-+  if ([raw lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 2048) return;
++  if ([raw lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 8192) return;
 +  NSData *data = [raw dataUsingEncoding:NSUTF8StringEncoding];
 +  id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 +  if (![parsed isKindOfClass:NSDictionary.class]) return;

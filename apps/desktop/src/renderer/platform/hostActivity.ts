@@ -2,7 +2,7 @@ import { parseCallsState, type HostCallsCapability, type HostCallsOperation, typ
 import { parseNotificationState, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
 export interface HostActivityBridge {
-  version: number; host: number; document: string; notificationsVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number;
+  version: number; host: number; document: string; notificationsVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
   rotateDocument(): void;
   send(data: string): void;
 }
@@ -94,6 +94,12 @@ export function createHostCapabilities(win: Window = window): {
   });
   return {
     ...(bridge.callsVersion===1 ? {incomingCalls:{
+      ...(bridge.callsAudioVersion===1 ? {audio:{
+        connect: async input => (await requestCall({operation:'audioConnect',...input})).state.media ?? null,
+        control(eventId,connectionId,controls){if(ready)send('calls',{request:++requestId,operation:'audioControl',eventId,connectionId,controls});},
+        disconnect(eventId,connectionId){if(ready)send('calls',{request:++requestId,operation:'audioDisconnect',eventId,connectionId});},
+        subscribe(listener){const onState=(s:HostCallsState)=>{if(s.media)listener(s.media);};callListeners.add(onState);return ()=>callListeners.delete(onState);},
+      }} : {}),
       state:async()=> (await requestCall({operation:'status'})).state,
       bind:async(binding,version,token)=>(await requestCall({operation:'bind',binding,version:String(version),token})).bound===true,
       subscribe(listener){callListeners.add(listener);return ()=>callListeners.delete(listener);},

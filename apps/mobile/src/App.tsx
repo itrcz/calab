@@ -14,7 +14,7 @@ import { parseWebOrigin } from './config';
 import { hostReducer, initialHostState } from './hostState';
 import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './navigation';
 import { strings } from './strings';
-import { callsOperation, callsReply, subscribeCalls } from './incomingCalls';
+import { callsOperation, callsReply, subscribeCalls, callAudioEnabled } from './incomingCalls';
 import { ActivityProtocol, activityBootstrap, activityReady } from './activityProtocol';
 import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, subscribeNotifications } from './notifications';
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
@@ -224,7 +224,7 @@ function Host({ origin }: { origin: string }) {
         onRenderProcessGone={onProcessGone}
         {...(hostChannelEnabled ? {
           onMessage,
-          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation),
+          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled),
           injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true,
         } : {})}
         // Persistent session: the default (non-incognito) website data store keeps the HttpOnly cookie.

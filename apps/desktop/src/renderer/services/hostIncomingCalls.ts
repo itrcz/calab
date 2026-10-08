@@ -13,7 +13,7 @@ export interface IncomingCallApi {
  capabilities:(signal:AbortSignal)=>Promise<{appId:string;environment:string}[]>;
  register:(state:HostCallsState,signal:AbortSignal)=>Promise<{id:string;version:bigint}>;
  resolve:(reference:HostPushReference,signal:AbortSignal)=>Promise<Call|undefined>;
- ring:(call:Call)=>void;
+ ring:(call:Call,eventId?:string)=>void;
  owns:(callId:string)=>boolean;
  act:(callId:string,action:'answer'|'end',signal:AbortSignal,isCurrent:()=>boolean,isSessionCurrent:()=>boolean)=>Promise<boolean>;
  release:(callId:string)=>void;
@@ -25,7 +25,7 @@ const api:IncomingCallApi={
   provider:PushProvider.VOIP,appId:s.appId??'',environment:s.environment??'',installationId:s.installationId??'',token:s.token??'',callsEnabled:true,notificationsEnabled:false,mentionsEnabled:false,allEnabled:false,
  }),signal),
  resolve:async(reference,signal)=>(await call('POST','/api/me/push-resolve',ResolvePushResponseSchema,body(ResolvePushRequestSchema,reference),signal)).call,
- ring(value){setHostIncomingOwnership(value.id,true);if(value.state===CallState.RINGING)onCallRing(value,undefined); },
+ ring(value,eventId){setHostIncomingOwnership(value.id,true,eventId);if(value.state===CallState.RINGING)onCallRing(value,undefined); },
  act:performHostCallAction,
  owns:ownsHostCall,
  mute:setHostCallMuted,
@@ -137,7 +137,7 @@ export class HostIncomingController {
     const value=await this.resolve(action,signal,current);
     if(!current())return;
     if(!value || (value.state!==CallState.RINGING && !(value.state===CallState.ACTIVE && this.api.owns(value.id))))throw new Error('call unavailable');
-    route={callId:value.id,roomId:value.dmRoomId,expiresAt:action.expiresAt};this.routes.set(action.eventId,route);this.api.ring(value);
+    route={callId:value.id,roomId:value.dmRoomId,expiresAt:action.expiresAt};this.routes.set(action.eventId,route);this.api.ring(value,action.eventId);
     if(this.latestSync)this.sync(...this.latestSync);
    }
    if(!current()){if(revision===this.revision)this.capability.settle(action.actionId,'failed');return;}

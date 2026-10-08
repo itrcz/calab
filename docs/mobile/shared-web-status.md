@@ -1,5 +1,33 @@
 # Телефон: общий веб в оболочке — статус
 
+## R18: локальный нативный аудиодрайвер, 2026-10-08
+
+- **Реализовано локально:** опциональный LiveKit Swift под существующим общим
+  входящим звонком. UI, REST accept/join, авторизация и права остаются в вебе.
+  Захват и воспроизведение входящего CallKit-звонка выполняет нативный SDK;
+  второй WebKit RTC/mic не создаётся. [Контракт ADR-0079](../adr/0079-phone-call-audio-driver.md).
+- **Защищённые переходы:** mute до публикации микрофона, deafen, прекращение
+  захвата при end/logout/reload, ожидание завершения старого SDK перед новым
+  звонком, отсечение поздних callbacks. Сохраняются общие правила desktop
+  takeover и reconnect; повторный join не оставляет незавершённое состояние.
+- **Проверено локально:** полный desktop unit checkpoint 2731 passed, после
+  последней дельты 166 целевых call/voice/bridge tests; mobile 117, plugin 6;
+  mobile/desktop web typecheck, root `make lint`, Swift readiness и web bundle
+  без Electron. Сохранена подписанная iOS arm64 Release: strict/deep codesign,
+  development APS, профиль целевого iPhone, три native license файла в bundle;
+  во время финальной сборки входные файлы не изменялись.
+- **На устройстве:** R18 ещё не установлена и не проверена. На телефоне остаётся
+  R17 trace-03 с подтверждённым foreground-тоном и неработающим locked capture.
+  Новая реализация не доказывает исправление без минутного двустороннего разговора.
+- **Осталось:** review границы credentials/protocol и согласованный web release,
+  затем установка и locked-warm/cold, microphone permission, speaker/AEC,
+  Bluetooth, mute/end, повторный звонок и desktop takeover. API, миграции и новые
+  provider keys для R18 не требуются; одной установки без нового web adapter мало.
+- **Ограничение:** opt-in `CALAB_IOS_NATIVE_CALL_AUDIO=1` выключен по умолчанию.
+  Это аудиопроверка входящего звонка: native video/screen/musician parity ещё нет.
+  Обычные комнаты, web/desktop и исходящие phone calls сохраняют прежний engine.
+  Публикации не было; независимые reviews и device gates не пройдены, не READY_TO_SHIP.
+
 ## R17: регистрация аудиосессии CallKit, 2026-10-08
 
 - **На устройстве до правки:** владелец подтвердил аватары. Повтор locked answer
