@@ -65,6 +65,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   private var calls: [UUID: [String: Any]] = [:]
   private var answers: [UUID: CXAnswerCallAction] = [:]
   private var ends: [UUID: CXEndCallAction] = [:]
+  private var ending = Set<UUID>()
   private var deadlines: [UUID: Task<Void, Never>] = [:]
   private var readiness = CalabCallReadiness()
   #if canImport(LiveKitClient) || canImport(LiveKit)
@@ -78,6 +79,8 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   private var muteTransactions: [UUID: UUID] = [:]
   private var nativeMuted: [UUID: Bool] = [:]
   private var desiredMuted: [UUID: Bool] = [:]
+  private var muteSafety = CalabCallMuteSafety()
+  private var muteRetries: [String: UUID] = [:]
   private let storage = UserDefaults.standard
   private let bindingKey = "CalabVoIPBinding"
   private var environment: String? {
@@ -119,18 +122,34 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     #if canImport(LiveKitClient) || canImport(LiveKit)
     if calabCallAudioEnabled {
       let audio = CalabCallAudio()
+      audio.systemMuted = { [weak self] id in self?.muteSafety.blocks(id) == true }
+      audio.acknowledgeMute = { [weak self] id, muted in
+        guard let self else { return }
+        if self.muteSafety.acknowledge(id, muted: muted) { self.desiredMuted[id] = true }
+      }
       audio.authorized = { [weak self] doc, id in
         guard let self else { return false }
-        return self.current(doc) && self.calls[id] != nil && (self.readiness.accepted.contains(id) || self.answers[id] != nil)
+        return self.current(doc) && self.calls[id] != nil && !self.ending.contains(id) && (self.readiness.accepted.contains(id) || self.answers[id] != nil || self.answerTransactions.contains(id))
       }
       audio.active = { [weak self, weak audio] in
         guard let self, let id = audio?.eventID else { return false }
-        return self.readiness.audioActive && self.readiness.accepted.contains(id)
+        return !self.ending.contains(id) && self.readiness.audioActive && self.readiness.accepted.contains(id)
       }
       audio.changed = { [weak self, weak audio] in
         guard let self else { return }
+        if let audio, let id = audio.eventID, !self.ending.contains(id) {
+          // audioConnect is proof that this call selected the native transport.
+          // A queued early mute is enforced before the connect task can publish.
+          for action in self.muteActions.values where action.callUUID == id && action.isMuted && !action.isComplete {
+            self.muteSafety.mute(id); self.nativeMuted[id] = true; self.desiredMuted[id] = true
+            action.fulfill()
+          }
+        }
         if let audio, audio.ready, let id = audio.eventID {
           self.readiness.connected.insert(id); self.cancelReadyDeadlines()
+          for action in self.muteActions.values where action.callUUID == id && action.isMuted && action.isComplete {
+            self.enqueueMute(action)
+          }
         }
         self.changed()
       }
@@ -202,10 +221,13 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     stopMedia(id)
     deadlines.removeValue(forKey: id)?.cancel()
     answers.removeValue(forKey: id)?.fail(); ends.removeValue(forKey: id)?.fail()
+    ending.remove(id)
     readiness.remove(id); answerTransactions.remove(id)
     for (actionID, action) in Array(muteActions) where action.callUUID == id { finishMute(actionID, success: false) }
     muteTransactions = muteTransactions.filter { $0.value != id }
     nativeMuted.removeValue(forKey: id); desiredMuted.removeValue(forKey: id)
+    muteSafety.release(id)
+    muteRetries = muteRetries.filter { $0.value != id }
     actions = actions.filter { $0.value["eventId"] as? String != id.uuidString.lowercased() }
     if calls.removeValue(forKey: id) != nil { provider?.reportCall(with: id, endedAt: Date(), reason: reason) }
     reports.remove(id)
@@ -270,6 +292,11 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     }
   }
   func settle(_ doc: String, _ actionID: String, _ result: String) {
+    if current(doc), let id = muteRetries.removeValue(forKey: actionID) {
+      let expires = actions.removeValue(forKey: actionID)?["expiresAt"] as? Double ?? 0
+      if result == "muted", expires > now, calls[id] != nil, !ending.contains(id) { confirmNativeMute(id) }
+      return
+    }
     if current(doc), let id = UUID(uuidString: actionID), let action = muteActions[id] {
       let expected = action.isMuted ? "muted" : "unmuted"
       finishMute(id, success: result == expected && (actions[actionID]?["expiresAt"] as? Double ?? 0) > now)
@@ -277,6 +304,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     }
     guard current(doc), let action = actions.removeValue(forKey: actionID), let raw = action["eventId"] as? String, let id = UUID(uuidString: raw), calls[id] != nil,
       (action["expiresAt"] as? Double ?? 0) > now else { return }
+    if ending.contains(id), action["action"] as? String != "end" { return }
     logger.info("call action settled: \(result, privacy: .public)")
     switch (action["action"] as? String, result) {
     case ("ring", "ringing"): break
@@ -296,6 +324,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   }
   func sync(_ doc: String, _ event: String, _ phase: String) {
     guard current(doc), let id = UUID(uuidString: event), calls[id] != nil else { return }
+    if ending.contains(id), phase != "ended" { return }
     if phase == "accepted" {
       // Web already proved its own REST accept. A system transaction converges on
       // the same answer delegate/settle path without another business-state owner.
@@ -314,7 +343,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
       return
     }
     if phase == "muted" || phase == "unmuted" {
-      desiredMuted[id] = phase == "muted"; syncMute(id); return
+      desiredMuted[id] = phase == "muted"; retryNativeMute(id); syncMute(id); return
     }
     if phase == "ended" { end(id, .remoteEnded) }
     if phase == "connected" {
@@ -322,6 +351,9 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
       if media?.eventID == id && media?.ready != true { return }
       #endif
       readiness.connected.insert(id); cancelReadyDeadlines()
+      var queued = false
+      for action in muteActions.values where action.callUUID == id { if enqueueMute(action) { queued = true } }
+      if queued { changed() }
     }
   }
   private func cancelReadyDeadlines() {
@@ -331,13 +363,61 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     muteDeadlines.removeValue(forKey: actionID)?.cancel()
     actions.removeValue(forKey: actionID.uuidString.lowercased())
     guard let action = muteActions.removeValue(forKey: actionID) else { return }
-    if success { nativeMuted[action.callUUID] = action.isMuted; action.fulfill() }
-    else { action.fail() }
+    if success {
+      nativeMuted[action.callUUID] = action.isMuted
+      if action.isMuted { confirmNativeMute(action.callUUID) }
+      if !action.isMuted {
+        muteSafety.release(action.callUUID)
+        #if canImport(LiveKitClient) || canImport(LiveKit)
+        if media?.eventID == action.callUUID { media?.refreshControls() }
+        #endif
+      }
+    }
+    // Native mute may have already completed synchronously; a late/failed web
+    // acknowledgement cannot reverse the system action or open the microphone.
+    if !action.isComplete { if success { action.fulfill() } else { action.fail() } }
     syncMute(action.callUUID)
+  }
+  private func confirmNativeMute(_ id: UUID) {
+    #if canImport(LiveKitClient) || canImport(LiveKit)
+    if media?.eventID == id {
+      muteSafety.confirm(id, webMuted: media?.webMuted == true)
+      desiredMuted[id] = true
+    }
+    #endif
+  }
+  // Retry only when the shared document sends another state update, never in an
+  // unbounded timer loop. Each retry is a fresh bounded web action, not a new OS action.
+  private func retryNativeMute(_ id: UUID) {
+    guard muteSafety.blocks(id), !ending.contains(id), readiness.connected.contains(id),
+      let call = calls[id], !muteActions.values.contains(where: { $0.callUUID == id }) else { return }
+    for (key, event) in Array(muteRetries) where event == id {
+      if (actions[key]?["expiresAt"] as? Double ?? 0) > now { return }
+      actions.removeValue(forKey: key); muteRetries.removeValue(forKey: key)
+    }
+    guard actions.count < 8 else { return }
+    let key = UUID().uuidString.lowercased()
+    muteRetries[key] = id
+    actions[key] = ["binding": call["binding"]!, "eventId": id.uuidString.lowercased(),
+      "expiresAt": now + 10000, "actionId": key, "action": "mute"]
+    changed()
+  }
+  @discardableResult private func enqueueMute(_ action: CXSetMutedCallAction) -> Bool {
+    let key = action.uuid.uuidString.lowercased()
+    guard actions[key] == nil, actions.count < 8, let call = calls[action.callUUID] else { return false }
+    actions[key] = ["binding": call["binding"]!, "eventId": action.callUUID.uuidString.lowercased(),
+      "expiresAt": now + 10000, "actionId": key, "action": action.isMuted ? "mute" : "unmute"]
+    muteDeadlines.removeValue(forKey: action.uuid)?.cancel()
+    muteDeadlines[action.uuid] = Task { @MainActor in
+      do { try await Task.sleep(for: .seconds(10)) } catch { return }
+      self.finishMute(action.uuid, success: false)
+    }
+    return true
   }
   /** App-originated transactions acknowledge already-applied media, without a feedback loop. */
   private func syncMute(_ id: UUID) {
     guard calls[id] != nil, readiness.accepted.contains(id), let muted = desiredMuted[id],
+      !(muteSafety.blocks(id) && !muted),
       nativeMuted[id, default: false] != muted,
       !muteActions.values.contains(where: { $0.callUUID == id }),
       !muteTransactions.values.contains(id) else { return }
@@ -350,22 +430,49 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   nonisolated func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
     MainActor.assumeIsolated {
       let id = action.callUUID
+      guard !self.ending.contains(id) else { action.fail(); return }
       if self.muteTransactions.removeValue(forKey: action.uuid) != nil {
         if self.calls[id] != nil && self.readiness.accepted.contains(id) && self.desiredMuted[id] == action.isMuted {
           self.nativeMuted[id] = action.isMuted; action.fulfill()
         } else { action.fail() }
         self.syncMute(id); return
       }
-      guard self.calls[id] != nil, self.readiness.accepted.contains(id), self.desiredMuted[id] != nil,
-        !self.muteActions.values.contains(where: { $0.callUUID == id }), !self.muteTransactions.values.contains(id), self.actions.count < 8,
-        let call = self.calls[id] else { action.fail(); return }
-      self.muteActions[action.uuid] = action
-      self.actions[action.uuid.uuidString.lowercased()] = ["binding": call["binding"]!, "eventId": id.uuidString.lowercased(),
-        "expiresAt": self.now + 10000, "actionId": action.uuid.uuidString.lowercased(), "action": action.isMuted ? "mute" : "unmute"]
-      self.muteDeadlines[action.uuid] = Task { @MainActor in
-        do { try await Task.sleep(for: .seconds(10)) } catch { return }
-        self.finishMute(action.uuid, success: false)
+      #if canImport(LiveKitClient) || canImport(LiveKit)
+      if action.isMuted, self.media?.eventID == id, self.calls[id] != nil,
+        self.readiness.accepted.contains(id) || self.answers[id] != nil {
+        self.muteSafety.mute(id)
+        for (key, event) in Array(self.muteRetries) where event == id {
+          self.muteRetries.removeValue(forKey: key); self.actions.removeValue(forKey: key)
+        }
+        self.nativeMuted[id] = true; self.desiredMuted[id] = true
+        // Cancel an older pending unmute before its late acknowledgement can
+        // undo this newer user intent. The web action remains best-effort sync.
+        for (pendingID, pending) in Array(self.muteActions) where pending.callUUID == id {
+          self.finishMute(pendingID, success: false)
+        }
+        if self.media?.eventID == id { self.media?.refreshControls() }
+        action.fulfill()
+        self.muteActions[action.uuid] = action
+        // Early mute is retained while connecting. Queue web convergence only
+        // after the media-ready event can make its existing mute API accept it.
+        if self.media?.eventID == id && self.media?.ready == true { self.enqueueMute(action); self.changed() }
+        return
       }
+      #endif
+      if action.isMuted, self.calls[id] != nil, self.answers[id] != nil || self.readiness.accepted.contains(id),
+        !self.readiness.connected.contains(id), !self.muteActions.values.contains(where: { $0.callUUID == id }) {
+        self.muteActions[action.uuid] = action
+        self.muteDeadlines[action.uuid] = Task { @MainActor in
+          do { try await Task.sleep(for: .seconds(10)) } catch { return }
+          self.finishMute(action.uuid, success: false)
+        }
+        return
+      }
+      guard self.calls[id] != nil, self.readiness.accepted.contains(id), self.desiredMuted[id] != nil,
+        !self.muteActions.values.contains(where: { $0.callUUID == id }), !self.muteTransactions.values.contains(id), self.actions.count < 8
+        else { if !action.isComplete { action.fail() }; return }
+      self.muteActions[action.uuid] = action
+      self.enqueueMute(action)
       self.changed()
     }
   }
@@ -400,8 +507,26 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
   nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
     MainActor.assumeIsolated {
       guard self.calls[action.callUUID] != nil else { action.fulfill(); return }
+      self.ending.insert(action.callUUID)
+      self.readiness.remove(action.callUUID)
+      self.answers.removeValue(forKey: action.callUUID)?.fail()
+      #if canImport(LiveKitClient) || canImport(LiveKit)
+      let nativeOwned = self.media?.eventID == action.callUUID
+      #else
+      let nativeOwned = false
+      #endif
       self.stopMedia(action.callUUID)
-      self.ends[action.callUUID] = action; self.deadline(action.callUUID, milliseconds: 10000)
+      // The local media is already stopped. Do not hold the system UI hostage
+      // to a suspended document or REST round trip; retain bounded web cleanup.
+      if nativeOwned {
+        action.fulfill()
+        // Release the incoming slot now. A suspended web cleanup must not turn
+        // the next legitimate push into a busy/generic phantom call.
+        self.end(action.callUUID, .remoteEnded, notifyWeb: true)
+        self.changed(); return
+      }
+      self.ends[action.callUUID] = action
+      self.deadline(action.callUUID, milliseconds: 10000)
       self.enqueue(action.callUUID, "end", expires: self.now + 10000)
     }
   }

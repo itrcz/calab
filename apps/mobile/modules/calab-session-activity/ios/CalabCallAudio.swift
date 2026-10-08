@@ -1,5 +1,25 @@
 import Foundation
 
+// A system mute must take effect even before the shared document is responsive.
+// Its late unmuted controls cannot undo that intent. Once web acknowledges mute,
+// its ordinary controls own the state again; an explicit unmute also converges.
+struct CalabCallMuteSafety {
+  private var held = Set<UUID>()
+  private var confirmed = Set<UUID>()
+  func blocks(_ id: UUID) -> Bool { held.contains(id) }
+  mutating func mute(_ id: UUID) { held.insert(id); confirmed.remove(id) }
+  mutating func confirm(_ id: UUID, webMuted: Bool) {
+    guard held.contains(id) else { return }
+    confirmed.insert(id)
+    acknowledge(id, muted: webMuted)
+  }
+  @discardableResult mutating func acknowledge(_ id: UUID, muted: Bool) -> Bool {
+    guard muted, confirmed.contains(id), held.contains(id) else { return false }
+    release(id); return true
+  }
+  mutating func release(_ id: UUID) { held.remove(id); confirmed.remove(id) }
+}
+
 func calabCallAudioBitrate(_ value: Any?) -> Int? {
   // Expo's JSI dictionaries contain Double for JS numbers. Do not truncate a
   // fractional input or relax the shared protocol's integer/range validation.
@@ -24,6 +44,8 @@ final class CalabCallAudio: NSObject, RoomDelegate {
   var failed: ((UUID) -> Void)?
   var authorized: ((String, UUID) -> Bool)?
   var active: (() -> Bool)?
+  var systemMuted: ((UUID) -> Bool)?
+  var acknowledgeMute: ((UUID, Bool) -> Void)?
   private var room: Room?
   private var document: String?
   private var event: UUID?
@@ -42,6 +64,7 @@ final class CalabCallAudio: NSObject, RoomDelegate {
   private var speakers: [String] = []
   private var error: String?
   var eventID: UUID? { event }
+  var webMuted: Bool { controls["muted"] as? Bool == true }
   var ready: Bool { phase == "connected" && (!canSpeak || microphoneReady) }
   func snapshot(for doc: String) -> [String: Any]? {
     // Reload/logout must not expose a previous document's media state to a new
@@ -53,7 +76,8 @@ final class CalabCallAudio: NSObject, RoomDelegate {
     if let error { state["error"] = error }
     return state
   }
-  private var effectiveMute: Bool { !canSpeak || controls["muted"] as? Bool == true || controls["deafened"] as? Bool == true }
+  private var effectiveMute: Bool { event.map { systemMuted?($0) == true } == true || !canSpeak || controls["muted"] as? Bool == true || controls["deafened"] as? Bool == true }
+  func refreshControls() { applyControls() }
   private func current(_ rev: Int, _ expected: Room) -> Bool {
     revision == rev && room === expected && document.map { doc in event.map { authorized?(doc, $0) == true } ?? false } == true
   }
@@ -129,6 +153,13 @@ final class CalabCallAudio: NSObject, RoomDelegate {
         autoSubscribe: false, reconnectAttempts: 3, iceTransportPolicy: relayOnly ? .relay : .all))
       guard current(rev,expected) else { await expected.disconnect(); return }
       canSpeak = canSpeak && microphoneAllowed(expected.localParticipant.permissions)
+      // Receiving and publishing use independent RTC transports. Do not hold
+      // the caller's already-published audio behind our microphone publication.
+      for participant in expected.remoteParticipants.values {
+        for publication in participant.trackPublications.values {
+          if let publication = publication as? RemoteTrackPublication { subscribe(publication, in: expected, revision: rev) }
+        }
+      }
       if canSpeak {
         try await publishMicrophone(expected, revision: rev)
       }
@@ -136,11 +167,6 @@ final class CalabCallAudio: NSObject, RoomDelegate {
       phase = "connected"
       failureDeadline?.cancel(); failureDeadline = nil
       applyControls()
-      for participant in expected.remoteParticipants.values {
-        for publication in participant.trackPublications.values {
-          if let publication = publication as? RemoteTrackPublication { subscribe(publication, in: expected, revision: rev) }
-        }
-      }
       changed?()
     } catch {
       if current(rev,expected) { fail(id,"connection") }
@@ -150,6 +176,11 @@ final class CalabCallAudio: NSObject, RoomDelegate {
   private func publishMicrophone(_ expected: Room, revision rev: Int) async throws {
     if let publicationTask { return try await publicationTask.value }
     if microphoneReady { return }
+    // A later server grant must not cause a background permission prompt.
+    guard AVAudioSession.sharedInstance().recordPermission == .granted else {
+      if current(rev,expected), let event { fail(event,"permission") }
+      throw CancellationError()
+    }
     let task = Task { @MainActor in
       let track = await LocalAudioTrack.createTrack(options: AudioCaptureOptions(
         echoCancellation: true, autoGainControl: true, noiseSuppression: true))
@@ -170,7 +201,9 @@ final class CalabCallAudio: NSObject, RoomDelegate {
     guard document == doc, input["connectionId"] as? String == connection,
       input["eventId"] as? String == event?.uuidString.lowercased(),
       let value = input["controls"] as? [String: Any] else { return }
-    controls = value; applyControls()
+    controls = value
+    if let event { acknowledgeMute?(event, value["muted"] as? Bool == true) }
+    applyControls()
   }
   func disconnect(_ doc: String, _ input: [String: Any]) {
     guard document == doc, input["connectionId"] as? String == connection,

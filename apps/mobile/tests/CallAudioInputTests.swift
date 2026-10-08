@@ -10,12 +10,42 @@ struct CallAudioInputTests {
       }
     }
     for value: Any in [7999.0, 64001.0, 32000.5, Double.nan, Double.infinity,
-                       -Double.infinity, Double.greatestFiniteMagnitude, true, "32000", NSNull()] {
+                       -Double.infinity, Double.greatestFiniteMagnitude, true,
+                       NSNumber(value: true), NSNumber(value: 32000.5), "32000", NSNull()] {
       guard calabCallAudioBitrate(value) == nil else {
         print("FAIL: invalid bitrate accepted"); exit(1)
       }
     }
     guard calabCallAudioBitrate(nil) == nil else { exit(1) }
+    let call = UUID(), other = UUID()
+    var mute = CalabCallMuteSafety()
+    mute.mute(call) // system mute before media exists
+    precondition(mute.blocks(call) && !mute.blocks(other))
+    for _ in 0..<3 { // delayed unmuted controls and failed acknowledgements
+      precondition(!mute.acknowledge(call, muted: false))
+      precondition(mute.blocks(call), "late web state reopened the microphone")
+    }
+    precondition(!mute.acknowledge(other, muted: true))
+    precondition(mute.blocks(call), "another call acknowledged this mute")
+    precondition(!mute.acknowledge(call, muted: true), "old muted controls acknowledged a newer action")
+    precondition(mute.blocks(call))
+    mute.confirm(call, webMuted: false) // matching action settles before its controls
+    precondition(mute.blocks(call))
+    precondition(mute.acknowledge(call, muted: true))
+    precondition(!mute.blocks(call), "confirmed web mute did not restore ordinary controls")
+    mute.mute(call)
+    mute.confirm(call, webMuted: false)
+    mute.mute(call) // a new user intent invalidates the previous confirmation
+    precondition(!mute.acknowledge(call, muted: true))
+    precondition(mute.blocks(call))
+    mute.confirm(call, webMuted: true) // controls may also precede the matching result
+    precondition(!mute.blocks(call))
+    mute.mute(call)
+    mute.release(other)
+    precondition(mute.blocks(call))
+    mute.release(call) // confirmed explicit unmute or end
+    precondition(!mute.blocks(call), "ended call retained its microphone latch")
     print("PASS: native bridged bitrate validation")
+    print("PASS: early system mute, late controls, acknowledgement and call isolation")
   }
 }

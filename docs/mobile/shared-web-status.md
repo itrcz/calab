@@ -1,5 +1,35 @@
 # Телефон: общий веб в оболочке — статус
 
+## R19: system controls and measured startup, 2026-10-08
+
+- **Implemented locally:** native system mute stops capture immediately and latches
+  across stale web controls; matching acknowledgement restores shared control.
+  Early mute waits for native ownership; unmute retains shared permission checks.
+  Expired mute reconciliation retries on later document activity. End revokes
+  media authorization and frees the incoming slot immediately, preserving bounded
+  shared REST cleanup. Legacy web end retains its acknowledgement. In-app answer
+  preparation recognizes the pending CallKit transaction; capture still requires
+  acceptance and activation.
+- **Startup:** remote-audio subscription now runs alongside microphone publication.
+  UI, REST, API, cookie ownership and server schema are unchanged.
+- **Device verified before the subscription change:** locked warm and cold calls;
+  native mute gate applied in 13 ms with remote received audio energy flat while
+  muted; system unmute acknowledged; owner hangup stopped media in 3 ms and ended
+  the caller session. The owner ended too soon after unmute for the 3-second
+  observer to independently sample resumed microphone RTP.
+- **Measured, still open:** warm answer-to-remote-subscription 5.680 s, cold 7.427 s.
+  Cold stages: document granted 1.491 s, REST accepted 3.397 s, CallKit activated
+  3.681 s, RTC connected 5.764 s, microphone published 6.482 s. These are single
+  samples, not a latency distribution or proof of improvement yet.
+- **Verification:** 118 mobile tests, 6 plugin tests, mobile typecheck/lint, signed
+  iPhone Release; focused Swift/wire delta checks after review corrections.
+  Read-only Opus 5.5 consultation/review informed the mute/end race fixes. This
+  revision remains local. Timing probes are excluded from publishable source.
+- **Remaining device gates:** final-delta cold/repeated incoming, early mute/end,
+  resumed microphone RTP after unmute, in-app answer, desktop takeover, reconnect,
+  speakerphone/AEC, Bluetooth and permission denial. The historical pre-answer
+  flash remains unconfirmed. Not READY_TO_SHIP.
+
 ## R18: локальный нативный аудиодрайвер, 2026-10-08
 
 - **Реализовано:** опциональный LiveKit Swift под существующим общим

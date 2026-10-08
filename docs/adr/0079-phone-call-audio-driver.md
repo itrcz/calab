@@ -62,8 +62,18 @@ voice processing supplies AEC/NS/AGC and native remote output (the native except
 to ADR-0004's browser `<audio>` rule). Mute keeps the track published; deafen also
 mutes output. Server publish-permission revocation cannot be lifted by UI unmute.
 
-The existing 15-second native readiness deadline remains (after up to ~10 s of CallKit
-activation wait); the web-side `audioConnect` request therefore waits 30 s, other host
+System mute is also a synchronous native capture boundary once `audioConnect`
+selects this transport. An early mute remains bounded and pending until that
+selection; it is enforced before publication. Delayed web controls cannot release
+the latch without the matching mute acknowledgement. Failed acknowledgement keeps
+capture muted and retries on later document activity. Explicit system unmute still
+requires the shared call/permission checks. System end immediately revokes native
+media authorization; delayed connect/accept cannot revive an ending call. Native
+CallKit end completes after local stop, with the existing bounded web REST cleanup;
+the legacy web-only transport retains its acknowledgement path.
+
+The existing 15-second native readiness deadline includes the up-to-10-second
+CallKit activation wait; the web-side `audioConnect` request waits 30 s, other host
 call requests 10 s. Connected means RTC,
 required mic publication and CallKit audio activation, not just a signaling socket.
 Perceptual audio still needs a real-device test. End and mute work through the

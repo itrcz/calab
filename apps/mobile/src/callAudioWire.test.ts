@@ -14,7 +14,7 @@ const roomId = '33333333-3333-4333-8333-333333333333';
 const controls = { muted: false, deafened: false, volume: 1, userVolumes: {} };
 const connect = { operation: 'audioConnect', eventId, connectionId, roomId, url: 'wss://rtc.example.test', token: 'eyJhbGciOiJIUzI1NiJ9.eyJ0ZXN0Ijp0cnVlfQ.signature', relayOnly: true, bitrate: 32000, canSpeak: true, controls };
 
-it.skipIf(spawnSync('swiftc', ['--version']).status !== 0)('accepts Expo numeric inputs in the actual native bitrate validator', () => {
+it.skipIf(spawnSync('swiftc', ['--version']).status !== 0)('validates Expo inputs and system mute safety in actual native Swift', () => {
   const dir = mkdtempSync(join(tmpdir(), 'calab-call-audio-wire-'));
   try {
     const binary = join(dir, 'fixture');
@@ -22,7 +22,9 @@ it.skipIf(spawnSync('swiftc', ['--version']).status !== 0)('accepts Expo numeric
       fileURLToPath(new URL('../modules/calab-session-activity/ios/CalabCallAudio.swift', import.meta.url)),
       fileURLToPath(new URL('../tests/CallAudioInputTests.swift', import.meta.url)), '-o', binary,
     ]);
-    expect(execFileSync(binary, { encoding: 'utf8' })).toContain('PASS: native bridged bitrate validation');
+    const result = execFileSync(binary, { encoding: 'utf8' });
+    expect(result).toContain('PASS: native bridged bitrate validation');
+    expect(result).toContain('PASS: early system mute, late controls, acknowledgement and call isolation');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
