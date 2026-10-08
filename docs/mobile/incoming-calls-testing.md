@@ -24,3 +24,25 @@ CXCallUpdate has no per-caller image field: the donation is not proof that iOS d
 profile picture on its full-screen call UI. Record actual rendering separately from ringing,
 one-tap answer and locked bidirectional audio. Check that the system's Calab/open-app button
 works after Answer, including an old-server payload without a person identifier.
+
+## Audio-session registration regression (R17)
+
+On iOS, test a locked incoming call after a fresh process launch, then another call
+without relaunching. Answer on the system screen. Require CallKit audio activation,
+media connection and at least 60 seconds of bidirectional sound; a running call timer
+alone is not a pass. Repeat with the app visible and with desktop voice connected.
+
+The pre-fix device failure was an accepted answer followed by a 15-second readiness
+timeout, with `audiomxd` reporting `session lookup failure for SessionID 0x0`.
+The native report path now refreshes the existing provider configuration immediately
+before reporting each incoming call, following
+[Apple DTS guidance](https://developer.apple.com/forums/thread/783870).
+It initializes the shared audio session but never activates it itself. Verify that
+the lookup error and timeout disappear, `CallKit audio activated` occurs, and sound
+actually works in both directions. If a timeout remains, record its accepted,
+connected and audioActive flags to identify the failed boundary.
+
+Also check cancellation, duplicate delivery and a subsequent successful call;
+configuration refresh must not create another call or lose its completion callback.
+This native-only change requires a new phone build, not a web/API deployment.
+Device acceptance of the new build is pending; local compilation does not prove it.

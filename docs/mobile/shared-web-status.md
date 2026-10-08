@@ -1,5 +1,22 @@
 # Телефон: общий веб в оболочке — статус
 
+## R17: регистрация аудиосессии CallKit, 2026-10-08
+
+- **На устройстве до правки:** владелец подтвердил аватары. Повтор locked answer
+  дошёл до общего accept, затем завершился по 15-секундному native deadline.
+  В тот же момент iOS зарегистрировала `session lookup failure for SessionID 0x0`;
+  событие CallKit audio activation отсутствовало. Foreground answer без слышимого
+  звука также сообщён владельцем, его причина отдельно не подтверждена.
+- **Реализовано локально:** перед каждым incoming report нативный host создаёт
+  shared audio session и обновляет прежнюю конфигурацию того же CXProvider по
+  рекомендации Apple. Принудительной активации, увеличения таймеров, нового RTC,
+  изменений общего UI/web/API нет. Timeout logs различают accept/media/audio.
+- **Проверено локально:** 111 mobile tests, 5 plugin tests, typecheck, mobile lint,
+  Swift readiness во всех шести порядках событий, подписанная iPhone Release.
+- **Осталось:** установка и [повтор на устройстве](incoming-calls-testing.md#audio-session-registration-regression-r17):
+  foreground/locked/cold answer, двусторонний звук ≥60 с, mute/end и desktop voice.
+  Сборка не доказывает устранение сбоя; обновление сервера для этой правки не нужно.
+
 ## R15: системный ответ и уведомления, 2026-10-07
 
 - **Реализовано:** целые миллисекунды во всех native call actions; совместимый optional

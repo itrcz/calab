@@ -136,7 +136,8 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     deadlines[id]?.cancel()
     deadlines[id] = Task { @MainActor in
       do { try await Task.sleep(for: .milliseconds(max(1, milliseconds))) } catch { return }
-      self.logger.error("call deadline expired"); self.end(id, .failed, notifyWeb: true); self.changed()
+      self.logger.error("call deadline expired; accepted=\(self.readiness.accepted.contains(id)) connected=\(self.readiness.connected.contains(id)) audioActive=\(self.readiness.audioActive)")
+      self.end(id, .failed, notifyWeb: true); self.changed()
     }
   }
   private func end(_ id: UUID, _ reason: CXCallEndedReason, notifyWeb: Bool = false) {
@@ -156,10 +157,20 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     }
   }
   private func endAll(notifyWeb: Bool = false) { actions.removeAll(); for id in Array(calls.keys) { end(id, .failed, notifyWeb: notifyWeb) } }
+  private func reportIncoming(_ provider: CXProvider, id: UUID, update: CXCallUpdate, completion: @escaping @Sendable (Error?) -> Void) {
+    // PushKit can create the provider before an audio session exists. Refresh the
+    // registration so callservicesd does not keep SessionID 0x0 and miss didActivate.
+    // Apple DTS: https://developer.apple.com/forums/thread/783870
+    // This does not activate audio; CallKit remains its activation owner.
+    _ = AVAudioSession.sharedInstance()
+    let configuration = provider.configuration
+    provider.configuration = configuration
+    provider.reportNewIncomingCall(with: id, update: update, completion: completion)
+  }
   private func generic(_ completion: CallCompletion) {
     guard let provider else { completion.finish(); return }
     let id = UUID(); let update = CXCallUpdate(); update.localizedCallerName = "Calab"
-    provider.reportNewIncomingCall(with: id, update: update) { _ in
+    reportIncoming(provider, id: id, update: update) { _ in
       provider.reportCall(with: id, endedAt: Date(), reason: .failed); completion.finish()
     }
   }
@@ -177,7 +188,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
       // CallKit rejects the duplicate; it cannot create/end a second phantom call.
       let update = CXCallUpdate(); update.localizedCallerName = calabCallerName(raw["callerName"])
       update.remoteHandle = CXHandle(type: .generic, value: CalabCommunicationPayload(raw)?.personID ?? id.uuidString.lowercased())
-      provider.reportNewIncomingCall(with: id, update: update) { _ in completion.finish() }
+      reportIncoming(provider, id: id, update: update) { _ in completion.finish() }
       return
     }
     guard calls.isEmpty, let ticket = try? reports.begin(id, bindingID, 0) else { generic(completion); return }
@@ -187,7 +198,7 @@ private final class CalabIncomingCalls: NSObject, PKPushRegistryDelegate, CXProv
     update.hasVideo = false
     update.supportsHolding = false; update.supportsGrouping = false; update.supportsUngrouping = false; update.supportsDTMF = false
     // DND is enforced by the OS and current web/server policy; no custom ringtone override.
-    provider.reportNewIncomingCall(with: id, update: update) { error in
+    reportIncoming(provider, id: id, update: update) { error in
       Task { @MainActor in
         defer { completion.finish() }
         guard self.reports.complete(ticket, error == nil) else {
