@@ -4,7 +4,7 @@ import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { Container } from '@/components/ui';
 import { getDict, isLocale, localePath } from '@/i18n';
-import { isLegalDocument, LEGAL_DATE, LEGAL_DOCUMENTS, LEGAL_IDS, LEGAL_VERSION } from '@/lib/legal';
+import { isLegalDocument, getLegalDocuments, LEGAL_IDS, LEGAL_VERSION } from '@/lib/legal';
 
 type Params = Promise<{ locale: string; document: string }>;
 
@@ -12,16 +12,17 @@ export const dynamicParams = false;
 export const generateStaticParams = () => LEGAL_IDS.map((document) => ({ document }));
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
-  const { document } = await params;
-  if (!isLegalDocument(document)) return {};
-  const { title, description } = LEGAL_DOCUMENTS[document];
-  const canonical = localePath('ru', `legal/${document}/`);
+  const { locale, document } = await params;
+  if (!isLocale(locale) || !isLegalDocument(document)) return {};
+  const { title, description } = getLegalDocuments(locale)[document];
+  const language = locale === 'ru' ? 'ru' : 'en';
+  const canonical = localePath(language, `legal/${document}/`);
   return {
     title: `${title} — Calab`,
     description,
-    // The navigation is localized; the legal text has one Russian original.
-    alternates: { canonical, languages: { ru: canonical } },
-    openGraph: { title, description, url: canonical, locale: 'ru_RU', alternateLocale: [] },
+    // Distinct suppliers, not translations of the same agreement.
+    alternates: { canonical, languages: { [language]: canonical } },
+    openGraph: { title, description, url: canonical, locale: language === 'ru' ? 'ru_RU' : 'en_US', alternateLocale: [] },
     twitter: { title, description },
   };
 }
@@ -30,18 +31,20 @@ export default async function LegalPage({ params }: { params: Params }) {
   const { locale, document } = await params;
   if (!isLocale(locale) || !isLegalDocument(document)) notFound();
   const t = getDict(locale);
-  const content = LEGAL_DOCUMENTS[document];
+  const documents = getLegalDocuments(locale);
+  const content = documents[document];
+  const ru = locale === 'ru';
   return (
     <>
       <div className="print:hidden"><Header t={t.header} locale={locale} page={`legal/${document}/`} /></div>
-      <main id="main" lang="ru" className="py-12 sm:py-20 print:py-0">
+      <main id="main" lang={ru ? 'ru' : 'en'} className="py-12 sm:py-20 print:py-0">
         <Container>
           <article className="mx-auto max-w-[840px] break-words" aria-labelledby="legal-title">
-            <p className="text-[13px] font-medium tracking-wide text-fg-2">CALAB · ПРАВОВЫЕ ДОКУМЕНТЫ</p>
+            <p className="text-[13px] font-medium tracking-wide text-fg-2">{ru ? 'CALAB · ПРАВОВЫЕ ДОКУМЕНТЫ' : 'CALAB GLOBAL · LEGAL · ENGLISH'}</p>
             <h1 id="legal-title" className="mt-4 text-[32px] leading-tight font-semibold tracking-tight sm:text-[44px]">{content.title}</h1>
-            <p className="mt-4 text-[14px] text-fg-2">Редакция от <time dateTime={LEGAL_VERSION}>{LEGAL_DATE}</time></p>
+            <p className="mt-4 text-[14px] text-fg-2">{ru ? 'Редакция от ' : 'Updated '}<time dateTime={LEGAL_VERSION}>{ru ? '9 октября 2026 года' : '9 October 2026'}</time> · {ru ? 'Суточные тарифы' : 'Daily pricing edition'}</p>
             <p className="mt-6 text-[17px] leading-7 text-fg-2">{content.description}</p>
-            <nav aria-label="Разделы документа" className="my-8 rounded-2xl border border-line p-5 print:hidden">
+            <nav aria-label={ru ? 'Разделы документа' : 'Document sections'} className="my-8 rounded-2xl border border-line p-5 print:hidden">
               <ol className="space-y-2 text-[14px] leading-6">
                 {content.sections.map((section, index) => (
                   <li key={section.title}><a className="link" href={`#section-${index + 1}`}>{section.title}</a></li>
@@ -59,10 +62,10 @@ export default async function LegalPage({ params }: { params: Params }) {
               ))}
             </div>
             <aside className="mt-12 border-t border-line pt-6 text-[14px] leading-6">
-              <p>Поддержка: <a className="link" href="mailto:support@calab.io">support@calab.io</a></p>
-              <nav aria-label="Другие правовые документы" className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+              <p>{ru ? 'Поддержка: ' : 'Support: '}<a className="link" href="mailto:support@calab.io">support@calab.io</a></p>
+              <nav aria-label={ru ? 'Другие правовые документы' : 'Other legal documents'} className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
                 {LEGAL_IDS.filter((id) => id !== document).map((id) => (
-                  <a className="link" key={id} href={localePath(locale, `legal/${id}/`)}>{LEGAL_DOCUMENTS[id].title}</a>
+                  <a className="link" key={id} href={localePath(locale, `legal/${id}/`)}>{documents[id].title}</a>
                 ))}
               </nav>
             </aside>

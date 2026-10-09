@@ -20,7 +20,7 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
 - Routes: `/ru/`, `/en/`, `/es/`, `/zh/` and `/<locale>/bots/` (Bot API page, ADR-0031; docs link: ru → `docs/19-bot-api.md`, others → `.en.md`) — pages per locale (`src/app/[locale]/`, `generateStaticParams`,
   `dynamicParams = false`), `<html lang>`, title/description/OG, canonical and `hreflang` (+ `x-default → /en/`) per locale.
 - `/` is `out/index.html` from `src/app/index.html/route.ts`: a content-less redirect page (no React runtime). Order:
-  the switcher's saved choice (`localStorage['calab.locale']`) → `navigator.languages` (first supported: ru/uk/be/kk →
+  the switcher's saved choice (`localStorage['calab.locale']`, only with unexpired storage permission) → `navigator.languages` (first supported: ru/uk/be/kk →
   `ru`, zh* → `zh`, es* → `es`, en* → `en`) → `/en/`. Query and `#hash` are kept, so old `calab.io/#download` links
   (release notes, `/download/` fallback in Caddy) land on `/<locale>/#download`. Without JS: `<noscript>` meta refresh
   to `/en/`. In `next dev` it is served at `/index.html`, not `/`.
@@ -29,13 +29,30 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
   `docs/i18n-glossary.md` (workspace/espacio/工作区, room/sala/房间, screen share/pantalla compartida/屏幕共享 …);
   «Powered by GPTunneL» and product/tech names are never translated. es/zh are agent translations, native review pending.
 - Language switcher: header pill (`locale-switcher.tsx`, native `<details>` + links, works without JS); names in their own
-  language (Русский · English · Español · 中文); with JS it saves the choice and keeps the current `#section`.
+  language (Русский · English · Español · 中文); with JS and permission it saves the choice and keeps the page path.
 - `404.html` is shared by all locales (English + links to each language). Caddy redirects unknown locale prefixes
   (`/de/`, `/pt-BR/…`) to `/en/` and `/ru` → `/ru/`.
 - Screenshots follow the page: `Screen` (`components/ui.tsx`) loads `public/screens/<lang>/<name>` — the app UI *and*
   its team (names, rooms, chat, meetings, board) in that language, dark theme in both page themes. OpenGraph image per
   locale: `public/og/<lang>.png`. The home page carries schema.org `SoftwareApplication` JSON-LD in its language.
 - `public/llms.txt` (summary + links, llmstxt.org format) and `public/llms-full.txt` (full text) are served at the site root as-is; keep their plan table, limits and feature list in sync with `src/i18n/en.ts` and the README, and mark unreleased features as planned.
+
+## Public agreements and browser preferences
+
+RU uses Gromtekh / RUB 6 and 18 per employee/day; other locales use Unne / USD $0.10 and $0.30.
+`content/legal.json` is the RU edition; `content/legal-global.json` is the English Global edition.
+Six documents × four locale paths; canonical legal URLs use RU or EN respectively. ES/ZH
+keep localized navigation and explicitly identify English legal text. The previous monthly
+edition is kept in `content/legal-archive/` and is not imported into pages.
+
+The corner panel uses `lib/site-preferences.ts`; consent is optional-off by default, versioned
+and expires after 180 days. It controls real language persistence in both the switcher and
+the root redirect. Analytics/marketing categories are prepared but inactive. Before enabling
+a provider: disclose recipients/purposes/lifetimes, bump the consent version, update parser
+and root-router validation together, and gate loading plus withdrawal through the purpose
+check. Never add a tracker via an unconditional script. Only preferences are active now.
+Run `pnpm -F @calaba/landing test:preferences` for consent and root-router regression checks.
+No analytics SDK, third-party CMP or payment functionality is enabled by these pages.
 
 ## Where it is served
 
@@ -57,7 +74,7 @@ performance (measured numbers only, docs/14-energy.md / docs/18) → pricing (Fr
 Landing v4 added the SIP, sound, web-apps and performance blocks and the four-plan table; plan limits live in `src/i18n/*.ts`
 (`pricing.table.cells`), keep them equal to the server's plans (ADR-0024) and to the `README*.md` tables.
 Screenshots sit in a solid dark `.shot-frame` (the app is dark in every shot). All components are server components
-except `download-primary.tsx` (OS detection + `latest/VERSION`) and the language switcher; the FAQ uses native
+except `download-primary.tsx` (OS detection + `latest/VERSION`), the language switcher and the cookie preferences controls; the FAQ uses native
 `<details>`, so the page works without JS (the Next runtime chunk still ships, ~100 kB).
 
 Performance: the hero shot is preloaded with its `srcset` and `fetchpriority=high` (phone 720 w ≈ 30 KB, 1x ≈ 80 KB,

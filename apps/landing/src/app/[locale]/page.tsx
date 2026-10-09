@@ -57,7 +57,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
         <section id="control" className="story-section control-section" aria-labelledby="control-title">
           <Container><ControlInfographic locale={locale} title={getStory(locale).control} /></Container>
         </section>
-        <Pricing t={t.pricing} />
+        <Pricing locale={locale} t={t.pricing} />
         <Downloads t={t.downloads} />
         <Faq t={t.faq} />
         <StickerFinale locale={locale} />
