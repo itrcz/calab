@@ -51,7 +51,7 @@ License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on
   go.uber.org/multierr                     v1.11.0                MIT
   golang.org/x/crypto                      v0.57.0                BSD-3-Clause
   golang.org/x/image                       v0.46.0                BSD-3-Clause
-  golang.org/x/net                         v0.59.0                BSD-3-Clause
+  golang.org/x/net                         v0.60.0                BSD-3-Clause
   golang.org/x/oauth2                      v0.37.0                BSD-3-Clause
   golang.org/x/sync                        v0.23.0                BSD-3-Clause
   golang.org/x/sys                         v0.48.0                BSD-3-Clause
@@ -5056,7 +5056,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-golang.org/x/net v0.59.0 — BSD-3-Clause
+golang.org/x/net v0.60.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
