@@ -1,7 +1,7 @@
 // Package billinghttp registers the billing REST routes (ADR-0080 v5 §13, docs/plans/
 // billing-v1-tasks.md). T0 registered every route with a 501 handler so the route tables
 // (internal/app botroutes.go / identityroutes.go) are final; T5 (owner + public routes) and
-// T6 (admin routes, billing/admin) replace the handlers, not the patterns.
+// T6 (admin routes, billing/admin) fill Handlers.Owner / Public / Admin, not the patterns.
 //
 // Classification (internal/app):
 //   - /api/workspaces/{id}/billing/…: private, people only (bots denied), identity scope
@@ -73,30 +73,32 @@ var AdminRoutes = []string{
 	"POST /api/admin/billing/test-clock", // BILLING_TEST_CLOCK=1 only, else 404
 }
 
-// Handlers serves the billing routes. Handlers maps a pattern to its implementation; a
-// pattern without one answers 501 BILLING_NOT_IMPLEMENTED (BILLING_DISABLED while the master
-// switch is off).
+// Handlers serves the billing routes. Owner and Public map an owner / public pattern to its
+// implementation (T5, Service.Owner / Service.Public); Admin maps an admin pattern (T6,
+// billing/admin). A pattern without one answers 501 BILLING_NOT_IMPLEMENTED
+// (BILLING_DISABLED while the master switch is off).
 type Handlers struct {
-	Enabled  bool // BILLING_ENABLED
-	Handlers map[string]httpx.HandlerFunc
+	Enabled bool // BILLING_ENABLED
+	Owner   map[string]httpx.HandlerFunc
+	Public  map[string]httpx.HandlerFunc
+	Admin   map[string]httpx.HandlerFunc
 }
 
 // Routes registers every billing route: private wraps the authenticated ones (auth, bot and
 // identity gates of internal/app); public ones are registered as they are.
 func (h *Handlers) Routes(mux httpx.Router, private func(http.Handler) http.Handler) {
 	for _, p := range OwnerRoutes {
-		mux.Handle(p, private(h.handler(p)))
+		mux.Handle(p, private(h.handler(h.Owner[p])))
 	}
 	for _, p := range AdminRoutes {
-		mux.Handle(p, private(h.handler(p)))
+		mux.Handle(p, private(h.handler(h.Admin[p])))
 	}
 	for _, p := range PublicRoutes {
-		mux.Handle(p, h.handler(p))
+		mux.Handle(p, h.handler(h.Public[p]))
 	}
 }
 
-func (h *Handlers) handler(pattern string) httpx.HandlerFunc {
-	impl := h.Handlers[pattern]
+func (h *Handlers) handler(impl httpx.HandlerFunc) httpx.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		if !h.Enabled {
 			return billing.ErrDisabled
