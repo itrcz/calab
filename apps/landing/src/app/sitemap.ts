@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { hreflangAlternates, LOCALES, localePath } from '@/i18n/locales';
 import { SITE_URL } from '@/lib/site';
+import { LEGAL_IDS } from '@/lib/legal';
 
 export const dynamic = 'force-static';
 
@@ -13,7 +14,7 @@ const PAGES = [
 
 // Each entry lists every language version of its page (hreflang).
 export default function sitemap(): MetadataRoute.Sitemap {
-  return PAGES.flatMap(({ page, priority }) => {
+  return [...PAGES.flatMap(({ page, priority }) => {
     const languages = Object.fromEntries(
       Object.entries(hreflangAlternates(page)).map(([lang, path]) => [lang, `${SITE_URL}${path}`]),
     );
@@ -23,5 +24,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority,
       alternates: { languages },
     }));
-  });
+  }), ...LEGAL_IDS.map((id) => ({
+    url: `${SITE_URL}${localePath('ru', `legal/${id}/`)}`,
+    changeFrequency: 'monthly' as const,
+    priority: 0.4,
+  }))];
 }
