@@ -31,6 +31,10 @@ func (s *Service) formAccess(r *http.Request, q *sqlc.Queries, row sqlc.BoardFor
 	if ws.SuspendedAt != nil {
 		return nil, moderation.ErrSuspended
 	}
+	// A workspace suspended for unpaid billing takes no submissions either (public ones included).
+	if err := s.plans.CheckBillingOpen(r.Context(), q, b.WorkspaceID); err != nil {
+		return nil, err
+	}
 	d, err := formDefinition(row)
 	if err != nil {
 		return nil, err

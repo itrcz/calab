@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/boards/vcs"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -251,6 +252,14 @@ func (s *Service) repoInbound(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if b.ArchivedAt != nil {
+		httpx.NoContent(w)
+		return nil
+	}
+	if err := s.plans.CheckBillingOpen(ctx, s.db.Q, b.WorkspaceID); err != nil {
+		if !errors.Is(err, billing.ErrWorkspaceBillingSuspended) {
+			return err
+		}
+		s.repoStatus(ctx, id, "the workspace is suspended for unpaid billing")
 		httpx.NoContent(w)
 		return nil
 	}

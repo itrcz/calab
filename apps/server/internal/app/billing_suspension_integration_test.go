@@ -78,6 +78,9 @@ func TestBillingSuspensionEnforcement(t *testing.T) {
 	joinCode := invite(t, a, ws)
 	outsider := register(t, invite(t, base, createWorkspace(t, base, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()))
 	messages := "/api/rooms/" + room + "/messages"
+	var fr v1.BoardFormResponse
+	a.must(201, "POST", "/api/boards/"+board.GetId()+"/forms", &v1.CreateBoardFormRequest{Definition: formFixture(board)}, &fr)
+	publicForm := "/api/public/forms/" + fr.GetForm().GetUrl()[strings.LastIndex(fr.GetForm().GetUrl(), "/")+1:]
 
 	// In arrears: everything works; Workspace.billing shows the deadline to every member.
 	account := billingAccount(t, ws, "active", true)
@@ -115,6 +118,8 @@ func TestBillingSuspensionEnforcement(t *testing.T) {
 			t.Fatalf("owner %s %s: %d %v", p[0], p[1], st, e)
 		}
 	}
+	// Public forms take no submissions (anonymous reads included).
+	wantBillingSuspended(t, newClient(t), "GET", publicForm, nil)
 	// Bots: closed (no recovery scope).
 	wantBillingSuspended(t, bot.client, "GET", messages, nil)
 	// RTC: tokens and the reconciler's identity check refuse every device.
