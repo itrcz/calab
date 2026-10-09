@@ -122,6 +122,8 @@ type BillingCharge struct {
 	BusinessKey      string
 	ActorID          *uuid.UUID
 	CreatedAt        time.Time
+	CanceledQty      int32
+	CanceledSeatUs   int64
 }
 
 type BillingCheckout struct {

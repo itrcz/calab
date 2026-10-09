@@ -204,7 +204,7 @@ const compensateBillingCharge = `-- name: CompensateBillingCharge :one
 UPDATE billing_charges SET compensated_minor = compensated_minor + $1::bigint,
     unfunded_minor = unfunded_minor - $2::bigint
 WHERE id = $3
-RETURNING id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at
+RETURNING id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at, canceled_qty, canceled_seat_us
 `
 
 type CompensateBillingChargeParams struct {
@@ -235,6 +235,8 @@ func (q *Queries) CompensateBillingCharge(ctx context.Context, arg CompensateBil
 		&i.BusinessKey,
 		&i.ActorID,
 		&i.CreatedAt,
+		&i.CanceledQty,
+		&i.CanceledSeatUs,
 	)
 	return i, err
 }
@@ -287,7 +289,7 @@ func (q *Queries) CountBillableMembers(ctx context.Context, workspaceID uuid.UUI
 const fundBillingCharge = `-- name: FundBillingCharge :one
 UPDATE billing_charges SET unfunded_minor = unfunded_minor - $1::bigint
 WHERE id = $2 AND unfunded_minor >= $1::bigint
-RETURNING id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at
+RETURNING id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at, canceled_qty, canceled_seat_us
 `
 
 type FundBillingChargeParams struct {
@@ -317,6 +319,8 @@ func (q *Queries) FundBillingCharge(ctx context.Context, arg FundBillingChargePa
 		&i.BusinessKey,
 		&i.ActorID,
 		&i.CreatedAt,
+		&i.CanceledQty,
+		&i.CanceledSeatUs,
 	)
 	return i, err
 }
@@ -1058,7 +1062,7 @@ INSERT INTO billing_charges (account_id, sku, plan, price_id, qty, unit_minor, d
     starts_at, ends_at, amount_minor, unfunded_minor, reason, business_key, actor_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (business_key) DO NOTHING
-RETURNING id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at
+RETURNING id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at, canceled_qty, canceled_seat_us
 `
 
 type InsertBillingChargeParams struct {
@@ -1115,6 +1119,8 @@ func (q *Queries) InsertBillingCharge(ctx context.Context, arg InsertBillingChar
 		&i.BusinessKey,
 		&i.ActorID,
 		&i.CreatedAt,
+		&i.CanceledQty,
+		&i.CanceledSeatUs,
 	)
 	return i, err
 }
@@ -1611,7 +1617,7 @@ func (q *Queries) ListBillingAccountsToSuspend(ctx context.Context, arg ListBill
 }
 
 const listBillingChargesActiveAt = `-- name: ListBillingChargesActiveAt :many
-SELECT id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at FROM billing_charges
+SELECT id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at, canceled_qty, canceled_seat_us FROM billing_charges
 WHERE account_id = $1 AND starts_at <= $2::timestamptz AND ends_at > $2::timestamptz
 ORDER BY ends_at, id
 `
@@ -1649,6 +1655,8 @@ func (q *Queries) ListBillingChargesActiveAt(ctx context.Context, arg ListBillin
 			&i.BusinessKey,
 			&i.ActorID,
 			&i.CreatedAt,
+			&i.CanceledQty,
+			&i.CanceledSeatUs,
 		); err != nil {
 			return nil, err
 		}
@@ -1661,7 +1669,7 @@ func (q *Queries) ListBillingChargesActiveAt(ctx context.Context, arg ListBillin
 }
 
 const listBillingChargesEndingBy = `-- name: ListBillingChargesEndingBy :many
-SELECT id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at FROM billing_charges
+SELECT id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at, canceled_qty, canceled_seat_us FROM billing_charges
 WHERE account_id = $1 AND ends_at <= $2::timestamptz AND ends_at > $3::timestamptz
 ORDER BY ends_at, id
 `
@@ -1701,6 +1709,8 @@ func (q *Queries) ListBillingChargesEndingBy(ctx context.Context, arg ListBillin
 			&i.BusinessKey,
 			&i.ActorID,
 			&i.CreatedAt,
+			&i.CanceledQty,
+			&i.CanceledSeatUs,
 		); err != nil {
 			return nil, err
 		}
@@ -2002,7 +2012,7 @@ func (q *Queries) LockOpenBillingFundingLots(ctx context.Context, accountID uuid
 }
 
 const lockUnfundedBillingCharges = `-- name: LockUnfundedBillingCharges :many
-SELECT id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at FROM billing_charges
+SELECT id, account_id, sku, plan, price_id, qty, unit_minor, discount_bps, starts_at, ends_at, amount_minor, unfunded_minor, compensated_minor, reason, business_key, actor_id, created_at, canceled_qty, canceled_seat_us FROM billing_charges
 WHERE account_id = $1 AND unfunded_minor > 0
 ORDER BY starts_at, id
 FOR UPDATE
@@ -2036,6 +2046,8 @@ func (q *Queries) LockUnfundedBillingCharges(ctx context.Context, accountID uuid
 			&i.BusinessKey,
 			&i.ActorID,
 			&i.CreatedAt,
+			&i.CanceledQty,
+			&i.CanceledSeatUs,
 		); err != nil {
 			return nil, err
 		}
