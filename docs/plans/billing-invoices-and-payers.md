@@ -1,9 +1,45 @@
 # Контракт биллинга: плательщик, банковские счета и админка
 
-Дата: 2026-10-09. Приложение v1.0 к [ADR-0080 v3.1](../adr/0080-seat-billing.md).
-Это спецификация до реализации. Требования владельца: Private Person / Organization,
+Дата: 2026-10-09. Приложение v1.1 к [ADR-0080 v4.0](../adr/0080-seat-billing.md).
+Основной рынок — USD/Stripe; RUB/Точка — последующий этап. Это спецификация до реализации. Требования владельца: Private Person / Organization,
 реквизиты по стране, автоматическая сверка поступлений, все платежи и ручные операции
 в суперадминке. Конкретные алгоритмы ниже — решения лида. Деньги ещё не включены.
+
+## 0. Продавцы и доступность способов оплаты
+
+| Рынок | Продавец / условия |
+|---|---|
+| USD, первый | **Unne L.L.C-FZ**, Limited Liability Company (Free Zone), UAE (Dubai); предоставленный TRN **105410888900001**, VAT-статус не подтверждён; Stripe UAE, выплаты AED, цены/балансы USD |
+| RUB, следующий | ООО «Громтех», реквизиты опубликованной RU редакции; Точка, АУСН/без НДС |
+
+Registered office Unne: **Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE**.
+Реквизиты получены от владельца, не объявляются независимо проверенными по реестру.
+Номер licence/registration Unne пока не предоставлен. TRN взят владельцем из выписки;
+его вид/принадлежность проверяются по FTA, а не выводятся из подписи TRN в выписке.
+Окончание 01 не соответствует VAT ID в PINT-AE (03); в VAT settings номер не переносим.
+Контакт support@calab.io уже используется проектом; применимость для Global подтвердить
+перед публикацией. UI плательщика не может менять seller/его TRN/юридический адрес.
+
+Цены USD $0.10/$0.30 **без налога**: применимый налог показывается до оплаты и
+в receipt/invoice отдельной строкой сверх базы. Wallet учитывает net стоимость услуги,
+банк/invoice coverage — gross; детали обязательны по [налоговому контракту](billing-tax-and-documents.md). Ставка
+не выводится из валюты USD, наличия TRN или слова Free Zone; tax jurisdiction/регистрации/
+профиль покупателя задают проверенную tax policy. RUB без НДС не переносится в Global.
+
+USD hosted card — первый метод. Счёт с ссылкой на card checkout и **bank transfer** —
+разные способы: invoice не обещает банковские реквизиты, которых нет у seller. Stripe
+bank-transfer eligibility сейчас не перечисляет UAE/AE; метод off до подтверждения
+supported route. Общий интерфейс сохраняет capability bank transfer на будущее.
+[Stripe-контракт и источники](billing-stripe-v1.md).
+
+| Тип покупателя | USD / Stripe UAE | RUB / Точка позже |
+|---|---|---|
+| Private Person | Hosted card; локальный invoice с card link по утверждённому шаблону; bank transfer off | Card/SBP после подключения; invoice API для person не подтверждён, не обещать универсальную поддержку |
+| Company / sole proprietor | Hosted card; invoice с собственными реквизитами и card link; transfer только по capability | Card/SBP; Create Invoice с подтверждённым type/taxCode и country schema |
+
+Собственный invoice/PDF не подменяет налоговый документ нужной страны. До утверждения
+шаблона/налогового расчёта недоступный способ не отображается; нельзя имитировать company
+для физлица или подставлять фиктивный ИНН ради обязательного поля банка.
 
 ## 1. Профиль плательщика и национальные реквизиты
 
@@ -18,7 +54,7 @@ Owner выбирает страну и **Private Person** / **Organization**. У
 | RU / person | ФИО, email для документов, страна; адрес/налоговый ID только при необходимости конкретного способа оплаты или документа |
 | RU / company | Полное наименование, ИНН (10 цифр), КПП при применимости, ОГРН (13 цифр), юридический адрес, email для документов |
 | RU / sole_proprietor | ФИО/наименование ИП, ИНН (12 цифр), ОГРНИП (15 цифр), адрес, email; КПП не требуется |
-| Global / person | Имя, email, страна; billing address и иные поля по проверенной схеме страны/платежа |
+| Global / person | Имя, email, страна; billing address/postal code и иные поля, необходимые проверенному налоговому расчёту/способу оплаты |
 | Global / organization | Legal name, company/sole proprietor, registration IDs, tax IDs, registered/billing address, email; обязательность и формат по стране |
 
 Это выбранный контракт продукта, а не утверждение, что любое поле обязательно по закону
@@ -59,11 +95,15 @@ Invoice/PDF, funding intent, consent, fiscal task фиксируют `payer_vers
 
 ## 2. Счёт и его денежное состояние
 
-`POST /invoices`: owner передаёт `payer_version_id`, сумму в валюте account и request_id.
+`POST /invoices`: owner передаёт `payer_version_id`, net сумму услуг в валюте account и request_id.
+Сервер рассчитывает tax и gross, сохраняет строки/основание/quote expiry; сумма банка и
+invoice coverage — gross, credit — net. Устаревший tax quote требует новой версии документа.
 Сервер фиксирует свой номер и уникальную reference, продавца/счёт получателя, плательщика,
-назначение «пополнение баланса / погашение задолженности», сумму, валюту, срок оплаты,
-версию условий и PDF. Reference входит в назначение платежа, копируется одной кнопкой.
-Bank `documentId` хранится отдельно от нашего invoice ID/reference и payment ID.
+назначение «пополнение баланса / погашение задолженности», net/tax/gross, валюту, срок оплаты,
+версию условий и PDF. Reference входит в назначение применимого банковского перевода,
+копируется одной кнопкой. Для USD card invoice содержит ссылку на intent своего account.
+Optional provider documentId (например Точка) хранится отдельно от invoice/reference/payment ID;
+Stripe Customer/PI/Checkout mappings не выдаются за bank documentId.
 
 Срок оплаты счёта не является сроком действия внесённого аванса. Оплата не запускает
 месячный период и сама по себе не разрешает автоматические списания карты.
@@ -75,7 +115,7 @@ Bank `documentId` хранится отдельно от нашего invoice ID
 | Invoice document | `draft`, `issued`, `expired`, `void`; история причин и версии документа |
 | Invoice payment coverage | `unpaid`, `partial`, `paid`, `overpaid`; проекция действующих payment allocations |
 | Bank transaction | Подтверждённое движение денег, неизменяемые observations и canonical ID |
-| Wallet credit | Journal зачисления; source и сумма, отдельно от invoice coverage |
+| Wallet credit | Journal зачисления net; source и tax link, отдельно от gross invoice coverage |
 | Refund / correction | Свои операции и компенсирующие записи; не перезапись bank transaction |
 
 `allocated_amount`, `refunded_amount`, `reversed_amount` показываются отдельно. Отвязка
@@ -83,16 +123,27 @@ Bank `documentId` хранится отдельно от нашего invoice ID
 Сумма wallet credits за вычетом corrections связана с конкретными transfer allocations,
 но `invoice.paid_amount` сам никогда не является командой «зачислить ещё раз».
 
-Частичная оплата с точной reference зачисляет фактически пришедшую сумму и оставляет счёт
-частично оплаченным. Переплата того же плательщика поступает на тот же баланс с отдельной
-строкой превышения invoice amount. Поздняя оплата expired invoice допустима после проверки
+Частичная **завершённая** оплата с точной reference покрывает gross часть invoice,
+зачисляет её net часть и отражает налог отдельно; счёт остаётся частично оплаченным.
+Переплата того же плательщика после tax allocation поступает net авансом на тот же баланс
+с отдельной строкой превышения gross invoice amount. Неопределённый налоговый mapping — review. Поздняя оплата expired invoice допустима после проверки
 его неизменных реквизитов и отсутствия конфликта. Платёж на `void` invoice попадает в review:
 деньги сохраняются в реестре, документ не восстанавливается молча. Один перевод можно
 распределить на несколько счетов только с явными суммами распределения; иначе review.
 
-## 3. Checker банка и защита от повторного зачисления
+## 3. Checker и защита от повторного зачисления
 
-### 3.1. Получение и нормализация поступлений
+### 3.0. USD / Stripe первым
+
+Нормативный поток — [Stripe §4–5](billing-stripe-v1.md): Customer→billing account, manual
+cash reconciliation, PI collection на фактическую сумму и unique credit по succeeded PI.
+Получение средств в raw Stripe cash balance, подтверждение PI и payout на AED счёт
+продавца — разные факты. Card invoice получает payment allocations из того же PI pipeline.
+Метод bank transfer не включается в UAE на основании общего интерфейса invoice.
+Следующие §3.1–3.2 описывают **вторичный RUB/Точка adapter**, а не способ опросить Stripe.
+
+
+### 3.1. RUB / Точка: получение и нормализация поступлений
 
 Один логический checker на receiving account банка, не по запросу на каждый invoice.
 Период — 5 минут; incomingPayment ускоряет сверку через durable inbox. Проверяем подпись,
@@ -112,11 +163,19 @@ receiver, purpose и извлечённые references. Raw банковские
 Доступ, шифрование и retention входят в P0/P2; неизменность финансовой истории не означает
 бессрочное хранение всех PII/raw payloads.
 
-Все страницы/диапазоны окна импортируются до продвижения cursor. Окна перекрываются:
-обычно последние 7 календарных дней, суточная расширенная сверка — последние 90 дней,
-пакетами в пределах bank rate limits. После долгого простоя начинаем с последнего
-завершённого cursor, не просто «сегодня минус 7»: разрыв не должен пропасть. Для исправлений
-старше 90 дней доступны explicit range reconciliation и банковские уведомления.
+Основной цикл идёт от последнего завершённого cursor, с коротким overlap (начальная
+цель 30 минут, если API поддерживает такую гранулярность). Для date-only выписки читаем
+текущий банковский день и отдельно сверяем закрытие предыдущего; не запрашиваем неделю
+каждые пять минут. После простоя начинаем от старого cursor, даже если прошло 20 дней.
+Полная пагинация/импорт окна завершаются до продвижения cursor.
+
+Глубокая сверка раздельная: последние7 дней проверяются сегментами раз в сутки; последние90
+дней — по распределённому недельному циклу. У неё отдельный бюджет запросов/IO, чтобы не
+задерживать новые поступления. Старые correction/reversal события также приходят через
+webhook/provider reconciliation; доступны explicit range jobs. Лимиты/window size
+уточняются fixtures банка. Это стратегия покрытия истории, не запрос всего диапазона на
+каждом tick. Идентичная observation по source+canonical ID+payload hash не создаёт новую
+версию финансового факта; last_seen coalesced, изменения payload сохраняются отдельно.
 
 Запуски имеют lease/fencing token; повтор или падение процесса не пропускают страницу.
 HTTP retry/backoff/jitter разрешён для безопасного чтения. Повтор создания банковской
@@ -128,7 +187,7 @@ HTTP retry/backoff/jitter разрешён для безопасного чте�
 счёт, относящийся к клиентскому пополнению, допускается к matching. Settlement card/SBP
 сверяется с acquiring payments отдельно: его нельзя повторно зачислить клиентам.
 
-### 3.2. Сопоставление и зачисление
+### 3.2. RUB / Точка: сопоставление и зачисление
 
 1. Ищем точную invoice reference. Проверяем account продавца, валюту, профиль покупателя
    и доступные реквизиты отправителя. Для RU company/ИП — ИНН и применимый КПП; для person
@@ -147,7 +206,7 @@ HTTP retry/backoff/jitter разрешён для безопасного чте�
    + account cache + invoice projection + audit/outbox. При большом backlog выполнение
    ожидает своей очереди account; банку повторно оплатить ничего не предлагаем.
 
-Unique `(provider, merchant_receiving_account, canonical_payment_id)` объединяет webhook,
+Для Точки unique `(provider, merchant_receiving_account, canonical_payment_id)` объединяет webhook,
 polling, statement и ручное подтверждение. Событие из нового источника добавляет observation,
 не второе пополнение. Credit business key привязан к allocation, а остаток bank transaction
 защищён row lock и invariant суммы. Статус счета «оплачен» без ID движения не зачисляет деньги.
@@ -218,6 +277,10 @@ Refund ограничен подтверждённой исходной опла
 Если банк не предоставляет подтверждённый API для метода, создаём операторскую задачу:
 кнопка не ставит `succeeded` без evidence исполнения. `unknown` сверяем, не повторяем POST.
 
+USD manual verified credit требует succeeded Stripe PI, не raw cash funded и не payout.
+Неизвестный прямой перевод на счёт Global seller не обходится кнопкой verified_transfer
+без отдельного подключённого bank adapter; временная компенсация имеет admin source.
+
 Все команды: действующая superadmin authorisation + step-up, reason, request_id,
 expected_revision, preview последствий и immutable audit actor/time/source/result.
 Preview не является разрешением сам по себе; под lock повторно проверяются права,
@@ -225,6 +288,9 @@ Preview не является разрешением сам по себе; по�
 Повтор request_id с тем же body возвращает прежний результат, с другим — 409.
 Нельзя DELETE financial history или PATCH balance/paid_status. Audit содержит ссылки/маски,
 не полные банковские payloads или секреты. События исправления видны owner в истории.
+При сломанном head используется maintenance repair из FIFO §2.1: freeze/control epoch,
+проверяемые компенсирующие записи и явное завершение repair. Такой запрос не enqueue за
+непроходимым head; обычные коррекции не могут произвольно обходить финансовую очередь.
 
 ## 5. API и сущности до зависимой реализации
 
@@ -238,6 +304,7 @@ Owner API и права — ADR §13. Профиль редактирует owne
 |---|---|
 | `GET /payments`, `/credits`, `/invoices`, `/bank-transfers`, `/sync-runs`, `/refunds`, `/disputes` | Cursor pages и детали с явным account/currency |
 | `POST /bank-sync` | Ограниченный диапазон/receiving account, job ID; один проверяемый run |
+| `POST /accounts/{id}/repair/preview`, `/repair/apply`, `/repair/resume` | Maintenance plan/fence/preconditions/audit, отдельный контроль восстановления FIFO |
 | `POST /actions/preview` | action + target + amount → версия, изменения balance/invoice/deadline, quote ID/TTL |
 | `POST /bank-transfers/{id}/allocations` | Подтверждённый match/split с amounts и expected revisions |
 | `POST /invoices/{id}/void` | Отмена неоплаченного документа |
@@ -254,7 +321,7 @@ Owner API и права — ADR §13. Профиль редактирует owne
 
 Схема дополняет ADR §10: payer/version/identifiers; invoice document/coverage;
 bank sync runs/observations, canonical transactions, transfer/invoice allocations;
-verified sender bindings; manual credits/claims; disputes и audit. Любая денежная связь
+verified sender bindings; manual credits/claims; disputes, repair/control records и audit. Любая денежная связь
 имеет original amount, remaining/projection revision и append-only movements.
 Порядок locks: workspace boundaries по ID → accounts по ID → bank transactions → allocations/
 lots/invoices. Нельзя предварительно держать bank row lock и затем запрашивать account lock.
@@ -284,6 +351,13 @@ Checker сначала читает кандидатов, после захва�
     чужой target ID, stale preview, потеря superadmin/step-up → отказ без partial journal.
 12. Bank refund timeout остаётся unknown; ни кнопка, ни повтор job не делают второй POST
     без доказанной bank idempotency/recovery. Audit и owner history сохраняют результат.
+
+13. USD cash-funded/PI-succeeded/payout AED → один USD wallet credit; одинаковый payer
+    в двух spaces не делит Stripe Customer. У UAE неизвестный transfer метод не показывается.
+14. Mixed source refund следует хвосту исходных allocations и cumulative rounding ADR §9;
+    admin credit не становится cash, восстановленный аванс сперва гасит старые долги.
+15. Broken head не мешает специальному repair; stale worker и обычная команда не могут
+    писать через maintenance fence. Restore не отправляет повторный bank refund.
 
 Порядок операций, индексы и нагрузочная приёмка —
 [FIFO и масштабирование](billing-fifo-and-scale.md). План этапов —

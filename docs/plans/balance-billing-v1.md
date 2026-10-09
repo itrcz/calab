@@ -1,229 +1,218 @@
-# План реализации: баланс, суточные места и Точка
+# План реализации: USD-баланс и Stripe, затем RUB / Точка
 
-Дата: 2026-10-09. Контракт: [ADR-0080 v3.1](../adr/0080-seat-billing.md).
-База кода: `8fdf1b9d907de88173dd8e6c82950bb75bc082df`; ветка `codex/seat-billing`.
-Работает лид без субагентов. Только документация в текущей поставке; включение денег и
-публикация новой оферты не являются побочным эффектом принятия ADR.
+Дата: 2026-10-09. Контракт: [ADR-0080 v4.0](../adr/0080-seat-billing.md).
+База кода: `8fdf1b9d907de88173dd8e6c82950bb75bc082df`; исходное ревью: `e7c825ca`.
+Ветка: `codex/seat-billing`. Работает лид без субагентов. Текущая поставка — документация;
+реализация, обновление публичных условий и live payments выполняются отдельными этапами.
+Приложения: [Stripe](billing-stripe-v1.md), [счета/плательщики](billing-invoices-and-payers.md),
+[FIFO/нагрузка/restore](billing-fifo-and-scale.md), [налоги/документы](billing-tax-and-documents.md).
 
-## P0 — зафиксировать договор и внешние контракты
+## P0 — продавец, условия и внешний контракт Stripe
 
-Результат: дневные цены 600/1800 копеек, 24h, auto-topup на 30 суток,
-7-дневный долг и ежедневные auto-попытки, receipt/provider capability matrix,
-Global USD 10/30 cents и будущий Stripe adapter. Детальные контракты:
-[счета, реквизиты и админка](billing-invoices-and-payers.md), [FIFO и масштабирование](billing-fifo-and-scale.md).
-Источники — ADR и владелец, не предположения исполнителя. До завершения можно реализовать
-чистое ядро/fake provider; bank autocharge и enforcement запрещены.
+Решение владельца: Global/USD первый, Team 10 / Business 30 cents за 24h; продавец
+Unne L.L.C-FZ, UAE (Dubai), выплаты в AED. Цены USD без применимого налога. RUB 600/1800 копеек и Точка позже.
+Auto-topup = долг + 30 суток текущей команды, не чаще одной новой попытки в 24h.
+Семь дней в минусе для текущей команды; рост платных мест требует аванса, карантина нет.
 
-Разрешённые пути: `docs/adr/0080-seat-billing.md`, этот план, два приложения выше,
-`docs/legal/README.md`, индекс ADR.
-Не менять юридический текст production, env, secret stores, grants и схемы денег вслепую.
-После ответа банка сохранить обезличенные request/response fixtures в будущий
-`apps/server/internal/billing/providers/tochka/testdata/` без токенов/PII.
+Разрешено: ADR, этот план и приложения, индекс ADR, `docs/legal/README.md`.
+Не публиковать неподтверждённые условия и не заполнять секреты/merchant ID выдуманными данными.
+Открыты licence/registration number, VAT-статус Unne, налоговый момент аванса/долга и шаблоны
+Global terms/invoice/refund/privacy. TRN 105410888900001 из выписки сохранён непроверенным;
+его формат не соответствует VAT ID (окончание 01 вместо 03), не использовать как VAT TRN.
+Шаблоны RU/АУСН относятся только к ООО «Громтех» и не заменяют документы Global seller.
 
-Банку нужен конкретный запрос на проверку, **здесь подготовка, не отправка**:
+Для Stripe проверить account/API version/test mode, USD card и min/max top-up,
+Checkout→PI→Charge identity, idempotency/unknown recovery, SCA/off-session/отзыв,
+refund/dispute events, источники success timestamp, fees и AED settlement отдельно.
+UAE отсутствует в текущей опубликованной eligibility-таблице USD bank transfer: этот
+метод выключен, пока не подтверждён конкретный supported route. Local invoice с ссылкой
+на card checkout возможен после утверждения юридического шаблона; это не bank transfer.
 
-1. Авансовое пополнение сервиса картой/СБП/счётом и дальнейшая оплата суток: какой
-   фискальный партнёр оформляет и получение аванса, и зачёт, и возврат? Как связать
-   зачёты с несколькими исходными пополнениями, допустима ли группировка? АУСН, без НДС.
-2. CreatePayment: формат уникального paymentLinkId, TTL/cancel, повторная оплата ссылки,
-   восстановление после timeout create; canonical payment ID в webhook/status/выписке.
-3. Invoice: частичная/повторная/избыточная/поздняя оплата; связь documentId с каждым
-   входящим paymentId; как отличить settlement эквайринга от прямого платежа клиента?
-4. Optional ChargeSubscription: идентификатор **каждой** попытки, idempotency, timeout
-   recovery, decline event/status/time, различение двух платежей с одинаковой суммой.
-5. Первая привязка, смена/отмена mandate; `Cancelled` и ещё живая ссылка; минимумы/лимиты,
-   sandbox coverage card/sbp/invoice/recurring/refund, доступные тесты отказов.
-6. Возврат частями на карту/СБП/расчётный счёт: API или оператор, устойчивый id исполнения,
-   отражение в выписке/чеках. Не использовать общий refund API для recurring без подтверждения.
+Готовность: capability matrix seller/country/payer/method, документы/налоговый контракт,
+обезличенные fixtures в `internal/billing/providers/stripe/testdata/`, продуктовые решения
+в ADR. Незакрытый live gate не запрещает ядро и test adapter; production flags остаются off.
 
-## P1 — денежное ядро, schema/proto, fake clock
+## P1 — денежное ядро и единый wire contract
 
-Зависимость: ADR v3.1, реальные платежи остаются под флагами до provider/fiscal acceptance.
-Разрешено: `apps/server/internal/billing/`, SQL migrations/queries/generated,
-`proto/calaba/v1/billing.proto`, additive workspace/event proto, generated protocol,
-конфигурация, тесты. Запрещено: live provider/credentials, включение flags, изменение
-прежних ручных планов, новая миграция из текущего числа людей в платные обязательства.
+Зависимость: ADR v4.0. Разрешено: `apps/server/internal/billing/`, SQL migrations/queries/
+generated, `proto/calaba/v1/billing.proto`, additive workspace/event proto, generated protocol,
+конфигурация и тесты. Запрещено: live keys/charges, включение flags, перенос ручных планов
+в платные обязательства и FX-конвертация старых RUB balances.
 
-Результат: account, immutable balanced journal/postings, funding/allocations, reservations,
-price/discount history, дневные lots/events, request idempotency, fake provider, clock.
-Добавить версионируемые payer schemas/IDs, command FIFO на account, schedule/head/cursor,
-leases/fencing, индексы due/open lots/debts. Нельзя обходить head посредством SKIP LOCKED
-внутри account; сетевые pending/unknown не держат денежную очередь.
-Один автор всех SQL/proto/interfaces. Записать номера миграций/полей и порядок locks до
-подключения зависимых handlers. `make gen`, drift, целевые unit/integration PG17/race.
+Результат: accounts с currency/seller, immutable journals/postings, funding source slices,
+allocations/reservations, отдельные tax liabilities/receivables и net/tax/gross breakdown,
+prices, seat cohorts/events, payer versions, fake provider/clock,
+FIFO commands/head/schedule, control epoch, repair records и authoritative balance projection.
+Один автор SQL/proto/interfaces до подключения зависимых потребителей. Зафиксировать
+migration/field numbers, guards/revisions, idempotency и порядок workspace→account→dependent locks.
 
-Готовность: математические сценарии ниже, constraint-level uniqueness, concurrency debit/
-refund/credit, rollback составного действия. Документировать API DTO и error reasons из ADR,
-никаких `float64` для денег и «balance += amount» без journal; валюта/market не берутся из locale клиента.
+Обязательны: атомарность денег+membership, deterministic mixed refund (ADR §9), normalization
+возврата в старый долг, maintenance repair вне сломанного head, фиксированный catch-up
+watermark, admission без роста в кредит, отдельные confirmed receipt/barrier и Free recovery.
+Multi-transaction money saga в v1 отсутствует. Нет float64, прямого PATCH balance и проверки
+прав по replica; SKIP LOCKED выбирает accounts, а не пропускает старые funding lots.
 
-## P2 — ручное пополнение и счёт
+Готовность: unit/property/fake-clock + targeted PG17 integration/race, `make gen` и drift,
+constraint-level duplicates, rollback целой команды, currency/payer ownership rejection.
+Математические и конфликтные сценарии ниже проходят на точном SHA.
 
-Зависимость: P1 + bank gates для manual card/sbp/invoice/fiscalization.
-Разрешено: billing provider adapter, inbox/reconcile jobs, app wiring/routes, receipt adapter,
-mail templates/outbox и contract tests. Запрещено: автоматические charge и production flags.
+## P2 — ручная Stripe-карта и документы на оплату
 
-Результат: hosted card/SBP, invoice PDF, incoming transfers/status reconciliation, manual
-review для неоднозначных переводов, отдельная обработка settlement. Checker каждые 5 минут
-на receiving account, overlap 7 дней, ежедневная сверка 90 дней, durable cursor после полного
-импорта; матчинг reference+плательщик, fallback только verified sender и единственный invoice. Credit подтверждённой
-операции атомарен с journal/outbox. Чек и email имеют свой статус, не переоплачивают intent.
-Refund v1 может исполнять оператор, но reservation/reconciliation обязательны.
+Зависимость: P1 + test merchant/capabilities. Разрешено: Stripe adapter, inbox/reconcile,
+app wiring/routes, tax/document adapter, outbox и contract tests. Auto-topup/live flags off.
 
-Готовность: webhook+polling+statement дают один credit; partial invoice точно отражается;
-нет credit от redirect, paid status без денежной идентичности, платёжки пользователя или
-bank settlement. Crash/timeout/late payment покрыты. Sandbox evidence не заменяет live pilot.
+Результат: hosted Checkout mode=payment, Customer per billing account, PI canonical credit,
+raw-body signature verification, versioned webhook DTO, pagination/cursors, pending/unknown
+и refund/dispute. Completed redirect не выдаёт деньги; funded/cash balance/PI/Charge/payout
+различаются. Сохраняем service net + tax = gross USD customer amount; wallet credit только
+net, отдельно AED settlement/fees. Встроенный Checkout Tax и custom Tax/PI flow имеют
+одну tax transaction на продажу, без повторного налога при расходовании аванса.
+Invoice и квитанция привязаны к seller/payer version, сроку и способу, который доступен.
 
-## P3 — места, тариф и сквозные запреты
+Готовность: duplicate/reordered Checkout/PI/Charge events дают один credit; обработаны timeout,
+requires_action, late success, wrong Customer/seller/currency/test-mode, orphan и refunds.
+Рассылка/налоговый документ не кредитуют платёж повторно при своих сбоях.
 
-Зависимость: P1, 7-дневная debt policy; P2 может проверяться fake funding.
-Разрешено: workspaces/auth/roles/email invites/guests/bots/directory admission, plans,
-DB admission, RTC/gateway/files/messages/boards/recording/integrations и их тесты.
-Запрещено: менять `computePermissions` ради выдачи платных прав, списывать деньги за ботов,
-глобально блокировать user/DM, очищать административную suspension успешной оплатой.
+### P2b — USD bank transfer, только после подтверждения доступности
 
-Результат: every member mutation участвует в seat accounting; продление 24h, повторное
-занятие купленного места, отрицательный баланс, неизменный negative_since, suspension/recovery. Классификация
-всех маршрутов с тестом полноты, shared server gate и проверка выдачи/доставки данных.
+Это независимый capability, **не гарантирован для UAE** и не обязательный gate USD card pilot.
+Подтвердить supported receiving route, buyer/payer type, partial payments/refunds и юридический
+invoice. Для Stripe customer_balance — manual reconciliation и collection фактической суммы
+через PI (Stripe-приложение §4); credit только после succeeded. Микропереводы ниже minimum
+показываются pending collection, не исчезают. Прямой банковский счёт продавца потребует
+отдельного адаптера выписки и ADR; нельзя подменить его данными Точки или картой.
 
-Готовность: старая версия клиента, bot/OAuth/API/public link и живой SFU token не обходят
-запрет. При race paid capacity/списание и membership согласованы; снятие запрета после
-оплаты не снимает модерацию/identity. Проверены уже открытый голос и два API instances.
+## P3 — места, долг, восстановление и сквозной доступ
 
-## P4 — кабинет, админка, новая редакция публичных документов
+Зависимость: P1; funding может быть fake. Разрешено: workspaces/auth/roles/invites/guests/
+bots/directory admission, plans, DB boundaries, RTC/gateway/files/messages/boards/recordings/
+integrations. Не менять computePermissions ради выдачи платных прав; не блокировать identity
+пользователя/его другие spaces/DMs, не снимать admin suspension успешным платежом.
 
-Зависимость: P1–P3, завершённый wire contract. Разрешено: общие renderer services/stores,
-PlanTab/admin UI/i18n, landing/legal content, профильные docs. Запрещено: card form в
-renderer, доступ non-owner к деньгам, публикация неверифицированных банковских обещаний.
+Результат: все membership mutations проходят billing, сутки rolling24h, замена в покрытой
+capacity без debit, renewal текущего состава в долг до deadline, новые места только за аванс.
+Первая операция роста не может сама уйти в минус. Downgrade/stop не сбрасывают deadline.
+Stop фиксирует время приёма и прекращает future dispatch сразу через control state.
 
-Результат: баланс/расход/прогноз, 3 метода пополнения, history/receipts/refunds, stop/change,
-owner paywall/employee stub; формы Private Person / Organization по стране с ИП/ОГРН.
-Админка: все payments/credits/invoices/disputes, matching/split, void, detach/reverse invoice
-payment, manual verified bank credit/admin adjustment, refund; preview/reason/revision/audit.
-Ручная коррекция не отменяется следующим checker; bank refund и chargeback разделены. Отдельные действия
-«выключить автопополнение» и «остановить платный тариф». Цена 6/18 ₽ за человека за 24h.
-Юридические страницы 3.0.3 архивируются по version/hash и обновляются под аванс, не monthly/yearly.
+Перед suspension — receipt barrier; оплаченный вовремя клиент не блокируется из-за очереди.
+После оплаты долга resume_free открывает Free без покупки суток; resume_paid покупает новые
+сутки. Нужна полная route inventory: старый клиент, OAuth/bot/API, public link, exports,
+upload/finalize, открытый RTC/WS token и data delivery не обходят policy.
 
-Готовность: typecheck/lint затронутых слоёв, один manual screenshot QA desktop/mobile,
-явные pending/unknown/debt/suspended states, old client server denial. Visual suites выключены.
+Готовность: два API instances, DB/Redis/cache failures, deadlines по DB time, отзыв RTC/WS,
+admin/identity restrictions сохраняются, сумма не начисляется за suspended interval.
 
-## P5 — необязательное автопополнение
+## P4 — кабинет, админка и Global terms
 
-Зависимость: P2 + отдельно подтверждённая безопасная recurrent correlation/timeout recovery.
-Разрешено: mandates/consents/autotopup settings/jobs/provider/UI и тесты. Если bank gate
-не закрыт, этот этап остаётся выключенным независимо от готовности ручных методов.
+Зависимость: P1–P3, wire contract, данные Global seller. Разрешено: renderer services/stores,
+PlanTab/AdminWindow/i18n, landing/legal content и профильные docs. Не встраивать card form
+в renderer и не выдавать non-owner финансовые реквизиты.
 
-Результат: запас 30×N×day_price (+ долг, если подтверждено), owner max amount,
-одна попытка раз в 24h при продолжающейся потребности до suspension, отказ/отзыв/race
-с ручным пополнением. Unknown сначала сверяется, даже если сутки прошли. Неявного
-расширения лимита после роста команды нет. Первое списание при подключении подтверждается
-пользователем и полностью зачисляется на баланс.
+Результат: USD по умолчанию для новых Global accounts, цены $0.10/$0.30 за человека за сутки
+без применимого налога; до оплаты и в receipt/invoice — net/tax/gross,
+доступные способы пополнения, баланс/debt/reserved/refundable, forecast/history/documents,
+owner paywall и employee stub. Private Person/Organization — страновые схемы реквизитов.
+Админка: все payments/credits/invoices, matching/split, void, detach/reverse credit,
+verified manual funding/admin adjustment, refunds/disputes и maintenance repair. Preview,
+reason/revision/request_id/step-up/audit обязательны. «Остановить тариф» и «Отключить auto»
+различаются; resume_free и resume_paid имеют разные котировки.
 
-Готовность: unknown не повторяет charge; manual funding отменяет unsent retries, late
-success не теряется; consent withdrawal сериализован с dispatch; второй новый charge
-внутри 24h невозможен даже после restart. На каждый настоящий отказ — отдельное письмо.
+Публичные месячные/годовые тексты 3.0.3 архивируются по version/hash. Новые Global terms
+содержат правильного продавца Unne, USD, суточный аванс/кредит, семь дней, запрет роста
+в долг, налоги, способы оплаты/возврата и Stripe data processing. Их публикация — отдельный
+этап, не побочный эффект merge текущего ADR.
+Готовность: targeted typecheck/lint и один manual screenshot QA desktop/mobile; visual suites off.
 
-## P6 — приёмка и пилот
+## P5 — optional auto-topup и безопасное восстановление
 
-Без нового поручения владельца агенты не запускаются. Независимые security/protocol reviews
-перед включением денег остаются gate, не объявляются выполненными самостоятельной проверкой.
+Зависимость: P2 + owner consent, подтверждённый off-session flow, внешний dispatch fence/
+manifest. Разрешено: setup/mandate/consents/settings/jobs/provider/UI и профильные тесты.
 
-1. Собрать связный diff и exact SHA: `make gen` + drift, `make lint` из корня,
-   targeted unit/race/integration и один полный server integration на PG17 перед merge.
-   PG18 support сохраняется, второй полный прогон не требуется.
-2. Shadow с fake funding: никаких реальных задолженностей, банковских запросов/писем/
-   ограничений. Проверить остатки, расходы и будущие due jobs на нескольких составах.
-3. Раздельные sandbox credentials/DB/Redis/порты. Fixtures не печатают секреты. Chaos:
-   DB/Redis/provider down, webhook reordered, lease expiry, mixed API versions.
-   Нагрузочная приёмка по приложению FIFO: 100k accounts/5m people/10m historical journals,
-   200 account ops/s, burst 100k due, hot account/fairness и EXPLAIN рабочих запросов.
-   Зафиксировать стенд и измерения; до такого прогона не заявлять ёмкость подтверждённой.
-4. Верифицированный live pilot с явно разрешёнными суммой/инструментом и тестовым workspace:
-   по одному каждой включаемой операции, возврат и fiscal evidence. Реальный charge не
-   запускается автоматически только потому, что fake тесты прошли.
-5. Опубликовать согласованные документы перед доступностью checkout; включить manual
-   methods/debits/enforcement только для allowlist. Auto-topup отдельным gate/flag.
-6. Наблюдать reconciliation/ledger/receipt/mail/policy metrics. Rollback выключает новые
-   writers совместимым binary, сохраняет inbox/refunds; старый binary не использовать.
+A_net = max(0, -balance) + 30 × N × effective_daily_price; tax engine добавляет только
+подлежащий оплате налог долга/аванса. Лимит owner проверяется по A_gross; новый charge
+не чаще 24h. Сохранённая карта не включает auto. Unknown сначала сверяется; requires_action
+продолжается в том же PI. На каждый реальный отказ — письмо. Ручное пополнение отменяет
+unsent повтор, но не скрывает возможный late success уже отправленного intent.
 
-## Проверяемые сценарии (fixture: без скидки, Team 600 / Business 1800 копеек)
+До live внедрить FIFO §6: manifest вне восстанавливаемой БД, deployment/control epoch,
+provider writes off после restore, восстановление consent/stop, сверка потерянного окна.
+Drill с backup до HTTP и bank success после него не создаёт второй charge/refund.
+Готовность: consent race, stale worker, same amount attempts, unknown >24h, restore и
+инварианты реестра подтверждены evidence; ключи/карточные данные не попадают в fixtures/logs.
+
+## P6 — приёмка, shadow и пилот USD
+
+Без нового поручения владельца субагенты не запускаются. Независимые security/protocol
+reviews до реальных денег — отдельный gate, не подменяются самостоятельной проверкой.
+
+1. Exact SHA: `make gen` + drift, `make lint` из корня, targeted unit/race/integration;
+   полный server integration на PG17 один раз перед merge. Поддержка PG18 сохраняется.
+2. Shadow fake funding без денег/писем/ограничений; отдельные test DB/Redis/порты/Stripe mode.
+3. Load по FIFO-приложению: 100k accounts/5m people/10m historical journals, 200 ops/s,
+   burst100k, hot-account fairness, EXPLAIN. Фиксировать стенд, SHA, команды/результаты.
+4. Проверить recovery/restore/repair, mixed refund, receipt barrier, no-credit-growth,
+   resume_free, signer/owner boundaries и failure provider/fiscal/mail без повторного charge.
+5. Согласованные Global terms доступны до checkout; отдельный разрешённый live pilot с
+   суммой/инструментом, refund, документом и evidence. Card и auto/transfer flags раздельные.
+6. Rollback использует совместимый binary/flags, сохраняет inbox/refunds/repair. Старый
+   binary без billing policy не выкатывать. Gates RUB не блокируют проверенный USD scope.
+
+## Денежные сценарии: основной USD, суммы в cents
+
+M1–M23 — net money fixtures с явно заданным tax=0, не налоговый режим Unne.
+Отдельные налоговые сценарии — в налоговом приложении: $100+$5=$105, auto $32+$1.60=$33.60,
+original-source refund, отсутствие повторного налога и непогашенный tax_due.
 
 | № | Сценарий | Ожидание |
 |---|---|---|
-| M1 | Team, баланс 10 000, 10 людей, первая активация | Debit 6 000, available 4 000, 10 мест ровно на 24h |
-| M2 | Добавить 2 человека через 6h | Debit 1 200, available 2 800; их expiry на 6h позже исходных |
-| M3 | Удалить 1, принять замену до expiry | Debit 0, ёмкость и исходное expiry сохраняются |
-| M4 | Удалить 2 до первого expiry: N=10, более поздних мест 2 | На первой границе нужно продлить 8, debit 4 800 при достаточном балансе |
-| M5 | Баланс 600, активировать 1 Team | Available 0; оплаченные сутки доступны полностью |
-| M6 | Активированный account, баланс 1, следующие 10 Team | Debit 6 000, balance −5 999, negative_since впервые зафиксирован, срок +7d |
-| M7 | 5 человек Business RU на сутки | Debit 9 000; запас на 30 суток 270 000 копеек плюс долг по утверждённой формуле |
-| M8 | Скидка Team 10%, покупка 3 суток-мест | Unit 540, debit 1 620; topup 10 000 кредитует 10 000 |
-| M9 | Скидка истекла после покупки | Уже оплаченные lots без изменений; следующий debit проверяет уведомление/согласие |
-| M10 | Отказ от 2 Team мест за половину оплаченных суток | Возврат неиспользованной стоимости 600 копеек, без двойного возврата |
-| M11 | Auto-topup 10 Team RU без долга | A=180 000 копеек; один credit; дальше отдельные daily debits |
-| M12 | Два пополнения 1 000 и 2 000, расход 1 200 | Allocations FIFO: первое 1 000, второе 200; остаток второго 1 800 |
-| M13 | Global, 10 Team / 10 Business | Daily debit 100 / 300 cents; запас 30d $30 / $90, без FX |
-| M14 | Долг 10 000, пополнение 4 000 | Balance −6 000, negative_since не меняется |
-| M15 | Долг 10 000, пополнение 16 000 | 10 000 погашает старые услуги, 6 000 становится авансом; episode закрывается после due catch-up |
-| M16 | На исходном suspend_at остаётся −1 | Полная suspension, новые daily debits и auto-topups остановлены |
-| M17 | Долг 10 000 и recovery 10 Team | Quote 16 000; после оплаты 10 000 на долг и 6 000 на первые новые сутки |
-| M18 | Осталось 6h до suspend_at, lot на 1 Team | Начислить 150 копеек за 6h, не полные 600 за недоступные 24h |
-| M19 | Отказ от половины lot, купленного полностью в долг | Уменьшить receivable, не вернуть клиенту деньги, которых не получали |
+| M1 | Team, balance1000, 10 людей, activate | Debit100, balance900, 24h |
+| M2 | Добавить ещё2 через6h после M1 | Debit20, balance880; их expiry на6h позже |
+| M3 | Удалить человека и заменить в покрытой capacity | Debit0, первоначальный expiry |
+| M4 | N=10, из них2 места живут дольше первой границы | Renewal8, debit80 при достаточном авансе |
+| M5 | 1 Team, balance10, activate | Balance0, полные оплаченные сутки |
+| M6 | Renewal10 Team, balance1 | Debit100, balance−99, начало episode, deadline+7d |
+| M7 | 5 Business | Daily150, reserve30d4500 ($45) |
+| M8 | Team discount10%, 3 места | Unit9, debit27; top-up1000 зачисляет1000 |
+| M9 | Скидка закончилась | Старые lots неизменны, повышение требует notice/consent |
+| M10 | Отказ от2 полностью оплаченных Team за половину суток | Компенсация10, без повторной отмены capacity |
+| M11 | 10 Team, долг200 | Auto A=200+3000=3200 ($32) |
+| M12 | Funding1000+2000, debit1200 | FIFO1000+200, остаток1800 |
+| M13 | Вторичный RUB: 10 Team/Business | Daily6000/18000 копеек, reserve180000/540000; без FX |
+| M14 | Debt1000, top-up400 | Balance−600, исходный deadline |
+| M15 | Debt1000, top-up1100 | 1000 на старые charges, 100 аванс; episode после due catch-up |
+| M16 | Balance−1 на deadline | Full suspension, нет новых service intervals/auto dispatch |
+| M17 | Debt1000, resume_paid10 Team | Quote1100; долг1000 + первые сутки100 |
+| M18 | 1 Team, до deadline6h | Пропорция10×6/24=2.5 → debit3 cents half-up |
+| M19 | Возврат части lot целиком в долг | Уменьшить receivable, cash refund0 |
+| M20 | Charge10=5cash+3admin+2debt, вернуть5 | Отменить2debt+3admin, cash0; повторные части дают тот же итог |
+| M21 | Stop, debt1000, оплатить1000, resume_free | Free без покупки Team/Business и снятия admin/identity restrictions |
+| M22 | Оплачен1 Team, balance0, join ещё499 | 409, ни membership, ни credit debit; первый уход в минус через growth запрещён |
+| M23 | Debt есть, одно свободное покрытое место | Замена без debit разрешена; новое место сверх capacity запрещено |
 
-M4 — самостоятельная fixture с достаточным пополнением, не продолжение недостаточного
-остатка M2. Все времена fake clock; на границе ровно `t=covered_until` old lot уже истёк.
+Все времена fake clock, интервалы half-open. Proration/отмена привязаны к исходному charge:
+SQL batching не меняет его quantity, цену или округление. RUB сценарии — совместимость
+ядра, не требование запускать Точку до USD.
 
-| № | Гонка/сбой | Ожидание |
-|---|---|---|
-| R1 | Два worker пытаются продлить один interval | Один journal и один entitlement |
-| R2 | Два simultaneous join на одно свободное место | Один занимает резерв; второй покупает сутки, при запрещённой отсрочке отказ |
-| R3 | Join/payment succeeds locally, membership SQL fails | Откат debit и lots вместе с membership |
-| R4 | Card webhook + status poll + statement | Один canonical transaction и один credit |
-| R5 | Settlement приобретённого эквайринга в выписке | Не новый пользовательский credit |
-| R6 | Invoice оплачен двумя переводами / переплачен / оплачен после expiry | Фактические подтверждённые суммы учтены один раз; invoice aggregate корректен |
-| R7 | Одинаковые суммы двух workspace одного ИНН | Reference определяет account; иначе review, не угадывание |
-| R8 | Timeout auto-charge, restart, retry job | Unknown; повтор банковского POST не отправляется |
-| R9 | Успех SBP при ожидающем auto-retry | Unsent отменяется; in-flight сверяется и late credit учитывается |
-| R10 | Concurrent reserve refund + daily debit | Резерв уменьшает свободный balance; capture не списывает второй раз, release гасит долг; минус только для мест |
-| R11 | Пришёл bank success, fiscal/SMTP упал | Баланс зачислен, receipt/mail retry, повтор charge отсутствует |
-| R12 | Отключили auto-topup | Нет новых charge; daily debit внесённого аванса продолжается до отдельного stop |
-| R13 | Повторные отказы auto-topup и рестарты | Между новыми dispatch ≥24h; на каждый реальный отказ письмо; unknown не порождает retry |
-| R14 | Малое пополнение, которое оставляет минус | Negative_since и suspend_at не сдвигаются |
-| R15 | Удалили людей при долге | Будущий расход меньше; уже оказанная услуга/negative_since остаются |
-| R16 | Цена/состав выросли выше max_auto_topup | Нужен owner confirmation, не молчаливое превышение |
-| R17 | Остановка/смена плана при разно-временных lots | Нет двойной платы и потерянного неиспользованного остатка |
-| R18 | Удалён workspace, пришёл late payment | Ledger не потерян, operator refund; новые права не создаются |
-| R19 | Поддельный/повторный/неизвестный webhook | Reject / один credit / review соответственно |
-| R20 | Worker опоздал на несколько дней с изменениями членов | Расчёт по историческим событиям; negative_since исторический, остановка расходов точно на suspend_at |
-| R21 | Stop/Free/смена owner/карты при долге | Исходный debt deadline остаётся, admin suspension тоже |
-| R22 | Создать Global intent для RUB account | Отказ; валюта, merchant и provider не подменяются |
-| R23 | Добавление людей в период разрешённого минуса | Суточное начисление в долг атомарно с membership; scope/plan caps соблюдены |
-| R24 | Add-on/refund пытается уйти в минус | Отказ: разрешение отсрочки только для мест |
+Конфликтные сценарии из трёх приложений обязательны: дубли источников, stale leases,
+broken head/repair, durable receipt before deadline, late/partial/overpayment, payout,
+manual reversal, pending refund, crash/restore, strict FIFO и большие очереди. Изменения
+членства rollback вместе с debit. Количество кейсов не заменяет route/transition coverage.
 
-Дополнительно обязательны все 12 сценариев приложения счетов и 7 FIFO/invariant сценариев
-приложения масштабирования: профиль/snapshot, cursor outage, ручные corrections, partial/
-overpayment, duplicates, порядок head, stale worker и поздние банковские события.
+## R1 — RUB / Точка после USD
 
-Security acceptance: owner vs admin/bot/guest/OAuth, межпространственные id, admin suspension,
-identity step-up, upload/finalize/reuse, media reconnect/token replay, suspended public
-links/notifications/exports, cache/Redis failure и измеренное окно отзыва RTC/WS.
+Зависимость: общее ядро и проверенный Stripe scope; собственные merchant/документы/фискальный
+партнёр RU. Разрешено: `providers/tochka`, RUB card/SBP/invoice capabilities, fixtures,
+русская редакция условий под баланс. Не менять существующие USD accounts, не делать FX
+или отправлять USD клиента на Точку без нового договора/явного выбора.
 
-## G1 — Global / Stripe после RU
+Проверить stable external IDs, incomingPayment/Init/Get Statement, различение settlement,
+partial/overpayment/late invoice, payer type support (особенно person), recurring correlation,
+timeout recovery, возвраты и чеки АУСН/без НДС. Сверка incremental с небольшим overlap;
+исторические7/90 дней — отдельные разнесённые jobs, не перечитывание всей недели каждые5min.
+Чеки аванса/зачёта/постоплаты/возврата подтверждает фискальный партнёр, не Stripe receipt.
 
-Зависимость: единое ядро с currency/market с P1, merchant/юрлицо Global, налоги/документы,
-отдельный Stripe sandbox. Цены owner: Team 10 / Business 30 cents за 24h; общая policy долга.
-Разрешено: новый provider adapter/capabilities, Global catalogue/terms/privacy, UI валюты,
-contract fixtures/test clock. Запрещено: FX перенос RUB→USD, переключение рынка по locale,
-автоматический fallback RU денег на Stripe, перенос RU реквизитов без решения продавца.
+## Evidence
 
-Результат: Checkout/PaymentIntent/manual topup; optional off-session consent/SetupIntent,
-raw-body webhook verification, idempotency + durable reconciliation, refunds, tax mapping.
-Stripe Subscription на месяц не используется как второй scheduler суточных мест.
-Готовность: duplicate/reordered events, requires_action, unknown после >24h idempotency
-retention, одинаковые суммы, cross-account/currency rejection, live evidence/возврат.
-
-## Evidence на каждом этапе
-
-Версия ADR + base/implementation SHA, разрешённые пути, выполненные команды/среда/результат,
-отдельно skipped/unavailable и внешние ответы. Docs-only не требует полного Go/renderer
-прогона: проверить ссылки, согласованность цифр/сценариев, `git diff --check`.
-Не помечать bank live/чеки/reviews passed по наличию scaffolding или fake provider.
+Версия ADR + exact SHA, разрешённые пути, команды/среда/результат, skipped/unavailable,
+provider fixtures и внешние ответы. Docs-only: ссылки, арифметика, согласованность решений,
+`git diff --check`. Application/load/live/независимое review не считаются пройденными по тексту.

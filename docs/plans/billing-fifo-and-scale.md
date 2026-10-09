@@ -1,6 +1,6 @@
 # Контракт биллинга: FIFO, конкуренция и масштабирование
 
-Дата: 2026-10-09. Приложение v1.0 к [ADR-0080 v3.1](../adr/0080-seat-billing.md).
+Дата: 2026-10-09. Приложение v1.1 к [ADR-0080 v4.0](../adr/0080-seat-billing.md).
 Владелец потребовал FIFO и работу на большом количестве клиентов. Ниже — решение лида
 и проверяемые цели до реализации, не результат уже проведённого нагрузочного теста.
 База — PostgreSQL 17, общий Go billing module; отдельный брокер не требуется для v1.
@@ -21,6 +21,11 @@ FIFO касается одного billing account и одной валюты. �
 RUB и USD не смешиваются. Refund/chargeback связан с исходным источником платежа:
 его нельзя применить к произвольному «самому старому платежу» в нарушение этой связи.
 Зарезервированный и невыводимый остаток не подходит для cash refund.
+Баланс/seat debits/funding lots — net стоимость услуг; tax due/collected/refundable
+учитываются отдельно по [налоговому контракту](billing-tax-and-documents.md). Gross перевод
+не зачисляется целиком на net balance. Net/tax allocations применяются атомарно; отсутствие
+долга проверяется по всем подлежащим оплате компонентам. Deadline налоговой части услуги
+не сбрасывается при её выделении, а restore включает tax transaction/reversal IDs.
 
 `command_sequence` назначается сервером под account lock; UNIQUE `(account_id, sequence)`.
 Это порядок принятых в денежную обработку команд, не timestamp устройства, HTTP arrival
@@ -43,8 +48,12 @@ RUB и USD не смешиваются. Refund/chargeback связан с исх
 
 1. API, webhook consumer, checker и scheduler используют один command handler и правила
    locks из ADR. Единственный способ изменить balance — journal transaction с account lock.
-2. Под lock материализуем известные наступившие due events до принимаемой команды;
-   порядок их обработки детерминирован. Они не теряются из-за того, что scheduler опоздал.
+2. Под lock материализуем due events до фиксированного watermark принимаемой команды.
+   Уже durable подтверждённый credit/stop задаёт границу: не генерируем новые due events
+   за его effective_at, оставляя сам credit/stop позади растущего catch-up. Фиксированный
+   head sequence не пересортировывается; старые интервалы и известные financial receipts
+   объединяются по effective_at до назначения sequence. Повтор materialization использует
+   исходный watermark и business keys, а не постоянно сдвигающийся now.
    Для большого backlog есть durable catch-up cursor; нельзя вписать тысячи списаний
    в транзакцию принятия участника или молча перепрыгнуть старое обязательство.
 3. Новая команда попадает после уже принятых готовых команд. Если очередь пуста и catch-up
@@ -53,7 +62,9 @@ RUB и USD не смешиваются. Refund/chargeback связан с исх
    `BILLING_RECONCILING`; членство/расход не применены, повтор с тем же request_id безопасен.
 4. Подтверждённый bank fact всегда сначала durably импортируется. Если account занят
    catch-up, его credit ожидает применения: UI различает «банк подтвердил» и «зачислено».
-   Банковский факт не теряется и не требует повторной оплаты; зачисление проходит один раз.
+   Достаточный квалифицированный receipt, durable до deadline, участвует в barrier перед
+   suspension (ADR §8). Блокировка не обгоняет такой платёж из-за внутренней задержки.
+   Raw Stripe cash balance funded / pending PI не являются квалифицированным receipt.
 5. Worker исполняет только head account. Следующая команда не обгоняет предыдущую из-за
    другого worker, рестарта, lease expiry или повтора. Проверяем head sequence и fencing
    token внутри транзакции; устаревший worker не может записать результат после нового.
@@ -72,6 +83,35 @@ dispatch и consent revocation по конкретному mandate сериал�
 нарушение денежного инварианта переводит **этот account** в reconciliation hold и вызывает
 alert; нельзя отправить такую команду в dead letter и продолжить списания через пробел.
 Новые банковские факты продолжают импортироваться независимо от hold account.
+
+### 2.1. Repair не стоит за сломанной командой
+
+Для superadmin есть отдельная maintenance control operation, которая **не enqueue после
+head**. Она требует step-up, reason, expected account/head revision и preview. В порядке
+workspace → account locks устанавливаем maintenance fence, увеличиваем `control_epoch`,
+останавливаем новые dispatch/обычные writers этого account; уже отправленные provider
+операции сохраняют unknown/reconciliation, inbox продолжает импорт. Worker перед commit
+проверяет актуальные head/lease/control epoch условной записью; failed CAS откатывает tx.
+
+Repair plan фиксирует исходный head, hash текущих проекций/остатков, доказательство причины,
+компенсирующие postings и ожидаемый результат. Деньги не редактируются прямым PATCH.
+В одной repair transaction: подтвердить fence/preconditions → завершить неисполненный head
+как `repaired_failed` либо подтвердить его уже существующий unique outcome → записать
+следующий repair command/journal + audit → восстановить согласованные проекции → проверить
+нулевую сумму postings/источники/sequence → определить новый head. Частично исполненного
+обычного journal быть не может; повтор repair_request_id возвращает прежний результат.
+
+Снятие maintenance fence — явная команда после проверки invariants и provider in-flight.
+Ни одна нормальная операция не обгоняет незавершённый head; исключительный переход головы
+объясняется repair record, а не тихим пропуском. Если исходные деньги нельзя доказать,
+account остаётся в maintenance, полученные платежи не теряются. Два параллельных repair,
+устаревший worker и stale preview проверяются тестами. Это отдельный путь восстановления
+данных, не этап обычного семидневного долга.
+
+Stop фиксирует `stop_effective_at` при durable принятии, сразу закрывает новые auto dispatch
+через control state; catch-up позже начисляет лишь услуги до этого времени. Не заставляем
+пользователя оплачивать задержку обработки отказа. Отзыв card consent также проходит через
+control state сразу, а не ждёт денежного head. Существующие in-flight intents сверяются.
 
 При непогашенном episode услуги с `effective_at >= negative_since + 7 * 86400`
 не начисляются; запоздалый учёт ранее оказанных услуг сохраняется. Deadline проверяется
@@ -104,12 +144,16 @@ schedule lock, ожидая workspace lock: mutation handler обновляет 
 
 Начальные настраиваемые ограничения для измерения: claim до 100 accounts, до 100 due events
 за проход account, целевой DB transaction budget 100 ms, ограниченный worker/connection pool.
-Это не обещание точного времени и не повод оборвать commit посередине. Одна логическая
-операция не публикует частичный entitlement. При патологически большом числе allocations
-она переходит в bounded settlement job с cursor/reservations и последовательными
-компенсируемыми шагами; доступ выдаётся только после завершения всей суммы. Следующий
-денежный command account ждёт, а другие accounts получают CPU/DB время между пакетами.
-Контракт этого редкого пути и recovery-тесты обязательны до его включения.
+Пакет делится **между самостоятельными атомарными командами**. Одна покупка/зачисление/
+возврат/изменение membership не превращается в цепочку частично проведённых денег.
+
+Для большого числа allocations можно подготовить план вне tx, затем в одной transaction
+под lock проверить revisions/источники и применить весь план. Тяжёлые команды исполняет
+ограниченный background pool; в admission до готовности возвращается BILLING_RECONCILING
+без membership и debit. Если команда превышает допустимый budget/limit, она не исполняется
+частями: сохраняем diagnostic и запускаем repair/оптимизацию источников с сохранением
+provenance. Multi-transaction settlement saga **не входит в v1**. Её возможное добавление
+требует отдельного ADR и не отменяет текущий all-or-nothing invariant.
 
 Пулы и квоты раздельные: local ledger/due, policy deadlines, bank reads, payment dispatch,
 fiscal/mail. Bank rate limits действуют на merchant/endpoint, а не суммируются без контроля
@@ -157,8 +201,9 @@ quantity: 100 сотрудников с одной границей → один
 funding lot и service charge хранит сумму диапазоном, не запись на каждую копейку/человека.
 Исторические member events сохраняют персональную причинность отдельно от денежных строк.
 
-Bank checker читает receiving accounts и новые/перекрывающиеся диапазоны пакетами,
-не вызывает банк N раз для N invoice. Кандидаты ищутся индексно; нет полного fuzzy scan.
+Stripe checker обрабатывает dirty/pending Customer/PI; будущий Точка checker читает
+receiving accounts с коротким overlap и отдельной сегментированной исторической сверкой.
+Нет запроса банку на каждый invoice или полного обхода всех клиентов каждые пять минут. Кандидаты ищутся индексно; нет полного fuzzy scan.
 Админские фильтры имеют ограничения периода/page size, keyset cursor; тяжёлый экспорт
 в отдельной job с snapshot watermark. Реплика годится для истории с индикатором lag,
 но не для денежных проверок, preview commitment или разрешения доступа.
@@ -171,7 +216,7 @@ autovacuum, bloat и write amplification. Partitioning/архивировани�
 
 ## 5. Приёмка производительности и корректности
 
-Начальные **предложенные лидом** нагрузочные цели для RU v1; перед запуском фиксируем
+Начальные **предложенные лидом** нагрузочные цели для USD/Stripe v1; перед запуском фиксируем
 ожидаемый объём клиентов и стенд. Эти цифры — gate измерения, не гарантия продакшена.
 
 | Профиль | Набор данных / критерий |
@@ -210,6 +255,52 @@ autovacuum, bloat и write amplification. Partitioning/архивировани�
 open lots touched, backlog по пулу, failed invariant, stale leases, provider quota/lag,
 длительность reconciliation. Метрики агрегируются; account/payment IDs находятся в
 структурированных диагностических событиях, не в labels с неограниченной cardinality.
+
+## 6. Восстановление после потери БД — отдельный runbook
+
+Обычный restart сохраняет dispatched факт; restore старой копии может его потерять.
+Поэтому invariant «записать dispatch перед HTTP» сам по себе не защищает от второго charge.
+До live вводим независимый от восстанавливаемой billing DB dispatch fence и append-only
+manifest внешних операций: operation/request ID, seller/provider, amount/currency,
+idempotency key, request hash, known provider IDs и этап. Карточных секретов в нём нет.
+Manifest подтверждается durable до отправки; при его недоступности external write не идёт.
+Локальная таблица — проекция manifest, не единственная копия доказательства отправки.
+
+1. До restore/failover закрыть provider write egress/dispatcher, отозвать старую deployment
+   epoch. Клон/старая инсталляция не могут одновременно списывать деньги. Новый deployment
+   начинает с внешних writes off независимо от восстановленных флагов в DB.
+2. Восстановить согласованный checkpoint DB/inbox/manifest, определить утраченный диапазон
+   и все операции с неизвестным исходом. Prepared в старой БД не доказывает «не отправлено».
+3. Сверить PI/Charge/Refund/транзакции и incoming receipts с провайдером. Восстановить
+   уникальные dispatch/outcome/credit/refund records; старые API idempotency keys и Events
+   archive не считаются вечной защитой. Не найденный одним search объект остаётся unknown.
+4. Восстановить отмены consent/stop из независимого control audit. Если доказательств
+   актуальности согласия за утраченное окно нет — auto-topup выключен до нового consent.
+   Проверить money totals, FIFO, pending reservations и deadline receipts без новых charge.
+5. Зафиксировать reconciliation report/checkpoint и новую deployment epoch. Лид/оператор
+   снимает fence для проверенного provider/account scope. Неустранённые операции остаются
+   изолированы; не открывать весь dispatch по факту успешного старта API.
+
+Runbook относится к новым платежам, refunds и collection из Stripe cash balance. Чтение
+провайдера и durable inbox разрешены во время восстановления. Конкретный backup/manifest
+storage, RPO/RTO и drills фиксируются до live в deployment runbook; text-only ADR не
+подтверждает их наличие. Drill: backup перед HTTP → provider success → потеря локальных
+dispatch/success → restore → повтор worker: **ни одного второго charge/refund**.
+
+## 7. Новые обязательные сценарии после ревью v3.1
+
+- Broken head + admin repair: исправление доступно без прямого SQL, stale worker fenced,
+  обычная следующая команда выполняется только после явно завершённого repair.
+- Confirmed достаточный receipt за секунду до deadline + задержка worker: нет ошибочной
+  debt suspension; pending PI/неверная сумма/чужой invoice такого исключения не получают.
+- Уже принятый stop/credit перед новым catch-up: нет начисления после stop и вечного
+  отодвигания credit постоянно растущим watermark.
+- Mixed cash/admin/debt refund, повторные частичные отмены и позже оплаченный долг:
+  детерминированные source slices, cumulative rounding, ноль лишнего cash refund.
+- Stop → suspension → полная оплата долга → resume_free: без новых платных суток;
+  resume_paid требует нового первого дня. Модерация/identity не снимаются оплатой.
+- Restore drill выше, потерянный consent revoke, idempotency retention истекла, provider
+  API недоступен: external writes остаются fenced, полученные деньги не дублируются.
 
 Порядок работы — [план P1/P6](balance-billing-v1.md); банковские и административные
 операции — [контракт счетов и плательщиков](billing-invoices-and-payers.md).
