@@ -473,6 +473,10 @@ message AdminBillingRefund {
   BillingRefund refund = 1;
   string account_id = 2;
   string provider_refund_id = 3;
+  // Set when the provider had no trace of this pending Calab refund 24 h after it was written:
+  // it is never sent again, its money stays reserved until a superadmin resolves it (reconcile
+  // with release_refund_ids, or a refund made by hand in the provider dashboard is matched).
+  google.protobuf.Timestamp needs_review_since = 4;
 }
 
 message AdminBillingRefunds {
@@ -568,6 +572,10 @@ message AdminHoldRequest {
 message AdminReconcileRequest {
   string reason = 1;
   string request_id = 2;
+  // Refunds of this account marked needs_review that the superadmin confirmed absent at the
+  // provider: after one more provider lookup finds nothing they fail and their reservation
+  // returns to the balance (409 BILLING_REFUND_NOT_RELEASABLE otherwise).
+  repeated string release_refund_ids = 3;
 }
 
 // PUT /api/admin/billing/accounts/{id}/discount

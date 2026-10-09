@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -483,9 +484,25 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request) error {
 	if h.d.Reconciler == nil {
 		return billing.ErrNotImplemented
 	}
+	release := make([]uuid.UUID, 0, len(req.GetReleaseRefundIds()))
+	for _, s := range req.GetReleaseRefundIds() {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return httpx.Validation("release_refund_ids", "refund ids must be UUIDs")
+		}
+		release = append(release, id)
+	}
+	releaser, canRelease := h.d.Reconciler.(RefundReleaser)
+	if len(release) > 0 && !canRelease {
+		return billing.ErrNotImplemented
+	}
 	ctx := r.Context()
 	res, replay, err := h.ahead(ctx, c, &accID, nil, func(_ *sqlc.Queries, acc *sqlc.BillingAccount) (*effect, error) {
-		return &effect{before: acc, acc: acc, target: map[string]string{"account_id": acc.ID.String()}}, nil
+		target := map[string]string{"account_id": acc.ID.String()}
+		if len(release) > 0 {
+			target["release_refund_ids"] = strings.Join(req.GetReleaseRefundIds(), ",")
+		}
+		return &effect{before: acc, acc: acc, target: target}, nil
 	})
 	if err != nil {
 		return err
@@ -493,6 +510,13 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request) error {
 	if !c.preview {
 		if err := h.d.Reconciler.ReconcileAccount(ctx, accID); err != nil {
 			return err
+		}
+		if !replay { // a replay answers again; the release happened (or was refused) the first time
+			for _, id := range release {
+				if err := releaser.ReleaseRefund(ctx, accID, id); err != nil {
+					return err
+				}
+			}
 		}
 		acc, err := h.d.DB.Q.GetBillingAccount(ctx, accID)
 		if err != nil {

@@ -1,8 +1,23 @@
 import { create } from '@bufbuild/protobuf';
-import { BillingAccountStatus, BillingState, BillingSummarySchema, MoneySchema, PaymentMethodKind, PaymentMethodOptionSchema, Plan } from '@calaba/protocol';
+import {
+  BillingAccountStatus,
+  BillingDisputeSchema,
+  BillingPaymentSchema,
+  BillingRefundSchema,
+  BillingState,
+  BillingSummarySchema,
+  DisputeStatus,
+  MoneySchema,
+  PaymentMethodKind,
+  PaymentMethodOptionSchema,
+  PaymentStatus,
+  Plan,
+  RefundStatus,
+} from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   amountProblem,
+  autoTopupFailure,
   autoTopupLimits,
   billingPlan,
   cabinetPhase,
@@ -11,6 +26,7 @@ import {
   forecastOf,
   offeredMethods,
   otherPlan,
+  refundableMinor,
   rejectRefundRequest,
   reserveAmount,
   timeLeft,
@@ -128,6 +144,36 @@ describe('auto-topup limits', () => {
     expect(autoTopupLimits(summary())).toEqual({ def: 50_000n, max: 500_000n });
     expect(autoTopupLimits(summary({ autoTopup: { defaultMaxAmount: usd(20_000n), limitMaxAmount: usd(100_000n) } }))).toEqual({ def: 20_000n, max: 100_000n });
     expect(autoTopupLimits(summary({ autoTopup: { defaultMaxAmount: usd(900_000n), limitMaxAmount: usd(100_000n) } }))).toEqual({ def: 100_000n, max: 100_000n });
+  });
+});
+
+describe('refundableMinor', () => {
+  const pay = (refunded = 0n, status = PaymentStatus.SUCCEEDED) => create(BillingPaymentSchema, { id: 'p1', amount: usd(1000n), refunded: usd(refunded), status });
+  const dispute = (status: DisputeStatus, paymentId = 'p1') => create(BillingDisputeSchema, { id: 'd', paymentId, status });
+  const refund = (amount: bigint, status: RefundStatus, paymentId = 'p1') => create(BillingRefundSchema, { id: 'r', paymentId, amount: usd(amount), status });
+
+  it('is amount minus refunded minus refunds in flight', () => {
+    expect(refundableMinor(pay(), [], [])).toBe(1000n);
+    expect(refundableMinor(pay(300n), [], [refund(300n, RefundStatus.SUCCEEDED), refund(200n, RefundStatus.PENDING), refund(100n, RefundStatus.FAILED)])).toBe(500n);
+    expect(refundableMinor(pay(), [], [refund(500n, RefundStatus.PENDING, 'other')])).toBe(1000n);
+  });
+
+  it('hides «Вернуть» on fully refunded, unfinished, lost or open-disputed payments', () => {
+    expect(refundableMinor(pay(1000n), [], [])).toBe(0n);
+    expect(refundableMinor(pay(600n), [], [refund(400n, RefundStatus.REQUIRES_ACTION)])).toBe(0n);
+    expect(refundableMinor(pay(0n, PaymentStatus.PROCESSING), [], [])).toBe(0n);
+    expect(refundableMinor(pay(), [dispute(DisputeStatus.LOST)], [])).toBe(0n);
+    expect(refundableMinor(pay(), [dispute(DisputeStatus.OPEN)], [])).toBe(0n);
+    expect(refundableMinor(pay(), [dispute(DisputeStatus.WON), dispute(DisputeStatus.LOST, 'other')], [])).toBe(1000n);
+    expect(refundableMinor(undefined, [], [])).toBe(0n);
+  });
+});
+
+describe('autoTopupFailure', () => {
+  it('names the known codes and folds the rest into generic', () => {
+    for (const c of ['authentication_required', 'card_declined', 'insufficient_funds', 'expired_card'] as const) expect(autoTopupFailure(c)).toBe(c);
+    expect(autoTopupFailure('do_not_honor')).toBe('generic');
+    expect(autoTopupFailure('')).toBe('generic');
   });
 });
 

@@ -269,12 +269,18 @@ func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.Bi
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), providerTimeout)
 	defer cancel()
 	var fact provider.RefundFact
-	if ref.ProviderRefundID != nil {
+	switch {
+	case ref.ProviderRefundID != nil:
 		fact, err = p.GetRefund(pctx, *ref.ProviderRefundID)
-	} else {
+	case !core.RefundMayRepost(ref):
+		// Near / past the provider's idempotency window a POST could refund twice: only the
+		// reconciliation's lookup (metadata calab_refund_id) finishes it now.
+		slog.WarnContext(ctx, "billing admin: refund past the repost window, left to reconciliation", "refund", ref.ID)
+		return ref, nil
+	default:
 		fact, err = p.Refund(pctx, provider.RefundReq{
 			IdemKey: ref.IdemKey, PaymentID: pay.ProviderPaymentID, Amount: bmoney.New(ref.AmountMinor, bmoney.Currency(ref.Currency)),
-			Reason: ref.Reason, Metadata: provider.Metadata{AccountID: ref.AccountID},
+			Reason: ref.Reason, Metadata: provider.Metadata{AccountID: ref.AccountID, RefundID: ref.ID},
 		})
 	}
 	status := ""

@@ -182,7 +182,8 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 			return false
 		}
 		for _, snap := range ready.Workspaces {
-			if !s.workspaceLeaseAllows(parseID(snap.GetWorkspace().GetId())) {
+			ws := parseID(snap.GetWorkspace().GetId())
+			if !s.workspaceLeaseAllows(ws) && (!isBillingStub(snap) || !s.billingStubAllows(ws)) {
 				return false
 			}
 		}
@@ -471,6 +472,17 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, err)
 		}
 	}
+	stubs := map[uuid.UUID]bool{} // held as billing stubs (not subscribed)
+	for _, ws := range s.billingStubs() {
+		if old[ws] {
+			continue
+		}
+		if !present[ws] {
+			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, nil)
+			continue
+		}
+		stubs[ws] = true
+	}
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	due, probes := s.dueWorkspaceChecks(ids, old)
 	allowed := map[uuid.UUID]identitypolicy.Decision{}
@@ -482,6 +494,9 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			allowed[ws] = decision
 		} else if old[ws] && (!identityTransient(decision, err) || !s.workspaceLeaseAllows(ws)) {
 			// A transient failure keeps a still-valid lease (incident 2026-10-05).
+			h.identityRemoveWorkspace(s, ws, decision, err)
+		} else if stubs[ws] && !identityTransient(decision, err) && !billingDenied(decision, err) && !decision.Allowed {
+			// A billing stub that is now denied for another reason (left, banned, SSO): gone.
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
 	}
@@ -605,8 +620,14 @@ func identityTransient(d identitypolicy.Decision, err error) bool {
 	return d.Reason == identitypolicy.StateUnavailable
 }
 
+// identityRemoveWorkspace closes ws for the session. A billing suspension (ADR-0080 §8) sends
+// only the access status: the client drops the content and keeps the workspace as a stub
+// with the paywall; anything else removes it (WORKSPACE_DELETE) first.
 func (h *Hub) identityRemoveWorkspace(s *Session, ws uuid.UUID, d identitypolicy.Decision, err error) {
-	s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: ws.String()}}})
+	if !billingDenied(d, err) {
+		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: ws.String()}}})
+		s.dropBillingStub(ws)
+	}
 	s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: identityAccessStatus(ws, d, err, s.principal)}}})
 	h.leaveWorkspace(s, ws)
 }
@@ -707,10 +728,12 @@ func identityAccessStatus(ws uuid.UUID, d identitypolicy.Decision, err error, p 
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_ENTITLEMENT_REQUIRED
 	case identitypolicy.DirectoryStale, identitypolicy.MembershipSuspended:
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_DIRECTORY_DENIED
-	case identitypolicy.WorkspaceSuspended, identitypolicy.BillingSuspended:
-		// A billing suspension closes the workspace like this one (ADR-0080 §12): no data, the
-		// client drops its cache; the owner reads GET /api/workspaces/{id}/billing.
+	case identitypolicy.WorkspaceSuspended:
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED
+	case identitypolicy.BillingSuspended:
+		// Closed like SUSPENDED (ADR-0080 §12: no data, the client drops its cache), but kept as
+		// a stub: the owner's paywall reads GET /api/workspaces/{id}/billing.
+		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_BILLING_SUSPENDED
 	case identitypolicy.RecentAuthRequired:
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_RECENT_AUTH_REQUIRED
 	case identitypolicy.StateUnavailable:

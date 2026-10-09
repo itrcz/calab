@@ -80,9 +80,9 @@ func TestStripeEndToEnd(t *testing.T) {
 		t.Fatalf("payment intent %s", pi.Status)
 	}
 
-	event := func(id string) []byte {
+	event := func(id, version string) []byte {
 		body, _ := json.Marshal(map[string]any{
-			"id": id, "object": "event", "api_version": stripe.APIVersion, "created": time.Now().Unix(), "livemode": false,
+			"id": id, "object": "event", "api_version": version, "created": time.Now().Unix(), "livemode": false,
 			"type": "payment_intent.succeeded", "pending_webhooks": 1,
 			"data": map[string]any{"object": map[string]any{"id": pi.ID, "object": "payment_intent", "metadata": pi.Metadata}},
 		})
@@ -98,7 +98,7 @@ func TestStripeEndToEnd(t *testing.T) {
 		_ = res.Body.Close()
 		return res.StatusCode
 	}
-	body := event("evt_t5_" + hex.EncodeToString(b[:6]))
+	body := event("evt_t5_"+hex.EncodeToString(b[:6]), stripe.APIVersion)
 	signed := webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: body, Secret: secret, Timestamp: time.Now()})
 	wrong := webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: body, Secret: "whsec_wrong", Timestamp: time.Now()})
 	if st := post(body, wrong.Header); st != http.StatusBadRequest {
@@ -109,8 +109,9 @@ func TestStripeEndToEnd(t *testing.T) {
 			t.Fatalf("webhook: %d", st)
 		}
 	}
-	// A second event of the same payment (another event id).
-	body2 := event("evt_t5b_" + hex.EncodeToString(b[:6]))
+	// A second event of the same payment (another event id), rendered with another API version
+	// (the account default / `stripe listen`): accepted, the payment is re-read, no second credit.
+	body2 := event("evt_t5b_"+hex.EncodeToString(b[:6]), "2026-09-30.endive")
 	if st := post(body2, webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: body2, Secret: secret}).Header); st != http.StatusOK {
 		t.Fatalf("second event: %d", st)
 	}

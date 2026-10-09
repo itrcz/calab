@@ -2,11 +2,15 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
-	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/reflect/protoreflect"
+
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 )
 
 // A lease is owned by one exact Session, never shared by user ID. until retains
@@ -29,6 +33,10 @@ type identityLeases struct {
 	// workspace lease a billing suspension denies (ADR-0080 §12: the owner's recovery scope).
 	// It opens nothing else.
 	billing map[uuid.UUID]time.Time
+	// stubs: workspaces whose last definitive decision was a billing suspension. The session
+	// may hold them as content-free stubs (READY / GET /api/workspaces: workspaces.BillingStub)
+	// and is told when that ends (re-added in full, or removed). Opens no events.
+	stubs map[uuid.UUID]bool
 }
 
 func (s *Session) lease(d identitypolicy.Decision, ws uuid.UUID, started, evaluated time.Time, revision uint64) identityLease {
@@ -132,6 +140,14 @@ func (s *Session) refreshWorkspaceLeaseOnce(ctx context.Context, ws uuid.UUID) (
 	defer s.leases.mu.Unlock()
 	if s.leases.revision != revision {
 		return d, true, err
+	}
+	if billingDenied(d, err) {
+		if s.leases.stubs == nil {
+			s.leases.stubs = map[uuid.UUID]bool{}
+		}
+		s.leases.stubs[ws] = true
+	} else {
+		delete(s.leases.stubs, ws)
 	}
 	if billingUntil.IsZero() {
 		delete(s.leases.billing, ws)
@@ -263,6 +279,56 @@ func (s *Session) billingRecoveryLease(ctx context.Context, d identitypolicy.Dec
 		return time.Time{}
 	}
 	return s.lease(bd, ws, started, evaluated, revision).until
+}
+
+// billingDenied: a definitive denial for a billing suspension (ADR-0080 §8).
+func billingDenied(d identitypolicy.Decision, err error) bool {
+	return !d.Allowed && d.Reason == identitypolicy.BillingSuspended && (err == nil || errors.Is(err, identitypolicy.ErrDenied))
+}
+
+// billingStubAllows: the last definitive decision on ws was a billing suspension, so the
+// session may hold ws as a content-free stub (isBillingStub).
+func (s *Session) billingStubAllows(ws uuid.UUID) bool {
+	if ws == uuid.Nil || (s.principal.Authority != identitypolicy.LocalAccount && s.principal.WorkspaceID != ws) {
+		return false
+	}
+	s.leases.mu.Lock()
+	defer s.leases.mu.Unlock()
+	return s.leases.stubs[ws]
+}
+
+// billingStubs lists the workspaces the session holds as billing stubs.
+func (s *Session) billingStubs() []uuid.UUID {
+	s.leases.mu.Lock()
+	defer s.leases.mu.Unlock()
+	out := make([]uuid.UUID, 0, len(s.leases.stubs))
+	for ws := range s.leases.stubs {
+		out = append(out, ws)
+	}
+	return out
+}
+
+// dropBillingStub forgets that the session holds ws as a stub.
+func (s *Session) dropBillingStub(ws uuid.UUID) {
+	s.leases.mu.Lock()
+	delete(s.leases.stubs, ws)
+	s.leases.mu.Unlock()
+}
+
+// isBillingStub: a READY snapshot that carries only the workspace (with billing state
+// SUSPENDED) and the recipient's role — workspaces.BillingStub, nothing of the content.
+func isBillingStub(snap *v1.WorkspaceSnapshot) bool {
+	if snap.GetWorkspace().GetBilling().GetState() != v1.BillingState_BILLING_STATE_SUSPENDED {
+		return false
+	}
+	only := true
+	snap.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, _ protoreflect.Value) bool {
+		if n := fd.Name(); n != "workspace" && n != "role" {
+			only = false
+		}
+		return only
+	})
+	return only
 }
 
 // billingLeaseAllows: the owner's billing recovery lease of ws is valid (see billingRecoveryLease).

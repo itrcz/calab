@@ -28,6 +28,7 @@ const REASON: Record<string, MessageKey> = {
   BILLING_AUTO_TOPUP_LIMIT: 'billing.err.autoLimit',
   BILLING_AUTO_TOPUP_UNAVAILABLE: 'billing.err.autoUnavailable',
   BILLING_REFUND_EXCEEDS_REFUNDABLE: 'billing.err.refundExceeds',
+  BILLING_REFUND_NOT_RELEASABLE: 'billing.err.notReleasable',
   BILLING_ACCOUNT_NOT_FOUND: 'billing.err.notFound',
   BILLING_DISPUTE_HOLD: 'billing.err.disputeHold',
   BILLING_CURRENCY_MISMATCH: 'billing.err.currency',

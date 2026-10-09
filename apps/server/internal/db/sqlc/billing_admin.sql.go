@@ -532,7 +532,7 @@ func (q *Queries) AdminListBillingRefundRequests(ctx context.Context, arg AdminL
 }
 
 const adminListBillingRefunds = `-- name: AdminListBillingRefunds :many
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds
 WHERE ($1::uuid IS NULL OR account_id = $1::uuid)
   AND ($2::uuid IS NULL OR payment_id = $2::uuid)
   AND ($3::text = '' OR status = $3::text)
@@ -580,6 +580,7 @@ func (q *Queries) AdminListBillingRefunds(ctx context.Context, arg AdminListBill
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SucceededAt,
+			&i.NeedsReviewAt,
 		); err != nil {
 			return nil, err
 		}
@@ -592,7 +593,7 @@ func (q *Queries) AdminListBillingRefunds(ctx context.Context, arg AdminListBill
 }
 
 const adminListBillingRefundsByIdemPrefix = `-- name: AdminListBillingRefundsByIdemPrefix :many
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds WHERE idem_key LIKE $1::text || '%' ORDER BY id
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds WHERE idem_key LIKE $1::text || '%' ORDER BY id
 `
 
 // Refunds created by one admin request (idem_key 'refund:{request_id}…'), oldest first.
@@ -621,6 +622,7 @@ func (q *Queries) AdminListBillingRefundsByIdemPrefix(ctx context.Context, prefi
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SucceededAt,
+			&i.NeedsReviewAt,
 		); err != nil {
 			return nil, err
 		}
@@ -770,7 +772,7 @@ func (q *Queries) AdminSetBillingAccountHold(ctx context.Context, arg AdminSetBi
 const adminSetBillingRefundProviderID = `-- name: AdminSetBillingRefundProviderID :one
 UPDATE billing_refunds SET provider_refund_id = $1::text, updated_at = $2::timestamptz
 WHERE id = $3 AND provider_refund_id IS NULL AND status IN ('pending', 'requires_action')
-RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at
+RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at
 `
 
 type AdminSetBillingRefundProviderIDParams struct {
@@ -800,6 +802,7 @@ func (q *Queries) AdminSetBillingRefundProviderID(ctx context.Context, arg Admin
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SucceededAt,
+		&i.NeedsReviewAt,
 	)
 	return i, err
 }

@@ -68,8 +68,8 @@
 - Приостановка: `identitypolicy.State.BillingSuspended` (из `billing_accounts.status='suspended'`
   в снимке `GetIdentityGateState`, при `BILLING_ENFORCEMENT_ENABLED`). Закрыто всё, чтение тоже;
   владельцу открыты `BillingRead/BillingWrite`: маршруты `scopeBilling` и `GET
-  /api/workspaces/{id}`. Боты, входы (ссылки, регистрация, гостевые ссылки), RTC закрыты; шлюз
-  убирает пространство (`IdentityAccess` reason `SUSPENDED`), владельцу доходит только
+  /api/workspaces/{id}`. Боты, входы (ссылки, регистрация, гостевые ссылки), RTC закрыты; контент
+  шлюз закрывает (`IdentityAccess` reason `BILLING_SUSPENDED`; пространство остаётся заглушкой — см. «После E2E»), владельцу доходит только
   `BILLING_UPDATE`. Модерация и биллинг друг друга не снимают; владелец платит и под модерацией.
 - После изменения статуса/плана аккаунта ядро вызывает `plans.Service.BillingChanged` (сброс
   кэша + `WORKSPACE_UPDATE` с `Workspace.billing`). Ручной план при `source='billing'` — `409
@@ -87,3 +87,20 @@
 - `PUT …/auto-topup`: `consent_version` = `autotopup.ConsentVersion` (текст —
   `autotopup.ConsentTexts`), потолок в [минимум метода, $5000].
 - Новый маршрут `POST /api/admin/billing/auto-topup/reconcile` (scope admin, боты запрещены).
+
+## После E2E и ревью (2026-10-09)
+
+- Приостановка за неоплату не убирает пространство: `GET /api/workspaces` и READY отдают участникам
+  заглушку (`workspaces.BillingStub`: id, имя, иконка, владелец, тариф, `Workspace.billing.state =
+  SUSPENDED`; в READY — только workspace и роль), шлюз шлёт `IDENTITY_ACCESS_REASON_BILLING_SUSPENDED`
+  без `WORKSPACE_DELETE`. Клиент чистит контент как при блокировке, оставляет заглушку и показывает
+  paywall владельцу / «Пространство приостановлено» остальным (desktop и телефон); маршруты
+  `…/billing` и `GET /api/workspaces/{id}` владельца проходят клиентский gate. После оплаты —
+  `ALLOWED` + `WORKSPACE_CREATE`. Модерационная приостановка — как раньше.
+- Webhook Stripe принимает события любой версии API (только конверт и id объекта, объект
+  перечитывается закреплённой версией); подпись строгая.
+- Время для провайдера — реальное (expires_at Checkout, фильтры списков); billing clock — только
+  ledger и расписание.
+- Возврат без provider id не POST-ится после 23 ч с создания строки; поиск по `calab_refund_id`;
+  через 24 ч без следа — `needs_review` (миграция 00076), резерв держится, суперадмин снимает его
+  через reconcile `release_refund_ids`.

@@ -1,7 +1,7 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceLock, LockedWorkspacePicker } from '../identity/WorkspaceLock';
 import { useIdentity } from '../../stores/identity';
-import { accessLocked, localAuthority } from '../identity/model';
+import { localAuthority, lockScreen } from '../identity/model';
 import { Compass, Plus } from 'lucide-react';
 import { MessagesSquare } from 'lucide-react';
 import { WorkspaceRole } from '@calaba/protocol';
@@ -71,7 +71,7 @@ function ShellLayout(): ReactNode {
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
   const local = useSession((s) => localAuthority(s.authority));
-  const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
+  const locked = useIdentity((s) => !!wsId && lockScreen(s.access[wsId]));
   const home = wsId === HOME && local;
   const hasWs = useWorkspaces((s) => (wsId && !home ? !!s.byId[wsId] : false));
   // Balance billing (ADR-0080 §8): a workspace closed for unpaid billing shows the paywall.

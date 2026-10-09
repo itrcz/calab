@@ -82,7 +82,8 @@ type Metadata struct {
 	AccountID  uuid.UUID
 	CheckoutID uuid.UUID
 	AttemptID  uuid.UUID
-	Kind       string // MetadataKindCheckout | MetadataKindAutoTopup
+	RefundID   uuid.UUID // billing_refunds.id of a Calab refund: found by listing when its answer was lost
+	Kind       string    // MetadataKindCheckout | MetadataKindAutoTopup
 }
 
 // Metadata kinds.
@@ -96,6 +97,7 @@ const (
 	MetaAccountID  = "calab_account_id"
 	MetaCheckoutID = "calab_checkout_id"
 	MetaAttemptID  = "calab_attempt_id"
+	MetaRefundID   = "calab_refund_id"
 	MetaKind       = "kind"
 )
 
@@ -110,6 +112,9 @@ func (m Metadata) Map() map[string]string {
 	}
 	if m.AttemptID != uuid.Nil {
 		out[MetaAttemptID] = m.AttemptID.String()
+	}
+	if m.RefundID != uuid.Nil {
+		out[MetaRefundID] = m.RefundID.String()
 	}
 	if m.Kind != "" {
 		out[MetaKind] = m.Kind
@@ -126,7 +131,7 @@ func ParseMetadata(kv map[string]string) Metadata {
 		}
 		return u
 	}
-	return Metadata{AccountID: id(MetaAccountID), CheckoutID: id(MetaCheckoutID), AttemptID: id(MetaAttemptID), Kind: kv[MetaKind]}
+	return Metadata{AccountID: id(MetaAccountID), CheckoutID: id(MetaCheckoutID), AttemptID: id(MetaAttemptID), RefundID: id(MetaRefundID), Kind: kv[MetaKind]}
 }
 
 // CustomerRef identifies a provider customer of one merchant account and mode.

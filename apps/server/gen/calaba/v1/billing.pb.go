@@ -3726,6 +3726,10 @@ type AdminBillingRefund struct {
 	Refund           *BillingRefund         `protobuf:"bytes,1,opt,name=refund,proto3" json:"refund,omitempty"`
 	AccountId        string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	ProviderRefundId string                 `protobuf:"bytes,3,opt,name=provider_refund_id,json=providerRefundId,proto3" json:"provider_refund_id,omitempty"`
+	// Set when the provider had no trace of this pending Calab refund 24 h after it was written:
+	// it is never sent again, its money stays reserved until a superadmin resolves it (reconcile
+	// with release_refund_ids, or a refund made by hand in the provider dashboard is matched).
+	NeedsReviewSince *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=needs_review_since,json=needsReviewSince,proto3" json:"needs_review_since,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -3779,6 +3783,13 @@ func (x *AdminBillingRefund) GetProviderRefundId() string {
 		return x.ProviderRefundId
 	}
 	return ""
+}
+
+func (x *AdminBillingRefund) GetNeedsReviewSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NeedsReviewSince
+	}
+	return nil
 }
 
 type AdminBillingRefunds struct {
@@ -4597,11 +4608,15 @@ func (x *AdminHoldRequest) GetPreview() bool {
 
 // POST /api/admin/billing/accounts/{id}/reconcile
 type AdminReconcileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
-	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Reason    string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
+	RequestId string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Refunds of this account marked needs_review that the superadmin confirmed absent at the
+	// provider: after one more provider lookup finds nothing they fail and their reservation
+	// returns to the balance (409 BILLING_REFUND_NOT_RELEASABLE otherwise).
+	ReleaseRefundIds []string `protobuf:"bytes,3,rep,name=release_refund_ids,json=releaseRefundIds,proto3" json:"release_refund_ids,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *AdminReconcileRequest) Reset() {
@@ -4646,6 +4661,13 @@ func (x *AdminReconcileRequest) GetRequestId() string {
 		return x.RequestId
 	}
 	return ""
+}
+
+func (x *AdminReconcileRequest) GetReleaseRefundIds() []string {
+	if x != nil {
+		return x.ReleaseRefundIds
+	}
+	return nil
 }
 
 // PUT /api/admin/billing/accounts/{id}/discount
@@ -5556,12 +5578,13 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"\x14AdminBillingPayments\x12:\n" +
 	"\bpayments\x18\x01 \x03(\v2\x1e.calaba.v1.AdminBillingPaymentR\bpayments\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
-	"nextCursor\"\x93\x01\n" +
+	"nextCursor\"\xdd\x01\n" +
 	"\x12AdminBillingRefund\x120\n" +
 	"\x06refund\x18\x01 \x01(\v2\x18.calaba.v1.BillingRefundR\x06refund\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12,\n" +
-	"\x12provider_refund_id\x18\x03 \x01(\tR\x10providerRefundId\"o\n" +
+	"\x12provider_refund_id\x18\x03 \x01(\tR\x10providerRefundId\x12H\n" +
+	"\x12needs_review_since\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x10needsReviewSince\"o\n" +
 	"\x13AdminBillingRefunds\x127\n" +
 	"\arefunds\x18\x01 \x03(\v2\x1d.calaba.v1.AdminBillingRefundR\arefunds\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
@@ -5634,11 +5657,12 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12\x18\n" +
-	"\apreview\x18\x04 \x01(\bR\apreview\"N\n" +
+	"\apreview\x18\x04 \x01(\bR\apreview\"|\n" +
 	"\x15AdminReconcileRequest\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x02 \x01(\tR\trequestId\"\xb7\x01\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12,\n" +
+	"\x12release_refund_ids\x18\x03 \x03(\tR\x10releaseRefundIds\"\xb7\x01\n" +
 	"\x14AdminDiscountRequest\x12!\n" +
 	"\fdiscount_bps\x18\x01 \x01(\rR\vdiscountBps\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1d\n" +
@@ -5989,41 +6013,42 @@ var file_calaba_v1_billing_proto_depIdxs = []int32{
 	39,  // 98: calaba.v1.AdminBillingPayment.payment:type_name -> calaba.v1.BillingPayment
 	49,  // 99: calaba.v1.AdminBillingPayments.payments:type_name -> calaba.v1.AdminBillingPayment
 	41,  // 100: calaba.v1.AdminBillingRefund.refund:type_name -> calaba.v1.BillingRefund
-	51,  // 101: calaba.v1.AdminBillingRefunds.refunds:type_name -> calaba.v1.AdminBillingRefund
-	43,  // 102: calaba.v1.AdminBillingRefundRequest.request:type_name -> calaba.v1.BillingRefundRequest
-	53,  // 103: calaba.v1.AdminBillingRefundRequests.requests:type_name -> calaba.v1.AdminBillingRefundRequest
-	45,  // 104: calaba.v1.AdminBillingDispute.dispute:type_name -> calaba.v1.BillingDispute
-	55,  // 105: calaba.v1.AdminBillingDisputes.disputes:type_name -> calaba.v1.AdminBillingDispute
-	73,  // 106: calaba.v1.AdminProviderEvent.received_at:type_name -> google.protobuf.Timestamp
-	73,  // 107: calaba.v1.AdminProviderEvent.processed_at:type_name -> google.protobuf.Timestamp
-	57,  // 108: calaba.v1.AdminProviderEvents.events:type_name -> calaba.v1.AdminProviderEvent
-	74,  // 109: calaba.v1.AdminEnableBillingRequest.plan:type_name -> calaba.v1.Plan
-	16,  // 110: calaba.v1.AdminManualCreditRequest.amount:type_name -> calaba.v1.Money
-	16,  // 111: calaba.v1.AdminRefundRequest.amount:type_name -> calaba.v1.Money
-	73,  // 112: calaba.v1.AdminHoldRequest.hold_until:type_name -> google.protobuf.Timestamp
-	74,  // 113: calaba.v1.AdminPriceVersion.plan:type_name -> calaba.v1.Plan
-	16,  // 114: calaba.v1.AdminPriceVersion.unit:type_name -> calaba.v1.Money
-	73,  // 115: calaba.v1.AdminPriceVersion.effective_from:type_name -> google.protobuf.Timestamp
-	73,  // 116: calaba.v1.AdminPriceVersion.created_at:type_name -> google.protobuf.Timestamp
-	66,  // 117: calaba.v1.AdminPriceVersions.prices:type_name -> calaba.v1.AdminPriceVersion
-	74,  // 118: calaba.v1.AdminCreatePriceRequest.plan:type_name -> calaba.v1.Plan
-	16,  // 119: calaba.v1.AdminCreatePriceRequest.unit:type_name -> calaba.v1.Money
-	73,  // 120: calaba.v1.AdminCreatePriceRequest.effective_from:type_name -> google.protobuf.Timestamp
-	16,  // 121: calaba.v1.AdminBillingMutationResult.balance_before:type_name -> calaba.v1.Money
-	16,  // 122: calaba.v1.AdminBillingMutationResult.balance_after:type_name -> calaba.v1.Money
-	46,  // 123: calaba.v1.AdminBillingMutationResult.account:type_name -> calaba.v1.AdminBillingAccount
-	16,  // 124: calaba.v1.AdminBillingMutationResult.amount:type_name -> calaba.v1.Money
-	51,  // 125: calaba.v1.AdminBillingMutationResult.refunds:type_name -> calaba.v1.AdminBillingRefund
-	53,  // 126: calaba.v1.AdminBillingMutationResult.refund_request:type_name -> calaba.v1.AdminBillingRefundRequest
-	66,  // 127: calaba.v1.AdminBillingMutationResult.price:type_name -> calaba.v1.AdminPriceVersion
-	16,  // 128: calaba.v1.AdminBillingMutationResult.refundable:type_name -> calaba.v1.Money
-	73,  // 129: calaba.v1.AdminBillingTestClockRequest.now:type_name -> google.protobuf.Timestamp
-	73,  // 130: calaba.v1.AdminBillingTestClockResponse.now:type_name -> google.protobuf.Timestamp
-	131, // [131:131] is the sub-list for method output_type
-	131, // [131:131] is the sub-list for method input_type
-	131, // [131:131] is the sub-list for extension type_name
-	131, // [131:131] is the sub-list for extension extendee
-	0,   // [0:131] is the sub-list for field type_name
+	73,  // 101: calaba.v1.AdminBillingRefund.needs_review_since:type_name -> google.protobuf.Timestamp
+	51,  // 102: calaba.v1.AdminBillingRefunds.refunds:type_name -> calaba.v1.AdminBillingRefund
+	43,  // 103: calaba.v1.AdminBillingRefundRequest.request:type_name -> calaba.v1.BillingRefundRequest
+	53,  // 104: calaba.v1.AdminBillingRefundRequests.requests:type_name -> calaba.v1.AdminBillingRefundRequest
+	45,  // 105: calaba.v1.AdminBillingDispute.dispute:type_name -> calaba.v1.BillingDispute
+	55,  // 106: calaba.v1.AdminBillingDisputes.disputes:type_name -> calaba.v1.AdminBillingDispute
+	73,  // 107: calaba.v1.AdminProviderEvent.received_at:type_name -> google.protobuf.Timestamp
+	73,  // 108: calaba.v1.AdminProviderEvent.processed_at:type_name -> google.protobuf.Timestamp
+	57,  // 109: calaba.v1.AdminProviderEvents.events:type_name -> calaba.v1.AdminProviderEvent
+	74,  // 110: calaba.v1.AdminEnableBillingRequest.plan:type_name -> calaba.v1.Plan
+	16,  // 111: calaba.v1.AdminManualCreditRequest.amount:type_name -> calaba.v1.Money
+	16,  // 112: calaba.v1.AdminRefundRequest.amount:type_name -> calaba.v1.Money
+	73,  // 113: calaba.v1.AdminHoldRequest.hold_until:type_name -> google.protobuf.Timestamp
+	74,  // 114: calaba.v1.AdminPriceVersion.plan:type_name -> calaba.v1.Plan
+	16,  // 115: calaba.v1.AdminPriceVersion.unit:type_name -> calaba.v1.Money
+	73,  // 116: calaba.v1.AdminPriceVersion.effective_from:type_name -> google.protobuf.Timestamp
+	73,  // 117: calaba.v1.AdminPriceVersion.created_at:type_name -> google.protobuf.Timestamp
+	66,  // 118: calaba.v1.AdminPriceVersions.prices:type_name -> calaba.v1.AdminPriceVersion
+	74,  // 119: calaba.v1.AdminCreatePriceRequest.plan:type_name -> calaba.v1.Plan
+	16,  // 120: calaba.v1.AdminCreatePriceRequest.unit:type_name -> calaba.v1.Money
+	73,  // 121: calaba.v1.AdminCreatePriceRequest.effective_from:type_name -> google.protobuf.Timestamp
+	16,  // 122: calaba.v1.AdminBillingMutationResult.balance_before:type_name -> calaba.v1.Money
+	16,  // 123: calaba.v1.AdminBillingMutationResult.balance_after:type_name -> calaba.v1.Money
+	46,  // 124: calaba.v1.AdminBillingMutationResult.account:type_name -> calaba.v1.AdminBillingAccount
+	16,  // 125: calaba.v1.AdminBillingMutationResult.amount:type_name -> calaba.v1.Money
+	51,  // 126: calaba.v1.AdminBillingMutationResult.refunds:type_name -> calaba.v1.AdminBillingRefund
+	53,  // 127: calaba.v1.AdminBillingMutationResult.refund_request:type_name -> calaba.v1.AdminBillingRefundRequest
+	66,  // 128: calaba.v1.AdminBillingMutationResult.price:type_name -> calaba.v1.AdminPriceVersion
+	16,  // 129: calaba.v1.AdminBillingMutationResult.refundable:type_name -> calaba.v1.Money
+	73,  // 130: calaba.v1.AdminBillingTestClockRequest.now:type_name -> google.protobuf.Timestamp
+	73,  // 131: calaba.v1.AdminBillingTestClockResponse.now:type_name -> google.protobuf.Timestamp
+	132, // [132:132] is the sub-list for method output_type
+	132, // [132:132] is the sub-list for method input_type
+	132, // [132:132] is the sub-list for extension type_name
+	132, // [132:132] is the sub-list for extension extendee
+	0,   // [0:132] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_billing_proto_init() }

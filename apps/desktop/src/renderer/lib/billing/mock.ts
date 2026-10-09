@@ -1,4 +1,5 @@
 import {
+  AdminBillingAccountDetailsSchema,
   AdminBillingAccountSchema,
   AdminBillingMutationResultSchema,
   AdminBillingPaymentSchema,
@@ -438,7 +439,8 @@ function admin(): AdminBillingApi {
     },
     async account(id) {
       await wait();
-      return find(id);
+      const a = find(id);
+      return create(AdminBillingAccountDetailsSchema, { account: a, freeAdvance: usd(a.balance && a.balance.minor > 0n ? a.balance.minor : 0n), pendingRefunds: usd(0n) });
     },
     async ledger(id, cursor) {
       return owner().ledger(id, cursor);
@@ -504,7 +506,8 @@ function admin(): AdminBillingApi {
     },
     async enable(ws, init) {
       await wait();
-      return create(AdminBillingAccountSchema, { accountId: `acc-${ws}`, workspaceId: ws, status: BillingAccountStatus.INACTIVE, plan: init.plan ?? Plan.TEAM, market: init.market ?? 'global', balance: usd(0n), debt: usd(0n) });
+      const a = create(AdminBillingAccountSchema, { accountId: `acc-${ws}`, workspaceId: ws, status: BillingAccountStatus.INACTIVE, plan: init.plan ?? Plan.TEAM, market: init.market ?? 'global', balance: usd(0n), debt: usd(0n), revision: 1n });
+      return result(a, 0n, 0n, false);
     },
     async manualCredit(id, init) {
       await wait();

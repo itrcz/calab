@@ -103,9 +103,9 @@ func TestParseWebhookSignature(t *testing.T) {
 func TestParseWebhookRefusals(t *testing.T) {
 	p := newMock(t).provider(t)
 	now := time.Now()
-	old := fixture(t, filepath.Join("events", "old_version.json"))
-	if _, err := p.ParseWebhook(ctx, signed(old, "whsec_fixture", now), old); !errors.Is(err, ErrAPIVersionMismatch) || errors.Is(err, provider.ErrBadSignature) {
-		t.Fatalf("old version: %v", err)
+	notEvent := []byte(`["not", "an", "event"]`)
+	if _, err := p.ParseWebhook(ctx, signed(notEvent, "whsec_fixture", now), notEvent); err == nil || errors.Is(err, provider.ErrBadSignature) {
+		t.Fatalf("signed non-event: %v", err)
 	}
 	live := fixture(t, filepath.Join("events", "livemode.json"))
 	if _, err := p.ParseWebhook(ctx, signed(live, "whsec_fixture", now), live); !errors.Is(err, provider.ErrLivemodeForbidden) {
@@ -120,6 +120,49 @@ func TestParseWebhookRefusals(t *testing.T) {
 	ev, err = p.ParseWebhook(ctx, signed(conn, "whsec_fixture", now), conn)
 	if err != nil || ev.ProviderAccount != "acct_FIXTURECONNECT" {
 		t.Fatalf("connect: %v %+v", err, ev)
+	}
+}
+
+// Events of any API version are accepted: only the envelope and the ids / metadata of
+// data.object are read, leniently (the objects are re-fetched with the pinned version).
+func TestParseWebhookForeignVersions(t *testing.T) {
+	p := newMock(t).provider(t)
+	now := time.Now()
+	old := fixture(t, filepath.Join("events", "old_version.json"))
+	ev, err := p.ParseWebhook(ctx, signed(old, "whsec_fixture", now), old)
+	if err != nil || ev.Kind != provider.EventPaymentSucceeded || ev.ObjectID != "pi_FIXTURE0003" || ev.PaymentID != "pi_FIXTURE0003" ||
+		ev.Metadata.Kind != provider.MetadataKindAutoTopup || ev.EventID != "evt_FIXTURE_old_version" {
+		t.Fatalf("old version: %v %+v", err, ev)
+	}
+	// A future version whose shapes moved: request as a string, created/livemode as usual,
+	// payment_intent expanded, a non-string metadata value, unknown fields everywhere.
+	future := []byte(`{"id":"evt_FIXTURE_future","object":"event","api_version":"2026-09-30.endive","created":1791561600,
+		"livemode":false,"type":"charge.refunded","request":"req_x","context":{"x":1},"pending_webhooks":"n/a",
+		"data":{"object":{"id":"ch_FIXTURE0002","object":"charge","amount":{"value":1000},
+			"payment_intent":{"id":"pi_FIXTURE0003","object":"payment_intent"},
+			"metadata":{"calab_account_id":"` + fixAccount.String() + `","kind":"auto_topup","n":5}},
+			"previous_attributes":{"refunds":[]}}}`)
+	ev, err = p.ParseWebhook(ctx, signed(future, "whsec_fixture", now), future)
+	if err != nil || ev.Kind != provider.EventRefundUpdated || ev.ObjectID != "ch_FIXTURE0002" || ev.PaymentID != "pi_FIXTURE0003" ||
+		ev.Metadata.AccountID != fixAccount || ev.Metadata.Kind != provider.MetadataKindAutoTopup || ev.Created.Unix() != 1791561600 {
+		t.Fatalf("future version: %v %+v", err, ev)
+	}
+	// Envelope fields of another shape read as empty instead of failing the event.
+	odd := []byte(`{"id":"evt_FIXTURE_odd","object":"event","api_version":"2027-01-01.fig","created":"soon","livemode":false,
+		"type":"refund.updated","data":{"object":{"id":"re_FIXTURE0001","payment_intent":42,"metadata":"none"}}}`)
+	ev, err = p.ParseWebhook(ctx, signed(odd, "whsec_fixture", now), odd)
+	if err != nil || ev.Kind != provider.EventRefundUpdated || ev.ObjectID != "re_FIXTURE0001" || ev.PaymentID != "" || ev.Metadata.Kind != "" {
+		t.Fatalf("odd shapes: %v %+v", err, ev)
+	}
+	// Thin (v2) notifications are not snapshot events: ignored, never an error.
+	thin := []byte(`{"id":"evt_FIXTURE_thin","object":"v2.core.event","type":"payment_intent.succeeded","created":"2026-10-09T00:00:00Z"}`)
+	ev, err = p.ParseWebhook(ctx, signed(thin, "whsec_fixture", now), thin)
+	if err != nil || ev.Kind != provider.EventIgnored {
+		t.Fatalf("thin: %v %+v", err, ev)
+	}
+	// Signature stays strict for foreign versions too.
+	if _, err := p.ParseWebhook(ctx, signed(future, "whsec_other", now), future); !errors.Is(err, provider.ErrBadSignature) {
+		t.Fatalf("foreign version, wrong secret: %v", err)
 	}
 }
 

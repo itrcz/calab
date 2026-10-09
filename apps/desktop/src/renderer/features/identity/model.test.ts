@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { create } from '@bufbuild/protobuf';
 import { IdentityAccessReason, SessionAuthorityKind, SessionAuthoritySchema, WorkspaceIdentityAccessSchema } from '@calaba/protocol';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { accessLocked, consentHandle, localAuthority, lockTitleKey, reasonKey } from './model';
+import { accessLocked, billingLocked, consentHandle, localAuthority, lockScreen, lockTitleKey, reasonKey } from './model';
 describe('identity UX states', () => {
   it('only independently local sessions offer global controls, with legacy server compatibility', () => {
     expect(localAuthority(null)).toBe(true);
@@ -24,6 +24,16 @@ describe('identity UX states', () => {
     expect(reasonKey(IdentityAccessReason.ENTITLEMENT_REQUIRED)).toBe('identity.plan');
     expect(reasonKey(IdentityAccessReason.SCOPE_DENIED)).toBe('identity.scope');
     expect(reasonKey(IdentityAccessReason.RECOVERY_ONLY)).toBe('identity.recoveryOnly');
+  });
+  it('a billing suspension locks the content but shows the paywall, not the lock screen', () => {
+    const billing = create(WorkspaceIdentityAccessSchema, { reason: IdentityAccessReason.BILLING_SUSPENDED });
+    expect(accessLocked(billing)).toBe(true);
+    expect(billingLocked(billing)).toBe(true);
+    expect(lockScreen(billing)).toBe(false);
+    const sso = create(WorkspaceIdentityAccessSchema, { reason: IdentityAccessReason.SSO_REQUIRED });
+    expect(billingLocked(sso)).toBe(false);
+    expect(lockScreen(sso)).toBe(true);
+    expect(lockTitleKey(IdentityAccessReason.BILLING_SUSPENDED)).toBe('billing.paywall.title');
   });
   it('a dependency outage is not presented as a locked workspace (#115)', () => {
     expect(lockTitleKey(IdentityAccessReason.DEPENDENCY_UNAVAILABLE)).toBe('identity.lockedUnavailable');

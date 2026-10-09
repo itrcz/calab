@@ -445,7 +445,7 @@ func (s *Service) Status(ctx context.Context, p identitypolicy.Principal, ws uui
 		identitypolicy.DirectoryStale:      pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_DIRECTORY_DENIED,
 		identitypolicy.MembershipSuspended: pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED,
 		identitypolicy.WorkspaceSuspended:  pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED,
-		identitypolicy.BillingSuspended:    pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED,
+		identitypolicy.BillingSuspended:    pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_BILLING_SUSPENDED,
 	}
 	out.Access.Reason = reasons[decision.Reason]
 	if st.Principal.Authority == identitypolicy.Recovery {

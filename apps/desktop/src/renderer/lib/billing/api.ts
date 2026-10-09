@@ -1,5 +1,5 @@
 import {
-  AdminBillingAccountSchema,
+  AdminBillingAccountDetailsSchema,
   AdminBillingAccountsSchema,
   AdminBillingDisputesSchema,
   AdminBillingMutationResultSchema,
@@ -37,7 +37,7 @@ import {
   PutPayerRequestSchema,
   ResumeBillingRequestSchema,
   SavedPaymentMethodsSchema,
-  type AdminBillingAccount,
+  type AdminBillingAccountDetails,
   type AdminBillingAccounts,
   type AdminBillingDisputes,
   type AdminBillingMutationResult,
@@ -103,14 +103,15 @@ export interface AdminListQuery {
 
 export interface AdminBillingApi {
   accounts(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingAccounts>;
-  account(id: string, signal?: AbortSignal): Promise<AdminBillingAccount>;
+  /** The account with its payer, auto-topup consent, open disputes, free advance and pending refunds. */
+  account(id: string, signal?: AbortSignal): Promise<AdminBillingAccountDetails>;
   ledger(id: string, cursor: string, signal?: AbortSignal): Promise<LedgerPage>;
   payments(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingPayments>;
   refunds(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingRefunds>;
   refundRequests(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingRefundRequests>;
   disputes(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingDisputes>;
   events(q: AdminListQuery, signal?: AbortSignal): Promise<AdminProviderEvents>;
-  enable(workspaceId: string, init: Init<typeof AdminEnableBillingRequestSchema>): Promise<AdminBillingAccount>;
+  enable(workspaceId: string, init: Init<typeof AdminEnableBillingRequestSchema>): Promise<AdminBillingMutationResult>;
   manualCredit(id: string, init: Init<typeof AdminManualCreditRequestSchema>): Promise<AdminBillingMutationResult>;
   reverseCredit(id: string, creditId: string, init: Init<typeof AdminReverseCreditRequestSchema>): Promise<AdminBillingMutationResult>;
   refund(paymentId: string, init: Init<typeof AdminRefundRequestSchema>): Promise<AdminBillingMutationResult>;
@@ -154,14 +155,14 @@ const listQs = (q: AdminListQuery): string =>
 
 export const restAdminApi: AdminBillingApi = {
   accounts: (q, signal) => call('GET', `${A}/accounts${listQs(q)}`, AdminBillingAccountsSchema, undefined, signal),
-  account: (id, signal) => call('GET', `${A}/accounts/${enc(id)}`, AdminBillingAccountSchema, undefined, signal),
+  account: (id, signal) => call('GET', `${A}/accounts/${enc(id)}`, AdminBillingAccountDetailsSchema, undefined, signal),
   ledger: (id, cursor, signal) => call('GET', `${A}/accounts/${enc(id)}/ledger${qs({ cursor })}`, LedgerPageSchema, undefined, signal),
   payments: (q, signal) => call('GET', `${A}/payments${listQs(q)}`, AdminBillingPaymentsSchema, undefined, signal),
   refunds: (q, signal) => call('GET', `${A}/refunds${listQs(q)}`, AdminBillingRefundsSchema, undefined, signal),
   refundRequests: (q, signal) => call('GET', `${A}/refund-requests${listQs(q)}`, AdminBillingRefundRequestsSchema, undefined, signal),
   disputes: (q, signal) => call('GET', `${A}/disputes${listQs(q)}`, AdminBillingDisputesSchema, undefined, signal),
   events: (q, signal) => call('GET', `${A}/events${listQs(q)}`, AdminProviderEventsSchema, undefined, signal),
-  enable: (ws, init) => call('POST', `${A}/workspaces/${enc(ws)}/enable`, AdminBillingAccountSchema, body(AdminEnableBillingRequestSchema, init)),
+  enable: (ws, init) => call('POST', `${A}/workspaces/${enc(ws)}/enable`, AdminBillingMutationResultSchema, body(AdminEnableBillingRequestSchema, init)),
   manualCredit: (id, init) => call('POST', `${A}/accounts/${enc(id)}/manual-credits`, AdminBillingMutationResultSchema, body(AdminManualCreditRequestSchema, init)),
   reverseCredit: (id, cid, init) =>
     call('POST', `${A}/accounts/${enc(id)}/manual-credits/${enc(cid)}/reverse`, AdminBillingMutationResultSchema, body(AdminReverseCreditRequestSchema, init)),

@@ -18,6 +18,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
 	billingcore "github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/boards"
@@ -173,6 +174,30 @@ func requireInvite(r *http.Request) (uuid.UUID, perm.Role, error) {
 		return uuid.Nil, "", httpx.Forbidden("INVITE_MEMBERS required")
 	}
 	return wsID, role, nil
+}
+
+// BillingStub is a workspace closed for unpaid billing as its members still see it (ADR-0080
+// §8): who it is (id, slug, name, icon, owner, visibility, created), the plan and
+// Workspace.billing with state SUSPENDED — no amounts, no settings, no content. The owner opens
+// the paywall from it (GET …/billing stays open to the owner), other members a notice. Only for
+// a caller whose access was denied with identitypolicy.BillingSuspended: that check comes after
+// membership, so the stub reveals nothing to a non-member.
+func BillingStub(ctx context.Context, pl *plans.Service, ws sqlc.Workspace) (*v1.Workspace, error) {
+	full := pbconv.Workspace(ws)
+	out := &v1.Workspace{
+		Id: full.GetId(), Slug: full.GetSlug(), Name: full.GetName(), IconFileId: full.GetIconFileId(),
+		Visibility: full.GetVisibility(), OwnerId: full.GetOwnerId(), CreatedAt: full.GetCreatedAt(),
+	}
+	if err := pl.Fill(ctx, out); err != nil {
+		return nil, err
+	}
+	// The plan cache may still hold the state before the suspension (invalidation in flight):
+	// the denial is the source of truth here.
+	if out.Billing == nil {
+		out.Billing = &v1.WorkspaceBillingStatus{Source: v1.PlanSource_PLAN_SOURCE_BILLING}
+	}
+	out.Billing.State = v1.BillingState_BILLING_STATE_SUSPENDED
+	return out, nil
 }
 
 // Snapshot builds the workspace state as seen by userID (rooms filtered by VIEW_ROOM), with
@@ -439,9 +464,12 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	filtered := rows[:0]
+	var stubs []sqlc.Workspace // closed for unpaid billing: listed as stubs (BillingStub)
 	for _, row := range rows {
 		if err := perm.CheckAccess(r.Context(), row.ID, uid(r)); err == nil {
 			filtered = append(filtered, row)
+		} else if errors.Is(err, billing.ErrWorkspaceBillingSuspended) {
+			stubs = append(stubs, row)
 		} else if httpx.AsError(err).Status >= 500 {
 			return err
 		}
@@ -449,6 +477,13 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	list := workspaceList(filtered)
 	if err := h.limits.Plans.FillAll(r.Context(), list); err != nil {
 		return err
+	}
+	for _, row := range stubs {
+		stub, err := BillingStub(r.Context(), h.limits.Plans, row)
+		if err != nil {
+			return err
+		}
+		list = append(list, stub)
 	}
 	for i, ws := range list { // the suspension reason is for the owner / admins only
 		if ws.GetSuspension() == nil {

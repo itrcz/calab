@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
-	stripego "github.com/stripe/stripe-go/v86"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stripe/stripe-go/v86/webhook"
 
 	"github.com/calaba/calaba/server/internal/billing/provider"
@@ -50,14 +53,27 @@ var eventKinds = map[string]provider.EventKind{
 // far smaller; the handler enforces it with http.MaxBytesReader before ParseWebhook).
 const MaxWebhookBody = 256 << 10
 
+var (
+	foreignVersionEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "calaba_billing_stripe_foreign_version_events_total",
+		Help: "Stripe webhook events rendered with another API version than the adapter's pinned one (accepted: only envelope ids are read).",
+	}, []string{"api_version"})
+	// warnedVersions: one warning per foreign API version and process.
+	warnedVersions sync.Map
+)
+
 // ParseWebhook verifies a webhook against every configured endpoint secret (rotation) on the
 // raw body, within the timestamp tolerance, and normalizes it. Errors:
 //   - provider.ErrBadSignature: no secret matches, the header is missing / malformed, or the
 //     timestamp is outside the tolerance (answer 400, store nothing);
-//   - ErrAPIVersionMismatch: signed, but rendered with another API version (answer 5xx);
-//   - provider.ErrLivemodeForbidden: a livemode event while live mode is not allowed.
+//   - provider.ErrLivemodeForbidden: a livemode event while live mode is not allowed;
+//   - any other error: a signed body that is not a JSON event at all (answer 5xx).
 //
-// The event is a hint: never credit from its payload, re-read the object (GetPayment …).
+// Events of any API version are accepted (the account default, `stripe listen`, an endpoint
+// created with another version): the event is only a hint — we read the stable envelope (id,
+// type, account, livemode, created) and the ids / our metadata of data.object, leniently, and
+// re-read the object itself (GetPayment, GetRefund, GetDispute …) with the pinned APIVersion.
+// Never credit from the payload.
 func (p *Provider) ParseWebhook(ctx context.Context, h http.Header, raw []byte) (provider.Event, error) {
 	if len(p.secrets) == 0 {
 		return provider.Event{}, fmt.Errorf("stripe webhook: no STRIPE_WEBHOOK_SECRET configured: %w", provider.ErrBadSignature)
@@ -66,30 +82,33 @@ func (p *Provider) ParseWebhook(ctx context.Context, h http.Header, raw []byte) 
 	if sig == "" {
 		return provider.Event{}, fmt.Errorf("stripe webhook: no %s header: %w", SignatureHeader, provider.ErrBadSignature)
 	}
-	opts := webhook.ConstructEventOptions{Tolerance: p.tolerance, IgnoreAPIVersionMismatch: true}
-	var (
-		ev      stripego.Event
-		lastErr error
-		ok      bool
-	)
+	var lastErr error
+	ok := false
 	for _, secret := range p.secrets {
-		e, err := webhook.ConstructEventWithOptions(raw, sig, secret, opts)
+		err := webhook.ValidatePayloadWithTolerance(raw, sig, secret, p.tolerance)
 		if err == nil {
-			ev, ok = e, true
+			ok = true
 			break
 		}
 		lastErr = err
 		if !errors.Is(err, webhook.ErrNoValidSignature) {
-			// Missing / malformed header, too old, unparsable body: no other secret helps.
+			// Missing / malformed header, too old: no other secret helps.
 			break
 		}
 	}
 	if !ok {
 		return provider.Event{}, fmt.Errorf("stripe webhook: %s: %w", webhookReason(lastErr), provider.ErrBadSignature)
 	}
+	var ev envelope
+	if err := json.Unmarshal(raw, &ev); err != nil || ev.ID == "" {
+		return provider.Event{}, errors.New("stripe webhook: signed body is not an event")
+	}
 	if ev.APIVersion != APIVersion {
-		return provider.Event{}, fmt.Errorf("stripe webhook: event %s rendered with API version %q, the adapter is pinned to %s (recreate the endpoint with this version): %w",
-			ev.ID, ev.APIVersion, APIVersion, ErrAPIVersionMismatch)
+		foreignVersionEvents.WithLabelValues(ev.APIVersion).Inc()
+		if _, seen := warnedVersions.LoadOrStore(ev.APIVersion, true); !seen {
+			slog.WarnContext(ctx, "stripe webhook: event rendered with another API version; reading only the envelope, objects are re-fetched with the pinned version",
+				"event_api_version", ev.APIVersion, "pinned", APIVersion, "event", ev.ID)
+		}
 	}
 	if err := p.checkLive("webhook", ev.Livemode); err != nil {
 		return provider.Event{}, err
@@ -104,25 +123,20 @@ func (p *Provider) ParseWebhook(ctx context.Context, h http.Header, raw []byte) 
 	}
 	out := provider.Event{
 		Provider: provider.Stripe, ProviderAccount: acct, Livemode: ev.Livemode, EventID: ev.ID,
-		Type: string(ev.Type), Created: time.Unix(ev.Created, 0).UTC(),
+		Type: ev.Type, Created: time.Unix(ev.Created, 0).UTC(),
 	}
 	kind, known := eventKinds[out.Type]
-	if !known {
+	if !known || ev.Object != "event" { // thin (v2) notifications carry no object: ignored
 		out.Kind = provider.EventIgnored
 		return out, nil
 	}
 	out.Kind = kind
-	var obj eventObject
-	if ev.Data != nil && len(ev.Data.Raw) > 0 {
-		if err := json.Unmarshal(ev.Data.Raw, &obj); err != nil {
-			return provider.Event{}, fmt.Errorf("stripe webhook: event %s: undecodable object", ev.ID)
-		}
-	}
-	out.ObjectID = obj.ID
-	out.Metadata = provider.ParseMetadata(obj.Metadata)
+	obj := ev.Data.Object
+	out.ObjectID = obj.ID.id()
+	out.Metadata = provider.ParseMetadata(obj.Metadata.strings())
 	switch {
 	case strings.HasPrefix(out.Type, "payment_intent."):
-		out.PaymentID = obj.ID
+		out.PaymentID = out.ObjectID
 	case out.Type == "setup_intent.succeeded":
 		out.ObjectID = obj.PaymentMethod.id()
 	default:
@@ -147,12 +161,72 @@ func webhookReason(err error) string {
 	return "unverifiable body"
 }
 
+// envelope is the part of an event we read. Every field is decoded leniently: a field whose
+// shape changed between API versions reads as empty instead of failing the event.
+type envelope struct {
+	ID         string    `json:"id"`
+	Object     string    `json:"object"`
+	Type       string    `json:"type"`
+	Account    string    `json:"account"`
+	Livemode   bool      `json:"livemode"`
+	Created    int64     `json:"created"`
+	APIVersion string    `json:"api_version"`
+	Data       eventData `json:"data"`
+}
+
+func (e *envelope) UnmarshalJSON(b []byte) error {
+	var f map[string]json.RawMessage
+	if err := json.Unmarshal(b, &f); err != nil {
+		return err
+	}
+	lenient(f["id"], &e.ID)
+	lenient(f["object"], &e.Object)
+	lenient(f["type"], &e.Type)
+	lenient(f["account"], &e.Account)
+	lenient(f["livemode"], &e.Livemode)
+	lenient(f["created"], &e.Created)
+	lenient(f["api_version"], &e.APIVersion)
+	var d map[string]json.RawMessage
+	lenient(f["data"], &d)
+	var o map[string]json.RawMessage
+	lenient(d["object"], &o)
+	e.Data.Object = eventObject{ID: ref(o["id"]), Metadata: meta(o["metadata"]), PaymentIntent: ref(o["payment_intent"]), PaymentMethod: ref(o["payment_method"])}
+	return nil
+}
+
+// lenient decodes raw into v, leaving v zero when the field is absent or of another shape.
+func lenient(raw json.RawMessage, v any) {
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, v)
+	}
+}
+
+type eventData struct {
+	Object eventObject
+}
+
 // eventObject is the part of an event object we read: ids and our metadata.
 type eventObject struct {
-	ID            string            `json:"id"`
-	Metadata      map[string]string `json:"metadata"`
-	PaymentIntent ref               `json:"payment_intent"`
-	PaymentMethod ref               `json:"payment_method"`
+	ID            ref
+	Metadata      meta
+	PaymentIntent ref
+	PaymentMethod ref
+}
+
+// meta is a metadata object; values that are not strings are dropped.
+type meta json.RawMessage
+
+func (m meta) strings() map[string]string {
+	var all map[string]json.RawMessage
+	lenient(json.RawMessage(m), &all)
+	out := make(map[string]string, len(all))
+	for k, v := range all {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			out[k] = s
+		}
+	}
+	return out
 }
 
 // ref is an id or an expanded object with an id.

@@ -3,14 +3,18 @@
 package billinghttp_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing"
+	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/billing/provider/fake"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/mail"
@@ -56,6 +60,42 @@ func TestTopupIdempotency(t *testing.T) {
 	var sum v1.GetBillingResponse
 	if st, _ := e.do(e.owner, "GET", e.base(), nil, &sum); st != 200 || sum.GetSummary().GetOpenCheckoutId() != a.GetCheckoutId() {
 		t.Fatalf("summary open checkout: %v", &sum)
+	}
+}
+
+// checkoutSpy records the checkout requests the provider gets.
+type checkoutSpy struct {
+	*fake.Provider
+	reqs []provider.CheckoutReq
+}
+
+func (c *checkoutSpy) CreateCheckout(ctx context.Context, req provider.CheckoutReq) (provider.CheckoutSession, error) {
+	c.reqs = append(c.reqs, req)
+	return c.Provider.CreateCheckout(ctx, req)
+}
+
+// The provider's expires_at is real time even when the billing clock runs ahead (dev test
+// clock): Stripe refuses an expiry outside 30 min .. 24 h of its own now. Our row keeps the
+// billing-clock expiry for our scheduling.
+func TestCheckoutExpiryIsWallClock(t *testing.T) {
+	ahead := time.Now().Add(40 * 24 * time.Hour)
+	var spy *checkoutSpy
+	e := newEnv(t, envOpt{clock: billing.NewFakeClock(ahead), wrap: func(f *fake.Provider) provider.Provider {
+		spy = &checkoutSpy{Provider: f}
+		return spy
+	}})
+	before := time.Now()
+	id, _ := e.topup(2000, false)
+	if len(spy.reqs) != 1 {
+		t.Fatalf("%d checkout requests", len(spy.reqs))
+	}
+	exp := spy.reqs[0].ExpiresAt
+	if lo, hi := before.Add(30*time.Minute), time.Now().Add(24*time.Hour); exp.Before(lo) || exp.After(hi) {
+		t.Fatalf("provider expires_at %s outside [%s, %s]", exp, lo, hi)
+	}
+	co, err := e.d.Q.GetBillingCheckout(ctx, id)
+	if err != nil || co.ExpiresAt == nil || co.ExpiresAt.Before(ahead) {
+		t.Fatalf("row expiry %v (billing clock %s): %v", co.ExpiresAt, ahead, err)
 	}
 }
 

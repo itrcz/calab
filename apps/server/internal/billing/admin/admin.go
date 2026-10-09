@@ -70,6 +70,12 @@ type Reconciler interface {
 	ReconcileAccount(ctx context.Context, accountID uuid.UUID) error
 }
 
+// RefundReleaser is implemented by a Reconciler that can resolve a needs-review refund the
+// superadmin confirmed absent at the provider (AdminReconcileRequest.release_refund_ids).
+type RefundReleaser interface {
+	ReleaseRefund(ctx context.Context, accountID, refundID uuid.UUID) error
+}
+
 // Limiter rate-limits a superadmin (redisx.RateLimiter).
 type Limiter interface {
 	Take(ctx context.Context, key string) error

@@ -8,7 +8,7 @@ import { Button, Card, Field, Input, Modal, Row, Select, Toggle } from '../../..
 import { t, type MessageKey } from '../../../i18n';
 import { nowMs } from '../../../lib/billing/checkout';
 import { billingErrorText } from '../../../lib/billing/errors';
-import { AUTO_TOPUP_CONSENT_VERSION, autoTopupLimits, currencyOf, requestId } from '../../../lib/billing/model';
+import { AUTO_TOPUP_CONSENT_VERSION, autoTopupFailure, autoTopupLimits, currencyOf, requestId, type AutoTopupFailure } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, inputOf, minorOf, parseMajor } from '../../../lib/billing/money';
 import { fmt } from '../../../lib/format';
 import { billingKeys, ownerBilling, reloadBilling } from '../../../services/billing';
@@ -28,6 +28,14 @@ const ATTEMPT_KEY: Record<AutoTopupAttemptStatus, MessageKey> = {
   [AutoTopupAttemptStatus.SUCCEEDED]: 'billing.auto.attempt.ok',
   [AutoTopupAttemptStatus.FAILED]: 'billing.auto.attempt.failed',
   [AutoTopupAttemptStatus.UNKNOWN]: 'billing.auto.attempt.unknown',
+};
+
+const FAILURE_KEY: Record<AutoTopupFailure, MessageKey> = {
+  authentication_required: 'billing.auto.fail.authentication_required',
+  card_declined: 'billing.auto.fail.card_declined',
+  insufficient_funds: 'billing.auto.fail.insufficient_funds',
+  expired_card: 'billing.auto.fail.expired_card',
+  generic: 'billing.auto.fail.generic',
 };
 
 export const cardText = (m: SavedPaymentMethod): string =>
@@ -85,7 +93,7 @@ export function AutoTopupCard({ workspaceId, summary: s, payments }: { workspace
         </Row>
       ) : null}
       {last ? (
-        <Row label={t('billing.auto.last')} hint={last.failureCode ? t('billing.auto.failure', { code: last.failureCode }) : undefined}>
+        <Row label={t('billing.auto.last')} hint={last.failureCode ? t(FAILURE_KEY[autoTopupFailure(last.failureCode)]) : undefined}>
           <span className={last.status === AutoTopupAttemptStatus.FAILED ? 'text-body text-danger-text' : 'text-body text-muted'}>
             {t(ATTEMPT_KEY[last.status], { amount: formatMoney(last.amount), when: last.createdAt ? fmt.shortDate(timestampDate(last.createdAt)) : '—' })}
           </span>

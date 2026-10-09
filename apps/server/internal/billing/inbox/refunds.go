@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/calaba/calaba/server/internal/billing"
@@ -95,6 +96,9 @@ func (in *Inbox) ApplyRefund(ctx context.Context, p provider.Provider, f provide
 			return refusal
 		}
 		ref, err := q.GetBillingRefundByProviderID(ctx, &f.ID)
+		if db.IsNotFound(err) && f.Metadata.RefundID != uuid.Nil {
+			ref, err = calabRefundOf(ctx, q, pay, f)
+		}
 		if db.IsNotFound(err) {
 			ref, err = matchCalabRefund(ctx, q, pay, f)
 		}
@@ -148,6 +152,21 @@ func (in *Inbox) ApplyRefund(ctx context.Context, p provider.Provider, f provide
 		in.committed(ctx, acc)
 	}
 	return nil
+}
+
+// calabRefundOf is the pending Calab refund a provider refund names in its metadata
+// (calab_refund_id) when its provider id was never stored (lost answer); it must be of the
+// same payment and amount.
+func calabRefundOf(ctx context.Context, q *sqlc.Queries, pay sqlc.BillingPayment, f provider.RefundFact) (sqlc.BillingRefund, error) {
+	r, err := q.GetBillingRefund(ctx, f.Metadata.RefundID)
+	if err != nil {
+		return r, err
+	}
+	if r.PaymentID != pay.ID || r.Origin != core.RefundOriginCalab || r.ProviderRefundID != nil || r.AmountMinor != f.Amount.Minor ||
+		(r.Status != core.RefundPending && r.Status != core.RefundRequiresAction) {
+		return sqlc.BillingRefund{}, pgx.ErrNoRows
+	}
+	return r, nil
 }
 
 // matchCalabRefund finds the Calab refund a provider refund answers when the provider id was

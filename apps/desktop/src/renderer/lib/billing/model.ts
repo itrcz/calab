@@ -1,8 +1,14 @@
 import {
   BillingAccountStatus,
   BillingState,
+  DisputeStatus,
   PaymentMethodKind,
+  PaymentStatus,
   Plan,
+  RefundStatus,
+  type BillingDispute,
+  type BillingPayment,
+  type BillingRefund,
   type BillingSummary,
   type Money,
   type PaymentMethodOption,
@@ -181,3 +187,31 @@ export function rejectRefundRequest(a: { reason: string; requestId: string }): {
 export function requestId(): string {
   return globalThis.crypto.randomUUID();
 }
+
+/**
+ * What the superadmin may still refund of a payment (minor units): nothing unless it succeeded,
+ * nothing while a dispute on it is open or after it was lost (the bank already took the money
+ * back), otherwise amount − refunded − refunds still in flight. 0 hides «Вернуть».
+ */
+export function refundableMinor(
+  p: BillingPayment | undefined,
+  disputes: readonly (BillingDispute | undefined)[],
+  refunds: readonly (BillingRefund | undefined)[],
+): bigint {
+  if (!p || p.status !== PaymentStatus.SUCCEEDED) return 0n;
+  if (disputes.some((d) => d?.paymentId === p.id && (d.status === DisputeStatus.LOST || d.status === DisputeStatus.OPEN))) return 0n;
+  const inFlight = refunds.reduce(
+    (a, r) => (r?.paymentId === p.id && (r.status === RefundStatus.PENDING || r.status === RefundStatus.REQUIRES_ACTION) ? a + minorOf(r.amount) : a),
+    0n,
+  );
+  const left = minorOf(p.amount) - minorOf(p.refunded) - inFlight;
+  return left > 0n ? left : 0n;
+}
+
+/** Auto-topup failure codes the owner gets a sentence for; anything else reads as «generic». */
+export type AutoTopupFailure = 'authentication_required' | 'card_declined' | 'insufficient_funds' | 'expired_card' | 'generic';
+
+const KNOWN_FAILURES: ReadonlySet<string> = new Set(['authentication_required', 'card_declined', 'insufficient_funds', 'expired_card']);
+
+/** Maps a failure code of an attempt (AutoTopupAttempt.failure_code) to a kind with a sentence. */
+export const autoTopupFailure = (code: string): AutoTopupFailure => (KNOWN_FAILURES.has(code) ? (code as AutoTopupFailure) : 'generic');
