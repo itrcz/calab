@@ -726,7 +726,7 @@ func (q *Queries) GetBillingPriceAt(ctx context.Context, arg GetBillingPriceAtPa
 }
 
 const getBillingRefundByIdemKey = `-- name: GetBillingRefundByIdemKey :one
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds WHERE idem_key = $1
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds WHERE idem_key = $1
 `
 
 func (q *Queries) GetBillingRefundByIdemKey(ctx context.Context, idemKey string) (BillingRefund, error) {
@@ -748,12 +748,13 @@ func (q *Queries) GetBillingRefundByIdemKey(ctx context.Context, idemKey string)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SucceededAt,
+		&i.NeedsReviewAt,
 	)
 	return i, err
 }
 
 const getBillingRefundByProviderID = `-- name: GetBillingRefundByProviderID :one
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds WHERE provider_refund_id = $1
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds WHERE provider_refund_id = $1
 `
 
 func (q *Queries) GetBillingRefundByProviderID(ctx context.Context, providerRefundID *string) (BillingRefund, error) {
@@ -775,6 +776,7 @@ func (q *Queries) GetBillingRefundByProviderID(ctx context.Context, providerRefu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SucceededAt,
+		&i.NeedsReviewAt,
 	)
 	return i, err
 }
@@ -1490,7 +1492,7 @@ INSERT INTO billing_refunds (account_id, payment_id, lot_id, amount_minor, curre
     provider_refund_id, idem_key, reason, requested_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT DO NOTHING
-RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at
+RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at
 `
 
 type InsertBillingRefundParams struct {
@@ -1540,6 +1542,7 @@ func (q *Queries) InsertBillingRefund(ctx context.Context, arg InsertBillingRefu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SucceededAt,
+		&i.NeedsReviewAt,
 	)
 	return i, err
 }

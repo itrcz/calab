@@ -12,6 +12,18 @@ import (
 	"github.com/google/uuid"
 )
 
+const countBillingRefundsNeedingReview = `-- name: CountBillingRefundsNeedingReview :one
+SELECT count(*)::bigint FROM billing_refunds
+WHERE needs_review_at IS NOT NULL AND status IN ('pending', 'requires_action')
+`
+
+func (q *Queries) CountBillingRefundsNeedingReview(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countBillingRefundsNeedingReview)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const detachBillingPaymentMethod = `-- name: DetachBillingPaymentMethod :one
 UPDATE billing_payment_methods SET detached_at = coalesce(detached_at, $1::timestamptz)
 WHERE id = $2
@@ -704,7 +716,7 @@ func (q *Queries) ListBillingRefundRequests(ctx context.Context, arg ListBilling
 }
 
 const listBillingRefundsToRetry = `-- name: ListBillingRefundsToRetry :many
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds
 WHERE origin = 'calab' AND status IN ('pending', 'requires_action')
   AND ($1::uuid IS NULL OR account_id = $1::uuid)
   AND updated_at < $2::timestamptz
@@ -746,6 +758,7 @@ func (q *Queries) ListBillingRefundsToRetry(ctx context.Context, arg ListBilling
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SucceededAt,
+			&i.NeedsReviewAt,
 		); err != nil {
 			return nil, err
 		}
@@ -758,7 +771,7 @@ func (q *Queries) ListBillingRefundsToRetry(ctx context.Context, arg ListBilling
 }
 
 const listPendingCalabBillingRefunds = `-- name: ListPendingCalabBillingRefunds :many
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds
 WHERE payment_id = $1 AND origin = 'calab' AND provider_refund_id IS NULL AND status IN ('pending', 'requires_action')
 ORDER BY id
 `
@@ -790,6 +803,7 @@ func (q *Queries) ListPendingCalabBillingRefunds(ctx context.Context, paymentID 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SucceededAt,
+			&i.NeedsReviewAt,
 		); err != nil {
 			return nil, err
 		}
@@ -821,6 +835,43 @@ type MarkBillingProviderEventDeadParams struct {
 func (q *Queries) MarkBillingProviderEventDead(ctx context.Context, arg MarkBillingProviderEventDeadParams) error {
 	_, err := q.db.Exec(ctx, markBillingProviderEventDead, arg.Now, arg.Error, arg.ID)
 	return err
+}
+
+const markBillingRefundNeedsReview = `-- name: MarkBillingRefundNeedsReview :one
+UPDATE billing_refunds SET needs_review_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND origin = 'calab' AND status IN ('pending', 'requires_action') AND needs_review_at IS NULL
+RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at
+`
+
+type MarkBillingRefundNeedsReviewParams struct {
+	Now time.Time
+	ID  uuid.UUID
+}
+
+// A Calab refund the provider has no trace of past the idempotency window: a superadmin decides.
+// No row = it left pending meanwhile or was marked before (the first mark keeps its time).
+func (q *Queries) MarkBillingRefundNeedsReview(ctx context.Context, arg MarkBillingRefundNeedsReviewParams) (BillingRefund, error) {
+	row := q.db.QueryRow(ctx, markBillingRefundNeedsReview, arg.Now, arg.ID)
+	var i BillingRefund
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PaymentID,
+		&i.LotID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.Origin,
+		&i.ProviderRefundID,
+		&i.IdemKey,
+		&i.Reason,
+		&i.RequestedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SucceededAt,
+		&i.NeedsReviewAt,
+	)
+	return i, err
 }
 
 const revokeBillingAutoTopup = `-- name: RevokeBillingAutoTopup :execrows

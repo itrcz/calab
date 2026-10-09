@@ -40,10 +40,18 @@ var (
 	t0  = time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
 )
 
-type reconciler struct{ calls []uuid.UUID }
+type reconciler struct {
+	calls    []uuid.UUID
+	released []uuid.UUID
+}
 
 func (r *reconciler) ReconcileAccount(_ context.Context, id uuid.UUID) error {
 	r.calls = append(r.calls, id)
+	return nil
+}
+
+func (r *reconciler) ReleaseRefund(_ context.Context, _, refundID uuid.UUID) error {
+	r.released = append(r.released, refundID)
 	return nil
 }
 

@@ -40,6 +40,7 @@ const (
 	ReasonAmountOutOfRange           = "BILLING_AMOUNT_OUT_OF_RANGE" // 422: top-up outside min..max
 	ReasonPriceEffectiveTooSoon      = "BILLING_PRICE_EFFECTIVE_TOO_SOON"
 	ReasonManualCreditAlreadyReverse = "BILLING_CREDIT_ALREADY_REVERSED"
+	ReasonRefundNotReleasable        = "BILLING_REFUND_NOT_RELEASABLE" // 409: not a needs-review refund, or the provider has a refund it may be
 )
 
 func coded(status int, code v1.ErrorCode, reason, msg string) *httpx.Error {
@@ -68,6 +69,7 @@ var (
 	ErrAccountExists           = conflict(ReasonAccountExists, "billing is already enabled")
 	ErrDisputeHold             = conflict(ReasonDisputeHold, "an open dispute holds the account")
 	ErrRefundExceedsRefundable = conflict(ReasonRefundExceedsRefundable, "amount exceeds the refundable amount")
+	ErrRefundNotReleasable     = conflict(ReasonRefundNotReleasable, "the refund cannot be released")
 
 	ErrOwnerRequired = coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_FORBIDDEN, ReasonOwnerRequired, "only the workspace owner manages billing")
 	// ErrWorkspaceBillingSuspended: the debt deadline passed; the workspace is closed except

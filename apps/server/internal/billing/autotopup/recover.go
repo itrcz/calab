@@ -108,7 +108,10 @@ func (j *Job) resolve(ctx context.Context, att sqlc.BillingAutotopupAttempt, now
 		since = *att.DispatchedAt
 	}
 	age := now.Sub(since)
-	retry, err := j.mayRetry(ctx, att, age)
+	// The provider's idempotency window runs on the wall clock: the same-key retry also stops
+	// by the wall age of the row (created_at = database now(), before the dispatch), so a
+	// billing clock behind real time can never re-POST with an expired key.
+	retry, err := j.mayRetry(ctx, att, max(age, time.Since(att.CreatedAt)))
 	if err != nil {
 		return false, err
 	}

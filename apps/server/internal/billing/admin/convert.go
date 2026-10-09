@@ -169,6 +169,9 @@ func refundProto(r sqlc.BillingRefund) *v1.AdminBillingRefund {
 	if r.ProviderRefundID != nil {
 		out.ProviderRefundId = *r.ProviderRefundID
 	}
+	if r.NeedsReviewAt != nil && (r.Status == core.RefundPending || r.Status == core.RefundRequiresAction) {
+		out.NeedsReviewSince = timestamppb.New(*r.NeedsReviewAt)
+	}
 	return out
 }
 

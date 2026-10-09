@@ -301,6 +301,7 @@ type BillingRefund struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	SucceededAt      *time.Time
+	NeedsReviewAt    *time.Time
 }
 
 type BillingRefundRequest struct {

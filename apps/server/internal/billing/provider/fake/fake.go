@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -545,6 +546,27 @@ func (p *Provider) GetRefund(_ context.Context, id string) (provider.RefundFact,
 		return provider.RefundFact{}, provider.ErrNotFound
 	}
 	return *r, nil
+}
+
+// ListRefunds implements provider.RefundLister: the refunds of a payment, oldest first.
+func (p *Provider) ListRefunds(_ context.Context, paymentID string) ([]provider.RefundFact, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls["ListRefunds"]++
+	if err := p.live(); err != nil {
+		return nil, err
+	}
+	if err := p.getOutcome(); err != nil {
+		return nil, err
+	}
+	out := []provider.RefundFact{}
+	for _, r := range p.refunds {
+		if r.PaymentID == paymentID {
+			out = append(out, *r)
+		}
+	}
+	slices.SortFunc(out, func(a, b provider.RefundFact) int { return strings.Compare(a.ID, b.ID) })
+	return out, nil
 }
 
 // OpenDispute / CloseDispute queue dispute events of a payment (id "dp_…" is returned).

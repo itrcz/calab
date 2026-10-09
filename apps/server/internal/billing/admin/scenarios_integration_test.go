@@ -375,9 +375,21 @@ func TestReconcileAndTestClock(t *testing.T) {
 	e.enable()
 	var res v1.AdminBillingMutationResult
 	e.must("POST", "/api/admin/billing/accounts/"+e.acc.String()+"/reconcile", &v1.AdminReconcileRequest{Reason: "missing payment", RequestId: uuid.NewString()}, &res)
-	if len(e.rec.calls) != 1 || e.rec.calls[0] != e.acc || res.GetAuditId() == "" {
+	if len(e.rec.calls) != 1 || e.rec.calls[0] != e.acc || res.GetAuditId() == "" || len(e.rec.released) != 0 {
 		t.Fatalf("reconcile: %v %v", &res, e.rec.calls)
 	}
+	// Needs-review refunds confirmed absent at the provider are released after the reconcile;
+	// a replay of the same request does not release again.
+	rel := uuid.New()
+	req := &v1.AdminReconcileRequest{Reason: "refund never reached Stripe", RequestId: uuid.NewString(), ReleaseRefundIds: []string{rel.String()}}
+	for range 2 {
+		e.must("POST", "/api/admin/billing/accounts/"+e.acc.String()+"/reconcile", req, &res)
+	}
+	if len(e.rec.released) != 1 || e.rec.released[0] != rel {
+		t.Fatalf("released %v", e.rec.released)
+	}
+	e.wantErr(422, "", "POST", "/api/admin/billing/accounts/"+e.acc.String()+"/reconcile",
+		&v1.AdminReconcileRequest{Reason: "x", RequestId: uuid.NewString(), ReleaseRefundIds: []string{"nope"}})
 	e.wantErr(404, billing.ReasonTestClockDisabled, "POST", "/api/admin/billing/test-clock", &v1.AdminBillingTestClockRequest{})
 
 	clk := &billing.SwitchClock{}

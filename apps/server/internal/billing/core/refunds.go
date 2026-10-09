@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -22,6 +23,25 @@ const (
 	RefundOriginCalab     = "calab"     // requested through Calab (admin): unused money only
 	RefundOriginDashboard = "dashboard" // already made in the provider dashboard: recorded as it is
 )
+
+// Unknown-outcome rules of a Calab refund (wall clock, from billing_refunds.created_at — the
+// database now() of the reservation, never later than the first provider call). Stripe keeps an
+// Idempotency-Key for 24 h; a POST with an expired key would create a second refund.
+const (
+	// RefundRepostWindow: a refund without a provider id is POSTed again (same key) only while
+	// younger than this; afterwards it is only looked up (the payment's refunds, metadata
+	// calab_refund_id).
+	RefundRepostWindow = 23 * time.Hour
+	// RefundReviewAfter: a refund the provider has no trace of this long after it was written
+	// is marked needs_review; its money stays reserved until a superadmin resolves it.
+	RefundReviewAfter = 24 * time.Hour
+)
+
+// RefundMayRepost reports whether a Calab refund without a provider id may be sent again with
+// its idempotency key.
+func RefundMayRepost(ref sqlc.BillingRefund) bool {
+	return ref.NeedsReviewAt == nil && time.Since(ref.CreatedAt) < RefundRepostWindow
+}
 
 // Refundable is what can go back to one payment now.
 type Refundable struct {

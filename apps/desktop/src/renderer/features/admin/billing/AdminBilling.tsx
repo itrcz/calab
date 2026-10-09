@@ -7,6 +7,7 @@ import {
   RefundStatus,
   type AdminBillingAccount,
   type AdminBillingPayment,
+  type AdminBillingRefund,
   type AdminBillingRefundRequest,
   type AdminProviderEvent,
   type LedgerEntry,
@@ -234,6 +235,7 @@ type Dialog =
   | { kind: 'hold' }
   | { kind: 'discount' }
   | { kind: 'reconcile' }
+  | { kind: 'release'; refund: AdminBillingRefund }
   | null;
 
 function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => void; notice: ReactNode }): ReactNode {
@@ -387,8 +389,16 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
                   <SimpleRow
                     key={r.refund.id}
                     title={`${t('billing.kind.refund')} ${formatMoney(r.refund.amount)}`}
-                    status={t(REFUND_STATUS[r.refund.status])}
+                    status={r.needsReviewSince ? t('adminBilling.refund.needsReview') : t(REFUND_STATUS[r.refund.status])}
+                    danger={!!r.needsReviewSince}
                     sub={[r.refund.createdAt ? fmt.dateTime(timestampDate(r.refund.createdAt), 'short') : '', r.refund.reason, r.providerRefundId].filter(Boolean).join(' · ')}
+                    extra={
+                      r.needsReviewSince ? (
+                        <Button size="sm" variant="secondary" onClick={() => setDialog({ kind: 'release', refund: r })} data-testid="admin-billing-release">
+                          {t('adminBilling.release')}
+                        </Button>
+                      ) : null
+                    }
                   />
                 ) : null,
               )}
@@ -542,6 +552,23 @@ function AccountDialogs({ a, dialog, currency, onDone, onClose }: { a: AdminBill
           </>
         }
         run={(x) => adminBilling.hold(a.accountId, { ...(release ? {} : { holdUntil: timestampFromMs(nowMs() + days * 86_400_000) }), reason: x.reason, requestId: x.requestId })}
+        onDone={onDone}
+        onClose={onClose}
+      />
+    );
+  }
+  if (dialog.kind === 'release') {
+    const refundId = dialog.refund.refund?.id ?? '';
+    return (
+      <MoneyActionDialog
+        title={t('adminBilling.releaseTitle')}
+        text={t('adminBilling.releaseText', { amount: formatMoney(dialog.refund.refund?.amount) })}
+        action={t('adminBilling.release')}
+        currency={currency}
+        amount={false}
+        preview={false}
+        destructive
+        run={(x) => adminBilling.reconcile(a.accountId, { reason: x.reason, requestId: x.requestId, releaseRefundIds: [refundId] })}
         onDone={onDone}
         onClose={onClose}
       />

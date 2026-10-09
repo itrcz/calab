@@ -94,7 +94,7 @@ func TestRegistryCapabilities(t *testing.T) {
 }
 
 func TestMetadataRoundTrip(t *testing.T) {
-	m := provider.Metadata{AccountID: uuid.New(), AttemptID: uuid.New(), Kind: provider.MetadataKindAutoTopup}
+	m := provider.Metadata{AccountID: uuid.New(), AttemptID: uuid.New(), RefundID: uuid.New(), Kind: provider.MetadataKindAutoTopup}
 	kv := m.Map()
 	if _, ok := kv[provider.MetaCheckoutID]; ok {
 		t.Fatal("unset id rendered")

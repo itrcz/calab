@@ -364,7 +364,7 @@ func (q *Queries) GetBillingFundingLotByPayment(ctx context.Context, paymentID *
 }
 
 const getBillingRefund = `-- name: GetBillingRefund :one
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds WHERE id = $1
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds WHERE id = $1
 `
 
 func (q *Queries) GetBillingRefund(ctx context.Context, id uuid.UUID) (BillingRefund, error) {
@@ -386,6 +386,7 @@ func (q *Queries) GetBillingRefund(ctx context.Context, id uuid.UUID) (BillingRe
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SucceededAt,
+		&i.NeedsReviewAt,
 	)
 	return i, err
 }
@@ -705,7 +706,7 @@ func (q *Queries) LockBillingFundingLotByPayment(ctx context.Context, paymentID 
 }
 
 const lockBillingRefund = `-- name: LockBillingRefund :one
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds WHERE id = $1 FOR UPDATE
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockBillingRefund(ctx context.Context, id uuid.UUID) (BillingRefund, error) {
@@ -727,6 +728,7 @@ func (q *Queries) LockBillingRefund(ctx context.Context, id uuid.UUID) (BillingR
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SucceededAt,
+		&i.NeedsReviewAt,
 	)
 	return i, err
 }
@@ -800,7 +802,7 @@ UPDATE billing_refunds SET status = $1,
     succeeded_at = CASE WHEN $1::text = 'succeeded' THEN $3::timestamptz ELSE NULL END,
     updated_at = $3::timestamptz
 WHERE id = $4 AND status IN ('pending', 'requires_action')
-RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at
+RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at
 `
 
 type SetBillingRefundStatusParams struct {
@@ -835,6 +837,7 @@ func (q *Queries) SetBillingRefundStatus(ctx context.Context, arg SetBillingRefu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SucceededAt,
+		&i.NeedsReviewAt,
 	)
 	return i, err
 }

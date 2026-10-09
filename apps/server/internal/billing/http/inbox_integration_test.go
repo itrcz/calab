@@ -4,6 +4,7 @@ package billinghttp_test
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/money"
 	"github.com/calaba/calaba/server/internal/billing/provider"
@@ -473,5 +475,152 @@ func TestReconcileAccountRetriesRefund(t *testing.T) {
 	}
 	if n := e.count(`SELECT count(*) FROM billing_refunds WHERE account_id = $1`, e.acc); n != 1 {
 		t.Fatalf("refunds %d", n)
+	}
+}
+
+// reserveRefund reserves a Calab refund of amount from the payment pi (no provider call).
+func (e *env) reserveRefund(pi string, amount int64) sqlc.BillingRefund {
+	e.t.Helper()
+	pay, err := e.d.Q.GetBillingPaymentByProviderID(ctx, sqlc.GetBillingPaymentByProviderIDParams{Provider: "stripe", ProviderAccount: e.merchant, ProviderPaymentID: pi})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	var ref sqlc.BillingRefund
+	if err := e.d.Tx(ctx, func(q *sqlc.Queries) error {
+		var err error
+		ref, _, err = e.core.ReserveRefund(ctx, q, core.RefundReq{PaymentID: pay.ID, Amount: amount, IdemKey: "refund:" + uuid.NewString(), Origin: core.RefundOriginCalab})
+		return err
+	}); err != nil {
+		e.t.Fatal(err)
+	}
+	return ref
+}
+
+// ageRefund moves a refund's row back in (wall-clock) time, as if written age ago.
+func (e *env) ageRefund(id uuid.UUID, age time.Duration) {
+	e.t.Helper()
+	if _, err := e.d.Pool.Exec(ctx, `UPDATE billing_refunds SET created_at = now() - $2::interval, updated_at = now() - interval '1 hour' WHERE id = $1`,
+		id, age.String()); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func (e *env) refund(id uuid.UUID) sqlc.BillingRefund {
+	e.t.Helper()
+	r, err := e.d.Q.GetBillingRefund(ctx, id)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return r
+}
+
+// A refund whose answer was lost (the provider did create it) is never POSTed again past the
+// 23 h repost window: the payment's refunds are listed and it is found by calab_refund_id.
+func TestRefundPastRepostWindowFoundByLookup(t *testing.T) {
+	e := newEnv(t)
+	_, pi := e.paid(2000)
+	ref := e.reserveRefund(pi, 700)
+	e.fake.Queue(fake.OpRefund, fake.Timeout) // created at the provider, answer lost
+	if err := e.in.ReconcileAccount(ctx, e.acc); err == nil {
+		t.Fatal("unknown outcome must be reported")
+	}
+	if r := e.refund(ref.ID); r.Status != core.RefundPending || r.ProviderRefundID != nil {
+		t.Fatalf("after lost answer %+v", r)
+	}
+	e.ageRefund(ref.ID, 23*time.Hour+30*time.Minute)
+	if err := e.in.ReconcileAccount(ctx, e.acc); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.fake.Calls("Refund"); n != 1 {
+		t.Fatalf("refund POSTed %d times", n)
+	}
+	if n := e.fake.Calls("ListRefunds"); n != 1 {
+		t.Fatalf("lookups %d", n)
+	}
+	r := e.refund(ref.ID)
+	if r.Status != core.RefundSucceeded || r.ProviderRefundID == nil || r.NeedsReviewAt != nil {
+		t.Fatalf("found refund %+v", r)
+	}
+	if acc := e.account(); acc.BalanceMinor != 1300 {
+		t.Fatalf("balance %d", acc.BalanceMinor)
+	}
+}
+
+// A refund the provider never created: no POST after 23 h, needs_review after 24 h with the
+// money still reserved; a superadmin release is refused while the provider has an unclaimed
+// refund of that amount, and frees the reservation once it is confirmed absent.
+func TestRefundNeverCreatedNeedsReview(t *testing.T) {
+	e := newEnv(t)
+	_, pi := e.paid(2000)
+	ref := e.reserveRefund(pi, 700)
+	e.fake.Queue(fake.OpRefund, fake.Unknown) // nothing happened at the provider
+	_ = e.in.ReconcileAccount(ctx, e.acc)
+	if err := e.in.ReleaseRefund(ctx, e.acc, ref.ID); !errors.Is(err, billing.ErrRefundNotReleasable) {
+		t.Fatalf("release before review: %v", err)
+	}
+	e.ageRefund(ref.ID, 23*time.Hour+30*time.Minute)
+	if err := e.in.ReconcileAccount(ctx, e.acc); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.refund(ref.ID); r.Status != core.RefundPending || r.NeedsReviewAt != nil {
+		t.Fatalf("23.5 h: %+v", r)
+	}
+	e.ageRefund(ref.ID, 25*time.Hour)
+	for range 2 {
+		if err := e.in.ReconcileAccount(ctx, e.acc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := e.fake.Calls("Refund"); n != 1 {
+		t.Fatalf("refund POSTed %d times", n)
+	}
+	r := e.refund(ref.ID)
+	if r.Status != core.RefundPending || r.NeedsReviewAt == nil {
+		t.Fatalf("25 h: %+v", r)
+	}
+	if acc := e.account(); acc.BalanceMinor != 1300 {
+		t.Fatalf("reservation kept: balance %d", acc.BalanceMinor)
+	}
+	// A refund of the same amount made by hand that no row claims yet: not releasable.
+	if _, err := e.fake.DashboardRefund(pi, 700); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.in.ReleaseRefund(ctx, e.acc, ref.ID); !errors.Is(err, billing.ErrRefundNotReleasable) {
+		t.Fatalf("release with an unclaimed refund: %v", err)
+	}
+	// Its webhook matches it to the reserved refund: resolved, no second debit.
+	for _, w := range e.fake.TakeWebhooks() {
+		e.webhook(w)
+	}
+	e.process()
+	if r := e.refund(ref.ID); r.Status != core.RefundSucceeded {
+		t.Fatalf("matched by hand refund %+v", r)
+	}
+	if acc := e.account(); acc.BalanceMinor != 1300 {
+		t.Fatalf("balance %d", acc.BalanceMinor)
+	}
+
+	// A second never-created refund, confirmed absent: released, the money is back.
+	ref2 := e.reserveRefund(pi, 300)
+	e.fake.Queue(fake.OpRefund, fake.Unknown)
+	_ = e.in.ReconcileAccount(ctx, e.acc)
+	e.ageRefund(ref2.ID, 25*time.Hour)
+	if err := e.in.ReconcileAccount(ctx, e.acc); err != nil {
+		t.Fatal(err)
+	}
+	if acc := e.account(); acc.BalanceMinor != 1000 {
+		t.Fatalf("second reservation: balance %d", acc.BalanceMinor)
+	}
+	if err := e.in.ReleaseRefund(ctx, e.acc, ref2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.refund(ref2.ID); r.Status != core.RefundFailed {
+		t.Fatalf("released %+v", r)
+	}
+	if acc := e.account(); acc.BalanceMinor != 1300 {
+		t.Fatalf("released: balance %d", acc.BalanceMinor)
+	}
+	if n := e.fake.Calls("Refund"); n != 2 {
+		t.Fatalf("refund POSTs %d", n)
 	}
 }

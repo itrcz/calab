@@ -145,3 +145,14 @@ WHERE origin = 'calab' AND status IN ('pending', 'requires_action')
   AND updated_at < sqlc.arg('before')::timestamptz
 ORDER BY id
 LIMIT sqlc.arg('lim');
+
+-- name: MarkBillingRefundNeedsReview :one
+-- A Calab refund the provider has no trace of past the idempotency window: a superadmin decides.
+-- No row = it left pending meanwhile or was marked before (the first mark keeps its time).
+UPDATE billing_refunds SET needs_review_at = sqlc.arg('now')::timestamptz, updated_at = sqlc.arg('now')::timestamptz
+WHERE id = sqlc.arg('id') AND origin = 'calab' AND status IN ('pending', 'requires_action') AND needs_review_at IS NULL
+RETURNING *;
+
+-- name: CountBillingRefundsNeedingReview :one
+SELECT count(*)::bigint FROM billing_refunds
+WHERE needs_review_at IS NOT NULL AND status IN ('pending', 'requires_action');
