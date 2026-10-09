@@ -182,10 +182,22 @@ func (c *Core) AdminDebit(ctx context.Context, accountID uuid.UUID, amount int64
 // then what it already paid for becomes debt again (the episode opens if the balance goes
 // negative). Once per lot (ErrCreditAlreadyReversed). Returns the amount taken back.
 func (c *Core) ReverseAdminCredit(ctx context.Context, lotID uuid.UUID, reason string, actor *uuid.UUID) (int64, error) {
+	return c.reverseAdminCredit(ctx, nil, lotID, reason, actor)
+}
+
+// ReverseUnusedAdminCredit is ReverseAdminCredit of the superadmin API: the lot must belong to
+// accountID and must not have paid for any service yet (ErrCreditUsed). Both are checked under
+// the account lock, so a renewal that spends the credit between the admin preview and this
+// command cannot turn delivered service into debt.
+func (c *Core) ReverseUnusedAdminCredit(ctx context.Context, accountID, lotID uuid.UUID, reason string, actor *uuid.UUID) (int64, error) {
+	return c.reverseAdminCredit(ctx, &accountID, lotID, reason, actor)
+}
+
+func (c *Core) reverseAdminCredit(ctx context.Context, unusedOf *uuid.UUID, lotID uuid.UUID, reason string, actor *uuid.UUID) (int64, error) {
 	var taken int64
 	find := func(q *sqlc.Queries) (uuid.UUID, error) {
 		lot, err := q.GetBillingFundingLot(ctx, lotID)
-		if db.IsNotFound(err) {
+		if db.IsNotFound(err) || (err == nil && unusedOf != nil && lot.AccountID != *unusedOf) {
 			return uuid.Nil, httpx.NotFound("credit")
 		}
 		return lot.AccountID, err
@@ -203,6 +215,9 @@ func (c *Core) ReverseAdminCredit(ctx context.Context, lotID uuid.UUID, reason s
 			return err
 		} else if ok {
 			return ErrCreditAlreadyReversed
+		}
+		if unusedOf != nil && lot.ConsumedMinor > 0 {
+			return ErrCreditUsed
 		}
 		if taken, err = s.clawback(lot, lot.AmountMinor-lot.RefundedMinor); err != nil {
 			return err
