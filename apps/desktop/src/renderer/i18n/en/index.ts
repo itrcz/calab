@@ -22,6 +22,7 @@ import { enBoards2 } from './boards2';
 import { enMilestones } from './milestones';
 import { enAutomations } from './automations';
 import { enPlan } from './plan';
+import { enBilling } from './billing';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
@@ -59,6 +60,7 @@ export const en: Dict = {
   ...enMusic,
   ...enMedia,
   ...enPlan,
+  ...enBilling,
   ...enModeration,
   ...enMail,
   ...enRecording,
