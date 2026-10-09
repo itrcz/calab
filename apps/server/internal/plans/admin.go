@@ -315,17 +315,8 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 		} else if err != nil {
 			return err
 		}
-		for _, feature := range []identitypolicy.Feature{identitypolicy.SSO, identitypolicy.DirectorySync, identitypolicy.OAuthProvider} {
-			current, err := q.GetIdentityGrant(r.Context(), sqlc.GetIdentityGrantParams{WorkspaceID: id, Feature: string(feature)})
-			if err != nil && !db.IsNotFound(err) {
-				return err
-			}
-			if err == nil && current.Source == "onprem_enterprise" {
-				continue
-			} // plan edits cannot replace an operator grant
-			if _, err := q.UpsertIdentityGrant(r.Context(), sqlc.UpsertIdentityGrantParams{WorkspaceID: id, Feature: string(feature), Enabled: plan == "enterprise", Source: "cloud_business", ValidUntil: until, UpdatedBy: &actor}); err != nil {
-				return err
-			}
+		if _, err := setBusinessGrants(r.Context(), q, id, plan == "enterprise", until, &actor, true); err != nil {
+			return err
 		}
 		if err := auth.InvalidateIdentity(r.Context(), q, id, nil, &actor, "plan_changed"); err != nil {
 			return err

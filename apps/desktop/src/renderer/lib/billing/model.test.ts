@@ -11,6 +11,7 @@ import {
   forecastOf,
   offeredMethods,
   otherPlan,
+  rejectRefundRequest,
   reserveAmount,
   timeLeft,
   topupLimits,
@@ -127,5 +128,11 @@ describe('auto-topup limits', () => {
     expect(autoTopupLimits(summary())).toEqual({ def: 50_000n, max: 500_000n });
     expect(autoTopupLimits(summary({ autoTopup: { defaultMaxAmount: usd(20_000n), limitMaxAmount: usd(100_000n) } }))).toEqual({ def: 20_000n, max: 100_000n });
     expect(autoTopupLimits(summary({ autoTopup: { defaultMaxAmount: usd(900_000n), limitMaxAmount: usd(100_000n) } }))).toEqual({ def: 100_000n, max: 100_000n });
+  });
+});
+
+describe('rejectRefundRequest', () => {
+  it('rejects without a preview, with the trimmed reason and the form request id', () => {
+    expect(rejectRefundRequest({ reason: '  duplicate request ', requestId: 'r-1' })).toEqual({ approve: false, reason: 'duplicate request', requestId: 'r-1', preview: false });
   });
 });

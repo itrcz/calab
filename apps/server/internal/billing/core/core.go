@@ -64,7 +64,9 @@ type Config struct {
 // Hooks connect the core to the packages it must not import.
 type Hooks struct {
 	// PlanChanged runs inside the transaction right after the core wrote workspace_plans
-	// (source = billing) for workspaceID: identity grants, auth.InvalidateIdentity (T3).
+	// (source = billing) for workspaceID, while the account is locked. It must not lock
+	// workspace rows (lock order: workspace → account): the identity grants of the plan and
+	// auth.InvalidateIdentity run after the commit instead (app wiring, Committed).
 	PlanChanged func(ctx context.Context, q *sqlc.Queries, workspaceID uuid.UUID, plan string) error
 	// Committed runs after the commit of a command the core ran in its own transaction:
 	// plans.Invalidate, WORKSPACE_UPDATE / BILLING_UPDATE (T5). planChanged reports a new

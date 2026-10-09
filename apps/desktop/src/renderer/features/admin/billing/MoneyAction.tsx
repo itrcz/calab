@@ -33,6 +33,7 @@ export function MoneyActionDialog({
   maxAmount,
   initialAmount,
   preview = true,
+  destructive = false,
   extra,
   run,
   onDone,
@@ -49,6 +50,8 @@ export function MoneyActionDialog({
   initialAmount?: bigint | undefined;
   /** The route answers a preview (manual credit, reverse, refund); else a plain confirmation. */
   preview?: boolean;
+  /** The confirm button is destructive (a rejection). */
+  destructive?: boolean;
   /** Extra fields above the reason (rendered by the caller). */
   extra?: ReactNode;
   run: (a: MoneyActionArgs) => Promise<unknown>;
@@ -99,7 +102,7 @@ export function MoneyActionDialog({
           <Button variant="secondary" onClick={shown ? () => setShown(null) : onClose}>
             {shown ? t('adminBilling.back') : t('common.cancel')}
           </Button>
-          <Button busy={busy} onClick={() => void go(!confirmStep)} data-testid="admin-billing-submit">
+          <Button busy={busy} variant={confirmStep && destructive ? 'destructive' : 'primary'} onClick={() => void go(!confirmStep)} data-testid="admin-billing-submit">
             {confirmStep ? action : t('adminBilling.preview')}
           </Button>
         </>

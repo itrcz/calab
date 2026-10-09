@@ -21,6 +21,7 @@ import { plural, t, type MessageKey } from '../../../i18n';
 import { recentAuthRequired } from '../../../lib/api/errors';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { nowMs } from '../../../lib/billing/checkout';
+import { rejectRefundRequest } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, minorOf, parseMajor } from '../../../lib/billing/money';
 import { fmt } from '../../../lib/format';
 import { adminBilling } from '../../../services/billing';
@@ -597,7 +598,11 @@ function RequestsPage({ onClose, notice }: { onClose: () => void; notice: ReactN
   const qc = useQueryClient();
   const q = useQuery({ queryKey: KEY.requests, queryFn: ({ signal }) => adminBilling.refundRequests({ open: true }, signal), retry: false });
   const [deciding, setDeciding] = useState<AdminBillingRefundRequest | null>(null);
+  const [rejecting, setRejecting] = useState<AdminBillingRefundRequest | null>(null);
   const list = q.data?.requests ?? [];
+  const done = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ['admin', 'billing'] });
+  }, [qc]);
   return (
     <>
       <PaneHeader title={t('adminBilling.nav.requests')} onClose={onClose} />
@@ -614,25 +619,42 @@ function RequestsPage({ onClose, notice }: { onClose: () => void; notice: ReactN
                 key={r.request.id}
                 r={r.request}
                 extra={
-                  <Button size="sm" variant="secondary" onClick={() => setDeciding(r)} data-testid="admin-billing-decide">
-                    {t('adminBilling.decide')}
-                  </Button>
+                  <span className="flex items-center gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => setRejecting(r)} data-testid="admin-billing-reject">
+                      {t('adminBilling.reject')}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setDeciding(r)} data-testid="admin-billing-decide">
+                      {t('adminBilling.decide')}
+                    </Button>
+                  </span>
                 }
               />
             ) : null,
           )}
         </div>
       </Scroll>
-      {deciding ? (
-        <DecideDialog
-          r={deciding}
-          onClose={() => setDeciding(null)}
-          onDone={() => {
-            void qc.invalidateQueries({ queryKey: ['admin', 'billing'] });
-          }}
-        />
-      ) : null}
+      {deciding ? <DecideDialog r={deciding} onClose={() => setDeciding(null)} onDone={done} /> : null}
+      {rejecting ? <RejectDialog r={rejecting} onClose={() => setRejecting(null)} onDone={done} /> : null}
     </>
+  );
+}
+
+/** Rejects an owner's refund request: no money moves, the reason goes to the audit log. */
+function RejectDialog({ r, onClose, onDone }: { r: AdminBillingRefundRequest; onClose: () => void; onDone: () => void }): ReactNode {
+  const id = r.request?.id ?? '';
+  return (
+    <MoneyActionDialog
+      title={t('adminBilling.rejectTitle')}
+      text={t('adminBilling.rejectText', { amount: formatMoney(r.request?.amount) })}
+      action={t('adminBilling.reject')}
+      currency={r.request?.amount?.currency || 'USD'}
+      amount={false}
+      preview={false}
+      destructive
+      run={(x) => adminBilling.decideRefundRequest(id, rejectRefundRequest(x))}
+      onDone={onDone}
+      onClose={onClose}
+    />
   );
 }
 

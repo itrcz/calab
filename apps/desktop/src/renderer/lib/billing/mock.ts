@@ -525,6 +525,12 @@ function admin(): AdminBillingApi {
       if ((init.amount?.minor ?? 0n) > 2500n) throw new ApiError('ERROR_CODE_CONFLICT', 'refundable', 409, undefined, { reason: 'BILLING_REFUND_EXCEEDS_REFUNDABLE' });
       return result(a, b, b - (init.amount?.minor ?? 0n), !!init.preview);
     },
+    async decideRefundRequest(_id, init) {
+      await wait();
+      const a = find('acc-2');
+      const b = a.balance?.minor ?? 0n;
+      return result(a, b, init.approve ? b - 2000n : b, !!init.preview);
+    },
     async hold(id) {
       await wait();
       const a = find(id);
