@@ -186,4 +186,19 @@ func TestTaskApprovalNotifyDelay(t *testing.T) {
 	if r := state(fourth.GetId(), dave.id); r.scheduled {
 		t.Fatalf("dave with delay 0 %+v", r)
 	}
+
+	// A vote cast while scheduled, then the delay set to 0 and a reset: one immediate
+	// re-request, the stale schedule never sends a second notice.
+	setNotifyDelay(t, o, b.GetId(), 60, 200)
+	fifth := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Пятая", ApproverIds: []string{dave.id}}, 201)
+	voteTask(dave, fifth.GetId(), 200, approve, "")
+	setNotifyDelay(t, o, b.GetId(), 0, 200)
+	title5 := "Пятая v2"
+	patchTask(t, o, fifth.GetId(), &v1.UpdateTaskRequest{Title: &title5}, 200)
+	if n := gd.wait("the immediate re-request", asked(fifth.GetId())).GetTaskUpdate().GetNotice(); !n.GetReRequested() {
+		t.Fatalf("immediate re-request %v", n)
+	}
+	exec("UPDATE task_approvers SET notify_due_at = now() - interval '1 second' WHERE task_id = $1 AND notify_due_at IS NOT NULL", fifth.GetId())
+	deliver()
+	gd.quiet("a second notice from a stale schedule", 300*time.Millisecond, asked(fifth.GetId()))
 }

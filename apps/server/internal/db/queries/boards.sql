@@ -613,8 +613,10 @@ DELETE FROM task_approvers WHERE task_id = $1 AND user_id = ANY(sqlc.arg('user_i
 UPDATE tasks SET approval_required = $2, updated_at = now() WHERE id = $1;
 
 -- name: SetApproverVote :exec
--- A vote; pending (withdraw) asks for it again: the reminders start over.
+-- A vote; pending (withdraw) asks for it again: the reminders start over. A cast vote drops its
+-- notice not sent yet (ADR-0082): a later reset or delay-0 request is then never sent twice.
 UPDATE task_approvers SET state = sqlc.arg('state')::text, comment = sqlc.arg('comment')::text,
+    notify_due_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN notify_due_at ELSE NULL END,
     decided_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN NULL ELSE now() END,
     requested_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN now() ELSE requested_at END,
     reminders = CASE WHEN sqlc.arg('state')::text = 'pending' THEN 0 ELSE reminders END,
@@ -626,7 +628,7 @@ WHERE task_id = sqlc.arg('task_id') AND user_id = sqlc.arg('user_id');
 -- again; pending ones keep their notice and reminder schedule (ADR-0082). Returns the
 -- approvers whose vote was reset.
 UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
-    reminders = 0, reminded_at = NULL
+    reminders = 0, reminded_at = NULL, notify_due_at = NULL
 WHERE task_id = $1 AND state <> 'pending'
 RETURNING user_id;
 

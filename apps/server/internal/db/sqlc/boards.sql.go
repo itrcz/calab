@@ -2553,7 +2553,7 @@ func (q *Queries) NextTaskNumber(ctx context.Context, id uuid.UUID) (int32, erro
 
 const resetTaskApprovals = `-- name: ResetTaskApprovals :many
 UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
-    reminders = 0, reminded_at = NULL
+    reminders = 0, reminded_at = NULL, notify_due_at = NULL
 WHERE task_id = $1 AND state <> 'pending'
 RETURNING user_id
 `
@@ -2607,6 +2607,7 @@ func (q *Queries) ScheduleApprovalNotices(ctx context.Context, arg ScheduleAppro
 
 const setApproverVote = `-- name: SetApproverVote :exec
 UPDATE task_approvers SET state = $1::text, comment = $2::text,
+    notify_due_at = CASE WHEN $1::text = 'pending' THEN notify_due_at ELSE NULL END,
     decided_at = CASE WHEN $1::text = 'pending' THEN NULL ELSE now() END,
     requested_at = CASE WHEN $1::text = 'pending' THEN now() ELSE requested_at END,
     reminders = CASE WHEN $1::text = 'pending' THEN 0 ELSE reminders END,
@@ -2621,7 +2622,8 @@ type SetApproverVoteParams struct {
 	UserID  uuid.UUID
 }
 
-// A vote; pending (withdraw) asks for it again: the reminders start over.
+// A vote; pending (withdraw) asks for it again: the reminders start over. A cast vote drops its
+// notice not sent yet (ADR-0082): a later reset or delay-0 request is then never sent twice.
 func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams) error {
 	_, err := q.db.Exec(ctx, setApproverVote,
 		arg.State,
