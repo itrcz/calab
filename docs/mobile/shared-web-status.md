@@ -1,5 +1,24 @@
 # Телефон: общий веб в оболочке — статус
 
+## Native microphone/camera permissions (2026-10-09)
+
+- **Implemented locally:** shared settings and microphone onboarding use iOS
+  authorization; denied microphone, camera and notifications link to Calab's
+  system settings. Foreground return refreshes media states. Requests do not
+  start capture or reconfigure the audio session. Only the proven Calab main
+  frame can reuse an existing OS grant without an extra WebKit site prompt.
+- **Verified locally:** latest main integrated without conflicts; 2759 desktop
+  unit tests, 122 mobile tests, 6 plugin tests, all desktop/mobile typechecks,
+  changed-file lint, web build and unsigned iOS Release compilation. Final
+  adapter/localization delta passed 46 focused tests. Patch application and
+  frozen lockfile verified. Manual 390 px shared-settings QA used simulated
+  native states; this is not evidence of an iPhone OS permission prompt.
+- **Remaining:** first-time prompts, denial -> Settings -> return, duplicate
+  site-prompt suppression and active-call preservation on a real iPhone;
+  independent security/protocol review and full CI gates (local golangci-lint
+  is unavailable), then web deployment and a new native build. No API change.
+  Existing TestFlight build 20 is unchanged; this is not READY_TO_SHIP.
+
 ## Native notification permission and local test (2026-10-09)
 
 - **Implemented locally:** contextual native permission after login for returning

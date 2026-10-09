@@ -1,4 +1,5 @@
 import { parseCallsOperation, type HostCallsOperation } from './hostCalls';
+import { parseMediaPermissionsOperation, type MediaPermissionsOperation } from './hostPermissions';
 /** Local, optional host capability (ADR-0056), not a server/auth protocol. No product identifiers. */
 export interface SessionActivitySnapshot {
   generation: number;
@@ -13,6 +14,7 @@ export interface SessionActivityCapability {
 }
 
 export type HostActivityMessage =
+  | ({ v: 1; type: 'permissions'; host: number; document: string; seq: number; request: number } & MediaPermissionsOperation)
   | ({ v:1; type:'calls'; host:number; document:string; seq:number; request:number } & HostCallsOperation)
   | { v: 1; type: 'hello'; host: number; document: string }
   | { v: 1; type: 'revoke'; host: number; document: string; seq: number; reason?: 'logout' }
@@ -52,6 +54,10 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
   if (value.type === 'hello' && keys(value, base)) return value as unknown as HostActivityMessage;
   if (!counter(value.seq) || value.seq < 1) return null;
   if (value.type === 'revoke' && (keys(value, [...base, 'seq']) || (value.reason === 'logout' && keys(value, [...base, 'seq', 'reason'])))) return value as unknown as HostActivityMessage;
+  if (value.type === 'permissions' && counter(value.request) && value.request > 0) {
+    const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
+    return parseMediaPermissionsOperation(fields) ? value as unknown as HostActivityMessage : null;
+  }
   if (value.type === 'calls' && counter(value.request) && value.request > 0) {
     const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
     if (parseCallsOperation(fields)) return value as unknown as HostActivityMessage;

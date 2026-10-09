@@ -1,4 +1,5 @@
 import { requestNotify, readNotifyState, testNotification, type NotifyState } from '../../lib/notifyPermission';
+import type { MediaPermissionKind } from '../../../shared/hostPermissions';
 import { AuthorizedApps, useOAuthAppsAvailable } from '../identity/OAuth';
 import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
@@ -241,6 +242,7 @@ function statusText(s: string): string {
 
 export function PermissionsCard(): ReactNode {
   const [p, setP] = useState<PermissionStatus | null>(null);
+  const [requesting, setRequesting] = useState<MediaPermissionKind | null>(null);
   const [notif, setNotif] = useState<NotifyState>(() => readNotifyState(undefined, platform.notifications));
   const os = useSession((s) => s.appInfo?.platform);
   const mac = os === 'darwin' && platform.kind === 'electron';
@@ -252,10 +254,26 @@ export function PermissionsCard(): ReactNode {
     };
     refresh();
     const unsubscribe = platform.notifications?.subscribe(s => setNotif(s.permission));
+    const unsubscribeMedia = platform.mediaPermissions?.subscribe(state => setP(previous => previous ? { ...previous, ...state } : previous));
     window.addEventListener('focus', refresh); // back from System Settings
-    return () => { unsubscribe?.(); window.removeEventListener('focus', refresh); };
+    return () => { unsubscribe?.(); unsubscribeMedia?.(); window.removeEventListener('focus', refresh); };
   }, []);
   if (!p) return null;
+  const openAppSettings = (): void => {
+    void platform.mediaPermissions?.openSettings().then(opened => { if (!opened) toast.error(t('perm.openFailed')); });
+  };
+  const mediaButton = (kind: MediaPermissionKind): ReactNode => {
+    const host = platform.mediaPermissions;
+    if (!host) return osButton(kind);
+    if (p[kind] === 'not-determined') return (
+      <Button size="sm" variant="secondary" disabled={requesting !== null} busy={requesting === kind} onClick={() => {
+        setRequesting(kind);
+        void host.request(kind).then(state => setP(previous => previous ? { ...previous, ...state } : previous)).finally(() => setRequesting(null));
+      }}>{t('perm.ask')}</Button>
+    );
+    if (p[kind] === 'denied' || p[kind] === 'restricted') return <Button size="sm" variant="secondary" onClick={openAppSettings}>{t('perm.openOs')}</Button>;
+    return null;
+  };
   const osButton = (pane: 'microphone' | 'camera' | 'screen' | 'accessibility'): ReactNode =>
     mac || ((pane === 'microphone' || pane === 'camera') && os === 'win32' && platform.kind === 'electron') ? (
       <Button size="sm" variant="secondary" onClick={() => void platform.system.openPrivacySettings(pane)}>
@@ -263,14 +281,14 @@ export function PermissionsCard(): ReactNode {
       </Button>
     ) : null;
   return (
-    <Card title={t('perm.title')} footer={t('perm.hint')}>
+    <Card title={t('perm.title')} footer={t(platform.mediaPermissions ? 'perm.phoneHint' : 'perm.hint')}>
       <Row label={t('perm.mic')}>
         <span className="text-body text-muted">{statusText(p.microphone)}</span>
-        {osButton('microphone')}
+        {mediaButton('microphone')}
       </Row>
       <Row label={t('video.device')}>
         <span className="text-body text-muted">{statusText(p.camera)}</span>
-        {osButton('camera')}
+        {mediaButton('camera')}
       </Row>
       {mac ? (
         <>
@@ -291,6 +309,7 @@ export function PermissionsCard(): ReactNode {
             {t('perm.ask')}
           </Button>
         ) : null}
+        {notif === 'denied' && platform.mediaPermissions ? <Button size="sm" variant="secondary" onClick={openAppSettings}>{t('perm.openOs')}</Button> : null}
       </Row>
     </Card>
   );

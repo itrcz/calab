@@ -1,12 +1,13 @@
 diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 --- a/apple/RNCWebViewImpl.m
 +++ b/apple/RNCWebViewImpl.m
-@@ -24,6 +24,218 @@
+@@ -24,6 +24,219 @@
  static NSDictionary* customCertificatesForHost;
 
  NSString *const CUSTOM_SELECTOR = @"_CUSTOM_SELECTOR_";
 +
 +#if TARGET_OS_IOS
++#import <AVFoundation/AVFoundation.h>
 +#pragma mark - Page downloads (Calab patch, ADR-0068)
 +
 +/**
@@ -220,7 +221,7 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 
  #if TARGET_OS_IOS
  // runtime trick to remove WKWebView keyboard default toolbar
-@@ -151,6 +363,12 @@
+@@ -151,6 +364,12 @@
  #endif
  #if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000 /* __IPHONE_13_0 */
    BOOL _savedAutomaticallyAdjustsScrollIndicatorInsets;
@@ -233,7 +234,7 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
  #endif
  }
 
-@@ -613,6 +831,13 @@
+@@ -613,6 +832,13 @@
  - (void)removeFromSuperview
  #endif
  {
@@ -247,7 +248,7 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
    if (_webView) {
      [_webView.configuration.userContentController removeScriptMessageHandlerForName:HistoryShimName];
      [_webView.configuration.userContentController removeScriptMessageHandlerForName:MessageHandlerName];
-@@ -768,6 +993,71 @@
+@@ -768,6 +994,71 @@
  }
  #endif
 
@@ -312,14 +313,14 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 +  }
 +  if (![_calabBridgeDocument isEqualToString:document]) return;
 +  if ([type isEqualToString:@"revoke"]) { if ([body[@"reason"] isEqual:@"logout"]) [NSNotificationCenter.defaultCenter postNotificationName:@"CalabHostSessionCleared" object:self]; [self calabRevokeAuthority]; [self calabForwardMessage:message]; }
-+  else if ([type isEqualToString:@"activity"] || [type isEqualToString:@"notifications"] || [type isEqualToString:@"calls"]) [self calabForwardMessage:message];
++  else if ([type isEqualToString:@"activity"] || [type isEqualToString:@"notifications"] || [type isEqualToString:@"calls"] || [type isEqualToString:@"permissions"]) [self calabForwardMessage:message];
 +}
 +#endif
 +
  /**
   * This method is called whenever JavaScript running within the web view calls:
   *   - window.webkit.messageHandlers[MessageHandlerName].postMessage
-@@ -782,18 +1072,25 @@
+@@ -782,18 +1073,25 @@
        _onLoadingFinish(event);
      }
    } else if ([message.name isEqualToString:MessageHandlerName]) {
@@ -345,10 +346,35 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
      _source = [source copy];
 
      if (_webView != nil) {
-@@ -1343,6 +1640,17 @@
+@@ -1294,6 +1592,23 @@
+                         initiatedByFrame:(WKFrameInfo *)frame
+                                     type:(WKMediaCaptureType)type
+                          decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler {
++#if TARGET_OS_IOS
++  // ADR-0081: only Calab's proven main-frame origin can reuse an existing OS grant.
++  // Never grant another frame/origin, an unknown capture type, or an undecided/denied OS permission.
++  NSURL *calabOrigin = RNCDownloadOrigin([RCTConvert NSString:_source[@"uri"]]);
++  BOOL needsAudio = type == WKMediaCaptureTypeMicrophone || type == WKMediaCaptureTypeCameraAndMicrophone;
++  BOOL needsVideo = type == WKMediaCaptureTypeCamera || type == WKMediaCaptureTypeCameraAndMicrophone;
++  if (webView == _webView && calabOrigin != nil && frame.isMainFrame &&
++      RNCFrameHasOrigin(frame, calabOrigin) && RNCUrlHasOrigin(frame.request.URL, calabOrigin) &&
++      RNCUrlHasOrigin(webView.URL, calabOrigin) && [origin.protocol.lowercaseString isEqualToString:@"https"] &&
++      RNCSameHost(origin.host, calabOrigin.host) && RNCHttpsPort(origin.port) == RNCHttpsPort(calabOrigin.port.integerValue) &&
++      (needsAudio || needsVideo) &&
++      (!needsAudio || [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusAuthorized) &&
++      (!needsVideo || [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo] == AVAuthorizationStatusAuthorized)) {
++    decisionHandler(WKPermissionDecisionGrant);
++    return;
++  }
++#endif
+   if (_mediaCapturePermissionGrantType == RNCWebViewPermissionGrantType_GrantIfSameHost_ElsePrompt || _mediaCapturePermissionGrantType == RNCWebViewPermissionGrantType_GrantIfSameHost_ElseDeny) {
+     if ([origin.host isEqualToString:webView.URL.host]) {
+       decisionHandler(WKPermissionDecisionGrant);
+@@ -1342,6 +1657,17 @@
+             @(WKNavigationTypeOther): @"other",
          };
      });
-
++
 +#if TARGET_OS_IOS
 +    // Calab patch: a blob: download of the source origin's main frame, decided natively (see RNCWebViewDownloads).
 +    if (@available(iOS 14.5, *)) {
@@ -359,11 +385,10 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 +      }
 +    }
 +#endif
-+
+
      WKNavigationType navigationType = navigationAction.navigationType;
      NSURLRequest *request = navigationAction.request;
-     BOOL isTopFrame = [request.URL isEqual:request.mainDocumentURL];
-@@ -1420,12 +1728,35 @@
+@@ -1420,12 +1746,35 @@
      decisionHandler(WKNavigationActionPolicyAllow);
  }
 
@@ -399,7 +424,7 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
    RCTLogWarn(@"Webview Process Terminated");
    if (_onContentProcessDidTerminate) {
      NSMutableDictionary<NSString *, id> *event = [self baseEvent];
-@@ -1769,6 +2100,9 @@
+@@ -1769,6 +2118,9 @@
  }
 
  - (void)setMessagingEnabled:(BOOL)messagingEnabled {
