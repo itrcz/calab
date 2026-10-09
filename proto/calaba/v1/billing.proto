@@ -437,6 +437,17 @@ message AdminBillingAccount {
   google.protobuf.Timestamp created_at = 16;
   uint64 revision = 17;
   uint32 billable_members = 18;
+  string provider = 19;        // provider id of the market ("stripe")
+}
+
+// GET /api/admin/billing/accounts/{id}
+message AdminBillingAccountDetails {
+  AdminBillingAccount account = 1;
+  PayerProfile payer = 2;                         // unset until the owner saved it
+  AutoTopupSettings auto_topup = 3;               // consent state only (no next_amount)
+  repeated AdminBillingDispute open_disputes = 4;
+  Money free_advance = 5;                         // unused money on the funding lots
+  Money pending_refunds = 6;                      // reserved by refunds not final yet
 }
 
 message AdminBillingAccounts {
@@ -515,9 +526,11 @@ message AdminEnableBillingRequest {
   Plan plan = 2;     // PLAN_TEAM | PLAN_ENTERPRISE
   string reason = 3;
   string request_id = 4;
+  bool preview = 5;
 }
 
-// POST /api/admin/billing/accounts/{id}/manual-credits
+// POST /api/admin/billing/accounts/{id}/manual-credits and …/admin-debit (a correction that
+// takes money off the free advance, never into debt)
 message AdminManualCreditRequest {
   Money amount = 1; // > 0, account currency
   string reason = 2;
@@ -548,6 +561,7 @@ message AdminHoldRequest {
   google.protobuf.Timestamp hold_until = 1; // unset = release the hold
   string reason = 2;
   string request_id = 3;
+  bool preview = 4;
 }
 
 // POST /api/admin/billing/accounts/{id}/reconcile
@@ -562,6 +576,7 @@ message AdminDiscountRequest {
   string reason = 2;
   string request_id = 3;
   uint64 expected_revision = 4;
+  bool preview = 5;
 }
 
 message AdminPriceVersion {
@@ -587,6 +602,16 @@ message AdminCreatePriceRequest {
   google.protobuf.Timestamp effective_from = 4;
   string reason = 5;
   string request_id = 6;
+  bool preview = 7;
+}
+
+// POST /api/admin/billing/refund-requests/{id}/decide: approve = refunds of the requested
+// amount from the account's payments (oldest first, unused money only); reject = no money moves.
+message AdminDecideRefundRequest {
+  bool approve = 1;
+  string reason = 2;
+  string request_id = 3;
+  bool preview = 4;
 }
 
 // Answer of an admin money mutation (or its preview).
@@ -596,10 +621,24 @@ message AdminBillingMutationResult {
   Money balance_after = 3;
   AdminBillingAccount account = 4;
   string audit_id = 5; // empty for a preview
+  string action = 6;   // audit action, e.g. "manual_credit"
+  bool replayed = 7;   // the request_id was seen before with the same body
+  Money amount = 8;    // money moved by the action (credited, debited, reversed, refunded)
+  string credit_id = 9; // manual credit: the funding lot (…/manual-credits/{creditId}/reverse)
+  repeated AdminBillingRefund refunds = 10;      // refunds created (pending until the provider answers)
+  AdminBillingRefundRequest refund_request = 11; // decided owner request
+  AdminPriceVersion price = 12;                  // created price version
+  Money refundable = 13;                         // refund preview: unused money of the payment
 }
 
 // POST /api/admin/billing/test-clock (BILLING_TEST_CLOCK=1 only, never in production): moves
 // the billing clock used by the scheduler.
 message AdminBillingTestClockRequest {
-  google.protobuf.Timestamp now = 1; // unset = back to the database clock
+  google.protobuf.Timestamp now = 1; // unset = back to the database clock (unless advance_seconds)
+  uint64 advance_seconds = 2;        // > 0: fix the clock at (now or the billing time) + this
+}
+
+message AdminBillingTestClockResponse {
+  google.protobuf.Timestamp now = 1; // the billing time now
+  bool fixed = 2;                    // false = database clock
 }
