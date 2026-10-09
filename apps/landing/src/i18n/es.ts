@@ -270,7 +270,7 @@ const es: Dict = {
   },
   pricing: {
     perSeatMonth: 'por empleado al mes',
-    billingNote: 'Precio base por empleado, sin IVA. Con el descuento mensual activo del 10%: Team 179,10 ₽ y Business 449,10 ₽ por puesto. Con el descuento anual del 20%: 1 910,40 ₽ y 4 790,40 ₽ por puesto por todo el año. Los pagos de suscripción están en preparación.',
+    billingNote: 'Precio base por empleado, sin IVA. Con el descuento mensual activo del 10%: Team 179 ₽ y Business 449 ₽ por puesto. Con el descuento anual del 20%: 1 910 ₽ y 4 790 ₽ por puesto por todo el año. Los pagos de suscripción están en preparación.',
     offerLink: 'Condiciones y reembolsos (en ruso)',
     eyebrow: 'Precios',
     title: 'Free, Team, Business y Enterprise',

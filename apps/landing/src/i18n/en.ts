@@ -270,7 +270,7 @@ const en: Dict = {
   },
   pricing: {
     perSeatMonth: 'per employee per month',
-    billingNote: 'Base price per employee, no VAT. When active, the 10% monthly discount gives Team ₽179.10 and Business ₽449.10 per seat. With the 20% annual discount: ₽1,910.40 and ₽4,790.40 per seat for the full year. Subscription payments are being prepared for launch.',
+    billingNote: 'Base price per employee, no VAT. When active, the 10% monthly discount gives Team ₽179 and Business ₽449 per seat. With the 20% annual discount: ₽1,910 and ₽4,790 per seat for the full year. Subscription payments are being prepared for launch.',
     offerLink: 'Subscription and refund terms (Russian)',
     eyebrow: 'Pricing',
     title: 'Free, Team, Business and Enterprise',

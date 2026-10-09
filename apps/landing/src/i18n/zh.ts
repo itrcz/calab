@@ -271,7 +271,7 @@ const zh: Dict = {
   },
   pricing: {
     perSeatMonth: '每位员工每月',
-    billingNote: '每位员工的基础价格，不含增值税。月付九折优惠生效时：Team 每席位 179.10 ₽，Business 449.10 ₽。年付八折优惠生效时：每席位全年分别为 1,910.40 ₽ 和 4,790.40 ₽。订阅付款功能正在准备上线。',
+    billingNote: '每位员工的基础价格，不含增值税。月付九折优惠生效时：Team 每席位 179 ₽，Business 449 ₽。年付八折优惠生效时：每席位全年分别为 1,910 ₽ 和 4,790 ₽。订阅付款功能正在准备上线。',
     offerLink: '订阅与退款条款（俄语）',
     eyebrow: '价格',
     title: 'Free、Team、Business 与 Enterprise',
