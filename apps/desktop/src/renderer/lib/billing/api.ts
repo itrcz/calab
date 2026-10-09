@@ -7,6 +7,7 @@ import {
   AdminBillingRefundRequestsSchema,
   AdminBillingRefundsSchema,
   AdminCreatePriceRequestSchema,
+  AdminDecideRefundRequestSchema,
   AdminDiscountRequestSchema,
   AdminEnableBillingRequestSchema,
   AdminHoldRequestSchema,
@@ -113,6 +114,8 @@ export interface AdminBillingApi {
   manualCredit(id: string, init: Init<typeof AdminManualCreditRequestSchema>): Promise<AdminBillingMutationResult>;
   reverseCredit(id: string, creditId: string, init: Init<typeof AdminReverseCreditRequestSchema>): Promise<AdminBillingMutationResult>;
   refund(paymentId: string, init: Init<typeof AdminRefundRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** Approve (refund FIFO from the account's payments) or reject an owner's refund request. */
+  decideRefundRequest(id: string, init: Init<typeof AdminDecideRefundRequestSchema>): Promise<AdminBillingMutationResult>;
   hold(id: string, init: Init<typeof AdminHoldRequestSchema>): Promise<AdminBillingMutationResult>;
   reconcile(id: string, init: Init<typeof AdminReconcileRequestSchema>): Promise<AdminBillingMutationResult>;
   discount(id: string, init: Init<typeof AdminDiscountRequestSchema>): Promise<AdminBillingMutationResult>;
@@ -163,6 +166,8 @@ export const restAdminApi: AdminBillingApi = {
   reverseCredit: (id, cid, init) =>
     call('POST', `${A}/accounts/${enc(id)}/manual-credits/${enc(cid)}/reverse`, AdminBillingMutationResultSchema, body(AdminReverseCreditRequestSchema, init)),
   refund: (pid, init) => call('POST', `${A}/payments/${enc(pid)}/refunds`, AdminBillingMutationResultSchema, body(AdminRefundRequestSchema, init)),
+  decideRefundRequest: (id, init) =>
+    call('POST', `${A}/refund-requests/${enc(id)}/decide`, AdminBillingMutationResultSchema, body(AdminDecideRefundRequestSchema, init)),
   hold: (id, init) => call('POST', `${A}/accounts/${enc(id)}/hold`, AdminBillingMutationResultSchema, body(AdminHoldRequestSchema, init)),
   reconcile: (id, init) => call('POST', `${A}/accounts/${enc(id)}/reconcile`, AdminBillingMutationResultSchema, body(AdminReconcileRequestSchema, init)),
   discount: (id, init) => call('PUT', `${A}/accounts/${enc(id)}/discount`, AdminBillingMutationResultSchema, body(AdminDiscountRequestSchema, init)),

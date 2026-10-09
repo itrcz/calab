@@ -168,6 +168,15 @@ export const hasDailyLine = (s: BillingSummary): boolean => s.billableMembers > 
 /** Sum of Money values of one currency (bigint). */
 export const sumMinor = (...ms: Array<Money | undefined>): bigint => ms.reduce((a, m) => a + minorOf(m), 0n);
 
+/**
+ * The body of a superadmin rejection of an owner's refund request (POST …/refund-requests/{id}/
+ * decide, AdminDecideRefundRequest): approve false moves no money, so there is no preview step;
+ * the reason goes to the audit log and request_id makes a retry the same decision.
+ */
+export function rejectRefundRequest(a: { reason: string; requestId: string }): { approve: false; reason: string; requestId: string; preview: false } {
+  return { approve: false, reason: a.reason.trim(), requestId: a.requestId, preview: false };
+}
+
 /** Request ids of money mutations: one per form open, so a double click is the same request. */
 export function requestId(): string {
   return globalThis.crypto.randomUUID();
