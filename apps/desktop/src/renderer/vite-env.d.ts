@@ -9,4 +9,6 @@ interface ImportMetaEnv {
   readonly VITE_APP_VERSION?: string;
   /** Plans on the landing page («Тариф» → «Подробнее о тарифах», ADR-0024); unset = no link. */
   readonly VITE_PRICING_URL?: string;
+  /** '1': the billing cabinet and admin talk to an in-memory mock (lib/billing/mock.ts; dev / QA builds only). */
+  readonly VITE_BILLING_MOCK?: string;
 }
