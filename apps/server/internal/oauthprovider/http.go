@@ -332,7 +332,7 @@ func apiIdentityError(st identitypolicy.State, d identitypolicy.Decision, err er
 		code = v1.ErrorCode_ERROR_CODE_DIRECTORY_ACCESS_DENIED
 	case identitypolicy.EntitlementRequired:
 		return httpx.Conflict("Business or Enterprise is required").WithDetails(httpx.ReasonPlanLimit, 0, 0)
-	case identitypolicy.WorkspaceSuspended:
+	case identitypolicy.WorkspaceSuspended, identitypolicy.BillingSuspended:
 		code = v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED
 	}
 	if st.Principal.Authority == identitypolicy.Recovery {

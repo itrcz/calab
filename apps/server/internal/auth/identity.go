@@ -8,6 +8,7 @@ import (
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -106,6 +107,8 @@ func IdentityError(p identitypolicy.Principal, d identitypolicy.Decision, err er
 		return httpx.NotFound("workspace")
 	case identitypolicy.WorkspaceSuspended:
 		return httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED, "workspace suspended")
+	case identitypolicy.BillingSuspended:
+		return billing.ErrWorkspaceBillingSuspended
 	}
 	if p.Authority == identitypolicy.Recovery {
 		code = v1.ErrorCode_ERROR_CODE_RECOVERY_ONLY
@@ -122,6 +125,10 @@ func (s *Service) CheckWorkspace(ctx context.Context, id Identity, ws uuid.UUID,
 		}
 		if suspended {
 			return httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED, "workspace suspended")
+		}
+		// Bots have no billing recovery scope: a billing suspension closes every bot route.
+		if err := s.CheckBillingOpen(ctx, s.db.Q, ws); err != nil {
+			return err
 		}
 		return nil // existing machine route/permission gates remain mandatory
 	}
@@ -379,14 +386,14 @@ func (s *Service) CheckWorkspaceDecisionInTx(ctx context.Context, q *sqlc.Querie
 }
 
 func (s *Service) checkWorkspaceDecision(ctx context.Context, q *sqlc.Queries, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
-	state, err := identitypolicy.NewSQLLoader(q, s.entitlements).LoadIdentityState(ctx, id.SessionID, id.UserID, ws)
+	state, err := identitypolicy.NewSQLLoader(q, s.entitlementConfig()).LoadIdentityState(ctx, id.SessionID, id.UserID, ws)
 	return s.decideWorkspace(ctx, q, id, ws, op, state, err, func() (time.Time, error) { return q.IdentityDatabaseNow(ctx) })
 }
 
 // IdentityStates loads the workspace identity state of several sessions in one statement (the
 // RTC sweep checks a room at once); see identitypolicy.SQLLoader.LoadIdentityStates.
 func (s *Service) IdentityStates(ctx context.Context, ws uuid.UUID, keys []identitypolicy.SessionKey) (map[identitypolicy.SessionKey]identitypolicy.State, error) {
-	return identitypolicy.NewSQLLoader(s.db.Q, s.entitlements).LoadIdentityStates(ctx, ws, keys)
+	return identitypolicy.NewSQLLoader(s.db.Q, s.entitlementConfig()).LoadIdentityStates(ctx, ws, keys)
 }
 
 // CheckWorkspaceState is CheckWorkspace of a non-bot identity (id.Principal resolved) over a
@@ -430,4 +437,36 @@ func (s *Service) decideWorkspace(ctx context.Context, q *sqlc.Queries, id Ident
 		return decision, identitypolicy.ErrDenied
 	}
 	return decision, nil
+}
+
+// entitlementConfig is the trusted configuration of the identity loaders with the current
+// billing enforcement switch.
+func (s *Service) entitlementConfig() identitypolicy.EntitlementConfig {
+	c := s.entitlements
+	c.BillingEnforcement = s.billingEnforced.Load()
+	return c
+}
+
+// SetBillingEnforcement turns the billing suspension on or off at run time (wiring and
+// tests; the configuration default is BILLING_ENABLED && BILLING_ENFORCEMENT_ENABLED).
+func (s *Service) SetBillingEnforcement(on bool) { s.billingEnforced.Store(on) }
+
+// BillingEnforced reports whether a billing suspension is applied (ADR-0080 §12).
+func (s *Service) BillingEnforced() bool { return s.billingEnforced.Load() }
+
+// CheckBillingOpen refuses a workspace closed by a billing suspension with 403
+// WORKSPACE_SUSPENDED / WORKSPACE_BILLING_SUSPENDED: admission paths (nobody joins a
+// suspended workspace) and bots. Nil while enforcement is off. q may be a transaction.
+func (s *Service) CheckBillingOpen(ctx context.Context, q *sqlc.Queries, ws uuid.UUID) error {
+	if s == nil || !s.billingEnforced.Load() {
+		return nil
+	}
+	suspended, err := q.WorkspaceBillingSuspended(ctx, &ws)
+	if err != nil {
+		return httpx.Unavailable(err)
+	}
+	if suspended {
+		return billing.ErrWorkspaceBillingSuspended
+	}
+	return nil
 }

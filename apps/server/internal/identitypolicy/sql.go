@@ -19,7 +19,7 @@ type SQLLoader struct {
 
 // NewSQLLoader copies trusted edition configuration and binds generated queries.
 func NewSQLLoader(q *sqlc.Queries, config EntitlementConfig) *SQLLoader {
-	copied := EntitlementConfig{Edition: config.Edition, EnterpriseWorkspaceIDs: map[uuid.UUID]bool{}}
+	copied := EntitlementConfig{Edition: config.Edition, EnterpriseWorkspaceIDs: map[uuid.UUID]bool{}, BillingEnforcement: config.BillingEnforcement}
 	for id, enabled := range config.EnterpriseWorkspaceIDs {
 		copied.EnterpriseWorkspaceIDs[id] = enabled
 	}
@@ -99,6 +99,7 @@ func (l *SQLLoader) state(row sqlc.GetIdentityGateStateRow) State {
 		Identity:      Identity{ID: row.IdentityID, ConnectionID: row.ConnectionID, Version: row.IdentityVersion, Active: row.IdentityActive},
 		Directory:     Directory{Required: row.DirectoryRequired, Active: row.DirectoryActive, Enabled: row.DirectoryEnabled, ValidUntil: row.DirectoryValidUntil},
 		RecoveryReady: row.RecoveryReady, ProductAdminGranted: row.ProductAdminGranted, Grants: map[Feature]Grant{},
+		BillingSuspended: row.BillingSuspended && l.Config.BillingEnforcement,
 	}
 	add := func(feature Feature, enabled *bool, source *string, expiry, revoked *time.Time, version int64) {
 		if enabled == nil || source == nil {

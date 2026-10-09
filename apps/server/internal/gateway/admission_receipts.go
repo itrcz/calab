@@ -204,6 +204,9 @@ func (s *Session) prepareEventLeases(ctx context.Context, enc *encEvent) error {
 			continue
 		}
 		decision, err := s.refreshWorkspaceLease(ctx, ws)
+		if s.billingRecoveryEvent(enc.ev, ws) {
+			continue // the owner's BILLING_UPDATE under a billing suspension (refreshed just now)
+		}
 		if errors.Is(err, identitypolicy.ErrDenied) || (err == nil && !decision.Allowed) {
 			return identitypolicy.ErrDenied
 		}

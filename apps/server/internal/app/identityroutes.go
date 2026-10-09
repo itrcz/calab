@@ -51,6 +51,13 @@ const (
 	scopeBilling
 )
 
+// billingRecoveryRoutes: workspace routes besides scopeBilling the owner keeps under a billing
+// suspension (the paywall shows the workspace's name and icon). Everyone else gets 403
+// WORKSPACE_SUSPENDED / WORKSPACE_BILLING_SUSPENDED there too.
+var billingRecoveryRoutes = map[string]bool{
+	"GET /api/workspaces/{id}": true,
+}
+
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
 // always requires an explicit authority and resource classification.
 var identityRoutes = map[string]identityScope{
@@ -484,6 +491,13 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			op = identitypolicy.WorkspaceRead
 		}
+		if scope == scopeBilling || billingRecoveryRoutes[r.Pattern] {
+			// The owner's recovery scope stays open under a billing suspension (ADR-0080 §12).
+			op = identitypolicy.BillingWrite
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				op = identitypolicy.BillingRead
+			}
+		}
 		ctx := a.WithPolicy(r.Context(), id, op)
 		r = r.WithContext(ctx)
 		// The typed file handler checks every live reference with this exact policy
@@ -549,6 +563,7 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 			mutation.Global = ws == uuid.Nil
 			mutation.ExclusiveUser = ws == uuid.Nil
 			mutation.ExclusiveWorkspace = scope == scopeWorkspace || scope == scopeBilling
+			mutation.Billing = scope == scopeBilling
 			if strings.HasSuffix(r.Pattern, "/members/{userId}/birthday") {
 				mutation.TargetUser, err = httpx.PathUUID(r, "userId", "user")
 			}

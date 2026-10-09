@@ -11,6 +11,7 @@ import (
 	"net/http"
 	netmail "net/mail"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -82,11 +83,17 @@ type Service struct {
 	// has no seat left (ADR-0024, plans.Check); called inside the registration transaction.
 	// Optional.
 	CheckSeat func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error
+	// AdmitSeat is the billing hook of that join (ADR-0080, plans.Service.AdmitSeat): called in
+	// the same transaction after the membership row is written. Optional.
+	AdmitSeat func(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID, role string) error
+
+	// billingEnforced: BILLING_ENABLED && BILLING_ENFORCEMENT_ENABLED (billing suspension).
+	billingEnforced atomic.Bool
 }
 
 // NewService wires the auth service.
 func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publisher) *Service {
-	return &Service{
+	s := &Service{
 		db:           d,
 		redis:        r,
 		tokens:       NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
@@ -99,6 +106,8 @@ func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publis
 		Policy:       &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(d.Q, cfg.IdentityEntitlements())},
 		entitlements: cfg.IdentityEntitlements(),
 	}
+	s.billingEnforced.Store(s.entitlements.BillingEnforcement)
+	return s
 }
 
 // EmailGate is the configured EMAIL_VERIFICATION policy for actions (ADR-0065).
@@ -402,6 +411,9 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			if err := moderation.CheckSuspended(ctx, q, *gate); err != nil {
 				return err
 			}
+			if err := s.CheckBillingOpen(ctx, q, *gate); err != nil {
+				return err
+			}
 			if err := moderation.CheckBan(ctx, q, *gate, user.ID, &email); err != nil {
 				return err
 			}
@@ -415,6 +427,11 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(role)})
 			if err != nil {
 				return err
+			}
+			if s.AdmitSeat != nil {
+				if err := s.AdmitSeat(ctx, q, inv.WorkspaceID, user.ID, m.Role); err != nil {
+					return err
+				}
 			}
 			joined = &m
 		}

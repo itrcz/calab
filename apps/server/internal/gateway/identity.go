@@ -194,7 +194,7 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 		return true
 	}
 	if enc.workspace != uuid.Nil {
-		return knownScopedEvent(ev) && s.workspaceLeaseAllows(enc.workspace)
+		return knownScopedEvent(ev) && (s.workspaceLeaseAllows(enc.workspace) || s.billingRecoveryEvent(ev, enc.workspace))
 	}
 	if !enc.scoped {
 		return false
@@ -204,11 +204,19 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 			if s.principal.Authority != identitypolicy.LocalAccount || !ownProfileOrPresence(s.user, ev) {
 				return false
 			}
-		} else if !s.workspaceLeaseAllows(ws) {
+		} else if !s.workspaceLeaseAllows(ws) && !s.billingRecoveryEvent(ev, ws) {
 			return false
 		}
 	}
 	return len(enc.scopes) > 0
+}
+
+// billingRecoveryEvent: BILLING_UPDATE (content-free: workspace id and revision) of ws reaches
+// its owner while a billing suspension closes the rest of the workspace (ADR-0080 §12), so the
+// paywall refreshes after a payment. Nothing else passes.
+func (s *Session) billingRecoveryEvent(ev *v1.DispatchEvent, ws uuid.UUID) bool {
+	b := ev.GetBillingUpdate()
+	return b != nil && parseID(b.GetWorkspaceId()) == ws && s.billingLeaseAllows(ws)
 }
 
 // ownProfileOrPresence: a profile/presence event without workspace attribution (user
@@ -449,6 +457,11 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		for ws := range s.leases.workspaces {
 			if !present[ws] {
 				delete(s.leases.workspaces, ws)
+			}
+		}
+		for ws := range s.leases.billing {
+			if !present[ws] {
+				delete(s.leases.billing, ws)
 			}
 		}
 		s.leases.mu.Unlock()
@@ -694,7 +707,9 @@ func identityAccessStatus(ws uuid.UUID, d identitypolicy.Decision, err error, p 
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_ENTITLEMENT_REQUIRED
 	case identitypolicy.DirectoryStale, identitypolicy.MembershipSuspended:
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_DIRECTORY_DENIED
-	case identitypolicy.WorkspaceSuspended:
+	case identitypolicy.WorkspaceSuspended, identitypolicy.BillingSuspended:
+		// A billing suspension closes the workspace like this one (ADR-0080 §12): no data, the
+		// client drops its cache; the owner reads GET /api/workspaces/{id}/billing.
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED
 	case identitypolicy.RecentAuthRequired:
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_RECENT_AUTH_REQUIRED
