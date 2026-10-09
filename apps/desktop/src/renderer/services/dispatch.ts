@@ -1,6 +1,6 @@
 import { applyIdentityAccess, identityRoomLocked } from './identity';
 import { useIdentity } from '../stores/identity';
-import { accessLocked } from '../features/identity/model';
+import { accessLocked, billingLocked } from '../features/identity/model';
 import {
   VoiceStreamStopReason,
   WorkspaceRole,
@@ -129,8 +129,12 @@ export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
   if (e.value && e.case !== 'ready' && e.case !== 'workspaceIdentityAccessUpdate') {
     const value = e.value;
-    if ('workspaceId' in value && typeof value.workspaceId === 'string' && accessLocked(useIdentity.getState().access[value.workspaceId]))
-      return;
+    if ('workspaceId' in value && typeof value.workspaceId === 'string') {
+      const access = useIdentity.getState().access[value.workspaceId];
+      // BILLING_UPDATE (content-free) still reaches the owner of a workspace closed for unpaid
+      // billing: the paywall refreshes after a payment (ADR-0080 §12).
+      if (accessLocked(access) && !(e.case === 'billingUpdate' && billingLocked(access))) return;
+    }
     if ('roomId' in value && typeof value.roomId === 'string' && identityRoomLocked(value.roomId)) return;
   }
   switch (e.case) {

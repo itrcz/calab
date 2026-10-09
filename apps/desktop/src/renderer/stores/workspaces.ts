@@ -9,7 +9,8 @@ import type {
   WorkspaceMember,
   WorkspaceSnapshot,
 } from '@calaba/protocol';
-import { WorkspaceRole } from '@calaba/protocol';
+import { BillingState, WorkspaceBillingStatusSchema, WorkspaceRole } from '@calaba/protocol';
+import { create as createMessage } from '@bufbuild/protobuf';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { t } from '../i18n';
@@ -42,6 +43,11 @@ interface WorkspacesState {
   reset: () => void;
   applySnapshot: (s: WorkspaceSnapshot) => void;
   remove: (workspaceId: string) => void;
+  /**
+   * The workspace was closed for unpaid billing (ADR-0080 §8): keep who it is and my role (the
+   * paywall / the notice), drop everything of its content.
+   */
+  toBillingStub: (workspaceId: string) => void;
   updateWorkspace: (ws: Workspace) => void;
   upsertMember: (m: WorkspaceMember) => void;
   /** My own member record changed (WORKSPACE_MEMBER_UPDATE): the entry's built-in role follows it. */
@@ -141,6 +147,18 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       delete byId[id];
       return { byId, order: s.order.filter((x) => x !== id) };
     }),
+  toBillingStub: (id) =>
+    set((s) =>
+      withEntry(s, id, (e) => ({
+        ws: { ...e.ws, billing: createMessage(WorkspaceBillingStatusSchema, { suspendAt: e.ws.billing?.suspendAt, source: e.ws.billing?.source, state: BillingState.SUSPENDED }) },
+        role: e.role,
+        members: {},
+        roles: legacyRoles(id),
+        badges: {},
+        backgrounds: {},
+        voice: {},
+      })),
+    ),
   updateWorkspace: (ws) => set((s) => withEntry(s, ws.id, (e) => ({ ...e, ws }))),
   upsertMember: (m) =>
     set((s) => {

@@ -404,6 +404,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			ready.Call = c.Proto()
 		}
 	}
+	var stubs []*v1.WorkspaceSnapshot // closed for unpaid billing: appended after every fill below
 	for _, w := range wss {
 		var access *v1.WorkspaceIdentityAccess
 		if !s.bot {
@@ -429,6 +430,14 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
 			}
 			ready.IdentityAccess = append(ready.IdentityAccess, access)
+			if billingDenied(decision, err) && s.billingStubAllows(w.ID) {
+				stub, err := h.billingStub(ctx, w, uid)
+				if err != nil {
+					return nil, err
+				}
+				stubs = append(stubs, stub)
+				continue
+			}
 			if !decision.Allowed || err != nil {
 				continue
 			}
@@ -533,7 +542,27 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		}
 		ready.WorkspaceNotificationSettings = append(ready.WorkspaceNotificationSettings, pbconv.WorkspaceNotificationSettings(n))
 	}
+	// Billing stubs last, so none of the fills above (admissions, meetings, read states) adds
+	// anything to them: only the workspace and the recipient's role (isBillingStub).
+	ready.Workspaces = append(ready.Workspaces, stubs...)
 	return ready, nil
+}
+
+// billingStub is the READY snapshot of a workspace closed for unpaid billing (ADR-0080 §8):
+// workspaces.BillingStub and the recipient's role, nothing else. The caller's decision was a
+// billing suspension, which comes after the membership check.
+func (h *Hub) billingStub(ctx context.Context, w sqlc.Workspace, uid uuid.UUID) (*v1.WorkspaceSnapshot, error) {
+	ws, err := workspaces.BillingStub(ctx, h.cfg.Plans, w)
+	if err != nil {
+		return nil, err
+	}
+	snap := &v1.WorkspaceSnapshot{Workspace: ws}
+	if m, err := h.db.Q.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: w.ID, UserID: uid}); err == nil {
+		snap.Role = perm.Role(m.Role).Proto()
+	} else if !db.IsNotFound(err) {
+		return nil, err
+	}
+	return snap, nil
 }
 
 func (h *Hub) invalid(c *conn) {

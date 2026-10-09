@@ -113,7 +113,10 @@ export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactN
   const payments = billingPaymentsAllowed();
   const debt = minorOf(summary?.debt);
   return (
-    <div className="mat-content grid min-w-0 flex-1 place-items-center overflow-y-auto rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)] px-6 py-10" data-testid="billing-paywall">
+    <div
+      className="mat-content grid min-w-0 flex-1 place-items-center overflow-y-auto rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)] px-6 py-10 mobile:rounded-none mobile:border-0 mobile:px-4"
+      data-testid="billing-paywall"
+    >
       <div className="flex w-full max-w-[420px] flex-col items-center gap-4 text-center">
         <CirclePause className="size-10 text-danger" strokeWidth={1.5} aria-hidden />
         <div className="flex flex-col gap-1.5">

@@ -10,6 +10,8 @@ import {
   UserSchema,
   MessageSchema,
   CalendarEventSchema,
+  BillingState,
+  WorkspaceRole,
 } from '@calaba/protocol';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 const mocks = vi.hoisted(() => ({ prune: vi.fn(), clearMedia: vi.fn(), forget: vi.fn(), leave: vi.fn(), chatClear: vi.fn() }));
@@ -119,6 +121,36 @@ describe('workspace identity cache boundary', () => {
     applyIdentityAccess(create(WorkspaceIdentityAccessSchema, { workspaceId: 'a', reason: IdentityAccessReason.ALLOWED }));
     expect(identityRequestBlocked(path, version)).toBe(true);
     expect(identityRequestBlocked(path)).toBe(false);
+  });
+  it('a billing suspension drops the content but keeps the workspace as a paywall stub', () => {
+    useWorkspaces.getState().setMyRole('a', WorkspaceRole.OWNER);
+    useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId: 'a', tab: 'plan' });
+    applyIdentityAccess(create(WorkspaceIdentityAccessSchema, { workspaceId: 'a', reason: IdentityAccessReason.BILLING_SUSPENDED }));
+    expect(useMessages.getState().rooms['room-a']).toBeUndefined();
+    expect(useRooms.getState().byId['room-a']).toBeUndefined();
+    expect(useRoomPreviews.getState().preview['room-a']).toBeUndefined();
+    const stub = useWorkspaces.getState().byId['a'];
+    expect(stub?.ws.name).toBe('a');
+    expect(stub?.ws.billing?.state).toBe(BillingState.SUSPENDED);
+    expect(stub?.role).toBe(WorkspaceRole.OWNER);
+    expect(Object.keys(stub?.members ?? {})).toEqual([]);
+    expect(useWorkspaces.getState().users['user-a']).toBeUndefined();
+    expect(useWorkspaces.getState().order).toContain('a');
+    // The cabinet stays open; the owner's billing routes pass the gate, content does not.
+    expect(useUi.getState().dialog?.kind).toBe('workspace-settings');
+    expect(identityRequestBlocked('/api/workspaces/a/billing')).toBe(false);
+    expect(identityRequestBlocked('/api/workspaces/a/billing/topups')).toBe(false);
+    expect(identityRequestBlocked('/api/workspaces/a')).toBe(false);
+    expect(identityRequestBlocked('/api/workspaces/a/members')).toBe(true);
+    expect(identityRequestBlocked('/api/workspaces/a/billingx')).toBe(true);
+    expect(identityRequestBlocked('/api/rooms/room-a/messages')).toBe(true);
+    // Paid: access is back, the full snapshot replaces the stub (WORKSPACE_CREATE).
+    applyIdentityAccess(create(WorkspaceIdentityAccessSchema, { workspaceId: 'a', reason: IdentityAccessReason.ALLOWED }));
+    expect(identityRequestBlocked('/api/workspaces/a/members')).toBe(false);
+    // Another lock reason removes the workspace as before (and closes the billing exception).
+    applyIdentityAccess(create(WorkspaceIdentityAccessSchema, { workspaceId: 'a', reason: IdentityAccessReason.SUSPENDED }));
+    expect(useWorkspaces.getState().byId['a']).toBeUndefined();
+    expect(identityRequestBlocked('/api/workspaces/a/billing')).toBe(true);
   });
   it('treats an expired ALLOWED summary as locked', () => {
     applyIdentityAccess(

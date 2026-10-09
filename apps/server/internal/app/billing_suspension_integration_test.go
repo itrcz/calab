@@ -92,7 +92,16 @@ func TestBillingSuspensionEnforcement(t *testing.T) {
 	}
 	m.must(200, "GET", messages, nil, nil)
 
+	// An owner session open before the deadline switches to the paywall live: WORKSPACE_UPDATE
+	// with Workspace.billing SUSPENDED (its lease is still valid when the core reports it).
+	live := dialGW(t)
+	defer func() { _ = live.ws.CloseNow() }()
+	live.identify(a.token)
 	setBillingStatus(t, ws, account, "suspended")
+	live.wait("live WORKSPACE_UPDATE with the suspension", func(e *v1.DispatchEvent) bool {
+		w := e.GetWorkspaceUpdate().GetWorkspace()
+		return w.GetId() == ws && w.GetBilling().GetState() == v1.BillingState_BILLING_STATE_SUSPENDED
+	})
 	for _, c := range []*client{m.client, a.client} {
 		wantBillingSuspended(t, c, "GET", messages, nil)
 		wantBillingSuspended(t, c, "POST", messages, &v1.CreateMessageRequest{Content: "after", Nonce: uniq("n-")})
@@ -136,22 +145,63 @@ func TestBillingSuspensionEnforcement(t *testing.T) {
 	wantBillingSuspended(t, newClient(t), "POST", "/api/auth/register", &v1.RegisterRequest{
 		Email: uniq("late") + "@example.com", Password: "password123", DisplayName: "Late", InviteCode: joinCode, DeviceName: "test"})
 	wantBillingSuspended(t, newClient(t), "POST", "/api/room-invites/"+link.GetCode()+"/join", &v1.JoinRoomInviteRequest{Nickname: "Guest"})
-	// Gateway: READY leaves the workspace out and marks it suspended (the client drops its cache).
-	g := dialGW(t)
-	defer func() { _ = g.ws.CloseNow() }()
-	ready := g.identify(m.token)
-	for _, snap := range ready.GetWorkspaces() {
-		if snap.GetWorkspace().GetId() == ws {
-			t.Fatal("READY carries the billing-suspended workspace")
+	// The workspace stays listed for its members as a stub (the client shows the paywall /
+	// the notice instead of «create a workspace»): GET /api/workspaces and READY carry only the
+	// workspace with Workspace.billing SUSPENDED — no settings, no rooms, no members — and the
+	// access status BILLING_SUSPENDED closes the content (the client drops its cache).
+	for _, c := range []struct {
+		who  *client
+		role v1.WorkspaceRole
+	}{{m.client, v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER}, {a.client, v1.WorkspaceRole_WORKSPACE_ROLE_OWNER}} {
+		var list v1.ListWorkspacesResponse
+		c.who.must(200, "GET", "/api/workspaces", nil, &list)
+		var stub *v1.Workspace
+		for _, w := range list.GetWorkspaces() {
+			if w.GetId() == ws {
+				stub = w
+			}
+		}
+		if stub == nil || stub.GetBilling().GetState() != v1.BillingState_BILLING_STATE_SUSPENDED || stub.GetName() == "" ||
+			stub.GetMediaDefaults() != nil || stub.GetStorageUsedBytes() != 0 || stub.GetOwnerId() != a.id {
+			t.Fatalf("GET /api/workspaces stub for %v: %v", c.role, stub)
+		}
+		g := dialGW(t)
+		ready := g.identify(c.who.token)
+		_ = g.ws.CloseNow()
+		var snap *v1.WorkspaceSnapshot
+		for _, s := range ready.GetWorkspaces() {
+			if s.GetWorkspace().GetId() == ws {
+				snap = s
+			}
+		}
+		if snap == nil || snap.GetRole() != c.role || snap.GetWorkspace().GetBilling().GetState() != v1.BillingState_BILLING_STATE_SUSPENDED ||
+			len(snap.GetRooms()) != 0 || len(snap.GetMembers()) != 0 || len(snap.GetRoles()) != 0 || snap.GetWorkspace().GetMediaDefaults() != nil {
+			t.Fatalf("READY stub for %v: %v", c.role, snap)
+		}
+		locked := false
+		for _, acc := range ready.GetIdentityAccess() {
+			locked = locked || (acc.GetWorkspaceId() == ws && acc.GetReason() == v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_BILLING_SUSPENDED)
+		}
+		if !locked {
+			t.Fatalf("READY identity access for %v: %v", c.role, ready.GetIdentityAccess())
+		}
+		for _, rs := range ready.GetReadStates() {
+			if rs.GetRoomId() == room {
+				t.Fatal("READY carries a read state of the suspended workspace")
+			}
 		}
 	}
-	locked := false
-	for _, acc := range ready.GetIdentityAccess() {
-		locked = locked || (acc.GetWorkspaceId() == ws && acc.GetReason() == v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED)
+	// An outsider never sees it.
+	var outList v1.ListWorkspacesResponse
+	outsider.must(200, "GET", "/api/workspaces", nil, &outList)
+	for _, w := range outList.GetWorkspaces() {
+		if w.GetId() == ws {
+			t.Fatal("an outsider lists the suspended workspace")
+		}
 	}
-	if !locked {
-		t.Fatalf("READY identity access: %v", ready.GetIdentityAccess())
-	}
+	g := dialGW(t)
+	defer func() { _ = g.ws.CloseNow() }()
+	g.identify(m.token)
 	// BILLING_UPDATE (content-free) still reaches the owner, so the paywall refreshes after a
 	// payment; nothing else of the workspace does, and a member gets nothing of it.
 	og := dialGW(t)
@@ -193,7 +243,7 @@ func TestBillingSuspensionEnforcement(t *testing.T) {
 	suspend(t, ws, false, "")
 	m.must(201, "POST", messages, &v1.CreateMessageRequest{Content: "after paying", Nonce: uniq("n-")}, nil)
 	// Without enforcement data the gateway brings the workspace back.
-	ready = dialGW(t).identify(m.token)
+	ready := dialGW(t).identify(m.token)
 	found := false
 	for _, snap := range ready.GetWorkspaces() {
 		found = found || snap.GetWorkspace().GetId() == ws

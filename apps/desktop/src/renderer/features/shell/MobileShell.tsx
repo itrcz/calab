@@ -22,11 +22,11 @@ import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { mayCreateBoards } from '../../lib/permissions';
 import { useIdentity } from '../../stores/identity';
-import { accessLocked } from '../identity/model';
+import { lockScreen } from '../identity/model';
 import { WorkspaceLock } from '../identity/WorkspaceLock';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
-import { BillingBanner } from '../workspace/billing/BillingPaywall';
+import { BillingBanner, BillingPaywall, useBillingSuspended } from '../workspace/billing/BillingPaywall';
 import { ChatPane } from '../chat/ChatPane';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { DmSidebar } from '../dm/DmSidebar';
@@ -140,19 +140,29 @@ function TabRoot({ tab, welcome }: { tab: PhoneTab; welcome: ReactNode }): React
 }
 
 /** The workspace on «Команда» / «Календарь»: the open one, unless it is «Личные». */
-function useRootWorkspace(): { ws: string | null; locked: boolean } {
+function useRootWorkspace(): { ws: string | null; locked: boolean; billing: boolean } {
   const wsId = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
   const has = useWorkspaces((s) => (wsId ? !!s.byId[wsId] : false));
-  const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
-  return { ws: wsId && (has || locked) ? wsId : null, locked };
+  const locked = useIdentity((s) => !!wsId && lockScreen(s.access[wsId]));
+  // Closed for unpaid billing (ADR-0080 §8): the paywall (owner) / the notice instead of the content.
+  const billing = useBillingSuspended(wsId) && has;
+  return { ws: wsId && (has || locked) ? wsId : null, locked: locked || billing, billing };
 }
 
 /** «Команда»: the room list at full width; the workspace is picked in its header (the switcher, ADR-0074). */
 function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
-  const { ws, locked } = useRootWorkspace();
+  const { ws, locked, billing } = useRootWorkspace();
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-chats">
-      {locked && ws ? <WorkspaceLock workspaceId={ws} /> : ws ? <PhoneRoomList workspaceId={ws} /> : welcome}
+      {billing && ws ? (
+        <BillingPaywall workspaceId={ws} />
+      ) : locked && ws ? (
+        <WorkspaceLock workspaceId={ws} />
+      ) : ws ? (
+        <PhoneRoomList workspaceId={ws} />
+      ) : (
+        welcome
+      )}
     </div>
   );
 }
@@ -193,7 +203,8 @@ function DmsRoot(): ReactNode {
 
 /** «Календарь»: the day of the open workspace (guests have none: no tab). */
 function CalendarRoot({ welcome }: { welcome: ReactNode }): ReactNode {
-  const { ws } = useRootWorkspace();
+  const { ws: open, locked } = useRootWorkspace();
+  const ws = locked ? null : open;
   const day = useUi((s) => s.calDay);
   useEffect(() => {
     // The tab without a day (a stale state): today.
