@@ -52,6 +52,12 @@ const (
 	GlobalWrite     Operation = "global_write"
 	LinkIdentity    Operation = "link_identity"
 	ProductAdmin    Operation = "product_admin"
+	// BillingRead / BillingWrite: the owner's billing recovery scope (ADR-0080 §12): the
+	// /api/workspaces/{id}/billing routes and the workspace's own metadata. Otherwise they are
+	// WorkspaceRead / WorkspaceWrite; under a billing suspension they stay open to the owner
+	// only, while every other operation of the workspace is closed.
+	BillingRead  Operation = "billing_read"
+	BillingWrite Operation = "billing_write"
 )
 
 // Feature names a separately granted workspace identity entitlement.
@@ -108,6 +114,9 @@ type Grant struct {
 type EntitlementConfig struct {
 	Edition                string
 	EnterpriseWorkspaceIDs map[uuid.UUID]bool
+	// BillingEnforcement: BILLING_ENABLED && BILLING_ENFORCEMENT_ENABLED. Off, a billing
+	// suspension (billing_accounts.status = 'suspended') is not applied (kill switch).
+	BillingEnforcement bool
 }
 
 // Eligible checks the current Business plan or exact operator Enterprise allowlist.
@@ -173,6 +182,11 @@ type State struct {
 	Identity                                     Identity
 	Directory                                    Directory
 	ProductAdminGranted                          bool
+
+	// BillingSuspended: the debt deadline passed (ADR-0080 §8) and enforcement is on. A full
+	// close, unlike the moderation WorkspaceSuspended: no read exception, only the owner's
+	// BillingRead / BillingWrite. Neither suspension lifts the other.
+	BillingSuspended bool
 }
 
 // Reason is a closed internal denial classification; consumers map it to wire errors.
@@ -189,6 +203,7 @@ const (
 	EntitlementRequired Reason = "identity_entitlement_required"
 	SSORequired         Reason = "sso_required"
 	WorkspaceSuspended  Reason = "workspace_suspended"
+	BillingSuspended    Reason = "workspace_billing_suspended"
 	DirectoryStale      Reason = "directory_stale"
 	RoleRequired        Reason = "builtin_role_required"
 	RecentAuthRequired  Reason = "recent_auth_required"
@@ -303,9 +318,11 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 		return deny(ScopeDenied)
 	}
 	// Preserve the legacy read-only suspension contract without skipping any
-	// membership, directory, identity-version or resource permission checks.
+	// membership, directory, identity-version or resource permission checks. The owner's
+	// billing scope is not content: a moderation suspension neither blocks paying nor is
+	// lifted by it.
 	localRead := p.Authority == LocalAccount && !p.Bot &&
-		(s.Policy.Mode == Off || s.Policy.Mode == Optional) && op == WorkspaceRead
+		(s.Policy.Mode == Off || s.Policy.Mode == Optional) && (op == WorkspaceRead || op == BillingRead || op == BillingWrite)
 	if s.WorkspaceSuspended && !localRead {
 		return deny(WorkspaceSuspended)
 	}
@@ -317,6 +334,11 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 	}
 	if p.Bot {
 		return deny(ScopeDenied)
+	}
+	// Billing suspension after membership, so it reveals nothing to non-members. The owner's
+	// recovery scope still passes every identity check below (SSO proof, directory).
+	if s.BillingSuspended && ((op != BillingRead && op != BillingWrite) || s.BuiltinRole != "owner" || p.Guest) {
+		return deny(BillingSuspended)
 	}
 	if s.EntitlementVersion < 1 || s.AccessVersion < 1 || s.Policy.Version < 1 || (s.Policy.Mode != Off && s.Policy.Mode != Optional && s.Policy.Mode != Enforced) || s.Policy.MaxAge < ManagementMaxAge || s.Policy.MaxAge > CorporateProofMaxAge {
 		return deny(PolicyInvalid)
@@ -340,7 +362,7 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 	}
 	feature := Feature("")
 	switch op {
-	case WorkspaceRead, WorkspaceWrite, Realtime, RTC:
+	case WorkspaceRead, WorkspaceWrite, Realtime, RTC, BillingRead, BillingWrite:
 	case ManageDirectory:
 		if s.BuiltinRole != "owner" {
 			return deny(RoleRequired)

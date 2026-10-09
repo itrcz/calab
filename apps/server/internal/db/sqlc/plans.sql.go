@@ -267,6 +267,7 @@ VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (workspace_id) DO UPDATE SET
     plan = EXCLUDED.plan, limits = EXCLUDED.limits, valid_until = EXCLUDED.valid_until,
     note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()
+WHERE workspace_plans.source = 'manual'
 RETURNING workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source
 `
 
@@ -279,6 +280,8 @@ type UpsertWorkspacePlanParams struct {
 	UpdatedBy   *uuid.UUID
 }
 
+// The manual plan (superadmin). A billing-managed plan (source = 'billing', ADR-0080) is not
+// touched: no row comes back (409 BILLING_PLAN_MANAGED).
 func (q *Queries) UpsertWorkspacePlan(ctx context.Context, arg UpsertWorkspacePlanParams) (WorkspacePlan, error) {
 	row := q.db.QueryRow(ctx, upsertWorkspacePlan,
 		arg.WorkspaceID,

@@ -2,11 +2,14 @@
 SELECT * FROM workspace_plans WHERE workspace_id = $1;
 
 -- name: UpsertWorkspacePlan :one
+-- The manual plan (superadmin). A billing-managed plan (source = 'billing', ADR-0080) is not
+-- touched: no row comes back (409 BILLING_PLAN_MANAGED).
 INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (workspace_id) DO UPDATE SET
     plan = EXCLUDED.plan, limits = EXCLUDED.limits, valid_until = EXCLUDED.valid_until,
     note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()
+WHERE workspace_plans.source = 'manual'
 RETURNING *;
 
 -- name: InsertPlanLog :exec

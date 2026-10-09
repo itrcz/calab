@@ -15,6 +15,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/achievements"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
 	billinghttp "github.com/calaba/calaba/server/internal/billing/http"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
@@ -93,6 +94,9 @@ type Deps struct {
 	SIPOptions sip.Options
 	// Push transports override provider clients in local deterministic tests.
 	Push map[v1.PushProvider]push.Provider
+	// Seats is the paid-seat hook of admission (ADR-0080, billing.Seats). nil = billing.NoSeats;
+	// it is used only with BILLING_ENABLED.
+	Seats billing.Seats
 }
 
 // BlobConfig is the file store of the configuration (STORAGE_*, ADR-0011).
@@ -221,6 +225,8 @@ func New(d Deps) *App {
 		panic(err) // validated by config.Validate
 	}
 	planSvc := plans.New(d.DB, d.Redis, free, team, biz)
+	planSvc.SetBilling(plans.Billing{Seats: d.Seats, Enabled: d.Config.Billing.Enabled,
+		Enforced: d.Config.Billing.Enabled && d.Config.Billing.EnforcementEnabled})
 	base := d.Events
 	if base == nil {
 		base = events.Redis{C: d.Redis}
@@ -271,6 +277,9 @@ func New(d Deps) *App {
 	authSvc.OnSessionsRevoked = pushSvc.CleanupSessions
 	authSvc.CheckSeat = func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
 		return planSvc.Check(ctx, q, wsID, plans.KindMembers, true)
+	}
+	authSvc.AdmitSeat = func(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID, role string) error {
+		return planSvc.AdmitSeat(ctx, q, wsID, userID, userID, role)
 	}
 	authSvc.Mail = mailSvc
 	botSvc.SetAuth(authSvc)
@@ -503,4 +512,12 @@ func New(d Deps) *App {
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
 		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
+}
+
+// SetBilling switches billing admission and enforcement at run time (tests; the startup values
+// come from BILLING_ENABLED / BILLING_ENFORCEMENT_ENABLED and Deps.Seats): the paid-seat hook,
+// Workspace.billing and the billing suspension of every identity gate of this instance.
+func (a *App) SetBilling(seats billing.Seats, enabled, enforced bool) {
+	a.Plans.SetBilling(plans.Billing{Seats: seats, Enabled: enabled, Enforced: enabled && enforced})
+	a.Auth.SetBillingEnforcement(enabled && enforced)
 }

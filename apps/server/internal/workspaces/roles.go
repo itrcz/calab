@@ -584,8 +584,13 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 			return false
 		}
 		if next := legacyRole(hasBuiltin, base); next != perm.Role(m.Role) {
-			s := string(next)
+			s, before := string(next), m.Role
 			if m, err = q.UpdateMember(r.Context(), sqlc.UpdateMemberParams{WorkspaceID: wsID, UserID: target, Role: &s}); err != nil {
+				return err
+			}
+			// The base role is kept here (guest ↔ member is …/promote / PATCH): this is a
+			// no-op unless that rule ever changes, then the paid seat follows (ADR-0080).
+			if err := h.limits.Plans.SeatRoleChanged(r.Context(), q, wsID, target, uid(r), before, m.Role); err != nil {
 				return err
 			}
 		}

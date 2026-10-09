@@ -21,6 +21,9 @@ type MutationOptions struct {
 	ExclusiveWorkspace, ExclusiveUser, Global, Admin bool
 	TargetUser                                       uuid.UUID
 	Admission, OpenAdmission                         bool
+	// Billing: the owner's billing recovery scope (identitypolicy.BillingWrite), open under a
+	// billing suspension.
+	Billing bool
 }
 
 type mutationKey struct{}
@@ -160,6 +163,9 @@ func (s *Service) WithMutation(ctx context.Context, id Identity, opt MutationOpt
 						return release, err
 					}
 				}
+				if err := s.CheckBillingOpen(ctx, q, ws); err != nil {
+					return release, err
+				}
 				continue
 			}
 			if id.IsBot {
@@ -177,8 +183,15 @@ func (s *Service) WithMutation(ctx context.Context, id Identity, opt MutationOpt
 				if suspended {
 					return release, httpx.Forbidden("workspace suspended")
 				}
+				if err := s.CheckBillingOpen(ctx, q, ws); err != nil {
+					return release, err
+				}
 			} else if !opt.Admin {
-				d, err := s.checkWorkspaceDecision(ctx, q, id, ws, identitypolicy.WorkspaceWrite)
+				op := identitypolicy.WorkspaceWrite
+				if opt.Billing {
+					op = identitypolicy.BillingWrite
+				}
+				d, err := s.checkWorkspaceDecision(ctx, q, id, ws, op)
 				if err != nil {
 					return release, IdentityError(id.Principal, d, err)
 				}

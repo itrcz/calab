@@ -1141,6 +1141,7 @@ const getIdentityGateState = `-- name: GetIdentityGateState :one
 SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
 (u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+EXISTS(SELECT FROM billing_accounts ba WHERE ba.workspace_id=w.id AND ba.status='suspended')::boolean AS billing_suspended,
 (m.user_id IS NOT NULL)::boolean AS member,
 COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
 (COALESCE(x.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
@@ -1200,6 +1201,7 @@ type GetIdentityGateStateRow struct {
 	UserDisabled                bool
 	WorkspaceID                 uuid.UUID
 	WorkspaceSuspended          bool
+	BillingSuspended            bool
 	Member                      bool
 	BuiltinRole                 string
 	Suspended                   bool
@@ -1285,6 +1287,7 @@ func (q *Queries) GetIdentityGateState(ctx context.Context, arg GetIdentityGateS
 		&i.UserDisabled,
 		&i.WorkspaceID,
 		&i.WorkspaceSuspended,
+		&i.BillingSuspended,
 		&i.Member,
 		&i.BuiltinRole,
 		&i.Suspended,
@@ -1344,6 +1347,7 @@ const getIdentityGateStates = `-- name: GetIdentityGateStates :many
 SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
 (u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
+EXISTS(SELECT FROM billing_accounts ba WHERE ba.workspace_id=w.id AND ba.status='suspended')::boolean AS billing_suspended,
 (m.user_id IS NOT NULL)::boolean AS member,
 COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
 (COALESCE(x.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
@@ -1406,6 +1410,7 @@ type GetIdentityGateStatesRow struct {
 	UserDisabled                bool
 	WorkspaceID                 uuid.UUID
 	WorkspaceSuspended          bool
+	BillingSuspended            bool
 	Member                      bool
 	BuiltinRole                 string
 	Suspended                   bool
@@ -1500,6 +1505,7 @@ func (q *Queries) GetIdentityGateStates(ctx context.Context, arg GetIdentityGate
 			&i.UserDisabled,
 			&i.WorkspaceID,
 			&i.WorkspaceSuspended,
+			&i.BillingSuspended,
 			&i.Member,
 			&i.BuiltinRole,
 			&i.Suspended,

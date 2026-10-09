@@ -681,7 +681,14 @@ func join(ctx context.Context, q *sqlc.Queries, pl *plans.Service, wsID, userID 
 		m, err = q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID})
 		return m, false, err
 	}
-	return m, err == nil, err
+	if err != nil {
+		return m, false, err
+	}
+	// The paid seat (ADR-0080) in the same transaction: refused, the join rolls back.
+	if err = pl.AdmitSeat(ctx, q, wsID, userID, userID, m.Role); err != nil {
+		return m, false, err
+	}
+	return m, true, nil
 }
 
 func (h *Handlers) memberResponse(ctx context.Context, ws sqlc.Workspace, m sqlc.WorkspaceMember) (*v1.JoinWorkspaceResponse, error) {
@@ -875,8 +882,16 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 			m, err = q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: ws.ID, UserID: uid(r)})
 			return err
 		}
-		added = err == nil
-		return err
+		if err != nil {
+			return err
+		}
+		// The paid seat (ADR-0080) in the same transaction: refused, the join (and the use
+		// of the link) rolls back.
+		if err := h.limits.Plans.AdmitSeat(r.Context(), q, ws.ID, uid(r), uid(r), m.Role); err != nil {
+			return err
+		}
+		added = true
+		return nil
 	})
 	if err != nil {
 		return err
@@ -1141,7 +1156,23 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 		s := string(newRole)
 		p.Role = &s
 	}
-	m, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceMember, error) { return guarded.UpdateMember(r.Context(), p) })
+	var m sqlc.WorkspaceMember
+	if p.Role != nil && *p.Role != cur.Role {
+		// A member demoted to a guest frees a paid seat (ADR-0080 §4.1): role and seat in one
+		// transaction.
+		err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+			before, err := q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: target})
+			if err != nil {
+				return err
+			}
+			if m, err = q.UpdateMember(r.Context(), p); err != nil {
+				return err
+			}
+			return h.limits.Plans.SeatRoleChanged(r.Context(), q, wsID, target, uid(r), before.Role, m.Role)
+		})
+	} else {
+		m, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceMember, error) { return guarded.UpdateMember(r.Context(), p) })
+	}
 	if err != nil {
 		return err
 	}
@@ -1200,8 +1231,12 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 		if err := auth.InvalidateIdentity(r.Context(), q, wsID, &target, &actor, "member_removed"); err != nil {
 			return err
 		}
-		if _, err := q.RemoveMember(r.Context(), sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: target}); err != nil {
+		if n, err := q.RemoveMember(r.Context(), sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: target}); err != nil {
 			return err
+		} else if n > 0 {
+			if err := h.limits.Plans.SeatRemoved(r.Context(), q, wsID, target, cur.Role); err != nil {
+				return err
+			}
 		}
 		return q.DeleteUserOverridesInWorkspace(r.Context(), sqlc.DeleteUserOverridesInWorkspaceParams{WorkspaceID: wsID, UserID: target.String()})
 	})
@@ -1243,6 +1278,10 @@ func (h *Handlers) promote(w http.ResponseWriter, r *http.Request) error {
 			return httpx.NotFound("guest")
 		}
 		if err != nil {
+			return err
+		}
+		// A guest takes no paid seat, a member does (ADR-0080 §4.1).
+		if err := h.limits.Plans.PromoteSeat(r.Context(), q, wsID, target, uid(r), m.Role); err != nil {
 			return err
 		}
 		return q.ClearGuestExpiry(r.Context(), target)

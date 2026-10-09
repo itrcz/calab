@@ -25,6 +25,10 @@ type identityLeases struct {
 	session    identityLease
 	workspaces map[uuid.UUID]identityLease
 	receipts   map[uuid.UUID]receiptPolicyState // actual own receipts only; never workspace access
+	// billing: until when the session's owner may get BILLING_UPDATE of a workspace whose
+	// workspace lease a billing suspension denies (ADR-0080 §12: the owner's recovery scope).
+	// It opens nothing else.
+	billing map[uuid.UUID]time.Time
 }
 
 func (s *Session) lease(d identitypolicy.Decision, ws uuid.UUID, started, evaluated time.Time, revision uint64) identityLease {
@@ -123,10 +127,19 @@ func (s *Session) refreshWorkspaceLeaseOnce(ctx context.Context, ws uuid.UUID) (
 	if err == nil {
 		l = s.lease(d, ws, started, evaluated, revision)
 	}
+	billingUntil := s.billingRecoveryLease(ctx, d, ws, started, revision)
 	s.leases.mu.Lock()
 	defer s.leases.mu.Unlock()
 	if s.leases.revision != revision {
 		return d, true, err
+	}
+	if billingUntil.IsZero() {
+		delete(s.leases.billing, ws)
+	} else {
+		if s.leases.billing == nil {
+			s.leases.billing = map[uuid.UUID]time.Time{}
+		}
+		s.leases.billing[ws] = billingUntil
 	}
 	if s.leases.workspaces == nil {
 		s.leases.workspaces = map[uuid.UUID]identityLease{}
@@ -232,4 +245,33 @@ func (s *Session) requireResync(why string) {
 		s.conn.closeNow(4000, why)
 	}
 	s.mu.Unlock()
+}
+
+// billingRecoveryLease: when a billing suspension denied the workspace lease, the owner's
+// billing scope (identitypolicy.BillingRead, every other identity check included) is evaluated
+// separately; its lease lets only BILLING_UPDATE through (billingLeaseAllows). Zero: none.
+func (s *Session) billingRecoveryLease(ctx context.Context, d identitypolicy.Decision, ws uuid.UUID, started time.Time, revision uint64) time.Time {
+	if d.Allowed || d.Reason != identitypolicy.BillingSuspended || s.hub.auth == nil || ctx.Err() != nil {
+		return time.Time{}
+	}
+	bd, err := s.hub.auth.CheckWorkspaceDecision(ctx, s.identity(), ws, identitypolicy.BillingRead)
+	if err != nil || !bd.Allowed {
+		return time.Time{}
+	}
+	evaluated, err := s.hub.db.Q.IdentityDatabaseNow(ctx)
+	if err != nil {
+		return time.Time{}
+	}
+	return s.lease(bd, ws, started, evaluated, revision).until
+}
+
+// billingLeaseAllows: the owner's billing recovery lease of ws is valid (see billingRecoveryLease).
+func (s *Session) billingLeaseAllows(ws uuid.UUID) bool {
+	if ws == uuid.Nil || (s.principal.Authority != identitypolicy.LocalAccount && s.principal.WorkspaceID != ws) {
+		return false
+	}
+	s.leases.mu.Lock()
+	until := s.leases.billing[ws]
+	s.leases.mu.Unlock()
+	return time.Now().Before(until)
 }
