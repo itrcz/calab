@@ -228,7 +228,7 @@ function notifyTask(u: TaskUpdate): void {
   if (prefs().presence === PresenceStatus.DND) return;
   const visible = document.hasFocus() && useBoardsUi.getState().taskId === task.id;
   if (visible) return;
-  const what = noticeText(task, n.kind, n.actorId, n.text);
+  const what = noticeText(task, n.kind, n.actorId, n.text, n.reRequested);
   try {
     const note = new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` });
     note.onclick = () => {
@@ -243,9 +243,10 @@ function notifyTask(u: TaskUpdate): void {
 
 /**
  * The text of a task notice (system notification). Approvals (ADR-0049 §5) are mandatory: the
- * server sends them past the task level and «Отписаться»; the reminder has no actor.
+ * server sends them past the task level and «Отписаться»; the reminder has no actor; a
+ * re-request (the task changed, ADR-0082) has its own text.
  */
-export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string, text = ''): string {
+export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string, text = '', reRequested = false): string {
   const actor = actorId ? memberName(task.workspaceId, actorId) : '';
   switch (kind) {
     case TaskNoticeKind.ASSIGNED:
@@ -255,6 +256,8 @@ export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: 
     case TaskNoticeKind.COMMENT:
       return t('boards.notice.comment', { name: actor });
     case TaskNoticeKind.APPROVAL_REQUESTED:
+      // ADR-0082: the task changed and the recipient's decided vote was reset.
+      if (reRequested) return t('boards.notice.approvalReRequested');
       return actor ? t('boards.notice.approvalRequested', { name: actor }) : t('boards.notice.approvalReminder');
     case TaskNoticeKind.APPROVED:
       return t('boards.notice.approved');
