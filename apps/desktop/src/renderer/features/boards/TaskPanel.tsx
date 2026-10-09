@@ -24,12 +24,12 @@ import { ProfileTarget } from '../../components/ProfileTarget';
 import { Bar } from '../../components/Bar';
 import { PhoneBack } from '../../components/PhoneHeader';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, CloseButton, IconButton, Segmented, Spinner, Tip, cx } from '../../components/ui';
+import { Button, CloseButton, IconButton, Modal, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { filterFeed, startsRun, type ActivityTab } from '../../lib/boards/activity';
-import { blockedStatusIds } from '../../lib/boards/approvals';
+import { approvalsWouldReset, blockedStatusIds, decidedApprovers } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
 import { useMobile } from '../../lib/mobile';
@@ -242,7 +242,50 @@ const isMac = (): boolean => typeof navigator !== 'undefined' && /Mac OS X|Macin
 
 // ------------------------------------------------------------------ title / description
 
+/**
+ * Editing the title, description or attachments resets all votes (ADR-0049 §3): when a vote is
+ * already decided, `guard(go, cancel)` asks first and runs `go` only on «Изменить и сбросить».
+ * Render `dialog` next to the editor.
+ */
+function useResetGuard(task: Task): { guard: (go: () => void, cancel?: () => void) => void; dialog: ReactNode } {
+  const disabled = useDisabledFeatures(task.boardId);
+  const [ask, setAsk] = useState<{ go: () => void; cancel?: () => void } | null>(null);
+  const would = approvalsWouldReset(task, disabled);
+  const guard = (go: () => void, cancel?: () => void): void => {
+    if (would) setAsk({ go, cancel });
+    else go();
+  };
+  const decided = decidedApprovers(task);
+  const close = (ok: boolean): void => {
+    const a = ask;
+    setAsk(null);
+    if (a) (ok ? a.go : (a.cancel ?? (() => undefined)))();
+  };
+  const dialog = ask ? (
+    <Modal
+      open
+      onClose={() => close(false)}
+      title={t('boards.resetTitle')}
+      description={t('boards.resetText', { n: decided.length, m: task.approvers.length, names: decided.map((a) => memberName(task.workspaceId, a.userId)).join(', ') })}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => close(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="destructive" onClick={() => close(true)} data-testid="approvals-reset-confirm">
+            {t('boards.resetConfirm')}
+          </Button>
+        </>
+      }
+    >
+      {null}
+    </Modal>
+  ) : null;
+  return { guard, dialog };
+}
+
 function TitleEditor({ task, canEdit }: { task: Task; canEdit: boolean }): ReactNode {
+  const { guard, dialog } = useResetGuard(task);
   const [v, setV] = useState(task.title);
   const ref = useRef<HTMLTextAreaElement>(null);
   // A title changed elsewhere (TASK_UPDATE) replaces the field (derived during render).
@@ -261,9 +304,10 @@ function TitleEditor({ task, canEdit }: { task: Task; canEdit: boolean }): React
   const save = (): void => {
     const next = v.trim();
     if (!next) setV(task.title);
-    else if (next !== task.title) void updateTask(task.id, { title: next });
+    else if (next !== task.title) guard(() => void updateTask(task.id, { title: next }), () => setV(task.title));
   };
   return (
+    <>
     <textarea
       ref={ref}
       value={v}
@@ -287,10 +331,13 @@ function TitleEditor({ task, canEdit }: { task: Task; canEdit: boolean }): React
       className="selectable w-full resize-none overflow-hidden rounded-[var(--radius-row)] bg-transparent text-title font-semibold leading-[26px] text-fg outline-none focus-visible:bg-hover"
       data-testid="task-title"
     />
+    {dialog}
+    </>
   );
 }
 
 function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit: boolean; attachments: boolean }): ReactNode {
+  const { guard, dialog } = useResetGuard(task);
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(task.description);
   const [busy, setBusy] = useState(false);
@@ -309,8 +356,9 @@ function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit
     }
   }, [v, editing]);
   const save = (): void => {
-    setEditing(false);
-    if (v !== task.description) void updateTask(task.id, { description: v });
+    if (v === task.description) setEditing(false);
+    // Cancelling the reset prompt keeps the editor open with the draft.
+    else guard(() => { setEditing(false); void updateTask(task.id, { description: v }); });
   };
   const attach = async (files: FileList | null): Promise<void> => {
     if (!files?.length) return;
@@ -382,7 +430,7 @@ function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit
                 {f.name}
               </a>
               {canEdit ? (
-                <button type="button" aria-label={t('boards.removeAttachment', { name: f.name })} onClick={() => void setTaskAttachments(task.id, task.attachments.filter((x) => x.id !== f.id).map((x) => x.id))} className="grid size-5 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">
+                <button type="button" aria-label={t('boards.removeAttachment', { name: f.name })} onClick={() => guard(() => void setTaskAttachments(task.id, task.attachments.filter((x) => x.id !== f.id).map((x) => x.id)))} className="grid size-5 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">
                   <X className="size-3" aria-hidden />
                 </button>
               ) : null}
@@ -390,7 +438,7 @@ function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit
           ))}
           {canEdit ? (
             <>
-              <Button variant="ghost" size="sm" busy={busy} onClick={() => file.current?.click()} data-testid="task-attach">
+              <Button variant="ghost" size="sm" busy={busy} onClick={() => guard(() => file.current?.click())} data-testid="task-attach">
                 <Paperclip className="size-3.5" aria-hidden /> {t('boards.attach')}
               </Button>
               <input ref={file} type="file" multiple hidden onChange={(e) => void attach(e.target.files)} />
@@ -398,6 +446,7 @@ function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit
           ) : null}
         </div>
       ) : null}
+      {dialog}
     </section>
   );
 }

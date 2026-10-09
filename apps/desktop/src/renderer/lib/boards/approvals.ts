@@ -1,4 +1,4 @@
-import { ApproverState, BoardStatusType, TaskApprovalState, type BoardStatus, type Task } from '@calaba/protocol';
+import { ApproverState, BoardFeature, BoardStatusType, TaskApprovalState, type BoardStatus, type Task } from '@calaba/protocol';
 
 /**
  * Task approvals on the client (ADR-0049 §6, «Контракт для клиента»): the quorum caption, the
@@ -105,4 +105,18 @@ export function approvalControls(t: Pick<Task, 'approvers' | 'archivedAt'>, canE
     vote: !!own && seesBoard && !t.archivedAt,
     mine: own?.state ?? ApproverState.UNSPECIFIED,
   };
+}
+
+/** Approvers who already decided (approved or rejected): the votes an edit of the task would drop. */
+export function decidedApprovers(t: Pick<Task, 'approvers'>): Task['approvers'] {
+  return t.approvers.filter((a) => a.state === ApproverState.APPROVED || a.state === ApproverState.REJECTED);
+}
+
+/**
+ * Editing the title, description or attachments resets every vote (ADR-0049 §3) — but only when
+ * the board has APPROVALS on (`disabled` = `Board.disabledFeatures`) and at least one approver has
+ * decided; the UI asks before such an edit. Mirrors the server's `resetApprovals`.
+ */
+export function approvalsWouldReset(t: Pick<Task, 'approvers'>, disabled: readonly BoardFeature[] | undefined): boolean {
+  return !disabled?.includes(BoardFeature.APPROVALS) && decidedApprovers(t).length > 0;
 }
