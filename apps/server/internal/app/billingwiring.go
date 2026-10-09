@@ -39,7 +39,7 @@ type billingRuntime struct {
 }
 
 // newBilling wires the providers (BILLING_PROVIDERS; Stripe when BILLING_STRIPE_ENABLED), the
-// core with its post-commit hook (plans.Invalidate, WORKSPACE_UPDATE with Workspace.billing to
+// core with its post-commit hook (Business identity grants, plans.Invalidate, WORKSPACE_UPDATE with Workspace.billing to
 // the workspace, BILLING_UPDATE to the owner, state mails), the webhook inbox and the owner /
 // public handlers. Invalid Stripe settings panic like other config errors (config.Validate
 // checks them first).
@@ -135,9 +135,11 @@ func resolveStripeAccount(ctx context.Context, p *stripe.Provider) {
 	}
 }
 
-// billingCommitted runs after a committed billing change of acc: the plan cache, the members'
-// Workspace.billing (WORKSPACE_UPDATE, no amounts), the owner's BILLING_UPDATE and the owner
-// mails of the new state (debt started, suspended).
+// billingCommitted runs after a committed billing change of acc: the Business identity grants
+// of the billing plan (plans.SyncBillingIdentity, the post-commit equivalent of the superadmin
+// plan edit; never inside the core's transaction, which holds the account lock), the plan
+// cache, the members' Workspace.billing (WORKSPACE_UPDATE, no amounts), the owner's
+// BILLING_UPDATE and the owner mails of the new state (debt started, suspended).
 func billingCommitted(ctx context.Context, d Deps, planSvc *plans.Service, pub events.Publisher, n *inbox.Notifier, acc sqlc.BillingAccount) {
 	if acc.WorkspaceID == nil {
 		return
@@ -145,6 +147,9 @@ func billingCommitted(ctx context.Context, d Deps, planSvc *plans.Service, pub e
 	ctx, done := events.Detached(ctx, 5*time.Second)
 	defer done()
 	wsID := *acc.WorkspaceID
+	if _, err := plans.SyncBillingIdentity(ctx, d.DB, wsID); err != nil {
+		slog.WarnContext(ctx, "billing: committed: identity grants", "workspace", wsID, "err", err)
+	}
 	if err := planSvc.BillingChanged(ctx, d.DB.Q, pub, wsID); err != nil {
 		slog.WarnContext(ctx, "billing: committed: workspace update", "workspace", wsID, "err", err)
 	}

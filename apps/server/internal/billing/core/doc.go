@@ -64,8 +64,9 @@
 // PlanFor(acc) is the workspace plan billing gives: active / suspended → the account plan,
 // stopped → the account plan while its lots run, then free; inactive / closed → not managed
 // (the manual row stays). Commands write it into workspace_plans with source = billing in their
-// transaction and call Hooks.PlanChanged there (T3: identity grants of Business,
-// auth.InvalidateIdentity); Hooks.Committed gets planChanged for plans.Invalidate and events.
+// transaction and call Hooks.PlanChanged there (nothing that locks workspace rows);
+// Hooks.Committed gets planChanged for plans.Invalidate, events and the identity grants of
+// Business (plans.SyncBillingIdentity: workspace lock first, so only after the commit).
 //
 // # Debt (ADR-0080 §8)
 //
