@@ -378,8 +378,12 @@ func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomIn
 	if err != nil && !db.IsNotFound(err) {
 		return granted{}, err
 	}
-	// A suspended workspace takes nobody in; banned users stay out (item 32).
+	// A suspended workspace takes nobody in; banned users stay out (item 32). A guest takes no
+	// paid seat, but a workspace suspended for billing takes nobody in either (ADR-0080 §12).
 	if err := moderation.CheckSuspended(ctx, q, wsID); err != nil {
+		return granted{}, err
+	}
+	if err := s.Plans.CheckBillingOpen(ctx, q, wsID); err != nil {
 		return granted{}, err
 	}
 	if !isMember {

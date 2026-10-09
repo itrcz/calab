@@ -80,6 +80,9 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 			if _, err := q.RemoveMember(r.Context(), sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: target}); err != nil {
 				return err
 			}
+			if err := h.limits.Plans.SeatRemoved(r.Context(), q, wsID, target, cur.Role); err != nil {
+				return err
+			}
 			if err := q.DeleteUserOverridesInWorkspace(r.Context(), sqlc.DeleteUserOverridesInWorkspaceParams{WorkspaceID: wsID, UserID: target.String()}); err != nil {
 				return err
 			}

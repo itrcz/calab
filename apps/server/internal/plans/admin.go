@@ -14,6 +14,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -307,7 +308,11 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 		}
 		if _, err := q.UpsertWorkspacePlan(r.Context(), sqlc.UpsertWorkspacePlanParams{
 			WorkspaceID: id, Plan: plan, Limits: stored, ValidUntil: until, Note: note, UpdatedBy: &actor,
-		}); err != nil {
+		}); db.IsNotFound(err) {
+			// The plan of a billing workspace follows its paid days (ADR-0080 §3): the owner
+			// changes it through billing, never a direct edit.
+			return billing.ErrPlanManagedByBilling
+		} else if err != nil {
 			return err
 		}
 		for _, feature := range []identitypolicy.Feature{identitypolicy.SSO, identitypolicy.DirectorySync, identitypolicy.OAuthProvider} {

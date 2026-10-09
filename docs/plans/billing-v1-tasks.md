@@ -55,3 +55,22 @@
   клиент перечитывает `GET …/billing` (решает T3/T5).
 - Запись — через `db.Tx`/`db.GuardValue`; прямые мутации `d.Q.*` и `Pool` ловит
   `TestIdentityMutationQueryAndPoolInventory`.
+
+## Решения T3 (приём и приостановка)
+
+- Вход в пространство — `plans.Service`: `AdmitSeat` (приглашение, открытое, регистрация,
+  добавление по аккаунту, email-приглашение после подтверждения — в savepoint, отказ оставляет
+  приглашение висеть), `PromoteSeat` (гость → участник), `SeatRemoved` (выход, удаление, бан,
+  понижение до гостя). Вызов `billing.Seats` — в той же транзакции после записи членства; гости
+  и боты не вызывают. `BILLING_ENABLED=false` — ни одного лишнего запроса.
+- Отказ `Seats` за деньги: `409 BILLING_SEAT_GROWTH_REQUIRES_FUNDS`, текст для владельца
+  («пополните баланс») или остальных («попросите владельца»); клиент различает по reason.
+- Приостановка: `identitypolicy.State.BillingSuspended` (из `billing_accounts.status='suspended'`
+  в снимке `GetIdentityGateState`, при `BILLING_ENFORCEMENT_ENABLED`). Закрыто всё, чтение тоже;
+  владельцу открыты `BillingRead/BillingWrite`: маршруты `scopeBilling` и `GET
+  /api/workspaces/{id}`. Боты, входы (ссылки, регистрация, гостевые ссылки), RTC закрыты; шлюз
+  убирает пространство (`IdentityAccess` reason `SUSPENDED`), владельцу доходит только
+  `BILLING_UPDATE`. Модерация и биллинг друг друга не снимают; владелец платит и под модерацией.
+- После изменения статуса/плана аккаунта ядро вызывает `plans.Service.BillingChanged` (сброс
+  кэша + `WORKSPACE_UPDATE` с `Workspace.billing`). Ручной план при `source='billing'` — `409
+  BILLING_PLAN_MANAGED` (условный upsert).

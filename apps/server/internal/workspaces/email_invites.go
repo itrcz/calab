@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -178,6 +179,10 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Conflict("already a member")
 		}
 		if err != nil {
+			return err
+		}
+		// The paid seat (ADR-0080): the inviter spends the balance the owner keeps (§13).
+		if err := h.limits.Plans.AdmitSeat(r.Context(), q, wsID, target, uid(r), m.Role); err != nil {
 			return err
 		}
 		// A pending email invitation of the same address is moot now: revoke its link.
@@ -452,7 +457,7 @@ func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub ev
 		m  sqlc.WorkspaceMember
 	}
 	var joins []join
-	err := d.Tx(ctx, func(q *sqlc.Queries) error {
+	err := d.TxRaw(ctx, func(q *sqlc.Queries, tx pgx.Tx) error {
 		joins = joins[:0]
 		rows, err := q.PendingEmailInvitesFor(ctx, *u.Email)
 		if err != nil {
@@ -506,18 +511,12 @@ func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub ev
 			} else if err != nil {
 				return err
 			}
-			if err := q.AcceptEmailInvite(ctx, ei.ID); err != nil {
-				return err
-			}
-			if err := q.UseInvite(ctx, ei.InviteID); err != nil {
-				return err
-			}
-			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: ei.WorkspaceID, UserID: u.ID, Role: ei.Role})
-			if db.IsNotFound(err) {
-				continue // already a member
-			}
+			m, joined, err := acceptEmailInvite(ctx, tx, q, pl, ei, u.ID)
 			if err != nil {
 				return err
+			}
+			if !joined {
+				continue
 			}
 			ws, err := q.GetWorkspace(ctx, ei.WorkspaceID)
 			if err != nil {
@@ -537,4 +536,38 @@ func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub ev
 		ids = append(ids, j.ws.ID)
 	}
 	return ids
+}
+
+// acceptEmailInvite spends one pending invitation inside a savepoint of the caller's
+// transaction, so a refused paid seat (ADR-0080: no money for the first day, or the
+// workspace is suspended for billing) undoes just this workspace's join: the invitation stays
+// pending, like at a plan limit, and the other workspaces still join. joined=false: already a
+// member or refused.
+func acceptEmailInvite(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, pl *plans.Service, ei sqlc.EmailInvite, user uuid.UUID) (m sqlc.WorkspaceMember, joined bool, err error) {
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return m, false, err
+	}
+	defer func() { _ = sp.Rollback(ctx) }() // after Commit: a no-op
+	sq := q.WithTx(sp)
+	if err := sq.AcceptEmailInvite(ctx, ei.ID); err != nil {
+		return m, false, err
+	}
+	if err := sq.UseInvite(ctx, ei.InviteID); err != nil {
+		return m, false, err
+	}
+	m, err = sq.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: ei.WorkspaceID, UserID: user, Role: ei.Role})
+	if db.IsNotFound(err) {
+		return m, false, sp.Commit(ctx) // already a member: the invitation is spent, as before
+	}
+	if err != nil {
+		return m, false, err
+	}
+	if err := pl.AdmitSeat(ctx, sq, ei.WorkspaceID, user, user, m.Role); err != nil {
+		if plans.SeatRefused(err) {
+			return m, false, nil // the deferred rollback undoes this join only
+		}
+		return m, false, err
+	}
+	return m, true, sp.Commit(ctx)
 }
