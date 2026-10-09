@@ -3,7 +3,6 @@ import {
   BillingState,
   DisputeStatus,
   LedgerEntryKind,
-  PaymentStatus,
   Plan,
   RefundStatus,
   type AdminBillingAccount,
@@ -21,7 +20,7 @@ import { plural, t, type MessageKey } from '../../../i18n';
 import { recentAuthRequired } from '../../../lib/api/errors';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { nowMs } from '../../../lib/billing/checkout';
-import { rejectRefundRequest } from '../../../lib/billing/model';
+import { refundableMinor, rejectRefundRequest } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, minorOf, parseMajor } from '../../../lib/billing/money';
 import { fmt } from '../../../lib/format';
 import { adminBilling } from '../../../services/billing';
@@ -231,7 +230,7 @@ export function AdminBillingPane({ view, onClose, notice }: { view: BillingView;
 type Dialog =
   | { kind: 'credit' }
   | { kind: 'reverse'; entry: LedgerEntry }
-  | { kind: 'refund'; payment: AdminBillingPayment; request?: AdminBillingRefundRequest }
+  | { kind: 'refund'; payment: AdminBillingPayment; refundable: bigint; request?: AdminBillingRefundRequest }
   | { kind: 'hold' }
   | { kind: 'discount' }
   | { kind: 'reconcile' }
@@ -257,8 +256,11 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
       ) : null,
     [],
   );
-  const a = acc.data;
-  if (!a) {
+  const details = acc.data;
+  const disputeList = (disputes.data?.disputes ?? []).map((d) => d.dispute);
+  const refundList = (refunds.data?.refunds ?? []).map((r) => r.refund);
+  const a = details?.account;
+  if (!details || !a) {
     return (
       <>
         <PaneHeader title={t('adminBilling.section.billing')} onClose={onClose} />
@@ -312,6 +314,16 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
               <span className="text-body text-muted">{fmt.dateTime(timestampDate(a.nextDueAt), 'short')}</span>
             </Row>
           ) : null}
+          {minorOf(details.freeAdvance) > 0n ? (
+            <Row label={t('adminBilling.row.freeAdvance')}>
+              <MoneyText m={details.freeAdvance} className="text-body text-muted" />
+            </Row>
+          ) : null}
+          {minorOf(details.pendingRefunds) > 0n ? (
+            <Row label={t('adminBilling.row.pendingRefunds')}>
+              <MoneyText m={details.pendingRefunds} className="text-body text-warn" />
+            </Row>
+          ) : null}
           <Row label={t('adminBilling.row.discount')}>
             <span className="text-body tabular-nums text-muted">{a.discountBps ? `${fmt.number(a.discountBps / 100)} %` : '—'}</span>
           </Row>
@@ -346,21 +358,23 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
           <div className="overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)]" data-testid="admin-billing-payments">
             {payments.isLoading ? <Spinner className="mx-auto my-3" /> : null}
             {payments.data?.payments.length === 0 ? <p className="px-3 py-3 text-body text-muted">{t('billing.history.noPayments')}</p> : null}
-            {payments.data?.payments.map((p) =>
-              p.payment ? (
+            {payments.data?.payments.map((p) => {
+              if (!p.payment) return null;
+              const refundable = refundableMinor(p.payment, disputeList, refundList);
+              return (
                 <PaymentRow
                   key={p.payment.id}
                   p={p.payment}
                   extra={
-                    p.payment.status === PaymentStatus.SUCCEEDED && refundableOf(p) > 0n ? (
-                      <Button size="sm" variant="destructive" onClick={() => setDialog({ kind: 'refund', payment: p })} data-testid="admin-billing-refund">
+                    refundable > 0n ? (
+                      <Button size="sm" variant="destructive" onClick={() => setDialog({ kind: 'refund', payment: p, refundable })} data-testid="admin-billing-refund">
                         {t('adminBilling.refund')}
                       </Button>
                     ) : null
                   }
                 />
-              ) : null,
-            )}
+              );
+            })}
           </div>
         </section>
 
@@ -404,8 +418,6 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
     </>
   );
 }
-
-const refundableOf = (p: AdminBillingPayment): bigint => minorOf(p.payment?.amount) - minorOf(p.payment?.refunded);
 
 const REFUND_STATUS: Record<RefundStatus, MessageKey> = {
   [RefundStatus.UNSPECIFIED]: 'adminBilling.refund.pending',
@@ -476,7 +488,7 @@ function AccountDialogs({ a, dialog, currency, onDone, onClose }: { a: AdminBill
         onClose={onClose}
       />
     );
-  if (dialog.kind === 'refund') return <RefundDialog payment={dialog.payment} request={dialog.request} currency={currency} onDone={onDone} onClose={onClose} />;
+  if (dialog.kind === 'refund') return <RefundDialog payment={dialog.payment} refundable={dialog.refundable} request={dialog.request} currency={currency} onDone={onDone} onClose={onClose} />;
   if (dialog.kind === 'discount') {
     const bps = Math.round(Number(discount.replace(',', '.')) * 100);
     return (
@@ -552,6 +564,7 @@ function AccountDialogs({ a, dialog, currency, onDone, onClose }: { a: AdminBill
 
 function RefundDialog({
   payment,
+  refundable,
   request,
   currency,
   extra,
@@ -559,13 +572,14 @@ function RefundDialog({
   onClose,
 }: {
   payment: AdminBillingPayment;
+  /** refundableMinor of the payment: the dialog never offers more. */
+  refundable: bigint;
   request?: AdminBillingRefundRequest | undefined;
   currency: string;
   extra?: ReactNode;
   onDone: () => void;
   onClose: () => void;
 }): ReactNode {
-  const refundable = refundableOf(payment);
   const want = minorOf(request?.request?.amount);
   return (
     <MoneyActionDialog
@@ -661,11 +675,17 @@ function RejectDialog({ r, onClose, onDone }: { r: AdminBillingRefundRequest; on
 /** Executes an owner's refund request as a refund of one of the account's payments. */
 function DecideDialog({ r, onClose, onDone }: { r: AdminBillingRefundRequest; onClose: () => void; onDone: () => void }): ReactNode {
   const payments = useQuery({ queryKey: KEY.payments(r.accountId), queryFn: ({ signal }) => adminBilling.payments({ accountId: r.accountId }, signal), retry: false });
-  const options = (payments.data?.payments ?? []).filter((p) => p.payment?.status === PaymentStatus.SUCCEEDED && refundableOf(p) > 0n);
+  const disputes = useQuery({ queryKey: KEY.disputes(r.accountId), queryFn: ({ signal }) => adminBilling.disputes({ accountId: r.accountId }, signal), retry: false });
+  const refunds = useQuery({ queryKey: KEY.refunds(r.accountId), queryFn: ({ signal }) => adminBilling.refunds({ accountId: r.accountId }, signal), retry: false });
+  const disputeList = (disputes.data?.disputes ?? []).map((d) => d.dispute);
+  const refundList = (refunds.data?.refunds ?? []).map((x) => x.refund);
+  const options = (payments.data?.payments ?? [])
+    .map((p) => ({ p, refundable: refundableMinor(p.payment, disputeList, refundList) }))
+    .filter((o) => o.refundable > 0n);
   const [pid, setPid] = useState('');
-  const chosen = options.find((p) => p.payment?.id === pid) ?? options[0];
+  const chosen = options.find((o) => o.p.payment?.id === pid) ?? options[0];
   const currency = r.request?.amount?.currency || 'USD';
-  if (payments.isLoading) return null;
+  if (payments.isLoading || disputes.isLoading || refunds.isLoading) return null;
   if (!chosen) {
     return (
       <Modal open onClose={onClose} title={t('adminBilling.decide')} footer={<Button onClick={onClose}>{t('common.close')}</Button>}>
@@ -676,16 +696,16 @@ function DecideDialog({ r, onClose, onDone }: { r: AdminBillingRefundRequest; on
   const picker =
     options.length > 1 ? (
       <Field label={t('adminBilling.pickPayment')}>
-        <Select aria-label={t('adminBilling.pickPayment')} value={chosen.payment?.id ?? ''} onChange={(e) => setPid(e.target.value)}>
-          {options.map((p) => (
+        <Select aria-label={t('adminBilling.pickPayment')} value={chosen.p.payment?.id ?? ''} onChange={(e) => setPid(e.target.value)}>
+          {options.map(({ p, refundable }) => (
             <option key={p.payment?.id} value={p.payment?.id}>
-              {`${formatMoney(p.payment?.amount)} · ${p.payment?.succeededAt ? fmt.shortDate(timestampDate(p.payment.succeededAt)) : ''} · ${t('adminBilling.refundable', { amount: formatMinor(refundableOf(p), currency) })}`}
+              {`${formatMoney(p.payment?.amount)} · ${p.payment?.succeededAt ? fmt.shortDate(timestampDate(p.payment.succeededAt)) : ''} · ${t('adminBilling.refundable', { amount: formatMinor(refundable, currency) })}`}
             </option>
           ))}
         </Select>
       </Field>
     ) : null;
-  return <RefundDialog key={chosen.payment?.id} payment={chosen} request={r} currency={currency} extra={picker} onDone={onDone} onClose={onClose} />;
+  return <RefundDialog key={chosen.p.payment?.id} payment={chosen.p} refundable={chosen.refundable} request={r} currency={currency} extra={picker} onDone={onDone} onClose={onClose} />;
 }
 
 // ---------------------------------------------------------------- prices
