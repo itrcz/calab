@@ -265,6 +265,9 @@ var eventScope = map[protoreflect.Name]bool{
 	"board_rule_update": true, "board_rule_delete": true, "task_git_links_update": true,
 	// Achievement catalogs (ADR-0061, amendment 1): workspace channel, every member.
 	"workspace_achievements_update": true,
+	// Balance billing (ADR-0080): workspace-attributed (workspace_id), published on the owner's
+	// user channel only; lease-gated by that workspace like every scoped event.
+	"billing_update": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

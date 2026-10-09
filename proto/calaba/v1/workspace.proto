@@ -1,6 +1,7 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "calaba/v1/billing.proto";
 import "calaba/v1/identity.proto";
 
 import "google/protobuf/timestamp.proto";
@@ -50,6 +51,9 @@ message Workspace {
   // PLACE_CALLS in a voice room they are in may call phone numbers from it.
   WorkspaceIdentityAccess identity_access = 16;
   bool sip_enabled = 15;
+  // Balance billing (ADR-0080): state without amounts, for every member; unset = no billing
+  // account. The owner reads the money through GET /api/workspaces/{id}/billing.
+  WorkspaceBillingStatus billing = 17;
 }
 
 message WorkspaceSuspension {

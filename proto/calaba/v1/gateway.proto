@@ -4,6 +4,7 @@ package calaba.v1;
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/achievement.proto";
 import "calaba/v1/automations.proto";
+import "calaba/v1/billing.proto";
 import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
@@ -280,6 +281,9 @@ message DispatchEvent {
     TaskGitLinksUpdate task_git_links_update = 94;
     // The workspace's achievement catalog changed (ADR-0061, amendment 1); to every member.
     WorkspaceAchievementsUpdate workspace_achievements_update = 95;
+    // Balance billing (ADR-0080): the owner's billing data changed; to the workspace owner's
+    // user channel only (members see Workspace.billing through WORKSPACE_UPDATE).
+    BillingUpdate billing_update = 96;
   }
 }
 
