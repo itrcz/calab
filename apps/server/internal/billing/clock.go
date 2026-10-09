@@ -99,3 +99,18 @@ func (c *SwitchClock) Set(t *time.Time) {
 	u := t.UTC()
 	c.fixed = &u
 }
+
+// Provider-facing timestamps (checkout expires_at, list filters) are real time: the provider
+// runs on the wall clock, the billing Clock only orders our ledger and scheduling. A billing
+// clock moved ahead (dev test clock) must neither push an expiry beyond what the provider
+// accepts nor hide payments it made "before" the billing time.
+
+// ProviderSince is the lower bound of a provider-side "created at or after" filter: the earlier
+// of the billing time and the wall clock, minus window.
+func ProviderSince(billingNow time.Time, window time.Duration) time.Time {
+	t := time.Now().UTC()
+	if billingNow.Before(t) {
+		t = billingNow
+	}
+	return t.Add(-window)
+}

@@ -83,7 +83,7 @@ func (j *Job) Reconcile(ctx context.Context) (ReconcileResult, error) {
 			continue
 		}
 		res.Customers++
-		if err := j.reconcileCustomer(ctx, p, c, since, &res); err != nil {
+		if err := j.reconcileCustomer(ctx, p, c, billing.ProviderSince(now, ReconcileWindow), &res); err != nil {
 			slog.WarnContext(ctx, "billing auto-topup reconcile: customer", "customer", c.ID, "err", err)
 			errs = append(errs, err)
 		}

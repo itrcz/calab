@@ -56,7 +56,8 @@ type env struct {
 }
 
 type envOpt struct {
-	wrap func(*fake.Provider) provider.Provider
+	wrap  func(*fake.Provider) provider.Provider
+	clock billing.Clock // default DBClock
 }
 
 func newEnv(t *testing.T, opts ...envOpt) *env {
@@ -67,20 +68,24 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	e := &env{t: t, d: d, merchant: "acct_" + hex.EncodeToString(b[:])}
 	e.fake = fake.New(fake.Options{ID: provider.Stripe, Account: e.merchant})
 	e.fp = e.fake
+	var clock billing.Clock = billing.DBClock{}
 	for _, o := range opts {
 		if o.wrap != nil {
 			e.fp = o.wrap(e.fake)
+		}
+		if o.clock != nil {
+			clock = o.clock
 		}
 	}
 	reg, err := provider.NewRegistry("stripe:global", provider.DefaultMatrix(), e.fp)
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.core = core.New(d, billing.DBClock{}, core.Config{Debits: true, Enforcement: true}, core.Hooks{})
+	e.core = core.New(d, clock, core.Config{Debits: true, Enforcement: true}, core.Hooks{})
 	e.in = inbox.New(d, reg, e.core, inbox.Options{})
 	e.mail = mail.New(mail.Config{Secret: []byte("billing-test-secret-billing-test-secret")}, d, nil, mail.NewFake())
 	e.in.Mail = inbox.NewNotifier(d, e.mail, "https://app.calab.test")
-	svc := billinghttp.New(d, e.core, reg, e.in, billing.DBClock{}, billinghttp.Config{
+	svc := billinghttp.New(d, e.core, reg, e.in, clock, billinghttp.Config{
 		Checkouts: true, ReturnURL: "https://app.calab.test/api/billing/return", AppURL: "https://app.calab.test",
 	})
 	h := &billinghttp.Handlers{Enabled: true, Owner: svc.Owner(), Public: svc.Public()}

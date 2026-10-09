@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -176,10 +175,11 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 		return provider.CheckoutSession{}, err
 	}
 	ret := returnURL(s.cfg.ReturnURL, co.ID)
-	exp := time.Time{}
-	if co.ExpiresAt != nil {
-		exp = *co.ExpiresAt
-	}
+	// The provider runs on the wall clock: its expires_at is the row's creation (database now(),
+	// real time) + TTL — stable across retries of the same idempotency key — never the billing
+	// clock (a dev test clock ahead of time made Stripe refuse the session). The row keeps its
+	// billing-clock expiry for our own scheduling.
+	exp := co.CreatedAt.Add(s.cfg.CheckoutTTL)
 	sess, err := p.CreateCheckout(ctx, provider.CheckoutReq{
 		IdemKey: "checkout:" + co.ID.String(), Amount: money.New(co.AmountMinor, money.Currency(co.Currency)), Method: opt.Method,
 		Customer: cust, SuccessURL: ret, CancelURL: ret, SaveForOffSession: co.SaveMethod, ExpiresAt: exp,
@@ -200,12 +200,8 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 		return sess, billing.ErrProviderUnavailable
 	}
 	sid, u := sess.ID, sess.URL
-	var sexp *time.Time
-	if !sess.ExpiresAt.IsZero() {
-		sexp = &sess.ExpiresAt
-	}
 	_, err = db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.BillingCheckout, error) {
-		return q.SetBillingCheckoutSession(ctx, sqlc.SetBillingCheckoutSessionParams{SessionID: &sid, Url: &u, ExpiresAt: sexp, Now: s.now(ctx), ID: co.ID})
+		return q.SetBillingCheckoutSession(ctx, sqlc.SetBillingCheckoutSessionParams{SessionID: &sid, Url: &u, ExpiresAt: co.ExpiresAt, Now: s.now(ctx), ID: co.ID})
 	})
 	if db.IsNotFound(err) {
 		return sess, billing.ErrPaymentPending // the checkout left 'open' meanwhile (expired / reconciled)
