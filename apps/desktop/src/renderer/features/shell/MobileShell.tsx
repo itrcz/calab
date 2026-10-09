@@ -26,6 +26,7 @@ import { accessLocked } from '../identity/model';
 import { WorkspaceLock } from '../identity/WorkspaceLock';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { BillingBanner } from '../workspace/billing/BillingPaywall';
 import { ChatPane } from '../chat/ChatPane';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { DmSidebar } from '../dm/DmSidebar';
@@ -89,6 +90,7 @@ export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean
       <UpdateBar />
       <VerifyBanner />
       <SuspendedBanner />
+      <BillingBanner />
       <main className="mat-content relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <ScreenTransition depth={depth}>
           {!on ? null : !ready ? (

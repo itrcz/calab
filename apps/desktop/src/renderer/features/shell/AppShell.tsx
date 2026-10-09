@@ -15,6 +15,7 @@ import { installHotkeys } from '../../services/hotkeys';
 import { installEmail } from '../../services/email';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { BillingBanner, BillingPaywall, useBillingSuspended } from '../workspace/billing/BillingPaywall';
 import { UpdateBar } from './UpdateBar';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
@@ -73,6 +74,8 @@ function ShellLayout(): ReactNode {
   const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
   const home = wsId === HOME && local;
   const hasWs = useWorkspaces((s) => (wsId && !home ? !!s.byId[wsId] : false));
+  // Balance billing (ADR-0080 §8): a workspace closed for unpaid billing shows the paywall.
+  const billingClosed = useBillingSuspended(home ? null : wsId);
   const roomId = useActiveRoom(home ? null : wsId);
   const dmId = useActiveDm();
   // ≥ 1200 px: a column next to the chat; narrower: a floating panel over it (docs/08, Layout).
@@ -136,6 +139,7 @@ function ShellLayout(): ReactNode {
       {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
       <VerifyBanner />
       <SuspendedBanner />
+      <BillingBanner />
       {showReconnect ? <ReconnectBanner /> : null}
       {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
       <UpdateBar />
@@ -154,6 +158,8 @@ function ShellLayout(): ReactNode {
           </div>
         ) : locked && wsId ? (
           <WorkspaceLock workspaceId={wsId} />
+        ) : billingClosed && hasWs && wsId ? (
+          <BillingPaywall workspaceId={wsId} />
         ) : home ? (
           // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">

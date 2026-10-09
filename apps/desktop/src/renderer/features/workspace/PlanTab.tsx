@@ -13,6 +13,7 @@ import { loadWorkspaceStickers } from '../../services/stickers';
 import { useSession } from '../../stores/session';
 import { useStickers } from '../../stores/stickers';
 import { useWorkspaces } from '../../stores/workspaces';
+import { BillingSection } from './billing/BillingSection';
 
 /** Members that take a seat: everyone but guests (bots count, ADR-0024). */
 const seats = (members: Record<string, WorkspaceMember> | undefined): number => {
@@ -152,6 +153,8 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const pricing = planOffersAllowed() ? import.meta.env.VITE_PRICING_URL : undefined;
   return (
     <>
+      {/* Balance billing (ADR-0080 v5): the owner's cabinet / the members' stub; nothing without an account. */}
+      <BillingSection workspaceId={workspaceId} />
       <Card title={t('plan.card.current')}>
         <Row label={t('plan.row.plan')}>
           {plan.expired ? <ExpiredBadge /> : null}
