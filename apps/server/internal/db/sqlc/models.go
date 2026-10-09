@@ -32,6 +32,288 @@ type AchievementLegacyBlob struct {
 	Key string
 }
 
+type BillingAccount struct {
+	ID            uuid.UUID
+	WorkspaceID   *uuid.UUID
+	Market        string
+	Currency      string
+	Provider      string
+	Plan          string
+	Status        string
+	BalanceMinor  int64
+	EntrySeq      int64
+	NegativeSince *time.Time
+	SuspendAt     *time.Time
+	NextDueAt     *time.Time
+	HoldUntil     *time.Time
+	DisputeHold   bool
+	DiscountBps   int32
+	Revision      int64
+	CreatedBy     *uuid.UUID
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ClosedAt      *time.Time
+}
+
+type BillingAllocation struct {
+	ID          uuid.UUID
+	AccountID   uuid.UUID
+	ChargeID    uuid.UUID
+	LotID       uuid.UUID
+	AmountMinor int64
+	CreatedAt   time.Time
+}
+
+type BillingAudit struct {
+	ID          uuid.UUID
+	RequestID   uuid.UUID
+	BodyHash    []byte
+	AccountID   *uuid.UUID
+	WorkspaceID *uuid.UUID
+	ActorID     *uuid.UUID
+	Action      string
+	Reason      string
+	Details     []byte
+	CreatedAt   time.Time
+}
+
+type BillingAutotopup struct {
+	AccountID      uuid.UUID
+	PmID           uuid.UUID
+	MaxMinor       int64
+	ConsentVersion int32
+	ConsentAt      time.Time
+	ConsentBy      *uuid.UUID
+	RevokedAt      *time.Time
+	RevokedReason  string
+	NotBefore      *time.Time
+	UpdatedAt      time.Time
+}
+
+type BillingAutotopupAttempt struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	PmID              uuid.UUID
+	AmountMinor       int64
+	Currency          string
+	Status            string
+	ProviderPaymentID *string
+	FailureCode       string
+	CreatedAt         time.Time
+	DispatchedAt      *time.Time
+	FinishedAt        *time.Time
+}
+
+type BillingCharge struct {
+	ID               uuid.UUID
+	AccountID        uuid.UUID
+	Sku              string
+	Plan             string
+	PriceID          uuid.UUID
+	Qty              int32
+	UnitMinor        int64
+	DiscountBps      int32
+	StartsAt         time.Time
+	EndsAt           time.Time
+	AmountMinor      int64
+	UnfundedMinor    int64
+	CompensatedMinor int64
+	Reason           string
+	BusinessKey      string
+	ActorID          *uuid.UUID
+	CreatedAt        time.Time
+}
+
+type BillingCheckout struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	RequestID         uuid.UUID
+	BodyHash          []byte
+	Purpose           string
+	MethodID          string
+	Provider          string
+	AmountMinor       int64
+	Currency          string
+	SaveMethod        bool
+	Status            string
+	ProviderSessionID *string
+	Url               *string
+	PayerSnapshot     []byte
+	CreatedBy         *uuid.UUID
+	ExpiresAt         *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type BillingCustomer struct {
+	ID              uuid.UUID
+	AccountID       uuid.UUID
+	Provider        string
+	ProviderAccount string
+	Livemode        bool
+	CustomerID      string
+	CreatedAt       time.Time
+}
+
+type BillingDispute struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	PaymentID         uuid.UUID
+	ProviderDisputeID string
+	AmountMinor       int64
+	Currency          string
+	Status            string
+	Outcome           *string
+	CreatedAt         time.Time
+	ClosedAt          *time.Time
+}
+
+type BillingFundingLot struct {
+	ID            uuid.UUID
+	AccountID     uuid.UUID
+	Source        string
+	PaymentID     *uuid.UUID
+	AmountMinor   int64
+	ConsumedMinor int64
+	RefundedMinor int64
+	ActorID       *uuid.UUID
+	Reason        string
+	CreatedAt     time.Time
+}
+
+type BillingLedger struct {
+	ID           uuid.UUID
+	AccountID    uuid.UUID
+	Seq          int64
+	Kind         string
+	AmountMinor  int64
+	BalanceAfter int64
+	BusinessKey  string
+	LotID        *uuid.UUID
+	ChargeID     *uuid.UUID
+	RefundID     *uuid.UUID
+	DisputeID    *uuid.UUID
+	ActorID      *uuid.UUID
+	Reason       string
+	CreatedAt    time.Time
+}
+
+type BillingNotification struct {
+	ID        uuid.UUID
+	AccountID uuid.UUID
+	Key       string
+	Template  string
+	MailID    *uuid.UUID
+	CreatedAt time.Time
+}
+
+type BillingPayer struct {
+	AccountID uuid.UUID
+	Type      string
+	Name      string
+	Country   string
+	Email     string
+	TaxID     *string
+	UpdatedBy *uuid.UUID
+	UpdatedAt time.Time
+}
+
+type BillingPayment struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	Provider          string
+	ProviderAccount   string
+	Livemode          bool
+	ProviderPaymentID string
+	ProviderChargeID  *string
+	AmountMinor       int64
+	Currency          string
+	Status            string
+	Origin            string
+	CheckoutID        *uuid.UUID
+	AttemptID         *uuid.UUID
+	ReceiptUrl        string
+	RefundedMinor     int64
+	SucceededAt       *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type BillingPaymentMethod struct {
+	ID           uuid.UUID
+	AccountID    uuid.UUID
+	CustomerID   uuid.UUID
+	Provider     string
+	Livemode     bool
+	ProviderPmID string
+	Kind         string
+	Brand        string
+	Last4        *string
+	ExpMonth     *int16
+	ExpYear      *int16
+	CreatedAt    time.Time
+	DetachedAt   *time.Time
+}
+
+type BillingPrice struct {
+	ID            uuid.UUID
+	Market        string
+	Currency      string
+	Sku           string
+	Plan          *string
+	UnitMinor     int64
+	EffectiveFrom time.Time
+	CreatedBy     *uuid.UUID
+	CreatedAt     time.Time
+}
+
+type BillingProviderEvent struct {
+	ID              uuid.UUID
+	Provider        string
+	ProviderAccount string
+	Livemode        bool
+	EventID         string
+	Kind            string
+	ObjectID        string
+	Payload         []byte
+	ReceivedAt      time.Time
+	NextAttemptAt   time.Time
+	Attempts        int32
+	ProcessedAt     *time.Time
+	Error           string
+}
+
+type BillingRefund struct {
+	ID               uuid.UUID
+	AccountID        uuid.UUID
+	PaymentID        uuid.UUID
+	LotID            *uuid.UUID
+	AmountMinor      int64
+	Currency         string
+	Status           string
+	Origin           string
+	ProviderRefundID *string
+	IdemKey          string
+	Reason           string
+	RequestedBy      *uuid.UUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	SucceededAt      *time.Time
+}
+
+type BillingRefundRequest struct {
+	ID          uuid.UUID
+	AccountID   uuid.UUID
+	RequestID   uuid.UUID
+	AmountMinor int64
+	Reason      string
+	Status      string
+	RequestedBy *uuid.UUID
+	DecidedBy   *uuid.UUID
+	CreatedAt   time.Time
+	DecidedAt   *time.Time
+}
+
 type BirthdayGreeting struct {
 	UserID      uuid.UUID
 	WorkspaceID uuid.UUID
@@ -1432,6 +1714,7 @@ type WorkspacePlan struct {
 	Note        string
 	UpdatedBy   *uuid.UUID
 	UpdatedAt   time.Time
+	Source      string
 }
 
 type WorkspacePlanLog struct {
@@ -1443,6 +1726,7 @@ type WorkspacePlanLog struct {
 	ValidUntil  *time.Time
 	Note        string
 	CreatedAt   time.Time
+	Source      string
 }
 
 type WorkspaceRole struct {
