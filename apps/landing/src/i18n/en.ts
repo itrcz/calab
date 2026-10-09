@@ -269,14 +269,16 @@ const en: Dict = {
     releases: 'Releases on GitHub',
   },
   pricing: {
+    billingNote: 'Base price per employee, no VAT. When active, the 10% monthly discount gives Team ₽179.10 and Business ₽449.10 per seat. With the 20% annual discount: ₽1,910.40 and ₽4,790.40 per seat for the full year. Subscription payments are being prepared for launch.',
+    offerLink: 'Subscription and refund terms (Russian)',
     eyebrow: 'Pricing',
     title: 'Free, Team, Business and Enterprise',
     lead: 'Start for free. Need more? Team or Business in the cloud, or Enterprise: Calab on your own server.',
     startHere: 'Start here',
     plans: {
       free: { name: 'Free', price: 'Free', note: 'For small teams: up to 5 people per room' },
-      team: { name: 'Team', price: 'On request', note: 'Up to 15 people per room, 100 members, 300 GB of files' },
-      business: { name: 'Business', price: 'On request', note: 'Up to 50 people per room, 500 members, 1 TB of files and priority support' },
+      team: { name: 'Team', price: '₽199 / seat / month', note: 'Up to 15 people per room, 100 members, 300 GB of files' },
+      business: { name: 'Business', price: '₽499 / seat / month', note: 'Up to 50 people per room, 500 members, 1 TB of files and priority support' },
       enterprise: { name: 'Enterprise', price: 'Your server', note: 'On-prem without limits, BSL 1.1 or commercial licence' },
     },
     cta: {
@@ -341,7 +343,7 @@ const en: Dict = {
         whitelabel: ["—", "—", "—", "✓"],
         onprem: ["—", "—", "—", "✓"],
         support: ["—", "✓", "priority", "—"],
-        price: ["free", "on request", "on request", "BSL 1.1; commercial on request"],
+        price: ["free", '₽199 / seat / month', '₽499 / seat / month', "BSL 1.1; commercial on request"],
       },
     },
     license:
@@ -388,6 +390,11 @@ const en: Dict = {
     },
   },
   footer: {
+    offer: 'Offer (RU)',
+    terms: 'User agreement (RU)',
+    privacy: 'Privacy policy (RU)',
+    payments: 'Payment & refunds (RU)',
+    company: 'Company details (RU)',
     contact: 'Contact us',
     navLabel: 'Documents',
     license: 'License',

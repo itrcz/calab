@@ -269,14 +269,16 @@ const es: Dict = {
     releases: 'Versiones en GitHub',
   },
   pricing: {
+    billingNote: 'Precio base por empleado, sin IVA. Con el descuento mensual activo del 10%: Team 179,10 ₽ y Business 449,10 ₽ por puesto. Con el descuento anual del 20%: 1 910,40 ₽ y 4 790,40 ₽ por puesto por todo el año. Los pagos de suscripción están en preparación.',
+    offerLink: 'Condiciones y reembolsos (en ruso)',
     eyebrow: 'Precios',
     title: 'Free, Team, Business y Enterprise',
     lead: 'Empieza gratis. ¿Necesitas más? Team o Business en la nube, o Enterprise: Calab en tu propio servidor.',
     startHere: 'Empieza aquí',
     plans: {
       free: { name: 'Free', price: 'Gratis', note: 'Para equipos pequeños: hasta 5 personas por sala' },
-      team: { name: 'Team', price: 'Bajo consulta', note: 'Hasta 15 personas por sala, 100 miembros, 300 GB de archivos' },
-      business: { name: 'Business', price: 'Bajo consulta', note: 'Hasta 50 personas por sala, 500 miembros, 1 TB de archivos y soporte prioritario' },
+      team: { name: 'Team', price: '199 ₽ / puesto / mes', note: 'Hasta 15 personas por sala, 100 miembros, 300 GB de archivos' },
+      business: { name: 'Business', price: '499 ₽ / puesto / mes', note: 'Hasta 50 personas por sala, 500 miembros, 1 TB de archivos y soporte prioritario' },
       enterprise: { name: 'Enterprise', price: 'Tu servidor', note: 'On-prem sin límites, licencia BSL 1.1 o comercial' },
     },
     cta: {
@@ -341,7 +343,7 @@ const es: Dict = {
         whitelabel: ["—", "—", "—", "✓"],
         onprem: ["—", "—", "—", "✓"],
         support: ["—", "✓", "prioritario", "—"],
-        price: ["gratis", "bajo consulta", "bajo consulta", "BSL 1.1; comercial bajo consulta"],
+        price: ["gratis", '199 ₽ / puesto / mes', '499 ₽ / puesto / mes', "BSL 1.1; comercial bajo consulta"],
       },
     },
     license:
@@ -388,6 +390,11 @@ const es: Dict = {
     },
   },
   footer: {
+    offer: 'Oferta (RU)',
+    terms: 'Acuerdo de usuario (RU)',
+    privacy: 'Privacidad (RU)',
+    payments: 'Pagos y reembolsos (RU)',
+    company: 'Datos de la empresa (RU)',
     contact: 'Contactar',
     navLabel: 'Documentos',
     license: 'Licencia',

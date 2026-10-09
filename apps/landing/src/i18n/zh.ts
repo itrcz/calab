@@ -270,14 +270,16 @@ const zh: Dict = {
     releases: 'GitHub 发布页',
   },
   pricing: {
+    billingNote: '每位员工的基础价格，不含增值税。月付九折优惠生效时：Team 每席位 179.10 ₽，Business 449.10 ₽。年付八折优惠生效时：每席位全年分别为 1,910.40 ₽ 和 4,790.40 ₽。订阅付款功能正在准备上线。',
+    offerLink: '订阅与退款条款（俄语）',
     eyebrow: '价格',
     title: 'Free、Team、Business 与 Enterprise',
     lead: '免费开始。需要更多？选择云端的 Team 或 Business，或选择 Enterprise：把 Calab 部署在你自己的服务器上。',
     startHere: '从这里开始',
     plans: {
       free: { name: 'Free', price: '免费', note: '适合小团队：每个房间最多 5 人' },
-      team: { name: 'Team', price: '价格详询', note: '每个房间最多 15 人，100 名成员，300 GB 文件' },
-      business: { name: 'Business', price: '价格详询', note: '每个房间最多 50 人，500 名成员，1 TB 文件，优先支持' },
+      team: { name: 'Team', price: '199 ₽ / 席位 / 月', note: '每个房间最多 15 人，100 名成员，300 GB 文件' },
+      business: { name: 'Business', price: '499 ₽ / 席位 / 月', note: '每个房间最多 50 人，500 名成员，1 TB 文件，优先支持' },
       enterprise: { name: 'Enterprise', price: '自己的服务器', note: '无限制的 On-prem，BSL 1.1 或商业许可证' },
     },
     cta: {
@@ -342,7 +344,7 @@ const zh: Dict = {
         whitelabel: ["—", "—", "—", "✓"],
         onprem: ["—", "—", "—", "✓"],
         support: ["—", "✓", "优先", "—"],
-        price: ["免费", "详询", "详询", "BSL 1.1；商业许可详询"],
+        price: ["免费", '199 ₽ / 席位 / 月', '499 ₽ / 席位 / 月', "BSL 1.1；商业许可详询"],
       },
     },
     license:
@@ -389,6 +391,11 @@ const zh: Dict = {
     },
   },
   footer: {
+    offer: '公开要约（俄语）',
+    terms: '用户协议（俄语）',
+    privacy: '隐私政策（俄语）',
+    payments: '付款与退款（俄语）',
+    company: '公司信息（俄语）',
     contact: '联系我们',
     navLabel: '文档',
     license: '许可证',

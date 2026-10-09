@@ -1,4 +1,5 @@
 import { ChevronDown, Lock } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { Dict } from '@/i18n';
 import { APP_URL, CONTACT_FORM_URL, repoFile } from '@/lib/site';
@@ -139,6 +140,10 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
           );
         })}
       </ul>
+      <p className="mt-6 max-w-[860px] text-[14px] leading-6 text-fg-2">
+        {t.billingNote}{' '}
+        <Link href="/ru/legal/offer/" className="link">{t.offerLink}</Link>
+      </p>
       <div className="mt-10 hidden overflow-hidden rounded-[24px] md:block">
         <table className="w-full table-fixed border-collapse text-[15px] leading-6">
           <caption className="sr-only">{tb.caption}</caption>
