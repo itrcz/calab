@@ -12,7 +12,7 @@ export type BillingLoad =
   /** First load running (no data yet). */
   | 'loading'
   | 'ready'
-  /** 501: billing is off on this server or not built yet — «Оплата скоро будет доступна». */
+  /** 501: billing is off on this server or not built yet — the owner UI renders nothing. */
   | 'unavailable'
   /** 404: no billing account for this workspace. */
   | 'none'

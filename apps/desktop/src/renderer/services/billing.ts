@@ -86,7 +86,8 @@ export function reloadBilling(ws: string): void {
 
 /** DispatchEvent.billing_update (owner only): reload what is shown when the revision is newer. */
 export function onBillingUpdate(ws: string, revision: bigint): void {
-  if (!ws || !useBilling.getState().byWs[ws]) return; // nothing of it on screen: the next open loads
+  const load = useBilling.getState().byWs[ws]?.load;
+  if (!load || load === 'unavailable') return; // nothing on screen / billing off: the next tab open asks again
   if (useBilling.getState().update(ws, revision)) reloadBilling(ws);
 }
 
@@ -105,9 +106,11 @@ export function onWorkspaceBilling(ws: Workspace): void {
 
 /** After READY: reload the summaries on screen, forget workspaces I am no longer in. */
 export function resyncBilling(workspaceIds: ReadonlySet<string>): void {
-  for (const ws of Object.keys(useBilling.getState().byWs)) {
-    if (workspaceIds.has(ws)) reloadBilling(ws);
-    else useBilling.getState().drop(ws);
+  for (const [ws, entry] of Object.entries(useBilling.getState().byWs)) {
+    // 501 / 404 answers are not re-asked on reconnect: the next tab open does.
+    if (workspaceIds.has(ws)) {
+      if (entry.load !== 'unavailable' && entry.load !== 'none') reloadBilling(ws);
+    } else useBilling.getState().drop(ws);
   }
 }
 

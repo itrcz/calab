@@ -1,5 +1,5 @@
 import { BillingState, WorkspaceRole, type BillingSummary } from '@calaba/protocol';
-import { CirclePause, Clock } from 'lucide-react';
+import { CirclePause } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, Spinner } from '../../../components/ui';
 import { t } from '../../../i18n';
@@ -18,8 +18,8 @@ import { Note } from './parts';
 /**
  * Balance billing in workspace settings → «Тариф» (ADR-0080 v5 §13). Only the owner sees money: the
  * owner gets the cabinet (balance, plan actions, top-up, auto-topup, payer, history); members of a
- * billing workspace see a stub without amounts. 501 from the server — «Оплата скоро будет
- * доступна»; 404 (no billing account) — nothing, the plan tab stays as it was.
+ * billing workspace see a stub without amounts. 501 (billing off) and 404 (no billing account) render
+ * nothing and are not retried by events — the plan tab stays as it was.
  */
 
 /** Dialogs of the cabinet, one at a time. */
@@ -80,16 +80,8 @@ export function BillingSection({ workspaceId }: { workspaceId: string }): ReactN
       </Card>
     );
   }
-  if (entry.load === 'none') return null;
-  if (entry.load === 'unavailable') {
-    return (
-      <Card title={t('billing.title')}>
-        <Note icon={<Clock className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />} testId="billing-soon">
-          {t('billing.soon')}
-        </Note>
-      </Card>
-    );
-  }
+  // 501 (billing off) / 404 (no account): nothing at all — the plan tab stays exactly as it was.
+  if (entry.load === 'none' || entry.load === 'unavailable') return null;
   const data = entry.data;
   if (entry.load === 'error' && !data) {
     return (
