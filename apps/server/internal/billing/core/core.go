@@ -46,6 +46,10 @@ var (
 	// ErrCreditAlreadyReversed: a manual credit is reversed once.
 	ErrCreditAlreadyReversed = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT,
 		"manual credit already reversed").WithDetails(billing.ReasonManualCreditAlreadyReverse, 0, 0)
+	// ErrCreditUsed: the superadmin API reverses only a manual credit that paid for no service
+	// (checked under the account lock).
+	ErrCreditUsed = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT,
+		"the manual credit already paid for service: only an unused credit can be reversed")
 	// errDuplicateEntry: a ledger business key exists although the command did not see its
 	// idempotency key: a bug, so the whole command rolls back.
 	errDuplicateEntry = errors.New("billing core: duplicate ledger business key")

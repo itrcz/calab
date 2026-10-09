@@ -40,6 +40,7 @@
 //	                                                  paid → first day of the team (M17)
 //	AdminCredit / AdminDebit(acc, amount, reason, requestID, actor)   superadmin corrections (debit never creates debt)
 //	ReverseAdminCredit(lot, reason, actor)            take a manual credit back in full (spent part becomes debt)
+//	ReverseUnusedAdminCredit(acc, lot, reason, actor) superadmin API: only an unused credit (ErrCreditUsed), checked under the lock
 //	CreditPaymentTx(payment)                          CreditPayment in its own transaction
 //	Quote(acc, plan)                                  catch-up + Quote; QuoteIn without catch-up in the caller's tx
 //	ProcessDue(kind, skip)                            one due account (worker): renewal | coverage | suspension

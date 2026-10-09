@@ -83,7 +83,10 @@ func mapErr(op string, err error) error {
 	}
 	switch {
 	case se.Type == stripego.ErrorTypeIdempotency:
-		return fmt.Errorf("%w: %w", ErrIdempotencyMismatch, ae)
+		// The key was used before with other parameters: whatever the first request created
+		// (a refund, a charge) may exist. Never a definite refusal: callers keep the money
+		// reserved and reconcile instead of releasing it.
+		return fmt.Errorf("%w: %w: %w", ErrIdempotencyMismatch, provider.ErrUnknownOutcome, ae)
 	case se.HTTPStatusCode == http.StatusNotFound || se.Code == stripego.ErrorCodeResourceMissing:
 		return fmt.Errorf("%w: %w", provider.ErrNotFound, ae)
 	case se.HTTPStatusCode == http.StatusConflict, se.HTTPStatusCode == http.StatusTooManyRequests,

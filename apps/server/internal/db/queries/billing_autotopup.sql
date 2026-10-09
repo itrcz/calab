@@ -5,16 +5,19 @@
 -- name: ListBillingAutoTopupCandidates :many
 -- Accounts that may need an auto-topup now: active, consent not revoked, not_before passed,
 -- no open attempt, no dispute / incident hold. The need itself (balance under the threshold)
--- is decided from the quote; everything is re-checked under the account lock.
+-- is decided from the quote; everything is re-checked under the account lock. Keyset pages by
+-- account_id (after = the last id of the previous page, uuid nil first): a tick walks every
+-- live consent, so accounts that never needed a top-up cannot starve the others.
 SELECT t.account_id FROM billing_autotopup t
 JOIN billing_accounts a ON a.id = t.account_id
 WHERE t.revoked_at IS NULL
+  AND t.account_id > sqlc.arg('after')::uuid
   AND (t.not_before IS NULL OR t.not_before <= sqlc.arg('now')::timestamptz)
   AND a.status = 'active' AND NOT a.dispute_hold
   AND (a.hold_until IS NULL OR a.hold_until <= sqlc.arg('now')::timestamptz)
   AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts x
                   WHERE x.account_id = t.account_id AND x.status IN ('prepared', 'dispatched', 'unknown'))
-ORDER BY t.not_before NULLS FIRST, t.account_id
+ORDER BY t.account_id
 LIMIT sqlc.arg('lim');
 
 -- name: SetBillingAutoTopupNotBefore :exec

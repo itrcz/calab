@@ -267,7 +267,7 @@ func (h *Handlers) reverseCredit(w http.ResponseWriter, r *http.Request) error {
 	if c.preview {
 		return h.respond(w, r, res, accID)
 	}
-	taken, err := h.d.Core.ReverseAdminCredit(ctx, lotID, c.reason, &c.actor)
+	taken, err := h.d.Core.ReverseUnusedAdminCredit(ctx, accID, lotID, c.reason, &c.actor)
 	if errors.Is(err, core.ErrCreditAlreadyReversed) && replay {
 		e, gerr := h.d.DB.Q.GetBillingLedgerEntryByKey(ctx, "admin_reverse:"+lotID.String())
 		taken, err = -e.AmountMinor, gerr

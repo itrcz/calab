@@ -60,7 +60,8 @@ var (
 	// redelivers once it is fixed, and alert.
 	ErrAPIVersionMismatch = errors.New("stripe: webhook event API version mismatch")
 	// ErrIdempotencyMismatch: an idempotency key reused with other parameters (Stripe 400
-	// idempotency_error). A bug in the caller: the key must derive from one local row.
+	// idempotency_error). A bug in the caller: the key must derive from one local row. It also
+	// matches provider.ErrUnknownOutcome: the first request may have created the object.
 	ErrIdempotencyMismatch = errors.New("stripe: idempotency key reused with other parameters")
 	// ErrInvalidRequest: the request is refused locally before any network call.
 	ErrInvalidRequest = errors.New("stripe: invalid request")

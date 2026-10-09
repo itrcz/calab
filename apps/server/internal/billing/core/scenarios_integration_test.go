@@ -567,3 +567,25 @@ func TestM23ReplacementInDebt(t *testing.T) {
 	wantErr(t, err, billing.ErrSeatGrowthRequiresFunds)
 	e.wantBalance(-20)
 }
+
+// The superadmin reverse checks «unused» and the account under the account lock: a credit a
+// renewal spent after the admin preview is refused, never turned into debt.
+func TestReverseUnusedAdminCreditUnderLock(t *testing.T) {
+	e := newEnv(t, 1)
+	spare := e.credit(5)
+	if _, err := e.c.ReverseUnusedAdminCredit(ctx, uuid.New(), spare, "wrong account", &e.owner); err == nil {
+		t.Fatal("reverse through another account passed")
+	}
+	if taken, err := e.c.ReverseUnusedAdminCredit(ctx, e.acc, spare, "unused", &e.owner); err != nil || taken != 5 {
+		t.Fatalf("reverse unused %d %v", taken, err)
+	}
+	e.wantBalance(0)
+	lot := e.credit(10)
+	e.activate(core.PlanTeam) // the renewal between the admin check and the command spends it
+	_, err := e.c.ReverseUnusedAdminCredit(ctx, e.acc, lot, "too late", &e.owner)
+	wantErr(t, err, core.ErrCreditUsed)
+	e.wantBalance(0)
+	if e.account().NegativeSince != nil {
+		t.Fatal("a refused reverse opened a debt episode")
+	}
+}

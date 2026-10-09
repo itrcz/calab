@@ -39,7 +39,8 @@ const ID provider.ID = "fake"
 // SignatureHeader carries hex(HMAC-SHA256(secret, body)) of a fake webhook.
 const SignatureHeader = "Fake-Signature"
 
-// ErrIdempotencyMismatch is an idempotency key reused with other parameters (Stripe answers 400).
+// ErrIdempotencyMismatch is an idempotency key reused with other parameters (Stripe answers 400);
+// it is returned wrapped with provider.ErrUnknownOutcome, like the Stripe adapter does.
 var ErrIdempotencyMismatch = errors.New("fake: idempotency key reused with other parameters")
 
 // Outcome of the next call of an operation.
@@ -210,7 +211,7 @@ func (p *Provider) begin(method, key, fingerprint string) (string, bool, error) 
 	}
 	if e, ok := p.idem[method+"\x00"+key]; ok {
 		if e.fingerprint != fingerprint {
-			return "", false, ErrIdempotencyMismatch
+			return "", false, fmt.Errorf("%w: %w", ErrIdempotencyMismatch, provider.ErrUnknownOutcome)
 		}
 		return e.objectID, true, e.err
 	}
