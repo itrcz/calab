@@ -16,7 +16,6 @@ import (
 	"github.com/calaba/calaba/server/internal/achievements"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/billing"
-	billinghttp "github.com/calaba/calaba/server/internal/billing/http"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/boards"
@@ -146,6 +145,7 @@ type App struct {
 	Rooms *rooms.Handlers
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
 	SIP        *sip.Service
+	billing    *billingRuntime
 	redis      rueidis.Client
 	identityDB *db.DB
 	// tempRetention: TEMP_ROOM_RETENTION_DAYS.
@@ -187,6 +187,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Boards.RunApprovalNotices(ctx, boards.ApprovalNoticeInterval) // delayed approval notices (ADR-0082)
 	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 	go a.SIP.Run(ctx)
+	go a.billing.Run(ctx) // returns at once while BILLING_ENABLED=false
 	if a.OAuth != nil {
 		go a.OAuth.Run(ctx, a.redis, oauthprovider.SweepInterval) // provider retention
 	}
@@ -270,6 +271,7 @@ func New(d Deps) *App {
 		PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
 	}, d.DB, d.Redis, sender)
 
+	billingRT := newBilling(d, planSvc, pub, mailSvc) // ADR-0080 v5: billingwiring.go
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
 	pushSvc.Auth = authSvc
 	pushSvc.DeviceLimit = redisx.NewRateLimiter(d.Redis, "rl:push-device:", 20, 20)   // 20 at once, 20 per minute
@@ -431,9 +433,8 @@ func New(d Deps) *App {
 		return qt.Proto(), err
 	}
 	admin.Routes(mux, private)
-	// Balance billing (ADR-0080 v5): every route registered; 501 until BILLING_ENABLED and the
-	// handlers of T5/T6 are wired in.
-	(&billinghttp.Handlers{Enabled: d.Config.Billing.Enabled}).Routes(mux, private)
+	// Balance billing (ADR-0080 v5): every route registered; 501 while BILLING_ENABLED=false.
+	billingRT.Routes(mux, private)
 	achSvc := achievements.New(d.DB, d.Blob, filesSvc, pub, voice.Store{C: d.Redis}.Rooms)
 	achSvc.Routes(mux, private)
 	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
@@ -510,7 +511,7 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }
 

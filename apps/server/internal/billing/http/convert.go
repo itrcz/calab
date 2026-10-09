@@ -1,7 +1,6 @@
 package billinghttp
 
 import (
-	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,7 +9,6 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/provider"
-	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
 
@@ -30,8 +28,9 @@ func idStr(id *uuid.UUID) string {
 	return id.String()
 }
 
-// Status is Workspace.billing of an account (nil account = no billing): the state every member
-// may see, without amounts. source is workspace_plans.source ("" = no plan row).
+// Status is the WorkspaceBillingStatus of an account in GET …/billing (nil account = no
+// billing): the state every member may see, without amounts, mapped like Workspace.billing
+// (plans.resolveBilling). source is workspace_plans.source ("" = no plan row).
 func Status(acc *sqlc.BillingAccount, source string) *v1.WorkspaceBillingStatus {
 	st := &v1.WorkspaceBillingStatus{Source: v1.PlanSource_PLAN_SOURCE_MANUAL}
 	if source == "billing" {
@@ -45,7 +44,7 @@ func Status(acc *sqlc.BillingAccount, source string) *v1.WorkspaceBillingStatus 
 		st.State = v1.BillingState_BILLING_STATE_INACTIVE
 	case core.StatusActive:
 		st.State = v1.BillingState_BILLING_STATE_ACTIVE
-		if acc.NegativeSince != nil || acc.BalanceMinor < 0 {
+		if acc.NegativeSince != nil {
 			st.State, st.SuspendAt = v1.BillingState_BILLING_STATE_IN_ARREARS, ts(acc.SuspendAt)
 		}
 	case core.StatusStopped:
@@ -54,27 +53,6 @@ func Status(acc *sqlc.BillingAccount, source string) *v1.WorkspaceBillingStatus 
 		st.State, st.SuspendAt = v1.BillingState_BILLING_STATE_SUSPENDED, ts(acc.SuspendAt)
 	}
 	return st
-}
-
-// StatusOf reads Workspace.billing of a workspace (for WORKSPACE_UPDATE and workspace reads).
-func StatusOf(ctx context.Context, q *sqlc.Queries, workspaceID uuid.UUID) (*v1.WorkspaceBillingStatus, error) {
-	source := ""
-	if p, err := q.GetWorkspacePlan(ctx, workspaceID); err == nil {
-		source = p.Source
-	} else if !db.IsNotFound(err) {
-		return nil, err
-	}
-	acc, err := q.GetLiveBillingAccountByWorkspace(ctx, &workspaceID)
-	if db.IsNotFound(err) {
-		if source != "billing" {
-			return nil, nil // no billing: the field stays unset
-		}
-		return Status(nil, source), nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return Status(&acc, source), nil
 }
 
 func accountStatus(s string) v1.BillingAccountStatus {
