@@ -510,7 +510,7 @@ func (s *Service) publishAuto(ctx context.Context, a *autoEffects) {
 	for _, x := range a.acts {
 		if wsID, err := s.workspaceOf(ctx, x.BoardID); err == nil {
 			s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-				WorkspaceId: wsID.String(), TaskId: x.TaskID.String(), Activity: activity(x)}}})
+				WorkspaceId: wsID.String(), TaskId: x.TaskID.String(), BoardId: x.BoardID.String(), Activity: activity(x)}}})
 		}
 	}
 	for task, ns := range a.notices {

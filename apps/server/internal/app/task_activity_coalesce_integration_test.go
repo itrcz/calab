@@ -112,4 +112,15 @@ func TestTaskActivityCoalesce(t *testing.T) {
 		}
 		return n == 7
 	})
+
+	// A move to another board in between: its statuses are not comparable, no merge.
+	ageActivity(t, id)
+	b2 := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Coalesce 2", Key: "COB", Template: v1.BoardTemplate_BOARD_TEMPLATE_DEVELOPMENT}, 201)
+	move(o, done)
+	other := b2.GetId()
+	patchTask(t, o, id, &v1.UpdateTaskRequest{BoardId: &other}, 200)
+	move(o, statusOf(b2, v1.BoardStatusType_BOARD_STATUS_TYPE_STARTED))
+	if rows := activityOf(t, o, id, "status"); len(rows) != 6 {
+		t.Fatalf("across boards: %v", rows)
+	}
 }

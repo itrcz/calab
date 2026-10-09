@@ -80,7 +80,7 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 	// A repeated change of the field by the same user merges into his recent entry (ADR-0081):
 	// the journal keeps the first before and the last after; c.acts — rules, webhooks,
 	// notifications — still gets this change as it is.
-	replaced, first, merged, err := mergeTarget(ctx, q, t.ID, actor, rule, kind)
+	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, kind)
 	if err != nil {
 		return err
 	}

@@ -64,7 +64,7 @@ func journalOf(js []journalEntry, taskID uuid.UUID) []journalEntry {
 
 // event is the TASK_ACTIVITY of the entry.
 func (j journalEntry) event(ws uuid.UUID) *v1.DispatchEvent {
-	ev := &v1.TaskActivityAppend{WorkspaceId: ws.String(), TaskId: j.task.String()}
+	ev := &v1.TaskActivityAppend{WorkspaceId: ws.String(), TaskId: j.task.String(), BoardId: j.board.String()}
 	if j.row != nil {
 		ev.Activity = activity(*j.row)
 	}
@@ -75,22 +75,23 @@ func (j journalEntry) event(ws uuid.UUID) *v1.DispatchEvent {
 }
 
 // mergeTarget finds and removes the entry a change of kind by actor merges into: the newest
-// entry of that kind of the task, by the same actor (not a rule), within CoalesceWindow. The
-// task row is locked by the caller's write; the delete re-checks that no concurrent writer
-// merged it first. Returns the removed entry's id and its before.
-func mergeTarget(ctx context.Context, q *sqlc.Queries, taskID uuid.UUID, actor *uuid.UUID, rule *uuid.UUID, kind string) (uuid.UUID, []byte, bool, error) {
+// entry of that kind of the task, by the same actor (not a rule), within CoalesceWindow, on the
+// task's current board. The task row is locked by the caller's write; the delete re-checks that
+// no concurrent writer merged it first. Returns the removed entry's id and its before.
+func mergeTarget(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID, rule *uuid.UUID, kind string) (uuid.UUID, []byte, bool, error) {
 	if _, ok := coalescable[kind]; !ok || actor == nil || rule != nil {
 		return uuid.Nil, nil, false, nil
 	}
 	prev, err := q.LastTaskActivityOfKind(ctx, sqlc.LastTaskActivityOfKindParams{
-		WindowSecs: CoalesceWindow.Seconds(), TaskID: taskID, Kind: kind})
+		WindowSecs: CoalesceWindow.Seconds(), TaskID: t.ID, Kind: kind})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, nil, false, nil
 	}
 	if err != nil {
 		return uuid.Nil, nil, false, err
 	}
-	if !prev.Recent || prev.RuleID != nil || prev.ActorID == nil || *prev.ActorID != *actor {
+	// Another board: the task moved since (moved_board), its statuses and labels are not comparable.
+	if !prev.Recent || prev.RuleID != nil || prev.ActorID == nil || *prev.ActorID != *actor || prev.BoardID != t.BoardID {
 		return uuid.Nil, nil, false, nil
 	}
 	if _, err := q.DeleteTaskActivity(ctx, prev.ID); errors.Is(err, pgx.ErrNoRows) {

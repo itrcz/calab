@@ -558,7 +558,7 @@ RETURNING *;
 -- name: LastTaskActivityOfKind :one
 -- The newest journal entry of a kind of the task and whether it is younger than the window: the
 -- candidate a repeated change of the same field by the same user is merged into (ADR-0081).
-SELECT id, actor_id, rule_id, before,
+SELECT id, board_id, actor_id, rule_id, before,
     (created_at > now() - make_interval(secs => sqlc.arg('window_secs')::float8))::boolean AS recent
 FROM task_activity WHERE task_id = sqlc.arg('task_id') AND kind = sqlc.arg('kind')
 ORDER BY id DESC LIMIT 1;

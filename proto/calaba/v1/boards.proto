@@ -1164,7 +1164,10 @@ message TaskActivityAppend {
   string workspace_id = 1;
   TaskActivity activity = 2;
   string replaced_id = 3;
-  string task_id = 4; // the task of the entry (also when activity is empty)
+  // The task and board of the entry, also when activity is empty: the gateway routes the event
+  // by them (who sees the task).
+  string task_id = 4;
+  string board_id = 5;
 }
 
 // Board categories (ADR-0058 §1): to every member of the workspace except guests.

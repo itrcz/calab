@@ -82,7 +82,7 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 			s.ev.Workspace(ctx, w, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskDelete{TaskDelete: &v1.TaskDelete{
 				WorkspaceId: w.String(), BoardId: t.BoardID.String(), TaskId: t.ID.String()}}})
 			s.ev.Workspace(ctx, w, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-				WorkspaceId: w.String(), Activity: activity(acts[i])}}})
+				WorkspaceId: w.String(), TaskId: t.ID.String(), BoardId: t.BoardID.String(), Activity: activity(acts[i])}}})
 		}
 		total += len(done)
 		if len(due) < sweepBatch {

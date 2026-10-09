@@ -1544,7 +1544,7 @@ func (q *Queries) InsertTaskRelation(ctx context.Context, arg InsertTaskRelation
 }
 
 const lastTaskActivityOfKind = `-- name: LastTaskActivityOfKind :one
-SELECT id, actor_id, rule_id, before,
+SELECT id, board_id, actor_id, rule_id, before,
     (created_at > now() - make_interval(secs => $1::float8))::boolean AS recent
 FROM task_activity WHERE task_id = $2 AND kind = $3
 ORDER BY id DESC LIMIT 1
@@ -1558,6 +1558,7 @@ type LastTaskActivityOfKindParams struct {
 
 type LastTaskActivityOfKindRow struct {
 	ID      uuid.UUID
+	BoardID uuid.UUID
 	ActorID *uuid.UUID
 	RuleID  *uuid.UUID
 	Before  []byte
@@ -1571,6 +1572,7 @@ func (q *Queries) LastTaskActivityOfKind(ctx context.Context, arg LastTaskActivi
 	var i LastTaskActivityOfKindRow
 	err := row.Scan(
 		&i.ID,
+		&i.BoardID,
 		&i.ActorID,
 		&i.RuleID,
 		&i.Before,
