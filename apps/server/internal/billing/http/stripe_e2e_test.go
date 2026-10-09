@@ -68,7 +68,7 @@ func TestStripeEndToEnd(t *testing.T) {
 	params := &stripego.PaymentIntentCreateParams{
 		Amount: stripego.Int64(1200), Currency: stripego.String("usd"), Customer: stripego.String(cust.CustomerID),
 		PaymentMethod: stripego.String("pm_card_visa"), PaymentMethodTypes: stripego.StringSlice([]string{"card"}),
-		Confirm: stripego.Bool(true),
+		Confirm:  stripego.Bool(true),
 		Metadata: provider.Metadata{AccountID: e.acc, Kind: provider.MetadataKindCheckout}.Map(),
 	}
 	params.SetIdempotencyKey("t5-e2e-" + hex.EncodeToString(b[:8]))
