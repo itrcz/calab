@@ -255,6 +255,7 @@ func (s *Service) submitForm(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		c.acts = append(c.acts, act)
+		c.journal = append(c.journal, journalEntry{task: taskID, board: b.ID, row: &act})
 		saved, err := q.InsertBoardFormSubmission(r.Context(), sqlc.InsertBoardFormSubmissionParams{FormID: row.ID, Nonce: nonce, RequestHash: hash[:], ActorID: actor, TaskID: &taskID})
 		receipt = saved.ID
 		return err

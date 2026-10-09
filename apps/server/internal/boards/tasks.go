@@ -28,7 +28,10 @@ import (
 
 // change collects what a task mutation produced, published after the commit.
 type change struct {
+	// acts: the changes as made (rules, webhooks, notifications); journal: what they did to the
+	// stored entries (TASK_ACTIVITY) — a merged entry differs from its change (ADR-0081).
 	acts    []sqlc.TaskActivity
+	journal []journalEntry
 	notices []notice
 	tasks   []uuid.UUID // other tasks whose TASK_UPDATE must go out (moved subtasks, relations)
 	// before: events to send first (TASK_DELETE to the old board of a moved task); moved: the
@@ -73,13 +76,34 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 	if c.rule != nil {
 		rule = &c.rule.id
 	}
-	a, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
-		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: enc(before), After: enc(after), RuleID: rule,
+	b, a := enc(before), enc(after)
+	// A repeated change of the field by the same user merges into his recent entry (ADR-0081):
+	// the journal keeps the first before and the last after; c.acts — rules, webhooks,
+	// notifications — still gets this change as it is.
+	replaced, first, merged, err := mergeTarget(ctx, q, t.ID, actor, rule, kind)
+	if err != nil {
+		return err
+	}
+	stored := b
+	if merged {
+		stored = first
+		if noOp(kind, first, a) { // back to where it was: no entry at all
+			c.journal = append(c.journal, journalEntry{task: t.ID, board: t.BoardID, replaced: replaced})
+			c.acts = append(c.acts, sqlc.TaskActivity{ID: replaced, TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind,
+				Before: b, After: a, CreatedAt: time.Now()})
+			return nil
+		}
+	}
+	row, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
+		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: stored, After: a, RuleID: rule,
 	})
 	if err != nil {
 		return err
 	}
-	c.acts = append(c.acts, a)
+	c.journal = append(c.journal, journalEntry{task: t.ID, board: t.BoardID, row: &row, replaced: replaced})
+	act := row
+	act.Before = b
+	c.acts = append(c.acts, act)
 	return nil
 }
 
@@ -95,10 +119,9 @@ func (s *Service) publish(ctx context.Context, taskID uuid.UUID, c *change, crea
 			s.publishTaskEvent(ctx, id, false)
 		}
 	}
-	for _, a := range c.acts {
-		if wsID, err := s.workspaceOf(ctx, a.BoardID); err == nil {
-			s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-				WorkspaceId: wsID.String(), Activity: activity(a)}}})
+	for _, j := range c.journal {
+		if wsID, err := s.workspaceOf(ctx, j.board); err == nil {
+			s.ev.Workspace(ctx, wsID, j.event(wsID))
 		}
 	}
 	s.sendNotices(ctx, taskID, c.notices)
@@ -1759,9 +1782,8 @@ func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived b
 	if archived {
 		s.ev.Workspace(r.Context(), t.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskDelete{TaskDelete: &v1.TaskDelete{
 			WorkspaceId: t.WorkspaceID.String(), BoardId: t.BoardID.String(), TaskId: t.ID.String()}}})
-		for _, a := range c.acts {
-			s.ev.Workspace(r.Context(), t.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-				WorkspaceId: t.WorkspaceID.String(), Activity: activity(a)}}})
+		for _, j := range c.journal {
+			s.ev.Workspace(r.Context(), t.WorkspaceID, j.event(t.WorkspaceID))
 		}
 		for _, id := range c.tasks {
 			s.publishTaskEvent(r.Context(), id, false)
