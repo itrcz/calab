@@ -649,6 +649,18 @@ func (q *Queries) DeleteBoardView(ctx context.Context, arg DeleteBoardViewParams
 	return result.RowsAffected(), nil
 }
 
+const deleteTaskActivity = `-- name: DeleteTaskActivity :one
+DELETE FROM task_activity WHERE id = $1 RETURNING id
+`
+
+// Removes a journal entry being merged (ADR-0081); no row when another transaction removed it.
+func (q *Queries) DeleteTaskActivity(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteTaskActivity, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const deleteTaskApprovers = `-- name: DeleteTaskApprovers :exec
 DELETE FROM task_approvers WHERE task_id = $1 AND user_id = ANY($2::uuid[])
 `
@@ -1529,6 +1541,42 @@ func (q *Queries) InsertTaskRelation(ctx context.Context, arg InsertTaskRelation
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const lastTaskActivityOfKind = `-- name: LastTaskActivityOfKind :one
+SELECT id, actor_id, rule_id, before,
+    (created_at > now() - make_interval(secs => $1::float8))::boolean AS recent
+FROM task_activity WHERE task_id = $2 AND kind = $3
+ORDER BY id DESC LIMIT 1
+`
+
+type LastTaskActivityOfKindParams struct {
+	WindowSecs float64
+	TaskID     uuid.UUID
+	Kind       string
+}
+
+type LastTaskActivityOfKindRow struct {
+	ID      uuid.UUID
+	ActorID *uuid.UUID
+	RuleID  *uuid.UUID
+	Before  []byte
+	Recent  bool
+}
+
+// The newest journal entry of a kind of the task and whether it is younger than the window: the
+// candidate a repeated change of the same field by the same user is merged into (ADR-0081).
+func (q *Queries) LastTaskActivityOfKind(ctx context.Context, arg LastTaskActivityOfKindParams) (LastTaskActivityOfKindRow, error) {
+	row := q.db.QueryRow(ctx, lastTaskActivityOfKind, arg.WindowSecs, arg.TaskID, arg.Kind)
+	var i LastTaskActivityOfKindRow
+	err := row.Scan(
+		&i.ID,
+		&i.ActorID,
+		&i.RuleID,
+		&i.Before,
+		&i.Recent,
+	)
+	return i, err
 }
 
 const listBoardActivity = `-- name: ListBoardActivity :many

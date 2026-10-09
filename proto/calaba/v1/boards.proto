@@ -1156,10 +1156,15 @@ message TaskDelete {
   bool purged = 4;
 }
 
-// One new journal entry (TASK_ACTIVITY).
+// One new journal entry (TASK_ACTIVITY). A repeated change of the same field by the same user
+// within a few minutes is merged into one entry (ADR-0081): the merged entry gets a new id and
+// replaced_id names the entry it supersedes, which the client drops; activity empty with
+// replaced_id set = the entry is gone (the field came back to its value, net no-op).
 message TaskActivityAppend {
   string workspace_id = 1;
   TaskActivity activity = 2;
+  string replaced_id = 3;
+  string task_id = 4; // the task of the entry (also when activity is empty)
 }
 
 // Board categories (ADR-0058 §1): to every member of the workspace except guests.

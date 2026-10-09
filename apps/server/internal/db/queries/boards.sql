@@ -555,6 +555,18 @@ INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rul
 VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('rule_id'))
 RETURNING *;
 
+-- name: LastTaskActivityOfKind :one
+-- The newest journal entry of a kind of the task and whether it is younger than the window: the
+-- candidate a repeated change of the same field by the same user is merged into (ADR-0081).
+SELECT id, actor_id, rule_id, before,
+    (created_at > now() - make_interval(secs => sqlc.arg('window_secs')::float8))::boolean AS recent
+FROM task_activity WHERE task_id = sqlc.arg('task_id') AND kind = sqlc.arg('kind')
+ORDER BY id DESC LIMIT 1;
+
+-- name: DeleteTaskActivity :one
+-- Removes a journal entry being merged (ADR-0081); no row when another transaction removed it.
+DELETE FROM task_activity WHERE id = sqlc.arg('id') RETURNING id;
+
 -- name: ListTaskActivity :many
 SELECT * FROM task_activity WHERE task_id = sqlc.arg('task_id')
   AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
