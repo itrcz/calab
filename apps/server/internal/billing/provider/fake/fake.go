@@ -16,6 +16,7 @@ package fake
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -94,6 +95,7 @@ type idem struct {
 type Provider struct {
 	opts      Options
 	mu        sync.Mutex
+	tag       string // per instance: ids of two fakes never collide in one database
 	seq       int
 	queues    map[Op][]Outcome
 	idem      map[string]idem
@@ -135,7 +137,10 @@ func New(o Options) *Provider {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
+	var tag [4]byte
+	_, _ = rand.Read(tag[:])
 	return &Provider{
+		tag:  hex.EncodeToString(tag[:]),
 		opts: o, queues: map[Op][]Outcome{}, idem: map[string]idem{}, customers: map[string]provider.CustomerRef{},
 		checkouts: map[string]*checkout{}, payments: map[string]*provider.PaymentFact{}, refunds: map[string]*provider.RefundFact{},
 		methods: map[string]provider.SavedMethod{}, calls: map[string]int{},
@@ -184,7 +189,7 @@ func (p *Provider) next(op Op) Outcome {
 
 func (p *Provider) newID(prefix string) string {
 	p.seq++
-	return prefix + "_fake" + strconv.Itoa(p.seq)
+	return prefix + "_fake" + p.tag + "x" + strconv.Itoa(p.seq)
 }
 
 func (p *Provider) live() error {
