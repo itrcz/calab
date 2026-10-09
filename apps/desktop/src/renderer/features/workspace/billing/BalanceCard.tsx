@@ -1,4 +1,4 @@
-import { BillingResumeMode, BillingState, WorkspaceRole, type BillingSummary, type WorkspaceMember } from '@calaba/protocol';
+import { BillingResumeMode, BillingState, Plan, WorkspaceRole, type BillingSummary, type WorkspaceMember } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { CirclePause, Snowflake, TriangleAlert } from 'lucide-react';
 import { type ReactNode } from 'react';
@@ -55,7 +55,7 @@ export function BalanceCard({
   const forecast = forecastOf(s);
   const plan = billingPlan(s.plan);
   return (
-    <Card title={t('billing.card.balance')} footer={s.discountBps > 0 ? t('billing.discount', { pct: fmt.number(s.discountBps / 100) }) : undefined}>
+    <Card title={t('billing.title')} footer={s.discountBps > 0 ? t('billing.discount', { pct: fmt.number(s.discountBps / 100) }) : undefined}>
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-3 pb-2 pt-3" data-testid="billing-balance">
         <div className="flex min-w-0 flex-col">
           <span className="text-caption text-muted">{t('billing.balance')}</span>
@@ -68,7 +68,7 @@ export function BalanceCard({
       </div>
 
       {debt > 0n ? (
-        <Row label={t('billing.debt')} hint={suspendAt ? t('billing.debtHint', { when: fmt.dateTime(new Date(suspendAt), 'long') }) : undefined}>
+        <Row label={t('billing.debt')} hint={suspendAt && phase !== 'suspended' ? t('billing.debtHint', { when: fmt.dateTime(new Date(suspendAt), 'long') }) : undefined}>
           <span className="flex flex-col items-end gap-0.5 mobile:items-start">
             <MoneyText m={s.debt} danger className="text-body font-semibold" />
             {suspendAt && phase !== 'suspended' ? (
@@ -179,12 +179,17 @@ function Actions({ phase, plan, onTopup, onQuote }: { phase: CabinetPhase; plan:
         </Button>
       </>
     );
+  // An upgrade only without debt (lead plan «v1 cut»): in arrears Business is not offered.
+  const next = otherPlan(plan);
+  const canChange = phase !== 'arrears' || next === Plan.TEAM;
   return (
     <>
       {topup}
-      <Button variant="secondary" onClick={() => onQuote({ kind: 'change', plan: otherPlan(plan) })} data-testid="billing-change-plan">
-        {t('billing.changeTo', { plan: t(PLAN_NAME[otherPlan(plan)]) })}
-      </Button>
+      {canChange ? (
+        <Button variant="secondary" onClick={() => onQuote({ kind: 'change', plan: next })} data-testid="billing-change-plan">
+          {t('billing.changeTo', { plan: t(PLAN_NAME[next]) })}
+        </Button>
+      ) : null}
       <Button variant="ghost" className="ml-auto mobile:ml-0" onClick={() => onQuote({ kind: 'stop' })} data-testid="billing-stop">
         {t('billing.stop')}
       </Button>

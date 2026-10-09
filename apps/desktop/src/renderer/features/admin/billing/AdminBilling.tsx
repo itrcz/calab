@@ -118,7 +118,7 @@ const AccountCard = memo(function AccountCard({ a, selected, onSelect }: { a: Ad
       </span>
       <span className={cx('flex min-w-0 items-center gap-2 text-caption', selected ? 'text-accent-fg' : 'text-muted')}>
         <span className="min-w-0 flex-1 truncate">{a.ownerEmail}</span>
-        <span className="shrink-0">{t(STATUS_KEY[a.status])}</span>
+        <span className="shrink-0">{t(accountState(a) === BillingState.IN_ARREARS ? 'billing.state.arrears' : STATUS_KEY[a.status])}</span>
       </span>
     </button>
   );
@@ -140,7 +140,11 @@ function NavButton({ icon, label, active, onClick, testId }: { icon: ReactNode; 
       onClick={onClick}
       aria-current={active || undefined}
       data-testid={testId}
-      className={cx('flex h-8 w-full items-center gap-2 rounded-[var(--radius-card)] px-3 text-left text-body mobile:tap-min-h', active ? 'bg-accent-strong text-accent-fg' : 'hover:bg-hover')}
+      // Phone: compact pills in one wrapping row, so the accounts list keeps its height in the top half.
+      className={cx(
+        'flex h-8 w-full items-center gap-2 rounded-[var(--radius-card)] px-3 text-left text-body mobile:h-9 mobile:w-auto mobile:rounded-full mobile:px-3',
+        active ? 'bg-accent-strong text-accent-fg' : 'hover:bg-hover mobile:bg-hover',
+      )}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -169,12 +173,12 @@ export function AdminBillingSide({ view, onView }: { view: BillingView; onView: 
           className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:tap-h [&::-webkit-search-cancel-button]:hidden"
         />
       </label>
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-0.5 mobile:flex-row mobile:flex-wrap mobile:gap-1.5">
         <NavButton icon={<Inbox className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.requests')} active={view?.kind === 'requests'} onClick={() => onView({ kind: 'requests' })} testId="admin-billing-nav-requests" />
         <NavButton icon={<Tags className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.prices')} active={view?.kind === 'prices'} onClick={() => onView({ kind: 'prices' })} testId="admin-billing-nav-prices" />
         <NavButton icon={<Activity className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.events')} active={view?.kind === 'events'} onClick={() => onView({ kind: 'events' })} testId="admin-billing-nav-events" />
       </div>
-      <div role="listbox" aria-label={t('adminBilling.accounts')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto border-t border-line px-0.5 pb-1 pt-2" data-testid="admin-billing-list">
+      <div role="listbox" aria-label={t('adminBilling.accounts')} className="-mx-0.5 flex min-h-0 flex-1 mobile:min-h-[120px] flex-col gap-1 overflow-y-auto border-t border-line px-0.5 pb-1 pt-2" data-testid="admin-billing-list">
         {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
         {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{billingErrorText(list.error)}</p> : null}
         {list.isSuccess && items.length === 0 ? <p className="px-2 py-3 text-body text-muted">{t('adminBilling.none')}</p> : null}
@@ -419,7 +423,7 @@ const DISPUTE_STATUS: Record<DisputeStatus, MessageKey> = {
   [DisputeStatus.WITHDRAWN]: 'adminBilling.dispute.withdrawn',
 };
 
-const SimpleRow = memo(function SimpleRow({ title, status, sub, danger, extra }: { title: string; status?: string; sub?: string; danger?: boolean; extra?: ReactNode }): ReactNode {
+const SimpleRow = memo(function SimpleRow({ title, status, sub, error, danger, extra }: { title: string; status?: string; sub?: string; error?: string; danger?: boolean; extra?: ReactNode }): ReactNode {
   return (
     <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0">
       <span className="flex min-w-0 flex-1 flex-col">
@@ -432,6 +436,7 @@ const SimpleRow = memo(function SimpleRow({ title, status, sub, danger, extra }:
             {sub}
           </span>
         ) : null}
+        {error ? <span className="selectable break-words text-caption text-danger-text">{error}</span> : null}
       </span>
       {extra}
     </div>
@@ -670,14 +675,16 @@ function PricesPage({ onClose, notice }: { onClose: () => void; notice: ReactNod
   const [plan, setPlan] = useState<'TEAM' | 'ENTERPRISE'>('TEAM');
   const currency = market === 'ru' ? 'RUB' : 'USD';
   const [openedAt] = useState(nowMs);
+  // The server wants effective_from >= now + 10 d; a date input is a UTC midnight, so the first
+  // allowed day is the one after now + 10 d.
   const minDate = new Date(openedAt + PRICE_LEAD_DAYS * 86_400_000);
-  const minInput = minDate.toISOString().slice(0, 10);
+  const minInput = new Date(openedAt + (PRICE_LEAD_DAYS + 1) * 86_400_000).toISOString().slice(0, 10);
   const [raw, setRaw] = useState('');
   const [from, setFrom] = useState(minInput);
   const [open, setOpen] = useState(false);
   const unit = parseMajor(raw, currency);
   const fromDate = from ? new Date(`${from}T00:00:00Z`) : null;
-  const tooSoon = !fromDate || fromDate.getTime() < minDate.getTime() - 86_400_000;
+  const tooSoon = !fromDate || fromDate.getTime() < minDate.getTime();
   const prices = [...(q.data?.prices ?? [])].sort((x, y) => Number((y.effectiveFrom?.seconds ?? 0n) - (x.effectiveFrom?.seconds ?? 0n)));
   return (
     <>
@@ -757,7 +764,8 @@ const EventRow = memo(function EventRow({ e }: { e: AdminProviderEvent }): React
       title={e.kind}
       status={e.error ? t('adminBilling.eventFailed', { n: e.attempts }) : e.processedAt ? t('adminBilling.eventOk') : t('adminBilling.eventPending')}
       danger={!!e.error}
-      sub={[e.receivedAt ? fmt.dateTime(timestampDate(e.receivedAt), 'short') : '', e.provider, e.eventId, e.objectId, e.livemode ? 'live' : 'test', e.error].filter(Boolean).join(' · ')}
+      sub={[e.receivedAt ? fmt.dateTime(timestampDate(e.receivedAt), 'short') : '', e.provider, e.eventId, e.objectId, e.livemode ? 'live' : 'test'].filter(Boolean).join(' · ')}
+      error={e.error}
     />
   );
 });

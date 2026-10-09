@@ -46,7 +46,8 @@ const skuPlan = (sku: string): string => (sku.includes('enterprise') ? t(PLAN_NA
 /** The second line of a ledger row: what was bought / why. */
 export function ledgerDetail(e: LedgerEntry): string {
   if (e.kind === LedgerEntryKind.SEAT_CHARGE && e.quantity > 0) {
-    const period = e.startsAt && e.endsAt ? `${fmt.dateTime(timestampDate(e.startsAt), 'short')} – ${fmt.dateTime(timestampDate(e.endsAt), 'short')}` : '';
+    // The row already shows when it started (created_at ≈ starts_at): the end is what matters.
+    const period = e.endsAt ? t('billing.until', { when: fmt.dateTime(timestampDate(e.endsAt), 'short') }) : '';
     return [plural('billing.nSeats', e.quantity), e.sku ? skuPlan(e.sku) : '', period].filter(Boolean).join(' · ');
   }
   return e.reason;

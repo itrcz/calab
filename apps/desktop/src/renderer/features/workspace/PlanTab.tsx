@@ -14,6 +14,7 @@ import { useSession } from '../../stores/session';
 import { useStickers } from '../../stores/stickers';
 import { useWorkspaces } from '../../stores/workspaces';
 import { BillingSection } from './billing/BillingSection';
+import { useBilling } from '../../stores/billing';
 
 /** Members that take a seat: everyone but guests (bots count, ADR-0024). */
 const seats = (members: Record<string, WorkspaceMember> | undefined): number => {
@@ -138,6 +139,9 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const contact = useSession((s) => (planOffersAllowed() ? contactHref(s.planContact) : null));
   const packs = useStickers((s) => s.byWorkspace[workspaceId]?.length);
+  // Balance billing manages the plan (ADR-0080): the cabinet above replaces «Связаться для покупки».
+  const billingCabinet = useBilling((s) => !!s.byWs[workspaceId]?.data?.summary);
+  const billingManaged = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.billing?.state) || billingCabinet;
   useEffect(() => {
     void loadWorkspaceStickers(workspaceId);
   }, [workspaceId]);
@@ -204,7 +208,7 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
         <p className="px-1 text-caption text-faint">{t('plan.limitsFooter')}</p>
       </section>
 
-      {contact || pricing ? (
+      {(contact || pricing) && !billingManaged ? (
         <Card title={t('plan.card.buy')}>
           <div className="flex flex-col items-start gap-3 px-3 py-3">
             <p className="text-body text-muted">{kind === Plan.FREE || plan.expired ? t('plan.teamPitch') : t('plan.paidPitch')}</p>

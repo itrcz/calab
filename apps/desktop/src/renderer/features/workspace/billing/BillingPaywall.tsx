@@ -76,7 +76,7 @@ export function BillingBanner(): ReactNode {
           owner ? (
             t('billing.banner.ownerSuspended')
           ) : (
-            t('billing.member.suspended')
+            t('billing.banner.member')
           )
         ) : (
           <>
@@ -144,7 +144,7 @@ export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactN
           </>
         ) : (
           <p className="text-body text-muted" data-testid="billing-paywall-member">
-            {t('billing.member.suspended')}
+            {t('billing.paywall.member')}
           </p>
         )}
       </div>

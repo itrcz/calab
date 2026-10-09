@@ -71,7 +71,7 @@ export function AutoTopupCard({ workspaceId, summary: s, payments }: { workspace
 
   return (
     <Card title={t('billing.auto.title')} footer={t('billing.auto.formula')}>
-      <Row label={t('billing.auto.toggle')} hint={enabled && a.maxAmount ? t('billing.auto.capLine', { cap: formatMoney(a.maxAmount, { compact: true }) }) : t('billing.auto.offHint')}>
+      <Row label={t('billing.auto.toggle')} hint={enabled && a.maxAmount ? t('billing.auto.capLine', { cap: formatMoney(a.maxAmount, { compact: true }) }) : t(cards.length > 0 ? 'billing.auto.offHint' : 'billing.auto.needCard')}>
         <Toggle
           label={t('billing.auto.toggle')}
           checked={enabled}
@@ -168,7 +168,12 @@ function ConsentDialog({ workspaceId, summary, cards, initial, onClose }: { work
     >
       <div className="flex flex-col gap-4" data-testid="billing-auto-consent">
         <p className="text-body">{t('billing.auto.consentText', { cap: cap !== null && !bad ? formatMinor(cap, currency, { compact: true }) : '—' })}</p>
-        {cards.length > 1 ? (
+        {cards.length === 1 && cards[0] ? (
+          <p className="flex items-center gap-2 text-body text-muted">
+            <CreditCard className="size-4" aria-hidden />
+            {cardText(cards[0])}
+          </p>
+        ) : cards.length > 1 ? (
           <Field label={t('billing.card.saved')}>
             <Select value={pm} onChange={(e) => setPm(e.target.value)} aria-label={t('billing.card.saved')}>
               {cards.map((c) => (

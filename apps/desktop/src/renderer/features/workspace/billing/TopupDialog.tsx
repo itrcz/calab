@@ -6,7 +6,7 @@ import { t, type MessageKey } from '../../../i18n';
 import { IDLE, checkoutReducer, nowMs, pollDelay, type CheckoutFlow, type CheckoutOutcome } from '../../../lib/billing/checkout';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { amountProblem, currencyOf, defaultTopup, offeredMethods, requestId, topupLimits, topupPresets, type AmountProblem } from '../../../lib/billing/model';
-import { clampMinor, formatMinor, inputOf, parseMajor } from '../../../lib/billing/money';
+import { clampMinor, formatMinor, inputOf, minorOf, parseMajor } from '../../../lib/billing/money';
 import { openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
 
 /**
@@ -118,7 +118,9 @@ export function TopupDialog({
   const reqId = useRef(requestId());
   const minor = parseMajor(raw, currency);
   const problem = amountProblem(minor, raw, lim);
-  const canSave = !!method?.autoTopupCapable;
+  // «Save the card» only while no card is saved (one card per account in v1).
+  const canSave = !!method?.autoTopupCapable && !summary.autoTopup?.paymentMethodId;
+  const hasDebt = minorOf(summary.debt) > 0n;
   useCheckoutPoll(workspaceId, flow, dispatch);
 
   useEffect(() => {
@@ -186,7 +188,7 @@ export function TopupDialog({
                       )}
                     >
                       {formatMinor(p.minor, currency, { compact: true })}
-                      {p.reserve ? <span className={cx('text-caption font-normal', on ? 'text-accent-fg' : 'text-muted')}>{t('billing.topup.reserve')}</span> : null}
+                      {p.reserve ? <span className={cx('text-caption font-normal', on ? 'text-accent-fg' : 'text-muted')}>{t(hasDebt ? 'billing.topup.reserve' : 'billing.topup.reserve30')}</span> : null}
                     </button>
                   );
                 })}
