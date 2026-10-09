@@ -1,12 +1,72 @@
 # ADR-0080: USD-баланс и суточные места — Stripe, затем RUB / Точка
 
-Дата: 2026-10-09. Статус: **проект v4.1; реальные платежи выключены**.
+Дата: 2026-10-09. Статус: **v5 — принят срез v1 (ниже); реальные платежи выключены**.
 База исследования: `8fdf1b9d907de88173dd8e6c82950bb75bc082df` (3.0.3).
-Ветка: `codex/seat-billing`. План поставок: [balance-billing-v1](../plans/balance-billing-v1.md).
+План поставок: [billing-v1-tasks](../plans/billing-v1-tasks.md) (задачи T0–T9 и их пути);
+исходный план v4.1: [balance-billing-v1](../plans/balance-billing-v1.md).
 Детальные контракты: [счета/плательщики/админка](../plans/billing-invoices-and-payers.md),
 [FIFO/масштабирование](../plans/billing-fifo-and-scale.md),
 [Stripe v1](../plans/billing-stripe-v1.md),
 [налоги и документы](../plans/billing-tax-and-documents.md).
+
+## 0. Срез v1 (2026-10-09) — имеет приоритет над текстом ниже
+
+Решения владельца 09.10.2026:
+
+- Полный объём v1, включая **необязательное автопополнение**. Провайдеры — за абстракцией
+  (`internal/billing/provider`): Stripe первый, Точка / RUB подключается следующим без
+  изменения ядра. Плательщик выбирает способ оплаты из того, что даёт его рынок / валюта /
+  тип плательщика (capability matrix; v1: Global/USD, person|company → Stripe card).
+- **Только Stripe receipt** (без `invoice_creation`); в истории показываем `receipt_url`.
+  Invoice — позже отдельным флагом. §2/§13 про «invoice к тому же PI» в v1 не действуют.
+- Лимиты USD: ручное пополнение **$5..$5000**; потолок автопополнения задаёт владелец
+  пространства, по умолчанию **$500**, максимум **$5000**.
+- Off-session `requires_action` → PaymentIntent отменяем, попытка = failed, письмо владельцу
+  со ссылкой на ручной Checkout, следующая автопопытка не раньше чем через 24 h (вместо
+  «продолжить тот же intent» из §7 и Stripe-приложения §3).
+- Решение лида (не спрашивали): смена тарифа применяется сразу — остаток лотов
+  компенсируется на баланс и в той же транзакции покупаются полные сутки нового тарифа;
+  повышение — только без долга.
+
+**Вырезано из v1** (тексты остаются как дизайн на будущее, не как требование): bank
+transfer / `customer_balance` (§6.3, Stripe-приложение §4); локальные счета, банковская
+сверка и разнесение переводов ([счета/плательщики](../plans/billing-invoices-and-payers.md));
+версии плательщика и страновые формы реквизитов (§6.4) — Checkout сам собирает адрес и tax id
+(`billing_address_collection=required`, `tax_id_collection`); внешний dispatch manifest,
+FIFO-очередь команд / leases / control_epoch / maintenance repair
+([FIFO-приложение](../plans/billing-fifo-and-scale.md)); журналы двойной записи / postings;
+реконструкция seat_events; налоговые таблицы (tax = 0, net = gross, `automatic_tax=false`,
+[налоги](../plans/billing-tax-and-documents.md)); поток согласия на повышение цены — новая
+версия цены только с `effective_from ≥ now + 10 d`.
+
+**Остаётся обязательным (корректность денег):** int64 minor units, account в одной валюте,
+без FX; один кредит на PaymentIntent — `UNIQUE(provider, provider_account, livemode,
+provider_payment_id)`, Checkout / Charge / event — только ссылки; webhook inbox (подпись по
+сырому телу → `INSERT … ON CONFLICT DO NOTHING` → 200 → обработка), перед зачислением PI
+перечитывается через API; success redirect лишь запускает тот же pull-sync; append-only
+ledger (триггер запрещает UPDATE/DELETE) + кэш баланса в той же транзакции + ночная сверка;
+один `SELECT … FOR UPDATE` аккаунта перед любой денежной мутацией, без сети в транзакции;
+FIFO funding lots, возврат на исходный платёж, долг гасится первым; эпизод долга
+`negative_since` + `suspend_at = +7d` пишется один раз; рост мест только из аванса
+(M22/M23); защита автопополнения от двойного списания (одна открытая попытка на аккаунт,
+Idempotency-Key = attempt_id, ≤ 1 новой попытки за 24 h, согласие и лимит под блокировкой,
+unknown → повтор тем же ключом < 24 h, иначе поиск PI по Customer + metadata; после
+восстановления БД автопополнение выключено до сверки оператором).
+
+**Исправления текста ниже:** запрет субагентов (§15, план P6) снят — действует текущее
+поручение владельца и CLAUDE.md; повтор запроса Stripe с тем же Idempotency-Key безопасен
+24 h (правило «не повторять, unknown блокирует» — только для Точки, §11.2); Stripe Test
+Clocks не двигают наш планировщик — суточные списания проверяются внедрённым clock
+(dev-only endpoint при `BILLING_TEST_CLOCK=1`, никогда в production); `/topups` метод card —
+только USD (СБП нет).
+
+**Контракт v1 (T0):** миграция `00074_billing.sql`, `proto/calaba/v1/billing.proto`
+(`Workspace.billing = 17` без сумм — всем участникам; `DispatchEvent.billing_update = 96` —
+только владельцу), пакеты `internal/billing/{money,provider,provider/fake}`, флаги
+`BILLING_*` / `STRIPE_*` (все false), маршруты из [billing-v1-tasks](../plans/billing-v1-tasks.md).
+Причины ошибок: имена §13 + `BILLING_DISABLED`, `BILLING_REQUEST_REUSED`,
+`BILLING_METHOD_UNAVAILABLE` и др. (`internal/billing/errors.go`); приостановка за неоплату
+отдаёт `403` с кодом `WORKSPACE_SUSPENDED` и `reason = WORKSPACE_BILLING_SUSPENDED`.
 
 ## 1. Решение владельца и границы версии
 
@@ -948,5 +1008,5 @@ ID движений, partial/overpayment/settlement, отдельная пров
 при необходимости используется отдельный юридически согласованный собственный документ.
 
 Незакрытые live gates не мешают ядру и Stripe test integration. Security/protocol reviews
-требуются перед реальными деньгами/ограничениями. Владелец запретил субагентов: текущие
-документы и проверка готовятся лидом, независимые ревью не объявляются выполненными.
+требуются перед реальными деньгами/ограничениями. Независимые ревью не объявляются
+выполненными по тексту. (Прежний запрет субагентов снят, см. §0.)

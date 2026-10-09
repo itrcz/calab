@@ -190,6 +190,9 @@ type Config struct {
 	// messages per minute. 0 = the default.
 	BotRatePerSec     int `env:"BOT_RATE_PER_SEC" envDefault:"30"`
 	BotMessagesPerMin int `env:"BOT_MESSAGES_PER_MIN" envDefault:"20"`
+
+	// Balance billing (ADR-0080 v5): BILLING_* and STRIPE_* (config/billing.go).
+	Billing Billing
 }
 
 // BotLimits returns the effective bot limits (defaults for 0).
@@ -352,6 +355,9 @@ func (c *Config) Validate() error {
 	// The recordings volume shared with the egress; with s3 recordings go to the files bucket.
 	if c.StorageDriver != "s3" && (c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/")) {
 		errs = append(errs, errors.New("RECORDINGS_PATH must be set and RECORDING_EGRESS_DIR an absolute path (STORAGE_DRIVER=fs)"))
+	}
+	if err := c.Billing.validate(); err != nil {
+		errs = append(errs, err)
 	}
 	if c.BotRatePerSec < 0 || c.BotRatePerSec > 10000 || c.BotMessagesPerMin < 0 || c.BotMessagesPerMin > 100000 {
 		errs = append(errs, errors.New("BOT_RATE_PER_SEC must be 0..10000 and BOT_MESSAGES_PER_MIN 0..100000 (0 = default)"))

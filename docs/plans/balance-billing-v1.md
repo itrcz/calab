@@ -2,7 +2,7 @@
 
 Дата: 2026-10-09. Контракт: [ADR-0080 v4.1](../adr/0080-seat-billing.md).
 База кода: `8fdf1b9d907de88173dd8e6c82950bb75bc082df`; исходное ревью: `e7c825ca`.
-Ветка: `codex/seat-billing`. Работает лид без субагентов. Текущая поставка — документация;
+Ветка: `codex/seat-billing`. **Заменён срезом v1:** [ADR-0080 §0](../adr/0080-seat-billing.md), задачи — [billing-v1-tasks](billing-v1-tasks.md). Текущая поставка — документация;
 реализация, обновление публичных условий и live payments выполняются отдельными этапами.
 Приложения: [Stripe](billing-stripe-v1.md), [счета/плательщики](billing-invoices-and-payers.md),
 [FIFO/нагрузка/restore](billing-fifo-and-scale.md), [налоги/документы](billing-tax-and-documents.md).
@@ -150,7 +150,7 @@ Drill с backup до HTTP и bank success после него не создаё�
 
 ## P6 — приёмка, shadow и пилот USD
 
-Без нового поручения владельца субагенты не запускаются. Независимые security/protocol
+Работа идёт задачами субагентов (ADR-0080 §0, billing-v1-tasks). Независимые security/protocol
 reviews до реальных денег — отдельный gate, не подменяются самостоятельной проверкой.
 
 1. Exact SHA: `make gen` + drift, `make lint` из корня, targeted unit/race/integration;

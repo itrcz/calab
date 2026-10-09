@@ -334,6 +334,14 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - `Room.media` остаётся настройками комнаты (UI различает замок «комната» и замок «тариф»); эффективные лимиты плана — в `Workspace.plan.limits` и в ответе `/join` (`media` уже урезан планом, `plan_limits`).
 - Суперадмин — пользователь с email из `SUPERADMIN_EMAILS`; флаг не хранится, вычисляется из текущего email при каждом запросе (`Me.is_superadmin`).
 
+## Баланс и суточные места (ADR-0080 v5, миграция 00074)
+
+- `billing_accounts` — один живой аккаунт на пространство (`workspace_id` SET NULL при удалении, частичный UNIQUE `status <> 'closed'`), рынок + валюта фиксированы (global/USD, ru/RUB), `balance_minor` — кэш суммы `billing_ledger`, `entry_seq`, эпизод долга `negative_since` + `suspend_at` (только вместе), `discount_bps`, `revision`.
+- `billing_ledger` (append-only, триггер на UPDATE/DELETE/TRUNCATE; знак по виду), `billing_funding_lots` (FIFO, `consumed + refunded ≤ amount`), `billing_charges` (лоты мест `[starts_at, ends_at)`, `unfunded_minor` — долг), `billing_allocations` (append-only), `billing_prices` (неизменяемые версии; сид: global 10/30 центов, ru 600/1800 копеек за место в сутки).
+- Провайдер: `billing_customers`, `billing_checkouts` (одна открытая на аккаунт), `billing_payments` (`UNIQUE(provider, provider_account, livemode, provider_payment_id)` — один кредит на PaymentIntent), `billing_refunds`, `billing_refund_requests`, `billing_disputes`, `billing_payment_methods`, `billing_autotopup` + `billing_autotopup_attempts` (одна открытая попытка), inbox `billing_provider_events`, `billing_audit` (append-only, `request_id` UNIQUE), `billing_notifications`.
+- `workspace_plans.source` / `workspace_plan_log.source`: `manual` (по умолчанию) | `billing`.
+- Счётчик оплачиваемых мест — участники без гостей и ботов (`CountBillableMembers`); лимит `members` плана по-прежнему считает ботов.
+
 ## Бейджи участников (docs/09 #82)
 
 - Библиотека пространства (`workspace_badges`, ≤ 20): название 1..32 + картинка — файл этого пространства, загруженный самим администратором (не чужой — бейдж делает файл читаемым всем участникам; не файл стикера; строка `files`, в квоте), PNG / WebP / JPEG ≤ 128 КБ и ≤ 256×256 (размеры сервер берёт из `files.width/height`, измеренных при загрузке). Клиент перед загрузкой обрезает картинку до квадрата и рисует 64×64 WebP (`lib/badgePrepare`). У участника — один бейдж (`workspace_members.badge_id`, `WorkspaceMember.badge_id`); бейдж — свойство членства в пространстве, в DM не показывается.

@@ -163,7 +163,7 @@ func (q *Queries) AdminWorkspaceDetails(ctx context.Context, ids []uuid.UUID) ([
 }
 
 const getWorkspacePlan = `-- name: GetWorkspacePlan :one
-SELECT workspace_id, plan, limits, valid_until, note, updated_by, updated_at FROM workspace_plans WHERE workspace_id = $1
+SELECT workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source FROM workspace_plans WHERE workspace_id = $1
 `
 
 func (q *Queries) GetWorkspacePlan(ctx context.Context, workspaceID uuid.UUID) (WorkspacePlan, error) {
@@ -177,6 +177,7 @@ func (q *Queries) GetWorkspacePlan(ctx context.Context, workspaceID uuid.UUID) (
 		&i.Note,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.Source,
 	)
 	return i, err
 }
@@ -208,7 +209,7 @@ func (q *Queries) InsertPlanLog(ctx context.Context, arg InsertPlanLogParams) er
 }
 
 const listPlanLog = `-- name: ListPlanLog :many
-SELECT l.id, l.workspace_id, l.actor_id, l.plan, l.limits, l.valid_until, l.note, l.created_at, u.email AS actor_email
+SELECT l.id, l.workspace_id, l.actor_id, l.plan, l.limits, l.valid_until, l.note, l.created_at, l.source, u.email AS actor_email
 FROM workspace_plan_log l
 LEFT JOIN users u ON u.id = l.actor_id
 WHERE l.workspace_id = $1
@@ -225,6 +226,7 @@ type ListPlanLogRow struct {
 	ValidUntil  *time.Time
 	Note        string
 	CreatedAt   time.Time
+	Source      string
 	ActorEmail  *string
 }
 
@@ -246,6 +248,7 @@ func (q *Queries) ListPlanLog(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 			&i.ValidUntil,
 			&i.Note,
 			&i.CreatedAt,
+			&i.Source,
 			&i.ActorEmail,
 		); err != nil {
 			return nil, err
@@ -264,7 +267,7 @@ VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (workspace_id) DO UPDATE SET
     plan = EXCLUDED.plan, limits = EXCLUDED.limits, valid_until = EXCLUDED.valid_until,
     note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()
-RETURNING workspace_id, plan, limits, valid_until, note, updated_by, updated_at
+RETURNING workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source
 `
 
 type UpsertWorkspacePlanParams struct {
@@ -294,6 +297,7 @@ func (q *Queries) UpsertWorkspacePlan(ctx context.Context, arg UpsertWorkspacePl
 		&i.Note,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.Source,
 	)
 	return i, err
 }

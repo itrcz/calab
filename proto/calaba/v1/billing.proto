@@ -1,0 +1,605 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/plan.proto";
+
+// Balance billing v1 (ADR-0080 v5 «v1 cut», migration 00074). A workspace billing account has
+// a money balance in one currency; seats are charged per 24 hours from it. Money is always
+// int64 minor units (cents, kopecks) with the account currency; the client never sets the
+// price of a service, only the amount of a top-up. JSON (protojson) sends int64 as strings.
+//
+// Visibility: Workspace.billing (WorkspaceBillingStatus) goes to every member and carries no
+// amounts. Everything else here is for the workspace owner (/api/workspaces/{id}/billing) or
+// superadmins (/api/admin/billing). Errors: ApiError.reason BILLING_* (internal/billing).
+
+// Money in minor units of an ISO 4217 currency ("USD", "RUB").
+message Money {
+  int64 minor = 1;
+  string currency = 2;
+}
+
+// Who sets the plan of a workspace (workspace_plans.source).
+enum PlanSource {
+  PLAN_SOURCE_UNSPECIFIED = 0;
+  PLAN_SOURCE_MANUAL = 1;  // a superadmin through /api/admin/workspaces/{id}/plan
+  PLAN_SOURCE_BILLING = 2; // the billing account (manual plan changes get 409)
+}
+
+// Billing state as every member sees it.
+enum BillingState {
+  BILLING_STATE_UNSPECIFIED = 0; // no billing account (manual or free plan)
+  BILLING_STATE_INACTIVE = 1;    // enabled by a superadmin, waiting for the owner's first top-up
+  BILLING_STATE_ACTIVE = 2;      // paid plan running, balance >= 0
+  BILLING_STATE_IN_ARREARS = 3;  // paid plan running in debt until suspend_at
+  BILLING_STATE_STOPPED = 4;     // the owner stopped the paid plan
+  BILLING_STATE_SUSPENDED = 5;   // debt deadline passed: the workspace is closed except owner billing
+}
+
+// Workspace.billing: no amounts (members other than the owner never see money).
+message WorkspaceBillingStatus {
+  BillingState state = 1;
+  google.protobuf.Timestamp suspend_at = 2; // set in IN_ARREARS / SUSPENDED
+  PlanSource source = 3;
+}
+
+// BILLING_UPDATE: the owner's billing data changed; refetch GET …/billing. To the owner only.
+message BillingUpdate {
+  string workspace_id = 1;
+  uint64 revision = 2; // billing account revision; ignore if <= the one shown
+}
+
+enum BillingAccountStatus {
+  BILLING_ACCOUNT_STATUS_UNSPECIFIED = 0;
+  BILLING_ACCOUNT_STATUS_INACTIVE = 1;
+  BILLING_ACCOUNT_STATUS_ACTIVE = 2;
+  BILLING_ACCOUNT_STATUS_STOPPED = 3;
+  BILLING_ACCOUNT_STATUS_SUSPENDED = 4;
+  BILLING_ACCOUNT_STATUS_CLOSED = 5;
+}
+
+// Sign of LedgerEntry.amount: + topup, compensation, refund_reversal, dispute_reversal,
+// admin_credit; − seat_charge, refund, dispute, admin_debit.
+enum LedgerEntryKind {
+  LEDGER_ENTRY_KIND_UNSPECIFIED = 0;
+  LEDGER_ENTRY_KIND_TOPUP = 1;
+  LEDGER_ENTRY_KIND_SEAT_CHARGE = 2;
+  LEDGER_ENTRY_KIND_COMPENSATION = 3;
+  LEDGER_ENTRY_KIND_REFUND = 4;
+  LEDGER_ENTRY_KIND_REFUND_REVERSAL = 5;
+  LEDGER_ENTRY_KIND_DISPUTE = 6;
+  LEDGER_ENTRY_KIND_DISPUTE_REVERSAL = 7;
+  LEDGER_ENTRY_KIND_ADMIN_CREDIT = 8;
+  LEDGER_ENTRY_KIND_ADMIN_DEBIT = 9;
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PROCESSING = 1;
+  PAYMENT_STATUS_SUCCEEDED = 2;
+  PAYMENT_STATUS_FAILED = 3;
+  PAYMENT_STATUS_CANCELED = 4;
+}
+
+enum PaymentOrigin {
+  PAYMENT_ORIGIN_UNSPECIFIED = 0;
+  PAYMENT_ORIGIN_CHECKOUT = 1;   // manual top-up through hosted checkout
+  PAYMENT_ORIGIN_AUTO_TOPUP = 2; // off-session auto-topup attempt
+  PAYMENT_ORIGIN_IMPORT = 3;     // found by reconciliation (e.g. after a restore)
+}
+
+enum RefundStatus {
+  REFUND_STATUS_UNSPECIFIED = 0;
+  REFUND_STATUS_PENDING = 1;
+  REFUND_STATUS_REQUIRES_ACTION = 2;
+  REFUND_STATUS_SUCCEEDED = 3;
+  REFUND_STATUS_FAILED = 4;
+  REFUND_STATUS_CANCELED = 5;
+}
+
+enum RefundOrigin {
+  REFUND_ORIGIN_UNSPECIFIED = 0;
+  REFUND_ORIGIN_CALAB = 1;     // made through our API
+  REFUND_ORIGIN_DASHBOARD = 2; // made in the provider dashboard, imported from its event
+}
+
+enum RefundRequestStatus {
+  REFUND_REQUEST_STATUS_UNSPECIFIED = 0;
+  REFUND_REQUEST_STATUS_REQUESTED = 1;
+  REFUND_REQUEST_STATUS_APPROVED = 2;
+  REFUND_REQUEST_STATUS_REJECTED = 3;
+  REFUND_REQUEST_STATUS_WITHDRAWN = 4;
+}
+
+enum DisputeStatus {
+  DISPUTE_STATUS_UNSPECIFIED = 0;
+  DISPUTE_STATUS_OPEN = 1;
+  DISPUTE_STATUS_WON = 2;
+  DISPUTE_STATUS_LOST = 3;
+  DISPUTE_STATUS_WITHDRAWN = 4;
+}
+
+enum AutoTopupAttemptStatus {
+  AUTO_TOPUP_ATTEMPT_STATUS_UNSPECIFIED = 0;
+  AUTO_TOPUP_ATTEMPT_STATUS_PREPARED = 1;
+  AUTO_TOPUP_ATTEMPT_STATUS_DISPATCHED = 2;
+  AUTO_TOPUP_ATTEMPT_STATUS_SUCCEEDED = 3;
+  AUTO_TOPUP_ATTEMPT_STATUS_FAILED = 4;
+  AUTO_TOPUP_ATTEMPT_STATUS_UNKNOWN = 5; // outcome not known yet: reconciled before anything else
+}
+
+enum PayerType {
+  PAYER_TYPE_UNSPECIFIED = 0;
+  PAYER_TYPE_PERSON = 1;
+  PAYER_TYPE_COMPANY = 2;
+}
+
+// How money is paid. v1 offers CARD only (USD, Stripe); SBP / BANK_TRANSFER are for later markets.
+enum PaymentMethodKind {
+  PAYMENT_METHOD_KIND_UNSPECIFIED = 0;
+  PAYMENT_METHOD_KIND_CARD = 1;
+  PAYMENT_METHOD_KIND_SBP = 2;
+  PAYMENT_METHOD_KIND_BANK_TRANSFER = 3;
+}
+
+enum CheckoutState {
+  CHECKOUT_STATE_UNSPECIFIED = 0;
+  CHECKOUT_STATE_OPEN = 1;      // waiting for the payer (or the provider's answer)
+  CHECKOUT_STATE_COMPLETED = 2; // paid; credited once the payment succeeded (CheckoutStatus.credited)
+  CHECKOUT_STATE_EXPIRED = 3;
+  CHECKOUT_STATE_CANCELED = 4;
+  CHECKOUT_STATE_FAILED = 5;
+}
+
+enum BillingQuotePurpose {
+  BILLING_QUOTE_PURPOSE_UNSPECIFIED = 0;
+  BILLING_QUOTE_PURPOSE_ACTIVATE = 1;    // first paid day of the current members
+  BILLING_QUOTE_PURPOSE_CHANGE_PLAN = 2; // compensation of the remaining lots + a full day on the new plan
+  BILLING_QUOTE_PURPOSE_RESUME_PAID = 3; // debt + a new paid day
+  BILLING_QUOTE_PURPOSE_RESUME_FREE = 4; // debt only, then the free plan
+  BILLING_QUOTE_PURPOSE_STOP = 5;        // what stopping returns / keeps
+}
+
+enum BillingResumeMode {
+  BILLING_RESUME_MODE_UNSPECIFIED = 0;
+  BILLING_RESUME_MODE_FREE = 1;
+  BILLING_RESUME_MODE_PAID = 2;
+}
+
+// A way to pay offered for the account's market / currency / payer type / country
+// (capability matrix, internal/billing/provider). id is re-validated by POST …/topups (422).
+message PaymentMethodOption {
+  string id = 1;        // "stripe:card"
+  string provider = 2;  // "stripe"
+  PaymentMethodKind kind = 3;
+  Money min = 4;
+  Money max = 5;
+  bool auto_topup_capable = 6;
+}
+
+message PayerProfile {
+  PayerType type = 1;
+  string name = 2;
+  string country = 3; // ISO 3166-1 alpha-2
+  string email = 4;
+  string tax_id = 5;  // optional
+}
+
+// GET/PUT …/billing/payer
+message PutPayerRequest {
+  PayerProfile payer = 1;
+}
+
+message SavedPaymentMethod {
+  string id = 1;
+  PaymentMethodKind kind = 2;
+  string brand = 3;
+  string last4 = 4;
+  uint32 exp_month = 5;
+  uint32 exp_year = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// GET …/billing/payment-methods
+message SavedPaymentMethods {
+  repeated SavedPaymentMethod methods = 1;
+}
+
+message AutoTopupAttempt {
+  string id = 1;
+  Money amount = 2;
+  AutoTopupAttemptStatus status = 3;
+  string failure_code = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp finished_at = 6;
+}
+
+// GET/PUT/DELETE …/billing/auto-topup. Amount of an attempt = debt + 30 days of the current
+// members, capped by max_amount; at most one new attempt per 24 h.
+message AutoTopupSettings {
+  bool enabled = 1;               // consent given and not revoked
+  string payment_method_id = 2;
+  Money max_amount = 3;           // owner's cap per attempt
+  Money default_max_amount = 4;   // USD: $500
+  Money limit_max_amount = 5;     // USD: $5000
+  uint32 consent_version = 6;
+  google.protobuf.Timestamp consent_at = 7;
+  google.protobuf.Timestamp not_before = 8; // next new attempt not earlier
+  Money next_amount = 9;          // what an attempt now would charge
+  AutoTopupAttempt last_attempt = 10;
+}
+
+message PutAutoTopupRequest {
+  string payment_method_id = 1;
+  Money max_amount = 2;
+  uint32 consent_version = 3; // the consent text version the owner accepted
+  string request_id = 4;
+}
+
+// GET …/billing for the owner.
+message BillingSummary {
+  string account_id = 1;
+  BillingAccountStatus status = 2;
+  Plan plan = 3;                  // PLAN_TEAM | PLAN_ENTERPRISE
+  string market = 4;              // "global" | "ru"
+  Money balance = 5;              // signed
+  Money debt = 6;                 // max(0, -balance)
+  Money unit_price = 7;           // per seat per 24 h after discount
+  uint32 discount_bps = 8;
+  Money daily_cost = 9;           // billable_members × unit_price
+  uint32 billable_members = 10;   // members without guests and bots, owner included
+  uint32 covered_seats = 11;      // seats paid for now
+  google.protobuf.Timestamp next_due_at = 12;
+  google.protobuf.Timestamp negative_since = 13;
+  google.protobuf.Timestamp suspend_at = 14;
+  int32 forecast_days = 15;       // the balance lasts about this many days at the current cost; -1 = n/a
+  bool hold = 16;                 // incident hold by a superadmin
+  uint64 revision = 17;
+  repeated PaymentMethodOption methods = 18;
+  AutoTopupSettings auto_topup = 19;
+  PayerProfile payer = 20;
+  string open_checkout_id = 21;   // a checkout waiting for payment, if any
+}
+
+// GET /api/workspaces/{id}/billing: summary only for the owner.
+message GetBillingResponse {
+  WorkspaceBillingStatus status = 1;
+  BillingSummary summary = 2;
+}
+
+// POST …/billing/quote
+message BillingQuoteRequest {
+  BillingQuotePurpose purpose = 1;
+  Plan plan = 2; // CHANGE_PLAN: the new plan
+}
+
+message BillingQuote {
+  string quote_id = 1;
+  BillingQuotePurpose purpose = 2;
+  Plan plan = 3;
+  Money debt = 4;           // paid first
+  Money charge = 5;         // the service amount debited now (first day, new plan day, …)
+  Money compensation = 6;   // returned to the balance (plan change, stop)
+  Money to_pay = 7;         // what must be topped up for the operation (0 = balance suffices)
+  uint32 seats = 8;
+  Money unit_price = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  uint64 revision = 11;     // account revision the quote was made at
+}
+
+// POST …/billing/activate, …/stop
+message BillingActionRequest {
+  string quote_id = 1;
+  string request_id = 2;
+  uint64 expected_revision = 3;
+}
+
+// POST …/billing/change-plan
+message ChangeBillingPlanRequest {
+  Plan plan = 1;
+  string quote_id = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+}
+
+// POST …/billing/resume
+message ResumeBillingRequest {
+  BillingResumeMode mode = 1;
+  string quote_id = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+}
+
+// POST …/billing/topups: opens hosted checkout in the system browser.
+message CreateTopupRequest {
+  string method_id = 1;  // PaymentMethodOption.id
+  Money amount = 2;      // within the option's min..max, currency of the account
+  string request_id = 3; // same request_id + same body = same checkout
+  bool save_method = 4;  // save the card for auto-topup (does not enable it)
+}
+
+message CreateTopupResponse {
+  string checkout_id = 1;
+  string url = 2;
+}
+
+// GET …/billing/checkouts/{cid}: also pulls the provider state (success redirect).
+message CheckoutStatus {
+  string checkout_id = 1;
+  CheckoutState state = 2;
+  Money amount = 3;
+  bool credited = 4;           // the payment is on the balance
+  string payment_id = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+message LedgerEntry {
+  string id = 1;
+  uint64 seq = 2;
+  LedgerEntryKind kind = 3;
+  Money amount = 4;            // signed effect on the balance
+  Money balance_after = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string reason = 7;
+  string actor_id = 8;
+  // Seat charges: what was bought.
+  string sku = 9;
+  uint32 quantity = 10;
+  google.protobuf.Timestamp starts_at = 11;
+  google.protobuf.Timestamp ends_at = 12;
+  string payment_id = 13;
+  string refund_id = 14;
+}
+
+// GET …/billing/ledger?cursor=
+message LedgerPage {
+  repeated LedgerEntry entries = 1;
+  string next_cursor = 2; // empty = no more
+}
+
+message BillingPayment {
+  string id = 1;
+  Money amount = 2;
+  PaymentStatus status = 3;
+  PaymentOrigin origin = 4;
+  google.protobuf.Timestamp succeeded_at = 5;
+  string receipt_url = 6;      // provider receipt
+  Money refunded = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// GET …/billing/payments?cursor=
+message BillingPaymentPage {
+  repeated BillingPayment payments = 1;
+  string next_cursor = 2;
+}
+
+message BillingRefund {
+  string id = 1;
+  string payment_id = 2;
+  Money amount = 3;
+  RefundStatus status = 4;
+  RefundOrigin origin = 5;
+  string reason = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp succeeded_at = 8;
+}
+
+// POST …/billing/refund-requests
+message CreateRefundRequest {
+  Money amount = 1;
+  string reason = 2;
+  string request_id = 3;
+}
+
+message BillingRefundRequest {
+  string id = 1;
+  Money amount = 2;
+  RefundRequestStatus status = 3;
+  string reason = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp decided_at = 6;
+}
+
+// GET …/billing/refund-requests
+message BillingRefundRequests {
+  repeated BillingRefundRequest requests = 1;
+}
+
+message BillingDispute {
+  string id = 1;
+  string payment_id = 2;
+  Money amount = 3;
+  DisputeStatus status = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp closed_at = 6;
+}
+
+// --- Superadmin: /api/admin/billing. Every mutation takes reason + request_id (audit,
+// idempotent) and preview = true answers the effect without applying it; recent auth required.
+
+message AdminBillingAccount {
+  string account_id = 1;
+  string workspace_id = 2;     // empty after the workspace was deleted
+  string workspace_name = 3;
+  string owner_email = 4;
+  string market = 5;
+  BillingAccountStatus status = 6;
+  Plan plan = 7;
+  Money balance = 8;
+  Money debt = 9;
+  uint32 discount_bps = 10;
+  google.protobuf.Timestamp hold_until = 11;
+  bool dispute_hold = 12;
+  google.protobuf.Timestamp negative_since = 13;
+  google.protobuf.Timestamp suspend_at = 14;
+  google.protobuf.Timestamp next_due_at = 15;
+  google.protobuf.Timestamp created_at = 16;
+  uint64 revision = 17;
+  uint32 billable_members = 18;
+}
+
+message AdminBillingAccounts {
+  repeated AdminBillingAccount accounts = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingPayment {
+  BillingPayment payment = 1;
+  string account_id = 2;
+  string workspace_id = 3;
+  string provider = 4;
+  string provider_payment_id = 5;
+  bool livemode = 6;
+}
+
+message AdminBillingPayments {
+  repeated AdminBillingPayment payments = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingRefund {
+  BillingRefund refund = 1;
+  string account_id = 2;
+  string provider_refund_id = 3;
+}
+
+message AdminBillingRefunds {
+  repeated AdminBillingRefund refunds = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingRefundRequest {
+  BillingRefundRequest request = 1;
+  string account_id = 2;
+  string workspace_id = 3;
+}
+
+message AdminBillingRefundRequests {
+  repeated AdminBillingRefundRequest requests = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingDispute {
+  BillingDispute dispute = 1;
+  string account_id = 2;
+  string provider_dispute_id = 3;
+}
+
+message AdminBillingDisputes {
+  repeated AdminBillingDispute disputes = 1;
+  string next_cursor = 2;
+}
+
+message AdminProviderEvent {
+  string id = 1;
+  string provider = 2;
+  string event_id = 3;
+  string kind = 4;
+  string object_id = 5;
+  bool livemode = 6;
+  google.protobuf.Timestamp received_at = 7;
+  google.protobuf.Timestamp processed_at = 8;
+  uint32 attempts = 9;
+  string error = 10;
+}
+
+message AdminProviderEvents {
+  repeated AdminProviderEvent events = 1;
+  string next_cursor = 2;
+}
+
+// POST /api/admin/billing/workspaces/{id}/enable: creates the inactive account.
+message AdminEnableBillingRequest {
+  string market = 1; // "global" (v1)
+  Plan plan = 2;     // PLAN_TEAM | PLAN_ENTERPRISE
+  string reason = 3;
+  string request_id = 4;
+}
+
+// POST /api/admin/billing/accounts/{id}/manual-credits
+message AdminManualCreditRequest {
+  Money amount = 1; // > 0, account currency
+  string reason = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+  bool preview = 5;
+}
+
+// POST /api/admin/billing/accounts/{id}/manual-credits/{creditId}/reverse
+message AdminReverseCreditRequest {
+  string reason = 1;
+  string request_id = 2;
+  uint64 expected_revision = 3;
+  bool preview = 4;
+}
+
+// POST /api/admin/billing/payments/{id}/refunds
+message AdminRefundRequest {
+  Money amount = 1; // <= refundable of the payment
+  string reason = 2;
+  string request_id = 3;
+  bool preview = 4;
+  string refund_request_id = 5; // the owner request this executes, if any
+}
+
+// POST /api/admin/billing/accounts/{id}/hold
+message AdminHoldRequest {
+  google.protobuf.Timestamp hold_until = 1; // unset = release the hold
+  string reason = 2;
+  string request_id = 3;
+}
+
+// POST /api/admin/billing/accounts/{id}/reconcile
+message AdminReconcileRequest {
+  string reason = 1;
+  string request_id = 2;
+}
+
+// PUT /api/admin/billing/accounts/{id}/discount
+message AdminDiscountRequest {
+  uint32 discount_bps = 1; // 0..10000
+  string reason = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+}
+
+message AdminPriceVersion {
+  string id = 1;
+  string market = 2;
+  string sku = 3;
+  Plan plan = 4;
+  Money unit = 5; // per seat per 24 h
+  google.protobuf.Timestamp effective_from = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// GET /api/admin/billing/prices
+message AdminPriceVersions {
+  repeated AdminPriceVersion prices = 1;
+}
+
+// POST /api/admin/billing/prices: effective_from >= now + 10 days.
+message AdminCreatePriceRequest {
+  string market = 1;
+  Plan plan = 2;
+  Money unit = 3;
+  google.protobuf.Timestamp effective_from = 4;
+  string reason = 5;
+  string request_id = 6;
+}
+
+// Answer of an admin money mutation (or its preview).
+message AdminBillingMutationResult {
+  bool preview = 1;
+  Money balance_before = 2;
+  Money balance_after = 3;
+  AdminBillingAccount account = 4;
+  string audit_id = 5; // empty for a preview
+}
+
+// POST /api/admin/billing/test-clock (BILLING_TEST_CLOCK=1 only, never in production): moves
+// the billing clock used by the scheduler.
+message AdminBillingTestClockRequest {
+  google.protobuf.Timestamp now = 1; // unset = back to the database clock
+}

@@ -15,6 +15,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/achievements"
 	"github.com/calaba/calaba/server/internal/auth"
+	billinghttp "github.com/calaba/calaba/server/internal/billing/http"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/boards"
@@ -421,6 +422,9 @@ func New(d Deps) *App {
 		return qt.Proto(), err
 	}
 	admin.Routes(mux, private)
+	// Balance billing (ADR-0080 v5): every route registered; 501 until BILLING_ENABLED and the
+	// handlers of T5/T6 are wired in.
+	(&billinghttp.Handlers{Enabled: d.Config.Billing.Enabled}).Routes(mux, private)
 	achSvc := achievements.New(d.DB, d.Blob, filesSvc, pub, voice.Store{C: d.Redis}.Rooms)
 	achSvc.Routes(mux, private)
 	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),

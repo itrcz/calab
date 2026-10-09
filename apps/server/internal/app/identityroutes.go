@@ -45,6 +45,10 @@ const (
 	scopeTaskMilestone
 	scopeRule
 	scopeAchievement
+	// scopeBilling: the owner money routes of /api/workspaces/{id}/billing. Resolved and checked
+	// like scopeWorkspace; a separate scope so billing suspension (ADR-0080 §12) can keep the
+	// owner's recovery scope open while it closes the rest of the workspace.
+	scopeBilling
 )
 
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
@@ -421,6 +425,47 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/boards/{id}/git":             scopeBoard,
 	"DELETE /api/boards/{id}/git":          scopeBoard,
 	"POST /api/git/boards/{id}/{provider}": scopePublic,
+	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook
+	// (signed body, no session); the return page only redirects into the app.
+	"GET /api/workspaces/{id}/billing":                                        scopeBilling,
+	"POST /api/workspaces/{id}/billing/quote":                                 scopeBilling,
+	"POST /api/workspaces/{id}/billing/activate":                              scopeBilling,
+	"POST /api/workspaces/{id}/billing/stop":                                  scopeBilling,
+	"POST /api/workspaces/{id}/billing/change-plan":                           scopeBilling,
+	"POST /api/workspaces/{id}/billing/resume":                                scopeBilling,
+	"GET /api/workspaces/{id}/billing/payer":                                  scopeBilling,
+	"PUT /api/workspaces/{id}/billing/payer":                                  scopeBilling,
+	"POST /api/workspaces/{id}/billing/topups":                                scopeBilling,
+	"GET /api/workspaces/{id}/billing/checkouts/{cid}":                        scopeBilling,
+	"GET /api/workspaces/{id}/billing/auto-topup":                             scopeBilling,
+	"PUT /api/workspaces/{id}/billing/auto-topup":                             scopeBilling,
+	"DELETE /api/workspaces/{id}/billing/auto-topup":                          scopeBilling,
+	"GET /api/workspaces/{id}/billing/payment-methods":                        scopeBilling,
+	"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}":              scopeBilling,
+	"GET /api/workspaces/{id}/billing/ledger":                                 scopeBilling,
+	"GET /api/workspaces/{id}/billing/payments":                               scopeBilling,
+	"GET /api/workspaces/{id}/billing/refund-requests":                        scopeBilling,
+	"POST /api/workspaces/{id}/billing/refund-requests":                       scopeBilling,
+	"GET /api/admin/billing/accounts":                                         scopeAdmin,
+	"GET /api/admin/billing/accounts/{id}":                                    scopeAdmin,
+	"GET /api/admin/billing/accounts/{id}/ledger":                             scopeAdmin,
+	"GET /api/admin/billing/payments":                                         scopeAdmin,
+	"GET /api/admin/billing/refunds":                                          scopeAdmin,
+	"GET /api/admin/billing/refund-requests":                                  scopeAdmin,
+	"GET /api/admin/billing/disputes":                                         scopeAdmin,
+	"GET /api/admin/billing/events":                                           scopeAdmin,
+	"POST /api/admin/billing/workspaces/{id}/enable":                          scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/manual-credits":                    scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/manual-credits/{creditId}/reverse": scopeAdmin,
+	"POST /api/admin/billing/payments/{id}/refunds":                           scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/hold":                              scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/reconcile":                         scopeAdmin,
+	"PUT /api/admin/billing/accounts/{id}/discount":                           scopeAdmin,
+	"GET /api/admin/billing/prices":                                           scopeAdmin,
+	"POST /api/admin/billing/prices":                                          scopeAdmin,
+	"POST /api/admin/billing/test-clock":                                      scopeAdmin,
+	"POST /api/billing/stripe/webhook":                                        scopePublic,
+	"GET /api/billing/return":                                                 scopePublic,
 }
 
 func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Handler {
@@ -503,7 +548,7 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 			mutation.Workspace = ws
 			mutation.Global = ws == uuid.Nil
 			mutation.ExclusiveUser = ws == uuid.Nil
-			mutation.ExclusiveWorkspace = scope == scopeWorkspace
+			mutation.ExclusiveWorkspace = scope == scopeWorkspace || scope == scopeBilling
 			if strings.HasSuffix(r.Pattern, "/members/{userId}/birthday") {
 				mutation.TargetUser, err = httpx.PathUUID(r, "userId", "user")
 			}
@@ -552,7 +597,7 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		return uuid.Nil, httpx.BadRequest("invalid resource id")
 	}
 	switch sc {
-	case scopeWorkspace:
+	case scopeWorkspace, scopeBilling:
 		return id, nil
 	case scopeRoom:
 		parent, err := q.GetIdentityRoomParent(ctx, id)
@@ -683,7 +728,7 @@ func IdentityRouteClass(pattern string) string {
 		return "global"
 	case scopeAdmin:
 		return "admin"
-	case scopeWorkspace:
+	case scopeWorkspace, scopeBilling:
 		return "workspace"
 	case scopeRoom:
 		return "room"
