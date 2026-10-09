@@ -1,6 +1,7 @@
 package bots
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"net/http"
@@ -177,7 +178,7 @@ func workspaceView(wsID uuid.UUID, ev *v1.DispatchEvent) botView {
 	case *v1.DispatchEvent_TaskDelete:
 		board = parse(e.TaskDelete.GetBoardId())
 	case *v1.DispatchEvent_TaskActivity:
-		board = parse(e.TaskActivity.GetActivity().GetBoardId())
+		board = parse(cmp.Or(e.TaskActivity.GetBoardId(), e.TaskActivity.GetActivity().GetBoardId())) // a removed entry has no activity (ADR-0081)
 	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete, *v1.DispatchEvent_EventRsvp:
 		return calendarView(wsID, ev)
 	default:

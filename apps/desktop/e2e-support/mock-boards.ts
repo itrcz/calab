@@ -608,6 +608,7 @@ export class BoardsMock {
       isPrivate: req.isPrivate,
       position: live.filter((r) => !r.board.archivedAt).length,
       autoArchiveDays: 30,
+      approvalNotifyDelaySeconds: 60,
       createdBy: userId,
       createdAt: this.host.tick(),
       statuses,
@@ -641,6 +642,7 @@ export class BoardsMock {
       setDisabledFeatures?: boolean;
       disabledFeatures?: readonly BoardFeature[];
       estimateScale?: EstimateScale | undefined;
+      approvalNotifyDelaySeconds?: number | undefined;
     },
   ): Board {
     const rec = this.boardFor(id, userId);
@@ -664,6 +666,11 @@ export class BoardsMock {
     if (req.description !== undefined) b.description = req.description.slice(0, 2000);
     if (req.autoArchiveDays !== undefined) b.autoArchiveDays = Math.min(3650, req.autoArchiveDays);
     if (req.defaultViewId !== undefined) b.defaultViewId = req.defaultViewId;
+    // ADR-0082: the approval notice delay (the mock sends notices at once whatever it is).
+    if (req.approvalNotifyDelaySeconds !== undefined) {
+      if (![0, 60, 300, 900, 1800, 3600].includes(req.approvalNotifyDelaySeconds)) throw invalid('approvalNotifyDelaySeconds', 'bad delay');
+      b.approvalNotifyDelaySeconds = req.approvalNotifyDelaySeconds;
+    }
     // ADR-0058 §3: the disabled features (ascending, unique) and the estimate scale.
     if (req.setDisabledFeatures) {
       const list = [...new Set(req.disabledFeatures ?? [])].sort((x, y) => x - y);

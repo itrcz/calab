@@ -1,8 +1,8 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { ApproverState, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
+import { ApproverState, BoardFeature, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { approvalBadge, approvalControls, blockedStatusIds, clampRequired, mayMoveTo, quorumChoices, quorumOf, toggleApprover, MAX_APPROVERS } from './approvals';
+import { approvalBadge, approvalsWouldReset, decidedApprovers, approvalControls, blockedStatusIds, clampRequired, mayMoveTo, quorumChoices, quorumOf, toggleApprover, MAX_APPROVERS } from './approvals';
 
 // ADR-0049 «Контракт для клиента»: the gate mirrors the server's checkApprovalGate.
 const st = (id: string, position: number, type = BoardStatusType.UNSTARTED) => create(BoardStatusSchema, { id, position, type });
@@ -90,5 +90,20 @@ describe('approvalControls (permission gating of the section)', () => {
   it('no vote without the board, nothing editable on an archived task', () => {
     expect(approvalControls(t(), true, false, 'me').vote).toBe(false);
     expect(approvalControls(t(undefined, true), true, true, 'me')).toMatchObject({ edit: false, vote: false });
+  });
+});
+
+describe('approvalsWouldReset', () => {
+  const voted = task(TaskApprovalState.PENDING, { approvers: [ap('a', ApproverState.APPROVED), ap('b', ApproverState.PENDING)] });
+  it('is true when a vote is decided and the feature is on', () => {
+    expect(approvalsWouldReset(voted, undefined)).toBe(true);
+    expect(approvalsWouldReset(voted, [BoardFeature.ESTIMATE])).toBe(true);
+    expect(approvalsWouldReset(task(TaskApprovalState.REJECTED, { approvers: [ap('a', ApproverState.REJECTED)] }), [])).toBe(true);
+    expect(decidedApprovers(voted).map((a) => a.userId)).toEqual(['a']);
+  });
+  it('is false with no decided vote or with the feature off', () => {
+    expect(approvalsWouldReset(task(TaskApprovalState.PENDING, { approvers: [ap('a', ApproverState.PENDING)] }), undefined)).toBe(false);
+    expect(approvalsWouldReset(task(TaskApprovalState.NONE), undefined)).toBe(false);
+    expect(approvalsWouldReset(voted, [BoardFeature.APPROVALS])).toBe(false);
   });
 });

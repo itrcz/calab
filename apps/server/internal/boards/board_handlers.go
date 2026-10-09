@@ -387,6 +387,13 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 			p.DefaultViewID = &vid
 		}
 	}
+	if req.ApprovalNotifyDelaySeconds != nil {
+		d, ok := approvalNotifyDelays[req.GetApprovalNotifyDelaySeconds()]
+		if !ok {
+			return httpx.Validation("approvalNotifyDelaySeconds", "approval notify delay must be 0, 60, 300, 900, 1800 or 3600 seconds")
+		}
+		p.ApprovalNotifyDelaySeconds = &d
+	}
 	// Board features (ADR-0058 §3): the disabled set and the estimate scale.
 	var features sqlc.SetBoardFeaturesParams
 	if req.GetSetDisabledFeatures() {
@@ -999,7 +1006,7 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	for _, t := range moved {
-		s.publish(r.Context(), t, &change{acts: actsOf(c.acts, t)}, false)
+		s.publish(r.Context(), t, &change{acts: actsOf(c.acts, t), journal: journalOf(c.journal, t)}, false)
 	}
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
 }

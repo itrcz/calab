@@ -15,7 +15,7 @@ import {
   type Role,
 } from '@calaba/protocol';
 import { Archive, ChevronDown, ChevronUp, Copy, Diamond, GitBranch, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook, Workflow, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
 import { Avatar } from '../../components/Avatar';
@@ -175,6 +175,7 @@ function FeaturesTab({ board }: { board: Board }): ReactNode {
           ))}
         </div>
       </Card>
+      {featureOn(disabled, BoardFeature.APPROVALS) && <ApprovalNotifyCard boardId={board.id} delay={board.approvalNotifyDelaySeconds} />}
       <Card title={t('boards.scale.card')} footer={t('boards.scale.footer')}>
         <Row label={t('boards.scale.label')}>
           <Select value={String(scale)} onChange={(e) => void setEstimateScale(board.id, Number(e.target.value))} aria-label={t('boards.scale.label')} data-testid="estimate-scale">
@@ -189,6 +190,34 @@ function FeaturesTab({ board }: { board: Board }): ReactNode {
     </>
   );
 }
+
+/** The delays of the approval notice (ADR-0082), seconds; the server refuses others. */
+const APPROVAL_NOTIFY_DELAYS = [0, 60, 300, 900, 1800, 3600] as const;
+
+const delayLabel = (secs: number): string =>
+  secs === 0 ? t('boards.approvalNotify.now') : secs === 3600 ? t('boards.approvalNotify.hour') : t('boards.approvalNotify.min', { n: secs / 60 });
+
+/** «Уведомлять согласующих» (ADR-0082): shown while APPROVALS is on; one PATCH per change. */
+const ApprovalNotifyCard = memo(function ApprovalNotifyCard({ boardId, delay }: { boardId: string; delay: number }): ReactNode {
+  return (
+    <Card title={t('boards.approvalNotify.card')} footer={t('boards.approvalNotify.hint')}>
+      <Row label={t('boards.approvalNotify.label')}>
+        <Select
+          value={String(delay)}
+          onChange={(e) => void patch(boardId, { approvalNotifyDelaySeconds: Number(e.target.value) })}
+          aria-label={t('boards.approvalNotify.label')}
+          data-testid="approval-notify-delay"
+        >
+          {APPROVAL_NOTIFY_DELAYS.map((d) => (
+            <option key={d} value={d}>
+              {delayLabel(d)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+    </Card>
+  );
+});
 
 // ------------------------------------------------------------------ webhook (ADR-0058 §4)
 
