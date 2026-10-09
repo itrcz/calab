@@ -1,6 +1,6 @@
 # План реализации: USD-баланс и Stripe, затем RUB / Точка
 
-Дата: 2026-10-09. Контракт: [ADR-0080 v4.0](../adr/0080-seat-billing.md).
+Дата: 2026-10-09. Контракт: [ADR-0080 v4.1](../adr/0080-seat-billing.md).
 База кода: `8fdf1b9d907de88173dd8e6c82950bb75bc082df`; исходное ревью: `e7c825ca`.
 Ветка: `codex/seat-billing`. Работает лид без субагентов. Текущая поставка — документация;
 реализация, обновление публичных условий и live payments выполняются отдельными этапами.
@@ -13,12 +13,19 @@
 Unne L.L.C-FZ, UAE (Dubai), выплаты в AED. Цены USD без применимого налога. RUB 600/1800 копеек и Точка позже.
 Auto-topup = долг + 30 суток текущей команды, не чаще одной новой попытки в 24h.
 Семь дней в минусе для текущей команды; рост платных мест требует аванса, карантина нет.
+**Последнее решение: VAT отложен.** Первый flow: net=gross, tax=0/not_calculated,
+automatic_tax=false, без Tax API; $100 оплаты = $100 на долг/аванс. Налоговое расширение
+не входит в P1/P2/P5. Схема не заявляется налоговым освобождением для всех стран.
 
 Разрешено: ADR, этот план и приложения, индекс ADR, `docs/legal/README.md`.
 Не публиковать неподтверждённые условия и не заполнять секреты/merchant ID выдуманными данными.
-Открыты licence/registration number, VAT-статус Unne, налоговый момент аванса/долга и шаблоны
-Global terms/invoice/refund/privacy. TRN 105410888900001 из выписки сохранён непроверенным;
-его формат не соответствует VAT ID (окончание 01 вместо 03), не использовать как VAT TRN.
+Владелец подтвердил действующую VAT-регистрацию Unne с TRN 105410888900001, UAE VAT
+только внутри ОАЭ, отсутствие дополнительных регистраций и выдачу Stripe invoice/receipt.
+Сохраняем статус `owner_confirmed`, не выдаём его за независимую проверку FTA.
+Получены коды деятельности 6209.00/6311.00 из изображения владельца. Открыты licence number,
+приём точного TRN Stripe и Global terms/privacy. Налоговый момент аванса/долга и зарубежные
+налоговые основания отложены, но допустимость режима до live проверяется для включённых
+рынков. Scope и источники — в налоговом приложении.
 Шаблоны RU/АУСН относятся только к ООО «Громтех» и не заменяют документы Global seller.
 
 Для Stripe проверить account/API version/test mode, USD card и min/max top-up,
@@ -34,13 +41,13 @@ UAE отсутствует в текущей опубликованной eligib
 
 ## P1 — денежное ядро и единый wire contract
 
-Зависимость: ADR v4.0. Разрешено: `apps/server/internal/billing/`, SQL migrations/queries/
+Зависимость: ADR v4.1. Разрешено: `apps/server/internal/billing/`, SQL migrations/queries/
 generated, `proto/calaba/v1/billing.proto`, additive workspace/event proto, generated protocol,
 конфигурация и тесты. Запрещено: live keys/charges, включение flags, перенос ручных планов
 в платные обязательства и FX-конвертация старых RUB balances.
 
 Результат: accounts с currency/seller, immutable journals/postings, funding source slices,
-allocations/reservations, отдельные tax liabilities/receivables и net/tax/gross breakdown,
+allocations/reservations, net/tax/gross breakdown с deferred tax policy version (tax=0),
 prices, seat cohorts/events, payer versions, fake provider/clock,
 FIFO commands/head/schedule, control epoch, repair records и authoritative balance projection.
 Один автор SQL/proto/interfaces до подключения зависимых потребителей. Зафиксировать
@@ -59,14 +66,15 @@ constraint-level duplicates, rollback целой команды, currency/payer 
 ## P2 — ручная Stripe-карта и документы на оплату
 
 Зависимость: P1 + test merchant/capabilities. Разрешено: Stripe adapter, inbox/reconcile,
-app wiring/routes, tax/document adapter, outbox и contract tests. Auto-topup/live flags off.
+app wiring/routes, document adapter, outbox и contract tests. Tax adapter отложен. Auto-topup/live flags off.
 
-Результат: hosted Checkout mode=payment, Customer per billing account, PI canonical credit,
+Результат: hosted Checkout mode=payment + invoice_creation.enabled, Stripe invoice/receipt,
+Customer per billing account, PI canonical credit,
 raw-body signature verification, versioned webhook DTO, pagination/cursors, pending/unknown
 и refund/dispute. Completed redirect не выдаёт деньги; funded/cash balance/PI/Charge/payout
 различаются. Сохраняем service net + tax = gross USD customer amount; wallet credit только
-net, отдельно AED settlement/fees. Встроенный Checkout Tax и custom Tax/PI flow имеют
-одну tax transaction на продажу, без повторного налога при расходовании аванса.
+net (равный gross в v1), отдельно AED settlement/fees. Проверяем automatic_tax=false,
+отсутствие Tax API/скрытых tax rates и документов с фиктивным tax exemption.
 Invoice и квитанция привязаны к seller/payer version, сроку и способу, который доступен.
 
 Готовность: duplicate/reordered Checkout/PI/Charge events дают один credit; обработаны timeout,
@@ -128,8 +136,8 @@ reason/revision/request_id/step-up/audit обязательны. «Остано�
 Зависимость: P2 + owner consent, подтверждённый off-session flow, внешний dispatch fence/
 manifest. Разрешено: setup/mandate/consents/settings/jobs/provider/UI и профильные тесты.
 
-A_net = max(0, -balance) + 30 × N × effective_daily_price; tax engine добавляет только
-подлежащий оплате налог долга/аванса. Лимит owner проверяется по A_gross; новый charge
+A_net = max(0, -balance) + 30 × N × effective_daily_price; в v1 A_gross=A_net,
+без Tax API. Налоговое расширение отложено. Лимит owner проверяется по A_gross; новый charge
 не чаще 24h. Сохранённая карта не включает auto. Unknown сначала сверяется; requires_action
 продолжается в том же PI. На каждый реальный отказ — письмо. Ручное пополнение отменяет
 unsent повтор, но не скрывает возможный late success уже отправленного intent.
@@ -160,7 +168,7 @@ reviews до реальных денег — отдельный gate, не по�
 ## Денежные сценарии: основной USD, суммы в cents
 
 M1–M23 — net money fixtures с явно заданным tax=0, не налоговый режим Unne.
-Отдельные налоговые сценарии — в налоговом приложении: $100+$5=$105, auto $32+$1.60=$33.60,
+Отдельные сценарии **отложенного налогового этапа** — в налоговом приложении: $100+$5=$105, auto $32+$1.60=$33.60,
 original-source refund, отсутствие повторного налога и непогашенный tax_due.
 
 | № | Сценарий | Ожидание |

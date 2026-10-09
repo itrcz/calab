@@ -1,6 +1,6 @@
 # ADR-0080: USD-баланс и суточные места — Stripe, затем RUB / Точка
 
-Дата: 2026-10-09. Статус: **проект v4.0; реальные платежи выключены**.
+Дата: 2026-10-09. Статус: **проект v4.1; реальные платежи выключены**.
 База исследования: `8fdf1b9d907de88173dd8e6c82950bb75bc082df` (3.0.3).
 Ветка: `codex/seat-billing`. План поставок: [balance-billing-v1](../plans/balance-billing-v1.md).
 Детальные контракты: [счета/плательщики/админка](../plans/billing-invoices-and-payers.md),
@@ -15,8 +15,9 @@
 - У пространства есть денежный баланс. Стоимость действующих мест списывается раз в сутки.
 - **USD — основной рынок**, Stripe — первая интеграция: Team **$0.10**, Business **$0.30**
   за человека за полные **24 часа**, без применимого налога.
-- На сайте — базовая цена с пометкой о налогах; до оплаты в checkout и в receipt/invoice —
-  база, применимый налог и итог. Налог не устанавливается универсально в 0% или 5%.
+- На сайте — базовая цена без налога; документы — Stripe invoice/receipt. **Последнее
+  уточнение: VAT пока отложен**, в первой интеграции платёж равен пополнению, без налоговой
+  надбавки. `tax_status=not_calculated` не означает юридическую ставку 0%/освобождение.
 - RUB — вторичный рынок, Точка — следующий этап: Team **6 ₽**, Business **18 ₽** за те же сутки.
 - Добавление сотрудника сверх уже оплаченных мест сразу оплачивает одни сутки.
 - Удаление сотрудника уменьшает следующие списания; схема должна поддерживать будущие допы.
@@ -109,9 +110,13 @@ RU и USD не конвертируем и не смешиваем в одном
 USD нельзя автоматически подключить к ООО «Громтех» или распространить на него обещание
 «все данные в РФ»: Global seller — **Unne L.L.C-FZ**, UAE (Dubai), Stripe AE / settlement AED.
 Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE.
-TRN 105410888900001 предоставлен владельцем из выписки; вид/принадлежность/статус регистрации
-не подтверждены. Номер не публикуем как VAT TRN. Licence number, VAT-статус, применимые
-налоги, документы и обработчики — live gates; ядро/test adapter разрабатываем сейчас.
+TRN **105410888900001** подтверждён владельцем 09.10.2026 как действующая VAT-регистрация
+Unne (`owner_confirmed`, не независимая проверка FTA). Владелец указал UAE VAT только внутри
+ОАЭ, отсутствие необходимости дополнительных регистраций и документы Stripe invoice/receipt.
+Последующее решение — отложить VAT за рамки первой интеграции (§0 налогового приложения).
+Владелец также предоставил коды деятельности **6209.00** (прочие IT-услуги) и **6311.00**
+(обработка данных/хостинг); сохраняем их отдельно от номера лицензии/TRN/Stripe tax code.
+Границы применения и отложенные вопросы — в налоговом приложении.
 Реквизиты RU и режим АУСН не подставляются за Global seller.
 
 ## 3. Интеграция с существующим кодом
@@ -240,7 +245,9 @@ Scheduler выбирает accounts с наступившим next_due чере�
 signed **net** величина, без налога. `reserved` показывается отдельно; `spendable_cash = max(0, balance)`.
 `tax_due`/собранный налог — отдельные компоненты; положительный net balance не закрывает
 эпизод долга при непогашенном налоговом обязательстве. Правила покрытия и deadline —
-в [налоговом контракте](../plans/billing-tax-and-documents.md), обязательном для USD.
+в [налоговом контракте](../plans/billing-tax-and-documents.md). В первой интеграции
+`tax_mode=deferred`, `tax_due=0`, Tax API/налоговые проводки не создаются; ненулевой tax
+и связанные сущности ниже относятся к отложенному расширению, не к текущему scope.
 Создание резерва переводит деньги из свободного аванса в reserved и сразу уменьшает balance;
 capture не вычитает их второй раз, release возвращает в balance (сначала гасит долг).
 Зарезервированный возврат не маскирует уход доступного остатка в минус. Покупка мест может уменьшить balance ниже нуля только
@@ -311,7 +318,7 @@ Ledger неизменяемый, cached balance сверяется отдель�
 
 Owner выбирает net сумму на услуги и метод; до подтверждения видит tax и gross итог.
 Создаём `funding_intent` с account, payer/seller snapshots, currency, net/tax/gross breakdown,
-tax quote/version/TTL, request_id и purpose. Внешний запрос вне DB-транзакции. Успех — подтверждённая денежная
+tax policy version (v1: deferred, tax=0, tax quote отсутствует), request_id и purpose. Внешний запрос вне DB-транзакции. Успех — подтверждённая денежная
 операция банка, сопоставленная с intent; redirect/кнопка «Я оплатил»/загруженная платёжка
 денег не зачисляют. Повтор события из webhook/polling/выписки даёт одно зачисление.
 
@@ -404,8 +411,9 @@ A_gross = A_net + tax_payable_for_debt_and_advance
 
 Формула **утверждена владельцем**: покрываем долг и добавляем запас на 30 суток.
 Пример без налога: 10 Team USD → $30; долг $2 → A_net=$32.
-Применимый налог сверху рассчитывает Stripe Tax по строкам долга/аванса, без повторного
-обложения ранее учтённого налога; при условных 5% на обе строки A_gross=$33.60.
+В первой интеграции налог не рассчитывается: A_gross=A_net=$32. Отложенный налоговый
+этап рассчитывает надбавку по строкам долга/аванса, без повторного обложения; условный
+пример со ставкой 5% даёт A_gross=$33.60 и **не является текущим режимом**.
 Вторичный RU без НДС: запас 1 800 ₽, долг 120 ₽ → A=1 920 ₽.
 10 Team Global → $30; 10 Business Global → $90. Пополнение не закрепляет цену или состав
 на 30 дней и не сгорает в конце месяца. Допы не увеличивают reserve_30d автоматически.
@@ -625,7 +633,7 @@ admin credit, а не превращается в cash. Алгоритм оди�
 | `billing_invoices` | account, number/reference UNIQUE, bank document id, payer, requested/paid gross + net/tax allocations, PDF/status |
 | `billing_mandates`, `billing_consents`, `billing_autotopup_settings` | разрешение только для auto-topup, masked card, формула 30 дней/денежный предел, version/revocation |
 | `billing_funding_episodes` | negative_since, suspend_at, daily bank attempt timestamps, recovery evidence, debt_seat_cap; один открытый episode на account |
-| `billing_tax_calculations`, `billing_tax_transactions`, `billing_tax_reversals` | source/quote/registration versions, net/tax/gross, provider IDs, liabilities/receivables, document links и reconciliation |
+| `billing_tax_calculations`, `billing_tax_transactions`, `billing_tax_reversals` — отложенный этап | source/quote/registration versions, net/tax/gross, provider IDs, liabilities/receivables, document links и reconciliation; не требуются в v1 с deferred VAT |
 | `billing_refunds`, `billing_receipts` | status/id/amount/source/deadline; отдельно от подтверждения оплаты |
 | `billing_provider_events`, `billing_jobs`, `billing_outbox`, `billing_audit` | durable inbox, leases, side effects, actor/reason |
 
@@ -820,11 +828,13 @@ Webhook `/api/billing/stripe/webhook` (v1) и `/api/billing/tochka/webhook` (RU 
 сотрудник видит заглушку без сумм/карты. Desktop/mobile hosted checkout — системный браузер
 и возврат к статусу intent, не обработка карты в renderer.
 
-**Документы USD:** Stripe receipt не заменяет автоматически налоговый invoice/учёт
-авансов страны Global seller. Каталог tax-exclusive; Stripe Tax добавляет применимый
-налог до оплаты, receipt/invoice показывают net/tax/gross. VAT-статус Unne не подтверждён.
-До запуска фиксируем классификацию/момент налога, регистрации, invoice numbering,
-B2B/B2C поля и правила refund/credit note по налоговому приложению. Публичные документы 3.0.3 с ООО «Громтех»
+**Документы USD:** по решению владельца выдаём Stripe invoice/receipt. Для ручного
+Checkout включаем one-off invoice к тому же PI, сохраняем ссылку в кабинете; отдельного
+повторного требования оплаты не создаём. Каталог tax-exclusive; в первой интеграции VAT
+отложен, net=gross, tax=0 с `not_calculated`. VAT-регистрация Unne подтверждена владельцем.
+Ненулевой tax breakdown — следующий этап. До live проверяем
+классификацию/момент налога, country/payer scope, invoice numbering, B2B/B2C поля и
+refund/credit note; Stripe документ не подменяет учёт аванса/зачёта по налоговому приложению. Публичные документы 3.0.3 с ООО «Громтех»
 не являются Global terms.
 
 **Чеки RU, следующий этап:** пополнение аванса и зачёт аванса за услуги — разные хозяйственные события.
@@ -897,8 +907,13 @@ policy lag>30s, несошедшийся реестр и просроченны�
 
 Владелец подтвердил **Unne L.L.C-FZ, UAE/AE, settlement AED, продажи USD** и цены без
 налога; receipt/invoice с применимым налогом. Worldwide intent ограничен доступными
-странами/методами и налоговой готовностью. TRN из выписки не является подтверждённым
-VAT number; licence number и статус регистрации открыты. Подробности и источники —
+странами/методами и налоговой готовностью. VAT TRN **105410888900001** подтверждён
+владельцем как действующий для Unne; документы — Stripe invoice/receipt. Позиция владельца:
+UAE VAT внутри ОАЭ, дополнительные регистрации не нужны. Не распространяем отсутствие
+UAE VAT на все налоги других стран: глобальное заключение не проверено. **Позднейшее
+решение — VAT отложить, первый flow без налоговой надбавки**, а не объявить юридическое
+освобождение. Коды деятельности 6209.00/6311.00 получены из фрагмента документа владельца.
+Licence number, момент налога и приём реквизита Stripe ещё проверяются. Подробности —
 в налоговом приложении. Free Zone не задаёт автоматическое освобождение.
 
 Для Stripe UAE hosted card в USD проверяем по capability аккаунта; USD bank transfer

@@ -1,6 +1,6 @@
 # Stripe v1: основной USD-биллинг Calab
 
-Дата: 2026-10-09. Контракт v1.0 к [ADR-0080 v4.0](../adr/0080-seat-billing.md).
+Дата: 2026-10-09. Контракт v1.0 к [ADR-0080 v4.1](../adr/0080-seat-billing.md).
 Решение владельца: **USD — основной рынок; Stripe интегрируется первым**. Team — $0.10,
 Business — $0.30 за человека за 86400 секунд, без применимого налога. RUB 6/18 ₽ и Точка — следующий этап.
 Это проект реализации; live payments и публичные условия этой поставкой не включаются.
@@ -13,13 +13,14 @@ currency и конвертация самим банком покупателя 
 старый RUB account в USD и не подключаем ООО «Громтех» к Stripe по умолчанию.
 
 Владелец подтвердил Unne L.L.C-FZ, UAE (Dubai), Stripe AE, settlement AED и продажи в USD.
-Реквизиты и непроверенный TRN — в [налоговом контракте](billing-tax-and-documents.md).
+VAT TRN 105410888900001 подтверждён владельцем как действующая регистрация Unne;
+источник подтверждения и налоговый scope — в [налоговом контракте](billing-tax-and-documents.md).
 USD bank transfer выключен: AE отсутствует в опубликованной таблице business locations
 этого метода. Основной USD card flow проверяется отдельно.
 [Stripe UAE: методы и валюты](https://support.stripe.com/questions/which-payments-methods-and-products-are-available-in-the-uae),
 [bank-transfer eligibility](https://docs.stripe.com/payments/bank-transfers).
 
-До live нужны проверка реквизитов/VAT-статуса продавца и Stripe account, поддерживаемые
+До live нужны проверка приёма реквизитов/настроек регистрации в Stripe account, поддерживаемые
 страны покупателей и методы, налоговая классификация, документы и уведомление о передаче данных
 Stripe. Секреты находятся в secret store, не в ADR. Страну регистрации нельзя придумать:
 [поддерживаемые Stripe страны](https://stripe.com/global).
@@ -35,11 +36,12 @@ Stripe. Секреты находятся в secret store, не в ADR. Стра
 UI показывает только реально включённые методы для комбинации seller/country/payer type.
 Для Private Person и Organization проверяем возможности отдельно. Global schema содержит
 национальные registration/tax IDs; обязательный ИНН/ОГРН для всех стран не используется.
-Владелец утвердил **tax_exclusive**: сайт показывает базовую цену, checkout до оплаты
-и receipt/invoice — базу, применимый налог и итог. Stripe Tax настраивается по реальным
-регистрациям и покупателю; Free Zone/отсутствие регистрации в Stripe не означают tax=0.
-Момент налогообложения аванса/долга — live gate. Баланс услуги net, налог отдельно;
-подробный расчёт, refund и документы обязательны по налоговому приложению.
+Владелец утвердил **tax_exclusive** и затем **отложил VAT**: в первой интеграции
+`automatic_tax.enabled=false`, tax rates/Tax API не используются, `tax_status=not_calculated`.
+Сайт показывает цену без налога, checkout/invoice/receipt — фактическую сумму без надбавки.
+Net=gross, $100 оплачено → $100 на баланс; customer tax_exempt не подделывается.
+Stripe Tax и налоговые проводки — отложенный этап из налогового приложения, не требование
+v1. Это продуктовый scope, не подтверждение освобождения всех продаж от налогов.
 
 Цены каталога — integer cents 10/30. Минимум/максимум внешнего top-up определяется отдельно
 по валюте/методу и merchant settings. Маленькое суточное начисление не превращается в
@@ -48,12 +50,18 @@ balance — разные сущности, с отдельными полями 
 
 ## 2. Ручное пополнение картой
 
-Используем стабильный Customers API и Checkout `mode=payment`; версия Stripe API закреплена
+Используем стабильный Customers API и Checkout `mode=payment` с
+`invoice_creation.enabled=true`: по решению владельца выдаём Stripe invoice/receipt.
+Сохраняем provider document IDs/ссылки, показываем net/tax/gross; invoice относится к
+тому же PI и не создаёт вторую оплату или credit. Приёмка включает получение документа
+и его реквизиты: [Create Checkout Session](https://docs.stripe.com/api/checkout/sessions/create).
+Версия Stripe API закреплена
 в adapter и webhook endpoint, смена версии проходит contract fixtures. Preview API и
 Connect marketplace не требуются. Один Stripe Customer привязан к одному billing account
 и продавцу: одинаковый ИНН в нескольких пространствах не объединяет balances/средства оплаты.
 
-Локальный intent фиксирует net/tax/gross, tax quote/TTL/currency/payer version/seller/request_id до внешнего
+Локальный intent фиксирует net/tax/gross (v1: tax=0, net=gross), tax policy version,
+currency/payer version/seller/request_id до внешнего
 вызова. Metadata содержит непривилегированные IDs intent/account/attempt, не секреты/реквизиты.
 Stripe ID никогда не принимается от клиента как доказательство принадлежности account.
 Create Checkout использует стабильный idempotency key; сеть вне DB tx.
@@ -67,7 +75,8 @@ Calab. Авторитетное событие подтверждения — su
 
 Одна успешная оплата создаёт один funding credit по `(stripe_account_id, livemode,
 payment_intent_id)`; Charge ID и balance transaction — дополнительные ссылки для сверки.
-В wallet идёт только net часть; налоговые проводки связаны с тем же PI.
+В wallet идёт net часть (в текущем режиме равна gross); налоговые проводки не создаются.
+В отложенном налоговом режиме они будут связаны с тем же PI.
 Webhook Checkout, PaymentIntent и Charge не являются тремя пополнениями. До этого credit
 может иметь `provider_confirmed / pending_application`, но не spendable balance.
 
@@ -77,9 +86,9 @@ Setup отдельно от ручной покупки: hosted setup flow с Se
 при платеже с `setup_future_usage=off_session`. Сохранение карты не включает auto-topup.
 Согласие фиксирует seller/account, утверждённую формулу **долг + 30 суток текущей команды**,
 max **gross** amount с налогом, частоту, version/time и отзыв.
-Net долг + net reserve30d сначала получают tax calculation по исходным debt/advance строкам;
-не облагать повторно уже учтённый налог долга. Off-session PI использует Tax API flow,
-а не предположение, что `automatic_tax` прошлого Checkout сработает для нового PI.
+В v1 net долг + net reserve30d = сумма PI, Tax API не вызывается. Для отложенного
+налогового этапа нужен отдельный calculation по debt/advance без повторного налога;
+настройки `automatic_tax` Checkout не наследуются standalone PI.
 Привязка через [SetupIntent](https://docs.stripe.com/api/setup_intents) не выдаёт места
 и не создаёт внутренний баланс; отказ/дополнительная аутентификация обрабатываются явно.
 
@@ -194,7 +203,10 @@ reversals; нельзя считать любой bank transfer безотзыв
 - Подтверждённый достаточный credit до deadline обрабатывается перед enforcement;
   неоплаченный/неприменённый Stripe cash balance сам не является succeeded PaymentIntent.
 
-Открыты: проверка merchant/requisites, licence number, VAT-статус, налоговая классификация
-аванса/услуг и country/payer matrix, документы. Unne/UAE/AED settlement и USD exclusive
-цены подтверждены; TRN из выписки не переносится в VAT settings без проверки. Формула auto-topup долг+30d и запрет новых платных мест в минусе утверждены
+Открыты: проверка merchant/requisites в Stripe, licence number, налоговый момент
+аванса/услуг/долга и country/payer matrix, приёмка Stripe документов. Unne/UAE/AED settlement,
+USD exclusive цены и действующая VAT-регистрация с TRN 105410888900001 подтверждены
+владельцем. Отсутствие дополнительных регистраций вне UAE — позиция владельца,
+глобальное налоговое заключение не проверено. Последний scope — VAT отложен, первая
+интеграция без надбавки; это не настройка освобождения или всеобщей ставки 0%. Формула auto-topup долг+30d и запрет новых платных мест в минусе утверждены
 владельцем. Ответы по продавцу фиксируются в ADR, не выбираются исполнителем API. Интеграция разрабатывается с test keys; live — только после её gates.
