@@ -42,7 +42,7 @@ export const ruPlan = {
   'plan.contactShort': 'Связаться',
   'plan.more': 'Подробнее о тарифах',
   // locks and toasts
-  'plan.lockTip': 'Доступно на тарифе Team — связаться',
+  'plan.lockTip': 'Доступно на тарифе Team',
   'plan.toast.preset': '{preset} доступно на тарифе Team',
   'plan.toast.roomFree': 'В бесплатном тарифе до {n} человек в комнате',
   'plan.toast.room': 'По тарифу пространства — до {n} человек в комнате',
@@ -53,7 +53,7 @@ export const ruPlan = {
   'plan.paidOnly': 'Доступно в платном тарифе',
   'plan.lockedFrom': 'Доступно на тарифе {plan} и выше',
   'plan.caldavLocked': 'CalDAV доступен на тарифах Team и выше',
-  'plan.membersFull': 'Лимит тарифа {plan}: {n} участников — свяжитесь с нами',
+  'plan.membersFull': 'Лимит тарифа {plan}: {n} участников',
   'plan.boardsFull': 'Лимит тарифа {plan}: {n} досок',
   'plan.lockedOption': '{label} 🔒',
   // camera ▾

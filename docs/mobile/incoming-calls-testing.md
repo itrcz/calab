@@ -60,3 +60,14 @@ system/app mute and deafen, end during connect, a second call, desktop takeover,
 Bluetooth/interruption, denied microphone permission and logout/reload cleanup.
 Verify room sessions still use the existing web engine. Camera/screen media and
 musician mode are outside this opt-in audio proof; it is not full mobile parity.
+
+## Bounded startup cue (R19)
+
+On the signed iPhone build, answer a locked incoming call. Before remote audio,
+expect a quiet intermittent connecting pulse; the caller sends a distinct steady
+test tone. The cue must stop before mic capture, on remote subscription, deafen,
+end/failure, or its 10-second cue-only deadline. It must not restart from late
+controls. Mute immediately after answer, unmute after 10 seconds, speak, and hold
+the call long enough to sample outgoing audio before hanging up. Verify muted
+capture, resumed audio after unmute, and cleanup; do not infer speech quality or
+Bluetooth acceptance from packet counters. No recording is required.

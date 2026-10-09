@@ -1,8 +1,92 @@
 # Телефон: общий веб в оболочке — статус
 
+## TestFlight app icon (2026-10-08)
+
+The mobile host uses the existing Calab mark at 1024 × 1024, with an opaque
+full-bleed background and no pre-rounded corners. It is derived from the shared
+`apps/desktop/build/icons/src/icon_other.svg`; the glyph and gradient are unchanged.
+The icon is packaged into a new iOS build and reaches TestFlight through that build.
+
+## Native mobile commercial UI (2026-10-08)
+
+The shared web client suppresses sales contact actions and the purchase/pricing card
+when the existing native `sessionActivity` host capability is present. Ordinary web
+and desktop clients retain their purchase links. Plan status, usage, feature locks
+and server entitlement enforcement are unchanged. Passive limit hints do not repeat
+a contact-sales instruction. This is a web-client change and needs web deployment;
+it does not require a new iPhone binary.
+
+
+## R19 final polish: bounded connecting cue
+
+- **Implemented locally:** quiet native connecting pulse after CallKit activation
+  and native transport selection. It stops on remote audio, deafen, end/failure,
+  before microphone capture, or after 10 seconds. It cannot reactivate from late
+  controls; cue failure never fails the call. No UI clone, new API or media join
+  before answer.
+- **Checked:** 118 mobile tests plus 6 plugin tests, typecheck, lint, signed iPhone
+  Release and strict code signing. Independent review found no blocker/major.
+  Fresh main remains the branch base; no conflicts at this checkpoint.
+- **Latest device result:** on the clean signed Release, the owner confirmed
+  audible sound and manual hangup. The caller sent its synthetic tone throughout;
+  received microphone packets and audio energy stopped increasing during the
+  mute window, then resumed with nonzero input after unmute. The peer closed on
+  owner hangup. This verifies the bounded mute/unmute/end scenario, not speech
+  quality or the earliest pre-publication mute. The owner ended this call before
+  60 seconds of audio; earlier sustained-call evidence remains separate.
+- **Pending on device:** distinguish the new short connecting cue from the remote
+  steady tone. Earlier locked warm/cold, repeated incoming and early-end results
+  remain evidence for unchanged paths; they do not verify the new cue.
+- **Latency decision:** 5.680/7.427/8.052 s are isolated answer-to-subscription
+  samples, including startup of both endpoints, not a proven iPhone-only defect.
+  In the last cold test, the caller itself began producing tone roughly 6.3 s
+  after answer (cross-device UTC alignment, not calibrated acoustic timing).
+  No speedup claimed. RTC URL arrives only with the authorized join; early
+  prewarming/persisted endpoint discovery and pre-answer RTC remain deferred.
+  Reliability and understandable waiting take priority over a call-protocol rewrite.
+- **Release boundary:** local only; no server change or publication. Opt-in scope
+  and the remaining device gates below still apply; not READY_TO_SHIP.
+
+## R19: system controls and measured startup, 2026-10-08
+
+- **Implemented locally:** native system mute stops capture immediately and latches
+  across stale web controls; matching acknowledgement restores shared control.
+  Early mute waits for native ownership; unmute retains shared permission checks.
+  Expired mute reconciliation retries on later document activity. End revokes
+  media authorization and frees the incoming slot immediately, preserving bounded
+  shared REST cleanup. Legacy web end retains its acknowledgement. In-app answer
+  preparation recognizes the pending CallKit transaction; capture still requires
+  acceptance and activation.
+- **Startup:** remote-audio subscription now runs alongside microphone publication.
+  UI, REST, API, cookie ownership and server schema are unchanged.
+- **Device verified before the subscription change:** locked warm and cold calls;
+  native mute gate applied in 13 ms with remote received audio energy flat while
+  muted; system unmute acknowledged; owner hangup stopped media in 3 ms and ended
+  the caller session. The owner ended too soon after unmute for the 3-second
+  observer to independently sample resumed microphone RTP.
+- **Final-delta device pair:** process absence was verified before the first locked
+  incoming. It established native audio; a second incoming reached the same phone
+  after hangup. On the second call, the owner ended 1.816 s after answer, before
+  audio activation; the later activation did not start native media or restore
+  the call, and the caller session closed.
+- **Measured, still open:** warm answer-to-remote-subscription 5.680 s; cold samples
+  7.427 s before and 8.052 s after parallel subscription. The latter subscribed
+  before microphone publication completed (8.141 s), so the serialization was
+  removed, but end-to-end improvement is not demonstrated. Latest cold stages:
+  document granted 1.452 s, REST accepted 3.350 s, audioConnect received 4.149 s,
+  RTC connect 4.173–7.038 s. These are individual samples, not a distribution.
+- **Verification:** 118 mobile tests, 6 plugin tests, mobile typecheck/lint, signed
+  iPhone Release; focused Swift/wire delta checks after review corrections.
+  Read-only Opus 5.5 consultation/review informed the mute/end race fixes. This
+  revision remains local. Timing probes are excluded from publishable source.
+- **Remaining device gates:** earliest pre-publication mute,
+  in-app answer, desktop takeover, reconnect,
+  speakerphone/AEC, Bluetooth and permission denial. The historical pre-answer
+  flash remains unconfirmed. Not READY_TO_SHIP.
+
 ## R18: локальный нативный аудиодрайвер, 2026-10-08
 
-- **Реализовано локально:** опциональный LiveKit Swift под существующим общим
+- **Реализовано:** опциональный LiveKit Swift под существующим общим
   входящим звонком. UI, REST accept/join, авторизация и права остаются в вебе.
   Захват и воспроизведение входящего CallKit-звонка выполняет нативный SDK;
   второй WebKit RTC/mic не создаётся. [Контракт ADR-0079](../adr/0079-phone-call-audio-driver.md).
@@ -16,17 +100,36 @@
   без Electron. Сохранена подписанная iOS arm64 Release: strict/deep codesign,
   development APS, профиль целевого iPhone, три native license файла в bundle;
   во время финальной сборки входные файлы не изменялись.
-- **На устройстве:** R18 ещё не установлена и не проверена. На телефоне остаётся
-  R17 trace-03 с подтверждённым foreground-тоном и неработающим locked capture.
-  Новая реализация не доказывает исправление без минутного двустороннего разговора.
-- **Осталось:** review границы credentials/protocol и согласованный web release,
-  затем установка и locked-warm/cold, microphone permission, speaker/AEC,
+- **Review и web:** PR #131 прошёл review и вошёл в 3.0.1; наличие адаптера
+  проверено в развёрнутом web. API, миграции и новые ключи для R18 не нужны.
+- **На устройстве:** совпадающая с 3.0.1 сборка установлена. Locked answer
+  обрывался до микрофона: native guard отклонял числовой bitrate из Expo JSI
+  (`Double` вместо ожидаемого `Int`). Точный integer conversion исправлен локально;
+  реальный Swift regression воспроизводит отказ до правки и проходит после неё.
+  Семь целевых wire tests, mobile typecheck, lint изменённого теста и подписанная
+  iOS Release прошли. Временные diagnostics удалены из публикуемых исходников.
+- **Промежуточный повтор:** входящий мелькнул и завершился до ответа владельца;
+  caller наблюдал около 45 с ожидания, медиа не запускалось. Регистрация устройства
+  актуальна. Причина единичного завершения до ответа не подтверждена.
+- **Warm locked после numeric fix:** системный ответ подключился; владелец слышал
+  тестовый тон, Calab не открывал, запроса разрешения микрофона не было. Тестовый
+  клиент получил 76.92 с входящего аудио с ненулевой энергией. Соединение удержалось
+  до 90-секундного автоокончания теста; самопроизвольного сброса не было.
+  Это подтверждает транспорт и слышимость тона, но не все сценарии и качество речи/AEC.
+- **Cold locked:** процесс приложения остановлен и его отсутствие проверено до вызова.
+  Push запустил новый процесс; владелец ответил системно и слышал тон без открытия Calab.
+  Тестовый клиент получил 70.86 с аудио; вызов удержался до автоокончания теста.
+  По наблюдению владельца, звук появился примерно через 8 с после ответа:
+  задержка начала аудио остаётся открытой, точная стадия не установлена.
+- **Осталось:** задержка первого звука, повторяемость доставки без мгновенного закрытия,
+  microphone permission, speaker/AEC,
   Bluetooth, mute/end, повторный звонок и desktop takeover. API, миграции и новые
-  provider keys для R18 не требуются; одной установки без нового web adapter мало.
+  provider keys для R18 не требуются.
 - **Ограничение:** opt-in `CALAB_IOS_NATIVE_CALL_AUDIO=1` выключен по умолчанию.
   Это аудиопроверка входящего звонка: native video/screen/musician parity ещё нет.
   Обычные комнаты, web/desktop и исходящие phone calls сохраняют прежний engine.
-  Публикации не было; независимые reviews и device gates не пройдены, не READY_TO_SHIP.
+  R18 опубликована через PR #131; последующая numeric-правка остаётся локальной.
+  Device gates не пройдены, не READY_TO_SHIP.
 
 ## R17: регистрация аудиосессии CallKit, 2026-10-08
 

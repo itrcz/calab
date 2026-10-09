@@ -62,8 +62,18 @@ voice processing supplies AEC/NS/AGC and native remote output (the native except
 to ADR-0004's browser `<audio>` rule). Mute keeps the track published; deafen also
 mutes output. Server publish-permission revocation cannot be lifted by UI unmute.
 
-The existing 15-second native readiness deadline remains (after up to ~10 s of CallKit
-activation wait); the web-side `audioConnect` request therefore waits 30 s, other host
+System mute is also a synchronous native capture boundary once `audioConnect`
+selects this transport. An early mute remains bounded and pending until that
+selection; it is enforced before publication. Delayed web controls cannot release
+the latch without the matching mute acknowledgement. Failed acknowledgement keeps
+capture muted and retries on later document activity. Explicit system unmute still
+requires the shared call/permission checks. System end immediately revokes native
+media authorization; delayed connect/accept cannot revive an ending call. Native
+CallKit end completes after local stop, with the existing bounded web REST cleanup;
+the legacy web-only transport retains its acknowledgement path.
+
+The existing 15-second native readiness deadline includes the up-to-10-second
+CallKit activation wait; the web-side `audioConnect` request waits 30 s, other host
 call requests 10 s. Connected means RTC,
 required mic publication and CallKit audio activation, not just a signaling socket.
 Perceptual audio still needs a real-device test. End and mute work through the
@@ -71,6 +81,21 @@ existing shared call state; native termination always releases its own media.
 Participant removal retains the existing shared takeover grace; duplicate identity
 leaves locally, and network loss uses the existing rejoin policy. Native failure
 cleanup has a 15-second fallback if the shared document stops responding.
+
+## Bounded startup polish
+
+A native incoming call may play a quiet local connecting cue only after this
+transport is selected and CallKit activates audio. It does not activate a session,
+request permission or publish audio. Remote audio subscription, deafen, system end,
+reload and failure stop the cue. It also stops before microphone capture starts,
+so the local signal cannot become outgoing call audio. Later state/control updates
+cannot restart a finished cue; a new call resets that latch. An independent
+10-second cue-only deadline bounds it even when no peer publishes audio; this
+expiry does not end the call. Shared call UI and REST permissions are unchanged.
+
+Evaluate network prewarming independently; no persisted token, pre-answer room join
+or new server contract is authorized by this polish. Keep a prewarm only if it can
+run safely before a needed connection, without delaying answer or starting capture.
 
 ## Gates and rollout
 

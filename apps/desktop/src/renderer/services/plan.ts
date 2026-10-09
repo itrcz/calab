@@ -17,9 +17,14 @@ export function workspacePlan(workspaceId: string | null | undefined): Workspace
   return workspaceId ? useWorkspaces.getState().byId[workspaceId]?.ws.plan : undefined;
 }
 
+/** Native mobile is a companion client; purchases and sales offers stay on the website. */
+export function planOffersAllowed(): boolean {
+  return !platform.sessionActivity;
+}
+
 /** «Связаться для покупки» target (READY.plan_contact), or null when the server gave none usable. */
 export function planContact(): string | null {
-  return contactHref(useSession.getState().planContact);
+  return planOffersAllowed() ? contactHref(useSession.getState().planContact) : null;
 }
 
 /** Opens the contact (the mail client for mailto:, the browser for https:). */

@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseCallsOperation, parseCallsState } from '../../desktop/src/shared/hostCalls';
 import { parseHostActivityMessage } from '../../desktop/src/shared/hostActivity';
 import { ActivityProtocol } from './activityProtocol';
@@ -8,6 +13,23 @@ const connectionId = '22222222-2222-4222-8222-222222222222';
 const roomId = '33333333-3333-4333-8333-333333333333';
 const controls = { muted: false, deafened: false, volume: 1, userVolumes: {} };
 const connect = { operation: 'audioConnect', eventId, connectionId, roomId, url: 'wss://rtc.example.test', token: 'eyJhbGciOiJIUzI1NiJ9.eyJ0ZXN0Ijp0cnVlfQ.signature', relayOnly: true, bitrate: 32000, canSpeak: true, controls };
+
+it.skipIf(spawnSync('swiftc', ['--version']).status !== 0)('validates Expo inputs and system mute safety in actual native Swift', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'calab-call-audio-wire-'));
+  try {
+    const binary = join(dir, 'fixture');
+    execFileSync('swiftc', [
+      fileURLToPath(new URL('../modules/calab-session-activity/ios/CalabCallAudio.swift', import.meta.url)),
+      fileURLToPath(new URL('../tests/CallAudioInputTests.swift', import.meta.url)), '-o', binary,
+    ]);
+    const result = execFileSync(binary, { encoding: 'utf8' });
+    expect(result).toContain('PASS: native bridged bitrate validation');
+    expect(result).toContain('PASS: connecting cue respects activation, deafen, remote audio and termination');
+    expect(result).toContain('PASS: early system mute, late controls, acknowledgement and call isolation');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 180_000);
 const envelope = (op: object, document = eventId, seq = 1) => JSON.stringify({ v: 1, type: 'calls', host: 0, document, seq, request: seq, ...op });
 
 describe('native call audio wire', () => {
