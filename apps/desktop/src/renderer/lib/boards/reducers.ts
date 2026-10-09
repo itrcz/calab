@@ -21,6 +21,9 @@ export interface BoardsData {
   unread: Readonly<Record<string, string>>;
   /** Journal entries that arrived live, per task (the panel merges them with its loaded page). */
   activity: Readonly<Record<string, readonly TaskActivity[]>>;
+  /** Task id → journal entries gone since the panel loaded its page: merged into a newer one or
+   * cancelled out (ADR-0081, TASK_ACTIVITY.replaced_id); the panel hides them. */
+  activityGone: Readonly<Record<string, readonly string[]>>;
   /** Board categories by id (ADR-0058 §1; READY + BOARD_CATEGORY_*). */
   categories: Readonly<Record<string, BoardCategory>>;
   /** Task id → its checklists by position: only tasks opened in the panel (GET /tasks/{id}). */
@@ -38,7 +41,7 @@ export interface CheckCounts {
   done: number;
 }
 
-export const EMPTY_DATA: BoardsData = { boards: {}, tasks: {}, columns: {}, roomTask: {}, unread: {}, activity: {}, categories: {}, checklists: {}, checkCounts: {} };
+export const EMPTY_DATA: BoardsData = { boards: {}, tasks: {}, columns: {}, roomTask: {}, unread: {}, activity: {}, activityGone: {}, categories: {}, checklists: {}, checkCounts: {} };
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -224,11 +227,27 @@ export function setUnread(d: BoardsData, workspaceId: string, ids: readonly stri
   return { unread };
 }
 
-/** TASK_ACTIVITY: one journal row (dedup by id). */
-export function appendActivity(d: BoardsData, a: TaskActivity): Partial<BoardsData> {
-  const list = d.activity[a.taskId] ?? [];
-  if (list.some((x) => x.id === a.id)) return {};
-  return { activity: { ...d.activity, [a.taskId]: [...list, a] } };
+const NO_ACTIVITY: readonly TaskActivity[] = [];
+
+/**
+ * TASK_ACTIVITY: one journal row (dedup by id). replacedId (ADR-0081): a repeated change of a
+ * field merged that row into this one (a newer id, so it sorts last) or, without a row, the
+ * change cancelled out — the old row goes either way. taskId: the event's, for a removal.
+ */
+export function appendActivity(d: BoardsData, a: TaskActivity | undefined, replacedId = '', taskId = ''): Partial<BoardsData> {
+  const tid = a?.taskId || taskId;
+  if (!tid) return {};
+  const prev = d.activity[tid] ?? NO_ACTIVITY;
+  let list = prev;
+  const out: Partial<BoardsData> = {};
+  if (replacedId) {
+    if (list.some((x) => x.id === replacedId)) list = list.filter((x) => x.id !== replacedId);
+    const gone = d.activityGone[tid] ?? [];
+    if (!gone.includes(replacedId)) out.activityGone = { ...d.activityGone, [tid]: [...gone, replacedId] };
+  }
+  if (a && !list.some((x) => x.id === a.id)) list = [...list, a];
+  if (list !== prev) out.activity = { ...d.activity, [tid]: list };
+  return out;
 }
 
 // ------------------------------------------------------------------ board categories (ADR-0058 §1)

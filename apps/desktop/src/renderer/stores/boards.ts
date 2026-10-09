@@ -45,7 +45,7 @@ interface BoardsState extends BoardsData {
   removeTask: (taskId: string) => void;
   setPositions: (positions: Readonly<Record<string, number>>) => void;
   setUnread: (workspaceId: string, ids: readonly string[]) => void;
-  appendActivity: (a: TaskActivity) => void;
+  appendActivity: (a: TaskActivity | undefined, replacedId?: string, taskId?: string) => void;
   setWorkspaceCategories: (workspaceId: string, list: readonly BoardCategory[]) => void;
   upsertCategory: (c: BoardCategory) => void;
   removeCategory: (categoryId: string) => void;
@@ -78,7 +78,7 @@ export const useBoards = create<BoardsState>()((set) => ({
   removeTask: (id) => set((d) => removeTask(d, id)),
   setPositions: (p) => set((d) => setPositions(d, p)),
   setUnread: (ws, ids) => set((d) => setUnread(d, ws, ids)),
-  appendActivity: (a) => set((d) => appendActivity(d, a)),
+  appendActivity: (a, replacedId, taskId) => set((d) => appendActivity(d, a, replacedId, taskId)),
   setWorkspaceCategories: (ws, list) => set((d) => setWorkspaceCategories(d, ws, list)),
   upsertCategory: (c) => set((d) => upsertCategory(d, c)),
   removeCategory: (id) => set((d) => removeCategory(d, id)),

@@ -912,6 +912,7 @@ type FeedRow = { kind: 'msg'; at: number; key: string; index: number } | { kind:
 function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; toEnd: () => void; commentsOff: boolean }): ReactNode {
   const state = useMessages((s) => s.rooms[room.id] ?? EMPTY_ROOM_MESSAGES);
   const live = useBoards((s) => s.activity[task.id]);
+  const gone = useBoards((s) => s.activityGone[task.id]); // merged / cancelled rows (ADR-0081)
   const [loaded, setLoaded] = useState<TaskActivity[]>([]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const perms = useTaskPerms(task);
@@ -929,7 +930,7 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
   const metas = useMemo(() => buildMetas(state.items, '', me, cache), [state.items, me, cache]);
   const rows = useMemo((): FeedRow[] => {
     const acts = new Map<string, TaskActivity>();
-    for (const a of [...loaded, ...(live ?? [])]) acts.set(a.id, a);
+    for (const a of [...loaded, ...(live ?? [])]) if (!gone?.includes(a.id)) acts.set(a.id, a);
     const firstMsg = state.items[0]?.msg.createdAt ? timestampMs(state.items[0].msg.createdAt) : Infinity;
     const out: FeedRow[] = state.items.map((c, i) => ({ kind: 'msg' as const, at: c.msg.createdAt ? timestampMs(c.msg.createdAt) : Number.MAX_SAFE_INTEGER, key: c.key, index: i }));
     for (const a of acts.values()) {
@@ -939,7 +940,7 @@ function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; 
       out.push({ kind: 'act', at, key: a.id, a });
     }
     return out.sort((x, y) => x.at - y.at || (x.key < y.key ? -1 : 1));
-  }, [state.items, state.hasMoreBefore, loaded, live]);
+  }, [state.items, state.hasMoreBefore, loaded, live, gone]);
   // Read: the newest comment is on screen (the panel is open) and the window has the focus.
   const last = state.items.at(-1);
   useEffect(() => {

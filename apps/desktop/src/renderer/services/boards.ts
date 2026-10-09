@@ -186,7 +186,7 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       return true;
     }
     case 'taskActivity':
-      if (ev.value.activity) s.appendActivity(ev.value.activity);
+      s.appendActivity(ev.value.activity, ev.value.replacedId, ev.value.taskId);
       return true;
     case 'boardCategoryCreate':
     case 'boardCategoryUpdate':
