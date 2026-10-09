@@ -310,6 +310,29 @@ func TestManualTopupSupersedesUnsentAttempt(t *testing.T) {
 	e.wantBalance(5000)
 }
 
+// The owner lowers the cap between prepare and the fence: the prepared amount is above the
+// new cap, so the attempt is not sent.
+func TestCapLoweredBeforeFence(t *testing.T) {
+	e := newEnv(t, opts{})
+	att, err := e.job.Prepare(ctx, e.acc)
+	if err != nil || att == nil || att.AmountMinor <= 500 {
+		t.Fatalf("prepare %+v %v", att, err)
+	}
+	if st, r := e.consent(500); st != 200 {
+		t.Fatalf("consent %d %s", st, r)
+	}
+	sent, err := e.job.Dispatch(ctx, *att)
+	if err != nil || sent {
+		t.Fatalf("dispatch %t %v", sent, err)
+	}
+	if a := e.attempts(); a[0].Status != "failed" || a[0].FailureCode != "cap_lowered" {
+		t.Fatalf("attempts %+v", a)
+	}
+	if e.fake.Calls("ChargeOffSession") != 0 {
+		t.Fatal("charged above the cap")
+	}
+}
+
 // A prepared attempt abandoned by a crash is closed by the recovery, never sent.
 func TestAbandonedPreparedClosed(t *testing.T) {
 	e := newEnv(t, opts{})

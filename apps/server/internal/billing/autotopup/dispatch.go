@@ -270,9 +270,12 @@ func (j *Job) dispatch(ctx context.Context, att sqlc.BillingAutotopupAttempt) (b
 		if err != nil {
 			return err
 		}
-		_, v, err := j.check(ctx, q, acc, now, &cur)
+		p, v, err := j.check(ctx, q, acc, now, &cur)
 		if err != nil {
 			return err
+		}
+		if v.ok() && cur.AmountMinor > p.consent.MaxMinor {
+			v.skip = "cap_lowered" // the owner lowered the cap after prepare: never charge above it
 		}
 		if !v.ok() {
 			code := v.skip
