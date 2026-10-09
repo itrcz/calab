@@ -204,23 +204,32 @@ func (j *Job) Tick(ctx context.Context) int {
 		slog.WarnContext(ctx, "billing auto-topup: clock", "err", err)
 		return 0
 	}
-	ids, err := j.db.Q.ListBillingAutoTopupCandidates(ctx, sqlc.ListBillingAutoTopupCandidatesParams{Now: now, Lim: int32(j.opts.Batch)}) //nolint:gosec // small
-	if err != nil {
-		slog.WarnContext(ctx, "billing auto-topup: candidates", "err", err)
-		return 0
-	}
 	n := 0
-	for _, id := range ids {
-		if ctx.Err() != nil {
+	after := uuid.Nil
+	for ctx.Err() == nil {
+		ids, err := j.db.Q.ListBillingAutoTopupCandidates(ctx, sqlc.ListBillingAutoTopupCandidatesParams{
+			Now: now, After: after, Lim: int32(j.opts.Batch), //nolint:gosec // small
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "billing auto-topup: candidates", "err", err)
+			return n
+		}
+		for _, id := range ids {
+			if ctx.Err() != nil {
+				break
+			}
+			ok, err := j.TryAccount(ctx, id)
+			if err != nil && ctx.Err() == nil {
+				slog.WarnContext(ctx, "billing auto-topup: account", "account", id, "err", err)
+			}
+			if ok {
+				n++
+			}
+		}
+		if len(ids) < j.opts.Batch {
 			break
 		}
-		ok, err := j.TryAccount(ctx, id)
-		if err != nil && ctx.Err() == nil {
-			slog.WarnContext(ctx, "billing auto-topup: account", "account", id, "err", err)
-		}
-		if ok {
-			n++
-		}
+		after = ids[len(ids)-1]
 	}
 	return n
 }

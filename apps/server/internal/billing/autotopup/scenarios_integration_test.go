@@ -333,6 +333,20 @@ func TestCapLoweredBeforeFence(t *testing.T) {
 	}
 }
 
+// A tick walks every live consent page by page: with a batch of one, the accounts sorted
+// before this one (other tests' consents in the shared database) do not starve it.
+func TestCandidatesPagedNoStarvation(t *testing.T) {
+	e := newEnv(t, opts{})
+	other := newEnv(t, opts{}) // a second live consent in the same database
+	_ = other
+	j := autotopup.New(e.d, e.core, e.reg, e.in, e.clk, autotopup.Options{Enabled: true, Batch: 1})
+	e.in.AttemptSettled = j.AttemptSettled
+	j.Tick(ctx)
+	if a := e.attempts(); len(a) != 1 || a[0].Status != "succeeded" {
+		t.Fatalf("attempts %+v", a)
+	}
+}
+
 // A prepared attempt abandoned by a crash is closed by the recovery, never sent.
 func TestAbandonedPreparedClosed(t *testing.T) {
 	e := newEnv(t, opts{})

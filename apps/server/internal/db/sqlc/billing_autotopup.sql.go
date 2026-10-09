@@ -128,18 +128,20 @@ const listBillingAutoTopupCandidates = `-- name: ListBillingAutoTopupCandidates 
 SELECT t.account_id FROM billing_autotopup t
 JOIN billing_accounts a ON a.id = t.account_id
 WHERE t.revoked_at IS NULL
-  AND (t.not_before IS NULL OR t.not_before <= $1::timestamptz)
+  AND t.account_id > $1::uuid
+  AND (t.not_before IS NULL OR t.not_before <= $2::timestamptz)
   AND a.status = 'active' AND NOT a.dispute_hold
-  AND (a.hold_until IS NULL OR a.hold_until <= $1::timestamptz)
+  AND (a.hold_until IS NULL OR a.hold_until <= $2::timestamptz)
   AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts x
                   WHERE x.account_id = t.account_id AND x.status IN ('prepared', 'dispatched', 'unknown'))
-ORDER BY t.not_before NULLS FIRST, t.account_id
-LIMIT $2
+ORDER BY t.account_id
+LIMIT $3
 `
 
 type ListBillingAutoTopupCandidatesParams struct {
-	Now time.Time
-	Lim int32
+	After uuid.UUID
+	Now   time.Time
+	Lim   int32
 }
 
 // Auto-topup (T7: internal/billing/autotopup, ADR-0080 §7 and v5 «v1 cut»). Same rules as
@@ -147,9 +149,11 @@ type ListBillingAutoTopupCandidatesParams struct {
 // from billing.Clock as sqlc.arg('now').
 // Accounts that may need an auto-topup now: active, consent not revoked, not_before passed,
 // no open attempt, no dispute / incident hold. The need itself (balance under the threshold)
-// is decided from the quote; everything is re-checked under the account lock.
+// is decided from the quote; everything is re-checked under the account lock. Keyset pages by
+// account_id (after = the last id of the previous page, uuid nil first): a tick walks every
+// live consent, so accounts that never needed a top-up cannot starve the others.
 func (q *Queries) ListBillingAutoTopupCandidates(ctx context.Context, arg ListBillingAutoTopupCandidatesParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, listBillingAutoTopupCandidates, arg.Now, arg.Lim)
+	rows, err := q.db.Query(ctx, listBillingAutoTopupCandidates, arg.After, arg.Now, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
