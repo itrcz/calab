@@ -56,7 +56,11 @@ balance — разные сущности, с отдельными полями 
 тому же PI и не создаёт вторую оплату или credit. Приёмка включает получение документа
 и его реквизиты: [Create Checkout Session](https://docs.stripe.com/api/checkout/sessions/create).
 Версия Stripe API закреплена
-в adapter и webhook endpoint, смена версии проходит contract fixtures. Preview API и
+в adapter (все запросы и перечитывание объектов), смена версии проходит contract fixtures.
+События webhook принимаются любой версии (версия аккаунта по умолчанию, `stripe listen`):
+читается только конверт (id, type, account, livemode, created, id/metadata/payment_intent
+объекта), сам объект перечитывается закреплённой версией; чужая версия — warning один раз и
+метрика `calaba_billing_stripe_foreign_version_events_total`. Подпись проверяется строго. Preview API и
 Connect marketplace не требуются. Один Stripe Customer привязан к одному billing account
 и продавцу: одинаковый ИНН в нескольких пространствах не объединяет balances/средства оплаты.
 
@@ -165,6 +169,10 @@ endpoint secret/rotation, SDK timestamp tolerance; ключ не берётся 
 После durable insert ACK, затем обработка. Повтор event ID и разные события одного PI
 не повторяют credit. Режим test/live, merchant, Customer и сумма проверяются по mapping.
 Порядок доставки не предполагается. [Официальный webhook contract](https://docs.stripe.com/webhooks).
+
+Локально (test mode): `stripe listen --api-key "$STRIPE_SECRET_KEY" --forward-to
+http://127.0.0.1:3000/api/billing/stripe/webhook` — напечатанный `whsec_…` положить в
+`STRIPE_WEBHOOK_SECRET` и перезапустить сервер; relay и отдельный endpoint с нужной версией не нужны.
 
 Активные pending/unknown intents опрашиваются адресно с backoff. Новые события и cash
 transactions импортируются по cursor с коротким overlap; глубокая сверка идёт отдельным

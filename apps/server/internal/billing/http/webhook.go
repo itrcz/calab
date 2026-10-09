@@ -24,8 +24,10 @@ var ErrBadWebhook = httpx.BadRequest("invalid webhook signature")
 // stripeWebhook: POST /api/billing/stripe/webhook. Reads the raw body (≤ stripe.MaxWebhookBody),
 // verifies it against the endpoint secrets, stores the event (a redelivery is a no-op) and
 // answers 200 at once; the inbox worker processes it. A bad signature, a livemode event while
-// live mode is off: 400 and nothing stored. An event of another API version: 500 (Stripe
-// redelivers once the endpoint is fixed) and an error log to alert on. Anything else: 503.
+// live mode is off: 400 and nothing stored. Events of any API version are stored (the adapter
+// reads only the envelope; objects are re-fetched with the pinned version), so `stripe listen
+// --forward-to …/api/billing/stripe/webhook` works with the account default version. Anything
+// else: 503 (Stripe redelivers).
 func (s *Service) stripeWebhook(w http.ResponseWriter, r *http.Request) error {
 	p, ok := s.reg.Provider(provider.Stripe)
 	if !ok {
@@ -49,9 +51,6 @@ func (s *Service) stripeWebhook(w http.ResponseWriter, r *http.Request) error {
 	case errors.Is(err, provider.ErrLivemodeForbidden):
 		slog.ErrorContext(ctx, "billing webhook: livemode event refused (STRIPE_LIVEMODE_ALLOWED=false)", "err", err)
 		return httpx.BadRequest("livemode events are not accepted")
-	case errors.Is(err, stripe.ErrAPIVersionMismatch):
-		slog.ErrorContext(ctx, "billing webhook: API version mismatch: recreate the endpoint with "+stripe.APIVersion, "err", err)
-		return httpx.Internal(err)
 	default:
 		slog.WarnContext(ctx, "billing webhook: not stored", "err", err)
 		return httpx.Unavailable(err)

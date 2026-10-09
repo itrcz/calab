@@ -2,7 +2,8 @@
 // provider.OffSessionCharger over stripe-go with a pinned API version.
 //
 // The adapter is a pure API client: it keeps no state beyond credentials and the merchant
-// account id (resolved once), never touches the database and never logs. Rules it keeps:
+// account id (resolved once), never touches the database and logs only one warning per foreign
+// webhook API version (ids, no payload). Rules it keeps:
 //   - every create call carries the caller's idempotency key (IdemKey) and is refused without
 //     one; stripe-go retries connection errors (and 429 lock timeouts) with the same key,
 //     which Stripe deduplicates for 24h, so a retry never creates a second object;
@@ -13,7 +14,8 @@
 //   - errors carry Stripe's type / code / decline code / request id and a redacted message,
 //     never request bodies, client secrets or keys;
 //   - webhooks are verified on the raw body against every configured endpoint secret
-//     (rotation) and must be rendered with APIVersion.
+//     (rotation); events of any API version are accepted, only their envelope ids are read
+//     and the objects are re-fetched with APIVersion.
 package stripe
 
 import (
@@ -31,8 +33,9 @@ import (
 )
 
 // APIVersion is the Stripe API version this adapter is written and tested against. stripe-go
-// sends it on every request (Stripe-Version) and the webhook endpoint must be created with it:
-// events rendered with another version are refused (ErrAPIVersionMismatch). Changing it means
+// sends it on every request (Stripe-Version), so every object we act on is read in it. Webhook
+// events may be rendered with any version (the account default, `stripe listen`): ParseWebhook
+// reads only their stable envelope and the objects are re-fetched. Changing it means
 // a stripe-go major upgrade plus a new run of the contract tests (build tag stripetest).
 const APIVersion = "2026-08-26.dahlia"
 
@@ -55,10 +58,6 @@ const Caps = provider.CapHostedCheckout | provider.CapSaveMethod | provider.CapO
 
 // Errors of this adapter (besides the provider.Err* sentinels).
 var (
-	// ErrAPIVersionMismatch: a webhook event rendered with another API version than
-	// APIVersion. The endpoint must be recreated with APIVersion; answer 5xx so Stripe
-	// redelivers once it is fixed, and alert.
-	ErrAPIVersionMismatch = errors.New("stripe: webhook event API version mismatch")
 	// ErrIdempotencyMismatch: an idempotency key reused with other parameters (Stripe 400
 	// idempotency_error). A bug in the caller: the key must derive from one local row. It also
 	// matches provider.ErrUnknownOutcome: the first request may have created the object.
