@@ -1,0 +1,29 @@
+{
+  "amount": 300,
+  "balance_transaction": "txn_FIXTURE0001",
+  "charge": "ch_FIXTURE0002",
+  "created": 1791569779,
+  "currency": "usd",
+  "customer": "cus_FIXTURE0004",
+  "customer_account": null,
+  "destination_details": {
+    "card": {
+      "reference_status": "pending",
+      "reference_type": "acquirer_reference_number",
+      "type": "refund"
+    },
+    "type": "card"
+  },
+  "id": "re_FIXTURE0001",
+  "metadata": {
+    "calab_account_id": "3ec8d17f-f6cb-4706-801f-f21d2fc8a7d0"
+  },
+  "object": "refund",
+  "payment_intent": "pi_FIXTURE0003",
+  "payment_method": "pm_FIXTURE0002",
+  "reason": "requested_by_customer",
+  "receipt_number": null,
+  "source_transfer_reversal": null,
+  "status": "succeeded",
+  "transfer_reversal": null
+}

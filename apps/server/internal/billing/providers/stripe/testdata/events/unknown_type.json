@@ -1,0 +1,21 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791561600,
+  "data": {
+    "object": {
+      "id": "cus_FIXTURE0004",
+      "livemode": false,
+      "metadata": {},
+      "object": "customer"
+    }
+  },
+  "id": "evt_FIXTURE_unknown_type",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 1,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "customer.updated"
+}

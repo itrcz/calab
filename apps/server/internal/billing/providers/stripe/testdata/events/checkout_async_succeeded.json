@@ -1,0 +1,33 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791561600,
+  "data": {
+    "object": {
+      "amount_total": 500,
+      "client_reference_id": "e21679b8-ab27-41b3-bb43-c9e4cc62825c",
+      "currency": "usd",
+      "customer": "cus_FIXTURE0001",
+      "id": "cs_test_FIXTURE0001",
+      "livemode": false,
+      "metadata": {
+        "calab_account_id": "3ec8d17f-f6cb-4706-801f-f21d2fc8a7d0",
+        "calab_checkout_id": "e21679b8-ab27-41b3-bb43-c9e4cc62825c",
+        "kind": "checkout"
+      },
+      "mode": "payment",
+      "object": "checkout.session",
+      "payment_intent": "pi_FIXTURE0004",
+      "payment_status": "paid",
+      "status": "complete"
+    }
+  },
+  "id": "evt_FIXTURE_checkout_async_succeeded",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 1,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "checkout.session.async_payment_succeeded"
+}

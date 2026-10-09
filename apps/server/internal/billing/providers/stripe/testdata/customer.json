@@ -1,0 +1,32 @@
+{
+  "address": null,
+  "balance": 0,
+  "created": 1791569771,
+  "currency": null,
+  "customer_account": null,
+  "default_source": null,
+  "delinquent": false,
+  "description": null,
+  "discount": null,
+  "email": null,
+  "id": "cus_FIXTURE0001",
+  "invoice_prefix": "HQWHGCPU",
+  "invoice_settings": {
+    "custom_fields": null,
+    "default_payment_method": null,
+    "footer": null,
+    "rendering_options": null
+  },
+  "livemode": false,
+  "metadata": {
+    "calab_account_id": "abe96dea-e1b8-4677-b15a-2b8026267952"
+  },
+  "name": "Fixture Payer",
+  "next_invoice_sequence": 1,
+  "object": "customer",
+  "phone": null,
+  "preferred_locales": [],
+  "shipping": null,
+  "tax_exempt": "none",
+  "test_clock": null
+}

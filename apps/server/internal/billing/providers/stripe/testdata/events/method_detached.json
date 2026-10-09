@@ -1,0 +1,29 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791561600,
+  "data": {
+    "object": {
+      "card": {
+        "brand": "visa",
+        "exp_month": 12,
+        "exp_year": 2030,
+        "last4": "4242"
+      },
+      "customer": null,
+      "id": "pm_FIXTURE0003",
+      "livemode": false,
+      "metadata": {},
+      "object": "payment_method",
+      "type": "card"
+    }
+  },
+  "id": "evt_FIXTURE_method_detached",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 1,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "payment_method.detached"
+}
