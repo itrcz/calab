@@ -1,0 +1,124 @@
+{
+  "adaptive_pricing": {
+    "enabled": false
+  },
+  "after_expiration": null,
+  "allow_promotion_codes": null,
+  "allowed_payment_method_types": [
+    "card"
+  ],
+  "amount_subtotal": 500,
+  "amount_total": 500,
+  "automatic_tax": {
+    "enabled": false,
+    "liability": null,
+    "provider": null,
+    "status": null
+  },
+  "billing_address_collection": "required",
+  "branding_settings": {
+    "background_color": "#ffffff",
+    "border_style": "rounded",
+    "button_color": "#0074d4",
+    "display_name": "calab.io sandbox",
+    "font_family": "default",
+    "icon": null,
+    "logo": null
+  },
+  "cancel_url": "https://app.calab.test/api/billing/return?checkout=e21679b8-ab27-41b3-bb43-c9e4cc62825c",
+  "client_reference_id": "e21679b8-ab27-41b3-bb43-c9e4cc62825c",
+  "client_secret": null,
+  "collected_information": null,
+  "consent": null,
+  "consent_collection": null,
+  "created": 1791569773,
+  "currency": "usd",
+  "currency_conversion": null,
+  "custom_fields": [],
+  "custom_text": {
+    "after_submit": null,
+    "shipping_address": null,
+    "submit": null,
+    "terms_of_service_acceptance": null
+  },
+  "customer": "cus_FIXTURE0001",
+  "customer_account": null,
+  "customer_creation": null,
+  "customer_details": null,
+  "customer_email": null,
+  "discounts": [],
+  "expires_at": 1791573371,
+  "id": "cs_test_FIXTURE0001",
+  "integration_identifier": null,
+  "invoice": null,
+  "invoice_creation": {
+    "enabled": false,
+    "invoice_data": {
+      "account_tax_ids": null,
+      "custom_fields": null,
+      "description": null,
+      "footer": null,
+      "issuer": null,
+      "metadata": {},
+      "rendering_options": null
+    }
+  },
+  "livemode": false,
+  "locale": "auto",
+  "managed_payments": {
+    "enabled": false
+  },
+  "metadata": {
+    "calab_account_id": "abe96dea-e1b8-4677-b15a-2b8026267952",
+    "calab_checkout_id": "e21679b8-ab27-41b3-bb43-c9e4cc62825c",
+    "kind": "checkout"
+  },
+  "mode": "payment",
+  "object": "checkout.session",
+  "origin_context": null,
+  "payment_intent": null,
+  "payment_link": null,
+  "payment_method_collection": "if_required",
+  "payment_method_configuration_details": null,
+  "payment_method_options": {
+    "card": {
+      "request_three_d_secure": "automatic"
+    }
+  },
+  "payment_method_types": [
+    "card"
+  ],
+  "payment_status": "unpaid",
+  "permissions": null,
+  "phone_number_collection": {
+    "enabled": false
+  },
+  "recovered_from": null,
+  "saved_payment_method_options": {
+    "allow_redisplay_filters": [
+      "always"
+    ],
+    "payment_method_remove": "disabled",
+    "payment_method_save": null
+  },
+  "setup_intent": null,
+  "shipping_address_collection": null,
+  "shipping_cost": null,
+  "shipping_options": [],
+  "status": "open",
+  "submit_type": null,
+  "subscription": null,
+  "success_url": "https://app.calab.test/api/billing/return?checkout=e21679b8-ab27-41b3-bb43-c9e4cc62825c",
+  "tax_id_collection": {
+    "enabled": true,
+    "required": "never"
+  },
+  "total_details": {
+    "amount_discount": 0,
+    "amount_shipping": 0,
+    "amount_tax": 0
+  },
+  "ui_mode": "hosted_page",
+  "url": "https://checkout.stripe.com/c/pay/cs_test_FIXTURE",
+  "wallet_options": null
+}

@@ -24,6 +24,7 @@ require (
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/redis/rueidis v1.0.78
+	github.com/stripe/stripe-go/v86 v86.4.2
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
