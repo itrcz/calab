@@ -29,6 +29,8 @@ import { toast } from '../../stores/toasts';
 import { ExpiredBadge, PlanPill } from '../workspace/PlanTab';
 import { SuspendedBadge, SuspendedMark, SuspensionCard } from './SuspensionCard';
 import { LocalReauth } from '../identity/SignIn';
+import { AdminBillingPane, AdminBillingSide, AdminBillingWorkspaceCard, AdminSectionSwitch, type AdminSection, type BillingView } from './billing/AdminBilling';
+import { billingStateOf } from '../../lib/billing/model';
 
 /** The search waits this long after the last keystroke (admin API: 60 requests / min). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -106,6 +108,13 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim(), SEARCH_DEBOUNCE_MS);
   const [selected, setSelected] = useState<string | null>(workspaceId ?? null);
+  // «Пространства | Оплата» (ADR-0080 §13): the billing section has its own list and pages.
+  const [section, setSection] = useState<AdminSection>('workspaces');
+  const [billingView, setBillingView] = useState<BillingView>(null);
+  const openBilling = useCallback((view: BillingView) => {
+    setSection('billing');
+    setBillingView(view);
+  }, []);
   const list = useQuery({
     queryKey: KEY.search(dq),
     queryFn: ({ signal }) => adminApi.search(dq, signal),
@@ -168,30 +177,39 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
               <ShieldCheck className="size-4 text-accent" aria-hidden />
               {t('admin.title')}
             </DialogP.Title>
-            <label className="relative flex items-center">
-              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted" aria-hidden />
-              <input
-                type="search"
-                role="searchbox"
-                aria-label={t('admin.search')}
-                placeholder={t('admin.search')}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:tap-h [&::-webkit-search-cancel-button]:hidden"
-              />
-            </label>
-            <div role="listbox" aria-label={t('admin.title')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1" data-testid="admin-list">
-              {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
-              {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{t('admin.loadFailed')}</p> : null}
-              {list.isSuccess && items.length === 0 ? <p className="px-2 py-3 text-body text-muted">{t('admin.none')}</p> : null}
-              {items.map((a) =>
-                a.workspace ? <WorkspaceCard key={a.workspace.id} a={a} selected={a.workspace.id === selected} onSelect={() => setSelected(a.workspace?.id ?? null)} /> : null,
-              )}
-            </div>
+            <AdminSectionSwitch value={section} onChange={setSection} />
+            {section === 'billing' ? (
+              <AdminBillingSide view={billingView} onView={setBillingView} />
+            ) : (
+              <>
+                <label className="relative flex items-center">
+                  <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted" aria-hidden />
+                  <input
+                    type="search"
+                    role="searchbox"
+                    aria-label={t('admin.search')}
+                    placeholder={t('admin.search')}
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:tap-h [&::-webkit-search-cancel-button]:hidden"
+                  />
+                </label>
+                <div role="listbox" aria-label={t('admin.title')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1" data-testid="admin-list">
+                  {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
+                  {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{t('admin.loadFailed')}</p> : null}
+                  {list.isSuccess && items.length === 0 ? <p className="px-2 py-3 text-body text-muted">{t('admin.none')}</p> : null}
+                  {items.map((a) =>
+                    a.workspace ? <WorkspaceCard key={a.workspace.id} a={a} selected={a.workspace.id === selected} onSelect={() => setSelected(a.workspace?.id ?? null)} /> : null,
+                  )}
+                </div>
+              </>
+            )}
           </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]">
-            {selected ? (
-              <AdminDetail key={selected} id={selected} onClose={onClose} notice={notice} />
+            {section === 'billing' ? (
+              <AdminBillingPane view={billingView} onClose={onClose} notice={notice} />
+            ) : selected ? (
+              <AdminDetail key={selected} id={selected} onClose={onClose} notice={notice} onOpenBilling={openBilling} />
             ) : (
               <>
                 <PaneHeader title={t('admin.title')} onClose={onClose} />
@@ -303,7 +321,7 @@ function PresetField({
 }
 
 /** The chosen workspace: summary, the plan form (PUT with a confirmation), the change log. */
-function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void; notice: ReactNode }): ReactNode {
+function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClose: () => void; notice: ReactNode; onOpenBilling: (v: BillingView) => void }): ReactNode {
   const qc = useQueryClient();
   const ws = useQuery({ queryKey: KEY.ws(id), queryFn: ({ signal }) => adminApi.get(id, signal), retry: false });
   const log = useQuery({ queryKey: KEY.log(id), queryFn: ({ signal }) => adminApi.log(id, signal), retry: false });
@@ -493,6 +511,8 @@ function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void;
           <PlanLog entries={entries} loading={log.isLoading} />
 
           <SuspensionCard a={a} onSaved={(next) => qc.setQueryData(KEY.ws(id), { workspace: next })} />
+
+          <AdminBillingWorkspaceCard workspaceId={w.id} name={w.name} state={billingStateOf(w.billing)} onOpen={() => onOpenBilling(null)} />
         </div>
       </div>
     </>
