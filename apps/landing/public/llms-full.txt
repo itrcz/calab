@@ -141,7 +141,9 @@ Business Source License 1.1 (https://github.com/itrcz/calab/blob/main/LICENSE). 
 
 ## Plans
 
-Free, Team and Business are cloud plans of a workspace; Enterprise is Calab on your own server, without limits. Limits are enforced on the server. Team and Business prices are on request at it@gptunnel.ai; Free is free; Enterprise is free for non-commercial use, commercial licence on request.
+Free, Team and Business are cloud plans of a workspace; Enterprise is Calab on your own server, without limits. Limits are enforced on the server. Global (Unne L.L.C-FZ): Team USD $0.10 and Business USD $0.30 per employee per complete rolling 24 hours, base prices excluding applicable taxes; the final total is shown before payment. RU (ООО «Громтех»): Team 6 RUB and Business 18 RUB per employee per 24 hours, without VAT. The owner counts; guests, bots and pending invitations do not. Balance top-ups fund daily seat charges, with optional automatic top-up. Current teams can run a negative balance for up to seven days without increasing paid capacity, then service and accrual stop. No monthly/yearly commitment or discount. Payments are being prepared for launch; contact support@calab.io. Free is free; Enterprise is free for non-commercial use, commercial licence on request.
+
+Global paid terms: https://calab.io/en/legal/offer/; EULA: https://calab.io/en/legal/terms/; privacy: https://calab.io/en/legal/privacy/. RU documents: https://calab.io/ru/legal/offer/. The marketing site has no active analytics/advertising trackers; optional language storage is controlled in the corner preferences panel. Cookie policy: https://calab.io/en/legal/cookies/.
 
 | | Free | Team | Business | Enterprise (own server) |
 |---|---|---|---|---|

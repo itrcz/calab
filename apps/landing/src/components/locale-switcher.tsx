@@ -2,11 +2,12 @@
 
 import { Globe } from 'lucide-react';
 import { useEffect, useRef, type MouseEvent } from 'react';
-import { LOCALE_INFO, LOCALE_STORAGE_KEY, LOCALES, localePath, type Locale } from '@/i18n/locales';
+import { LOCALE_INFO, LOCALES, localePath, type Locale } from '@/i18n/locales';
+import { rememberLocale } from '@/lib/site-preferences';
 
 /**
  * Icon-only language control in the header (ADR-0022 §3): a native <details> menu of plain links, so it works without JS.
- * With JS: remembers the explicit choice (read by the root redirect page), keeps the current page and navigates to #top,
+ * With JS and storage consent: remembers the choice. Keeps the current page and navigates to #top,
  * closes on outside click / Escape.
  */
 export function LocaleSwitcher({ locale, label, page = '' }: { locale: Locale; label: string; page?: string }) {
@@ -33,11 +34,7 @@ export function LocaleSwitcher({ locale, label, page = '' }: { locale: Locale; l
   }, []);
 
   const choose = (l: Locale) => (e: MouseEvent<HTMLAnchorElement>) => {
-    try {
-      localStorage.setItem(LOCALE_STORAGE_KEY, l);
-    } catch {
-      // storage blocked (private mode, policies): the link still navigates
-    }
+    rememberLocale(l);
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
     e.preventDefault();
     window.location.assign(localePath(l, page) + '#top');

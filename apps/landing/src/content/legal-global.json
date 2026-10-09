@@ -1,0 +1,334 @@
+{
+  "offer": {
+    "title": "Paid service terms",
+    "description": "Daily workspace pricing, your balance, optional automatic top-ups, cancellation and refunds for Global Calab.",
+    "sections": [
+      {
+        "title": "1. Your contract",
+        "paragraphs": [
+          "Unne L.L.C-FZ, a Limited Liability Company (Free Zone) registered in Dubai, United Arab Emirates. Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE. Contact: support@calab.io. VAT TRN: 105410888900001.",
+          "These terms apply to Global cloud services supplied by Unne L.L.C-FZ (we, us). You may purchase as an adult individual, a sole trader or an organisation through an authorised representative. Select the correct payer type and provide accurate billing details. The Russian edition has a separate supplier and RUB terms; changing the website language does not change an existing billing account or contract.",
+          "A paid contract starts when you expressly accept the terms presented with your order and the first payment is confirmed. Online purchases become available when checkout is enabled; until then, contact support to discuss availability. Sending an enquiry does not by itself create a paid order. Your order identifies the supplier, currency, price, plan and terms version. The EULA governs use of Calab; these terms govern payment."
+        ]
+      },
+      {
+        "title": "2. Daily prices and seats",
+        "paragraphs": [
+          "Team costs USD $0.10 and Business costs USD $0.30 per paid seat for a complete 24-hour interval. These are base prices excluding any applicable tax; the final payable total is shown before payment. We do not add an undisclosed charge after you approve a payment. There is no monthly or annual subscription commitment or monthly/annual discount in this model. Free remains free within its limits; Enterprise arrangements are agreed separately.",
+          "Each active workspace member, including the owner, uses a paid seat. Bots, guests and invitations that have not been accepted do not count. The plan’s features and capacity limits are shown with the order.",
+          "When a paid plan starts, you purchase the required seats for 24 hours. An additional seat is charged immediately for its own full 24 hours, rather than waiting until midnight. Each needed seat then renews for another 24 hours. Removing a member stops the next renewal of the vacant seat. Another member can use its remaining paid time without a second charge.",
+          "Removing a member does not automatically request a refund for the current interval. You can end paid service early and request a proportionate refund under section 7. A plan change or paid add-on requires its price to be shown before confirmation."
+        ]
+      },
+      {
+        "title": "3. Your workspace balance",
+        "paragraphs": [
+          "A top-up is an advance payment for Calab services. Daily charges reduce the balance; a top-up first repays any existing debt and then leaves credit for future service. This is a service balance, not a bank account, stored-value payment product or transferable currency. No interest is paid, and it cannot be sent to another customer.",
+          "Access is supplied online in the selected workspace after payment confirmation and purchase of the necessary seat intervals, within 24 hours. There is no physical delivery. The billing history records charges, top-ups, adjustments and refunds. Contact support about an incorrect or duplicate entry.",
+          "You must fund an increase in paid capacity before receiving it. Paid seat capacity cannot increase while the balance is negative. A replacement member can use existing, already purchased capacity."
+        ]
+      },
+      {
+        "title": "4. Payments and optional automatic top-ups",
+        "paragraphs": [
+          "Global payments use Stripe. Pay only through the methods displayed at checkout; not every card, country or bank-transfer method is necessarily supported. Card details are collected by the payment provider, not entered into Calab servers. You receive the applicable Stripe invoice or receipt at your billing email. Your bank may separately charge for currency conversion or cross-border payment.",
+          "Where bank transfer against an invoice is offered, use the currency, beneficiary and unique payment reference shown on that invoice. Credit is applied only after actual receipt and reconciliation, not on the strength of an uploaded payment order. Contact support if a payment cannot be matched; a payer or amount mismatch may require clarification. Each payment is credited only once.",
+          "Automatic top-up is optional and requires separate permission to save a payment method and charge it later. When funds are insufficient for the next daily charge, the top-up amount is the current debt plus 30 days of service for the current paid team and plan. This creates a reserve on your balance; it is not a monthly subscription purchase. The formula and method are shown when you enable it.",
+          "After a failed attempt we send a service notification and may try again no more than once every 24 hours while a top-up is needed and permission remains active. A payment with an unknown outcome is reconciled before another charge is initiated. Automatic top-up stops when the workspace is suspended or permission is withdrawn.",
+          "Turn it off in available billing settings or email support@calab.io from the owner’s account, identifying the workspace. Once we receive your withdrawal, no new charge is initiated under that permission. A previously authorised payment may still complete; an incorrect charge is refundable. Turning off automatic top-up does not itself stop daily service charges."
+        ]
+      },
+      {
+        "title": "5. Seven days to settle a negative balance",
+        "paragraphs": [
+          "If funds are insufficient to renew the existing team’s seats, service may continue on credit for up to seven consecutive days from the first negative balance. We notify the owner of insufficient funds, the debt and the suspension deadline. Paid capacity cannot increase during this period.",
+          "A partial payment that leaves the balance negative does not restart the seven-day clock. Settling the full debt ends that debt episode. Removing members reduces future charges but does not erase charges for service already provided.",
+          "If the debt remains unpaid at the deadline, the workspace is suspended and further daily charges stop. The owner can access payment, billing and cancellation actions; members see a suspension notice. To resume paid service, settle the debt and fund the necessary new daily intervals. Alternatively, settle the debt and move to Free within its limits without buying another paid day.",
+          "Suspension does not immediately delete your data. Retention, deletion and requests for access are covered by the Privacy Policy and EULA.",
+          "If a final daily interval would extend past the seven-day suspension deadline, it ends at that deadline and is charged proportionately, rounded to the nearest cent. You are not charged for time after suspension."
+        ]
+      },
+      {
+        "title": "6. Stop paid service",
+        "paragraphs": [
+          "You can stop the paid plan and future charges through available settings or by contacting support@calab.io. Identify the workspace and the date you want service to stop; without a later date, your request takes effect when received. We confirm the cancellation and stop future daily charges and associated automatic top-ups.",
+          "Simply removing a card or disabling automatic top-up is different from ending the paid plan. Amounts for service already provided remain payable. You can request a refund of unused funds and unused paid service. Free-plan limits apply if you move to Free; contact support about retrieving available workspace data."
+        ]
+      },
+      {
+        "title": "7. Refunds and consumer rights",
+        "paragraphs": [
+          "Email support@calab.io with the account email, workspace, payment date and amount, and requested service end date. You do not need to give a reason for cancellation. We may proportionately verify the payer or representative. Never send a full card number, security code, password or bank confirmation code.",
+          "We refund the unused positive cash balance after accounting for service provided and any debt. If you end an already paid 24-hour interval early, its unused part is refunded in proportion to the remaining time. The corresponding capacity ends when refunded. There is no cancellation penalty or supplier refund fee.",
+          "Promotional credit, non-cash goodwill adjustments and unpaid service cannot be redeemed for cash. Prior refunds and payment disputes are reconciled so that the same funds are not refunded twice. We return the relevant full payment for a service not supplied, an erroneous duplicate payment or an unauthorised charge.",
+          "We review and issue refunds within 10 calendar days of receiving the request, or sooner if mandatory law requires it. If essential details are missing, we ask without undue delay. The time for the credit to appear depends on your payment provider. Refunds go to the original payer by the original method; if that is impossible, we agree another lawful method after verifying the recipient.",
+          "These terms do not remove mandatory consumer rights, including withdrawal, remedies for faulty services or local dispute rights. If a statutory withdrawal period applies, it remains available. Where you expressly request service to begin within that period, a proportionate charge for service actually supplied applies only as allowed by law; using Calab alone is not a blanket waiver of withdrawal rights."
+        ]
+      },
+      {
+        "title": "8. Changes and disputes",
+        "paragraphs": [
+          "We give at least 10 calendar days’ notice of a material change or price increase affecting ongoing service. A new price applies to future daily intervals, not retroactively to service already provided or purchased. You can stop paid service before it applies. If the law requires fresh consent, publication alone is insufficient. Ask support for the version used for your purchase.",
+          "UAE law applies, subject to mandatory protections of your country that cannot lawfully be excluded. Contact support or our registered office to resolve a complaint. No clause restricts a consumer’s mandatory right to bring a claim in an available local court. The EULA and these terms do not exclude liability where exclusion is prohibited."
+        ]
+      }
+    ]
+  },
+  "terms": {
+    "title": "Calab EULA",
+    "description": "A plain-language agreement for using Global Calab: your account, workspace, content and rights.",
+    "sections": [
+      {
+        "title": "1. Who provides Calab",
+        "paragraphs": [
+          "Unne L.L.C-FZ, a Limited Liability Company (Free Zone) registered in Dubai, United Arab Emirates. Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE. Contact: support@calab.io. VAT TRN: 105410888900001.",
+          "This End User Licence Agreement (EULA) governs the Global hosted Calab service and clients used to connect to it. You accept it when it is presented for acceptance at registration or another relevant step. Merely publishing a revised document does not replace consent where it is required. Paid service terms apply when you buy a paid plan; the Privacy Policy explains data handling.",
+          "You must be an adult with capacity to enter this agreement. If you act for an organisation, you must be authorised to do so. A separately operated self-hosted server has its own operator; its data practices are not automatically ours."
+        ]
+      },
+      {
+        "title": "2. What you may use",
+        "paragraphs": [
+          "We grant you a non-exclusive right to access the hosted service and use the client functions made available to you for lawful collaboration, subject to your workspace permissions and plan. This right lasts while your account or service entitlement remains active. No ownership of Calab, its branding or other users’ material is transferred.",
+          "This hosted-service agreement does not replace the BSL, commercial licence or third-party licences distributed with the source code or software components. Rights to copy, modify, redistribute or self-host those components are governed by their applicable licences."
+        ]
+      },
+      {
+        "title": "3. Your account and workspace",
+        "paragraphs": [
+          "Provide accurate account information and keep your credentials, recovery methods and sessions secure. Do not share passwords or verification codes. Tell support promptly if you suspect unauthorised access; you can challenge unauthorised activity and are not automatically responsible for every action after a compromise.",
+          "The workspace owner controls membership, roles, plans and integrations. Content is visible according to the relevant room, task, calendar and sharing permissions. Public or guest links can broaden its audience. Check permissions before sharing.",
+          "Leaving a workspace or deleting an account does not automatically remove every shared message or business record needed by other participants. Requests involving personal data are still handled under the Privacy Policy and applicable law."
+        ]
+      },
+      {
+        "title": "4. Your content stays yours",
+        "paragraphs": [
+          "You retain your rights in messages, files and other content. You permit us to store, process, transmit and display it only as needed to provide and secure the functions you choose, to authorised recipients. This permission does not allow us to sell your content or use it in advertising without a separate lawful basis.",
+          "You must have the rights and legal basis to upload and share other people’s content and personal data. Do not post unlawful material, infringe intellectual property, distribute malware or spam, attempt unauthorised access, evade access controls or deliberately disrupt the service. Do not use Calab to process information whose handling is prohibited by requirements applicable to you."
+        ]
+      },
+      {
+        "title": "5. Calls, recordings and integrations",
+        "paragraphs": [
+          "You control camera, microphone and screen sharing through the client and device permissions. Recording is a separate function; the person starting it must inform participants and obtain any legally required consent. An on-screen recording indicator does not replace that duty. We do not use voice or images for biometric identity recognition.",
+          "External integrations are optional and are not enabled by default. If you enable recording processing through GPTunneL, the recording and related information are sent there for transcription or summarisation. Connected calendars, identity providers, telephony, bots, web apps and webhooks can receive information within the permissions granted. Read their own terms and privacy information before connecting them.",
+          "Automatically produced transcripts and summaries may contain errors. Revoking integration access stops future access within the revoked permission; it does not automatically erase copies already sent to the other provider."
+        ]
+      },
+      {
+        "title": "6. Business data and privacy",
+        "paragraphs": [
+          "For our account, billing, support and security purposes, Unne acts as a data controller. For workspace personal data processed on a business customer’s behalf, the customer determines the purposes and we process it to provide the agreed functions on its instructions. The customer must establish a lawful basis and inform the people whose data it supplies.",
+          "Contact support for a data processing agreement and processor/transfer information required for your use before entrusting data that requires such arrangements. This EULA and a cookie choice are not blanket consent for all personal-data processing. The Privacy Policy explains purposes, recipients, retention and how to exercise rights."
+        ]
+      },
+      {
+        "title": "7. Availability, restrictions and remedies",
+        "paragraphs": [
+          "We maintain the service, apply security measures and address reported defects. Availability also depends on networks and devices outside our control. We do not promise uninterrupted or error-free operation; this does not remove obligations to supply the agreed service or provide remedies required by law.",
+          "We may restrict access proportionately to address an actual security incident, serious misuse or a lawful requirement. Where practicable and lawful, we give notice, explain the reason and allow the issue to be corrected; urgent protection may require action first. Contact support to challenge a restriction. Billing suspension follows the seven-day rules in the Paid service terms.",
+          "Nothing excludes liability for fraud, intentional misconduct or any liability that mandatory law prevents us from excluding. Applicable rights to correction, price reduction, refund or compensation remain available."
+        ]
+      },
+      {
+        "title": "8. Ending use and getting your data",
+        "paragraphs": [
+          "You can stop using Calab, request account deletion and end paid service under the Paid service terms. Stopping use alone does not cancel a paid plan. We may terminate for a material breach that is not remedied after reasonable notice, or where immediate action is legally required or necessary to prevent serious harm.",
+          "Before closing a workspace, use available export or download functions or contact support for assistance obtaining available data you are entitled to receive. Suspension or termination does not mean immediate erasure; retention and deletion follow the Privacy Policy and applicable obligations. Shared records and legally required records may be handled separately."
+        ]
+      },
+      {
+        "title": "9. Changes and contact",
+        "paragraphs": [
+          "We identify each version and notify users of material changes in advance; for ongoing paid terms, at least 10 calendar days. Changes do not retroactively alter completed purchases. Where fresh agreement is needed, we request it. You can stop using the affected service and exercise cancellation and refund rights.",
+          "UAE law governs this agreement subject to mandatory local rights that cannot be excluded. Consumer rights to an available local court remain intact. Questions, complaints and notices: support@calab.io or our registered office above."
+        ]
+      }
+    ]
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "description": "How Unne L.L.C-FZ handles information for Global Calab and how to exercise your rights.",
+    "sections": [
+      {
+        "title": "1. Responsibility and scope",
+        "paragraphs": [
+          "Unne L.L.C-FZ, a Limited Liability Company (Free Zone) registered in Dubai, United Arab Emirates. Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE. Contact: support@calab.io. VAT TRN: 105410888900001.",
+          "Unne is responsible for personal information used for its website, account administration, billing, support and service security. This policy covers visitors, account holders, workspace members, guests, customer representatives and people who contact us. It describes processing; it is not a request for universal consent.",
+          "A business customer determines the purposes of personal data it places in its workspace. We process that content to provide the customer’s chosen functions on its instructions. For such requests, contact the workspace owner or us so we can route and assist with them. Independently operated self-hosted servers are governed by their operators’ policies."
+        ]
+      },
+      {
+        "title": "2. Information, purposes and legal grounds",
+        "paragraphs": [
+          "Account and access: email, name, handle, account identifiers, password verification data for password sign-in, confirmation and session records; when connected, attributes from your chosen identity provider. We use these to create, authenticate and manage the account and perform our agreement.",
+          "Workspace functions: membership, roles, invitations, profile and optional contact fields, messages, files, tasks, comments, calendar entries and their authors. These are supplied by users or their authorised organisation. We process them to deliver the chosen functions under the service agreement and the customer’s lawful instructions.",
+          "Calls and recordings: audio, video, shared screen and connection information; when separately enabled, recordings, transcripts and summaries. These support functions selected by participants. We do not use voice or images to identify people biometrically, and ordinary use does not require special-category personal data.",
+          "Payments: payer and representative details, billing address, applicable registration or tax identifiers, billing email, plan, seats, amounts, transaction identifiers, status, refunds and automatic-payment permission. Stripe collects payment credentials; Calab does not receive the full card number or security code. We use billing data to perform the contract and meet applicable accounting and legal obligations.",
+          "Support: your contact details, requests, attachments you choose to provide, proportionate identity or authority checks, correspondence and resolution. We use them to respond, perform our contract and fulfil legal obligations.",
+          "Security and operation: IP address, request time, client/browser/OS information, session or device identifiers, diagnostic and security events, and push tokens if notifications are enabled. We use them to deliver and protect the service, on contractual grounds and, where the applicable law permits it, legitimate interests balanced against your rights. Where another legal basis is required, we use that basis before processing.",
+          "Optional storage and marketing require consent where applicable. We do not treat acceptance of service terms as marketing consent. Necessary service messages about access, invitations, payment or security are separate from advertising. We do not sell personal data or use it for targeted advertising."
+        ]
+      },
+      {
+        "title": "3. Sources and recipients",
+        "paragraphs": [
+          "Information comes from you, your workspace and inviting users, connected identity or calendar providers, payment providers and your device’s interaction with the service. Optional fields are voluntary; without data necessary for a selected function, we may be unable to provide that function.",
+          "Other users receive information within workspace and sharing permissions. Public links can make selected information available to their recipients. Authorised personnel and contracted infrastructure/service providers access data only as needed for their tasks and applicable confidentiality obligations.",
+          "Stripe and payment organisations receive information needed to process payments, detect fraud and fulfil their own obligations. Stripe’s privacy information is available at https://stripe.com/privacy. Payment processing has its own recipients and locations; it is separate from the location of workspace storage.",
+          "Optional integrations are disabled by default. If connected, GPTunneL recording processing, calendars, corporate sign-in, SIP providers, bots, web apps or webhooks can receive information within the chosen permissions. Device notification platforms may process delivery tokens and notification content when enabled. Review the selected provider’s policy and available privacy settings.",
+          "We disclose information to authorities where legally required and proportionate. Contact support for information on processors and recipients relevant to your data."
+        ]
+      },
+      {
+        "title": "4. Storage location and international processing",
+        "paragraphs": [
+          "Calab’s current core databases and workspace storage are hosted in Russia. Unne is established in the UAE. Access by authorised personnel, Stripe payment processing and integrations you choose may involve other countries; not all payment or integration data is stored with the workspace.",
+          "International processing is subject to the transfer rules applicable to the relevant data and customer. Before a transfer requiring additional safeguards, the required lawful mechanism and contractual arrangements must be in place. This policy does not claim an adequacy decision for Russia, a particular signed transfer agreement or consent merely from visiting the site. Contact support for the actual locations and safeguards relevant to your use."
+        ]
+      },
+      {
+        "title": "5. Retention and deletion",
+        "paragraphs": [
+          "We retain account and workspace information for the period needed to provide the service and the functions selected by the customer. On closure or a valid deletion request, we delete or restrict information no longer needed, subject to applicable legal obligations and rights of other participants. Shared organisational records are assessed separately, not retained indefinitely merely because an account once existed.",
+          "Payment and accounting records are retained for the periods required by the laws applicable to Unne. Records needed for a specific dispute are retained for that purpose and the applicable limitation period. Support records are kept to resolve the request and then only where a continuing contractual or legal basis requires them.",
+          "Diagnostic logs and backups have limited operational retention based on security and recovery needs. Deleted data is excluded from ordinary use; deletion instructions must be reapplied after a recovery. Recording availability also depends on the function and workspace settings. Ask support for the retention applicable to a specific record or request."
+        ]
+      },
+      {
+        "title": "6. Website cookies and browser storage",
+        "paragraphs": [
+          "The marketing website has no advertising or analytics trackers. It uses a necessary localStorage record, calab.site-preferences, to remember your storage choice for up to 180 days. Only with permission, calab.locale remembers your chosen language for the remaining duration of that choice.",
+          "Use the corner preferences button or the footer’s Cookie settings link to allow, reject or withdraw optional storage. Closing the panel is not consent. Rejection, withdrawal or expiry stops use of the saved language and removes it on the next site storage access. Language links work without saving a preference. See the Cookie & storage policy for details.",
+          "This marketing-site choice does not control the application’s separate login/security storage or external sites. Browser controls can remove stored data; application and device controls govern notifications. New optional tracking purposes would require new information and any necessary permission before activation."
+        ]
+      },
+      {
+        "title": "7. Security and incidents",
+        "paragraphs": [
+          "We use access controls, authentication, transport protection, session and secret management, security logging, backups, updates and incident response appropriate to the processing. These measures reduce risk but cannot guarantee that no incident will occur.",
+          "If an incident affects personal data, we investigate, limit its impact and make legally required notifications to authorities and affected people. Report suspected exposure or unauthorised access to support@calab.io without sending passwords or bank codes."
+        ]
+      },
+      {
+        "title": "8. Your choices and rights",
+        "paragraphs": [
+          "Depending on the law applicable to you, you may request access and a copy, correction, deletion, restriction, portability, object to relevant processing, or withdraw consent for future processing. Withdrawal does not make earlier lawful processing unlawful. You may complain to the competent data protection authority or seek a legal remedy.",
+          "Email support@calab.io or write to our registered office, identifying the account and your request. We may verify identity or authority proportionately. We respond within the applicable statutory deadline and explain any lawful refusal or extension. Contractual, accounting or other legal duties may require retention of specific records despite a deletion request.",
+          "For data controlled by your organisation, we assist the organisation in responding and direct the request to the appropriate controller. You can disable optional integrations, adjust sharing and notification settings, and change website storage choices without closing your account."
+        ]
+      },
+      {
+        "title": "9. Updates",
+        "paragraphs": [
+          "We publish a dated version and notify users of material changes through available service channels. A revised policy does not retroactively expand processing purposes or create consent. Ask support for an earlier version or further details about your information."
+        ]
+      }
+    ]
+  },
+  "payments": {
+    "title": "Payments & refunds",
+    "description": "Daily USD prices and a practical guide to paying, stopping service and requesting a refund.",
+    "sections": [
+      {
+        "title": "Prices and delivery",
+        "paragraphs": [
+          "Team: USD $0.10. Business: USD $0.30. Each price is per employee for a full 24 hours, including the owner; bots, guests and unaccepted invitations do not count. Base prices exclude applicable taxes; the final total is shown before payment. No monthly/yearly commitment or discount.",
+          "Top-ups fund a service balance. Each needed seat buys rolling 24-hour intervals. An additional seat is charged immediately; removing a member stops the next renewal, and a replacement can use the remaining paid time. Access is supplied online within 24 hours of payment confirmation and purchase of the required intervals. Checkout is available only as payment methods launch."
+        ]
+      },
+      {
+        "title": "Paying and receipts",
+        "paragraphs": [
+          "Supplier: Unne L.L.C-FZ, UAE. Global payments are in USD through Stripe using the methods shown at checkout. Choose individual or organisation billing and provide accurate details and a receipt email. Calab does not receive your full card number or security code. Stripe supplies the applicable invoice or receipt.",
+          "Where transfer against an invoice is available, use its exact beneficiary, currency and payment reference. Credit follows actual receipt and matching; support investigates unmatched payments. Do not pay an uncertain transaction twice before its outcome is checked."
+        ]
+      },
+      {
+        "title": "Optional top-up and debt",
+        "paragraphs": [
+          "Automatic top-up requires separate permission. It covers the current debt plus 30 days for the current team and plan, with a failed attempt retried no more than once per 24 hours. You can withdraw permission in available settings or through support. To stop daily service charges as well, explicitly end the paid plan.",
+          "The current team may continue with a negative balance for up to seven days, without increasing paid capacity. Then the workspace is suspended and new daily charges stop. A partial payment leaving debt does not reset the deadline. To resume paid service, pay the debt and new required intervals; alternatively, settle the debt and use Free within its limits."
+        ]
+      },
+      {
+        "title": "Cancel or request a refund",
+        "paragraphs": [
+          "Email support@calab.io with your account, workspace, payment date and amount, and desired cancellation date. A reason is optional. Never send passwords, full card details or bank codes.",
+          "We refund unused positive cash balance after accounting for service and debt, plus a proportionate unused part of a paid interval ended early. No cancellation penalty or supplier refund fee. Promotional credit and unpaid service cannot be cashed out; previously refunded funds are not refunded twice.",
+          "Refunds are issued within 10 calendar days of the request, or sooner if required by law, to the original payer and method. Provider processing time can vary. Mandatory consumer withdrawal and faulty-service rights remain available. The Paid service terms contain the full rules."
+        ]
+      }
+    ]
+  },
+  "contacts": {
+    "title": "Company & contact",
+    "description": "The supplier for Global Calab cloud services.",
+    "sections": [
+      {
+        "title": "Registered company",
+        "paragraphs": [
+          "Legal name: Unne L.L.C-FZ.",
+          "Company type: Limited Liability Company (Free Zone). Jurisdiction: Dubai, United Arab Emirates.",
+          "Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE.",
+          "VAT TRN: 105410888900001."
+        ]
+      },
+      {
+        "title": "Support, billing and privacy",
+        "paragraphs": [
+          "Email: support@calab.io. Use this address for service enquiries, invoices, payment reconciliation, automatic-payment withdrawal, cancellation, refunds and privacy requests. You can also send formal correspondence to the registered office.",
+          "Identify the account or workspace and the request. Do not send passwords, bank confirmation codes or full card credentials. A representative may be asked for proportionate proof of authority."
+        ]
+      },
+      {
+        "title": "Online services",
+        "paragraphs": [
+          "Calab is a cloud collaboration service delivered through the web and applications. There is no physical shipping. Global prices and balances are in USD; Stripe payment methods appear at checkout as they become available. Paid service terms, the EULA and Privacy Policy are available without signing in.",
+          "The Russian-language edition separately identifies ООО «Громтех» as its supplier under Russian documents and RUB pricing. The seller shown in an actual order governs that purchase; navigating between website languages does not transfer an existing contract."
+        ]
+      }
+    ]
+  },
+  "cookies": {
+    "title": "Cookie & storage policy",
+    "description": "What the Calab marketing website saves on your device, and how to choose.",
+    "sections": [
+      {
+        "title": "1. Scope",
+        "paragraphs": [
+          "Unne L.L.C-FZ, a Limited Liability Company (Free Zone) registered in Dubai, United Arab Emirates. Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE. Contact: support@calab.io. VAT TRN: 105410888900001.",
+          "The marketing website at calab.io has no advertising or analytics trackers. The records below use localStorage rather than HTTP cookies, but both types of technology store information on your device. Fonts and images are hosted by the website itself; links to the app or third-party services do not embed their trackers here. The Privacy Policy explains broader personal-data handling."
+        ]
+      },
+      {
+        "title": "2. Necessary choice record",
+        "paragraphs": [
+          "calab.site-preferences stores the settings version, whether remembering language is allowed, the choice time and expiry. It is written after an explicit choice for up to 180 days to honour your permission or refusal. It contains no advertising identifier and is not automatically sent in HTTP requests. We ask again after expiry."
+        ]
+      },
+      {
+        "title": "3. Optional language preference",
+        "paragraphs": [
+          "calab.locale stores only ru, en, es or zh, after you allow “Remember language”. It opens the chosen language when you return to the root address. It lasts only for the remaining lifetime of your permission, at most 180 days.",
+          "Without permission, language links still work. The root address uses your browser language without saving it. Rejection, withdrawal or expiry stops the saved preference being used and removes it on the next site storage access."
+        ]
+      },
+      {
+        "title": "4. Change your choice",
+        "paragraphs": [
+          "Use the corner button or Cookie settings in the footer at any time. Allowing and rejecting optional storage are equally available. Closing the panel, scrolling or following a link does not give permission. Withdrawing is as easy as allowing and does not invalidate earlier lawful use.",
+          "If your browser blocks storage, optional persistence stays off and language links still work. Clearing browser data removes the choice too, so the panel will appear again. The choice applies to this browser and domain; other devices, app domains and external sites manage their own settings and necessary session data."
+        ]
+      },
+      {
+        "title": "5. Future changes",
+        "paragraphs": [
+          "A new optional purpose requires updated information and any necessary permission before activation. This policy does not authorise future trackers. For questions or requests, contact support@calab.io.",
+          "Settings include Analytics and Marketing categories marked “Not connected”. We do not currently collect permission for them; their stored values remain off. Before connecting a service, we will identify its provider, purpose and retention, update the choice version and request fresh permission."
+        ]
+      }
+    ]
+  }
+}

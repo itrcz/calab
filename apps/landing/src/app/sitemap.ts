@@ -24,9 +24,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority,
       alternates: { languages },
     }));
-  }), ...LEGAL_IDS.map((id) => ({
-    url: `${SITE_URL}${localePath('ru', `legal/${id}/`)}`,
+  }), ...(['ru', 'en'] as const).flatMap((locale) => LEGAL_IDS.map((id) => ({
+    url: `${SITE_URL}${localePath(locale, `legal/${id}/`)}`,
     changeFrequency: 'monthly' as const,
     priority: 0.4,
-  }))];
+  })))];
 }

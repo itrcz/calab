@@ -1,7 +1,7 @@
 import { ChevronDown, Lock } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import type { Dict } from '@/i18n';
+import { localePath, type Dict, type Locale } from '@/i18n';
 import { APP_URL, CONTACT_FORM_URL, repoFile } from '@/lib/site';
 import { Button, Section, SectionHeading } from './ui';
 
@@ -90,7 +90,7 @@ function Cell({ value, t }: { value: string; t: Dict['pricing']['table'] }) {
  * table from md up, expanded by default; on phones the table would need a sideways scroll, so each card carries its own
  * values in a native <details> instead (no JS).
  */
-export function Pricing({ t }: { t: Dict['pricing'] }) {
+export function Pricing({ t, locale }: { t: Dict['pricing']; locale: Locale }) {
   const tb = t.table;
   return (
     <Section id="pricing" labelledBy="pricing-title">
@@ -119,7 +119,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
               </h3>
               <p className="mt-1 text-[24px] leading-8 font-semibold tracking-tight">{plan.price}</p>
               {(id === 'team' || id === 'business') && (
-                <p className="mt-1 text-[14px] leading-5 text-fg-2">{t.perSeatMonth}</p>
+                <p className="mt-1 text-[14px] leading-5 text-fg-2">{t.perSeatDay}</p>
               )}
               <p className="mt-1 text-[14px] leading-5 text-pretty text-fg-2">{plan.note}</p>
               <details className="group mt-4 md:hidden">
@@ -134,7 +134,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
                       <dd className="text-right font-medium">
                         <Cell value={tb.cells[row][col] ?? ''} t={tb} />
                         {row === 'price' && (id === 'team' || id === 'business') && (
-                          <span className="block text-[12px] font-normal text-fg-2">{t.perSeatMonth}</span>
+                          <span className="block text-[12px] font-normal text-fg-2">{t.perSeatDay}</span>
                         )}
                       </dd>
                     </div>
@@ -148,7 +148,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
       </ul>
       <p className="mt-6 max-w-[860px] text-[14px] leading-6 text-fg-2">
         {t.billingNote}{' '}
-        <Link href="/ru/legal/offer/" className="link">{t.offerLink}</Link>
+        <Link href={localePath(locale, 'legal/offer/')} className="link">{t.offerLink}</Link>
       </p>
       <div className="mt-10 hidden overflow-hidden rounded-[24px] md:block">
         <table className="w-full table-fixed border-collapse text-[15px] leading-6">
@@ -179,7 +179,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
                   <td key={PLAN_IDS[col]} className="px-4 py-3 align-top text-pretty">
                     <Cell value={v} t={tb} />
                     {row === 'price' && (col === 1 || col === 2) && (
-                      <span className="block text-[12px] text-fg-2">{t.perSeatMonth}</span>
+                      <span className="block text-[12px] text-fg-2">{t.perSeatDay}</span>
                     )}
                   </td>
                 ))}
