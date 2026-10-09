@@ -871,8 +871,10 @@ const (
 	TaskNoticeKind_TASK_NOTICE_KIND_STATUS      TaskNoticeKind = 4 // the status of a task the recipient is subscribed to changed
 	// Approvals (ADR-0049 §5). Mandatory notices bypass the task level, a muted workspace and
 	// «Отписаться» (like a direct mention; only «Не беспокоить» silences them on the client).
-	// APPROVAL_REQUESTED (mandatory): the recipient became an approver, every vote was reset
-	// (the task changed), or a daily reminder of a vote pending for 24 h (≤ 3; actor_id empty).
+	// APPROVAL_REQUESTED (mandatory): the recipient became an approver, their decided vote was
+	// reset (the task changed; TaskNotice.re_requested), or a daily reminder of a vote pending for
+	// 24 h (≤ 3; actor_id empty). The first two wait the board's approval_notify_delay_seconds
+	// (ADR-0082).
 	TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED TaskNoticeKind = 5
 	// APPROVED: the quorum was reached; REJECTED: an approver rejected (the comment is in
 	// Task.approvers). Mandatory for the task's creator and lead assignee; other assignees and
@@ -1956,9 +1958,13 @@ type Board struct {
 	TaskScoped bool `protobuf:"varint,28,opt,name=task_scoped,json=taskScoped,proto3" json:"task_scoped,omitempty"`
 	// Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
 	// created or deleted).
-	RulesCount    uint32 `protobuf:"varint,29,opt,name=rules_count,json=rulesCount,proto3" json:"rules_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RulesCount uint32 `protobuf:"varint,29,opt,name=rules_count,json=rulesCount,proto3" json:"rules_count,omitempty"`
+	// Approvals (ADR-0082): seconds after an approver is added (or their decided vote is reset by
+	// a change of the task) before the APPROVAL_REQUESTED notice goes out; one of 0 (immediately),
+	// 60, 300, 900, 1800, 3600. An approver removed or a vote cast meanwhile cancels the notice.
+	ApprovalNotifyDelaySeconds uint32 `protobuf:"varint,30,opt,name=approval_notify_delay_seconds,json=approvalNotifyDelaySeconds,proto3" json:"approval_notify_delay_seconds,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *Board) Reset() {
@@ -2190,6 +2196,13 @@ func (x *Board) GetTaskScoped() bool {
 func (x *Board) GetRulesCount() uint32 {
 	if x != nil {
 		return x.RulesCount
+	}
+	return 0
+}
+
+func (x *Board) GetApprovalNotifyDelaySeconds() uint32 {
+	if x != nil {
+		return x.ApprovalNotifyDelaySeconds
 	}
 	return 0
 }
@@ -3466,8 +3479,11 @@ type UpdateBoardRequest struct {
 	SetDisabledFeatures bool           `protobuf:"varint,10,opt,name=set_disabled_features,json=setDisabledFeatures,proto3" json:"set_disabled_features,omitempty"`
 	DisabledFeatures    []BoardFeature `protobuf:"varint,11,rep,packed,name=disabled_features,json=disabledFeatures,proto3,enum=calaba.v1.BoardFeature" json:"disabled_features,omitempty"`
 	EstimateScale       *EstimateScale `protobuf:"varint,12,opt,name=estimate_scale,json=estimateScale,proto3,enum=calaba.v1.EstimateScale,oneof" json:"estimate_scale,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// ADR-0082: one of 0, 60, 300, 900, 1800, 3600 (422 otherwise). Notices already scheduled
+	// keep their time.
+	ApprovalNotifyDelaySeconds *uint32 `protobuf:"varint,13,opt,name=approval_notify_delay_seconds,json=approvalNotifyDelaySeconds,proto3,oneof" json:"approval_notify_delay_seconds,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *UpdateBoardRequest) Reset() {
@@ -3582,6 +3598,13 @@ func (x *UpdateBoardRequest) GetEstimateScale() EstimateScale {
 		return *x.EstimateScale
 	}
 	return EstimateScale_ESTIMATE_SCALE_UNSPECIFIED
+}
+
+func (x *UpdateBoardRequest) GetApprovalNotifyDelaySeconds() uint32 {
+	if x != nil && x.ApprovalNotifyDelaySeconds != nil {
+		return *x.ApprovalNotifyDelaySeconds
+	}
+	return 0
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
@@ -7020,13 +7043,16 @@ func (x *TaskUpdate) GetNotice() *TaskNotice {
 
 // Why a task notifies its recipient: the client shows a system notification.
 type TaskNotice struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          TaskNoticeKind         `protobuf:"varint,1,opt,name=kind,proto3,enum=calaba.v1.TaskNoticeKind" json:"kind,omitempty"`
-	ActorId       string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	MessageId     string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"` // COMMENT / MENTIONED in a comment
-	ActivityId    string                 `protobuf:"bytes,4,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
-	Text          string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`                   // RULE: the rule's rendered message (≤ 2000 characters)
-	RuleId        string                 `protobuf:"bytes,6,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // RULE: the rule that sent it
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Kind       TaskNoticeKind         `protobuf:"varint,1,opt,name=kind,proto3,enum=calaba.v1.TaskNoticeKind" json:"kind,omitempty"`
+	ActorId    string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	MessageId  string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"` // COMMENT / MENTIONED in a comment
+	ActivityId string                 `protobuf:"bytes,4,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
+	Text       string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`                   // RULE: the rule's rendered message (≤ 2000 characters)
+	RuleId     string                 `protobuf:"bytes,6,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // RULE: the rule that sent it
+	// APPROVAL_REQUESTED (ADR-0082): the task changed and the recipient's decided vote was reset
+	// - «Задача изменена - нужно согласовать повторно». Older clients show the plain request.
+	ReRequested   bool `protobuf:"varint,7,opt,name=re_requested,json=reRequested,proto3" json:"re_requested,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7101,6 +7127,13 @@ func (x *TaskNotice) GetRuleId() string {
 		return x.RuleId
 	}
 	return ""
+}
+
+func (x *TaskNotice) GetReRequested() bool {
+	if x != nil {
+		return x.ReRequested
+	}
+	return false
 }
 
 // The task was archived (purged false) or deleted with its board.
@@ -8331,7 +8364,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x12\x1a\n" +
 	"\bposition\x18\t \x01(\x05R\bposition\x12\x19\n" +
 	"\bboard_id\x18\n" +
-	" \x01(\tR\aboardId\"\x8e\t\n" +
+	" \x01(\tR\aboardId\"\xd1\t\n" +
 	"\x05Board\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -8376,7 +8409,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\vtask_scoped\x18\x1c \x01(\bR\n" +
 	"taskScoped\x12\x1f\n" +
 	"\vrules_count\x18\x1d \x01(\rR\n" +
-	"rulesCount\"\xb2\x01\n" +
+	"rulesCount\x12A\n" +
+	"\x1dapproval_notify_delay_seconds\x18\x1e \x01(\rR\x1aapprovalNotifyDelaySeconds\"\xb2\x01\n" +
 	"\fTaskAssignee\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\ais_lead\x18\x02 \x01(\bR\x06isLead\x12\x12\n" +
@@ -8504,7 +8538,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\ficon_file_id\x18\a \x01(\tR\n" +
 	"iconFileId\"7\n" +
 	"\rBoardResponse\x12&\n" +
-	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\xab\x05\n" +
+	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\x95\x06\n" +
 	"\x12UpdateBoardRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x15\n" +
 	"\x03key\x18\x02 \x01(\tH\x01R\x03key\x88\x01\x01\x12\x19\n" +
@@ -8522,7 +8556,9 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x15set_disabled_features\x18\n" +
 	" \x01(\bR\x13setDisabledFeatures\x12D\n" +
 	"\x11disabled_features\x18\v \x03(\x0e2\x17.calaba.v1.BoardFeatureR\x10disabledFeatures\x12D\n" +
-	"\x0eestimate_scale\x18\f \x01(\x0e2\x18.calaba.v1.EstimateScaleH\tR\restimateScale\x88\x01\x01B\a\n" +
+	"\x0eestimate_scale\x18\f \x01(\x0e2\x18.calaba.v1.EstimateScaleH\tR\restimateScale\x88\x01\x01\x12F\n" +
+	"\x1dapproval_notify_delay_seconds\x18\r \x01(\rH\n" +
+	"R\x1aapprovalNotifyDelaySeconds\x88\x01\x01B\a\n" +
 	"\x05_nameB\x06\n" +
 	"\x04_keyB\b\n" +
 	"\x06_emojiB\x0f\n" +
@@ -8532,7 +8568,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x12_auto_archive_daysB\x12\n" +
 	"\x10_default_view_idB\r\n" +
 	"\v_restrictedB\x11\n" +
-	"\x0f_estimate_scale\"k\n" +
+	"\x0f_estimate_scaleB \n" +
+	"\x1e_approval_notify_delay_seconds\"k\n" +
 	"\x17SetBoardPositionRequest\x12\x1a\n" +
 	"\bposition\x18\x01 \x01(\x05R\bposition\x12$\n" +
 	"\vcategory_id\x18\x02 \x01(\tH\x00R\n" +
@@ -8881,7 +8918,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\n" +
 	"TaskUpdate\x12#\n" +
 	"\x04task\x18\x01 \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12-\n" +
-	"\x06notice\x18\x02 \x01(\v2\x15.calaba.v1.TaskNoticeR\x06notice\"\xc3\x01\n" +
+	"\x06notice\x18\x02 \x01(\v2\x15.calaba.v1.TaskNoticeR\x06notice\"\xe6\x01\n" +
 	"\n" +
 	"TaskNotice\x12-\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x19.calaba.v1.TaskNoticeKindR\x04kind\x12\x19\n" +
@@ -8891,7 +8928,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\vactivity_id\x18\x04 \x01(\tR\n" +
 	"activityId\x12\x12\n" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x17\n" +
-	"\arule_id\x18\x06 \x01(\tR\x06ruleId\"{\n" +
+	"\arule_id\x18\x06 \x01(\tR\x06ruleId\x12!\n" +
+	"\fre_requested\x18\a \x01(\bR\vreRequested\"{\n" +
 	"\n" +
 	"TaskDelete\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +

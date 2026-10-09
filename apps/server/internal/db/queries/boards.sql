@@ -146,7 +146,8 @@ UPDATE boards SET
     is_private        = coalesce(sqlc.narg('is_private'), is_private),
     auto_archive_days = coalesce(sqlc.narg('auto_archive_days'), auto_archive_days),
     default_view_id   = CASE WHEN sqlc.arg('set_default_view')::boolean THEN sqlc.narg('default_view_id')::uuid ELSE default_view_id END,
-    restricted        = coalesce(sqlc.narg('restricted'), restricted)
+    restricted        = coalesce(sqlc.narg('restricted'), restricted),
+    approval_notify_delay_seconds = coalesce(sqlc.narg('approval_notify_delay_seconds'), approval_notify_delay_seconds)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 
@@ -612,19 +613,59 @@ DELETE FROM task_approvers WHERE task_id = $1 AND user_id = ANY(sqlc.arg('user_i
 UPDATE tasks SET approval_required = $2, updated_at = now() WHERE id = $1;
 
 -- name: SetApproverVote :exec
--- A vote; pending (withdraw) asks for it again: the reminders start over.
+-- A vote; pending (withdraw) asks for it again: the reminders start over. A cast vote drops its
+-- notice not sent yet (ADR-0082): a later reset or delay-0 request is then never sent twice.
 UPDATE task_approvers SET state = sqlc.arg('state')::text, comment = sqlc.arg('comment')::text,
+    notify_due_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN notify_due_at ELSE NULL END,
     decided_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN NULL ELSE now() END,
     requested_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN now() ELSE requested_at END,
     reminders = CASE WHEN sqlc.arg('state')::text = 'pending' THEN 0 ELSE reminders END,
     reminded_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN NULL ELSE reminded_at END
 WHERE task_id = sqlc.arg('task_id') AND user_id = sqlc.arg('user_id');
 
--- name: ResetTaskApprovals :exec
--- The task changed (title / description / its attachments): every vote is asked for again.
+-- name: ResetTaskApprovals :many
+-- The task changed (title / description / its attachments): every decided vote is asked for
+-- again; pending ones keep their notice and reminder schedule (ADR-0082). Returns the
+-- approvers whose vote was reset.
 UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
-    reminders = 0, reminded_at = NULL
-WHERE task_id = $1;
+    reminders = 0, reminded_at = NULL, notify_due_at = NULL
+WHERE task_id = $1 AND state <> 'pending'
+RETURNING user_id;
+
+-- name: BoardApprovalNotifyDelay :one
+SELECT approval_notify_delay_seconds FROM boards WHERE id = $1;
+
+-- name: ScheduleApprovalNotices :exec
+-- The approval notice of these approvers goes out in delay seconds (ADR-0082, DB time).
+UPDATE task_approvers SET notify_due_at = now() + make_interval(secs => sqlc.arg('delay')::integer),
+    notify_reason = sqlc.arg('reason')::text
+WHERE task_id = sqlc.arg('task_id') AND user_id = ANY(sqlc.arg('user_ids')::uuid[]);
+
+-- name: DueApprovalNoticeTasks :many
+-- The tasks with an approval notice due (the partial index; cheap while none is due).
+SELECT DISTINCT task_id FROM (
+    SELECT task_id FROM task_approvers
+    WHERE notify_due_at IS NOT NULL AND notify_due_at <= now()
+    ORDER BY notify_due_at
+    LIMIT sqlc.arg('lim')
+) d;
+
+-- name: ClaimApprovalNotices :many
+-- Claims the due approval notices of one task: clears notify_due_at under the row locks
+-- (SKIP LOCKED: another server instance's pass takes them, never both). A vote still pending
+-- is asked for from now on: the daily reminders count from the notice (ADR-0082). The caller
+-- sends only to pending votes.
+WITH due AS (
+    SELECT a.task_id, a.user_id FROM task_approvers a
+    WHERE a.task_id = sqlc.arg('task_id') AND a.notify_due_at IS NOT NULL AND a.notify_due_at <= now()
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE task_approvers a SET notify_due_at = NULL,
+    requested_at = CASE WHEN a.state = 'pending' THEN now() ELSE a.requested_at END,
+    reminders = CASE WHEN a.state = 'pending' THEN 0 ELSE a.reminders END,
+    reminded_at = CASE WHEN a.state = 'pending' THEN NULL ELSE a.reminded_at END
+FROM due WHERE a.task_id = due.task_id AND a.user_id = due.user_id
+RETURNING a.user_id, a.state, a.notify_reason, a.added_by;
 
 -- name: DueApprovalReminders :many
 -- Votes pending for 24 h since they were asked for or last reminded (≤ 3 reminders), on live
@@ -634,7 +675,7 @@ JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
     AND b.disabled_features & 512 = 0 -- BOARD_FEATURE_APPROVALS (9) off: no reminders (ADR-0058 §3)
 JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
-WHERE a.state = 'pending' AND a.reminders < 3
+WHERE a.state = 'pending' AND a.reminders < 3 AND a.notify_due_at IS NULL
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
 ORDER BY a.task_id, a.user_id
@@ -648,7 +689,7 @@ FROM tasks t JOIN board_statuses st ON st.id = t.status_id JOIN boards b ON b.id
 WHERE a.task_id = sqlc.arg('task_id') AND a.user_id = ANY(sqlc.arg('user_ids')::uuid[])
   AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
   AND b.disabled_features & 512 = 0
-  AND a.state = 'pending' AND a.reminders < 3
+  AND a.state = 'pending' AND a.reminders < 3 AND a.notify_due_at IS NULL
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
 RETURNING a.user_id;

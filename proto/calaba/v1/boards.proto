@@ -249,6 +249,10 @@ message Board {
   // Automations (ADR-0060): rules of the board, enabled or not (BOARD_UPDATE follows a rule
   // created or deleted).
   uint32 rules_count = 29;
+  // Approvals (ADR-0082): seconds after an approver is added (or their decided vote is reset by
+  // a change of the task) before the APPROVAL_REQUESTED notice goes out; one of 0 (immediately),
+  // 60, 300, 900, 1800, 3600. An approver removed or a vote cast meanwhile cancels the notice.
+  uint32 approval_notify_delay_seconds = 30;
 }
 
 message TaskAssignee {
@@ -536,6 +540,9 @@ message UpdateBoardRequest {
   bool set_disabled_features = 10;
   repeated BoardFeature disabled_features = 11;
   optional EstimateScale estimate_scale = 12;
+  // ADR-0082: one of 0, 60, 300, 900, 1800, 3600 (422 otherwise). Notices already scheduled
+  // keep their time.
+  optional uint32 approval_notify_delay_seconds = 13;
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
@@ -1113,6 +1120,9 @@ message TaskNotice {
   string activity_id = 4;
   string text = 5;    // RULE: the rule's rendered message (≤ 2000 characters)
   string rule_id = 6; // RULE: the rule that sent it
+  // APPROVAL_REQUESTED (ADR-0082): the task changed and the recipient's decided vote was reset
+  // - «Задача изменена - нужно согласовать повторно». Older clients show the plain request.
+  bool re_requested = 7;
 }
 
 enum TaskNoticeKind {
@@ -1123,8 +1133,10 @@ enum TaskNoticeKind {
   TASK_NOTICE_KIND_STATUS = 4;    // the status of a task the recipient is subscribed to changed
   // Approvals (ADR-0049 §5). Mandatory notices bypass the task level, a muted workspace and
   // «Отписаться» (like a direct mention; only «Не беспокоить» silences them on the client).
-  // APPROVAL_REQUESTED (mandatory): the recipient became an approver, every vote was reset
-  // (the task changed), or a daily reminder of a vote pending for 24 h (≤ 3; actor_id empty).
+  // APPROVAL_REQUESTED (mandatory): the recipient became an approver, their decided vote was
+  // reset (the task changed; TaskNotice.re_requested), or a daily reminder of a vote pending for
+  // 24 h (≤ 3; actor_id empty). The first two wait the board's approval_notify_delay_seconds
+  // (ADR-0082).
   TASK_NOTICE_KIND_APPROVAL_REQUESTED = 5;
   // APPROVED: the quorum was reached; REJECTED: an approver rejected (the comment is in
   // Task.approvers). Mandatory for the task's creator and lead assignee; other assignees and

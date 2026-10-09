@@ -60,6 +60,17 @@ func (q *Queries) ArchiveTasks(ctx context.Context, ids []uuid.UUID) ([]ArchiveT
 	return items, nil
 }
 
+const boardApprovalNotifyDelay = `-- name: BoardApprovalNotifyDelay :one
+SELECT approval_notify_delay_seconds FROM boards WHERE id = $1
+`
+
+func (q *Queries) BoardApprovalNotifyDelay(ctx context.Context, id uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, boardApprovalNotifyDelay, id)
+	var approval_notify_delay_seconds int32
+	err := row.Scan(&approval_notify_delay_seconds)
+	return approval_notify_delay_seconds, err
+}
+
 const boardHasTasks = `-- name: BoardHasTasks :one
 SELECT (next_number > 1)::boolean FROM boards WHERE id = $1
 `
@@ -151,13 +162,63 @@ func (q *Queries) BoardTaskRoomIDs(ctx context.Context, boardID uuid.UUID) ([]uu
 	return items, nil
 }
 
+const claimApprovalNotices = `-- name: ClaimApprovalNotices :many
+WITH due AS (
+    SELECT a.task_id, a.user_id FROM task_approvers a
+    WHERE a.task_id = $1 AND a.notify_due_at IS NOT NULL AND a.notify_due_at <= now()
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE task_approvers a SET notify_due_at = NULL,
+    requested_at = CASE WHEN a.state = 'pending' THEN now() ELSE a.requested_at END,
+    reminders = CASE WHEN a.state = 'pending' THEN 0 ELSE a.reminders END,
+    reminded_at = CASE WHEN a.state = 'pending' THEN NULL ELSE a.reminded_at END
+FROM due WHERE a.task_id = due.task_id AND a.user_id = due.user_id
+RETURNING a.user_id, a.state, a.notify_reason, a.added_by
+`
+
+type ClaimApprovalNoticesRow struct {
+	UserID       uuid.UUID
+	State        string
+	NotifyReason string
+	AddedBy      *uuid.UUID
+}
+
+// Claims the due approval notices of one task: clears notify_due_at under the row locks
+// (SKIP LOCKED: another server instance's pass takes them, never both). A vote still pending
+// is asked for from now on: the daily reminders count from the notice (ADR-0082). The caller
+// sends only to pending votes.
+func (q *Queries) ClaimApprovalNotices(ctx context.Context, taskID uuid.UUID) ([]ClaimApprovalNoticesRow, error) {
+	rows, err := q.db.Query(ctx, claimApprovalNotices, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimApprovalNoticesRow{}
+	for rows.Next() {
+		var i ClaimApprovalNoticesRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.State,
+			&i.NotifyReason,
+			&i.AddedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimApprovalReminders = `-- name: ClaimApprovalReminders :many
 UPDATE task_approvers a SET reminders = a.reminders + 1, reminded_at = now()
 FROM tasks t JOIN board_statuses st ON st.id = t.status_id JOIN boards b ON b.id = t.board_id
 WHERE a.task_id = $1 AND a.user_id = ANY($2::uuid[])
   AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
   AND b.disabled_features & 512 = 0
-  AND a.state = 'pending' AND a.reminders < 3
+  AND a.state = 'pending' AND a.reminders < 3 AND a.notify_due_at IS NULL
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
 RETURNING a.user_id
@@ -263,7 +324,7 @@ VALUES ($1, $2, $3, $4, $5,
         $6, $7,
         (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = $1),
         $8)
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
 `
 
 type CreateBoardParams struct {
@@ -309,6 +370,7 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board
 		&i.CategoryID,
 		&i.DisabledFeatures,
 		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
 	)
 	return i, err
 }
@@ -673,13 +735,43 @@ func (q *Queries) DetachSubtasks(ctx context.Context, parentID *uuid.UUID) error
 	return err
 }
 
+const dueApprovalNoticeTasks = `-- name: DueApprovalNoticeTasks :many
+SELECT DISTINCT task_id FROM (
+    SELECT task_id FROM task_approvers
+    WHERE notify_due_at IS NOT NULL AND notify_due_at <= now()
+    ORDER BY notify_due_at
+    LIMIT $1
+) d
+`
+
+// The tasks with an approval notice due (the partial index; cheap while none is due).
+func (q *Queries) DueApprovalNoticeTasks(ctx context.Context, lim int32) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, dueApprovalNoticeTasks, lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var task_id uuid.UUID
+		if err := rows.Scan(&task_id); err != nil {
+			return nil, err
+		}
+		items = append(items, task_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const dueApprovalReminders = `-- name: DueApprovalReminders :many
 SELECT a.task_id, a.user_id FROM task_approvers a
 JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
     AND b.disabled_features & 512 = 0 -- BOARD_FEATURE_APPROVALS (9) off: no reminders (ADR-0058 §3)
 JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
-WHERE a.state = 'pending' AND a.reminders < 3
+WHERE a.state = 'pending' AND a.reminders < 3 AND a.notify_due_at IS NULL
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
 ORDER BY a.task_id, a.user_id
@@ -794,7 +886,7 @@ func (q *Queries) FilesAttachable(ctx context.Context, arg FilesAttachableParams
 }
 
 const getBoard = `-- name: GetBoard :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale FROM boards WHERE id = $1
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds FROM boards WHERE id = $1
 `
 
 func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -820,6 +912,7 @@ func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
 		&i.CategoryID,
 		&i.DisabledFeatures,
 		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
 	)
 	return i, err
 }
@@ -921,7 +1014,7 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 }
 
 const getBoardForUpdate = `-- name: GetBoardForUpdate :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale FROM boards WHERE id = $1 FOR UPDATE
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds FROM boards WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -947,6 +1040,7 @@ func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, e
 		&i.CategoryID,
 		&i.DisabledFeatures,
 		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
 	)
 	return i, err
 }
@@ -1718,7 +1812,7 @@ func (q *Queries) ListBoardViews(ctx context.Context, arg ListBoardViewsParams) 
 }
 
 const listBoards = `-- name: ListBoards :many
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
 ORDER BY position, id
 `
 
@@ -1756,6 +1850,7 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 			&i.CategoryID,
 			&i.DisabledFeatures,
 			&i.EstimateScale,
+			&i.ApprovalNotifyDelaySeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -1853,7 +1948,7 @@ func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityPara
 
 const listTaskApprovers = `-- name: ListTaskApprovers :many
 
-SELECT task_id, user_id, state, comment, decided_at, added_by, added_at, requested_at, reminders, reminded_at FROM task_approvers WHERE task_id = ANY($1::uuid[])
+SELECT task_id, user_id, state, comment, decided_at, added_by, added_at, requested_at, reminders, reminded_at, notify_due_at, notify_reason FROM task_approvers WHERE task_id = ANY($1::uuid[])
 ORDER BY task_id, added_at, user_id
 `
 
@@ -1878,6 +1973,8 @@ func (q *Queries) ListTaskApprovers(ctx context.Context, taskIds []uuid.UUID) ([
 			&i.RequestedAt,
 			&i.Reminders,
 			&i.RemindedAt,
+			&i.NotifyDueAt,
+			&i.NotifyReason,
 		); err != nil {
 			return nil, err
 		}
@@ -2454,20 +2551,63 @@ func (q *Queries) NextTaskNumber(ctx context.Context, id uuid.UUID) (int32, erro
 	return column_1, err
 }
 
-const resetTaskApprovals = `-- name: ResetTaskApprovals :exec
+const resetTaskApprovals = `-- name: ResetTaskApprovals :many
 UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
-    reminders = 0, reminded_at = NULL
-WHERE task_id = $1
+    reminders = 0, reminded_at = NULL, notify_due_at = NULL
+WHERE task_id = $1 AND state <> 'pending'
+RETURNING user_id
 `
 
-// The task changed (title / description / its attachments): every vote is asked for again.
-func (q *Queries) ResetTaskApprovals(ctx context.Context, taskID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, resetTaskApprovals, taskID)
+// The task changed (title / description / its attachments): every decided vote is asked for
+// again; pending ones keep their notice and reminder schedule (ADR-0082). Returns the
+// approvers whose vote was reset.
+func (q *Queries) ResetTaskApprovals(ctx context.Context, taskID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, resetTaskApprovals, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const scheduleApprovalNotices = `-- name: ScheduleApprovalNotices :exec
+UPDATE task_approvers SET notify_due_at = now() + make_interval(secs => $1::integer),
+    notify_reason = $2::text
+WHERE task_id = $3 AND user_id = ANY($4::uuid[])
+`
+
+type ScheduleApprovalNoticesParams struct {
+	Delay   int32
+	Reason  string
+	TaskID  uuid.UUID
+	UserIds []uuid.UUID
+}
+
+// The approval notice of these approvers goes out in delay seconds (ADR-0082, DB time).
+func (q *Queries) ScheduleApprovalNotices(ctx context.Context, arg ScheduleApprovalNoticesParams) error {
+	_, err := q.db.Exec(ctx, scheduleApprovalNotices,
+		arg.Delay,
+		arg.Reason,
+		arg.TaskID,
+		arg.UserIds,
+	)
 	return err
 }
 
 const setApproverVote = `-- name: SetApproverVote :exec
 UPDATE task_approvers SET state = $1::text, comment = $2::text,
+    notify_due_at = CASE WHEN $1::text = 'pending' THEN notify_due_at ELSE NULL END,
     decided_at = CASE WHEN $1::text = 'pending' THEN NULL ELSE now() END,
     requested_at = CASE WHEN $1::text = 'pending' THEN now() ELSE requested_at END,
     reminders = CASE WHEN $1::text = 'pending' THEN 0 ELSE reminders END,
@@ -2482,7 +2622,8 @@ type SetApproverVoteParams struct {
 	UserID  uuid.UUID
 }
 
-// A vote; pending (withdraw) asks for it again: the reminders start over.
+// A vote; pending (withdraw) asks for it again: the reminders start over. A cast vote drops its
+// notice not sent yet (ADR-0082): a later reset or delay-0 request is then never sent twice.
 func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams) error {
 	_, err := q.db.Exec(ctx, setApproverVote,
 		arg.State,
@@ -2496,7 +2637,7 @@ func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams
 const setBoardArchived = `-- name: SetBoardArchived :one
 UPDATE boards SET archived_at = CASE WHEN $1::boolean THEN now() ELSE NULL END
 WHERE id = $2
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
 `
 
 type SetBoardArchivedParams struct {
@@ -2527,6 +2668,7 @@ func (q *Queries) SetBoardArchived(ctx context.Context, arg SetBoardArchivedPara
 		&i.CategoryID,
 		&i.DisabledFeatures,
 		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
 	)
 	return i, err
 }
@@ -2536,7 +2678,7 @@ UPDATE boards SET
     disabled_features = coalesce($1, disabled_features),
     estimate_scale    = coalesce($2, estimate_scale)
 WHERE id = $3
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
 `
 
 type SetBoardFeaturesParams struct {
@@ -2569,6 +2711,7 @@ func (q *Queries) SetBoardFeatures(ctx context.Context, arg SetBoardFeaturesPara
 		&i.CategoryID,
 		&i.DisabledFeatures,
 		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
 	)
 	return i, err
 }
@@ -2921,24 +3064,26 @@ UPDATE boards SET
     is_private        = coalesce($7, is_private),
     auto_archive_days = coalesce($8, auto_archive_days),
     default_view_id   = CASE WHEN $9::boolean THEN $10::uuid ELSE default_view_id END,
-    restricted        = coalesce($11, restricted)
-WHERE id = $12
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
+    restricted        = coalesce($11, restricted),
+    approval_notify_delay_seconds = coalesce($12, approval_notify_delay_seconds)
+WHERE id = $13
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
 `
 
 type UpdateBoardParams struct {
-	Name            *string
-	Key             *string
-	Emoji           *string
-	SetIcon         bool
-	IconFileID      *uuid.UUID
-	Description     *string
-	IsPrivate       *bool
-	AutoArchiveDays *int32
-	SetDefaultView  bool
-	DefaultViewID   *uuid.UUID
-	Restricted      *bool
-	ID              uuid.UUID
+	Name                       *string
+	Key                        *string
+	Emoji                      *string
+	SetIcon                    bool
+	IconFileID                 *uuid.UUID
+	Description                *string
+	IsPrivate                  *bool
+	AutoArchiveDays            *int32
+	SetDefaultView             bool
+	DefaultViewID              *uuid.UUID
+	Restricted                 *bool
+	ApprovalNotifyDelaySeconds *int32
+	ID                         uuid.UUID
 }
 
 func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board, error) {
@@ -2954,6 +3099,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		arg.SetDefaultView,
 		arg.DefaultViewID,
 		arg.Restricted,
+		arg.ApprovalNotifyDelaySeconds,
 		arg.ID,
 	)
 	var i Board
@@ -2977,6 +3123,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		&i.CategoryID,
 		&i.DisabledFeatures,
 		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
 	)
 	return i, err
 }
