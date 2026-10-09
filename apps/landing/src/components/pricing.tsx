@@ -118,6 +118,9 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
                 {plan.name}
               </h3>
               <p className="mt-1 text-[24px] leading-8 font-semibold tracking-tight">{plan.price}</p>
+              {(id === 'team' || id === 'business') && (
+                <p className="mt-1 text-[14px] leading-5 text-fg-2">{t.perSeatMonth}</p>
+              )}
               <p className="mt-1 text-[14px] leading-5 text-pretty text-fg-2">{plan.note}</p>
               <details className="group mt-4 md:hidden">
                 <summary className="flex min-h-11 cursor-pointer items-center justify-between rounded-md text-[15px] font-medium text-accent-text">
@@ -130,6 +133,9 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
                       <dt className="text-fg-2">{tb.rows[row]}</dt>
                       <dd className="text-right font-medium">
                         <Cell value={tb.cells[row][col] ?? ''} t={tb} />
+                        {row === 'price' && (id === 'team' || id === 'business') && (
+                          <span className="block text-[12px] font-normal text-fg-2">{t.perSeatMonth}</span>
+                        )}
                       </dd>
                     </div>
                   ))}
@@ -172,6 +178,9 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
                 {tb.cells[row].map((v, col) => (
                   <td key={PLAN_IDS[col]} className="px-4 py-3 align-top text-pretty">
                     <Cell value={v} t={tb} />
+                    {row === 'price' && (col === 1 || col === 2) && (
+                      <span className="block text-[12px] text-fg-2">{t.perSeatMonth}</span>
+                    )}
                   </td>
                 ))}
               </tr>

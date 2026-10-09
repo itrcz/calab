@@ -269,6 +269,7 @@ const en: Dict = {
     releases: 'Releases on GitHub',
   },
   pricing: {
+    perSeatMonth: 'per employee per month',
     billingNote: 'Base price per employee, no VAT. When active, the 10% monthly discount gives Team ₽179.10 and Business ₽449.10 per seat. With the 20% annual discount: ₽1,910.40 and ₽4,790.40 per seat for the full year. Subscription payments are being prepared for launch.',
     offerLink: 'Subscription and refund terms (Russian)',
     eyebrow: 'Pricing',
@@ -277,8 +278,8 @@ const en: Dict = {
     startHere: 'Start here',
     plans: {
       free: { name: 'Free', price: 'Free', note: 'For small teams: up to 5 people per room' },
-      team: { name: 'Team', price: '₽199 / seat / month', note: 'Up to 15 people per room, 100 members, 300 GB of files' },
-      business: { name: 'Business', price: '₽499 / seat / month', note: 'Up to 50 people per room, 500 members, 1 TB of files and priority support' },
+      team: { name: 'Team', price: '₽199', note: 'Up to 15 people per room, 100 members, 300 GB of files' },
+      business: { name: 'Business', price: '₽499', note: 'Up to 50 people per room, 500 members, 1 TB of files and priority support' },
       enterprise: { name: 'Enterprise', price: 'Your server', note: 'On-prem without limits, BSL 1.1 or commercial licence' },
     },
     cta: {
@@ -343,7 +344,7 @@ const en: Dict = {
         whitelabel: ["—", "—", "—", "✓"],
         onprem: ["—", "—", "—", "✓"],
         support: ["—", "✓", "priority", "—"],
-        price: ["free", '₽199 / seat / month', '₽499 / seat / month', "BSL 1.1; commercial on request"],
+        price: ["free", '₽199', '₽499', "BSL 1.1; commercial on request"],
       },
     },
     license:
