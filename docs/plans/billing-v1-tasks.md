@@ -74,3 +74,16 @@
 - После изменения статуса/плана аккаунта ядро вызывает `plans.Service.BillingChanged` (сброс
   кэша + `WORKSPACE_UPDATE` с `Workspace.billing`). Ручной план при `source='billing'` — `409
   BILLING_PLAN_MANAGED` (условный upsert).
+
+## Решения T7 (автопополнение)
+
+- `internal/billing/autotopup.Job` (запускается в `billingwiring.go` при `BILLING_ENABLED`; новые
+  попытки — только при `BILLING_AUTO_TOPUP_ENABLED`, разбор открытых — всегда). Порог, фазы,
+  unknown и restore — ADR-0080 §7 «Дополнение v1 (T7)».
+- Зачисление — только через `inbox.SyncPayment` + хук `inbox.AttemptSettled` (попытка
+  становится `succeeded` в транзакции зачисления; поздний успех после `failed` не скрывается).
+- Письма: `billing_autotopup_failed` (каждый отказ), `billing_autotopup_action_required`
+  (банк просит подтверждение, PI отменён); ключ дедупликации `auto_topup:{attempt}`.
+- `PUT …/auto-topup`: `consent_version` = `autotopup.ConsentVersion` (текст —
+  `autotopup.ConsentTexts`), потолок в [минимум метода, $5000].
+- Новый маршрут `POST /api/admin/billing/auto-topup/reconcile` (scope admin, боты запрещены).
