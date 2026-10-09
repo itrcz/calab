@@ -170,9 +170,10 @@ endpoint secret/rotation, SDK timestamp tolerance; ключ не берётся 
 не повторяют credit. Режим test/live, merchant, Customer и сумма проверяются по mapping.
 Порядок доставки не предполагается. [Официальный webhook contract](https://docs.stripe.com/webhooks).
 
-Локально (test mode): `stripe listen --api-key "$STRIPE_SECRET_KEY" --forward-to
+Локально (test mode): `stripe listen --api-key "$STRIPE_SECRET_KEY" --all-snapshot --forward-to
 http://127.0.0.1:3000/api/billing/stripe/webhook` — напечатанный `whsec_…` положить в
-`STRIPE_WEBHOOK_SECRET` и перезапустить сервер; relay и отдельный endpoint с нужной версией не нужны.
+`STRIPE_WEBHOOK_SECRET` и перезапустить сервер; relay и отдельный endpoint с нужной версией не нужны
+(`--all-snapshot` требуют новые версии CLI; события чужой версии `2026-09-30.endive` принимаются).
 
 Активные pending/unknown intents опрашиваются адресно с backoff. Новые события и cash
 transactions импортируются по cursor с коротким overlap; глубокая сверка идёт отдельным
