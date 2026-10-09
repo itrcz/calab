@@ -59,3 +59,31 @@ Registry маршруты имеют local-account scope; workspace_sso, recover
 directory/access state; source locks идут workspace → user → membership → session.
 Proof другой сессии того же пользователя не заменяет proof endpoint-сессии.
 Внешний SSO adapter телефона пока отсутствует; enforced SSO parity остаётся gate.
+
+## Permission and local test correction (2026-10-09)
+
+The shared renderer remains the only settings/onboarding UI. Returning local-account
+users get the native permission prompt after login, in the foreground, once onboarding
+is complete and no voice/call is active. Only `notDetermined` may prompt. New users
+keep the existing explanatory notification step; visiting it records that permission
+was offered, so choosing Later is respected. A per-device preference records this
+offer; denial is never re-prompted. Guests, bots and non-local authorities do not prompt.
+
+`notificationsTestVersion: 1` adds an optional `test(body)` capability. Its bounded
+operation carries only localized sample text (1–512 characters), no URL or auth data,
+over the existing verified main-frame/origin/document/sequence channel. A separate
+reply returns `scheduled | denied | unsupported | failed`; it cannot alter a push
+registration or resolve a message. Old binaries show an update hint instead of calling
+the unavailable browser Notification constructor. Web/Electron keep their browser path.
+
+iOS checks document authority before and after asynchronous work, requires foreground
+and authorization, and schedules one immediate local notification with a fixed title
+and identifier. Only this local test can show a foreground banner; remote foreground
+APNs remain suppressed to avoid duplicate alerts. A test proves local permission and
+presentation, not server/APNs delivery. No server API, migration, auth or billing changes.
+
+Acceptance: default/denied/granted, skipped onboarding, background and stale-session
+prompt guards; bounded bridge payload, old-host fallback and revoke/timeout replies;
+test results do not reach push-state subscribers; shared permission UI reflects native
+state; iOS compilation plus device banner check. A new web deployment and native build
+are needed for the complete fix. Existing TestFlight review is not changed by this work.

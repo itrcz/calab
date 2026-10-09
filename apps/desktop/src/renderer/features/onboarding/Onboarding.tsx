@@ -444,7 +444,13 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
   const [state, setState] = useState<NotifyState>(() => (desktop ? 'default' : readNotifyState(undefined, platform.notifications)));
   const [asking, setAsking] = useState(false);
   useEffect(() => {
-    if (platform.notifications) void platform.notifications.state().then(s => setState(s.permission === 'unsupported' ? 'unsupported' : s.permission));
+    const host = platform.notifications;
+    if (!host) return;
+    usePrefs.getState().setPrefs({ nativeNotifyOffered: true });
+    let active = true;
+    void host.state().then(s => { if (active) setState(s.permission); });
+    const unsubscribe = host.subscribe(s => setState(s.permission));
+    return () => { active = false; unsubscribe(); };
   }, []);
   const view = notifyStepView(state);
   const enable = (): void => {

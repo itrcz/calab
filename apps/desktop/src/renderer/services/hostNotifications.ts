@@ -6,6 +6,10 @@ import { useSession } from '../stores/session';
 import { usePrefs } from '../stores/prefs';
 import { HOME } from '../stores/dms';
 import { useUi } from '../stores/ui';
+import { useVoice } from '../stores/voice';
+import { useCall } from '../stores/call';
+import { localAuthority } from '../features/identity/model';
+import { HostNotificationPrompt } from '../lib/notifyPermission';
 
 interface Identity { session: string; mentions: boolean; all: boolean }
 interface Endpoint { id: string; version: bigint }
@@ -95,18 +99,33 @@ export function installHostNotifications(capability = platform.notifications): (
  if (!capability) return () => undefined;
  const controller = new HostPushController(capability, api);
  let revokedSession: string | null = null;
+ let disposed = false;
+ const prompt = new HostNotificationPrompt(capability, () => {
+  const s = useSession.getState(); const p = usePrefs.getState();
+  if (disposed || document.visibilityState !== 'visible' || s.status !== 'authed' || !s.sessionId ||
+      s.sessionId === revokedSession || !localAuthority(s.authority) || !s.me?.user || s.me.user.isGuest || s.me.user.isBot ||
+      !p.onboarded || p.nativeNotifyOffered || (!p.notifyMentions && !p.notifyAll) ||
+      useVoice.getState().phase !== 'idle' || useVoice.getState().joining || useCall.getState().phase !== 'idle') return null;
+  return s.sessionId;
+ }, () => usePrefs.getState().setPrefs({ nativeNotifyOffered: true }));
  const update = () => {
   const s = useSession.getState();
   if (s.status === 'offline') return; // Keep the current endpoint during a transient disconnect.
   const p = usePrefs.getState();
   controller.update(s.status === 'authed' && s.sessionId && s.sessionId !== revokedSession ?
     { session: s.sessionId, mentions: p.notifyMentions, all: p.notifyAll } : null);
+  void prompt.update();
  };
- const subscriptions = [useSession.subscribe(update), usePrefs.subscribe(update), capability.subscribe(state => controller.accept(state)),
+ const subscriptions = [useSession.subscribe(update), usePrefs.subscribe(update),
+  useVoice.subscribe((state, previous) => { if (state.phase !== previous.phase || state.joining !== previous.joining) update(); }),
+  useCall.subscribe((state, previous) => { if (state.phase !== previous.phase) update(); }),
+  capability.subscribe(state => controller.accept(state)),
   platform.auth.onLoggedOut(() => { revokedSession = useSession.getState().sessionId; controller.update(null); })];
  // A reload is a document boundary, not user logout: the session-bound server endpoint stays live.
- const pagehide = () => controller.dispose();
+ const pagehide = () => { disposed = true; controller.dispose(); };
  window.addEventListener('pagehide', pagehide);
+ document.addEventListener('visibilitychange', update);
+ window.addEventListener('focus', update);
  update();
- return () => { for (const unsub of subscriptions) unsub(); window.removeEventListener('pagehide', pagehide); controller.dispose(); };
+ return () => { disposed = true; for (const unsub of subscriptions) unsub(); window.removeEventListener('pagehide', pagehide); document.removeEventListener('visibilitychange', update); window.removeEventListener('focus', update); controller.dispose(); };
 }

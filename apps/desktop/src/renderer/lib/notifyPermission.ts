@@ -1,4 +1,4 @@
-import type { HostNotificationsCapability } from '../../shared/hostActivity';
+import type { HostNotificationsCapability, HostNotificationTestResult } from '../../shared/hostActivity';
 
 /**
  * Notification permission for the onboarding step (docs/09 #20): one pure mapping from the
@@ -25,7 +25,7 @@ export function readNotifyState(api: NotificationApi = (globalThis as { Notifica
  * callback-only Safari API and never throws: a failure leaves the state as it was.
  */
 export function requestNotify(api: NotificationApi = (globalThis as { Notification?: NotificationApi }).Notification, host?: HostNotificationsCapability): Promise<NotifyState> {
-  if (host) return host.state(true).then(s => s.permission === 'unsupported' ? 'unsupported' : s.permission);
+  if (host) return host.state(true).then(s => s.permission, () => 'unsupported');
   if (!api || typeof api.requestPermission !== 'function') return Promise.resolve('unsupported');
   const request = api.requestPermission.bind(api);
   return new Promise<NotifyState>((resolve) => {
@@ -36,6 +36,45 @@ export function requestNotify(api: NotificationApi = (globalThis as { Notificati
       resolve(readNotifyState(api));
     }
   });
+}
+
+/** Use the OS host when present. WKWebView has no browser Notification constructor. */
+export async function testNotification(
+  body: string,
+  host?: HostNotificationsCapability,
+  api: NotificationApi = (globalThis as { Notification?: NotificationApi }).Notification,
+  show = (body: string): void => { new Notification('Calab', { body }); },
+): Promise<HostNotificationTestResult | 'update'> {
+  try {
+    if (host) return host.test ? await host.test(body) : 'update';
+    let permission = readNotifyState(api);
+    if (permission === 'default') permission = await requestNotify(api);
+    if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'unsupported';
+    show(body);
+    return 'scheduled';
+  } catch { return 'failed'; }
+}
+
+/** No timers/polling: the installer retries on auth, foreground or preference changes. */
+export class HostNotificationPrompt {
+  private pending = false;
+  private attempted: string | null = null;
+  constructor(private readonly host: HostNotificationsCapability, private readonly eligibleSession: () => string | null, private readonly offered: () => void) {}
+  async update(): Promise<void> {
+    const session = this.eligibleSession();
+    if (!session || this.pending || this.attempted === session) return;
+    this.pending = true;
+    this.attempted = session;
+    try {
+      let state = await this.host.state();
+      if (this.eligibleSession() !== session) { this.attempted = null; return; }
+      if (state.permission === 'default') state = await this.host.state(true);
+      if (this.eligibleSession() !== session) { this.attempted = null; return; }
+      if (state.permission === 'denied' || state.permission === 'granted') this.offered();
+      else this.attempted = null; // e.g. iOS became inactive while the request was in flight.
+    } catch { this.attempted = null; }
+    finally { this.pending = false; }
+  }
 }
 
 export interface NotifyStepView {

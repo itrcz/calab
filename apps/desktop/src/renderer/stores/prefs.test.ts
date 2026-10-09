@@ -9,6 +9,15 @@ const mem = vi.hoisted(() => {
 });
 const { usePrefs } = await import('./prefs');
 
+it('keeps the native notification offer on this device and defaults older preferences to not offered', async () => {
+  usePrefs.setState({ nativeNotifyOffered: false });
+  mem.setItem('calaba-prefs', JSON.stringify({ state: { onboarded: true }, version: 4 }));
+  await usePrefs.persist.rehydrate();
+  expect(usePrefs.getState().nativeNotifyOffered).toBe(false);
+  usePrefs.getState().setPrefs({ nativeNotifyOffered: true });
+  expect(JSON.parse(mem.getItem('calaba-prefs') ?? '{}')).toMatchObject({ state: { nativeNotifyOffered: true } });
+});
+
 describe('prefs.cameraBgFps', () => {
   beforeEach(() => mem.clear());
   it('defaults to 20', () => expect(usePrefs.getState().cameraBgFps).toBe(20));

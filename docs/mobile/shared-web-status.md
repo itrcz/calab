@@ -1,5 +1,23 @@
 # Телефон: общий веб в оболочке — статус
 
+## Native notification permission and local test (2026-10-09)
+
+- **Implemented locally:** contextual native permission after login for returning
+  users, respecting onboarding Later, denial, background and active calls. Native
+  settings read native permission. The test button uses a local iOS notification;
+  older binaries show an update hint. The shared web interface is preserved.
+- **Verified locally:** 95 focused renderer tests, 119 mobile tests, 6 plugin tests;
+  renderer/mobile TypeScript and changed renderer/mobile ESLint; web production
+  build and unsigned iOS Release compilation. Manual 390 px UI check used the
+  local mock API and a denied native-capability fixture; no visual suite was run.
+  `make lint` completed both Go vet passes but could not run `golangci-lint`
+  because it is not installed on this machine. The full lint gate remains open.
+- **Not device-verified:** the new OS permission prompt and foreground local
+  banner. Existing installed/TestFlight binaries do not contain this correction.
+- **Remaining:** independent review, full CI lint, web deployment and a new native
+  build, then an iPhone prompt/test check. No API/server changes or migration.
+  TestFlight build 20 already submitted for review is unchanged by this work.
+
 ## TestFlight app icon (2026-10-08)
 
 The mobile host uses the existing Calab mark at 1024 × 1024, with an opaque
