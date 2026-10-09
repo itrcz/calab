@@ -129,6 +129,7 @@ func TestTaskApprovals(t *testing.T) {
 	o.must(200, "PUT", "/api/tasks/"+id+"/approvers", &v1.SetTaskApproversRequest{UserIds: []string{bob.id, carol.id}, Required: 1}, nil)
 	patchTask(t, o, id, &v1.UpdateTaskRequest{StatusId: &doing}, 409) // 1 of 2 approved, but vetoed
 	gateRefused(t, o.client, 1, 1)
+	ageActivity(t, id) // else required 1 and back merge into nothing (ADR-0081)
 	setApprovers(o, id, 200, 0, bob.id, carol.id)
 	// Withdraw: back to pending; then approve: all approved → forward allowed.
 	if a := voteTask(carol, id, 200, withdraw, "ignored").GetApprovers()[1]; a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetComment() != "" || a.GetDecidedAt() != nil {

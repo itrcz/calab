@@ -7205,11 +7205,19 @@ func (x *TaskDelete) GetPurged() bool {
 	return false
 }
 
-// One new journal entry (TASK_ACTIVITY).
+// One new journal entry (TASK_ACTIVITY). A repeated change of the same field by the same user
+// within a few minutes is merged into one entry (ADR-0081): the merged entry gets a new id and
+// replaced_id names the entry it supersedes, which the client drops; activity empty with
+// replaced_id set = the entry is gone (the field came back to its value, net no-op).
 type TaskActivityAppend struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Activity      *TaskActivity          `protobuf:"bytes,2,opt,name=activity,proto3" json:"activity,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Activity    *TaskActivity          `protobuf:"bytes,2,opt,name=activity,proto3" json:"activity,omitempty"`
+	ReplacedId  string                 `protobuf:"bytes,3,opt,name=replaced_id,json=replacedId,proto3" json:"replaced_id,omitempty"`
+	// The task and board of the entry, also when activity is empty: the gateway routes the event
+	// by them (who sees the task).
+	TaskId        string `protobuf:"bytes,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	BoardId       string `protobuf:"bytes,5,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7256,6 +7264,27 @@ func (x *TaskActivityAppend) GetActivity() *TaskActivity {
 		return x.Activity
 	}
 	return nil
+}
+
+func (x *TaskActivityAppend) GetReplacedId() string {
+	if x != nil {
+		return x.ReplacedId
+	}
+	return ""
+}
+
+func (x *TaskActivityAppend) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskActivityAppend) GetBoardId() string {
+	if x != nil {
+		return x.BoardId
+	}
+	return ""
 }
 
 // Board categories (ADR-0058 §1): to every member of the workspace except guests.
@@ -8935,10 +8964,14 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +
 	"\bboard_id\x18\x02 \x01(\tR\aboardId\x12\x17\n" +
 	"\atask_id\x18\x03 \x01(\tR\x06taskId\x12\x16\n" +
-	"\x06purged\x18\x04 \x01(\bR\x06purged\"l\n" +
+	"\x06purged\x18\x04 \x01(\bR\x06purged\"\xc1\x01\n" +
 	"\x12TaskActivityAppend\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x123\n" +
-	"\bactivity\x18\x02 \x01(\v2\x17.calaba.v1.TaskActivityR\bactivity\"K\n" +
+	"\bactivity\x18\x02 \x01(\v2\x17.calaba.v1.TaskActivityR\bactivity\x12\x1f\n" +
+	"\vreplaced_id\x18\x03 \x01(\tR\n" +
+	"replacedId\x12\x17\n" +
+	"\atask_id\x18\x04 \x01(\tR\x06taskId\x12\x19\n" +
+	"\bboard_id\x18\x05 \x01(\tR\aboardId\"K\n" +
 	"\x13BoardCategoryCreate\x124\n" +
 	"\bcategory\x18\x01 \x01(\v2\x18.calaba.v1.BoardCategoryR\bcategory\"K\n" +
 	"\x13BoardCategoryUpdate\x124\n" +

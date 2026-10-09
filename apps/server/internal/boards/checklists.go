@@ -199,9 +199,8 @@ func (s *Service) publishChecklist(ctx context.Context, o *clOut) {
 	if o.subtask != uuid.Nil {
 		return
 	}
-	for _, a := range o.c.acts {
-		s.ev.Workspace(ctx, t.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: &v1.TaskActivityAppend{
-			WorkspaceId: t.WorkspaceID.String(), Activity: activity(a)}}})
+	for _, j := range o.c.journal {
+		s.ev.Workspace(ctx, t.WorkspaceID, j.event(t.WorkspaceID))
 	}
 }
 

@@ -1006,7 +1006,7 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	for _, t := range moved {
-		s.publish(r.Context(), t, &change{acts: actsOf(c.acts, t)}, false)
+		s.publish(r.Context(), t, &change{acts: actsOf(c.acts, t), journal: journalOf(c.journal, t)}, false)
 	}
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
 }

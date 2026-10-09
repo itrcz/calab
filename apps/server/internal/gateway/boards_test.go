@@ -196,3 +196,20 @@ func TestTaskScopedTransitions(t *testing.T) {
 		t.Fatal("archived task invites nobody")
 	}
 }
+
+// TestTaskOfActivityEvent: a removed journal entry (ADR-0081, no activity) is routed by the
+// event's own task and board, else nobody would get it.
+func TestTaskOfActivityEvent(t *testing.T) {
+	task, board := uuid.New(), uuid.New()
+	ev := func(a *v1.TaskActivityAppend) *v1.DispatchEvent {
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskActivity{TaskActivity: a}}
+	}
+	for name, e := range map[string]*v1.DispatchEvent{
+		"removed": ev(&v1.TaskActivityAppend{TaskId: task.String(), BoardId: board.String(), ReplacedId: uuid.NewString()}),
+		"old":     ev(&v1.TaskActivityAppend{Activity: &v1.TaskActivity{TaskId: task.String(), BoardId: board.String()}}),
+	} {
+		if gt, gb := taskOfEvent(e); gt != task || gb != board {
+			t.Errorf("%s: %v %v", name, gt, gb)
+		}
+	}
+}
