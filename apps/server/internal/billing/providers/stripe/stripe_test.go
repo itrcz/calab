@@ -742,7 +742,7 @@ func TestErrorMapping(t *testing.T) {
 	if _, err := p.GetPayment(ctx, "pi_missing"); !errors.Is(err, provider.ErrNotFound) {
 		t.Fatalf("404: %v", err)
 	}
-	if _, err := p.GetPayment(ctx, "pi_idem"); !errors.Is(err, ErrIdempotencyMismatch) {
+	if _, err := p.GetPayment(ctx, "pi_idem"); !errors.Is(err, ErrIdempotencyMismatch) || !errors.Is(err, provider.ErrUnknownOutcome) {
 		t.Fatalf("idempotency: %v", err)
 	}
 	_, err := p.GetPayment(ctx, "pi_leak")

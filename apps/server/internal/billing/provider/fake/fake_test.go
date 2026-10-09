@@ -47,7 +47,7 @@ func TestCheckoutSuccessAndWebhooks(t *testing.T) {
 		t.Fatal("checkout not idempotent")
 	}
 	req.Amount = money.New(2000, money.USD)
-	if _, err := p.CreateCheckout(ctx, req); !errors.Is(err, fake.ErrIdempotencyMismatch) {
+	if _, err := p.CreateCheckout(ctx, req); !errors.Is(err, fake.ErrIdempotencyMismatch) || !errors.Is(err, provider.ErrUnknownOutcome) {
 		t.Fatalf("reused key with another amount: %v", err)
 	}
 	pay, err := p.CompleteCheckout(s.ID, fake.Succeed)
