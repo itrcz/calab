@@ -1,0 +1,564 @@
+import {
+  AdminBillingAccountSchema,
+  AdminBillingMutationResultSchema,
+  AdminBillingPaymentSchema,
+  AdminBillingRefundRequestSchema,
+  AdminBillingRefundSchema,
+  AdminBillingDisputeSchema,
+  AdminPriceVersionSchema,
+  AdminProviderEventSchema,
+  AutoTopupAttemptStatus,
+  AutoTopupSettingsSchema,
+  BillingAccountStatus,
+  BillingPaymentSchema,
+  BillingQuotePurpose,
+  BillingQuoteSchema,
+  BillingRefundRequestSchema,
+  BillingResumeMode,
+  BillingState,
+  BillingSummarySchema,
+  CheckoutState,
+  CheckoutStatusSchema,
+  DisputeStatus,
+  GetBillingResponseSchema,
+  LedgerEntryKind,
+  LedgerEntrySchema,
+  PayerProfileSchema,
+  PayerType,
+  PaymentMethodKind,
+  PaymentOrigin,
+  PaymentStatus,
+  Plan,
+  PlanSource,
+  RefundOrigin,
+  RefundRequestStatus,
+  RefundStatus,
+  SavedPaymentMethodSchema,
+  type AdminBillingAccount,
+  type BillingSummary,
+  type LedgerEntry,
+  type Money,
+} from '@calaba/protocol';
+import { create } from '@bufbuild/protobuf';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+import { ApiError } from '../api/client';
+import type { AdminBillingApi, BillingAdapters, OwnerBillingApi } from './api';
+
+/**
+ * In-memory billing for dev / QA builds (VITE_BILLING_MOCK=1, services/billing.ts): the owner
+ * cabinet and the superadmin pages without a billing server. The scenario comes from
+ * `?billing=<name>` or localStorage `calaba-billing-mock`: normal | debt | suspended | inactive |
+ * stopped | member | memberSuspended | disabled. A top-up checkout is «paid» on the second poll.
+ * Never imported by a production build.
+ */
+
+const DAY = 86_400_000;
+const USD = 'USD';
+const usd = (minor: bigint): Money => ({ $typeName: 'calaba.v1.Money', minor, currency: USD });
+const ts = (ms: number) => timestampFromMs(ms);
+
+type Scenario = 'normal' | 'debt' | 'suspended' | 'inactive' | 'stopped' | 'member' | 'memberSuspended' | 'disabled';
+const SCENARIOS: readonly Scenario[] = ['normal', 'debt', 'suspended', 'inactive', 'stopped', 'member', 'memberSuspended', 'disabled'];
+
+function scenario(): Scenario {
+  let v: string | null = null;
+  try {
+    v = new URLSearchParams(location.search).get('billing') ?? localStorage.getItem('calaba-billing-mock');
+    if (v) localStorage.setItem('calaba-billing-mock', v);
+  } catch {
+    // storage blocked: the default
+  }
+  return (SCENARIOS as readonly string[]).includes(v ?? '') ? (v as Scenario) : 'normal';
+}
+
+const wait = (ms = 180): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+interface State {
+  sc: Scenario;
+  status: BillingAccountStatus;
+  plan: Plan.TEAM | Plan.ENTERPRISE;
+  balance: bigint;
+  members: number;
+  negativeSince: number | null;
+  suspendAt: number | null;
+  revision: bigint;
+  autoOn: boolean;
+  cap: bigint;
+  cardSaved: boolean;
+  checkouts: Map<string, { amount: bigint; polls: number; save: boolean }>;
+  ledger: LedgerEntry[];
+  refundRequests: Array<ReturnType<typeof create<typeof BillingRefundRequestSchema>>>;
+}
+
+const unit = (p: Plan): bigint => (p === Plan.ENTERPRISE ? 30n : 10n);
+
+function seedLedger(now: number, balance: bigint, members: number, plan: Plan): LedgerEntry[] {
+  const out: LedgerEntry[] = [];
+  let bal = balance;
+  let seq = 40n;
+  const price = unit(plan);
+  for (let i = 0; i < 36; i++) {
+    const topup = i % 12 === 5;
+    const amount = topup ? 2500n : -(price * BigInt(members));
+    const at = now - i * DAY - 3_600_000;
+    out.push(
+      create(LedgerEntrySchema, {
+        id: `le-${seq}`,
+        seq,
+        kind: topup ? LedgerEntryKind.TOPUP : LedgerEntryKind.SEAT_CHARGE,
+        amount: usd(amount),
+        balanceAfter: usd(bal),
+        createdAt: ts(at),
+        ...(topup ? { paymentId: `pay-${i}` } : { sku: plan === Plan.ENTERPRISE ? 'seat.enterprise.day' : 'seat.team.day', quantity: members, startsAt: ts(at), endsAt: ts(at + DAY) }),
+      }),
+    );
+    bal -= amount;
+    seq--;
+  }
+  out.splice(
+    3,
+    0,
+    create(LedgerEntrySchema, { id: 'le-credit', seq: 37n, kind: LedgerEntryKind.ADMIN_CREDIT, amount: usd(1000n), balanceAfter: usd(balance), createdAt: ts(now - 3 * DAY), reason: 'Компенсация за сбой 03.10' }),
+  );
+  return out;
+}
+
+function initial(): State {
+  const sc = scenario();
+  const now = Date.now();
+  const members = 6;
+  const s: State = {
+    sc,
+    status: BillingAccountStatus.ACTIVE,
+    plan: Plan.TEAM,
+    balance: 4230n,
+    members,
+    negativeSince: null,
+    suspendAt: null,
+    revision: 12n,
+    autoOn: true,
+    cap: 50_000n,
+    cardSaved: true,
+    checkouts: new Map(),
+    ledger: [],
+    refundRequests: [
+      create(BillingRefundRequestSchema, { id: 'rr-1', amount: usd(1500n), status: RefundRequestStatus.APPROVED, reason: 'Переплатили', createdAt: ts(now - 20 * DAY), decidedAt: ts(now - 19 * DAY) }),
+    ],
+  };
+  if (sc === 'debt') Object.assign(s, { balance: -320n, negativeSince: now - 3 * DAY - 19 * 3_600_000, suspendAt: now + 3 * DAY + 5 * 3_600_000, autoOn: false });
+  if (sc === 'suspended' || sc === 'memberSuspended')
+    Object.assign(s, { status: BillingAccountStatus.SUSPENDED, balance: -560n, negativeSince: now - 8 * DAY, suspendAt: now - DAY, autoOn: false, cardSaved: false });
+  if (sc === 'inactive') Object.assign(s, { status: BillingAccountStatus.INACTIVE, balance: 0n, autoOn: false, cardSaved: false });
+  if (sc === 'stopped') Object.assign(s, { status: BillingAccountStatus.STOPPED, balance: 1210n, autoOn: false });
+  s.ledger = sc === 'inactive' ? [] : seedLedger(now, s.balance, members, s.plan);
+  return s;
+}
+
+let st: State | null = null;
+const S = (): State => (st ??= initial());
+
+function stateOf(s: State): BillingState {
+  if (s.status === BillingAccountStatus.SUSPENDED) return BillingState.SUSPENDED;
+  if (s.status === BillingAccountStatus.INACTIVE) return BillingState.INACTIVE;
+  if (s.status === BillingAccountStatus.STOPPED) return BillingState.STOPPED;
+  return s.balance < 0n ? BillingState.IN_ARREARS : BillingState.ACTIVE;
+}
+
+function summary(s: State): BillingSummary {
+  const price = unit(s.plan);
+  const daily = s.status === BillingAccountStatus.ACTIVE ? price * BigInt(s.members) : 0n;
+  const debt = s.balance < 0n ? -s.balance : 0n;
+  const now = Date.now();
+  return create(BillingSummarySchema, {
+    accountId: 'acc-1',
+    status: s.status,
+    plan: s.plan,
+    market: 'global',
+    balance: usd(s.balance),
+    debt: usd(debt),
+    unitPrice: usd(price),
+    dailyCost: usd(daily),
+    billableMembers: s.members,
+    coveredSeats: s.status === BillingAccountStatus.ACTIVE ? s.members : 0,
+    ...(s.status === BillingAccountStatus.ACTIVE ? { nextDueAt: ts(now + 9 * 3_600_000) } : {}),
+    ...(s.negativeSince ? { negativeSince: ts(s.negativeSince) } : {}),
+    ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}),
+    forecastDays: daily > 0n && s.balance > 0n ? Number(s.balance / daily) : -1,
+    revision: s.revision,
+    methods: [{ id: 'stripe:card', provider: 'stripe', kind: PaymentMethodKind.CARD, min: usd(500n), max: usd(500_000n), autoTopupCapable: true }],
+    autoTopup: autoTopup(s),
+    payer: create(PayerProfileSchema, { type: PayerType.COMPANY, name: 'ООО «Ромашка»', country: 'DE', email: 'billing@romashka.test', taxId: 'DE123456789' }),
+  });
+}
+
+function autoTopup(s: State) {
+  const now = Date.now();
+  const debt = s.balance < 0n ? -s.balance : 0n;
+  return create(AutoTopupSettingsSchema, {
+    enabled: s.autoOn,
+    paymentMethodId: s.cardSaved ? 'pm-1' : '',
+    maxAmount: usd(s.cap),
+    defaultMaxAmount: usd(50_000n),
+    limitMaxAmount: usd(500_000n),
+    consentVersion: s.autoOn ? 1 : 0,
+    ...(s.autoOn ? { consentAt: ts(now - 40 * DAY) } : {}),
+    nextAmount: usd(debt + 30n * unit(s.plan) * BigInt(s.members)),
+    ...(s.cardSaved
+      ? { lastAttempt: { id: 'att-1', amount: usd(1800n), status: AutoTopupAttemptStatus.SUCCEEDED, createdAt: ts(now - 12 * DAY), finishedAt: ts(now - 12 * DAY + 4000) } }
+      : {}),
+  });
+}
+
+const unavailable = (): ApiError => new ApiError('ERROR_CODE_UNAVAILABLE', 'billing is not enabled', 501, undefined, { reason: 'BILLING_DISABLED' });
+
+function guard(s: State): void {
+  if (s.sc === 'disabled') throw unavailable();
+}
+
+function bump(s: State): void {
+  s.revision++;
+  if (s.balance >= 0n) {
+    s.negativeSince = null;
+    s.suspendAt = null;
+  }
+}
+
+function quoteOf(s: State, purpose: BillingQuotePurpose, plan: Plan) {
+  const debt = s.balance < 0n ? -s.balance : 0n;
+  const price = unit(plan || s.plan);
+  const day = price * BigInt(s.members);
+  const comp = purpose === BillingQuotePurpose.CHANGE_PLAN || purpose === BillingQuotePurpose.STOP ? unit(s.plan) * BigInt(s.members) / 2n : 0n;
+  const charge = purpose === BillingQuotePurpose.STOP || purpose === BillingQuotePurpose.RESUME_FREE ? 0n : day;
+  const free = s.balance > 0n ? s.balance : 0n;
+  const need = debt + charge - comp - free;
+  return create(BillingQuoteSchema, {
+    quoteId: `q-${Date.now()}`,
+    purpose,
+    plan: plan || s.plan,
+    debt: usd(debt),
+    charge: usd(charge),
+    compensation: usd(comp),
+    toPay: usd(need > 0n ? need : 0n),
+    seats: s.members,
+    unitPrice: usd(price),
+    expiresAt: ts(Date.now() + 10 * 60_000),
+    revision: s.revision,
+  });
+}
+
+function owner(): OwnerBillingApi {
+  return {
+    async get() {
+      await wait();
+      const s = S();
+      guard(s);
+      if (s.sc === 'member' || s.sc === 'memberSuspended')
+        return create(GetBillingResponseSchema, { status: { state: s.sc === 'member' ? BillingState.ACTIVE : BillingState.SUSPENDED, source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) } });
+      return create(GetBillingResponseSchema, {
+        status: { state: stateOf(s), source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) },
+        summary: summary(s),
+      });
+    },
+    async quote(_ws, init) {
+      await wait();
+      return quoteOf(S(), init.purpose ?? BillingQuotePurpose.ACTIVATE, init.plan ?? Plan.UNSPECIFIED);
+    },
+    async activate() {
+      await wait();
+      const s = S();
+      s.balance -= unit(s.plan) * BigInt(s.members);
+      s.status = BillingAccountStatus.ACTIVE;
+      bump(s);
+    },
+    async stop() {
+      await wait();
+      const s = S();
+      s.status = BillingAccountStatus.STOPPED;
+      bump(s);
+    },
+    async changePlan(_ws, init) {
+      await wait();
+      const s = S();
+      s.plan = init.plan === Plan.ENTERPRISE ? Plan.ENTERPRISE : Plan.TEAM;
+      bump(s);
+    },
+    async resume(_ws, init) {
+      await wait();
+      const s = S();
+      if (s.balance < 0n) throw new ApiError('ERROR_CODE_CONFLICT', 'insufficient', 409, undefined, { reason: 'BILLING_INSUFFICIENT_FUNDS' });
+      s.status = init.mode === BillingResumeMode.PAID ? BillingAccountStatus.ACTIVE : BillingAccountStatus.STOPPED;
+      bump(s);
+    },
+    async payer() {
+      await wait();
+      return summary(S()).payer ?? create(PayerProfileSchema);
+    },
+    async putPayer() {
+      await wait();
+      bump(S());
+    },
+    async topup(_ws, init) {
+      await wait(300);
+      const s = S();
+      const amount = init.amount?.minor ?? 0n;
+      if (amount < 500n || amount > 500_000n) throw new ApiError('ERROR_CODE_VALIDATION', 'range', 422, 'amount', { reason: 'BILLING_AMOUNT_OUT_OF_RANGE' });
+      const id = `co-${Date.now()}`;
+      s.checkouts.set(id, { amount, polls: 0, save: !!init.saveMethod });
+      return { $typeName: 'calaba.v1.CreateTopupResponse', checkoutId: id, url: `https://checkout.stripe.com/c/pay/mock_${id}` };
+    },
+    async checkout(_ws, cid) {
+      await wait(120);
+      const s = S();
+      const c = s.checkouts.get(cid);
+      if (!c) throw new ApiError('ERROR_CODE_NOT_FOUND', 'checkout', 404);
+      c.polls++;
+      const paid = c.polls >= 2;
+      if (paid && c.polls === 2) {
+        s.balance += c.amount;
+        if (c.save) s.cardSaved = true;
+        if (s.status === BillingAccountStatus.SUSPENDED && s.balance >= 0n) s.status = BillingAccountStatus.STOPPED;
+        s.ledger.unshift(
+          create(LedgerEntrySchema, { id: `le-${cid}`, seq: s.revision + 100n, kind: LedgerEntryKind.TOPUP, amount: usd(c.amount), balanceAfter: usd(s.balance), createdAt: ts(Date.now()), paymentId: `pay-${cid}` }),
+        );
+        bump(s);
+      }
+      return create(CheckoutStatusSchema, { checkoutId: cid, state: paid ? CheckoutState.COMPLETED : CheckoutState.OPEN, amount: usd(c.amount), credited: paid, ...(paid ? { paymentId: `pay-${cid}` } : {}) });
+    },
+    async autoTopup() {
+      await wait();
+      return autoTopup(S());
+    },
+    async putAutoTopup(_ws, init) {
+      await wait();
+      const s = S();
+      s.autoOn = true;
+      s.cap = init.maxAmount?.minor ?? s.cap;
+      bump(s);
+    },
+    async revokeAutoTopup() {
+      await wait();
+      const s = S();
+      s.autoOn = false;
+      bump(s);
+    },
+    async paymentMethods() {
+      await wait();
+      const s = S();
+      return {
+        $typeName: 'calaba.v1.SavedPaymentMethods',
+        methods: s.cardSaved ? [create(SavedPaymentMethodSchema, { id: 'pm-1', kind: PaymentMethodKind.CARD, brand: 'visa', last4: '4242', expMonth: 8, expYear: 2029, createdAt: ts(Date.now() - 90 * DAY) })] : [],
+      };
+    },
+    async detachMethod() {
+      await wait();
+      const s = S();
+      s.cardSaved = false;
+      s.autoOn = false;
+      bump(s);
+    },
+    async ledger(_ws, cursor) {
+      await wait();
+      const all = S().ledger;
+      const from = Number(cursor || '0');
+      const page = all.slice(from, from + 20);
+      return { $typeName: 'calaba.v1.LedgerPage', entries: page, nextCursor: from + 20 < all.length ? String(from + 20) : '' };
+    },
+    async payments() {
+      await wait();
+      const now = Date.now();
+      const payments = [0, 1, 2].map((i) =>
+        create(BillingPaymentSchema, {
+          id: `pay-${i}`,
+          amount: usd(i === 1 ? 1800n : 2500n),
+          status: PaymentStatus.SUCCEEDED,
+          origin: i === 1 ? PaymentOrigin.AUTO_TOPUP : PaymentOrigin.CHECKOUT,
+          succeededAt: ts(now - (5 + i * 12) * DAY),
+          createdAt: ts(now - (5 + i * 12) * DAY),
+          receiptUrl: 'https://pay.stripe.com/receipts/mock',
+          refunded: usd(i === 2 ? 1500n : 0n),
+        }),
+      );
+      return { $typeName: 'calaba.v1.BillingPaymentPage', payments: S().sc === 'inactive' ? [] : payments, nextCursor: '' };
+    },
+    async refundRequests() {
+      await wait();
+      return { $typeName: 'calaba.v1.BillingRefundRequests', requests: S().refundRequests };
+    },
+    async createRefundRequest(_ws, init) {
+      await wait();
+      const r = create(BillingRefundRequestSchema, { id: `rr-${Date.now()}`, amount: usd(init.amount?.minor ?? 0n), status: RefundRequestStatus.REQUESTED, reason: init.reason ?? '', createdAt: ts(Date.now()) });
+      S().refundRequests.unshift(r);
+      return r;
+    },
+  };
+}
+
+function accounts(): AdminBillingAccount[] {
+  const now = Date.now();
+  const s = S();
+  const mk = (i: number, name: string, email: string, status: BillingAccountStatus, balance: bigint, plan: Plan, extra: Omit<Partial<AdminBillingAccount>, '$typeName' | '$unknown'> = {}) =>
+    create(AdminBillingAccountSchema, {
+      accountId: `acc-${i}`,
+      workspaceId: `ws-${i}`,
+      workspaceName: name,
+      ownerEmail: email,
+      market: 'global',
+      status,
+      plan,
+      balance: usd(balance),
+      debt: usd(balance < 0n ? -balance : 0n),
+      createdAt: ts(now - (60 + i) * DAY),
+      revision: BigInt(10 + i),
+      billableMembers: 3 + i,
+      ...(status === BillingAccountStatus.ACTIVE ? { nextDueAt: ts(now + 5 * 3_600_000) } : {}),
+      ...extra,
+    });
+  return [
+    mk(1, 'Calab Team', 'owner@calaba.test', s.status, s.balance, s.plan, s.suspendAt ? { suspendAt: ts(s.suspendAt), negativeSince: ts(s.negativeSince ?? now) } : {}),
+    mk(2, 'Studio North', 'anna@north.test', BillingAccountStatus.ACTIVE, -1240n, Plan.ENTERPRISE, { negativeSince: ts(now - 2 * DAY), suspendAt: ts(now + 5 * DAY), discountBps: 1500 }),
+    mk(3, 'Garage Lab', 'dev@garage.test', BillingAccountStatus.SUSPENDED, -880n, Plan.TEAM, { suspendAt: ts(now - DAY), negativeSince: ts(now - 8 * DAY) }),
+    mk(4, 'Orbit', 'cto@orbit.test', BillingAccountStatus.INACTIVE, 0n, Plan.TEAM),
+    mk(5, 'Pixel Forge', 'hi@pixel.test', BillingAccountStatus.ACTIVE, 98_120n, Plan.ENTERPRISE, { holdUntil: ts(now + 2 * DAY), disputeHold: true }),
+  ];
+}
+
+function admin(): AdminBillingApi {
+  const result = (a: AdminBillingAccount, before: bigint, after: bigint, preview: boolean) =>
+    create(AdminBillingMutationResultSchema, { preview, balanceBefore: usd(before), balanceAfter: usd(after), account: { ...a, balance: usd(after) }, auditId: preview ? '' : `audit-${Date.now()}` });
+  const find = (id: string): AdminBillingAccount => {
+    const all = accounts();
+    return all.find((a) => a.accountId === id) ?? all[0] ?? create(AdminBillingAccountSchema);
+  };
+  return {
+    async accounts(q) {
+      await wait();
+      guard(S());
+      const needle = (q.q ?? '').toLowerCase();
+      return { $typeName: 'calaba.v1.AdminBillingAccounts', accounts: accounts().filter((a) => !needle || `${a.workspaceName} ${a.ownerEmail}`.toLowerCase().includes(needle)), nextCursor: '' };
+    },
+    async account(id) {
+      await wait();
+      return find(id);
+    },
+    async ledger(id, cursor) {
+      return owner().ledger(id, cursor);
+    },
+    async payments(q) {
+      await wait();
+      const page = await owner().payments(q.accountId ?? '', '');
+      return {
+        $typeName: 'calaba.v1.AdminBillingPayments',
+        payments: page.payments.map((p) => create(AdminBillingPaymentSchema, { payment: p, accountId: q.accountId ?? 'acc-1', provider: 'stripe', providerPaymentId: `pi_3Q${p.id}`, livemode: false })),
+        nextCursor: '',
+      };
+    },
+    async refunds(q) {
+      await wait();
+      return {
+        $typeName: 'calaba.v1.AdminBillingRefunds',
+        refunds: [
+          create(AdminBillingRefundSchema, {
+            refund: { id: 'rf-1', paymentId: 'pay-2', amount: usd(1500n), status: RefundStatus.SUCCEEDED, origin: RefundOrigin.CALAB, reason: 'Переплатили', createdAt: ts(Date.now() - 19 * DAY), succeededAt: ts(Date.now() - 19 * DAY) },
+            accountId: q.accountId ?? 'acc-1',
+            providerRefundId: 're_3Qmock',
+          }),
+        ],
+        nextCursor: '',
+      };
+    },
+    async refundRequests(q) {
+      await wait();
+      return {
+        $typeName: 'calaba.v1.AdminBillingRefundRequests',
+        requests: [
+          create(AdminBillingRefundRequestSchema, {
+            request: { id: 'rr-2', amount: usd(2000n), status: RefundRequestStatus.REQUESTED, reason: 'Закрываем пространство, верните остаток', createdAt: ts(Date.now() - 2 * 3_600_000) },
+            accountId: q.accountId ?? 'acc-2',
+            workspaceId: 'ws-2',
+          }),
+        ],
+        nextCursor: '',
+      };
+    },
+    async disputes(q) {
+      await wait();
+      return {
+        $typeName: 'calaba.v1.AdminBillingDisputes',
+        disputes:
+          q.accountId === 'acc-5'
+            ? [create(AdminBillingDisputeSchema, { dispute: { id: 'dp-1', paymentId: 'pay-0', amount: usd(2500n), status: DisputeStatus.OPEN, createdAt: ts(Date.now() - 3 * DAY) }, accountId: 'acc-5', providerDisputeId: 'du_mock' })]
+            : [],
+        nextCursor: '',
+      };
+    },
+    async events() {
+      await wait();
+      return {
+        $typeName: 'calaba.v1.AdminProviderEvents',
+        events: [
+          create(AdminProviderEventSchema, { id: 'ev-1', provider: 'stripe', eventId: 'evt_1Qmock', kind: 'payment_intent.succeeded', objectId: 'pi_3Qpay-0', receivedAt: ts(Date.now() - 600_000), processedAt: ts(Date.now() - 599_000), attempts: 1 }),
+          create(AdminProviderEventSchema, { id: 'ev-2', provider: 'stripe', eventId: 'evt_1Qfail', kind: 'charge.refunded', objectId: 'ch_3Qmock', receivedAt: ts(Date.now() - 3_600_000), attempts: 4, error: 'payment not found: pi_3Qunknown' }),
+        ],
+        nextCursor: '',
+      };
+    },
+    async enable(ws, init) {
+      await wait();
+      return create(AdminBillingAccountSchema, { accountId: `acc-${ws}`, workspaceId: ws, status: BillingAccountStatus.INACTIVE, plan: init.plan ?? Plan.TEAM, market: init.market ?? 'global', balance: usd(0n), debt: usd(0n) });
+    },
+    async manualCredit(id, init) {
+      await wait();
+      const a = find(id);
+      const b = a.balance?.minor ?? 0n;
+      return result(a, b, b + (init.amount?.minor ?? 0n), !!init.preview);
+    },
+    async reverseCredit(id, _cid, init) {
+      await wait();
+      const a = find(id);
+      const b = a.balance?.minor ?? 0n;
+      return result(a, b, b - 1000n, !!init.preview);
+    },
+    async refund(_pid, init) {
+      await wait();
+      const a = find('acc-1');
+      const b = a.balance?.minor ?? 0n;
+      if ((init.amount?.minor ?? 0n) > 2500n) throw new ApiError('ERROR_CODE_CONFLICT', 'refundable', 409, undefined, { reason: 'BILLING_REFUND_EXCEEDS_REFUNDABLE' });
+      return result(a, b, b - (init.amount?.minor ?? 0n), !!init.preview);
+    },
+    async hold(id) {
+      await wait();
+      const a = find(id);
+      return result(a, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, false);
+    },
+    async reconcile(id) {
+      await wait();
+      const a = find(id);
+      return result(a, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, false);
+    },
+    async discount(id, init) {
+      await wait();
+      const a = find(id);
+      return result({ ...a, discountBps: init.discountBps ?? 0 }, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, false);
+    },
+    async prices() {
+      await wait();
+      const now = Date.now();
+      return {
+        $typeName: 'calaba.v1.AdminPriceVersions',
+        prices: [
+          create(AdminPriceVersionSchema, { id: 'pr-1', market: 'global', sku: 'seat.team.day', plan: Plan.TEAM, unit: usd(10n), effectiveFrom: ts(now - 200 * DAY), createdAt: ts(now - 200 * DAY) }),
+          create(AdminPriceVersionSchema, { id: 'pr-2', market: 'global', sku: 'seat.enterprise.day', plan: Plan.ENTERPRISE, unit: usd(30n), effectiveFrom: ts(now - 200 * DAY), createdAt: ts(now - 200 * DAY) }),
+          create(AdminPriceVersionSchema, { id: 'pr-3', market: 'global', sku: 'seat.team.day', plan: Plan.TEAM, unit: usd(12n), effectiveFrom: ts(now + 14 * DAY), createdAt: ts(now - DAY) }),
+        ],
+      };
+    },
+    async createPrice(init) {
+      await wait();
+      return create(AdminPriceVersionSchema, { id: `pr-${Date.now()}`, market: init.market ?? 'global', plan: init.plan ?? Plan.TEAM, sku: 'seat.team.day', ...(init.unit ? { unit: init.unit } : {}), ...(init.effectiveFrom ? { effectiveFrom: init.effectiveFrom } : {}) });
+    },
+  };
+}
+
+export function createMockAdapters(): BillingAdapters {
+  return { owner: owner(), admin: admin() };
+}

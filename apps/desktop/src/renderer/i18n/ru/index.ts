@@ -21,6 +21,7 @@ import { ruBoards2 } from './boards2';
 import { ruMilestones } from './milestones';
 import { ruAutomations } from './automations';
 import { ruPlan } from './plan';
+import { ruBilling } from './billing';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
 import { ruStickers } from './stickers';
@@ -58,6 +59,7 @@ export const ru = {
   ...ruMusic,
   ...ruMedia,
   ...ruPlan,
+  ...ruBilling,
   ...ruModeration,
   ...ruMail,
   ...ruRecording,

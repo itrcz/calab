@@ -38,6 +38,7 @@ import { mentionsMe, onIncomingMessage } from './notify';
 import { achievementForMe } from '../lib/achievements';
 import { invalidateCatalog, invalidateMemberAchievements } from '../lib/achievementCatalog';
 import { applyUserSettings } from './profile';
+import { onBillingUpdate, onWorkspaceBilling, resyncBilling } from './billing';
 import { applyStickerEvent } from './stickers';
 import { applyBotEvent } from './bots';
 import { useBots } from '../stores/bots';
@@ -229,6 +230,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       resumeVoiceAfterReady(r.call);
       // Web: a server newer than this bundle → «Обновить страницу» (docs/09 #125).
       void checkWebVersion();
+      // Balance billing (ADR-0080): a BILLING_UPDATE may have been missed while away.
+      resyncBilling(new Set(r.workspaces.map((w) => w.workspace?.id ?? '')));
       return;
     }
     case 'resumed':
@@ -288,7 +291,13 @@ export function applyDispatch(ev: DispatchEvent): void {
       applyDmState(e.value.roomId, e.value.archivedAt ? timestampMs(e.value.archivedAt) : 0, e.value.clearedBeforeMessageId);
       return;
     case 'workspaceUpdate':
-      if (e.value.workspace) useWorkspaces.getState().updateWorkspace(e.value.workspace);
+      if (e.value.workspace) {
+        useWorkspaces.getState().updateWorkspace(e.value.workspace);
+        onWorkspaceBilling(e.value.workspace);
+      }
+      return;
+    case 'billingUpdate':
+      onBillingUpdate(e.value.workspaceId, e.value.revision);
       return;
     case 'workspaceDelete': {
       const id = e.value.workspaceId;
