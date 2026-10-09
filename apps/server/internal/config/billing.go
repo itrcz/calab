@@ -21,6 +21,10 @@ type Billing struct {
 	EnforcementEnabled bool `env:"BILLING_ENFORCEMENT_ENABLED"` // seat growth checks and suspension at the deadline
 	AutoTopupEnabled   bool `env:"BILLING_AUTO_TOPUP_ENABLED"`  // off-session auto-topup (stays off after a DB restore until reconciled)
 	SelfServe          bool `env:"BILLING_SELF_SERVE"`          // owners may start billing themselves (else a superadmin enables a workspace)
+	// BILLING_AUTO_TOPUP_REQUIRE_RECONCILE: set to a new unique marker (e.g. "restore-2026-10-09")
+	// after a database restore. Auto-topup starts no new charge until a superadmin ran POST
+	// /api/admin/billing/auto-topup/reconcile, which records this marker (docs/06 «Резервные копии»).
+	AutoTopupRequireReconcile string `env:"BILLING_AUTO_TOPUP_REQUIRE_RECONCILE"`
 	// BILLING_PROVIDERS: which provider serves which market, "stripe:global" (v1).
 	Providers string `env:"BILLING_PROVIDERS" envDefault:"stripe:global"`
 	// BILLING_PUBLIC_RETURN_URL: where hosted checkout returns the payer (GET /api/billing/return

@@ -67,6 +67,7 @@ var AdminRoutes = []string{
 	"POST /api/admin/billing/refund-requests/{id}/decide",
 	"POST /api/admin/billing/accounts/{id}/hold",
 	"POST /api/admin/billing/accounts/{id}/reconcile",
+	"POST /api/admin/billing/auto-topup/reconcile", // restore reconcile of auto-topup (T7)
 	"PUT /api/admin/billing/accounts/{id}/discount",
 	"GET /api/admin/billing/prices",
 	"POST /api/admin/billing/prices",

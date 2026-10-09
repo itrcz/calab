@@ -105,7 +105,7 @@ func init() {
 // IsBillingTemplate reports whether t is a billing mail.
 func IsBillingTemplate(t Template) bool {
 	_, ok := billingTexts(billingLabels{})[t]
-	return ok
+	return ok || isAutoTopupTemplate(t)
 }
 
 // EnqueueFinancial queues a billing mail in q (the caller's transaction, which also writes the
