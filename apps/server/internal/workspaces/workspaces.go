@@ -18,6 +18,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	billingcore "github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/calendar"
@@ -649,6 +650,11 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		// otherwise leave its blob behind (uploads after the delete fail on the FK).
 		var err error
 		if keys, err = q.ListWorkspaceFileKeys(r.Context(), &wsID); err != nil {
+			return err
+		}
+		// The billing account closes with the workspace (no further charges, auto-topup
+		// consent revoked); its money history stays (ADR-0080).
+		if err = billingcore.CloseWorkspaceAccount(r.Context(), q, wsID); err != nil {
 			return err
 		}
 		_, err = q.DeleteWorkspace(r.Context(), wsID)

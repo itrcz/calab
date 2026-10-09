@@ -33,7 +33,7 @@ func TestBillingRoutesDisabled(t *testing.T) {
 	anon.must(401, "GET", base, nil, nil)
 	anon.must(501, "POST", "/api/billing/stripe/webhook", nil, nil)
 	anon.must(501, "GET", "/api/billing/return", nil, nil)
-	if len(billinghttp.OwnerRoutes)+len(billinghttp.AdminRoutes)+len(billinghttp.PublicRoutes) != 41 {
+	if len(billinghttp.OwnerRoutes)+len(billinghttp.AdminRoutes)+len(billinghttp.PublicRoutes) != 42 {
 		t.Fatal("billing route list changed: update the route tables and this count")
 	}
 }

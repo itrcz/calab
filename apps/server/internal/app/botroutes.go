@@ -114,6 +114,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/admin/billing/refund-requests/{id}/decide":                     botDeny,
 	"POST /api/admin/billing/accounts/{id}/hold":                              botDeny,
 	"POST /api/admin/billing/accounts/{id}/reconcile":                         botDeny,
+	"POST /api/admin/billing/auto-topup/reconcile":                            botDeny,
 	"PUT /api/admin/billing/accounts/{id}/discount":                           botDeny,
 	"GET /api/admin/billing/prices":                                           botDeny,
 	"POST /api/admin/billing/prices":                                          botDeny,

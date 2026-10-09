@@ -9,6 +9,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/admin"
+	"github.com/calaba/calaba/server/internal/billing/autotopup"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	billinghttp "github.com/calaba/calaba/server/internal/billing/http"
 	"github.com/calaba/calaba/server/internal/billing/inbox"
@@ -36,6 +37,9 @@ type billingRuntime struct {
 	Clock    billing.Clock // *billing.SwitchClock when admin.TestClockAllowed (T6 test-clock route)
 	due      *worker.Worker
 	stripe   *stripe.Provider
+	// AutoTopup runs the off-session attempts (T7); its recovery runs whenever billing is on,
+	// new attempts only with BILLING_AUTO_TOPUP_ENABLED.
+	AutoTopup *autotopup.Job
 }
 
 // newBilling wires the providers (BILLING_PROVIDERS; Stripe when BILLING_STRIPE_ENABLED), the
@@ -72,6 +76,9 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	notifier := inbox.NewNotifier(d.DB, mailSvc, d.Config.PublicAppURL)
 	committed := func(ctx context.Context, acc sqlc.BillingAccount) {
 		billingCommitted(ctx, d, planSvc, pub, notifier, acc)
+		if rt.AutoTopup != nil {
+			rt.AutoTopup.Wake() // a renewal debit may have lowered the balance
+		}
 	}
 	rt.Core = core.New(d.DB, rt.Clock, core.Config{Debits: b.DebitsEnabled, Enforcement: b.EnforcementEnabled}, core.Hooks{
 		Committed: func(ctx context.Context, acc sqlc.BillingAccount, _ bool) { committed(ctx, acc) },
@@ -82,6 +89,10 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	}
 	rt.Inbox = inbox.New(d.DB, reg, rt.Core, inbox.Options{})
 	rt.Inbox.Committed, rt.Inbox.Mail = committed, notifier
+	rt.AutoTopup = autotopup.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, autotopup.Options{
+		Enabled: b.AutoTopupEnabled, RestoreMarker: b.AutoTopupRequireReconcile,
+	})
+	rt.Inbox.AttemptSettled = rt.AutoTopup.AttemptSettled
 	svc := billinghttp.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, billinghttp.Config{
 		Checkouts: b.StripeEnabled, ReturnURL: b.PublicReturnURL, AppURL: d.Config.PublicAppURL,
 	})
@@ -91,6 +102,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		TestClock: testClock, Limiter: redisx.NewRateLimiter(d.Redis, "rl:billing-admin:", 60, 60), // 60 per minute
 		Committed: committed,
 	}).Handlers()
+	rt.Handlers.Admin[autotopup.ReconcileRoute] = rt.AutoTopup.ReconcileHandler()
 	rt.due = worker.New(rt.Core, worker.Options{Suspend: b.EnforcementEnabled})
 	return rt
 }
@@ -101,8 +113,8 @@ func (rt *billingRuntime) Routes(mux httpx.Router, private func(http.Handler) ht
 }
 
 // Run starts the background work of billing until ctx is done: the merchant account lookup,
-// the inbox worker and the reconciliation, the due worker (BILLING_DEBITS_ENABLED) and the
-// nightly integrity check. Nothing runs while billing is disabled.
+// the inbox worker and the reconciliation, the due worker (BILLING_DEBITS_ENABLED), the
+// nightly integrity check and the auto-topup job. Nothing runs while billing is disabled.
 func (rt *billingRuntime) Run(ctx context.Context) {
 	if !rt.cfg.Enabled {
 		return
@@ -116,6 +128,7 @@ func (rt *billingRuntime) Run(ctx context.Context) {
 		go rt.due.Run(ctx)
 	}
 	go rt.due.RunIntegrity(ctx)
+	go rt.AutoTopup.Run(ctx)
 }
 
 // resolveStripeAccount resolves the merchant account once at startup so webhooks do not wait

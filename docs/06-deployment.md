@@ -629,5 +629,12 @@ authority/policy. Не отключать enforcement автоматически
   - `restore.sh pg <dump>` — заменить живую БД (останавливает api, спрашивает подтверждение).
   - `restore.sh files <tar.zst>` — заменить файлы (останавливает api, `chown 65532`). Архив файлов проверен распаковкой: `diff -r` с живым volume — идентично.
   - Caddy/секреты — вручную: `zstd -dc … | tar -x` в volume `calaba_caddy_data` / в `infra/docker/`.
+  - **Биллинг после `restore.sh pg`** (ADR-0080 §7, T7): в восстановленной базе может не быть уже
+    отправленных автопополнений — новая попытка списала бы второй раз. До старта api задать
+    `BILLING_AUTO_TOPUP_REQUIRE_RECONCILE=restore-<дата-время>` (каждый раз новый маркер), после
+    старта суперадмином (свежий вход) — `POST /api/admin/billing/auto-topup/reconcile`
+    `{"reason":"restore <дата>","requestId":"<uuid>"}`: зачисляет найденные у Stripe PI за 48 h и
+    снимает паузу на всех инстансах. Ответ 503 — Stripe недоступен, повторить с новым `requestId`.
+    Переменную можно убрать при следующем деплое. Ручные пополнения и webhook пауза не трогает.
 - Основной `rsync` в `sync.sh` каталог `/backups/` не трогает (иначе `--delete` стёр бы копии).
 - Перенос базы с PostgreSQL 18 на 17 (ADR-0037): `pg_dump` пишет `DEFAULT uuidv7()` без схемы при пустом `search_path`, и на 17 такой дамп не восстанавливается (`function uuidv7() does not exist`). В пустой базе на 17 сначала выполнить `apps/server/internal/db/uuidv7.sql`, затем восстановить дамп со схемой в DEFAULT: `pg_restore -f - calaba.dump | sed 's/DEFAULT uuidv7()/DEFAULT public.uuidv7()/' | psql -v ON_ERROR_STOP=1 -d <база>`. Проверено 2026-09-28 (18.6 → 17.11): данные и `goose_db_version` на месте, `server migrate` ничего не применяет, новые id — v7.
