@@ -110,3 +110,38 @@ LIMIT sqlc.arg('lim');
 
 -- name: GetBillingNotification :one
 SELECT * FROM billing_notifications WHERE account_id = $1 AND key = $2;
+
+-- name: ListBillingOpenCheckoutsOfAccount :many
+SELECT * FROM billing_checkouts WHERE account_id = $1 AND status = 'open' ORDER BY id;
+
+-- name: ListBillingPaymentsProcessingOfAccount :many
+SELECT * FROM billing_payments WHERE account_id = $1 AND status = 'processing' ORDER BY id;
+
+-- name: ListBillingCustomersOfAccount :many
+SELECT * FROM billing_customers WHERE account_id = $1 ORDER BY id;
+
+-- name: UpsertBillingAutoTopupConsent :one
+-- The owner's auto-topup consent (PUT …/auto-topup); the account is locked by the caller.
+-- not_before survives a new consent (≤ 1 new attempt per 24 h, T7).
+INSERT INTO billing_autotopup (account_id, pm_id, max_minor, consent_version, consent_at, consent_by, updated_at)
+VALUES ($1, $2, $3, $4, sqlc.arg('now')::timestamptz, $5, sqlc.arg('now')::timestamptz)
+ON CONFLICT (account_id) DO UPDATE SET pm_id = EXCLUDED.pm_id, max_minor = EXCLUDED.max_minor,
+    consent_version = EXCLUDED.consent_version, consent_at = EXCLUDED.consent_at, consent_by = EXCLUDED.consent_by,
+    revoked_at = NULL, revoked_reason = '', updated_at = EXCLUDED.updated_at
+RETURNING *;
+
+-- name: RevokeBillingAutoTopup :execrows
+UPDATE billing_autotopup SET revoked_at = sqlc.arg('now')::timestamptz, revoked_reason = sqlc.arg('reason'),
+    updated_at = sqlc.arg('now')::timestamptz
+WHERE account_id = sqlc.arg('account_id') AND revoked_at IS NULL;
+
+-- name: ListBillingRefundsToRetry :many
+-- Calab refunds still waiting for the provider (lost answer, provider down): reconciliation
+-- asks again with the same idempotency key, or re-reads them by provider id. account_id NULL =
+-- every account; only rows not touched since `before`.
+SELECT * FROM billing_refunds
+WHERE origin = 'calab' AND status IN ('pending', 'requires_action')
+  AND (sqlc.narg('account_id')::uuid IS NULL OR account_id = sqlc.narg('account_id')::uuid)
+  AND updated_at < sqlc.arg('before')::timestamptz
+ORDER BY id
+LIMIT sqlc.arg('lim');

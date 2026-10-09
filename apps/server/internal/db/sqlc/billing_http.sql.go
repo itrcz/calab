@@ -348,6 +348,38 @@ func (q *Queries) ListBillingCheckoutsToReconcile(ctx context.Context, arg ListB
 	return items, nil
 }
 
+const listBillingCustomersOfAccount = `-- name: ListBillingCustomersOfAccount :many
+SELECT id, account_id, provider, provider_account, livemode, customer_id, created_at FROM billing_customers WHERE account_id = $1 ORDER BY id
+`
+
+func (q *Queries) ListBillingCustomersOfAccount(ctx context.Context, accountID uuid.UUID) ([]BillingCustomer, error) {
+	rows, err := q.db.Query(ctx, listBillingCustomersOfAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingCustomer{}
+	for rows.Next() {
+		var i BillingCustomer
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Provider,
+			&i.ProviderAccount,
+			&i.Livemode,
+			&i.CustomerID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingDirtyCustomers = `-- name: ListBillingDirtyCustomers :many
 SELECT c.id, c.account_id, c.provider, c.provider_account, c.livemode, c.customer_id, c.created_at FROM billing_customers c
 WHERE EXISTS (SELECT 1 FROM billing_checkouts k WHERE k.account_id = c.account_id AND k.created_at >= $1::timestamptz)
@@ -464,6 +496,49 @@ func (q *Queries) ListBillingLedgerPage(ctx context.Context, arg ListBillingLedg
 	return items, nil
 }
 
+const listBillingOpenCheckoutsOfAccount = `-- name: ListBillingOpenCheckoutsOfAccount :many
+SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at FROM billing_checkouts WHERE account_id = $1 AND status = 'open' ORDER BY id
+`
+
+func (q *Queries) ListBillingOpenCheckoutsOfAccount(ctx context.Context, accountID uuid.UUID) ([]BillingCheckout, error) {
+	rows, err := q.db.Query(ctx, listBillingOpenCheckoutsOfAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingCheckout{}
+	for rows.Next() {
+		var i BillingCheckout
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.RequestID,
+			&i.BodyHash,
+			&i.Purpose,
+			&i.MethodID,
+			&i.Provider,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.SaveMethod,
+			&i.Status,
+			&i.ProviderSessionID,
+			&i.Url,
+			&i.PayerSnapshot,
+			&i.CreatedBy,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingPaymentMethods = `-- name: ListBillingPaymentMethods :many
 SELECT id, account_id, customer_id, provider, livemode, provider_pm_id, kind, brand, last4, exp_month, exp_year, created_at, detached_at FROM billing_payment_methods WHERE account_id = $1 AND detached_at IS NULL ORDER BY id
 `
@@ -545,6 +620,49 @@ func (q *Queries) ListBillingPaymentsProcessing(ctx context.Context, lim int32) 
 	return items, nil
 }
 
+const listBillingPaymentsProcessingOfAccount = `-- name: ListBillingPaymentsProcessingOfAccount :many
+SELECT id, account_id, provider, provider_account, livemode, provider_payment_id, provider_charge_id, amount_minor, currency, status, origin, checkout_id, attempt_id, receipt_url, refunded_minor, succeeded_at, created_at, updated_at FROM billing_payments WHERE account_id = $1 AND status = 'processing' ORDER BY id
+`
+
+func (q *Queries) ListBillingPaymentsProcessingOfAccount(ctx context.Context, accountID uuid.UUID) ([]BillingPayment, error) {
+	rows, err := q.db.Query(ctx, listBillingPaymentsProcessingOfAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingPayment{}
+	for rows.Next() {
+		var i BillingPayment
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Provider,
+			&i.ProviderAccount,
+			&i.Livemode,
+			&i.ProviderPaymentID,
+			&i.ProviderChargeID,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.Status,
+			&i.Origin,
+			&i.CheckoutID,
+			&i.AttemptID,
+			&i.ReceiptUrl,
+			&i.RefundedMinor,
+			&i.SucceededAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingRefundRequests = `-- name: ListBillingRefundRequests :many
 SELECT id, account_id, request_id, amount_minor, reason, status, requested_by, decided_by, created_at, decided_at FROM billing_refund_requests WHERE account_id = $1 ORDER BY id DESC LIMIT $2
 `
@@ -574,6 +692,60 @@ func (q *Queries) ListBillingRefundRequests(ctx context.Context, arg ListBilling
 			&i.DecidedBy,
 			&i.CreatedAt,
 			&i.DecidedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingRefundsToRetry = `-- name: ListBillingRefundsToRetry :many
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at FROM billing_refunds
+WHERE origin = 'calab' AND status IN ('pending', 'requires_action')
+  AND ($1::uuid IS NULL OR account_id = $1::uuid)
+  AND updated_at < $2::timestamptz
+ORDER BY id
+LIMIT $3
+`
+
+type ListBillingRefundsToRetryParams struct {
+	AccountID *uuid.UUID
+	Before    time.Time
+	Lim       int32
+}
+
+// Calab refunds still waiting for the provider (lost answer, provider down): reconciliation
+// asks again with the same idempotency key, or re-reads them by provider id. account_id NULL =
+// every account; only rows not touched since `before`.
+func (q *Queries) ListBillingRefundsToRetry(ctx context.Context, arg ListBillingRefundsToRetryParams) ([]BillingRefund, error) {
+	rows, err := q.db.Query(ctx, listBillingRefundsToRetry, arg.AccountID, arg.Before, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingRefund{}
+	for rows.Next() {
+		var i BillingRefund
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.PaymentID,
+			&i.LotID,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.Status,
+			&i.Origin,
+			&i.ProviderRefundID,
+			&i.IdemKey,
+			&i.Reason,
+			&i.RequestedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SucceededAt,
 		); err != nil {
 			return nil, err
 		}
@@ -651,6 +823,26 @@ func (q *Queries) MarkBillingProviderEventDead(ctx context.Context, arg MarkBill
 	return err
 }
 
+const revokeBillingAutoTopup = `-- name: RevokeBillingAutoTopup :execrows
+UPDATE billing_autotopup SET revoked_at = $1::timestamptz, revoked_reason = $2,
+    updated_at = $1::timestamptz
+WHERE account_id = $3 AND revoked_at IS NULL
+`
+
+type RevokeBillingAutoTopupParams struct {
+	Now       time.Time
+	Reason    string
+	AccountID uuid.UUID
+}
+
+func (q *Queries) RevokeBillingAutoTopup(ctx context.Context, arg RevokeBillingAutoTopupParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeBillingAutoTopup, arg.Now, arg.Reason, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeBillingAutoTopupForMethod = `-- name: RevokeBillingAutoTopupForMethod :execrows
 UPDATE billing_autotopup SET revoked_at = $1::timestamptz, revoked_reason = $2,
     updated_at = $1::timestamptz
@@ -706,6 +898,51 @@ func (q *Queries) SetBillingPaymentClosed(ctx context.Context, arg SetBillingPay
 		&i.RefundedMinor,
 		&i.SucceededAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertBillingAutoTopupConsent = `-- name: UpsertBillingAutoTopupConsent :one
+INSERT INTO billing_autotopup (account_id, pm_id, max_minor, consent_version, consent_at, consent_by, updated_at)
+VALUES ($1, $2, $3, $4, $6::timestamptz, $5, $6::timestamptz)
+ON CONFLICT (account_id) DO UPDATE SET pm_id = EXCLUDED.pm_id, max_minor = EXCLUDED.max_minor,
+    consent_version = EXCLUDED.consent_version, consent_at = EXCLUDED.consent_at, consent_by = EXCLUDED.consent_by,
+    revoked_at = NULL, revoked_reason = '', updated_at = EXCLUDED.updated_at
+RETURNING account_id, pm_id, max_minor, consent_version, consent_at, consent_by, revoked_at, revoked_reason, not_before, updated_at
+`
+
+type UpsertBillingAutoTopupConsentParams struct {
+	AccountID      uuid.UUID
+	PmID           uuid.UUID
+	MaxMinor       int64
+	ConsentVersion int32
+	ConsentBy      *uuid.UUID
+	Now            time.Time
+}
+
+// The owner's auto-topup consent (PUT …/auto-topup); the account is locked by the caller.
+// not_before survives a new consent (≤ 1 new attempt per 24 h, T7).
+func (q *Queries) UpsertBillingAutoTopupConsent(ctx context.Context, arg UpsertBillingAutoTopupConsentParams) (BillingAutotopup, error) {
+	row := q.db.QueryRow(ctx, upsertBillingAutoTopupConsent,
+		arg.AccountID,
+		arg.PmID,
+		arg.MaxMinor,
+		arg.ConsentVersion,
+		arg.ConsentBy,
+		arg.Now,
+	)
+	var i BillingAutotopup
+	err := row.Scan(
+		&i.AccountID,
+		&i.PmID,
+		&i.MaxMinor,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.ConsentBy,
+		&i.RevokedAt,
+		&i.RevokedReason,
+		&i.NotBefore,
 		&i.UpdatedAt,
 	)
 	return i, err

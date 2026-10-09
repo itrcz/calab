@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -102,6 +103,13 @@ func (in *Inbox) ApplyRefund(ctx context.Context, p provider.Provider, f provide
 		case err == nil:
 			before = ref.Status
 			if status == core.RefundPending || before == status {
+				if ref.ProviderRefundID == nil {
+					// A Calab refund still pending at the provider: remember its id.
+					_, err := q.AdminSetBillingRefundProviderID(ctx, sqlc.AdminSetBillingRefundProviderIDParams{ProviderRefundID: f.ID, Now: time.Now(), ID: ref.ID})
+					if err != nil && !db.IsNotFound(err) {
+						return err
+					}
+				}
 				return nil
 			}
 			if ref, acc, err = in.core.ApplyRefundResult(ctx, q, ref.ID, status, &f.ID); err != nil {

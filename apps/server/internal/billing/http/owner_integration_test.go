@@ -236,3 +236,47 @@ func TestReturnPage(t *testing.T) {
 	}
 	_ = fake.Succeed
 }
+
+// Auto-topup consent: stored for a saved card of the account within the cap limit, revoked by
+// DELETE and by deleting the card.
+func TestAutoTopupConsent(t *testing.T) {
+	e := newEnv(t)
+	_, sess := e.topup(1500, true)
+	if _, err := e.fake.CompleteCheckout(sess, fake.Succeed); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range e.fake.TakeWebhooks() {
+		e.webhook(w)
+	}
+	e.process()
+	var ms v1.SavedPaymentMethods
+	if st, _ := e.do(e.owner, "GET", e.base()+"/payment-methods", nil, &ms); st != 200 || len(ms.GetMethods()) != 1 {
+		t.Fatalf("methods %v", &ms)
+	}
+	pm := ms.GetMethods()[0].GetId()
+	put := &v1.PutAutoTopupRequest{PaymentMethodId: pm, MaxAmount: &v1.Money{Minor: 600000, Currency: "USD"}, ConsentVersion: 1, RequestId: uuid.NewString()}
+	if st, r := e.do(e.owner, "PUT", e.base()+"/auto-topup", put, nil); st != 422 || r != "BILLING_AUTO_TOPUP_LIMIT" {
+		t.Fatalf("over the limit: %d %s", st, r)
+	}
+	put.MaxAmount.Minor, put.RequestId = 20000, uuid.NewString()
+	var at v1.AutoTopupSettings
+	if st, r := e.do(e.owner, "PUT", e.base()+"/auto-topup", put, &at); st != 200 || !at.GetEnabled() || at.GetMaxAmount().GetMinor() != 20000 || at.GetPaymentMethodId() != pm {
+		t.Fatalf("put: %d %s %v", st, r, &at)
+	}
+	if st, _ := e.do(e.member, "PUT", e.base()+"/auto-topup", put, nil); st != 403 {
+		t.Fatalf("member: %d", st)
+	}
+	if st, _ := e.do(e.owner, "DELETE", e.base()+"/auto-topup", nil, &at); st != 200 || at.GetEnabled() {
+		t.Fatalf("delete: %v", &at)
+	}
+	put.RequestId = uuid.NewString()
+	if st, _ := e.do(e.owner, "PUT", e.base()+"/auto-topup", put, &at); st != 200 || !at.GetEnabled() {
+		t.Fatalf("again: %v", &at)
+	}
+	if st, _ := e.do(e.owner, "DELETE", e.base()+"/payment-methods/"+pm, nil, nil); st != 204 {
+		t.Fatalf("delete card: %d", st)
+	}
+	if st, _ := e.do(e.owner, "GET", e.base()+"/auto-topup", nil, &at); st != 200 || at.GetEnabled() {
+		t.Fatalf("consent survived its card: %v", &at)
+	}
+}

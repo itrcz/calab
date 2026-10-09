@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/money"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/billing/provider/fake"
@@ -430,5 +431,47 @@ func TestReconcileImportsLostPayment(t *testing.T) {
 	e.in.Reconcile(ctx)
 	if n := e.count(`SELECT count(*) FROM billing_checkouts WHERE account_id = $1 AND status = 'expired'`, e.acc); n != 1 {
 		t.Fatalf("expired checkouts %d", n)
+	}
+}
+
+// A Calab refund whose provider call never happened (or whose answer was lost) is finished
+// by the account reconcile with the same idempotency key, once.
+func TestReconcileAccountRetriesRefund(t *testing.T) {
+	e := newEnv(t)
+	_, pi := e.paid(2000)
+	pay, err := e.d.Q.GetBillingPaymentByProviderID(ctx, sqlc.GetBillingPaymentByProviderIDParams{Provider: "stripe", ProviderAccount: e.merchant, ProviderPaymentID: pi})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.d.Tx(ctx, func(q *sqlc.Queries) error {
+		_, _, err := e.core.ReserveRefund(ctx, q, core.RefundReq{PaymentID: pay.ID, Amount: 700, IdemKey: "refund:" + uuid.NewString(), Origin: core.RefundOriginCalab})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if acc := e.account(); acc.BalanceMinor != 1300 {
+		t.Fatalf("reserved: %d", acc.BalanceMinor)
+	}
+	for range 2 {
+		if err := e.in.ReconcileAccount(ctx, e.acc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := e.fake.Calls("Refund"); n != 1 {
+		t.Fatalf("provider refund calls %d", n)
+	}
+	if n := e.count(`SELECT count(*) FROM billing_refunds WHERE account_id = $1 AND status = 'succeeded' AND provider_refund_id IS NOT NULL`, e.acc); n != 1 {
+		t.Fatalf("succeeded refunds %d", n)
+	}
+	// Its webhook afterwards changes nothing.
+	for _, w := range e.fake.TakeWebhooks() {
+		e.webhook(w)
+	}
+	e.process()
+	if acc := e.account(); acc.BalanceMinor != 1300 {
+		t.Fatalf("balance %d", acc.BalanceMinor)
+	}
+	if n := e.count(`SELECT count(*) FROM billing_refunds WHERE account_id = $1`, e.acc); n != 1 {
+		t.Fatalf("refunds %d", n)
 	}
 }

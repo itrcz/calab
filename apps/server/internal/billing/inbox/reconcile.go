@@ -76,6 +76,9 @@ func (in *Inbox) Reconcile(ctx context.Context) {
 			slog.WarnContext(ctx, "billing reconcile: payment", "payment", pay.ID, "err", err)
 		}
 	}
+	if err := in.retryRefunds(ctx, nil, now.Add(-refundRetryAfter)); err != nil {
+		slog.WarnContext(ctx, "billing reconcile: refunds", "err", err)
+	}
 	if in.Mail != nil {
 		soon, err := in.db.Q.ListBillingAccountsSuspendingSoon(ctx, sqlc.ListBillingAccountsSuspendingSoonParams{Now: now, Until: now.Add(billing.Day), Lim: reconcileBatch})
 		if err != nil {

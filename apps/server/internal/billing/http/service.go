@@ -59,7 +59,8 @@ func New(d *db.DB, c *core.Core, reg *provider.Registry, in *inbox.Inbox, clock 
 	return &Service{db: d, core: c, reg: reg, inbox: in, clock: clock, cfg: cfg}
 }
 
-// Owner returns the owner route implementations (Handlers.Owner). Auto-topup routes are T7's.
+// Owner returns the owner route implementations (Handlers.Owner). The auto-topup routes store
+// the consent only; T7 runs the attempts.
 func (s *Service) Owner() map[string]httpx.HandlerFunc {
 	return map[string]httpx.HandlerFunc{
 		"GET /api/workspaces/{id}/billing":                           s.get,
@@ -72,6 +73,9 @@ func (s *Service) Owner() map[string]httpx.HandlerFunc {
 		"PUT /api/workspaces/{id}/billing/payer":                     s.putPayer,
 		"POST /api/workspaces/{id}/billing/topups":                   s.topup,
 		"GET /api/workspaces/{id}/billing/checkouts/{cid}":           s.checkout,
+		"GET /api/workspaces/{id}/billing/auto-topup":                s.autoTopup,
+		"PUT /api/workspaces/{id}/billing/auto-topup":                s.putAutoTopup,
+		"DELETE /api/workspaces/{id}/billing/auto-topup":             s.deleteAutoTopup,
 		"GET /api/workspaces/{id}/billing/payment-methods":           s.methods,
 		"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}": s.deleteMethod,
 		"GET /api/workspaces/{id}/billing/ledger":                    s.ledger,
