@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/billing"
+	"github.com/calaba/calaba/server/internal/billing/admin"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	billinghttp "github.com/calaba/calaba/server/internal/billing/http"
 	"github.com/calaba/calaba/server/internal/billing/inbox"
@@ -20,6 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/plans"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // billingRuntime is balance billing assembled from config.Billing (ADR-0080 v5). With
@@ -31,7 +33,7 @@ type billingRuntime struct {
 	Core     *core.Core
 	Inbox    *inbox.Inbox
 	Registry *provider.Registry
-	Clock    billing.Clock // *billing.SwitchClock with BILLING_TEST_CLOCK=1 (T6 test-clock route)
+	Clock    billing.Clock // *billing.SwitchClock when admin.TestClockAllowed (T6 test-clock route)
 	due      *worker.Worker
 	stripe   *stripe.Provider
 }
@@ -62,8 +64,10 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	}
 	rt.Registry = reg
 	rt.Clock = billing.DBClock{}
-	if b.TestClock {
-		rt.Clock = &billing.SwitchClock{}
+	var testClock *billing.SwitchClock
+	if admin.TestClockAllowed(b) {
+		testClock = &billing.SwitchClock{}
+		rt.Clock = testClock
 	}
 	notifier := inbox.NewNotifier(d.DB, mailSvc, d.Config.PublicAppURL)
 	committed := func(ctx context.Context, acc sqlc.BillingAccount) {
@@ -82,6 +86,11 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		Checkouts: b.StripeEnabled, ReturnURL: b.PublicReturnURL, AppURL: d.Config.PublicAppURL,
 	})
 	rt.Handlers.Owner, rt.Handlers.Public = svc.Owner(), svc.Public()
+	rt.Handlers.Admin = admin.New(admin.Deps{
+		DB: d.DB, Core: rt.Core, Clock: rt.Clock, Providers: reg, ProviderSpec: b.Providers, Reconciler: rt.Inbox,
+		TestClock: testClock, Limiter: redisx.NewRateLimiter(d.Redis, "rl:billing-admin:", 60, 60), // 60 per minute
+		Committed: committed,
+	}).Handlers()
 	rt.due = worker.New(rt.Core, worker.Options{Suspend: b.EnforcementEnabled})
 	return rt
 }
