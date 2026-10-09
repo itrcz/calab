@@ -34,6 +34,15 @@ const (
 	MaxApprovalReminders = 3
 )
 
+// Why an approver is asked (task_approvers.notify_reason, ADR-0082).
+const (
+	reasonRequested   = "requested"    // became an approver
+	reasonReRequested = "re_requested" // the task changed and the decided vote was reset
+)
+
+// approvalNotifyDelays: the allowed boards.approval_notify_delay_seconds (ADR-0082).
+var approvalNotifyDelays = map[uint32]int32{0: 0, 60: 60, 300: 300, 900: 900, 1800: 1800, 3600: 3600}
+
 // Stored approver states (task_approvers.state).
 const (
 	votePending  = "pending"
@@ -273,12 +282,33 @@ func voteStates(as []sqlc.TaskApprover) []string {
 	return out
 }
 
-// notifyApprovers subscribes approvers who see the board and sends them APPROVAL_REQUESTED
-// (mandatory, ADR-0049 §5).
+// notifyApprovers asks approvers for their vote (APPROVAL_REQUESTED, mandatory, ADR-0049 §5):
+// after the board's approval_notify_delay_seconds (ADR-0082, the delivery worker), or at once
+// when the delay is 0.
 func (s *Service) notifyApprovers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, users []uuid.UUID, c *change) error {
+	return s.askApprovers(ctx, q, t, actor, users, reasonRequested, c)
+}
+
+// askApprovers schedules (delay > 0) or sends the approval notice of users with reason
+// (reasonRequested | reasonReRequested). The actor is never asked by their own change.
+func (s *Service) askApprovers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, users []uuid.UUID, reason string, c *change) error {
+	users = slices.DeleteFunc(slices.Clone(users), func(u uuid.UUID) bool { return u == actor })
 	if len(users) == 0 {
 		return nil
 	}
+	delay, err := q.BoardApprovalNotifyDelay(ctx, t.BoardID)
+	if err != nil {
+		return err
+	}
+	if delay > 0 {
+		return q.ScheduleApprovalNotices(ctx, sqlc.ScheduleApprovalNoticesParams{TaskID: t.ID, UserIds: users, Delay: delay, Reason: reason})
+	}
+	return s.sendApprovalRequest(ctx, q, t, actor, users, reason == reasonReRequested, c)
+}
+
+// sendApprovalRequest subscribes the approvers who see the task and adds their
+// APPROVAL_REQUESTED notice to c (sent after the commit).
+func (s *Service) sendApprovalRequest(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, users []uuid.UUID, reRequested bool, c *change) error {
 	users, err := sees(ctx, q, t, users)
 	if err != nil || len(users) == 0 {
 		return err
@@ -286,7 +316,14 @@ func (s *Service) notifyApprovers(ctx context.Context, q *sqlc.Queries, t taskRo
 	if err := q.Subscribe(ctx, sqlc.SubscribeParams{TaskID: t.ID, UserIds: users}); err != nil {
 		return err
 	}
-	return decide(ctx, q, t, actor, notifications.TaskApprovalRequested, users, uuid.Nil, nil, c)
+	from := len(c.notices)
+	if err := decide(ctx, q, t, actor, notifications.TaskApprovalRequested, users, uuid.Nil, nil, c); err != nil {
+		return err
+	}
+	for i := from; i < len(c.notices); i++ {
+		c.notices[i].reRequested = reRequested
+	}
+	return nil
 }
 
 // notifyOutcome sends APPROVED / REJECTED: mandatory to the task's creator and lead assignee,
@@ -340,7 +377,8 @@ func (s *Service) notifyOutcome(ctx context.Context, q *sqlc.Queries, t taskRow,
 }
 
 // resetApprovals: the title, description or its attachments changed (ADR-0049 §3) — every
-// vote goes back to pending, journal "approvals_reset", every approver is asked again.
+// vote goes back to pending, journal "approvals_reset"; the approvers whose decided vote was
+// reset are asked again (re_requested, ADR-0082), pending ones keep their schedule.
 func (s *Service) resetApprovals(ctx context.Context, q *sqlc.Queries, t taskRow, me uuid.UUID, c *change) error {
 	aps, err := q.ListTaskApprovers(ctx, []uuid.UUID{t.ID})
 	if err != nil {
@@ -350,13 +388,14 @@ func (s *Service) resetApprovals(ctx context.Context, q *sqlc.Queries, t taskRow
 	if tl.Approved == 0 && tl.Rejected == 0 {
 		return nil // nothing was decided: nothing to reset
 	}
-	if err := q.ResetTaskApprovals(ctx, t.ID); err != nil {
+	reset, err := q.ResetTaskApprovals(ctx, t.ID)
+	if err != nil {
 		return err
 	}
 	if err := c.record(ctx, q, t, me, "approvals_reset", map[string]any{"approved": tl.Approved, "rejected": tl.Rejected}, nil); err != nil {
 		return err
 	}
-	return s.notifyApprovers(ctx, q, t, me, approverIDs(aps), c)
+	return s.askApprovers(ctx, q, t, me, reset, reasonReRequested, c)
 }
 
 // ---- handlers ----

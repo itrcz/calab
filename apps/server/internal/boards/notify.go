@@ -25,6 +25,8 @@ type notice struct {
 	// text / rule: the message of an automation rule (TaskRule, ADR-0060).
 	text string
 	rule uuid.UUID
+	// reRequested: APPROVAL_REQUESTED after the recipient's decided vote was reset (ADR-0082).
+	reRequested bool
 }
 
 var noticeKinds = map[notifications.TaskKind]v1.TaskNoticeKind{
@@ -182,6 +184,7 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 		if n.message != uuid.Nil {
 			tn.MessageId = n.message.String()
 		}
+		tn.ReRequested = n.reRequested
 		if n.rule != uuid.Nil {
 			tn.Text, tn.RuleId = n.text, n.rule.String()
 		}

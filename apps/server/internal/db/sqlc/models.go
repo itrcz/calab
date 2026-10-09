@@ -41,25 +41,26 @@ type BirthdayGreeting struct {
 }
 
 type Board struct {
-	ID               uuid.UUID
-	WorkspaceID      uuid.UUID
-	Name             string
-	Key              string
-	Emoji            string
-	IconFileID       *uuid.UUID
-	Description      string
-	IsPrivate        bool
-	Position         int32
-	NextNumber       int32
-	AutoArchiveDays  int32
-	DefaultViewID    *uuid.UUID
-	CreatedBy        *uuid.UUID
-	CreatedAt        time.Time
-	ArchivedAt       *time.Time
-	Restricted       bool
-	CategoryID       *uuid.UUID
-	DisabledFeatures int64
-	EstimateScale    string
+	ID                         uuid.UUID
+	WorkspaceID                uuid.UUID
+	Name                       string
+	Key                        string
+	Emoji                      string
+	IconFileID                 *uuid.UUID
+	Description                string
+	IsPrivate                  bool
+	Position                   int32
+	NextNumber                 int32
+	AutoArchiveDays            int32
+	DefaultViewID              *uuid.UUID
+	CreatedBy                  *uuid.UUID
+	CreatedAt                  time.Time
+	ArchivedAt                 *time.Time
+	Restricted                 bool
+	CategoryID                 *uuid.UUID
+	DisabledFeatures           int64
+	EstimateScale              string
+	ApprovalNotifyDelaySeconds int32
 }
 
 type BoardCategory struct {
@@ -1055,16 +1056,18 @@ type TaskActivity struct {
 }
 
 type TaskApprover struct {
-	TaskID      uuid.UUID
-	UserID      uuid.UUID
-	State       string
-	Comment     string
-	DecidedAt   *time.Time
-	AddedBy     *uuid.UUID
-	AddedAt     time.Time
-	RequestedAt time.Time
-	Reminders   int16
-	RemindedAt  *time.Time
+	TaskID       uuid.UUID
+	UserID       uuid.UUID
+	State        string
+	Comment      string
+	DecidedAt    *time.Time
+	AddedBy      *uuid.UUID
+	AddedAt      time.Time
+	RequestedAt  time.Time
+	Reminders    int16
+	RemindedAt   *time.Time
+	NotifyDueAt  *time.Time
+	NotifyReason string
 }
 
 type TaskAssignee struct {

@@ -178,7 +178,8 @@ func (a *App) Run(ctx context.Context) {
 	go a.Calendar.Run(ctx, calendar.Tick)
 	go a.CalDAV.Run(ctx)
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
-	go a.Boards.RunRules(ctx, a.redis) // scheduled automation rules (ADR-0060)
+	go a.Boards.RunRules(ctx, a.redis)                                 // scheduled automation rules (ADR-0060)
+	go a.Boards.RunApprovalNotices(ctx, boards.ApprovalNoticeInterval) // delayed approval notices (ADR-0082)
 	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 	go a.SIP.Run(ctx)
 	if a.OAuth != nil {

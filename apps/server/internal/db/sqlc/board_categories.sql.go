@@ -168,7 +168,7 @@ func (q *Queries) SetBoardCategoryPosition(ctx context.Context, arg SetBoardCate
 const setBoardPlacement = `-- name: SetBoardPlacement :one
 UPDATE boards SET position = $1, category_id = $2
 WHERE id = $3 AND workspace_id = $4::uuid
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds
 `
 
 type SetBoardPlacementParams struct {
@@ -208,6 +208,7 @@ func (q *Queries) SetBoardPlacement(ctx context.Context, arg SetBoardPlacementPa
 		&i.CategoryID,
 		&i.DisabledFeatures,
 		&i.EstimateScale,
+		&i.ApprovalNotifyDelaySeconds,
 	)
 	return i, err
 }

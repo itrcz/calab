@@ -173,7 +173,8 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Boa
 		CreatedBy: idp(b.CreatedBy), CreatedAt: timestamppb.New(b.CreatedAt), ArchivedAt: tsp(b.ArchivedAt),
 		KeyLocked: b.NextNumber > 1, DefaultViewId: idp(b.DefaultViewID),
 		CategoryId: idp(b.CategoryID), DisabledFeatures: FeaturesProto(b.DisabledFeatures), EstimateScale: EstimateScaleFromDB(b.EstimateScale),
-		RulesCount: uint32(max(p.rules[b.ID], 0)), //nolint:gosec // ≤ 20
+		RulesCount:                 uint32(max(p.rules[b.ID], 0)),                //nolint:gosec // ≤ 20
+		ApprovalNotifyDelaySeconds: uint32(max(b.ApprovalNotifyDelaySeconds, 0)), //nolint:gosec // CHECK 0..3600
 	}
 	for _, s := range p.statuses[b.ID] {
 		out.Statuses = append(out.Statuses, status(s))
