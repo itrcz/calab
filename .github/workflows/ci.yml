@@ -103,7 +103,7 @@ jobs:
           setup_only: true
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.9'
           cache-dependency-path: apps/server/go.sum
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -139,7 +139,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         id: go
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.9'
           cache: false   # own key below: the shared setup-go key holds no -race build cache
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -188,7 +188,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.9'
           cache-dependency-path: apps/server/go.sum
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
@@ -236,7 +236,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         id: go
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.9'
           cache: false   # setup-go's shared key is saved by whichever job ends first (no -race/integration builds)
       # Own cache per shard: modules + the -race/integration build cache of exactly what this shard compiles
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

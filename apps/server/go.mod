@@ -1,6 +1,6 @@
 module github.com/calaba/calaba/server
 
-go 1.26.8
+go 1.26.9
 
 tool google.golang.org/protobuf/cmd/protoc-gen-go
 
@@ -27,7 +27,7 @@ require (
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/text v0.42.0
