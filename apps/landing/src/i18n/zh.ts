@@ -278,9 +278,9 @@ const zh: Dict = {
     lead: '免费开始。需要更多？选择云端的 Team 或 Business，或选择 Enterprise：把 Calab 部署在你自己的服务器上。',
     startHere: '从这里开始',
     plans: {
-      free: { name: 'Free', price: '免费', note: '适合小团队：每个房间最多 5 人' },
-      team: { name: 'Team', price: '199 ₽', note: '每个房间最多 15 人，100 名成员，300 GB 文件' },
-      business: { name: 'Business', price: '499 ₽', note: '每个房间最多 50 人，500 名成员，1 TB 文件，优先支持' },
+      free: { name: 'Free', price: '免费', note: '最多 50 名成员' },
+      team: { name: 'Team', price: '199 ₽', note: '最多 100 名成员' },
+      business: { name: 'Business', price: '499 ₽', note: '最多 500 名成员' },
       enterprise: { name: 'Enterprise', price: '自己的服务器', note: '无限制的 On-prem，BSL 1.1 或商业许可证' },
     },
     cta: {

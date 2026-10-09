@@ -277,9 +277,9 @@ const es: Dict = {
     lead: 'Empieza gratis. ¿Necesitas más? Team o Business en la nube, o Enterprise: Calab en tu propio servidor.',
     startHere: 'Empieza aquí',
     plans: {
-      free: { name: 'Free', price: 'Gratis', note: 'Para equipos pequeños: hasta 5 personas por sala' },
-      team: { name: 'Team', price: '199 ₽', note: 'Hasta 15 personas por sala, 100 miembros, 300 GB de archivos' },
-      business: { name: 'Business', price: '499 ₽', note: 'Hasta 50 personas por sala, 500 miembros, 1 TB de archivos y soporte prioritario' },
+      free: { name: 'Free', price: 'Gratis', note: 'Hasta 50 miembros' },
+      team: { name: 'Team', price: '199 ₽', note: 'Hasta 100 miembros' },
+      business: { name: 'Business', price: '499 ₽', note: 'Hasta 500 miembros' },
       enterprise: { name: 'Enterprise', price: 'Tu servidor', note: 'On-prem sin límites, licencia BSL 1.1 o comercial' },
     },
     cta: {

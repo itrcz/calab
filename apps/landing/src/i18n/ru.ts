@@ -278,9 +278,9 @@ const ru = {
     lead: 'Начните бесплатно. Нужно больше — Team или Business в облаке, либо Enterprise: Calab на вашем собственном сервере.',
     startHere: 'Начните здесь',
     plans: {
-      free: { name: 'Free', price: 'Бесплатно', note: 'Небольшой команде: до 5 человек в комнате' },
-      team: { name: 'Team', price: '199 ₽', note: 'До 15 человек в комнате, до 100 участников, 300 ГБ файлов' },
-      business: { name: 'Business', price: '499 ₽', note: 'До 50 человек в комнате, до 500 участников, 1 ТБ файлов и приоритетная поддержка' },
+      free: { name: 'Free', price: 'Бесплатно', note: 'До 50 участников' },
+      team: { name: 'Team', price: '199 ₽', note: 'До 100 участников' },
+      business: { name: 'Business', price: '499 ₽', note: 'До 500 участников' },
       enterprise: { name: 'Enterprise', price: 'Свой сервер', note: 'On-prem без ограничений, лицензия BSL 1.1 или коммерческая' },
     },
     cta: {
