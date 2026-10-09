@@ -41,6 +41,7 @@ task_activity     id, task_id, board_id, actor_id (пользователь ил
                   'archived'|'restored'|'moved_board'), before jsonb, after jsonb, created_at
                   -- журнал «кто, что, куда и когда» — источник будущей аналитики (владелец): пишется на каждое
                   -- изменение, никогда не редактируется и не чистится (только вместе с доской при purge);
+                  -- уточнено ADR-0081: повторные правки одного поля одним человеком за 5 мин — одна строка
                   -- индексы (board_id, created_at), (actor_id, created_at); время в статусах и cycle time
                   -- считаются из него; экспорт `GET /boards/{id}/activity?since&until&actor&kind&format=csv`
 task_subscribers  task_id, user_id, muted bool                                   PK  -- автор, исполнитель,
