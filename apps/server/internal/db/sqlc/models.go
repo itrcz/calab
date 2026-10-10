@@ -290,6 +290,7 @@ type BillingPrice struct {
 	EffectiveFrom time.Time
 	CreatedBy     *uuid.UUID
 	CreatedAt     time.Time
+	AccountID     *uuid.UUID
 }
 
 type BillingProviderEvent struct {
@@ -1749,6 +1750,8 @@ type WorkspacePlan struct {
 	UpdatedBy   *uuid.UUID
 	UpdatedAt   time.Time
 	Source      string
+	DisplayName string
+	Description string
 }
 
 type WorkspacePlanLog struct {
@@ -1761,6 +1764,8 @@ type WorkspacePlanLog struct {
 	Note        string
 	CreatedAt   time.Time
 	Source      string
+	DisplayName string
+	Description string
 }
 
 type WorkspaceRole struct {

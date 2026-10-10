@@ -39,7 +39,7 @@ import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
 import { TelephonyTab } from './TelephonyTab';
-import { PLAN_LABEL, capMax, clampToCap, planHasIdentity, planKind } from '../../lib/plan';
+import { capMax, clampToCap, planHasIdentity, workspacePlanName } from '../../lib/plan';
 import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
@@ -540,7 +540,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
       {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
       {cap.full ? (
         <PlanFullNote
-          text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })}
+          text={t('plan.membersFull', { plan: workspacePlanName(workspacePlan(workspaceId)), n: cap.limit })}
           testId="invite-plan-full"
         />
       ) : null}

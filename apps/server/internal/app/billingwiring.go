@@ -143,7 +143,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	rt.Handlers.Admin = admin.New(admin.Deps{
 		DB: d.DB, Core: rt.Core, Clock: rt.Clock, Providers: reg, ProviderSpec: b.Providers, Reconciler: rt.Inbox,
 		TestClock: testClock, Limiter: redisx.NewRateLimiter(d.Redis, "rl:billing-admin:", 60, 60), // 60 per minute
-		Committed: committed,
+		Committed: committed, Plans: planSvc,
 	}).Handlers()
 	rt.Handlers.Admin[autotopup.ReconcileRoute] = rt.AutoTopup.ReconcileHandler()
 	rt.due = worker.New(rt.Core, worker.Options{Suspend: b.EnforcementEnabled})

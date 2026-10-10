@@ -329,8 +329,12 @@ type AdminSetPlanRequest struct {
 	// PLAN_LIMITS_EXCEEDED with ApiError.plan_violations) unless the superadmin confirms it here;
 	// the override and the violations are written to the plan log.
 	OverrideLimits bool `protobuf:"varint,5,opt,name=override_limits,json=overrideLimits,proto3" json:"override_limits,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// PLAN_CUSTOM only (422 otherwise): the name members see (trimmed, control characters removed,
+	// <= 40 characters; empty = «Индивидуальный») and a short description (<= 140).
+	DisplayName   string `protobuf:"bytes,6,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description   string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AdminSetPlanRequest) Reset() {
@@ -398,6 +402,20 @@ func (x *AdminSetPlanRequest) GetOverrideLimits() bool {
 	return false
 }
 
+func (x *AdminSetPlanRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *AdminSetPlanRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 type AdminSetPlanResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Workspace     *AdminWorkspace        `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
@@ -454,6 +472,8 @@ type PlanLogEntry struct {
 	ValidUntil    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"`
 	Note          string                 `protobuf:"bytes,8,opt,name=note,proto3" json:"note,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,10,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"` // PLAN_CUSTOM: the name and description set with this change
+	Description   string                 `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -549,6 +569,20 @@ func (x *PlanLogEntry) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *PlanLogEntry) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *PlanLogEntry) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
 }
 
 type AdminPlanLogResponse struct {
@@ -725,16 +759,18 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"workspaces\x18\x01 \x03(\v2\x19.calaba.v1.AdminWorkspaceR\n" +
 	"workspaces\"T\n" +
 	"\x19AdminGetWorkspaceResponse\x127\n" +
-	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\xe3\x01\n" +
+	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\xa8\x02\n" +
 	"\x13AdminSetPlanRequest\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +
 	"\vvalid_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"validUntil\x12\x12\n" +
 	"\x04note\x18\x04 \x01(\tR\x04note\x12'\n" +
-	"\x0foverride_limits\x18\x05 \x01(\bR\x0eoverrideLimits\"O\n" +
+	"\x0foverride_limits\x18\x05 \x01(\bR\x0eoverrideLimits\x12!\n" +
+	"\fdisplay_name\x18\x06 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\a \x01(\tR\vdescription\"O\n" +
 	"\x14AdminSetPlanResponse\x127\n" +
-	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\xdd\x02\n" +
+	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\xa2\x03\n" +
 	"\fPlanLogEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x19\n" +
@@ -747,7 +783,10 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"validUntil\x12\x12\n" +
 	"\x04note\x18\b \x01(\tR\x04note\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"I\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12!\n" +
+	"\fdisplay_name\x18\n" +
+	" \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\v \x01(\tR\vdescription\"I\n" +
 	"\x14AdminPlanLogResponse\x121\n" +
 	"\aentries\x18\x01 \x03(\v2\x17.calaba.v1.PlanLogEntryR\aentries\"Q\n" +
 	"\x19AdminSetSuspensionRequest\x12\x1c\n" +

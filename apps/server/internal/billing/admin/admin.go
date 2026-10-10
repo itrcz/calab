@@ -62,6 +62,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 // Reconciler re-reads one account's provider objects (payments, refunds, disputes) and
@@ -98,6 +99,9 @@ type Deps struct {
 	// hold, discount): BILLING_UPDATE to the owner (T5). Core commands notify through
 	// core.Hooks.Committed.
 	Committed func(ctx context.Context, acc sqlc.BillingAccount)
+	// Plans gives the limits of the standard plans for a superadmin's plan change (ADR-0086;
+	// nil: the change is not checked against them). The custom plan carries its own.
+	Plans *plans.Service
 }
 
 // TestClockAllowed reports whether the test clock endpoint may exist (BILLING_TEST_CLOCK=1, never with live
@@ -135,6 +139,8 @@ func (h *Handlers) Handlers() map[string]httpx.HandlerFunc {
 		"POST /api/admin/billing/accounts/{id}/hold":                              h.hold,
 		"POST /api/admin/billing/accounts/{id}/reconcile":                         h.reconcile,
 		"PUT /api/admin/billing/accounts/{id}/discount":                           h.discount,
+		"PUT /api/admin/billing/accounts/{id}/custom-plan":                        h.customPlan,
+		"POST /api/admin/billing/accounts/{id}/plan":                              h.setPlan,
 		"GET /api/admin/billing/prices":                                           h.prices,
 		"POST /api/admin/billing/prices":                                          h.createPrice,
 		"POST /api/admin/billing/test-clock":                                      h.testClock,
@@ -504,7 +510,7 @@ func (h *Handlers) account(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (
 	if err != nil {
 		return nil, err
 	}
-	return accountProto(accountRow{acc: row.BillingAccount, wsName: row.WorkspaceName, email: row.OwnerEmail, billable: row.BillableMembers}), nil
+	return accountProto(accountRow{acc: row.BillingAccount, wsName: row.WorkspaceName, email: row.OwnerEmail, billable: row.BillableMembers, planName: row.PlanDisplayName}), nil
 }
 
 // previewAccount is the admin view of acc as a preview leaves it (names and members from the
@@ -519,7 +525,7 @@ func previewAccount(ctx context.Context, q *sqlc.Queries, acc *sqlc.BillingAccou
 		if err != nil {
 			return nil, err
 		}
-		row.wsName, row.email, row.billable = got.WorkspaceName, got.OwnerEmail, got.BillableMembers
+		row.wsName, row.email, row.billable, row.planName = got.WorkspaceName, got.OwnerEmail, got.BillableMembers, got.PlanDisplayName
 	}
 	return accountProto(row), nil
 }

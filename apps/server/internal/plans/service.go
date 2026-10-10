@@ -30,13 +30,16 @@ type Info struct {
 	Limits     Limits // effective (free when expired)
 	ValidUntil *time.Time
 	Expired    bool
+	// DisplayName / Description: a custom plan's name and description (ADR-0086 «Индивидуальный
+	// тариф»); empty = the client's localized name.
+	DisplayName, Description string
 	// billing: Workspace.billing (BILLING_ENABLED and a live billing account), else nil.
 	billing *billingInfo
 }
 
 // Proto converts the plan to the wire message (Workspace.plan).
 func (i Info) Proto() *v1.WorkspacePlan {
-	p := &v1.WorkspacePlan{Plan: i.Plan, Limits: i.Limits.Proto(), Expired: i.Expired}
+	p := &v1.WorkspacePlan{Plan: i.Plan, Limits: i.Limits.Proto(), Expired: i.Expired, DisplayName: i.DisplayName, Description: i.Description}
 	if i.ValidUntil != nil {
 		p.ValidUntil = timestamppb.New(*i.ValidUntil)
 	}
@@ -230,6 +233,9 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 		return Info{Plan: v1.Plan_PLAN_FREE, Limits: s.free}
 	}
 	info := Info{Plan: PlanFromDB(row.Plan), ValidUntil: row.ValidUntil}
+	if info.Plan == v1.Plan_PLAN_CUSTOM {
+		info.DisplayName, info.Description = row.DisplayName, row.Description
+	}
 	if row.ValidUntil != nil && !now.Before(*row.ValidUntil) {
 		info.Expired, info.Limits = true, s.free
 		return info
@@ -240,16 +246,27 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 	case v1.Plan_PLAN_ENTERPRISE:
 		info.Limits = s.biz
 	case v1.Plan_PLAN_CUSTOM:
-		l, err := ParseLimits(string(row.Limits), CustomBase)
-		if err != nil { // written by us, validated; fail safe to free if it is ever corrupt
-			slog.WarnContext(ctx, "invalid custom plan limits, using free", "workspace", row.WorkspaceID, "err", err)
-			l = s.free
-		}
-		info.Limits = l
+		info.Limits = s.customLimitsLocked(ctx, *row)
 	default:
 		info.Limits = s.free
 	}
 	return info
+}
+
+// CustomLimits are the limits a custom plan row stores (free if it is ever corrupt).
+func (s *Service) CustomLimits(ctx context.Context, row sqlc.WorkspacePlan) Limits {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.customLimitsLocked(ctx, row)
+}
+
+func (s *Service) customLimitsLocked(ctx context.Context, row sqlc.WorkspacePlan) Limits {
+	l, err := ParseLimits(string(row.Limits), CustomBase)
+	if err != nil { // written by us, validated; fail safe to free if it is ever corrupt
+		slog.WarnContext(ctx, "invalid custom plan limits, using free", "workspace", row.WorkspaceID, "err", err)
+		return s.free
+	}
+	return l
 }
 
 // Fill sets ws.plan (a workspace of the caller's view). nil-safe: a nil service fills nothing.

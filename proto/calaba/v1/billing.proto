@@ -331,12 +331,12 @@ message PutAutoTopupRequest {
 message BillingSummary {
   string account_id = 1;
   BillingAccountStatus status = 2;
-  Plan plan = 3;                  // PLAN_TEAM | PLAN_ENTERPRISE
+  Plan plan = 3;                  // PLAN_TEAM | PLAN_ENTERPRISE | PLAN_CUSTOM (assigned by a superadmin)
   string market = 4;              // "global" | "ru"
   Money balance = 5;              // signed
   Money debt = 6;                 // max(0, -balance)
-  Money unit_price = 7;           // per seat per 24 h after discount
-  uint32 discount_bps = 8;
+  Money unit_price = 7;           // per seat per 24 h after discount (PLAN_CUSTOM: the account's own price, no discount)
+  uint32 discount_bps = 8;        // 0 on PLAN_CUSTOM: its price is final
   Money daily_cost = 9;           // billable_members × unit_price
   uint32 billable_members = 10;   // members without guests and bots, owner included
   uint32 covered_seats = 11;      // seats paid for now
@@ -354,6 +354,10 @@ message BillingSummary {
   repeated SavedPaymentMethod saved_methods = 22;
   // A one-click top-up still in flight (waiting for 3-D Secure or the provider's answer), if any.
   SavedMethodTopup pending_saved_topup = 23;
+  // The next price version of the plan after now, if one is scheduled (ADR-0086 «Индивидуальный
+  // тариф»: a superadmin's new custom price applies to seat-days starting at next_price_at).
+  Money next_unit_price = 24;
+  google.protobuf.Timestamp next_price_at = 25;
 }
 
 // GET /api/workspaces/{id}/billing: summary only for the owner.
@@ -393,9 +397,10 @@ message PublicBillingOffers {
   string contact = 4;                   // PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL
 }
 
-// A plan the owner may choose (the plan screen).
+// A plan the owner may choose (the plan screen). An account on its custom plan also gets a
+// PLAN_CUSTOM offer (its own price and limits; name in Workspace.plan) — shown, never chosen.
 message BillingPlanOffer {
-  Plan plan = 1;         // PLAN_FREE | PLAN_TEAM | PLAN_ENTERPRISE
+  Plan plan = 1;         // PLAN_FREE | PLAN_TEAM | PLAN_ENTERPRISE | PLAN_CUSTOM
   Money unit_price = 2;  // per seat per 24 h after the account discount; unset for Free
   PlanLimits limits = 3; // the plan's limits on this server
   string market = 4;     // "global" | "ru": the market of unit_price
@@ -615,6 +620,7 @@ message AdminBillingAccount {
   uint64 revision = 17;
   uint32 billable_members = 18;
   string provider = 19;        // provider id of the market ("stripe")
+  string plan_display_name = 20; // PLAN_CUSTOM: the name members see (empty = «Индивидуальный»)
 }
 
 // GET /api/admin/billing/accounts/{id}
@@ -626,6 +632,54 @@ message AdminBillingAccountDetails {
   Money free_advance = 5;                         // unused money on the funding lots
   Money pending_refunds = 6;                      // reserved by refunds not final yet
   repeated SavedPaymentMethod saved_methods = 7;  // saved cards, detached ones left out
+  AdminCustomPlan custom_plan = 8;                // the account's custom plan and its price history
+}
+
+// The custom plan of an account (ADR-0086 «Индивидуальный тариф»).
+message AdminCustomPlan {
+  bool active = 1;                       // the account is on its custom plan now
+  // The definition in force (active) — limits, name and description of the workspace plan.
+  PlanLimits limits = 2;
+  string display_name = 3;
+  string description = 4;
+  repeated AdminPriceVersion prices = 5; // the account's price versions, newest first
+}
+
+// PUT /api/admin/billing/accounts/{id}/custom-plan: puts the account on its custom plan or edits
+// it. Not on custom yet: unit is required and starts now; an active account switches at once (the
+// rest of the current lots is compensated, a full day of every billable member is bought at
+// unit, like a plan change — a dearer day needs no debt and enough free advance), an inactive or
+// stopped one starts (first day from the free advance, never into debt). Already on custom: limits,
+// name and description apply now; a new unit is a new price version from effective_from (unset =
+// now, never in the past, <= 365 days ahead; it replaces a version scheduled after its start),
+// seat-days already bought keep their price; unit unset or equal to the price in force = no new
+// version. The custom price is final: discount_bps does not apply. Limits the workspace exceeds: 409
+// PLAN_LIMITS_EXCEEDED unless override_limits (written to the plan log). Self-serve changes are
+// blocked while the plan is custom (BILLING_PLAN_ADMIN_ASSIGNED); top-ups and auto-topup work.
+message AdminSetCustomPlanRequest {
+  PlanLimits limits = 1;                     // stored as written, 0 = no limit
+  Money unit = 2;                            // per seat per 24 h, account currency; > 0, <= the currency's cap
+  string display_name = 3;                   // trimmed, control characters removed, <= 40; empty = «Индивидуальный»
+  string description = 4;                    // <= 140
+  google.protobuf.Timestamp effective_from = 5;
+  string reason = 6;
+  string request_id = 7;
+  uint64 expected_revision = 8;
+  bool preview = 9;
+  bool override_limits = 10;
+}
+
+// POST /api/admin/billing/accounts/{id}/plan: a superadmin moves the account to a standard paid plan
+// (back from custom, ADR-0086): active — switched at once like a plan change; inactive / stopped —
+// only the plan the owner activates next. Limits the workspace exceeds: 409 PLAN_LIMITS_EXCEEDED
+// unless override_limits (plan log + WARN).
+message AdminSetAccountPlanRequest {
+  Plan plan = 1; // PLAN_TEAM | PLAN_ENTERPRISE
+  string reason = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+  bool preview = 5;
+  bool override_limits = 6;
 }
 
 message AdminBillingAccounts {
@@ -773,6 +827,7 @@ message AdminPriceVersion {
   Money unit = 5; // per seat per 24 h
   google.protobuf.Timestamp effective_from = 6;
   google.protobuf.Timestamp created_at = 7;
+  string account_id = 8; // a custom price of this account; empty = the market catalog
 }
 
 // GET /api/admin/billing/prices
@@ -848,6 +903,7 @@ message AdminBillingMutationResult {
   AdminPriceVersion price = 12;                  // created price version
   Money refundable = 13;                         // refund preview: unused money of the payment
   AdminBillingProviders providers = 14;          // provider switch: the switches after it
+  Money compensation = 15;                       // plan switch: the rest of the old lots back on the balance
 }
 
 // POST /api/admin/billing/test-clock (BILLING_TEST_CLOCK=1 only, never in production): moves

@@ -142,14 +142,25 @@ func (s *Service) TargetLimits(plan string) (Limits, bool) {
 }
 
 // AdminAssigned reports a plan a superadmin assigned that self-serve must not override (ADR-0086):
-// a manual row other than Free that has not expired.
+// a manual row other than Free that has not expired, or the billing account's custom plan
+// («Индивидуальный тариф»: billed daily, but chosen and changed by a superadmin only).
 func AdminAssigned(row sqlc.WorkspacePlan, now time.Time) bool {
-	return row.Source == "manual" && row.Plan != "free" && (row.ValidUntil == nil || row.ValidUntil.After(now))
+	return BillingCustom(row) || row.Source == "manual" && row.Plan != "free" && (row.ValidUntil == nil || row.ValidUntil.After(now))
+}
+
+// BillingCustom reports the custom plan of a billing account (source = billing, plan = custom).
+func BillingCustom(row sqlc.WorkspacePlan) bool {
+	return row.Source == "billing" && row.Plan == "custom"
 }
 
 // AdminAssignedAt reads the plan row of ws (locked when lock, inside a transaction) and reports
 // AdminAssigned. No row: false.
 func AdminAssignedAt(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, now time.Time, lock bool) (bool, error) {
+	row, ok, err := planRow(ctx, q, ws, lock)
+	return ok && AdminAssigned(row, now), err
+}
+
+func planRow(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, lock bool) (sqlc.WorkspacePlan, bool, error) {
 	var row sqlc.WorkspacePlan
 	var err error
 	if lock {
@@ -158,37 +169,43 @@ func AdminAssignedAt(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, now tim
 		row, err = q.GetWorkspacePlan(ctx, ws)
 	}
 	if db.IsNotFound(err) {
-		return false, nil
+		return row, false, nil
 	}
-	if err != nil {
-		return false, err
-	}
-	return AdminAssigned(row, now), nil
+	return row, err == nil, err
 }
 
-// CheckTransition refuses moving ws to target (free | team | enterprise) by the owner: a plan a
-// superadmin assigned (billing.ErrPlanAdminAssigned) or usage over the target's limits
-// (ViolationsError). Inside the command's transaction pass lock=true (the plan row is locked;
-// LockUsage must have run before the billing account lock); the quote passes false. A nil service
-// allows everything.
+// CheckTransition refuses moving ws to target (free | team | enterprise | custom) by the owner: a
+// plan a superadmin assigned (billing.ErrPlanAdminAssigned) or usage over the target's limits
+// (ViolationsError). The billing custom plan blocks every owner transition, a stop to Free
+// included; "custom" itself is a target only while the workspace is on it (paying a debt off and
+// resuming the assigned plan). Inside the command's transaction pass lock=true (the plan row is
+// locked; LockUsage must have run before the billing account lock); the quote passes false. A nil
+// service allows everything.
 func (s *Service) CheckTransition(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, target string, now time.Time, lock bool) error {
 	if s == nil {
 		return nil
 	}
-	if target != "free" {
-		assigned, err := AdminAssignedAt(ctx, q, ws, now, lock)
-		if err != nil {
-			return err
+	row, ok, err := planRow(ctx, q, ws, lock)
+	if err != nil {
+		return err
+	}
+	var lim Limits
+	identity := false
+	switch {
+	case target == "custom":
+		if !ok || !BillingCustom(row) {
+			return billing.ErrPlanAdminAssigned // custom is only ever the superadmin's assignment
 		}
-		if assigned {
-			return billing.ErrPlanAdminAssigned
-		}
+		lim = s.CustomLimits(ctx, row)
+	case ok && AdminAssigned(row, now) && (target != "free" || BillingCustom(row)):
+		return billing.ErrPlanAdminAssigned
+	default:
+		lim, identity = s.TargetLimits(target)
 	}
 	u, err := ReadUsage(ctx, q, ws)
 	if err != nil {
 		return err
 	}
-	lim, identity := s.TargetLimits(target)
 	if v := u.Violations(lim, identity); len(v) > 0 {
 		return ViolationsError(target, v)
 	}

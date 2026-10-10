@@ -65,10 +65,12 @@ func (q *Queries) AdminDecideBillingRefundRequest(ctx context.Context, arg Admin
 const adminGetBillingAccount = `-- name: AdminGetBillingAccount :one
 SELECT a.id, a.workspace_id, a.market, a.currency, a.provider, a.plan, a.status, a.balance_minor, a.entry_seq, a.negative_since, a.suspend_at, a.next_due_at, a.hold_until, a.dispute_hold, a.discount_bps, a.revision, a.created_by, a.created_at, a.updated_at, a.closed_at, coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
     (SELECT count(*) FROM workspace_members m JOIN users mu ON mu.id = m.user_id
-     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members
+     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members,
+    coalesce(wp.display_name, '')::text AS plan_display_name
 FROM billing_accounts a
 LEFT JOIN workspaces w ON w.id = a.workspace_id
 LEFT JOIN users u ON u.id = w.owner_id
+LEFT JOIN workspace_plans wp ON wp.workspace_id = a.workspace_id AND wp.plan = 'custom'
 WHERE a.id = $1
 `
 
@@ -77,6 +79,7 @@ type AdminGetBillingAccountRow struct {
 	WorkspaceName   string
 	OwnerEmail      string
 	BillableMembers int32
+	PlanDisplayName string
 }
 
 func (q *Queries) AdminGetBillingAccount(ctx context.Context, id uuid.UUID) (AdminGetBillingAccountRow, error) {
@@ -106,6 +109,7 @@ func (q *Queries) AdminGetBillingAccount(ctx context.Context, id uuid.UUID) (Adm
 		&i.WorkspaceName,
 		&i.OwnerEmail,
 		&i.BillableMembers,
+		&i.PlanDisplayName,
 	)
 	return i, err
 }
@@ -136,10 +140,12 @@ const adminListBillingAccounts = `-- name: AdminListBillingAccounts :many
 
 SELECT a.id, a.workspace_id, a.market, a.currency, a.provider, a.plan, a.status, a.balance_minor, a.entry_seq, a.negative_since, a.suspend_at, a.next_due_at, a.hold_until, a.dispute_hold, a.discount_bps, a.revision, a.created_by, a.created_at, a.updated_at, a.closed_at, coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
     (SELECT count(*) FROM workspace_members m JOIN users mu ON mu.id = m.user_id
-     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members
+     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members,
+    coalesce(wp.display_name, '')::text AS plan_display_name
 FROM billing_accounts a
 LEFT JOIN workspaces w ON w.id = a.workspace_id
 LEFT JOIN users u ON u.id = w.owner_id
+LEFT JOIN workspace_plans wp ON wp.workspace_id = a.workspace_id AND wp.plan = 'custom'
 WHERE ($1::text = '' OR a.status = $1::text)
   AND ($2::uuid IS NULL OR a.id < $2::uuid)
   AND ($3::text = ''
@@ -163,6 +169,7 @@ type AdminListBillingAccountsRow struct {
 	WorkspaceName   string
 	OwnerEmail      string
 	BillableMembers int32
+	PlanDisplayName string
 }
 
 // Balance billing v1, superadmin API (T6, internal/billing/admin). Reads for the admin lists
@@ -210,6 +217,7 @@ func (q *Queries) AdminListBillingAccounts(ctx context.Context, arg AdminListBil
 			&i.WorkspaceName,
 			&i.OwnerEmail,
 			&i.BillableMembers,
+			&i.PlanDisplayName,
 		); err != nil {
 			return nil, err
 		}

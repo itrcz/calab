@@ -84,12 +84,14 @@ func (q *Queries) AppendBillingLedgerEntry(ctx context.Context, arg AppendBillin
 const billingAccountMarketFixed = `-- name: BillingAccountMarketFixed :one
 SELECT (a.entry_seq > 0 OR a.balance_minor <> 0
         OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = a.id)
-        OR EXISTS (SELECT 1 FROM billing_checkouts c WHERE c.account_id = a.id AND c.status = 'open'))::boolean AS fixed
+        OR EXISTS (SELECT 1 FROM billing_checkouts c WHERE c.account_id = a.id AND c.status = 'open')
+        OR EXISTS (SELECT 1 FROM billing_prices bp WHERE bp.account_id = a.id))::boolean AS fixed
 FROM billing_accounts a WHERE a.id = $1
 `
 
 // ADR-0083: the market of an account is fixed by its first money: a ledger entry, any payment
-// row (even a processing one) or an open checkout. Read under the account lock.
+// row (even a processing one) or an open checkout; also by a custom price version (ADR-0086
+// «Индивидуальный тариф»: it is in the account's currency). Read under the account lock.
 func (q *Queries) BillingAccountMarketFixed(ctx context.Context, id uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, billingAccountMarketFixed, id)
 	var fixed bool
@@ -518,6 +520,39 @@ func (q *Queries) GetBillingCheckoutBySession(ctx context.Context, providerSessi
 	return i, err
 }
 
+const getBillingCustomPriceAt = `-- name: GetBillingCustomPriceAt :one
+SELECT id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at, account_id FROM billing_prices
+WHERE account_id = $1 AND effective_from <= $2::timestamptz
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetBillingCustomPriceAtParams struct {
+	AccountID *uuid.UUID
+	At        time.Time
+}
+
+// The custom price of an account in effect at `at` (ADR-0086 «Индивидуальный тариф»): the newest
+// version whose effective_from has come (a later version replaces one scheduled after its start).
+// core.CustomPriceAt is the same rule over a list.
+func (q *Queries) GetBillingCustomPriceAt(ctx context.Context, arg GetBillingCustomPriceAtParams) (BillingPrice, error) {
+	row := q.db.QueryRow(ctx, getBillingCustomPriceAt, arg.AccountID, arg.At)
+	var i BillingPrice
+	err := row.Scan(
+		&i.ID,
+		&i.Market,
+		&i.Currency,
+		&i.Sku,
+		&i.Plan,
+		&i.UnitMinor,
+		&i.EffectiveFrom,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.AccountID,
+	)
+	return i, err
+}
+
 const getBillingCustomer = `-- name: GetBillingCustomer :one
 SELECT id, account_id, provider, provider_account, livemode, customer_id, created_at FROM billing_customers WHERE account_id = $1 AND provider = $2 AND livemode = $3
 `
@@ -719,8 +754,9 @@ func (q *Queries) GetBillingPaymentByProviderID(ctx context.Context, arg GetBill
 }
 
 const getBillingPriceAt = `-- name: GetBillingPriceAt :one
-SELECT id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at FROM billing_prices
-WHERE market = $1 AND sku = $2 AND effective_from <= $3::timestamptz
+SELECT id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at, account_id FROM billing_prices
+WHERE market = $1 AND sku = $2 AND account_id IS NULL
+  AND effective_from <= $3::timestamptz
 ORDER BY effective_from DESC
 LIMIT 1
 `
@@ -731,7 +767,7 @@ type GetBillingPriceAtParams struct {
 	At     time.Time
 }
 
-// The price version of a SKU in effect at `at`.
+// The catalog price version of a SKU in effect at `at`.
 func (q *Queries) GetBillingPriceAt(ctx context.Context, arg GetBillingPriceAtParams) (BillingPrice, error) {
 	row := q.db.QueryRow(ctx, getBillingPriceAt, arg.Market, arg.Sku, arg.At)
 	var i BillingPrice
@@ -745,6 +781,7 @@ func (q *Queries) GetBillingPriceAt(ctx context.Context, arg GetBillingPriceAtPa
 		&i.EffectiveFrom,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -864,6 +901,39 @@ func (q *Queries) GetLiveBillingAccountByWorkspace(ctx context.Context, workspac
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+	)
+	return i, err
+}
+
+const getNextBillingPriceAfter = `-- name: GetNextBillingPriceAfter :one
+SELECT id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at, account_id FROM billing_prices
+WHERE market = $1 AND sku = $2 AND account_id IS NULL
+  AND effective_from > $3::timestamptz
+ORDER BY effective_from
+LIMIT 1
+`
+
+type GetNextBillingPriceAfterParams struct {
+	Market string
+	Sku    string
+	After  time.Time
+}
+
+// The first catalog price version of a SKU starting after `after` (none: no row).
+func (q *Queries) GetNextBillingPriceAfter(ctx context.Context, arg GetNextBillingPriceAfterParams) (BillingPrice, error) {
+	row := q.db.QueryRow(ctx, getNextBillingPriceAfter, arg.Market, arg.Sku, arg.After)
+	var i BillingPrice
+	err := row.Scan(
+		&i.ID,
+		&i.Market,
+		&i.Currency,
+		&i.Sku,
+		&i.Plan,
+		&i.UnitMinor,
+		&i.EffectiveFrom,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -1241,6 +1311,48 @@ func (q *Queries) InsertBillingCheckout(ctx context.Context, arg InsertBillingCh
 	return i, err
 }
 
+const insertBillingCustomPrice = `-- name: InsertBillingCustomPrice :one
+INSERT INTO billing_prices (market, currency, sku, plan, unit_minor, effective_from, created_by, account_id)
+VALUES ($1, $2, 'seat.custom.day', 'custom', $3,
+    $4::timestamptz, $5, $6)
+RETURNING id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at, account_id
+`
+
+type InsertBillingCustomPriceParams struct {
+	Market        string
+	Currency      string
+	UnitMinor     int64
+	EffectiveFrom time.Time
+	CreatedBy     *uuid.UUID
+	AccountID     *uuid.UUID
+}
+
+// A custom price version of an account (immutable).
+func (q *Queries) InsertBillingCustomPrice(ctx context.Context, arg InsertBillingCustomPriceParams) (BillingPrice, error) {
+	row := q.db.QueryRow(ctx, insertBillingCustomPrice,
+		arg.Market,
+		arg.Currency,
+		arg.UnitMinor,
+		arg.EffectiveFrom,
+		arg.CreatedBy,
+		arg.AccountID,
+	)
+	var i BillingPrice
+	err := row.Scan(
+		&i.ID,
+		&i.Market,
+		&i.Currency,
+		&i.Sku,
+		&i.Plan,
+		&i.UnitMinor,
+		&i.EffectiveFrom,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.AccountID,
+	)
+	return i, err
+}
+
 const insertBillingCustomer = `-- name: InsertBillingCustomer :one
 INSERT INTO billing_customers (account_id, provider, provider_account, livemode, customer_id)
 VALUES ($1, $2, $3, $4, $5)
@@ -1465,7 +1577,7 @@ func (q *Queries) InsertBillingPayment(ctx context.Context, arg InsertBillingPay
 const insertBillingPrice = `-- name: InsertBillingPrice :one
 INSERT INTO billing_prices (market, currency, sku, plan, unit_minor, effective_from, created_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at
+RETURNING id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at, account_id
 `
 
 type InsertBillingPriceParams struct {
@@ -1499,6 +1611,7 @@ func (q *Queries) InsertBillingPrice(ctx context.Context, arg InsertBillingPrice
 		&i.EffectiveFrom,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -1775,6 +1888,42 @@ func (q *Queries) ListBillingChargesEndingBy(ctx context.Context, arg ListBillin
 	return items, nil
 }
 
+const listBillingCustomPrices = `-- name: ListBillingCustomPrices :many
+SELECT id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at, account_id FROM billing_prices WHERE account_id = $1 ORDER BY created_at DESC, id DESC LIMIT 200
+`
+
+// The custom price versions of an account, newest first.
+func (q *Queries) ListBillingCustomPrices(ctx context.Context, accountID *uuid.UUID) ([]BillingPrice, error) {
+	rows, err := q.db.Query(ctx, listBillingCustomPrices, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingPrice{}
+	for rows.Next() {
+		var i BillingPrice
+		if err := rows.Scan(
+			&i.ID,
+			&i.Market,
+			&i.Currency,
+			&i.Sku,
+			&i.Plan,
+			&i.UnitMinor,
+			&i.EffectiveFrom,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.AccountID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingLedger = `-- name: ListBillingLedger :many
 SELECT id, account_id, seq, kind, amount_minor, balance_after, business_key, lot_id, charge_id, refund_id, dispute_id, actor_id, reason, created_at FROM billing_ledger
 WHERE account_id = $1
@@ -1968,9 +2117,10 @@ func (q *Queries) ListBillingPayments(ctx context.Context, arg ListBillingPaymen
 }
 
 const listBillingPrices = `-- name: ListBillingPrices :many
-SELECT id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at FROM billing_prices ORDER BY market, sku, effective_from DESC
+SELECT id, market, currency, sku, plan, unit_minor, effective_from, created_by, created_at, account_id FROM billing_prices WHERE account_id IS NULL ORDER BY market, sku, effective_from DESC
 `
 
+// The catalog (custom prices of accounts: ListBillingCustomPrices).
 func (q *Queries) ListBillingPrices(ctx context.Context) ([]BillingPrice, error) {
 	rows, err := q.db.Query(ctx, listBillingPrices)
 	if err != nil {
@@ -1990,6 +2140,7 @@ func (q *Queries) ListBillingPrices(ctx context.Context) ([]BillingPrice, error)
 			&i.EffectiveFrom,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.AccountID,
 		); err != nil {
 			return nil, err
 		}

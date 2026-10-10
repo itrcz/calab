@@ -41,7 +41,7 @@ func TestBillingRoutesDisabled(t *testing.T) {
 	if og.identify(o.token).GetBillingSelfServe() {
 		t.Fatal("READY.billing_self_serve with billing off")
 	}
-	if len(billinghttp.OwnerRoutes)+len(billinghttp.AdminRoutes)+len(billinghttp.PublicRoutes) != 51 {
+	if len(billinghttp.OwnerRoutes)+len(billinghttp.AdminRoutes)+len(billinghttp.PublicRoutes) != 53 {
 		t.Fatal("billing route list changed: update the route tables and this count")
 	}
 }

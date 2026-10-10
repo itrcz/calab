@@ -50,7 +50,8 @@ func MarketCurrency(market string) string { return marketCurrency[market] }
 
 // SwitchMarket moves an account that has no money yet to another market (ADR-0083): the owner's
 // pre-payment choice (quote ACTIVATE with a market) and the superadmin's change. The market is
-// fixed by the first money — a ledger entry, any payment row or an open checkout — checked under
+// fixed by the first money — a ledger entry, any payment row or an open checkout — or a custom
+// price version (its currency is the account's, ADR-0086), checked under
 // the account lock, so a checkout opened concurrently either commits first (the switch is
 // refused) or sees the new market (POST …/topups re-validates under the same lock).
 // expectedRevision 0 skips the revision check. Switching to the current market is a no-op.
@@ -416,7 +417,9 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 	if mode != ResumeFree && mode != ResumePaid {
 		return sqlc.BillingAccount{}, httpx.Validation("mode", "mode must be free or paid")
 	}
-	if mode == ResumePaid && !ValidPaidPlan(plan) {
+	// A custom plan resumes only as the account's own (a superadmin assigned it; the guard checks
+	// the workspace is still on it).
+	if mode == ResumePaid && !ValidPaidPlan(plan) && plan != PlanCustom {
 		return sqlc.BillingAccount{}, badPlan()
 	}
 	run := c.run
@@ -426,6 +429,9 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 	return run(ctx, accountID, actor, func(s *state) error {
 		if mode == ResumePaid && s.acc.Status == StatusActive && s.acc.Plan == plan {
 			return nil // replay
+		}
+		if mode == ResumePaid && plan == PlanCustom && s.acc.Plan != PlanCustom {
+			return badPlan()
 		}
 		if mode == ResumeFree && s.acc.Status == StatusStopped && s.acc.BalanceMinor >= 0 {
 			s.clearEpisode()

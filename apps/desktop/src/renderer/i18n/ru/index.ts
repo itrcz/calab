@@ -23,6 +23,7 @@ import { ruAutomations } from './automations';
 import { ruPlan } from './plan';
 import { ruBilling } from './billing';
 import { ruTransitions } from './transitions';
+import { ruCustomPlan } from './customPlan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
 import { ruStickers } from './stickers';
@@ -62,6 +63,7 @@ export const ru = {
   ...ruPlan,
   ...ruBilling,
   ...ruTransitions,
+  ...ruCustomPlan,
   ...ruModeration,
   ...ruMail,
   ...ruRecording,

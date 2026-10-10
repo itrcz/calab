@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -45,6 +46,18 @@ func (c *Core) SyncPlan(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAc
 	return s.planChanged, nil
 }
 
+// CustomPlan is the definition of a custom plan (ADR-0086 «Индивидуальный тариф»): its limits
+// (plans.Limits as JSON), the name members see (empty = «Индивидуальный») and a short
+// description. It lives on the workspace_plans row (source = billing) while the account is on it.
+type CustomPlan struct {
+	Limits      []byte
+	Name        string
+	Description string
+}
+
+// maxPlanNote is workspace_plans.note's CHECK.
+const maxPlanNote = 500
+
 func (s *state) syncPlan() error {
 	plan, managed := PlanFor(s.acc)
 	if !managed || s.acc.WorkspaceID == nil {
@@ -52,18 +65,47 @@ func (s *state) syncPlan() error {
 	}
 	ws := *s.acc.WorkspaceID
 	row, err := s.q.GetWorkspacePlan(s.ctx, ws)
+	found := err == nil
 	if err != nil && !db.IsNotFound(err) {
 		return err
 	}
-	if err == nil && row.Source == "billing" && row.Plan == plan && row.Limits == nil && row.ValidUntil == nil {
+	var def CustomPlan
+	if plan == PlanCustom {
+		switch {
+		case s.custom != nil:
+			def = *s.custom
+		case found && row.Plan == PlanCustom:
+			def = CustomPlan{Limits: row.Limits, Name: row.DisplayName, Description: row.Description}
+		default:
+			// Only a superadmin's assignment puts an account on custom, and it writes the definition.
+			return fmt.Errorf("billing: account %s is on the custom plan without its definition", s.acc.ID)
+		}
+	}
+	if found && s.custom == nil && row.Source == "billing" && row.Plan == plan && row.ValidUntil == nil &&
+		(plan == PlanCustom || (row.Limits == nil && row.DisplayName == "" && row.Description == "")) {
 		return nil
 	}
+	note := s.planNote
+	if note == "" {
+		note = "billing"
+	}
+	if r := []rune(note); len(r) > maxPlanNote {
+		note = string(r[:maxPlanNote])
+	}
+	logged := def.Limits
+	if logged == nil {
+		logged = []byte("{}")
+	}
 	if _, err := s.q.UpsertBillingWorkspacePlan(s.ctx, sqlc.UpsertBillingWorkspacePlanParams{
-		WorkspaceID: ws, Plan: plan, UpdatedBy: s.actor, Now: s.now,
+		WorkspaceID: ws, Plan: plan, Limits: def.Limits, Note: note, UpdatedBy: s.actor, Now: s.now,
+		DisplayName: def.Name, Description: def.Description,
 	}); err != nil {
 		return err
 	}
-	if err := s.q.InsertBillingPlanLog(s.ctx, sqlc.InsertBillingPlanLogParams{WorkspaceID: ws, ActorID: s.actor, Plan: plan, Now: s.now}); err != nil {
+	if err := s.q.InsertBillingPlanLog(s.ctx, sqlc.InsertBillingPlanLogParams{
+		WorkspaceID: ws, ActorID: s.actor, Plan: plan, Limits: logged, Note: note, Now: s.now,
+		DisplayName: def.Name, Description: def.Description,
+	}); err != nil {
 		return err
 	}
 	if h := s.c.hooks.PlanChanged; h != nil {

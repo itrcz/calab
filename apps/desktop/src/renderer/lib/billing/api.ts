@@ -4,6 +4,8 @@ import {
   AdminBillingProvidersSchema,
   AdminChangeMarketRequestSchema,
   AdminSetProviderRequestSchema,
+  AdminSetCustomPlanRequestSchema,
+  AdminSetAccountPlanRequestSchema,
   AdminBillingDisputesSchema,
   AdminBillingMutationResultSchema,
   AdminBillingPaymentsSchema,
@@ -143,6 +145,10 @@ export interface AdminBillingApi {
   /** ADR-0083: the acquirers and their «принимать новых клиентов» switches. */
   providers(signal?: AbortSignal): Promise<AdminBillingProviders>;
   setProvider(id: string, init: Init<typeof AdminSetProviderRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** ADR-0086 «Индивидуальный тариф»: put the account on its custom plan or edit it (limits, name, price version). */
+  customPlan(id: string, init: Init<typeof AdminSetCustomPlanRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** ADR-0086: back to a standard paid plan (Team / Business). */
+  setPlan(id: string, init: Init<typeof AdminSetAccountPlanRequestSchema>): Promise<AdminBillingMutationResult>;
 }
 
 const W = (ws: string): string => `/api/workspaces/${encodeURIComponent(ws)}/billing`;
@@ -201,6 +207,8 @@ export const restAdminApi: AdminBillingApi = {
   changeMarket: (id, init) => call('POST', `${A}/accounts/${enc(id)}/market`, AdminBillingMutationResultSchema, body(AdminChangeMarketRequestSchema, init)),
   providers: (signal) => call('GET', `${A}/providers`, AdminBillingProvidersSchema, undefined, signal),
   setProvider: (id, init) => call('PUT', `${A}/providers/${enc(id)}`, AdminBillingMutationResultSchema, body(AdminSetProviderRequestSchema, init)),
+  customPlan: (id, init) => call('PUT', `${A}/accounts/${enc(id)}/custom-plan`, AdminBillingMutationResultSchema, body(AdminSetCustomPlanRequestSchema, init)),
+  setPlan: (id, init) => call('POST', `${A}/accounts/${enc(id)}/plan`, AdminBillingMutationResultSchema, body(AdminSetAccountPlanRequestSchema, init)),
 };
 
 export interface BillingAdapters {

@@ -4,17 +4,18 @@ SELECT * FROM workspace_plans WHERE workspace_id = $1;
 -- name: UpsertWorkspacePlan :one
 -- The manual plan (superadmin). A billing-managed plan (source = 'billing', ADR-0080) is not
 -- touched: no row comes back (409 BILLING_PLAN_MANAGED).
-INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at, display_name, description)
+VALUES ($1, $2, $3, $4, $5, $6, now(), sqlc.arg('display_name'), sqlc.arg('description'))
 ON CONFLICT (workspace_id) DO UPDATE SET
     plan = EXCLUDED.plan, limits = EXCLUDED.limits, valid_until = EXCLUDED.valid_until,
-    note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()
+    note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now(),
+    display_name = EXCLUDED.display_name, description = EXCLUDED.description
 WHERE workspace_plans.source = 'manual'
 RETURNING *;
 
 -- name: InsertPlanLog :exec
-INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note)
-VALUES ($1, $2, $3, $4, $5, $6);
+INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note, display_name, description)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.arg('display_name'), sqlc.arg('description'));
 
 -- name: ListPlanLog :many
 SELECT l.*, u.email AS actor_email

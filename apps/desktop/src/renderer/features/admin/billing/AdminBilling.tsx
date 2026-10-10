@@ -31,6 +31,7 @@ import { adminBilling } from '../../../services/billing';
 import { PlanPill } from '../../workspace/PlanTab';
 import { LedgerTable, PaymentRow, RefundRequestRow } from '../../workspace/billing/HistoryCard';
 import { MoneyText, StatePill } from '../../workspace/billing/parts';
+import { CustomPlanCard } from './CustomPlanCard';
 import { MoneyActionDialog, type MoneyActionArgs } from './MoneyAction';
 
 /**
@@ -91,7 +92,7 @@ const ACCOUNT_STATE: Record<BillingAccountStatus, BillingState> = {
 const accountState = (a: AdminBillingAccount): BillingState =>
   a.status === BillingAccountStatus.ACTIVE && minorOf(a.debt) > 0n ? BillingState.IN_ARREARS : ACCOUNT_STATE[a.status];
 
-const planOf = (p: Plan): Plan => (p === Plan.ENTERPRISE ? Plan.ENTERPRISE : Plan.TEAM);
+const planOf = (p: Plan): Plan => (p === Plan.ENTERPRISE || p === Plan.CUSTOM ? p : Plan.TEAM);
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -367,7 +368,7 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
     <>
       <PaneHeader title={a.workspaceName || t('adminBilling.deletedWs')} onClose={onClose}>
         <StatePill state={accountState(a)} />
-        <PlanPill plan={planOf(a.plan)} />
+        <PlanPill plan={planOf(a.plan)} name={a.planDisplayName} />
       </PaneHeader>
       {notice}
       <Scroll testId="admin-billing-detail">
@@ -455,6 +456,8 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
             </Button>
           </div>
         </Card>
+
+        <CustomPlanCard details={details} onDone={refresh} />
 
         <section className="flex flex-col gap-1.5">
           <h3 className="px-1 text-caption font-semibold text-muted">{t('billing.history.payments')}</h3>

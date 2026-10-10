@@ -109,10 +109,11 @@ func (s *state) quote(plan string) (Quote, error) {
 	if plan == "" {
 		plan = s.acc.Plan
 	}
-	if !ValidPaidPlan(plan) {
+	// The custom plan is quoted only as the account's own (its price versions are the account's).
+	if !ValidPaidPlan(plan) && (plan != PlanCustom || s.acc.Plan != PlanCustom) {
 		return Quote{}, badPlan()
 	}
-	price, unit, err := s.unitPrice(plan, s.now)
+	price, unit, _, err := s.unitPrice(plan, s.now)
 	if err != nil {
 		return Quote{}, err
 	}

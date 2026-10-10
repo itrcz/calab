@@ -27,10 +27,12 @@ SELECT * FROM billing_accounts WHERE id = $1;
 
 -- name: BillingAccountMarketFixed :one
 -- ADR-0083: the market of an account is fixed by its first money: a ledger entry, any payment
--- row (even a processing one) or an open checkout. Read under the account lock.
+-- row (even a processing one) or an open checkout; also by a custom price version (ADR-0086
+-- «Индивидуальный тариф»: it is in the account's currency). Read under the account lock.
 SELECT (a.entry_seq > 0 OR a.balance_minor <> 0
         OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = a.id)
-        OR EXISTS (SELECT 1 FROM billing_checkouts c WHERE c.account_id = a.id AND c.status = 'open'))::boolean AS fixed
+        OR EXISTS (SELECT 1 FROM billing_checkouts c WHERE c.account_id = a.id AND c.status = 'open')
+        OR EXISTS (SELECT 1 FROM billing_prices bp WHERE bp.account_id = a.id))::boolean AS fixed
 FROM billing_accounts a WHERE a.id = $1;
 
 -- name: SwitchBillingAccountMarket :one
@@ -124,14 +126,44 @@ WHERE a.balance_minor <> coalesce(l.total, 0) OR a.entry_seq <> coalesce(l.last_
    OR a.entry_seq <> coalesce(l.n, 0);
 
 -- name: GetBillingPriceAt :one
--- The price version of a SKU in effect at `at`.
+-- The catalog price version of a SKU in effect at `at`.
 SELECT * FROM billing_prices
-WHERE market = sqlc.arg('market') AND sku = sqlc.arg('sku') AND effective_from <= sqlc.arg('at')::timestamptz
+WHERE market = sqlc.arg('market') AND sku = sqlc.arg('sku') AND account_id IS NULL
+  AND effective_from <= sqlc.arg('at')::timestamptz
 ORDER BY effective_from DESC
 LIMIT 1;
 
+-- name: GetNextBillingPriceAfter :one
+-- The first catalog price version of a SKU starting after `after` (none: no row).
+SELECT * FROM billing_prices
+WHERE market = sqlc.arg('market') AND sku = sqlc.arg('sku') AND account_id IS NULL
+  AND effective_from > sqlc.arg('after')::timestamptz
+ORDER BY effective_from
+LIMIT 1;
+
 -- name: ListBillingPrices :many
-SELECT * FROM billing_prices ORDER BY market, sku, effective_from DESC;
+-- The catalog (custom prices of accounts: ListBillingCustomPrices).
+SELECT * FROM billing_prices WHERE account_id IS NULL ORDER BY market, sku, effective_from DESC;
+
+-- name: GetBillingCustomPriceAt :one
+-- The custom price of an account in effect at `at` (ADR-0086 «Индивидуальный тариф»): the newest
+-- version whose effective_from has come (a later version replaces one scheduled after its start).
+-- core.CustomPriceAt is the same rule over a list.
+SELECT * FROM billing_prices
+WHERE account_id = sqlc.arg('account_id') AND effective_from <= sqlc.arg('at')::timestamptz
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: ListBillingCustomPrices :many
+-- The custom price versions of an account, newest first.
+SELECT * FROM billing_prices WHERE account_id = $1 ORDER BY created_at DESC, id DESC LIMIT 200;
+
+-- name: InsertBillingCustomPrice :one
+-- A custom price version of an account (immutable).
+INSERT INTO billing_prices (market, currency, sku, plan, unit_minor, effective_from, created_by, account_id)
+VALUES (sqlc.arg('market'), sqlc.arg('currency'), 'seat.custom.day', 'custom', sqlc.arg('unit_minor'),
+    sqlc.arg('effective_from')::timestamptz, sqlc.narg('created_by'), sqlc.arg('account_id'))
+RETURNING *;
 
 -- name: InsertBillingPrice :one
 INSERT INTO billing_prices (market, currency, sku, plan, unit_minor, effective_from, created_by)

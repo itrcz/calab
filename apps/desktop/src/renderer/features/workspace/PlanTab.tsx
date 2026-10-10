@@ -6,7 +6,7 @@ import { Button, Card, Row, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import { fmt } from '../../lib/format';
-import { PLAN_LABEL, atLimit, contactHref, countText, planKind, planUsage, storageText, videoLimitText } from '../../lib/plan';
+import { atLimit, contactHref, countText, planDisplayName, planKind, planUsage, storageText, videoLimitText } from '../../lib/plan';
 import { platform } from '../../platform';
 import { openPlanContact, planContact, planOffersAllowed } from '../../services/plan';
 import { loadWorkspaceStickers } from '../../services/stickers';
@@ -56,19 +56,22 @@ export function PlanFullNote({ text, testId }: { text: string; testId?: string }
   );
 }
 
-/** Plan name as a pill (docs/08 «Тариф»): Free neutral, Team / Enterprise accent, Custom green. */
-export function PlanPill({ plan, className }: { plan: Plan; className?: string }): ReactNode {
+/**
+ * Plan name as a pill (docs/08 «Тариф»): Free neutral, Team / Enterprise accent, Custom green.
+ * `name`: a custom plan's own name (ADR-0086; empty = «Индивидуальный»), truncated when long.
+ */
+export function PlanPill({ plan, name, className }: { plan: Plan; name?: string | undefined; className?: string }): ReactNode {
   const kind = plan === Plan.UNSPECIFIED ? Plan.FREE : plan;
   return (
     <span
       data-plan={Plan[kind]}
       className={cx(
-        'inline-flex h-5 shrink-0 items-center rounded-full px-2 text-caption font-semibold',
+        'inline-flex h-5 min-w-0 max-w-56 shrink-0 items-center rounded-full px-2 text-caption font-semibold',
         kind === Plan.TEAM || kind === Plan.ENTERPRISE ? 'bg-accent-strong text-accent-fg' : kind === Plan.CUSTOM ? 'bg-ok-fill text-white' : 'bg-[var(--color-fill-hover)] text-fg',
         className,
       )}
     >
-      {t(PLAN_LABEL[kind])}
+      <span className="truncate">{planDisplayName(kind, name)}</span>
     </span>
   );
 }
@@ -147,8 +150,22 @@ function PlanSwitch({ workspaceId }: { workspaceId: string }): ReactNode {
     const d = s.byWs[workspaceId]?.data;
     return !!d && (!!d.summary || d.selfServe) && d.offers.length > 0;
   });
+  // ADR-0086 «Индивидуальный тариф»: billed from the balance, changed only by a superadmin — its terms
+  // (price, limits) open in the plans dialog, read-only.
+  const custom = useBilling((s) => s.byWs[workspaceId]?.data?.summary?.plan === Plan.CUSTOM);
   const [open, setOpen] = useState(false);
   if (!owner) return null;
+  if (assigned && custom) {
+    return (
+      <div className="flex flex-col items-start gap-2 px-3 py-3" data-testid="plan-custom-terms">
+        <p className="text-body text-muted">{t('customPlan.note')}</p>
+        <Button variant="secondary" onClick={() => setOpen(true)} data-testid="plan-custom-open">
+          {t('customPlan.terms')}
+        </Button>
+        {open ? <PlansDialog workspaceId={workspaceId} welcome={false} inSettings onClose={() => setOpen(false)} /> : null}
+      </div>
+    );
+  }
   if (assigned) return <AdminAssignedNote />;
   if (!canSwitch) return null;
   return (
@@ -189,9 +206,9 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
   return (
     <>
       <Card title={t('plan.card.current')}>
-        <Row label={t('plan.row.plan')}>
+        <Row label={t('plan.row.plan')} hint={kind === Plan.CUSTOM && plan.description ? plan.description : undefined}>
           {plan.expired ? <ExpiredBadge /> : null}
-          <PlanPill plan={kind} />
+          <PlanPill plan={kind} name={plan.displayName} />
         </Row>
         <Row label={t('plan.row.validUntil')}>
           <span className={cx('text-body', plan.expired ? 'text-danger-text' : 'text-muted')}>{until ? fmt.date(until) : t('plan.noExpiry')}</span>

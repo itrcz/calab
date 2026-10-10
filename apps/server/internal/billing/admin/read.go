@@ -114,7 +114,7 @@ func (h *Handlers) listAccounts(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := &v1.AdminBillingAccounts{Accounts: make([]*v1.AdminBillingAccount, 0, len(rows))}
 	for _, row := range rows {
-		out.Accounts = append(out.Accounts, accountProto(accountRow{acc: row.BillingAccount, wsName: row.WorkspaceName, email: row.OwnerEmail, billable: row.BillableMembers}))
+		out.Accounts = append(out.Accounts, accountProto(accountRow{acc: row.BillingAccount, wsName: row.WorkspaceName, email: row.OwnerEmail, billable: row.BillableMembers, planName: row.PlanDisplayName}))
 	}
 	if len(rows) > 0 {
 		out.NextCursor = next(len(rows), lim, rows[len(rows)-1].BillingAccount.ID)
@@ -169,6 +169,9 @@ func (h *Handlers) getAccount(w http.ResponseWriter, r *http.Request) error {
 	}
 	for _, m := range methods {
 		out.SavedMethods = append(out.SavedMethods, savedMethodProto(m))
+	}
+	if out.CustomPlan, err = customPlanDetails(ctx, q, acc, id); err != nil {
+		return err
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
