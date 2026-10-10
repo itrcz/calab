@@ -334,6 +334,7 @@ func New(d Deps) *App {
 		AllowedOrigins:     d.Config.AllowedOrigins(),
 		Plans:              planSvc,
 		PlanContact:        d.Config.PlanContact(),
+		BillingSelfServe:   d.Config.Billing.Enabled && d.Config.Billing.SelfServe,
 	}, d.DB, d.Redis, authSvc, pub)
 
 	authSvc.OnBotRequest = hub.TouchBot

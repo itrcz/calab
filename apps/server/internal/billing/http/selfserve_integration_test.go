@@ -59,8 +59,12 @@ func TestSelfServeStart(t *testing.T) {
 	if st, _ := e.do(e.owner, "POST", e.base()+"/topups", &v1.CreateTopupRequest{}, nil); st != 404 {
 		t.Fatalf("topup without account: %d", st)
 	}
+	bad := &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE, Plan: v1.Plan_PLAN_FREE}
+	if st, _ := e.do(e.owner, "POST", e.base()+"/quote", bad, nil); st != 422 {
+		t.Fatalf("activate quote for Free: %d", st)
+	}
 	if _, err := e.d.Q.GetLiveBillingAccountByWorkspace(ctx, &e.ws); err == nil {
-		t.Fatal("an account was created before the ACTIVATE quote")
+		t.Fatal("an account was created before a valid ACTIVATE quote")
 	}
 
 	var q v1.BillingQuote

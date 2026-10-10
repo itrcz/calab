@@ -621,7 +621,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 `POST /api/rooms/:id/messages` идемпотентен по `nonce`: `id` генерирует Postgres (`uuidv7()`), а повтор с уже использованным `(author_id, nonce)` возвращает существующее сообщение (`200` вместо `201`) без повторного `MESSAGE_CREATE`.
 
 Тарифы (ADR-0024):
-- `READY.plan_contact` и `GET /api/version` → `planContact`: куда писать за подпиской (`PLAN_CONTACT_URL`, иначе `mailto:` + `PLAN_CONTACT_EMAIL`, по умолчанию `mailto:it@gptunnel.ai`). `READY.me.is_superadmin`.
+- `READY.plan_contact` и `GET /api/version` → `planContact`: куда писать за подпиской (`PLAN_CONTACT_URL`, иначе `mailto:` + `PLAN_CONTACT_EMAIL`, по умолчанию `mailto:it@gptunnel.ai`). `READY.me.is_superadmin`. `READY.billing_self_serve` (ADR-0080) — `BILLING_ENABLED` и `BILLING_SELF_SERVE`: только тогда клиент спрашивает `GET …/billing` для пространства без `Workspace.billing` (шильдик тарифа, выбор тарифа после создания); при выключенной оплате — ни одного лишнего запроса.
 - `Workspace.plan {plan, limits, valid_until, expired}` — в READY / `WORKSPACE_CREATE` / `WORKSPACE_UPDATE` и REST пространства (не в discover и превью инвайта).
 - `POST /api/rooms/{id}/join` → `media` урезан планом (`max_stream_preset`, `max_streams`), `plan_limits`. Места в комнате: pending считается; упор в план → `409 ROOM_FULL` с `reason: "PLAN_LIMIT"`, `used`, `limit`.
 - `POST …/stream/request {preset, fps?}` → `{preset, fps}` фактические (1080p на free → `H720` / 15). `POST …/camera/request {preset?, fps?}` → `200 {preset, fps}` (раньше 204): `min(запрошенное, план)`; `UNSPECIFIED`/0 = без ограничения.

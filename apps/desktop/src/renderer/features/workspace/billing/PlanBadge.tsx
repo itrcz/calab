@@ -1,4 +1,4 @@
-import { Plan, WorkspaceRole } from '@calaba/protocol';
+import { BillingState, Plan, WorkspaceRole } from '@calaba/protocol';
 import { CirclePause, TriangleAlert } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
@@ -8,6 +8,7 @@ import { PLAN_LABEL, planKind } from '../../../lib/plan';
 import { billingMock, loadBilling, openPlans } from '../../../services/billing';
 import { useBilling } from '../../../stores/billing';
 import { useContextWorkspace } from '../../../stores/sections';
+import { useSession } from '../../../stores/session';
 import { HOME } from '../../../stores/dms';
 import { useWorkspaces } from '../../../stores/workspaces';
 import { useBillingState } from './BillingPaywall';
@@ -16,8 +17,8 @@ import { useBillingState } from './BillingPaywall';
  * The plan badge beside the open workspace's name (ADR-0080, docs/08 «Тариф»): «Free» / «Team» /
  * «Business», plus «долг» / «приостановлено» when it needs attention; a click opens «Тариф и
  * оплата». Only where billing exists for this workspace: Workspace.billing (every member) or an
- * owner who may start billing (GET …/billing self_serve). Billing off on the server (501), no
- * account and no self-serve — nothing at all, the header stays as it was.
+ * owner who may start billing (READY.billing_self_serve, then GET …/billing self_serve). Billing off
+ * on the server, no account and no self-serve — nothing at all and no request; the header stays as it was.
  * A leaf: primitive selectors only (plan kind, state, two booleans) — a presence / voice / member
  * change re-renders nothing here; the owner's GET runs once per workspace (stores/billing).
  */
@@ -28,10 +29,13 @@ export function PlanBadge({ phone = false }: { phone?: boolean }): ReactNode {
   const plan = useWorkspaces((s) => (id ? planKind(s.byId[id]?.ws.plan) : Plan.FREE));
   const state = useBillingState(id || null);
   const selfServe = useBilling((s) => (owner ? selfServeOf(s.byWs[id]?.data) : false));
-  // The owner asks once (a 501 / 404 answer is remembered and not asked again this session).
+  const serverSelfServe = useSession((s) => s.billingSelfServe);
+  // Only the owner of a workspace without Workspace.billing on a self-serve server asks (once; a
+  // 501 / 404 answer is remembered): with billing off (READY.billing_self_serve unset) — no request.
+  const ask = !!id && ((owner && serverSelfServe && state === BillingState.UNSPECIFIED) || billingMock());
   useEffect(() => {
-    if (id && (owner || billingMock()) && !useBilling.getState().byWs[id]) void loadBilling(id);
-  }, [id, owner]);
+    if (ask && !useBilling.getState().byWs[id]) void loadBilling(id);
+  }, [ask, id]);
   if (!id || !badgeShown(state, selfServe)) return null;
   const v = badgeView(plan, state);
   const note = v.note === 'debt' ? t('billing.badge.debt') : v.note === 'suspended' ? t('billing.badge.suspended') : v.note === 'inactive' && owner ? t('billing.badge.inactive') : '';

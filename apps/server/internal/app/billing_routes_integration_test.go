@@ -33,6 +33,11 @@ func TestBillingRoutesDisabled(t *testing.T) {
 	anon.must(401, "GET", base, nil, nil)
 	anon.must(501, "POST", "/api/billing/stripe/webhook", nil, nil)
 	anon.must(501, "GET", "/api/billing/return", nil, nil)
+	// READY tells the client billing self-serve is off: no badge GET, no plan step after creating.
+	og := dialGW(t)
+	if og.identify(o.token).GetBillingSelfServe() {
+		t.Fatal("READY.billing_self_serve with billing off")
+	}
 	if len(billinghttp.OwnerRoutes)+len(billinghttp.AdminRoutes)+len(billinghttp.PublicRoutes) != 42 {
 		t.Fatal("billing route list changed: update the route tables and this count")
 	}

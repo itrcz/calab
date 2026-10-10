@@ -6,6 +6,7 @@ import { log } from '../lib/log';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
 import { useBilling } from '../stores/billing';
+import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 import { planOffersAllowed } from './plan';
 
@@ -130,7 +131,9 @@ export function openPlans(workspaceId: string): void {
  * is already open; a 501 / 404 / error, or another dialog opened meanwhile, shows nothing.
  */
 export async function offerPlansAfterCreate(workspaceId: string): Promise<void> {
-  if (!billingPaymentsAllowed()) return;
+  // A new workspace has no account: only a self-serve server (READY.billing_self_serve) has a plan
+  // to offer — with billing off no request at all.
+  if (!billingPaymentsAllowed() || !(useSession.getState().billingSelfServe || MOCK)) return;
   await loadBilling(workspaceId);
   const data = useBilling.getState().byWs[workspaceId]?.data;
   if (!data || !(data.selfServe || data.summary)) return;

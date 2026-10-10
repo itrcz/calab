@@ -42,6 +42,7 @@ type Config struct {
 	AllowedOrigins     []string       // web client origins (PUBLIC_APP_URL[_ALT]), see OriginAllowed
 	Plans              *plans.Service // Workspace.plan in snapshots (ADR-0024); nil = unset
 	PlanContact        string         // Ready.plan_contact
+	BillingSelfServe   bool           // Ready.billing_self_serve (BILLING_ENABLED && BILLING_SELF_SERVE)
 }
 
 // Hub owns this instance's gateway sessions.

@@ -81,7 +81,19 @@ func (c *Core) Activate(ctx context.Context, accountID uuid.UUID, plan string, r
 		if s.acc.BalanceMinor < 0 {
 			return billing.ErrInsufficientFunds
 		}
-		return s.startPaid(plan, ReasonActivate, "activate:"+s.acc.ID.String()+":"+requestID.String())
+		key := "activate:" + s.acc.ID.String() + ":" + requestID.String()
+		if s.acc.Status == StatusStopped && s.acc.Plan != plan {
+			// Restarting a stopped account on another plan: the stopped plan's running lots
+			// end now and their unused rest goes back to the balance (as ChangePlan does), so
+			// the overlap is not paid twice.
+			if _, err := s.cancelAll(s.acc.Plan, key+":comp"); err != nil {
+				return err
+			}
+			if err := s.normalize(); err != nil {
+				return err
+			}
+		}
+		return s.startPaid(plan, ReasonActivate, key)
 	})
 }
 

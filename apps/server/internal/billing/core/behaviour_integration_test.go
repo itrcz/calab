@@ -192,6 +192,36 @@ func TestStopAndReactivate(t *testing.T) {
 	}
 }
 
+// Activating a stopped account on another plan (the plan screen) compensates the stopped plan's
+// running lots first: the overlap is not paid twice and the old lots cover nobody.
+func TestStoppedActivateOtherPlan(t *testing.T) {
+	e := newEnv(t, 2)
+	e.pay(100)
+	e.activate(core.PlanEnterprise)
+	e.wantBalance(40)
+	e.at(t0.Add(12 * time.Hour))
+	if _, err := e.c.Stop(ctx, e.acc, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.activate(core.PlanTeam)
+	e.wantBalance(40 + 30 - 20) // 2 × 30 × 1/2 back, 2 × 10 bought
+	a := e.account()
+	if a.Status != core.StatusActive || a.Plan != core.PlanTeam {
+		t.Fatalf("account %s %s", a.Status, a.Plan)
+	}
+	timeEq(t, "next_due", a.NextDueAt, day(1).Add(12*time.Hour))
+	if p := e.workspacePlan(); p.Plan != "team" {
+		t.Fatalf("workspace plan %q", p.Plan)
+	}
+	// The same plan again keeps the running lots (TestStopAndReactivate): nothing compensated.
+	e.at(t0.Add(18 * time.Hour))
+	if _, err := e.c.Stop(ctx, e.acc, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.activate(core.PlanTeam)
+	e.wantBalance(50)
+}
+
 // Two admissions racing for the last day of advance: exactly one member gets in.
 func TestConcurrentAdmit(t *testing.T) {
 	e := newEnv(t, 1)

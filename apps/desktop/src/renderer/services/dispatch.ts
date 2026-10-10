@@ -213,6 +213,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         planContact: r.planContact,
         emailVerificationOptional: r.emailVerificationOptional,
         emailInvitePending: r.emailInvitePending,
+        billingSelfServe: r.billingSelfServe,
         ready: true,
       });
       if (r.me?.settings) applyUserSettings(r.me.settings);

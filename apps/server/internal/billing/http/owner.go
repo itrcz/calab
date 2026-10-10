@@ -174,15 +174,8 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
-	if !c.hasAc {
-		if req.GetPurpose() != v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE {
-			return billing.ErrAccountNotFound
-		}
-		if err := s.startSelfServe(ctx, &c); err != nil {
-			return err
-		}
-	}
-	plan := c.acc.Plan
+	// The plan asked is validated before a self-serve start: a bad request creates no account.
+	plan := ""
 	switch req.GetPurpose() {
 	case v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_CHANGE_PLAN:
 		if plan = planName(req.GetPlan()); plan == "" {
@@ -194,6 +187,17 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) error {
 				return httpx.Validation("plan", "plan must be PLAN_TEAM or PLAN_ENTERPRISE")
 			}
 		}
+	}
+	if !c.hasAc {
+		if req.GetPurpose() != v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE {
+			return billing.ErrAccountNotFound
+		}
+		if err := s.startSelfServe(ctx, &c); err != nil {
+			return err
+		}
+	}
+	if plan == "" {
+		plan = c.acc.Plan
 	}
 	qt, err := s.core.Quote(ctx, c.acc.ID, plan)
 	if err != nil {
