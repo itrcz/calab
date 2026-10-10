@@ -55,6 +55,16 @@ type Config struct {
 	PublicLimiter interface {
 		Take(ctx context.Context, key string) error
 	}
+	// SavedMethodTopups (BILLING_SAVED_METHOD_TOPUP_ENABLED): the owner may top up with a saved
+	// card in one click (POST …/saved-method-topups through Charger). Off: saved cards are only
+	// for auto-topup and every manual top-up opens the hosted page.
+	SavedMethodTopups bool
+	// Charger runs the one-click top-ups (autotopup.Job).
+	Charger Charger
+	// ChargeLimiter rate-limits one-click top-ups per billing account (nil: none).
+	ChargeLimiter interface {
+		Take(ctx context.Context, key string) error
+	}
 	// Committed runs after a self-serve account was created (WORKSPACE_UPDATE with
 	// Workspace.billing, BILLING_UPDATE) — core.Hooks.Committed of the wiring.
 	Committed func(ctx context.Context, acc sqlc.BillingAccount)
@@ -102,6 +112,8 @@ func (s *Service) Owner() map[string]httpx.HandlerFunc {
 		"DELETE /api/workspaces/{id}/billing/auto-topup":             s.deleteAutoTopup,
 		"GET /api/workspaces/{id}/billing/payment-methods":           s.methods,
 		"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}": s.deleteMethod,
+		"POST /api/workspaces/{id}/billing/saved-method-topups":      s.savedTopup,
+		"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}": s.savedTopupStatus,
 		"GET /api/workspaces/{id}/billing/ledger":                    s.ledger,
 		"GET /api/workspaces/{id}/billing/payments":                  s.payments,
 		"GET /api/workspaces/{id}/billing/refund-requests":           s.refundRequests,

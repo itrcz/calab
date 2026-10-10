@@ -21,6 +21,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/billing"
+	"github.com/calaba/calaba/server/internal/billing/autotopup"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	billinghttp "github.com/calaba/calaba/server/internal/billing/http"
 	"github.com/calaba/calaba/server/internal/billing/inbox"
@@ -62,6 +63,7 @@ type env struct {
 	payBank   *tochkapaytest.Bank
 	tochkaPay *tochkapay.Provider
 	reg       *provider.Registry
+	job       *autotopup.Job // with envOpt.charger
 }
 
 type envOpt struct {
@@ -78,6 +80,9 @@ type envOpt struct {
 	// payBank: the Tochka Pay Gateway adapter on this fake site is registered with its matrix
 	// row (BILLING_TOCHKA_SBP_BINDING_ENABLED, ADR-0083 phase 3).
 	payBank *tochkapaytest.Bank
+	// recurring: the Tochka adapter charges saved cards (TOCHKA_RECURRING_ENABLED); charger:
+	// one-click top-ups on (BILLING_SAVED_METHOD_TOPUP_ENABLED) through an auto-topup job.
+	recurring, charger bool
 }
 
 func newEnv(t *testing.T, opts ...envOpt) *env {
@@ -96,11 +101,15 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	spec, market := "stripe:global", "global"
 	var tp, pp provider.Provider
 	rows := provider.DefaultMatrix()
+	charger := false
 	for _, o := range opts {
 		noAccount = noAccount || o.noAccount
+		charger = charger || o.charger
 		if o.bank != nil {
 			e.bank = o.bank
-			p, err := tochka.New(o.bank.Config())
+			tc := o.bank.Config()
+			tc.Recurring = o.recurring
+			p, err := tochka.New(tc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -139,6 +148,11 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	e.in = inbox.New(d, reg, e.core, inbox.Options{})
 	e.mail = mail.New(mail.Config{Secret: []byte("billing-test-secret-billing-test-secret")}, d, nil, mail.NewFake())
 	e.in.Mail = inbox.NewNotifier(d, e.mail, "https://app.calab.test")
+	if charger {
+		e.job = autotopup.New(d, e.core, reg, e.in, clock, autotopup.Options{Enabled: true, ReturnURL: cfg.ReturnURL})
+		e.in.AttemptSettled = e.job.AttemptSettled
+		cfg.SavedMethodTopups, cfg.Charger = true, e.job
+	}
 	svc := billinghttp.New(d, e.core, reg, e.in, clock, cfg)
 	h := &billinghttp.Handlers{Enabled: true, Owner: svc.Owner(), Public: svc.Public()}
 	mux := http.NewServeMux()

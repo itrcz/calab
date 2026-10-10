@@ -70,6 +70,11 @@ const DefaultWebhookKey = `{"kty":"RSA","e":"AQAB","n":"rwm77av7GIttq-JF1itEgLCG
 const Caps = provider.CapHostedCheckout | provider.CapRefund | provider.CapPartialRefund |
 	provider.CapListPayments | provider.CapReconcilableCharge | provider.CapSuccessOnlyWebhooks
 
+// RecurringCaps are added with Config.Recurring (phase 2): a card top-up may save the card as a
+// subscription without a schedule, charged later by Charge Subscription (no idempotency key:
+// CapReconcilableCharge + ListCharges).
+const RecurringCaps = provider.CapSaveMethod | provider.CapOffSession
+
 //go:embed russian_trusted_ca.pem
 var russianTrustedCA []byte
 
@@ -100,7 +105,10 @@ type Config struct {
 	// DefaultWebhookKey. Several keys during a rotation: a JSON array or {"keys":[…]}.
 	WebhookKey string
 	// ClientID of the webhook API; default the token's iss claim.
-	ClientID   string
+	ClientID string
+	// Recurring (TOCHKA_RECURRING_ENABLED): card binding and charges of the saved card (phase 2,
+	// ADR-0083). Off until the live check of a 2 ₽ subscription and a charge passed.
+	Recurring  bool
 	HTTPClient *http.Client // tests; default: DefaultTimeout + system roots and Russian Trusted CA
 	Timeout    time.Duration
 }
@@ -115,14 +123,17 @@ type Provider struct {
 	vatType    string
 	clientID   string
 	live       bool
+	recurring  bool
 	hc         *http.Client
 	webhookKey []any // *rsa.PublicKey
 }
 
 var (
-	_ provider.Provider         = (*Provider)(nil)
-	_ provider.RefundLister     = (*Provider)(nil)
-	_ provider.LivemodeReporter = (*Provider)(nil)
+	_ provider.Provider          = (*Provider)(nil)
+	_ provider.RefundLister      = (*Provider)(nil)
+	_ provider.LivemodeReporter  = (*Provider)(nil)
+	_ provider.ChargeLister      = (*Provider)(nil)
+	_ provider.OffSessionCharger = (*Provider)(nil)
 )
 
 // New validates the config and builds the adapter. It makes no network call.
@@ -186,7 +197,7 @@ func New(cfg Config) (*Provider, error) {
 	}
 	return &Provider{
 		base: base, token: token, customer: cfg.CustomerCode, merchant: cfg.MerchantID, taxSystem: tax, vatType: vat,
-		clientID: clientID, live: !strings.Contains(base, "/sandbox/"), hc: hc, webhookKey: keys,
+		clientID: clientID, live: !strings.Contains(base, "/sandbox/"), hc: hc, webhookKey: keys, recurring: cfg.Recurring,
 	}, nil
 }
 
@@ -226,8 +237,13 @@ func tokenIssuer(token string) string {
 // ID is provider.Tochka.
 func (p *Provider) ID() provider.ID { return provider.Tochka }
 
-// Caps of Tochka.
-func (p *Provider) Caps() provider.Cap { return Caps }
+// Caps of Tochka (with RecurringCaps when Config.Recurring).
+func (p *Provider) Caps() provider.Cap {
+	if p.recurring {
+		return Caps | RecurringCaps
+	}
+	return Caps
+}
 
 // Livemode is true on the production API, which is live (there is no test mode for payments); the sandbox is not.
 func (p *Provider) Livemode() bool { return p.live }

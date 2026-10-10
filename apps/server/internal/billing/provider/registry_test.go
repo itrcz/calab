@@ -63,8 +63,8 @@ func TestRegistryV1Matrix(t *testing.T) {
 	if !ok || def != 50000 || limit != 500000 {
 		t.Fatalf("auto-topup limits %d %d %v", def, limit, ok)
 	}
-	if _, _, ok := provider.AutoTopupLimits(money.RUB); ok {
-		t.Fatal("RUB auto-topup")
+	if def, limit, ok := provider.AutoTopupLimits(money.RUB); !ok || def != 5000000 || limit != provider.RUBTopupMax {
+		t.Fatalf("RUB auto-topup limits %d %d %v", def, limit, ok)
 	}
 }
 

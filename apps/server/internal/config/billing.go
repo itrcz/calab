@@ -21,6 +21,9 @@ type Billing struct {
 	EnforcementEnabled bool `env:"BILLING_ENFORCEMENT_ENABLED"` // seat growth checks and suspension at the deadline
 	AutoTopupEnabled   bool `env:"BILLING_AUTO_TOPUP_ENABLED"`  // off-session auto-topup (stays off after a DB restore until reconciled)
 	SelfServe          bool `env:"BILLING_SELF_SERVE"`          // owners may start billing themselves (else a superadmin enables a workspace)
+	// BILLING_SAVED_METHOD_TOPUP_ENABLED: a manual top-up may be charged to a saved card in one
+	// click (ADR-0083 phase 2), without the hosted page. Off: saved cards serve auto-topup only.
+	SavedMethodTopupEnabled bool `env:"BILLING_SAVED_METHOD_TOPUP_ENABLED"`
 	// BILLING_AUTO_TOPUP_REQUIRE_RECONCILE: set to a new unique marker (e.g. "restore-2026-10-09")
 	// after a database restore. Auto-topup starts no new charge until a superadmin ran POST
 	// /api/admin/billing/auto-topup/reconcile, which records this marker (docs/06 «Резервные копии»).
@@ -62,6 +65,10 @@ type Billing struct {
 	// TOCHKA_CLIENT_ID: client id of the webhook API; empty = the token's iss claim.
 	TochkaClientID string `env:"TOCHKA_CLIENT_ID"`
 
+	// TOCHKA_RECURRING_ENABLED: card binding (subscription without a schedule) and its charges —
+	// auto-topup and one-click top-ups in RU (ADR-0083 phase 2). Turn on after the live check
+	// of a 2 ₽ subscription and a charge (docs/adr/0083 «Фаза 2»).
+	TochkaRecurring bool `env:"TOCHKA_RECURRING_ENABLED"`
 	// BILLING_TOCHKA_SBP_BINDING_ENABLED: Tochka Pay Gateway SBP account binding for RU auto-topup
 	// (ADR-0083 phase 3): the tochkapay provider, its matrix row and its webhook. Needs
 	// BILLING_TOCHKA_ENABLED (RU served) and the site the bank issues at onboarding.
@@ -183,7 +190,7 @@ func (b *Billing) validate() error {
 			{"BILLING_STRIPE_ENABLED", b.StripeEnabled}, {"BILLING_TOCHKA_ENABLED", b.TochkaEnabled}, {"BILLING_DEBITS_ENABLED", b.DebitsEnabled},
 			{"BILLING_TOCHKA_SBP_BINDING_ENABLED", b.TochkaSBPBindingEnabled},
 			{"BILLING_ENFORCEMENT_ENABLED", b.EnforcementEnabled}, {"BILLING_AUTO_TOPUP_ENABLED", b.AutoTopupEnabled},
-			{"BILLING_SELF_SERVE", b.SelfServe},
+			{"BILLING_SELF_SERVE", b.SelfServe}, {"BILLING_SAVED_METHOD_TOPUP_ENABLED", b.SavedMethodTopupEnabled},
 		} {
 			if f.on {
 				errs = append(errs, fmt.Errorf("%s requires BILLING_ENABLED=true", f.name))
@@ -200,8 +207,11 @@ func (b *Billing) validate() error {
 			}
 		}
 	}
-	if b.AutoTopupEnabled && !b.StripeEnabled {
-		errs = append(errs, errors.New("BILLING_AUTO_TOPUP_ENABLED requires BILLING_STRIPE_ENABLED=true"))
+	if b.AutoTopupEnabled && !b.StripeEnabled && !b.TochkaEnabled {
+		errs = append(errs, errors.New("BILLING_AUTO_TOPUP_ENABLED requires BILLING_STRIPE_ENABLED=true or BILLING_TOCHKA_ENABLED=true"))
+	}
+	if b.TochkaRecurring && !b.TochkaEnabled {
+		errs = append(errs, errors.New("TOCHKA_RECURRING_ENABLED requires BILLING_TOCHKA_ENABLED=true"))
 	}
 	if b.TestClock && (b.StripeLivemodeAllowed || b.StripeLiveKey()) {
 		errs = append(errs, errors.New("BILLING_TEST_CLOCK is refused together with live Stripe keys"))

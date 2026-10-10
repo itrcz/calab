@@ -1,4 +1,4 @@
-import { PaymentMethodKind, type BillingSummary, type PaymentMethodOption } from '@calaba/protocol';
+import { PaymentMethodKind, SavedMethodTopupState, type BillingSummary, type CheckoutStatus, type PaymentMethodOption, type SavedPaymentMethod } from '@calaba/protocol';
 import { CircleCheck, CircleX, CreditCard, ExternalLink, QrCode } from 'lucide-react';
 import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { Button, Field, Input, Modal, Spinner, cx } from '../../../components/ui';
@@ -8,6 +8,7 @@ import { billingErrorText } from '../../../lib/billing/errors';
 import { methodLabel, providerTag } from '../../../lib/billing/market';
 import { amountProblem, currencyOf, defaultTopup, offeredMethods, requestId, topupLimits, topupPresets, type AmountProblem } from '../../../lib/billing/model';
 import { clampMinor, formatMinor, inputOf, minorOf, parseMajor } from '../../../lib/billing/money';
+import { asCheckoutStatus, cardLabel, optionForSaved, savedChoices, savedFailureKey } from '../../../lib/billing/savedTopup';
 import { onCheckoutReturn, openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
 
 /**
@@ -16,6 +17,11 @@ import { onCheckoutReturn, openCheckout, ownerBilling, reloadBilling } from '../
  * the server), the optional «save the card for auto-topup» consent; POST …/topups opens the hosted
  * checkout in the system browser, then the dialog polls GET …/checkouts/{id} until the money is on
  * the balance (the poll pauses while the window is hidden and runs again when it comes back).
+ *
+ * One-click (ADR-0083 phase 2): saved cards the server allows (`one_click`) come first in the picker;
+ * with one picked, «Далее» shows a confirm step and POST …/saved-method-topups charges it without the
+ * payment page. A 3-D Secure page (Stripe) opens in the payment window like a checkout and the same
+ * poll reads GET …/saved-method-topups/{id}.
  */
 
 const PROBLEM_KEY: Record<AmountProblem, MessageKey> = {
@@ -25,9 +31,39 @@ const PROBLEM_KEY: Record<AmountProblem, MessageKey> = {
   tooLarge: 'billing.topup.err.max',
 };
 
-function MethodPicker({ methods, value, onChange }: { methods: PaymentMethodOption[]; value: string; onChange: (id: string) => void }): ReactNode {
+const SAVED = 'saved:';
+
+function MethodPicker({
+  methods,
+  saved,
+  value,
+  onChange,
+}: {
+  methods: PaymentMethodOption[];
+  saved: SavedPaymentMethod[];
+  value: string;
+  onChange: (id: string) => void;
+}): ReactNode {
   return (
     <div role="radiogroup" aria-label={t('billing.topup.method')} className="flex flex-col gap-1.5">
+      {saved.map((m) => (
+        <button
+          key={m.id}
+          type="button"
+          role="radio"
+          aria-checked={value === SAVED + m.id}
+          onClick={() => onChange(SAVED + m.id)}
+          data-testid="billing-topup-saved"
+          className={cx(
+            'flex min-h-10 items-center gap-2.5 rounded-[var(--radius-card)] border px-3 py-2 text-left text-body mobile:tap-min-h',
+            value === SAVED + m.id ? 'border-[var(--color-focus)] bg-[var(--color-card)]' : 'border-line hover:bg-hover',
+          )}
+        >
+          <CreditCard className="size-4 shrink-0 text-muted" aria-hidden />
+          <span className="min-w-0 flex-1 tabular-nums">{cardLabel(m)}</span>
+          <span className="text-caption text-faint">{t('billing.saved.card')}</span>
+        </button>
+      ))}
       {methods.map((m) => (
         <button
           key={m.id}
@@ -41,7 +77,7 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethodOpti
           )}
         >
           {m.kind === PaymentMethodKind.SBP ? <QrCode className="size-4 shrink-0 text-muted" aria-hidden /> : <CreditCard className="size-4 shrink-0 text-muted" aria-hidden />}
-          <span className="min-w-0 flex-1">{t(methodLabel(m))}</span>
+          <span className="min-w-0 flex-1">{saved.length > 0 && m.kind === PaymentMethodKind.CARD ? t('billing.saved.newCard') : t(methodLabel(m))}</span>
           {providerTag(m.provider) ? <span className="text-caption text-faint">{providerTag(m.provider)}</span> : null}
         </button>
       ))}
@@ -49,7 +85,17 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethodOpti
   );
 }
 
-export function useCheckoutPoll(workspaceId: string, flow: CheckoutFlow, dispatch: (e: Parameters<typeof checkoutReducer>[1]) => void): void {
+type StatusReader = (ws: string, id: string, signal: AbortSignal) => Promise<CheckoutStatus>;
+const readCheckout: StatusReader = (ws, id, signal) => ownerBilling.checkout(ws, id, signal);
+/** A one-click top-up polled like a checkout (its 3-D Secure page is the «checkout» page). */
+const readSavedTopup: StatusReader = (ws, id, signal) => ownerBilling.savedTopupStatus(ws, id, signal).then(asCheckoutStatus);
+
+export function useCheckoutPoll(
+  workspaceId: string,
+  flow: CheckoutFlow,
+  dispatch: (e: Parameters<typeof checkoutReducer>[1]) => void,
+  read: StatusReader = readCheckout,
+): void {
   // The poll: one timeout at a time, none while hidden; coming back polls at once (the person
   // returns from the browser or the checkout window right after paying).
   const id = flow.phase === 'waiting' ? flow.checkoutId : null;
@@ -61,8 +107,7 @@ export function useCheckoutPoll(workspaceId: string, flow: CheckoutFlow, dispatc
     let timer = 0;
     const poll = (): void => {
       window.clearTimeout(timer);
-      ownerBilling
-        .checkout(workspaceId, id, ac.signal)
+      read(workspaceId, id, ac.signal)
         .then((status) => dispatch({ type: 'polled', status, now: nowMs() }))
         .catch(() => {
           if (!ac.signal.aborted) dispatch({ type: 'pollFailed', now: nowMs() });
@@ -87,7 +132,7 @@ export function useCheckoutPoll(workspaceId: string, flow: CheckoutFlow, dispatc
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onVisibility);
     };
-  }, [workspaceId, id, delay, polls, dispatch]);
+  }, [workspaceId, id, delay, polls, dispatch, read]);
 }
 
 export function TopupDialog({
@@ -104,8 +149,13 @@ export function TopupDialog({
 }): ReactNode {
   const currency = currencyOf(summary);
   const methods = offeredMethods(summary);
-  const [methodId, setMethodId] = useState(methods[0]?.id ?? '');
-  const method = methods.find((m) => m.id === methodId);
+  const saved = savedChoices(summary);
+  const [methodId, setMethodId] = useState(saved[0] ? SAVED + saved[0].id : (methods[0]?.id ?? ''));
+  const savedCard = methodId.startsWith(SAVED) ? saved.find((m) => SAVED + m.id === methodId) : undefined;
+  const method = savedCard ? optionForSaved(summary, savedCard) : methods.find((m) => m.id === methodId);
+  // One-click: «Далее» → the confirm step → POST …/saved-method-topups.
+  const [confirming, setConfirming] = useState(false);
+  const [failure, setFailure] = useState('');
   const lim = topupLimits(method, currency);
   const basePresets = topupPresets(summary, lim, currency);
   // A quote's «to pay» opens the form: that exact amount is the first chip, so the chips and the field agree.
@@ -120,17 +170,38 @@ export function TopupDialog({
   const minor = parseMajor(raw, currency);
   const problem = amountProblem(minor, raw, lim);
   // «Save the card» only while no card is saved (one card per account in v1).
-  const canSave = !!method?.autoTopupCapable && !summary.autoTopup?.paymentMethodId;
+  const canSave = !savedCard && !!method?.autoTopupCapable && !summary.autoTopup?.paymentMethodId;
   const hasDebt = minorOf(summary.debt) > 0n;
-  useCheckoutPoll(workspaceId, flow, dispatch);
+  useCheckoutPoll(workspaceId, flow, dispatch, savedCard ? readSavedTopup : readCheckout);
 
   useEffect(() => {
     if (flow.phase === 'done' && flow.outcome === 'credited') reloadBilling(workspaceId);
   }, [flow, workspaceId]);
 
+  const charge = async (): Promise<void> => {
+    if (!savedCard || problem || minor === null) return;
+    dispatch({ type: 'create' });
+    try {
+      const r = await ownerBilling.savedTopup(workspaceId, { paymentMethodId: savedCard.id, amount: { minor, currency }, requestId: reqId.current });
+      setFailure(r.failureCode);
+      if (r.state === SavedMethodTopupState.FAILED) reqId.current = requestId(); // a new attempt is a new charge
+      dispatch({ type: 'created', checkoutId: r.id, url: r.actionUrl, now: nowMs() });
+      dispatch({ type: 'polled', status: asCheckoutStatus(r), now: nowMs() });
+      if (r.state === SavedMethodTopupState.REQUIRES_ACTION && r.actionUrl) openCheckout(r.actionUrl);
+    } catch (e) {
+      // A lost answer keeps the request id: «Списать» again is the same charge, never a second one.
+      setConfirming(false);
+      dispatch({ type: 'createFailed', message: billingErrorText(e, t('billing.saved.failed')) });
+    }
+  };
+
   const pay = async (): Promise<void> => {
     setTouched(true);
     if (problem || minor === null || !method) return;
+    if (savedCard) {
+      setConfirming(true);
+      return;
+    }
     dispatch({ type: 'create' });
     try {
       const r = await ownerBilling.topup(workspaceId, { methodId: method.id, amount: { minor, currency }, requestId: reqId.current, saveMethod: canSave && save });
@@ -144,13 +215,23 @@ export function TopupDialog({
 
   const phase = flow.phase;
   const form = phase === 'idle' || phase === 'creating' || phase === 'error';
-  const footer = form ? (
+  const confirmCard = form && confirming && minor !== null ? savedCard : undefined;
+  const footer = confirmCard && minor !== null ? (
+    <>
+      <Button variant="secondary" disabled={phase === 'creating'} onClick={() => setConfirming(false)}>
+        {t('billing.saved.back')}
+      </Button>
+      <Button busy={phase === 'creating'} onClick={() => void charge()} data-testid="billing-topup-charge">
+        {t('billing.saved.charge', { amount: formatMinor(minor, currency) })}
+      </Button>
+    </>
+  ) : form ? (
     <>
       <Button variant="secondary" onClick={onClose}>
         {t('common.cancel')}
       </Button>
       <Button busy={phase === 'creating'} disabled={!method} onClick={() => void pay()} data-testid="billing-topup-pay">
-        {minor !== null && !problem ? t('billing.topup.payAmount', { amount: formatMinor(minor, currency) }) : t('billing.topup.pay')}
+        {savedCard ? t('billing.saved.next') : minor !== null && !problem ? t('billing.topup.payAmount', { amount: formatMinor(minor, currency) }) : t('billing.topup.pay')}
       </Button>
     </>
   ) : phase === 'done' || phase === 'stalled' ? (
@@ -164,12 +245,22 @@ export function TopupDialog({
   return (
     <Modal open initialFocus="body" onClose={onClose} title={t('billing.topup.title')} footer={footer}>
       <div className="flex flex-col gap-4" data-testid="billing-topup">
-        {form ? (
+        {confirmCard && minor !== null ? (
+          <div className="flex flex-col gap-1.5 py-1" data-testid="billing-topup-confirm">
+            <p className="text-body font-medium tabular-nums">{t('billing.saved.confirm', { amount: formatMinor(minor, currency), card: cardLabel(confirmCard) })}</p>
+            <p className="text-caption text-muted">{t('billing.saved.confirmHint')}</p>
+            {phase === 'error' ? (
+              <p role="alert" className="text-caption text-danger-text">
+                {flow.message}
+              </p>
+            ) : null}
+          </div>
+        ) : form ? (
           <>
-            {methods.length === 0 ? (
+            {methods.length === 0 && saved.length === 0 ? (
               <p className="text-body text-muted">{t('billing.topup.noMethods')}</p>
-            ) : methods.length > 1 ? (
-              <MethodPicker methods={methods} value={methodId} onChange={setMethodId} />
+            ) : methods.length + saved.length > 1 ? (
+              <MethodPicker methods={methods} saved={saved} value={methodId} onChange={setMethodId} />
             ) : null}
             <div className="flex flex-col gap-2">
               <span className="text-caption font-medium text-muted">{t('billing.topup.amount')}</span>
@@ -219,7 +310,7 @@ export function TopupDialog({
                 </span>
               </label>
             ) : null}
-            <p className="text-caption text-faint">{t('billing.topup.hosted')}</p>
+            <p className="text-caption text-faint">{t(savedCard ? 'billing.saved.hint' : 'billing.topup.hosted')}</p>
             {phase === 'error' ? (
               <p role="alert" className="text-caption text-danger-text">
                 {flow.message}
@@ -227,7 +318,7 @@ export function TopupDialog({
             ) : null}
           </>
         ) : (
-          <CheckoutProgress flow={flow} onRecheck={() => dispatch({ type: 'recheck', now: nowMs() })} />
+          <CheckoutProgress flow={flow} saved={!!savedCard} failure={failure} onRecheck={() => dispatch({ type: 'recheck', now: nowMs() })} />
         )}
       </div>
     </Modal>
@@ -241,28 +332,32 @@ const OUTCOME: Record<CheckoutOutcome, MessageKey> = {
   failed: 'billing.checkout.failed',
 };
 
-/** After the checkout opened: waiting / paid / failed, with «open the page again». */
-export function CheckoutProgress({ flow, onRecheck }: { flow: CheckoutFlow; onRecheck: () => void }): ReactNode {
+/**
+ * After the checkout opened: waiting / paid / failed, with «open the page again». `saved`: a one-click
+ * charge (its page, if any, is the bank's 3-D Secure confirmation; `failure` is its decline code).
+ */
+export function CheckoutProgress({ flow, saved = false, failure = '', onRecheck }: { flow: CheckoutFlow; saved?: boolean; failure?: string; onRecheck: () => void }): ReactNode {
   if (flow.phase === 'done') {
     const ok = flow.outcome === 'credited';
     return (
       <div className="flex flex-col items-center gap-3 py-4 text-center" role="status" data-testid="billing-checkout-done">
         {ok ? <CircleCheck className="size-8 text-ok" aria-hidden /> : <CircleX className="size-8 text-danger" aria-hidden />}
-        <p className="text-body">{t(OUTCOME[flow.outcome])}</p>
+        <p className="text-body">{t(saved && !ok ? savedFailureKey(failure) : OUTCOME[flow.outcome])}</p>
       </div>
     );
   }
   const url = flow.phase === 'waiting' || flow.phase === 'stalled' ? flow.url : '';
   const paid = (flow.phase === 'waiting' || flow.phase === 'stalled') && flow.paid;
+  const waiting = saved ? (url ? 'billing.saved.waiting' : 'billing.saved.processing') : 'billing.checkout.waiting';
   return (
     <div className="flex flex-col items-center gap-3 py-2 text-center" role="status" data-testid="billing-checkout-waiting">
       {flow.phase === 'waiting' ? <Spinner className="size-6" /> : null}
-      <p className="text-body">{paid ? t('billing.checkout.crediting') : flow.phase === 'stalled' ? t('billing.checkout.stalled') : t('billing.checkout.waiting')}</p>
+      <p className="text-body">{paid ? t('billing.checkout.crediting') : flow.phase === 'stalled' ? t('billing.checkout.stalled') : t(waiting)}</p>
       <p className="text-caption text-muted">{t('billing.checkout.hint')}</p>
       <div className="flex flex-wrap justify-center gap-2">
         {url && !paid ? (
           <Button variant="secondary" onClick={() => openCheckout(url)}>
-            {t('billing.checkout.open')}
+            {t(saved ? 'billing.saved.open' : 'billing.checkout.open')}
             <ExternalLink className="size-3.5" aria-hidden />
           </Button>
         ) : null}

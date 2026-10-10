@@ -94,6 +94,8 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/workspaces/{id}/billing/auto-topup":                          botDeny,
 	"GET /api/workspaces/{id}/billing/payment-methods":                        botDeny,
 	"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}":              botDeny,
+	"POST /api/workspaces/{id}/billing/saved-method-topups":                   botDeny,
+	"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}":              botDeny,
 	"GET /api/workspaces/{id}/billing/ledger":                                 botDeny,
 	"GET /api/workspaces/{id}/billing/payments":                               botDeny,
 	"GET /api/workspaces/{id}/billing/refund-requests":                        botDeny,

@@ -38,6 +38,8 @@ import {
   RefundRequestStatus,
   RefundStatus,
   SavedPaymentMethodSchema,
+  SavedMethodTopupSchema,
+  SavedMethodTopupState,
   type AdminBillingAccount,
   type BillingPlanOffer,
   type BillingSummary,
@@ -268,14 +270,34 @@ function summary(s: State): BillingSummary {
     methods:
       s.market === 'ru'
         ? [
-            { id: 'tochka:card', provider: 'tochka', kind: PaymentMethodKind.CARD, min: mon(15_000n), max: mon(50_000_000n), autoTopupCapable: false },
+            { id: 'tochka:card', provider: 'tochka', kind: PaymentMethodKind.CARD, min: mon(15_000n), max: mon(50_000_000n), autoTopupCapable: true },
             { id: 'tochka:sbp', provider: 'tochka', kind: PaymentMethodKind.SBP, min: mon(15_000n), max: mon(50_000_000n), autoTopupCapable: false },
           ]
         : [{ id: 'stripe:card', provider: 'stripe', kind: PaymentMethodKind.CARD, min: mon(500n), max: mon(500_000n), autoTopupCapable: true }],
     autoTopup: autoTopup(s),
+    savedMethods: s.cardSaved ? [savedCard(s)] : [],
     payer: create(PayerProfileSchema, { type: PayerType.COMPANY, name: 'ООО «Ромашка»', country: 'DE', email: 'billing@romashka.test', taxId: 'DE123456789' }),
   });
 }
+
+/** The saved card: МИР ••0792 on Tochka in RU, Visa ••4242 on Stripe otherwise (one-click on). */
+function savedCard(s: State) {
+  const ru = s.market === 'ru';
+  return create(SavedPaymentMethodSchema, {
+    id: 'pm-1',
+    kind: PaymentMethodKind.CARD,
+    provider: ru ? 'tochka' : 'stripe',
+    brand: ru ? 'mir' : 'visa',
+    last4: ru ? '0792' : '4242',
+    ...(ru ? {} : { expMonth: 8, expYear: 2029 }),
+    createdAt: ts(Date.now() - 90 * DAY),
+    oneClick: true,
+    autoTopupCapable: true,
+  });
+}
+
+/** One-click top-ups of the mock: ?oneclick=3ds asks for 3-D Secure (paid on the second poll), =decline fails. */
+const oneClicks = new Map<string, { amount: bigint; polls: number }>();
 
 function autoTopup(s: State) {
   const now = Date.now();
@@ -431,6 +453,38 @@ function owner(): OwnerBillingApi {
       }
       return create(CheckoutStatusSchema, { checkoutId: cid, state: paid ? CheckoutState.COMPLETED : CheckoutState.OPEN, amount: mon(c.amount), credited: paid, ...(paid ? { paymentId: `pay-${cid}` } : {}) });
     },
+    async savedTopup(_ws, init) {
+      await wait(500);
+      const s = S();
+      const amount = init.amount?.minor ?? 0n;
+      const [lo, hi] = s.market === 'ru' ? [15_000n, 50_000_000n] : [500n, 500_000n];
+      if (amount < lo || amount > hi) throw new ApiError('ERROR_CODE_VALIDATION', 'range', 422, 'amount', { reason: 'BILLING_AMOUNT_OUT_OF_RANGE' });
+      const id = `sm-${Date.now()}`;
+      const mode = param('oneclick', 'calaba-billing-oneclick');
+      const base = { id, amount: mon(amount), paymentMethodId: init.paymentMethodId ?? '', createdAt: ts(Date.now()) };
+      if (mode === 'decline') return create(SavedMethodTopupSchema, { ...base, state: SavedMethodTopupState.FAILED, failureCode: 'card_declined' });
+      if (mode === '3ds') {
+        oneClicks.set(id, { amount, polls: 0 });
+        return create(SavedMethodTopupSchema, { ...base, state: SavedMethodTopupState.REQUIRES_ACTION, actionUrl: 'https://hooks.stripe.com/3d_secure_2/hosted?mock=1' });
+      }
+      s.balance += amount;
+      bump(s);
+      return create(SavedMethodTopupSchema, { ...base, state: SavedMethodTopupState.SUCCEEDED, credited: true });
+    },
+    async savedTopupStatus(_ws, id) {
+      await wait(120);
+      const s = S();
+      const c = oneClicks.get(id);
+      if (!c) throw new ApiError('ERROR_CODE_NOT_FOUND', 'top-up', 404);
+      c.polls++;
+      const base = { id, amount: mon(c.amount), paymentMethodId: 'pm-1', createdAt: ts(Date.now()) };
+      if (c.polls < 2) return create(SavedMethodTopupSchema, { ...base, state: SavedMethodTopupState.REQUIRES_ACTION, actionUrl: 'https://hooks.stripe.com/3d_secure_2/hosted?mock=1' });
+      if (c.polls === 2) {
+        s.balance += c.amount;
+        bump(s);
+      }
+      return create(SavedMethodTopupSchema, { ...base, state: SavedMethodTopupState.SUCCEEDED, credited: true });
+    },
     async autoTopup() {
       await wait();
       return autoTopup(S());
@@ -453,7 +507,7 @@ function owner(): OwnerBillingApi {
       const s = S();
       return {
         $typeName: 'calaba.v1.SavedPaymentMethods',
-        methods: s.cardSaved ? [create(SavedPaymentMethodSchema, { id: 'pm-1', kind: PaymentMethodKind.CARD, brand: 'visa', last4: '4242', expMonth: 8, expYear: 2029, createdAt: ts(Date.now() - 90 * DAY) })] : [],
+        methods: s.cardSaved ? [savedCard(s)] : [],
       };
     },
     async detachMethod() {
@@ -556,7 +610,12 @@ function admin(): AdminBillingApi {
     async account(id) {
       await wait();
       const a = find(id);
-      return create(AdminBillingAccountDetailsSchema, { account: a, freeAdvance: usd(a.balance && a.balance.minor > 0n ? a.balance.minor : 0n), pendingRefunds: usd(0n) });
+      return create(AdminBillingAccountDetailsSchema, {
+        account: a,
+        freeAdvance: usd(a.balance && a.balance.minor > 0n ? a.balance.minor : 0n),
+        pendingRefunds: usd(0n),
+        savedMethods: id === 'acc-1' && S().cardSaved ? [savedCard(S())] : [],
+      });
     },
     async ledger(id, cursor) {
       return owner().ledger(id, cursor);

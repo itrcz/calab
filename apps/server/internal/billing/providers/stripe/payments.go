@@ -387,6 +387,11 @@ func (p *Provider) DetachMethod(ctx context.Context, paymentMethodID string) err
 //
 // A lost answer is ErrUnknownOutcome: retry with the same key within 24h (Stripe replays the
 // first answer, decline included), else ListPayments by customer + metadata attempt id.
+//
+// OnSession (one-click top-up, the owner is in the app): the intent is confirmed without
+// off_session and with return_url, so a card that needs 3-D Secure answers requires_action with
+// NextActionURL = Stripe's hosted authentication page (next_action.redirect_to_url); the payer
+// returns to ReturnURL and the core re-reads the intent.
 func (p *Provider) ChargeOffSession(ctx context.Context, req provider.OffSessionReq) (provider.PaymentFact, error) {
 	if err := requireKey("off-session charge", req.IdemKey); err != nil {
 		return provider.PaymentFact{}, err
@@ -416,8 +421,15 @@ func (p *Provider) ChargeOffSession(ctx context.Context, req provider.OffSession
 		PaymentMethod:      stripego.String(req.PaymentMethodID),
 		PaymentMethodTypes: stripego.StringSlice([]string{"card"}),
 		Confirm:            stripego.Bool(true),
-		OffSession:         stripego.Bool(true),
 		Metadata:           md.Map(),
+	}
+	if req.OnSession {
+		if req.ReturnURL == "" {
+			return provider.PaymentFact{}, fmt.Errorf("%w: an on-session charge needs a return URL", ErrInvalidRequest)
+		}
+		params.ReturnURL = stripego.String(req.ReturnURL)
+	} else {
+		params.OffSession = stripego.Bool(true)
 	}
 	if req.Description != "" {
 		params.Description = stripego.String(req.Description)
@@ -439,6 +451,9 @@ func (p *Provider) ChargeOffSession(ctx context.Context, req provider.OffSession
 	}
 	f.FailureCode = failureCode(string(se.Code), string(se.DeclineCode))
 	if f.Status == provider.PaymentSucceeded || f.Status == provider.PaymentProcessing || f.Status == provider.PaymentCanceled {
+		return f, nil
+	}
+	if req.OnSession && f.Status == provider.PaymentRequiresAction && f.NextActionURL != "" {
 		return f, nil
 	}
 	if isAuthRequired(string(se.Code), string(se.DeclineCode)) {
@@ -525,13 +540,16 @@ func (p *Provider) paymentFact(op, acct string, pi *stripego.PaymentIntent) (pro
 	case stripego.PaymentIntentStatusCanceled:
 		f.Status = provider.PaymentCanceled
 	case stripego.PaymentIntentStatusRequiresPaymentMethod:
-		if pi.LastPaymentError != nil && f.Metadata.Kind == provider.MetadataKindAutoTopup && !isAuthRequired(code, decline) {
+		if pi.LastPaymentError != nil && provider.IsChargeKind(f.Metadata.Kind) && !isAuthRequired(code, decline) {
 			f.Status = provider.PaymentFailed
 		} else {
 			f.Status = provider.PaymentRequiresAction
 		}
 	default: // requires_action, requires_confirmation
 		f.Status = provider.PaymentRequiresAction
+		if na := pi.NextAction; na != nil && na.RedirectToURL != nil {
+			f.NextActionURL = na.RedirectToURL.URL
+		}
 	}
 	return f, nil
 }

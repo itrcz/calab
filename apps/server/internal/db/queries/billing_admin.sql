@@ -139,3 +139,8 @@ UPDATE billing_accounts SET discount_bps = sqlc.arg('discount_bps'), revision = 
     updated_at = sqlc.arg('now')::timestamptz
 WHERE id = sqlc.arg('id')
 RETURNING *;
+
+-- name: ListBillingSavedMethodRefs :many
+-- Which of these provider ids are saved-card references (Tochka subscriptions, chargeable with our
+-- token): the admin APIs show them masked (ADR-0083 phase 2).
+SELECT provider_pm_id FROM billing_payment_methods WHERE provider_pm_id = ANY(sqlc.arg('ids')::text[]);

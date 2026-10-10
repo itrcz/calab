@@ -162,6 +162,13 @@ func (h *Handlers) getAccount(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out.FreeAdvance, out.PendingRefunds = money(free, cur), money(pending, cur)
+	methods, err := q.ListBillingPaymentMethods(ctx, id)
+	if err != nil {
+		return err
+	}
+	for _, m := range methods {
+		out.SavedMethods = append(out.SavedMethods, savedMethodProto(m))
+	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
 }
@@ -229,9 +236,19 @@ func (h *Handlers) payments(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.BillingPayment.ProviderPaymentID)
+	}
+	mask, err := savedRefs(r.Context(), h.d.DB.Q, ids)
+	if err != nil {
+		return err
+	}
 	out := &v1.AdminBillingPayments{Payments: make([]*v1.AdminBillingPayment, 0, len(rows))}
 	for _, row := range rows {
-		out.Payments = append(out.Payments, paymentProto(row.BillingPayment, row.WorkspaceID))
+		p := paymentProto(row.BillingPayment, row.WorkspaceID)
+		p.ProviderPaymentId = mask.apply(p.GetProviderPaymentId())
+		out.Payments = append(out.Payments, p)
 	}
 	if len(rows) > 0 {
 		out.NextCursor = next(len(rows), lim, rows[len(rows)-1].BillingPayment.ID)
@@ -262,9 +279,21 @@ func (h *Handlers) refunds(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.ProviderRefundID != nil {
+			ids = append(ids, *row.ProviderRefundID)
+		}
+	}
+	mask, err := savedRefs(r.Context(), h.d.DB.Q, ids)
+	if err != nil {
+		return err
+	}
 	out := &v1.AdminBillingRefunds{Refunds: make([]*v1.AdminBillingRefund, 0, len(rows))}
 	for _, row := range rows {
-		out.Refunds = append(out.Refunds, refundProto(row))
+		rf := refundProto(row)
+		rf.ProviderRefundId = mask.apply(rf.GetProviderRefundId())
+		out.Refunds = append(out.Refunds, rf)
 	}
 	if len(rows) > 0 {
 		out.NextCursor = next(len(rows), lim, rows[len(rows)-1].ID)
@@ -367,9 +396,22 @@ func (h *Handlers) events(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ObjectID)
+	}
+	mask, err := savedRefs(r.Context(), h.d.DB.Q, ids)
+	if err != nil {
+		return err
+	}
 	out := &v1.AdminProviderEvents{Events: make([]*v1.AdminProviderEvent, 0, len(rows))}
 	for _, row := range rows {
-		out.Events = append(out.Events, eventProto(row))
+		ev := eventProto(row)
+		ev.ObjectId = mask.apply(ev.GetObjectId())
+		if mask[opPart(row.ObjectID)] {
+			ev.Error = strings.ReplaceAll(ev.GetError(), opPart(row.ObjectID), ev.GetObjectId())
+		}
+		out.Events = append(out.Events, ev)
 	}
 	if len(rows) > 0 {
 		out.NextCursor = next(len(rows), lim, rows[len(rows)-1].ID)

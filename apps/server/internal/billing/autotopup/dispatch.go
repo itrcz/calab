@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -220,6 +221,15 @@ func (t target) ref() provider.CustomerRef {
 		Livemode: t.cust.Livemode, ID: t.cust.CustomerID}
 }
 
+// reconcilable: the provider has no idempotency keys (Tochka): one request per attempt, the
+// charge is found by reading the method's charges (ListCharges), never by sending again.
+func (t target) reconcilable() bool { return !t.p.Caps().SafeRetry() }
+
+func (t target) lister() (provider.ChargeLister, bool) {
+	l, ok := t.p.(provider.ChargeLister)
+	return l, ok
+}
+
 // targetOf loads the card and customer an attempt charges (its own pm_id, not the consent's).
 func (j *Job) targetOf(ctx context.Context, att sqlc.BillingAutotopupAttempt) (target, error) {
 	var t target
@@ -240,21 +250,48 @@ func (j *Job) targetOf(ctx context.Context, att sqlc.BillingAutotopupAttempt) (t
 	return t, nil
 }
 
-// request is the off-session charge of an attempt; identical on every retry.
-func request(att sqlc.BillingAutotopupAttempt, t target) provider.OffSessionReq {
-	return provider.OffSessionReq{
+// request is the charge of an attempt; identical on every retry. A manual (one-click) charge is
+// on-session: the owner is in the app and may confirm 3-D Secure on the provider's page.
+func (j *Job) request(att sqlc.BillingAutotopupAttempt, t target) provider.OffSessionReq {
+	r := provider.OffSessionReq{
 		IdemKey: att.ID.String(), Customer: t.ref(), PaymentMethodID: t.pm.ProviderPmID,
 		Amount: money.New(att.AmountMinor, money.Currency(att.Currency)), Description: chargeDescription,
 		Metadata: provider.Metadata{AccountID: att.AccountID, AttemptID: att.ID, Kind: provider.MetadataKindAutoTopup},
 	}
+	if att.Kind == KindManual {
+		r.Description, r.Metadata.Kind = manualDescription, provider.MetadataKindSavedMethod
+		r.OnSession, r.ReturnURL = true, j.returnURL(att.ID)
+	}
+	return r
 }
 
 // dispatch: phase 2 (fence under the lock: prepared → dispatched, or failed when the consent or
-// the need went away), the provider call outside any transaction, then the outcome.
+// the need went away), the provider call outside any transaction, then the outcome. A provider
+// without idempotency keys gets the method's charges read first (the snapshot is stored with the
+// fence): the charge of this attempt is the new one that appears after the call.
 func (j *Job) dispatch(ctx context.Context, att sqlc.BillingAutotopupAttempt) (bool, error) {
 	t, err := j.targetOf(ctx, att)
 	if err != nil {
 		return false, err
+	}
+	var snapshot []string
+	if t.reconcilable() {
+		snapshot, err = j.snapshot(ctx, t, att)
+		if err != nil {
+			// Not sent: the attempt is closed now instead of waiting to be abandoned.
+			slog.WarnContext(ctx, "billing auto-topup: read charges before dispatch", "attempt", att.ID, "err", err)
+			ferr := j.db.Tx(ctx, func(q *sqlc.Queries) error {
+				if _, err := q.LockBillingAccount(ctx, att.AccountID); err != nil {
+					return err
+				}
+				_, err := q.FailBillingAutoTopupAttemptPrepared(ctx, sqlc.FailBillingAutoTopupAttemptPreparedParams{FailureCode: CodeUnavailable, Now: j.now(ctx, q), ID: att.ID})
+				if db.IsNotFound(err) {
+					return nil
+				}
+				return err
+			})
+			return false, errors.Join(err, ferr)
+		}
 	}
 	sent := false
 	err = j.db.Tx(ctx, func(q *sqlc.Queries) error {
@@ -270,12 +307,9 @@ func (j *Job) dispatch(ctx context.Context, att sqlc.BillingAutotopupAttempt) (b
 		if err != nil {
 			return err
 		}
-		p, v, err := j.check(ctx, q, acc, now, &cur)
+		v, err := j.fence(ctx, q, acc, now, cur)
 		if err != nil {
 			return err
-		}
-		if v.ok() && cur.AmountMinor > p.consent.MaxMinor {
-			v.skip = "cap_lowered" // the owner lowered the cap after prepare: never charge above it
 		}
 		if !v.ok() {
 			code := v.skip
@@ -289,7 +323,12 @@ func (j *Job) dispatch(ctx context.Context, att sqlc.BillingAutotopupAttempt) (b
 			_, err := q.FailBillingAutoTopupAttemptPrepared(ctx, sqlc.FailBillingAutoTopupAttemptPreparedParams{FailureCode: code, Now: now, ID: cur.ID})
 			return err
 		}
-		if _, err := q.MarkBillingAutoTopupAttemptDispatched(ctx, sqlc.MarkBillingAutoTopupAttemptDispatchedParams{Now: now, ID: cur.ID}); err != nil {
+		if snapshot == nil && t.reconcilable() {
+			snapshot = []string{} // stored as an empty array: «read, nothing yet»
+		}
+		if _, err := q.MarkBillingAutoTopupAttemptDispatched(ctx, sqlc.MarkBillingAutoTopupAttemptDispatchedParams{
+			Now: now, OrderSnapshot: snapshot, ID: cur.ID,
+		}); err != nil {
 			return err
 		}
 		sent = true
@@ -298,15 +337,171 @@ func (j *Job) dispatch(ctx context.Context, att sqlc.BillingAutotopupAttempt) (b
 	if err != nil || !sent {
 		return false, err
 	}
+	att.OrderSnapshot = snapshot
 	attempts.WithLabelValues("dispatched").Inc()
 	cctx, cancel := context.WithTimeout(ctx, j.opts.ChargeTimeout)
-	fact, err := t.charger.ChargeOffSession(cctx, request(att, t))
+	fact, err := t.charger.ChargeOffSession(cctx, j.request(att, t))
 	cancel()
 	// The outcome is recorded even if ctx ends now (shutdown): an unrecorded success would
 	// otherwise wait for the recovery.
 	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer rcancel()
+	if t.reconcilable() {
+		return true, j.outcomeReconcilable(rctx, t, att, fact, err)
+	}
 	return true, j.outcome(rctx, t, att, fact, err, false)
+}
+
+// fence re-checks an attempt under the account lock just before it is sent.
+func (j *Job) fence(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, now time.Time, cur sqlc.BillingAutotopupAttempt) (verdict, error) {
+	if cur.Kind == KindManual {
+		return j.checkManual(ctx, q, acc, cur.PmID)
+	}
+	p, v, err := j.check(ctx, q, acc, now, &cur)
+	if err != nil {
+		return v, err
+	}
+	if v.ok() && cur.AmountMinor > p.consent.MaxMinor {
+		v.skip = "cap_lowered" // the owner lowered the cap after prepare: never charge above it
+	}
+	return v, nil
+}
+
+// snapshot reads the ids of the charges a saved method has now. The attempt being sent is the
+// account's only open one and was not sent yet, so a succeeded charge with no payment row belongs
+// to a closed attempt (an approval that appeared after «declined» or after not_found): it is
+// credited once as an import here, never hidden in the snapshot. An error leaves the attempt
+// unsent.
+func (j *Job) snapshot(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt) ([]string, error) {
+	l, ok := t.lister()
+	if !ok {
+		return nil, errors.New("auto-topup: provider cannot list the charges of a method")
+	}
+	cctx, cancel := context.WithTimeout(ctx, j.opts.ChargeTimeout)
+	defer cancel()
+	facts, err := l.ListCharges(cctx, t.ref(), t.pm.ProviderPmID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(facts))
+	var stray []provider.PaymentFact
+	for _, f := range facts {
+		ids = append(ids, f.ID)
+		// Only a charge made after the card was saved: the binding payment (recorded under its
+		// own id) can never be taken for a stray charge, whatever order the bank lists it in.
+		if f.Status != provider.PaymentSucceeded || !f.Created.After(t.pm.CreatedAt) {
+			continue
+		}
+		_, err := j.db.Q.GetBillingPaymentByProviderID(ctx, sqlc.GetBillingPaymentByProviderIDParams{
+			Provider: string(t.p.ID()), ProviderAccount: f.ProviderAccount, Livemode: f.Livemode, ProviderPaymentID: f.ID,
+		})
+		if db.IsNotFound(err) {
+			stray = append(stray, f)
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	if len(stray) == 0 {
+		return ids, nil
+	}
+	// Read after the list: still prepared means this attempt was not sent before the list was read
+	// (the send follows the dispatched mark), so none of these charges is its own. Moved on (a
+	// concurrent dispatch of the same attempt): no import, the fence will not send it again.
+	cur, err := j.db.Q.GetBillingAutoTopupAttemptOfAccount(ctx, sqlc.GetBillingAutoTopupAttemptOfAccountParams{ID: att.ID, AccountID: att.AccountID})
+	if err != nil {
+		return nil, err
+	}
+	if cur.Status != statusPrepared {
+		return ids, nil
+	}
+	for _, f := range stray {
+		slog.ErrorContext(ctx, "billing auto-topup: a charge of the saved method had no payment, credited as an import",
+			"account", att.AccountID, "attempt", att.ID, "amount", f.Amount.String())
+		if _, err := j.inbox.ApplyPaymentFact(ctx, t.p, f); err != nil {
+			return nil, err
+		}
+	}
+	return ids, nil
+}
+
+// findCharge looks for the charge of a reconcilable attempt: a charge of its method that was not
+// there before it was sent (order_snapshot), is not recorded as a payment yet and has its amount.
+// One charge in flight per account (and one subscription per method) makes it unambiguous.
+func (j *Job) findCharge(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt) (provider.PaymentFact, bool, error) {
+	if att.OrderSnapshot == nil {
+		return provider.PaymentFact{}, false, fmt.Errorf("auto-topup: attempt %s has no charge snapshot", att.ID)
+	}
+	l, ok := t.lister()
+	if !ok {
+		return provider.PaymentFact{}, false, errors.New("auto-topup: provider cannot list the charges of a method")
+	}
+	facts, err := l.ListCharges(ctx, t.ref(), t.pm.ProviderPmID)
+	if err != nil {
+		return provider.PaymentFact{}, false, err
+	}
+	want := money.New(att.AmountMinor, money.Currency(att.Currency))
+	for _, f := range facts {
+		if slices.Contains(att.OrderSnapshot, f.ID) || f.Amount != want || f.Status != provider.PaymentSucceeded {
+			continue
+		}
+		pay, err := j.db.Q.GetBillingPaymentByProviderID(ctx, sqlc.GetBillingPaymentByProviderIDParams{
+			Provider: string(t.p.ID()), ProviderAccount: f.ProviderAccount, Livemode: f.Livemode, ProviderPaymentID: f.ID,
+		})
+		if err == nil && (pay.AttemptID == nil || *pay.AttemptID != att.ID) {
+			continue // another attempt's (or imported) charge
+		}
+		if err != nil && !db.IsNotFound(err) {
+			return provider.PaymentFact{}, false, err
+		}
+		kind := provider.MetadataKindAutoTopup
+		if att.Kind == KindManual {
+			kind = provider.MetadataKindSavedMethod
+		}
+		f.Metadata = provider.Metadata{AccountID: att.AccountID, AttemptID: att.ID, Kind: kind}
+		return f, true, nil
+	}
+	return provider.PaymentFact{}, false, nil
+}
+
+// outcomeReconcilable records the answer of a charge of a provider without idempotency keys. The
+// answer never identifies the payment: the charge is looked up right away and, if not visible yet,
+// by the recovery. A definite refusal (4xx) charged nothing; a «declined» answer is trusted only
+// once no new charge is visible.
+func (j *Job) outcomeReconcilable(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt, fact provider.PaymentFact, err error) error {
+	if err != nil && !errors.Is(err, provider.ErrUnknownOutcome) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		slog.WarnContext(ctx, "billing auto-topup: refused", "attempt", att.ID, "account", att.AccountID, "err", err)
+		return j.fail(ctx, att, nil, CodeRefused, j.failMail(att, mail.TemplateBillingAutoTopupFailed))
+	}
+	f, found, ferr := j.findCharge(ctx, t, att)
+	if ferr == nil && found {
+		return j.credit(ctx, t, att, f)
+	}
+	if err != nil || ferr != nil {
+		attempts.WithLabelValues("unknown").Inc()
+		slog.WarnContext(ctx, "billing auto-topup: outcome unknown (resolved by reading the charges)", "attempt", att.ID, "account", att.AccountID, "err", errors.Join(err, ferr))
+		return j.setStatus(ctx, att, statusUnknown, nil, "")
+	}
+	if fact.Status == provider.PaymentFailed {
+		code := fact.FailureCode
+		if code == "" {
+			code = string(provider.PaymentFailed)
+		}
+		return j.fail(ctx, att, nil, code, j.failMail(att, mail.TemplateBillingAutoTopupFailed))
+	}
+	return nil // accepted, not listed yet: dispatched until the recovery finds it
+}
+
+// credit applies a charge found by reading (reconcilable providers): the inbox credit path with the
+// attempt in the metadata, then the attempt row.
+func (j *Job) credit(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt, f provider.PaymentFact) error {
+	res, err := j.inbox.ApplyPaymentFact(ctx, t.p, f)
+	if err != nil {
+		return err
+	}
+	if res.Credited && res.Payment != nil {
+		return j.markPaid(ctx, att, *res.Payment)
+	}
+	return nil
 }
 
 // outcome records the answer of a charge request. retry: a same-key retry of an open attempt
@@ -321,7 +516,7 @@ func (j *Job) outcome(ctx context.Context, t target, att sqlc.BillingAutotopupAt
 		// A definite refusal before any payment (invalid card reference, livemode): nothing
 		// was charged; the owner learns that the automatic top-up did not happen.
 		slog.WarnContext(ctx, "billing auto-topup: refused", "attempt", att.ID, "account", att.AccountID, "err", err)
-		return j.fail(ctx, att, nil, CodeRefused, mail.TemplateBillingAutoTopupFailed)
+		return j.fail(ctx, att, nil, CodeRefused, j.failMail(att, mail.TemplateBillingAutoTopupFailed))
 	}
 	if fact.Metadata.AttemptID != uuid.Nil && fact.Metadata.AttemptID != att.ID {
 		return fmt.Errorf("auto-topup: payment %s belongs to attempt %s, not %s", fact.ID, fact.Metadata.AttemptID, att.ID)
@@ -331,14 +526,16 @@ func (j *Job) outcome(ctx context.Context, t target, att sqlc.BillingAutotopupAt
 
 // Attempt statuses (billing_autotopup_attempts.status).
 const (
-	statusPrepared   = "prepared"
-	statusDispatched = "dispatched"
-	statusSucceeded  = "succeeded"
-	statusFailed     = "failed"
-	statusUnknown    = "unknown"
+	statusPrepared       = "prepared"
+	statusDispatched     = "dispatched"
+	statusRequiresAction = "requires_action"
+	statusSucceeded      = "succeeded"
+	statusFailed         = "failed"
+	statusUnknown        = "unknown"
 )
 
-// settle applies a fresh payment fact of the attempt. done-ness is in the attempt row.
+// settle applies a fresh payment fact of the attempt (a provider with idempotency keys: the fact
+// names its payment). done-ness is in the attempt row.
 func (j *Job) settle(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt, f provider.PaymentFact) error {
 	switch f.Status {
 	case provider.PaymentSucceeded, provider.PaymentProcessing:
@@ -356,6 +553,12 @@ func (j *Job) settle(ctx context.Context, t target, att sqlc.BillingAutotopupAtt
 		}
 		return nil
 	case provider.PaymentRequiresAction:
+		if att.Kind == KindManual && f.NextActionURL != "" && f.ID != "" {
+			// The owner confirms 3-D Secure on the provider's page; the GET of the top-up or the
+			// recovery re-reads the payment (and cancels it after ActionTimeout).
+			attempts.WithLabelValues("requires_action").Inc()
+			return j.requiresAction(ctx, att, f.ID, f.NextActionURL)
+		}
 		// Off-session the payer cannot authenticate: cancel, never continue the intent.
 		cf, err := t.charger.CancelPayment(ctx, f.ID)
 		if err != nil {
@@ -366,14 +569,45 @@ func (j *Job) settle(ctx context.Context, t target, att sqlc.BillingAutotopupAtt
 			return j.settle(ctx, t, att, cf)
 		}
 		attempts.WithLabelValues("requires_action").Inc()
-		return j.fail(ctx, att, &f.ID, CodeAuthRequired, mail.TemplateBillingAutoTopupActionRequired)
+		return j.fail(ctx, att, &f.ID, CodeAuthRequired, j.failMail(att, mail.TemplateBillingAutoTopupActionRequired))
 	default: // failed, canceled
 		code := f.FailureCode
 		if code == "" {
 			code = string(f.Status)
 		}
-		return j.fail(ctx, att, &f.ID, code, mail.TemplateBillingAutoTopupFailed)
+		return j.fail(ctx, att, &f.ID, code, j.failMail(att, mail.TemplateBillingAutoTopupFailed))
 	}
+}
+
+// failMail is the owner mail of a failed attempt: auto-topup only (a one-click top-up shows its
+// result in the app).
+func (j *Job) failMail(att sqlc.BillingAutotopupAttempt, t mail.Template) mail.Template {
+	if att.Kind == KindManual {
+		return ""
+	}
+	return t
+}
+
+// requiresAction keeps a one-click charge waiting for 3-D Secure.
+func (j *Job) requiresAction(ctx context.Context, att sqlc.BillingAutotopupAttempt, pi, actionURL string) error {
+	return j.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockBillingAccount(ctx, att.AccountID); err != nil {
+			return err
+		}
+		_, err := q.SetBillingAttemptRequiresAction(ctx, sqlc.SetBillingAttemptRequiresActionParams{ProviderPaymentID: &pi, ActionUrl: actionURL, ID: att.ID})
+		if db.IsNotFound(err) {
+			return nil // final already
+		}
+		return err
+	})
+}
+
+func (j *Job) now(ctx context.Context, q *sqlc.Queries) time.Time {
+	t, err := j.clock.Now(ctx, q)
+	if err != nil {
+		return time.Now().UTC()
+	}
+	return t
 }
 
 // setStatus moves an open attempt (dispatched / unknown) under the account lock.

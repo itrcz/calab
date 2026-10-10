@@ -38,6 +38,8 @@ var OwnerRoutes = []string{
 	"DELETE /api/workspaces/{id}/billing/auto-topup",
 	"GET /api/workspaces/{id}/billing/payment-methods",
 	"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}",
+	"POST /api/workspaces/{id}/billing/saved-method-topups",      // ADR-0083 phase 2: one-click top-up
+	"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}", // its state (re-reads the provider)
 	"GET /api/workspaces/{id}/billing/ledger",
 	"GET /api/workspaces/{id}/billing/payments",
 	"GET /api/workspaces/{id}/billing/refund-requests",

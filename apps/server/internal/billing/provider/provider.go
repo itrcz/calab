@@ -112,7 +112,15 @@ type Metadata struct {
 const (
 	MetadataKindCheckout  = "checkout"
 	MetadataKindAutoTopup = "auto_topup"
+	// MetadataKindSavedMethod: the owner's one-click top-up charged to a saved card (an attempt
+	// of kind manual; ADR-0083 phase 2).
+	MetadataKindSavedMethod = "saved_method"
 )
+
+// IsChargeKind reports whether a metadata kind is a charge of a saved card (an attempt row).
+func IsChargeKind(kind string) bool {
+	return kind == MetadataKindAutoTopup || kind == MetadataKindSavedMethod
+}
 
 // Metadata keys on the provider side.
 const (
@@ -248,9 +256,12 @@ type PaymentFact struct {
 	PaymentMethodID string // pm_…
 	ReceiptURL      string
 	FailureCode     string // decline / authentication code, for the owner mail
-	Created         time.Time
-	SucceededAt     time.Time
-	Metadata        Metadata
+	// NextActionURL: PaymentRequiresAction of an on-session charge — the provider's page where
+	// the payer confirms it (3-D Secure). Empty otherwise.
+	NextActionURL string
+	Created       time.Time
+	SucceededAt   time.Time
+	Metadata      Metadata
 }
 
 // ListReq lists payments of a customer (reconciliation after a restore or an unknown outcome).
@@ -307,14 +318,18 @@ type SavedMethod struct {
 	ExpYear    int
 }
 
-// OffSessionReq charges a saved method without the payer (auto-topup).
+// OffSessionReq charges a saved method: without the payer (auto-topup) or, OnSession, for the
+// owner who asked for a one-click top-up (the bank may then ask for 3-D Secure:
+// PaymentRequiresAction with NextActionURL, the payer comes back to ReturnURL).
 type OffSessionReq struct {
-	IdemKey         string // the auto-topup attempt id
+	IdemKey         string // the attempt id
 	Customer        CustomerRef
 	PaymentMethodID string
 	Amount          money.Money
 	Description     string
 	Metadata        Metadata
+	OnSession       bool
+	ReturnURL       string // OnSession: where the 3-D Secure page returns the payer
 }
 
 // EventKind is the provider-neutral kind of a webhook event.
@@ -364,9 +379,15 @@ type Provider interface {
 	ParseWebhook(ctx context.Context, h http.Header, raw []byte) (Event, error)
 }
 
-// OffSessionCharger is implemented by providers with CapOffSession (auto-topup). An off-session
-// requires_action is returned as a PaymentFact with PaymentRequiresAction: the core cancels it
-// (CancelPayment) and mails the owner a manual checkout link — never retried with a new key.
+// OffSessionCharger is implemented by providers with CapOffSession (auto-topup, one-click top-up).
+// An off-session requires_action is returned as a PaymentFact with PaymentRequiresAction: the
+// core cancels it (CancelPayment) and mails the owner a manual checkout link — never retried with
+// a new key.
+//
+// A provider with CapReconcilableCharge instead of CapIdempotentCharge (Tochka) is a ChargeLister
+// too: its charge answer does not identify the payment (PaymentProcessing with an empty ID or
+// PaymentFailed), so the core snapshots the method's charges before the call and takes the new
+// one that appears after it; a lost answer is resolved by reading, never by sending again.
 type OffSessionCharger interface {
 	ListMethods(ctx context.Context, customer CustomerRef) ([]SavedMethod, error)
 	ChargeOffSession(ctx context.Context, req OffSessionReq) (PaymentFact, error)

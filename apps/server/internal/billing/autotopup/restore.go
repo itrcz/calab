@@ -95,8 +95,18 @@ func (j *Job) reconcileCustomer(ctx context.Context, p provider.Provider, c sqlc
 	ref := provider.CustomerRef{Provider: p.ID(), ProviderAccount: c.ProviderAccount, Livemode: c.Livemode, ID: c.CustomerID}
 	var newest time.Time
 	var errs []error
+	if lister, ok := p.(provider.ChargeLister); ok && !p.Caps().SafeRetry() {
+		// No metadata at the provider (Tochka): the charges of the customer's saved cards. One
+		// we have no payment for is credited as an import, unless an open attempt is resolving it.
+		var err error
+		newest, err = j.reconcileCharges(ctx, p, lister, c, ref, since, res)
+		errs = append(errs, err)
+	}
 	cursor := ""
 	for range 10 {
+		if !p.Caps().SafeRetry() {
+			break
+		}
 		facts, next, err := p.ListPayments(ctx, provider.ListReq{Customer: ref, CreatedAfter: since, Kind: provider.MetadataKindAutoTopup, Cursor: cursor, Limit: 100})
 		if err != nil {
 			return err
@@ -231,4 +241,43 @@ func (j *Job) ReconcileHandler() httpx.HandlerFunc {
 		httpx.Write(w, http.StatusOK, &v1.AdminBillingMutationResult{Action: auditAction, AuditId: row.ID.String()})
 		return nil
 	}
+}
+
+// reconcileCharges imports the charges of a reconcilable provider's saved cards made since
+// `since` that the database has no payment for (a restore lost their attempts). Returns the
+// newest charge time.
+func (j *Job) reconcileCharges(ctx context.Context, p provider.Provider, lister provider.ChargeLister, c sqlc.BillingCustomer,
+	ref provider.CustomerRef, since time.Time, res *ReconcileResult) (time.Time, error) {
+	var newest time.Time
+	if _, err := j.db.Q.GetOpenBillingAutoTopupAttempt(ctx, c.AccountID); err == nil {
+		return newest, nil // the open attempt's recovery attributes the new charge
+	} else if !db.IsNotFound(err) {
+		return newest, err
+	}
+	ms, err := j.db.Q.ListBillingPaymentMethods(ctx, c.AccountID)
+	if err != nil {
+		return newest, err
+	}
+	var errs []error
+	for _, m := range ms {
+		if m.CustomerID != c.ID {
+			continue
+		}
+		facts, err := lister.ListCharges(ctx, ref, m.ProviderPmID)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, f := range facts {
+			if f.Created.Before(since) {
+				continue
+			}
+			res.Payments++
+			if f.Created.After(newest) {
+				newest = f.Created
+			}
+			errs = append(errs, j.reconcilePayment(ctx, p, c, f, res))
+		}
+	}
+	return newest, errors.Join(errs...)
 }

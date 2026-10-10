@@ -89,7 +89,7 @@ func (q *Queries) DetachBillingPaymentMethodByProviderID(ctx context.Context, ar
 }
 
 const getBillingAutoTopupAttemptOfAccount = `-- name: GetBillingAutoTopupAttemptOfAccount :one
-SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at FROM billing_autotopup_attempts WHERE id = $1 AND account_id = $2
+SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts WHERE id = $1 AND account_id = $2
 `
 
 type GetBillingAutoTopupAttemptOfAccountParams struct {
@@ -112,6 +112,12 @@ func (q *Queries) GetBillingAutoTopupAttemptOfAccount(ctx context.Context, arg G
 		&i.CreatedAt,
 		&i.DispatchedAt,
 		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
 	)
 	return i, err
 }

@@ -31,6 +31,7 @@ import {
   ChangeBillingPlanRequestSchema,
   CheckoutStatusSchema,
   CreateRefundRequestSchema,
+  CreateSavedMethodTopupRequestSchema,
   CreateTopupRequestSchema,
   CreateTopupResponseSchema,
   GetBillingResponseSchema,
@@ -58,6 +59,8 @@ import {
   type BillingRefundRequests,
   type CheckoutStatus,
   type CreateTopupResponse,
+  SavedMethodTopupSchema,
+  type SavedMethodTopup,
   type GetBillingResponse,
   type LedgerPage,
   type PayerProfile,
@@ -86,6 +89,10 @@ export interface OwnerBillingApi {
   putPayer(ws: string, payer: Init<typeof PayerProfileSchema>): Promise<void>;
   topup(ws: string, init: Init<typeof CreateTopupRequestSchema>): Promise<CreateTopupResponse>;
   checkout(ws: string, checkoutId: string, signal?: AbortSignal): Promise<CheckoutStatus>;
+  /** One-click top-up with a saved card (ADR-0083 phase 2): charged at once, or the 3-D Secure page to open. */
+  savedTopup(ws: string, init: Init<typeof CreateSavedMethodTopupRequestSchema>): Promise<SavedMethodTopup>;
+  /** Its state; the server re-reads the provider (after the 3-D Secure page). */
+  savedTopupStatus(ws: string, id: string, signal?: AbortSignal): Promise<SavedMethodTopup>;
   autoTopup(ws: string, signal?: AbortSignal): Promise<AutoTopupSettings>;
   putAutoTopup(ws: string, init: Init<typeof PutAutoTopupRequestSchema>): Promise<void>;
   revokeAutoTopup(ws: string): Promise<void>;
@@ -148,6 +155,8 @@ export const restOwnerApi: OwnerBillingApi = {
   putPayer: (ws, payer) => callEmpty('PUT', `${W(ws)}/payer`, body(PutPayerRequestSchema, { payer })),
   topup: (ws, init) => call('POST', `${W(ws)}/topups`, CreateTopupResponseSchema, body(CreateTopupRequestSchema, init)),
   checkout: (ws, cid, signal) => call('GET', `${W(ws)}/checkouts/${enc(cid)}`, CheckoutStatusSchema, undefined, signal),
+  savedTopup: (ws, init) => call('POST', `${W(ws)}/saved-method-topups`, SavedMethodTopupSchema, body(CreateSavedMethodTopupRequestSchema, init)),
+  savedTopupStatus: (ws, id, signal) => call('GET', `${W(ws)}/saved-method-topups/${enc(id)}`, SavedMethodTopupSchema, undefined, signal),
   autoTopup: (ws, signal) => call('GET', `${W(ws)}/auto-topup`, AutoTopupSettingsSchema, undefined, signal),
   putAutoTopup: (ws, init) => callEmpty('PUT', `${W(ws)}/auto-topup`, body(PutAutoTopupRequestSchema, init)),
   revokeAutoTopup: (ws) => callEmpty('DELETE', `${W(ws)}/auto-topup`),

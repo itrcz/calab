@@ -172,7 +172,7 @@ func (s *Service) methods(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := &v1.SavedPaymentMethods{}
 	for _, m := range rows {
-		out.Methods = append(out.Methods, savedMethodProto(m))
+		out.Methods = append(out.Methods, SavedMethodProto(s.reg, s.cfg.SavedMethodTopups, c.acc, m))
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
@@ -180,7 +180,9 @@ func (s *Service) methods(w http.ResponseWriter, r *http.Request) error {
 
 // deleteMethod: DELETE …/billing/payment-methods/{pmId}. Our row first (detached, and an
 // auto-topup consent on this card revoked: nothing can charge it from now on), then the
-// provider detach; a provider failure answers 503 and the retry detaches again.
+// provider detach; a provider failure answers 503 and the retry detaches again. Tochka cannot
+// cancel a subscription without a schedule: the card stays bound at the bank but is never
+// charged again (ADR-0083 phase 2).
 func (s *Service) deleteMethod(w http.ResponseWriter, r *http.Request) error {
 	c, err := s.ownerOf(r)
 	if err != nil {

@@ -119,7 +119,15 @@ type checkout struct {
 var (
 	_ provider.Provider          = (*Provider)(nil)
 	_ provider.OffSessionCharger = (*Provider)(nil)
+	_ provider.ChargeLister      = (*Provider)(nil)
 )
+
+// reconcilable: Tochka-like charges (CapReconcilableCharge without CapIdempotentCharge): no
+// key replay, and a charge answer that does not identify the payment.
+func (p *Provider) reconcilable() bool {
+	c := p.opts.Caps
+	return c.Has(provider.CapReconcilableCharge) && !c.Has(provider.CapIdempotentCharge)
+}
 
 // New returns an empty fake provider.
 func New(o Options) *Provider {
@@ -629,11 +637,28 @@ func (p *Provider) AddMethod(customerID string) provider.SavedMethod {
 	return m
 }
 
+// AddCharge records a succeeded charge of a saved method that no ChargeOffSession answer
+// reported (a reconcilable bank's approval that appears late, e.g. after «declined»). The
+// metadata carries only the account, like a bank without metadata.
+func (p *Provider) AddCharge(customerID, pmID string, amount money.Money, md provider.Metadata) provider.PaymentFact {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return *p.newPayment(customerID, pmID, amount, provider.Metadata{AccountID: md.AccountID}, Succeed)
+}
+
 // ChargeOffSession implements provider.OffSessionCharger. The idempotency key (attempt id)
 // returns the first payment: a retry after Timeout finds the payment that was charged.
+//
+// A reconcilable fake (CapReconcilableCharge without CapIdempotentCharge) behaves like Tochka:
+// every call charges again (no key), and an accepted charge answers PaymentProcessing without
+// an id (a decline PaymentFailed): the caller finds the payment through ListCharges. An
+// on-session RequiresAction carries a NextActionURL; SettlePayment finishes it.
 func (p *Provider) ChargeOffSession(_ context.Context, req provider.OffSessionReq) (provider.PaymentFact, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.reconcilable() {
+		return p.chargeReconcilable(req)
+	}
 	fp := fmt.Sprintf("%v|%s|%s", req.Amount, req.Customer.ID, req.PaymentMethodID)
 	if id, ok, err := p.begin("ChargeOffSession", req.IdemKey, fp); ok || err != nil {
 		if err != nil {
@@ -656,11 +681,62 @@ func (p *Provider) ChargeOffSession(_ context.Context, req provider.OffSessionRe
 		created = out
 	}
 	pay := p.newPayment(req.Customer.ID, req.PaymentMethodID, req.Amount, req.Metadata, created)
+	if pay.Status == provider.PaymentRequiresAction && req.OnSession {
+		pay.NextActionURL = "https://pay.fake.test/3ds/" + pay.ID
+	}
 	p.remember("ChargeOffSession", req.IdemKey, fp, pay.ID, nil)
 	if out == Timeout {
 		return provider.PaymentFact{}, provider.ErrUnknownOutcome
 	}
 	return *pay, nil
+}
+
+func (p *Provider) chargeReconcilable(req provider.OffSessionReq) (provider.PaymentFact, error) {
+	p.calls["ChargeOffSession"]++
+	if err := p.live(); err != nil {
+		return provider.PaymentFact{}, err
+	}
+	if err := p.checkCustomer(req.Customer); err != nil {
+		return provider.PaymentFact{}, err
+	}
+	if m, ok := p.methods[req.PaymentMethodID]; !ok || m.CustomerID != req.Customer.ID {
+		return provider.PaymentFact{}, fmt.Errorf("fake: payment method %q: %w", req.PaymentMethodID, provider.ErrNotFound)
+	}
+	out := p.next(OpCharge)
+	switch out {
+	case Unknown:
+		return provider.PaymentFact{}, provider.ErrUnknownOutcome
+	case Decline:
+		return provider.PaymentFact{Status: provider.PaymentFailed, FailureCode: "declined", Amount: req.Amount,
+			AmountReceived: money.Zero(req.Amount.Currency), CustomerID: req.Customer.ID}, nil
+	}
+	// The bank keeps no metadata: the charge is seen only as a new approval of the method.
+	p.newPayment(req.Customer.ID, req.PaymentMethodID, req.Amount, provider.Metadata{AccountID: req.Metadata.AccountID}, Succeed)
+	if out == Timeout {
+		return provider.PaymentFact{}, provider.ErrUnknownOutcome
+	}
+	return provider.PaymentFact{Status: provider.PaymentProcessing, Amount: req.Amount,
+		AmountReceived: money.Zero(req.Amount.Currency), CustomerID: req.Customer.ID}, nil
+}
+
+// ListCharges implements provider.ChargeLister: the payments of a saved method, oldest first.
+func (p *Provider) ListCharges(_ context.Context, c provider.CustomerRef, pmID string) ([]provider.PaymentFact, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls["ListCharges"]++
+	if err := p.live(); err != nil {
+		return nil, err
+	}
+	if err := p.getOutcome(); err != nil {
+		return nil, err
+	}
+	var out []provider.PaymentFact
+	for _, id := range p.order {
+		if pay := p.payments[id]; pay.CustomerID == c.ID && pay.PaymentMethodID == pmID {
+			out = append(out, *pay)
+		}
+	}
+	return out, nil
 }
 
 // CancelPayment implements provider.OffSessionCharger.
