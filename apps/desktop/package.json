@@ -27,6 +27,8 @@
     "e2e:media": "playwright test --config playwright.media.config.ts",
     "e2e:visual:mobile": "pnpm build:web && playwright test --config playwright.mobile.config.ts",
     "e2e:visual:mobile:update": "pnpm build:web && playwright test --config playwright.mobile.config.ts --update-snapshots=all",
+    "e2e:visual:billing": "VITE_BILLING_MOCK=1 pnpm build:web && playwright test --config playwright.visual.config.ts -g billing",
+    "e2e:visual:billing:update": "VITE_BILLING_MOCK=1 pnpm build:web && playwright test --config playwright.visual.config.ts -g billing --update-snapshots=all",
     "e2e:visual:update": "pnpm build:app && pnpm build:web && playwright test --config playwright.visual.config.ts --update-snapshots=all"
   },
   "dependencies": {
