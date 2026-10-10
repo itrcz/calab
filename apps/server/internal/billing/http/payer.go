@@ -136,17 +136,27 @@ func (s *Service) syncCustomers(ctx context.Context, account uuid.UUID, p sqlc.B
 		slog.WarnContext(ctx, "billing: payer sync: list customers", "account", account, "err", err)
 		return syncProviderUnavailable
 	}
+	if len(rows) == 0 {
+		return ""
+	}
+	versions, err := s.db.Q.ListBillingPayerVersions(ctx, account)
+	if err != nil {
+		slog.WarnContext(ctx, "billing: payer sync: list versions", "account", account, "err", err)
+		return syncProviderUnavailable
+	}
+	history := payer.HistoryTaxIDs(versions)
 	warning := ""
 	for _, bc := range rows {
-		if w := s.syncCustomer(ctx, bc, p); w != "" {
+		if w := s.syncCustomer(ctx, bc, p, history); w != "" {
 			warning = w
 		}
 	}
 	return warning
 }
 
-// syncCustomer pushes the payer to one provider customer ("" = done or nothing to do).
-func (s *Service) syncCustomer(ctx context.Context, bc sqlc.BillingCustomer, p sqlc.BillingPayer) string {
+// syncCustomer pushes the payer to one provider customer ("" = done or nothing to do); history:
+// the tax ids earlier payer versions gave (payer.HistoryTaxIDs), removed there once gone.
+func (s *Service) syncCustomer(ctx context.Context, bc sqlc.BillingCustomer, p sqlc.BillingPayer, history []payer.TaxID) string {
 	prov, ok := s.reg.Provider(provider.ID(bc.Provider))
 	if !ok {
 		return ""
@@ -158,15 +168,18 @@ func (s *Service) syncCustomer(ctx context.Context, bc sqlc.BillingCustomer, p s
 	if lr, ok := prov.(provider.LivemodeReporter); ok && lr.Livemode() != bc.Livemode {
 		return "" // a customer of the other mode: not this deployment's
 	}
-	var ids []provider.CustomerTaxID
+	var ids, prev []provider.CustomerTaxID
 	for _, t := range payer.StripeTaxIDs(p.Country, p.Type, payer.Requisites(p.Requisites)) {
 		ids = append(ids, provider.CustomerTaxID{Type: t.Type, Value: t.Value})
+	}
+	for _, t := range history {
+		prev = append(prev, provider.CustomerTaxID{Type: t.Type, Value: t.Value})
 	}
 	ctx, cancel := context.WithTimeout(ctx, customerSyncTimeout)
 	defer cancel()
 	rejected, err := syncer.SyncCustomer(ctx, provider.CustomerSync{
 		Customer: provider.CustomerRef{Provider: prov.ID(), ProviderAccount: bc.ProviderAccount, Livemode: bc.Livemode, ID: bc.CustomerID},
-		Name:     p.Name, Email: p.Email, TaxIDs: ids, ManagedTypes: payer.StripeTypes(),
+		Name:     p.Name, Email: p.Email, TaxIDs: ids, Previous: prev,
 	})
 	switch {
 	case err != nil:

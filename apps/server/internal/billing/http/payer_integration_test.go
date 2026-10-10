@@ -93,7 +93,8 @@ func TestPayerRequisites(t *testing.T) {
 	if st, r := e.do(e.owner, "PUT", e.base()+"/payer", de, &p); st != 200 || p.GetVersion() != 2 || p.GetTaxId() != "DE123456789" || p.GetSyncWarning() != "" {
 		t.Fatalf("DE: %d %s %v", st, r, &p)
 	}
-	if sync, _ := e.fake.Synced(cus); len(sync.TaxIDs) != 1 || sync.TaxIDs[0] != (provider.CustomerTaxID{Type: "eu_vat", Value: "DE123456789"}) || !slices.Contains(sync.ManagedTypes, "ru_inn") {
+	if sync, _ := e.fake.Synced(cus); len(sync.TaxIDs) != 1 || sync.TaxIDs[0] != (provider.CustomerTaxID{Type: "eu_vat", Value: "DE123456789"}) ||
+		!slices.Contains(sync.Previous, provider.CustomerTaxID{Type: "ru_inn", Value: "7707083893"}) {
 		t.Fatalf("customer sync %+v", sync)
 	}
 	// Stripe refuses the tax id, then does not answer: saved anyway, with a warning.

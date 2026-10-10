@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 
 	stripego "github.com/stripe/stripe-go/v86"
 
@@ -15,8 +14,9 @@ import (
 var _ provider.CustomerSyncer = (*Provider)(nil)
 
 // SyncCustomer brings an existing customer in line with the payer profile (ADR-0080 §0.1): name
-// and e-mail, then its tax ids — a managed type's id the payer no longer has is deleted, a new
-// one created. A tax id Stripe refuses (400: tax_id_invalid, unsupported type) is returned in
+// and e-mail, then its tax ids — an id the profile gave before (req.Previous) or of a type the
+// profile now gives another value of is deleted when the payer no longer has it, a new one
+// created; ids only the Checkout page collected stay. A tax id Stripe refuses (400: tax_id_invalid, unsupported type) is returned in
 // rejected and does not stop the others.
 func (p *Provider) SyncCustomer(ctx context.Context, req provider.CustomerSync) ([]provider.CustomerTaxID, error) {
 	if req.Customer.ID == "" {
@@ -50,12 +50,16 @@ func (p *Provider) SyncCustomer(ctx context.Context, req provider.CustomerSync) 
 		}
 		have[key{string(t.Type), t.Value}] = t.ID
 	}
-	want := map[key]bool{}
+	want, wantType, prev := map[key]bool{}, map[string]bool{}, map[key]bool{}
 	for _, t := range req.TaxIDs {
 		want[key{t.Type, t.Value}] = true
+		wantType[t.Type] = true
+	}
+	for _, t := range req.Previous {
+		prev[key{t.Type, t.Value}] = true
 	}
 	for k, id := range have {
-		if want[k] || !slices.Contains(req.ManagedTypes, k.typ) {
+		if want[k] || (!wantType[k.typ] && !prev[k]) {
 			continue
 		}
 		if _, err := p.sc.V1TaxIDs.Delete(ctx, id, &stripego.TaxIDDeleteParams{Customer: stripego.String(req.Customer.ID)}); err != nil {

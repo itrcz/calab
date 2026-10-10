@@ -32,20 +32,18 @@ func StripeTaxIDs(country, typ string, requisites map[string]string) []TaxID {
 	return out
 }
 
-// StripeTypes lists every Stripe tax id type the schema fills: the types a payer profile owns
-// on its Stripe customer (one it no longer has is removed there).
-func StripeTypes() []string {
-	var out []string
-	for _, c := range countries {
-		for _, t := range c.types {
-			for _, f := range t.fields {
-				if f.StripeType != "" && !slices.Contains(out, f.StripeType) {
-					out = append(out, f.StripeType)
-				}
+// HistoryTaxIDs lists, without repeats, the Stripe tax ids the given payer versions gave: what a
+// sync may remove from the customer once the payer no longer has it (a tax id only Stripe
+// Checkout collected is not among them and stays).
+func HistoryTaxIDs(versions []sqlc.BillingPayerVersion) []TaxID {
+	var out []TaxID
+	for _, v := range versions {
+		for _, t := range StripeTaxIDs(v.Country, v.Type, Requisites(v.Requisites)) {
+			if !slices.Contains(out, t) {
+				out = append(out, t)
 			}
 		}
 	}
-	slices.Sort(out)
 	return out
 }
 

@@ -193,9 +193,11 @@ type CustomerSync struct {
 	Name     string
 	Email    string
 	TaxIDs   []CustomerTaxID // the payer's tax ids
-	// ManagedTypes: tax id types the payer profile owns; a customer's tax id of such a type that
-	// is not in TaxIDs is removed (a changed or cleared VAT ID). Other types are left alone.
-	ManagedTypes []string
+	// Previous: every tax id earlier versions of the payer profile gave. A customer's tax id that
+	// is not in TaxIDs is removed when it is one of these (cleared or changed in the profile) or
+	// when TaxIDs holds another value of its type (replaced). Any other tax id — one the payer
+	// typed on the Stripe Checkout page (tax_id_collection) — is left alone.
+	Previous []CustomerTaxID
 }
 
 // CustomerSyncer is implemented by providers that keep the payer's name and tax ids on their

@@ -288,8 +288,9 @@ func (s *Service) ensureCustomer(ctx context.Context, c caller, p provider.Provi
 	if db.IsNotFound(err) {
 		bc, err = s.db.Q.GetBillingCustomer(ctx, sqlc.GetBillingCustomerParams{AccountID: c.acc.ID, Provider: string(p.ID()), Livemode: cr.Livemode})
 	} else if err == nil && payer.AccountID != uuid.Nil {
-		// A new customer gets the payer's tax ids too (best effort: the checkout goes on).
-		s.syncCustomer(ctx, bc, payer)
+		// A new customer gets the payer's tax ids too (best effort: the checkout goes on); it has
+		// nothing of earlier payer versions to remove.
+		s.syncCustomer(ctx, bc, payer, nil)
 	}
 	if err != nil {
 		return provider.CustomerRef{}, err

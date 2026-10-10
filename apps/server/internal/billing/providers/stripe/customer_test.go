@@ -13,21 +13,25 @@ func TestSyncCustomer(t *testing.T) {
 	p := m.provider(t)
 	cus := provider.CustomerRef{Provider: provider.Stripe, ProviderAccount: testAccount, ID: "cus_FIXTURE0001"}
 	m.on("POST", "/v1/customers/cus_FIXTURE0001", http.StatusOK, []byte(`{"id":"cus_FIXTURE0001","object":"customer","livemode":false}`))
-	// Stripe has the old VAT ID (managed: deleted), the KPP to keep and a Checkout-collected
-	// tax id of an unmanaged type (left alone).
+	// Stripe has the old VAT ID (replaced: deleted), the KPP to keep, a US EIN the profile gave
+	// before and no longer has (deleted), a Checkout-collected tax id of a type the profile never
+	// gave and a Checkout-collected GB VAT the profile never had (both left alone).
 	m.on("GET", "/v1/customers/cus_FIXTURE0001/tax_ids", http.StatusOK, []byte(`{"object":"list","has_more":false,"data":[
 		{"id":"txi_OLD","object":"tax_id","type":"eu_vat","value":"DE111111111"},
 		{"id":"txi_KPP","object":"tax_id","type":"ru_kpp","value":"773601001"},
+		{"id":"txi_EIN","object":"tax_id","type":"us_ein","value":"12-3456789"},
+		{"id":"txi_GB","object":"tax_id","type":"gb_vat","value":"GB123456789"},
 		{"id":"txi_CH","object":"tax_id","type":"ch_vat","value":"CHE-123.456.789 MWST"}]}`))
 	m.on("DELETE", "/v1/customers/cus_FIXTURE0001/tax_ids/txi_OLD", http.StatusOK, []byte(`{"id":"txi_OLD","object":"tax_id","deleted":true}`))
+	m.on("DELETE", "/v1/customers/cus_FIXTURE0001/tax_ids/txi_EIN", http.StatusOK, []byte(`{"id":"txi_EIN","object":"tax_id","deleted":true}`))
 	m.on("POST", "/v1/customers/cus_FIXTURE0001/tax_ids", http.StatusOK, []byte(`{"id":"txi_NEW","object":"tax_id","type":"ru_inn","value":"7707083893"}`))
 	m.on("POST", "/v1/customers/cus_FIXTURE0001/tax_ids", http.StatusBadRequest,
 		[]byte(`{"error":{"type":"invalid_request_error","code":"tax_id_invalid","param":"value","message":"Invalid value for eu_vat."}}`))
 
 	rejected, err := p.SyncCustomer(ctx, provider.CustomerSync{
 		Customer: cus, Name: "ООО «Ромашка»", Email: "billing@romashka.test",
-		TaxIDs:       []provider.CustomerTaxID{{Type: "ru_kpp", Value: "773601001"}, {Type: "ru_inn", Value: "7707083893"}, {Type: "eu_vat", Value: "DE123456789"}},
-		ManagedTypes: []string{"eu_vat", "ru_inn", "ru_kpp"},
+		TaxIDs:   []provider.CustomerTaxID{{Type: "ru_kpp", Value: "773601001"}, {Type: "ru_inn", Value: "7707083893"}, {Type: "eu_vat", Value: "DE123456789"}},
+		Previous: []provider.CustomerTaxID{{Type: "us_ein", Value: "12-3456789"}, {Type: "ru_kpp", Value: "773601001"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,8 +49,11 @@ func TestSyncCustomer(t *testing.T) {
 	if len(creates) != 2 || creates[0].form.Get("type") != "ru_inn" || creates[1].form.Get("value") != "DE123456789" {
 		t.Fatalf("creates %v", creates)
 	}
-	if len(m.requests("DELETE", "/v1/customers/cus_FIXTURE0001/tax_ids/txi_CH")) != 0 {
-		t.Fatal("an unmanaged tax id was deleted")
+	if n := len(m.requests("DELETE", "/v1/customers/cus_FIXTURE0001/tax_ids/txi_EIN")); n != 1 {
+		t.Fatalf("cleared EIN deleted %d times", n)
+	}
+	if len(m.requests("DELETE", "/v1/customers/cus_FIXTURE0001/tax_ids/txi_CH"))+len(m.requests("DELETE", "/v1/customers/cus_FIXTURE0001/tax_ids/txi_GB")) != 0 {
+		t.Fatal("a Checkout-collected tax id was deleted")
 	}
 
 	if _, err := p.SyncCustomer(ctx, provider.CustomerSync{}); !errors.Is(err, ErrInvalidRequest) {
