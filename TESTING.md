@@ -1208,6 +1208,17 @@ CALABA_VISUAL_MOCK_PORT=41370 pnpm e2e:visual -g "admin-suspend|settings-bans|wo
 ```
 Ожидается: 2 `--- PASS`, всё зелёное, 3 снимка совпадают. Вручную: суперадмин приостанавливает пространство → у всех плашка (у владельца — причина и «Связаться»), звонок завершается, отправка/голос/инвайты — отказ; «Забанить…» в меню участника → он пропадает, вход по инвайту — «Вход в это пространство для вас закрыт»; «Разбанить» во вкладке «Забаненные».
 
+Индивидуальный тариф с ценой и названием (ADR-0086 «Дополнение 2026-10-10», ветка `feat/custom-plan-pricing`):
+```sh
+cd apps/server && export TEST_DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba
+go test -race -tags integration -count=1 -run 'TestCustom|TestAdminCustomPlan|TestTransitionCustomPlan' ./internal/billing/core/ ./internal/billing/admin/ ./internal/billing/http/
+go test -race -count=1 -run 'TestCleanText|TestCustomText|TestCustomPlanName' ./internal/plans/
+cd ../desktop && pnpm exec vitest run src/renderer/lib/billing/customPlan.test.ts src/renderer/lib/plan.test.ts
+pnpm e2e:visual:billing -g "billing-custom"
+```
+Ожидается: всё `ok`/зелёное, снимки `billing-custom-*` (dark-960 и iPhone 14) совпадают. Проверяется: списания, продление и рост состава — по индивидуальной цене без скидки; новая цена — только для суток, начатых с `effective_from`; возврат на Team компенсирует остаток по индивидуальной цене; владелец не меняет и не останавливает тариф (`409 BILLING_PLAN_ADMIN_ASSIGNED`), пополнение работает; название — в шильдике, вкладке «Тариф», «Условиях тарифа»; пусто → «Индивидуальный».
+Вручную (стенд, суперадмин): «Администрирование» → «Оплата» → аккаунт → «Назначить индивидуальный» (название, цена, лимиты, причина → «Предпросмотр» → «Сохранить тариф») → у участников шильдик с названием; «Изменить» с датой → строка «Следующая цена» и «запланирована» в истории; «Вернуть на стандартный» сверх лимитов Team → список и «Назначить всё равно».
+
 ### 3.19 Запись встреч и GPTunneL (ADR-0025)
 
 ```sh

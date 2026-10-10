@@ -45,6 +45,7 @@ import {
   SavedMethodTopupSchema,
   SavedMethodTopupState,
   type AdminBillingAccount,
+  type AdminPriceVersion,
   type BillingPlanOffer,
   type BillingSummary,
   type LedgerEntry,
@@ -55,6 +56,7 @@ import { create, fromJson, type JsonValue } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { ApiError } from '../api/client';
 import type { AdminBillingApi, BillingAdapters, OwnerBillingApi } from './api';
+import { customPriceAt, nextCustomPrice } from './customPlan';
 // The schema the server serves, pinned by its Go test (internal/billing/payer TestSchemaGolden).
 import payerSchemaJson from '../../../../../../proto/testdata/billing_payer_schema.json';
 
@@ -97,6 +99,16 @@ function param(name: string, key: string): string | null {
  */
 const overLimits = (): boolean => param('limits', 'calaba-billing-limits') === 'over';
 const adminAssigned = (): boolean => param('admin', 'calaba-billing-admin') === '1';
+/**
+ * ADR-0086 «Индивидуальный тариф»: `?custom=1` — the account is on its custom plan (its own price,
+ * a new one scheduled in 5 days, the name of MOCK_CUSTOM_NAME that the visual test gives Workspace.plan).
+ */
+const customPlan = (): boolean => param('custom', 'calaba-billing-custom') === '1';
+export const MOCK_CUSTOM_NAME = 'Нейро-офис Про';
+const CUSTOM_DESCRIPTION = 'Договор № 7 от 01.10: до 120 человек, 500 ГБ';
+const CUSTOM_LIMITS = { members: 120, roomMembers: 30, storageMb: 500n * 1024n, bots: 8, telephonyDisabled: true };
+/** The custom price per seat per day by market (USD cents, RUB kopecks) until a superadmin changes it. */
+const customUnitOf = (m: Market): bigint => st?.customUnit ?? (m === 'ru' ? 1500n : 25n);
 const v = (kind: PlanLimitKind, current: bigint, limit: bigint, rooms = 0) => create(PlanLimitViolationSchema, { kind, current, limit, rooms });
 function violationsFor(p: Plan) {
   if (!overLimits() || p === Plan.ENTERPRISE) return [];
@@ -137,8 +149,11 @@ const wait = (ms = 180): Promise<void> => new Promise((r) => setTimeout(r, ms));
 interface State {
   sc: Scenario;
   status: BillingAccountStatus;
-  plan: Plan.TEAM | Plan.ENTERPRISE;
+  plan: Plan.TEAM | Plan.ENTERPRISE | Plan.CUSTOM;
   balance: bigint;
+  /** ADR-0086: the custom plan's price now and its versions (newest first). */
+  customUnit: bigint;
+  customPrices: AdminPriceVersion[];
   members: number;
   negativeSince: number | null;
   suspendAt: number | null;
@@ -183,7 +198,8 @@ function initialPayer(market: Market): PayerProfile {
       });
 }
 
-const unit = (p: Plan, m: Market = S().market): bigint => (m === 'ru' ? (p === Plan.ENTERPRISE ? 1800n : 600n) : p === Plan.ENTERPRISE ? 30n : 10n);
+const unit = (p: Plan, m: Market = S().market): bigint =>
+  p === Plan.CUSTOM ? customUnitOf(m) : m === 'ru' ? (p === Plan.ENTERPRISE ? 1800n : 600n) : p === Plan.ENTERPRISE ? 30n : 10n;
 const price = (minor: bigint, m: Market): Money => ({ $typeName: 'calaba.v1.Money', minor, currency: m === 'ru' ? 'RUB' : USD });
 
 /** The plan offers of GET …/billing (built-in default limits of the server, plans/limits.go). */
@@ -197,6 +213,8 @@ function offers(m: Market = S().market): BillingPlanOffer[] {
     create(BillingPlanOfferSchema, { plan: Plan.ENTERPRISE, unitPrice: price(unit(Plan.ENTERPRISE, m), m), limits: biz, market: m, violations: violationsFor(Plan.ENTERPRISE) }),
   ];
 }
+
+const skuOf = (p: Plan): string => (p === Plan.ENTERPRISE ? 'seat.enterprise.day' : p === Plan.CUSTOM ? 'seat.custom.day' : 'seat.team.day');
 
 function seedLedger(now: number, balance: bigint, members: number, plan: Plan, market: Market): LedgerEntry[] {
   const mon = (minor: bigint): Money => price(minor, market);
@@ -216,7 +234,7 @@ function seedLedger(now: number, balance: bigint, members: number, plan: Plan, m
         amount: mon(amount),
         balanceAfter: mon(bal),
         createdAt: ts(at),
-        ...(topup ? { paymentId: `pay-${i}` } : { sku: plan === Plan.ENTERPRISE ? 'seat.enterprise.day' : 'seat.team.day', quantity: members, startsAt: ts(at), endsAt: ts(at + DAY) }),
+        ...(topup ? { paymentId: `pay-${i}` } : { sku: skuOf(plan), quantity: members, startsAt: ts(at), endsAt: ts(at + DAY) }),
       }),
     );
     bal -= amount;
@@ -265,6 +283,8 @@ function initial(): State {
     status: BillingAccountStatus.ACTIVE,
     plan: Plan.TEAM,
     balance: 4230n,
+    customUnit: market === 'ru' ? 1500n : 25n,
+    customPrices: [],
     members,
     negativeSince: null,
     suspendAt: null,
@@ -291,6 +311,13 @@ function initial(): State {
   if (sc === 'selfServe') s.account = false;
   if (sc === 'stopped') Object.assign(s, { status: BillingAccountStatus.STOPPED, balance: 1210n, autoOn: false });
   if (overLimits()) s.plan = Plan.ENTERPRISE; // Business, over Team's and Free's limits (ADR-0086)
+  if (customPlan()) {
+    const ru = market === 'ru';
+    const v = (id: string, minor: bigint, from: number, created: number) =>
+      create(AdminPriceVersionSchema, { id, market, sku: 'seat.custom.day', plan: Plan.CUSTOM, unit: price(minor, market), effectiveFrom: ts(from), createdAt: ts(created), accountId: 'acc-1' });
+    s.plan = Plan.CUSTOM;
+    s.customPrices = [v('pc-3', ru ? 2100n : 35n, now + 5 * DAY, now - DAY), v('pc-2', s.customUnit, now - 12 * DAY, now - 12 * DAY), v('pc-1', ru ? 1200n : 20n, now - 40 * DAY, now - 40 * DAY)];
+  }
   s.ledger = sc === 'inactive' || sc === 'selfServe' ? [] : seedLedger(now, s.balance, members, s.plan, s.market);
   return s;
 }
@@ -336,7 +363,15 @@ function summary(s: State): BillingSummary {
     autoTopup: autoTopup(s),
     savedMethods: s.cardSaved ? [savedCard(s)] : [],
     payer: s.payer,
+    ...nextPriceOf(s, now),
   });
+}
+
+/** The scheduled custom price (ADR-0086) of the summary. */
+function nextPriceOf(s: State, now: number) {
+  if (s.plan !== Plan.CUSTOM) return {};
+  const next = nextCustomPrice(s.customPrices, now);
+  return next?.version.unit ? { nextUnitPrice: next.version.unit, nextPriceAt: ts(next.at) } : {};
 }
 
 /** The saved card: МИР ••0792 on Tochka in RU, Visa ••4242 on Stripe otherwise (one-click on). */
@@ -424,10 +459,18 @@ function owner(): OwnerBillingApi {
         return create(GetBillingResponseSchema, { status: { state: s.sc === 'member' ? BillingState.ACTIVE : BillingState.SUSPENDED, source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) } });
       if (adminAssigned()) return create(GetBillingResponseSchema, { status: { source: PlanSource.MANUAL }, adminAssigned: true });
       if (!s.account) return create(GetBillingResponseSchema, { status: { source: PlanSource.MANUAL }, selfServe: true, ...salesPart(s) });
+      const sales = salesPart(s);
+      const custom = s.plan === Plan.CUSTOM;
       return create(GetBillingResponseSchema, {
         status: { state: stateOf(s), source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) },
         summary: summary(s),
-        ...salesPart(s),
+        ...sales,
+        ...(custom
+          ? {
+              adminAssigned: true,
+              offers: [...sales.offers, create(BillingPlanOfferSchema, { plan: Plan.CUSTOM, unitPrice: mon(s.customUnit), limits: CUSTOM_LIMITS, market: s.market })],
+            }
+          : {}),
       });
     },
     async quote(_ws, init) {
@@ -670,7 +713,10 @@ function accounts(): AdminBillingAccount[] {
       ...extra,
     });
   return [
-    mk(1, 'Calab Team', 'owner@calaba.test', s.status, s.balance, s.plan, s.suspendAt ? { suspendAt: ts(s.suspendAt), negativeSince: ts(s.negativeSince ?? now) } : {}),
+    mk(1, 'Calab Team', 'owner@calaba.test', s.status, s.balance, s.plan, {
+      ...(s.suspendAt ? { suspendAt: ts(s.suspendAt), negativeSince: ts(s.negativeSince ?? now) } : {}),
+      ...(s.plan === Plan.CUSTOM ? { planDisplayName: MOCK_CUSTOM_NAME } : {}),
+    }),
     mk(2, 'Studio North', 'anna@north.test', BillingAccountStatus.ACTIVE, -1240n, Plan.ENTERPRISE, { negativeSince: ts(now - 2 * DAY), suspendAt: ts(now + 5 * DAY), discountBps: 1500 }),
     mk(3, 'Garage Lab', 'dev@garage.test', BillingAccountStatus.SUSPENDED, -880n, Plan.TEAM, { suspendAt: ts(now - DAY), negativeSince: ts(now - 8 * DAY) }),
     mk(4, 'Orbit', 'cto@orbit.test', BillingAccountStatus.INACTIVE, 0n, Plan.TEAM, s.orbitRu ? { market: 'ru', balance: price(0n, 'ru'), debt: price(0n, 'ru') } : {}),
@@ -710,6 +756,14 @@ function admin(): AdminBillingApi {
         freeAdvance: usd(a.balance && a.balance.minor > 0n ? a.balance.minor : 0n),
         pendingRefunds: usd(0n),
         savedMethods: id === 'acc-1' && S().cardSaved ? [savedCard(S())] : [],
+        customPlan:
+          id === 'acc-1'
+            ? {
+                active: S().plan === Plan.CUSTOM,
+                prices: S().customPrices,
+                ...(S().plan === Plan.CUSTOM ? { limits: CUSTOM_LIMITS, displayName: MOCK_CUSTOM_NAME, description: CUSTOM_DESCRIPTION } : {}),
+              }
+            : { active: false, prices: [] },
       });
     },
     async ledger(id, cursor) {
@@ -849,6 +903,69 @@ function admin(): AdminBillingApi {
       const s = S();
       if (!init.preview && (id === 'stripe' || id === 'tochka')) s.accept[id] = !!init.acceptNew;
       return create(AdminBillingMutationResultSchema, { preview: !!init.preview, providers: providersView(s), auditId: init.preview ? '' : `audit-${Date.now()}` });
+    },
+    async customPlan(id, init) {
+      await wait();
+      const s = S();
+      const a = find(id);
+      const entering = s.plan !== Plan.CUSTOM;
+      const now = Date.now();
+      const want = init.unit?.minor ?? 0n;
+      if (entering && want <= 0n) throw new ApiError('ERROR_CODE_VALIDATION', 'a price is required', 422, undefined, {});
+      const from = init.effectiveFrom ? Number(init.effectiveFrom.seconds) * 1000 : now;
+      const cur = customPriceAt(s.customPrices, from);
+      const version =
+        want > 0n && (cur?.unit?.minor !== want || cur.id !== s.customPrices[0]?.id)
+          ? create(AdminPriceVersionSchema, { id: `pc-${now}`, market: s.market, sku: 'seat.custom.day', plan: Plan.CUSTOM, unit: mon(want), effectiveFrom: ts(from), createdAt: ts(now), accountId: 'acc-1' })
+          : null;
+      const newUnit = version && from <= now ? want : s.customUnit;
+      const charged = entering ? newUnit * BigInt(s.members) : 0n;
+      const comp = entering && s.status === BillingAccountStatus.ACTIVE ? (unit(s.plan) * BigInt(s.members)) / 2n : 0n;
+      const before = s.balance;
+      const after = before + comp - charged;
+      if (!init.preview) {
+        if (version) s.customPrices.unshift(version);
+        s.customUnit = newUnit;
+        s.plan = Plan.CUSTOM;
+        s.status = BillingAccountStatus.ACTIVE;
+        s.balance = after;
+        bump(s);
+      }
+      return create(AdminBillingMutationResultSchema, {
+        preview: !!init.preview,
+        balanceBefore: mon(before),
+        balanceAfter: mon(after),
+        account: { ...a, plan: Plan.CUSTOM, balance: mon(after), planDisplayName: init.displayName ?? '' },
+        amount: mon(charged),
+        compensation: mon(comp),
+        ...(version ? { price: version } : {}),
+        auditId: init.preview ? '' : `audit-${now}`,
+      });
+    },
+    async setPlan(id, init) {
+      await wait();
+      const s = S();
+      const a = find(id);
+      const target = init.plan === Plan.ENTERPRISE ? Plan.ENTERPRISE : Plan.TEAM;
+      const active = s.status === BillingAccountStatus.ACTIVE;
+      const comp = active ? (unit(s.plan) * BigInt(s.members)) / 2n : 0n;
+      const charged = active ? unit(target) * BigInt(s.members) : 0n;
+      const before = s.balance;
+      const after = before + comp - charged;
+      if (!init.preview) {
+        s.plan = target;
+        s.balance = after;
+        bump(s);
+      }
+      return create(AdminBillingMutationResultSchema, {
+        preview: !!init.preview,
+        balanceBefore: mon(before),
+        balanceAfter: mon(after),
+        account: { ...a, plan: target, balance: mon(after), planDisplayName: '' },
+        amount: mon(charged),
+        compensation: mon(comp),
+        auditId: init.preview ? '' : `audit-${Date.now()}`,
+      });
     },
     async createPrice(init) {
       await wait();

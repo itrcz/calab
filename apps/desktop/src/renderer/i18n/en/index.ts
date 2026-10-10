@@ -24,6 +24,7 @@ import { enAutomations } from './automations';
 import { enPlan } from './plan';
 import { enBilling } from './billing';
 import { enTransitions } from './transitions';
+import { enCustomPlan } from './customPlan';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
@@ -63,6 +64,7 @@ export const en: Dict = {
   ...enPlan,
   ...enBilling,
   ...enTransitions,
+  ...enCustomPlan,
   ...enModeration,
   ...enMail,
   ...enRecording,

@@ -8,6 +8,7 @@ import { billingPlan, cabinetPhase, forecastOf, otherPlan, tsMs, type CabinetPha
 import { formatMoney, minorOf } from '../../../lib/billing/money';
 import { fmt } from '../../../lib/format';
 import { countText } from '../../../lib/plan';
+import { useBilling } from '../../../stores/billing';
 import { useWorkspaces } from '../../../stores/workspaces';
 import { PlanPill } from '../PlanTab';
 import type { QuoteAction } from './QuoteDialog';
@@ -60,6 +61,13 @@ export function BalanceCard({
   const suspendAt = tsMs(s.suspendAt);
   const forecast = forecastOf(s);
   const plan = billingPlan(s.plan);
+  // ADR-0086 «Индивидуальный тариф»: its own name and price; a plan a superadmin assigned is not
+  // changed or stopped here (top-ups and a paid resume after a debt still are). Its price rows are
+  // not shown in the iOS shell (ADR-0087 §10: name and status only).
+  const custom = s.plan === Plan.CUSTOM;
+  const customName = useWorkspaces((st) => (custom ? (st.byId[workspaceId]?.ws.plan?.displayName ?? '') : ''));
+  const assigned = useBilling((st) => !!st.byWs[workspaceId]?.data?.adminAssigned);
+  const nextAt = tsMs(s.nextPriceAt);
   return (
     <Card title={t('billing.title')} footer={s.discountBps > 0 ? t('billing.discount', { pct: fmt.number(s.discountBps / 100) }) : undefined}>
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-3 pb-2 pt-3" data-testid="billing-balance">
@@ -69,7 +77,7 @@ export function BalanceCard({
         </div>
         <div className="flex items-center gap-2">
           <StatePill state={state} />
-          <PlanPill plan={plan} />
+          <PlanPill plan={custom ? Plan.CUSTOM : plan} name={customName} />
         </div>
       </div>
 
@@ -87,6 +95,20 @@ export function BalanceCard({
         </Row>
       ) : null}
 
+      {custom && s.unitPrice && payments ? (
+        <Row label={t('customPlan.price')} hint={t('customPlan.priceHint')}>
+          <span className="text-body font-semibold tabular-nums" data-testid="billing-custom-price">
+            {formatMoney(s.unitPrice)}
+          </span>
+        </Row>
+      ) : null}
+      {s.nextUnitPrice && nextAt && payments ? (
+        <Row label={t('customPlan.nextPriceLabel')} hint={t('customPlan.nextPriceHint')}>
+          <span className="text-body tabular-nums" data-testid="billing-next-price">
+            {t('customPlan.nextPrice', { date: fmt.dateTime(new Date(nextAt), 'short'), price: formatMoney(s.nextUnitPrice) })}
+          </span>
+        </Row>
+      ) : null}
       <Row label={t('billing.daily')} hint={s.unitPrice ? t('billing.dailyHint', { n: s.billableMembers, price: formatMoney(s.unitPrice) }) : undefined}>
         <span className="text-body tabular-nums">{phase === 'active' || phase === 'arrears' ? formatMoney(s.dailyCost) : '—'}</span>
       </Row>
@@ -118,7 +140,7 @@ export function BalanceCard({
         <Note testId="billing-payments-elsewhere">{t('billing.paymentsElsewhere')}</Note>
       ) : manage ? (
         <div className="flex flex-wrap items-center gap-2 px-3 py-3" data-testid="billing-actions">
-          <Actions phase={phase} plan={plan} onTopup={onTopup} onQuote={onQuote} />
+          <Actions phase={phase} plan={plan} assigned={assigned} onTopup={onTopup} onQuote={onQuote} />
         </div>
       ) : (
         <>
@@ -155,13 +177,27 @@ function PhaseNote({ phase }: { phase: CabinetPhase }): ReactNode {
   return null;
 }
 
-function Actions({ phase, plan, onTopup, onQuote }: { phase: CabinetPhase; plan: ReturnType<typeof billingPlan>; onTopup: () => void; onQuote: (a: QuoteAction) => void }): ReactNode {
+function Actions({
+  phase,
+  plan,
+  assigned,
+  onTopup,
+  onQuote,
+}: {
+  phase: CabinetPhase;
+  plan: ReturnType<typeof billingPlan>;
+  /** A superadmin assigned the plan (ADR-0086): no change or stop here, the server refuses them. */
+  assigned: boolean;
+  onTopup: () => void;
+  onQuote: (a: QuoteAction) => void;
+}): ReactNode {
   if (phase === 'closed') return null;
   const topup = (
     <Button onClick={onTopup} data-testid="billing-topup-open">
       {t('billing.topup.open')}
     </Button>
   );
+  if (assigned && (phase === 'active' || phase === 'arrears')) return topup;
   if (phase === 'inactive')
     return (
       <>

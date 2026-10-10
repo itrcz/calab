@@ -24,6 +24,7 @@ import { esAutomations } from './automations';
 import { esPlan } from './plan';
 import { esBilling } from './billing';
 import { esTransitions } from './transitions';
+import { esCustomPlan } from './customPlan';
 import { esShell } from './shell';
 import { esVideo } from './video';
 import { esStickers } from './stickers';
@@ -63,6 +64,7 @@ export const es: Dict = {
   ...esPlan,
   ...esBilling,
   ...esTransitions,
+  ...esCustomPlan,
   ...esModeration,
   ...esMail,
   ...esRecording,

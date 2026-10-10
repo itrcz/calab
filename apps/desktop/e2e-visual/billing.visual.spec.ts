@@ -41,22 +41,31 @@ test.beforeEach(() => {
   mock.reset('data');
 });
 
+/** ADR-0086: the custom plan of the `custom` scenario (the billing mock's MOCK_CUSTOM_NAME and limits). */
+const CUSTOM_PLAN = {
+  displayName: 'Нейро-офис Про',
+  description: 'Договор № 7 от 01.10: до 120 человек, 500 ГБ',
+  limits: { members: 120, roomMembers: 30, storageMb: String(500 * 1024), bots: 8, telephonyDisabled: true, boardWebhooksDisabled: true },
+};
+
 /** The workspace's plan as a superadmin sets it (Workspace.plan → the badge). */
-async function setPlan(plan: 'PLAN_FREE' | 'PLAN_TEAM' | 'PLAN_ENTERPRISE'): Promise<void> {
+async function setPlan(plan: 'PLAN_FREE' | 'PLAN_TEAM' | 'PLAN_ENTERPRISE' | 'PLAN_CUSTOM'): Promise<void> {
   const json = { 'content-type': 'application/json' };
   const login = await fetch(`${mock.url}/api/auth/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'owner@calaba.test', password: PASSWORD }) });
   const token = ((await login.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
   const r = await fetch(`${mock.url}/api/admin/workspaces/${IDS.workspaces.main}/plan`, {
     method: 'PUT',
     headers: { ...json, authorization: `Bearer ${token}` },
-    body: JSON.stringify({ plan, note: '' }),
+    body: JSON.stringify(plan === 'PLAN_CUSTOM' ? { plan, note: '', ...CUSTOM_PLAN } : { plan, note: '' }),
   });
   expect(r.status, 'set the workspace plan').toBe(200);
 }
 
 interface Boot {
   scenario: 'normal' | 'debt' | 'suspended' | 'selfServe' | 'member' | 'memberSuspended';
-  plan: 'PLAN_FREE' | 'PLAN_TEAM' | 'PLAN_ENTERPRISE';
+  plan: 'PLAN_FREE' | 'PLAN_TEAM' | 'PLAN_ENTERPRISE' | 'PLAN_CUSTOM';
+  /** ADR-0086 «Индивидуальный тариф»: the account is on its custom plan (mock `?custom=1`). */
+  custom?: boolean;
   email?: string;
   /** The plan badge is expected in the header (default). */
   badge?: boolean;
@@ -88,7 +97,7 @@ async function boot(page: Page, o: Boot): Promise<Shot> {
   await page.clock.setFixedTime(NOW);
   await page.goto(`${mock.url}/?visual-test`);
   await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
-  const extra = `${o.sales ? `&sales=${o.sales}` : ''}${o.market ? `&market=${o.market}` : ''}${o.oneclick ? `&oneclick=${o.oneclick}` : ''}${o.limits ? `&limits=${o.limits}` : ''}${o.admin ? '&admin=1' : ''}`;
+  const extra = `${o.sales ? `&sales=${o.sales}` : ''}${o.market ? `&market=${o.market}` : ''}${o.oneclick ? `&oneclick=${o.oneclick}` : ''}${o.limits ? `&limits=${o.limits}` : ''}${o.admin ? '&admin=1' : ''}${o.custom ? '&custom=1' : ''}`;
   await page.goto(`${mock.url}/?visual-test&billing=${o.scenario}${extra}`);
   if (isPhone()) {
     await page.addStyleTag({ content: `@media (max-width: 768px) { :root.web:not(.kb-open) { --safe-top: ${INSETS.top}px; --safe-bottom: ${INSETS.bottom}px; } }` });
@@ -550,6 +559,62 @@ test('billing-transitions-admin: a plan assigned by a superadmin', async ({ page
   await expect(note).toBeVisible();
   await note.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await checkpoint(s, 'billing-tr-admin-assigned');
+});
+
+// ---------------------------------------------------------------- Custom plan (ADR-0086 «Индивидуальный тариф»)
+
+test('billing-custom: the custom plan for the owner and the superadmin editor', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_CUSTOM', custom: true });
+  // The badge carries the custom name.
+  await expect(page.getByTestId('plan-badge')).toContainText(CUSTOM_PLAN.displayName);
+  await checkpoint(s, 'billing-custom-badge');
+  // Settings → «Тариф»: the name and description, the custom price and the scheduled one, no change / stop.
+  const settings = await openPlanTab(page);
+  const cabinet = settings.getByTestId('billing-cabinet');
+  await expect(cabinet.getByTestId('billing-custom-price')).toBeVisible();
+  await expect(cabinet.getByTestId('billing-change-plan')).toHaveCount(0);
+  await expect(cabinet.getByTestId('billing-stop')).toHaveCount(0);
+  await expect(cabinet.getByTestId('billing-topup-open')).toBeVisible();
+  // The top: the plan row with the custom name and description, the note and «Условия тарифа».
+  await settings.evaluate((el) => [el, ...el.querySelectorAll<HTMLElement>('*')].forEach((e) => (e.scrollTop = 0)));
+  await checkpoint(s, 'billing-custom-plan-tab-top');
+  await settings.getByTestId('plan-custom-terms').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(s, 'billing-custom-plan-tab');
+  // «Условия тарифа»: the plans dialog shows the custom plan read-only.
+  await tap(settings.getByTestId('plan-custom-open'));
+  await expect(page.getByTestId('plans-custom')).toBeVisible();
+  await checkpoint(s, 'billing-custom-plans');
+});
+
+test('billing-custom-admin: «Индивидуальный тариф» on the account page and its editor', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_CUSTOM', custom: true });
+  if (isPhone()) {
+    await tap(page.getByTestId('phone-tab-profile'));
+    await tap(page.getByRole('button', { name: 'Администрирование' }));
+  } else {
+    await tap(page.getByRole('button', { name: /^Мой статус/ }));
+    await tap(page.getByRole('menuitem', { name: 'Администрирование' }));
+  }
+  const admin = page.getByTestId('admin-window');
+  await expect(admin).toBeVisible();
+  await tap(admin.getByRole('radio', { name: 'Оплата' }));
+  await tap(admin.getByTestId('admin-billing-account').first());
+  const actions = admin.getByTestId('admin-custom-actions');
+  await expect(actions).toBeVisible();
+  await expect(admin.getByTestId('admin-custom-history')).toBeVisible();
+  await actions.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-custom-admin');
+  await tap(admin.getByTestId('admin-custom-edit'));
+  await expect(page.getByTestId('admin-custom-dialog')).toBeVisible();
+  await checkpoint(s, 'billing-custom-admin-editor');
+  // A new price from a later date: the preview of what moves now.
+  await page.getByTestId('admin-custom-price-input').fill('0,40');
+  await page.getByTestId('admin-custom-reason').fill('Новые условия договора');
+  await tap(page.getByTestId('admin-custom-submit'));
+  await expect(page.getByTestId('admin-custom-preview')).toBeVisible();
+  await checkpoint(s, 'billing-custom-admin-preview');
 });
 
 // ---------------------------------------------------------------- Billing permissions (ADR-0087)

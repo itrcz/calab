@@ -24,6 +24,7 @@ import { zhAutomations } from './automations';
 import { zhPlan } from './plan';
 import { zhBilling } from './billing';
 import { zhTransitions } from './transitions';
+import { zhCustomPlan } from './customPlan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 import { zhStickers } from './stickers';
@@ -63,6 +64,7 @@ export const zhCN: Dict = {
   ...zhPlan,
   ...zhBilling,
   ...zhTransitions,
+  ...zhCustomPlan,
   ...zhModeration,
   ...zhMail,
   ...zhRecording,

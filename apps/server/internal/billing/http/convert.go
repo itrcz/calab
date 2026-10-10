@@ -251,7 +251,8 @@ func ledgerEntry(e sqlc.ListBillingLedgerPageRow, currency string) *v1.LedgerEnt
 }
 
 // ledgerOperation groups the entries of one owner operation (LedgerEntry.operation_id): the seat
-// charge of an activation / plan change / paid resume (its charge key «{reason}:{account}:{request}»)
+// charge of an activation / plan change / paid resume / superadmin plan assignment (its charge key
+// «{reason}:{account}:{request}», «admin_plan:{account}:{request}»)
 // and the compensation of the previous plan (ledger key «{that key}:comp:{i}»). An opaque digest:
 // the request id is not exposed.
 func ledgerOperation(e sqlc.ListBillingLedgerPageRow) string {
@@ -266,7 +267,8 @@ func ledgerOperation(e sqlc.ListBillingLedgerPageRow) string {
 			key = e.BusinessKey[:i]
 		}
 	}
-	for _, p := range []string{core.ReasonActivate + ":", core.ReasonChangePlan + ":", core.ReasonResume + ":"} {
+	// admin_plan: a superadmin's plan assignment (ADR-0086 «Индивидуальный тариф») — the same pair.
+	for _, p := range []string{core.ReasonActivate + ":", core.ReasonChangePlan + ":", core.ReasonResume + ":", "admin_plan:"} {
 		if strings.HasPrefix(key, p) {
 			h := sha256.Sum256([]byte(key))
 			return hex.EncodeToString(h[:8])

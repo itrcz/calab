@@ -1,29 +1,30 @@
-import { Plan, ScreenSharePreset, type AdminWorkspace, type PlanLogEntry } from '@calaba/protocol';
+import { Plan, type AdminWorkspace, type PlanLogEntry } from '@calaba/protocol';
 import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
 import * as DialogP from '@radix-ui/react-dialog';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
-import { plural, t, type MessageKey } from '../../i18n';
+import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Spinner, cx } from '../../components/ui';
+import { plural, t } from '../../i18n';
 import { adminApi } from '../../lib/api/endpoints';
 import { onApiError } from '../../lib/api/client';
 import { errorText, recentAuthRequired } from '../../lib/api/errors';
 import { fmt } from '../../lib/format';
-import { audioTierLabel } from '../../lib/audioTierLabel';
 import {
-  AUDIO_CAP_OPTIONS,
+  CUSTOM_DESCRIPTION_MAX,
+  CUSTOM_NAME_MAX,
   NOTE_MAX,
   PLAN_LABEL,
   inputFromDate,
   limitsFormFrom,
+  planDisplayName,
   planKind,
   setPlanBody,
-  type LimitsField,
   type LimitsForm,
   type PlanForm,
 } from '../../lib/plan';
+import { CustomLimitsFields, FIELD_LABEL } from './CustomLimitsFields';
 import { platform } from '../../platform';
 import { toast } from '../../stores/toasts';
 import { ExpiredBadge, PlanPill } from '../workspace/PlanTab';
@@ -258,28 +259,6 @@ function PaneHeader({ title, onClose, children }: { title: string; onClose: () =
   );
 }
 
-const STREAM_PRESETS = [ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL];
-const CAMERA_PRESET_OPTIONS = [ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.H720, ScreenSharePreset.H1080];
-const PRESET_NAME: Record<ScreenSharePreset, MessageKey> = {
-  [ScreenSharePreset.UNSPECIFIED]: 'plan.unlimited',
-  [ScreenSharePreset.ECONOMY]: 'preset.economy',
-  [ScreenSharePreset.H720]: 'preset.h720',
-  [ScreenSharePreset.H1080]: 'preset.h1080',
-  [ScreenSharePreset.ORIGINAL]: 'preset.original',
-};
-
-const FIELD_LABEL: Record<LimitsField, MessageKey> = {
- boardFormsPerBoard: 'forms.limit',
-  roomMembers: 'plan.limit.roomMembers',
-  members: 'plan.limit.members',
-  streamsPerRoom: 'plan.limit.streams',
-  streamMaxFps: 'admin.limit.streamFps',
-  cameraMaxFps: 'admin.limit.cameraFps',
-  storageMb: 'admin.limit.storageMb',
-  bots: 'plan.limit.bots',
-  stickerPacks: 'plan.limit.stickerPacks',
-};
-
 function formFrom(a: AdminWorkspace): PlanForm {
   const p = a.workspace?.plan;
   const kind = planKind(p);
@@ -288,46 +267,9 @@ function formFrom(a: AdminWorkspace): PlanForm {
     limits: limitsFormFrom(kind, p?.limits),
     validUntil: inputFromDate(p?.validUntil ? timestampDate(p.validUntil) : null),
     note: a.planNote,
+    displayName: kind === Plan.CUSTOM ? (p?.displayName ?? '') : '',
+    description: kind === Plan.CUSTOM ? (p?.description ?? '') : '',
   };
-}
-
-function NumberField({ field, form, onChange }: { field: LimitsField; form: LimitsForm; onChange: (f: LimitsForm) => void }): ReactNode {
-  const label = t(FIELD_LABEL[field]);
-  return (
-    <Row label={label}>
-      <Input
-        aria-label={label}
-        inputMode="numeric"
-        className="w-28 text-right tabular-nums"
-        value={form[field]}
-        onChange={(e) => onChange({ ...form, [field]: e.target.value.replace(/[^\d]/g, '') })}
-      />
-    </Row>
-  );
-}
-
-function PresetField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: ScreenSharePreset;
-  options: ScreenSharePreset[];
-  onChange: (p: ScreenSharePreset) => void;
-}): ReactNode {
-  return (
-    <Row label={label}>
-      <Select aria-label={label} className="w-44" value={value} onChange={(e) => onChange(Number(e.target.value))}>
-        {options.map((p) => (
-          <option key={p} value={p}>
-            {t(PRESET_NAME[p])}
-          </option>
-        ))}
-      </Select>
-    </Row>
-  );
 }
 
 /** The chosen workspace: summary, the plan form (PUT with a confirmation), the change log. */
@@ -386,7 +328,7 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
       setError(t('admin.invalid', { field: t(FIELD_LABEL[r.error]) }));
       return;
     }
-    const ok = await confirmAction(t('admin.saveTitle'), t('admin.saveText', { name: w.name, plan: t(PLAN_LABEL[form.plan]) }), t('admin.save'), 'primary');
+    const ok = await confirmAction(t('admin.saveTitle'), t('admin.saveText', { name: w.name, plan: planDisplayName(form.plan, form.displayName) }), t('admin.save'), 'primary');
     if (!ok) return;
     const { validUntil, ...rest } = r.body;
     save.mutate({ ...rest, ...(validUntil ? { validUntil: timestampFromDate(validUntil) } : {}) });
@@ -399,7 +341,7 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
       <PaneHeader title={w.name} onClose={onClose}>
         {w.suspension ? <SuspendedBadge /> : null}
         {w.plan?.expired ? <ExpiredBadge /> : null}
-        <PlanPill plan={planKind(w.plan)} />
+        <PlanPill plan={planKind(w.plan)} name={w.plan?.displayName} />
       </PaneHeader>
       {notice}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 mobile:px-4" data-testid="admin-detail">
@@ -461,61 +403,27 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
 
           {form.plan === Plan.CUSTOM ? (
             <Card title={t('admin.card.limits')} footer={t('admin.limitsHint')}>
-              <NumberField field="roomMembers" form={form.limits} onChange={setLimits} />
-              <NumberField field="streamsPerRoom" form={form.limits} onChange={setLimits} />
-              <PresetField
-                label={t('admin.limit.streamPreset')}
-                value={form.limits.streamMaxPreset}
-                options={STREAM_PRESETS}
-                onChange={(p) => setLimits({ ...form.limits, streamMaxPreset: p })}
-              />
-              <NumberField field="streamMaxFps" form={form.limits} onChange={setLimits} />
-              <PresetField
-                label={t('admin.limit.cameraPreset')}
-                value={form.limits.cameraMaxPreset}
-                options={CAMERA_PRESET_OPTIONS}
-                onChange={(p) => setLimits({ ...form.limits, cameraMaxPreset: p })}
-              />
-              <NumberField field="cameraMaxFps" form={form.limits} onChange={setLimits} />
-              <NumberField field="storageMb" form={form.limits} onChange={setLimits} />
-              <NumberField field="members" form={form.limits} onChange={setLimits} />
-              <Row label={t('admin.limit.audio')}>
-                <Select
-                  aria-label={t('admin.limit.audio')}
-                  className="w-44"
-                  value={form.limits.audioTierMaxKbps}
-                  onChange={(e) => setLimits({ ...form.limits, audioTierMaxKbps: Number(e.target.value) })}
-                >
-                  {AUDIO_CAP_OPTIONS.map((k) => (
-                    <option key={k} value={k}>
-                      {k === 0 ? t('plan.unlimited') : audioTierLabel(k)}
-                    </option>
-                  ))}
-                </Select>
+              <Row label={t('admin.row.planName')} hint={t('adminCustom.nameHint')}>
+                <Input
+                  aria-label={t('admin.row.planName')}
+                  className="w-72"
+                  maxLength={CUSTOM_NAME_MAX}
+                  placeholder={t('adminCustom.namePh')}
+                  value={form.displayName ?? ''}
+                  onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                  data-testid="admin-plan-name"
+                />
               </Row>
-              <NumberField field="bots" form={form.limits} onChange={setLimits} />
-              <NumberField field="stickerPacks" form={form.limits} onChange={setLimits} />
-              {/* ADR-0058 §5: written with the plan — without them a save would switch both on. */}
-              <Row label={t('admin.limit.checklists')} hint={t('admin.limit.checklistsHint')}>
-                <Toggle label={t('admin.limit.checklists')} checked={!form.limits.checklistsDisabled} onChange={(v) => setLimits({ ...form.limits, checklistsDisabled: !v })} />
+              <Row label={t('admin.row.planDescription')} hint={t('adminCustom.descriptionHint')}>
+                <Input
+                  aria-label={t('admin.row.planDescription')}
+                  className="w-72"
+                  maxLength={CUSTOM_DESCRIPTION_MAX}
+                  value={form.description ?? ''}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                />
               </Row>
-              <Row label={t('forms.title')}>
-                <Toggle label={t('forms.title')} checked={!form.limits.boardFormsDisabled} onChange={(v) => setLimits({ ...form.limits, boardFormsDisabled: !v })} />
-              </Row>
-              <Row label={t('forms.limit')}>
-                <Input aria-label={t('forms.limit')} type="number" min={0} value={form.limits.boardFormsPerBoard} onChange={(e) => setLimits({ ...form.limits, boardFormsPerBoard: e.target.value })} />
-              </Row>
-              <Row label={t('admin.limit.boardWebhooks')} hint={t('admin.limit.boardWebhooksHint')}>
-                <Toggle label={t('admin.limit.boardWebhooks')} checked={!form.limits.boardWebhooksDisabled} onChange={(v) => setLimits({ ...form.limits, boardWebhooksDisabled: !v })} />
-              </Row>
-              {/* ADR-0060: board automations (rules and Git) — Team and above; a new Custom plan has them. */}
-              <Row label={t('admin.limit.automations')} hint={t('admin.limit.automationsHint')}>
-                <Toggle label={t('admin.limit.automations')} checked={!form.limits.automationsDisabled} onChange={(v) => setLimits({ ...form.limits, automationsDisabled: !v })} />
-              </Row>
-              {/* ADR-0046 (owner, 02.10): telephony is Business only; a new Custom plan starts without it. */}
-              <Row label={t('admin.limit.telephony')} hint={t('admin.limit.telephonyHint')}>
-                <Toggle label={t('admin.limit.telephony')} checked={!form.limits.telephonyDisabled} onChange={(v) => setLimits({ ...form.limits, telephonyDisabled: !v })} />
-              </Row>
+              <CustomLimitsFields form={form.limits} onChange={setLimits} />
             </Card>
           ) : null}
 
@@ -569,7 +477,7 @@ function PlanLog({ entries, loading }: { entries: PlanLogEntry[]; loading: boole
                 {e.actorEmail || '—'}
               </span>
               <span role="cell">
-                <PlanPill plan={e.plan} />
+                <PlanPill plan={e.plan} name={e.displayName} />
               </span>
               <span role="cell" className="tabular-nums text-muted">
                 {e.validUntil ? fmt.shortDate(timestampDate(e.validUntil)) : '—'}

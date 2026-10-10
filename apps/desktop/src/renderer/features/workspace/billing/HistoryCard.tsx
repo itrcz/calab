@@ -43,7 +43,8 @@ export const LEDGER_KIND: Record<LedgerEntryKind, MessageKey> = {
   [LedgerEntryKind.ADMIN_DEBIT]: 'billing.kind.adminDebit',
 };
 
-const skuPlan = (sku: string): string => (sku.includes('enterprise') ? t(PLAN_NAME[Plan.ENTERPRISE]) : t(PLAN_NAME[Plan.TEAM]));
+const skuPlan = (sku: string): string =>
+  sku.includes('enterprise') ? t(PLAN_NAME[Plan.ENTERPRISE]) : sku.includes('custom') ? t(PLAN_LABEL[Plan.CUSTOM]) : t(PLAN_NAME[Plan.TEAM]);
 
 /** The second line of a ledger row: what was bought / why. */
 export function ledgerDetail(e: LedgerEntry): string {

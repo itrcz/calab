@@ -5231,7 +5231,13 @@ class MockImpl {
             : b.plan === Plan.ENTERPRISE
               ? ENTERPRISE_PLAN_LIMITS
               : FREE_PLAN_LIMITS;
-      ws.plan = create(WorkspacePlanSchema, { plan: b.plan, limits, ...(b.validUntil ? { validUntil: b.validUntil } : {}), expired: false });
+      // ADR-0086: a custom plan's name and description (trimmed, CUSTOM only, like the server).
+      if (b.plan !== Plan.CUSTOM && (b.displayName.trim() || b.description.trim())) throw invalid('displayName', 'a name and description are only set for PLAN_CUSTOM');
+      const displayName = b.plan === Plan.CUSTOM ? b.displayName.replace(/\s+/g, ' ').trim() : '';
+      const description = b.plan === Plan.CUSTOM ? b.description.replace(/\s+/g, ' ').trim() : '';
+      if (Array.from(displayName).length > 40) throw invalid('displayName', 'the plan name must be at most 40 characters');
+      if (Array.from(description).length > 140) throw invalid('description', 'the plan description must be at most 140 characters');
+      ws.plan = create(WorkspacePlanSchema, { plan: b.plan, limits, ...(b.validUntil ? { validUntil: b.validUntil } : {}), expired: false, displayName, description });
       s().planMeta.set(ws.id, { note: b.note, updatedBy: me, updatedAt: now });
       const log = s().planLog.get(ws.id) ?? [];
       log.unshift(
@@ -5245,6 +5251,8 @@ class MockImpl {
           ...(b.validUntil ? { validUntil: b.validUntil } : {}),
           note: b.note,
           createdAt: now,
+          displayName,
+          description,
         }),
       );
       s().planLog.set(ws.id, log.slice(0, 100));

@@ -44,6 +44,22 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
+/** Most characters of a custom plan's name / description (the server's limits, ADR-0086). */
+export const CUSTOM_NAME_MAX = 40;
+export const CUSTOM_DESCRIPTION_MAX = 140;
+
+/**
+ * The plan's name as members see it (ADR-0086 «Индивидуальный тариф»): a custom plan carries the
+ * name a superadmin gave it; without one — and for every other plan — the localized name.
+ */
+export function planDisplayName(plan: Plan, displayName: string | undefined): string {
+  const name = plan === Plan.CUSTOM ? (displayName ?? '').trim() : '';
+  return name || t(PLAN_LABEL[plan === Plan.UNSPECIFIED ? Plan.FREE : plan]);
+}
+
+/** planDisplayName of Workspace.plan. */
+export const workspacePlanName = (p: WorkspacePlan | undefined): string => planDisplayName(planKind(p), p?.displayName);
+
 /**
  * Plan features that are not part of every plan: CalDAV, musician mode (ADR-0052), task
  * checklists — Team and above; board webhooks (ADR-0058 §5) and telephony SIP (ADR-0046, owner
@@ -366,6 +382,9 @@ export interface PlanForm {
   /** `<input type="date">` value; '' = no end date. */
   validUntil: string;
   note: string;
+  /** CUSTOM only: the name members see ('' / unset = «Индивидуальный») and a short description. */
+  displayName?: string;
+  description?: string;
 }
 
 export const NOTE_MAX = 500;
@@ -375,7 +394,9 @@ export const NOTE_MAX = 500;
  * TEAM take theirs from the server config, ENTERPRISE has none), the end of the chosen day, the trimmed note. Returns
  * the first invalid field instead when the CUSTOM numbers are wrong.
  */
-export function setPlanBody(f: PlanForm): { body: { plan: Plan; limits?: PlanLimitsInit; validUntil?: Date; note: string } } | { error: LimitsField } {
+export function setPlanBody(
+  f: PlanForm,
+): { body: { plan: Plan; limits?: PlanLimitsInit; validUntil?: Date; note: string; displayName?: string; description?: string } } | { error: LimitsField } {
   let limits: PlanLimitsInit | undefined;
   if (f.plan === Plan.CUSTOM) {
     const r = limitsFromForm(f.limits);
@@ -389,6 +410,7 @@ export function setPlanBody(f: PlanForm): { body: { plan: Plan; limits?: PlanLim
       ...(limits ? { limits } : {}),
       ...(until ? { validUntil: until } : {}),
       note: f.note.trim().slice(0, NOTE_MAX),
+      ...(f.plan === Plan.CUSTOM ? { displayName: (f.displayName ?? '').trim().slice(0, CUSTOM_NAME_MAX), description: (f.description ?? '').trim().slice(0, CUSTOM_DESCRIPTION_MAX) } : {}),
     },
   };
 }

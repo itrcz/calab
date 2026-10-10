@@ -11,7 +11,8 @@ export type LedgerItem =
   | { kind: 'entry'; entry: LedgerEntry }
   | { kind: 'op'; id: string; op: 'change' | 'activate' | 'resume'; from: Plan; to: Plan; total: bigint; currency: string; entries: readonly LedgerEntry[] };
 
-const skuPlan = (sku: string): Plan => (sku.includes('enterprise') ? Plan.ENTERPRISE : sku.includes('team') ? Plan.TEAM : Plan.UNSPECIFIED);
+const skuPlan = (sku: string): Plan =>
+  sku.includes('enterprise') ? Plan.ENTERPRISE : sku.includes('team') ? Plan.TEAM : sku.includes('custom') ? Plan.CUSTOM : Plan.UNSPECIFIED;
 
 /** Entries (newest first, as the API pages them) → rows; an operation's entries are consecutive. */
 export function groupLedger(entries: readonly LedgerEntry[]): LedgerItem[] {

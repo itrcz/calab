@@ -44,7 +44,8 @@ import {
   type PlanTier,
   type ScreenPhase,
 } from '../../../lib/billing/plans';
-import { PLAN_LABEL, countText, planKind, storageText } from '../../../lib/plan';
+import { PLAN_LABEL, countText, planDisplayName, storageText, workspacePlanName } from '../../../lib/plan';
+import { fmt } from '../../../lib/format';
 import { billingMock, billingPaymentsAllowed, loadBilling, openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
 import { openPlanContact, planContact } from '../../../services/plan';
 import { useBilling } from '../../../stores/billing';
@@ -151,6 +152,9 @@ export function PlansDialog({
       ) : (
         <p className="py-2 text-body text-muted">{t('billing.plans.unavailable')}</p>
       );
+  } else if (data.summary?.plan === Plan.CUSTOM) {
+    // ADR-0086 «Индивидуальный тариф»: its terms, read-only — a superadmin changes them.
+    body = <CustomPlanView workspaceId={workspaceId} summary={data.summary} offer={offerOf(data.offers, Plan.CUSTOM)} state={data.status?.state ?? state} />;
   } else if (chosen) {
     const market = screenMarket(data, remembered, locale);
     return (
@@ -215,7 +219,7 @@ export function PlansDialog({
  * оплатой доступно в веб-версии и на компьютере», no link (App Store anti-steering).
  */
 function MemberView({ workspaceId, state, elsewhere, onClose }: { workspaceId: string; state: BillingState; elsewhere: boolean; onClose: () => void }): ReactNode {
-  const plan = useWorkspaces((s) => planKind(s.byId[workspaceId]?.ws.plan));
+  const plan = useWorkspaces((s) => workspacePlanName(s.byId[workspaceId]?.ws.plan));
   const suspended = state === BillingState.SUSPENDED;
   return (
     <Modal
@@ -234,7 +238,7 @@ function MemberView({ workspaceId, state, elsewhere, onClose }: { workspaceId: s
     >
       <div className="flex flex-col gap-3 pb-1" data-testid="billing-plans-member">
         <div className="flex items-center gap-2">
-          <span className="text-headline font-semibold">{t(PLAN_LABEL[plan])}</span>
+          <span className="min-w-0 truncate text-headline font-semibold">{plan}</span>
           <StatePill state={state} />
         </div>
         <Note tone={suspended ? 'danger' : 'muted'} icon={suspended ? <CirclePause className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden /> : undefined}>
@@ -242,6 +246,65 @@ function MemberView({ workspaceId, state, elsewhere, onClose }: { workspaceId: s
         </Note>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * The custom plan (ADR-0086 «Индивидуальный тариф»): the name and description a superadmin gave it,
+ * the account's own price per person per day (and a scheduled new one), what the team pays a day,
+ * the plan's limits — read-only, with the note that a superadmin changes it. Static props; the
+ * name is a primitive selector.
+ */
+function CustomPlanView({ workspaceId, summary, offer, state }: { workspaceId: string; summary: BillingSummary; offer: BillingPlanOffer | undefined; state: BillingState }): ReactNode {
+  const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.displayName ?? '');
+  const description = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.description ?? '');
+  const planLimits = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits);
+  const unit = summary.unitPrice;
+  const cur = unit?.currency ?? '';
+  const people = summary.billableMembers;
+  const lines = highlights(Plan.FREE, offer?.limits ?? planLimits);
+  const nextAt = summary.nextPriceAt ? timestampMs(summary.nextPriceAt) : 0;
+  return (
+    <div className="flex flex-col gap-3" data-testid="plans-custom">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-body" data-testid="plans-balance">
+        <span className="text-muted">{t('billing.balance')}</span>
+        <MoneyText m={summary.balance} className="font-semibold" />
+        <StatePill state={state} />
+      </div>
+      <section aria-current="true" data-plan="CUSTOM" data-testid="plan-card" className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-focus)] bg-[var(--color-card)] p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="min-w-0 truncate text-headline font-semibold">{planDisplayName(Plan.CUSTOM, name)}</h3>
+          <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-accent-strong px-2 text-caption font-semibold text-accent-fg">{t('billing.plans.current')}</span>
+        </div>
+        {description ? <p className="text-body text-muted">{description}</p> : null}
+        {unit ? (
+          <div className="flex flex-col gap-0.5">
+            <span className="flex flex-wrap items-baseline gap-x-1.5">
+              <span className="text-title font-semibold tabular-nums">{formatMoney(unit)}</span>
+              <span className="text-caption text-muted">{t('billing.plans.perSeatDay')}</span>
+            </span>
+            <span className="text-caption text-muted">{t('billing.plans.perMonth', { amount: formatMinor(monthOf(unit.minor), cur) })}</span>
+            {people > 0 ? <span className="text-caption text-muted">{t('billing.plans.forTeam', { n: people, amount: formatMinor(unit.minor * BigInt(people), cur) })}</span> : null}
+            {summary.nextUnitPrice && nextAt ? (
+              <span className="text-caption text-muted" data-testid="plans-custom-next">
+                {t('customPlan.nextPrice', { date: fmt.dateTime(new Date(nextAt), 'short'), price: formatMoney(summary.nextUnitPrice) })}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {lines.length ? (
+          <ul className="flex flex-col gap-1.5 text-body">
+            {lines.map((line) => (
+              <li key={line} className="flex items-start gap-2">
+                <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden />
+                <span className="min-w-0">{line}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+      <Note>{t('customPlan.note')}</Note>
+    </div>
   );
 }
 
