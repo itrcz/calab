@@ -119,6 +119,11 @@ func (s *Service) AdmitSeat(ctx context.Context, q *sqlc.Queries, ws, user, acto
 	if err := checkOpen(ctx, q, ws, b); err != nil {
 		return err
 	}
+	// The restricted mode takes nobody in (ADR-0086 amendment), whatever way the membership
+	// came: invite links, open join, email invitations, registration by invitation.
+	if err := s.CheckActive(ctx, ws, RestrictedInvite); err != nil {
+		return err
+	}
 	if billable, err := billableUser(ctx, q, user, role); err != nil || !billable {
 		return err
 	}
@@ -136,6 +141,9 @@ func (s *Service) PromoteSeat(ctx context.Context, q *sqlc.Queries, ws, user, ac
 		return nil
 	}
 	if err := checkOpen(ctx, q, ws, b); err != nil {
+		return err
+	}
+	if err := s.CheckActive(ctx, ws, RestrictedInvite); err != nil { // guest → member: a new seat
 		return err
 	}
 	if billable, err := billableUser(ctx, q, user, role); err != nil || !billable {
@@ -224,7 +232,8 @@ func SeatRefused(err error) bool {
 	if !errors.As(err, &e) {
 		return false
 	}
-	return e.Reason == billing.ReasonSeatGrowthRequiresFunds || e.Reason == billing.ReasonWorkspaceBillingSuspended
+	return e.Reason == billing.ReasonSeatGrowthRequiresFunds || e.Reason == billing.ReasonWorkspaceBillingSuspended ||
+		e.Reason == billing.ReasonWorkspacePlanInactive
 }
 
 // billingInfo is the Workspace.billing part of Info (no amounts).

@@ -4,6 +4,7 @@ package app_test
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"testing"
 	"time"
@@ -117,4 +118,40 @@ func TestBillingLapsedRestrictedMode(t *testing.T) {
 	setLapsed(t, ws, account, false)
 	send(t, m, room, "plan active again", uniq("back-"))
 	bot.must(201, "POST", messages, &v1.CreateMessageRequest{Content: "bot writes again", Nonce: uniq("bot-")}, nil)
+}
+
+// Links issued before the restricted mode let nobody new in: registration by a workspace invite
+// code and an account-less room guest link (public routes outside the identity gate's route
+// table) are refused with WORKSPACE_PLAN_INACTIVE; the same links work again once the mode is
+// over.
+func TestBillingLapsedOldLinksRefused(t *testing.T) {
+	withBilling(t, newFakeSeats(), true)
+	a, wsPB := wsOwner(t)
+	ws := wsPB.GetId()
+	code := invite(t, a, ws)
+	room := textRoom(t, a, ws, "Guest link", false)
+	link := roomLink(t, a, room, &v1.CreateRoomInviteRequest{AllowGuests: proto.Bool(true)})
+
+	account := billingAccount(t, ws, "stopped", false)
+	setLapsed(t, ws, account, true)
+
+	seq++
+	c := &client{t: t, ip: fmt.Sprintf("10.1.%d.%d", seq/250, seq%250+1)}
+	email := uniq("u") + "@example.com"
+	st, e := c.apiErrBody("POST", "/api/auth/register", &v1.RegisterRequest{
+		Email: email, Password: "password123", DisplayName: email[:8], InviteCode: code, DeviceName: "test",
+	})
+	if st != 403 || e.GetReason() != billing.ReasonWorkspacePlanInactive {
+		t.Fatalf("registration by invite: %d %v, want 403 %s", st, e, billing.ReasonWorkspacePlanInactive)
+	}
+	admissionIP++
+	g := &client{t: t, ip: fmt.Sprintf("10.140.%d.%d", admissionIP/250, admissionIP%250+1)}
+	st, e = g.apiErrBody("POST", "/api/room-invites/"+link.GetCode()+"/join", &v1.JoinRoomInviteRequest{Nickname: "late guest"})
+	if st != 403 || e.GetReason() != billing.ReasonWorkspacePlanInactive {
+		t.Fatalf("guest link: %d %v, want 403 %s", st, e, billing.ReasonWorkspacePlanInactive)
+	}
+
+	setLapsed(t, ws, account, false)
+	register(t, code)
+	anonGuest(t, link.GetCode(), "guest after")
 }

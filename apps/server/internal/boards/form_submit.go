@@ -14,6 +14,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/moderation"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -198,6 +199,11 @@ func (s *Service) submitForm(w http.ResponseWriter, r *http.Request) error {
 		} //nolint:gosec // positive revision
 		title, description, err := formAnswers(d, answers)
 		if err != nil {
+			return err
+		}
+		// A submission is a new task: refused in the restricted mode (ADR-0086 amendment),
+		// public forms included.
+		if err := s.plans.CheckActive(r.Context(), b.WorkspaceID, plans.RestrictedCreate); err != nil {
 			return err
 		}
 		// ACL members may have left since the definition was saved: only the caller is

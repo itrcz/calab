@@ -40,6 +40,7 @@ var planInactiveRoutes = map[string]string{
 	"POST /api/workspaces/{id}/rooms/temp":    plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/boards":        plans.RestrictedCreate,
 	"POST /api/boards/{id}/tasks":             plans.RestrictedCreate,
+	"POST /api/checklist-items/{id}/convert":  plans.RestrictedCreate, // a subtask is a new task
 	"POST /api/workspaces/{id}/bots":          plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/bots/add":      plans.RestrictedCreate,
 	"POST /api/workspaces/{id}/sticker-packs": plans.RestrictedCreate,
