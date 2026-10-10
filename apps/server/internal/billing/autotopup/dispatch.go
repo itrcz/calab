@@ -276,7 +276,7 @@ func (j *Job) dispatch(ctx context.Context, att sqlc.BillingAutotopupAttempt) (b
 	}
 	var snapshot []string
 	if t.reconcilable() {
-		snapshot, err = j.snapshot(ctx, t)
+		snapshot, err = j.snapshot(ctx, t, att)
 		if err != nil {
 			// Not sent: the attempt is closed now instead of waiting to be abandoned.
 			slog.WarnContext(ctx, "billing auto-topup: read charges before dispatch", "attempt", att.ID, "err", err)
@@ -367,8 +367,12 @@ func (j *Job) fence(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccoun
 	return v, nil
 }
 
-// snapshot reads the ids of the charges a saved method has now.
-func (j *Job) snapshot(ctx context.Context, t target) ([]string, error) {
+// snapshot reads the ids of the charges a saved method has now. The attempt being sent is the
+// account's only open one and was not sent yet, so a succeeded charge with no payment row belongs
+// to a closed attempt (an approval that appeared after «declined» or after not_found): it is
+// credited once as an import here, never hidden in the snapshot. An error leaves the attempt
+// unsent.
+func (j *Job) snapshot(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt) ([]string, error) {
 	l, ok := t.lister()
 	if !ok {
 		return nil, errors.New("auto-topup: provider cannot list the charges of a method")
@@ -380,8 +384,42 @@ func (j *Job) snapshot(ctx context.Context, t target) ([]string, error) {
 		return nil, err
 	}
 	ids := make([]string, 0, len(facts))
+	var stray []provider.PaymentFact
 	for _, f := range facts {
 		ids = append(ids, f.ID)
+		// Only a charge made after the card was saved: the binding payment (recorded under its
+		// own id) can never be taken for a stray charge, whatever order the bank lists it in.
+		if f.Status != provider.PaymentSucceeded || !f.Created.After(t.pm.CreatedAt) {
+			continue
+		}
+		_, err := j.db.Q.GetBillingPaymentByProviderID(ctx, sqlc.GetBillingPaymentByProviderIDParams{
+			Provider: string(t.p.ID()), ProviderAccount: f.ProviderAccount, Livemode: f.Livemode, ProviderPaymentID: f.ID,
+		})
+		if db.IsNotFound(err) {
+			stray = append(stray, f)
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	if len(stray) == 0 {
+		return ids, nil
+	}
+	// Read after the list: still prepared means this attempt was not sent before the list was read
+	// (the send follows the dispatched mark), so none of these charges is its own. Moved on (a
+	// concurrent dispatch of the same attempt): no import, the fence will not send it again.
+	cur, err := j.db.Q.GetBillingAutoTopupAttemptOfAccount(ctx, sqlc.GetBillingAutoTopupAttemptOfAccountParams{ID: att.ID, AccountID: att.AccountID})
+	if err != nil {
+		return nil, err
+	}
+	if cur.Status != statusPrepared {
+		return ids, nil
+	}
+	for _, f := range stray {
+		slog.ErrorContext(ctx, "billing auto-topup: a charge of the saved method had no payment, credited as an import",
+			"account", att.AccountID, "attempt", att.ID, "amount", f.Amount.String())
+		if _, err := j.inbox.ApplyPaymentFact(ctx, t.p, f); err != nil {
+			return nil, err
+		}
 	}
 	return ids, nil
 }

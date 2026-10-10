@@ -637,6 +637,15 @@ func (p *Provider) AddMethod(customerID string) provider.SavedMethod {
 	return m
 }
 
+// AddCharge records a succeeded charge of a saved method that no ChargeOffSession answer
+// reported (a reconcilable bank's approval that appears late, e.g. after «declined»). The
+// metadata carries only the account, like a bank without metadata.
+func (p *Provider) AddCharge(customerID, pmID string, amount money.Money, md provider.Metadata) provider.PaymentFact {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return *p.newPayment(customerID, pmID, amount, provider.Metadata{AccountID: md.AccountID}, Succeed)
+}
+
 // ChargeOffSession implements provider.OffSessionCharger. The idempotency key (attempt id)
 // returns the first payment: a retry after Timeout finds the payment that was charged.
 //

@@ -47,6 +47,9 @@ const (
 	// outcome is not visible in the method's charges is read this long (logged as an error after
 	// GiveUpAfter) before it is closed as not_found — never sent again.
 	DefaultReconcileGiveUp = 7 * 24 * time.Hour
+	// RecheckEvery: how often failed charges of a provider without idempotency keys are read again
+	// for a late approval (for ReconcileGiveUp after they were closed).
+	RecheckEvery = time.Hour
 	// ReconcileWindow: the restore reconcile lists auto-topup payments this far back.
 	ReconcileWindow = 48 * time.Hour
 	// MinInterval between two new attempts of an account (owner decision).
@@ -107,6 +110,7 @@ type Job struct {
 	reconciled bool                     // RestoreMarker was found reconciled (cached)
 	pausedLog  bool                     // the pause was logged
 	retry      map[uuid.UUID]retryState // backoff of open attempts being resolved
+	recheckAt  time.Time                // billing time of the next recheck of failed reconcilable charges
 }
 
 type retryState struct {

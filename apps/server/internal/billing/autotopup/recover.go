@@ -46,7 +46,62 @@ func (j *Job) Recover(ctx context.Context) error {
 			}
 		}
 	}
+	if err := j.recheck(ctx, now); err != nil && first == nil {
+		first = err
+	}
 	return first
+}
+
+// recheck reads again, at most every RecheckEvery, the charges of the methods of reconcilable
+// attempts that failed within ReconcileGiveUp («declined», not_found, refused after the send):
+// the bank's answer never identifies the payment, so an approval that appears late is credited
+// to its attempt (failed → succeeded, one credit per charge) instead of waiting for the next
+// charge of the card (snapshot) or an operator.
+func (j *Job) recheck(ctx context.Context, now time.Time) error {
+	j.mu.Lock()
+	due := !now.Before(j.recheckAt)
+	if due {
+		j.recheckAt = now.Add(RecheckEvery)
+	}
+	j.mu.Unlock()
+	if !due {
+		return nil
+	}
+	atts, err := j.db.Q.ListBillingReconcilableAttemptsToRecheck(ctx, sqlc.ListBillingReconcilableAttemptsToRecheckParams{
+		Since: now.Add(-j.opts.ReconcileGiveUp), Lim: recoverBatch,
+	})
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, att := range atts {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		errs = append(errs, j.recheckOne(ctx, att))
+	}
+	return errors.Join(errs...)
+}
+
+func (j *Job) recheckOne(ctx context.Context, att sqlc.BillingAutotopupAttempt) error {
+	t, err := j.targetOf(ctx, att)
+	if err != nil || !t.reconcilable() {
+		return err
+	}
+	f, found, err := j.findCharge(ctx, t, att)
+	if err != nil || !found {
+		return err
+	}
+	// Read after the list: with no charge of the account in flight now, none was sent before the
+	// list was read without being closed, so the charge found is not an open attempt's.
+	if _, err := j.db.Q.GetOpenBillingAutoTopupAttempt(ctx, att.AccountID); err == nil {
+		return nil
+	} else if !db.IsNotFound(err) {
+		return err
+	}
+	slog.ErrorContext(ctx, "billing auto-topup: a failed charge appeared late in the method's charges, crediting it",
+		"attempt", att.ID, "account", att.AccountID, "failure_code", att.FailureCode)
+	return j.credit(ctx, t, att, f)
 }
 
 // due: the attempt's backoff has passed.

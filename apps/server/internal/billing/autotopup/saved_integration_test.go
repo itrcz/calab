@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/billing/autotopup"
+	"github.com/calaba/calaba/server/internal/billing/money"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/billing/provider/fake"
 	"github.com/calaba/calaba/server/internal/mail"
@@ -266,5 +267,78 @@ func TestOneClickDisabled(t *testing.T) {
 	e.do(e.owner, "GET", e.base(), nil, &sum)
 	if ms := sum.GetSummary().GetSavedMethods(); len(ms) != 1 || ms[0].GetOneClick() {
 		t.Fatalf("%+v", ms)
+	}
+}
+
+// methodRef: the provider ids of the env's saved card (customer, payment method).
+func (e *env) methodRef() (string, string) {
+	e.t.Helper()
+	var cust, pm string
+	if err := e.d.Pool.QueryRow(ctx, `SELECT c.customer_id, m.provider_pm_id FROM billing_payment_methods m
+		JOIN billing_customers c ON c.id = m.customer_id WHERE m.id = $1`, e.pm).Scan(&cust, &pm); err != nil {
+		e.t.Fatal(err)
+	}
+	return cust, pm
+}
+
+// Review 2026-10-10: «declined» (no approval visible right after the call) but the bank's
+// approval appears later. The recovery's recheck credits it to the failed attempt once; the
+// charge is never sent again.
+func TestReconcilableDeclinedLateApprovalCredited(t *testing.T) {
+	e := newEnv(t, opts{caps: reconcilableCaps})
+	e.fake.Queue(fake.OpCharge, fake.Decline)
+	e.tick(1)
+	if a := e.attempts(); len(a) != 1 || a[0].Status != "failed" {
+		t.Fatalf("attempts %+v", a)
+	}
+	cust, pm := e.methodRef()
+	e.fake.AddCharge(cust, pm, money.New(900, money.USD), provider.Metadata{AccountID: e.acc})
+	e.clk.Advance(30 * time.Minute)
+	if err := e.job.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	e.wantBalance(0) // the recheck runs at most every RecheckEvery
+	for range 2 {
+		e.clk.Advance(autotopup.RecheckEvery)
+		if err := e.job.Recover(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a := e.attempts(); len(a) != 1 || a[0].Status != "succeeded" {
+		t.Fatalf("attempts %+v", a)
+	}
+	e.wantBalance(900)
+	if n, sum := e.autoPayments(); n != 1 || sum != 900 {
+		t.Fatalf("payments %d %d", n, sum)
+	}
+	if e.fake.Calls("ChargeOffSession") != 1 {
+		t.Fatalf("charges %d", e.fake.Calls("ChargeOffSession"))
+	}
+}
+
+// A late approval no recheck has credited yet is credited as an import before the next charge
+// of the card is sent, and never taken for the new charge.
+func TestReconcilableStrayChargeImportedBeforeNextCharge(t *testing.T) {
+	e := newEnv(t, opts{caps: reconcilableCaps, noConsent: true})
+	e.fake.Queue(fake.OpCharge, fake.Decline)
+	var out v1.SavedMethodTopup
+	e.savedTopup(uuid.NewString(), 2000, &out)
+	if out.GetState() != v1.SavedMethodTopupState_SAVED_METHOD_TOPUP_STATE_FAILED {
+		t.Fatalf("%+v", &out)
+	}
+	cust, pm := e.methodRef()
+	e.clk.Advance(time.Minute)
+	e.fake.AddCharge(cust, pm, money.New(2000, money.USD), provider.Metadata{AccountID: e.acc})
+	var next v1.SavedMethodTopup
+	if st, r := e.savedTopup(uuid.NewString(), 2000, &next); st != 200 ||
+		next.GetState() != v1.SavedMethodTopupState_SAVED_METHOD_TOPUP_STATE_SUCCEEDED {
+		t.Fatalf("%d %s %+v", st, r, &next)
+	}
+	e.wantBalance(4000)
+	if e.savedPayments() != 1 || e.count(`SELECT count(*) FROM billing_payments WHERE account_id = $1 AND origin = 'import'`, e.acc) != 1 {
+		t.Fatal("one saved_method payment and one import")
+	}
+	if e.fake.Calls("ChargeOffSession") != 2 {
+		t.Fatalf("charges %d", e.fake.Calls("ChargeOffSession"))
 	}
 }

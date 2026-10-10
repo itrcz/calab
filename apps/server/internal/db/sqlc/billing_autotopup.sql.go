@@ -343,6 +343,61 @@ func (q *Queries) ListBillingAutoTopupReconcileCustomers(ctx context.Context, si
 	return items, nil
 }
 
+const listBillingReconcilableAttemptsToRecheck = `-- name: ListBillingReconcilableAttemptsToRecheck :many
+SELECT x.id, x.account_id, x.pm_id, x.amount_minor, x.currency, x.status, x.provider_payment_id, x.failure_code, x.created_at, x.dispatched_at, x.finished_at, x.kind, x.request_id, x.body_hash, x.created_by, x.action_url, x.order_snapshot FROM billing_autotopup_attempts x
+WHERE x.status = 'failed' AND x.order_snapshot IS NOT NULL AND x.finished_at >= $1::timestamptz
+  AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts o
+                  WHERE o.account_id = x.account_id AND o.status IN ('prepared', 'dispatched', 'requires_action', 'unknown'))
+ORDER BY x.finished_at DESC
+LIMIT $2
+`
+
+type ListBillingReconcilableAttemptsToRecheckParams struct {
+	Since time.Time
+	Lim   int32
+}
+
+// Failed charges of a provider without idempotency keys (order_snapshot set: the request may have
+// been sent) closed since `since`, of accounts with no charge in flight: a late approval in the
+// method's charges is still credited to them (ADR-0083 phase 2).
+func (q *Queries) ListBillingReconcilableAttemptsToRecheck(ctx context.Context, arg ListBillingReconcilableAttemptsToRecheckParams) ([]BillingAutotopupAttempt, error) {
+	rows, err := q.db.Query(ctx, listBillingReconcilableAttemptsToRecheck, arg.Since, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingAutotopupAttempt{}
+	for rows.Next() {
+		var i BillingAutotopupAttempt
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.PmID,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.Status,
+			&i.ProviderPaymentID,
+			&i.FailureCode,
+			&i.CreatedAt,
+			&i.DispatchedAt,
+			&i.FinishedAt,
+			&i.Kind,
+			&i.RequestID,
+			&i.BodyHash,
+			&i.CreatedBy,
+			&i.ActionUrl,
+			&i.OrderSnapshot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockWorkspaceForBillingClose = `-- name: LockWorkspaceForBillingClose :one
 SELECT id FROM workspaces WHERE id = $1 FOR UPDATE
 `

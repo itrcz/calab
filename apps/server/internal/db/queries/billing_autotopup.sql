@@ -90,6 +90,17 @@ WHERE status IN ('prepared', 'dispatched', 'requires_action', 'unknown') AND cre
 ORDER BY created_at
 LIMIT sqlc.arg('lim');
 
+-- name: ListBillingReconcilableAttemptsToRecheck :many
+-- Failed charges of a provider without idempotency keys (order_snapshot set: the request may have
+-- been sent) closed since `since`, of accounts with no charge in flight: a late approval in the
+-- method's charges is still credited to them (ADR-0083 phase 2).
+SELECT x.* FROM billing_autotopup_attempts x
+WHERE x.status = 'failed' AND x.order_snapshot IS NOT NULL AND x.finished_at >= sqlc.arg('since')::timestamptz
+  AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts o
+                  WHERE o.account_id = x.account_id AND o.status IN ('prepared', 'dispatched', 'requires_action', 'unknown'))
+ORDER BY x.finished_at DESC
+LIMIT sqlc.arg('lim');
+
 -- name: GetBillingCustomerByID :one
 SELECT * FROM billing_customers WHERE id = $1;
 
