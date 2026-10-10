@@ -370,7 +370,7 @@ func TestOwnerChangeRevokes(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.tick(0)
-	if c := e.consentRow(); c.RevokedAt == nil || c.RevokedReason != "owner_changed" {
+	if c := e.consentRow(); c.RevokedAt == nil || c.RevokedReason != "permission_lost" {
 		t.Fatalf("consent %+v", c)
 	}
 	if len(e.attempts()) != 0 {

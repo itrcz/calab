@@ -1872,6 +1872,48 @@ func (q *Queries) ListBillingLedgerMismatches(ctx context.Context) ([]ListBillin
 	return items, nil
 }
 
+const listBillingManagerRecipients = `-- name: ListBillingManagerRecipients :many
+SELECT u.email::text AS email, coalesce(u.locale, '')::text AS locale FROM workspace_members m
+JOIN users u ON u.id = m.user_id
+JOIN workspaces w ON w.id = m.workspace_id
+WHERE m.workspace_id = $1 AND m.user_id <> w.owner_id AND m.role <> 'guest'
+  AND NOT u.is_bot AND NOT u.is_guest AND u.disabled_at IS NULL AND u.email IS NOT NULL AND u.email <> ''
+  AND EXISTS (SELECT FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+              WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id
+                AND (wr.permissions & 17179869184::bigint) <> 0)
+ORDER BY u.id
+LIMIT 20
+`
+
+type ListBillingManagerRecipientsRow struct {
+	Email  string
+	Locale string
+}
+
+// ADR-0087: members other than the owner whose roles carry BILLING_MANAGE (bit 34) and who can
+// get mail (not guests, bots or disabled, with an e-mail): the copy recipients of the owner's
+// billing warnings (debt, suspension, failed auto-topup). Capped: a role given to a crowd must
+// not turn one warning into a mass mailing.
+func (q *Queries) ListBillingManagerRecipients(ctx context.Context, workspaceID uuid.UUID) ([]ListBillingManagerRecipientsRow, error) {
+	rows, err := q.db.Query(ctx, listBillingManagerRecipients, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBillingManagerRecipientsRow{}
+	for rows.Next() {
+		var i ListBillingManagerRecipientsRow
+		if err := rows.Scan(&i.Email, &i.Locale); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingPayments = `-- name: ListBillingPayments :many
 SELECT id, account_id, provider, provider_account, livemode, provider_payment_id, provider_charge_id, amount_minor, currency, status, origin, checkout_id, attempt_id, receipt_url, refunded_minor, succeeded_at, created_at, updated_at FROM billing_payments
 WHERE account_id = $1

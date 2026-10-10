@@ -34,6 +34,16 @@ func TestPolicyBillingSuspension(t *testing.T) {
 					if d := Evaluate(testNow, other, op); d.Allowed || d.Reason != BillingSuspended {
 						t.Fatalf("%s %s: %+v", role, op, d)
 					}
+					// ADR-0087: a BILLING_TOPUP / MANAGE holder keeps the billing scope (a guest never).
+					other.BillingPayer = true
+					if d := Evaluate(testNow, other, op); d.Allowed == (role == "guest") {
+						t.Fatalf("billing payer %s %s: %+v", role, op, d)
+					}
+					for _, cop := range all {
+						if d := Evaluate(testNow, other, cop); d.Allowed {
+							t.Fatalf("billing payer %s got %s under suspension: %+v", role, cop, d)
+						}
+					}
 				}
 				stranger := s
 				stranger.Member = false

@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // chargeDescription is the statement / receipt text of an auto-topup payment. It is part of
@@ -73,8 +74,19 @@ func (j *Job) check(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccoun
 	if err != nil {
 		return p, verdict{}, err
 	}
-	if t.ConsentBy == nil || *t.ConsentBy != ws.OwnerID {
+	// ADR-0087: the consent holds while the person who gave it is the owner or holds
+	// BILLING_MANAGE (a revoked role, a removed member or an ownership change revokes it).
+	if t.ConsentBy == nil {
 		return p, verdict{revoke: "owner_changed"}, nil
+	}
+	if *t.ConsentBy != ws.OwnerID {
+		bits, _, err := perm.LoadBilling(ctx, q, ws.ID, ws.OwnerID, *t.ConsentBy)
+		if err != nil {
+			return p, verdict{}, err
+		}
+		if !bits.Has(perm.BillingManage) {
+			return p, verdict{revoke: "permission_lost"}, nil
+		}
 	}
 	if _, known := ConsentTexts[uint32(max(t.ConsentVersion, 0))]; !known { //nolint:gosec // non-negative
 		return p, verdict{skip: "consent_version"}, nil

@@ -140,7 +140,7 @@ func TestOwnerOnly(t *testing.T) {
 		{"POST", "/quote"}, {"POST", "/activate"}, {"GET", "/refund-requests"}, {"POST", "/refund-requests"},
 		{"GET", "/payment-methods"}, {"GET", "/checkouts/" + uuid.NewString()},
 	} {
-		if st, reason := e.do(e.member, r.method, e.base()+r.path, nil, nil); st != 403 || reason != "BILLING_OWNER_REQUIRED" {
+		if st, reason := e.do(e.member, r.method, e.base()+r.path, nil, nil); st != 403 || reason != "BILLING_PERMISSION_REQUIRED" {
 			t.Errorf("member %s %s: %d %s", r.method, r.path, st, reason)
 		}
 	}

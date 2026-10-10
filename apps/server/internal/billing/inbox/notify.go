@@ -36,7 +36,20 @@ func NewNotifier(d *db.DB, m Mailer, appURL string) *Notifier {
 	return &Notifier{db: d, mail: m, appURL: appURL}
 }
 
-// Notify queues template for the owner of acc's workspace in q unless key was mailed already.
+// ManagersCopied reports the warnings that need someone to act — a debt started, the suspension near or
+// done, a failed or blocked auto-topup — go to the BILLING_MANAGE holders too (ADR-0087); the
+// rest (payment received, refund, dispute) stays the owner's.
+func ManagersCopied(t mail.Template) bool {
+	switch t {
+	case mail.TemplateBillingDebtStarted, mail.TemplateBillingSuspendSoon, mail.TemplateBillingSuspended,
+		mail.TemplateBillingAutoTopupFailed, mail.TemplateBillingAutoTopupActionRequired:
+		return true
+	}
+	return false
+}
+
+// Notify queues template for the owner of acc's workspace in q unless key was mailed already;
+// ManagersCopied templates also for the BILLING_MANAGE holders (one dedup row per key).
 // The caller's transaction must hold the account lock (so two notifications of one key cannot
 // race); the mail commits or rolls back with it.
 func (n *Notifier) Notify(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, key string, t mail.Template, p mail.Params) error {
@@ -56,7 +69,22 @@ func (n *Notifier) Notify(ctx context.Context, q *sqlc.Queries, acc sqlc.Billing
 	if err != nil {
 		return err
 	}
-	if owner.Email == nil || *owner.Email == "" {
+	var to []sqlc.ListBillingManagerRecipientsRow
+	if owner.Email != nil && *owner.Email != "" {
+		locale := ""
+		if owner.Locale != nil {
+			locale = *owner.Locale
+		}
+		to = append(to, sqlc.ListBillingManagerRecipientsRow{Email: *owner.Email, Locale: locale})
+	}
+	if ManagersCopied(t) {
+		managers, err := q.ListBillingManagerRecipients(ctx, ws.ID)
+		if err != nil {
+			return err
+		}
+		to = append(to, managers...)
+	}
+	if len(to) == 0 {
 		return nil
 	}
 	params := mail.Params{"workspace": ws.Name, "url": n.appURL}
@@ -65,15 +93,17 @@ func (n *Notifier) Notify(ctx context.Context, q *sqlc.Queries, acc sqlc.Billing
 			params[k] = v
 		}
 	}
-	locale := ""
-	if owner.Locale != nil {
-		locale = *owner.Locale
+	var first uuid.UUID // billing_notifications points at the first mail (the owner's when they have an e-mail)
+	for _, r := range to {
+		id, err := n.mail.EnqueueFinancial(ctx, q, mail.Mail{To: r.Email, Template: t, Locale: r.Locale, Params: params, TTL: mail.FinancialTTL})
+		if err != nil {
+			return err
+		}
+		if first == uuid.Nil {
+			first = id
+		}
 	}
-	id, err := n.mail.EnqueueFinancial(ctx, q, mail.Mail{To: *owner.Email, Template: t, Locale: locale, Params: params, TTL: mail.FinancialTTL})
-	if err != nil {
-		return err
-	}
-	_, err = q.InsertBillingNotification(ctx, sqlc.InsertBillingNotificationParams{AccountID: acc.ID, Key: key, Template: string(t), MailID: &id})
+	_, err = q.InsertBillingNotification(ctx, sqlc.InsertBillingNotificationParams{AccountID: acc.ID, Key: key, Template: string(t), MailID: &first})
 	if db.IsNotFound(err) {
 		return nil
 	}

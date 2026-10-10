@@ -40,7 +40,7 @@ func TestErrorsAreAPIErrors(t *testing.T) {
 	}{
 		billing.ErrSeatGrowthRequiresFunds:   {http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT, "BILLING_SEAT_GROWTH_REQUIRES_FUNDS"},
 		billing.ErrWorkspaceBillingSuspended: {http.StatusForbidden, v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED, "WORKSPACE_BILLING_SUSPENDED"},
-		billing.ErrOwnerRequired:             {http.StatusForbidden, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "BILLING_OWNER_REQUIRED"},
+		billing.ErrPermissionRequired:        {http.StatusForbidden, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "BILLING_PERMISSION_REQUIRED"},
 		billing.ErrDisabled:                  {http.StatusNotImplemented, v1.ErrorCode_ERROR_CODE_UNAVAILABLE, "BILLING_DISABLED"},
 	} {
 		e := httpx.AsError(err)

@@ -26,7 +26,7 @@ const (
 	ReasonPlanAdminAssigned          = "BILLING_PLAN_ADMIN_ASSIGNED"  // 409: a superadmin assigned the plan (ADR-0086)
 	ReasonAccountExists              = "BILLING_ACCOUNT_EXISTS"       // superadmin enable twice
 	ReasonMethodUnavailable          = "BILLING_METHOD_UNAVAILABLE"   // 422: method_id not offered to this account
-	ReasonOwnerRequired              = "BILLING_OWNER_REQUIRED"       // 403
+	ReasonPermissionRequired         = "BILLING_PERMISSION_REQUIRED"  // 403: the caller lacks the route's billing bit (ADR-0087)
 	ReasonWorkspaceBillingSuspended  = "WORKSPACE_BILLING_SUSPENDED"  // 403
 	ReasonDisabled                   = "BILLING_DISABLED"             // 501: BILLING_ENABLED=false or the flag of the feature is off
 	ReasonNotImplemented             = "BILLING_NOT_IMPLEMENTED"      // 501: route registered, handler not built yet
@@ -80,9 +80,11 @@ var (
 	// (ADR-0083: the market is fixed by the first credit; afterwards close + new account).
 	ErrMarketFixed = conflict(ReasonMarketFixed, "the account's market is fixed by its payments")
 
-	ErrOwnerRequired = coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_FORBIDDEN, ReasonOwnerRequired, "only the workspace owner manages billing")
+	// ErrPermissionRequired: the route needs BILLING_VIEW / TOPUP / MANAGE (ADR-0087; the owner
+	// has all three). It replaced BILLING_OWNER_REQUIRED of the owner-only billing.
+	ErrPermissionRequired = coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_FORBIDDEN, ReasonPermissionRequired, "billing permission required")
 	// ErrWorkspaceBillingSuspended: the debt deadline passed; the workspace is closed except
-	// the owner's billing routes. Never lifted by payment of a moderation suspension.
+	// the billing routes of the owner and of BILLING_TOPUP / MANAGE holders (ADR-0087). Never lifted by payment of a moderation suspension.
 	ErrWorkspaceBillingSuspended = coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED, ReasonWorkspaceBillingSuspended, "workspace suspended for unpaid billing")
 
 	ErrMethodUnavailable     = coded(http.StatusUnprocessableEntity, v1.ErrorCode_ERROR_CODE_VALIDATION, ReasonMethodUnavailable, "payment method not available")

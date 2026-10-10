@@ -109,13 +109,17 @@ func validateColor(c uint32) (int32, error) {
 
 // checkGrant validates a role's permissions going from old to next, set by actor (ADR-0026 §3):
 // ADMINISTRATOR is never grantable; a non-admin cannot change MANAGE_ROLES / MANAGE_WORKSPACE
-// nor any permission they do not hold themselves.
+// nor any permission they do not hold themselves. The billing bits (ADR-0087) are the owner's
+// alone to grant or revoke: ADMINISTRATOR does not include them.
 func checkGrant(actor perm.Member, old, next perm.Bits) error {
-	if next&^perm.All != 0 {
+	if next&^perm.Known != 0 {
 		return httpx.Validation("permissions", "unknown permission bits")
 	}
 	if next&perm.Administrator != 0 {
 		return httpx.Validation("permissions", "ADMINISTRATOR cannot be given to a role")
+	}
+	if (old^next)&perm.Billing != 0 && actor.Role != perm.RoleOwner {
+		return httpx.Forbidden("only the owner can grant or revoke billing permissions")
 	}
 	own := actor.Workspace()
 	if own.Has(perm.Administrator) {
@@ -326,6 +330,9 @@ func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) error {
 		}
 		if !above(actor, cur.Position) {
 			return httpx.Forbidden("cannot delete a role at or above your highest role")
+		}
+		if perm.Bits(uint64(cur.Permissions))&perm.Billing != 0 && actor.Role != perm.RoleOwner { //nolint:gosec // bit mask
+			return httpx.Forbidden("only the owner can delete a role with billing permissions") // ADR-0087
 		}
 		roleID = cur.ID
 		// Holders keep their other roles (MEMBER / GUEST at least): member_roles cascade.
@@ -559,6 +566,11 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 				return httpx.Validation("roleIds", "promote the guest to a member first")
 			case b == perm.RoleAdmin && want[id] && tu.IsBot:
 				return errBotAdmin
+			case perm.Bits(uint64(rr.Permissions))&perm.Billing != 0 && actor.Role != perm.RoleOwner: //nolint:gosec // bit mask
+				// ADR-0087: money rights are the owner's to hand out and to take back.
+				return httpx.Forbidden("only the owner can assign or remove roles with billing permissions")
+			case perm.Bits(uint64(rr.Permissions))&perm.Billing != 0 && want[id] && tu.IsBot: //nolint:gosec // bit mask
+				return httpx.Validation("roleIds", "bots cannot hold billing permissions")
 			case !above(actor, rr.Position):
 				return httpx.Forbidden("cannot assign roles at or above your highest role")
 			case !own.Has(perm.Administrator) && perm.Bits(uint64(rr.Permissions))&^own != 0: //nolint:gosec // bit mask

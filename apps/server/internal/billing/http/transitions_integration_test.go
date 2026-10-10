@@ -320,7 +320,7 @@ func isViolation(err error) bool {
 // Only the owner moves plans; members get 403 before any check.
 func TestTransitionOwnerOnly(t *testing.T) {
 	e := newEnv(t, envOpt{plans: transitionPlans(t)})
-	if st, r := e.do(e.member, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP}, nil); st != 403 || r != "BILLING_OWNER_REQUIRED" {
+	if st, r := e.do(e.member, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP}, nil); st != 403 || r != "BILLING_PERMISSION_REQUIRED" {
 		t.Fatalf("member: %d %s", st, r)
 	}
 }

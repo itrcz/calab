@@ -22,6 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 )
 
@@ -137,14 +138,19 @@ func (s *Service) Public() map[string]httpx.HandlerFunc {
 	}
 }
 
-// caller is the request's workspace, its viewer and the live account.
+// caller is the request's workspace, its viewer, the viewer's billing bits (ADR-0087: the owner
+// has all three) and the live account.
 type caller struct {
 	user  uuid.UUID
 	ws    sqlc.Workspace
 	owner bool
+	bits  perm.Bits // perm.BillingOf: BILLING_VIEW / TOPUP / MANAGE, implications applied
 	acc   sqlc.BillingAccount
 	hasAc bool
 }
+
+// can reports whether the caller holds billing bit b.
+func (c caller) can(b perm.Bits) bool { return c.bits.Has(b) }
 
 // who resolves the workspace of {id} for the caller: 404 for non-members (the identity gate
 // already refuses them; this is the second line).
@@ -161,12 +167,16 @@ func (s *Service) who(r *http.Request) (caller, error) {
 		return c, err
 	}
 	c.owner = c.ws.OwnerID == c.user
-	if !c.owner {
-		if _, err := s.db.Q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: c.user}); db.IsNotFound(err) {
-			return c, httpx.NotFound("workspace")
-		} else if err != nil {
-			return c, err
-		}
+	bits, member, err := perm.LoadBilling(ctx, s.db.Q, wsID, c.ws.OwnerID, c.user)
+	if err != nil {
+		return c, err
+	}
+	if !member && !c.owner {
+		return c, httpx.NotFound("workspace")
+	}
+	c.bits = bits
+	if c.owner {
+		c.bits = perm.Billing
 	}
 	acc, err := s.db.Q.GetLiveBillingAccountByWorkspace(ctx, &wsID)
 	switch {
@@ -178,15 +188,16 @@ func (s *Service) who(r *http.Request) (caller, error) {
 	return c, nil
 }
 
-// ownerOf is who for owner-only routes: 403 BILLING_OWNER_REQUIRED for other members, 404
-// BILLING_ACCOUNT_NOT_FOUND without a live account.
-func (s *Service) ownerOf(r *http.Request) (caller, error) {
+// holderOf is who for a route that needs billing bit b (ADR-0087: perm.BillingView / Topup /
+// Manage): 403 BILLING_PERMISSION_REQUIRED without it, 404 BILLING_ACCOUNT_NOT_FOUND without a
+// live account.
+func (s *Service) holderOf(r *http.Request, b perm.Bits) (caller, error) {
 	c, err := s.who(r)
 	if err != nil {
 		return c, err
 	}
-	if !c.owner {
-		return c, billing.ErrOwnerRequired
+	if !c.can(b) {
+		return c, billing.ErrPermissionRequired
 	}
 	if !c.hasAc {
 		return c, billing.ErrAccountNotFound
@@ -210,7 +221,7 @@ func bodyHash(action string, msg proto.Message) []byte {
 	return h[:]
 }
 
-// audit records an owner action under its request_id (billing_audit, append-only). A replay
+// audit records a billing action of the caller (actor_id: the caller, ADR-0087) under its request_id (billing_audit, append-only). A replay
 // with the same body passes (the core commands are idempotent by request id), another body or
 // another account is billing.ErrRequestReused.
 func (s *Service) audit(ctx context.Context, c caller, action string, requestID uuid.UUID, hash []byte) (replay bool, err error) {

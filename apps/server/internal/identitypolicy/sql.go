@@ -99,7 +99,7 @@ func (l *SQLLoader) state(row sqlc.GetIdentityGateStateRow) State {
 		Identity:      Identity{ID: row.IdentityID, ConnectionID: row.ConnectionID, Version: row.IdentityVersion, Active: row.IdentityActive},
 		Directory:     Directory{Required: row.DirectoryRequired, Active: row.DirectoryActive, Enabled: row.DirectoryEnabled, ValidUntil: row.DirectoryValidUntil},
 		RecoveryReady: row.RecoveryReady, ProductAdminGranted: row.ProductAdminGranted, Grants: map[Feature]Grant{},
-		BillingSuspended: row.BillingSuspended && l.Config.BillingEnforcement,
+		BillingSuspended: row.BillingSuspended && l.Config.BillingEnforcement, BillingPayer: row.BillingPayer,
 	}
 	add := func(feature Feature, enabled *bool, source *string, expiry, revoked *time.Time, version int64) {
 		if enabled == nil || source == nil {

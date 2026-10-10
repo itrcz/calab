@@ -19,6 +19,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // get: GET /api/workspaces/{id}/billing. The owner gets the summary, other members only the
@@ -49,8 +50,8 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 		acc = &c.acc
 	}
 	resp := &v1.GetBillingResponse{Status: Status(acc, source)}
-	if !c.owner {
-		return resp, nil
+	if !c.can(perm.BillingView) {
+		return resp, nil // ADR-0087: the plan and its status only, no amounts
 	}
 	assigned, err := s.adminAssigned(ctx, c)
 	if err != nil {
@@ -223,8 +224,8 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !c.owner {
-		return billing.ErrOwnerRequired
+	if !c.can(perm.BillingManage) {
+		return billing.ErrPermissionRequired // every purpose is a plan action (ADR-0087)
 	}
 	if !c.hasAc && !s.canSelfServe(c) {
 		return billing.ErrAccountNotFound
@@ -378,7 +379,7 @@ type actionRequest struct {
 // revision, then the core command; answers the fresh GET …/billing.
 func (s *Service) act(w http.ResponseWriter, r *http.Request, action string, body actionRequest, hashOf []byte,
 	run func(ctx context.Context, c caller, requestID uuid.UUID) error) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}

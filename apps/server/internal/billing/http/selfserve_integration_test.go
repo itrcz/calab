@@ -50,7 +50,7 @@ func TestSelfServeStart(t *testing.T) {
 		t.Fatalf("member view: %d %v", st, &member)
 	}
 	// Nothing but an owner's ACTIVATE quote starts an account.
-	if st, r := e.do(e.member, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE}, nil); st != 403 || r != "BILLING_OWNER_REQUIRED" {
+	if st, r := e.do(e.member, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE}, nil); st != 403 || r != "BILLING_PERMISSION_REQUIRED" {
 		t.Fatalf("member quote: %d %s", st, r)
 	}
 	if st, r := e.do(e.owner, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP}, nil); st != 404 || r != "BILLING_ACCOUNT_NOT_FOUND" {

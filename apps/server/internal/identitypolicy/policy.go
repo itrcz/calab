@@ -187,6 +187,10 @@ type State struct {
 	// close, unlike the moderation WorkspaceSuspended: no read exception, only the owner's
 	// BillingRead / BillingWrite. Neither suspension lifts the other.
 	BillingSuspended bool
+	// BillingPayer: one of the member's roles carries BILLING_TOPUP or BILLING_MANAGE (ADR-0087):
+	// like the owner they keep BillingRead / BillingWrite under a billing suspension (the billing
+	// handlers still check the exact bit of each route).
+	BillingPayer bool
 }
 
 // Reason is a closed internal denial classification; consumers map it to wire errors.
@@ -335,9 +339,10 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 	if p.Bot {
 		return deny(ScopeDenied)
 	}
-	// Billing suspension after membership, so it reveals nothing to non-members. The owner's
-	// recovery scope still passes every identity check below (SSO proof, directory).
-	if s.BillingSuspended && ((op != BillingRead && op != BillingWrite) || s.BuiltinRole != "owner" || p.Guest) {
+	// Billing suspension after membership, so it reveals nothing to non-members. The recovery
+	// scope of the owner and of a BILLING_TOPUP / MANAGE holder (ADR-0087; not a guest) still
+	// passes every identity check below (SSO proof, directory).
+	if s.BillingSuspended && ((op != BillingRead && op != BillingWrite) || (s.BuiltinRole != "owner" && !s.BillingPayer) || p.Guest) {
 		return deny(BillingSuspended)
 	}
 	if s.EntitlementVersion < 1 || s.AccessVersion < 1 || s.Policy.Version < 1 || (s.Policy.Mode != Off && s.Policy.Mode != Optional && s.Policy.Mode != Enforced) || s.Policy.MaxAge < ManagementMaxAge || s.Policy.MaxAge > CorporateProofMaxAge {
