@@ -1,0 +1,45 @@
+{
+ "Data": {
+  "paymentUid": "977639EE70494C67",
+  "createdDateTime": "2025-01-01T01:23:45+03:00",
+  "orderUid": "12EKN0170494C67",
+  "amount": {
+   "currency": "RUB",
+   "amount": "123.45"
+  },
+  "refundedAmount": {
+   "currency": "RUB",
+   "amount": "0.00"
+  },
+  "chargebackSummary": {
+   "chargedAmount": {
+    "currency": "RUB",
+    "amount": "0.00"
+   },
+   "reversedAmount": {
+    "currency": "RUB",
+    "amount": "0.00"
+   }
+  },
+  "paymentMethod": {
+   "type": "SBP_TOKEN",
+   "qrcId": "AS1000670LSS7DN18SJQDNP4B05KLJL2",
+   "nspkTransactionId": "A12930013057370100000546241820D7"
+  },
+  "status": {
+   "value": "COMPLETED",
+   "changedDateTime": "2025-01-01T01:23:46+03:00"
+  },
+  "customer": {
+   "account": "E268443E43D93DAB7EBEF303BBE9642F"
+  },
+  "isTest": true,
+  "metadata": "{\"key1\":\"value1\",\"key2\":\"value2\"}"
+ },
+ "Links": {
+  "self": "https://enter.tochka.com/uapi/pay"
+ },
+ "Meta": {
+  "totalPages": 1
+ }
+}

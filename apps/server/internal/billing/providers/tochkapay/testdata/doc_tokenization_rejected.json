@@ -1,0 +1,14 @@
+{
+ "Data": {
+  "status": "REJECTED",
+  "qrcId": "AS1000670LSS7DN18SJQDNP4B05KLJL2",
+  "merchantQrcId": "0192a4c0-7e1d-7c3a-9b1e-3f6a2d8c5b10",
+  "metadata": "{\"key1\":\"value1\",\"key2\":\"value2\"}"
+ },
+ "Links": {
+  "self": "https://enter.tochka.com/uapi/pay"
+ },
+ "Meta": {
+  "totalPages": 1
+ }
+}

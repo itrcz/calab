@@ -61,6 +61,62 @@ type Billing struct {
 	TochkaWebhookKey string `env:"TOCHKA_WEBHOOK_PUBLIC_KEY"`
 	// TOCHKA_CLIENT_ID: client id of the webhook API; empty = the token's iss claim.
 	TochkaClientID string `env:"TOCHKA_CLIENT_ID"`
+
+	// BILLING_TOCHKA_SBP_BINDING_ENABLED: Tochka Pay Gateway SBP account binding for RU auto-topup
+	// (ADR-0083 phase 3): the tochkapay provider, its matrix row and its webhook. Needs
+	// BILLING_TOCHKA_ENABLED (RU served) and the site the bank issues at onboarding.
+	TochkaSBPBindingEnabled bool `env:"BILLING_TOCHKA_SBP_BINDING_ENABLED"`
+	// TOCHKA_PAY_SITE_UID: the Pay Gateway site (test or production) issued at onboarding.
+	TochkaPaySiteUID string `env:"TOCHKA_PAY_SITE_UID"`
+	// TOCHKA_PAY_SIGNING_KEY: our RSA private key (PEM or base64 of PEM, ≥ 2048 bits) whose public
+	// half the bank registered for the site; signs create payment / refund. Secret store only.
+	TochkaPaySigningKey string `env:"TOCHKA_PAY_SIGNING_KEY"`
+	// TOCHKA_PAY_LIVE: the site is a production site. false (default): a test site — every
+	// answer must be isTest=true, live objects are refused.
+	TochkaPayLive bool `env:"TOCHKA_PAY_LIVE"`
+	// TOCHKA_PAY_API_TOKEN: the gateway JWT if the bank issues a separate one; empty =
+	// TOCHKA_API_TOKEN (the payment-links key is accepted by the gateway, checked 2026-10-10).
+	TochkaPayAPIToken string `env:"TOCHKA_PAY_API_TOKEN"`
+	// TOCHKA_PAY_API_URL: default https://enter.tochka.com/uapi/pay.
+	TochkaPayAPIURL string `env:"TOCHKA_PAY_API_URL"`
+	// TOCHKA_PAY_CALLBACK_URL: the gateway webhook URL sent with every operation
+	// (…/api/billing/tochkapay/webhook); empty = the URL given to the bank at onboarding.
+	TochkaPayCallbackURL string `env:"TOCHKA_PAY_CALLBACK_URL"`
+}
+
+var tochkaPaySiteUID = regexp.MustCompile(`^[0-9a-zA-Z_-]{1,64}$`)
+
+// TochkaPayToken is the JWT the gateway adapter uses.
+func (b *Billing) TochkaPayToken() string {
+	if b.TochkaPayAPIToken != "" {
+		return b.TochkaPayAPIToken
+	}
+	return b.TochkaAPIToken
+}
+
+// validateTochkaPay checks BILLING_TOCHKA_SBP_BINDING_ENABLED (ADR-0083 phase 3). Texts never
+// include key or token values.
+func (b *Billing) validateTochkaPay() []error {
+	if !b.TochkaSBPBindingEnabled {
+		return nil
+	}
+	var errs []error
+	if !b.TochkaEnabled {
+		errs = append(errs, errors.New("BILLING_TOCHKA_SBP_BINDING_ENABLED requires BILLING_TOCHKA_ENABLED=true (the RU market)"))
+	}
+	if !tochkaPaySiteUID.MatchString(b.TochkaPaySiteUID) {
+		errs = append(errs, errors.New("TOCHKA_PAY_SITE_UID must be the site id issued by the bank (BILLING_TOCHKA_SBP_BINDING_ENABLED=true)"))
+	}
+	if strings.TrimSpace(b.TochkaPaySigningKey) == "" {
+		errs = append(errs, errors.New("TOCHKA_PAY_SIGNING_KEY is required for BILLING_TOCHKA_SBP_BINDING_ENABLED=true"))
+	}
+	if b.TochkaPayToken() == "" {
+		errs = append(errs, errors.New("TOCHKA_PAY_API_TOKEN or TOCHKA_API_TOKEN is required for BILLING_TOCHKA_SBP_BINDING_ENABLED=true"))
+	}
+	if b.TochkaPayCallbackURL != "" && !strings.HasPrefix(b.TochkaPayCallbackURL, "https://") {
+		errs = append(errs, errors.New("TOCHKA_PAY_CALLBACK_URL must be an https URL"))
+	}
+	return errs
 }
 
 var (
@@ -103,6 +159,7 @@ func (b *Billing) validate() error {
 			errs = append(errs, errors.New("TOCHKA_MERCHANT_ID must be the 15-digit merchant id (BILLING_TOCHKA_ENABLED=true)"))
 		}
 	}
+	errs = append(errs, b.validateTochkaPay()...)
 	if b.StripeSecretKey != "" && !stripeKey.MatchString(b.StripeSecretKey) {
 		errs = append(errs, errors.New("STRIPE_SECRET_KEY must be a Stripe secret or restricted key (sk_test_… / rk_test_…)"))
 	}
@@ -124,6 +181,7 @@ func (b *Billing) validate() error {
 			on   bool
 		}{
 			{"BILLING_STRIPE_ENABLED", b.StripeEnabled}, {"BILLING_TOCHKA_ENABLED", b.TochkaEnabled}, {"BILLING_DEBITS_ENABLED", b.DebitsEnabled},
+			{"BILLING_TOCHKA_SBP_BINDING_ENABLED", b.TochkaSBPBindingEnabled},
 			{"BILLING_ENFORCEMENT_ENABLED", b.EnforcementEnabled}, {"BILLING_AUTO_TOPUP_ENABLED", b.AutoTopupEnabled},
 			{"BILLING_SELF_SERVE", b.SelfServe},
 		} {
