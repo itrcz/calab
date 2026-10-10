@@ -84,12 +84,14 @@ func (q *Queries) AppendBillingLedgerEntry(ctx context.Context, arg AppendBillin
 const billingAccountMarketFixed = `-- name: BillingAccountMarketFixed :one
 SELECT (a.entry_seq > 0 OR a.balance_minor <> 0
         OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = a.id)
-        OR EXISTS (SELECT 1 FROM billing_checkouts c WHERE c.account_id = a.id AND c.status = 'open'))::boolean AS fixed
+        OR EXISTS (SELECT 1 FROM billing_checkouts c WHERE c.account_id = a.id AND c.status = 'open')
+        OR EXISTS (SELECT 1 FROM billing_prices bp WHERE bp.account_id = a.id))::boolean AS fixed
 FROM billing_accounts a WHERE a.id = $1
 `
 
 // ADR-0083: the market of an account is fixed by its first money: a ledger entry, any payment
-// row (even a processing one) or an open checkout. Read under the account lock.
+// row (even a processing one) or an open checkout; also by a custom price version (ADR-0086
+// «Индивидуальный тариф»: it is in the account's currency). Read under the account lock.
 func (q *Queries) BillingAccountMarketFixed(ctx context.Context, id uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, billingAccountMarketFixed, id)
 	var fixed bool

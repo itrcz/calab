@@ -50,7 +50,8 @@ func MarketCurrency(market string) string { return marketCurrency[market] }
 
 // SwitchMarket moves an account that has no money yet to another market (ADR-0083): the owner's
 // pre-payment choice (quote ACTIVATE with a market) and the superadmin's change. The market is
-// fixed by the first money — a ledger entry, any payment row or an open checkout — checked under
+// fixed by the first money — a ledger entry, any payment row or an open checkout — or a custom
+// price version (its currency is the account's, ADR-0086), checked under
 // the account lock, so a checkout opened concurrently either commits first (the switch is
 // refused) or sees the new market (POST …/topups re-validates under the same lock).
 // expectedRevision 0 skips the revision check. Switching to the current market is a no-op.

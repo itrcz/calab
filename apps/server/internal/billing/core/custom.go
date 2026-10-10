@@ -161,10 +161,12 @@ func (s *state) customPrice(a AssignPlan, entering bool) (*sqlc.BillingPrice, er
 	if err != nil {
 		return nil, err
 	}
-	if len(versions) > 0 {
-		if cur, ok := CustomPriceAt(versions, from); ok && cur.ID == versions[0].ID && cur.UnitMinor == a.Unit {
-			return nil, nil // the same price applies from then on already
-		}
+	// The price in force at from already is a.Unit: no version. On the plan, a later scheduled
+	// version stays — an edit of the name or limits resends the current price and must not cancel
+	// it (a scheduled change is replaced by a version from its own start). Entering the plan again
+	// starts fresh terms: only the newest version at that price is reused.
+	if cur, ok := CustomPriceAt(versions, from); ok && cur.UnitMinor == a.Unit && (!entering || cur.ID == versions[0].ID) {
+		return nil, nil
 	}
 	p, err := s.q.InsertBillingCustomPrice(s.ctx, sqlc.InsertBillingCustomPriceParams{
 		Market: s.acc.Market, Currency: s.acc.Currency, UnitMinor: a.Unit, EffectiveFrom: from, CreatedBy: s.actor,

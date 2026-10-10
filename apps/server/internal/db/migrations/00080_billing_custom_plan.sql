@@ -4,6 +4,9 @@
 --
 --   * billing_accounts / billing_charges: plan 'custom' next to team / enterprise; seat lots of the
 --     custom plan reference the account's own price version.
+--   * billing_prices (account_id, currency) references billing_accounts (id, currency): a custom
+--     price is always in its account's currency (a market switch of an account with custom prices
+--     is refused: BillingAccountMarketFixed).
 --   * billing_prices: account_id NOT NULL = a price version of that account only (sku
 --     seat.custom.day, plan custom); NULL = the catalog of the market as before. Still append-only:
 --     a new price is a new row from effective_from (never in the past), so bought seat-days are
@@ -26,7 +29,13 @@ ALTER TABLE billing_accounts DROP CONSTRAINT billing_accounts_plan_check,
 ALTER TABLE billing_charges DROP CONSTRAINT billing_charges_plan_check,
     ADD CONSTRAINT billing_charges_plan_check CHECK (plan IN ('team', 'enterprise', 'custom'));
 
+-- (id, currency) is unique because id is; the composite key lets a custom price reference the
+-- currency of its account, so a price in another currency cannot exist.
+ALTER TABLE billing_accounts ADD CONSTRAINT billing_accounts_id_currency_key UNIQUE (id, currency);
+
 ALTER TABLE billing_prices ADD COLUMN account_id uuid REFERENCES billing_accounts (id);
+ALTER TABLE billing_prices ADD CONSTRAINT billing_prices_account_currency_fkey
+    FOREIGN KEY (account_id, currency) REFERENCES billing_accounts (id, currency);
 ALTER TABLE billing_prices DROP CONSTRAINT billing_prices_plan_check,
     ADD CONSTRAINT billing_prices_plan_check CHECK (plan IN ('team', 'enterprise', 'custom')),
     ADD CONSTRAINT billing_prices_custom_check
@@ -52,6 +61,8 @@ ALTER TABLE workspace_plan_log DROP COLUMN description, DROP COLUMN display_name
 ALTER TABLE workspace_plans DROP COLUMN description, DROP COLUMN display_name;
 DROP INDEX billing_prices_account_idx;
 DROP INDEX billing_prices_catalog_idx;
+ALTER TABLE billing_prices DROP CONSTRAINT billing_prices_account_currency_fkey;
+ALTER TABLE billing_accounts DROP CONSTRAINT billing_accounts_id_currency_key;
 ALTER TABLE billing_prices DROP CONSTRAINT billing_prices_custom_check,
     DROP CONSTRAINT billing_prices_plan_check,
     ADD CONSTRAINT billing_prices_plan_check CHECK (plan IN ('team', 'enterprise')),

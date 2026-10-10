@@ -217,3 +217,99 @@ func TestCustomPlanAssignRules(t *testing.T) {
 	}
 	e.check()
 }
+
+// Second review of the custom plan: an edit that resends the current price keeps a scheduled
+// change, a paid resume after debt returns to the same custom plan at the price in force, and a
+// switch custom → Team → custom compensates each side once at its own price.
+func TestCustomPlanScheduledPriceAndResume(t *testing.T) {
+	e := newEnv(t, 2)
+	e.at(t0)
+	e.pay(100)
+	if res := e.mustAssign(core.AssignPlan{Plan: core.PlanCustom, Custom: custom("Acme"), Unit: 20}); res.Charged != 40 {
+		t.Fatalf("start: %+v", res)
+	}
+	from := day(3)
+	e.at(t0.Add(time.Hour))
+	if res := e.mustAssign(core.AssignPlan{Plan: core.PlanCustom, Custom: custom("Acme"), Unit: 30, From: from}); res.Price == nil {
+		t.Fatalf("scheduled version: %+v", res)
+	}
+	// The editor resends the price in force (20, from now) with a new name: no version, the
+	// scheduled 30 stays.
+	if res := e.mustAssign(core.AssignPlan{Plan: core.PlanCustom, Custom: custom("Acme Pro"), Unit: 20}); res.Price != nil {
+		t.Fatalf("a name edit wrote a price version: %+v", res.Price)
+	}
+	if unit, at, ok, err := e.c.NextPriceIn(ctx, e.d.Q, e.account(), e.clk.Time()); err != nil || !ok || unit != 30 || !at.Equal(from) {
+		t.Fatalf("next price %d at %s (%v, %v)", unit, at, ok, err)
+	}
+
+	// Renewals run the balance into debt until the suspension (from day 3 at 30).
+	for d := 1; d <= 10; d++ {
+		e.tick(day(d))
+	}
+	acc := e.account()
+	if acc.Status != core.StatusSuspended || acc.Plan != core.PlanCustom {
+		t.Fatalf("not suspended on custom: %s/%s", acc.Status, acc.Plan)
+	}
+	for _, c := range e.charges() {
+		want := int64(30)
+		if c.StartsAt.Before(from) {
+			want = 20
+		}
+		if c.UnitMinor != want {
+			t.Fatalf("lot at %s: unit %d, want %d", c.StartsAt, c.UnitMinor, want)
+		}
+	}
+	if row := e.workspacePlan(); row.Plan != "custom" || row.DisplayName != "Acme Pro" {
+		t.Fatalf("suspended plan row %+v", row)
+	}
+	// Paying the debt and a first day resumes the same custom plan at the price in force (30).
+	e.at(day(10).Add(time.Hour))
+	e.pay(-acc.BalanceMinor + 2*30)
+	if _, err := e.c.Resume(ctx, e.acc, core.ResumePaid, core.PlanCustom, uuid.New(), &e.owner); err != nil {
+		t.Fatal(err)
+	}
+	e.wantBalance(0)
+	if c := e.lastCharge(); c.Plan != core.PlanCustom || c.UnitMinor != 30 || c.Qty != 2 || c.Reason != core.ReasonResume || c.DiscountBps != 0 {
+		t.Fatalf("resume lot %+v", c)
+	}
+	if row := e.workspacePlan(); row.Plan != "custom" || row.Source != "billing" || row.DisplayName != "Acme Pro" || string(row.Limits) == "" {
+		t.Fatalf("resumed plan row %+v", row)
+	}
+	e.check()
+
+	// custom → Team → custom: each switch returns the rest of the running lots at their own price.
+	e.pay(1000)
+	e.at(day(10).Add(7 * time.Hour)) // 18 h of the 24 h lot (60) left: 45 back, Team 2 × 10
+	res := e.mustAssign(core.AssignPlan{Plan: core.PlanTeam})
+	if !res.Switched || res.Compensated != 45 || res.Charged != 20 {
+		t.Fatalf("custom → Team: %+v", res)
+	}
+	e.at(day(10).Add(13 * time.Hour)) // 18 h of the Team lot (20) left: 15 back, custom 2 × 30 again
+	res = e.mustAssign(core.AssignPlan{Plan: core.PlanCustom, Custom: custom("Acme Pro"), Unit: 30})
+	if !res.Switched || res.Price != nil || res.Compensated != 15 || res.Charged != 60 {
+		t.Fatalf("Team → custom: %+v", res)
+	}
+	e.wantBalance(1000 + 45 - 20 + 15 - 60)
+	e.check()
+}
+
+// A custom price is always in the account's currency (00080: (account_id, currency) references
+// the account), and an account with custom prices cannot switch its market.
+func TestCustomPriceCurrencyFixed(t *testing.T) {
+	e := newEnv(t, 1)
+	e.at(t0)
+	acc := e.account()
+	if _, err := e.d.Q.InsertBillingCustomPrice(ctx, sqlc.InsertBillingCustomPriceParams{Market: "ru", Currency: "RUB", UnitMinor: 500,
+		EffectiveFrom: t0, AccountID: &acc.ID}); err == nil {
+		t.Fatal("a RUB custom price for a USD account")
+	}
+	if _, err := e.d.Q.InsertBillingCustomPrice(ctx, sqlc.InsertBillingCustomPriceParams{Market: acc.Market, Currency: acc.Currency, UnitMinor: 5,
+		EffectiveFrom: t0, AccountID: &acc.ID}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.c.SwitchMarket(ctx, e.acc, "ru", "tochka", 0, &e.owner)
+	wantErr(t, err, billing.ErrMarketFixed)
+	if _, err := e.d.Pool.Exec(ctx, `UPDATE billing_accounts SET market = 'ru', currency = 'RUB' WHERE id = $1`, e.acc); err == nil {
+		t.Fatal("the account's currency moved away from its custom price")
+	}
+}
