@@ -7,7 +7,7 @@
 //   - /api/workspaces/{id}/billing/…: private, people only (bots denied), identity scope
 //     "billing" (workspace of {id}; the owner keeps it under billing suspension). Handlers check
 //     owner (403 BILLING_OWNER_REQUIRED) except GET /, which shows members the status only.
-//   - POST /api/billing/{stripe,tochka}/webhook, GET /api/billing/public/offers and GET
+//   - POST /api/billing/{stripe,tochka,tochkapay}/webhook, GET /api/billing/public/offers and GET
 //     /api/billing/return: public, no session; a webhook reads the raw body and verifies the
 //     provider signature itself.
 //   - /api/admin/billing/…: private, identity scope admin (superadmin + recent local auth);
@@ -47,8 +47,9 @@ var OwnerRoutes = []string{
 // PublicRoutes need no session.
 var PublicRoutes = []string{
 	"POST /api/billing/stripe/webhook",
-	"POST /api/billing/tochka/webhook", // ADR-0083: RS256 JWT body, verified by the adapter
-	"GET /api/billing/public/offers",   // ADR-0083: landing prices, cacheable, rate-limited
+	"POST /api/billing/tochka/webhook",    // ADR-0083: RS256 JWT body, verified by the adapter
+	"POST /api/billing/tochkapay/webhook", // ADR-0083 phase 3: Pay Gateway, RS256 JWT body
+	"GET /api/billing/public/offers",      // ADR-0083: landing prices, cacheable, rate-limited
 	"GET /api/billing/return",
 }
 

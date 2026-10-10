@@ -1,0 +1,12 @@
+{
+ "code": "403",
+ "id": "4a0f8085-c255-4693-8f1e-68a5e4b0adb7",
+ "message": "OPERATION_FORBIDDEN",
+ "Errors": [
+  {
+   "errorCode": "SIGNATURE_VERIFICATION_ERROR",
+   "message": "Более детальное пояснение проблемы",
+   "url": "https://enter.tochka.com/uapi/pay"
+  }
+ ]
+}

@@ -112,10 +112,11 @@ func (s *Service) Owner() map[string]httpx.HandlerFunc {
 // Public returns the public route implementations (Handlers.Public).
 func (s *Service) Public() map[string]httpx.HandlerFunc {
 	return map[string]httpx.HandlerFunc{
-		"POST /api/billing/stripe/webhook": s.stripeWebhook,
-		"POST /api/billing/tochka/webhook": s.tochkaWebhook,
-		"GET /api/billing/public/offers":   s.publicOffers,
-		"GET /api/billing/return":          s.returnPage,
+		"POST /api/billing/stripe/webhook":    s.stripeWebhook,
+		"POST /api/billing/tochka/webhook":    s.tochkaWebhook,
+		"POST /api/billing/tochkapay/webhook": s.tochkapayWebhook,
+		"GET /api/billing/public/offers":      s.publicOffers,
+		"GET /api/billing/return":             s.returnPage,
 	}
 }
 

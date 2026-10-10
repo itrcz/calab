@@ -28,6 +28,8 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/provider/fake"
 	"github.com/calaba/calaba/server/internal/billing/providers/tochka"
 	"github.com/calaba/calaba/server/internal/billing/providers/tochka/tochkatest"
+	"github.com/calaba/calaba/server/internal/billing/providers/tochkapay"
+	"github.com/calaba/calaba/server/internal/billing/providers/tochkapay/tochkapaytest"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/dbtest"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -42,22 +44,24 @@ var ctx = context.Background()
 // fake provider registered as "stripe", the core, the inbox and the owner / public routes behind
 // a test identity (header X-Test-User).
 type env struct {
-	t        *testing.T
-	d        *db.DB
-	fp       provider.Provider // the registered provider (the fake, or a wrapper of it)
-	fake     *fake.Provider
-	core     *core.Core
-	in       *inbox.Inbox
-	mail     *mail.Service
-	srv      *httptest.Server
-	ws       uuid.UUID
-	owner    uuid.UUID
-	member   uuid.UUID
-	acc      uuid.UUID
-	merchant string // merchant account of the fake
-	bank     *tochkatest.Bank
-	tochka   *tochka.Provider
-	reg      *provider.Registry
+	t         *testing.T
+	d         *db.DB
+	fp        provider.Provider // the registered provider (the fake, or a wrapper of it)
+	fake      *fake.Provider
+	core      *core.Core
+	in        *inbox.Inbox
+	mail      *mail.Service
+	srv       *httptest.Server
+	ws        uuid.UUID
+	owner     uuid.UUID
+	member    uuid.UUID
+	acc       uuid.UUID
+	merchant  string // merchant account of the fake
+	bank      *tochkatest.Bank
+	tochka    *tochka.Provider
+	payBank   *tochkapaytest.Bank
+	tochkaPay *tochkapay.Provider
+	reg       *provider.Registry
 }
 
 type envOpt struct {
@@ -71,6 +75,9 @@ type envOpt struct {
 	// stripe:global,tochka:ru); market: the market of the account (default global).
 	bank   *tochkatest.Bank
 	market string
+	// payBank: the Tochka Pay Gateway adapter on this fake site is registered with its matrix
+	// row (BILLING_TOCHKA_SBP_BINDING_ENABLED, ADR-0083 phase 3).
+	payBank *tochkapaytest.Bank
 }
 
 func newEnv(t *testing.T, opts ...envOpt) *env {
@@ -87,7 +94,8 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 		Checkouts: true, ReturnURL: "https://app.calab.test/api/billing/return", AppURL: "https://app.calab.test",
 	}
 	spec, market := "stripe:global", "global"
-	var tp provider.Provider
+	var tp, pp provider.Provider
+	rows := provider.DefaultMatrix()
 	for _, o := range opts {
 		noAccount = noAccount || o.noAccount
 		if o.bank != nil {
@@ -97,6 +105,14 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 				t.Fatal(err)
 			}
 			tp, e.tochka, spec = p, p, "stripe:global,tochka:ru"
+		}
+		if o.payBank != nil {
+			p, err := tochkapay.New(o.payBank.Config())
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.payBank, e.tochkaPay, pp = o.payBank, p, p
+			rows = append(rows, provider.SBPBindingRow())
 		}
 		if o.market != "" {
 			market = o.market
@@ -111,7 +127,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 			clock = o.clock
 		}
 	}
-	reg, err := provider.NewRegistry(spec, provider.DefaultMatrix(), e.fp, tp)
+	reg, err := provider.NewRegistry(spec, rows, e.fp, tp, pp)
 	if err != nil {
 		t.Fatal(err)
 	}

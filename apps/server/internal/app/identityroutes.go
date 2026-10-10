@@ -479,6 +479,7 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/admin/billing/providers/{provider}":                             scopeAdmin,
 	"POST /api/billing/stripe/webhook":                                        scopePublic,
 	"POST /api/billing/tochka/webhook":                                        scopePublic,
+	"POST /api/billing/tochkapay/webhook":                                     scopePublic,
 	"GET /api/billing/public/offers":                                          scopePublic,
 	"GET /api/billing/return":                                                 scopePublic,
 }

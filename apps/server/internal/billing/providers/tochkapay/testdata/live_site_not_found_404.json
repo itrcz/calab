@@ -1,0 +1,12 @@
+{
+ "code": "404",
+ "id": "2512e315-57c6-4993-9aa4-c770fdcefb03",
+ "message": "ENTITY_NOT_FOUND",
+ "Errors": [
+  {
+   "errorCode": "MERCHANT_SITE_NOT_FOUND",
+   "message": "Can not found merchant site with siteUid:calaba-probe-nonexistent.",
+   "url": "https://enter.tochka.com/uapi/pay"
+  }
+ ]
+}

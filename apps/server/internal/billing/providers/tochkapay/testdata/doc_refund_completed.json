@@ -1,0 +1,22 @@
+{
+ "Data": {
+  "refundUid": "8H7GSEE7018GC67",
+  "createdDateTime": "2025-01-01T01:23:45+03:00",
+  "amount": {
+   "currency": "RUB",
+   "amount": "123.45"
+  },
+  "status": {
+   "value": "COMPLETED",
+   "changedDateTime": "2025-01-01T01:23:45+03:00"
+  },
+  "comment": "Возврат за услугу",
+  "metadata": "{\"key1\":\"value1\",\"key2\":\"value2\"}"
+ },
+ "Links": {
+  "self": "https://enter.tochka.com/uapi/pay"
+ },
+ "Meta": {
+  "totalPages": 1
+ }
+}

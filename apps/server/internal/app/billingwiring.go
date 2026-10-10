@@ -16,6 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/billing/providers/stripe"
 	"github.com/calaba/calaba/server/internal/billing/providers/tochka"
+	"github.com/calaba/calaba/server/internal/billing/providers/tochkapay"
 	"github.com/calaba/calaba/server/internal/billing/worker"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -70,7 +71,18 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		}
 		providers = append(providers, tp)
 	}
-	reg, err := provider.NewRegistry(b.Providers, provider.DefaultMatrix(), providers...)
+	rows := provider.DefaultMatrix()
+	if b.TochkaSBPBindingEnabled {
+		// ADR-0083 phase 3: SBP binding through the Pay Gateway; auto-topup only (no hosted
+		// checkout), admitted to off-session together with the no-repost dispatch.
+		pp, err := tochkapay.New(TochkaPayConfig(b))
+		if err != nil {
+			panic(err)
+		}
+		providers = append(providers, pp)
+		rows = append(rows, provider.SBPBindingRow())
+	}
+	reg, err := provider.NewRegistry(b.Providers, rows, providers...)
 	if err != nil {
 		panic(err) // BILLING_PROVIDERS is validated by config.Validate
 	}
@@ -155,6 +167,14 @@ func TochkaConfig(b config.Billing) tochka.Config {
 	return tochka.Config{
 		BaseURL: b.TochkaAPIURL, Token: b.TochkaAPIToken, CustomerCode: b.TochkaCustomerCode, MerchantID: b.TochkaMerchantID,
 		TaxSystem: b.TochkaTaxSystem, VatType: b.TochkaVatType, WebhookKey: b.TochkaWebhookKey, ClientID: b.TochkaClientID,
+	}
+}
+
+// TochkaPayConfig is the Pay Gateway adapter config of the env (also used by `server tochkapay …`).
+func TochkaPayConfig(b config.Billing) tochkapay.Config {
+	return tochkapay.Config{
+		BaseURL: b.TochkaPayAPIURL, Token: b.TochkaPayToken(), SiteUID: b.TochkaPaySiteUID, SigningKey: b.TochkaPaySigningKey,
+		Live: b.TochkaPayLive, WebhookKey: b.TochkaWebhookKey, CallbackURL: b.TochkaPayCallbackURL,
 	}
 }
 
