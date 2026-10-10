@@ -1,12 +1,14 @@
 import type { HostCallsOperation } from '../../desktop/src/shared/hostCalls';
+import type { MediaPermissionsOperation } from '../../desktop/src/shared/hostPermissions';
 import { parseHostActivityMessage, type SessionActivitySnapshot } from '../../desktop/src/shared/hostActivity';
 
 export type ActivityAction =
+  | ({ type: 'permissions'; document: string; request: number } & MediaPermissionsOperation)
   | ({ type:'calls'; document:string; request:number } & HostCallsOperation)
   | { type: 'ready'; document: string }
   | { type: 'publish'; document: string; snapshot: SessionActivitySnapshot }
   | { type: 'end' }
-  | { type: 'notifications'; document: string; request: number; operation: 'status' | 'request' | 'clear' | 'ack'; eventId?: string };
+  | { type: 'notifications'; document: string; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test'; eventId?: string; body?: string };
 
 /** Native has already proved frame, origin and current document. JS narrows schema and order. */
 export class ActivityProtocol {
@@ -35,7 +37,8 @@ export class ActivityProtocol {
     this.sequence = message.seq;
     if (message.type === 'revoke') { this.reset(); return { type: 'end' }; }
     if (message.type === 'calls') return { ...message, type:'calls' };
-    if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}) };
+    if (message.type === 'permissions') return { ...message, type: 'permissions' };
+    if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}), ...(message.body ? { body: message.body } : {}) };
     if (message.snapshot.generation < this.generation) return null;
     this.generation = message.snapshot.generation;
     return { type: 'publish', document: message.document, snapshot: message.snapshot };
@@ -48,13 +51,13 @@ export function activityBootstrap(host: number, nativeAudio = false): string {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
     let documentId = crypto.randomUUID();
     Object.defineProperty(window, 'CalabHostActivity', { configurable: false, writable: false,
-      value: Object.freeze({version: 1, notificationsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''} host: ${String(host)}, get document() { return documentId; },
+      value: Object.freeze({version: 1, notificationsVersion: 1, notificationsTestVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''} host: ${String(host)}, get document() { return documentId; },
         rotateDocument: () => { documentId = crypto.randomUUID(); },
         send: (data) => window.ReactNativeWebView.postMessage(data)}) });
   })(); true;`;
 }
 
 export function activityReady(host: number, document: string, activity = true): string {
-  const detail = JSON.stringify({ v: 1, host, document, capability: activity ? 'sessionActivity' : 'notifications', notifications: 1, calls: 1 });
+  const detail = JSON.stringify({ v: 1, host, document, capability: activity ? 'sessionActivity' : 'notifications', notifications: 1, calls: 1, permissions: 1 });
   return `window.dispatchEvent(new CustomEvent('calab-host-activity-ready', {detail: ${detail}})); true;`;
 }

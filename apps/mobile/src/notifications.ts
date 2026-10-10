@@ -1,8 +1,9 @@
 import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
-import { parseNotificationState, type HostNotificationState } from '../../desktop/src/shared/hostActivity';
+import { parseNotificationState, parseNotificationTestResult, type HostNotificationTestResult, type HostNotificationState } from '../../desktop/src/shared/hostActivity';
 
 interface NativePush {
+  testNotification(document: string, body: string): Promise<unknown>;
   pushState(document: string, requestPermission: boolean): Promise<unknown>;
   acknowledgePush(document: string, eventId: string): Promise<void>;
   addListener(name: 'onPushChanged', callback: (value: { document: string; state: unknown }) => void): { remove(): void };
@@ -24,6 +25,15 @@ export function subscribeNotifications(callback: (document: string, state: HostN
 export function notificationReply(host: number, document: string, request: number, state: HostNotificationState): string {
   const detail = JSON.stringify({ v: 1, host, document, request, state });
   return `window.dispatchEvent(new CustomEvent('calab-host-notifications', {detail: ${detail}})); true;`;
+}
+
+export async function testNotification(document: string, body: string): Promise<HostNotificationTestResult> {
+  if (!native) return 'unsupported';
+  try { return parseNotificationTestResult(await native.testNotification(document, body)) ?? 'failed'; }
+  catch { return 'failed'; }
+}
+export function notificationTestReply(host: number, document: string, request: number, result: HostNotificationTestResult): string {
+  return `window.dispatchEvent(new CustomEvent('calab-host-notification-test', {detail: ${JSON.stringify({ v: 1, host, document, request, result })}})); true;`;
 }
 
 export function acknowledgeNotification(document: string, eventId: string): void { void native?.acknowledgePush(document, eventId).catch(() => undefined); }

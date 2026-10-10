@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HostPushController, type HostPushApi } from './hostNotifications';
+import { HostPushController, installHostNotifications, type HostPushApi } from './hostNotifications';
 import type { HostNotificationState, HostNotificationsCapability } from '../../shared/hostActivity';
-vi.mock('../platform', () => ({ platform: {} }));
+import { useSession } from '../stores/session';
+import { usePrefs } from '../stores/prefs';
+import { useVoice } from '../stores/voice';
+import { useCall } from '../stores/call';
+import { SessionAuthorityKind } from '@calaba/protocol';
+vi.mock('../platform', () => ({ platform: { auth: { onLoggedOut: () => () => undefined } } }));
 
 const state: HostNotificationState = { permission: 'granted', appId: 'dev.calab.test', environment: 'development',
  installationId: '00000000-0000-0000-0000-000000000001', token: 'aa'.repeat(32) };
@@ -15,6 +20,41 @@ function harness(initial: HostNotificationState = state) {
  const start = async () => { controller.update({ session: 'first', mentions: true, all: false }); await Promise.resolve(); await controller.settled(); };
  return { controller, capability, api, start };
 }
+
+it('only offers permission to an onboarded local user in the foreground outside calls, preserving Later', async () => {
+ const saved = { session: useSession.getState(), prefs: usePrefs.getState(), voice: useVoice.getState(), call: useCall.getState() };
+ const windowEvents = new EventTarget(); const documentEvents = new EventTarget();
+ let visibilityState = 'hidden';
+ Object.defineProperty(documentEvents, 'visibilityState', { get: () => visibilityState });
+ vi.stubGlobal('window', windowEvents); vi.stubGlobal('document', documentEvents);
+ let stop: () => void = () => undefined;
+ try {
+  useSession.setState({ status: 'authed', sessionId: 'first', authority: null, me: { user: { isGuest: false, isBot: false } } as never });
+  usePrefs.setState({ onboarded: true, nativeNotifyOffered: false, notifyMentions: true, notifyAll: false });
+  useVoice.setState({ phase: 'idle', joining: null }); useCall.setState({ phase: 'idle' });
+  const native = harness({ permission: 'default' }).capability;
+  stop = installHostNotifications(native);
+  const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+  await flush(); expect(native.state).not.toHaveBeenCalledWith(true);
+  useCall.setState({ phase: 'incoming' }); visibilityState = 'visible'; documentEvents.dispatchEvent(new Event('visibilitychange'));
+  await flush(); expect(native.state).not.toHaveBeenCalledWith(true);
+  usePrefs.setState({ nativeNotifyOffered: true }); useCall.setState({ phase: 'idle' });
+  await flush(); expect(native.state).not.toHaveBeenCalledWith(true);
+  usePrefs.setState({ nativeNotifyOffered: false, onboarded: false });
+  await flush(); expect(native.state).not.toHaveBeenCalledWith(true);
+  useSession.setState({ authority: { kind: SessionAuthorityKind.WORKSPACE_SSO } as never }); usePrefs.setState({ onboarded: true });
+  await flush(); expect(native.state).not.toHaveBeenCalledWith(true);
+  useSession.setState({ authority: null, me: { user: { isGuest: true } } as never });
+  await flush(); expect(native.state).not.toHaveBeenCalledWith(true);
+  useSession.setState({ me: { user: { isBot: true } } as never });
+  await flush(); expect(native.state).not.toHaveBeenCalledWith(true);
+  vi.mocked(native.state).mockImplementation(ask => Promise.resolve({ permission: ask ? 'denied' : 'default' }));
+  useSession.setState({ me: { user: { isGuest: false, isBot: false } } as never }); await flush();
+  expect(native.state).toHaveBeenCalledWith(true); expect(usePrefs.getState().nativeNotifyOffered).toBe(true);
+ } finally {
+  stop(); useSession.setState(saved.session); usePrefs.setState(saved.prefs); useVoice.setState(saved.voice); useCall.setState(saved.call); vi.unstubAllGlobals();
+ }
+});
 describe('session-bound shared-web message push', () => {
  it('never registers unavailable builds, denied permission, or mismatched provider config', async () => {
   for (const initial of [{ permission: 'unsupported' }, { permission: 'denied' }] as HostNotificationState[]) {

@@ -1,4 +1,5 @@
 import { parseCallsOperation, type HostCallsOperation } from './hostCalls';
+import { parseMediaPermissionsOperation, type MediaPermissionsOperation } from './hostPermissions';
 /** Local, optional host capability (ADR-0056), not a server/auth protocol. No product identifiers. */
 export interface SessionActivitySnapshot {
   generation: number;
@@ -13,10 +14,11 @@ export interface SessionActivityCapability {
 }
 
 export type HostActivityMessage =
+  | ({ v: 1; type: 'permissions'; host: number; document: string; seq: number; request: number } & MediaPermissionsOperation)
   | ({ v:1; type:'calls'; host:number; document:string; seq:number; request:number } & HostCallsOperation)
   | { v: 1; type: 'hello'; host: number; document: string }
   | { v: 1; type: 'revoke'; host: number; document: string; seq: number; reason?: 'logout' }
-  | { v: 1; type: 'notifications'; host: number; document: string; seq: number; request: number; operation: 'status' | 'request' | 'clear' | 'ack'; eventId?: string }
+  | { v: 1; type: 'notifications'; host: number; document: string; seq: number; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test'; eventId?: string; body?: string }
   | { v: 1; type: 'activity'; host: number; document: string; seq: number; snapshot: SessionActivitySnapshot };
 
 export const HOST_ACTIVITY_MAX_LENGTH = 8192;
@@ -52,12 +54,17 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
   if (value.type === 'hello' && keys(value, base)) return value as unknown as HostActivityMessage;
   if (!counter(value.seq) || value.seq < 1) return null;
   if (value.type === 'revoke' && (keys(value, [...base, 'seq']) || (value.reason === 'logout' && keys(value, [...base, 'seq', 'reason'])))) return value as unknown as HostActivityMessage;
+  if (value.type === 'permissions' && counter(value.request) && value.request > 0) {
+    const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
+    return parseMediaPermissionsOperation(fields) ? value as unknown as HostActivityMessage : null;
+  }
   if (value.type === 'calls' && counter(value.request) && value.request > 0) {
     const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
     if (parseCallsOperation(fields)) return value as unknown as HostActivityMessage;
     return null;
   }
   if (value.type === 'notifications' && value.operation === 'ack' && keys(value, [...base, 'seq', 'request', 'operation', 'eventId']) && counter(value.request) && value.request > 0 && typeof value.eventId === 'string' && /^[0-9a-f-]{36}$/i.test(value.eventId)) return value as unknown as HostActivityMessage;
+  if (value.type === 'notifications' && value.operation === 'test' && keys(value, [...base, 'seq', 'request', 'operation', 'body']) && counter(value.request) && value.request > 0 && typeof value.body === 'string' && value.body.trim().length > 0 && value.body.length <= 512) return value as unknown as HostActivityMessage;
   if (value.type === 'notifications' && keys(value, [...base, 'seq', 'request', 'operation']) && counter(value.request) && value.request > 0 &&
       ['status', 'request', 'clear'].includes(String(value.operation))) return value as unknown as HostActivityMessage;
   if (value.type !== 'activity' || !keys(value, [...base, 'seq', 'snapshot']) || !record(value.snapshot)) return null;
@@ -69,6 +76,10 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
 }
 
 export type HostNotificationPermission = 'unsupported' | 'default' | 'denied' | 'granted';
+export type HostNotificationTestResult = 'scheduled' | 'denied' | 'unsupported' | 'failed';
+export function parseNotificationTestResult(value: unknown): HostNotificationTestResult | null {
+ return value === 'scheduled' || value === 'denied' || value === 'unsupported' || value === 'failed' ? value : null;
+}
 export interface HostPushReference { binding: string; eventId: string; expiresAt: number }
 export interface HostNotificationState {
  permission: HostNotificationPermission;
@@ -76,6 +87,8 @@ export interface HostNotificationState {
  tap?: HostPushReference;
 }
 export interface HostNotificationsCapability {
+ /** A local OS banner only; does not prove remote APNs delivery. Absent on older binaries. */
+ test?: (body: string) => Promise<HostNotificationTestResult>;
  state: (requestPermission?: boolean) => Promise<HostNotificationState>;
  subscribe: (listener: (state: HostNotificationState) => void) => () => void;
  clear: (reason?: 'logout') => void;

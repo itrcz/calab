@@ -1,4 +1,5 @@
 import type { HostCallsCapability } from '../../shared/hostCalls';
+import type { HostMediaPermissionsCapability } from '../../shared/hostPermissions';
 import type { CalabaApi } from '../../preload/api';
 import type { AuthSession, IpcResult } from '../../shared/ipc';
 import type { SessionActivityCapability, HostNotificationsCapability } from '../../shared/hostActivity';
@@ -20,6 +21,7 @@ export interface Platform extends CalabaApi {
   /** Optional status-only phone host capability; absent in ordinary browsers/older hosts. */
   sessionActivity?: SessionActivityCapability;
   notifications?: HostNotificationsCapability;
+  mediaPermissions?: HostMediaPermissionsCapability;
   incomingCalls?: HostCallsCapability;
   kind: 'electron' | 'web';
   finishSso?(): Promise<import('../../shared/ipc').IpcResult<import('../../shared/ipc').SsoResult>>;

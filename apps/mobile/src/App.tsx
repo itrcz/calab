@@ -16,8 +16,9 @@ import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './na
 import { strings } from './strings';
 import { callsOperation, callsReply, subscribeCalls, callAudioEnabled } from './incomingCalls';
 import { ActivityProtocol, activityBootstrap, activityReady } from './activityProtocol';
-import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, subscribeNotifications } from './notifications';
+import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, subscribeNotifications, testNotification, notificationTestReply } from './notifications';
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
+import { permissionsOperation, permissionsReply, subscribePermissions } from './mediaPermissions';
 
 /**
  * The phone host (ADR-0067): one full-screen WebView with the web client — the same DOM, router and
@@ -83,9 +84,20 @@ function Host({ origin }: { origin: string }) {
         if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
           web.current?.injectJavaScript(callsReply(state.generation, action.document, action.request, value));
       });
+    } else if (action?.type === 'permissions') {
+      void permissionsOperation(action.document, action).then(reply => {
+        if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
+          web.current?.injectJavaScript(permissionsReply(state.generation, action.document, action.request, reply));
+      });
     } else if (action?.type === 'publish') publishSessionActivity(action.document, action.snapshot);
     else if (action?.type === 'end') endSessionActivity();
     else if (action?.type === 'notifications' && action.operation === 'ack' && action.eventId) acknowledgeNotification(action.document, action.eventId);
+    else if (action?.type === 'notifications' && action.operation === 'test' && action.body) {
+      void testNotification(action.document, action.body).then(result => {
+        if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
+          web.current?.injectJavaScript(notificationTestReply(state.generation, action.document, action.request, result));
+      });
+    }
     else if (action?.type === 'notifications' && (action.operation === 'status' || action.operation === 'request')) {
       void notificationState(action.document, action.operation === 'request').then((value) => {
         if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
@@ -97,6 +109,11 @@ function Host({ origin }: { origin: string }) {
   useEffect(() => subscribeNotifications((document, value) => {
     if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
       web.current?.injectJavaScript(notificationReply(state.generation, document, 0, value));
+  }), [state.generation]);
+
+  useEffect(() => subscribePermissions((document, value) => {
+    if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
+      web.current?.injectJavaScript(permissionsReply(state.generation, document, 0, { state: value }));
   }), [state.generation]);
 
   useEffect(() => subscribeCalls((document, value) => {

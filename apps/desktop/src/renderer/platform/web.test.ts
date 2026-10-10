@@ -34,11 +34,47 @@ let platform: ReturnType<(typeof import('./web'))['createWebPlatform']>;
 
 beforeEach(async () => {
   delete window.CalabHostActivity;
+  vi.stubGlobal('navigator', { userAgent: 'Chrome/150', onLine: true });
   vi.resetModules();
   fetchSpy.mockClear();
   created.length = 0;
   revoked.length = 0;
   platform = (await import('./web')).createWebPlatform();
+});
+
+describe('phone permission adapter', () => {
+  it('uses native authorization and status without opening a web capture stream', async () => {
+    const capture = vi.fn(); const query = vi.fn();
+    vi.stubGlobal('navigator', { userAgent: 'iPhone', mediaDevices: { getUserMedia: capture }, permissions: { query } });
+    const emit = (name: string, detail: object) => listeners.get(name)?.at(-1)?.({ detail });
+    const send = vi.fn((raw: string) => {
+      const message = JSON.parse(raw) as { type: string; request: number; operation: string };
+      if (message.type === 'hello') queueMicrotask(() => emit('calab-host-activity-ready', {
+        v: 1, host: 0, document: 'phone', capability: 'notifications', permissions: 1,
+      }));
+      if (message.type === 'permissions') queueMicrotask(() => emit('calab-host-permissions', {
+        v: 1, host: 0, document: 'phone', request: message.request,
+        state: { microphone: message.operation === 'request' ? 'granted' : 'not-determined', camera: 'denied' },
+      }));
+    });
+    window.CalabHostActivity = { version: 1, host: 0, document: 'phone', mediaPermissionsVersion: 1, send, rotateDocument: () => undefined };
+    platform = (await import('./web')).createWebPlatform();
+    await expect(platform.system.permissions()).resolves.toMatchObject({ microphone: 'not-determined', camera: 'denied' });
+    await expect(platform.system.requestMic()).resolves.toBe(true);
+    expect(capture).not.toHaveBeenCalled(); expect(query).not.toHaveBeenCalled();
+    expect(JSON.parse(String(send.mock.lastCall?.[0]))).toMatchObject({ type: 'permissions', operation: 'request', kind: 'microphone' });
+  });
+
+  it('retains the ordinary-browser prompt and stops the permission probe stream', async () => {
+    const stop = vi.fn();
+    const capture = vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] });
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: capture } });
+    await expect(platform.system.requestMic()).resolves.toBe(true);
+    expect(capture).toHaveBeenCalledExactlyOnceWith({ audio: true });
+    expect(stop).toHaveBeenCalledOnce();
+    capture.mockRejectedValueOnce(new DOMException('Denied', 'NotAllowedError'));
+    await expect(platform.system.requestMic()).resolves.toBe(false);
+  });
 });
 afterEach(() => {
   vi.useRealTimers();

@@ -2211,3 +2211,13 @@ are not current phone evidence. Visual suites remain disabled.
 5. After matching web/API + host rollout: one system answer while foreground, locked/warm and cold; >60s two-way audio, mute, hangup, computer logged in/in voice.
 6. Check message avatar/Face ID preview; real missed call has caller and proper label, decline/cancel/end do not create generic New message. Tap opens the existing DM history.
 7. Inspect only lifecycle logs if a step fails; no tokens, names, text or full push payloads. Passing source checks is not device acceptance.
+
+## iOS shared permission settings (ADR-0081)
+
+1. Run desktop `hostMediaPermissions`, `hostActivity`, `web` and mobile `mediaPermissionsProtocol` tests: old host, strict operations, document revocation, timeout and notification-state isolation.
+2. Compile iOS Release with the patched WebView; verify the patch and frozen lockfile.
+3. Fresh permission state: request microphone/camera separately from shared settings; expect the corresponding iOS alert, no recording/camera capture and no extra WebKit prompt after grant.
+4. Deny, use Open system settings, grant there and return: shared settings refresh without a reload. Repeat for denied notifications.
+5. During a call, visiting permission settings must not interrupt two-way audio; a status check must not activate capture.
+6. Cross-origin pages/iframes cannot request native authorization or reuse Calab's WebKit grant. Browser/old-host behavior is unchanged.
+7. Source/mock/unsigned-build results do not replace these real-device gates; visual regression suites remain disabled.

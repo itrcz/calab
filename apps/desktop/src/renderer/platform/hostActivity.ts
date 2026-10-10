@@ -1,8 +1,10 @@
 import { parseCallsState, type HostCallsCapability, type HostCallsOperation, type HostCallsState } from '../../shared/hostCalls';
-import { parseNotificationState, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
+import { parseMediaPermissionsState, unavailableMediaPermissions, type HostMediaPermissionsCapability, type MediaPermissionsOperation, type MediaPermissionsReply, type MediaPermissionsState } from '../../shared/hostPermissions';
+import { parseNotificationState, parseNotificationTestResult, type HostNotificationTestResult, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
 export interface HostActivityBridge {
-  version: number; host: number; document: string; notificationsVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
+  mediaPermissionsVersion?: number;
+  version: number; host: number; document: string; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
   rotateDocument(): void;
   send(data: string): void;
 }
@@ -15,6 +17,7 @@ const CALLS_REQUEST_TIMEOUT_MS = 10_000;
 
 /** One document/sequence authority for both optional capabilities; old hosts keep v1 activity. */
 export function createHostCapabilities(win: Window = window): {
+  mediaPermissions?: HostMediaPermissionsCapability;
   sessionActivity?: SessionActivityCapability; notifications?: HostNotificationsCapability; incomingCalls?: HostCallsCapability;
 } {
   const bridge = win.CalabHostActivity;
@@ -22,6 +25,7 @@ export function createHostCapabilities(win: Window = window): {
   let ready = false;
   let pendingLogout = false;
   let activityEnabled = false;
+  let permissionsEnabled = false;
   let sequence = 0;
   let requestId = 0;
   let latest: SessionActivitySnapshot | null = null;
@@ -29,13 +33,20 @@ export function createHostCapabilities(win: Window = window): {
   const callsPending = new Map<number,{operation:HostCallsOperation;resolve:(value:{state:HostCallsState;bound?:boolean})=>void;timer:ReturnType<typeof setTimeout>}>();
   const listeners = new Set<(state: HostNotificationState) => void>();
   const pending = new Map<number, { operation: 'status' | 'request'; resolve: (state: HostNotificationState) => void; timer: ReturnType<typeof setTimeout> }>();
-  const send = (type: 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls', fields: object = {}) => {
+  const tests = new Map<number, { body: string; resolve: (result: HostNotificationTestResult) => void; timer: ReturnType<typeof setTimeout> }>();
+  const permissions = new Map<number, { operation: MediaPermissionsOperation; resolve: (reply: MediaPermissionsReply) => void; timer: ReturnType<typeof setTimeout> }>();
+  const permissionListeners = new Set<(state: MediaPermissionsState) => void>();
+  const send = (type: 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls' | 'permissions', fields: object = {}) => {
     const base = { v: 1, type, host: bridge.host, document: bridge.document };
     bridge.send(JSON.stringify(type === 'hello' ? base : { ...base, seq: ++sequence, ...fields }));
   };
   const settle = () => {
     for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ permission: 'unsupported' }); }
     pending.clear();
+    for (const p of tests.values()) { clearTimeout(p.timer); p.resolve('unsupported'); }
+    tests.clear();
+    for (const p of permissions.values()) { clearTimeout(p.timer); p.resolve({ state: unavailableMediaPermissions() }); }
+    permissions.clear();
     for (const p of callsPending.values()) { clearTimeout(p.timer); p.resolve({state:{supported:false}}); }
     callsPending.clear();
   };
@@ -53,6 +64,7 @@ export function createHostCapabilities(win: Window = window): {
     bridge.rotateDocument();
     ready = false;
     activityEnabled = false;
+    permissionsEnabled = false;
     settle();
   };
   win.addEventListener('calab-host-activity-ready', (event) => {
@@ -63,10 +75,15 @@ export function createHostCapabilities(win: Window = window): {
       (a.capability !== 'sessionActivity' && a.capability !== 'notifications')) return;
     ready = true;
     activityEnabled = a.capability === 'sessionActivity';
+    permissionsEnabled = a.permissions === 1;
     if (pendingLogout) { pendingLogout = false; revoke('logout'); return; }
     if (latest && activityEnabled) send('activity', { snapshot: latest });
     if (a.notifications === 1) for (const [request, p] of pending) send('notifications', { request, operation: p.operation });
     else { for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ permission: 'unsupported' }); } pending.clear(); }
+    if (a.notifications === 1) for (const [request, p] of tests) send('notifications', { request, operation: 'test', body: p.body });
+    else { for (const p of tests.values()) { clearTimeout(p.timer); p.resolve('unsupported'); } tests.clear(); }
+    if (permissionsEnabled) for (const [request, p] of permissions) send('permissions', { request, ...p.operation });
+    else { for (const p of permissions.values()) { clearTimeout(p.timer); p.resolve({ state: unavailableMediaPermissions() }); } permissions.clear(); }
     if(a.calls===1)for(const [request,p] of callsPending)send('calls',{request,...p.operation});
     else { for(const p of callsPending.values()){clearTimeout(p.timer);p.resolve({state:{supported:false}});} callsPending.clear(); }
   });
@@ -80,6 +97,27 @@ export function createHostCapabilities(win: Window = window): {
     const p = pending.get(Number(e.request));
     if (p) { clearTimeout(p.timer); pending.delete(Number(e.request)); p.resolve(state); }
     if (p || e.request === 0) for (const listener of listeners) listener(state);
+  });
+  win.addEventListener('calab-host-notification-test', event => {
+    const raw: unknown = (event as CustomEvent<unknown>).detail;
+    if (!ready || !raw || typeof raw !== 'object') return;
+    const e = raw as Record<string, unknown>;
+    if (e.v !== 1 || e.document !== bridge.document || e.host !== bridge.host) return;
+    const result = parseNotificationTestResult(e.result);
+    const p = tests.get(Number(e.request));
+    if (p && result) { clearTimeout(p.timer); tests.delete(Number(e.request)); p.resolve(result); }
+  });
+  win.addEventListener('calab-host-permissions', event => {
+    const raw: unknown = (event as CustomEvent<unknown>).detail;
+    if (!ready || !raw || typeof raw !== 'object') return;
+    const e = raw as Record<string, unknown>;
+    if (!permissionsEnabled || e.v !== 1 || e.document !== bridge.document || e.host !== bridge.host ||
+        typeof e.request !== 'number' || !Number.isSafeInteger(e.request) || e.request < 0 ||
+        (e.opened !== undefined && typeof e.opened !== 'boolean')) return;
+    const state = parseMediaPermissionsState(e.state); if (!state) return;
+    const p = permissions.get(e.request);
+    if (p) { clearTimeout(p.timer); permissions.delete(e.request); p.resolve({ state, ...(typeof e.opened === 'boolean' ? { opened: e.opened } : {}) }); }
+    if (p || e.request === 0) for (const listener of permissionListeners) listener(state);
   });
   win.addEventListener('calab-host-calls', event => {
     const raw:unknown=(event as CustomEvent<unknown>).detail;
@@ -97,7 +135,20 @@ export function createHostCapabilities(win: Window = window): {
     callsPending.set(request,{operation,resolve,timer});
     if(ready)send('calls',{request,...operation});else send('hello');
   });
+  const requestPermissions = (operation: MediaPermissionsOperation) => new Promise<MediaPermissionsReply>(resolve => {
+    if (ready && !permissionsEnabled) { resolve({ state: unavailableMediaPermissions() }); return; }
+    const request = ++requestId;
+    const timer = setTimeout(() => { permissions.delete(request); resolve({ state: unavailableMediaPermissions() }); }, operation.operation === 'request' ? 60_000 : 10_000);
+    permissions.set(request, { operation, resolve, timer });
+    if (ready) send('permissions', { request, ...operation }); else send('hello');
+  });
   return {
+    ...(bridge.mediaPermissionsVersion === 1 ? { mediaPermissions: {
+      state: async () => (await requestPermissions({ operation: 'status' })).state,
+      request: async kind => (await requestPermissions({ operation: 'request', kind })).state,
+      openSettings: async () => (await requestPermissions({ operation: 'settings' })).opened === true,
+      subscribe(listener) { permissionListeners.add(listener); return () => permissionListeners.delete(listener); },
+    } satisfies HostMediaPermissionsCapability } : {}),
     ...(bridge.callsVersion===1 ? {incomingCalls:{
       ...(bridge.callsAudioVersion===1 ? {audio:{
         connect: async input => (await requestCall({operation:'audioConnect',...input})).state.media ?? null,
@@ -123,10 +174,17 @@ export function createHostCapabilities(win: Window = window): {
       clear: revoke,
     },
     ...(bridge.notificationsVersion === 1 ? { notifications: {
+      ...(bridge.notificationsTestVersion === 1 ? { test: (body: string) => new Promise<HostNotificationTestResult>(resolve => {
+        if (!body.trim() || body.length > 512) { resolve('failed'); return; }
+        const request = ++requestId;
+        const timer = setTimeout(() => { tests.delete(request); resolve('failed'); }, 60_000);
+        tests.set(request, { body, resolve, timer });
+        if (ready) send('notifications', { request, operation: 'test', body }); else send('hello');
+      }) } : {}),
       state: (ask = false) => new Promise<HostNotificationState>((resolve) => {
         const request = ++requestId;
         const operation = ask ? 'request' : 'status';
-        const timer = setTimeout(() => { pending.delete(request); resolve({ permission: 'unsupported' }); }, 15_000);
+        const timer = setTimeout(() => { pending.delete(request); resolve({ permission: 'unsupported' }); }, ask ? 60_000 : 15_000);
         pending.set(request, { operation, resolve, timer });
         if (ready) send('notifications', { request, operation });
         else send('hello');

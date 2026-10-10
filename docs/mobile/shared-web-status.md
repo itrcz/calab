@@ -1,5 +1,42 @@
 # Телефон: общий веб в оболочке — статус
 
+## Native microphone/camera permissions (2026-10-09)
+
+- **Implemented locally:** shared settings and microphone onboarding use iOS
+  authorization; denied microphone, camera and notifications link to Calab's
+  system settings. Foreground return refreshes media states. Requests do not
+  start capture or reconfigure the audio session. Only the proven Calab main
+  frame can reuse an existing OS grant without an extra WebKit site prompt.
+- **Verified locally:** latest main integrated without conflicts; 2759 desktop
+  unit tests, 122 mobile tests, 6 plugin tests, all desktop/mobile typechecks,
+  changed-file lint, web build and unsigned iOS Release compilation. Final
+  adapter/localization delta passed 46 focused tests. Patch application and
+  frozen lockfile verified. Manual 390 px shared-settings QA used simulated
+  native states; this is not evidence of an iPhone OS permission prompt.
+- **Remaining:** first-time prompts, denial -> Settings -> return, duplicate
+  site-prompt suppression and active-call preservation on a real iPhone;
+  independent security/protocol review and full CI gates (local golangci-lint
+  is unavailable), then web deployment and a new native build. No API change.
+  Existing TestFlight build 20 is unchanged; this is not READY_TO_SHIP.
+
+## Native notification permission and local test (2026-10-09)
+
+- **Implemented locally:** contextual native permission after login for returning
+  users, respecting onboarding Later, denial, background and active calls. Native
+  settings read native permission. The test button uses a local iOS notification;
+  older binaries show an update hint. The shared web interface is preserved.
+- **Verified locally:** 95 focused renderer tests, 119 mobile tests, 6 plugin tests;
+  renderer/mobile TypeScript and changed renderer/mobile ESLint; web production
+  build and unsigned iOS Release compilation. Manual 390 px UI check used the
+  local mock API and a denied native-capability fixture; no visual suite was run.
+  `make lint` completed both Go vet passes but could not run `golangci-lint`
+  because it is not installed on this machine. The full lint gate remains open.
+- **Not device-verified:** the new OS permission prompt and foreground local
+  banner. Existing installed/TestFlight binaries do not contain this correction.
+- **Remaining:** independent review, full CI lint, web deployment and a new native
+  build, then an iPhone prompt/test check. No API/server changes or migration.
+  TestFlight build 20 already submitted for review is unchanged by this work.
+
 ## TestFlight app icon (2026-10-08)
 
 The mobile host uses the existing Calab mark at 1024 × 1024, with an opaque

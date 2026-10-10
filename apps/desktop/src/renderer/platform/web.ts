@@ -710,7 +710,7 @@ export function createWebPlatform(): Platform {
       onRawKey: () => () => undefined,
     },
     system: {
-      openPrivacySettings: () => Promise.resolve(),
+      openPrivacySettings: async () => { await hostCapabilities.mediaPermissions?.openSettings(); },
       metrics: () => Promise.resolve({ rendererCpu: null, gpuCpu: null, mainCpu: null, rendererPid: 0 }),
       permissions: async () => {
         const q = async (name: string): Promise<string> => {
@@ -722,15 +722,17 @@ export function createWebPlatform(): Platform {
           }
         };
         const notification = hostCapabilities.notifications ? (await hostCapabilities.notifications.state()).permission : null;
+        const media = await hostCapabilities.mediaPermissions?.state();
         return {
-          microphone: await q('microphone'),
-          camera: await q('camera'),
+          microphone: media?.microphone ?? await q('microphone'),
+          camera: media?.camera ?? await q('camera'),
           screen: 'n/a',
           accessibility: true,
           notifications: notification === 'unsupported' ? 'n/a' : notification ?? (typeof Notification === 'undefined' ? 'n/a' : Notification.permission),
         };
       },
       requestMic: async () => {
+        if (hostCapabilities.mediaPermissions) return (await hostCapabilities.mediaPermissions.request('microphone')).microphone === 'granted';
         try {
           const s = await navigator.mediaDevices.getUserMedia({ audio: true });
           s.getTracks().forEach((t) => t.stop());

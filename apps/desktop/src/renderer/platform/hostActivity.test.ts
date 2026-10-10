@@ -4,6 +4,52 @@ import type { SessionActivitySnapshot } from '../../shared/hostActivity';
 
 const snapshot: SessionActivitySnapshot = { generation: 1, status: 'connected', muted: true, language: 'en' };
 
+describe('native notification test compatibility and authority', () => {
+  function setup(version?: number) {
+    const handlers = new Map<string, (event: CustomEvent<unknown>) => void>();
+    const send = vi.fn();
+    const bridge = { version: 1, notificationsVersion: 1, notificationsTestVersion: version, host: 0, document: 'old', send,
+      rotateDocument: () => { bridge.document = 'new'; } };
+    const cap = createHostCapabilities({ CalabHostActivity: bridge,
+      addEventListener: (name: string, cb: (event: CustomEvent<unknown>) => void) => handlers.set(name, cb),
+    } as unknown as Window).notifications;
+    if (!cap) throw new Error('Expected notification capability');
+    const run = (body: string) => {
+      if (!cap.test) throw new Error('Expected native test capability');
+      return cap.test(body);
+    };
+    const emit = (name: string, detail: object) => handlers.get(name)?.({ detail } as CustomEvent<unknown>);
+    const ready = () => emit('calab-host-activity-ready', { v: 1, host: 0, document: bridge.document, capability: 'notifications', notifications: 1 });
+    const reply = (extra: object = {}) => emit('calab-host-notification-test', { v: 1, host: 0, document: bridge.document, request: 1, result: 'scheduled', ...extra });
+    return { cap, run, send, ready, reply };
+  }
+  it('does not offer the test on old hosts', () => { expect(setup().cap.test).toBeUndefined(); });
+  it('waits for the handshake and never treats a test result as a push registration state', async () => {
+    const h = setup(1); const listener = vi.fn(); h.cap.subscribe(listener);
+    const done = h.run('Sample');
+    expect(JSON.parse(String(h.send.mock.lastCall?.[0]))).toMatchObject({ type: 'hello' });
+    h.ready(); expect(JSON.parse(String(h.send.mock.lastCall?.[0]))).toMatchObject({ type: 'notifications', operation: 'test', body: 'Sample' });
+    h.reply(); await expect(done).resolves.toBe('scheduled'); expect(listener).not.toHaveBeenCalled();
+  });
+  it('rejects old/foreign/malformed replies, settles on revoke and ignores late completions', async () => {
+    const h = setup(1); h.ready(); const settled = vi.fn(); const done = h.run('Sample').then(settled);
+    h.reply({ document: 'foreign' }); h.reply({ host: 1 }); h.reply({ result: 'invented' });
+    await Promise.resolve(); expect(settled).not.toHaveBeenCalled();
+    h.cap.clear('logout'); await done; expect(settled).toHaveBeenCalledExactlyOnceWith('unsupported');
+    h.reply({ document: 'old' }); expect(settled).toHaveBeenCalledOnce();
+  });
+  it('bounds local text and times out without leaving pending requests', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = setup(1); h.ready();
+      await expect(h.run('x'.repeat(513))).resolves.toBe('failed');
+      expect(h.send).not.toHaveBeenCalled();
+      const done = h.run('Sample'); await vi.advanceTimersByTimeAsync(60_000);
+      await expect(done).resolves.toBe('failed');
+    } finally { vi.useRealTimers(); }
+  });
+});
+
 describe('optional phone activity platform', () => {
   it('leaves ordinary browsers and old hosts without a capability', () => {
     expect(createHostActivity({} as Window)).toBeUndefined();
