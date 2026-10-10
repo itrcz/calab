@@ -126,7 +126,7 @@ func TestSubscriptionFacts(t *testing.T) {
 	}
 	other := customer()
 	other.ID = "someone-else"
-	if _, err := p.ListCharges(ctx, other, subID); !errors.Is(err, provider.ErrNotFound) {
+	if _, err := p.ListCharges(ctx, other, subID); !errors.Is(err, provider.ErrNotFound) || strings.Contains(err.Error(), subID) {
 		t.Fatalf("foreign consumer: %v", err)
 	}
 	for _, id := range []string{subID, charges[0].ID} {
@@ -184,8 +184,8 @@ func TestChargeOffSession(t *testing.T) {
 		t.Fatalf("declined: %+v %v", f, err)
 	}
 	status, answer = 500, `{"code":"500","id":"x","message":"boom","Errors":[]}`
-	if _, err := p.ChargeOffSession(ctx, req); !errors.Is(err, provider.ErrUnknownOutcome) {
-		t.Fatalf("5xx: %v", err)
+	if _, err := p.ChargeOffSession(ctx, req); !errors.Is(err, provider.ErrUnknownOutcome) || strings.Contains(err.Error(), subID) {
+		t.Fatalf("5xx (no subscription id in the text): %v", err)
 	}
 	status, answer = 400, `{"code":"400","id":"x","message":"bad","Errors":[{"errorCode":"Validation Error","message":"bad"}]}`
 	var ae *APIError

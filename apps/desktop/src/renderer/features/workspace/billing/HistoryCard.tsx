@@ -146,6 +146,7 @@ const ORIGIN: Record<PaymentOrigin, MessageKey> = {
   [PaymentOrigin.CHECKOUT]: 'billing.pay.origin.checkout',
   [PaymentOrigin.AUTO_TOPUP]: 'billing.pay.origin.auto',
   [PaymentOrigin.IMPORT]: 'billing.pay.origin.import',
+  [PaymentOrigin.SAVED_METHOD]: 'billing.pay.origin.saved',
 };
 
 export const PaymentRow = memo(function PaymentRow({ p, extra }: { p: BillingPayment; extra?: ReactNode }): ReactNode {

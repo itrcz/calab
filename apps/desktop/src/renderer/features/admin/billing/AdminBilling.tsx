@@ -23,7 +23,9 @@ import { recentAuthRequired } from '../../../lib/api/errors';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { nowMs } from '../../../lib/billing/checkout';
 import { refundableMinor, rejectRefundRequest } from '../../../lib/billing/model';
+import { providerTag } from '../../../lib/billing/market';
 import { formatMinor, formatMoney, minorOf, parseMajor } from '../../../lib/billing/money';
+import { cardLabel } from '../../../lib/billing/savedTopup';
 import { fmt } from '../../../lib/format';
 import { adminBilling } from '../../../services/billing';
 import { PlanPill } from '../../workspace/PlanTab';
@@ -418,6 +420,13 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
               <MoneyText m={details.pendingRefunds} className="text-body text-warn" />
             </Row>
           ) : null}
+          {details.savedMethods.map((m) => (
+            <Row key={m.id} label={t('billing.card.saved')} hint={providerTag(m.provider) || undefined}>
+              <span className="text-body tabular-nums text-muted" data-testid="admin-billing-card">
+                {cardLabel(m)}
+              </span>
+            </Row>
+          ))}
           <Row label={t('adminBilling.row.discount')}>
             <span className="text-body tabular-nums text-muted">{a.discountBps ? `${fmt.number(a.discountBps / 100)} %` : '—'}</span>
           </Row>

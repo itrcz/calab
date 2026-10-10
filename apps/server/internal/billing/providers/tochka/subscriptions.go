@@ -28,6 +28,23 @@ import (
 
 const chargeSep = ":charge:"
 
+// A subscription id is a charge credential with our token: it never appears in an error text (errors
+// are logged and stored in the inbox). hideRef replaces it, keeping the wrapped sentinels.
+type redacted struct {
+	msg string
+	err error
+}
+
+func (r redacted) Error() string { return r.msg }
+func (r redacted) Unwrap() error { return r.err }
+
+func hideRef(err error, ref string) error {
+	if err == nil || ref == "" || !strings.Contains(err.Error(), ref) {
+		return err
+	}
+	return redacted{msg: strings.ReplaceAll(err.Error(), ref, "[subscription]"), err: err}
+}
+
 func chargeID(opID, orderID string) string { return opID + chargeSep + orderID }
 
 func splitChargeID(id string) (string, string, bool) {
@@ -88,7 +105,7 @@ func (p *Provider) createSubscription(ctx context.Context, req provider.Checkout
 		// The subscription is a payment operation too: find it among the recent operations.
 		op, ferr := p.findByLinkID(ctx, linkID, time.Now().Add(-48*time.Hour))
 		if ferr != nil {
-			return provider.CheckoutSession{}, fmt.Errorf("tochka: subscription %s exists but was not found (%w): %w", linkID, ferr, provider.ErrUnknownOutcome)
+			return provider.CheckoutSession{}, fmt.Errorf("tochka: subscription of checkout %s exists but was not found (%w): %w", linkID, ferr, provider.ErrUnknownOutcome)
 		}
 		got, aerr := op.Amount.money()
 		if aerr != nil || got != req.Amount || op.ConsumerID != req.Customer.ID {
@@ -131,7 +148,7 @@ func (p *Provider) approvals(op operation) ([]provider.PaymentFact, error) {
 func (p *Provider) getCharge(ctx context.Context, opID, orderID string) (provider.PaymentFact, error) {
 	op, err := p.getOperation(ctx, "get charge", opID)
 	if err != nil {
-		return provider.PaymentFact{}, err
+		return provider.PaymentFact{}, hideRef(err, opID)
 	}
 	facts, err := p.approvals(op)
 	if err != nil {
@@ -142,7 +159,7 @@ func (p *Provider) getCharge(ctx context.Context, opID, orderID string) (provide
 			return f, nil
 		}
 	}
-	return provider.PaymentFact{}, fmt.Errorf("tochka get charge %s: %w", chargeID(opID, orderID), provider.ErrNotFound)
+	return provider.PaymentFact{}, fmt.Errorf("tochka get charge %s: %w", orderID, provider.ErrNotFound)
 }
 
 // ListCharges implements provider.ChargeLister: the charges of the subscription, oldest first —
@@ -151,10 +168,10 @@ func (p *Provider) getCharge(ctx context.Context, opID, orderID string) (provide
 func (p *Provider) ListCharges(ctx context.Context, customer provider.CustomerRef, subscriptionID string) ([]provider.PaymentFact, error) {
 	op, err := p.getOperation(ctx, "list charges", subscriptionID)
 	if err != nil {
-		return nil, err
+		return nil, hideRef(err, subscriptionID)
 	}
 	if op.ConsumerID != customer.ID {
-		return nil, fmt.Errorf("tochka list charges: subscription %s is of another consumer: %w", subscriptionID, provider.ErrNotFound)
+		return nil, fmt.Errorf("tochka list charges: the subscription is of another consumer: %w", provider.ErrNotFound)
 	}
 	facts, err := p.approvals(op)
 	if err != nil || len(facts) == 0 {
@@ -242,7 +259,7 @@ func (p *Provider) ChargeOffSession(ctx context.Context, req provider.OffSession
 	body := map[string]any{"Data": map[string]any{"amount": json.Number(req.Amount.Decimal())}}
 	var a chargeAnswer
 	if err := p.do(ctx, "charge subscription", "POST", "/acquiring/v1.0/subscriptions/"+url.PathEscape(req.PaymentMethodID)+"/charge", body, &a); err != nil {
-		return provider.PaymentFact{}, err
+		return provider.PaymentFact{}, hideRef(err, req.PaymentMethodID)
 	}
 	f := provider.PaymentFact{ProviderAccount: p.customer, Livemode: p.live, CustomerID: req.Customer.ID, Amount: req.Amount,
 		AmountReceived: money.Zero(money.RUB), PaymentMethodID: req.PaymentMethodID, Metadata: req.Metadata}
@@ -265,7 +282,7 @@ func (p *Provider) CancelPayment(_ context.Context, paymentID string) (provider.
 // answer is returned (the caller retries).
 func (p *Provider) DetachMethod(ctx context.Context, subscriptionID string) error {
 	if subscriptionID == "" || strings.ContainsAny(subscriptionID, "/?#:") {
-		return fmt.Errorf("%w: subscription id %q", ErrInvalidRequest, subscriptionID)
+		return fmt.Errorf("%w: malformed subscription id", ErrInvalidRequest)
 	}
 	body := map[string]any{"Data": map[string]any{"status": "Cancelled"}}
 	err := p.do(ctx, "cancel subscription", "POST", "/acquiring/v1.0/subscriptions/"+url.PathEscape(subscriptionID)+"/status", body, nil)
@@ -273,5 +290,5 @@ func (p *Provider) DetachMethod(ctx context.Context, subscriptionID string) erro
 	if err == nil || errors.Is(err, provider.ErrNotFound) || (errors.As(err, &ae) && !errors.Is(err, provider.ErrUnknownOutcome)) {
 		return nil
 	}
-	return err
+	return hideRef(err, subscriptionID)
 }

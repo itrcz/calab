@@ -809,3 +809,29 @@ func (q *Queries) AdminSetBillingRefundProviderID(ctx context.Context, arg Admin
 	)
 	return i, err
 }
+
+const listBillingSavedMethodRefs = `-- name: ListBillingSavedMethodRefs :many
+SELECT provider_pm_id FROM billing_payment_methods WHERE provider_pm_id = ANY($1::text[])
+`
+
+// Which of these provider ids are saved-card references (Tochka subscriptions, chargeable with our
+// token): the admin APIs show them masked (ADR-0083 phase 2).
+func (q *Queries) ListBillingSavedMethodRefs(ctx context.Context, ids []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listBillingSavedMethodRefs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var provider_pm_id string
+		if err := rows.Scan(&provider_pm_id); err != nil {
+			return nil, err
+		}
+		items = append(items, provider_pm_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

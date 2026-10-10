@@ -10,6 +10,7 @@ import { nowMs } from '../../../lib/billing/checkout';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { AUTO_TOPUP_CONSENT_VERSION, autoTopupFailure, autoTopupLimits, currencyOf, requestId, type AutoTopupFailure } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, inputOf, minorOf, parseMajor } from '../../../lib/billing/money';
+import { brandName, cardLabel } from '../../../lib/billing/savedTopup';
 import { fmt } from '../../../lib/format';
 import { billingKeys, ownerBilling, reloadBilling } from '../../../services/billing';
 import { toast } from '../../../stores/toasts';
@@ -28,6 +29,7 @@ const ATTEMPT_KEY: Record<AutoTopupAttemptStatus, MessageKey> = {
   [AutoTopupAttemptStatus.SUCCEEDED]: 'billing.auto.attempt.ok',
   [AutoTopupAttemptStatus.FAILED]: 'billing.auto.attempt.failed',
   [AutoTopupAttemptStatus.UNKNOWN]: 'billing.auto.attempt.unknown',
+  [AutoTopupAttemptStatus.REQUIRES_ACTION]: 'billing.auto.attempt.pending',
 };
 
 const FAILURE_KEY: Record<AutoTopupFailure, MessageKey> = {
@@ -38,8 +40,11 @@ const FAILURE_KEY: Record<AutoTopupFailure, MessageKey> = {
   generic: 'billing.auto.fail.generic',
 };
 
+/** «Visa •••• 4242, до 08/29»; a card without an expiry (Tochka shows none) is «МИР •••• 0792». */
 export const cardText = (m: SavedPaymentMethod): string =>
-  t('billing.card.line', { brand: m.brand ? m.brand.charAt(0).toUpperCase() + m.brand.slice(1) : t('billing.method.card'), last4: m.last4, exp: `${String(m.expMonth).padStart(2, '0')}/${String(m.expYear % 100).padStart(2, '0')}` });
+  m.expMonth > 0
+    ? t('billing.card.line', { brand: brandName(m.brand) || t('billing.method.card'), last4: m.last4, exp: `${String(m.expMonth).padStart(2, '0')}/${String(m.expYear % 100).padStart(2, '0')}` })
+    : cardLabel(m);
 
 export function AutoTopupCard({ workspaceId, summary: s, payments }: { workspaceId: string; summary: BillingSummary; payments: boolean }): ReactNode {
   const methods = useQuery({ queryKey: billingKeys.methods(workspaceId), queryFn: ({ signal }) => ownerBilling.paymentMethods(workspaceId, signal), retry: false });

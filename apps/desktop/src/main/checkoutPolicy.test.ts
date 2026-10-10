@@ -20,6 +20,11 @@ describe('parseCheckoutStart (ADR-0084: the window starts only on a provider hos
     expect(parseCheckoutStart('  https://merch.securepaytb.ru/order/?uuid=5f0c1a7e ')).toBe('https://merch.securepaytb.ru/order/?uuid=5f0c1a7e');
     expect(parseCheckoutStart('https://merch.tochka.com/order/?uuid=1')).toBe('https://merch.tochka.com/order/?uuid=1');
     expect(parseCheckoutStart('https://CHECKOUT.Stripe.com/c/pay/x')).toBe('https://checkout.stripe.com/c/pay/x');
+    // A one-click top-up's 3-D Secure page (Stripe test mode answered this host, 2026-10-10).
+    expect(parseCheckoutStart('https://hooks.stripe.com/3d_secure_2/hosted?merchant=acct_1&payment_intent=pi_1')).toBe(
+      'https://hooks.stripe.com/3d_secure_2/hosted?merchant=acct_1&payment_intent=pi_1',
+    );
+    expect(parseCheckoutStart('https://a.hooks.stripe.com/x')).toBeNull();
   });
 
   it.each([

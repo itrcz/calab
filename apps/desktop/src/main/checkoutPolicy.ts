@@ -11,8 +11,12 @@ import type { CheckoutWindowOutcome } from '../shared/ipc';
  * schemes. SBP bank-app links are handed to the OS after a scheme / host check.
  */
 
-/** Hosted checkout pages the window may start on: Stripe Checkout, Tochka payment links. */
-export const CHECKOUT_START_HOSTS: readonly string[] = ['checkout.stripe.com', 'merch.securepaytb.ru', 'merch.tochka.com'];
+/**
+ * Hosted pages the window may start on: Stripe Checkout, Stripe's 3-D Secure page of a one-click
+ * top-up with a saved card (next_action.redirect_to_url, hooks.stripe.com; ADR-0083 phase 2), Tochka
+ * payment links.
+ */
+export const CHECKOUT_START_HOSTS: readonly string[] = ['checkout.stripe.com', 'hooks.stripe.com', 'merch.securepaytb.ru', 'merch.tochka.com'];
 
 /** The server's return page (BILLING_PUBLIC_RETURN_URL, success + cancel of every checkout). */
 export const SERVER_RETURN_PATH = '/api/billing/return';

@@ -63,6 +63,8 @@ interface Boot {
   /** ADR-0083: markets open for new accounts (mock `?sales=`, default global) and the account's market. */
   sales?: 'both' | 'ru' | 'contact';
   market?: 'ru';
+  /** ADR-0083 phase 2: the mock's one-click answer (default: paid at once). */
+  oneclick?: '3ds' | 'decline';
 }
 
 /** One page load: the billing scenario, the theme, the sign-in, the workspace's main screen. */
@@ -72,7 +74,7 @@ async function boot(page: Page, o: Boot): Promise<Shot> {
   await page.clock.setFixedTime(NOW);
   await page.goto(`${mock.url}/?visual-test`);
   await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
-  const extra = `${o.sales ? `&sales=${o.sales}` : ''}${o.market ? `&market=${o.market}` : ''}`;
+  const extra = `${o.sales ? `&sales=${o.sales}` : ''}${o.market ? `&market=${o.market}` : ''}${o.oneclick ? `&oneclick=${o.oneclick}` : ''}`;
   await page.goto(`${mock.url}/?visual-test&billing=${o.scenario}${extra}`);
   if (isPhone()) {
     await page.addStyleTag({ content: `@media (max-width: 768px) { :root.web:not(.kb-open) { --safe-top: ${INSETS.top}px; --safe-bottom: ${INSETS.bottom}px; } }` });
@@ -299,6 +301,56 @@ test('billing-ru-cabinet: the RU top-up dialog', async ({ page }) => {
   await tap(settings.getByTestId('billing-topup-open'));
   await expect(page.getByTestId('billing-topup')).toBeVisible();
   await checkpoint(s, 'billing-topup-ru');
+});
+
+// ---------------------------------------------------------------- One-click top-up with a saved card (ADR-0083 phase 2)
+
+/** The cabinet's top-up dialog with the saved card preselected. */
+async function openTopup(page: Page): Promise<Locator> {
+  await openPlans(page);
+  await tap(page.getByTestId('plans-details'));
+  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await tap(settings.getByTestId('billing-topup-open'));
+  const d = page.getByTestId('billing-topup');
+  await expect(d).toBeVisible();
+  await expect(d.getByTestId('billing-topup-saved').first()).toHaveAttribute('aria-checked', 'true');
+  return d;
+}
+
+test('billing-oneclick: saved card, confirm, paid', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM' });
+  await openTopup(page);
+  await tap(page.getByTestId('billing-topup-pay'));
+  await expect(page.getByTestId('billing-topup-confirm')).toBeVisible();
+  await checkpoint(s, 'billing-oneclick-confirm');
+  await tap(page.getByTestId('billing-topup-charge'));
+  await expect(page.getByTestId('billing-checkout-done')).toBeVisible();
+  await checkpoint(s, 'billing-oneclick-done');
+});
+
+test('billing-oneclick-3ds: the bank asks to confirm', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', oneclick: '3ds' });
+  await openTopup(page);
+  await tap(page.getByTestId('billing-topup-pay'));
+  // The 3-D Secure page opens in a tab on the web: keep the shot on the app.
+  page.context().on('page', (p) => void p.close());
+  await tap(page.getByTestId('billing-topup-charge'));
+  await expect(page.getByTestId('billing-checkout-waiting')).toBeVisible();
+  await checkpoint(s, 'billing-oneclick-3ds');
+});
+
+test('billing-oneclick-ru: МИР card declined', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', market: 'ru', oneclick: 'decline' });
+  await openTopup(page);
+  await tap(page.getByTestId('billing-topup-pay'));
+  await expect(page.getByTestId('billing-topup-confirm')).toBeVisible();
+  await checkpoint(s, 'billing-oneclick-ru-confirm');
+  await tap(page.getByTestId('billing-topup-charge'));
+  await expect(page.getByTestId('billing-checkout-done')).toBeVisible();
+  await checkpoint(s, 'billing-oneclick-ru-declined');
 });
 
 test('billing-contact: no acquirer takes new clients', async ({ page }) => {
