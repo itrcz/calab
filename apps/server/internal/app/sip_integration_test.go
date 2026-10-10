@@ -691,7 +691,7 @@ func TestSIPPlanBusinessOnly(t *testing.T) {
 	sipCallStatus(t, o, wid, c1.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_ACTIVE)
 
 	// Downgrade to Team: nothing is deleted, the live call goes on.
-	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM, OverrideLimits: true}) // the trunk is on: over Team (ADR-0086)
 	var g v1.GetSipSettingsResponse
 	o.must(200, "GET", base, nil, &g)
 	if !g.GetSettings().GetEnabled() || !g.GetSettings().GetTrunkSaved() || g.GetSettings().GetHost() != "203.0.113.10" {
