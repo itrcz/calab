@@ -47,13 +47,35 @@ type Row struct {
 	AutoTopup  bool
 }
 
-// DefaultMatrix is the v1 matrix (owner decisions 2026-10-09): Global/USD, person or company,
-// any country → Stripe card, $5..$5000 per manual top-up, auto-topup capable.
+// Manual top-up limits per market (owner decisions): USD $5..$5000 (2026-10-09), RUB
+// 150..500 000 ₽ (2026-10-10).
+const (
+	USDTopupMin int64 = 500
+	USDTopupMax int64 = 500000
+	RUBTopupMin int64 = 15000
+	RUBTopupMax int64 = 50000000
+)
+
+// DefaultMatrix is the matrix of v1 and ADR-0083: Global/USD, person or company, any country →
+// Stripe card (auto-topup capable); RU/RUB, person or company, any country → Tochka hosted card
+// («Банковская карта (РФ)») and SBP as two options the payer chooses between, manual top-up
+// only (Tochka auto-topup by card is phase 2). Rows of a provider that is not configured or not
+// serving the market (BILLING_PROVIDERS) are left out by Methods.
 func DefaultMatrix() []Row {
-	return []Row{{
-		Market: MarketGlobal, Currency: money.USD, PayerTypes: []string{PayerPerson, PayerCompany},
-		Country: AnyCountry, Provider: Stripe, Method: MethodCard, Min: 500, Max: 500000, AutoTopup: true,
-	}}
+	return []Row{
+		{
+			Market: MarketGlobal, Currency: money.USD, PayerTypes: []string{PayerPerson, PayerCompany},
+			Country: AnyCountry, Provider: Stripe, Method: MethodCard, Min: USDTopupMin, Max: USDTopupMax, AutoTopup: true,
+		},
+		{
+			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany},
+			Country: AnyCountry, Provider: Tochka, Method: MethodCard, Min: RUBTopupMin, Max: RUBTopupMax,
+		},
+		{
+			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany},
+			Country: AnyCountry, Provider: Tochka, Method: MethodSBP, Min: RUBTopupMin, Max: RUBTopupMax,
+		},
+	}
 }
 
 // AutoTopupLimits are the owner cap bounds per attempt: the default cap and the largest one
@@ -125,7 +147,10 @@ func (r *Registry) Provider(id ID) (Provider, bool) {
 }
 
 // OffSession returns the provider as an off-session charger when it has the capabilities
-// auto-topup needs (CapOffSession and CapIdempotentCharge).
+// auto-topup needs (CapOffSession and CapIdempotentCharge). A CapReconcilableCharge provider
+// (Tochka) is admitted only together with the no-repost dispatch of its phase 2 (ADR-0083):
+// the auto-topup job retries an unknown outcome with the same key, which is safe only with
+// idempotent creates.
 func (r *Registry) OffSession(id ID) (OffSessionCharger, bool) {
 	p, ok := r.providers[id]
 	if !ok || !p.Caps().Has(CapOffSession|CapIdempotentCharge) {

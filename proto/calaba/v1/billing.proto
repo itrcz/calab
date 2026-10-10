@@ -160,6 +160,16 @@ enum BillingQuotePurpose {
   BILLING_QUOTE_PURPOSE_STOP = 5;        // what stopping returns / keeps
 }
 
+// Which markets new accounts may be opened in (ADR-0083): a market is open when its provider is
+// configured and a superadmin has not closed it for new clients.
+enum BillingSalesMode {
+  BILLING_SALES_MODE_UNSPECIFIED = 0; // the account's market is fixed by a payment: not offered
+  BILLING_SALES_MODE_BOTH = 1;        // Global ($, Stripe) and RU (₽, Tochka): the owner chooses
+  BILLING_SALES_MODE_RU_ONLY = 2;
+  BILLING_SALES_MODE_GLOBAL_ONLY = 3;
+  BILLING_SALES_MODE_CONTACT = 4;     // no acquirer takes new clients: Global prices, paid plans by contact
+}
+
 enum BillingResumeMode {
   BILLING_RESUME_MODE_UNSPECIFIED = 0;
   BILLING_RESUME_MODE_FREE = 1;
@@ -268,8 +278,30 @@ message GetBillingResponse {
   // Owner only: no live account yet and the owner may start billing (BILLING_SELF_SERVE); a
   // quote with purpose ACTIVATE then creates the inactive account.
   bool self_serve = 3;
-  // Owner only, with an account or self_serve: the plans to choose from (Free, Team, Business).
+  // Owner only, with an account or self_serve: the plans to choose from (Free, Team, Business),
+  // for every market in `markets` (BillingPlanOffer.market).
   repeated BillingPlanOffer offers = 4;
+  // Owner only (ADR-0083): the markets the owner may pay in now ("global", "ru"), served by a
+  // configured provider. Several only before the first credit (no account yet, or an account
+  // without ledger entries and open checkouts); afterwards just the account's market. The UI
+  // preselects one from the language or the owner's last choice; the server decides by the
+  // explicit BillingQuoteRequest.market only.
+  repeated string markets = 5;
+  // Owner only, before the first payment (no account, or an account without money): which
+  // markets are open (sales_mode) and the server's default among them. The client preselects
+  // by language only in BOTH; CONTACT hides the payment step (paid plans: contact us, offers in
+  // the Global catalog). UNSPECIFIED once the market is fixed.
+  BillingSalesMode sales_mode = 6;
+  string default_market = 7;
+}
+
+// GET /api/billing/public/offers (no session, cacheable, rate-limited): the prices the landing
+// shows. No account data.
+message PublicBillingOffers {
+  BillingSalesMode mode = 1;
+  repeated BillingPlanOffer offers = 2; // per market of `markets` (Global catalog in CONTACT)
+  repeated string markets = 3;
+  string contact = 4;                   // PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL
 }
 
 // A plan the owner may choose (the plan screen).
@@ -277,12 +309,18 @@ message BillingPlanOffer {
   Plan plan = 1;         // PLAN_FREE | PLAN_TEAM | PLAN_ENTERPRISE
   Money unit_price = 2;  // per seat per 24 h after the account discount; unset for Free
   PlanLimits limits = 3; // the plan's limits on this server
+  string market = 4;     // "global" | "ru": the market of unit_price
 }
 
 // POST …/billing/quote
 message BillingQuoteRequest {
   BillingQuotePurpose purpose = 1;
   Plan plan = 2; // CHANGE_PLAN: the new plan; ACTIVATE: the paid plan to start (unset = the account's)
+  // ACTIVATE (ADR-0083): the market the owner chose ("global" | "ru"; unset = the account's, or
+  // global for a new self-serve account). Before the first credit it creates the account in that
+  // market or moves the untouched account to it; afterwards another market is 409
+  // BILLING_MARKET_FIXED. Must be one of GetBillingResponse.markets (422 otherwise).
+  string market = 3;
 }
 
 message BillingQuote {
@@ -636,6 +674,38 @@ message AdminDecideRefundRequest {
 }
 
 // Answer of an admin money mutation (or its preview).
+// POST /api/admin/billing/accounts/{id}/market (ADR-0083): move an account without payments to
+// another market (same rule as the owner's pre-payment choice; 409 BILLING_MARKET_FIXED).
+message AdminChangeMarketRequest {
+  string request_id = 1;
+  string reason = 2;
+  string market = 3;             // "global" | "ru": must be open for new clients
+  uint64 expected_revision = 4;
+  bool preview = 5;
+}
+
+// A configured acquirer and its «принимать новых клиентов» switch.
+message AdminBillingProvider {
+  string id = 1;                  // "stripe" | "tochka"
+  repeated string markets = 2;    // markets it serves (BILLING_PROVIDERS)
+  bool accept_new = 3;            // new accounts may be opened on it
+  google.protobuf.Timestamp updated_at = 4; // of the switch; unset = never changed
+}
+
+// GET /api/admin/billing/providers
+message AdminBillingProviders {
+  repeated AdminBillingProvider providers = 1;
+  BillingSalesMode mode = 2; // for new accounts now
+}
+
+// PUT /api/admin/billing/providers/{provider}
+message AdminSetProviderRequest {
+  string request_id = 1;
+  string reason = 2;
+  bool accept_new = 3;
+  bool preview = 4;
+}
+
 message AdminBillingMutationResult {
   bool preview = 1;
   Money balance_before = 2;
@@ -650,6 +720,7 @@ message AdminBillingMutationResult {
   AdminBillingRefundRequest refund_request = 11; // decided owner request
   AdminPriceVersion price = 12;                  // created price version
   Money refundable = 13;                         // refund preview: unused money of the payment
+  AdminBillingProviders providers = 14;          // provider switch: the switches after it
 }
 
 // POST /api/admin/billing/test-clock (BILLING_TEST_CLOCK=1 only, never in production): moves

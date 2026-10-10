@@ -1,0 +1,12 @@
+{
+ "code": "424",
+ "id": "542bbd56-5308-4e18-aa87-ae80447b7e5a",
+ "message": "Что-то пошло не так",
+ "Errors": [
+  {
+   "errorCode": "Something going wrong",
+   "message": "Ошибка валидации: заказ с номером 0199d4a2-7c1e-7a40-9b6e-5f3c2d1e0a01 существует",
+   "url": "https://developers.tochka.com/"
+  }
+ ]
+}

@@ -98,11 +98,41 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `GATEWAY_HEARTBEAT_INTERVAL` | `41s` | интервал heartbeat (presence TTL = 2×) |
 | `GATEWAY_MAX_SESSIONS_PER_USER` | `5` | лимит устройств с активным gateway |
 
+## Оплата: Точка (RU, ₽; ADR-0083)
+
+Второй эквайер рядом со Stripe: рынок `ru`, валюта RUB, ручное пополнение картой МИР или по СБП
+через платёжную ссылку банка с чеком 54-ФЗ (облачная касса Точки). Все флаги выключены по
+умолчанию; прод не включает их без отдельного решения.
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `BILLING_TOCHKA_ENABLED` | `false` | адаптер Точки: новые оплаты, вебхук, опрос; нужен `BILLING_ENABLED` и `BILLING_PROVIDERS=stripe:global,tochka:ru` |
+| `TOCHKA_API_TOKEN` | — | JWT-ключ мерчанта (Bearer). Только в секретах; не логируется |
+| `TOCHKA_CUSTOMER_CODE` / `TOCHKA_MERCHANT_ID` | — | код клиента (9 символов) и торговая точка (15 цифр); чужие операции не принимаются |
+| `TOCHKA_API_URL` | `https://enter.tochka.com/uapi` | песочница `https://enter.tochka.com/sandbox/v2` отвечает заготовками (только формат) |
+| `TOCHKA_TAX_SYSTEM` / `TOCHKA_VAT_TYPE` | `usn_income` / `none` | система налогообложения и НДС в чеке (оферта: ООО «Громтех», АУСН, без НДС) |
+| `TOCHKA_WEBHOOK_PUBLIC_KEY` | ключ в адаптере | JWK банка для RS256 вебхуков; ротация — массив `[старый, новый]` и выкладка |
+| `TOCHKA_CLIENT_ID` | `iss` токена | client_id для API вебхуков |
+
+Лимиты ручного пополнения 150..500 000 ₽ (матрица `provider.DefaultMatrix`, проверка на сервере).
+Суперадмин закрывает эквайер для новых клиентов в «Оплата → Эквайеры» без выкладки
+(`PUT /api/admin/billing/providers/{id}`); уже оплатившие продолжают платить через него.
+
+Шаги оператора (`server tochka …` читает только `TOCHKA_*`, токен не печатает):
+
+1. `server tochka key` — закреплённый ключ вебхуков совпадает с опубликованным банком.
+2. Выкатить сервер с `BILLING_TOCHKA_ENABLED=true`, затем `server tochka webhook set https://app.calab.io/api/billing/tochka/webhook`.
+   Один URL на `client_id`; банк шлёт тестовый вебхук и сохраняет URL, только если получил 200
+   (с выключенной Точкой маршрут отвечает 501 — регистрация не пройдёт). Проверка: `server tochka webhook get` / `webhook test`.
+3. Без вебхуков всё работает опросом: открытые оплаты опрашиваются через 30 с, 1, 2, 4, 8 мин, затем раз в 15 мин.
+   Не-200 банк повторяет 30 раз раз в 10 с и бросает — деньги дойдут опросом.
+
 ## Фоновые задачи (в каждом инстансе, с блокировками там, где нужен один исполнитель)
 
 - gateway: подписка на Redis pub/sub, lease инстанса, sweeper presence (15 с, лок в Redis);
 - files: чистка файлов-сирот раз в час (не прикреплены > 24 ч, не аватар/иконка; `pg_try_advisory_xact_lock`);
-- rtc: reconcile voice state с LiveKit раз в 30 с (лок в Redis).
+- rtc: reconcile voice state с LiveKit раз в 30 с (лок в Redis);
+- billing (при `BILLING_ENABLED`): inbox вебхуков, сверка раз в 5 мин, опрос открытых оплат провайдеров без вебхуков об отказе (Точка, раз в 15 с ищет должные), суточные списания (`FOR UPDATE SKIP LOCKED`).
 
 При SIGTERM gateway рассылает `RECONNECT` с разбросом до 5 с и отдаёт сессии (их можно `RESUME` на любом инстансе), затем останавливается HTTP.
 

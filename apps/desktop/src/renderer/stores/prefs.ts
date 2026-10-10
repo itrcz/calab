@@ -124,6 +124,11 @@ export interface Prefs {
   soundboardUsage: Record<string, number>;
   /** The update bar's «Позже» / «×» (features/shell/updateBarModel.ts, docs/09 #125); null = never pressed. */
   updateNag: UpdateNag | null;
+  /**
+   * userId → the market the owner chose on the plan screen («Россия, ₽ | Global, $», ADR-0083): the
+   * preselect of the next visit while both markets are open. A hint only — the server decides.
+   */
+  billingMarket: Record<string, 'global' | 'ru'>;
 }
 
 const DEFAULTS: Prefs = {
@@ -179,6 +184,7 @@ const DEFAULTS: Prefs = {
   soundboardFavorites: [],
   soundboardUsage: {},
   updateNag: null,
+  billingMarket: {},
 };
 
 interface PrefsState extends Prefs {

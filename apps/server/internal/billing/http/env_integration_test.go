@@ -26,6 +26,8 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/inbox"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/billing/provider/fake"
+	"github.com/calaba/calaba/server/internal/billing/providers/tochka"
+	"github.com/calaba/calaba/server/internal/billing/providers/tochka/tochkatest"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/dbtest"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -53,6 +55,9 @@ type env struct {
 	member   uuid.UUID
 	acc      uuid.UUID
 	merchant string // merchant account of the fake
+	bank     *tochkatest.Bank
+	tochka   *tochka.Provider
+	reg      *provider.Registry
 }
 
 type envOpt struct {
@@ -62,6 +67,10 @@ type envOpt struct {
 	noAccount bool
 	// cfg adjusts the handlers' config (self-serve, plan limits, the committed hook).
 	cfg func(*billinghttp.Config)
+	// bank: the Tochka adapter on this fake bank is registered too (BILLING_PROVIDERS
+	// stripe:global,tochka:ru); market: the market of the account (default global).
+	bank   *tochkatest.Bank
+	market string
 }
 
 func newEnv(t *testing.T, opts ...envOpt) *env {
@@ -77,8 +86,21 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	cfg := billinghttp.Config{
 		Checkouts: true, ReturnURL: "https://app.calab.test/api/billing/return", AppURL: "https://app.calab.test",
 	}
+	spec, market := "stripe:global", "global"
+	var tp provider.Provider
 	for _, o := range opts {
 		noAccount = noAccount || o.noAccount
+		if o.bank != nil {
+			e.bank = o.bank
+			p, err := tochka.New(o.bank.Config())
+			if err != nil {
+				t.Fatal(err)
+			}
+			tp, e.tochka, spec = p, p, "stripe:global,tochka:ru"
+		}
+		if o.market != "" {
+			market = o.market
+		}
 		if o.cfg != nil {
 			o.cfg(&cfg)
 		}
@@ -89,10 +111,14 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 			clock = o.clock
 		}
 	}
-	reg, err := provider.NewRegistry("stripe:global", provider.DefaultMatrix(), e.fp)
+	reg, err := provider.NewRegistry(spec, provider.DefaultMatrix(), e.fp, tp)
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.reg = reg
+	// The provider switches are global to the package database: every test starts open.
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM billing_provider_settings`)
+	t.Cleanup(func() { _, _ = d.Pool.Exec(ctx, `DELETE FROM billing_provider_settings`) })
 	e.core = core.New(d, clock, core.Config{Debits: true, Enforcement: true}, core.Hooks{})
 	e.in = inbox.New(d, reg, e.core, inbox.Options{})
 	e.mail = mail.New(mail.Config{Secret: []byte("billing-test-secret-billing-test-secret")}, d, nil, mail.NewFake())
@@ -130,7 +156,11 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	if noAccount {
 		return e
 	}
-	acc, err := e.core.EnableAccount(ctx, ws.ID, "global", "stripe", &e.owner)
+	prov := "stripe"
+	if market == "ru" {
+		prov = "tochka"
+	}
+	acc, err := e.core.EnableAccount(ctx, ws.ID, market, prov, &e.owner)
 	if err != nil {
 		t.Fatal(err)
 	}

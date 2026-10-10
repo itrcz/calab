@@ -35,6 +35,8 @@ const REASON: Record<string, MessageKey> = {
   BILLING_AMOUNT_OUT_OF_RANGE: 'billing.err.range',
   BILLING_PRICE_EFFECTIVE_TOO_SOON: 'billing.err.priceTooSoon',
   BILLING_CREDIT_ALREADY_REVERSED: 'billing.err.reversed',
+  BILLING_MARKET_FIXED: 'billing.err.marketFixed',
+  BILLING_MARKET_UNAVAILABLE: 'billing.err.marketUnavailable',
 };
 
 const reasonOf = (e: unknown): string | undefined => (e instanceof ApiError ? e.reason : undefined);

@@ -117,9 +117,17 @@ func (in *Inbox) RetryRefund(ctx context.Context, ref sqlc.BillingRefund) error 
 		}
 		return in.ApplyRefund(ctx, p, fact)
 	}
-	if !core.RefundMayRepost(ref) {
+	if !core.RefundMayRepost(ref) || (!p.Caps().SafeRetry() && ref.DispatchedAt != nil) {
+		// Past the idempotency window, or sent once to a provider without idempotency keys
+		// (ADR-0083): only read, never send again.
 		_, err := in.lookupRefund(ctx, p, pay, ref)
 		return err
+	}
+	if !p.Caps().SafeRetry() {
+		sent, err := in.core.MarkRefundDispatched(ctx, ref.ID)
+		if err != nil || !sent {
+			return err
+		}
 	}
 	fact, err = p.Refund(ctx, provider.RefundReq{
 		IdemKey: ref.IdemKey, PaymentID: pay.ProviderPaymentID, Amount: money.New(ref.AmountMinor, money.Currency(ref.Currency)),
@@ -127,6 +135,14 @@ func (in *Inbox) RetryRefund(ctx context.Context, ref sqlc.BillingRefund) error 
 	})
 	status := ""
 	switch {
+	case errors.Is(err, provider.ErrNotSupported):
+		slog.ErrorContext(ctx, "billing reconcile: refund needs a manual refund in the provider's interface", "refund", ref.ID, "err", err)
+		if marked, merr := in.core.MarkRefundNeedsReview(ctx, ref); merr != nil {
+			return merr
+		} else if marked {
+			refundsMarkedForReview.Inc()
+		}
+		return nil
 	case errors.Is(err, provider.ErrUnknownOutcome):
 		return err
 	case err != nil:
@@ -216,6 +232,24 @@ func (in *Inbox) findRefund(ctx context.Context, p provider.Provider, pay sqlc.B
 // found → its status is applied; nothing after core.RefundReviewAfter → needs_review (error
 // log + metric), the reservation stays. resolved = the provider's refund was found.
 func (in *Inbox) lookupRefund(ctx context.Context, p provider.Provider, pay sqlc.BillingPayment, ref sqlc.BillingRefund) (bool, error) {
+	if !p.Caps().SafeRetry() {
+		// No metadata at the provider (Tochka): apply every refund of the payment — one not
+		// known by id is matched to a pending Calab refund of the same amount (ApplyRefund),
+		// a refund made by hand in the bank for a needs-review row included.
+		if done, err := in.applyListedRefunds(ctx, p, pay, ref); err != nil || done {
+			return done, err
+		}
+		if time.Since(ref.CreatedAt) < core.RefundReviewAfter || ref.NeedsReviewAt != nil {
+			return false, nil
+		}
+		marked, err := in.core.MarkRefundNeedsReview(ctx, ref)
+		if marked {
+			refundsMarkedForReview.Inc()
+			slog.ErrorContext(ctx, "billing: refund not visible at the provider 24 h after it was sent; money stays reserved, superadmin review needed",
+				"refund", ref.ID, "account", ref.AccountID, "payment", pay.ProviderPaymentID, "amount_minor", ref.AmountMinor)
+		}
+		return false, err
+	}
 	f, found, _, err := in.findRefund(ctx, p, pay, ref)
 	if err != nil {
 		return false, err
@@ -247,6 +281,29 @@ func (in *Inbox) lookupRefund(ctx context.Context, p provider.Provider, pay sqlc
 			"refund", ref.ID, "account", ref.AccountID, "payment", pay.ProviderPaymentID, "amount_minor", ref.AmountMinor)
 	}
 	return false, err
+}
+
+// applyListedRefunds applies the payment's refunds listed by the provider and reports whether
+// ref now has its provider refund.
+func (in *Inbox) applyListedRefunds(ctx context.Context, p provider.Provider, pay sqlc.BillingPayment, ref sqlc.BillingRefund) (bool, error) {
+	l, ok := p.(provider.RefundLister)
+	if !ok {
+		return false, fmt.Errorf("billing reconcile: provider %s cannot list refunds", p.ID())
+	}
+	facts, err := l.ListRefunds(ctx, pay.ProviderPaymentID)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range facts {
+		if err := in.ApplyRefund(ctx, p, f); err != nil {
+			return false, err
+		}
+	}
+	cur, err := in.db.Q.GetBillingRefund(ctx, ref.ID)
+	if err != nil {
+		return false, err
+	}
+	return cur.ProviderRefundID != nil, nil
 }
 
 // ReleaseRefund resolves a needs-review Calab refund the superadmin confirmed absent at the

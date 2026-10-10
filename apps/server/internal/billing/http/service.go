@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/inbox"
 	"github.com/calaba/calaba/server/internal/billing/provider"
+	"github.com/calaba/calaba/server/internal/billing/sales"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -37,19 +38,23 @@ type Config struct {
 	// checkout per account, so a short page lets the owner change the amount soon.
 	CheckoutTTL time.Duration
 	// SelfServe (BILLING_SELF_SERVE): an owner without a live account may start billing — GET
-	// answers self_serve, a quote with purpose ACTIVATE creates the inactive account (market
-	// SelfServeMarket) like the superadmin's enable. Off: only a superadmin enables a workspace.
+	// answers self_serve, a quote with purpose ACTIVATE creates the inactive account (in the
+	// chosen open market, ADR-0083) like the superadmin's enable. Off: only a superadmin enables a
+	// workspace.
 	SelfServe bool
 	// PlanLimits are the limits of a plan on this server (plans.Service.PlanLimits) for the plan
 	// offers of GET …/billing; nil sends offers without limits.
 	PlanLimits func(v1.Plan) *v1.PlanLimits
+	// Contact is the «contact us» link of paid plans (config.PlanContact) for the public offers.
+	Contact string
+	// PublicLimiter rate-limits GET /api/billing/public/offers per client IP (nil: none).
+	PublicLimiter interface {
+		Take(ctx context.Context, key string) error
+	}
 	// Committed runs after a self-serve account was created (WORKSPACE_UPDATE with
 	// Workspace.billing, BILLING_UPDATE) — core.Hooks.Committed of the wiring.
 	Committed func(ctx context.Context, acc sqlc.BillingAccount)
 }
-
-// SelfServeMarket is the market of a self-serve account (v1: Global / USD, ADR-0080 §0).
-const SelfServeMarket = "global"
 
 // QuoteTTL is how long a quote id is accepted by the actions.
 const QuoteTTL = 10 * time.Minute
@@ -63,6 +68,7 @@ type Service struct {
 	inbox *inbox.Inbox
 	clock billing.Clock
 	cfg   Config
+	sales *sales.Sales
 }
 
 // New creates the service.
@@ -70,7 +76,7 @@ func New(d *db.DB, c *core.Core, reg *provider.Registry, in *inbox.Inbox, clock 
 	if cfg.CheckoutTTL <= 0 {
 		cfg.CheckoutTTL = 35 * time.Minute
 	}
-	return &Service{db: d, core: c, reg: reg, inbox: in, clock: clock, cfg: cfg}
+	return &Service{db: d, core: c, reg: reg, inbox: in, clock: clock, cfg: cfg, sales: sales.New(reg)}
 }
 
 // Owner returns the owner route implementations (Handlers.Owner). The auto-topup routes store
@@ -103,6 +109,8 @@ func (s *Service) Owner() map[string]httpx.HandlerFunc {
 func (s *Service) Public() map[string]httpx.HandlerFunc {
 	return map[string]httpx.HandlerFunc{
 		"POST /api/billing/stripe/webhook": s.stripeWebhook,
+		"POST /api/billing/tochka/webhook": s.tochkaWebhook,
+		"GET /api/billing/public/offers":   s.publicOffers,
 		"GET /api/billing/return":          s.returnPage,
 	}
 }

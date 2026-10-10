@@ -7,8 +7,9 @@
 //   - /api/workspaces/{id}/billing/…: private, people only (bots denied), identity scope
 //     "billing" (workspace of {id}; the owner keeps it under billing suspension). Handlers check
 //     owner (403 BILLING_OWNER_REQUIRED) except GET /, which shows members the status only.
-//   - POST /api/billing/stripe/webhook and GET /api/billing/return: public, no session; the
-//     webhook reads the raw body (≤ 1 MiB) and verifies the provider signature itself.
+//   - POST /api/billing/{stripe,tochka}/webhook, GET /api/billing/public/offers and GET
+//     /api/billing/return: public, no session; a webhook reads the raw body and verifies the
+//     provider signature itself.
 //   - /api/admin/billing/…: private, identity scope admin (superadmin + recent local auth);
 //     handlers additionally answer 404 to non-superadmins like plans.Admin.
 package billinghttp
@@ -46,6 +47,8 @@ var OwnerRoutes = []string{
 // PublicRoutes need no session.
 var PublicRoutes = []string{
 	"POST /api/billing/stripe/webhook",
+	"POST /api/billing/tochka/webhook", // ADR-0083: RS256 JWT body, verified by the adapter
+	"GET /api/billing/public/offers",   // ADR-0083: landing prices, cacheable, rate-limited
 	"GET /api/billing/return",
 }
 
@@ -69,6 +72,9 @@ var AdminRoutes = []string{
 	"POST /api/admin/billing/accounts/{id}/reconcile",
 	"POST /api/admin/billing/auto-topup/reconcile", // restore reconcile of auto-topup (T7)
 	"PUT /api/admin/billing/accounts/{id}/discount",
+	"POST /api/admin/billing/accounts/{id}/market", // ADR-0083: before the first payment only
+	"GET /api/admin/billing/providers",             // ADR-0083: «принимать новых клиентов»
+	"PUT /api/admin/billing/providers/{provider}",
 	"GET /api/admin/billing/prices",
 	"POST /api/admin/billing/prices",
 	"POST /api/admin/billing/test-clock", // BILLING_TEST_CLOCK=1 only, else 404

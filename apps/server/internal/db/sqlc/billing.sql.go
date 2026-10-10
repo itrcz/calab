@@ -81,6 +81,22 @@ func (q *Queries) AppendBillingLedgerEntry(ctx context.Context, arg AppendBillin
 	return i, err
 }
 
+const billingAccountMarketFixed = `-- name: BillingAccountMarketFixed :one
+SELECT (a.entry_seq > 0 OR a.balance_minor <> 0
+        OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = a.id)
+        OR EXISTS (SELECT 1 FROM billing_checkouts c WHERE c.account_id = a.id AND c.status = 'open'))::boolean AS fixed
+FROM billing_accounts a WHERE a.id = $1
+`
+
+// ADR-0083: the market of an account is fixed by its first money: a ledger entry, any payment
+// row (even a processing one) or an open checkout. Read under the account lock.
+func (q *Queries) BillingAccountMarketFixed(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, billingAccountMarketFixed, id)
+	var fixed bool
+	err := row.Scan(&fixed)
+	return fixed, err
+}
+
 const billingNow = `-- name: BillingNow :one
 
 SELECT clock_timestamp()::timestamptz AS now
@@ -402,7 +418,7 @@ func (q *Queries) GetBillingAutoTopup(ctx context.Context, accountID uuid.UUID) 
 }
 
 const getBillingCheckout = `-- name: GetBillingCheckout :one
-SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at FROM billing_checkouts WHERE id = $1
+SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls FROM billing_checkouts WHERE id = $1
 `
 
 func (q *Queries) GetBillingCheckout(ctx context.Context, id uuid.UUID) (BillingCheckout, error) {
@@ -427,12 +443,14 @@ func (q *Queries) GetBillingCheckout(ctx context.Context, id uuid.UUID) (Billing
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NextPollAt,
+		&i.Polls,
 	)
 	return i, err
 }
 
 const getBillingCheckoutByRequest = `-- name: GetBillingCheckoutByRequest :one
-SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at FROM billing_checkouts WHERE account_id = $1 AND request_id = $2
+SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls FROM billing_checkouts WHERE account_id = $1 AND request_id = $2
 `
 
 type GetBillingCheckoutByRequestParams struct {
@@ -462,12 +480,14 @@ func (q *Queries) GetBillingCheckoutByRequest(ctx context.Context, arg GetBillin
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NextPollAt,
+		&i.Polls,
 	)
 	return i, err
 }
 
 const getBillingCheckoutBySession = `-- name: GetBillingCheckoutBySession :one
-SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at FROM billing_checkouts WHERE provider_session_id = $1
+SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls FROM billing_checkouts WHERE provider_session_id = $1
 `
 
 func (q *Queries) GetBillingCheckoutBySession(ctx context.Context, providerSessionID *string) (BillingCheckout, error) {
@@ -492,6 +512,8 @@ func (q *Queries) GetBillingCheckoutBySession(ctx context.Context, providerSessi
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NextPollAt,
+		&i.Polls,
 	)
 	return i, err
 }
@@ -726,7 +748,7 @@ func (q *Queries) GetBillingPriceAt(ctx context.Context, arg GetBillingPriceAtPa
 }
 
 const getBillingRefundByIdemKey = `-- name: GetBillingRefundByIdemKey :one
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds WHERE idem_key = $1
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at FROM billing_refunds WHERE idem_key = $1
 `
 
 func (q *Queries) GetBillingRefundByIdemKey(ctx context.Context, idemKey string) (BillingRefund, error) {
@@ -749,12 +771,13 @@ func (q *Queries) GetBillingRefundByIdemKey(ctx context.Context, idemKey string)
 		&i.UpdatedAt,
 		&i.SucceededAt,
 		&i.NeedsReviewAt,
+		&i.DispatchedAt,
 	)
 	return i, err
 }
 
 const getBillingRefundByProviderID = `-- name: GetBillingRefundByProviderID :one
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at FROM billing_refunds WHERE provider_refund_id = $1
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at FROM billing_refunds WHERE provider_refund_id = $1
 `
 
 func (q *Queries) GetBillingRefundByProviderID(ctx context.Context, providerRefundID *string) (BillingRefund, error) {
@@ -777,6 +800,7 @@ func (q *Queries) GetBillingRefundByProviderID(ctx context.Context, providerRefu
 		&i.UpdatedAt,
 		&i.SucceededAt,
 		&i.NeedsReviewAt,
+		&i.DispatchedAt,
 	)
 	return i, err
 }
@@ -861,7 +885,7 @@ func (q *Queries) GetOpenBillingAutoTopupAttempt(ctx context.Context, accountID 
 }
 
 const getOpenBillingCheckout = `-- name: GetOpenBillingCheckout :one
-SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at FROM billing_checkouts WHERE account_id = $1 AND status = 'open'
+SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls FROM billing_checkouts WHERE account_id = $1 AND status = 'open'
 `
 
 func (q *Queries) GetOpenBillingCheckout(ctx context.Context, accountID uuid.UUID) (BillingCheckout, error) {
@@ -886,6 +910,8 @@ func (q *Queries) GetOpenBillingCheckout(ctx context.Context, accountID uuid.UUI
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NextPollAt,
+		&i.Polls,
 	)
 	return i, err
 }
@@ -1132,7 +1158,7 @@ INSERT INTO billing_checkouts (account_id, request_id, body_hash, purpose, metho
     amount_minor, currency, save_method, payer_snapshot, created_by, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (account_id, request_id) DO NOTHING
-RETURNING id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at
+RETURNING id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls
 `
 
 type InsertBillingCheckoutParams struct {
@@ -1188,6 +1214,8 @@ func (q *Queries) InsertBillingCheckout(ctx context.Context, arg InsertBillingCh
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NextPollAt,
+		&i.Polls,
 	)
 	return i, err
 }
@@ -1492,7 +1520,7 @@ INSERT INTO billing_refunds (account_id, payment_id, lot_id, amount_minor, curre
     provider_refund_id, idem_key, reason, requested_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT DO NOTHING
-RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at
+RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at
 `
 
 type InsertBillingRefundParams struct {
@@ -1543,6 +1571,7 @@ func (q *Queries) InsertBillingRefund(ctx context.Context, arg InsertBillingRefu
 		&i.UpdatedAt,
 		&i.SucceededAt,
 		&i.NeedsReviewAt,
+		&i.DispatchedAt,
 	)
 	return i, err
 }
@@ -2220,7 +2249,7 @@ const setBillingCheckoutSession = `-- name: SetBillingCheckoutSession :one
 UPDATE billing_checkouts SET provider_session_id = $1, url = $2,
     expires_at = $3, updated_at = $4::timestamptz
 WHERE id = $5 AND status = 'open' AND (provider_session_id IS NULL OR provider_session_id = $1)
-RETURNING id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at
+RETURNING id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls
 `
 
 type SetBillingCheckoutSessionParams struct {
@@ -2260,6 +2289,8 @@ func (q *Queries) SetBillingCheckoutSession(ctx context.Context, arg SetBillingC
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NextPollAt,
+		&i.Polls,
 	)
 	return i, err
 }
@@ -2267,7 +2298,7 @@ func (q *Queries) SetBillingCheckoutSession(ctx context.Context, arg SetBillingC
 const setBillingCheckoutStatus = `-- name: SetBillingCheckoutStatus :one
 UPDATE billing_checkouts SET status = $1, updated_at = $2::timestamptz
 WHERE id = $3 AND status = 'open'
-RETURNING id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at
+RETURNING id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls
 `
 
 type SetBillingCheckoutStatusParams struct {
@@ -2299,6 +2330,60 @@ func (q *Queries) SetBillingCheckoutStatus(ctx context.Context, arg SetBillingCh
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NextPollAt,
+		&i.Polls,
+	)
+	return i, err
+}
+
+const switchBillingAccountMarket = `-- name: SwitchBillingAccountMarket :one
+UPDATE billing_accounts
+SET market = $1, currency = $2, provider = $3,
+    revision = revision + 1, updated_at = $4
+WHERE id = $5 AND status IN ('inactive', 'stopped') AND entry_seq = 0
+RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at
+`
+
+type SwitchBillingAccountMarketParams struct {
+	Market   string
+	Currency string
+	Provider string
+	Now      time.Time
+	ID       uuid.UUID
+}
+
+// Moves an account without money history to another market (BillingAccountMarketFixed false,
+// checked under the same lock).
+func (q *Queries) SwitchBillingAccountMarket(ctx context.Context, arg SwitchBillingAccountMarketParams) (BillingAccount, error) {
+	row := q.db.QueryRow(ctx, switchBillingAccountMarket,
+		arg.Market,
+		arg.Currency,
+		arg.Provider,
+		arg.Now,
+		arg.ID,
+	)
+	var i BillingAccount
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Market,
+		&i.Currency,
+		&i.Provider,
+		&i.Plan,
+		&i.Status,
+		&i.BalanceMinor,
+		&i.EntrySeq,
+		&i.NegativeSince,
+		&i.SuspendAt,
+		&i.NextDueAt,
+		&i.HoldUntil,
+		&i.DisputeHold,
+		&i.DiscountBps,
+		&i.Revision,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ClosedAt,
 	)
 	return i, err
 }

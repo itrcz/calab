@@ -43,6 +43,40 @@ func RefundMayRepost(ref sqlc.BillingRefund) bool {
 	return ref.NeedsReviewAt == nil && time.Since(ref.CreatedAt) < RefundRepostWindow
 }
 
+// MarkRefundDispatched records, in its own committed transaction, that a Calab refund is about
+// to be sent to a provider without idempotency keys (ADR-0083, Tochka). false: it was sent
+// before (or left pending): it must never be sent again — a lost answer is resolved by reading
+// the payment's refunds.
+func (c *Core) MarkRefundDispatched(ctx context.Context, refundID uuid.UUID) (bool, error) {
+	_, err := db.GuardValue(ctx, c.db, func(q *sqlc.Queries) (sqlc.BillingRefund, error) {
+		return q.MarkBillingRefundDispatched(ctx, sqlc.MarkBillingRefundDispatchedParams{Now: time.Now().UTC(), ID: refundID})
+	})
+	if db.IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// MarkRefundNeedsReview marks a pending Calab refund for a superadmin (the provider cannot do it
+// through its API, or has no trace of it): the money stays reserved; an operator refunds by hand
+// in the provider's interface (the reconciliation then matches that refund to this row) or
+// releases it. false: it was marked before or left pending.
+func (c *Core) MarkRefundNeedsReview(ctx context.Context, ref sqlc.BillingRefund) (bool, error) {
+	marked := false
+	err := c.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockBillingAccount(ctx, ref.AccountID); err != nil {
+			return err
+		}
+		_, err := q.MarkBillingRefundNeedsReview(ctx, sqlc.MarkBillingRefundNeedsReviewParams{Now: time.Now().UTC(), ID: ref.ID})
+		if db.IsNotFound(err) {
+			return nil
+		}
+		marked = err == nil
+		return err
+	})
+	return marked, err
+}
+
 // Refundable is what can go back to one payment now.
 type Refundable struct {
 	Minor       int64  // unused money of the payment's funding lot

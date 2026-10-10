@@ -60,6 +60,9 @@ interface Boot {
   email?: string;
   /** The plan badge is expected in the header (default). */
   badge?: boolean;
+  /** ADR-0083: markets open for new accounts (mock `?sales=`, default global) and the account's market. */
+  sales?: 'both' | 'ru' | 'contact';
+  market?: 'ru';
 }
 
 /** One page load: the billing scenario, the theme, the sign-in, the workspace's main screen. */
@@ -69,7 +72,8 @@ async function boot(page: Page, o: Boot): Promise<Shot> {
   await page.clock.setFixedTime(NOW);
   await page.goto(`${mock.url}/?visual-test`);
   await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
-  await page.goto(`${mock.url}/?visual-test&billing=${o.scenario}`);
+  const extra = `${o.sales ? `&sales=${o.sales}` : ''}${o.market ? `&market=${o.market}` : ''}`;
+  await page.goto(`${mock.url}/?visual-test&billing=${o.scenario}${extra}`);
   if (isPhone()) {
     await page.addStyleTag({ content: `@media (max-width: 768px) { :root.web:not(.kb-open) { --safe-top: ${INSETS.top}px; --safe-bottom: ${INSETS.bottom}px; } }` });
   }
@@ -285,6 +289,38 @@ test('billing-welcome: the plan choice after workspace creation', async ({ page 
   await checkpoint(s, 'billing-plans-welcome');
 });
 
+// ---------------------------------------------------------------- RU market (ADR-0083): the switch, СБП / Карта МИР, contact mode
+
+test('billing-ru: market switch and the RU pay step', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  // Both markets open, Russian UI: Russia, ₽ is preselected; the seller line names the RU seller.
+  const s = await boot(page, { scenario: 'selfServe', plan: 'PLAN_FREE', sales: 'both' });
+  await openPlans(page);
+  await expect(page.getByTestId('plans-market')).toBeVisible();
+  await checkpoint(s, 'billing-plans-market');
+  await tap(page.getByTestId('plans-choose-TEAM'));
+  await expect(page.getByTestId('plans-methods')).toBeVisible();
+  await checkpoint(s, 'billing-pay-ru');
+});
+
+test('billing-ru-cabinet: the RU top-up dialog', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', market: 'ru' });
+  await openPlans(page);
+  await tap(page.getByTestId('plans-details'));
+  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await tap(settings.getByTestId('billing-topup-open'));
+  await expect(page.getByTestId('billing-topup')).toBeVisible();
+  await checkpoint(s, 'billing-topup-ru');
+});
+
+test('billing-contact: no acquirer takes new clients', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'selfServe', plan: 'PLAN_FREE', sales: 'contact' });
+  await openPlans(page);
+  await checkpoint(s, 'billing-plans-contact');
+});
+
 // ---------------------------------------------------------------- Superadmin: «Оплата» list and account page
 
 test('billing-admin: accounts list and the account page', async ({ page }) => {
@@ -309,4 +345,12 @@ test('billing-admin: accounts list and the account page', async ({ page }) => {
   await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-payments');
   await scrollEnd(admin);
   await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-account-end');
+  // ADR-0083: «Эквайеры» and the market change of an account without payments (Orbit, inactive).
+  await tap(admin.getByTestId('admin-billing-nav-providers'));
+  await expect(admin.getByTestId('admin-billing-providers-mode')).toBeVisible();
+  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-providers');
+  await tap(admin.getByTestId('admin-billing-account').nth(3));
+  await tap(admin.getByTestId('admin-billing-market'));
+  await expect(page.getByRole('dialog').last()).toBeVisible();
+  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-market');
 });

@@ -1,0 +1,46 @@
+{
+ "Data": {
+  "Operation": [
+   {
+    "customerCode": "300123123",
+    "taxSystemCode": "usn_income",
+    "createdAt": "2026-10-10T11:58:49+05:00",
+    "paymentMode": [
+     "sbp",
+     "card"
+    ],
+    "redirectUrl": "https://app.calab.io/api/billing/return",
+    "failRedirectUrl": "https://app.calab.io/api/billing/return",
+    "Client": {
+     "email": "support@calab.io"
+    },
+    "Items": [
+     {
+      "vatType": "none",
+      "name": "Пополнение баланса Calab",
+      "amount": 1.0,
+      "quantity": 1.0,
+      "paymentMethod": "full_payment",
+      "paymentObject": "service",
+      "measure": "шт."
+     }
+    ],
+    "purpose": "Calab: проверка интеграции (не оплачивать)",
+    "amount": 1.0,
+    "status": "CREATED",
+    "operationId": "5f0c1a7e-2b4d-4c8e-9a61-0d3e7b2c9f10",
+    "paymentLink": "https://merch.securepaytb.ru/order/?uuid=5f0c1a7e-2b4d-4c8e-9a61-0d3e7b2c9f10",
+    "merchantId": "200000000001234",
+    "consumerId": "00000000-0000-4000-8000-000000000001",
+    "Order": [],
+    "paymentLinkId": "0199d4a2-7c1e-7a40-9b6e-5f3c2d1e0a01"
+   }
+  ]
+ },
+ "Links": {
+  "self": "https://enter.tochka.com/uapi/acquiring/v1.0/payments/5f0c1a7e-2b4d-4c8e-9a61-0d3e7b2c9f10"
+ },
+ "Meta": {
+  "totalPages": 1
+ }
+}

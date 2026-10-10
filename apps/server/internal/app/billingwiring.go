@@ -15,6 +15,7 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/inbox"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/billing/providers/stripe"
+	"github.com/calaba/calaba/server/internal/billing/providers/tochka"
 	"github.com/calaba/calaba/server/internal/billing/worker"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -62,6 +63,13 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		rt.stripe = sp
 		providers = append(providers, sp)
 	}
+	if b.TochkaEnabled {
+		tp, err := tochka.New(TochkaConfig(b))
+		if err != nil {
+			panic(err)
+		}
+		providers = append(providers, tp)
+	}
 	reg, err := provider.NewRegistry(b.Providers, provider.DefaultMatrix(), providers...)
 	if err != nil {
 		panic(err) // BILLING_PROVIDERS is validated by config.Validate
@@ -94,10 +102,13 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	})
 	rt.Inbox.AttemptSettled = rt.AutoTopup.AttemptSettled
 	svc := billinghttp.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, billinghttp.Config{
-		Checkouts: b.StripeEnabled, ReturnURL: b.PublicReturnURL, AppURL: d.Config.PublicAppURL,
+		Checkouts: b.StripeEnabled || b.TochkaEnabled, ReturnURL: b.PublicReturnURL, AppURL: d.Config.PublicAppURL,
 		SelfServe:  b.SelfServe,
 		PlanLimits: func(p v1.Plan) *v1.PlanLimits { return planSvc.PlanLimits(p).Proto() },
 		Committed:  committed,
+		Contact:    d.Config.PlanContact(),
+		// The landing reads it: 30 per minute and IP is plenty with Cache-Control max-age=300.
+		PublicLimiter: redisx.NewRateLimiter(d.Redis, "rl:billing-public:", 30, 30),
 	})
 	rt.Handlers.Owner, rt.Handlers.Public = svc.Owner(), svc.Public()
 	rt.Handlers.Admin = admin.New(admin.Deps{
@@ -127,11 +138,22 @@ func (rt *billingRuntime) Run(ctx context.Context) {
 	}
 	go rt.Inbox.Run(ctx)
 	go rt.Inbox.RunReconcile(ctx)
+	if rt.cfg.TochkaEnabled {
+		go rt.Inbox.RunPoll(ctx) // ADR-0083: open checkouts of providers without failure webhooks
+	}
 	if worker.Enabled(rt.cfg) {
 		go rt.due.Run(ctx)
 	}
 	go rt.due.RunIntegrity(ctx)
 	go rt.AutoTopup.Run(ctx)
+}
+
+// TochkaConfig is the adapter config of the env (also used by `server tochka …`).
+func TochkaConfig(b config.Billing) tochka.Config {
+	return tochka.Config{
+		BaseURL: b.TochkaAPIURL, Token: b.TochkaAPIToken, CustomerCode: b.TochkaCustomerCode, MerchantID: b.TochkaMerchantID,
+		TaxSystem: b.TochkaTaxSystem, VatType: b.TochkaVatType, WebhookKey: b.TochkaWebhookKey, ClientID: b.TochkaClientID,
+	}
 }
 
 // resolveStripeAccount resolves the merchant account once at startup so webhooks do not wait

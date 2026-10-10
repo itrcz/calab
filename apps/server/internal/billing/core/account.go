@@ -45,6 +45,62 @@ func (c *Core) EnableAccount(ctx context.Context, workspaceID uuid.UUID, market,
 	return acc, err
 }
 
+// MarketCurrency is the fixed currency of a market ("" for an unknown market).
+func MarketCurrency(market string) string { return marketCurrency[market] }
+
+// SwitchMarket moves an account that has no money yet to another market (ADR-0083): the owner's
+// pre-payment choice (quote ACTIVATE with a market) and the superadmin's change. The market is
+// fixed by the first money — a ledger entry, any payment row or an open checkout — checked under
+// the account lock, so a checkout opened concurrently either commits first (the switch is
+// refused) or sees the new market (POST …/topups re-validates under the same lock).
+// expectedRevision 0 skips the revision check. Switching to the current market is a no-op.
+func (c *Core) SwitchMarket(ctx context.Context, accountID uuid.UUID, market, provider string, expectedRevision int64, actor *uuid.UUID) (sqlc.BillingAccount, error) {
+	return c.run(ctx, accountID, actor, func(s *state) error {
+		if expectedRevision != 0 && s.acc.Revision != expectedRevision {
+			return billing.ErrRevisionConflict
+		}
+		acc, err := c.SwitchMarketIn(ctx, s.q, s.acc, market, provider, s.now)
+		if err != nil {
+			return err
+		}
+		s.acc = acc
+		return nil
+	})
+}
+
+// SwitchMarketIn is SwitchMarket inside the caller's transaction on an account it locked (the
+// admin command writes its audit row in the same transaction). No Committed hook: the caller
+// runs it after its commit.
+func (c *Core) SwitchMarketIn(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, market, provider string, now time.Time) (sqlc.BillingAccount, error) {
+	cur, ok := marketCurrency[market]
+	if !ok {
+		return acc, httpx.Validation("market", "market must be global or ru")
+	}
+	if provider == "" {
+		return acc, billing.ErrMarketUnavailable
+	}
+	if acc.Market == market && acc.Provider == provider {
+		return acc, nil
+	}
+	if acc.Status != StatusInactive && acc.Status != StatusStopped {
+		return acc, billing.ErrMarketFixed
+	}
+	fixed, err := q.BillingAccountMarketFixed(ctx, acc.ID)
+	if err != nil {
+		return acc, err
+	}
+	if fixed {
+		return acc, billing.ErrMarketFixed
+	}
+	out, err := q.SwitchBillingAccountMarket(ctx, sqlc.SwitchBillingAccountMarketParams{
+		Market: market, Currency: cur, Provider: provider, Now: now, ID: acc.ID,
+	})
+	if db.IsNotFound(err) {
+		return acc, billing.ErrMarketFixed
+	}
+	return out, err
+}
+
 func badPlan() error {
 	return httpx.Validation("plan", "plan must be team or enterprise")
 }

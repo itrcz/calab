@@ -110,8 +110,31 @@ func (s *Service) openCheckout(ctx context.Context, c caller, reqID uuid.UUID, h
 	amount int64, save bool, payer sqlc.BillingPayer) (sqlc.BillingCheckout, error) {
 	var co sqlc.BillingCheckout
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
-		if _, err := q.LockBillingAccount(ctx, c.acc.ID); err != nil {
+		locked, err := q.LockBillingAccount(ctx, c.acc.ID)
+		if err != nil {
 			return err
+		}
+		if locked.Market != c.acc.Market || locked.Currency != c.acc.Currency || locked.Provider != c.acc.Provider {
+			// The market moved since the method was validated (ADR-0083: an owner's or
+			// superadmin's switch before the first payment): the client reloads its methods.
+			return billing.ErrRevisionConflict
+		}
+		// A first payment opens a market for good (ADR-0083): only while its provider takes
+		// new clients. An account fixed by money keeps paying on its provider.
+		if locked.Status == core.StatusInactive || locked.Status == core.StatusStopped {
+			fixed, err := q.BillingAccountMarketFixed(ctx, locked.ID)
+			if err != nil {
+				return err
+			}
+			if !fixed {
+				open, err := s.sales.IsOpen(ctx, q, locked.Market)
+				if err != nil {
+					return err
+				}
+				if !open {
+					return billing.ErrMarketUnavailable
+				}
+			}
 		}
 		now, err := s.clock.Now(ctx, q)
 		if err != nil {
@@ -174,6 +197,12 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 	if err != nil {
 		return provider.CheckoutSession{}, err
 	}
+	email := payer.Email
+	if email == "" {
+		if u, err := s.db.Q.GetUser(ctx, c.user); err == nil && u.Email != nil {
+			email = *u.Email
+		}
+	}
 	ret := returnURL(s.cfg.ReturnURL, co.ID)
 	// The provider runs on the wall clock: its expires_at is the row's creation (database now(),
 	// real time) + TTL — stable across retries of the same idempotency key — never the billing
@@ -183,7 +212,8 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 	sess, err := p.CreateCheckout(ctx, provider.CheckoutReq{
 		IdemKey: "checkout:" + co.ID.String(), Amount: money.New(co.AmountMinor, money.Currency(co.Currency)), Method: opt.Method,
 		Customer: cust, SuccessURL: ret, CancelURL: ret, SaveForOffSession: co.SaveMethod, ExpiresAt: exp,
-		Metadata: provider.Metadata{AccountID: c.acc.ID, CheckoutID: co.ID, Kind: provider.MetadataKindCheckout},
+		Metadata:     provider.Metadata{AccountID: c.acc.ID, CheckoutID: co.ID, Kind: provider.MetadataKindCheckout},
+		ReceiptEmail: email,
 	})
 	if err != nil {
 		if !errors.Is(err, provider.ErrUnknownOutcome) {
@@ -205,6 +235,9 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 	})
 	if db.IsNotFound(err) {
 		return sess, billing.ErrPaymentPending // the checkout left 'open' meanwhile (expired / reconciled)
+	}
+	if err == nil {
+		s.inbox.SchedulePoll(ctx, p, co.ID) // providers without failure / expiry webhooks (ADR-0083)
 	}
 	return sess, err
 }
