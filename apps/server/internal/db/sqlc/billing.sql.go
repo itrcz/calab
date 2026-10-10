@@ -99,6 +99,53 @@ func (q *Queries) BillingAccountMarketFixed(ctx context.Context, id uuid.UUID) (
 	return fixed, err
 }
 
+const billingCustomerHistory = `-- name: BillingCustomerHistory :one
+SELECT
+    (SELECT count(*) FROM billing_payments p
+     WHERE p.account_id = $1 AND p.provider = $2
+       AND p.provider_account = $3 AND p.livemode = $4)::bigint AS payments,
+    (SELECT count(*) FROM billing_payment_methods m
+     WHERE m.customer_id = $5 AND m.detached_at IS NULL)::bigint AS methods,
+    (SELECT count(*) FROM billing_checkouts c
+     WHERE c.account_id = $1 AND c.provider = $2 AND c.id <> $6
+       AND c.provider_session_id IS NOT NULL
+       AND (c.status = 'open' OR (c.status = 'completed'
+            AND NOT EXISTS (SELECT 1 FROM billing_payments p2 WHERE p2.checkout_id = c.id))))::bigint AS checkouts
+`
+
+type BillingCustomerHistoryParams struct {
+	AccountID       uuid.UUID
+	Provider        string
+	ProviderAccount string
+	Livemode        bool
+	CustomerRow     uuid.UUID
+	Checkout        uuid.UUID
+}
+
+type BillingCustomerHistoryRow struct {
+	Payments  int64
+	Methods   int64
+	Checkouts int64
+}
+
+// What an account has under its customer row (provider-account drift, ensureCustomer): payments
+// under the row's provider account, live saved methods of the row, and checkouts other than
+// `checkout` whose provider session may still bring money (open, or completed without a payment
+// row). A checkout does not record its provider account: any such session counts.
+func (q *Queries) BillingCustomerHistory(ctx context.Context, arg BillingCustomerHistoryParams) (BillingCustomerHistoryRow, error) {
+	row := q.db.QueryRow(ctx, billingCustomerHistory,
+		arg.AccountID,
+		arg.Provider,
+		arg.ProviderAccount,
+		arg.Livemode,
+		arg.CustomerRow,
+		arg.Checkout,
+	)
+	var i BillingCustomerHistoryRow
+	err := row.Scan(&i.Payments, &i.Methods, &i.Checkouts)
+	return i, err
+}
+
 const billingNow = `-- name: BillingNow :one
 
 SELECT clock_timestamp()::timestamptz AS now
@@ -2389,6 +2436,35 @@ type MarkBillingProviderEventRetryParams struct {
 func (q *Queries) MarkBillingProviderEventRetry(ctx context.Context, arg MarkBillingProviderEventRetryParams) error {
 	_, err := q.db.Exec(ctx, markBillingProviderEventRetry, arg.NextAttemptAt, arg.Error, arg.ID)
 	return err
+}
+
+const moveBillingCustomerAccount = `-- name: MoveBillingCustomerAccount :one
+UPDATE billing_customers SET provider_account = $1
+WHERE id = $2 AND provider_account = $3
+RETURNING id, account_id, provider, provider_account, livemode, customer_id, created_at
+`
+
+type MoveBillingCustomerAccountParams struct {
+	ToAccount   string
+	ID          uuid.UUID
+	FromAccount string
+}
+
+// The row follows the provider's configured account (ensureCustomer, account locked, no
+// history there). No row = it moved meanwhile.
+func (q *Queries) MoveBillingCustomerAccount(ctx context.Context, arg MoveBillingCustomerAccountParams) (BillingCustomer, error) {
+	row := q.db.QueryRow(ctx, moveBillingCustomerAccount, arg.ToAccount, arg.ID, arg.FromAccount)
+	var i BillingCustomer
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderAccount,
+		&i.Livemode,
+		&i.CustomerID,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const refundBillingFundingLot = `-- name: RefundBillingFundingLot :one

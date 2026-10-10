@@ -41,6 +41,8 @@ type billingRuntime struct {
 	Clock    billing.Clock // *billing.SwitchClock when admin.TestClockAllowed (T6 test-clock route)
 	due      *worker.Worker
 	stripe   *stripe.Provider
+	// tochka logs and verifies its customer code / merchant id at startup (read-only calls).
+	tochka *tochka.Provider
 	// webhook keeps the bank's webhook URL equal to TOCHKA_WEBHOOK_URL (nil while unset); started
 	// by RunAfterListen, not Run: the bank's test webhook must find the listener.
 	webhook *tochka.Registrar
@@ -77,6 +79,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		if err != nil {
 			panic(err)
 		}
+		rt.tochka = tp
 		providers = append(providers, tp)
 		if b.TochkaWebhookURL != "" {
 			rt.webhook = tochka.NewRegistrar(tp, b.TochkaWebhookURL)
@@ -173,6 +176,9 @@ func (rt *billingRuntime) Run(ctx context.Context) {
 	}
 	if rt.stripe != nil {
 		go resolveStripeAccount(ctx, rt.stripe)
+	}
+	if rt.tochka != nil {
+		go rt.tochka.LogConfig(ctx) // ERROR when the bank contradicts TOCHKA_CUSTOMER_CODE / MERCHANT_ID
 	}
 	go rt.Inbox.Run(ctx)
 	go rt.Inbox.RunReconcile(ctx)

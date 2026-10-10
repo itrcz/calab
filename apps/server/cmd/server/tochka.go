@@ -19,7 +19,9 @@ server tochka webhook set <https-url> register (or move) the one webhook URL; th
                                      test webhook and keeps the URL only if it answers 200
 server tochka webhook test           ask the bank to send a test webhook to the registered URL
 server tochka webhook delete         remove the registered webhook
-server tochka key                    compare the pinned webhook key with the one the bank publishes`
+server tochka key                    compare the pinned webhook key with the one the bank publishes
+server tochka check                  read-only: TOCHKA_MERCHANT_ID is a retail point of TOCHKA_CUSTOMER_CODE
+                                     and the token's consent covers its acquiring`
 
 // tochkaCmd runs `server tochka …` and writes its answer to out.
 func tochkaCmd(ctx context.Context, args []string, out io.Writer) error {
@@ -82,6 +84,19 @@ func tochkaCmd(ctx context.Context, args []string, out io.Writer) error {
 			return errors.New("the bank publishes another webhook key than the pinned one: set TOCHKA_WEBHOOK_PUBLIC_KEY to [old, new] (JSON array) and redeploy")
 		}
 		_, err = fmt.Fprintln(out, "pinned webhook key matches the published one")
+		return err
+	case "check ":
+		v, err := p.VerifyConfig(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(out, "customer %s, merchant %s: %s (terminal %s, status %s, active %t, modes %v)\n",
+			v.CustomerCode, v.MerchantID, v.Retailer.Name, v.Retailer.TerminalID, v.Retailer.Status, v.Retailer.IsActive, v.Retailer.PaymentModes)
+		for _, w := range v.Warnings {
+			if err == nil {
+				_, err = fmt.Fprintln(out, "warning: "+w)
+			}
+		}
 		return err
 	}
 	return fmt.Errorf("usage:\n%s", tochkaUsage)

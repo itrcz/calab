@@ -3,6 +3,7 @@ package billinghttp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -203,7 +204,11 @@ func payerSnapshot(p sqlc.BillingPayer) []byte {
 // createSession talks to the provider (no transaction open) and stores the session.
 func (s *Service) createSession(ctx context.Context, c caller, p provider.Provider, co sqlc.BillingCheckout, opt provider.MethodOption,
 	payer sqlc.BillingPayer) (provider.CheckoutSession, error) {
-	cust, err := s.ensureCustomer(ctx, c, p, payer)
+	cust, err := s.ensureCustomer(ctx, c, p, payer, co.ID)
+	if errors.Is(err, billing.ErrProviderAccountChanged) {
+		// A definite refusal until an operator decides: free the open slot (the next try answers the same).
+		s.failCheckout(ctx, co.ID)
+	}
 	if err != nil {
 		return provider.CheckoutSession{}, err
 	}
@@ -229,11 +234,7 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 		if !errors.Is(err, provider.ErrUnknownOutcome) {
 			// A definite refusal: free the open slot so the owner can try again.
 			slog.ErrorContext(ctx, "billing: create checkout refused", "checkout", co.ID, "err", err)
-			if _, e := db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.BillingCheckout, error) {
-				return q.SetBillingCheckoutStatus(ctx, sqlc.SetBillingCheckoutStatusParams{Status: inbox.CheckoutFailed, Now: s.now(ctx), ID: co.ID})
-			}); e != nil && !db.IsNotFound(e) {
-				slog.WarnContext(ctx, "billing: fail checkout", "checkout", co.ID, "err", e)
-			}
+			s.failCheckout(ctx, co.ID)
 		} else {
 			slog.WarnContext(ctx, "billing: create checkout unknown outcome (retry with the same request_id)", "checkout", co.ID, "err", err)
 		}
@@ -252,9 +253,20 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 	return sess, err
 }
 
+// failCheckout marks an open checkout failed after a definite refusal (frees the open slot).
+func (s *Service) failCheckout(ctx context.Context, id uuid.UUID) {
+	if _, e := db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.BillingCheckout, error) {
+		return q.SetBillingCheckoutStatus(ctx, sqlc.SetBillingCheckoutStatusParams{Status: inbox.CheckoutFailed, Now: s.now(ctx), ID: id})
+	}); e != nil && !db.IsNotFound(e) {
+		slog.WarnContext(ctx, "billing: fail checkout", "checkout", id, "err", e)
+	}
+}
+
 // ensureCustomer returns the provider customer of the account, creating it once (idempotency
 // key customer:{account}; the mapping row is the proof of ownership for every later payment).
-func (s *Service) ensureCustomer(ctx context.Context, c caller, p provider.Provider, payer sqlc.BillingPayer) (provider.CustomerRef, error) {
+// The row follows the provider's configured account (followAccount); checkout is the one being
+// opened, not history.
+func (s *Service) ensureCustomer(ctx context.Context, c caller, p provider.Provider, payer sqlc.BillingPayer, checkout uuid.UUID) (provider.CustomerRef, error) {
 	live := false
 	if lr, ok := p.(provider.LivemodeReporter); ok {
 		live = lr.Livemode()
@@ -263,6 +275,9 @@ func (s *Service) ensureCustomer(ctx context.Context, c caller, p provider.Provi
 		return provider.CustomerRef{Provider: p.ID(), ProviderAccount: bc.ProviderAccount, Livemode: bc.Livemode, ID: bc.CustomerID}
 	}
 	if bc, err := s.db.Q.GetBillingCustomer(ctx, sqlc.GetBillingCustomerParams{AccountID: c.acc.ID, Provider: string(p.ID()), Livemode: live}); err == nil {
+		if bc, err = s.followAccount(ctx, c, p, bc, checkout); err != nil {
+			return provider.CustomerRef{}, err
+		}
 		return ref(bc), nil
 	} else if !db.IsNotFound(err) {
 		return provider.CustomerRef{}, err
@@ -291,6 +306,9 @@ func (s *Service) ensureCustomer(ctx context.Context, c caller, p provider.Provi
 	})
 	if db.IsNotFound(err) {
 		bc, err = s.db.Q.GetBillingCustomer(ctx, sqlc.GetBillingCustomerParams{AccountID: c.acc.ID, Provider: string(p.ID()), Livemode: cr.Livemode})
+		if err == nil {
+			bc, err = s.followAccount(ctx, c, p, bc, checkout)
+		}
 	} else if err == nil && payer.AccountID != uuid.Nil {
 		// A new customer gets the payer's tax ids too (best effort: the checkout goes on); it has
 		// nothing of earlier payer versions to remove.
@@ -301,6 +319,91 @@ func (s *Service) ensureCustomer(ctx context.Context, c caller, p provider.Provi
 	}
 	return ref(bc), nil
 }
+
+// followAccount keeps the customer row on the provider account the adapter is configured for
+// (provider.AccountReporter; 2026-10-10: TOCHKA_CUSTOMER_CODE was fixed after the row was
+// written, new links went out under the new code and the inbox refused the paid one as having
+// no local customer). Under the account lock: a row with no payments, saved methods or live
+// checkout session moves in place (audited); otherwise ErrProviderAccountChanged — money is
+// never credited across provider accounts, an operator decides.
+func (s *Service) followAccount(ctx context.Context, c caller, p provider.Provider, bc sqlc.BillingCustomer, checkout uuid.UUID) (sqlc.BillingCustomer, error) {
+	ar, ok := p.(provider.AccountReporter)
+	if !ok {
+		return bc, nil
+	}
+	cur := ar.ProviderAccount()
+	if cur == "" || cur == bc.ProviderAccount {
+		return bc, nil
+	}
+	var hist sqlc.BillingCustomerHistoryRow
+	from := bc.ProviderAccount
+	moved := false
+	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockBillingAccount(ctx, c.acc.ID); err != nil {
+			return err
+		}
+		row, err := q.GetBillingCustomerByID(ctx, bc.ID)
+		if err != nil {
+			return err
+		}
+		bc, from = row, row.ProviderAccount
+		if row.ProviderAccount == cur {
+			return nil // moved meanwhile
+		}
+		hist, err = q.BillingCustomerHistory(ctx, sqlc.BillingCustomerHistoryParams{
+			AccountID: c.acc.ID, Provider: row.Provider, ProviderAccount: row.ProviderAccount, Livemode: row.Livemode,
+			CustomerRow: row.ID, Checkout: checkout,
+		})
+		if err != nil {
+			return err
+		}
+		if hist.Payments > 0 || hist.Methods > 0 || hist.Checkouts > 0 {
+			return billing.ErrProviderAccountChanged
+		}
+		out, err := q.MoveBillingCustomerAccount(ctx, sqlc.MoveBillingCustomerAccountParams{ToAccount: cur, ID: row.ID, FromAccount: row.ProviderAccount})
+		if db.UniqueViolation(err) != "" {
+			return billing.ErrProviderAccountChanged // another row holds this customer id there
+		}
+		if err != nil {
+			return err
+		}
+		details, err := marshalJSON(map[string]any{
+			"customer_row": row.ID, "provider": row.Provider, "livemode": row.Livemode, "customer_id": row.CustomerID,
+			"from_account": row.ProviderAccount, "to_account": cur, "checkout": checkout, "user": c.user,
+		})
+		if err != nil {
+			return err
+		}
+		h := sha256.Sum256(details)
+		wsID := c.ws.ID
+		if _, err := q.InsertBillingAudit(ctx, sqlc.InsertBillingAuditParams{
+			RequestID: uuid.New(), BodyHash: h[:], AccountID: &c.acc.ID, WorkspaceID: &wsID,
+			Action: auditCustomerAccountMoved, Reason: "provider account changed in the config; no history under the old one", Details: details,
+		}); err != nil {
+			return err
+		}
+		bc, moved = out, true
+		return nil
+	})
+	switch {
+	case errors.Is(err, billing.ErrProviderAccountChanged):
+		slog.ErrorContext(ctx, "billing: provider account changed for a customer with history: no checkout until an operator decides "+
+			"(restore the old provider account in the config, or settle the history and move billing_customers.provider_account by hand)",
+			"account", c.acc.ID, "provider", bc.Provider, "livemode", bc.Livemode, "customer_row", bc.ID,
+			"stored_account", from, "configured_account", cur,
+			"payments", hist.Payments, "methods", hist.Methods, "checkouts", hist.Checkouts)
+		return bc, err
+	case err != nil:
+		return bc, err
+	case moved:
+		slog.WarnContext(ctx, "billing: customer moved to the configured provider account",
+			"account", c.acc.ID, "provider", bc.Provider, "livemode", bc.Livemode, "customer_row", bc.ID, "from", from, "to", cur)
+	}
+	return bc, nil
+}
+
+// auditCustomerAccountMoved: billing_audit action of followAccount (actor: none, the system).
+const auditCustomerAccountMoved = "billing.customer_account_moved"
 
 func returnURL(base string, checkout uuid.UUID) string {
 	u, err := url.Parse(base)

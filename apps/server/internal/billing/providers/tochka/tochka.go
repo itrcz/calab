@@ -132,6 +132,7 @@ var (
 	_ provider.Provider          = (*Provider)(nil)
 	_ provider.RefundLister      = (*Provider)(nil)
 	_ provider.LivemodeReporter  = (*Provider)(nil)
+	_ provider.AccountReporter   = (*Provider)(nil)
 	_ provider.ChargeLister      = (*Provider)(nil)
 	_ provider.OffSessionCharger = (*Provider)(nil)
 )
@@ -250,6 +251,13 @@ func (p *Provider) Livemode() bool { return p.live }
 
 // CustomerCode is the provider account of every Tochka object (billing_customers, payments).
 func (p *Provider) CustomerCode() string { return p.customer }
+
+// ProviderAccount is the customer code (provider.AccountReporter): every new payment link goes
+// out under it.
+func (p *Provider) ProviderAccount() string { return p.customer }
+
+// MerchantID is the internet-acquiring retail point of every payment link.
+func (p *Provider) MerchantID() string { return p.merchant }
 
 // ClientID is the id the webhook API is addressed by ("" if the token has no iss claim and
 // TOCHKA_CLIENT_ID is unset).

@@ -184,6 +184,30 @@ RETURNING *;
 SELECT * FROM billing_customers
 WHERE provider = $1 AND provider_account = $2 AND livemode = $3 AND customer_id = $4;
 
+-- name: BillingCustomerHistory :one
+-- What an account has under its customer row (provider-account drift, ensureCustomer): payments
+-- under the row's provider account, live saved methods of the row, and checkouts other than
+-- `checkout` whose provider session may still bring money (open, or completed without a payment
+-- row). A checkout does not record its provider account: any such session counts.
+SELECT
+    (SELECT count(*) FROM billing_payments p
+     WHERE p.account_id = sqlc.arg('account_id') AND p.provider = sqlc.arg('provider')
+       AND p.provider_account = sqlc.arg('provider_account') AND p.livemode = sqlc.arg('livemode'))::bigint AS payments,
+    (SELECT count(*) FROM billing_payment_methods m
+     WHERE m.customer_id = sqlc.arg('customer_row') AND m.detached_at IS NULL)::bigint AS methods,
+    (SELECT count(*) FROM billing_checkouts c
+     WHERE c.account_id = sqlc.arg('account_id') AND c.provider = sqlc.arg('provider') AND c.id <> sqlc.arg('checkout')
+       AND c.provider_session_id IS NOT NULL
+       AND (c.status = 'open' OR (c.status = 'completed'
+            AND NOT EXISTS (SELECT 1 FROM billing_payments p2 WHERE p2.checkout_id = c.id))))::bigint AS checkouts;
+
+-- name: MoveBillingCustomerAccount :one
+-- The row follows the provider's configured account (ensureCustomer, account locked, no
+-- history there). No row = it moved meanwhile.
+UPDATE billing_customers SET provider_account = sqlc.arg('to_account')
+WHERE id = sqlc.arg('id') AND provider_account = sqlc.arg('from_account')
+RETURNING *;
+
 -- name: GetBillingPayer :one
 SELECT * FROM billing_payers WHERE account_id = $1;
 

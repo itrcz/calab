@@ -55,3 +55,13 @@ type ChargeLister interface {
 type LivemodeReporter interface {
 	Livemode() bool
 }
+
+// AccountReporter tells the provider account the adapter's credentials act for, from its
+// config, without a network call (Tochka: TOCHKA_CUSTOMER_CODE). Only providers whose customer
+// ids are ours, not provider objects (Tochka: consumerId = billing account id), implement it:
+// their billing_customers row may move to another provider account in place when the operator
+// changed the config before the account had anything there (billinghttp ensureCustomer).
+// Stripe does not: a cus_ id lives in one merchant account.
+type AccountReporter interface {
+	ProviderAccount() string
+}

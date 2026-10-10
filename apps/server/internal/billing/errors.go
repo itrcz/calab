@@ -21,18 +21,19 @@ const (
 	ReasonChangeIncompatible         = "BILLING_CHANGE_INCOMPATIBLE" // e.g. upgrade with debt
 	ReasonPriceConfirmationRequired  = "BILLING_PRICE_CONFIRMATION_REQUIRED"
 	ReasonSeatGrowthRequiresFunds    = "BILLING_SEAT_GROWTH_REQUIRES_FUNDS"
-	ReasonRequestReused              = "BILLING_REQUEST_REUSED"       // same request_id, another body
-	ReasonPlanManagedByBilling       = "BILLING_PLAN_MANAGED"         // manual plan change of a billing workspace
-	ReasonPlanAdminAssigned          = "BILLING_PLAN_ADMIN_ASSIGNED"  // 409: a superadmin assigned the plan (ADR-0086)
-	ReasonAccountExists              = "BILLING_ACCOUNT_EXISTS"       // superadmin enable twice
-	ReasonMethodUnavailable          = "BILLING_METHOD_UNAVAILABLE"   // 422: method_id not offered to this account
-	ReasonPermissionRequired         = "BILLING_PERMISSION_REQUIRED"  // 403: the caller lacks the route's billing bit (ADR-0087)
-	ReasonWorkspaceBillingSuspended  = "WORKSPACE_BILLING_SUSPENDED"  // 403
-	ReasonWorkspacePlanInactive      = "WORKSPACE_PLAN_INACTIVE"      // 403 (409 ROOM_FULL in voice): restricted mode «тариф не активен» (ADR-0086 amendment)
-	ReasonDisabled                   = "BILLING_DISABLED"             // 501: BILLING_ENABLED=false or the flag of the feature is off
-	ReasonNotImplemented             = "BILLING_NOT_IMPLEMENTED"      // 501: route registered, handler not built yet
-	ReasonProviderUnavailable        = "BILLING_PROVIDER_UNAVAILABLE" // 503
-	ReasonAutoTopupLimit             = "BILLING_AUTO_TOPUP_LIMIT"     // 422: cap outside default..max
+	ReasonRequestReused              = "BILLING_REQUEST_REUSED"           // same request_id, another body
+	ReasonPlanManagedByBilling       = "BILLING_PLAN_MANAGED"             // manual plan change of a billing workspace
+	ReasonPlanAdminAssigned          = "BILLING_PLAN_ADMIN_ASSIGNED"      // 409: a superadmin assigned the plan (ADR-0086)
+	ReasonAccountExists              = "BILLING_ACCOUNT_EXISTS"           // superadmin enable twice
+	ReasonMethodUnavailable          = "BILLING_METHOD_UNAVAILABLE"       // 422: method_id not offered to this account
+	ReasonPermissionRequired         = "BILLING_PERMISSION_REQUIRED"      // 403: the caller lacks the route's billing bit (ADR-0087)
+	ReasonWorkspaceBillingSuspended  = "WORKSPACE_BILLING_SUSPENDED"      // 403
+	ReasonWorkspacePlanInactive      = "WORKSPACE_PLAN_INACTIVE"          // 403 (409 ROOM_FULL in voice): restricted mode «тариф не активен» (ADR-0086 amendment)
+	ReasonDisabled                   = "BILLING_DISABLED"                 // 501: BILLING_ENABLED=false or the flag of the feature is off
+	ReasonNotImplemented             = "BILLING_NOT_IMPLEMENTED"          // 501: route registered, handler not built yet
+	ReasonProviderUnavailable        = "BILLING_PROVIDER_UNAVAILABLE"     // 503
+	ReasonProviderAccountChanged     = "BILLING_PROVIDER_ACCOUNT_CHANGED" // 503: config moved off a provider account with history
+	ReasonAutoTopupLimit             = "BILLING_AUTO_TOPUP_LIMIT"         // 422: cap outside default..max
 	ReasonAutoTopupUnavailable       = "BILLING_AUTO_TOPUP_UNAVAILABLE"
 	ReasonRefundExceedsRefundable    = "BILLING_REFUND_EXCEEDS_REFUNDABLE"
 	ReasonAccountNotFound            = "BILLING_ACCOUNT_NOT_FOUND" // 404 for the owner of a workspace without billing
@@ -103,4 +104,8 @@ var (
 	ErrTestClockOff   = coded(http.StatusNotFound, v1.ErrorCode_ERROR_CODE_NOT_FOUND, ReasonTestClockDisabled, "route not found")
 
 	ErrProviderUnavailable = coded(http.StatusServiceUnavailable, v1.ErrorCode_ERROR_CODE_UNAVAILABLE, ReasonProviderUnavailable, "payment provider unavailable")
+	// ErrProviderAccountChanged: the provider's merchant account was changed in the config after
+	// this billing account had payments, saved methods or a live checkout under the old one;
+	// money is never credited across provider accounts, so no checkout until an operator decides.
+	ErrProviderAccountChanged = coded(http.StatusServiceUnavailable, v1.ErrorCode_ERROR_CODE_UNAVAILABLE, ReasonProviderAccountChanged, "payment provider account changed: contact support")
 )
