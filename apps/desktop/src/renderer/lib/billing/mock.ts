@@ -28,7 +28,9 @@ import {
   LedgerEntryKind,
   LedgerEntrySchema,
   PayerProfileSchema,
+  PayerSchemaSchema,
   PayerType,
+  checkPayer,
   PaymentMethodKind,
   PaymentOrigin,
   PaymentStatus,
@@ -45,11 +47,16 @@ import {
   type BillingSummary,
   type LedgerEntry,
   type Money,
+  type PayerProfile,
 } from '@calaba/protocol';
-import { create } from '@bufbuild/protobuf';
+import { create, fromJson, type JsonValue } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { ApiError } from '../api/client';
 import type { AdminBillingApi, BillingAdapters, OwnerBillingApi } from './api';
+// The schema the server serves, pinned by its Go test (internal/billing/payer TestSchemaGolden).
+import payerSchemaJson from '../../../../../../proto/testdata/billing_payer_schema.json';
+
+const payerSchema = fromJson(PayerSchemaSchema, payerSchemaJson as JsonValue);
 
 /**
  * In-memory billing for dev / QA builds (VITE_BILLING_MOCK=1, services/billing.ts): the owner
@@ -124,6 +131,30 @@ interface State {
   checkouts: Map<string, { amount: bigint; polls: number; save: boolean }>;
   ledger: LedgerEntry[];
   refundRequests: Array<ReturnType<typeof create<typeof BillingRefundRequestSchema>>>;
+  payer: PayerProfile;
+}
+
+/** The mock's saved payer: a Russian company on the RU market, a German one otherwise. */
+function initialPayer(market: Market): PayerProfile {
+  return market === 'ru'
+    ? create(PayerProfileSchema, {
+        type: PayerType.COMPANY,
+        name: 'ООО «Ромашка»',
+        country: 'RU',
+        email: 'billing@romashka.test',
+        taxId: '7707083893',
+        requisites: { inn: '7707083893', kpp: '773601001', ogrn: '1027700132195', legal_address: 'Москва, ул. Вавилова, 19' },
+        version: 3,
+      })
+    : create(PayerProfileSchema, {
+        type: PayerType.COMPANY,
+        name: 'ООО «Ромашка»',
+        country: 'DE',
+        email: 'billing@romashka.test',
+        taxId: 'DE123456789',
+        requisites: { vat: 'DE123456789' },
+        version: 2,
+      });
 }
 
 const unit = (p: Plan, m: Market = S().market): bigint => (m === 'ru' ? (p === Plan.ENTERPRISE ? 1800n : 600n) : p === Plan.ENTERPRISE ? 30n : 10n);
@@ -221,6 +252,7 @@ function initial(): State {
     sales: salesOf(param('sales', 'calaba-billing-sales')),
     accept: { stripe: true, tochka: true },
     orbitRu: false,
+    payer: initialPayer(market),
     ledger: [],
     refundRequests: [
       create(BillingRefundRequestSchema, { id: 'rr-1', amount: price(1500n, market), status: RefundRequestStatus.APPROVED, reason: 'Переплатили', createdAt: ts(now - 20 * DAY), decidedAt: ts(now - 19 * DAY) }),
@@ -276,7 +308,7 @@ function summary(s: State): BillingSummary {
         : [{ id: 'stripe:card', provider: 'stripe', kind: PaymentMethodKind.CARD, min: mon(500n), max: mon(500_000n), autoTopupCapable: true }],
     autoTopup: autoTopup(s),
     savedMethods: s.cardSaved ? [savedCard(s)] : [],
-    payer: create(PayerProfileSchema, { type: PayerType.COMPANY, name: 'ООО «Ромашка»', country: 'DE', email: 'billing@romashka.test', taxId: 'DE123456789' }),
+    payer: s.payer,
   });
 }
 
@@ -420,9 +452,26 @@ function owner(): OwnerBillingApi {
       await wait();
       return summary(S()).payer ?? create(PayerProfileSchema);
     },
-    async putPayer() {
+    async putPayer(_ws, init) {
       await wait();
-      bump(S());
+      const s = S();
+      const { payer, problems } = checkPayer(payerSchema, {
+        type: init.type ?? PayerType.UNSPECIFIED,
+        name: init.name ?? '',
+        country: init.country ?? '',
+        email: init.email ?? '',
+        taxId: init.taxId ?? '',
+        requisites: init.requisites ?? {},
+      });
+      const first = problems[0];
+      if (!payer || first) throw new ApiError('ERROR_CODE_VALIDATION', 'invalid payer', 422, first?.field, { reason: first?.reason ?? 'PAYER_FORMAT' });
+      s.payer = create(PayerProfileSchema, { ...payer, version: s.payer.version + 1 });
+      bump(s);
+      return s.payer;
+    },
+    async payerSchema() {
+      await wait(60);
+      return payerSchema;
     },
     async topup(_ws, init) {
       await wait(300);

@@ -37,6 +37,7 @@ import {
   GetBillingResponseSchema,
   LedgerPageSchema,
   PayerProfileSchema,
+  PayerSchemaSchema,
   PutAutoTopupRequestSchema,
   PutPayerRequestSchema,
   ResumeBillingRequestSchema,
@@ -64,6 +65,7 @@ import {
   type GetBillingResponse,
   type LedgerPage,
   type PayerProfile,
+  type PayerSchema,
   type SavedPaymentMethods,
 } from '@calaba/protocol';
 import type { DescMessage, MessageInitShape } from '@bufbuild/protobuf';
@@ -86,7 +88,10 @@ export interface OwnerBillingApi {
   changePlan(ws: string, init: Init<typeof ChangeBillingPlanRequestSchema>): Promise<void>;
   resume(ws: string, init: Init<typeof ResumeBillingRequestSchema>): Promise<void>;
   payer(ws: string, signal?: AbortSignal): Promise<PayerProfile>;
-  putPayer(ws: string, payer: Init<typeof PayerProfileSchema>): Promise<void>;
+  /** The saved payer (its version; sync_warning when the provider did not take a requisite). */
+  putPayer(ws: string, payer: Init<typeof PayerProfileSchema>): Promise<PayerProfile>;
+  /** ADR-0080 §0.1: the country requisites the payer form renders and checks (the same for every account). */
+  payerSchema(ws: string, signal?: AbortSignal): Promise<PayerSchema>;
   topup(ws: string, init: Init<typeof CreateTopupRequestSchema>): Promise<CreateTopupResponse>;
   checkout(ws: string, checkoutId: string, signal?: AbortSignal): Promise<CheckoutStatus>;
   /** One-click top-up with a saved card (ADR-0083 phase 2): charged at once, or the 3-D Secure page to open. */
@@ -152,7 +157,8 @@ export const restOwnerApi: OwnerBillingApi = {
   changePlan: (ws, init) => callEmpty('POST', `${W(ws)}/change-plan`, body(ChangeBillingPlanRequestSchema, init)),
   resume: (ws, init) => callEmpty('POST', `${W(ws)}/resume`, body(ResumeBillingRequestSchema, init)),
   payer: (ws, signal) => call('GET', `${W(ws)}/payer`, PayerProfileSchema, undefined, signal),
-  putPayer: (ws, payer) => callEmpty('PUT', `${W(ws)}/payer`, body(PutPayerRequestSchema, { payer })),
+  putPayer: (ws, payer) => call('PUT', `${W(ws)}/payer`, PayerProfileSchema, body(PutPayerRequestSchema, { payer })),
+  payerSchema: (ws, signal) => call('GET', `${W(ws)}/payer-schema`, PayerSchemaSchema, undefined, signal),
   topup: (ws, init) => call('POST', `${W(ws)}/topups`, CreateTopupResponseSchema, body(CreateTopupRequestSchema, init)),
   checkout: (ws, cid, signal) => call('GET', `${W(ws)}/checkouts/${enc(cid)}`, CheckoutStatusSchema, undefined, signal),
   savedTopup: (ws, init) => call('POST', `${W(ws)}/saved-method-topups`, SavedMethodTopupSchema, body(CreateSavedMethodTopupRequestSchema, init)),

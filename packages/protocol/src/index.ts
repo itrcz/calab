@@ -37,5 +37,6 @@ export * from './gen/calaba/v1/workspace_pb.js';
 export * from './permissions.js';
 export * from './media.js';
 export * from './notifications.js';
+export * from './payer.js';
 
 export * from './gen/calaba/v1/board_forms_pb.js';

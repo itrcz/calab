@@ -35,7 +35,7 @@ export function BillingCabinet({ workspaceId, summary, state }: { workspaceId: s
     <div className="flex flex-col gap-6" data-testid="billing-cabinet">
       <BalanceCard workspaceId={workspaceId} summary={summary} state={state} payments={payments} onTopup={onTopup} onQuote={onQuote} />
       {summary.methods.some((m) => m.autoTopupCapable) ? <AutoTopupCard workspaceId={workspaceId} summary={summary} payments={payments} /> : null}
-      <PayerCard workspaceId={workspaceId} payer={summary.payer} payments={payments} />
+      <PayerCard workspaceId={workspaceId} payer={summary.payer} market={summary.market} payments={payments} />
       <HistoryCard workspaceId={workspaceId} currency={currencyOf(summary)} payments={payments} />
       {open?.kind === 'topup' ? <TopupDialog workspaceId={workspaceId} summary={summary} initialAmount={open.amount} onClose={close} /> : null}
       {open?.kind === 'quote' ? (
