@@ -95,6 +95,9 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	rt.Inbox.AttemptSettled = rt.AutoTopup.AttemptSettled
 	svc := billinghttp.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, billinghttp.Config{
 		Checkouts: b.StripeEnabled, ReturnURL: b.PublicReturnURL, AppURL: d.Config.PublicAppURL,
+		SelfServe:  b.SelfServe,
+		PlanLimits: func(p v1.Plan) *v1.PlanLimits { return planSvc.PlanLimits(p).Proto() },
+		Committed:  committed,
 	})
 	rt.Handlers.Owner, rt.Handlers.Public = svc.Owner(), svc.Public()
 	rt.Handlers.Admin = admin.New(admin.Deps{

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/money"
 	"github.com/calaba/calaba/server/internal/billing/provider"
@@ -48,7 +49,18 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 		acc = &c.acc
 	}
 	resp := &v1.GetBillingResponse{Status: Status(acc, source)}
-	if !c.owner || !c.hasAc {
+	if !c.owner {
+		return resp, nil
+	}
+	if !c.hasAc {
+		if !s.canSelfServe(c) {
+			return resp, nil
+		}
+		offers, err := s.offers(ctx, SelfServeMarket, 0, s.now(ctx))
+		if err != nil {
+			return nil, err
+		}
+		resp.SelfServe, resp.Offers = true, offers
 		return resp, nil
 	}
 	sum, err := s.summary(ctx, c.acc)
@@ -56,6 +68,9 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 		return nil, err
 	}
 	resp.Summary = sum
+	if resp.Offers, err = s.offers(ctx, c.acc.Market, int(c.acc.DiscountBps), s.now(ctx)); err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
 
@@ -140,20 +155,44 @@ func autoTopupSummary(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAcco
 
 // quote: POST …/billing/quote. Applies what is due first (core.Quote), then answers what the
 // purpose costs now. Amounts are informative; the actions recompute them under the lock.
+//
+// Self-serve (Config.SelfServe): the owner's ACTIVATE quote of a workspace without a live
+// account first creates its inactive account (selfserve.go).
 func (s *Service) quote(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.who(r)
 	if err != nil {
 		return err
+	}
+	if !c.owner {
+		return billing.ErrOwnerRequired
+	}
+	if !c.hasAc && !s.canSelfServe(c) {
+		return billing.ErrAccountNotFound
 	}
 	var req v1.BillingQuoteRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
 	ctx := r.Context()
+	if !c.hasAc {
+		if req.GetPurpose() != v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE {
+			return billing.ErrAccountNotFound
+		}
+		if err := s.startSelfServe(ctx, &c); err != nil {
+			return err
+		}
+	}
 	plan := c.acc.Plan
-	if req.GetPurpose() == v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_CHANGE_PLAN {
+	switch req.GetPurpose() {
+	case v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_CHANGE_PLAN:
 		if plan = planName(req.GetPlan()); plan == "" {
 			return httpx.Validation("plan", "plan must be PLAN_TEAM or PLAN_ENTERPRISE")
+		}
+	case v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE:
+		if req.GetPlan() != v1.Plan_PLAN_UNSPECIFIED {
+			if plan = planName(req.GetPlan()); plan == "" {
+				return httpx.Validation("plan", "plan must be PLAN_TEAM or PLAN_ENTERPRISE")
+			}
 		}
 	}
 	qt, err := s.core.Quote(ctx, c.acc.ID, plan)
@@ -270,9 +309,20 @@ func (s *Service) activate(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	// The paid plan to start: the request's (the plan screen), else the account's.
+	plan := ""
+	if req.GetPlan() != v1.Plan_PLAN_UNSPECIFIED {
+		if plan = planName(req.GetPlan()); plan == "" {
+			return httpx.Validation("plan", "plan must be PLAN_TEAM or PLAN_ENTERPRISE")
+		}
+	}
 	return s.act(w, r, "owner.activate", actionRequest{req.GetQuoteId(), req.GetRequestId(), req.GetExpectedRevision()},
-		bodyHash("activate", &v1.BillingActionRequest{}), func(ctx context.Context, c caller, id uuid.UUID) error {
-			_, err := s.core.Activate(ctx, c.acc.ID, c.acc.Plan, id, &c.user)
+		bodyHash("activate", &v1.BillingActionRequest{Plan: req.GetPlan()}), func(ctx context.Context, c caller, id uuid.UUID) error {
+			p := plan
+			if p == "" {
+				p = c.acc.Plan
+			}
+			_, err := s.core.Activate(ctx, c.acc.ID, p, id, &c.user)
 			return err
 		})
 }

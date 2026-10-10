@@ -104,3 +104,20 @@
 - Возврат без provider id не POST-ится после 23 ч с создания строки; поиск по `calab_refund_id`;
   через 24 ч без следа — `needs_review` (миграция 00076), резерв держится, суперадмин снимает его
   через reconcile `release_refund_ids`.
+
+## Экран «Тариф и оплата» и self-serve (2026-10-10)
+
+- `BILLING_SELF_SERVE=true`: владелец пространства без живого счёта получает в `GET …/billing`
+  `self_serve = true`; первый `POST …/quote` с `purpose = ACTIVATE` создаёт неактивный счёт
+  (рынок `global`, провайдер по `BILLING_PROVIDERS`, как `enable` суперадмина) и вызывает
+  committed-хук. Другие маршруты без счёта — по-прежнему 404. Без флага — как раньше.
+- `GET …/billing` владельцу (со счётом или self-serve) отдаёт `offers`: Free / Team / Business с
+  ценой за человека в сутки (версия цены рынка, со скидкой счёта) и лимитами тарифа сервера
+  (`plans.Service.PlanLimits`); тариф без версии цены не продаётся.
+- `BillingQuoteRequest.plan` для `ACTIVATE` и `BillingActionRequest.plan` для `activate` —
+  выбранный платный тариф (пусто = тариф счёта); `plan` входит в хеш тела request_id.
+- Клиент: шильдик тарифа рядом с именем пространства (тайтлбар, шапка телефона) открывает
+  «Тариф и оплата»; путь — тариф → места (Team 5, Business 10, не меньше людей) → способ оплаты →
+  Checkout (карта сохраняется для автопополнения) → по зачислению activate / change-plan. Места —
+  размер предоплаты (места × цена × 30 дней), сервер списывает за фактических людей. SSO / каталог /
+  OAuth Business — из `plans/identity.go businessFeatures` (таблица `IDENTITY_FEATURES` клиента).
