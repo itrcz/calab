@@ -1,11 +1,12 @@
-import { PaymentOrigin } from '@calaba/protocol';
+import { create } from '@bufbuild/protobuf';
+import { AdminBillingMutationResultSchema, RefundStatus } from '@calaba/protocol';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { setLocale } from '../../i18n';
 
 vi.mock('../../platform', () => ({ platform: { kind: 'web', apiBase: '', apiFetch: vi.fn() } }));
 
 const { ApiError } = await import('../api/client');
-const { adminFormError, reasonError, reasonHint, reasonProblem, refundManualOnly } = await import('./adminForm');
+const { adminFormError, reasonError, reasonHint, reasonProblem, refundOutcome } = await import('./adminForm');
 
 beforeAll(() => setLocale('ru'));
 
@@ -50,15 +51,16 @@ describe('admin billing refusals', () => {
   });
 });
 
-describe('refunds Tochka cannot do through the API', () => {
-  const p = (provider: string, providerPaymentId: string, origin: PaymentOrigin) => ({ provider, providerPaymentId, payment: { origin } as never });
-  it('subscription charges and one-click top-ups of Tochka: by hand (needs review)', () => {
-    expect(refundManualOnly(p('tochka', 'sub-1:ord-2', PaymentOrigin.AUTO_TOPUP))).toBe(true);
-    expect(refundManualOnly(p('tochka', 'sub-1:ord-3', PaymentOrigin.SAVED_METHOD))).toBe(true);
-    expect(refundManualOnly(p('tochka', 'sub-1:ord-4', PaymentOrigin.IMPORT))).toBe(true);
-  });
-  it('payment links and Stripe: a normal refund', () => {
-    expect(refundManualOnly(p('tochka', 'op-1', PaymentOrigin.CHECKOUT))).toBe(false);
-    expect(refundManualOnly(p('stripe', 'pi_1', PaymentOrigin.SAVED_METHOD))).toBe(false);
+describe('synchronous admin refund outcome', () => {
+  const res = (status?: RefundStatus, manual = false) =>
+    create(AdminBillingMutationResultSchema, {
+      refunds: status === undefined ? [] : [{ refund: { status } }],
+      ...(manual ? { manualRefund: { provider: 'tochka', operation: '…299c', charge: '7824819' } } : {}),
+    });
+  it('manual / done / refused / waiting', () => {
+    expect(refundOutcome(res(undefined, true))).toBe('manual');
+    expect(refundOutcome(res(RefundStatus.SUCCEEDED))).toBe('done');
+    expect(refundOutcome(res(RefundStatus.FAILED))).toBe('refused');
+    expect(refundOutcome(res(RefundStatus.PENDING))).toBe('waiting');
   });
 });

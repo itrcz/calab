@@ -9,10 +9,8 @@ import {
   AdminBillingDisputesSchema,
   AdminBillingMutationResultSchema,
   AdminBillingPaymentsSchema,
-  AdminBillingRefundRequestsSchema,
   AdminBillingRefundsSchema,
   AdminCreatePriceRequestSchema,
-  AdminDecideRefundRequestSchema,
   AdminDiscountRequestSchema,
   AdminEnableBillingRequestSchema,
   AdminHoldRequestSchema,
@@ -22,17 +20,16 @@ import {
   AdminProviderEventsSchema,
   AdminReconcileRequestSchema,
   AdminRefundRequestSchema,
+  AdminResolveIssueRequestSchema,
+  AdminBillingIssuesSchema,
   AdminReverseCreditRequestSchema,
   AutoTopupSettingsSchema,
   BillingActionRequestSchema,
   BillingPaymentPageSchema,
   BillingQuoteRequestSchema,
   BillingQuoteSchema,
-  BillingRefundRequestSchema,
-  BillingRefundRequestsSchema,
   ChangeBillingPlanRequestSchema,
   CheckoutStatusSchema,
-  CreateRefundRequestSchema,
   CreateSavedMethodTopupRequestSchema,
   CreateTopupRequestSchema,
   CreateTopupResponseSchema,
@@ -48,9 +45,9 @@ import {
   type AdminBillingAccounts,
   type AdminBillingDisputes,
   type AdminBillingMutationResult,
+  type AdminBillingIssues,
   type AdminBillingPayments,
   type AdminBillingProviders,
-  type AdminBillingRefundRequests,
   type AdminBillingRefunds,
   type AdminPriceVersion,
   type AdminPriceVersions,
@@ -58,8 +55,6 @@ import {
   type AutoTopupSettings,
   type BillingPaymentPage,
   type BillingQuote,
-  type BillingRefundRequest,
-  type BillingRefundRequests,
   type CheckoutStatus,
   type CreateTopupResponse,
   SavedMethodTopupSchema,
@@ -107,15 +102,13 @@ export interface OwnerBillingApi {
   detachMethod(ws: string, methodId: string): Promise<void>;
   ledger(ws: string, cursor: string, signal?: AbortSignal): Promise<LedgerPage>;
   payments(ws: string, cursor: string, signal?: AbortSignal): Promise<BillingPaymentPage>;
-  refundRequests(ws: string, signal?: AbortSignal): Promise<BillingRefundRequests>;
-  createRefundRequest(ws: string, init: Init<typeof CreateRefundRequestSchema>): Promise<BillingRefundRequest>;
 }
 
 export interface AdminListQuery {
   q?: string;
   accountId?: string;
   cursor?: string;
-  /** refund-requests: only REQUESTED ones; events: only failed ones. */
+  /** events: only failed ones; issues: only open ones. */
   open?: boolean;
   /** accounts: only «тариф не активен» ones (a stopped account in the restricted mode). */
   lapsed?: boolean;
@@ -128,15 +121,23 @@ export interface AdminBillingApi {
   ledger(id: string, cursor: string, signal?: AbortSignal): Promise<LedgerPage>;
   payments(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingPayments>;
   refunds(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingRefunds>;
-  refundRequests(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingRefundRequests>;
   disputes(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingDisputes>;
   events(q: AdminListQuery, signal?: AbortSignal): Promise<AdminProviderEvents>;
   enable(workspaceId: string, init: Init<typeof AdminEnableBillingRequestSchema>): Promise<AdminBillingMutationResult>;
   manualCredit(id: string, init: Init<typeof AdminManualCreditRequestSchema>): Promise<AdminBillingMutationResult>;
   reverseCredit(id: string, creditId: string, init: Init<typeof AdminReverseCreditRequestSchema>): Promise<AdminBillingMutationResult>;
+  /**
+   * Synchronous (ADR-0083 amendment 2026-10-10): the answer carries the refund as the bank left it
+   * (succeeded / failed / pending = unknown outcome), or manual_refund when the bank makes it only
+   * in its own interface (nothing sent, nothing booked).
+   */
   refund(paymentId: string, init: Init<typeof AdminRefundRequestSchema>): Promise<AdminBillingMutationResult>;
-  /** Approve (refund FIFO from the account's payments) or reject an owner's refund request. */
-  decideRefundRequest(id: string, init: Init<typeof AdminDecideRefundRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Требует внимания»: refunds the bank executed without Calab (informational) and the open ones. */
+  issues(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingIssues>;
+  /** «Записать как долг»: books an open issue's bank refund. */
+  importIssue(id: string, init: Init<typeof AdminResolveIssueRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Отметить разобранным»: closes an open issue, no money moves. */
+  dismissIssue(id: string, init: Init<typeof AdminResolveIssueRequestSchema>): Promise<AdminBillingMutationResult>;
   hold(id: string, init: Init<typeof AdminHoldRequestSchema>): Promise<AdminBillingMutationResult>;
   reconcile(id: string, init: Init<typeof AdminReconcileRequestSchema>): Promise<AdminBillingMutationResult>;
   discount(id: string, init: Init<typeof AdminDiscountRequestSchema>): Promise<AdminBillingMutationResult>;
@@ -178,8 +179,6 @@ export const restOwnerApi: OwnerBillingApi = {
   detachMethod: (ws, pm) => callEmpty('DELETE', `${W(ws)}/payment-methods/${enc(pm)}`),
   ledger: (ws, cursor, signal) => call('GET', `${W(ws)}/ledger${qs({ cursor })}`, LedgerPageSchema, undefined, signal),
   payments: (ws, cursor, signal) => call('GET', `${W(ws)}/payments${qs({ cursor })}`, BillingPaymentPageSchema, undefined, signal),
-  refundRequests: (ws, signal) => call('GET', `${W(ws)}/refund-requests`, BillingRefundRequestsSchema, undefined, signal),
-  createRefundRequest: (ws, init) => call('POST', `${W(ws)}/refund-requests`, BillingRefundRequestSchema, body(CreateRefundRequestSchema, init)),
 };
 
 const listQs = (q: AdminListQuery): string =>
@@ -191,7 +190,6 @@ export const restAdminApi: AdminBillingApi = {
   ledger: (id, cursor, signal) => call('GET', `${A}/accounts/${enc(id)}/ledger${qs({ cursor })}`, LedgerPageSchema, undefined, signal),
   payments: (q, signal) => call('GET', `${A}/payments${listQs(q)}`, AdminBillingPaymentsSchema, undefined, signal),
   refunds: (q, signal) => call('GET', `${A}/refunds${listQs(q)}`, AdminBillingRefundsSchema, undefined, signal),
-  refundRequests: (q, signal) => call('GET', `${A}/refund-requests${listQs(q)}`, AdminBillingRefundRequestsSchema, undefined, signal),
   disputes: (q, signal) => call('GET', `${A}/disputes${listQs(q)}`, AdminBillingDisputesSchema, undefined, signal),
   events: (q, signal) => call('GET', `${A}/events${listQs(q)}`, AdminProviderEventsSchema, undefined, signal),
   enable: (ws, init) => call('POST', `${A}/workspaces/${enc(ws)}/enable`, AdminBillingMutationResultSchema, body(AdminEnableBillingRequestSchema, init)),
@@ -199,8 +197,9 @@ export const restAdminApi: AdminBillingApi = {
   reverseCredit: (id, cid, init) =>
     call('POST', `${A}/accounts/${enc(id)}/manual-credits/${enc(cid)}/reverse`, AdminBillingMutationResultSchema, body(AdminReverseCreditRequestSchema, init)),
   refund: (pid, init) => call('POST', `${A}/payments/${enc(pid)}/refunds`, AdminBillingMutationResultSchema, body(AdminRefundRequestSchema, init)),
-  decideRefundRequest: (id, init) =>
-    call('POST', `${A}/refund-requests/${enc(id)}/decide`, AdminBillingMutationResultSchema, body(AdminDecideRefundRequestSchema, init)),
+  issues: (q, signal) => call('GET', `${A}/issues${qs({ account_id: q.accountId, cursor: q.cursor, ...(q.open ? { status: 'open' } : {}) })}`, AdminBillingIssuesSchema, undefined, signal),
+  importIssue: (id, init) => call('POST', `${A}/issues/${enc(id)}/import`, AdminBillingMutationResultSchema, body(AdminResolveIssueRequestSchema, init)),
+  dismissIssue: (id, init) => call('POST', `${A}/issues/${enc(id)}/dismiss`, AdminBillingMutationResultSchema, body(AdminResolveIssueRequestSchema, init)),
   hold: (id, init) => call('POST', `${A}/accounts/${enc(id)}/hold`, AdminBillingMutationResultSchema, body(AdminHoldRequestSchema, init)),
   reconcile: (id, init) => call('POST', `${A}/accounts/${enc(id)}/reconcile`, AdminBillingMutationResultSchema, body(AdminReconcileRequestSchema, init)),
   discount: (id, init) => call('PUT', `${A}/accounts/${enc(id)}/discount`, AdminBillingMutationResultSchema, body(AdminDiscountRequestSchema, init)),

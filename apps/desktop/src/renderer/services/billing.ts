@@ -57,7 +57,6 @@ export const billingKeys = {
   all: (ws: string) => ['billing', ws] as const,
   ledger: (ws: string) => ['billing', ws, 'ledger'] as const,
   payments: (ws: string) => ['billing', ws, 'payments'] as const,
-  refundRequests: (ws: string) => ['billing', ws, 'refund-requests'] as const,
   methods: (ws: string) => ['billing', ws, 'methods'] as const,
   payer: (ws: string) => ['billing', ws, 'payer'] as const,
 };

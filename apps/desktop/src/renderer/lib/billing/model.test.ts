@@ -27,7 +27,6 @@ import {
   offeredMethods,
   otherPlan,
   refundableMinor,
-  rejectRefundRequest,
   reserveAmount,
   timeLeft,
   topupLimits,
@@ -178,8 +177,3 @@ describe('autoTopupFailure', () => {
   });
 });
 
-describe('rejectRefundRequest', () => {
-  it('rejects without a preview, with the trimmed reason and the form request id', () => {
-    expect(rejectRefundRequest({ reason: '  duplicate request ', requestId: 'r-1' })).toEqual({ approve: false, reason: 'duplicate request', requestId: 'r-1', preview: false });
-  });
-});

@@ -4,7 +4,7 @@ import {
   AdminBillingProvidersSchema,
   AdminBillingMutationResultSchema,
   AdminBillingPaymentSchema,
-  AdminBillingRefundRequestSchema,
+  AdminBillingIssueSchema,
   AdminBillingRefundSchema,
   AdminBillingDisputeSchema,
   AdminPriceVersionSchema,
@@ -16,7 +16,6 @@ import {
   BillingPlanOfferSchema,
   BillingQuotePurpose,
   BillingQuoteSchema,
-  BillingRefundRequestSchema,
   BillingResumeMode,
   BillingSalesMode,
   BillingState,
@@ -39,7 +38,6 @@ import {
   PlanLimitViolationSchema,
   PlanSource,
   RefundOrigin,
-  RefundRequestStatus,
   RefundStatus,
   SavedPaymentMethodSchema,
   SavedMethodTopupSchema,
@@ -76,6 +74,7 @@ const payerSchema = fromJson(PayerSchemaSchema, payerSchemaJson as JsonValue);
 const DAY = 86_400_000;
 const USD = 'USD';
 const usd = (minor: bigint): Money => ({ $typeName: 'calaba.v1.Money', minor, currency: USD });
+const rub = (minor: bigint): Money => ({ $typeName: 'calaba.v1.Money', minor, currency: 'RUB' });
 /** Money in the currency of the mock account's market (ADR-0083: Global $, Russia ₽). */
 const mon = (minor: bigint): Money => ({ $typeName: 'calaba.v1.Money', minor, currency: S().market === 'ru' ? 'RUB' : USD });
 
@@ -175,7 +174,6 @@ interface State {
   orbitRu: boolean;
   checkouts: Map<string, { amount: bigint; polls: number; save: boolean }>;
   ledger: LedgerEntry[];
-  refundRequests: Array<ReturnType<typeof create<typeof BillingRefundRequestSchema>>>;
   payer: PayerProfile;
 }
 
@@ -305,14 +303,11 @@ function initial(): State {
     orbitRu: false,
     payer: initialPayer(market),
     ledger: [],
-    refundRequests: [
-      create(BillingRefundRequestSchema, { id: 'rr-1', amount: price(1500n, market), status: RefundRequestStatus.APPROVED, reason: 'Переплатили', createdAt: ts(now - 20 * DAY), decidedAt: ts(now - 19 * DAY) }),
-    ],
   };
   if (sc === 'debt') Object.assign(s, { balance: -320n, negativeSince: now - 3 * DAY - 19 * 3_600_000, suspendAt: now + 3 * DAY + 5 * 3_600_000, autoOn: false });
   if (sc === 'suspended' || sc === 'memberSuspended')
     Object.assign(s, { status: BillingAccountStatus.SUSPENDED, balance: -560n, negativeSince: now - 8 * DAY, suspendAt: now - DAY, autoOn: false, cardSaved: false });
-  if (sc === 'inactive' || sc === 'selfServe') Object.assign(s, { status: BillingAccountStatus.INACTIVE, balance: 0n, autoOn: false, cardSaved: false, refundRequests: [] });
+  if (sc === 'inactive' || sc === 'selfServe') Object.assign(s, { status: BillingAccountStatus.INACTIVE, balance: 0n, autoOn: false, cardSaved: false });
   if (sc === 'selfServe') s.account = false;
   if (sc === 'stopped') Object.assign(s, { status: BillingAccountStatus.STOPPED, balance: 1210n, autoOn: false });
   if (sc === 'lapsed' || sc === 'memberLapsed') Object.assign(s, { status: BillingAccountStatus.STOPPED, lapsed: true, balance: 0n, autoOn: false });
@@ -699,16 +694,6 @@ function owner(): OwnerBillingApi {
       );
       return { $typeName: 'calaba.v1.BillingPaymentPage', payments: S().sc === 'inactive' ? [] : payments, nextCursor: '' };
     },
-    async refundRequests() {
-      await wait();
-      return { $typeName: 'calaba.v1.BillingRefundRequests', requests: S().refundRequests };
-    },
-    async createRefundRequest(_ws, init) {
-      await wait();
-      const r = create(BillingRefundRequestSchema, { id: `rr-${Date.now()}`, amount: mon(init.amount?.minor ?? 0n), status: RefundRequestStatus.REQUESTED, reason: init.reason ?? '', createdAt: ts(Date.now()) });
-      S().refundRequests.unshift(r);
-      return r;
-    },
   };
 }
 
@@ -815,19 +800,30 @@ function admin(): AdminBillingApi {
         nextCursor: '',
       };
     },
-    async refundRequests(q) {
+    async issues(q) {
       await wait();
-      return {
-        $typeName: 'calaba.v1.AdminBillingRefundRequests',
-        requests: [
-          create(AdminBillingRefundRequestSchema, {
-            request: { id: 'rr-2', amount: usd(2000n), status: RefundRequestStatus.REQUESTED, reason: 'Закрываем пространство, верните остаток', createdAt: ts(Date.now() - 2 * 3_600_000) },
-            accountId: q.accountId ?? 'acc-2',
-            workspaceId: 'ws-2',
-          }),
-        ],
-        nextCursor: '',
-      };
+      const all = [
+        create(AdminBillingIssueSchema, {
+          id: 'is-1', accountId: 'acc-1', workspaceId: 'ws-1', workspaceName: 'Acme', provider: 'tochka', providerRef: '…299c:7825106',
+          amount: rub(10000n), reason: 'bank_refund', status: 'imported', occurredAt: ts(Date.now() - 3_600_000), createdAt: ts(Date.now() - 3_000_000), resolvedAt: ts(Date.now() - 3_000_000),
+        }),
+        create(AdminBillingIssueSchema, {
+          id: 'is-2', accountId: 'acc-2', workspaceId: 'ws-2', workspaceName: 'Globex', provider: 'tochka', providerRef: 'op-77:78',
+          amount: usd(500n), reason: 'currency_mismatch', status: 'open', createdAt: ts(Date.now() - 600_000),
+        }),
+      ];
+      const issues = all.filter((i) => (!q.accountId || i.accountId === q.accountId) && (!q.open || i.status === 'open'));
+      return { $typeName: 'calaba.v1.AdminBillingIssues', issues, nextCursor: '', openTotal: BigInt(all.filter((i) => i.status === 'open').length) };
+    },
+    async importIssue(id) {
+      await wait();
+      const a = find(id === 'is-1' ? 'acc-1' : 'acc-2');
+      return result(a, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, false);
+    },
+    async dismissIssue(id) {
+      await wait();
+      const a = find(id === 'is-1' ? 'acc-1' : 'acc-2');
+      return result(a, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, false);
     },
     async disputes(q) {
       await wait();
@@ -874,12 +870,6 @@ function admin(): AdminBillingApi {
       const b = a.balance?.minor ?? 0n;
       if ((init.amount?.minor ?? 0n) > 2500n) throw new ApiError('ERROR_CODE_CONFLICT', 'refundable', 409, undefined, { reason: 'BILLING_REFUND_EXCEEDS_REFUNDABLE' });
       return result(a, b, b - (init.amount?.minor ?? 0n), !!init.preview);
-    },
-    async decideRefundRequest(_id, init) {
-      await wait();
-      const a = find('acc-2');
-      const b = a.balance?.minor ?? 0n;
-      return result(a, b, init.approve ? b - 2000n : b, !!init.preview);
     },
     async hold(id) {
       await wait();

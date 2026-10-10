@@ -1,7 +1,6 @@
 import { create, fromJson, toJson, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
 import { AdminBillingAccountDetailsSchema, AdminBillingMutationResultSchema } from '@calaba/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { rejectRefundRequest } from './model';
 
 const call = vi.fn();
 // The real client pulls the platform layer (window); the adapter only needs call / body here.
@@ -40,13 +39,14 @@ describe('restAdminApi.account', () => {
   });
 });
 
-describe('restAdminApi.decideRefundRequest', () => {
-  it('rejects through POST …/refund-requests/{id}/decide with the reason and request id', async () => {
-    call.mockResolvedValueOnce({});
-    await restAdminApi.decideRefundRequest('rr/1', rejectRefundRequest({ reason: 'not eligible', requestId: 'req-1' }));
-    expect(call).toHaveBeenCalledWith('POST', '/api/admin/billing/refund-requests/rr%2F1/decide', AdminBillingMutationResultSchema, {
-      reason: 'not eligible',
-      requestId: 'req-1',
-    });
+describe('restAdminApi issues («Требует внимания»)', () => {
+  it('lists, imports and dismisses through …/issues', async () => {
+    call.mockResolvedValue({});
+    await restAdminApi.issues({ accountId: 'acc 1', open: true });
+    expect(call).toHaveBeenLastCalledWith('GET', '/api/admin/billing/issues', expect.anything(), undefined, undefined); // qs is stubbed here
+    await restAdminApi.importIssue('is/1', { reason: 'bank refund', requestId: 'req-1' });
+    expect(call).toHaveBeenLastCalledWith('POST', '/api/admin/billing/issues/is%2F1/import', AdminBillingMutationResultSchema, { reason: 'bank refund', requestId: 'req-1' });
+    await restAdminApi.dismissIssue('is-2', { reason: 'checked', requestId: 'req-2' });
+    expect(call).toHaveBeenLastCalledWith('POST', '/api/admin/billing/issues/is-2/dismiss', AdminBillingMutationResultSchema, { reason: 'checked', requestId: 'req-2' });
   });
 });

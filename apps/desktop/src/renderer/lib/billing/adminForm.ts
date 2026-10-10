@@ -1,4 +1,4 @@
-import { PaymentOrigin, type AdminBillingPayment } from '@calaba/protocol';
+import { RefundStatus, type AdminBillingMutationResult } from '@calaba/protocol';
 import { t, type MessageKey } from '../../i18n';
 import { ApiError } from '../api/client';
 import { describeError, recentAuthRequired } from '../api/errors';
@@ -72,13 +72,14 @@ export function adminFormError(e: unknown): AdminFormError {
 }
 
 /**
- * Tochka cannot refund a charge of a saved card (subscription) or a one-click top-up through the
- * API (providers/tochka Refund → ErrNotSupported): the core marks the refund «Нужна проверка» and
- * the money is returned by hand in the bank. Known from the payment row: Tochka + an auto-topup /
- * one-click origin, or a charge id ({subscription}:{order}).
+ * What the bank did with a synchronous admin refund (ADR-0083 amendment 2026-10-10): manual =
+ * refunded only in the bank's interface (nothing sent or booked), done = executed and booked,
+ * refused = nothing moved, waiting = unknown outcome (the polling settles it).
  */
-export function refundManualOnly(p: Pick<AdminBillingPayment, 'provider' | 'providerPaymentId' | 'payment'>): boolean {
-  if (p.provider !== 'tochka') return false;
-  const origin = p.payment?.origin;
-  return origin === PaymentOrigin.AUTO_TOPUP || origin === PaymentOrigin.SAVED_METHOD || p.providerPaymentId.includes(':');
+export function refundOutcome(r: AdminBillingMutationResult): 'manual' | 'done' | 'refused' | 'waiting' {
+  if (r.manualRefund) return 'manual';
+  const st = r.refunds[0]?.refund?.status;
+  if (st === RefundStatus.SUCCEEDED) return 'done';
+  if (st === RefundStatus.FAILED || st === RefundStatus.CANCELED) return 'refused';
+  return 'waiting';
 }

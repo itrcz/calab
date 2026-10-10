@@ -3,30 +3,27 @@ import {
   PaymentOrigin,
   PaymentStatus,
   Plan,
-  RefundRequestStatus,
   type BillingPayment,
-  type BillingRefundRequest,
   type LedgerEntry,
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { ChevronDown, ExternalLink } from 'lucide-react';
-import { memo, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Button, Field, Input, Modal, Segmented, Spinner, cx } from '../../../components/ui';
+import { memo, useMemo, useState, type ReactNode } from 'react';
+import { Button, Segmented, Spinner, cx } from '../../../components/ui';
 import { plural, t, type MessageKey } from '../../../i18n';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { groupLedger, type LedgerItem } from '../../../lib/billing/history';
 import { PLAN_LABEL } from '../../../lib/plan';
-import { amountProblem, requestId } from '../../../lib/billing/model';
-import { formatMinor, formatMoney, minorOf, parseMajor } from '../../../lib/billing/money';
+import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
 import { fmt } from '../../../lib/format';
 import { billingKeys, openReceipt, ownerBilling } from '../../../services/billing';
-import { toast } from '../../../stores/toasts';
 import { PLAN_NAME } from './parts';
 
 /**
  * «История» (ADR-0080 §13): the ledger (every daily charge, top-up, refund, compensation — cursor
- * pages), payments with the provider receipt (`receipt_url`), and refund requests with the form.
+ * pages) and payments with the provider receipt (`receipt_url`). Refunds are made by the
+ * superadmin only (owner 2026-10-10: no refund requests); they show in the ledger.
  * Rows are memo components with primitive / stable props (CLAUDE.md «Ререндеры»).
  */
 
@@ -258,120 +255,9 @@ function Payments({ workspaceId }: { workspaceId: string }): ReactNode {
   );
 }
 
-const REQ_STATUS: Record<RefundRequestStatus, MessageKey> = {
-  [RefundRequestStatus.UNSPECIFIED]: 'billing.rr.status.requested',
-  [RefundRequestStatus.REQUESTED]: 'billing.rr.status.requested',
-  [RefundRequestStatus.APPROVED]: 'billing.rr.status.approved',
-  [RefundRequestStatus.REJECTED]: 'billing.rr.status.rejected',
-  [RefundRequestStatus.WITHDRAWN]: 'billing.rr.status.withdrawn',
-};
+type Tab = 'ledger' | 'payments';
 
-export const RefundRequestRow = memo(function RefundRequestRow({ r, extra }: { r: BillingRefundRequest; extra?: ReactNode }): ReactNode {
-  return (
-    <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0" data-testid="billing-rr-row">
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex items-baseline gap-2 text-body">
-          <span className="tabular-nums font-medium">{formatMoney(r.amount)}</span>
-          <span className={cx('text-caption', r.status === RefundRequestStatus.REJECTED ? 'text-danger-text' : 'text-muted')}>{t(REQ_STATUS[r.status])}</span>
-        </span>
-        <span className="truncate text-caption text-faint" title={r.reason}>
-          {[r.createdAt ? fmt.dateTime(timestampDate(r.createdAt), 'short') : '', r.reason].filter(Boolean).join(' · ')}
-        </span>
-      </span>
-      {extra}
-    </div>
-  );
-});
-
-function RefundRequests({ workspaceId, currency, payments }: { workspaceId: string; currency: string; payments: boolean }): ReactNode {
-  const q = useQuery({ queryKey: billingKeys.refundRequests(workspaceId), queryFn: ({ signal }) => ownerBilling.refundRequests(workspaceId, signal), retry: false });
-  const [form, setForm] = useState(false);
-  const list = q.data?.requests ?? [];
-  return (
-    <div data-testid="billing-refund-requests">
-      <p className="px-3 pt-3 text-caption text-muted">{t('billing.rr.explain')}</p>
-      {q.isLoading ? <Spinner className="mx-auto my-4" /> : null}
-      {q.isError ? <p className="px-3 py-3 text-body text-danger-text">{billingErrorText(q.error)}</p> : null}
-      {list.map((r) => (
-        <RefundRequestRow key={r.id} r={r} />
-      ))}
-      {payments ? (
-        <div className="flex px-3 py-2">
-          <Button size="sm" variant="secondary" onClick={() => setForm(true)} data-testid="billing-rr-new">
-            {t('billing.rr.new')}
-          </Button>
-        </div>
-      ) : null}
-      {form ? <RefundRequestDialog workspaceId={workspaceId} currency={currency} onClose={() => setForm(false)} /> : null}
-    </div>
-  );
-}
-
-function RefundRequestDialog({ workspaceId, currency, onClose }: { workspaceId: string; currency: string; onClose: () => void }): ReactNode {
-  const qc = useQueryClient();
-  const [raw, setRaw] = useState('');
-  const [reason, setReason] = useState('');
-  const [touched, setTouched] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const reqId = useRef(requestId());
-  const minor = parseMajor(raw, currency);
-  const problem = amountProblem(minor, raw, { min: 1n, max: 10n ** 15n });
-  const submit = async (): Promise<void> => {
-    setTouched(true);
-    if (problem || minor === null || !reason.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await ownerBilling.createRefundRequest(workspaceId, { amount: { minor, currency }, reason: reason.trim(), requestId: reqId.current });
-      toast.success(t('billing.rr.sent'));
-      void qc.invalidateQueries({ queryKey: billingKeys.refundRequests(workspaceId) });
-      onClose();
-    } catch (e) {
-      setError(billingErrorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      open
-      initialFocus="body"
-      onClose={onClose}
-      title={t('billing.rr.title')}
-      description={t('billing.rr.text')}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button busy={busy} onClick={() => void submit()}>
-            {t('billing.rr.send')}
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3" data-testid="billing-rr-form">
-        <Field label={t('billing.rr.amount', { currency })} error={touched && problem ? t('billing.topup.err.invalid') : null}>
-          <Input inputMode="decimal" className="w-40 tabular-nums mobile:w-full" value={raw} onChange={(e) => setRaw(e.target.value)} />
-        </Field>
-        <Field label={t('billing.rr.reason')} error={touched && !reason.trim() ? t('billing.rr.reasonRequired') : null}>
-          <Input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} />
-        </Field>
-        {error ? (
-          <p role="alert" className="text-caption text-danger-text">
-            {error}
-          </p>
-        ) : null}
-        {minor !== null && !problem ? <p className="text-caption text-faint">{t('billing.rr.note', { amount: formatMinor(minor, currency) })}</p> : null}
-      </div>
-    </Modal>
-  );
-}
-
-type Tab = 'ledger' | 'payments' | 'refunds';
-
-export function HistoryCard({ workspaceId, currency, payments }: { workspaceId: string; currency: string; payments: boolean }): ReactNode {
+export function HistoryCard({ workspaceId }: { workspaceId: string; currency: string; payments: boolean }): ReactNode {
   const [tab, setTab] = useState<Tab>('ledger');
   return (
     <section className="flex flex-col gap-1.5" data-testid="billing-history">
@@ -384,17 +270,14 @@ export function HistoryCard({ workspaceId, currency, payments }: { workspaceId: 
           options={[
             { value: 'ledger', label: t('billing.history.ledger') },
             { value: 'payments', label: t('billing.history.payments') },
-            { value: 'refunds', label: t('billing.history.refunds') },
           ]}
         />
       </div>
       <div className="overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)] text-body">
         {tab === 'ledger' ? (
           <LedgerTable queryKey={billingKeys.ledger(workspaceId)} fetchPage={(cursor, signal) => ownerBilling.ledger(workspaceId, cursor, signal)} />
-        ) : tab === 'payments' ? (
-          <Payments workspaceId={workspaceId} />
         ) : (
-          <RefundRequests workspaceId={workspaceId} currency={currency} payments={payments} />
+          <Payments workspaceId={workspaceId} />
         )}
       </div>
     </section>
