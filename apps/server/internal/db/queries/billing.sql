@@ -371,14 +371,16 @@ VALUES ($1, $2, $3, $4, sqlc.arg('now')::timestamptz)
 RETURNING *;
 
 -- name: GetOpenBillingAutoTopupAttempt :one
+-- The charge of a saved card in flight (auto or one-click): at most one per account.
 SELECT * FROM billing_autotopup_attempts
-WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'unknown');
+WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown');
 
 -- name: GetLastBillingAutoTopupAttempt :one
-SELECT * FROM billing_autotopup_attempts WHERE account_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1;
+SELECT * FROM billing_autotopup_attempts WHERE account_id = $1 AND kind = 'auto' ORDER BY created_at DESC, id DESC LIMIT 1;
 
 -- name: SetBillingAutoTopupAttemptStatus :one
--- prepared → dispatched → succeeded | failed | unknown; unknown → succeeded | failed.
+-- prepared → dispatched → succeeded | failed | unknown | requires_action (one-click 3-D Secure);
+-- unknown / requires_action → succeeded | failed.
 UPDATE billing_autotopup_attempts SET status = sqlc.arg('status'),
     provider_payment_id = coalesce(sqlc.narg('provider_payment_id'), provider_payment_id),
     failure_code = sqlc.arg('failure_code'),

@@ -41,6 +41,12 @@ const (
 	DefaultRetryWindow   = 23 * time.Hour
 	DefaultGiveUpAfter   = 24 * time.Hour
 	DefaultChargeTimeout = 90 * time.Second
+	// DefaultActionTimeout: a one-click charge waiting for 3-D Secure longer than this is canceled.
+	DefaultActionTimeout = 30 * time.Minute
+	// DefaultReconcileGiveUp: a charge of a provider without idempotency keys (Tochka) whose
+	// outcome is not visible in the method's charges is read this long (logged as an error after
+	// GiveUpAfter) before it is closed as not_found — never sent again.
+	DefaultReconcileGiveUp = 7 * 24 * time.Hour
 	// ReconcileWindow: the restore reconcile lists auto-topup payments this far back.
 	ReconcileWindow = 48 * time.Hour
 	// MinInterval between two new attempts of an account (owner decision).
@@ -55,6 +61,7 @@ const (
 	CodeAbandoned    = "abandoned"
 	CodeNotFound     = "not_found"
 	CodeRefused      = "provider_refused"
+	CodeUnavailable  = "provider_unavailable" // the charges of the method could not be read before the send
 )
 
 var attempts = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -76,6 +83,13 @@ type Options struct {
 	RetryWindow   time.Duration // same-key retries of an unknown attempt only while younger
 	GiveUpAfter   time.Duration // a lookup that finds nothing after this fails the attempt
 	ChargeTimeout time.Duration
+	// ActionTimeout: a one-click charge left in 3-D Secure longer than this is canceled.
+	ActionTimeout time.Duration
+	// ReconcileGiveUp: how long an unresolved charge of a provider without idempotency keys is
+	// read before it is closed (DefaultReconcileGiveUp).
+	ReconcileGiveUp time.Duration
+	// ReturnURL (BILLING_PUBLIC_RETURN_URL): where a 3-D Secure page returns the payer.
+	ReturnURL string
 }
 
 // Job runs the auto-topup attempts. Every instance may run it: the account lock and the
@@ -119,6 +133,12 @@ func New(d *db.DB, c *core.Core, reg *provider.Registry, in *inbox.Inbox, clock 
 	}
 	if opts.ChargeTimeout <= 0 {
 		opts.ChargeTimeout = DefaultChargeTimeout
+	}
+	if opts.ActionTimeout <= 0 {
+		opts.ActionTimeout = DefaultActionTimeout
+	}
+	if opts.ReconcileGiveUp <= 0 {
+		opts.ReconcileGiveUp = DefaultReconcileGiveUp
 	}
 	return &Job{db: d, core: c, reg: reg, inbox: in, clock: clock, opts: opts, wake: make(chan struct{}, 1),
 		retry: map[uuid.UUID]retryState{}}

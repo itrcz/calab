@@ -86,6 +86,7 @@ enum PaymentOrigin {
   PAYMENT_ORIGIN_CHECKOUT = 1;   // manual top-up through hosted checkout
   PAYMENT_ORIGIN_AUTO_TOPUP = 2; // off-session auto-topup attempt
   PAYMENT_ORIGIN_IMPORT = 3;     // found by reconciliation (e.g. after a restore)
+  PAYMENT_ORIGIN_SAVED_METHOD = 4; // manual top-up charged to a saved card in one click
 }
 
 enum RefundStatus {
@@ -126,6 +127,8 @@ enum AutoTopupAttemptStatus {
   AUTO_TOPUP_ATTEMPT_STATUS_SUCCEEDED = 3;
   AUTO_TOPUP_ATTEMPT_STATUS_FAILED = 4;
   AUTO_TOPUP_ATTEMPT_STATUS_UNKNOWN = 5; // outcome not known yet: reconciled before anything else
+  // A one-click top-up waits for the payer's 3-D Secure confirmation (SavedMethodTopup.action_url).
+  AUTO_TOPUP_ATTEMPT_STATUS_REQUIRES_ACTION = 6;
 }
 
 enum PayerType {
@@ -208,6 +211,11 @@ message SavedPaymentMethod {
   uint32 exp_month = 5;
   uint32 exp_year = 6;
   google.protobuf.Timestamp created_at = 7;
+  string provider = 8;            // "stripe" | "tochka"
+  // The card can pay a manual top-up in one click now (BILLING_SAVED_METHOD_TOPUP_ENABLED and
+  // its provider charges saved cards); else the owner pays on the hosted page.
+  bool one_click = 9;
+  bool auto_topup_capable = 10;   // the card may back the auto-topup consent
 }
 
 // GET …/billing/payment-methods
@@ -269,6 +277,10 @@ message BillingSummary {
   AutoTopupSettings auto_topup = 19;
   PayerProfile payer = 20;
   string open_checkout_id = 21;   // a checkout waiting for payment, if any
+  // Saved cards of the account (not detached), for the one-click top-up and auto-topup.
+  repeated SavedPaymentMethod saved_methods = 22;
+  // A one-click top-up still in flight (waiting for 3-D Secure or the provider's answer), if any.
+  SavedMethodTopup pending_saved_topup = 23;
 }
 
 // GET /api/workspaces/{id}/billing: summary only for the owner.
@@ -372,6 +384,36 @@ message CreateTopupRequest {
 message CreateTopupResponse {
   string checkout_id = 1;
   string url = 2;
+}
+
+// POST …/billing/saved-method-topups: a manual top-up charged to a saved card without the
+// hosted page (BILLING_SAVED_METHOD_TOPUP_ENABLED). Same request_id + same body = the same
+// charge (never a second one); another body under the same request_id is 409.
+message CreateSavedMethodTopupRequest {
+  string payment_method_id = 1; // SavedPaymentMethod.id
+  Money amount = 2;             // within the method's min..max, currency of the account
+  string request_id = 3;
+}
+
+enum SavedMethodTopupState {
+  SAVED_METHOD_TOPUP_STATE_UNSPECIFIED = 0;
+  SAVED_METHOD_TOPUP_STATE_PROCESSING = 1;      // sent; the provider has not answered for sure yet
+  SAVED_METHOD_TOPUP_STATE_REQUIRES_ACTION = 2; // the bank asks for 3-D Secure: open action_url
+  SAVED_METHOD_TOPUP_STATE_SUCCEEDED = 3;       // paid (credited = on the balance)
+  SAVED_METHOD_TOPUP_STATE_FAILED = 4;          // declined or not confirmed: nothing was charged
+}
+
+// The answer of POST …/saved-method-topups and GET …/saved-method-topups/{tid} (the GET also
+// re-reads the provider, e.g. after the 3-D Secure page).
+message SavedMethodTopup {
+  string id = 1;
+  SavedMethodTopupState state = 2;
+  Money amount = 3;
+  bool credited = 4;
+  string action_url = 5;         // REQUIRES_ACTION: the provider's confirmation page
+  string failure_code = 6;       // FAILED: decline / authentication code
+  string payment_method_id = 7;
+  google.protobuf.Timestamp created_at = 8;
 }
 
 // GET …/billing/checkouts/{cid}: also pulls the provider state (success redirect).
@@ -499,6 +541,7 @@ message AdminBillingAccountDetails {
   repeated AdminBillingDispute open_disputes = 4;
   Money free_advance = 5;                         // unused money on the funding lots
   Money pending_refunds = 6;                      // reserved by refunds not final yet
+  repeated SavedPaymentMethod saved_methods = 7;  // saved cards, detached ones left out
 }
 
 message AdminBillingAccounts {

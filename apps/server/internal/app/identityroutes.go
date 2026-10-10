@@ -449,6 +449,8 @@ var identityRoutes = map[string]identityScope{
 	"DELETE /api/workspaces/{id}/billing/auto-topup":                          scopeBilling,
 	"GET /api/workspaces/{id}/billing/payment-methods":                        scopeBilling,
 	"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}":              scopeBilling,
+	"POST /api/workspaces/{id}/billing/saved-method-topups":                   scopeBilling,
+	"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}":              scopeBilling,
 	"GET /api/workspaces/{id}/billing/ledger":                                 scopeBilling,
 	"GET /api/workspaces/{id}/billing/payments":                               scopeBilling,
 	"GET /api/workspaces/{id}/billing/refund-requests":                        scopeBilling,

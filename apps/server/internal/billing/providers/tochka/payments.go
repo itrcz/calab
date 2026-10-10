@@ -82,6 +82,20 @@ type operation struct {
 	CreatedAt     string  `json:"createdAt"`
 	PaidAt        string  `json:"paidAt"`
 	Order         []order `json:"Order"`
+	// CofToken: the card bound to a paid subscription without a schedule (phase 2).
+	CofToken *cofToken `json:"CofToken"`
+}
+
+// cofToken is the card of a subscription without a schedule (CofTokenModel).
+type cofToken struct {
+	TokenCardID string `json:"tokenCardId"`
+	CardType    string `json:"cardType"`
+	MaskedPan   string `json:"maskedPan"`
+}
+
+// bound reports whether the operation is a paid subscription with a card bound to it.
+func (o operation) bound() bool {
+	return o.CofToken != nil && (o.CofToken.TokenCardID != "" || o.CofToken.MaskedPan != "")
 }
 
 // order is one operation on a payment: its approval, a refund (Order[]).
@@ -242,6 +256,9 @@ func (p *Provider) CreateCheckout(ctx context.Context, req provider.CheckoutReq)
 	if !strings.Contains(req.ReceiptEmail, "@") {
 		return provider.CheckoutSession{}, fmt.Errorf("%w: a 54-FZ receipt needs the payer's e-mail", ErrInvalidRequest)
 	}
+	if req.SaveForOffSession {
+		return p.createSubscription(ctx, req)
+	}
 	ttl := 60
 	if !req.ExpiresAt.IsZero() {
 		left := time.Until(req.ExpiresAt)
@@ -372,6 +389,9 @@ func (p *Provider) GetCheckout(ctx context.Context, sessionID string) (provider.
 // separate facts (ListRefunds), they never lower AmountReceived. EXPIRED is canceled, CREATED
 // requires_action (the payer is still on the page), WAIT_FULL_PAYMENT processing.
 func (p *Provider) GetPayment(ctx context.Context, paymentID string) (provider.PaymentFact, error) {
+	if opID, orderID, ok := splitChargeID(paymentID); ok {
+		return p.getCharge(ctx, opID, orderID)
+	}
 	op, err := p.getOperation(ctx, "get payment", paymentID)
 	if err != nil {
 		return provider.PaymentFact{}, err
@@ -388,6 +408,9 @@ func (p *Provider) paymentFact(op operation) (provider.PaymentFact, error) {
 		ID: op.OperationID, ProviderAccount: p.customer, Livemode: p.live, CustomerID: op.ConsumerID, Amount: amt,
 		AmountReceived: money.Zero(money.RUB), ChargeID: op.PaymentID, PaymentMethodID: op.PaymentType,
 		Created: parseTime(op.CreatedAt), Metadata: metadata(op),
+	}
+	if op.bound() {
+		f.PaymentMethodID = op.OperationID // the saved card is the subscription itself
 	}
 	switch op.Status {
 	case statusApproved, statusOnRefund, statusRefunded, statusRefundedPartial:
@@ -474,9 +497,15 @@ func (p *Provider) Refund(ctx context.Context, req provider.RefundReq) (provider
 	if req.PaymentID == "" || req.Amount.Minor <= 0 || req.Amount.Currency != money.RUB {
 		return provider.RefundFact{}, fmt.Errorf("%w: refund needs a payment and a positive RUB amount", ErrInvalidRequest)
 	}
+	if _, _, charge := splitChargeID(req.PaymentID); charge {
+		return provider.RefundFact{}, fmt.Errorf("tochka refund of %s: subscription payments are refunded in the bank's interface: %w", req.PaymentID, provider.ErrNotSupported)
+	}
 	op, err := p.getOperation(ctx, "refund (read payment)", req.PaymentID)
 	if err != nil {
 		return provider.RefundFact{}, err
+	}
+	if op.bound() {
+		return provider.RefundFact{}, fmt.Errorf("tochka refund of %s: subscription payments are refunded in the bank's interface: %w", req.PaymentID, provider.ErrNotSupported)
 	}
 	if op.PaymentType == typeDigitalRuble {
 		return provider.RefundFact{}, fmt.Errorf("tochka refund of %s: digital ruble payments are refunded in the bank's interface: %w", req.PaymentID, provider.ErrNotSupported)
@@ -580,6 +609,11 @@ func (p *Provider) GetRefund(ctx context.Context, id string) (provider.RefundFac
 // ListRefunds lists the refunds of a payment (Order[] of type refund), including those an
 // operator made in the bank's interface.
 func (p *Provider) ListRefunds(ctx context.Context, paymentID string) ([]provider.RefundFact, error) {
+	if _, _, charge := splitChargeID(paymentID); charge {
+		// A subscription's refunds are listed on the subscription and cannot be told apart per
+		// charge: an operator resolves a refund of a charge (ADR-0083 phase 2).
+		return nil, nil
+	}
 	op, err := p.getOperation(ctx, "list refunds", paymentID)
 	if err != nil {
 		return nil, err

@@ -132,7 +132,7 @@ func payerProto(p sqlc.BillingPayer) *v1.PayerProfile {
 }
 
 func savedMethodProto(m sqlc.BillingPaymentMethod) *v1.SavedPaymentMethod {
-	out := &v1.SavedPaymentMethod{Id: m.ID.String(), Kind: methodKind(provider.Method(m.Kind)), Brand: m.Brand, CreatedAt: timestamppb.New(m.CreatedAt)}
+	out := &v1.SavedPaymentMethod{Id: m.ID.String(), Kind: methodKind(provider.Method(m.Kind)), Brand: m.Brand, Provider: m.Provider, CreatedAt: timestamppb.New(m.CreatedAt)}
 	if m.Last4 != nil {
 		out.Last4 = *m.Last4
 	}
@@ -157,6 +157,8 @@ func attemptStatus(s string) v1.AutoTopupAttemptStatus {
 		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_FAILED
 	case "unknown":
 		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_UNKNOWN
+	case "requires_action":
+		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_REQUIRES_ACTION
 	}
 	return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_UNSPECIFIED
 }
@@ -181,6 +183,8 @@ func paymentOrigin(s string) v1.PaymentOrigin {
 		return v1.PaymentOrigin_PAYMENT_ORIGIN_CHECKOUT
 	case "auto_topup":
 		return v1.PaymentOrigin_PAYMENT_ORIGIN_AUTO_TOPUP
+	case "saved_method":
+		return v1.PaymentOrigin_PAYMENT_ORIGIN_SAVED_METHOD
 	case "import":
 		return v1.PaymentOrigin_PAYMENT_ORIGIN_IMPORT
 	}

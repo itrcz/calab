@@ -92,8 +92,10 @@ type env struct {
 }
 
 type opts struct {
-	marker    string
-	noConsent bool // no consent yet
+	marker     string
+	noConsent  bool         // no consent yet
+	caps       provider.Cap // fake capabilities (0: Stripe-like defaults)
+	noOneClick bool         // BILLING_SAVED_METHOD_TOPUP_ENABLED off
 }
 
 func newEnv(t *testing.T, o opts) *env {
@@ -102,7 +104,7 @@ func newEnv(t *testing.T, o opts) *env {
 	var b [6]byte
 	_, _ = rand.Read(b[:])
 	e := &env{t: t, d: d, clk: billing.NewFakeClock(time.Now().UTC().Truncate(time.Second)), merchant: "acct_" + hex.EncodeToString(b[:])}
-	e.fake = fake.New(fake.Options{ID: provider.Stripe, Account: e.merchant, Now: e.clk.Time})
+	e.fake = fake.New(fake.Options{ID: provider.Stripe, Account: e.merchant, Now: e.clk.Time, Caps: o.caps})
 	e.p = &hooked{Provider: e.fake}
 	reg, err := provider.NewRegistry("stripe:global", provider.DefaultMatrix(), e.p)
 	if err != nil {
@@ -116,6 +118,7 @@ func newEnv(t *testing.T, o opts) *env {
 	e.job = e.newJob(o.marker)
 	svc := billinghttp.New(d, e.core, reg, e.in, e.clk, billinghttp.Config{
 		Checkouts: true, ReturnURL: "https://app.calab.test/api/billing/return", AppURL: "https://app.calab.test",
+		SavedMethodTopups: !o.noOneClick, Charger: e.job,
 	})
 	h := &billinghttp.Handlers{Enabled: true, Owner: svc.Owner(), Public: svc.Public(),
 		Admin: map[string]httpx.HandlerFunc{}}
@@ -155,7 +158,7 @@ func newEnv(t *testing.T, o opts) *env {
 	t.Cleanup(func() {
 		// Nothing of this test is picked up by the job of a later one.
 		_, _ = d.Pool.Exec(ctx, `UPDATE billing_autotopup_attempts SET status = 'failed', finished_at = now()
-			WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'unknown')`, acc.ID)
+			WHERE account_id = $1 AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown')`, acc.ID)
 		_, _ = d.Pool.Exec(ctx, `UPDATE billing_autotopup SET revoked_at = now() WHERE account_id = $1 AND revoked_at IS NULL`, acc.ID)
 		_, _ = d.Pool.Exec(ctx, `UPDATE billing_accounts SET status = 'closed', closed_at = now(), next_due_at = NULL WHERE id = $1 AND status <> 'closed'`, acc.ID)
 	})
@@ -183,7 +186,8 @@ func newEnv(t *testing.T, o opts) *env {
 }
 
 func (e *env) newJob(marker string) *autotopup.Job {
-	j := autotopup.New(e.d, e.core, e.reg, e.in, e.clk, autotopup.Options{Enabled: true, RestoreMarker: marker})
+	j := autotopup.New(e.d, e.core, e.reg, e.in, e.clk, autotopup.Options{Enabled: true, RestoreMarker: marker,
+		ReturnURL: "https://app.calab.test/api/billing/return"})
 	e.in.AttemptSettled = j.AttemptSettled
 	return j
 }

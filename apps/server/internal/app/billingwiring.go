@@ -110,7 +110,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	rt.Inbox = inbox.New(d.DB, reg, rt.Core, inbox.Options{})
 	rt.Inbox.Committed, rt.Inbox.Mail = committed, notifier
 	rt.AutoTopup = autotopup.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, autotopup.Options{
-		Enabled: b.AutoTopupEnabled, RestoreMarker: b.AutoTopupRequireReconcile,
+		Enabled: b.AutoTopupEnabled, RestoreMarker: b.AutoTopupRequireReconcile, ReturnURL: b.PublicReturnURL,
 	})
 	rt.Inbox.AttemptSettled = rt.AutoTopup.AttemptSettled
 	svc := billinghttp.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, billinghttp.Config{
@@ -119,6 +119,10 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		PlanLimits: func(p v1.Plan) *v1.PlanLimits { return planSvc.PlanLimits(p).Proto() },
 		Committed:  committed,
 		Contact:    d.Config.PlanContact(),
+
+		SavedMethodTopups: b.SavedMethodTopupEnabled, Charger: rt.AutoTopup,
+		// One-click top-ups: 5 per minute per billing account (a retry of the same request_id included).
+		ChargeLimiter: redisx.NewRateLimiter(d.Redis, "rl:billing-charge:", 5, 5),
 
 		LandingOrigins: d.Config.LandingOrigins(),
 		// The landing reads it: 30 per minute and IP is plenty with Cache-Control max-age=300.
@@ -167,6 +171,7 @@ func TochkaConfig(b config.Billing) tochka.Config {
 	return tochka.Config{
 		BaseURL: b.TochkaAPIURL, Token: b.TochkaAPIToken, CustomerCode: b.TochkaCustomerCode, MerchantID: b.TochkaMerchantID,
 		TaxSystem: b.TochkaTaxSystem, VatType: b.TochkaVatType, WebhookKey: b.TochkaWebhookKey, ClientID: b.TochkaClientID,
+		Recurring: b.TochkaRecurring,
 	}
 }
 

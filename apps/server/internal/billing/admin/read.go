@@ -162,6 +162,13 @@ func (h *Handlers) getAccount(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out.FreeAdvance, out.PendingRefunds = money(free, cur), money(pending, cur)
+	methods, err := q.ListBillingPaymentMethods(ctx, id)
+	if err != nil {
+		return err
+	}
+	for _, m := range methods {
+		out.SavedMethods = append(out.SavedMethods, savedMethodProto(m))
+	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
 }

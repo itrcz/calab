@@ -16,7 +16,7 @@ WHERE t.revoked_at IS NULL
   AND a.status = 'active' AND NOT a.dispute_hold
   AND (a.hold_until IS NULL OR a.hold_until <= sqlc.arg('now')::timestamptz)
   AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts x
-                  WHERE x.account_id = t.account_id AND x.status IN ('prepared', 'dispatched', 'unknown'))
+                  WHERE x.account_id = t.account_id AND x.status IN ('prepared', 'dispatched', 'requires_action', 'unknown'))
 ORDER BY t.account_id
 LIMIT sqlc.arg('lim');
 
@@ -28,7 +28,10 @@ WHERE account_id = sqlc.arg('account_id');
 
 -- name: MarkBillingAutoTopupAttemptDispatched :one
 -- prepared → dispatched, committed before the provider call: a prepared attempt was never sent.
-UPDATE billing_autotopup_attempts SET status = 'dispatched', dispatched_at = sqlc.arg('now')::timestamptz
+-- order_snapshot: the operations the card's subscription had before the call (providers without
+-- idempotency keys: the charge is the new one that appears after it).
+UPDATE billing_autotopup_attempts SET status = 'dispatched', dispatched_at = sqlc.arg('now')::timestamptz,
+    order_snapshot = sqlc.narg('order_snapshot')::text[]
 WHERE id = sqlc.arg('id') AND status = 'prepared'
 RETURNING *;
 
@@ -40,12 +43,35 @@ WHERE id = sqlc.arg('id') AND status = 'prepared'
 RETURNING *;
 
 -- name: SetBillingAutoTopupAttemptPayment :one
--- The provider answered with a payment of a dispatched / unknown attempt that is not final yet
--- (processing): keep its id, unknown becomes dispatched again.
+-- The provider answered with a payment of an open attempt that is not final yet (processing):
+-- keep its id; unknown / requires_action become dispatched again.
 UPDATE billing_autotopup_attempts SET provider_payment_id = sqlc.arg('provider_payment_id'),
-    status = CASE WHEN status = 'unknown' THEN 'dispatched' ELSE status END
-WHERE id = sqlc.arg('id') AND status IN ('dispatched', 'unknown')
+    status = CASE WHEN status IN ('unknown', 'requires_action') THEN 'dispatched' ELSE status END
+WHERE id = sqlc.arg('id') AND status IN ('dispatched', 'requires_action', 'unknown')
 RETURNING *;
+
+-- name: SetBillingAttemptRequiresAction :one
+-- A one-click charge waits for the payer's 3-D Secure: its payment and the confirmation page.
+UPDATE billing_autotopup_attempts SET status = 'requires_action', provider_payment_id = sqlc.arg('provider_payment_id'),
+    action_url = sqlc.arg('action_url')
+WHERE id = sqlc.arg('id') AND status IN ('dispatched', 'requires_action', 'unknown')
+RETURNING *;
+
+-- name: InsertBillingManualCharge :one
+-- The owner's one-click top-up (kind manual). A second open charge of the account raises
+-- unique_violation (billing_autotopup_attempts_one_open_idx), a reused request id
+-- billing_autotopup_attempts_request_idx.
+INSERT INTO billing_autotopup_attempts (account_id, pm_id, amount_minor, currency, kind, request_id, body_hash, created_by, created_at)
+VALUES ($1, $2, $3, $4, 'manual', $5, $6, $7, sqlc.arg('now')::timestamptz)
+RETURNING *;
+
+-- name: GetBillingChargeByRequest :one
+SELECT * FROM billing_autotopup_attempts WHERE account_id = $1 AND request_id = $2;
+
+-- name: GetOpenBillingManualCharge :one
+-- The one-click top-up in flight, if any (the owner's summary shows it).
+SELECT * FROM billing_autotopup_attempts
+WHERE account_id = $1 AND kind = 'manual' AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown');
 
 -- name: SettleBillingAutoTopupAttemptPaid :one
 -- The attempt's payment was credited: succeeded, also after failed (a late success is never
@@ -60,7 +86,7 @@ RETURNING *;
 -- Open attempts older than `before`: prepared ones were never sent (abandoned), dispatched /
 -- unknown ones are resolved with the same idempotency key or a provider lookup.
 SELECT * FROM billing_autotopup_attempts
-WHERE status IN ('prepared', 'dispatched', 'unknown') AND created_at < sqlc.arg('before')::timestamptz
+WHERE status IN ('prepared', 'dispatched', 'requires_action', 'unknown') AND created_at < sqlc.arg('before')::timestamptz
 ORDER BY created_at
 LIMIT sqlc.arg('lim');
 

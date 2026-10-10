@@ -159,6 +159,18 @@ func (s *Service) summary(ctx context.Context, acc0 sqlc.BillingAccount) (*v1.Bi
 		} else if !db.IsNotFound(err) {
 			return err
 		}
+		ms, err := q.ListBillingPaymentMethods(ctx, acc.ID)
+		if err != nil {
+			return err
+		}
+		for _, m := range ms {
+			out.SavedMethods = append(out.SavedMethods, SavedMethodProto(s.reg, s.cfg.SavedMethodTopups, acc, m))
+		}
+		if a, err := q.GetOpenBillingManualCharge(ctx, acc.ID); err == nil {
+			out.PendingSavedTopup = savedTopupProto(a)
+		} else if !db.IsNotFound(err) {
+			return err
+		}
 		out.AutoTopup, err = autoTopupSummary(ctx, q, acc, qt)
 		return err
 	})

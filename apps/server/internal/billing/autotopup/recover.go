@@ -96,18 +96,36 @@ func (j *Job) resolve(ctx context.Context, att sqlc.BillingAutotopupAttempt, now
 	if err != nil {
 		return false, err
 	}
-	if att.ProviderPaymentID != nil {
-		f, err := t.p.GetPayment(ctx, *att.ProviderPaymentID)
-		if err != nil {
-			return false, err
-		}
-		return f.Status != provider.PaymentProcessing, j.settle(ctx, t, att, f)
-	}
 	since := att.CreatedAt
 	if att.DispatchedAt != nil {
 		since = *att.DispatchedAt
 	}
 	age := now.Sub(since)
+	if t.reconcilable() {
+		return j.resolveReconcilable(ctx, t, att, max(age, time.Since(att.CreatedAt)))
+	}
+	if att.ProviderPaymentID != nil {
+		f, err := t.p.GetPayment(ctx, *att.ProviderPaymentID)
+		if err != nil {
+			return false, err
+		}
+		if f.Status == provider.PaymentRequiresAction && att.Kind == KindManual && max(age, time.Since(att.CreatedAt)) >= j.opts.ActionTimeout {
+			// The owner did not confirm 3-D Secure: cancel the intent, the charge failed.
+			cf, err := t.charger.CancelPayment(ctx, f.ID)
+			if err != nil {
+				return false, err
+			}
+			if cf.Status == provider.PaymentRequiresAction {
+				return false, nil
+			}
+			if cf.Status == provider.PaymentCanceled {
+				cf.FailureCode = CodeAuthRequired
+			}
+			return cf.Status != provider.PaymentProcessing, j.settle(ctx, t, att, cf)
+		}
+		waiting := f.Status == provider.PaymentProcessing || (f.Status == provider.PaymentRequiresAction && att.Kind == KindManual)
+		return !waiting, j.settle(ctx, t, att, f)
+	}
 	// The provider's idempotency window runs on the wall clock: the same-key retry also stops
 	// by the wall age of the row (created_at = database now(), before the dispatch), so a
 	// billing clock behind real time can never re-POST with an expired key.
@@ -119,7 +137,7 @@ func (j *Job) resolve(ctx context.Context, att sqlc.BillingAutotopupAttempt, now
 		// Same Idempotency-Key, same request: the provider answers with the first payment
 		// (or creates the one the lost request never created).
 		cctx, cancel := context.WithTimeout(ctx, j.opts.ChargeTimeout)
-		f, err := t.charger.ChargeOffSession(cctx, request(att, t))
+		f, err := t.charger.ChargeOffSession(cctx, j.request(att, t))
 		cancel()
 		if err != nil {
 			return false, j.outcome(ctx, t, att, f, err, true)
@@ -143,11 +161,48 @@ func (j *Job) resolve(ctx context.Context, att sqlc.BillingAutotopupAttempt, now
 	return false, nil
 }
 
+// resolveReconcilable resolves an open charge of a provider without idempotency keys by reading
+// the method's charges only (ADR-0083): found → credited; nothing after GiveUpAfter → logged as
+// an error on every pass (an operator compares with the bank); nothing after ReconcileGiveUp →
+// failed not_found. The attempt stays open meanwhile, so no other charge of the account starts.
+func (j *Job) resolveReconcilable(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt, age time.Duration) (bool, error) {
+	f, found, err := j.findCharge(ctx, t, att)
+	if err != nil {
+		return false, err
+	}
+	if found {
+		return true, j.credit(ctx, t, att, f)
+	}
+	switch {
+	case age >= j.opts.ReconcileGiveUp:
+		slog.ErrorContext(ctx, "billing auto-topup: charge never appeared in the method's charges, closing it",
+			"attempt", att.ID, "account", att.AccountID, "kind", att.Kind)
+		attempts.WithLabelValues(CodeNotFound).Inc()
+		return true, j.fail(ctx, att, nil, CodeNotFound, "")
+	case age >= j.opts.GiveUpAfter:
+		slog.ErrorContext(ctx, "billing auto-topup: charge outcome still unknown, check the bank (no retry is ever sent)",
+			"attempt", att.ID, "account", att.AccountID, "kind", att.Kind, "status", att.Status)
+	}
+	return false, nil
+}
+
 // mayRetry: a same-key retry is allowed only inside RetryWindow, with auto-topup on and not
 // paused, the consent still live on the attempt's card and the account active. Otherwise only
-// lookups: a revoked consent never gets a charge it did not already get.
+// lookups: a revoked consent never gets a charge it did not already get. A one-click charge is
+// retried while its card is still attached and the account active.
 func (j *Job) mayRetry(ctx context.Context, att sqlc.BillingAutotopupAttempt, age time.Duration) (bool, error) {
-	if !j.opts.Enabled || age >= j.opts.RetryWindow {
+	if age >= j.opts.RetryWindow {
+		return false, nil
+	}
+	if att.Kind == KindManual {
+		acc, err := j.db.Q.GetBillingAccount(ctx, att.AccountID)
+		if err != nil {
+			return false, err
+		}
+		v, err := j.checkManual(ctx, j.db.Q, acc, att.PmID)
+		return err == nil && v.ok(), err
+	}
+	if !j.opts.Enabled {
 		return false, nil
 	}
 	if paused, err := j.Paused(ctx); err != nil || paused {
@@ -173,10 +228,14 @@ func (j *Job) lookup(ctx context.Context, t target, att sqlc.BillingAutotopupAtt
 	if !t.p.Caps().Has(provider.CapListPayments) {
 		return provider.PaymentFact{}, false, errors.New("auto-topup: provider cannot list payments")
 	}
+	kind := provider.MetadataKindAutoTopup
+	if att.Kind == KindManual {
+		kind = provider.MetadataKindSavedMethod
+	}
 	cursor := ""
 	for range 10 {
 		facts, next, err := t.p.ListPayments(ctx, provider.ListReq{
-			Customer: t.ref(), CreatedAfter: att.CreatedAt.Add(-time.Hour), Kind: provider.MetadataKindAutoTopup, Cursor: cursor, Limit: 100,
+			Customer: t.ref(), CreatedAfter: att.CreatedAt.Add(-time.Hour), Kind: kind, Cursor: cursor, Limit: 100,
 		})
 		if err != nil {
 			return provider.PaymentFact{}, false, err

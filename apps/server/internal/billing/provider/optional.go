@@ -43,6 +43,13 @@ type DisputeReader interface {
 	GetDispute(ctx context.Context, disputeID string) (DisputeFact, error)
 }
 
+// ChargeLister lists the charges made on a saved method (Tochka: the approvals in Order[] of the
+// card's subscription), newest last. Ids are stable; the binding payment of the method may be
+// among them. Required of an OffSessionCharger without CapIdempotentCharge (Registry.OffSession).
+type ChargeLister interface {
+	ListCharges(ctx context.Context, customer CustomerRef, paymentMethodID string) ([]PaymentFact, error)
+}
+
 // LivemodeReporter tells the mode of the provider's credentials before any object exists
 // (the billing_customers key). Providers without it run in test mode.
 type LivemodeReporter interface {

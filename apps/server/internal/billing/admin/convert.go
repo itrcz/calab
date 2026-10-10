@@ -80,9 +80,10 @@ var paymentStatuses = map[string]v1.PaymentStatus{
 }
 
 var paymentOrigins = map[string]v1.PaymentOrigin{
-	"checkout":   v1.PaymentOrigin_PAYMENT_ORIGIN_CHECKOUT,
-	"auto_topup": v1.PaymentOrigin_PAYMENT_ORIGIN_AUTO_TOPUP,
-	"import":     v1.PaymentOrigin_PAYMENT_ORIGIN_IMPORT,
+	"checkout":     v1.PaymentOrigin_PAYMENT_ORIGIN_CHECKOUT,
+	"auto_topup":   v1.PaymentOrigin_PAYMENT_ORIGIN_AUTO_TOPUP,
+	"saved_method": v1.PaymentOrigin_PAYMENT_ORIGIN_SAVED_METHOD,
+	"import":       v1.PaymentOrigin_PAYMENT_ORIGIN_IMPORT,
 }
 
 var refundStatuses = map[string]v1.RefundStatus{
@@ -244,4 +245,25 @@ func autoTopupProto(a sqlc.BillingAutotopup, currency string) *v1.AutoTopupSetti
 		Enabled: a.RevokedAt == nil, PaymentMethodId: a.PmID.String(), MaxAmount: money(a.MaxMinor, currency),
 		ConsentVersion: uint32(max(0, a.ConsentVersion)), ConsentAt: timestamppb.New(a.ConsentAt), NotBefore: ts(a.NotBefore),
 	}
+}
+
+// savedMethodProto: a saved card as the account page shows it (provider, brand, last 4).
+func savedMethodProto(m sqlc.BillingPaymentMethod) *v1.SavedPaymentMethod {
+	out := &v1.SavedPaymentMethod{Id: m.ID.String(), Brand: m.Brand, Provider: m.Provider, CreatedAt: timestamppb.New(m.CreatedAt)}
+	switch m.Kind {
+	case "card":
+		out.Kind = v1.PaymentMethodKind_PAYMENT_METHOD_KIND_CARD
+	case "sbp":
+		out.Kind = v1.PaymentMethodKind_PAYMENT_METHOD_KIND_SBP
+	}
+	if m.Last4 != nil {
+		out.Last4 = *m.Last4
+	}
+	if m.ExpMonth != nil {
+		out.ExpMonth = uint32(*m.ExpMonth) //nolint:gosec // 1..12 (CHECK)
+	}
+	if m.ExpYear != nil {
+		out.ExpYear = uint32(*m.ExpYear) //nolint:gosec // 2000..2200 (CHECK)
+	}
+	return out
 }

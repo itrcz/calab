@@ -102,6 +102,12 @@ type BillingAutotopupAttempt struct {
 	CreatedAt         time.Time
 	DispatchedAt      *time.Time
 	FinishedAt        *time.Time
+	Kind              string
+	RequestID         *uuid.UUID
+	BodyHash          []byte
+	CreatedBy         *uuid.UUID
+	ActionUrl         string
+	OrderSnapshot     []string
 }
 
 type BillingCharge struct {

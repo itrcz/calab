@@ -32,7 +32,7 @@ type MethodOption struct {
 	Method           Method
 	Currency         money.Currency
 	Min, Max         int64 // minor units per manual top-up
-	AutoTopupCapable bool  // the row allows auto-topup and the provider has CapOffSession|CapIdempotentCharge
+	AutoTopupCapable bool  // the row allows auto-topup and the provider charges saved methods (Registry.OffSession)
 }
 
 // Row of the capability matrix.
@@ -48,7 +48,7 @@ type Row struct {
 }
 
 // Manual top-up limits per market (owner decisions): USD $5..$5000 (2026-10-09), RUB
-// 150..500 000 ₽ (2026-10-10).
+// 150..500 000 ₽ (2026-10-10). Charges of a saved card keep the same bounds.
 const (
 	USDTopupMin int64 = 500
 	USDTopupMax int64 = 500000
@@ -58,9 +58,11 @@ const (
 
 // DefaultMatrix is the matrix of v1 and ADR-0083: Global/USD, person or company, any country →
 // Stripe card (auto-topup capable); RU/RUB, person or company, any country → Tochka hosted card
-// («Банковская карта (РФ)») and SBP as two options the payer chooses between, manual top-up
-// only (Tochka auto-topup by card is phase 2). Rows of a provider that is not configured or not
-// serving the market (BILLING_PROVIDERS) are left out by Methods.
+// («Банковская карта (РФ)») and SBP as two options the payer chooses between. The Tochka card
+// may be saved (a subscription without a schedule) and back auto-topup once the adapter charges
+// saved cards (phase 2, TOCHKA_RECURRING_ENABLED); SBP stays manual (its binding needs Pay
+// Gateway, phase 3). Rows of a provider that is not configured or not serving the market
+// (BILLING_PROVIDERS) are left out by Methods.
 func DefaultMatrix() []Row {
 	return []Row{
 		{
@@ -69,7 +71,7 @@ func DefaultMatrix() []Row {
 		},
 		{
 			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany},
-			Country: AnyCountry, Provider: Tochka, Method: MethodCard, Min: RUBTopupMin, Max: RUBTopupMax,
+			Country: AnyCountry, Provider: Tochka, Method: MethodCard, Min: RUBTopupMin, Max: RUBTopupMax, AutoTopup: true,
 		},
 		{
 			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany},
@@ -79,10 +81,14 @@ func DefaultMatrix() []Row {
 }
 
 // AutoTopupLimits are the owner cap bounds per attempt: the default cap and the largest one
-// the owner may set (USD: $500 and $5000). ok = false: no auto-topup in this currency.
+// the owner may set (USD: $500 and $5000; RUB: 50 000 ₽ and 500 000 ₽, the manual top-up
+// maximum). ok = false: no auto-topup in this currency.
 func AutoTopupLimits(cur money.Currency) (defaultMax, limitMax int64, ok bool) {
-	if cur == money.USD {
-		return 50000, 500000, true
+	switch cur {
+	case money.USD:
+		return 50000, USDTopupMax, true
+	case money.RUB:
+		return 5000000, RUBTopupMax, true
 	}
 	return 0, 0, false
 }
@@ -146,14 +152,23 @@ func (r *Registry) Provider(id ID) (Provider, bool) {
 	return p, ok
 }
 
-// OffSession returns the provider as an off-session charger when it has the capabilities
-// auto-topup needs (CapOffSession and CapIdempotentCharge). A CapReconcilableCharge provider
-// (Tochka) is admitted only together with the no-repost dispatch of its phase 2 (ADR-0083):
-// the auto-topup job retries an unknown outcome with the same key, which is safe only with
-// idempotent creates.
+// OffSession returns the provider as a charger of saved methods when it has the capabilities a
+// charge needs: CapOffSession and either CapIdempotentCharge (Stripe: an unknown outcome is
+// retried with the same key) or CapReconcilableCharge with a ChargeLister (Tochka, ADR-0083
+// phase 2: one request per attempt, an unknown outcome is resolved by reading the method's
+// charges, never by sending again — the dispatcher checks Caps().SafeRetry()).
 func (r *Registry) OffSession(id ID) (OffSessionCharger, bool) {
 	p, ok := r.providers[id]
-	if !ok || !p.Caps().Has(CapOffSession|CapIdempotentCharge) {
+	if !ok || !p.Caps().Has(CapOffSession) {
+		return nil, false
+	}
+	switch {
+	case p.Caps().Has(CapIdempotentCharge):
+	case p.Caps().Has(CapReconcilableCharge):
+		if _, ok := p.(ChargeLister); !ok {
+			return nil, false
+		}
+	default:
 		return nil, false
 	}
 	c, ok := p.(OffSessionCharger)

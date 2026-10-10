@@ -29,7 +29,7 @@ const failBillingAutoTopupAttemptPrepared = `-- name: FailBillingAutoTopupAttemp
 UPDATE billing_autotopup_attempts SET status = 'failed', failure_code = $1,
     finished_at = $2::timestamptz
 WHERE id = $3 AND status = 'prepared'
-RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at
+RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot
 `
 
 type FailBillingAutoTopupAttemptPreparedParams struct {
@@ -54,6 +54,46 @@ func (q *Queries) FailBillingAutoTopupAttemptPrepared(ctx context.Context, arg F
 		&i.CreatedAt,
 		&i.DispatchedAt,
 		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
+	)
+	return i, err
+}
+
+const getBillingChargeByRequest = `-- name: GetBillingChargeByRequest :one
+SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts WHERE account_id = $1 AND request_id = $2
+`
+
+type GetBillingChargeByRequestParams struct {
+	AccountID uuid.UUID
+	RequestID *uuid.UUID
+}
+
+func (q *Queries) GetBillingChargeByRequest(ctx context.Context, arg GetBillingChargeByRequestParams) (BillingAutotopupAttempt, error) {
+	row := q.db.QueryRow(ctx, getBillingChargeByRequest, arg.AccountID, arg.RequestID)
+	var i BillingAutotopupAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PmID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.ProviderPaymentID,
+		&i.FailureCode,
+		&i.CreatedAt,
+		&i.DispatchedAt,
+		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
 	)
 	return i, err
 }
@@ -77,9 +117,94 @@ func (q *Queries) GetBillingCustomerByID(ctx context.Context, id uuid.UUID) (Bil
 	return i, err
 }
 
+const getOpenBillingManualCharge = `-- name: GetOpenBillingManualCharge :one
+SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts
+WHERE account_id = $1 AND kind = 'manual' AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown')
+`
+
+// The one-click top-up in flight, if any (the owner's summary shows it).
+func (q *Queries) GetOpenBillingManualCharge(ctx context.Context, accountID uuid.UUID) (BillingAutotopupAttempt, error) {
+	row := q.db.QueryRow(ctx, getOpenBillingManualCharge, accountID)
+	var i BillingAutotopupAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PmID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.ProviderPaymentID,
+		&i.FailureCode,
+		&i.CreatedAt,
+		&i.DispatchedAt,
+		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
+	)
+	return i, err
+}
+
+const insertBillingManualCharge = `-- name: InsertBillingManualCharge :one
+INSERT INTO billing_autotopup_attempts (account_id, pm_id, amount_minor, currency, kind, request_id, body_hash, created_by, created_at)
+VALUES ($1, $2, $3, $4, 'manual', $5, $6, $7, $8::timestamptz)
+RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot
+`
+
+type InsertBillingManualChargeParams struct {
+	AccountID   uuid.UUID
+	PmID        uuid.UUID
+	AmountMinor int64
+	Currency    string
+	RequestID   *uuid.UUID
+	BodyHash    []byte
+	CreatedBy   *uuid.UUID
+	Now         time.Time
+}
+
+// The owner's one-click top-up (kind manual). A second open charge of the account raises
+// unique_violation (billing_autotopup_attempts_one_open_idx), a reused request id
+// billing_autotopup_attempts_request_idx.
+func (q *Queries) InsertBillingManualCharge(ctx context.Context, arg InsertBillingManualChargeParams) (BillingAutotopupAttempt, error) {
+	row := q.db.QueryRow(ctx, insertBillingManualCharge,
+		arg.AccountID,
+		arg.PmID,
+		arg.AmountMinor,
+		arg.Currency,
+		arg.RequestID,
+		arg.BodyHash,
+		arg.CreatedBy,
+		arg.Now,
+	)
+	var i BillingAutotopupAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PmID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.ProviderPaymentID,
+		&i.FailureCode,
+		&i.CreatedAt,
+		&i.DispatchedAt,
+		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
+	)
+	return i, err
+}
+
 const listBillingAutoTopupAttemptsToRecover = `-- name: ListBillingAutoTopupAttemptsToRecover :many
-SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at FROM billing_autotopup_attempts
-WHERE status IN ('prepared', 'dispatched', 'unknown') AND created_at < $1::timestamptz
+SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts
+WHERE status IN ('prepared', 'dispatched', 'requires_action', 'unknown') AND created_at < $1::timestamptz
 ORDER BY created_at
 LIMIT $2
 `
@@ -112,6 +237,12 @@ func (q *Queries) ListBillingAutoTopupAttemptsToRecover(ctx context.Context, arg
 			&i.CreatedAt,
 			&i.DispatchedAt,
 			&i.FinishedAt,
+			&i.Kind,
+			&i.RequestID,
+			&i.BodyHash,
+			&i.CreatedBy,
+			&i.ActionUrl,
+			&i.OrderSnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -133,7 +264,7 @@ WHERE t.revoked_at IS NULL
   AND a.status = 'active' AND NOT a.dispute_hold
   AND (a.hold_until IS NULL OR a.hold_until <= $2::timestamptz)
   AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts x
-                  WHERE x.account_id = t.account_id AND x.status IN ('prepared', 'dispatched', 'unknown'))
+                  WHERE x.account_id = t.account_id AND x.status IN ('prepared', 'dispatched', 'requires_action', 'unknown'))
 ORDER BY t.account_id
 LIMIT $3
 `
@@ -226,19 +357,23 @@ func (q *Queries) LockWorkspaceForBillingClose(ctx context.Context, id uuid.UUID
 }
 
 const markBillingAutoTopupAttemptDispatched = `-- name: MarkBillingAutoTopupAttemptDispatched :one
-UPDATE billing_autotopup_attempts SET status = 'dispatched', dispatched_at = $1::timestamptz
-WHERE id = $2 AND status = 'prepared'
-RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at
+UPDATE billing_autotopup_attempts SET status = 'dispatched', dispatched_at = $1::timestamptz,
+    order_snapshot = $2::text[]
+WHERE id = $3 AND status = 'prepared'
+RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot
 `
 
 type MarkBillingAutoTopupAttemptDispatchedParams struct {
-	Now time.Time
-	ID  uuid.UUID
+	Now           time.Time
+	OrderSnapshot []string
+	ID            uuid.UUID
 }
 
 // prepared → dispatched, committed before the provider call: a prepared attempt was never sent.
+// order_snapshot: the operations the card's subscription had before the call (providers without
+// idempotency keys: the charge is the new one that appears after it).
 func (q *Queries) MarkBillingAutoTopupAttemptDispatched(ctx context.Context, arg MarkBillingAutoTopupAttemptDispatchedParams) (BillingAutotopupAttempt, error) {
-	row := q.db.QueryRow(ctx, markBillingAutoTopupAttemptDispatched, arg.Now, arg.ID)
+	row := q.db.QueryRow(ctx, markBillingAutoTopupAttemptDispatched, arg.Now, arg.OrderSnapshot, arg.ID)
 	var i BillingAutotopupAttempt
 	err := row.Scan(
 		&i.ID,
@@ -252,15 +387,60 @@ func (q *Queries) MarkBillingAutoTopupAttemptDispatched(ctx context.Context, arg
 		&i.CreatedAt,
 		&i.DispatchedAt,
 		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
+	)
+	return i, err
+}
+
+const setBillingAttemptRequiresAction = `-- name: SetBillingAttemptRequiresAction :one
+UPDATE billing_autotopup_attempts SET status = 'requires_action', provider_payment_id = $1,
+    action_url = $2
+WHERE id = $3 AND status IN ('dispatched', 'requires_action', 'unknown')
+RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot
+`
+
+type SetBillingAttemptRequiresActionParams struct {
+	ProviderPaymentID *string
+	ActionUrl         string
+	ID                uuid.UUID
+}
+
+// A one-click charge waits for the payer's 3-D Secure: its payment and the confirmation page.
+func (q *Queries) SetBillingAttemptRequiresAction(ctx context.Context, arg SetBillingAttemptRequiresActionParams) (BillingAutotopupAttempt, error) {
+	row := q.db.QueryRow(ctx, setBillingAttemptRequiresAction, arg.ProviderPaymentID, arg.ActionUrl, arg.ID)
+	var i BillingAutotopupAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PmID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.ProviderPaymentID,
+		&i.FailureCode,
+		&i.CreatedAt,
+		&i.DispatchedAt,
+		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
 	)
 	return i, err
 }
 
 const setBillingAutoTopupAttemptPayment = `-- name: SetBillingAutoTopupAttemptPayment :one
 UPDATE billing_autotopup_attempts SET provider_payment_id = $1,
-    status = CASE WHEN status = 'unknown' THEN 'dispatched' ELSE status END
-WHERE id = $2 AND status IN ('dispatched', 'unknown')
-RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at
+    status = CASE WHEN status IN ('unknown', 'requires_action') THEN 'dispatched' ELSE status END
+WHERE id = $2 AND status IN ('dispatched', 'requires_action', 'unknown')
+RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot
 `
 
 type SetBillingAutoTopupAttemptPaymentParams struct {
@@ -268,8 +448,8 @@ type SetBillingAutoTopupAttemptPaymentParams struct {
 	ID                uuid.UUID
 }
 
-// The provider answered with a payment of a dispatched / unknown attempt that is not final yet
-// (processing): keep its id, unknown becomes dispatched again.
+// The provider answered with a payment of an open attempt that is not final yet (processing):
+// keep its id; unknown / requires_action become dispatched again.
 func (q *Queries) SetBillingAutoTopupAttemptPayment(ctx context.Context, arg SetBillingAutoTopupAttemptPaymentParams) (BillingAutotopupAttempt, error) {
 	row := q.db.QueryRow(ctx, setBillingAutoTopupAttemptPayment, arg.ProviderPaymentID, arg.ID)
 	var i BillingAutotopupAttempt
@@ -285,6 +465,12 @@ func (q *Queries) SetBillingAutoTopupAttemptPayment(ctx context.Context, arg Set
 		&i.CreatedAt,
 		&i.DispatchedAt,
 		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
 	)
 	return i, err
 }
@@ -312,7 +498,7 @@ UPDATE billing_autotopup_attempts SET status = 'succeeded', provider_payment_id 
     failure_code = '', dispatched_at = coalesce(dispatched_at, $2::timestamptz),
     finished_at = coalesce(finished_at, $2::timestamptz)
 WHERE id = $3 AND status <> 'succeeded'
-RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at
+RETURNING id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot
 `
 
 type SettleBillingAutoTopupAttemptPaidParams struct {
@@ -338,6 +524,12 @@ func (q *Queries) SettleBillingAutoTopupAttemptPaid(ctx context.Context, arg Set
 		&i.CreatedAt,
 		&i.DispatchedAt,
 		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
 	)
 	return i, err
 }

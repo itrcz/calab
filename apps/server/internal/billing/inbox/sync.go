@@ -22,9 +22,10 @@ const (
 	payFailed     = "failed"
 	payCanceled   = "canceled"
 
-	originCheckout  = "checkout"
-	originAutoTopup = "auto_topup"
-	originImport    = "import"
+	originCheckout    = "checkout"
+	originAutoTopup   = "auto_topup"
+	originSavedMethod = "saved_method" // a one-click top-up (attempt of kind manual)
+	originImport      = "import"
 )
 
 // Checkout statuses (billing_checkouts).
@@ -90,11 +91,11 @@ func (in *Inbox) applyPayment(ctx context.Context, p provider.Provider, fact pro
 			return res, err
 		}
 	}
-	var attempt *uuid.UUID
-	if id := fact.Metadata.AttemptID; id != uuid.Nil && fact.Metadata.Kind == provider.MetadataKindAutoTopup {
+	var attempt *sqlc.BillingAutotopupAttempt
+	if id := fact.Metadata.AttemptID; id != uuid.Nil && provider.IsChargeKind(fact.Metadata.Kind) {
 		a, err := in.db.Q.GetBillingAutoTopupAttemptOfAccount(ctx, sqlc.GetBillingAutoTopupAttemptOfAccountParams{ID: id, AccountID: cust.AccountID})
 		if err == nil {
-			attempt = &a.ID
+			attempt = &a
 		} else if !db.IsNotFound(err) {
 			return res, err
 		}
@@ -200,7 +201,7 @@ func sameCurrency(acc sqlc.BillingAccount, f provider.PaymentFact) error {
 // insertPayment records a payment we did not know: succeeded (with the amount received) or
 // processing (requested amount, no money yet). ok = false: nothing to record (not paid).
 func insertPayment(ctx context.Context, q *sqlc.Queries, p provider.Provider, acc sqlc.BillingAccount, f provider.PaymentFact,
-	co *sqlc.BillingCheckout, attempt *uuid.UUID) (sqlc.BillingPayment, bool, error) {
+	co *sqlc.BillingCheckout, attempt *sqlc.BillingAutotopupAttempt) (sqlc.BillingPayment, bool, error) {
 	params := sqlc.InsertBillingPaymentParams{
 		AccountID: acc.ID, Provider: string(p.ID()), ProviderAccount: f.ProviderAccount, Livemode: f.Livemode,
 		ProviderPaymentID: f.ID, Currency: acc.Currency, Origin: originImport, ReceiptUrl: f.ReceiptURL,
@@ -210,7 +211,10 @@ func insertPayment(ctx context.Context, q *sqlc.Queries, p provider.Provider, ac
 	}
 	switch {
 	case attempt != nil:
-		params.Origin, params.AttemptID = originAutoTopup, attempt
+		params.Origin, params.AttemptID = originAutoTopup, &attempt.ID
+		if attempt.Kind == "manual" {
+			params.Origin = originSavedMethod
+		}
 	case co != nil:
 		params.Origin, params.CheckoutID = originCheckout, &co.ID
 	}
