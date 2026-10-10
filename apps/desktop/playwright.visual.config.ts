@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 // Visual regression + layout invariants + accessibility (docs/08, «Тесты дизайна»).
 // Self-contained: starts the deterministic mock API (e2e-support/) and the production
@@ -82,6 +82,16 @@ export default defineConfig<VisualOptions>({
     { name: 'inline-buttons', testMatch: /inline-buttons\.spec\.ts/, use: { browserName: 'chromium', viewport: { width: 960, height: 600 } } },
     // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.
     { name: 'voice-switch', testMatch: /voice-switch\.spec\.ts/ },
+    // Balance billing screens (ADR-0080, owner 10.10 allowed visual runs for them): the web build with
+    // VITE_BILLING_MOCK=1 (`pnpm e2e:visual:billing`) in Chromium (desktop dark 960×600, light 960 for
+    // the plan dialog) and WebKit on an iPhone 14 (390). The in-memory billing mock needs no server.
+    { name: 'billing-dark-960', testMatch: /billing\.visual\.spec\.ts/, use: { browserName: 'chromium', viewport: { width: 960, height: 600 }, colorScheme: 'dark', timezoneId: 'Europe/Moscow' } },
+    { name: 'billing-light-960', testMatch: /billing\.visual\.spec\.ts/, use: { browserName: 'chromium', viewport: { width: 960, height: 600 }, colorScheme: 'light', timezoneId: 'Europe/Moscow' } },
+    {
+      name: 'billing-phone-390',
+      testMatch: /billing\.visual\.spec\.ts/,
+      use: { ...devices['iPhone 14'], browserName: 'webkit', colorScheme: 'dark', timezoneId: 'Europe/Moscow', reducedMotion: 'reduce' },
+    },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only
     // web.spec.ts, where everything but the dark-960 join card is skipped (see above).
     { name: 'misc', testMatch: ALL_CONFIGS ? /(focus|web)\.spec\.ts/ : /web\.spec\.ts/ },
