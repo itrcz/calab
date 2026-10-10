@@ -252,12 +252,13 @@ test('billing-suspended: paywall, badge, plans, top-up', async ({ page }) => {
   const s = await boot(page, { scenario: 'suspended', plan: 'PLAN_TEAM' });
   await expect(page.getByTestId('billing-paywall')).toBeVisible();
   await checkpoint(s, 'billing-paywall-owner');
-  await openPlans(page);
-  await checkpoint(s, 'billing-plans-suspended');
-  await closeTop(page);
   await tap(page.getByTestId('billing-paywall-topup'));
   await expect(page.getByTestId('billing-topup')).toBeVisible();
   await checkpoint(s, 'billing-paywall-topup');
+  await closeTop(page);
+  // The plans open over settings → «Тариф» (ADR-0086): last, as settings stay under them.
+  await openPlans(page);
+  await checkpoint(s, 'billing-plans-suspended');
 });
 
 test('billing-suspended-member: the stub', async ({ page }) => {
@@ -387,9 +388,8 @@ test('billing-payer: requisites form by country', async ({ page }) => {
   test.skip(isLight(), 'dark only');
   // The RU account: the saved payer is a Russian company (ИНН, КПП, ОГРН, юридический адрес).
   const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', market: 'ru' });
-  await openPlans(page);
-  await tap(page.getByTestId('plans-details'));
-  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  // The badge opens settings → «Тариф» with the cabinet (ADR-0086).
+  const settings = await openPlanTab(page);
   await tap(settings.getByTestId('billing-payer-edit'));
   const form = page.getByTestId('billing-payer-form');
   await expect(form.getByTestId('billing-payer-type')).toBeVisible();
