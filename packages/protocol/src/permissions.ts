@@ -44,6 +44,46 @@ export const PERMISSION_BITS = {
   MANAGE_RECORDINGS: BigInt.asUintN(32, BigInt(Permission.MANAGE_RECORDINGS)),
 } as const;
 
+/**
+ * Billing bits (ADR-0087), Go: perm.BillingView / BillingTopup / BillingManage. Bits from 1 << 32
+ * on cannot be proto enum values (int32): listed in the comment of enum Permission. They live on
+ * roles but stand apart from PERMISSION_BITS: ADMINISTRATOR does not include them (ALL_PERMISSIONS
+ * stops at bit 31), overrides never touch them, only the workspace owner grants or assigns them;
+ * the owner always has all three, guests and bots never. Read them through billingPermissions.
+ */
+export const BILLING_BITS = {
+  /** The badge state and the «Тариф» settings: balance, history, plan, receipts. */
+  VIEW: 1n << 32n,
+  /** Manual top-up through a hosted payment page (own card / SBP). Implies VIEW. */
+  TOPUP: 1n << 33n,
+  /** Plan changes, one-click top-up, auto-topup, saved methods, payer, refund requests. Implies VIEW + TOPUP. */
+  MANAGE: 1n << 34n,
+} as const;
+
+export type BillingPermissionName = keyof typeof BILLING_BITS;
+
+/** The three billing bits (Go: perm.Billing). */
+export const BILLING_PERMISSIONS: PermissionBits = BILLING_BITS.VIEW | BILLING_BITS.TOPUP | BILLING_BITS.MANAGE;
+
+/**
+ * The one billing rule (ADR-0087; Go: perm.BillingOf): the workspace owner has all three, a guest
+ * (highest built-in role GUEST) nothing, anyone else the billing bits of their roles (ADMINISTRATOR
+ * gives none) closed under MANAGE → TOPUP → VIEW. The owner is recognized by the built-in owner
+ * role unless `owner` is given; a guest by the built-in guest role without a member one unless
+ * `guest` is given.
+ */
+export function billingPermissions(
+  roles: readonly Pick<RoleBits, 'permissions' | 'builtin'>[],
+  opts: { owner?: boolean | undefined; guest?: boolean | undefined } = {},
+): PermissionBits {
+  if (opts.owner ?? holdsOwnerRole(roles)) return BILLING_PERMISSIONS;
+  if (opts.guest ?? guestOnly(roles)) return 0n;
+  let b = rawPermissions(roles) & BILLING_PERMISSIONS;
+  if (b & BILLING_BITS.MANAGE) b |= BILLING_BITS.TOPUP;
+  if (b & BILLING_BITS.TOPUP) b |= BILLING_BITS.VIEW;
+  return b;
+}
+
 export type PermissionName = keyof typeof PERMISSION_BITS;
 export type PermissionBits = bigint;
 

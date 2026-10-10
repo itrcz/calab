@@ -18,6 +18,9 @@ import {
   computeMemberBoardPermissions,
   computeMemberRoomPermissions,
   computePermissions,
+  billingPermissions,
+  BILLING_BITS,
+  BILLING_PERMISSIONS,
   tempRoomScope,
   computeRoomPermissions,
   memberRoles,
@@ -46,6 +49,8 @@ interface Vector {
   board?: { private: boolean; guest?: boolean; restricted?: boolean; owner?: boolean };
   // ADR-0042 / ADR-0058 §3: a task room vector (taskRoomPermissions from the board bits).
   taskRoom?: { board: number; archived: boolean; commentsOff: boolean };
+  // ADR-0087: a billing vector (billingPermissions over the roles).
+  billing?: { owner: boolean; guest: boolean };
   expected: number;
 }
 
@@ -74,6 +79,10 @@ const toRoles = (rs: NonNullable<Vector['roles']>) =>
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
+      if (v.billing) {
+        expect(billingPermissions(toRoles(v.roles ?? []), v.billing)).toBe(BigInt(v.expected));
+        return;
+      }
       if (v.taskRoom) {
         expect(taskRoomPermissions(BigInt(v.taskRoom.board), v.taskRoom.archived, v.taskRoom.commentsOff)).toBe(
           BigInt(v.expected),
@@ -298,5 +307,20 @@ describe('roles (ADR-0026)', () => {
     const owner = [{ id: 'o', position: 1001, permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.OWNER }];
     expect(computeMemberRoomPermissions(owner, 'u2', [], true, undefined, temp)).toBe(0n);
     expect(computeMemberRoomPermissions(owner, 'u2', [], false, undefined, { private: false, createdBy: 'u1' })).toBe(ALL_PERMISSIONS);
+  });
+});
+
+describe('billing bits (ADR-0087)', () => {
+  it('stand apart from ALL_PERMISSIONS, overrides and the defaults', () => {
+    expect(ALL_PERMISSIONS & BILLING_PERMISSIONS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & BILLING_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & BILLING_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & BILLING_PERMISSIONS).toBe(0n);
+    expect(BILLING_PERMISSIONS).toBe(0x7n << 32n);
+  });
+  it('the owner role gives all three, a guest-only member none', () => {
+    expect(billingPermissions([{ permissions: 1024n, builtin: WorkspaceRole.OWNER }])).toBe(BILLING_PERMISSIONS);
+    expect(billingPermissions([{ permissions: BILLING_BITS.MANAGE, builtin: WorkspaceRole.GUEST }])).toBe(0n);
+    expect(billingPermissions([{ permissions: 1024n, builtin: WorkspaceRole.ADMIN }])).toBe(0n);
   });
 });

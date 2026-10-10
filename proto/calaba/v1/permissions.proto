@@ -76,7 +76,14 @@ enum Permission {
   // 1 << 31: delete recordings of any room the holder can see, the recording consent of rooms
   // (Room.allow_recording). Proto enums are int32: the value is bit 31 as a signed number
   // (0x80000000); read it as unsigned (TS: BigInt.asUintN(32, …)). Bits from 1 << 32 on cannot be
-  // enum values: they will be listed as constants in this comment block and in docs/04.
+  // enum values: they are listed as constants in this comment block and in docs/04.
+  // Billing bits (ADR-0087), workspace-level, outside ADMINISTRATOR (it does not include them),
+  // never in overrides, granted and assigned by the workspace owner only; the owner always has
+  // all three, guests and bots never (TS BILLING_BITS, Go perm.BillingView …):
+  // 1 << 32 BILLING_VIEW: the badge state and «Тариф»: balance, history, plan, receipts.
+  // 1 << 33 BILLING_TOPUP: manual top-up through a hosted payment page; implies VIEW.
+  // 1 << 34 BILLING_MANAGE: plan changes, one-click top-up, auto-topup, saved methods, payer,
+  // refund requests, the market before the first payment; implies VIEW and TOPUP.
   PERMISSION_MANAGE_RECORDINGS = -2147483648;
 }
 
