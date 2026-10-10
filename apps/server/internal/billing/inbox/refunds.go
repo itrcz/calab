@@ -118,6 +118,21 @@ func (in *Inbox) ApplyRefund(ctx context.Context, p provider.Provider, f provide
 			if ref, acc, err = in.core.ApplyRefundResult(ctx, q, ref.ID, status, &f.ID); err != nil {
 				return err
 			}
+		case db.IsNotFound(err) && status != core.RefundSucceeded:
+			// Made in the provider dashboard and not executed yet (Stripe: pending, or already
+			// failed / canceled): recorded as it is, its money reserved until the provider settles
+			// it — never booked as executed before it is (a failed one gives the money back).
+			ref, acc, err = in.core.ReserveRefund(ctx, q, core.RefundReq{
+				PaymentID: pay.ID, Amount: f.Amount.Minor, IdemKey: "dashboard:" + f.ID, Origin: core.RefundOriginDashboard,
+				Status: status, ProviderRefundID: &f.ID, Reason: "provider dashboard",
+			})
+			if errors.Is(err, billing.ErrRefundExceedsRefundable) || errors.Is(err, billing.ErrRequestReused) {
+				refusal = permanent("dashboard refund %s of %s: %w", f.ID, f.PaymentID, err)
+				return refusal
+			}
+			if err != nil {
+				return err
+			}
 		case db.IsNotFound(err):
 			// Executed at the provider without Calab: a fact, booked at once (owner 2026-10-10),
 			// even into debt; on the account's other payments when this one cannot hold it.

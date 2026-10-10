@@ -166,7 +166,7 @@ func TestTochkaAdminRefundExecuted(t *testing.T) {
 
 // A Tochka subscription payment (one-click charge, first payment) cannot be refunded through the
 // API: nothing is sent, reserved or booked; the answer says what to refund in the bank (the
-// subscription id masked). The prod case of 2026-10-10.
+// full operation id: the superadmin finds the operation by it). The prod case of 2026-10-10.
 func TestTochkaAdminRefundManual(t *testing.T) {
 	e, sub, binding, charge := savedCardEnv(t)
 	a := e.admin()
@@ -174,14 +174,14 @@ func TestTochkaAdminRefundManual(t *testing.T) {
 	res := a.refund(charge, 15000)
 	m := res.GetManualRefund()
 	order := strings.TrimPrefix(charge.ProviderPaymentID, sub+":charge:")
-	if m == nil || m.GetCharge() != order || m.GetAmount().GetMinor() != 15000 || strings.Contains(m.GetOperation(), sub) || !strings.HasSuffix(sub, strings.TrimPrefix(m.GetOperation(), "…")) {
+	if m == nil || m.GetCharge() != order || m.GetAmount().GetMinor() != 15000 || m.GetOperation() != sub {
 		t.Fatalf("manual %v", m)
 	}
 	if len(res.GetRefunds()) != 0 || e.account().BalanceMinor != bal || e.bank.RefundPosts != 0 ||
 		e.count(`SELECT count(*) FROM billing_refunds WHERE account_id = $1`, e.acc) != 0 {
 		t.Fatalf("something moved: %v balance %d posts %d", res, e.account().BalanceMinor, e.bank.RefundPosts)
 	}
-	if m := a.refund(binding, 10000).GetManualRefund(); m == nil || m.GetCharge() != "" {
+	if m := a.refund(binding, 10000).GetManualRefund(); m == nil || m.GetCharge() != "" || m.GetOperation() != sub {
 		t.Fatalf("first payment %v", m)
 	}
 	if n := e.count(`SELECT count(*) FROM billing_audit WHERE account_id = $1 AND action = 'refund' AND details->'target'->>'outcome' = 'manual'`, e.acc); n != 2 {

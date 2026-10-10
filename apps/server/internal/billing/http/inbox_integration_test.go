@@ -290,6 +290,51 @@ func TestDashboardRefundImportedOnce(t *testing.T) {
 	}
 }
 
+// A dashboard refund the provider reports pending is not booked as executed: its money is
+// reserved, and given back when the provider fails it (no deduction for a refund that never
+// happened); one that succeeds later is booked once.
+func TestDashboardRefundPendingThenSettled(t *testing.T) {
+	e := newEnv(t)
+	_, pi := e.paid(3000)
+	failed, err := e.fake.DashboardRefund(pi, 1200, fake.Processing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := e.fake.DashboardRefund(pi, 500, fake.Processing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliver := func() {
+		for _, w := range e.fake.TakeWebhooks() {
+			e.webhook(w)
+		}
+		e.process()
+	}
+	deliver()
+	if n := e.count(`SELECT count(*) FROM billing_refunds WHERE account_id = $1 AND origin = 'dashboard' AND status = 'pending'`, e.acc); n != 2 {
+		t.Fatalf("pending dashboard refunds %d: %v", n, e.eventErrors())
+	}
+	if acc := e.account(); acc.BalanceMinor != 1300 {
+		t.Fatalf("reserved: balance %d, want 1300", acc.BalanceMinor)
+	}
+	if err := e.fake.SettleRefund(failed.ID, fake.Decline); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.fake.SettleRefund(done.ID, fake.Succeed); err != nil {
+		t.Fatal(err)
+	}
+	deliver()
+	if acc := e.account(); acc.BalanceMinor != 2500 {
+		t.Fatalf("settled: balance %d, want 2500", acc.BalanceMinor)
+	}
+	if n := e.count(`SELECT refunded_minor FROM billing_payments WHERE account_id = $1`, e.acc); n != 500 {
+		t.Fatalf("payment refunded %d, want 500", n)
+	}
+	if n := e.count(`SELECT coalesce(sum(amount_minor), 0) FROM billing_ledger WHERE account_id = $1`, e.acc); n != 2500 {
+		t.Fatalf("ledger sum %d, want 2500", n)
+	}
+}
+
 // disputes wraps the fake with a provider.DisputeReader whose status the test sets.
 type disputes struct {
 	*fake.Provider

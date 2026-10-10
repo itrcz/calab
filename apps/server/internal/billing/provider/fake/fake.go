@@ -556,15 +556,36 @@ func (p *Provider) newRefund(pay *provider.PaymentFact, amount money.Money, meta
 	return r
 }
 
-// DashboardRefund simulates a refund made in the provider dashboard (not through our API).
-func (p *Provider) DashboardRefund(paymentID string, amount int64) (provider.RefundFact, error) {
+// DashboardRefund simulates a refund made in the provider dashboard (not through our API);
+// out (default Succeed) is its first state: Processing = pending, Decline = failed.
+func (p *Provider) DashboardRefund(paymentID string, amount int64, out ...Outcome) (provider.RefundFact, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	pay, ok := p.payments[paymentID]
 	if !ok || pay.Status != provider.PaymentSucceeded {
 		return provider.RefundFact{}, provider.ErrNotFound
 	}
-	return *p.newRefund(pay, money.New(amount, pay.Amount.Currency), pay.Metadata, Succeed), nil
+	o := Succeed
+	if len(out) > 0 {
+		o = out[0]
+	}
+	return *p.newRefund(pay, money.New(amount, pay.Amount.Currency), pay.Metadata, o), nil
+}
+
+// SettleRefund moves a refund to its final state (Succeed or Decline) and queues refund.updated.
+func (p *Provider) SettleRefund(refundID string, out Outcome) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	r, ok := p.refunds[refundID]
+	if !ok {
+		return provider.ErrNotFound
+	}
+	r.Status, r.FailureReason = provider.RefundSucceeded, ""
+	if out == Decline {
+		r.Status, r.FailureReason = provider.RefundFailed, "declined"
+	}
+	p.emit(provider.EventRefundUpdated, "refund.updated", r.ID, r.PaymentID, r.Metadata)
+	return nil
 }
 
 // GetRefund implements provider.Provider.

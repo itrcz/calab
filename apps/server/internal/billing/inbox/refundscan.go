@@ -32,7 +32,8 @@ import (
 //
 // Cadence (scanInterval): every minute for 24 h after the last payment or refund of the provider,
 // every 5 minutes for 7 days, every 15 minutes up to 180 days, then not at all. The superadmin's
-// «Сверить» runs a pass at once. One replica at a time (ScanLock).
+// «Сверить» runs a pass at once. One replica at a time (ScanLock), one scheduled pass per
+// interval across replicas and a 429 backoff shared by all (ScanGate).
 
 // RefundScanWindow bounds the operations read: older ones are not (cards are refundable 180 days).
 const RefundScanWindow = 180 * 24 * time.Hour
@@ -70,8 +71,7 @@ func scanInterval(last, now time.Time) time.Duration {
 // RunRefundScan runs the polling until ctx is done: each tick, a pass for every provider that
 // reads refunds this way when its cadence says one is due.
 func (in *Inbox) RunRefundScan(ctx context.Context) {
-	last := map[provider.ID]time.Time{}
-	backoff := map[provider.ID]time.Duration{} // after a 429: 2, 4, 8, 15 min
+	sched := map[provider.ID]*scanSchedule{}
 	t := time.NewTicker(RefundScanTick)
 	defer t.Stop()
 	for {
@@ -84,28 +84,58 @@ func (in *Inbox) RunRefundScan(ctx context.Context) {
 				slog.WarnContext(ctx, "billing refund scan: activity", "provider", p.ID(), "err", err)
 				continue
 			}
-			every := scanInterval(act, time.Now())
-			if every == 0 || time.Since(last[p.ID()]) < max(every, backoff[p.ID()])-time.Second {
+			s := sched[p.ID()]
+			if s == nil {
+				s = &scanSchedule{}
+				sched[p.ID()] = s
+			}
+			now := time.Now()
+			if !in.scanDue(ctx, string(p.ID()), s, scanInterval(act, now), now) {
 				continue
 			}
-			last[p.ID()] = time.Now()
 			err = in.ScanRefunds(ctx, p)
-			switch {
-			case errors.Is(err, provider.ErrRateLimited):
-				backoff[p.ID()] = min(max(2*backoff[p.ID()], 2*time.Minute), 15*time.Minute)
-				slog.WarnContext(ctx, "billing refund scan: rate limited, backing off", "provider", p.ID(), "retry_in", backoff[p.ID()].String())
-			case err != nil && ctx.Err() == nil:
-				backoff[p.ID()] = 0
-				slog.WarnContext(ctx, "billing refund scan", "provider", p.ID(), "err", err)
-			default:
-				backoff[p.ID()] = 0
-			}
+			in.scanDone(ctx, string(p.ID()), s, err)
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
+	}
+}
+
+// scanSchedule is one replica's view of a provider's polling: its last pass and the backoff
+// after a 429 (2, 4, 8, 15 min).
+type scanSchedule struct {
+	last    time.Time
+	backoff time.Duration
+}
+
+// scanDue tells whether this replica runs the provider's pass now: the cadence (every; 0 =
+// none) or a backoff has elapsed, and no other replica claimed this slot (ScanGate).
+func (in *Inbox) scanDue(ctx context.Context, prov string, s *scanSchedule, every time.Duration, now time.Time) bool {
+	wait := max(every, s.backoff) - time.Second // a tick's jitter
+	if every == 0 || now.Sub(s.last) < wait {
+		return false
+	}
+	s.last = now
+	return in.ScanGate == nil || in.ScanGate(ctx, prov, wait, false)
+}
+
+// scanDone records a pass's outcome: a 429 backs off (every replica, through ScanGate).
+func (in *Inbox) scanDone(ctx context.Context, prov string, s *scanSchedule, err error) {
+	switch {
+	case errors.Is(err, provider.ErrRateLimited):
+		s.backoff = min(max(2*s.backoff, 2*time.Minute), 15*time.Minute)
+		if in.ScanGate != nil {
+			in.ScanGate(ctx, prov, s.backoff-time.Second, true)
+		}
+		slog.WarnContext(ctx, "billing refund scan: rate limited, backing off", "provider", prov, "retry_in", s.backoff.String())
+	case err != nil && ctx.Err() == nil:
+		s.backoff = 0
+		slog.WarnContext(ctx, "billing refund scan", "provider", prov, "err", err)
+	default:
+		s.backoff = 0
 	}
 }
 

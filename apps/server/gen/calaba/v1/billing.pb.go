@@ -5175,9 +5175,10 @@ func (x *AdminBillingRefund) GetNeedsReviewSince() *timestamppb.Timestamp {
 	return nil
 }
 
-// A refund made in the provider's interface the reconciliation could not record on its own
-// (ADR-0083, 2026-10-10): «Требует внимания» in the admin. Resolved by POST
-// /api/admin/billing/issues/{id}/import («Записать как долг») or …/dismiss.
+// A refund made in the provider's interface (ADR-0083, 2026-10-10): «Требует внимания» in the
+// admin. Booked at once by the refund polling (bank_refund, status imported: information); one it
+// could not book stays open, resolved by POST /api/admin/billing/issues/{id}/import
+// («Записать как долг») or …/dismiss.
 type AdminBillingIssue struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -5190,9 +5191,9 @@ type AdminBillingIssue struct {
 	// masked like every admin provider id (…9f8f:7824819).
 	ProviderRef string `protobuf:"bytes,7,opt,name=provider_ref,json=providerRef,proto3" json:"provider_ref,omitempty"`
 	Amount      *Money `protobuf:"bytes,8,opt,name=amount,proto3" json:"amount,omitempty"`
-	// exceeds_refundable | currency_mismatch | unmatched
+	// bank_refund | currency_mismatch | exceeds_payments
 	Reason string `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"`
-	// open | imported | dismissed | matched
+	// open | imported | dismissed
 	Status        string                 `protobuf:"bytes,10,opt,name=status,proto3" json:"status,omitempty"`
 	OccurredAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"` // at the provider, when known
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -7143,13 +7144,13 @@ func (x *AdminBillingMutationResult) GetManualRefund() *AdminManualRefund {
 
 // A refund the provider makes only in its own interface (ADR-0083 amendment 2026-10-10: Tochka
 // subscription payments, digital ruble): nothing was sent or booked; the operator refunds in the
-// bank and the refund polling books it. The ids are what the operator looks up in the bank; a
-// saved card's subscription id is masked like every admin provider id (…299c).
+// bank and the refund polling books it. The ids are what the operator looks up in the bank, given
+// in full here (a saved card's subscription id stays masked in lists, logs and errors).
 type AdminManualRefund struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
 	PaymentId     string                 `protobuf:"bytes,2,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"` // ours
-	Operation     string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`                  // the provider's operation (masked for a saved card's subscription)
+	Operation     string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`                  // the provider's operation id, in full (the bank's reference)
 	Charge        string                 `protobuf:"bytes,4,opt,name=charge,proto3" json:"charge,omitempty"`                        // the charge's order id in the operation ("" for the first payment)
 	Amount        *Money                 `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`
 	unknownFields protoimpl.UnknownFields

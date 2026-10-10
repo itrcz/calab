@@ -103,7 +103,7 @@ func (h *Handlers) refund(w http.ResponseWriter, r *http.Request) error {
 		if byHand {
 			// Nothing to send: the answer says what to refund in the bank.
 			eff.target["outcome"] = "manual"
-			eff.res.ManualRefund = h.manualRefund(ctx, q, pay, amount, acc.Currency)
+			eff.res.ManualRefund = h.manualRefund(pay, amount, acc.Currency)
 			return eff, nil
 		}
 		if c.preview {
@@ -137,14 +137,12 @@ func (h *Handlers) refund(w http.ResponseWriter, r *http.Request) error {
 	return h.respond(w, r, res, pay.AccountID)
 }
 
-// manualRefund is what the operator refunds in the provider's interface.
-func (h *Handlers) manualRefund(ctx context.Context, q *sqlc.Queries, pay sqlc.BillingPayment, amount int64, currency string) *v1.AdminManualRefund {
+// manualRefund is what the operator refunds in the provider's interface. The operation id is
+// given in full (owner 2026-10-10): it is the bank's reference the superadmin finds the operation
+// by in the bank's interface; it stays masked in lists, logs and errors.
+func (h *Handlers) manualRefund(pay sqlc.BillingPayment, amount int64, currency string) *v1.AdminManualRefund {
 	op, charge, _ := strings.Cut(pay.ProviderPaymentID, ":charge:")
-	mask, err := savedRefs(ctx, q, []string{op})
-	if err != nil {
-		mask = refMask{op: true} // never show a subscription id unmasked
-	}
-	return &v1.AdminManualRefund{Provider: pay.Provider, PaymentId: pay.ID.String(), Operation: mask.apply(op), Charge: charge, Amount: money(amount, currency)}
+	return &v1.AdminManualRefund{Provider: pay.Provider, PaymentId: pay.ID.String(), Operation: op, Charge: charge, Amount: money(amount, currency)}
 }
 
 // executeAll sends every pending refund of res and replaces it with its state after the answer
@@ -228,7 +226,7 @@ func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.Bi
 		// local data did not know): nothing moved; the polling books the operator's refund.
 		slog.WarnContext(ctx, "billing admin: refund to be made in the provider's interface", "refund", ref.ID, "err", err)
 		status, outcome = core.RefundFailed, outcomeManual
-		manual = h.manualRefund(ctx, h.d.DB.Q, pay, ref.AmountMinor, ref.Currency)
+		manual = h.manualRefund(pay, ref.AmountMinor, ref.Currency)
 	case errors.Is(err, provider.ErrUnknownOutcome) || errors.Is(err, context.DeadlineExceeded):
 		slog.WarnContext(ctx, "billing admin: refund outcome unknown, the polling resolves it", "refund", ref.ID, "err", err)
 		return ref, outcomeUnknown, nil, nil

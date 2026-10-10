@@ -131,7 +131,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	}
 	rt.Inbox = inbox.New(d.DB, reg, rt.Core, inbox.Options{})
 	rt.Inbox.Committed, rt.Inbox.Mail = committed, notifier
-	rt.Inbox.ScanLock = redisScanLock(d.Redis)
+	rt.Inbox.ScanLock, rt.Inbox.ScanGate = redisScanLock(d.Redis), redisScanGate(d.Redis)
 	rt.AutoTopup = autotopup.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, autotopup.Options{
 		Enabled: b.AutoTopupEnabled, RestoreMarker: b.AutoTopupRequireReconcile, ReturnURL: b.PublicReturnURL,
 	})
@@ -215,6 +215,18 @@ func redisWebhookLock(r rueidis.Client) func(context.Context) (func(), bool) {
 func redisScanLock(r rueidis.Client) func(context.Context, string) (func(), bool) {
 	return func(ctx context.Context, provider string) (func(), bool) {
 		return redisLock(r, "billing:refund-scan:"+provider, 5*time.Minute)(ctx)
+	}
+}
+
+// redisScanGate makes the refund polling cadence (and a 429 backoff) one for every replica: the
+// replica that claims the slot runs the pass; the key is never released, it expires after hold.
+func redisScanGate(r rueidis.Client) func(context.Context, string, time.Duration, bool) bool {
+	return func(ctx context.Context, provider string, hold time.Duration, force bool) bool {
+		cmd := r.B().Set().Key(redisx.Key("billing:refund-scan-due:" + provider)).Value("1")
+		if force {
+			return r.Do(ctx, cmd.Px(hold).Build()).Error() == nil
+		}
+		return r.Do(ctx, cmd.Nx().Px(hold).Build()).Error() == nil
 	}
 }
 

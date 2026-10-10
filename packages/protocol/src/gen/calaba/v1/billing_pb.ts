@@ -2280,9 +2280,10 @@ export const AdminBillingRefundSchema: GenMessage<AdminBillingRefund> = /*@__PUR
   messageDesc(file_calaba_v1_billing, 46);
 
 /**
- * A refund made in the provider's interface the reconciliation could not record on its own
- * (ADR-0083, 2026-10-10): «Требует внимания» in the admin. Resolved by POST
- * /api/admin/billing/issues/{id}/import («Записать как долг») or …/dismiss.
+ * A refund made in the provider's interface (ADR-0083, 2026-10-10): «Требует внимания» in the
+ * admin. Booked at once by the refund polling (bank_refund, status imported: information); one it
+ * could not book stays open, resolved by POST /api/admin/billing/issues/{id}/import
+ * («Записать как долг») or …/dismiss.
  *
  * @generated from message calaba.v1.AdminBillingIssue
  */
@@ -2333,14 +2334,14 @@ export type AdminBillingIssue = Message<"calaba.v1.AdminBillingIssue"> & {
   amount?: Money | undefined;
 
   /**
-   * exceeds_refundable | currency_mismatch | unmatched
+   * bank_refund | currency_mismatch | exceeds_payments
    *
    * @generated from field: string reason = 9;
    */
   reason: string;
 
   /**
-   * open | imported | dismissed | matched
+   * open | imported | dismissed
    *
    * @generated from field: string status = 10;
    */
@@ -3332,8 +3333,8 @@ export const AdminBillingMutationResultSchema: GenMessage<AdminBillingMutationRe
 /**
  * A refund the provider makes only in its own interface (ADR-0083 amendment 2026-10-10: Tochka
  * subscription payments, digital ruble): nothing was sent or booked; the operator refunds in the
- * bank and the refund polling books it. The ids are what the operator looks up in the bank; a
- * saved card's subscription id is masked like every admin provider id (…299c).
+ * bank and the refund polling books it. The ids are what the operator looks up in the bank, given
+ * in full here (a saved card's subscription id stays masked in lists, logs and errors).
  *
  * @generated from message calaba.v1.AdminManualRefund
  */
@@ -3351,7 +3352,7 @@ export type AdminManualRefund = Message<"calaba.v1.AdminManualRefund"> & {
   paymentId: string;
 
   /**
-   * the provider's operation (masked for a saved card's subscription)
+   * the provider's operation id, in full (the bank's reference)
    *
    * @generated from field: string operation = 3;
    */

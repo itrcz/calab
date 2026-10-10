@@ -413,7 +413,7 @@ func TestRandomOperationsKeepInvariants(t *testing.T) {
 		var payments, credits []uuid.UUID
 		for step := range 120 {
 			var err error
-			switch op := r.IntN(13); op {
+			switch op := r.IntN(15); op {
 			case 0:
 				payments = append(payments, e.pay(int64(1+r.IntN(80))))
 			case 1:
@@ -467,6 +467,31 @@ func TestRandomOperationsKeepInvariants(t *testing.T) {
 						return err
 					})
 				}
+			case 13:
+				// The synchronous admin refund (2026-10-10): nothing reserved, booked when executed
+				// (possibly into debt), nothing moves when refused.
+				if len(payments) > 0 {
+					p := payments[r.IntN(len(payments))]
+					err = e.d.Tx(ctx, func(q *sqlc.Queries) error {
+						ref, _, err := e.c.StartRefund(ctx, q, core.RefundReq{PaymentID: p, Amount: int64(1 + r.IntN(60)),
+							IdemKey: "refund:" + uuid.NewString(), Reason: "x"})
+						if err != nil {
+							return err
+						}
+						_, _, err = e.c.ApplyRefundResult(ctx, q, ref.ID, []string{core.RefundSucceeded, core.RefundFailed}[r.IntN(2)], nil)
+						return err
+					})
+				}
+			case 14:
+				// A refund made in the provider's interface: booked at once over the payments.
+				err = e.d.Tx(ctx, func(q *sqlc.Queries) error {
+					var pref *uuid.UUID
+					if len(payments) > 0 {
+						pref = &payments[r.IntN(len(payments))]
+					}
+					_, _, err := e.c.BookBankRefund(ctx, q, e.acc, pref, "", "bank_"+uuid.NewString(), int64(1+r.IntN(60)), "bank", nil)
+					return err
+				})
 			}
 			if !apiErr(err) {
 				t.Fatalf("seed %d step %d: %v", seed, step, err)

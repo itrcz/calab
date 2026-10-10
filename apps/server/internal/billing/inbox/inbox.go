@@ -109,6 +109,11 @@ type Inbox struct {
 	// ScanLock lets one replica at a time run a refund polling pass of a provider (Redis SET NX;
 	// nil = always, a single process). ok=false: another replica is on it.
 	ScanLock func(ctx context.Context, provider string) (release func(), ok bool)
+	// ScanGate claims the next scheduled refund polling pass of a provider across replicas for
+	// hold (Redis SET NX PX, never released: the cadence and a 429 backoff hold for every pod;
+	// force: set it regardless, to extend a backoff). nil = a single process. false: another
+	// replica ran one within the interval.
+	ScanGate func(ctx context.Context, provider string, hold time.Duration, force bool) bool
 }
 
 // New creates the inbox.
