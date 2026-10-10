@@ -121,7 +121,7 @@ export function resyncBilling(workspaceIds: ReadonlySet<string>): void {
   }
 }
 
-/** Money actions are offered here (native mobile companions keep purchases on the website). */
+/** Payment UI is offered here: everywhere but the iOS shell (App Store rules; services/plan planOffersAllowed). */
 export const billingPaymentsAllowed = (): boolean => planOffersAllowed();
 
 /** Opens «Тариф и оплата» of a workspace (links; the plan step after creating a workspace). */

@@ -1,4 +1,4 @@
-import { Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
+import { BILLING_BITS, Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { ExternalLink, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -15,6 +15,8 @@ import { useStickers } from '../../stores/stickers';
 import { useWorkspaces } from '../../stores/workspaces';
 import { BillingSection } from './billing/BillingSection';
 import { PlansDialog } from './billing/PlansDialog';
+import { useBillingBits } from './billing/access';
+import { billingPaymentsAllowed } from '../../services/billing';
 import { AdminAssignedNote } from './billing/Violations';
 import { useBilling } from '../../stores/billing';
 
@@ -135,10 +137,11 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
 /**
  * «Сменить тариф» (owner, 10.10): the plans comparison opens over settings from here — the plan
  * badge leads to this tab. A plan a superadmin assigned is not changed by self-serve (ADR-0086):
- * the note with «Написать в поддержку» instead. Owner only; primitive selectors.
+ * the note with «Написать в поддержку» instead. BILLING_MANAGE only (ADR-0087; the owner has it),
+ * never in the iOS shell (App Store rules); primitive selectors.
  */
 function PlanSwitch({ workspaceId }: { workspaceId: string }): ReactNode {
-  const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+  const owner = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n && billingPaymentsAllowed();
   const assigned = useBilling((s) => !!s.byWs[workspaceId]?.data?.adminAssigned);
   const canSwitch = useBilling((s) => {
     const d = s.byWs[workspaceId]?.data;

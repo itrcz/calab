@@ -394,7 +394,8 @@ function quoteOf(s: State, purpose: BillingQuotePurpose, plan: Plan) {
   const debt = s.balance < 0n ? -s.balance : 0n;
   const price = unit(plan || s.plan);
   const day = price * BigInt(s.members);
-  const comp = purpose === BillingQuotePurpose.CHANGE_PLAN || purpose === BillingQuotePurpose.STOP ? unit(s.plan) * BigInt(s.members) / 2n : 0n;
+  // ADR-0086: a stop returns nothing (paid days run to their end); only a plan change compensates.
+  const comp = purpose === BillingQuotePurpose.CHANGE_PLAN ? unit(s.plan) * BigInt(s.members) / 2n : 0n;
   const charge = purpose === BillingQuotePurpose.STOP || purpose === BillingQuotePurpose.RESUME_FREE ? 0n : day;
   const free = s.balance > 0n ? s.balance : 0n;
   const need = debt + charge - comp - free;

@@ -1,4 +1,5 @@
 import {
+  BILLING_BITS,
   BillingQuotePurpose,
   BillingState,
   PaymentMethodKind,
@@ -51,6 +52,7 @@ import { usePrefs } from '../../../stores/prefs';
 import { useSession } from '../../../stores/session';
 import { useUi } from '../../../stores/ui';
 import { useWorkspaces } from '../../../stores/workspaces';
+import { useBillingBits } from './access';
 import { useBillingState } from './BillingPaywall';
 import { ChangeNet, QuoteDialog } from './QuoteDialog';
 import { AdminAssignedNote, ViolationList } from './Violations';
@@ -95,7 +97,11 @@ export function PlansDialog({
   onClose: () => void;
 }): ReactNode {
   const toCabinet = useCallback(() => (inSettings ? onClose() : openCabinet(workspaceId)), [inSettings, onClose, workspaceId]);
-  const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+  // ADR-0087: plan changes are BILLING_MANAGE (the owner has it); in the iOS shell nobody sees
+  // prices or pay paths (App Store rules) — the read-only view with a neutral line instead.
+  const manage = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n;
+  const payHere = billingPaymentsAllowed();
+  const owner = manage && payHere;
   const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name ?? '');
   const state = useBillingState(workspaceId);
   const entry = useBilling((s) => s.byWs[workspaceId]);
@@ -115,13 +121,13 @@ export function PlansDialog({
     },
     [userId],
   );
-  // A fresh summary each time the screen opens (the owner; members only in a billing workspace).
+  // A fresh summary each time the screen opens (a MANAGE holder; members only in a billing workspace).
   useEffect(() => {
     if (owner || billingMock()) void loadBilling(workspaceId);
   }, [owner, workspaceId]);
 
   const title = welcome ? t('billing.plans.welcomeTitle') : t('billing.plans.title');
-  if (!owner) return <MemberView workspaceId={workspaceId} state={state} onClose={onClose} />;
+  if (!owner) return <MemberView workspaceId={workspaceId} state={state} elsewhere={manage && !payHere} onClose={onClose} />;
 
   const data = entry?.data ?? null;
   const loading = !data && (!entry || entry.load === 'loading');
@@ -203,8 +209,12 @@ export function PlansDialog({
   );
 }
 
-/** Members: the plan and the state, «оплачивает владелец», the limits in settings. */
-function MemberView({ workspaceId, state, onClose }: { workspaceId: string; state: BillingState; onClose: () => void }): ReactNode {
+/**
+ * Without BILLING_MANAGE: the plan and the state, «управляет владелец или тот, кому он дал право»,
+ * the limits in settings. `elsewhere`: a MANAGE holder in the iOS shell — the neutral «Управление
+ * оплатой доступно в веб-версии и на компьютере», no link (App Store anti-steering).
+ */
+function MemberView({ workspaceId, state, elsewhere, onClose }: { workspaceId: string; state: BillingState; elsewhere: boolean; onClose: () => void }): ReactNode {
   const plan = useWorkspaces((s) => planKind(s.byId[workspaceId]?.ws.plan));
   const suspended = state === BillingState.SUSPENDED;
   return (
@@ -228,7 +238,7 @@ function MemberView({ workspaceId, state, onClose }: { workspaceId: string; stat
           <StatePill state={state} />
         </div>
         <Note tone={suspended ? 'danger' : 'muted'} icon={suspended ? <CirclePause className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden /> : undefined}>
-          {suspended ? t('billing.member.suspended') : t('billing.plans.member')}
+          {elsewhere ? t('billing.paymentsElsewhere') : suspended ? t('billing.member.suspended') : t('billing.plans.member')}
         </Note>
       </div>
     </Modal>

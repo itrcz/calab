@@ -281,6 +281,7 @@ import {
   MoveMemberRequestSchema,
   MessageSchema,
   MicMode,
+  BILLING_PERMISSIONS,
   PERMISSION_BITS,
   PermissionTargetType,
   PresenceSchema,
@@ -1492,8 +1493,10 @@ class MockImpl {
   }
 
   /** Bits a caller may put on / take off a role: never ADMINISTRATOR; a non-admin only its own, never MANAGE_ROLES / MANAGE_WORKSPACE. */
-  private checkGrant(a: { admin: boolean; perms: bigint }, bits: bigint): void {
+  private checkGrant(a: { owner: boolean; admin: boolean; perms: bigint }, bits: bigint): void {
     if (bits & PERMISSION_BITS.ADMINISTRATOR) throw forbidden('ADMINISTRATOR is not grantable');
+    // ADR-0087: the billing bits are the owner's alone to grant or revoke.
+    if (bits & BILLING_PERMISSIONS && !a.owner) throw forbidden('only the owner grants billing permissions');
     if (a.admin) return;
     if (bits & (PERMISSION_BITS.MANAGE_ROLES | PERMISSION_BITS.MANAGE_WORKSPACE)) throw forbidden('only admins grant role / workspace management');
     if (bits & ~a.perms) throw forbidden('cannot grant permissions you lack');
@@ -3589,6 +3592,7 @@ class MockImpl {
       if (!role) throw notFound('role not found');
       if (role.builtin !== WorkspaceRole.UNSPECIFIED) throw invalid('role', 'built-in roles cannot be deleted');
       if (!a.owner && role.position >= a.top) throw forbidden('the role is not below your highest role');
+      if (!a.owner && (role.permissions & BILLING_PERMISSIONS) !== 0n) throw forbidden('only the owner deletes billing roles');
       const touched: Room[] = [];
       this.withVisibility(ws.id, () => {
         s().roles.set(ws.id, all.filter((r) => r !== role));
@@ -3663,6 +3667,7 @@ class MockImpl {
             if (!a.owner) throw forbidden('only the owner manages admins');
             if (target.role === WorkspaceRole.GUEST) throw forbidden('a guest is promoted first');
           } else {
+            if (!a.owner && (r.permissions & BILLING_PERMISSIONS) !== 0n) throw forbidden('only the owner assigns billing roles');
             if (!a.owner && r.position >= a.top) throw forbidden('the role is not below your highest role');
             if (!a.admin && (r.permissions & ~a.perms) !== 0n) throw forbidden('the role has permissions you lack');
           }

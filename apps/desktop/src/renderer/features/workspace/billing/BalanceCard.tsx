@@ -38,14 +38,20 @@ export function BalanceCard({
   summary: s,
   state,
   payments,
+  topup,
+  manage,
   onTopup,
   onQuote,
 }: {
   workspaceId: string;
   summary: BillingSummary;
   state: BillingState;
-  /** Money actions offered here (not in a native mobile companion). */
+  /** Payment UI offered on this client (not in the iOS shell). */
   payments: boolean;
+  /** BILLING_TOPUP here: «Пополнить» (ADR-0087). */
+  topup: boolean;
+  /** BILLING_MANAGE here: activate, change, stop, resume. */
+  manage: boolean;
   onTopup: () => void;
   onQuote: (a: QuoteAction) => void;
 }): ReactNode {
@@ -108,12 +114,23 @@ export function BalanceCard({
       ) : null}
       <PhaseNote phase={phase} />
 
-      {payments ? (
+      {!payments ? (
+        <Note testId="billing-payments-elsewhere">{t('billing.paymentsElsewhere')}</Note>
+      ) : manage ? (
         <div className="flex flex-wrap items-center gap-2 px-3 py-3" data-testid="billing-actions">
           <Actions phase={phase} plan={plan} onTopup={onTopup} onQuote={onQuote} />
         </div>
       ) : (
-        <Note>{t('billing.paymentsElsewhere')}</Note>
+        <>
+          {topup && phase !== 'closed' ? (
+            <div className="flex flex-wrap items-center gap-2 px-3 py-3" data-testid="billing-actions">
+              <Button onClick={onTopup} data-testid="billing-topup-open">
+                {t('billing.topup.open')}
+              </Button>
+            </div>
+          ) : null}
+          <Note testId="billing-access-note">{t(topup ? 'billing.access.topup' : 'billing.access.view')}</Note>
+        </>
       )}
     </Card>
   );

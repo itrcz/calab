@@ -139,17 +139,23 @@ export function TopupDialog({
   workspaceId,
   summary,
   initialAmount,
+  manage,
   onClose,
 }: {
   workspaceId: string;
   summary: BillingSummary;
   /** Prefilled amount in minor units (a quote's «to pay»). */
   initialAmount?: bigint | undefined;
+  /**
+   * BILLING_MANAGE (ADR-0087): the one-click charge of a saved card and «save the card» are
+   * MANAGE; a TOPUP holder pays on the hosted page only.
+   */
+  manage: boolean;
   onClose: () => void;
 }): ReactNode {
   const currency = currencyOf(summary);
   const methods = offeredMethods(summary);
-  const saved = savedChoices(summary);
+  const saved = manage ? savedChoices(summary) : [];
   const [methodId, setMethodId] = useState(saved[0] ? SAVED + saved[0].id : (methods[0]?.id ?? ''));
   const savedCard = methodId.startsWith(SAVED) ? saved.find((m) => SAVED + m.id === methodId) : undefined;
   const method = savedCard ? optionForSaved(summary, savedCard) : methods.find((m) => m.id === methodId);
@@ -170,7 +176,7 @@ export function TopupDialog({
   const minor = parseMajor(raw, currency);
   const problem = amountProblem(minor, raw, lim);
   // «Save the card» only while no card is saved (one card per account in v1).
-  const canSave = !savedCard && !!method?.autoTopupCapable && !summary.autoTopup?.paymentMethodId;
+  const canSave = manage && !savedCard && !!method?.autoTopupCapable && !summary.autoTopup?.paymentMethodId;
   const hasDebt = minorOf(summary.debt) > 0n;
   useCheckoutPoll(workspaceId, flow, dispatch, savedCard ? readSavedTopup : readCheckout);
 

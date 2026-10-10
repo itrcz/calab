@@ -1,4 +1,4 @@
-import { BillingState, WorkspaceRole, type BillingSummary } from '@calaba/protocol';
+import { BILLING_BITS, BillingState, type BillingSummary } from '@calaba/protocol';
 import { CirclePause } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, Spinner } from '../../../components/ui';
@@ -7,6 +7,7 @@ import { billingStateOf, currencyOf } from '../../../lib/billing/model';
 import { billingMock, billingPaymentsAllowed, loadBilling } from '../../../services/billing';
 import { useBilling } from '../../../stores/billing';
 import { useWorkspaces } from '../../../stores/workspaces';
+import { capsOf, useBillingBits } from './access';
 import { AutoTopupCard } from './AutoTopupCard';
 import { BalanceCard } from './BalanceCard';
 import { HistoryCard } from './HistoryCard';
@@ -16,10 +17,12 @@ import { TopupDialog } from './TopupDialog';
 import { Note } from './parts';
 
 /**
- * Balance billing in workspace settings → «Тариф» (ADR-0080 v5 §13). Only the owner sees money: the
- * owner gets the cabinet (balance, plan actions, top-up, auto-topup, payer, history); members of a
- * billing workspace see a stub without amounts. 501 (billing off) and 404 (no billing account) render
- * nothing and are not retried by events — the plan tab stays as it was.
+ * Balance billing in workspace settings → «Тариф» (ADR-0080 v5 §13, ADR-0087). Money is seen by
+ * BILLING_VIEW (the owner has all three bits): the cabinet — balance, plan, payer, history — with
+ * the actions of the bits held: «Пополнить» for TOPUP, plan changes / auto-topup / saved cards /
+ * payer / refund requests for MANAGE; none of them in the iOS shell (App Store rules). Members
+ * without VIEW see a stub without amounts (the server sends no summary). 501 (billing off) and 404
+ * (no billing account) render nothing and are not retried by events — the plan tab stays as it was.
  */
 
 /** Dialogs of the cabinet, one at a time. */
@@ -28,16 +31,18 @@ type Open = { kind: 'topup'; amount?: bigint } | { kind: 'quote'; action: QuoteA
 export function BillingCabinet({ workspaceId, summary, state }: { workspaceId: string; summary: BillingSummary; state: BillingState }): ReactNode {
   const [open, setOpen] = useState<Open>(null);
   const payments = billingPaymentsAllowed();
+  const { topup, manage } = capsOf(useBillingBits(workspaceId));
   const close = useCallback(() => setOpen(null), []);
   const onTopup = useCallback(() => setOpen({ kind: 'topup' }), []);
   const onQuote = useCallback((action: QuoteAction) => setOpen({ kind: 'quote', action }), []);
   return (
     <div className="flex flex-col gap-6" data-testid="billing-cabinet">
-      <BalanceCard workspaceId={workspaceId} summary={summary} state={state} payments={payments} onTopup={onTopup} onQuote={onQuote} />
-      {summary.methods.some((m) => m.autoTopupCapable) ? <AutoTopupCard workspaceId={workspaceId} summary={summary} payments={payments} /> : null}
-      <PayerCard workspaceId={workspaceId} payer={summary.payer} market={summary.market} payments={payments} />
-      <HistoryCard workspaceId={workspaceId} currency={currencyOf(summary)} payments={payments} />
-      {open?.kind === 'topup' ? <TopupDialog workspaceId={workspaceId} summary={summary} initialAmount={open.amount} onClose={close} /> : null}
+      <BalanceCard workspaceId={workspaceId} summary={summary} state={state} payments={payments} topup={topup} manage={manage} onTopup={onTopup} onQuote={onQuote} />
+      {/* The iOS shell: no auto-topup or saved-card management, no payer form (App Store rules). */}
+      {payments && summary.methods.some((m) => m.autoTopupCapable) ? <AutoTopupCard workspaceId={workspaceId} summary={summary} payments={manage} /> : null}
+      {payments ? <PayerCard workspaceId={workspaceId} payer={summary.payer} market={summary.market} payments={manage} /> : null}
+      <HistoryCard workspaceId={workspaceId} currency={currencyOf(summary)} payments={manage} />
+      {open?.kind === 'topup' && topup ? <TopupDialog workspaceId={workspaceId} summary={summary} initialAmount={open.amount} manage={manage} onClose={close} /> : null}
       {open?.kind === 'quote' ? (
         <QuoteDialog workspaceId={workspaceId} action={open.action} onClose={close} onTopup={(amount) => setOpen({ kind: 'topup', amount })} />
       ) : null}
@@ -45,7 +50,7 @@ export function BillingCabinet({ workspaceId, summary, state }: { workspaceId: s
   );
 }
 
-/** Members (not the owner): the state only, never amounts or the card. */
+/** Members without BILLING_VIEW: the state only, never amounts or the card. */
 export function MemberBillingStub({ state }: { state: BillingState }): ReactNode {
   const suspended = state === BillingState.SUSPENDED;
   return (
@@ -62,10 +67,12 @@ export function MemberBillingStub({ state }: { state: BillingState }): ReactNode
 }
 
 export function BillingSection({ workspaceId }: { workspaceId: string }): ReactNode {
-  const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+  const bits = useBillingBits(workspaceId);
+  // A MANAGE holder may start billing (self-serve): asks always (a 404 / 501 answer decides what shows).
+  const manager = (bits & BILLING_BITS.MANAGE) !== 0n;
   const wsState = useWorkspaces((s) => billingStateOf(s.byId[workspaceId]?.ws.billing));
-  // The owner always asks (a 404 / 501 answer decides what shows); a member only in a billing workspace.
-  const wanted = owner || wsState !== BillingState.UNSPECIFIED || billingMock();
+  // Everyone else only in a billing workspace.
+  const wanted = manager || wsState !== BillingState.UNSPECIFIED || billingMock();
   const entry = useBilling((s) => s.byWs[workspaceId]);
   useEffect(() => {
     if (wanted) void loadBilling(workspaceId);

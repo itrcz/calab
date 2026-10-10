@@ -54,6 +54,15 @@ describe('bounded host activity contract', () => {
     runInNewContext(activityBootstrap(3), { window: top, crypto: top.crypto });
     expect(Object.getOwnPropertyDescriptor(top, 'CalabHostActivity')?.writable).toBe(false);
     expect(top.CalabHostActivity).toMatchObject({ version: 1, host: 3, document });
+    expect((top.CalabHostActivity as Record<string, unknown>).platform).toBeUndefined();
+  });
+  it('announces the platform when given (additive: the web side falls back to the user agent)', () => {
+    for (const platform of ['ios', 'android'] as const) {
+      const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
+      top.top = top;
+      runInNewContext(activityBootstrap(3, false, platform), { window: top, crypto: top.crypto });
+      expect(top.CalabHostActivity).toMatchObject({ version: 1, host: 3, platform });
+    }
   });
 });
 

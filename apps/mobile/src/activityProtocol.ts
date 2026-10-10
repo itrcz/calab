@@ -42,13 +42,18 @@ export class ActivityProtocol {
   }
 }
 
-/** Declaration only, main frame only. Native validation is the actual authority boundary. */
-export function activityBootstrap(host: number, nativeAudio = false): string {
+/**
+ * Declaration only, main frame only. Native validation is the actual authority boundary.
+ * `platform` (Platform.OS) tells the web client which store rules apply (App Store: no payment
+ * UI in the iOS shell); additive — an older binary without it is treated as iOS unless its
+ * user agent is Android (apps/desktop platform/nativeShell.ts).
+ */
+export function activityBootstrap(host: number, nativeAudio = false, platform: 'ios' | 'android' | null = null): string {
   return `(() => {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
     let documentId = crypto.randomUUID();
     Object.defineProperty(window, 'CalabHostActivity', { configurable: false, writable: false,
-      value: Object.freeze({version: 1, notificationsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''} host: ${String(host)}, get document() { return documentId; },
+      value: Object.freeze({version: 1, notificationsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''} ${platform ? `platform: '${platform}',` : ''} host: ${String(host)}, get document() { return documentId; },
         rotateDocument: () => { documentId = crypto.randomUUID(); },
         send: (data) => window.ReactNativeWebView.postMessage(data)}) });
   })(); true;`;

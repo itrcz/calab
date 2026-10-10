@@ -1,4 +1,4 @@
-import { BillingState, WorkspaceRole } from '@calaba/protocol';
+import { BILLING_BITS, BillingState } from '@calaba/protocol';
 import { CirclePause, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Spinner, cx } from '../../../components/ui';
@@ -10,15 +10,18 @@ import { useBilling } from '../../../stores/billing';
 import { HOME } from '../../../stores/dms';
 import { useUi } from '../../../stores/ui';
 import { useWorkspaces } from '../../../stores/workspaces';
+import { useBillingBits } from './access';
 import { TopupDialog } from './TopupDialog';
 import { Countdown, MoneyText } from './parts';
 
 /**
- * Billing in the app shell (ADR-0080 §8, §13): the owner's debt bar with the deadline countdown,
- * and the suspension — the owner gets what to pay and the buttons, members «Пространство
- * приостановлено. Обратитесь к владельцу». State comes from Workspace.billing (every member, no
- * amounts); the owner's amounts from GET …/billing. Selectors are primitives (no re-render on a
- * presence / voice change); the countdown is its own leaf.
+ * Billing in the app shell (ADR-0080 §8, §13, ADR-0087): the debt bar with the deadline countdown
+ * for BILLING_VIEW holders (the owner has every billing bit), «Оплатить» for TOPUP holders; the
+ * suspension — TOPUP holders (they keep the billing routes under it) get what to pay and the
+ * buttons, everyone else «Пространство приостановлено. Обратитесь к владельцу». No pay buttons in
+ * the iOS shell (App Store rules). State comes from Workspace.billing (every member, no amounts);
+ * the amounts from GET …/billing. Selectors are primitives (no re-render on a presence / voice
+ * change); the countdown is its own leaf.
  */
 
 /** Workspace.billing state of a workspace; in a mock build the mocked summary's state stands in. */
@@ -37,7 +40,7 @@ function openCabinet(workspaceId: string): void {
   useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'plan' });
 }
 
-/** The owner's summary for the bar / paywall (loads once per workspace while shown). */
+/** The summary for the bar / paywall (loads once per workspace while shown). */
 function useOwnerSummary(workspaceId: string, want: boolean) {
   useEffect(() => {
     if (want) void loadBilling(workspaceId);
@@ -45,11 +48,14 @@ function useOwnerSummary(workspaceId: string, want: boolean) {
   return useBilling((s) => (want ? s.byWs[workspaceId]?.data?.summary : undefined));
 }
 
-/** A bar under the title bar: the owner's debt with the deadline; the suspension for everyone. */
+/** A bar under the title bar: the debt with the deadline (BILLING_VIEW); the suspension for everyone. */
 export function BillingBanner(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
   const id = wsId && wsId !== HOME ? wsId : null;
-  const owner = useWorkspaces((s) => (id ? s.byId[id]?.role === WorkspaceRole.OWNER : false));
+  const bits = useBillingBits(id);
+  const view = (bits & BILLING_BITS.VIEW) !== 0n;
+  // TOPUP holders keep the billing routes under a suspension (VIEW alone does not).
+  const payer = (bits & BILLING_BITS.TOPUP) !== 0n;
   // Mock builds: no Workspace.billing from the mock API — load the mocked summary to have a state.
   useEffect(() => {
     if (id && billingMock()) void loadBilling(id);
@@ -58,8 +64,8 @@ export function BillingBanner(): ReactNode {
   const suspendAt = useWorkspaces((s) => (id ? tsMs(s.byId[id]?.ws.billing?.suspendAt) : null));
   const arrears = state === BillingState.IN_ARREARS;
   const suspended = state === BillingState.SUSPENDED;
-  const summary = useOwnerSummary(id ?? '', !!id && owner && (arrears || suspended));
-  if (!id || (!arrears && !suspended) || (arrears && !owner)) return null;
+  const summary = useOwnerSummary(id ?? '', !!id && ((view && arrears) || (payer && suspended)));
+  if (!id || (!arrears && !suspended) || (arrears && !view)) return null;
   const deadline = suspendAt ?? tsMs(summary?.suspendAt);
   return (
     <section
@@ -88,7 +94,7 @@ export function BillingBanner(): ReactNode {
           </>
         )}
       </p>
-      {owner ? (
+      {payer && billingPaymentsAllowed() ? (
         <Button size="sm" onClick={() => openCabinet(id)} data-testid="billing-banner-pay">
           {t('billing.banner.pay')}
         </Button>
@@ -99,14 +105,17 @@ export function BillingBanner(): ReactNode {
 
 /**
  * The desktop shell's content while the workspace is closed for unpaid billing (instead of the
- * rooms and the chat, which the server refuses anyway): the owner — the debt, «Пополнить» and the
- * cabinet; members — a short note.
+ * rooms and the chat, which the server refuses anyway): TOPUP holders (the owner included) — the
+ * debt, «Пополнить» and the cabinet (a neutral line instead in the iOS shell); members — a short note.
  */
 export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactNode {
-  const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+  const bits = useBillingBits(workspaceId);
+  // TOPUP holders (the owner included) keep the billing routes under the suspension (ADR-0087).
+  const payer = (bits & BILLING_BITS.TOPUP) !== 0n;
+  const manage = (bits & BILLING_BITS.MANAGE) !== 0n;
   const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name ?? '');
-  const summary = useOwnerSummary(workspaceId, owner);
-  const loading = useBilling((s) => owner && !s.byWs[workspaceId]?.data && s.byWs[workspaceId]?.load === 'loading');
+  const summary = useOwnerSummary(workspaceId, payer);
+  const loading = useBilling((s) => payer && !s.byWs[workspaceId]?.data && s.byWs[workspaceId]?.load === 'loading');
   const [topup, setTopup] = useState(false);
   const payments = billingPaymentsAllowed();
   const debt = minorOf(summary?.debt);
@@ -121,7 +130,7 @@ export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactN
           <h2 className="text-title font-semibold">{t('billing.paywall.title')}</h2>
           {name ? <p className="text-body text-muted">{name}</p> : null}
         </div>
-        {owner ? (
+        {payer ? (
           <>
             <p className="text-body text-muted">{t('billing.paywall.owner')}</p>
             {loading ? <Spinner /> : null}
@@ -131,17 +140,26 @@ export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactN
                 <MoneyText m={summary.debt} danger className="text-[26px] font-semibold leading-tight" />
               </div>
             ) : null}
-            <div className="flex flex-wrap justify-center gap-2">
-              {payments && summary ? (
-                <Button size="lg" onClick={() => setTopup(true)} data-testid="billing-paywall-topup">
-                  {t('billing.topup.open')}
-                </Button>
-              ) : null}
-              <Button size="lg" variant="secondary" onClick={() => openCabinet(workspaceId)} data-testid="billing-paywall-cabinet">
-                {t('billing.paywall.cabinet')}
-              </Button>
-            </div>
-            <p className="text-caption text-faint">{t('billing.paywall.after')}</p>
+            {payments ? (
+              <>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {summary ? (
+                    <Button size="lg" onClick={() => setTopup(true)} data-testid="billing-paywall-topup">
+                      {t('billing.topup.open')}
+                    </Button>
+                  ) : null}
+                  <Button size="lg" variant="secondary" onClick={() => openCabinet(workspaceId)} data-testid="billing-paywall-cabinet">
+                    {t('billing.paywall.cabinet')}
+                  </Button>
+                </div>
+                <p className="text-caption text-faint">{t('billing.paywall.after')}</p>
+              </>
+            ) : (
+              // The iOS shell (App Store rules): a neutral line, no button and no link.
+              <p className="text-caption text-muted" data-testid="billing-payments-elsewhere">
+                {t('billing.paymentsElsewhere')}
+              </p>
+            )}
           </>
         ) : (
           <p className="text-body text-muted" data-testid="billing-paywall-member">
@@ -149,7 +167,9 @@ export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactN
           </p>
         )}
       </div>
-      {topup && summary ? <TopupDialog workspaceId={workspaceId} summary={summary} initialAmount={debt > 0n ? debt : undefined} onClose={() => setTopup(false)} /> : null}
+      {topup && summary ? (
+        <TopupDialog workspaceId={workspaceId} summary={summary} initialAmount={debt > 0n ? debt : undefined} manage={manage} onClose={() => setTopup(false)} />
+      ) : null}
     </div>
   );
 }
