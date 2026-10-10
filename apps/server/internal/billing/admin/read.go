@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing/payer"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -137,7 +138,7 @@ func (h *Handlers) getAccount(w http.ResponseWriter, r *http.Request) error {
 	cur := acc.GetBalance().GetCurrency()
 	out := &v1.AdminBillingAccountDetails{Account: acc}
 	if p, err := q.GetBillingPayer(ctx, id); err == nil {
-		out.Payer = payerProto(p)
+		out.Payer = payer.Proto(p)
 	} else if !db.IsNotFound(err) {
 		return err
 	}

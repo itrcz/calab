@@ -162,6 +162,22 @@ func checkoutReq(method provider.Method) provider.CheckoutReq {
 	}
 }
 
+// An organization or a sole proprietor is the named buyer of its receipt (ADR-0080 §0.1).
+func TestCreateCheckoutReceiptBuyerName(t *testing.T) {
+	p, b := newTest(t, map[string]func(http.ResponseWriter, call){
+		"POST /acquiring/v1.0/payments_with_receipt": reply(200, fixture(t, "live_create_with_receipt.json")),
+	})
+	req := checkoutReq(provider.MethodCard)
+	req.ReceiptName = "ООО «Ромашка»"
+	if _, err := p.CreateCheckout(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	cl := b.calls[0].body["Data"].(map[string]any)["Client"].(map[string]any)
+	if cl["name"] != "ООО «Ромашка»" || cl["email"] != "owner@calab.test" {
+		t.Fatalf("client %v", cl)
+	}
+}
+
 func TestCreateCheckoutRequestShape(t *testing.T) {
 	p, b := newTest(t, map[string]func(http.ResponseWriter, call){
 		"POST /acquiring/v1.0/payments_with_receipt": reply(200, fixture(t, "live_create_with_receipt.json")),
@@ -196,8 +212,8 @@ func TestCreateCheckoutRequestShape(t *testing.T) {
 	if _, has := d["preAuthorization"]; has {
 		t.Error("preAuthorization sent")
 	}
-	if cl := d["Client"].(map[string]any); cl["email"] != "owner@calab.test" {
-		t.Errorf("client %v", cl)
+	if cl := d["Client"].(map[string]any); cl["email"] != "owner@calab.test" || cl["name"] != nil {
+		t.Errorf("client %v (a private person is not named)", cl)
 	}
 	items := d["Items"].([]any)
 	it := items[0].(map[string]any)

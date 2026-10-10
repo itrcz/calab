@@ -93,7 +93,7 @@ func (p *Provider) createSubscription(ctx context.Context, req provider.Checkout
 	}{Data: createSubscription{
 		CustomerCode: p.customer, MerchantID: p.merchant, Amount: amt, Purpose: clip(line, 140),
 		RedirectURL: req.SuccessURL, FailRedirectURL: fail, ConsumerID: req.Customer.ID, Recurring: true, PaymentLinkID: linkID,
-		TaxSystemCode: p.taxSystem, Client: receiptClient{Email: req.ReceiptEmail},
+		TaxSystemCode: p.taxSystem, Client: receiptClient{Name: clip(req.ReceiptName, 256), Email: req.ReceiptEmail},
 		Items: []receiptItem{{
 			Name: clip(line, 256), Amount: amt, Quantity: "1", VatType: p.vatType,
 			PaymentMethod: "full_prepayment", PaymentObject: "service", Measure: "шт.",

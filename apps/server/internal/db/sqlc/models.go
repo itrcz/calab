@@ -218,14 +218,29 @@ type BillingNotification struct {
 }
 
 type BillingPayer struct {
-	AccountID uuid.UUID
-	Type      string
-	Name      string
-	Country   string
-	Email     string
-	TaxID     *string
-	UpdatedBy *uuid.UUID
-	UpdatedAt time.Time
+	AccountID  uuid.UUID
+	Type       string
+	Name       string
+	Country    string
+	Email      string
+	TaxID      *string
+	UpdatedBy  *uuid.UUID
+	UpdatedAt  time.Time
+	Requisites []byte
+	Version    int32
+}
+
+type BillingPayerVersion struct {
+	AccountID  uuid.UUID
+	Version    int32
+	Type       string
+	Name       string
+	Country    string
+	Email      string
+	TaxID      *string
+	Requisites []byte
+	CreatedBy  *uuid.UUID
+	CreatedAt  time.Time
 }
 
 type BillingPayment struct {

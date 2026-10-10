@@ -113,24 +113,6 @@ func methodOption(o provider.MethodOption) *v1.PaymentMethodOption {
 	}
 }
 
-func payerType(t string) v1.PayerType {
-	switch t {
-	case provider.PayerPerson:
-		return v1.PayerType_PAYER_TYPE_PERSON
-	case provider.PayerCompany:
-		return v1.PayerType_PAYER_TYPE_COMPANY
-	}
-	return v1.PayerType_PAYER_TYPE_UNSPECIFIED
-}
-
-func payerProto(p sqlc.BillingPayer) *v1.PayerProfile {
-	out := &v1.PayerProfile{Type: payerType(p.Type), Name: p.Name, Country: p.Country, Email: p.Email}
-	if p.TaxID != nil {
-		out.TaxId = *p.TaxID
-	}
-	return out
-}
-
 func savedMethodProto(m sqlc.BillingPaymentMethod) *v1.SavedPaymentMethod {
 	out := &v1.SavedPaymentMethod{Id: m.ID.String(), Kind: methodKind(provider.Method(m.Kind)), Brand: m.Brand, Provider: m.Provider, CreatedAt: timestamppb.New(m.CreatedAt)}
 	if m.Last4 != nil {

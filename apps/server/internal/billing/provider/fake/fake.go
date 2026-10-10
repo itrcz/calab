@@ -66,7 +66,8 @@ const (
 	OpCheckout Op = "checkout"
 	OpCharge   Op = "charge" // ChargeOffSession
 	OpRefund   Op = "refund"
-	OpGet      Op = "get" // GetPayment / GetCheckout / GetRefund: Unknown or Timeout = ErrUnknownOutcome
+	OpGet      Op = "get"  // GetPayment / GetCheckout / GetRefund: Unknown or Timeout = ErrUnknownOutcome
+	OpSync     Op = "sync" // SyncCustomer: Unknown = ErrUnknownOutcome, Decline = every tax id rejected
 )
 
 // Options configure a fake provider.
@@ -101,7 +102,8 @@ type Provider struct {
 	seq       int
 	queues    map[Op][]Outcome
 	idem      map[string]idem
-	customers map[string]provider.CustomerRef // by id
+	customers map[string]provider.CustomerRef  // by id
+	synced    map[string]provider.CustomerSync // last SyncCustomer by customer id
 	checkouts map[string]*checkout
 	payments  map[string]*provider.PaymentFact
 	order     []string // payment ids in creation order
@@ -120,6 +122,7 @@ var (
 	_ provider.Provider          = (*Provider)(nil)
 	_ provider.OffSessionCharger = (*Provider)(nil)
 	_ provider.ChargeLister      = (*Provider)(nil)
+	_ provider.CustomerSyncer    = (*Provider)(nil)
 )
 
 // reconcilable: Tochka-like charges (CapReconcilableCharge without CapIdempotentCharge): no
@@ -151,7 +154,7 @@ func New(o Options) *Provider {
 	_, _ = rand.Read(tag[:])
 	return &Provider{
 		tag:  hex.EncodeToString(tag[:]),
-		opts: o, queues: map[Op][]Outcome{}, idem: map[string]idem{}, customers: map[string]provider.CustomerRef{},
+		opts: o, queues: map[Op][]Outcome{}, idem: map[string]idem{}, customers: map[string]provider.CustomerRef{}, synced: map[string]provider.CustomerSync{},
 		checkouts: map[string]*checkout{}, payments: map[string]*provider.PaymentFact{}, refunds: map[string]*provider.RefundFact{},
 		methods: map[string]provider.SavedMethod{}, calls: map[string]int{},
 	}
@@ -263,6 +266,32 @@ func (p *Provider) EnsureCustomer(_ context.Context, req provider.CustomerReq) (
 	p.customers[id] = p.ref(id)
 	p.remember("EnsureCustomer", req.IdemKey, fp, id, nil)
 	return p.ref(id), nil
+}
+
+// SyncCustomer implements provider.CustomerSyncer: it keeps the last sync of the customer.
+func (p *Provider) SyncCustomer(_ context.Context, req provider.CustomerSync) ([]provider.CustomerTaxID, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls["SyncCustomer"]++
+	if err := p.checkCustomer(req.Customer); err != nil {
+		return nil, err
+	}
+	switch p.next(OpSync) {
+	case Unknown, Timeout:
+		return nil, provider.ErrUnknownOutcome
+	case Decline:
+		return slices.Clone(req.TaxIDs), nil
+	}
+	p.synced[req.Customer.ID] = req
+	return nil, nil
+}
+
+// Synced returns the last accepted SyncCustomer of a customer.
+func (p *Provider) Synced(customerID string) (provider.CustomerSync, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	s, ok := p.synced[customerID]
+	return s, ok
 }
 
 // CreateCheckout implements provider.Provider.

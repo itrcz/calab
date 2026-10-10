@@ -31,6 +31,7 @@ var OwnerRoutes = []string{
 	"POST /api/workspaces/{id}/billing/resume",
 	"GET /api/workspaces/{id}/billing/payer",
 	"PUT /api/workspaces/{id}/billing/payer",
+	"GET /api/workspaces/{id}/billing/payer-schema", // ADR-0080 §0.1: the country requisites
 	"POST /api/workspaces/{id}/billing/topups",
 	"GET /api/workspaces/{id}/billing/checkouts/{cid}",
 	"GET /api/workspaces/{id}/billing/auto-topup",

@@ -181,6 +181,30 @@ type CustomerReq struct {
 	Metadata  Metadata
 }
 
+// CustomerTaxID is a tax id kept on a provider customer (Stripe tax_ids: type "eu_vat", "ru_inn"…).
+type CustomerTaxID struct {
+	Type  string
+	Value string
+}
+
+// CustomerSync is what the payer profile gives an existing provider customer (ADR-0080 §0.1).
+type CustomerSync struct {
+	Customer CustomerRef
+	Name     string
+	Email    string
+	TaxIDs   []CustomerTaxID // the payer's tax ids
+	// ManagedTypes: tax id types the payer profile owns; a customer's tax id of such a type that
+	// is not in TaxIDs is removed (a changed or cleared VAT ID). Other types are left alone.
+	ManagedTypes []string
+}
+
+// CustomerSyncer is implemented by providers that keep the payer's name and tax ids on their
+// customer (Stripe). Rejected lists the tax ids the provider refused as invalid — the rest is
+// synced and that is not an error; err is a call that failed (ErrUnknownOutcome etc.).
+type CustomerSyncer interface {
+	SyncCustomer(ctx context.Context, req CustomerSync) (rejected []CustomerTaxID, err error)
+}
+
 // CheckoutReq opens a hosted payment page for a fixed amount.
 type CheckoutReq struct {
 	IdemKey           string // "checkout:{checkout_id}"
@@ -196,6 +220,9 @@ type CheckoutReq struct {
 	// ReceiptEmail: where a provider that fiscalizes the payment itself (Tochka, 54-FZ) sends
 	// the receipt — the payer's e-mail, else the owner's. Stripe collects it on its page.
 	ReceiptEmail string
+	// ReceiptName: the buyer named on a 54-FZ receipt (Tochka Client.name) — an organization or a
+	// sole proprietor; "" for a private person. Tochka's receipt has no buyer INN field.
+	ReceiptName string
 }
 
 // CheckoutSession is the created page.

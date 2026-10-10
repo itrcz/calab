@@ -215,7 +215,8 @@ func TestOwnerFlow(t *testing.T) {
 	if st, _ := e.do(e.owner, "GET", e.base()+"/refund-requests", nil, &list); st != 200 || len(list.GetRequests()) != 1 {
 		t.Fatalf("refund requests %v", &list)
 	}
-	payer := &v1.PutPayerRequest{Payer: &v1.PayerProfile{Type: v1.PayerType_PAYER_TYPE_COMPANY, Name: "Acme", Country: "ae", Email: "pay@acme.test"}}
+	payer := &v1.PutPayerRequest{Payer: &v1.PayerProfile{Type: v1.PayerType_PAYER_TYPE_COMPANY, Name: "Acme", Country: "ae", Email: "pay@acme.test",
+		Requisites: map[string]string{"trn": "100123456700003"}}}
 	var pr v1.PayerProfile
 	if st, r := e.do(e.owner, "PUT", e.base()+"/payer", payer, &pr); st != 200 || pr.GetCountry() != "AE" {
 		t.Fatalf("payer: %d %s %v", st, r, &pr)

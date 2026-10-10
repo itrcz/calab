@@ -17,8 +17,9 @@ const (
 
 // Payer types (billing_payers.type).
 const (
-	PayerPerson  = "person"
-	PayerCompany = "company"
+	PayerPerson         = "person"
+	PayerCompany        = "company"
+	PayerSoleProprietor = "sole_proprietor" // RU / KZ / BY ИП (ADR-0080 §0.1)
 )
 
 // AnyCountry matches every payer country in a matrix row.
@@ -56,8 +57,8 @@ const (
 	RUBTopupMax int64 = 50000000
 )
 
-// DefaultMatrix is the matrix of v1 and ADR-0083: Global/USD, person or company, any country →
-// Stripe card (auto-topup capable); RU/RUB, person or company, any country → Tochka hosted card
+// DefaultMatrix is the matrix of v1 and ADR-0083: Global/USD, any payer type, any country →
+// Stripe card (auto-topup capable); RU/RUB, any payer type, any country → Tochka hosted card
 // («Банковская карта (РФ)») and SBP as two options the payer chooses between. The Tochka card
 // may be saved (a subscription without a schedule) and back auto-topup once the adapter charges
 // saved cards (phase 2, TOCHKA_RECURRING_ENABLED); SBP stays manual (its binding needs Pay
@@ -66,15 +67,15 @@ const (
 func DefaultMatrix() []Row {
 	return []Row{
 		{
-			Market: MarketGlobal, Currency: money.USD, PayerTypes: []string{PayerPerson, PayerCompany},
+			Market: MarketGlobal, Currency: money.USD, PayerTypes: []string{PayerPerson, PayerCompany, PayerSoleProprietor},
 			Country: AnyCountry, Provider: Stripe, Method: MethodCard, Min: USDTopupMin, Max: USDTopupMax, AutoTopup: true,
 		},
 		{
-			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany},
+			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany, PayerSoleProprietor},
 			Country: AnyCountry, Provider: Tochka, Method: MethodCard, Min: RUBTopupMin, Max: RUBTopupMax, AutoTopup: true,
 		},
 		{
-			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany},
+			Market: MarketRU, Currency: money.RUB, PayerTypes: []string{PayerPerson, PayerCompany, PayerSoleProprietor},
 			Country: AnyCountry, Provider: Tochka, Method: MethodSBP, Min: RUBTopupMin, Max: RUBTopupMax,
 		},
 	}

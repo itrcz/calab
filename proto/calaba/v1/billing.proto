@@ -135,6 +135,9 @@ enum PayerType {
   PAYER_TYPE_UNSPECIFIED = 0;
   PAYER_TYPE_PERSON = 1;
   PAYER_TYPE_COMPANY = 2;
+  // A registered sole proprietor (RU ИП, KZ ИП, BY ИП): offered only where the country schema
+  // lists it (ADR-0080 §0.1).
+  PAYER_TYPE_SOLE_PROPRIETOR = 3;
 }
 
 // How money is paid. v1 offers CARD only (USD, Stripe); SBP / BANK_TRANSFER are for later markets.
@@ -195,12 +198,81 @@ message PayerProfile {
   string name = 2;
   string country = 3; // ISO 3166-1 alpha-2
   string email = 4;
-  string tax_id = 5;  // optional
+  // The main tax number of the payer: the server fills it from the country schema field marked
+  // `primary` (ИНН, TRN, VAT ID…). A request from a client without requisites sends only this;
+  // it is then taken as the primary field.
+  string tax_id = 5;
+  // Country requisites (ADR-0080 §0.1): PayerFieldSpec.key → the value normalized by the server
+  // (digits only, upper case…). Only the fields of the schema of country + type are kept.
+  map<string, string> requisites = 6;
+  // Output: the payer version (billing_payer_versions, append-only); 0 = never saved.
+  uint32 version = 7;
+  // Output of PUT only: the payer is saved, but the payment provider did not take a requisite
+  // (TAX_ID_REJECTED: Stripe refused a tax id; PROVIDER_UNAVAILABLE: no answer). Not an error.
+  string sync_warning = 8;
 }
 
 // GET/PUT …/billing/payer
 message PutPayerRequest {
   PayerProfile payer = 1;
+}
+
+// How a requisite is typed and normalized before the checks: TEXT trims and collapses spaces;
+// DIGITS drops spaces, dashes, dots and slashes; CODE does the same and upper-cases, then adds
+// PayerFieldSpec.prefix when the value does not start with it (a value starting with the payer's
+// country code instead, Greek "GR…", has that code replaced by the prefix "EL").
+enum PayerFieldInput {
+  PAYER_FIELD_INPUT_UNSPECIFIED = 0; // TEXT
+  PAYER_FIELD_INPUT_TEXT = 1;
+  PAYER_FIELD_INPUT_DIGITS = 2;
+  PAYER_FIELD_INPUT_CODE = 3;
+}
+
+// Check digit algorithm of a requisite (after the pattern matched).
+enum PayerFieldCheck {
+  PAYER_FIELD_CHECK_UNSPECIFIED = 0; // none
+  PAYER_FIELD_CHECK_RU_INN = 1;      // 10 or 12 digits
+  PAYER_FIELD_CHECK_RU_OGRN = 2;     // 13 digits, mod 11
+  PAYER_FIELD_CHECK_RU_OGRNIP = 3;   // 15 digits, mod 13
+  PAYER_FIELD_CHECK_KZ_IIN_BIN = 4;  // 12 digits, two weight rounds mod 11
+  PAYER_FIELD_CHECK_IN_GSTIN = 5;    // 15 characters, mod 36
+  PAYER_FIELD_CHECK_CN_USCC = 6;     // 18 characters, GB 32100-2015 mod 31
+}
+
+// One requisite of a country + payer type. The client labels it by key (i18n
+// billing.payer.field.<key>) and runs the same checks (packages/protocol payer.ts); the server is
+// the judge. A failed check of PUT …/payer answers 422 VALIDATION with field "payer.<name>" or
+// "payer.requisites.<key>" and reason PAYER_REQUIRED / PAYER_FORMAT / PAYER_CHECKSUM /
+// PAYER_TOO_LONG / PAYER_EMAIL / PAYER_COUNTRY / PAYER_TYPE_UNAVAILABLE.
+message PayerFieldSpec {
+  string key = 1;            // "inn", "kpp", "ogrn", "vat", "trn", "legal_address"…
+  bool required = 2;
+  PayerFieldInput input = 3;
+  string pattern = 4;        // full-match regexp of the normalized value (RE2 = ECMAScript subset); "" = any
+  uint32 max_length = 5;     // characters of the normalized value
+  PayerFieldCheck check = 6;
+  string example = 7;        // placeholder, e.g. "7707083893"
+  string prefix = 8;         // CODE: the country prefix of a VAT ID ("DE", "EL" for Greece)
+  bool primary = 9;          // copied to PayerProfile.tax_id
+}
+
+message PayerTypeSchema {
+  PayerType type = 1;
+  repeated PayerFieldSpec fields = 2;
+}
+
+message PayerCountrySchema {
+  string country = 1; // ISO 3166-1 alpha-2; "" for the fallback
+  repeated PayerTypeSchema types = 2;
+}
+
+// GET …/billing/payer-schema: the one table of payer requisites (internal/billing/payer). The
+// payer's country never decides the market (ADR-0080 §2.1).
+message PayerSchema {
+  uint32 version = 1;
+  repeated PayerCountrySchema countries = 2; // countries with their own requisites
+  PayerCountrySchema fallback = 3;           // every other country of `all_countries`
+  repeated string all_countries = 4;         // ISO 3166-1 alpha-2 codes a payer may choose
 }
 
 message SavedPaymentMethod {
