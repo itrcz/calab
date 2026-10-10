@@ -16,7 +16,6 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/provider/fake"
 	"github.com/calaba/calaba/server/internal/db"
-	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
 
 // Enable: preview writes nothing, the same request_id replays, another body is 409, a second
@@ -200,11 +199,12 @@ func TestRefunds(t *testing.T) {
 		t.Fatalf("declined: %v balance %d", &res, e.account().BalanceMinor)
 	}
 
-	// Unknown outcome: stays pending with the money reserved; the same request_id finishes it.
+	// Unknown outcome: stays pending, nothing taken yet (the synchronous model); the same
+	// request_id finishes it (Stripe: the same Idempotency-Key).
 	e.fp.Queue(fake.OpRefund, fake.Unknown)
 	urid := uuid.NewString()
 	e.must("POST", path, refund(100, urid), &res)
-	if res.GetRefunds()[0].GetRefund().GetStatus() != v1.RefundStatus_REFUND_STATUS_PENDING || e.account().BalanceMinor != 500 {
+	if res.GetRefunds()[0].GetRefund().GetStatus() != v1.RefundStatus_REFUND_STATUS_PENDING || e.account().BalanceMinor != 600 {
 		t.Fatalf("unknown: %v balance %d", &res, e.account().BalanceMinor)
 	}
 	var det v1.AdminBillingAccountDetails
@@ -239,62 +239,14 @@ func TestRefunds(t *testing.T) {
 	if len(pays.GetPayments()) != 1 || pays.GetPayments()[0].GetPayment().GetRefunded().GetMinor() != 1000 {
 		t.Fatalf("payments: %v", &pays)
 	}
-	if got := e.actions(); len(got) != 5 { // enable + 4 refunds (the declined one included)
-		t.Fatalf("audit: %v", got)
+	// enable + 4 refund attempts (the declined one included) + each provider answer (the unknown
+	// one and its retry: two).
+	n := map[string]int{}
+	for _, a := range e.actions() {
+		n[a]++
 	}
-}
-
-// Owner refund requests: approve refunds FIFO over the payments with unused money; reject moves
-// nothing; a decided request is not decided again.
-func TestDecideRefundRequest(t *testing.T) {
-	e := newEnv(t, 1)
-	e.enable()
-	p1 := e.pay(1000)
-	p2 := e.pay(1000)
-	request := func(amount int64) sqlc.BillingRefundRequest {
-		rr, err := db.GuardValue(ctx, e.d, func(q *sqlc.Queries) (sqlc.BillingRefundRequest, error) {
-			return q.InsertBillingRefundRequest(ctx, sqlc.InsertBillingRefundRequestParams{AccountID: e.acc, RequestID: uuid.New(), AmountMinor: amount, Reason: "leaving", RequestedBy: &e.owner})
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return rr
-	}
-	decide := func(id uuid.UUID) string { return "/api/admin/billing/refund-requests/" + id.String() + "/decide" }
-
-	big := request(2500)
-	e.wantErr(409, billing.ReasonRefundExceedsRefundable, "POST", decide(big.ID), &v1.AdminDecideRefundRequest{Approve: true, Reason: "owner request", RequestId: uuid.NewString()})
-
-	rr := request(1500)
-	var res v1.AdminBillingMutationResult
-	e.must("POST", decide(rr.ID)+"?preview=1", &v1.AdminDecideRefundRequest{Approve: true, Reason: "owner request", RequestId: uuid.NewString()}, &res)
-	if len(res.GetRefunds()) != 2 || len(e.refunds()) != 0 {
-		t.Fatalf("preview: %v", &res)
-	}
-	e.must("POST", decide(rr.ID), &v1.AdminDecideRefundRequest{Approve: true, Reason: "owner request", RequestId: uuid.NewString()}, &res)
-	if len(res.GetRefunds()) != 2 || res.GetRefundRequest().GetRequest().GetStatus() != v1.RefundRequestStatus_REFUND_REQUEST_STATUS_APPROVED {
-		t.Fatalf("approve: %v", &res)
-	}
-	byPayment := map[string]int64{}
-	for _, r := range res.GetRefunds() {
-		if r.GetRefund().GetStatus() != v1.RefundStatus_REFUND_STATUS_SUCCEEDED {
-			t.Fatalf("refund not done: %v", r)
-		}
-		byPayment[r.GetRefund().GetPaymentId()] += r.GetRefund().GetAmount().GetMinor()
-	}
-	if byPayment[p1.ID.String()] != 1000 || byPayment[p2.ID.String()] != 500 || e.account().BalanceMinor != 500 {
-		t.Fatalf("FIFO split %v balance %d", byPayment, e.account().BalanceMinor)
-	}
-	e.wantErr(409, "", "POST", decide(rr.ID), &v1.AdminDecideRefundRequest{Approve: true, Reason: "owner request", RequestId: uuid.NewString()})
-
-	e.must("POST", decide(big.ID), &v1.AdminDecideRefundRequest{Reason: "not eligible", RequestId: uuid.NewString()}, &res)
-	if res.GetRefundRequest().GetRequest().GetStatus() != v1.RefundRequestStatus_REFUND_REQUEST_STATUS_REJECTED || len(res.GetRefunds()) != 0 || e.account().BalanceMinor != 500 {
-		t.Fatalf("reject: %v", &res)
-	}
-	var list v1.AdminBillingRefundRequests
-	e.must("GET", "/api/admin/billing/refund-requests?account_id="+e.acc.String()+"&status=approved", nil, &list)
-	if len(list.GetRequests()) != 1 || list.GetRequests()[0].GetRequest().GetAmount().GetMinor() != 1500 {
-		t.Fatalf("requests: %v", &list)
+	if n["enable"] != 1 || n["refund"] != 4 || n["refund.outcome"] != 5 {
+		t.Fatalf("audit: %v", n)
 	}
 }
 
@@ -378,18 +330,12 @@ func TestReconcileAndTestClock(t *testing.T) {
 	if len(e.rec.calls) != 1 || e.rec.calls[0] != e.acc || res.GetAuditId() == "" || len(e.rec.released) != 0 {
 		t.Fatalf("reconcile: %v %v", &res, e.rec.calls)
 	}
-	// Needs-review refunds confirmed absent at the provider are released after the reconcile;
-	// a replay of the same request does not release again.
-	rel := uuid.New()
-	req := &v1.AdminReconcileRequest{Reason: "refund never reached Stripe", RequestId: uuid.NewString(), ReleaseRefundIds: []string{rel.String()}}
-	for range 2 {
-		e.must("POST", "/api/admin/billing/accounts/"+e.acc.String()+"/reconcile", req, &res)
-	}
-	if len(e.rec.released) != 1 || e.rec.released[0] != rel {
+	// «Сверить» only reads (ADR-0083 amendment 2026-10-10): no refund is released any more.
+	e.wantErr(422, "", "POST", "/api/admin/billing/accounts/"+e.acc.String()+"/reconcile",
+		&v1.AdminReconcileRequest{Reason: "refund never reached Stripe", RequestId: uuid.NewString(), ReleaseRefundIds: []string{uuid.NewString()}})
+	if len(e.rec.released) != 0 {
 		t.Fatalf("released %v", e.rec.released)
 	}
-	e.wantErr(422, "", "POST", "/api/admin/billing/accounts/"+e.acc.String()+"/reconcile",
-		&v1.AdminReconcileRequest{Reason: "x", RequestId: uuid.NewString(), ReleaseRefundIds: []string{"nope"}})
 	e.wantErr(404, billing.ReasonTestClockDisabled, "POST", "/api/admin/billing/test-clock", &v1.AdminBillingTestClockRequest{})
 
 	clk := &billing.SwitchClock{}

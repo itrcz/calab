@@ -96,6 +96,8 @@ var (
 	// ErrNotSupported: the provider cannot do this through its API (Tochka: refund of a
 	// digital-ruble payment). Nothing was sent; the operation is left to an operator.
 	ErrNotSupported = errors.New("provider: operation not supported by the provider API")
+	// ErrRateLimited: the provider answered 429 (wrapped with ErrUnknownOutcome): back off.
+	ErrRateLimited = errors.New("provider: rate limited")
 )
 
 // Metadata travels with provider objects (PaymentIntent / Checkout metadata) so a webhook or

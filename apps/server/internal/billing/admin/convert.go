@@ -101,13 +101,6 @@ var refundOrigins = map[string]v1.RefundOrigin{
 	core.RefundOriginDashboard: v1.RefundOrigin_REFUND_ORIGIN_DASHBOARD,
 }
 
-var refundRequestStatuses = map[string]v1.RefundRequestStatus{
-	"requested": v1.RefundRequestStatus_REFUND_REQUEST_STATUS_REQUESTED,
-	"approved":  v1.RefundRequestStatus_REFUND_REQUEST_STATUS_APPROVED,
-	"rejected":  v1.RefundRequestStatus_REFUND_REQUEST_STATUS_REJECTED,
-	"withdrawn": v1.RefundRequestStatus_REFUND_REQUEST_STATUS_WITHDRAWN,
-}
-
 type accountRow struct {
 	acc      sqlc.BillingAccount
 	wsName   string
@@ -202,16 +195,6 @@ func disputeProto(d sqlc.BillingDispute) *v1.AdminBillingDispute {
 			CreatedAt: timestamppb.New(d.CreatedAt), ClosedAt: ts(d.ClosedAt),
 		},
 		AccountId: d.AccountID.String(), ProviderDisputeId: d.ProviderDisputeID,
-	}
-}
-
-func refundRequestProto(r sqlc.BillingRefundRequest, ws *uuid.UUID, currency string) *v1.AdminBillingRefundRequest {
-	return &v1.AdminBillingRefundRequest{
-		Request: &v1.BillingRefundRequest{
-			Id: r.ID.String(), Amount: money(r.AmountMinor, currency), Status: refundRequestStatuses[r.Status],
-			Reason: r.Reason, CreatedAt: timestamppb.New(r.CreatedAt), DecidedAt: ts(r.DecidedAt),
-		},
-		AccountId: r.AccountID.String(), WorkspaceId: idString(ws),
 	}
 }
 

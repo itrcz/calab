@@ -372,7 +372,7 @@ func TestListPayments(t *testing.T) {
 	if err != nil || next != "" || len(facts) != 1 || facts[0].Status != provider.PaymentSucceeded || facts[0].AmountReceived.Minor != 20000 {
 		t.Fatalf("%+v %q %v", facts, next, err)
 	}
-	if q := b.calls[0].query; !strings.Contains(q, "fromDate=2024-02-29") || !strings.Contains(q, "perPage=100") || !strings.Contains(q, "page=1") {
+	if q := b.calls[0].query; !strings.Contains(q, "fromDate=2024-02-29") || !strings.Contains(q, "perPage=1000") || !strings.Contains(q, "page=1") {
 		t.Fatalf("query %q", q)
 	}
 	if _, _, err := p.ListPayments(context.Background(), provider.ListReq{}); !errors.Is(err, ErrInvalidRequest) {

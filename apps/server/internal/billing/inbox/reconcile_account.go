@@ -55,6 +55,14 @@ func (in *Inbox) ReconcileAccount(ctx context.Context, accountID uuid.UUID) erro
 		errs = append(errs, in.importCustomer(ctx, p, c, time.Now().Add(-AccountImportWindow)))
 	}
 	errs = append(errs, in.retryRefunds(ctx, &accountID, time.Now()))
+	// «Сверить»: the refund polling of the account's providers at once (one pass per merchant).
+	scanned := map[provider.ID]bool{}
+	for _, c := range custs {
+		if p, ok := in.reg.Provider(provider.ID(c.Provider)); ok && !scanned[p.ID()] {
+			scanned[p.ID()] = true
+			errs = append(errs, in.ScanRefunds(ctx, p))
+		}
+	}
 	for _, e := range errs {
 		if e != nil {
 			return e
@@ -108,6 +116,23 @@ func (in *Inbox) RetryRefund(ctx context.Context, ref sqlc.BillingRefund) error 
 	p, ok := in.reg.Provider(provider.ID(pay.Provider))
 	if !ok {
 		return fmt.Errorf("billing reconcile: provider %q is not configured", pay.Provider)
+	}
+	if ref.ProviderRefundID == nil {
+		byHand, err := core.RefundByHand(ctx, in.db.Q, p, pay)
+		if err != nil {
+			return err
+		}
+		if byHand {
+			// Made only in the provider's interface (a row of the reserving model, before
+			// 2026-10-10): never sent. The refund polling claims it when the bank lists the refund;
+			// after unknownRefundTTL without one it never happened — canceled, the reservation
+			// goes back.
+			if !ref.Reserved || time.Since(ref.CreatedAt) < unknownRefundTTL {
+				return nil
+			}
+			slog.WarnContext(ctx, "billing reconcile: reserved refund of a hand-refunded payment never made at the bank, canceled", "refund", ref.ID)
+			return in.settleRefund(ctx, ref, core.RefundCanceled, "")
+		}
 	}
 	var fact provider.RefundFact
 	if ref.ProviderRefundID != nil {
@@ -193,6 +218,10 @@ var (
 	refundsMarkedForReview = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "calaba_billing_refunds_marked_needs_review_total",
 		Help: "Calab refunds with no trace at the provider 24 h after they were written (money stays reserved; a superadmin resolves). Alert on any increase.",
+	})
+	issuesOpened = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "calaba_billing_provider_issues_opened_total",
+		Help: "Provider refunds the refund polling could not book (billing_provider_issues open: another currency, more than the payments). Alert on any increase.",
 	})
 	refundsNeedingReview = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "calaba_billing_refunds_needs_review",
@@ -310,7 +339,9 @@ func (in *Inbox) applyListedRefunds(ctx context.Context, p provider.Provider, pa
 // provider (admin reconcile with release_refund_ids): one more lookup; if the provider has it
 // after all it is applied, if the provider has a refund of that amount no row claims it the
 // release is refused (billing.ErrRefundNotReleasable: let the webhook / reconcile match it),
-// else it fails and its reservation returns to the balance.
+// else it is canceled and its reservation returns to the balance (a refund_reversal ledger
+// entry; the superadmin's reconcile command is the audit row). A refund made by hand (Tochka
+// subscription) is first matched against the subscription's refunds.
 func (in *Inbox) ReleaseRefund(ctx context.Context, accountID, refundID uuid.UUID) error {
 	ref, err := in.db.Q.GetBillingRefund(ctx, refundID)
 	if db.IsNotFound(err) || err == nil && ref.AccountID != accountID {
@@ -341,6 +372,6 @@ func (in *Inbox) ReleaseRefund(ctx context.Context, accountID, refundID uuid.UUI
 	if unclaimed {
 		return billing.ErrRefundNotReleasable
 	}
-	slog.WarnContext(ctx, "billing: needs-review refund released by a superadmin", "refund", ref.ID, "account", ref.AccountID)
-	return in.settleRefund(ctx, ref, core.RefundFailed, "")
+	slog.WarnContext(ctx, "billing: needs-review refund canceled by a superadmin", "refund", ref.ID, "account", ref.AccountID)
+	return in.settleRefund(ctx, ref, core.RefundCanceled, "")
 }

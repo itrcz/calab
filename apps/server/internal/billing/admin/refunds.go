@@ -2,10 +2,12 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,21 +22,28 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 )
 
-// providerTimeout bounds one provider call of a refund (it runs detached from the request so
-// a closed connection does not turn an answer into an unknown outcome).
-const providerTimeout = 30 * time.Second
+// Refunds, the synchronous model (ADR-0080 / ADR-0083 amendment, owner 2026-10-10): the
+// superadmin picks a payment and an amount ≤ refundable (paid − refunded − pending); the server
+// records the attempt (nothing reserved), calls the provider at once outside any transaction and
+// answers its outcome:
+//   - executed → the ledger entry now (the balance may go negative: debt rules), «Возвращено»,
+//     the owner's mail;
+//   - refused, or not possible through the API (Tochka subscription payments, digital ruble) →
+//     nothing on the balance; for the latter the answer says what to refund in the bank
+//     (manual_refund), and the refund polling books it once the bank lists it;
+//   - unknown (timeout, 5xx; Tochka has no idempotency) → the one pending row, never sent again;
+//     the polling books it (executed) or closes it (absent).
+// Each attempt is audited: the request (refund) and its outcome (refund.outcome).
+
+// providerTimeout bounds the provider call of a refund (the admin waits for it).
+const providerTimeout = 15 * time.Second
+
+const actionRefundOutcome = "refund.outcome"
 
 // refundKey is billing_refunds.idem_key and the provider Idempotency-Key of an admin refund.
-func refundKey(requestID uuid.UUID, paymentID *uuid.UUID) string {
-	if paymentID == nil {
-		return "refund:" + requestID.String()
-	}
-	return "refund:" + requestID.String() + ":" + paymentID.String()
-}
+func refundKey(requestID uuid.UUID) string { return "refund:" + requestID.String() }
 
-// refund: POST /api/admin/billing/payments/{id}/refunds — refunds unused money of one payment
-// (amount <= core.RefundableForPayment, else 409 BILLING_REFUND_EXCEEDS_REFUNDABLE). The
-// reservation and the audit row commit together; the provider is called afterwards.
+// refund: POST /api/admin/billing/payments/{id}/refunds.
 func (h *Handlers) refund(w http.ResponseWriter, r *http.Request) error {
 	payID, err := httpx.PathUUID(r, "id", "payment")
 	if err != nil {
@@ -44,17 +53,12 @@ func (h *Handlers) refund(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeStrict(w, r, &req); err != nil {
 		return err
 	}
+	if req.GetRefundRequestId() != "" {
+		return httpx.Validation("refundRequestId", "refund requests are no longer decided here")
+	}
 	c, err := newCmd(r, actionRefund, &req, payID.String())
 	if err != nil {
 		return err
-	}
-	var linked *uuid.UUID
-	if s := req.GetRefundRequestId(); s != "" {
-		id, err := uuid.Parse(s)
-		if err != nil {
-			return httpx.Validation("refundRequestId", "refund_request_id must be a uuid")
-		}
-		linked = &id
 	}
 	ctx := r.Context()
 	pay, err := h.d.DB.Q.GetBillingPayment(ctx, payID)
@@ -63,6 +67,16 @@ func (h *Handlers) refund(w http.ResponseWriter, r *http.Request) error {
 	}
 	if err != nil {
 		return err
+	}
+	var p provider.Provider
+	if h.d.Providers != nil {
+		p, _ = h.d.Providers.Provider(provider.ID(pay.Provider))
+	}
+	byHand := false
+	if p != nil {
+		if byHand, err = core.RefundByHand(ctx, h.d.DB.Q, p, pay); err != nil {
+			return err
+		}
 	}
 	res, _, err := h.inTx(ctx, c, func(q *sqlc.Queries) (*effect, error) {
 		acc, err := lockAccount(ctx, q, pay.AccountID)
@@ -73,163 +87,69 @@ func (h *Handlers) refund(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return nil, err
 		}
-		refundable, err := h.d.Core.RefundableForPayment(ctx, q, pay.ID)
+		refundable, err := h.d.Core.RefundLeft(ctx, q, pay.ID)
 		if err != nil {
 			return nil, err
 		}
-		if linked != nil {
-			if _, err := h.decide(ctx, q, *linked, acc.ID, "approved", c.actor); err != nil {
-				return nil, err
-			}
+		if refundable.DisputeHold {
+			return nil, billing.ErrDisputeHold
 		}
-		ref, after, err := h.d.Core.ReserveRefund(ctx, q, core.RefundReq{
-			PaymentID: pay.ID, Amount: amount, IdemKey: refundKey(c.requestID, nil), Origin: core.RefundOriginCalab,
-			Reason: c.reason, RequestedBy: &c.actor,
+		if amount > refundable.Minor {
+			return nil, billing.ErrRefundExceedsRefundable
+		}
+		eff := &effect{before: &acc, acc: &acc,
+			target: map[string]string{"account_id": acc.ID.String(), "payment_id": pay.ID.String()},
+			res:    &v1.AdminBillingMutationResult{Amount: money(amount, acc.Currency), Refundable: money(refundable.Minor, acc.Currency)}}
+		if byHand {
+			// Nothing to send: the answer says what to refund in the bank.
+			eff.target["outcome"] = "manual"
+			eff.res.ManualRefund = h.manualRefund(ctx, q, pay, amount, acc.Currency)
+			return eff, nil
+		}
+		if c.preview {
+			after := acc
+			after.BalanceMinor -= amount // what an executed refund takes (the spent part becomes debt)
+			eff.acc = &after
+			return eff, nil
+		}
+		ref, _, err := h.d.Core.StartRefund(ctx, q, core.RefundReq{
+			PaymentID: pay.ID, Amount: amount, IdemKey: refundKey(c.requestID), Reason: c.reason, RequestedBy: &c.actor,
 		})
 		if err != nil {
 			return nil, err
 		}
-		return &effect{before: &acc, acc: &after,
-			target: map[string]string{"account_id": acc.ID.String(), "payment_id": pay.ID.String()},
-			res: &v1.AdminBillingMutationResult{Amount: money(amount, acc.Currency), Refunds: []*v1.AdminBillingRefund{refundProto(ref)},
-				Refundable: money(refundable.Minor, acc.Currency)}}, nil
-	})
-	if err != nil {
-		return err
-	}
-	if !c.preview {
-		if err := h.executeAll(ctx, res); err != nil {
-			return err
-		}
-	}
-	return h.respond(w, r, res, pay.AccountID)
-}
-
-// decideRefundRequest: POST /api/admin/billing/refund-requests/{id}/decide — approve: refunds
-// of the requested amount from the account's payments in funding (FIFO) order, unused money
-// only (409 if the account has less); reject: the request is closed, no money moves.
-func (h *Handlers) decideRefundRequest(w http.ResponseWriter, r *http.Request) error {
-	rrID, err := httpx.PathUUID(r, "id", "refund request")
-	if err != nil {
-		return err
-	}
-	var req v1.AdminDecideRefundRequest
-	if err := httpx.DecodeStrict(w, r, &req); err != nil {
-		return err
-	}
-	c, err := newCmd(r, actionDecide, &req, rrID.String())
-	if err != nil {
-		return err
-	}
-	ctx := r.Context()
-	rr0, err := h.d.DB.Q.AdminGetBillingRefundRequest(ctx, rrID)
-	if db.IsNotFound(err) {
-		return httpx.NotFound("refund request")
-	}
-	if err != nil {
-		return err
-	}
-	res, _, err := h.inTx(ctx, c, func(q *sqlc.Queries) (*effect, error) {
-		acc, err := lockAccount(ctx, q, rr0.AccountID)
-		if err != nil {
-			return nil, err
-		}
-		status := "rejected"
-		if req.GetApprove() {
-			status = "approved"
-		}
-		rr, err := h.decide(ctx, q, rrID, acc.ID, status, c.actor)
-		if err != nil {
-			return nil, err
-		}
-		eff := &effect{before: &acc, acc: &acc, target: map[string]string{"account_id": acc.ID.String(), "refund_request_id": rr.ID.String()},
-			res: &v1.AdminBillingMutationResult{RefundRequest: refundRequestProto(rr, acc.WorkspaceID, acc.Currency)}}
-		if !req.GetApprove() {
-			return eff, nil
-		}
-		refunds, after, err := h.reserveFIFO(ctx, q, acc, rr.AmountMinor, c)
-		if err != nil {
-			return nil, err
-		}
-		eff.acc = &after
-		eff.res.Amount = money(rr.AmountMinor, acc.Currency)
-		for _, ref := range refunds {
-			eff.res.Refunds = append(eff.res.Refunds, refundProto(ref))
-		}
+		eff.res.Refunds = []*v1.AdminBillingRefund{refundProto(ref)}
 		return eff, nil
 	})
 	if err != nil {
 		return err
 	}
-	if !c.preview {
-		if err := h.executeAll(ctx, res); err != nil {
+	if !c.preview && !byHand {
+		if err := h.executeAll(ctx, res, c); err != nil {
 			return err
 		}
-	}
-	return h.respond(w, r, res, rr0.AccountID)
-}
-
-// decide closes a requested refund request of the locked account.
-func (h *Handlers) decide(ctx context.Context, q *sqlc.Queries, id, accountID uuid.UUID, status string, actor uuid.UUID) (sqlc.BillingRefundRequest, error) {
-	rr, err := q.AdminLockBillingRefundRequest(ctx, id)
-	if db.IsNotFound(err) || err == nil && rr.AccountID != accountID {
-		return rr, httpx.NotFound("refund request")
-	}
-	if err != nil {
-		return rr, err
-	}
-	if rr.Status != "requested" {
-		return rr, conflict("refund request is " + rr.Status + " already")
-	}
-	now, err := h.now(ctx, q)
-	if err != nil {
-		return rr, err
-	}
-	return q.AdminDecideBillingRefundRequest(ctx, sqlc.AdminDecideBillingRefundRequestParams{Status: status, DecidedBy: &actor, Now: now, ID: id})
-}
-
-// reserveFIFO reserves refunds of amount over the account's payments with unused money, in
-// funding lot order.
-func (h *Handlers) reserveFIFO(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, amount int64, c *cmd) ([]sqlc.BillingRefund, sqlc.BillingAccount, error) {
-	if acc.DisputeHold {
-		return nil, acc, billing.ErrDisputeHold
-	}
-	ids, err := q.AdminListRefundableBillingPayments(ctx, acc.ID)
-	if err != nil {
-		return nil, acc, err
-	}
-	rest := amount
-	var out []sqlc.BillingRefund
-	for _, id := range ids {
-		if rest == 0 {
-			break
-		}
-		ref, err := h.d.Core.RefundableForPayment(ctx, q, id)
+		acc, err := h.d.DB.Q.GetBillingAccount(ctx, pay.AccountID)
 		if err != nil {
-			return nil, acc, err
+			return err
 		}
-		take := min(rest, ref.Minor)
-		if take <= 0 {
-			continue
-		}
-		r, after, err := h.d.Core.ReserveRefund(ctx, q, core.RefundReq{
-			PaymentID: id, Amount: take, IdemKey: refundKey(c.requestID, &id), Origin: core.RefundOriginCalab,
-			Reason: c.reason, RequestedBy: &c.actor,
-		})
-		if err != nil {
-			return nil, acc, err
-		}
-		out, acc, rest = append(out, r), after, rest-take
+		res.BalanceAfter, res.Account = money(acc.BalanceMinor, acc.Currency), nil
 	}
-	if rest > 0 {
-		return nil, acc, billing.ErrRefundExceedsRefundable
-	}
-	return out, acc, nil
+	return h.respond(w, r, res, pay.AccountID)
 }
 
-// executeAll sends every not-final refund of res to the provider and updates res with the
-// current state of each.
-func (h *Handlers) executeAll(ctx context.Context, res *v1.AdminBillingMutationResult) error {
+// manualRefund is what the operator refunds in the provider's interface.
+func (h *Handlers) manualRefund(ctx context.Context, q *sqlc.Queries, pay sqlc.BillingPayment, amount int64, currency string) *v1.AdminManualRefund {
+	op, charge, _ := strings.Cut(pay.ProviderPaymentID, ":charge:")
+	mask, err := savedRefs(ctx, q, []string{op})
+	if err != nil {
+		mask = refMask{op: true} // never show a subscription id unmasked
+	}
+	return &v1.AdminManualRefund{Provider: pay.Provider, PaymentId: pay.ID.String(), Operation: mask.apply(op), Charge: charge, Amount: money(amount, currency)}
+}
+
+// executeAll sends every pending refund of res and replaces it with its state after the answer
+// (a replay of the same request_id only reads: a refund is never sent twice).
+func (h *Handlers) executeAll(ctx context.Context, res *v1.AdminBillingMutationResult, c *cmd) error {
 	for i, pr := range res.GetRefunds() {
 		id, err := uuid.Parse(pr.GetRefund().GetId())
 		if err != nil {
@@ -239,24 +159,39 @@ func (h *Handlers) executeAll(ctx context.Context, res *v1.AdminBillingMutationR
 		if err != nil {
 			return err
 		}
-		if ref, err = h.execute(ctx, ref); err != nil {
+		ref, outcome, manual, err := h.execute(ctx, ref)
+		if err != nil {
 			return err
 		}
 		res.Refunds[i] = refundProto(ref)
+		if manual != nil {
+			res.ManualRefund = manual
+		}
+		if outcome != "" {
+			h.auditOutcome(ctx, c, ref, outcome)
+		}
 	}
 	return nil
 }
 
-// execute calls the provider for one reserved refund (Idempotency-Key = idem_key) and applies
-// its answer. Unknown outcome / no provider: the refund stays pending (webhook, reconcile or a
-// retry of the same request_id finish it).
-func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.BillingRefund, error) {
+// Outcomes of one provider call (audit refund.outcome).
+const (
+	outcomeExecuted = "executed"
+	outcomeRefused  = "refused"
+	outcomeManual   = "manual"
+	outcomeUnknown  = "unknown"
+)
+
+// execute calls the provider once for a pending admin refund and books its answer. A refund
+// already sent (dispatched, a provider id, or past the repost window) is only read back: the
+// polling resolves it.
+func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.BillingRefund, string, *v1.AdminManualRefund, error) {
 	if ref.Origin != core.RefundOriginCalab || ref.Status != core.RefundPending && ref.Status != core.RefundRequiresAction {
-		return ref, nil
+		return ref, "", nil, nil
 	}
 	pay, err := h.d.DB.Q.GetBillingPayment(ctx, ref.PaymentID)
 	if err != nil {
-		return ref, err
+		return ref, "", nil, err
 	}
 	var p provider.Provider
 	if h.d.Providers != nil {
@@ -264,63 +199,50 @@ func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.Bi
 	}
 	if p == nil {
 		slog.WarnContext(ctx, "billing admin: refund left pending, provider not configured", "refund", ref.ID, "provider", pay.Provider)
-		return ref, nil
+		return ref, outcomeUnknown, nil, nil
+	}
+	if ref.ProviderRefundID != nil || ref.DispatchedAt != nil || !core.RefundMayRepost(ref) {
+		return ref, "", nil, nil // sent before: the polling finishes it
 	}
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), providerTimeout)
 	defer cancel()
-	var fact provider.RefundFact
-	switch {
-	case ref.ProviderRefundID != nil:
-		fact, err = p.GetRefund(pctx, *ref.ProviderRefundID)
-	case !core.RefundMayRepost(ref):
-		// Near / past the provider's idempotency window a POST could refund twice: only the
-		// reconciliation's lookup (metadata calab_refund_id) finishes it now.
-		slog.WarnContext(ctx, "billing admin: refund past the repost window, left to reconciliation", "refund", ref.ID)
-		return ref, nil
-	default:
-		if !p.Caps().SafeRetry() {
-			// No idempotency at the provider (ADR-0083, Tochka): the refund is sent at most once,
-			// marked before the request; a replay or a lost answer only reads.
-			sent, merr := h.d.Core.MarkRefundDispatched(pctx, ref.ID)
-			if merr != nil {
-				return ref, merr
-			}
-			if !sent {
-				slog.WarnContext(ctx, "billing admin: refund sent before, left to reconciliation", "refund", ref.ID)
-				return ref, nil
-			}
+	if !p.Caps().SafeRetry() {
+		// No idempotency at the provider (Tochka): marked before the request, never sent again.
+		sent, err := h.d.Core.MarkRefundDispatched(pctx, ref.ID)
+		if err != nil {
+			return ref, "", nil, err
 		}
-		fact, err = p.Refund(pctx, provider.RefundReq{
-			IdemKey: ref.IdemKey, PaymentID: pay.ProviderPaymentID, Amount: bmoney.New(ref.AmountMinor, bmoney.Currency(ref.Currency)),
-			Reason: ref.Reason, Metadata: provider.Metadata{AccountID: ref.AccountID, RefundID: ref.ID},
-		})
+		if !sent {
+			return ref, "", nil, nil
+		}
 	}
-	status := ""
+	fact, err := p.Refund(pctx, provider.RefundReq{
+		IdemKey: ref.IdemKey, PaymentID: pay.ProviderPaymentID, Amount: bmoney.New(ref.AmountMinor, bmoney.Currency(ref.Currency)),
+		Reason: ref.Reason, Metadata: provider.Metadata{AccountID: ref.AccountID, RefundID: ref.ID},
+	})
+	status, outcome := "", ""
+	var manual *v1.AdminManualRefund
 	switch {
 	case errors.Is(err, provider.ErrNotSupported):
-		// The provider refunds this payment only in its own interface (Tochka: digital ruble):
-		// the money stays reserved, a superadmin refunds by hand; the reconciliation matches
-		// that refund to this row.
-		slog.ErrorContext(ctx, "billing admin: refund needs a manual refund in the provider's interface", "refund", ref.ID, "payment", pay.ProviderPaymentID, "err", err)
-		if _, merr := h.d.Core.MarkRefundNeedsReview(pctx, ref); merr != nil {
-			return ref, merr
-		}
-		return h.d.DB.Q.GetBillingRefund(pctx, ref.ID)
-	case errors.Is(err, provider.ErrUnknownOutcome):
-		slog.WarnContext(ctx, "billing admin: refund outcome unknown, left pending", "refund", ref.ID, "err", err)
-		return ref, nil
-	case err != nil && ref.ProviderRefundID != nil:
-		slog.WarnContext(ctx, "billing admin: refund re-read failed, left pending", "refund", ref.ID, "err", err)
-		return ref, nil
+		// Refunded only in the provider's interface (Tochka: digital ruble, a subscription the
+		// local data did not know): nothing moved; the polling books the operator's refund.
+		slog.WarnContext(ctx, "billing admin: refund to be made in the provider's interface", "refund", ref.ID, "err", err)
+		status, outcome = core.RefundFailed, outcomeManual
+		manual = h.manualRefund(ctx, h.d.DB.Q, pay, ref.AmountMinor, ref.Currency)
+	case errors.Is(err, provider.ErrUnknownOutcome) || errors.Is(err, context.DeadlineExceeded):
+		slog.WarnContext(ctx, "billing admin: refund outcome unknown, the polling resolves it", "refund", ref.ID, "err", err)
+		return ref, outcomeUnknown, nil, nil
 	case err != nil:
-		// The provider refused to create the refund: nothing left the merchant account.
 		slog.WarnContext(ctx, "billing admin: provider refused the refund", "refund", ref.ID, "err", err)
-		status = core.RefundFailed
+		status, outcome = core.RefundFailed, outcomeRefused
 	case fact.PaymentID != pay.ProviderPaymentID || fact.Amount.Minor != ref.AmountMinor || string(fact.Amount.Currency) != ref.Currency:
-		slog.ErrorContext(ctx, "billing admin: provider refund does not match, left pending", "refund", ref.ID, "provider_refund", fact.ID)
-		return ref, nil
+		slog.ErrorContext(ctx, "billing admin: provider refund does not match, the polling resolves it", "refund", ref.ID, "provider_refund", fact.ID)
+		return ref, outcomeUnknown, nil, nil
+	case fact.Status == provider.RefundFailed || fact.Status == provider.RefundCanceled:
+		status, outcome = core.RefundFailed, outcomeRefused
 	default:
-		status = string(fact.Status)
+		// Created at the provider (Stripe pending / succeeded, Tochka accepted): executed.
+		status, outcome = core.RefundSucceeded, outcomeExecuted
 	}
 	var pid *string
 	if fact.ID != "" {
@@ -330,32 +252,37 @@ func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.Bi
 	var acc sqlc.BillingAccount
 	err = h.d.DB.Tx(pctx, func(q *sqlc.Queries) error {
 		var err error
-		if status == core.RefundPending {
-			if acc, err = lockAccount(pctx, q, ref.AccountID); err != nil {
-				return err
-			}
-			if pid == nil {
-				out = ref
-				return nil
-			}
-			now, err := h.now(pctx, q)
-			if err != nil {
-				return err
-			}
-			out, err = q.AdminSetBillingRefundProviderID(pctx, sqlc.AdminSetBillingRefundProviderIDParams{ProviderRefundID: *pid, Now: now, ID: ref.ID})
-			if db.IsNotFound(err) {
-				out, err = q.GetBillingRefund(pctx, ref.ID)
-			}
-			return err
-		}
 		out, acc, err = h.d.Core.ApplyRefundResult(pctx, q, ref.ID, status, pid)
 		return err
 	})
 	if err != nil {
-		return ref, fmt.Errorf("billing admin: apply refund %s: %w", ref.ID, err)
+		return ref, "", nil, err
 	}
-	if h.d.Committed != nil && status != core.RefundPending {
+	if h.d.Committed != nil {
 		h.d.Committed(ctx, acc)
 	}
-	return out, nil
+	if status == core.RefundSucceeded && h.d.RefundDone != nil {
+		h.d.RefundDone(ctx, out)
+	}
+	return out, outcome, manual, nil
+}
+
+// auditOutcome appends the provider's answer to the audit (append-only, best effort: the money
+// state is in the refund row and the ledger).
+func (h *Handlers) auditOutcome(ctx context.Context, c *cmd, ref sqlc.BillingRefund, outcome string) {
+	det, _ := json.Marshal(details{Target: map[string]string{ //nolint:errchkjson // plain strings
+		"account_id": ref.AccountID.String(), "payment_id": ref.PaymentID.String(), "refund_id": ref.ID.String(),
+		"outcome": outcome, "status": ref.Status, "amount_minor": bmoney.New(ref.AmountMinor, bmoney.Currency(ref.Currency)).Decimal(),
+	}})
+	h1 := sha256.Sum256(det)
+	acc := ref.AccountID
+	actx := context.WithoutCancel(ctx)
+	if _, err := db.GuardValue(actx, h.d.DB, func(q *sqlc.Queries) (sqlc.BillingAudit, error) {
+		return q.InsertBillingAudit(actx, sqlc.InsertBillingAuditParams{
+			RequestID: uuid.NewSHA1(c.requestID, []byte(actionRefundOutcome+ref.Status)), BodyHash: h1[:], AccountID: &acc, ActorID: &c.actor,
+			Action: actionRefundOutcome, Reason: c.reason, Details: det,
+		})
+	}); err != nil && !db.IsNotFound(err) {
+		slog.WarnContext(ctx, "billing admin: audit refund outcome", "refund", ref.ID, "err", err)
+	}
 }

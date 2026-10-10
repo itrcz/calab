@@ -153,6 +153,20 @@ func (r *Registry) Provider(id ID) (Provider, bool) {
 	return p, ok
 }
 
+// Providers returns every configured provider, ordered by id.
+func (r *Registry) Providers() []Provider {
+	ids := make([]string, 0, len(r.providers))
+	for id := range r.providers {
+		ids = append(ids, string(id))
+	}
+	slices.Sort(ids)
+	out := make([]Provider, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, r.providers[ID(id)])
+	}
+	return out
+}
+
 // OffSession returns the provider as a charger of saved methods when it has the capabilities a
 // charge needs: CapOffSession and either CapIdempotentCharge (Stripe: an unknown outcome is
 // retried with the same key) or CapReconcilableCharge with a ChargeLister (Tochka, ADR-0083

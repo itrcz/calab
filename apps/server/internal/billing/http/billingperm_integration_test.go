@@ -58,7 +58,7 @@ func TestBillingPermissionPerRoute(t *testing.T) {
 		{"GET", "/auto-topup", V}, {"PUT", "/auto-topup", M}, {"DELETE", "/auto-topup", M},
 		{"GET", "/payment-methods", V}, {"DELETE", "/payment-methods/" + uuid.NewString(), M},
 		{"POST", "/saved-method-topups", M}, {"GET", "/saved-method-topups/" + uuid.NewString(), M},
-		{"GET", "/ledger", V}, {"GET", "/payments", V}, {"GET", "/refund-requests", V}, {"POST", "/refund-requests", M},
+		{"GET", "/ledger", V}, {"GET", "/payments", V},
 	}
 	// Bodies that pass the handlers' validation before the permission check.
 	bodies := map[string]proto.Message{

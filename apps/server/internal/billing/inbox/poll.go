@@ -26,6 +26,10 @@ const DefaultPollTick = 15 * time.Second
 // pollBatch bounds the checkouts one tick pulls.
 const pollBatch = 50
 
+// CheckoutPayGrace is how long a checkout may stay open at the provider after its expiry before it is closed
+// (the bank lets a payer finish a page opened before the link's expiry for about an hour).
+const CheckoutPayGrace = time.Hour
+
 // PollDelay is the wait before poll n+1 of a checkout (n polls done).
 func PollDelay(n int32) time.Duration {
 	if n >= 5 {

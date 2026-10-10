@@ -77,7 +77,7 @@ func (in *Inbox) ApplyRefund(ctx context.Context, p provider.Provider, f provide
 	})
 	if db.IsNotFound(err) {
 		// The payment may not be recorded yet (its own events are behind): retry with backoff.
-		return fmt.Errorf("refund %s: payment %s not recorded yet", f.ID, f.PaymentID)
+		return fmt.Errorf("refund %s: payment %s: %w", f.ID, f.PaymentID, errPaymentUnknown)
 	}
 	if err != nil {
 		return err
@@ -92,8 +92,8 @@ func (in *Inbox) ApplyRefund(ctx context.Context, p provider.Provider, f provide
 			return err
 		}
 		if string(f.Amount.Currency) != acc.Currency {
-			refusal = permanent("refund %s in %s, account %s: %w", f.ID, f.Amount.Currency, acc.Currency, ErrMismatch)
-			return refusal
+			// Recorded for the superadmin («Требует внимания»), not retried.
+			return reportIssue(ctx, q, acc.ID, &pay.ID, string(p.ID()), f, IssueCurrencyMismatch, "open")
 		}
 		ref, err := q.GetBillingRefundByProviderID(ctx, &f.ID)
 		if db.IsNotFound(err) && f.Metadata.RefundID != uuid.Nil {
@@ -106,31 +106,30 @@ func (in *Inbox) ApplyRefund(ctx context.Context, p provider.Provider, f provide
 		switch {
 		case err == nil:
 			before = ref.Status
-			if status == core.RefundPending || before == status {
-				if ref.ProviderRefundID == nil {
-					// A Calab refund still pending at the provider: remember its id.
-					_, err := q.AdminSetBillingRefundProviderID(ctx, sqlc.AdminSetBillingRefundProviderIDParams{ProviderRefundID: f.ID, Now: time.Now(), ID: ref.ID})
-					if err != nil && !db.IsNotFound(err) {
-						return err
-					}
+			if ref.ProviderRefundID == nil {
+				// A Calab refund the provider's id was not known for: it is this one.
+				if _, err := q.ClaimBillingRefundProviderID(ctx, sqlc.ClaimBillingRefundProviderIDParams{ProviderRefundID: f.ID, Now: time.Now(), ID: ref.ID}); err != nil && !db.IsNotFound(err) {
+					return err
 				}
+			}
+			if status == core.RefundPending || before == status || before == core.RefundSucceeded {
 				return nil
 			}
 			if ref, acc, err = in.core.ApplyRefundResult(ctx, q, ref.ID, status, &f.ID); err != nil {
 				return err
 			}
 		case db.IsNotFound(err):
-			ref, acc, err = in.core.ReserveRefund(ctx, q, core.RefundReq{
-				PaymentID: pay.ID, Amount: f.Amount.Minor, IdemKey: "dashboard:" + f.ID, Origin: core.RefundOriginDashboard,
-				Status: status, ProviderRefundID: &f.ID, Reason: "provider dashboard",
-			})
-			if errors.Is(err, billing.ErrRefundExceedsRefundable) || errors.Is(err, billing.ErrRequestReused) {
+			// Executed at the provider without Calab: a fact, booked at once (owner 2026-10-10),
+			// even into debt; on the account's other payments when this one cannot hold it.
+			refs, a, err := in.bookBankRefund(ctx, q, acc, &pay.ID, "", string(p.ID()), f)
+			if errors.Is(err, billing.ErrRequestReused) {
 				refusal = permanent("dashboard refund %s of %s: %w", f.ID, f.PaymentID, err)
 				return refusal
 			}
-			if err != nil {
+			if err != nil || len(refs) == 0 {
 				return err
 			}
+			ref, acc = refs[0], a
 		default:
 			return err
 		}
@@ -170,9 +169,10 @@ func calabRefundOf(ctx context.Context, q *sqlc.Queries, pay sqlc.BillingPayment
 }
 
 // matchCalabRefund finds the Calab refund a provider refund answers when the provider id was
-// not stored yet (the webhook raced the API answer): same payment and amount, oldest first.
+// not stored yet (an unknown outcome, the webhook raced the API answer, or an executed answer the
+// bank did not confirm by id): same payment and amount, oldest first — never a second deduction.
 func matchCalabRefund(ctx context.Context, q *sqlc.Queries, pay sqlc.BillingPayment, f provider.RefundFact) (sqlc.BillingRefund, error) {
-	rs, err := q.ListPendingCalabBillingRefunds(ctx, pay.ID)
+	rs, err := q.ListUnclaimedCalabBillingRefunds(ctx, pay.ID)
 	if err != nil {
 		return sqlc.BillingRefund{}, err
 	}

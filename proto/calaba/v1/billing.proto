@@ -701,6 +701,9 @@ message AdminBillingPayment {
   string provider = 4;
   string provider_payment_id = 5;
   bool livemode = 6;
+  // The provider refunds this payment only in its own interface (ADR-0083 amendment 2026-10-10:
+  // Tochka subscription payments): the admin refund shows what to refund in the bank instead.
+  bool refund_by_hand = 7;
 }
 
 message AdminBillingPayments {
@@ -716,6 +719,42 @@ message AdminBillingRefund {
   // it is never sent again, its money stays reserved until a superadmin resolves it (reconcile
   // with release_refund_ids, or a refund made by hand in the provider dashboard is matched).
   google.protobuf.Timestamp needs_review_since = 4;
+}
+
+// A refund made in the provider's interface the reconciliation could not record on its own
+// (ADR-0083, 2026-10-10): «Требует внимания» in the admin. Resolved by POST
+// /api/admin/billing/issues/{id}/import («Записать как долг») or …/dismiss.
+message AdminBillingIssue {
+  string id = 1;
+  string account_id = 2;
+  string workspace_id = 3;
+  string workspace_name = 4;
+  string payment_id = 5;         // our payment it is about ("" when unknown)
+  string provider = 6;
+  // The provider's refund id (Tochka: {operation}:{order}); a saved card's subscription id is
+  // masked like every admin provider id (…9f8f:7824819).
+  string provider_ref = 7;
+  Money amount = 8;
+  // exceeds_refundable | currency_mismatch | unmatched
+  string reason = 9;
+  // open | imported | dismissed | matched
+  string status = 10;
+  google.protobuf.Timestamp occurred_at = 11; // at the provider, when known
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp resolved_at = 13;
+}
+
+// GET /api/admin/billing/issues?account_id=&status=&cursor=&limit=
+message AdminBillingIssues {
+  repeated AdminBillingIssue issues = 1;
+  string next_cursor = 2;
+  int64 open_total = 3; // open issues of every account (the «Требует внимания» badge)
+}
+
+// POST /api/admin/billing/issues/{id}/import | /dismiss
+message AdminResolveIssueRequest {
+  string reason = 1;
+  string request_id = 2;
 }
 
 message AdminBillingRefunds {
@@ -911,6 +950,20 @@ message AdminBillingMutationResult {
   Money refundable = 13;                         // refund preview: unused money of the payment
   AdminBillingProviders providers = 14;          // provider switch: the switches after it
   Money compensation = 15;                       // plan switch: the rest of the old lots back on the balance
+  AdminBillingIssue issue = 16;                  // resolved «Требует внимания» item
+  AdminManualRefund manual_refund = 17;          // refund: the provider does not make it through its API
+}
+
+// A refund the provider makes only in its own interface (ADR-0083 amendment 2026-10-10: Tochka
+// subscription payments, digital ruble): nothing was sent or booked; the operator refunds in the
+// bank and the refund polling books it. The ids are what the operator looks up in the bank; a
+// saved card's subscription id is masked like every admin provider id (…299c).
+message AdminManualRefund {
+  string provider = 1;
+  string payment_id = 2;  // ours
+  string operation = 3;   // the provider's operation (masked for a saved card's subscription)
+  string charge = 4;      // the charge's order id in the operation ("" for the first payment)
+  Money amount = 5;
 }
 
 // POST /api/admin/billing/test-clock (BILLING_TEST_CLOCK=1 only, never in production): moves

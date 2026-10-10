@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -76,88 +75,6 @@ func (s *Service) payments(w http.ResponseWriter, r *http.Request) error {
 		out.Payments = append(out.Payments, PaymentProto(p))
 	}
 	httpx.Write(w, http.StatusOK, out)
-	return nil
-}
-
-func (s *Service) refundRequests(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.holderOf(r, perm.BillingView)
-	if err != nil {
-		return err
-	}
-	rows, err := s.db.Q.ListBillingRefundRequests(r.Context(), sqlc.ListBillingRefundRequestsParams{AccountID: c.acc.ID, Lim: 100})
-	if err != nil {
-		return err
-	}
-	out := &v1.BillingRefundRequests{}
-	for _, rr := range rows {
-		out.Requests = append(out.Requests, RefundRequestProto(rr, c.acc.Currency))
-	}
-	httpx.Write(w, http.StatusOK, out)
-	return nil
-}
-
-// createRefundRequest: POST …/billing/refund-requests. The owner asks for unused money back; a
-// superadmin decides (T6) and refunds it to the original payments. The amount may not exceed
-// the free advance now; request_id makes a retry return the same request.
-func (s *Service) createRefundRequest(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.holderOf(r, perm.BillingManage)
-	if err != nil {
-		return err
-	}
-	var req v1.CreateRefundRequest
-	if err := httpx.Decode(w, r, &req); err != nil {
-		return err
-	}
-	reqID, err := parseRequestID(req.GetRequestId())
-	if err != nil {
-		return err
-	}
-	amt := req.GetAmount()
-	if amt.GetCurrency() != c.acc.Currency {
-		return billing.ErrCurrencyMismatch
-	}
-	if amt.GetMinor() <= 0 {
-		return httpx.Validation("amount", "amount must be positive")
-	}
-	reason := strings.TrimSpace(req.GetReason())
-	if len([]rune(reason)) > 1000 {
-		return httpx.Validation("reason", "reason is at most 1000 characters")
-	}
-	ctx := r.Context()
-	var rr sqlc.BillingRefundRequest
-	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
-		acc, err := q.LockBillingAccount(ctx, c.acc.ID)
-		if err != nil {
-			return err
-		}
-		if old, err := q.GetBillingRefundRequestByRequest(ctx, sqlc.GetBillingRefundRequestByRequestParams{AccountID: acc.ID, RequestID: reqID}); err == nil {
-			if old.AmountMinor != amt.GetMinor() || old.Reason != reason {
-				return billing.ErrRequestReused
-			}
-			rr = old
-			return nil
-		} else if !db.IsNotFound(err) {
-			return err
-		}
-		if acc.DisputeHold {
-			return billing.ErrDisputeHold
-		}
-		free, err := q.BillingFreeAdvance(ctx, acc.ID)
-		if err != nil {
-			return err
-		}
-		if amt.GetMinor() > free {
-			return billing.ErrRefundExceedsRefundable
-		}
-		rr, err = q.InsertBillingRefundRequest(ctx, sqlc.InsertBillingRefundRequestParams{
-			AccountID: acc.ID, RequestID: reqID, AmountMinor: amt.GetMinor(), Reason: reason, RequestedBy: &c.user,
-		})
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	httpx.Write(w, http.StatusOK, RefundRequestProto(rr, c.acc.Currency))
 	return nil
 }
 

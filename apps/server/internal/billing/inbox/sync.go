@@ -379,6 +379,12 @@ func (in *Inbox) SyncCheckout(ctx context.Context, co sqlc.BillingCheckout, path
 	if fact.Status == provider.CheckoutExpired && !res.Credited {
 		status = CheckoutExpired
 	}
+	if fact.Status == provider.CheckoutOpen && co.ExpiresAt != nil && time.Now().After(co.ExpiresAt.Add(CheckoutPayGrace)) {
+		// Still open at the provider past our expiry: a Tochka subscription link («сохранить
+		// карту») has no bank TTL and would be polled forever (audit M1, 2026-10-10). A payment
+		// that still arrives later is credited by the import / webhook.
+		status = CheckoutExpired
+	}
 	if status != "" {
 		if _, err := db.GuardValue(ctx, in.db, func(q *sqlc.Queries) (sqlc.BillingCheckout, error) {
 			return q.SetBillingCheckoutStatus(ctx, sqlc.SetBillingCheckoutStatusParams{Status: status, Now: time.Now(), ID: co.ID})

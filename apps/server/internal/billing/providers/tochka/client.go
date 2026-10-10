@@ -131,7 +131,9 @@ func (p *Provider) do(ctx context.Context, op, method, path string, body, out an
 	}
 	low := strings.ToLower(msg)
 	switch {
-	case resp.StatusCode == http.StatusTooManyRequests, resp.StatusCode >= http.StatusInternalServerError:
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return fmt.Errorf("%w: %w: %w", provider.ErrUnknownOutcome, provider.ErrRateLimited, ae)
+	case resp.StatusCode >= http.StatusInternalServerError:
 		return fmt.Errorf("%w: %w", provider.ErrUnknownOutcome, ae)
 	case resp.StatusCode == http.StatusNotFound,
 		resp.StatusCode == http.StatusFailedDependency && (strings.Contains(low, "not found") || strings.Contains(low, "не найден")):

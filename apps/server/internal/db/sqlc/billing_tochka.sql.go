@@ -117,7 +117,7 @@ func (q *Queries) ListBillingProviderSettings(ctx context.Context) ([]BillingPro
 const markBillingRefundDispatched = `-- name: MarkBillingRefundDispatched :one
 UPDATE billing_refunds SET dispatched_at = $1::timestamptz, updated_at = $1::timestamptz
 WHERE id = $2 AND dispatched_at IS NULL AND status IN ('pending', 'requires_action')
-RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at
+RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at, reserved
 `
 
 type MarkBillingRefundDispatchedParams struct {
@@ -148,6 +148,7 @@ func (q *Queries) MarkBillingRefundDispatched(ctx context.Context, arg MarkBilli
 		&i.SucceededAt,
 		&i.NeedsReviewAt,
 		&i.DispatchedAt,
+		&i.Reserved,
 	)
 	return i, err
 }

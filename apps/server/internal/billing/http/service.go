@@ -122,8 +122,6 @@ func (s *Service) Owner() map[string]httpx.HandlerFunc {
 		"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}": s.savedTopupStatus,
 		"GET /api/workspaces/{id}/billing/ledger":                    s.ledger,
 		"GET /api/workspaces/{id}/billing/payments":                  s.payments,
-		"GET /api/workspaces/{id}/billing/refund-requests":           s.refundRequests,
-		"POST /api/workspaces/{id}/billing/refund-requests":          s.createRefundRequest,
 	}
 }
 

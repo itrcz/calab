@@ -102,6 +102,9 @@ type Deps struct {
 	// Plans gives the limits of the standard plans for a superadmin's plan change (ADR-0086;
 	// nil: the change is not checked against them). The custom plan carries its own.
 	Plans *plans.Service
+	// RefundDone queues the owner's «refund done» mail of an admin refund the provider executed
+	// (inbox.Inbox.NotifyRefundDone; nil = no mail).
+	RefundDone func(ctx context.Context, ref sqlc.BillingRefund)
 }
 
 // TestClockAllowed reports whether the test clock endpoint may exist (BILLING_TEST_CLOCK=1, never with live
@@ -127,7 +130,6 @@ func (h *Handlers) Handlers() map[string]httpx.HandlerFunc {
 		"GET /api/admin/billing/accounts/{id}/ledger":                             h.ledger,
 		"GET /api/admin/billing/payments":                                         h.payments,
 		"GET /api/admin/billing/refunds":                                          h.refunds,
-		"GET /api/admin/billing/refund-requests":                                  h.refundRequests,
 		"GET /api/admin/billing/disputes":                                         h.disputes,
 		"GET /api/admin/billing/events":                                           h.events,
 		"POST /api/admin/billing/workspaces/{id}/enable":                          h.enable,
@@ -135,7 +137,6 @@ func (h *Handlers) Handlers() map[string]httpx.HandlerFunc {
 		"POST /api/admin/billing/accounts/{id}/manual-credits/{creditId}/reverse": h.reverseCredit,
 		"POST /api/admin/billing/accounts/{id}/admin-debit":                       h.adminDebit,
 		"POST /api/admin/billing/payments/{id}/refunds":                           h.refund,
-		"POST /api/admin/billing/refund-requests/{id}/decide":                     h.decideRefundRequest,
 		"POST /api/admin/billing/accounts/{id}/hold":                              h.hold,
 		"POST /api/admin/billing/accounts/{id}/reconcile":                         h.reconcile,
 		"PUT /api/admin/billing/accounts/{id}/discount":                           h.discount,
@@ -147,6 +148,9 @@ func (h *Handlers) Handlers() map[string]httpx.HandlerFunc {
 		"POST /api/admin/billing/accounts/{id}/market":                            h.changeMarket,
 		"GET /api/admin/billing/providers":                                        h.providers,
 		"PUT /api/admin/billing/providers/{provider}":                             h.setProvider,
+		"GET /api/admin/billing/issues":                                           h.issues,
+		"POST /api/admin/billing/issues/{id}/import":                              h.importIssue,
+		"POST /api/admin/billing/issues/{id}/dismiss":                             h.dismissIssue,
 	}
 	for p, f := range m {
 		m[p] = h.guard(f)

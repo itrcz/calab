@@ -789,7 +789,7 @@ func (q *Queries) ListBillingRefundRequests(ctx context.Context, arg ListBilling
 }
 
 const listBillingRefundsToRetry = `-- name: ListBillingRefundsToRetry :many
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at FROM billing_refunds
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at, reserved FROM billing_refunds
 WHERE origin = 'calab' AND status IN ('pending', 'requires_action')
   AND ($1::uuid IS NULL OR account_id = $1::uuid)
   AND updated_at < $2::timestamptz
@@ -833,6 +833,7 @@ func (q *Queries) ListBillingRefundsToRetry(ctx context.Context, arg ListBilling
 			&i.SucceededAt,
 			&i.NeedsReviewAt,
 			&i.DispatchedAt,
+			&i.Reserved,
 		); err != nil {
 			return nil, err
 		}
@@ -845,7 +846,7 @@ func (q *Queries) ListBillingRefundsToRetry(ctx context.Context, arg ListBilling
 }
 
 const listPendingCalabBillingRefunds = `-- name: ListPendingCalabBillingRefunds :many
-SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at FROM billing_refunds
+SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at, reserved FROM billing_refunds
 WHERE payment_id = $1 AND origin = 'calab' AND provider_refund_id IS NULL AND status IN ('pending', 'requires_action')
 ORDER BY id
 `
@@ -879,6 +880,7 @@ func (q *Queries) ListPendingCalabBillingRefunds(ctx context.Context, paymentID 
 			&i.SucceededAt,
 			&i.NeedsReviewAt,
 			&i.DispatchedAt,
+			&i.Reserved,
 		); err != nil {
 			return nil, err
 		}
@@ -915,7 +917,7 @@ func (q *Queries) MarkBillingProviderEventDead(ctx context.Context, arg MarkBill
 const markBillingRefundNeedsReview = `-- name: MarkBillingRefundNeedsReview :one
 UPDATE billing_refunds SET needs_review_at = $1::timestamptz, updated_at = $1::timestamptz
 WHERE id = $2 AND origin = 'calab' AND status IN ('pending', 'requires_action') AND needs_review_at IS NULL
-RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at
+RETURNING id, account_id, payment_id, lot_id, amount_minor, currency, status, origin, provider_refund_id, idem_key, reason, requested_by, created_at, updated_at, succeeded_at, needs_review_at, dispatched_at, reserved
 `
 
 type MarkBillingRefundNeedsReviewParams struct {
@@ -946,6 +948,7 @@ func (q *Queries) MarkBillingRefundNeedsReview(ctx context.Context, arg MarkBill
 		&i.SucceededAt,
 		&i.NeedsReviewAt,
 		&i.DispatchedAt,
+		&i.Reserved,
 	)
 	return i, err
 }

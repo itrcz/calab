@@ -614,7 +614,7 @@ func TestRefundNeverCreatedNeedsReview(t *testing.T) {
 	if err := e.in.ReleaseRefund(ctx, e.acc, ref2.ID); err != nil {
 		t.Fatal(err)
 	}
-	if r := e.refund(ref2.ID); r.Status != core.RefundFailed {
+	if r := e.refund(ref2.ID); r.Status != core.RefundCanceled {
 		t.Fatalf("released %+v", r)
 	}
 	if acc := e.account(); acc.BalanceMinor != 1300 {

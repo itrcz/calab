@@ -131,6 +131,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	}
 	rt.Inbox = inbox.New(d.DB, reg, rt.Core, inbox.Options{})
 	rt.Inbox.Committed, rt.Inbox.Mail = committed, notifier
+	rt.Inbox.ScanLock = redisScanLock(d.Redis)
 	rt.AutoTopup = autotopup.New(d.DB, rt.Core, reg, rt.Inbox, rt.Clock, autotopup.Options{
 		Enabled: b.AutoTopupEnabled, RestoreMarker: b.AutoTopupRequireReconcile, ReturnURL: b.PublicReturnURL,
 	})
@@ -155,7 +156,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	rt.Handlers.Admin = admin.New(admin.Deps{
 		DB: d.DB, Core: rt.Core, Clock: rt.Clock, Providers: reg, ProviderSpec: b.Providers, Reconciler: rt.Inbox,
 		TestClock: testClock, Limiter: redisx.NewRateLimiter(d.Redis, "rl:billing-admin:", 60, 60), // 60 per minute
-		Committed: committed, Plans: planSvc,
+		Committed: committed, Plans: planSvc, RefundDone: rt.Inbox.NotifyRefundDone,
 	}).Handlers()
 	rt.Handlers.Admin[autotopup.ReconcileRoute] = rt.AutoTopup.ReconcileHandler()
 	rt.due = worker.New(rt.Core, worker.Options{Suspend: b.EnforcementEnabled})
@@ -184,6 +185,9 @@ func (rt *billingRuntime) Run(ctx context.Context) {
 	go rt.Inbox.RunReconcile(ctx)
 	if rt.cfg.TochkaEnabled {
 		go rt.Inbox.RunPoll(ctx) // ADR-0083: open checkouts of providers without failure webhooks
+		// ADR-0083 amendment 2026-10-10: the bank sends no refund webhook — refunds (ours and
+		// those made in the bank's interface) are read from the operations' Order[].
+		go rt.Inbox.RunRefundScan(ctx)
 	}
 	if worker.Enabled(rt.cfg) {
 		go rt.due.Run(ctx)
@@ -203,9 +207,21 @@ func (rt *billingRuntime) RunAfterListen(ctx context.Context) {
 // redisWebhookLock lets one replica at a time run a registration attempt (Redis SET NX, like the
 // other singleton sweepers); released by comparing the token, expires on its own if we die.
 func redisWebhookLock(r rueidis.Client) func(context.Context) (func(), bool) {
-	const hold = 3 * time.Minute // an attempt is bounded by 2 min
+	return redisLock(r, "tochka:webhook", 3*time.Minute) // an attempt is bounded by 2 min
+}
+
+// redisScanLock lets one replica at a time run a refund polling pass of a provider (prod runs two
+// API pods; a pass is one list call per merchant).
+func redisScanLock(r rueidis.Client) func(context.Context, string) (func(), bool) {
+	return func(ctx context.Context, provider string) (func(), bool) {
+		return redisLock(r, "billing:refund-scan:"+provider, 5*time.Minute)(ctx)
+	}
+}
+
+// redisLock is a SET NX lock with a token: released only by its holder, expires after hold.
+func redisLock(r rueidis.Client, name string, hold time.Duration) func(context.Context) (func(), bool) {
 	return func(ctx context.Context) (func(), bool) {
-		key, token := redisx.Key("tochka:webhook"), uuid.NewString()
+		key, token := redisx.Key(name), uuid.NewString()
 		if err := r.Do(ctx, r.B().Set().Key(key).Value(token).Nx().Px(hold).Build()).Error(); err != nil {
 			return nil, false
 		}

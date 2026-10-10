@@ -4966,8 +4966,11 @@ type AdminBillingPayment struct {
 	Provider          string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
 	ProviderPaymentId string                 `protobuf:"bytes,5,opt,name=provider_payment_id,json=providerPaymentId,proto3" json:"provider_payment_id,omitempty"`
 	Livemode          bool                   `protobuf:"varint,6,opt,name=livemode,proto3" json:"livemode,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The provider refunds this payment only in its own interface (ADR-0083 amendment 2026-10-10:
+	// Tochka subscription payments): the admin refund shows what to refund in the bank instead.
+	RefundByHand  bool `protobuf:"varint,7,opt,name=refund_by_hand,json=refundByHand,proto3" json:"refund_by_hand,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AdminBillingPayment) Reset() {
@@ -5038,6 +5041,13 @@ func (x *AdminBillingPayment) GetProviderPaymentId() string {
 func (x *AdminBillingPayment) GetLivemode() bool {
 	if x != nil {
 		return x.Livemode
+	}
+	return false
+}
+
+func (x *AdminBillingPayment) GetRefundByHand() bool {
+	if x != nil {
+		return x.RefundByHand
 	}
 	return false
 }
@@ -5165,6 +5175,267 @@ func (x *AdminBillingRefund) GetNeedsReviewSince() *timestamppb.Timestamp {
 	return nil
 }
 
+// A refund made in the provider's interface the reconciliation could not record on its own
+// (ADR-0083, 2026-10-10): «Требует внимания» in the admin. Resolved by POST
+// /api/admin/billing/issues/{id}/import («Записать как долг») or …/dismiss.
+type AdminBillingIssue struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AccountId     string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	WorkspaceName string                 `protobuf:"bytes,4,opt,name=workspace_name,json=workspaceName,proto3" json:"workspace_name,omitempty"`
+	PaymentId     string                 `protobuf:"bytes,5,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"` // our payment it is about ("" when unknown)
+	Provider      string                 `protobuf:"bytes,6,opt,name=provider,proto3" json:"provider,omitempty"`
+	// The provider's refund id (Tochka: {operation}:{order}); a saved card's subscription id is
+	// masked like every admin provider id (…9f8f:7824819).
+	ProviderRef string `protobuf:"bytes,7,opt,name=provider_ref,json=providerRef,proto3" json:"provider_ref,omitempty"`
+	Amount      *Money `protobuf:"bytes,8,opt,name=amount,proto3" json:"amount,omitempty"`
+	// exceeds_refundable | currency_mismatch | unmatched
+	Reason string `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"`
+	// open | imported | dismissed | matched
+	Status        string                 `protobuf:"bytes,10,opt,name=status,proto3" json:"status,omitempty"`
+	OccurredAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"` // at the provider, when known
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ResolvedAt    *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=resolved_at,json=resolvedAt,proto3" json:"resolved_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminBillingIssue) Reset() {
+	*x = AdminBillingIssue{}
+	mi := &file_calaba_v1_billing_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminBillingIssue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminBillingIssue) ProtoMessage() {}
+
+func (x *AdminBillingIssue) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_billing_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminBillingIssue.ProtoReflect.Descriptor instead.
+func (*AdminBillingIssue) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *AdminBillingIssue) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetWorkspaceName() string {
+	if x != nil {
+		return x.WorkspaceName
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetPaymentId() string {
+	if x != nil {
+		return x.PaymentId
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetProviderRef() string {
+	if x != nil {
+		return x.ProviderRef
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetAmount() *Money {
+	if x != nil {
+		return x.Amount
+	}
+	return nil
+}
+
+func (x *AdminBillingIssue) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AdminBillingIssue) GetOccurredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return nil
+}
+
+func (x *AdminBillingIssue) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AdminBillingIssue) GetResolvedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ResolvedAt
+	}
+	return nil
+}
+
+// GET /api/admin/billing/issues?account_id=&status=&cursor=&limit=
+type AdminBillingIssues struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Issues        []*AdminBillingIssue   `protobuf:"bytes,1,rep,name=issues,proto3" json:"issues,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	OpenTotal     int64                  `protobuf:"varint,3,opt,name=open_total,json=openTotal,proto3" json:"open_total,omitempty"` // open issues of every account (the «Требует внимания» badge)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminBillingIssues) Reset() {
+	*x = AdminBillingIssues{}
+	mi := &file_calaba_v1_billing_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminBillingIssues) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminBillingIssues) ProtoMessage() {}
+
+func (x *AdminBillingIssues) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_billing_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminBillingIssues.ProtoReflect.Descriptor instead.
+func (*AdminBillingIssues) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *AdminBillingIssues) GetIssues() []*AdminBillingIssue {
+	if x != nil {
+		return x.Issues
+	}
+	return nil
+}
+
+func (x *AdminBillingIssues) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+func (x *AdminBillingIssues) GetOpenTotal() int64 {
+	if x != nil {
+		return x.OpenTotal
+	}
+	return 0
+}
+
+// POST /api/admin/billing/issues/{id}/import | /dismiss
+type AdminResolveIssueRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminResolveIssueRequest) Reset() {
+	*x = AdminResolveIssueRequest{}
+	mi := &file_calaba_v1_billing_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminResolveIssueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminResolveIssueRequest) ProtoMessage() {}
+
+func (x *AdminResolveIssueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_billing_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminResolveIssueRequest.ProtoReflect.Descriptor instead.
+func (*AdminResolveIssueRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *AdminResolveIssueRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AdminResolveIssueRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 type AdminBillingRefunds struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Refunds       []*AdminBillingRefund  `protobuf:"bytes,1,rep,name=refunds,proto3" json:"refunds,omitempty"`
@@ -5175,7 +5446,7 @@ type AdminBillingRefunds struct {
 
 func (x *AdminBillingRefunds) Reset() {
 	*x = AdminBillingRefunds{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[47]
+	mi := &file_calaba_v1_billing_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5187,7 +5458,7 @@ func (x *AdminBillingRefunds) String() string {
 func (*AdminBillingRefunds) ProtoMessage() {}
 
 func (x *AdminBillingRefunds) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[47]
+	mi := &file_calaba_v1_billing_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5200,7 +5471,7 @@ func (x *AdminBillingRefunds) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingRefunds.ProtoReflect.Descriptor instead.
 func (*AdminBillingRefunds) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{47}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *AdminBillingRefunds) GetRefunds() []*AdminBillingRefund {
@@ -5228,7 +5499,7 @@ type AdminBillingRefundRequest struct {
 
 func (x *AdminBillingRefundRequest) Reset() {
 	*x = AdminBillingRefundRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[48]
+	mi := &file_calaba_v1_billing_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5240,7 +5511,7 @@ func (x *AdminBillingRefundRequest) String() string {
 func (*AdminBillingRefundRequest) ProtoMessage() {}
 
 func (x *AdminBillingRefundRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[48]
+	mi := &file_calaba_v1_billing_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5253,7 +5524,7 @@ func (x *AdminBillingRefundRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingRefundRequest.ProtoReflect.Descriptor instead.
 func (*AdminBillingRefundRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{48}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *AdminBillingRefundRequest) GetRequest() *BillingRefundRequest {
@@ -5287,7 +5558,7 @@ type AdminBillingRefundRequests struct {
 
 func (x *AdminBillingRefundRequests) Reset() {
 	*x = AdminBillingRefundRequests{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[49]
+	mi := &file_calaba_v1_billing_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5299,7 +5570,7 @@ func (x *AdminBillingRefundRequests) String() string {
 func (*AdminBillingRefundRequests) ProtoMessage() {}
 
 func (x *AdminBillingRefundRequests) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[49]
+	mi := &file_calaba_v1_billing_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5312,7 +5583,7 @@ func (x *AdminBillingRefundRequests) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingRefundRequests.ProtoReflect.Descriptor instead.
 func (*AdminBillingRefundRequests) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{49}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *AdminBillingRefundRequests) GetRequests() []*AdminBillingRefundRequest {
@@ -5340,7 +5611,7 @@ type AdminBillingDispute struct {
 
 func (x *AdminBillingDispute) Reset() {
 	*x = AdminBillingDispute{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[50]
+	mi := &file_calaba_v1_billing_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5352,7 +5623,7 @@ func (x *AdminBillingDispute) String() string {
 func (*AdminBillingDispute) ProtoMessage() {}
 
 func (x *AdminBillingDispute) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[50]
+	mi := &file_calaba_v1_billing_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5365,7 +5636,7 @@ func (x *AdminBillingDispute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingDispute.ProtoReflect.Descriptor instead.
 func (*AdminBillingDispute) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{50}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *AdminBillingDispute) GetDispute() *BillingDispute {
@@ -5399,7 +5670,7 @@ type AdminBillingDisputes struct {
 
 func (x *AdminBillingDisputes) Reset() {
 	*x = AdminBillingDisputes{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[51]
+	mi := &file_calaba_v1_billing_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5411,7 +5682,7 @@ func (x *AdminBillingDisputes) String() string {
 func (*AdminBillingDisputes) ProtoMessage() {}
 
 func (x *AdminBillingDisputes) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[51]
+	mi := &file_calaba_v1_billing_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5424,7 +5695,7 @@ func (x *AdminBillingDisputes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingDisputes.ProtoReflect.Descriptor instead.
 func (*AdminBillingDisputes) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{51}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *AdminBillingDisputes) GetDisputes() []*AdminBillingDispute {
@@ -5459,7 +5730,7 @@ type AdminProviderEvent struct {
 
 func (x *AdminProviderEvent) Reset() {
 	*x = AdminProviderEvent{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[52]
+	mi := &file_calaba_v1_billing_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5471,7 +5742,7 @@ func (x *AdminProviderEvent) String() string {
 func (*AdminProviderEvent) ProtoMessage() {}
 
 func (x *AdminProviderEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[52]
+	mi := &file_calaba_v1_billing_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5484,7 +5755,7 @@ func (x *AdminProviderEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminProviderEvent.ProtoReflect.Descriptor instead.
 func (*AdminProviderEvent) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{52}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *AdminProviderEvent) GetId() string {
@@ -5567,7 +5838,7 @@ type AdminProviderEvents struct {
 
 func (x *AdminProviderEvents) Reset() {
 	*x = AdminProviderEvents{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[53]
+	mi := &file_calaba_v1_billing_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5579,7 +5850,7 @@ func (x *AdminProviderEvents) String() string {
 func (*AdminProviderEvents) ProtoMessage() {}
 
 func (x *AdminProviderEvents) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[53]
+	mi := &file_calaba_v1_billing_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5592,7 +5863,7 @@ func (x *AdminProviderEvents) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminProviderEvents.ProtoReflect.Descriptor instead.
 func (*AdminProviderEvents) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{53}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *AdminProviderEvents) GetEvents() []*AdminProviderEvent {
@@ -5623,7 +5894,7 @@ type AdminEnableBillingRequest struct {
 
 func (x *AdminEnableBillingRequest) Reset() {
 	*x = AdminEnableBillingRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[54]
+	mi := &file_calaba_v1_billing_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5635,7 +5906,7 @@ func (x *AdminEnableBillingRequest) String() string {
 func (*AdminEnableBillingRequest) ProtoMessage() {}
 
 func (x *AdminEnableBillingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[54]
+	mi := &file_calaba_v1_billing_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5648,7 +5919,7 @@ func (x *AdminEnableBillingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminEnableBillingRequest.ProtoReflect.Descriptor instead.
 func (*AdminEnableBillingRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{54}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *AdminEnableBillingRequest) GetMarket() string {
@@ -5701,7 +5972,7 @@ type AdminManualCreditRequest struct {
 
 func (x *AdminManualCreditRequest) Reset() {
 	*x = AdminManualCreditRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[55]
+	mi := &file_calaba_v1_billing_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5713,7 +5984,7 @@ func (x *AdminManualCreditRequest) String() string {
 func (*AdminManualCreditRequest) ProtoMessage() {}
 
 func (x *AdminManualCreditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[55]
+	mi := &file_calaba_v1_billing_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5726,7 +5997,7 @@ func (x *AdminManualCreditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminManualCreditRequest.ProtoReflect.Descriptor instead.
 func (*AdminManualCreditRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{55}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *AdminManualCreditRequest) GetAmount() *Money {
@@ -5777,7 +6048,7 @@ type AdminReverseCreditRequest struct {
 
 func (x *AdminReverseCreditRequest) Reset() {
 	*x = AdminReverseCreditRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[56]
+	mi := &file_calaba_v1_billing_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5789,7 +6060,7 @@ func (x *AdminReverseCreditRequest) String() string {
 func (*AdminReverseCreditRequest) ProtoMessage() {}
 
 func (x *AdminReverseCreditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[56]
+	mi := &file_calaba_v1_billing_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5802,7 +6073,7 @@ func (x *AdminReverseCreditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReverseCreditRequest.ProtoReflect.Descriptor instead.
 func (*AdminReverseCreditRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{56}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *AdminReverseCreditRequest) GetReason() string {
@@ -5847,7 +6118,7 @@ type AdminRefundRequest struct {
 
 func (x *AdminRefundRequest) Reset() {
 	*x = AdminRefundRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[57]
+	mi := &file_calaba_v1_billing_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5859,7 +6130,7 @@ func (x *AdminRefundRequest) String() string {
 func (*AdminRefundRequest) ProtoMessage() {}
 
 func (x *AdminRefundRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[57]
+	mi := &file_calaba_v1_billing_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5872,7 +6143,7 @@ func (x *AdminRefundRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminRefundRequest.ProtoReflect.Descriptor instead.
 func (*AdminRefundRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{57}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *AdminRefundRequest) GetAmount() *Money {
@@ -5923,7 +6194,7 @@ type AdminHoldRequest struct {
 
 func (x *AdminHoldRequest) Reset() {
 	*x = AdminHoldRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[58]
+	mi := &file_calaba_v1_billing_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5935,7 +6206,7 @@ func (x *AdminHoldRequest) String() string {
 func (*AdminHoldRequest) ProtoMessage() {}
 
 func (x *AdminHoldRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[58]
+	mi := &file_calaba_v1_billing_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5948,7 +6219,7 @@ func (x *AdminHoldRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminHoldRequest.ProtoReflect.Descriptor instead.
 func (*AdminHoldRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{58}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *AdminHoldRequest) GetHoldUntil() *timestamppb.Timestamp {
@@ -5994,7 +6265,7 @@ type AdminReconcileRequest struct {
 
 func (x *AdminReconcileRequest) Reset() {
 	*x = AdminReconcileRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[59]
+	mi := &file_calaba_v1_billing_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6006,7 +6277,7 @@ func (x *AdminReconcileRequest) String() string {
 func (*AdminReconcileRequest) ProtoMessage() {}
 
 func (x *AdminReconcileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[59]
+	mi := &file_calaba_v1_billing_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6019,7 +6290,7 @@ func (x *AdminReconcileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminReconcileRequest.ProtoReflect.Descriptor instead.
 func (*AdminReconcileRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{59}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *AdminReconcileRequest) GetReason() string {
@@ -6057,7 +6328,7 @@ type AdminDiscountRequest struct {
 
 func (x *AdminDiscountRequest) Reset() {
 	*x = AdminDiscountRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[60]
+	mi := &file_calaba_v1_billing_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6069,7 +6340,7 @@ func (x *AdminDiscountRequest) String() string {
 func (*AdminDiscountRequest) ProtoMessage() {}
 
 func (x *AdminDiscountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[60]
+	mi := &file_calaba_v1_billing_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6082,7 +6353,7 @@ func (x *AdminDiscountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminDiscountRequest.ProtoReflect.Descriptor instead.
 func (*AdminDiscountRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{60}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *AdminDiscountRequest) GetDiscountBps() uint32 {
@@ -6136,7 +6407,7 @@ type AdminPriceVersion struct {
 
 func (x *AdminPriceVersion) Reset() {
 	*x = AdminPriceVersion{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[61]
+	mi := &file_calaba_v1_billing_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6148,7 +6419,7 @@ func (x *AdminPriceVersion) String() string {
 func (*AdminPriceVersion) ProtoMessage() {}
 
 func (x *AdminPriceVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[61]
+	mi := &file_calaba_v1_billing_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6161,7 +6432,7 @@ func (x *AdminPriceVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminPriceVersion.ProtoReflect.Descriptor instead.
 func (*AdminPriceVersion) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{61}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *AdminPriceVersion) GetId() string {
@@ -6230,7 +6501,7 @@ type AdminPriceVersions struct {
 
 func (x *AdminPriceVersions) Reset() {
 	*x = AdminPriceVersions{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[62]
+	mi := &file_calaba_v1_billing_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6242,7 +6513,7 @@ func (x *AdminPriceVersions) String() string {
 func (*AdminPriceVersions) ProtoMessage() {}
 
 func (x *AdminPriceVersions) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[62]
+	mi := &file_calaba_v1_billing_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6255,7 +6526,7 @@ func (x *AdminPriceVersions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminPriceVersions.ProtoReflect.Descriptor instead.
 func (*AdminPriceVersions) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{62}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *AdminPriceVersions) GetPrices() []*AdminPriceVersion {
@@ -6281,7 +6552,7 @@ type AdminCreatePriceRequest struct {
 
 func (x *AdminCreatePriceRequest) Reset() {
 	*x = AdminCreatePriceRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[63]
+	mi := &file_calaba_v1_billing_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6293,7 +6564,7 @@ func (x *AdminCreatePriceRequest) String() string {
 func (*AdminCreatePriceRequest) ProtoMessage() {}
 
 func (x *AdminCreatePriceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[63]
+	mi := &file_calaba_v1_billing_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6306,7 +6577,7 @@ func (x *AdminCreatePriceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminCreatePriceRequest.ProtoReflect.Descriptor instead.
 func (*AdminCreatePriceRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{63}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *AdminCreatePriceRequest) GetMarket() string {
@@ -6372,7 +6643,7 @@ type AdminDecideRefundRequest struct {
 
 func (x *AdminDecideRefundRequest) Reset() {
 	*x = AdminDecideRefundRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[64]
+	mi := &file_calaba_v1_billing_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6384,7 +6655,7 @@ func (x *AdminDecideRefundRequest) String() string {
 func (*AdminDecideRefundRequest) ProtoMessage() {}
 
 func (x *AdminDecideRefundRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[64]
+	mi := &file_calaba_v1_billing_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6397,7 +6668,7 @@ func (x *AdminDecideRefundRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminDecideRefundRequest.ProtoReflect.Descriptor instead.
 func (*AdminDecideRefundRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{64}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *AdminDecideRefundRequest) GetApprove() bool {
@@ -6444,7 +6715,7 @@ type AdminChangeMarketRequest struct {
 
 func (x *AdminChangeMarketRequest) Reset() {
 	*x = AdminChangeMarketRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[65]
+	mi := &file_calaba_v1_billing_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6456,7 +6727,7 @@ func (x *AdminChangeMarketRequest) String() string {
 func (*AdminChangeMarketRequest) ProtoMessage() {}
 
 func (x *AdminChangeMarketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[65]
+	mi := &file_calaba_v1_billing_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6469,7 +6740,7 @@ func (x *AdminChangeMarketRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminChangeMarketRequest.ProtoReflect.Descriptor instead.
 func (*AdminChangeMarketRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{65}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *AdminChangeMarketRequest) GetRequestId() string {
@@ -6520,7 +6791,7 @@ type AdminBillingProvider struct {
 
 func (x *AdminBillingProvider) Reset() {
 	*x = AdminBillingProvider{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[66]
+	mi := &file_calaba_v1_billing_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6532,7 +6803,7 @@ func (x *AdminBillingProvider) String() string {
 func (*AdminBillingProvider) ProtoMessage() {}
 
 func (x *AdminBillingProvider) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[66]
+	mi := &file_calaba_v1_billing_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6545,7 +6816,7 @@ func (x *AdminBillingProvider) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingProvider.ProtoReflect.Descriptor instead.
 func (*AdminBillingProvider) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{66}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *AdminBillingProvider) GetId() string {
@@ -6587,7 +6858,7 @@ type AdminBillingProviders struct {
 
 func (x *AdminBillingProviders) Reset() {
 	*x = AdminBillingProviders{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[67]
+	mi := &file_calaba_v1_billing_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6599,7 +6870,7 @@ func (x *AdminBillingProviders) String() string {
 func (*AdminBillingProviders) ProtoMessage() {}
 
 func (x *AdminBillingProviders) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[67]
+	mi := &file_calaba_v1_billing_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6612,7 +6883,7 @@ func (x *AdminBillingProviders) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingProviders.ProtoReflect.Descriptor instead.
 func (*AdminBillingProviders) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{67}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *AdminBillingProviders) GetProviders() []*AdminBillingProvider {
@@ -6642,7 +6913,7 @@ type AdminSetProviderRequest struct {
 
 func (x *AdminSetProviderRequest) Reset() {
 	*x = AdminSetProviderRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[68]
+	mi := &file_calaba_v1_billing_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6654,7 +6925,7 @@ func (x *AdminSetProviderRequest) String() string {
 func (*AdminSetProviderRequest) ProtoMessage() {}
 
 func (x *AdminSetProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[68]
+	mi := &file_calaba_v1_billing_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6667,7 +6938,7 @@ func (x *AdminSetProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSetProviderRequest.ProtoReflect.Descriptor instead.
 func (*AdminSetProviderRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{68}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *AdminSetProviderRequest) GetRequestId() string {
@@ -6715,13 +6986,15 @@ type AdminBillingMutationResult struct {
 	Refundable    *Money                     `protobuf:"bytes,13,opt,name=refundable,proto3" json:"refundable,omitempty"`                            // refund preview: unused money of the payment
 	Providers     *AdminBillingProviders     `protobuf:"bytes,14,opt,name=providers,proto3" json:"providers,omitempty"`                              // provider switch: the switches after it
 	Compensation  *Money                     `protobuf:"bytes,15,opt,name=compensation,proto3" json:"compensation,omitempty"`                        // plan switch: the rest of the old lots back on the balance
+	Issue         *AdminBillingIssue         `protobuf:"bytes,16,opt,name=issue,proto3" json:"issue,omitempty"`                                      // resolved «Требует внимания» item
+	ManualRefund  *AdminManualRefund         `protobuf:"bytes,17,opt,name=manual_refund,json=manualRefund,proto3" json:"manual_refund,omitempty"`    // refund: the provider does not make it through its API
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AdminBillingMutationResult) Reset() {
 	*x = AdminBillingMutationResult{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[69]
+	mi := &file_calaba_v1_billing_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6733,7 +7006,7 @@ func (x *AdminBillingMutationResult) String() string {
 func (*AdminBillingMutationResult) ProtoMessage() {}
 
 func (x *AdminBillingMutationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[69]
+	mi := &file_calaba_v1_billing_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6746,7 +7019,7 @@ func (x *AdminBillingMutationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingMutationResult.ProtoReflect.Descriptor instead.
 func (*AdminBillingMutationResult) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{69}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *AdminBillingMutationResult) GetPreview() bool {
@@ -6854,6 +7127,100 @@ func (x *AdminBillingMutationResult) GetCompensation() *Money {
 	return nil
 }
 
+func (x *AdminBillingMutationResult) GetIssue() *AdminBillingIssue {
+	if x != nil {
+		return x.Issue
+	}
+	return nil
+}
+
+func (x *AdminBillingMutationResult) GetManualRefund() *AdminManualRefund {
+	if x != nil {
+		return x.ManualRefund
+	}
+	return nil
+}
+
+// A refund the provider makes only in its own interface (ADR-0083 amendment 2026-10-10: Tochka
+// subscription payments, digital ruble): nothing was sent or booked; the operator refunds in the
+// bank and the refund polling books it. The ids are what the operator looks up in the bank; a
+// saved card's subscription id is masked like every admin provider id (…299c).
+type AdminManualRefund struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	PaymentId     string                 `protobuf:"bytes,2,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"` // ours
+	Operation     string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`                  // the provider's operation (masked for a saved card's subscription)
+	Charge        string                 `protobuf:"bytes,4,opt,name=charge,proto3" json:"charge,omitempty"`                        // the charge's order id in the operation ("" for the first payment)
+	Amount        *Money                 `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminManualRefund) Reset() {
+	*x = AdminManualRefund{}
+	mi := &file_calaba_v1_billing_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminManualRefund) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminManualRefund) ProtoMessage() {}
+
+func (x *AdminManualRefund) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_billing_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminManualRefund.ProtoReflect.Descriptor instead.
+func (*AdminManualRefund) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *AdminManualRefund) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *AdminManualRefund) GetPaymentId() string {
+	if x != nil {
+		return x.PaymentId
+	}
+	return ""
+}
+
+func (x *AdminManualRefund) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
+func (x *AdminManualRefund) GetCharge() string {
+	if x != nil {
+		return x.Charge
+	}
+	return ""
+}
+
+func (x *AdminManualRefund) GetAmount() *Money {
+	if x != nil {
+		return x.Amount
+	}
+	return nil
+}
+
 // POST /api/admin/billing/test-clock (BILLING_TEST_CLOCK=1 only, never in production): moves
 // the billing clock used by the scheduler.
 type AdminBillingTestClockRequest struct {
@@ -6866,7 +7233,7 @@ type AdminBillingTestClockRequest struct {
 
 func (x *AdminBillingTestClockRequest) Reset() {
 	*x = AdminBillingTestClockRequest{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[70]
+	mi := &file_calaba_v1_billing_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6878,7 +7245,7 @@ func (x *AdminBillingTestClockRequest) String() string {
 func (*AdminBillingTestClockRequest) ProtoMessage() {}
 
 func (x *AdminBillingTestClockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[70]
+	mi := &file_calaba_v1_billing_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6891,7 +7258,7 @@ func (x *AdminBillingTestClockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingTestClockRequest.ProtoReflect.Descriptor instead.
 func (*AdminBillingTestClockRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{70}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *AdminBillingTestClockRequest) GetNow() *timestamppb.Timestamp {
@@ -6918,7 +7285,7 @@ type AdminBillingTestClockResponse struct {
 
 func (x *AdminBillingTestClockResponse) Reset() {
 	*x = AdminBillingTestClockResponse{}
-	mi := &file_calaba_v1_billing_proto_msgTypes[71]
+	mi := &file_calaba_v1_billing_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6930,7 +7297,7 @@ func (x *AdminBillingTestClockResponse) String() string {
 func (*AdminBillingTestClockResponse) ProtoMessage() {}
 
 func (x *AdminBillingTestClockResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_billing_proto_msgTypes[71]
+	mi := &file_calaba_v1_billing_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6943,7 +7310,7 @@ func (x *AdminBillingTestClockResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminBillingTestClockResponse.ProtoReflect.Descriptor instead.
 func (*AdminBillingTestClockResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{71}
+	return file_calaba_v1_billing_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *AdminBillingTestClockResponse) GetNow() *timestamppb.Timestamp {
@@ -7344,7 +7711,7 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"\x14AdminBillingAccounts\x12:\n" +
 	"\baccounts\x18\x01 \x03(\v2\x1e.calaba.v1.AdminBillingAccountR\baccounts\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
-	"nextCursor\"\xf4\x01\n" +
+	"nextCursor\"\x9a\x02\n" +
 	"\x13AdminBillingPayment\x123\n" +
 	"\apayment\x18\x01 \x01(\v2\x19.calaba.v1.BillingPaymentR\apayment\x12\x1d\n" +
 	"\n" +
@@ -7352,7 +7719,8 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x1a\n" +
 	"\bprovider\x18\x04 \x01(\tR\bprovider\x12.\n" +
 	"\x13provider_payment_id\x18\x05 \x01(\tR\x11providerPaymentId\x12\x1a\n" +
-	"\blivemode\x18\x06 \x01(\bR\blivemode\"s\n" +
+	"\blivemode\x18\x06 \x01(\bR\blivemode\x12$\n" +
+	"\x0erefund_by_hand\x18\a \x01(\bR\frefundByHand\"s\n" +
 	"\x14AdminBillingPayments\x12:\n" +
 	"\bpayments\x18\x01 \x03(\v2\x1e.calaba.v1.AdminBillingPaymentR\bpayments\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
@@ -7362,7 +7730,37 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12,\n" +
 	"\x12provider_refund_id\x18\x03 \x01(\tR\x10providerRefundId\x12H\n" +
-	"\x12needs_review_since\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x10needsReviewSince\"o\n" +
+	"\x12needs_review_since\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x10needsReviewSince\"\xf9\x03\n" +
+	"\x11AdminBillingIssue\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x02 \x01(\tR\taccountId\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12%\n" +
+	"\x0eworkspace_name\x18\x04 \x01(\tR\rworkspaceName\x12\x1d\n" +
+	"\n" +
+	"payment_id\x18\x05 \x01(\tR\tpaymentId\x12\x1a\n" +
+	"\bprovider\x18\x06 \x01(\tR\bprovider\x12!\n" +
+	"\fprovider_ref\x18\a \x01(\tR\vproviderRef\x12(\n" +
+	"\x06amount\x18\b \x01(\v2\x10.calaba.v1.MoneyR\x06amount\x12\x16\n" +
+	"\x06reason\x18\t \x01(\tR\x06reason\x12\x16\n" +
+	"\x06status\x18\n" +
+	" \x01(\tR\x06status\x12;\n" +
+	"\voccurred_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"occurredAt\x129\n" +
+	"\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12;\n" +
+	"\vresolved_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"resolvedAt\"\x8a\x01\n" +
+	"\x12AdminBillingIssues\x124\n" +
+	"\x06issues\x18\x01 \x03(\v2\x1c.calaba.v1.AdminBillingIssueR\x06issues\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\x12\x1d\n" +
+	"\n" +
+	"open_total\x18\x03 \x01(\x03R\topenTotal\"Q\n" +
+	"\x18AdminResolveIssueRequest\x12\x16\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\"o\n" +
 	"\x13AdminBillingRefunds\x127\n" +
 	"\arefunds\x18\x01 \x03(\v2\x1d.calaba.v1.AdminBillingRefundR\arefunds\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
@@ -7499,7 +7897,7 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1d\n" +
 	"\n" +
 	"accept_new\x18\x03 \x01(\bR\tacceptNew\x12\x18\n" +
-	"\apreview\x18\x04 \x01(\bR\apreview\"\xd8\x05\n" +
+	"\apreview\x18\x04 \x01(\bR\apreview\"\xcf\x06\n" +
 	"\x1aAdminBillingMutationResult\x12\x18\n" +
 	"\apreview\x18\x01 \x01(\bR\apreview\x127\n" +
 	"\x0ebalance_before\x18\x02 \x01(\v2\x10.calaba.v1.MoneyR\rbalanceBefore\x125\n" +
@@ -7518,7 +7916,16 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"refundable\x18\r \x01(\v2\x10.calaba.v1.MoneyR\n" +
 	"refundable\x12>\n" +
 	"\tproviders\x18\x0e \x01(\v2 .calaba.v1.AdminBillingProvidersR\tproviders\x124\n" +
-	"\fcompensation\x18\x0f \x01(\v2\x10.calaba.v1.MoneyR\fcompensation\"u\n" +
+	"\fcompensation\x18\x0f \x01(\v2\x10.calaba.v1.MoneyR\fcompensation\x122\n" +
+	"\x05issue\x18\x10 \x01(\v2\x1c.calaba.v1.AdminBillingIssueR\x05issue\x12A\n" +
+	"\rmanual_refund\x18\x11 \x01(\v2\x1c.calaba.v1.AdminManualRefundR\fmanualRefund\"\xae\x01\n" +
+	"\x11AdminManualRefund\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x1d\n" +
+	"\n" +
+	"payment_id\x18\x02 \x01(\tR\tpaymentId\x12\x1c\n" +
+	"\toperation\x18\x03 \x01(\tR\toperation\x12\x16\n" +
+	"\x06charge\x18\x04 \x01(\tR\x06charge\x12(\n" +
+	"\x06amount\x18\x05 \x01(\v2\x10.calaba.v1.MoneyR\x06amount\"u\n" +
 	"\x1cAdminBillingTestClockRequest\x12,\n" +
 	"\x03now\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x03now\x12'\n" +
 	"\x0fadvance_seconds\x18\x02 \x01(\x04R\x0eadvanceSeconds\"c\n" +
@@ -7668,7 +8075,7 @@ func file_calaba_v1_billing_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_billing_proto_enumTypes = make([]protoimpl.EnumInfo, 20)
-var file_calaba_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 73)
+var file_calaba_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 77)
 var file_calaba_v1_billing_proto_goTypes = []any{
 	(PlanSource)(0),                       // 0: calaba.v1.PlanSource
 	(BillingState)(0),                     // 1: calaba.v1.BillingState
@@ -7737,46 +8144,50 @@ var file_calaba_v1_billing_proto_goTypes = []any{
 	(*AdminBillingPayment)(nil),           // 64: calaba.v1.AdminBillingPayment
 	(*AdminBillingPayments)(nil),          // 65: calaba.v1.AdminBillingPayments
 	(*AdminBillingRefund)(nil),            // 66: calaba.v1.AdminBillingRefund
-	(*AdminBillingRefunds)(nil),           // 67: calaba.v1.AdminBillingRefunds
-	(*AdminBillingRefundRequest)(nil),     // 68: calaba.v1.AdminBillingRefundRequest
-	(*AdminBillingRefundRequests)(nil),    // 69: calaba.v1.AdminBillingRefundRequests
-	(*AdminBillingDispute)(nil),           // 70: calaba.v1.AdminBillingDispute
-	(*AdminBillingDisputes)(nil),          // 71: calaba.v1.AdminBillingDisputes
-	(*AdminProviderEvent)(nil),            // 72: calaba.v1.AdminProviderEvent
-	(*AdminProviderEvents)(nil),           // 73: calaba.v1.AdminProviderEvents
-	(*AdminEnableBillingRequest)(nil),     // 74: calaba.v1.AdminEnableBillingRequest
-	(*AdminManualCreditRequest)(nil),      // 75: calaba.v1.AdminManualCreditRequest
-	(*AdminReverseCreditRequest)(nil),     // 76: calaba.v1.AdminReverseCreditRequest
-	(*AdminRefundRequest)(nil),            // 77: calaba.v1.AdminRefundRequest
-	(*AdminHoldRequest)(nil),              // 78: calaba.v1.AdminHoldRequest
-	(*AdminReconcileRequest)(nil),         // 79: calaba.v1.AdminReconcileRequest
-	(*AdminDiscountRequest)(nil),          // 80: calaba.v1.AdminDiscountRequest
-	(*AdminPriceVersion)(nil),             // 81: calaba.v1.AdminPriceVersion
-	(*AdminPriceVersions)(nil),            // 82: calaba.v1.AdminPriceVersions
-	(*AdminCreatePriceRequest)(nil),       // 83: calaba.v1.AdminCreatePriceRequest
-	(*AdminDecideRefundRequest)(nil),      // 84: calaba.v1.AdminDecideRefundRequest
-	(*AdminChangeMarketRequest)(nil),      // 85: calaba.v1.AdminChangeMarketRequest
-	(*AdminBillingProvider)(nil),          // 86: calaba.v1.AdminBillingProvider
-	(*AdminBillingProviders)(nil),         // 87: calaba.v1.AdminBillingProviders
-	(*AdminSetProviderRequest)(nil),       // 88: calaba.v1.AdminSetProviderRequest
-	(*AdminBillingMutationResult)(nil),    // 89: calaba.v1.AdminBillingMutationResult
-	(*AdminBillingTestClockRequest)(nil),  // 90: calaba.v1.AdminBillingTestClockRequest
-	(*AdminBillingTestClockResponse)(nil), // 91: calaba.v1.AdminBillingTestClockResponse
-	nil,                                   // 92: calaba.v1.PayerProfile.RequisitesEntry
-	(*timestamppb.Timestamp)(nil),         // 93: google.protobuf.Timestamp
-	(Plan)(0),                             // 94: calaba.v1.Plan
-	(*PlanLimits)(nil),                    // 95: calaba.v1.PlanLimits
-	(*PlanLimitViolation)(nil),            // 96: calaba.v1.PlanLimitViolation
+	(*AdminBillingIssue)(nil),             // 67: calaba.v1.AdminBillingIssue
+	(*AdminBillingIssues)(nil),            // 68: calaba.v1.AdminBillingIssues
+	(*AdminResolveIssueRequest)(nil),      // 69: calaba.v1.AdminResolveIssueRequest
+	(*AdminBillingRefunds)(nil),           // 70: calaba.v1.AdminBillingRefunds
+	(*AdminBillingRefundRequest)(nil),     // 71: calaba.v1.AdminBillingRefundRequest
+	(*AdminBillingRefundRequests)(nil),    // 72: calaba.v1.AdminBillingRefundRequests
+	(*AdminBillingDispute)(nil),           // 73: calaba.v1.AdminBillingDispute
+	(*AdminBillingDisputes)(nil),          // 74: calaba.v1.AdminBillingDisputes
+	(*AdminProviderEvent)(nil),            // 75: calaba.v1.AdminProviderEvent
+	(*AdminProviderEvents)(nil),           // 76: calaba.v1.AdminProviderEvents
+	(*AdminEnableBillingRequest)(nil),     // 77: calaba.v1.AdminEnableBillingRequest
+	(*AdminManualCreditRequest)(nil),      // 78: calaba.v1.AdminManualCreditRequest
+	(*AdminReverseCreditRequest)(nil),     // 79: calaba.v1.AdminReverseCreditRequest
+	(*AdminRefundRequest)(nil),            // 80: calaba.v1.AdminRefundRequest
+	(*AdminHoldRequest)(nil),              // 81: calaba.v1.AdminHoldRequest
+	(*AdminReconcileRequest)(nil),         // 82: calaba.v1.AdminReconcileRequest
+	(*AdminDiscountRequest)(nil),          // 83: calaba.v1.AdminDiscountRequest
+	(*AdminPriceVersion)(nil),             // 84: calaba.v1.AdminPriceVersion
+	(*AdminPriceVersions)(nil),            // 85: calaba.v1.AdminPriceVersions
+	(*AdminCreatePriceRequest)(nil),       // 86: calaba.v1.AdminCreatePriceRequest
+	(*AdminDecideRefundRequest)(nil),      // 87: calaba.v1.AdminDecideRefundRequest
+	(*AdminChangeMarketRequest)(nil),      // 88: calaba.v1.AdminChangeMarketRequest
+	(*AdminBillingProvider)(nil),          // 89: calaba.v1.AdminBillingProvider
+	(*AdminBillingProviders)(nil),         // 90: calaba.v1.AdminBillingProviders
+	(*AdminSetProviderRequest)(nil),       // 91: calaba.v1.AdminSetProviderRequest
+	(*AdminBillingMutationResult)(nil),    // 92: calaba.v1.AdminBillingMutationResult
+	(*AdminManualRefund)(nil),             // 93: calaba.v1.AdminManualRefund
+	(*AdminBillingTestClockRequest)(nil),  // 94: calaba.v1.AdminBillingTestClockRequest
+	(*AdminBillingTestClockResponse)(nil), // 95: calaba.v1.AdminBillingTestClockResponse
+	nil,                                   // 96: calaba.v1.PayerProfile.RequisitesEntry
+	(*timestamppb.Timestamp)(nil),         // 97: google.protobuf.Timestamp
+	(Plan)(0),                             // 98: calaba.v1.Plan
+	(*PlanLimits)(nil),                    // 99: calaba.v1.PlanLimits
+	(*PlanLimitViolation)(nil),            // 100: calaba.v1.PlanLimitViolation
 }
 var file_calaba_v1_billing_proto_depIdxs = []int32{
 	1,   // 0: calaba.v1.WorkspaceBillingStatus.state:type_name -> calaba.v1.BillingState
-	93,  // 1: calaba.v1.WorkspaceBillingStatus.suspend_at:type_name -> google.protobuf.Timestamp
+	97,  // 1: calaba.v1.WorkspaceBillingStatus.suspend_at:type_name -> google.protobuf.Timestamp
 	0,   // 2: calaba.v1.WorkspaceBillingStatus.source:type_name -> calaba.v1.PlanSource
 	12,  // 3: calaba.v1.PaymentMethodOption.kind:type_name -> calaba.v1.PaymentMethodKind
 	20,  // 4: calaba.v1.PaymentMethodOption.min:type_name -> calaba.v1.Money
 	20,  // 5: calaba.v1.PaymentMethodOption.max:type_name -> calaba.v1.Money
 	11,  // 6: calaba.v1.PayerProfile.type:type_name -> calaba.v1.PayerType
-	92,  // 7: calaba.v1.PayerProfile.requisites:type_name -> calaba.v1.PayerProfile.RequisitesEntry
+	96,  // 7: calaba.v1.PayerProfile.requisites:type_name -> calaba.v1.PayerProfile.RequisitesEntry
 	24,  // 8: calaba.v1.PutPayerRequest.payer:type_name -> calaba.v1.PayerProfile
 	17,  // 9: calaba.v1.PayerFieldSpec.input:type_name -> calaba.v1.PayerFieldInput
 	18,  // 10: calaba.v1.PayerFieldSpec.check:type_name -> calaba.v1.PayerFieldCheck
@@ -7786,165 +8197,173 @@ var file_calaba_v1_billing_proto_depIdxs = []int32{
 	28,  // 14: calaba.v1.PayerSchema.countries:type_name -> calaba.v1.PayerCountrySchema
 	28,  // 15: calaba.v1.PayerSchema.fallback:type_name -> calaba.v1.PayerCountrySchema
 	12,  // 16: calaba.v1.SavedPaymentMethod.kind:type_name -> calaba.v1.PaymentMethodKind
-	93,  // 17: calaba.v1.SavedPaymentMethod.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 17: calaba.v1.SavedPaymentMethod.created_at:type_name -> google.protobuf.Timestamp
 	30,  // 18: calaba.v1.SavedPaymentMethods.methods:type_name -> calaba.v1.SavedPaymentMethod
 	20,  // 19: calaba.v1.AutoTopupAttempt.amount:type_name -> calaba.v1.Money
 	10,  // 20: calaba.v1.AutoTopupAttempt.status:type_name -> calaba.v1.AutoTopupAttemptStatus
-	93,  // 21: calaba.v1.AutoTopupAttempt.created_at:type_name -> google.protobuf.Timestamp
-	93,  // 22: calaba.v1.AutoTopupAttempt.finished_at:type_name -> google.protobuf.Timestamp
+	97,  // 21: calaba.v1.AutoTopupAttempt.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 22: calaba.v1.AutoTopupAttempt.finished_at:type_name -> google.protobuf.Timestamp
 	20,  // 23: calaba.v1.AutoTopupSettings.max_amount:type_name -> calaba.v1.Money
 	20,  // 24: calaba.v1.AutoTopupSettings.default_max_amount:type_name -> calaba.v1.Money
 	20,  // 25: calaba.v1.AutoTopupSettings.limit_max_amount:type_name -> calaba.v1.Money
-	93,  // 26: calaba.v1.AutoTopupSettings.consent_at:type_name -> google.protobuf.Timestamp
-	93,  // 27: calaba.v1.AutoTopupSettings.not_before:type_name -> google.protobuf.Timestamp
+	97,  // 26: calaba.v1.AutoTopupSettings.consent_at:type_name -> google.protobuf.Timestamp
+	97,  // 27: calaba.v1.AutoTopupSettings.not_before:type_name -> google.protobuf.Timestamp
 	20,  // 28: calaba.v1.AutoTopupSettings.next_amount:type_name -> calaba.v1.Money
 	32,  // 29: calaba.v1.AutoTopupSettings.last_attempt:type_name -> calaba.v1.AutoTopupAttempt
 	20,  // 30: calaba.v1.PutAutoTopupRequest.max_amount:type_name -> calaba.v1.Money
 	2,   // 31: calaba.v1.BillingSummary.status:type_name -> calaba.v1.BillingAccountStatus
-	94,  // 32: calaba.v1.BillingSummary.plan:type_name -> calaba.v1.Plan
+	98,  // 32: calaba.v1.BillingSummary.plan:type_name -> calaba.v1.Plan
 	20,  // 33: calaba.v1.BillingSummary.balance:type_name -> calaba.v1.Money
 	20,  // 34: calaba.v1.BillingSummary.debt:type_name -> calaba.v1.Money
 	20,  // 35: calaba.v1.BillingSummary.unit_price:type_name -> calaba.v1.Money
 	20,  // 36: calaba.v1.BillingSummary.daily_cost:type_name -> calaba.v1.Money
-	93,  // 37: calaba.v1.BillingSummary.next_due_at:type_name -> google.protobuf.Timestamp
-	93,  // 38: calaba.v1.BillingSummary.negative_since:type_name -> google.protobuf.Timestamp
-	93,  // 39: calaba.v1.BillingSummary.suspend_at:type_name -> google.protobuf.Timestamp
+	97,  // 37: calaba.v1.BillingSummary.next_due_at:type_name -> google.protobuf.Timestamp
+	97,  // 38: calaba.v1.BillingSummary.negative_since:type_name -> google.protobuf.Timestamp
+	97,  // 39: calaba.v1.BillingSummary.suspend_at:type_name -> google.protobuf.Timestamp
 	23,  // 40: calaba.v1.BillingSummary.methods:type_name -> calaba.v1.PaymentMethodOption
 	33,  // 41: calaba.v1.BillingSummary.auto_topup:type_name -> calaba.v1.AutoTopupSettings
 	24,  // 42: calaba.v1.BillingSummary.payer:type_name -> calaba.v1.PayerProfile
 	30,  // 43: calaba.v1.BillingSummary.saved_methods:type_name -> calaba.v1.SavedPaymentMethod
 	47,  // 44: calaba.v1.BillingSummary.pending_saved_topup:type_name -> calaba.v1.SavedMethodTopup
 	20,  // 45: calaba.v1.BillingSummary.next_unit_price:type_name -> calaba.v1.Money
-	93,  // 46: calaba.v1.BillingSummary.next_price_at:type_name -> google.protobuf.Timestamp
+	97,  // 46: calaba.v1.BillingSummary.next_price_at:type_name -> google.protobuf.Timestamp
 	21,  // 47: calaba.v1.GetBillingResponse.status:type_name -> calaba.v1.WorkspaceBillingStatus
 	35,  // 48: calaba.v1.GetBillingResponse.summary:type_name -> calaba.v1.BillingSummary
 	38,  // 49: calaba.v1.GetBillingResponse.offers:type_name -> calaba.v1.BillingPlanOffer
 	15,  // 50: calaba.v1.GetBillingResponse.sales_mode:type_name -> calaba.v1.BillingSalesMode
 	15,  // 51: calaba.v1.PublicBillingOffers.mode:type_name -> calaba.v1.BillingSalesMode
 	38,  // 52: calaba.v1.PublicBillingOffers.offers:type_name -> calaba.v1.BillingPlanOffer
-	94,  // 53: calaba.v1.BillingPlanOffer.plan:type_name -> calaba.v1.Plan
+	98,  // 53: calaba.v1.BillingPlanOffer.plan:type_name -> calaba.v1.Plan
 	20,  // 54: calaba.v1.BillingPlanOffer.unit_price:type_name -> calaba.v1.Money
-	95,  // 55: calaba.v1.BillingPlanOffer.limits:type_name -> calaba.v1.PlanLimits
-	96,  // 56: calaba.v1.BillingPlanOffer.violations:type_name -> calaba.v1.PlanLimitViolation
+	99,  // 55: calaba.v1.BillingPlanOffer.limits:type_name -> calaba.v1.PlanLimits
+	100, // 56: calaba.v1.BillingPlanOffer.violations:type_name -> calaba.v1.PlanLimitViolation
 	14,  // 57: calaba.v1.BillingQuoteRequest.purpose:type_name -> calaba.v1.BillingQuotePurpose
-	94,  // 58: calaba.v1.BillingQuoteRequest.plan:type_name -> calaba.v1.Plan
+	98,  // 58: calaba.v1.BillingQuoteRequest.plan:type_name -> calaba.v1.Plan
 	14,  // 59: calaba.v1.BillingQuote.purpose:type_name -> calaba.v1.BillingQuotePurpose
-	94,  // 60: calaba.v1.BillingQuote.plan:type_name -> calaba.v1.Plan
+	98,  // 60: calaba.v1.BillingQuote.plan:type_name -> calaba.v1.Plan
 	20,  // 61: calaba.v1.BillingQuote.debt:type_name -> calaba.v1.Money
 	20,  // 62: calaba.v1.BillingQuote.charge:type_name -> calaba.v1.Money
 	20,  // 63: calaba.v1.BillingQuote.compensation:type_name -> calaba.v1.Money
 	20,  // 64: calaba.v1.BillingQuote.to_pay:type_name -> calaba.v1.Money
 	20,  // 65: calaba.v1.BillingQuote.unit_price:type_name -> calaba.v1.Money
-	93,  // 66: calaba.v1.BillingQuote.expires_at:type_name -> google.protobuf.Timestamp
-	94,  // 67: calaba.v1.BillingActionRequest.plan:type_name -> calaba.v1.Plan
-	94,  // 68: calaba.v1.ChangeBillingPlanRequest.plan:type_name -> calaba.v1.Plan
+	97,  // 66: calaba.v1.BillingQuote.expires_at:type_name -> google.protobuf.Timestamp
+	98,  // 67: calaba.v1.BillingActionRequest.plan:type_name -> calaba.v1.Plan
+	98,  // 68: calaba.v1.ChangeBillingPlanRequest.plan:type_name -> calaba.v1.Plan
 	16,  // 69: calaba.v1.ResumeBillingRequest.mode:type_name -> calaba.v1.BillingResumeMode
 	20,  // 70: calaba.v1.CreateTopupRequest.amount:type_name -> calaba.v1.Money
 	20,  // 71: calaba.v1.CreateSavedMethodTopupRequest.amount:type_name -> calaba.v1.Money
 	19,  // 72: calaba.v1.SavedMethodTopup.state:type_name -> calaba.v1.SavedMethodTopupState
 	20,  // 73: calaba.v1.SavedMethodTopup.amount:type_name -> calaba.v1.Money
-	93,  // 74: calaba.v1.SavedMethodTopup.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 74: calaba.v1.SavedMethodTopup.created_at:type_name -> google.protobuf.Timestamp
 	13,  // 75: calaba.v1.CheckoutStatus.state:type_name -> calaba.v1.CheckoutState
 	20,  // 76: calaba.v1.CheckoutStatus.amount:type_name -> calaba.v1.Money
-	93,  // 77: calaba.v1.CheckoutStatus.expires_at:type_name -> google.protobuf.Timestamp
+	97,  // 77: calaba.v1.CheckoutStatus.expires_at:type_name -> google.protobuf.Timestamp
 	3,   // 78: calaba.v1.LedgerEntry.kind:type_name -> calaba.v1.LedgerEntryKind
 	20,  // 79: calaba.v1.LedgerEntry.amount:type_name -> calaba.v1.Money
 	20,  // 80: calaba.v1.LedgerEntry.balance_after:type_name -> calaba.v1.Money
-	93,  // 81: calaba.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
-	93,  // 82: calaba.v1.LedgerEntry.starts_at:type_name -> google.protobuf.Timestamp
-	93,  // 83: calaba.v1.LedgerEntry.ends_at:type_name -> google.protobuf.Timestamp
+	97,  // 81: calaba.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 82: calaba.v1.LedgerEntry.starts_at:type_name -> google.protobuf.Timestamp
+	97,  // 83: calaba.v1.LedgerEntry.ends_at:type_name -> google.protobuf.Timestamp
 	49,  // 84: calaba.v1.LedgerPage.entries:type_name -> calaba.v1.LedgerEntry
 	20,  // 85: calaba.v1.BillingPayment.amount:type_name -> calaba.v1.Money
 	4,   // 86: calaba.v1.BillingPayment.status:type_name -> calaba.v1.PaymentStatus
 	5,   // 87: calaba.v1.BillingPayment.origin:type_name -> calaba.v1.PaymentOrigin
-	93,  // 88: calaba.v1.BillingPayment.succeeded_at:type_name -> google.protobuf.Timestamp
+	97,  // 88: calaba.v1.BillingPayment.succeeded_at:type_name -> google.protobuf.Timestamp
 	20,  // 89: calaba.v1.BillingPayment.refunded:type_name -> calaba.v1.Money
-	93,  // 90: calaba.v1.BillingPayment.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 90: calaba.v1.BillingPayment.created_at:type_name -> google.protobuf.Timestamp
 	51,  // 91: calaba.v1.BillingPaymentPage.payments:type_name -> calaba.v1.BillingPayment
 	20,  // 92: calaba.v1.BillingRefund.amount:type_name -> calaba.v1.Money
 	6,   // 93: calaba.v1.BillingRefund.status:type_name -> calaba.v1.RefundStatus
 	7,   // 94: calaba.v1.BillingRefund.origin:type_name -> calaba.v1.RefundOrigin
-	93,  // 95: calaba.v1.BillingRefund.created_at:type_name -> google.protobuf.Timestamp
-	93,  // 96: calaba.v1.BillingRefund.succeeded_at:type_name -> google.protobuf.Timestamp
+	97,  // 95: calaba.v1.BillingRefund.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 96: calaba.v1.BillingRefund.succeeded_at:type_name -> google.protobuf.Timestamp
 	20,  // 97: calaba.v1.CreateRefundRequest.amount:type_name -> calaba.v1.Money
 	20,  // 98: calaba.v1.BillingRefundRequest.amount:type_name -> calaba.v1.Money
 	8,   // 99: calaba.v1.BillingRefundRequest.status:type_name -> calaba.v1.RefundRequestStatus
-	93,  // 100: calaba.v1.BillingRefundRequest.created_at:type_name -> google.protobuf.Timestamp
-	93,  // 101: calaba.v1.BillingRefundRequest.decided_at:type_name -> google.protobuf.Timestamp
+	97,  // 100: calaba.v1.BillingRefundRequest.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 101: calaba.v1.BillingRefundRequest.decided_at:type_name -> google.protobuf.Timestamp
 	55,  // 102: calaba.v1.BillingRefundRequests.requests:type_name -> calaba.v1.BillingRefundRequest
 	20,  // 103: calaba.v1.BillingDispute.amount:type_name -> calaba.v1.Money
 	9,   // 104: calaba.v1.BillingDispute.status:type_name -> calaba.v1.DisputeStatus
-	93,  // 105: calaba.v1.BillingDispute.created_at:type_name -> google.protobuf.Timestamp
-	93,  // 106: calaba.v1.BillingDispute.closed_at:type_name -> google.protobuf.Timestamp
+	97,  // 105: calaba.v1.BillingDispute.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 106: calaba.v1.BillingDispute.closed_at:type_name -> google.protobuf.Timestamp
 	2,   // 107: calaba.v1.AdminBillingAccount.status:type_name -> calaba.v1.BillingAccountStatus
-	94,  // 108: calaba.v1.AdminBillingAccount.plan:type_name -> calaba.v1.Plan
+	98,  // 108: calaba.v1.AdminBillingAccount.plan:type_name -> calaba.v1.Plan
 	20,  // 109: calaba.v1.AdminBillingAccount.balance:type_name -> calaba.v1.Money
 	20,  // 110: calaba.v1.AdminBillingAccount.debt:type_name -> calaba.v1.Money
-	93,  // 111: calaba.v1.AdminBillingAccount.hold_until:type_name -> google.protobuf.Timestamp
-	93,  // 112: calaba.v1.AdminBillingAccount.negative_since:type_name -> google.protobuf.Timestamp
-	93,  // 113: calaba.v1.AdminBillingAccount.suspend_at:type_name -> google.protobuf.Timestamp
-	93,  // 114: calaba.v1.AdminBillingAccount.next_due_at:type_name -> google.protobuf.Timestamp
-	93,  // 115: calaba.v1.AdminBillingAccount.created_at:type_name -> google.protobuf.Timestamp
-	93,  // 116: calaba.v1.AdminBillingAccount.lapsed_at:type_name -> google.protobuf.Timestamp
+	97,  // 111: calaba.v1.AdminBillingAccount.hold_until:type_name -> google.protobuf.Timestamp
+	97,  // 112: calaba.v1.AdminBillingAccount.negative_since:type_name -> google.protobuf.Timestamp
+	97,  // 113: calaba.v1.AdminBillingAccount.suspend_at:type_name -> google.protobuf.Timestamp
+	97,  // 114: calaba.v1.AdminBillingAccount.next_due_at:type_name -> google.protobuf.Timestamp
+	97,  // 115: calaba.v1.AdminBillingAccount.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 116: calaba.v1.AdminBillingAccount.lapsed_at:type_name -> google.protobuf.Timestamp
 	58,  // 117: calaba.v1.AdminBillingAccountDetails.account:type_name -> calaba.v1.AdminBillingAccount
 	24,  // 118: calaba.v1.AdminBillingAccountDetails.payer:type_name -> calaba.v1.PayerProfile
 	33,  // 119: calaba.v1.AdminBillingAccountDetails.auto_topup:type_name -> calaba.v1.AutoTopupSettings
-	70,  // 120: calaba.v1.AdminBillingAccountDetails.open_disputes:type_name -> calaba.v1.AdminBillingDispute
+	73,  // 120: calaba.v1.AdminBillingAccountDetails.open_disputes:type_name -> calaba.v1.AdminBillingDispute
 	20,  // 121: calaba.v1.AdminBillingAccountDetails.free_advance:type_name -> calaba.v1.Money
 	20,  // 122: calaba.v1.AdminBillingAccountDetails.pending_refunds:type_name -> calaba.v1.Money
 	30,  // 123: calaba.v1.AdminBillingAccountDetails.saved_methods:type_name -> calaba.v1.SavedPaymentMethod
 	60,  // 124: calaba.v1.AdminBillingAccountDetails.custom_plan:type_name -> calaba.v1.AdminCustomPlan
-	95,  // 125: calaba.v1.AdminCustomPlan.limits:type_name -> calaba.v1.PlanLimits
-	81,  // 126: calaba.v1.AdminCustomPlan.prices:type_name -> calaba.v1.AdminPriceVersion
-	95,  // 127: calaba.v1.AdminSetCustomPlanRequest.limits:type_name -> calaba.v1.PlanLimits
+	99,  // 125: calaba.v1.AdminCustomPlan.limits:type_name -> calaba.v1.PlanLimits
+	84,  // 126: calaba.v1.AdminCustomPlan.prices:type_name -> calaba.v1.AdminPriceVersion
+	99,  // 127: calaba.v1.AdminSetCustomPlanRequest.limits:type_name -> calaba.v1.PlanLimits
 	20,  // 128: calaba.v1.AdminSetCustomPlanRequest.unit:type_name -> calaba.v1.Money
-	93,  // 129: calaba.v1.AdminSetCustomPlanRequest.effective_from:type_name -> google.protobuf.Timestamp
-	94,  // 130: calaba.v1.AdminSetAccountPlanRequest.plan:type_name -> calaba.v1.Plan
+	97,  // 129: calaba.v1.AdminSetCustomPlanRequest.effective_from:type_name -> google.protobuf.Timestamp
+	98,  // 130: calaba.v1.AdminSetAccountPlanRequest.plan:type_name -> calaba.v1.Plan
 	58,  // 131: calaba.v1.AdminBillingAccounts.accounts:type_name -> calaba.v1.AdminBillingAccount
 	51,  // 132: calaba.v1.AdminBillingPayment.payment:type_name -> calaba.v1.BillingPayment
 	64,  // 133: calaba.v1.AdminBillingPayments.payments:type_name -> calaba.v1.AdminBillingPayment
 	53,  // 134: calaba.v1.AdminBillingRefund.refund:type_name -> calaba.v1.BillingRefund
-	93,  // 135: calaba.v1.AdminBillingRefund.needs_review_since:type_name -> google.protobuf.Timestamp
-	66,  // 136: calaba.v1.AdminBillingRefunds.refunds:type_name -> calaba.v1.AdminBillingRefund
-	55,  // 137: calaba.v1.AdminBillingRefundRequest.request:type_name -> calaba.v1.BillingRefundRequest
-	68,  // 138: calaba.v1.AdminBillingRefundRequests.requests:type_name -> calaba.v1.AdminBillingRefundRequest
-	57,  // 139: calaba.v1.AdminBillingDispute.dispute:type_name -> calaba.v1.BillingDispute
-	70,  // 140: calaba.v1.AdminBillingDisputes.disputes:type_name -> calaba.v1.AdminBillingDispute
-	93,  // 141: calaba.v1.AdminProviderEvent.received_at:type_name -> google.protobuf.Timestamp
-	93,  // 142: calaba.v1.AdminProviderEvent.processed_at:type_name -> google.protobuf.Timestamp
-	72,  // 143: calaba.v1.AdminProviderEvents.events:type_name -> calaba.v1.AdminProviderEvent
-	94,  // 144: calaba.v1.AdminEnableBillingRequest.plan:type_name -> calaba.v1.Plan
-	20,  // 145: calaba.v1.AdminManualCreditRequest.amount:type_name -> calaba.v1.Money
-	20,  // 146: calaba.v1.AdminRefundRequest.amount:type_name -> calaba.v1.Money
-	93,  // 147: calaba.v1.AdminHoldRequest.hold_until:type_name -> google.protobuf.Timestamp
-	94,  // 148: calaba.v1.AdminPriceVersion.plan:type_name -> calaba.v1.Plan
-	20,  // 149: calaba.v1.AdminPriceVersion.unit:type_name -> calaba.v1.Money
-	93,  // 150: calaba.v1.AdminPriceVersion.effective_from:type_name -> google.protobuf.Timestamp
-	93,  // 151: calaba.v1.AdminPriceVersion.created_at:type_name -> google.protobuf.Timestamp
-	81,  // 152: calaba.v1.AdminPriceVersions.prices:type_name -> calaba.v1.AdminPriceVersion
-	94,  // 153: calaba.v1.AdminCreatePriceRequest.plan:type_name -> calaba.v1.Plan
-	20,  // 154: calaba.v1.AdminCreatePriceRequest.unit:type_name -> calaba.v1.Money
-	93,  // 155: calaba.v1.AdminCreatePriceRequest.effective_from:type_name -> google.protobuf.Timestamp
-	93,  // 156: calaba.v1.AdminBillingProvider.updated_at:type_name -> google.protobuf.Timestamp
-	86,  // 157: calaba.v1.AdminBillingProviders.providers:type_name -> calaba.v1.AdminBillingProvider
-	15,  // 158: calaba.v1.AdminBillingProviders.mode:type_name -> calaba.v1.BillingSalesMode
-	20,  // 159: calaba.v1.AdminBillingMutationResult.balance_before:type_name -> calaba.v1.Money
-	20,  // 160: calaba.v1.AdminBillingMutationResult.balance_after:type_name -> calaba.v1.Money
-	58,  // 161: calaba.v1.AdminBillingMutationResult.account:type_name -> calaba.v1.AdminBillingAccount
-	20,  // 162: calaba.v1.AdminBillingMutationResult.amount:type_name -> calaba.v1.Money
-	66,  // 163: calaba.v1.AdminBillingMutationResult.refunds:type_name -> calaba.v1.AdminBillingRefund
-	68,  // 164: calaba.v1.AdminBillingMutationResult.refund_request:type_name -> calaba.v1.AdminBillingRefundRequest
-	81,  // 165: calaba.v1.AdminBillingMutationResult.price:type_name -> calaba.v1.AdminPriceVersion
-	20,  // 166: calaba.v1.AdminBillingMutationResult.refundable:type_name -> calaba.v1.Money
-	87,  // 167: calaba.v1.AdminBillingMutationResult.providers:type_name -> calaba.v1.AdminBillingProviders
-	20,  // 168: calaba.v1.AdminBillingMutationResult.compensation:type_name -> calaba.v1.Money
-	93,  // 169: calaba.v1.AdminBillingTestClockRequest.now:type_name -> google.protobuf.Timestamp
-	93,  // 170: calaba.v1.AdminBillingTestClockResponse.now:type_name -> google.protobuf.Timestamp
-	171, // [171:171] is the sub-list for method output_type
-	171, // [171:171] is the sub-list for method input_type
-	171, // [171:171] is the sub-list for extension type_name
-	171, // [171:171] is the sub-list for extension extendee
-	0,   // [0:171] is the sub-list for field type_name
+	97,  // 135: calaba.v1.AdminBillingRefund.needs_review_since:type_name -> google.protobuf.Timestamp
+	20,  // 136: calaba.v1.AdminBillingIssue.amount:type_name -> calaba.v1.Money
+	97,  // 137: calaba.v1.AdminBillingIssue.occurred_at:type_name -> google.protobuf.Timestamp
+	97,  // 138: calaba.v1.AdminBillingIssue.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 139: calaba.v1.AdminBillingIssue.resolved_at:type_name -> google.protobuf.Timestamp
+	67,  // 140: calaba.v1.AdminBillingIssues.issues:type_name -> calaba.v1.AdminBillingIssue
+	66,  // 141: calaba.v1.AdminBillingRefunds.refunds:type_name -> calaba.v1.AdminBillingRefund
+	55,  // 142: calaba.v1.AdminBillingRefundRequest.request:type_name -> calaba.v1.BillingRefundRequest
+	71,  // 143: calaba.v1.AdminBillingRefundRequests.requests:type_name -> calaba.v1.AdminBillingRefundRequest
+	57,  // 144: calaba.v1.AdminBillingDispute.dispute:type_name -> calaba.v1.BillingDispute
+	73,  // 145: calaba.v1.AdminBillingDisputes.disputes:type_name -> calaba.v1.AdminBillingDispute
+	97,  // 146: calaba.v1.AdminProviderEvent.received_at:type_name -> google.protobuf.Timestamp
+	97,  // 147: calaba.v1.AdminProviderEvent.processed_at:type_name -> google.protobuf.Timestamp
+	75,  // 148: calaba.v1.AdminProviderEvents.events:type_name -> calaba.v1.AdminProviderEvent
+	98,  // 149: calaba.v1.AdminEnableBillingRequest.plan:type_name -> calaba.v1.Plan
+	20,  // 150: calaba.v1.AdminManualCreditRequest.amount:type_name -> calaba.v1.Money
+	20,  // 151: calaba.v1.AdminRefundRequest.amount:type_name -> calaba.v1.Money
+	97,  // 152: calaba.v1.AdminHoldRequest.hold_until:type_name -> google.protobuf.Timestamp
+	98,  // 153: calaba.v1.AdminPriceVersion.plan:type_name -> calaba.v1.Plan
+	20,  // 154: calaba.v1.AdminPriceVersion.unit:type_name -> calaba.v1.Money
+	97,  // 155: calaba.v1.AdminPriceVersion.effective_from:type_name -> google.protobuf.Timestamp
+	97,  // 156: calaba.v1.AdminPriceVersion.created_at:type_name -> google.protobuf.Timestamp
+	84,  // 157: calaba.v1.AdminPriceVersions.prices:type_name -> calaba.v1.AdminPriceVersion
+	98,  // 158: calaba.v1.AdminCreatePriceRequest.plan:type_name -> calaba.v1.Plan
+	20,  // 159: calaba.v1.AdminCreatePriceRequest.unit:type_name -> calaba.v1.Money
+	97,  // 160: calaba.v1.AdminCreatePriceRequest.effective_from:type_name -> google.protobuf.Timestamp
+	97,  // 161: calaba.v1.AdminBillingProvider.updated_at:type_name -> google.protobuf.Timestamp
+	89,  // 162: calaba.v1.AdminBillingProviders.providers:type_name -> calaba.v1.AdminBillingProvider
+	15,  // 163: calaba.v1.AdminBillingProviders.mode:type_name -> calaba.v1.BillingSalesMode
+	20,  // 164: calaba.v1.AdminBillingMutationResult.balance_before:type_name -> calaba.v1.Money
+	20,  // 165: calaba.v1.AdminBillingMutationResult.balance_after:type_name -> calaba.v1.Money
+	58,  // 166: calaba.v1.AdminBillingMutationResult.account:type_name -> calaba.v1.AdminBillingAccount
+	20,  // 167: calaba.v1.AdminBillingMutationResult.amount:type_name -> calaba.v1.Money
+	66,  // 168: calaba.v1.AdminBillingMutationResult.refunds:type_name -> calaba.v1.AdminBillingRefund
+	71,  // 169: calaba.v1.AdminBillingMutationResult.refund_request:type_name -> calaba.v1.AdminBillingRefundRequest
+	84,  // 170: calaba.v1.AdminBillingMutationResult.price:type_name -> calaba.v1.AdminPriceVersion
+	20,  // 171: calaba.v1.AdminBillingMutationResult.refundable:type_name -> calaba.v1.Money
+	90,  // 172: calaba.v1.AdminBillingMutationResult.providers:type_name -> calaba.v1.AdminBillingProviders
+	20,  // 173: calaba.v1.AdminBillingMutationResult.compensation:type_name -> calaba.v1.Money
+	67,  // 174: calaba.v1.AdminBillingMutationResult.issue:type_name -> calaba.v1.AdminBillingIssue
+	93,  // 175: calaba.v1.AdminBillingMutationResult.manual_refund:type_name -> calaba.v1.AdminManualRefund
+	20,  // 176: calaba.v1.AdminManualRefund.amount:type_name -> calaba.v1.Money
+	97,  // 177: calaba.v1.AdminBillingTestClockRequest.now:type_name -> google.protobuf.Timestamp
+	97,  // 178: calaba.v1.AdminBillingTestClockResponse.now:type_name -> google.protobuf.Timestamp
+	179, // [179:179] is the sub-list for method output_type
+	179, // [179:179] is the sub-list for method input_type
+	179, // [179:179] is the sub-list for extension type_name
+	179, // [179:179] is the sub-list for extension extendee
+	0,   // [0:179] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_billing_proto_init() }
@@ -7960,7 +8379,7 @@ func file_calaba_v1_billing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_billing_proto_rawDesc), len(file_calaba_v1_billing_proto_rawDesc)),
 			NumEnums:      20,
-			NumMessages:   73,
+			NumMessages:   77,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

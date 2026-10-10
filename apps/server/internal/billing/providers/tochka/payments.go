@@ -340,8 +340,8 @@ func (p *Provider) findByLinkID(ctx context.Context, linkID string, since time.T
 	return operation{}, provider.ErrNotFound
 }
 
-// listPerPage is the page size of operation lists.
-const listPerPage = 100
+// listPerPage is the page size of operation lists (the bank's default and maximum; audit M3).
+const listPerPage = 1000
 
 // listPage reads one page of the operations created from the day before `since` to tomorrow
 // (dates of the bank's time zone; the window is widened by a day on each side).
@@ -620,6 +620,12 @@ func (p *Provider) ListRefunds(ctx context.Context, paymentID string) ([]provide
 	op, err := p.getOperation(ctx, "list refunds", paymentID)
 	if err != nil {
 		return nil, err
+	}
+	if op.bound() {
+		// The binding payment of a saved card: Order[] holds the refunds of every charge of the
+		// subscription too. Never attributed to this payment (that imported a charge's refund as a
+		// dashboard refund of the binding payment): SubscriptionRefunds + the core's matching.
+		return nil, nil
 	}
 	return p.refundFacts(op)
 }

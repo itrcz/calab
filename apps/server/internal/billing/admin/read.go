@@ -9,7 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/payer"
+	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -253,6 +255,13 @@ func (h *Handlers) payments(w http.ResponseWriter, r *http.Request) error {
 	for _, row := range rows {
 		p := paymentProto(row.BillingPayment, row.WorkspaceID)
 		p.ProviderPaymentId = mask.apply(p.GetProviderPaymentId())
+		if h.d.Providers != nil {
+			if prov, ok := h.d.Providers.Provider(provider.ID(row.BillingPayment.Provider)); ok {
+				if p.RefundByHand, err = core.RefundByHand(r.Context(), h.d.DB.Q, prov, row.BillingPayment); err != nil {
+					return err
+				}
+			}
+		}
 		out.Payments = append(out.Payments, p)
 	}
 	if len(rows) > 0 {
@@ -302,46 +311,6 @@ func (h *Handlers) refunds(w http.ResponseWriter, r *http.Request) error {
 	}
 	if len(rows) > 0 {
 		out.NextCursor = next(len(rows), lim, rows[len(rows)-1].ID)
-	}
-	httpx.Write(w, http.StatusOK, out)
-	return nil
-}
-
-// refundRequests: GET /api/admin/billing/refund-requests?account_id=&status=&cursor=&limit=
-func (h *Handlers) refundRequests(w http.ResponseWriter, r *http.Request) error {
-	lim, before, err := page(r)
-	if err != nil {
-		return err
-	}
-	acc, err := optUUID(r, "account_id")
-	if err != nil {
-		return err
-	}
-	status, err := oneOf(r, "status", "requested", "approved", "rejected", "withdrawn")
-	if err != nil {
-		return err
-	}
-	ctx := r.Context()
-	rows, err := h.d.DB.Q.AdminListBillingRefundRequests(ctx, sqlc.AdminListBillingRefundRequestsParams{AccountID: acc, Status: status, BeforeID: before, Lim: lim})
-	if err != nil {
-		return err
-	}
-	currencies := map[uuid.UUID]string{}
-	out := &v1.AdminBillingRefundRequests{Requests: make([]*v1.AdminBillingRefundRequest, 0, len(rows))}
-	for _, row := range rows {
-		rr := row.BillingRefundRequest
-		cur, ok := currencies[rr.AccountID]
-		if !ok {
-			a, err := h.d.DB.Q.GetBillingAccount(ctx, rr.AccountID)
-			if err != nil {
-				return err
-			}
-			cur, currencies[rr.AccountID] = a.Currency, a.Currency
-		}
-		out.Requests = append(out.Requests, refundRequestProto(rr, row.WorkspaceID, cur))
-	}
-	if len(rows) > 0 {
-		out.NextCursor = next(len(rows), lim, rows[len(rows)-1].BillingRefundRequest.ID)
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil

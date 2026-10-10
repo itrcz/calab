@@ -21,7 +21,7 @@ func TestBillingAdminGate(t *testing.T) {
 		{"GET", "/api/admin/billing/accounts"},
 		{"POST", "/api/admin/billing/accounts/" + uuid.NewString() + "/manual-credits"},
 		{"POST", "/api/admin/billing/payments/" + uuid.NewString() + "/refunds"},
-		{"POST", "/api/admin/billing/refund-requests/" + uuid.NewString() + "/decide"},
+		{"GET", "/api/admin/billing/issues"},
 		{"POST", "/api/admin/billing/accounts/" + uuid.NewString() + "/admin-debit"},
 		{"POST", "/api/admin/billing/accounts/" + uuid.NewString() + "/market"}, // ADR-0083
 		{"GET", "/api/admin/billing/providers"},

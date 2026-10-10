@@ -137,7 +137,7 @@ func TestOwnerOnly(t *testing.T) {
 	}
 	for _, r := range []struct{ method, path string }{
 		{"POST", "/topups"}, {"GET", "/ledger"}, {"GET", "/payments"}, {"GET", "/payer"}, {"PUT", "/payer"},
-		{"POST", "/quote"}, {"POST", "/activate"}, {"GET", "/refund-requests"}, {"POST", "/refund-requests"},
+		{"POST", "/quote"}, {"POST", "/activate"},
 		{"GET", "/payment-methods"}, {"GET", "/checkouts/" + uuid.NewString()},
 	} {
 		if st, reason := e.do(e.member, r.method, e.base()+r.path, nil, nil); st != 403 || reason != "BILLING_PERMISSION_REQUIRED" {
@@ -197,23 +197,6 @@ func TestOwnerFlow(t *testing.T) {
 	if st, _ := e.do(e.owner, "GET", e.base()+"/payments", nil, &pp); st != 200 || len(pp.GetPayments()) != 1 ||
 		pp.GetPayments()[0].GetReceiptUrl() == "" || pp.GetPayments()[0].GetStatus() != v1.PaymentStatus_PAYMENT_STATUS_SUCCEEDED {
 		t.Fatalf("payments %v", &pp)
-	}
-	rr := &v1.CreateRefundRequest{Amount: &v1.Money{Minor: 6000, Currency: "USD"}, RequestId: uuid.NewString()}
-	if st, r := e.do(e.owner, "POST", e.base()+"/refund-requests", rr, nil); st != 409 || r != "BILLING_REFUND_EXCEEDS_REFUNDABLE" {
-		t.Fatalf("too much: %d %s", st, r)
-	}
-	rr.Amount.Minor, rr.Reason = 1000, "too much"
-	var got v1.BillingRefundRequest
-	if st, r := e.do(e.owner, "POST", e.base()+"/refund-requests", rr, &got); st != 200 || got.GetStatus() != v1.RefundRequestStatus_REFUND_REQUEST_STATUS_REQUESTED {
-		t.Fatalf("refund request: %d %s", st, r)
-	}
-	var again v1.BillingRefundRequest
-	if st, _ := e.do(e.owner, "POST", e.base()+"/refund-requests", rr, &again); st != 200 || again.GetId() != got.GetId() {
-		t.Fatalf("refund request replay: %v", &again)
-	}
-	var list v1.BillingRefundRequests
-	if st, _ := e.do(e.owner, "GET", e.base()+"/refund-requests", nil, &list); st != 200 || len(list.GetRequests()) != 1 {
-		t.Fatalf("refund requests %v", &list)
 	}
 	payer := &v1.PutPayerRequest{Payer: &v1.PayerProfile{Type: v1.PayerType_PAYER_TYPE_COMPANY, Name: "Acme", Country: "ae", Email: "pay@acme.test",
 		Requisites: map[string]string{"trn": "100123456700003"}}}

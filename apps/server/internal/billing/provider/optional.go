@@ -65,3 +65,29 @@ type LivemodeReporter interface {
 type AccountReporter interface {
 	ProviderAccount() string
 }
+
+// HandRefunder is a provider whose subscription payments (a saved card's binding payment and its
+// charges) are refunded only in its own interface (Tochka: «Платежи, поступившие через подписки,
+// можно вернуть только в интернет-банке»). The admin refund never sends such a refund: it shows
+// what to refund in the bank; the refund polling books it once the bank lists it.
+type HandRefunder interface {
+	// RefundsByHand tells from the payment id alone (no call) whether it is refunded only by hand;
+	// savedMethod: the payment is the binding payment of a saved method (billing_payment_methods).
+	RefundsByHand(paymentID string, savedMethod bool) bool
+}
+
+// OperationRefunds are the refunds the provider lists on one payment operation.
+type OperationRefunds struct {
+	// PaymentID: the operation (Tochka: the payment link's operation id, or the subscription's).
+	PaymentID string
+	// Subscription: the refunds do not name the approval they return (provider.HandRefunder).
+	Subscription bool
+	Refunds      []RefundFact
+}
+
+// RefundScanner lists, in one pass, the refunds of every payment operation created since `since`
+// (Tochka: GET payments?customerCode&fromDate returns Order[] of each operation). A provider
+// that sends no refund webhooks is read this way on a schedule (ADR-0083, 2026-10-10).
+type RefundScanner interface {
+	ScanRefunds(ctx context.Context, since time.Time) ([]OperationRefunds, error)
+}

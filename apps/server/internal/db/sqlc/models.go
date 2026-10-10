@@ -310,6 +310,22 @@ type BillingProviderEvent struct {
 	Error           string
 }
 
+type BillingProviderIssue struct {
+	ID          uuid.UUID
+	AccountID   uuid.UUID
+	PaymentID   *uuid.UUID
+	Provider    string
+	ProviderRef string
+	AmountMinor int64
+	Currency    string
+	Reason      string
+	Status      string
+	OccurredAt  *time.Time
+	CreatedAt   time.Time
+	ResolvedAt  *time.Time
+	ResolvedBy  *uuid.UUID
+}
+
 type BillingProviderSetting struct {
 	Provider  string
 	AcceptNew bool
@@ -335,6 +351,7 @@ type BillingRefund struct {
 	SucceededAt      *time.Time
 	NeedsReviewAt    *time.Time
 	DispatchedAt     *time.Time
+	Reserved         bool
 }
 
 type BillingRefundRequest struct {

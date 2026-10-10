@@ -45,8 +45,6 @@ var OwnerRoutes = []string{
 	"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}", // its state (re-reads the provider)
 	"GET /api/workspaces/{id}/billing/ledger",
 	"GET /api/workspaces/{id}/billing/payments",
-	"GET /api/workspaces/{id}/billing/refund-requests",
-	"POST /api/workspaces/{id}/billing/refund-requests",
 }
 
 // PublicRoutes need no session.
@@ -65,7 +63,6 @@ var AdminRoutes = []string{
 	"GET /api/admin/billing/accounts/{id}/ledger",
 	"GET /api/admin/billing/payments",
 	"GET /api/admin/billing/refunds",
-	"GET /api/admin/billing/refund-requests",
 	"GET /api/admin/billing/disputes",
 	"GET /api/admin/billing/events",
 	"POST /api/admin/billing/workspaces/{id}/enable",
@@ -73,7 +70,6 @@ var AdminRoutes = []string{
 	"POST /api/admin/billing/accounts/{id}/manual-credits/{creditId}/reverse",
 	"POST /api/admin/billing/accounts/{id}/admin-debit",
 	"POST /api/admin/billing/payments/{id}/refunds",
-	"POST /api/admin/billing/refund-requests/{id}/decide",
 	"POST /api/admin/billing/accounts/{id}/hold",
 	"POST /api/admin/billing/accounts/{id}/reconcile",
 	"POST /api/admin/billing/auto-topup/reconcile", // restore reconcile of auto-topup (T7)
@@ -83,6 +79,9 @@ var AdminRoutes = []string{
 	"POST /api/admin/billing/accounts/{id}/market",     // ADR-0083: before the first payment only
 	"GET /api/admin/billing/providers",                 // ADR-0083: «принимать новых клиентов»
 	"PUT /api/admin/billing/providers/{provider}",
+	"GET /api/admin/billing/issues",
+	"POST /api/admin/billing/issues/{id}/import",
+	"POST /api/admin/billing/issues/{id}/dismiss",
 	"GET /api/admin/billing/prices",
 	"POST /api/admin/billing/prices",
 	"POST /api/admin/billing/test-clock", // BILLING_TEST_CLOCK=1 only, else 404

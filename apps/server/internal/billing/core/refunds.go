@@ -84,9 +84,10 @@ type Refundable struct {
 	DisputeHold bool   // an open dispute: no refunds now (billing.ErrDisputeHold)
 }
 
-// RefundableForPayment returns the unused part of the payment's own funding lot. Money already spent
-// on delivered service is not refundable; cancelling unused seat-days first (CancelSeats)
-// gives their money back to their lots, which raises this. Admin credit is never refundable.
+// RefundableForPayment returns the unused part of the payment's own funding lot (the reserving
+// refund model). Money already spent on delivered service is not in it; cancelling unused
+// seat-days first (CancelSeats) gives their money back to their lots, which raises this. Admin
+// credit is never refundable. The admin refund uses RefundLeft.
 func (c *Core) RefundableForPayment(ctx context.Context, q *sqlc.Queries, paymentID uuid.UUID) (Refundable, error) {
 	pay, err := q.GetBillingPayment(ctx, paymentID)
 	if err != nil {
@@ -105,6 +106,34 @@ func (c *Core) RefundableForPayment(ctx context.Context, q *sqlc.Queries, paymen
 		return Refundable{}, err
 	}
 	r.Minor = lotFree(lot)
+	return r, nil
+}
+
+// RefundLeft returns what an admin refund may still return of the payment (the synchronous
+// model, owner 2026-10-10): paid − refunded − pending refunds without a reservation. It may
+// exceed the unused money: the spent part becomes debt when the refund is executed.
+func (c *Core) RefundLeft(ctx context.Context, q *sqlc.Queries, paymentID uuid.UUID) (Refundable, error) {
+	pay, err := q.GetBillingPayment(ctx, paymentID)
+	if err != nil {
+		return Refundable{}, err
+	}
+	acc, err := q.GetBillingAccount(ctx, pay.AccountID)
+	if err != nil {
+		return Refundable{}, err
+	}
+	r := Refundable{Currency: acc.Currency, DisputeHold: acc.DisputeHold}
+	lot, err := q.GetBillingFundingLotByPayment(ctx, &pay.ID)
+	if db.IsNotFound(err) {
+		return r, nil
+	}
+	if err != nil {
+		return Refundable{}, err
+	}
+	pending, err := q.SumUnreservedPendingBillingRefunds(ctx, pay.ID)
+	if err != nil {
+		return Refundable{}, err
+	}
+	r.Minor = max(lot.AmountMinor-lot.RefundedMinor-pending, 0)
 	return r, nil
 }
 
@@ -238,10 +267,20 @@ func (c *Core) applyRefund(s *state, ref sqlc.BillingRefund, status string, prov
 	}
 	switch status {
 	case RefundSucceeded:
+		if !ref.Reserved {
+			// The synchronous model: nothing was taken while it was pending — the money leaves
+			// the balance now (the spent part of the lot becomes debt, the balance may go negative).
+			if err := s.takeRefund(ref); err != nil {
+				return ref, s.acc, err
+			}
+		}
 		if _, err := s.q.AddBillingPaymentRefunded(s.ctx, sqlc.AddBillingPaymentRefundedParams{Delta: ref.AmountMinor, Now: s.now, ID: ref.PaymentID}); err != nil {
 			return ref, s.acc, err
 		}
 	case RefundFailed, RefundCanceled:
+		if !ref.Reserved {
+			break // nothing was taken: nothing to give back
+		}
 		e, err := s.q.GetBillingLedgerEntryByKey(s.ctx, "refund:"+ref.ID.String())
 		if err != nil {
 			return ref, s.acc, err
