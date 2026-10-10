@@ -78,8 +78,10 @@ var AdminRoutes = []string{
 	"POST /api/admin/billing/accounts/{id}/reconcile",
 	"POST /api/admin/billing/auto-topup/reconcile", // restore reconcile of auto-topup (T7)
 	"PUT /api/admin/billing/accounts/{id}/discount",
-	"POST /api/admin/billing/accounts/{id}/market", // ADR-0083: before the first payment only
-	"GET /api/admin/billing/providers",             // ADR-0083: «принимать новых клиентов»
+	"PUT /api/admin/billing/accounts/{id}/custom-plan", // ADR-0086 «Индивидуальный тариф»
+	"POST /api/admin/billing/accounts/{id}/plan",       // ADR-0086: back to a standard plan
+	"POST /api/admin/billing/accounts/{id}/market",     // ADR-0083: before the first payment only
+	"GET /api/admin/billing/providers",                 // ADR-0083: «принимать новых клиентов»
 	"PUT /api/admin/billing/providers/{provider}",
 	"GET /api/admin/billing/prices",
 	"POST /api/admin/billing/prices",

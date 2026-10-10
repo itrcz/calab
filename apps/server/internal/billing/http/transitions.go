@@ -3,6 +3,8 @@ package billinghttp
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -59,6 +61,18 @@ func (s *Service) checkQuoteTransition(ctx context.Context, c caller, purpose v1
 		return nil
 	}
 	return s.cfg.Plans.CheckTransition(ctx, s.db.Q, c.ws.ID, target, s.now(ctx), false)
+}
+
+// customLimits are the limits of the workspace's custom plan row (nil without plans or a row).
+func (s *Service) customLimits(ctx context.Context, ws uuid.UUID) *v1.PlanLimits {
+	if s.cfg.Plans == nil {
+		return nil
+	}
+	row, err := s.db.Q.GetWorkspacePlan(ctx, ws)
+	if err != nil || row.Plan != core.PlanCustom {
+		return nil
+	}
+	return s.cfg.Plans.CustomLimits(ctx, row).Proto()
 }
 
 // markViolations fills BillingPlanOffer.violations of the plan screen.

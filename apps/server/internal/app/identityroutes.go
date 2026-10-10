@@ -475,6 +475,8 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/admin/billing/accounts/{id}/reconcile":                         scopeAdmin,
 	"POST /api/admin/billing/auto-topup/reconcile":                            scopeAdmin,
 	"PUT /api/admin/billing/accounts/{id}/discount":                           scopeAdmin,
+	"PUT /api/admin/billing/accounts/{id}/custom-plan":                        scopeAdmin,
+	"POST /api/admin/billing/accounts/{id}/plan":                              scopeAdmin,
 	"GET /api/admin/billing/prices":                                           scopeAdmin,
 	"POST /api/admin/billing/prices":                                          scopeAdmin,
 	"POST /api/admin/billing/test-clock":                                      scopeAdmin,

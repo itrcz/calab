@@ -51,4 +51,9 @@ message WorkspacePlan {
   google.protobuf.Timestamp valid_until = 3; // unset = no expiry
   WorkspaceIdentityEntitlements identity_entitlements = 5;
   bool expired = 4;                        // valid_until passed: the FREE limits apply
+  // PLAN_CUSTOM only (ADR-0086 «Индивидуальный тариф»): the name a superadmin gave the plan
+  // (<= 40 characters) and its short description (<= 140). Empty name = the client's localized
+  // «Индивидуальный» / «Custom». Every member sees them (no money here).
+  string display_name = 6;
+  string description = 7;
 }

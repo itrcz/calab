@@ -82,6 +82,8 @@ func planProto(p string) v1.Plan {
 		return v1.Plan_PLAN_ENTERPRISE
 	case core.PlanFree:
 		return v1.Plan_PLAN_FREE
+	case core.PlanCustom:
+		return v1.Plan_PLAN_CUSTOM
 	}
 	return v1.Plan_PLAN_UNSPECIFIED
 }

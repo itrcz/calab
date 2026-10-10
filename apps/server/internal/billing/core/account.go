@@ -416,7 +416,9 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 	if mode != ResumeFree && mode != ResumePaid {
 		return sqlc.BillingAccount{}, httpx.Validation("mode", "mode must be free or paid")
 	}
-	if mode == ResumePaid && !ValidPaidPlan(plan) {
+	// A custom plan resumes only as the account's own (a superadmin assigned it; the guard checks
+	// the workspace is still on it).
+	if mode == ResumePaid && !ValidPaidPlan(plan) && plan != PlanCustom {
 		return sqlc.BillingAccount{}, badPlan()
 	}
 	run := c.run
@@ -426,6 +428,9 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 	return run(ctx, accountID, actor, func(s *state) error {
 		if mode == ResumePaid && s.acc.Status == StatusActive && s.acc.Plan == plan {
 			return nil // replay
+		}
+		if mode == ResumePaid && plan == PlanCustom && s.acc.Plan != PlanCustom {
+			return badPlan()
 		}
 		if mode == ResumeFree && s.acc.Status == StatusStopped && s.acc.BalanceMinor >= 0 {
 			s.clearEpisode()

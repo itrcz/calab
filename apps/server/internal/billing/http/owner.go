@@ -97,7 +97,15 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 	if resp.Offers, err = s.catalog(ctx, catalog, int(c.acc.DiscountBps)); err != nil {
 		return nil, err
 	}
-	return resp, s.markViolations(ctx, c, resp.Offers)
+	if err := s.markViolations(ctx, c, resp.Offers); err != nil {
+		return nil, err
+	}
+	if c.acc.Plan == core.PlanCustom && sum.GetUnitPrice() != nil {
+		// ADR-0086 «Индивидуальный тариф»: the assigned plan next to the catalog (name in Workspace.plan).
+		resp.Offers = append(resp.Offers, &v1.BillingPlanOffer{Plan: v1.Plan_PLAN_CUSTOM, UnitPrice: sum.GetUnitPrice(),
+			Limits: s.customLimits(ctx, c.ws.ID), Market: c.acc.Market})
+	}
+	return resp, nil
 }
 
 // catalog are the plan offers of every market of markets.
@@ -149,6 +157,14 @@ func (s *Service) summary(ctx context.Context, acc0 sqlc.BillingAccount) (*v1.Bi
 		}
 		if qt.DailyMinor > 0 {
 			out.ForecastDays = int32(min(qt.DaysLeft, 1<<30)) //nolint:gosec // clamped
+		}
+		if acc.Plan == core.PlanCustom {
+			out.DiscountBps = 0 // ADR-0086: the custom price is final
+		}
+		if unit, at, ok, err := s.core.NextPriceIn(ctx, q, acc, s.now(ctx)); err != nil {
+			return err
+		} else if ok {
+			out.NextUnitPrice, out.NextPriceAt = mon(unit, cur), timestamppb.New(at)
 		}
 		payerType, country := "", ""
 		if p, err := q.GetBillingPayer(ctx, acc.ID); err == nil {

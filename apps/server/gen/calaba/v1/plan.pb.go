@@ -298,8 +298,13 @@ type WorkspacePlan struct {
 	ValidUntil           *timestamppb.Timestamp         `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"` // unset = no expiry
 	IdentityEntitlements *WorkspaceIdentityEntitlements `protobuf:"bytes,5,opt,name=identity_entitlements,json=identityEntitlements,proto3" json:"identity_entitlements,omitempty"`
 	Expired              bool                           `protobuf:"varint,4,opt,name=expired,proto3" json:"expired,omitempty"` // valid_until passed: the FREE limits apply
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// PLAN_CUSTOM only (ADR-0086 «Индивидуальный тариф»): the name a superadmin gave the plan
+	// (<= 40 characters) and its short description (<= 140). Empty name = the client's localized
+	// «Индивидуальный» / «Custom». Every member sees them (no money here).
+	DisplayName   string `protobuf:"bytes,6,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description   string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorkspacePlan) Reset() {
@@ -367,6 +372,20 @@ func (x *WorkspacePlan) GetExpired() bool {
 	return false
 }
 
+func (x *WorkspacePlan) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *WorkspacePlan) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
@@ -397,14 +416,16 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x13checklists_disabled\x18\x1d \x01(\bR\x12checklistsDisabled\x126\n" +
 	"\x17board_webhooks_disabled\x18\x1e \x01(\bR\x15boardWebhooksDisabled\x12-\n" +
 	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabled\x121\n" +
-	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\x99\x02\n" +
+	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +
 	"\vvalid_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"validUntil\x12]\n" +
 	"\x15identity_entitlements\x18\x05 \x01(\v2(.calaba.v1.WorkspaceIdentityEntitlementsR\x14identityEntitlements\x12\x18\n" +
-	"\aexpired\x18\x04 \x01(\bR\aexpired*`\n" +
+	"\aexpired\x18\x04 \x01(\bR\aexpired\x12!\n" +
+	"\fdisplay_name\x18\x06 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\a \x01(\tR\vdescription*`\n" +
 	"\x04Plan\x12\x14\n" +
 	"\x10PLAN_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tPLAN_FREE\x10\x01\x12\r\n" +

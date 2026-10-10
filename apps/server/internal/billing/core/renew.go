@@ -78,7 +78,7 @@ func (s *state) renewAt(b time.Time) error {
 	}
 	end := b.Add(billing.Day)
 	if sa := s.acc.SuspendAt; sa != nil && sa.After(b) && end.After(*sa) {
-		_, unit, err := s.unitPrice(s.acc.Plan, b)
+		_, unit, _, err := s.unitPrice(s.acc.Plan, b)
 		if err != nil {
 			return err
 		}

@@ -8,10 +8,12 @@
 -- owner email (pattern is q with LIKE wildcards escaped); an empty status matches any.
 SELECT sqlc.embed(a), coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
     (SELECT count(*) FROM workspace_members m JOIN users mu ON mu.id = m.user_id
-     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members
+     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members,
+    coalesce(wp.display_name, '')::text AS plan_display_name
 FROM billing_accounts a
 LEFT JOIN workspaces w ON w.id = a.workspace_id
 LEFT JOIN users u ON u.id = w.owner_id
+LEFT JOIN workspace_plans wp ON wp.workspace_id = a.workspace_id AND wp.plan = 'custom'
 WHERE (sqlc.arg('status')::text = '' OR a.status = sqlc.arg('status')::text)
   AND (sqlc.narg('before_id')::uuid IS NULL OR a.id < sqlc.narg('before_id')::uuid)
   AND (sqlc.arg('q')::text = ''
@@ -24,10 +26,12 @@ LIMIT sqlc.arg('lim');
 -- name: AdminGetBillingAccount :one
 SELECT sqlc.embed(a), coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
     (SELECT count(*) FROM workspace_members m JOIN users mu ON mu.id = m.user_id
-     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members
+     WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members,
+    coalesce(wp.display_name, '')::text AS plan_display_name
 FROM billing_accounts a
 LEFT JOIN workspaces w ON w.id = a.workspace_id
 LEFT JOIN users u ON u.id = w.owner_id
+LEFT JOIN workspace_plans wp ON wp.workspace_id = a.workspace_id AND wp.plan = 'custom'
 WHERE a.id = $1;
 
 -- name: AdminListBillingLedger :many

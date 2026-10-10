@@ -145,16 +145,20 @@ RETURNING *;
 
 -- name: UpsertBillingWorkspacePlan :one
 -- The plan billing gives the workspace (source = billing: the manual admin API refuses it).
-INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source)
-VALUES (sqlc.arg('workspace_id'), sqlc.arg('plan'), NULL, NULL, 'billing', sqlc.narg('updated_by'), sqlc.arg('now')::timestamptz, 'billing')
+-- limits / display_name / description: the custom plan's definition (NULL / '' otherwise).
+INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source, display_name, description)
+VALUES (sqlc.arg('workspace_id'), sqlc.arg('plan'), sqlc.narg('limits'), NULL, sqlc.arg('note'), sqlc.narg('updated_by'),
+    sqlc.arg('now')::timestamptz, 'billing', sqlc.arg('display_name'), sqlc.arg('description'))
 ON CONFLICT (workspace_id) DO UPDATE SET
-    plan = EXCLUDED.plan, limits = NULL, valid_until = NULL, note = EXCLUDED.note,
-    updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at, source = 'billing'
+    plan = EXCLUDED.plan, limits = EXCLUDED.limits, valid_until = NULL, note = EXCLUDED.note,
+    updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at, source = 'billing',
+    display_name = EXCLUDED.display_name, description = EXCLUDED.description
 RETURNING *;
 
 -- name: InsertBillingPlanLog :exec
-INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note, source, created_at)
-VALUES (sqlc.arg('workspace_id'), sqlc.narg('actor_id'), sqlc.arg('plan'), '{}', NULL, 'billing', 'billing', sqlc.arg('now')::timestamptz);
+INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note, source, created_at, display_name, description)
+VALUES (sqlc.arg('workspace_id'), sqlc.narg('actor_id'), sqlc.arg('plan'), sqlc.arg('limits'), NULL, sqlc.arg('note'), 'billing',
+    sqlc.arg('now')::timestamptz, sqlc.arg('display_name'), sqlc.arg('description'));
 
 -- name: LockBillingRefund :one
 SELECT * FROM billing_refunds WHERE id = $1 FOR UPDATE;

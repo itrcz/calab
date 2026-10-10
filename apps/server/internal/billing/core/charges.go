@@ -20,10 +20,11 @@ const (
 	ReasonResume     = "resume"
 )
 
-// SKU is the daily seat SKU of a paid plan.
+// SKU is the daily seat SKU of a paid plan (seat.custom.day: the account's own price versions).
 func SKU(plan string) string { return "seat." + plan + ".day" }
 
-// ValidPaidPlan reports a plan an account can buy seats of.
+// ValidPaidPlan reports a self-serve paid plan (the owner's choice). The custom plan is paid too,
+// but only a superadmin puts an account on it (AssignPlanIn).
 func ValidPaidPlan(plan string) bool { return plan == PlanTeam || plan == PlanEnterprise }
 
 func planRank(plan string) int {
@@ -63,20 +64,29 @@ func CompensationTarget(amount int64, qty int32, lot time.Duration, canceledSeat
 	return money.Prorate(amount, canceledSeatUs, whole)
 }
 
-// unitPrice is the per-seat day price of plan at `at` after the account discount.
-func (s *state) unitPrice(plan string, at time.Time) (sqlc.BillingPrice, int64, error) {
-	p, err := s.q.GetBillingPriceAt(s.ctx, sqlc.GetBillingPriceAtParams{Market: s.acc.Market, Sku: SKU(plan), At: at})
+// unitPrice is the per-seat day price of plan at `at`: the catalog price after the account
+// discount, or the account's own custom price, which is final (ADR-0086 «Индивидуальный тариф»:
+// no discount). bps is the discount applied.
+func (s *state) unitPrice(plan string, at time.Time) (p sqlc.BillingPrice, unit int64, bps int32, err error) {
+	if plan == PlanCustom {
+		p, err = s.q.GetBillingCustomPriceAt(s.ctx, sqlc.GetBillingCustomPriceAtParams{AccountID: &s.acc.ID, At: at})
+	} else {
+		p, err = s.q.GetBillingPriceAt(s.ctx, sqlc.GetBillingPriceAtParams{Market: s.acc.Market, Sku: SKU(plan), At: at})
+	}
 	if db.IsNotFound(err) {
-		return p, 0, fmt.Errorf("billing: no price of %s/%s at %s", s.acc.Market, SKU(plan), at.Format(time.RFC3339))
+		return p, 0, 0, fmt.Errorf("billing: no price of %s/%s for account %s at %s", s.acc.Market, SKU(plan), s.acc.ID, at.Format(time.RFC3339))
 	}
 	if err != nil {
-		return p, 0, err
+		return p, 0, 0, err
 	}
 	if p.Currency != s.acc.Currency {
-		return p, 0, fmt.Errorf("billing: price %s in %s for a %s account", p.ID, p.Currency, s.acc.Currency)
+		return p, 0, 0, fmt.Errorf("billing: price %s in %s for a %s account", p.ID, p.Currency, s.acc.Currency)
 	}
-	unit, err := money.ApplyDiscountBps(p.UnitMinor, int(s.acc.DiscountBps))
-	return p, unit, err
+	if plan == PlanCustom {
+		return p, p.UnitMinor, 0, nil
+	}
+	unit, err = money.ApplyDiscountBps(p.UnitMinor, int(s.acc.DiscountBps))
+	return p, unit, s.acc.DiscountBps, err
 }
 
 // capacity is the number of seats of plan covering t.
@@ -144,7 +154,7 @@ func (s *state) buy(r buyReq) (sqlc.BillingCharge, bool, error) {
 	} else if !db.IsNotFound(err) {
 		return ch, false, err
 	}
-	price, unit, err := s.unitPrice(r.plan, r.start)
+	price, unit, bps, err := s.unitPrice(r.plan, r.start)
 	if err != nil {
 		return sqlc.BillingCharge{}, false, err
 	}
@@ -162,7 +172,7 @@ func (s *state) buy(r buyReq) (sqlc.BillingCharge, bool, error) {
 	}
 	ch, err := s.q.InsertBillingCharge(s.ctx, sqlc.InsertBillingChargeParams{
 		AccountID: s.acc.ID, Sku: SKU(r.plan), Plan: r.plan, PriceID: price.ID, Qty: r.qty, UnitMinor: unit,
-		DiscountBps: s.acc.DiscountBps, StartsAt: r.start, EndsAt: r.end, AmountMinor: amount, UnfundedMinor: rest,
+		DiscountBps: bps, StartsAt: r.start, EndsAt: r.end, AmountMinor: amount, UnfundedMinor: rest,
 		Reason: r.reason, BusinessKey: r.key, ActorID: s.actor,
 	})
 	if err != nil {

@@ -393,15 +393,20 @@ func (q *Queries) GetBillingRefund(ctx context.Context, id uuid.UUID) (BillingRe
 }
 
 const insertBillingPlanLog = `-- name: InsertBillingPlanLog :exec
-INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note, source, created_at)
-VALUES ($1, $2, $3, '{}', NULL, 'billing', 'billing', $4::timestamptz)
+INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note, source, created_at, display_name, description)
+VALUES ($1, $2, $3, $4, NULL, $5, 'billing',
+    $6::timestamptz, $7, $8)
 `
 
 type InsertBillingPlanLogParams struct {
 	WorkspaceID uuid.UUID
 	ActorID     *uuid.UUID
 	Plan        string
+	Limits      []byte
+	Note        string
 	Now         time.Time
+	DisplayName string
+	Description string
 }
 
 func (q *Queries) InsertBillingPlanLog(ctx context.Context, arg InsertBillingPlanLogParams) error {
@@ -409,7 +414,11 @@ func (q *Queries) InsertBillingPlanLog(ctx context.Context, arg InsertBillingPla
 		arg.WorkspaceID,
 		arg.ActorID,
 		arg.Plan,
+		arg.Limits,
+		arg.Note,
 		arg.Now,
+		arg.DisplayName,
+		arg.Description,
 	)
 	return err
 }
@@ -886,28 +895,39 @@ func (q *Queries) UnfundBillingCharge(ctx context.Context, arg UnfundBillingChar
 }
 
 const upsertBillingWorkspacePlan = `-- name: UpsertBillingWorkspacePlan :one
-INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source)
-VALUES ($1, $2, NULL, NULL, 'billing', $3, $4::timestamptz, 'billing')
+INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source, display_name, description)
+VALUES ($1, $2, $3, NULL, $4, $5,
+    $6::timestamptz, 'billing', $7, $8)
 ON CONFLICT (workspace_id) DO UPDATE SET
-    plan = EXCLUDED.plan, limits = NULL, valid_until = NULL, note = EXCLUDED.note,
-    updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at, source = 'billing'
-RETURNING workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source
+    plan = EXCLUDED.plan, limits = EXCLUDED.limits, valid_until = NULL, note = EXCLUDED.note,
+    updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at, source = 'billing',
+    display_name = EXCLUDED.display_name, description = EXCLUDED.description
+RETURNING workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source, display_name, description
 `
 
 type UpsertBillingWorkspacePlanParams struct {
 	WorkspaceID uuid.UUID
 	Plan        string
+	Limits      []byte
+	Note        string
 	UpdatedBy   *uuid.UUID
 	Now         time.Time
+	DisplayName string
+	Description string
 }
 
 // The plan billing gives the workspace (source = billing: the manual admin API refuses it).
+// limits / display_name / description: the custom plan's definition (NULL / ” otherwise).
 func (q *Queries) UpsertBillingWorkspacePlan(ctx context.Context, arg UpsertBillingWorkspacePlanParams) (WorkspacePlan, error) {
 	row := q.db.QueryRow(ctx, upsertBillingWorkspacePlan,
 		arg.WorkspaceID,
 		arg.Plan,
+		arg.Limits,
+		arg.Note,
 		arg.UpdatedBy,
 		arg.Now,
+		arg.DisplayName,
+		arg.Description,
 	)
 	var i WorkspacePlan
 	err := row.Scan(
@@ -919,6 +939,8 @@ func (q *Queries) UpsertBillingWorkspacePlan(ctx context.Context, arg UpsertBill
 		&i.UpdatedBy,
 		&i.UpdatedAt,
 		&i.Source,
+		&i.DisplayName,
+		&i.Description,
 	)
 	return i, err
 }

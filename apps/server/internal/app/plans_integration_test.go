@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -352,6 +353,9 @@ func TestAdminPlans(t *testing.T) {
 		"bad bound":         {Plan: v1.Plan_PLAN_CUSTOM, Limits: &v1.PlanLimits{RoomMembers: 5000}},
 		"past valid_until":  {Plan: v1.Plan_PLAN_TEAM, ValidUntil: timestamppb.New(time.Now().Add(-time.Hour))},
 		"long note":         {Plan: v1.Plan_PLAN_TEAM, Note: string(bytes.Repeat([]byte{'n'}, 501))},
+		"name for team":     {Plan: v1.Plan_PLAN_TEAM, DisplayName: "Pro"},
+		"long name":         {Plan: v1.Plan_PLAN_CUSTOM, Limits: &v1.PlanLimits{}, DisplayName: strings.Repeat("я", 41)},
+		"long description":  {Plan: v1.Plan_PLAN_CUSTOM, Limits: &v1.PlanLimits{}, Description: strings.Repeat("d", 141)},
 	} {
 		if st := admin.do("PUT", base+"/plan", req, nil); st != 422 {
 			t.Errorf("%s: %d, want 422", name, st)
@@ -365,14 +369,15 @@ func TestAdminPlans(t *testing.T) {
 	var put v1.AdminSetPlanResponse
 	admin.must(200, "PUT", base+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_CUSTOM,
 		Limits:     &v1.PlanLimits{RoomMembers: 12, StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080, StorageMb: 2048},
-		ValidUntil: timestamppb.New(until), Note: "invoice 42"}, &put)
+		ValidUntil: timestamppb.New(until), Note: "invoice 42", DisplayName: " Нейро\nофис ", Description: "Contract 7"}, &put)
 	if p := put.GetWorkspace().GetWorkspace().GetPlan(); p.GetPlan() != v1.Plan_PLAN_CUSTOM || p.GetLimits().GetRoomMembers() != 12 ||
+		p.GetDisplayName() != "Нейро офис" || p.GetDescription() != "Contract 7" ||
 		!p.GetValidUntil().AsTime().Equal(until) || put.GetWorkspace().GetPlanNote() != "invoice 42" || put.GetWorkspace().GetPlanUpdatedBy() != admin.id {
 		t.Fatalf("put response: %v", put.GetWorkspace())
 	}
 	ev := g.wait("WORKSPACE_UPDATE with limits", func(e *v1.DispatchEvent) bool {
 		w := e.GetWorkspaceUpdate().GetWorkspace()
-		return w.GetId() == wid && w.GetPlan().GetLimits().GetRoomMembers() == 12
+		return w.GetId() == wid && w.GetPlan().GetLimits().GetRoomMembers() == 12 && w.GetPlan().GetDisplayName() == "Нейро офис"
 	})
 	if ev.GetWorkspaceUpdate().GetWorkspace().GetPlan().GetLimits().GetStreamMaxPreset() != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H1080 {
 		t.Fatalf("event plan: %v", ev.GetWorkspaceUpdate().GetWorkspace().GetPlan())
@@ -390,6 +395,7 @@ func TestAdminPlans(t *testing.T) {
 	admin.must(200, "GET", base+"/plan/log", nil, &lg)
 	e := lg.GetEntries()
 	if len(e) != 2 || e[0].GetNote() != "downgrade" || e[0].GetPlan() != v1.Plan_PLAN_FREE || e[1].GetLimits().GetRoomMembers() != 12 ||
+		e[1].GetDisplayName() != "Нейро офис" || e[0].GetDisplayName() != "" ||
 		e[1].GetActorEmail() != superadminEmail || !e[1].GetValidUntil().AsTime().Equal(until) {
 		t.Fatalf("log: %v", e)
 	}

@@ -37,6 +37,8 @@ func planProto(plan string) v1.Plan {
 		return v1.Plan_PLAN_ENTERPRISE
 	case core.PlanFree:
 		return v1.Plan_PLAN_FREE
+	case core.PlanCustom:
+		return v1.Plan_PLAN_CUSTOM
 	}
 	return v1.Plan_PLAN_UNSPECIFIED
 }
@@ -111,11 +113,12 @@ type accountRow struct {
 	wsName   string
 	email    string
 	billable int32
+	planName string
 }
 
 func accountProto(r accountRow) *v1.AdminBillingAccount {
 	a := r.acc
-	return &v1.AdminBillingAccount{
+	out := &v1.AdminBillingAccount{
 		AccountId: a.ID.String(), WorkspaceId: idString(a.WorkspaceID), WorkspaceName: r.wsName, OwnerEmail: r.email,
 		Market: a.Market, Status: accountStatuses[a.Status], Plan: planProto(a.Plan),
 		Balance: money(a.BalanceMinor, a.Currency), Debt: money(max(0, -a.BalanceMinor), a.Currency),
@@ -126,6 +129,10 @@ func accountProto(r accountRow) *v1.AdminBillingAccount {
 		BillableMembers: uint32(max(0, r.billable)),
 		Provider:        a.Provider,
 	}
+	if a.Plan == core.PlanCustom {
+		out.PlanDisplayName = r.planName
+	}
+	return out
 }
 
 func ledgerProto(r sqlc.AdminListBillingLedgerRow, currency string) *v1.LedgerEntry {
@@ -219,6 +226,7 @@ func priceProto(p sqlc.BillingPrice) *v1.AdminPriceVersion {
 	out := &v1.AdminPriceVersion{
 		Id: p.ID.String(), Market: p.Market, Sku: p.Sku, Unit: money(p.UnitMinor, p.Currency),
 		EffectiveFrom: timestamppb.New(p.EffectiveFrom), CreatedAt: timestamppb.New(p.CreatedAt),
+		AccountId: idString(p.AccountID),
 	}
 	if p.Plan != nil {
 		out.Plan = planProto(*p.Plan)

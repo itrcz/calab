@@ -57,6 +57,10 @@ message AdminSetPlanRequest {
   // PLAN_LIMITS_EXCEEDED with ApiError.plan_violations) unless the superadmin confirms it here;
   // the override and the violations are written to the plan log.
   bool override_limits = 5;
+  // PLAN_CUSTOM only (422 otherwise): the name members see (trimmed, control characters removed,
+  // <= 40 characters; empty = «Индивидуальный») and a short description (<= 140).
+  string display_name = 6;
+  string description = 7;
 }
 
 message AdminSetPlanResponse {
@@ -74,6 +78,8 @@ message PlanLogEntry {
   google.protobuf.Timestamp valid_until = 7;
   string note = 8;
   google.protobuf.Timestamp created_at = 9;
+  string display_name = 10; // PLAN_CUSTOM: the name and description set with this change
+  string description = 11;
 }
 
 message AdminPlanLogResponse {

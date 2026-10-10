@@ -163,7 +163,7 @@ func (q *Queries) AdminWorkspaceDetails(ctx context.Context, ids []uuid.UUID) ([
 }
 
 const getWorkspacePlan = `-- name: GetWorkspacePlan :one
-SELECT workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source FROM workspace_plans WHERE workspace_id = $1
+SELECT workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source, display_name, description FROM workspace_plans WHERE workspace_id = $1
 `
 
 func (q *Queries) GetWorkspacePlan(ctx context.Context, workspaceID uuid.UUID) (WorkspacePlan, error) {
@@ -178,6 +178,8 @@ func (q *Queries) GetWorkspacePlan(ctx context.Context, workspaceID uuid.UUID) (
 		&i.UpdatedBy,
 		&i.UpdatedAt,
 		&i.Source,
+		&i.DisplayName,
+		&i.Description,
 	)
 	return i, err
 }
@@ -253,8 +255,8 @@ func (q *Queries) GetWorkspacePlanUsage(ctx context.Context, workspaceID uuid.UU
 }
 
 const insertPlanLog = `-- name: InsertPlanLog :exec
-INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note, display_name, description)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type InsertPlanLogParams struct {
@@ -264,6 +266,8 @@ type InsertPlanLogParams struct {
 	Limits      []byte
 	ValidUntil  *time.Time
 	Note        string
+	DisplayName string
+	Description string
 }
 
 func (q *Queries) InsertPlanLog(ctx context.Context, arg InsertPlanLogParams) error {
@@ -274,12 +278,14 @@ func (q *Queries) InsertPlanLog(ctx context.Context, arg InsertPlanLogParams) er
 		arg.Limits,
 		arg.ValidUntil,
 		arg.Note,
+		arg.DisplayName,
+		arg.Description,
 	)
 	return err
 }
 
 const listPlanLog = `-- name: ListPlanLog :many
-SELECT l.id, l.workspace_id, l.actor_id, l.plan, l.limits, l.valid_until, l.note, l.created_at, l.source, u.email AS actor_email
+SELECT l.id, l.workspace_id, l.actor_id, l.plan, l.limits, l.valid_until, l.note, l.created_at, l.source, l.display_name, l.description, u.email AS actor_email
 FROM workspace_plan_log l
 LEFT JOIN users u ON u.id = l.actor_id
 WHERE l.workspace_id = $1
@@ -297,6 +303,8 @@ type ListPlanLogRow struct {
 	Note        string
 	CreatedAt   time.Time
 	Source      string
+	DisplayName string
+	Description string
 	ActorEmail  *string
 }
 
@@ -319,6 +327,8 @@ func (q *Queries) ListPlanLog(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 			&i.Note,
 			&i.CreatedAt,
 			&i.Source,
+			&i.DisplayName,
+			&i.Description,
 			&i.ActorEmail,
 		); err != nil {
 			return nil, err
@@ -332,7 +342,7 @@ func (q *Queries) ListPlanLog(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 }
 
 const lockWorkspacePlanRow = `-- name: LockWorkspacePlanRow :one
-SELECT workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source FROM workspace_plans WHERE workspace_id = $1 FOR UPDATE
+SELECT workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source, display_name, description FROM workspace_plans WHERE workspace_id = $1 FOR UPDATE
 `
 
 // The plan row under a lock (ADR-0086): a self-serve start decides whether a superadmin assigned the
@@ -349,18 +359,21 @@ func (q *Queries) LockWorkspacePlanRow(ctx context.Context, workspaceID uuid.UUI
 		&i.UpdatedBy,
 		&i.UpdatedAt,
 		&i.Source,
+		&i.DisplayName,
+		&i.Description,
 	)
 	return i, err
 }
 
 const upsertWorkspacePlan = `-- name: UpsertWorkspacePlan :one
-INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO workspace_plans (workspace_id, plan, limits, valid_until, note, updated_by, updated_at, display_name, description)
+VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8)
 ON CONFLICT (workspace_id) DO UPDATE SET
     plan = EXCLUDED.plan, limits = EXCLUDED.limits, valid_until = EXCLUDED.valid_until,
-    note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()
+    note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now(),
+    display_name = EXCLUDED.display_name, description = EXCLUDED.description
 WHERE workspace_plans.source = 'manual'
-RETURNING workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source
+RETURNING workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source, display_name, description
 `
 
 type UpsertWorkspacePlanParams struct {
@@ -370,6 +383,8 @@ type UpsertWorkspacePlanParams struct {
 	ValidUntil  *time.Time
 	Note        string
 	UpdatedBy   *uuid.UUID
+	DisplayName string
+	Description string
 }
 
 // The manual plan (superadmin). A billing-managed plan (source = 'billing', ADR-0080) is not
@@ -382,6 +397,8 @@ func (q *Queries) UpsertWorkspacePlan(ctx context.Context, arg UpsertWorkspacePl
 		arg.ValidUntil,
 		arg.Note,
 		arg.UpdatedBy,
+		arg.DisplayName,
+		arg.Description,
 	)
 	var i WorkspacePlan
 	err := row.Scan(
@@ -393,6 +410,8 @@ func (q *Queries) UpsertWorkspacePlan(ctx context.Context, arg UpsertWorkspacePl
 		&i.UpdatedBy,
 		&i.UpdatedAt,
 		&i.Source,
+		&i.DisplayName,
+		&i.Description,
 	)
 	return i, err
 }

@@ -31,6 +31,9 @@ const (
 	PlanTeam       = "team"
 	PlanEnterprise = "enterprise" // «Business»
 	PlanFree       = "free"
+	// PlanCustom: limits, name and per-seat price a superadmin gives the account (ADR-0086
+	// «Индивидуальный тариф»); its price versions are the account's own (billing_prices.account_id).
+	PlanCustom = "custom"
 )
 
 // DebtWindow is the time from the first negative balance to the suspension (ADR-0080 §8).
@@ -122,6 +125,10 @@ type state struct {
 	joining     int32
 	dirty       bool // status / plan / episode / schedule changed: save before commit
 	planChanged bool
+	// custom: the custom plan definition a superadmin's assignment writes to workspace_plans
+	// (nil: keep the row's); planNote: the plan log note of that assignment ("" = "billing").
+	custom   *CustomPlan
+	planNote string
 }
 
 // lock takes the account lock and the decision time (after the lock, ADR-0080 §10).
