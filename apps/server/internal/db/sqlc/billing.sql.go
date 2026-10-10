@@ -624,7 +624,7 @@ func (q *Queries) GetBillingLedgerEntryByKey(ctx context.Context, businessKey st
 }
 
 const getBillingPayer = `-- name: GetBillingPayer :one
-SELECT account_id, type, name, country, email, tax_id, updated_by, updated_at FROM billing_payers WHERE account_id = $1
+SELECT account_id, type, name, country, email, tax_id, updated_by, updated_at, requisites, version FROM billing_payers WHERE account_id = $1
 `
 
 func (q *Queries) GetBillingPayer(ctx context.Context, accountID uuid.UUID) (BillingPayer, error) {
@@ -639,6 +639,8 @@ func (q *Queries) GetBillingPayer(ctx context.Context, accountID uuid.UUID) (Bil
 		&i.TaxID,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.Requisites,
+		&i.Version,
 	)
 	return i, err
 }
@@ -2469,51 +2471,6 @@ func (q *Queries) UpdateBillingAccountState(ctx context.Context, arg UpdateBilli
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
-	)
-	return i, err
-}
-
-const upsertBillingPayer = `-- name: UpsertBillingPayer :one
-INSERT INTO billing_payers (account_id, type, name, country, email, tax_id, updated_by, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz)
-ON CONFLICT (account_id) DO UPDATE SET
-    type = EXCLUDED.type, name = EXCLUDED.name, country = EXCLUDED.country, email = EXCLUDED.email,
-    tax_id = EXCLUDED.tax_id, updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at
-RETURNING account_id, type, name, country, email, tax_id, updated_by, updated_at
-`
-
-type UpsertBillingPayerParams struct {
-	AccountID uuid.UUID
-	Type      string
-	Name      string
-	Country   string
-	Email     string
-	TaxID     *string
-	UpdatedBy *uuid.UUID
-	Now       time.Time
-}
-
-func (q *Queries) UpsertBillingPayer(ctx context.Context, arg UpsertBillingPayerParams) (BillingPayer, error) {
-	row := q.db.QueryRow(ctx, upsertBillingPayer,
-		arg.AccountID,
-		arg.Type,
-		arg.Name,
-		arg.Country,
-		arg.Email,
-		arg.TaxID,
-		arg.UpdatedBy,
-		arg.Now,
-	)
-	var i BillingPayer
-	err := row.Scan(
-		&i.AccountID,
-		&i.Type,
-		&i.Name,
-		&i.Country,
-		&i.Email,
-		&i.TaxID,
-		&i.UpdatedBy,
-		&i.UpdatedAt,
 	)
 	return i, err
 }

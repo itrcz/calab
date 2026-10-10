@@ -226,20 +226,6 @@ func priceProto(p sqlc.BillingPrice) *v1.AdminPriceVersion {
 	return out
 }
 
-func payerProto(p sqlc.BillingPayer) *v1.PayerProfile {
-	out := &v1.PayerProfile{Name: p.Name, Country: p.Country, Email: p.Email}
-	switch p.Type {
-	case "person":
-		out.Type = v1.PayerType_PAYER_TYPE_PERSON
-	case "company":
-		out.Type = v1.PayerType_PAYER_TYPE_COMPANY
-	}
-	if p.TaxID != nil {
-		out.TaxId = *p.TaxID
-	}
-	return out
-}
-
 func autoTopupProto(a sqlc.BillingAutotopup, currency string) *v1.AutoTopupSettings {
 	return &v1.AutoTopupSettings{
 		Enabled: a.RevokedAt == nil, PaymentMethodId: a.PmID.String(), MaxAmount: money(a.MaxMinor, currency),

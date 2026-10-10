@@ -446,19 +446,33 @@ export function Switch({ checked, onChange, label, hint, disabled }: { checked: 
 }
 
 /** macOS segmented control. */
+/**
+ * `fill`: the track takes the width of its row and the segments share it (a form field,
+ * e.g. the payer type). Without it the track hugs its segments; inside a stretching flex column
+ * the host must not stretch it (`self-start`), or the segments bunch at the start of a wide track.
+ */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
   label,
+  fill = false,
+  testId,
 }: {
   value: T;
   options: Array<{ value: T; label: string }>;
   onChange: (v: T) => void;
   label: string;
+  fill?: boolean;
+  testId?: string;
 }): ReactNode {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-[var(--radius-control)] bg-hover p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      data-testid={testId}
+      className={cx('rounded-[var(--radius-control)] bg-hover p-0.5', fill ? 'flex w-full' : 'inline-flex')}
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -471,6 +485,8 @@ export function Segmented<T extends string>({
             // segment (macOS), in dark too — not a darker «pressed» one. Focus ring at offset 0: it
             // fills the track's 2 px padding instead of spilling onto the neighbours.
             'h-6 whitespace-nowrap rounded-full px-3 mobile:tap-h mobile:px-2.5 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
+            // Each segment grows from its label's width: a long «Частное лицо» next to «ИП» still fits on a phone.
+            fill && 'min-w-0 flex-auto truncate',
             value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >

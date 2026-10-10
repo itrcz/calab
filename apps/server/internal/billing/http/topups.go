@@ -3,6 +3,7 @@ package billinghttp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -182,8 +183,13 @@ func (s *Service) openCheckout(ctx context.Context, c caller, reqID uuid.UUID, h
 	return co, err
 }
 
+// payerSnapshot is the payer a checkout was opened under: its version (billing_payer_versions)
+// and the values, so the checkout keeps them after the payer is edited.
 func payerSnapshot(p sqlc.BillingPayer) []byte {
-	b, err := marshalJSON(map[string]any{"type": p.Type, "name": p.Name, "country": p.Country, "email": p.Email, "tax_id": deref(p.TaxID)})
+	b, err := marshalJSON(map[string]any{
+		"version": p.Version, "type": p.Type, "name": p.Name, "country": p.Country, "email": p.Email, "tax_id": deref(p.TaxID),
+		"requisites": json.RawMessage(p.Requisites),
+	})
 	if err != nil {
 		return []byte("{}")
 	}
@@ -213,7 +219,7 @@ func (s *Service) createSession(ctx context.Context, c caller, p provider.Provid
 		IdemKey: "checkout:" + co.ID.String(), Amount: money.New(co.AmountMinor, money.Currency(co.Currency)), Method: opt.Method,
 		Customer: cust, SuccessURL: ret, CancelURL: ret, SaveForOffSession: co.SaveMethod, ExpiresAt: exp,
 		Metadata:     provider.Metadata{AccountID: c.acc.ID, CheckoutID: co.ID, Kind: provider.MetadataKindCheckout},
-		ReceiptEmail: email,
+		ReceiptEmail: email, ReceiptName: receiptName(payer),
 	})
 	if err != nil {
 		if !errors.Is(err, provider.ErrUnknownOutcome) {
@@ -281,6 +287,10 @@ func (s *Service) ensureCustomer(ctx context.Context, c caller, p provider.Provi
 	})
 	if db.IsNotFound(err) {
 		bc, err = s.db.Q.GetBillingCustomer(ctx, sqlc.GetBillingCustomerParams{AccountID: c.acc.ID, Provider: string(p.ID()), Livemode: cr.Livemode})
+	} else if err == nil && payer.AccountID != uuid.Nil {
+		// A new customer gets the payer's tax ids too (best effort: the checkout goes on); it has
+		// nothing of earlier payer versions to remove.
+		s.syncCustomer(ctx, bc, payer, nil)
 	}
 	if err != nil {
 		return provider.CustomerRef{}, err

@@ -206,7 +206,10 @@ type createLink struct {
 	Items           []receiptItem `json:"Items"`
 }
 
+// receiptClient is the buyer of a 54-FZ receipt (ClientObject: name, email, phone — no INN
+// field). name is set for an organization or a sole proprietor only.
 type receiptClient struct {
+	Name  string `json:"name,omitempty"`
 	Email string `json:"email"`
 }
 
@@ -282,7 +285,7 @@ func (p *Provider) CreateCheckout(ctx context.Context, req provider.CheckoutReq)
 	}{Data: createLink{
 		CustomerCode: p.customer, MerchantID: p.merchant, Amount: amt, Purpose: clip(line, 140), PaymentMode: []string{mode},
 		RedirectURL: req.SuccessURL, FailRedirectURL: fail, TTL: ttl, PaymentLinkID: linkID, ConsumerID: req.Customer.ID,
-		TaxSystemCode: p.taxSystem, Client: receiptClient{Email: req.ReceiptEmail},
+		TaxSystemCode: p.taxSystem, Client: receiptClient{Name: clip(req.ReceiptName, 256), Email: req.ReceiptEmail},
 		Items: []receiptItem{{
 			Name: clip(line, 256), Amount: amt, Quantity: "1", VatType: p.vatType,
 			PaymentMethod: "full_prepayment", PaymentObject: "service", Measure: "шт.",

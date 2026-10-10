@@ -442,6 +442,7 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/workspaces/{id}/billing/resume":                                scopeBilling,
 	"GET /api/workspaces/{id}/billing/payer":                                  scopeBilling,
 	"PUT /api/workspaces/{id}/billing/payer":                                  scopeBilling,
+	"GET /api/workspaces/{id}/billing/payer-schema":                           scopeBilling,
 	"POST /api/workspaces/{id}/billing/topups":                                scopeBilling,
 	"GET /api/workspaces/{id}/billing/checkouts/{cid}":                        scopeBilling,
 	"GET /api/workspaces/{id}/billing/auto-topup":                             scopeBilling,

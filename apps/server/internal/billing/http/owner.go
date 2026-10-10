@@ -3,9 +3,7 @@ package billinghttp
 import (
 	"context"
 	"net/http"
-	"regexp"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +14,7 @@ import (
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/money"
+	"github.com/calaba/calaba/server/internal/billing/payer"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -147,7 +146,7 @@ func (s *Service) summary(ctx context.Context, acc0 sqlc.BillingAccount) (*v1.Bi
 		}
 		payerType, country := "", ""
 		if p, err := q.GetBillingPayer(ctx, acc.ID); err == nil {
-			out.Payer, payerType, country = payerProto(p), p.Type, p.Country
+			out.Payer, payerType, country = payer.Proto(p), p.Type, p.Country
 		} else if !db.IsNotFound(err) {
 			return err
 		}
@@ -474,74 +473,4 @@ func (s *Service) resume(w http.ResponseWriter, r *http.Request) error {
 			_, err := s.core.Resume(ctx, c.acc.ID, mode, c.acc.Plan, id, &c.user)
 			return err
 		})
-}
-
-func (s *Service) getPayer(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
-	if err != nil {
-		return err
-	}
-	p, err := s.db.Q.GetBillingPayer(r.Context(), c.acc.ID)
-	if db.IsNotFound(err) {
-		httpx.Write(w, http.StatusOK, &v1.PayerProfile{})
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	httpx.Write(w, http.StatusOK, payerProto(p))
-	return nil
-}
-
-var countryCode = regexp.MustCompile(`^[A-Z]{2}$`)
-
-func (s *Service) putPayer(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
-	if err != nil {
-		return err
-	}
-	var req v1.PutPayerRequest
-	if err := httpx.Decode(w, r, &req); err != nil {
-		return err
-	}
-	in := req.GetPayer()
-	typ := ""
-	switch in.GetType() {
-	case v1.PayerType_PAYER_TYPE_PERSON:
-		typ = provider.PayerPerson
-	case v1.PayerType_PAYER_TYPE_COMPANY:
-		typ = provider.PayerCompany
-	default:
-		return httpx.Validation("payer.type", "type must be PERSON or COMPANY")
-	}
-	name := strings.TrimSpace(in.GetName())
-	if n := len([]rune(name)); n < 1 || n > 200 {
-		return httpx.Validation("payer.name", "name must be 1..200 characters")
-	}
-	country := strings.ToUpper(strings.TrimSpace(in.GetCountry()))
-	if !countryCode.MatchString(country) {
-		return httpx.Validation("payer.country", "country must be an ISO 3166-1 alpha-2 code")
-	}
-	email := strings.TrimSpace(in.GetEmail())
-	if len(email) < 3 || len(email) > 320 || !strings.Contains(email, "@") || strings.ContainsAny(email, " \r\n") {
-		return httpx.Validation("payer.email", "invalid email")
-	}
-	var taxID *string
-	if t := strings.TrimSpace(in.GetTaxId()); t != "" {
-		if len([]rune(t)) > 64 {
-			return httpx.Validation("payer.tax_id", "tax id is at most 64 characters")
-		}
-		taxID = &t
-	}
-	ctx := r.Context()
-	p, err := db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.BillingPayer, error) {
-		return q.UpsertBillingPayer(ctx, sqlc.UpsertBillingPayerParams{
-			AccountID: c.acc.ID, Type: typ, Name: name, Country: country, Email: email, TaxID: taxID, UpdatedBy: &c.user, Now: s.now(ctx),
-		})
-	})
-	if err != nil {
-		return err
-	}
-	httpx.Write(w, http.StatusOK, payerProto(p))
-	return nil
 }

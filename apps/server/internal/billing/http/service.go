@@ -105,6 +105,7 @@ func (s *Service) Owner() map[string]httpx.HandlerFunc {
 		"POST /api/workspaces/{id}/billing/resume":                   s.resume,
 		"GET /api/workspaces/{id}/billing/payer":                     s.getPayer,
 		"PUT /api/workspaces/{id}/billing/payer":                     s.putPayer,
+		"GET /api/workspaces/{id}/billing/payer-schema":              s.payerSchema,
 		"POST /api/workspaces/{id}/billing/topups":                   s.topup,
 		"GET /api/workspaces/{id}/billing/checkouts/{cid}":           s.checkout,
 		"GET /api/workspaces/{id}/billing/auto-topup":                s.autoTopup,

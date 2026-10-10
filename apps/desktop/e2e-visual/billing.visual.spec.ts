@@ -360,6 +360,71 @@ test('billing-contact: no acquirer takes new clients', async ({ page }) => {
   await checkpoint(s, 'billing-plans-contact');
 });
 
+// ---------------------------------------------------------------- Payer requisites by country (ADR-0080 §0.1)
+
+/** Picks a country in the payer form's searchable select (by its English name: the search covers it). */
+async function pickCountry(page: Page, query: string, code: string): Promise<void> {
+  await tap(page.getByTestId('payer-country'));
+  const list = page.getByTestId('payer-country-list');
+  await list.getByRole('combobox').fill(query);
+  await tap(list.getByRole('option').filter({ hasText: code }).first());
+  await expect(page.getByTestId('payer-country')).toContainText(code);
+}
+
+test('billing-payer: requisites form by country', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  // The RU account: the saved payer is a Russian company (ИНН, КПП, ОГРН, юридический адрес).
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', market: 'ru' });
+  await openPlans(page);
+  await tap(page.getByTestId('plans-details'));
+  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await tap(settings.getByTestId('billing-payer-edit'));
+  const form = page.getByTestId('billing-payer-form');
+  await expect(form.getByTestId('billing-payer-type')).toBeVisible();
+  await expect(form.getByTestId('billing-payer-field-inn')).toHaveValue('7707083893');
+  await checkpoint(s, 'billing-payer-ru-company');
+  // Inline check: a wrong ИНН check digit once the field is left.
+  await form.getByTestId('billing-payer-field-inn').fill('7707083894');
+  await form.getByTestId('billing-payer-field-inn').press('Tab');
+  await expect(form.getByText('Номер с ошибкой — проверьте цифры')).toBeVisible();
+  await checkpoint(s, 'billing-payer-ru-error');
+  // ИП: ФИО, ИНН 12, ОГРНИП, адрес.
+  await tap(form.getByRole('radio', { name: 'ИП' }));
+  await form.getByRole('textbox', { name: 'ФИО предпринимателя' }).fill('ИП Иванов Иван Иванович');
+  await form.getByTestId('billing-payer-field-inn').fill('500100732259');
+  await form.getByTestId('billing-payer-field-ogrnip').fill('304500116000157');
+  await form.getByTestId('billing-payer-field-address').fill('Тверь, ул. Советская, 1');
+  await dialog(page).evaluate((el) => el.querySelectorAll<HTMLElement>('*').forEach((e) => (e.scrollTop = 0)));
+  await checkpoint(s, 'billing-payer-ru-sole');
+  // The searchable country list (the English name finds it too).
+  await tap(page.getByTestId('payer-country'));
+  await page.getByTestId('payer-country-list').getByRole('combobox').fill('Emir');
+  await expect(page.getByTestId('payer-country-list').getByRole('option')).toHaveCount(1);
+  await checkpoint(s, 'billing-payer-country-list');
+  await page.keyboard.press('Escape');
+  // UAE company: TRN (required), trade licence, address.
+  await pickCountry(page, 'Emirates', 'AE');
+  await expect(form.getByRole('radio', { name: 'ИП' })).toHaveCount(0);
+  await form.getByRole('textbox', { name: 'Название организации' }).fill('Falcon Trading LLC');
+  await form.getByTestId('billing-payer-field-trn').fill('100 1234 5670 0003');
+  await form.getByTestId('billing-payer-field-trade_license').fill('CN-1234567');
+  await checkpoint(s, 'billing-payer-ae-company');
+  // EU company: the VAT ID with its country prefix.
+  await pickCountry(page, 'Germany', 'DE');
+  await form.getByRole('textbox', { name: 'Название организации' }).fill('Muster GmbH');
+  await form.getByTestId('billing-payer-field-vat').fill('DE123456789');
+  await checkpoint(s, 'billing-payer-eu-company');
+  // Any other country: an optional free-form tax number.
+  await pickCountry(page, 'Brazil', 'BR');
+  await form.getByRole('textbox', { name: 'Название организации' }).fill('Empresa Exemplo Ltda');
+  await form.getByTestId('billing-payer-field-tax_id').fill('12.345.678/0001-95');
+  await checkpoint(s, 'billing-payer-generic');
+  // Saved: the card shows the new payer.
+  await tap(page.getByTestId('billing-payer-save'));
+  await expect(form).toBeHidden();
+  await expect(settings.getByText('Empresa Exemplo Ltda')).toBeVisible();
+});
+
 // ---------------------------------------------------------------- Superadmin: «Оплата» list and account page
 
 test('billing-admin: accounts list and the account page', async ({ page }) => {

@@ -1,0 +1,185 @@
+{
+  "_comment": "Payer requisites (ADR-0080 §0.1): check digit algorithms and whole-payer validation against the served schema (billing_payer_schema.json). Run by apps/server/internal/billing/payer and packages/protocol/src/payer.test.ts.",
+  "checks": [
+    { "check": "PAYER_FIELD_CHECK_RU_INN", "value": "7707083893", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_RU_INN", "value": "7707083894", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_RU_INN", "value": "500100732259", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_RU_INN", "value": "500100732258", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_RU_INN", "value": "50010073225", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_RU_OGRN", "value": "1027700132195", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_RU_OGRN", "value": "1027700132194", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_RU_OGRNIP", "value": "304500116000157", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_RU_OGRNIP", "value": "304500116000158", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_KZ_IIN_BIN", "value": "990740000683", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_KZ_IIN_BIN", "value": "850101300124", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_KZ_IIN_BIN", "value": "040840001231", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_KZ_IIN_BIN", "value": "990740000684", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_IN_GSTIN", "value": "27AAPFU0939F1ZV", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_IN_GSTIN", "value": "27AAPFU0939F1ZW", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_CN_USCC", "value": "91350100M000100Y43", "ok": true },
+    { "check": "PAYER_FIELD_CHECK_CN_USCC", "value": "91350100M000100Y44", "ok": false },
+    { "check": "PAYER_FIELD_CHECK_UNSPECIFIED", "value": "anything", "ok": true }
+  ],
+  "payers": [
+    {
+      "name": "RU company: digits cleaned, KPP upper-cased",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "  ООО  «Ромашка» ", "country": "ru", "email": " billing@romashka.test ",
+        "requisites": { "inn": "7707 083 893", "kpp": "7736-01-001", "ogrn": "1027700132195", "legal_address": "Москва,  ул. Вавилова, 19" } },
+      "out": { "name": "ООО «Ромашка»", "country": "RU", "email": "billing@romashka.test", "taxId": "7707083893",
+        "requisites": { "inn": "7707083893", "kpp": "773601001", "ogrn": "1027700132195", "legal_address": "Москва, ул. Вавилова, 19" } }
+    },
+    {
+      "name": "RU company: wrong INN check digit",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "ООО «Ромашка»", "country": "RU", "email": "a@b.c",
+        "requisites": { "inn": "7707083894", "kpp": "773601001", "ogrn": "1027700132195", "legal_address": "Москва" } },
+      "error": { "field": "payer.requisites.inn", "reason": "PAYER_CHECKSUM" }
+    },
+    {
+      "name": "RU company: a 12-digit INN is not an organization's",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "ООО «Ромашка»", "country": "RU", "email": "a@b.c",
+        "requisites": { "inn": "500100732259", "kpp": "773601001", "ogrn": "1027700132195", "legal_address": "Москва" } },
+      "error": { "field": "payer.requisites.inn", "reason": "PAYER_FORMAT" }
+    },
+    {
+      "name": "RU company: KPP is required",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "ООО «Ромашка»", "country": "RU", "email": "a@b.c",
+        "requisites": { "inn": "7707083893", "ogrn": "1027700132195", "legal_address": "Москва" } },
+      "error": { "field": "payer.requisites.kpp", "reason": "PAYER_REQUIRED" }
+    },
+    {
+      "name": "RU company: wrong OGRN",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "ООО «Ромашка»", "country": "RU", "email": "a@b.c",
+        "requisites": { "inn": "7707083893", "kpp": "773601001", "ogrn": "1027700132194", "legal_address": "Москва" } },
+      "error": { "field": "payer.requisites.ogrn", "reason": "PAYER_CHECKSUM" }
+    },
+    {
+      "name": "RU sole proprietor",
+      "in": { "type": "PAYER_TYPE_SOLE_PROPRIETOR", "name": "ИП Иванов Иван Иванович", "country": "RU", "email": "ip@ivanov.test",
+        "requisites": { "inn": "500100732259", "ogrnip": "304500116000157", "address": "Тверь, ул. Советская, 1" } },
+      "out": { "name": "ИП Иванов Иван Иванович", "country": "RU", "email": "ip@ivanov.test", "taxId": "500100732259",
+        "requisites": { "inn": "500100732259", "ogrnip": "304500116000157", "address": "Тверь, ул. Советская, 1" } }
+    },
+    {
+      "name": "RU sole proprietor: control characters become spaces (receipt name, NUL refused by Postgres)",
+      "in": { "type": "PAYER_TYPE_SOLE_PROPRIETOR", "name": "ИП\tИванов\u0007Иван\u0085", "country": "RU", "email": "ip@ivanov.test",
+        "requisites": { "inn": "500100732259", "ogrnip": "304500116000157", "address": "Тверь,\u0000ул. Советская,\u001b 1" } },
+      "out": { "name": "ИП Иванов Иван", "country": "RU", "email": "ip@ivanov.test", "taxId": "500100732259",
+        "requisites": { "inn": "500100732259", "ogrnip": "304500116000157", "address": "Тверь, ул. Советская, 1" } }
+    },
+    {
+      "name": "e-mail with a control character",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "Иван", "country": "RU", "email": "ivan\u0000@example.test" },
+      "error": { "field": "payer.email", "reason": "PAYER_EMAIL" }
+    },
+    {
+      "name": "RU sole proprietor: wrong OGRNIP",
+      "in": { "type": "PAYER_TYPE_SOLE_PROPRIETOR", "name": "ИП Иванов", "country": "RU", "email": "ip@ivanov.test",
+        "requisites": { "inn": "500100732259", "ogrnip": "304500116000158", "address": "Тверь" } },
+      "error": { "field": "payer.requisites.ogrnip", "reason": "PAYER_CHECKSUM" }
+    },
+    {
+      "name": "RU person: INN optional, a foreign key dropped",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "Иван Иванов", "country": "RU", "email": "ivan@example.test",
+        "requisites": { "vat": "DE123456789" } },
+      "out": { "name": "Иван Иванов", "country": "RU", "email": "ivan@example.test", "taxId": "", "requisites": {} }
+    },
+    {
+      "name": "legacy client: tax_id becomes the primary field",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "Иван Иванов", "country": "RU", "email": "ivan@example.test", "taxId": "500100732259" },
+      "out": { "name": "Иван Иванов", "country": "RU", "email": "ivan@example.test", "taxId": "500100732259", "requisites": { "inn": "500100732259" } }
+    },
+    {
+      "name": "AE company: TRN required",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Falcon Trading LLC", "country": "AE", "email": "a@falcon.test", "requisites": {} },
+      "error": { "field": "payer.requisites.trn", "reason": "PAYER_REQUIRED" }
+    },
+    {
+      "name": "AE company: TRN with spaces",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Falcon Trading LLC", "country": "AE", "email": "a@falcon.test",
+        "requisites": { "trn": "100 1234 5670 0003", "trade_license": " CN-1234567 " } },
+      "out": { "name": "Falcon Trading LLC", "country": "AE", "email": "a@falcon.test", "taxId": "100123456700003",
+        "requisites": { "trn": "100123456700003", "trade_license": "CN-1234567" } }
+    },
+    {
+      "name": "AE person: a short TRN",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "Omar", "country": "AE", "email": "o@x.test", "requisites": { "trn": "1001234" } },
+      "error": { "field": "payer.requisites.trn", "reason": "PAYER_FORMAT" }
+    },
+    {
+      "name": "DE company: the VAT prefix is added",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Muster GmbH", "country": "DE", "email": "rechnung@muster.test", "requisites": { "vat": "123 456 789" } },
+      "out": { "name": "Muster GmbH", "country": "DE", "email": "rechnung@muster.test", "taxId": "DE123456789", "requisites": { "vat": "DE123456789" } }
+    },
+    {
+      "name": "GR company: GR becomes EL",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Ellas AE", "country": "GR", "email": "a@ellas.test", "requisites": { "vat": "gr123456789" } },
+      "out": { "name": "Ellas AE", "country": "GR", "email": "a@ellas.test", "taxId": "EL123456789", "requisites": { "vat": "EL123456789" } }
+    },
+    {
+      "name": "FR company: a malformed VAT ID",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Exemple SA", "country": "FR", "email": "a@exemple.test", "requisites": { "vat": "FR1234" } },
+      "error": { "field": "payer.requisites.vat", "reason": "PAYER_FORMAT" }
+    },
+    {
+      "name": "EU company: no sole proprietor type",
+      "in": { "type": "PAYER_TYPE_SOLE_PROPRIETOR", "name": "Hans", "country": "DE", "email": "h@x.test" },
+      "error": { "field": "payer.type", "reason": "PAYER_TYPE_UNAVAILABLE" }
+    },
+    {
+      "name": "GB company",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Acme Ltd", "country": "GB", "email": "a@acme.test", "requisites": { "vat": "GB 123 4567 89" } },
+      "out": { "name": "Acme Ltd", "country": "GB", "email": "a@acme.test", "taxId": "GB123456789", "requisites": { "vat": "GB123456789" } }
+    },
+    {
+      "name": "US company: EIN optional, dash removed",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Acme Inc.", "country": "US", "email": "ap@acme.test", "requisites": { "ein": "12-3456789" } },
+      "out": { "name": "Acme Inc.", "country": "US", "email": "ap@acme.test", "taxId": "123456789", "requisites": { "ein": "123456789" } }
+    },
+    {
+      "name": "KZ company: BIN check",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "ТОО «Дала»", "country": "KZ", "email": "a@dala.test",
+        "requisites": { "bin": "990740000684", "legal_address": "Алматы" } },
+      "error": { "field": "payer.requisites.bin", "reason": "PAYER_CHECKSUM" }
+    },
+    {
+      "name": "KZ sole proprietor",
+      "in": { "type": "PAYER_TYPE_SOLE_PROPRIETOR", "name": "ИП Ахметов", "country": "KZ", "email": "a@x.test", "requisites": { "iin": "850101300124" } },
+      "out": { "name": "ИП Ахметов", "country": "KZ", "email": "a@x.test", "taxId": "850101300124", "requisites": { "iin": "850101300124" } }
+    },
+    {
+      "name": "BY company: UNP 9 digits",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "ООО «Бульба»", "country": "BY", "email": "a@bulba.test", "requisites": { "unp": "19000000", "legal_address": "Минск" } },
+      "error": { "field": "payer.requisites.unp", "reason": "PAYER_FORMAT" }
+    },
+    {
+      "name": "CN company: USCC upper-cased",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Example Co.", "country": "CN", "email": "a@x.test", "requisites": { "uscc": "91350100m000100y43" } },
+      "out": { "name": "Example Co.", "country": "CN", "email": "a@x.test", "taxId": "91350100M000100Y43", "requisites": { "uscc": "91350100M000100Y43" } }
+    },
+    {
+      "name": "IN company: GSTIN check",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Example Pvt Ltd", "country": "IN", "email": "a@x.test", "requisites": { "gstin": "27AAPFU0939F1ZW" } },
+      "error": { "field": "payer.requisites.gstin", "reason": "PAYER_CHECKSUM" }
+    },
+    {
+      "name": "another country: free-form tax id",
+      "in": { "type": "PAYER_TYPE_COMPANY", "name": "Empresa SA", "country": "BR", "email": "a@x.test", "requisites": { "tax_id": " 12.345.678/0001-95 " } },
+      "out": { "name": "Empresa SA", "country": "BR", "email": "a@x.test", "taxId": "12.345.678/0001-95", "requisites": { "tax_id": "12.345.678/0001-95" } }
+    },
+    {
+      "name": "unknown country",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "X", "country": "XX", "email": "a@x.test" },
+      "error": { "field": "payer.country", "reason": "PAYER_COUNTRY" }
+    },
+    {
+      "name": "empty name",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "   ", "country": "DE", "email": "a@x.test" },
+      "error": { "field": "payer.name", "reason": "PAYER_REQUIRED" }
+    },
+    {
+      "name": "bad e-mail",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "Hans", "country": "DE", "email": "hans.example.test" },
+      "error": { "field": "payer.email", "reason": "PAYER_EMAIL" }
+    }
+  ]
+}

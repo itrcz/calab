@@ -155,14 +155,6 @@ WHERE provider = $1 AND provider_account = $2 AND livemode = $3 AND customer_id 
 -- name: GetBillingPayer :one
 SELECT * FROM billing_payers WHERE account_id = $1;
 
--- name: UpsertBillingPayer :one
-INSERT INTO billing_payers (account_id, type, name, country, email, tax_id, updated_by, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, sqlc.arg('now')::timestamptz)
-ON CONFLICT (account_id) DO UPDATE SET
-    type = EXCLUDED.type, name = EXCLUDED.name, country = EXCLUDED.country, email = EXCLUDED.email,
-    tax_id = EXCLUDED.tax_id, updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at
-RETURNING *;
-
 -- name: InsertBillingCheckout :one
 -- No row = this request_id exists (GetBillingCheckoutByRequest: same body_hash → same result,
 -- else 409). A second open checkout of the account raises unique_violation

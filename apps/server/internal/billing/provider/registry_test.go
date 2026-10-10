@@ -31,7 +31,7 @@ func TestRegistryV1Matrix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, payer := range []string{provider.PayerPerson, provider.PayerCompany} {
+	for _, payer := range []string{provider.PayerPerson, provider.PayerCompany, provider.PayerSoleProprietor} {
 		got := r.Methods(provider.MarketGlobal, money.USD, payer, "AE")
 		if len(got) != 1 {
 			t.Fatalf("%s: %v", payer, got)
@@ -44,7 +44,7 @@ func TestRegistryV1Matrix(t *testing.T) {
 	if got := r.Methods(provider.MarketRU, money.RUB, provider.PayerPerson, "RU"); len(got) != 0 {
 		t.Fatalf("RUB offered in v1: %v", got)
 	}
-	if got := r.Methods(provider.MarketGlobal, money.USD, "sole_proprietor", "US"); len(got) != 0 {
+	if got := r.Methods(provider.MarketGlobal, money.USD, "trust", "US"); len(got) != 0 {
 		t.Fatalf("unknown payer type offered: %v", got)
 	}
 	if _, ok := r.Method("stripe:card", provider.MarketGlobal, money.USD, provider.PayerPerson, "US"); !ok {

@@ -87,6 +87,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/billing/resume":                                botDeny,
 	"GET /api/workspaces/{id}/billing/payer":                                  botDeny,
 	"PUT /api/workspaces/{id}/billing/payer":                                  botDeny,
+	"GET /api/workspaces/{id}/billing/payer-schema":                           botDeny,
 	"POST /api/workspaces/{id}/billing/topups":                                botDeny,
 	"GET /api/workspaces/{id}/billing/checkouts/{cid}":                        botDeny,
 	"GET /api/workspaces/{id}/billing/auto-topup":                             botDeny,
