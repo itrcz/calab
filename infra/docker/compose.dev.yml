@@ -26,7 +26,7 @@ services:
   # Mail catcher (ADR-0023): the API sends to SMTP localhost:1025 (SMTP_TLS=none),
   # letters are read at http://localhost:8025. Nothing leaves the machine.
   mailpit:
-    image: axllent/mailpit:v1.30
+    image: axllent/mailpit:v1.31
     ports:
       - "1025:1025"
       - "8025:8025"
@@ -72,7 +72,7 @@ services:
   # для egress — это сам LiveKit. Файлы — в apps/server/data/recordings (RECORDINGS_PATH API
   # на хосте по умолчанию), внутри контейнера /out.
   egress:
-    image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce
+    image: livekit/egress:v1.15.0@sha256:ac244a40268ce1dd1510fbff6eb529609ec68aceff1602343f79be8ca08c355b
     network_mode: "service:livekit"
     environment:
       EGRESS_CONFIG_BODY: |
