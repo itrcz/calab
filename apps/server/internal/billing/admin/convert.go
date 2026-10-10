@@ -128,6 +128,7 @@ func accountProto(r accountRow) *v1.AdminBillingAccount {
 		Revision:        uint64(a.Revision), //nolint:gosec // CHECK revision >= 1
 		BillableMembers: uint32(max(0, r.billable)),
 		Provider:        a.Provider,
+		Lapsed:          core.Lapsed(a), LapsedAt: ts(a.LapsedAt),
 	}
 	if a.Plan == core.PlanCustom {
 		out.PlanDisplayName = r.planName

@@ -108,6 +108,15 @@ WHERE suspend_at > sqlc.arg('now')::timestamptz AND suspend_at <= sqlc.arg('unti
 ORDER BY suspend_at
 LIMIT sqlc.arg('lim');
 
+-- name: ListBillingAccountsLapsingSoon :many
+-- Stopped accounts whose last paid day ends within (now, until] and which are not lapsed yet: the
+-- «tomorrow the plan stops being active» heads-up (sent only when the usage does not fit Free).
+SELECT * FROM billing_accounts
+WHERE status = 'stopped' AND lapsed_at IS NULL AND workspace_id IS NOT NULL
+  AND next_due_at > sqlc.arg('now')::timestamptz AND next_due_at <= sqlc.arg('until')::timestamptz
+ORDER BY next_due_at
+LIMIT sqlc.arg('lim');
+
 -- name: GetBillingNotification :one
 SELECT * FROM billing_notifications WHERE account_id = $1 AND key = $2;
 

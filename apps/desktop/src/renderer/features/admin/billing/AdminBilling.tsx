@@ -47,7 +47,7 @@ export type AdminSection = 'workspaces' | 'billing';
 export type BillingView = { kind: 'account'; id: string } | { kind: 'requests' } | { kind: 'prices' } | { kind: 'events' } | { kind: 'providers' } | null;
 
 const KEY = {
-  accounts: (q: string) => ['admin', 'billing', 'accounts', q] as const,
+  accounts: (q: string, lapsed: boolean) => ['admin', 'billing', 'accounts', q, lapsed] as const,
   account: (id: string) => ['admin', 'billing', 'account', id] as const,
   ledger: (id: string) => ['admin', 'billing', 'ledger', id] as const,
   payments: (id: string) => ['admin', 'billing', 'payments', id] as const,
@@ -88,9 +88,19 @@ const ACCOUNT_STATE: Record<BillingAccountStatus, BillingState> = {
   [BillingAccountStatus.CLOSED]: BillingState.UNSPECIFIED,
 };
 
-/** The pill for an account: arrears when active with debt. */
+/** The pill for an account: arrears when active with debt, «не активен» when stopped in the restricted mode. */
 const accountState = (a: AdminBillingAccount): BillingState =>
-  a.status === BillingAccountStatus.ACTIVE && minorOf(a.debt) > 0n ? BillingState.IN_ARREARS : ACCOUNT_STATE[a.status];
+  a.status === BillingAccountStatus.ACTIVE && minorOf(a.debt) > 0n
+    ? BillingState.IN_ARREARS
+    : a.status === BillingAccountStatus.STOPPED && a.lapsed
+      ? BillingState.LAPSED
+      : ACCOUNT_STATE[a.status];
+
+/** The list's status word: the pill's state wording for arrears and the restricted mode. */
+const accountStatusKey = (a: AdminBillingAccount): MessageKey => {
+  const st = accountState(a);
+  return st === BillingState.IN_ARREARS ? 'billing.state.arrears' : st === BillingState.LAPSED ? 'billing.state.lapsed' : STATUS_KEY[a.status];
+};
 
 const planOf = (p: Plan): Plan => (p === Plan.ENTERPRISE || p === Plan.CUSTOM ? p : Plan.TEAM);
 
@@ -112,7 +122,7 @@ const AccountCard = memo(function AccountCard({ a, selected, onSelect }: { a: Ad
       onClick={() => onSelect(a.accountId)}
       data-testid="admin-billing-account"
       className={cx(
-        'flex w-full flex-col gap-0.5 rounded-[var(--radius-card)] px-3 py-2 text-left transition-colors duration-[var(--motion-fast)]',
+        'flex w-full shrink-0 flex-col gap-0.5 rounded-[var(--radius-card)] px-3 py-2 text-left transition-colors duration-[var(--motion-fast)]',
         selected ? 'bg-accent-strong text-accent-fg' : 'hover:bg-hover',
       )}
     >
@@ -124,7 +134,7 @@ const AccountCard = memo(function AccountCard({ a, selected, onSelect }: { a: Ad
       </span>
       <span className={cx('flex min-w-0 items-center gap-2 text-caption', selected ? 'text-accent-fg' : 'text-muted')}>
         <span className="min-w-0 flex-1 truncate">{a.ownerEmail}</span>
-        <span className="shrink-0 whitespace-nowrap">{t(accountState(a) === BillingState.IN_ARREARS ? 'billing.state.arrears' : STATUS_KEY[a.status])}</span>
+        <span className="shrink-0 whitespace-nowrap">{t(accountStatusKey(a))}</span>
       </span>
     </button>
   );
@@ -162,7 +172,13 @@ function NavButton({ icon, label, active, onClick, testId }: { icon: ReactNode; 
 export function AdminBillingSide({ view, onView }: { view: BillingView; onView: (v: BillingView) => void }): ReactNode {
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim(), 300);
-  const list = useQuery({ queryKey: KEY.accounts(dq), queryFn: ({ signal }) => adminBilling.accounts({ q: dq }, signal), placeholderData: keepPreviousData, retry: false });
+  const [lapsedOnly, setLapsedOnly] = useState(false);
+  const list = useQuery({
+    queryKey: KEY.accounts(dq, lapsedOnly),
+    queryFn: ({ signal }) => adminBilling.accounts({ q: dq, lapsed: lapsedOnly }, signal),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
   const items = list.data?.accounts ?? [];
   const selected = view?.kind === 'account' ? view.id : null;
   const select = useCallback((id: string) => onView({ kind: 'account', id }), [onView]);
@@ -185,6 +201,15 @@ export function AdminBillingSide({ view, onView }: { view: BillingView; onView: 
         <NavButton icon={<Activity className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.events')} active={view?.kind === 'events'} onClick={() => onView({ kind: 'events' })} testId="admin-billing-nav-events" />
         <NavButton icon={<Landmark className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.providers')} active={view?.kind === 'providers'} onClick={() => onView({ kind: 'providers' })} testId="admin-billing-nav-providers" />
       </div>
+      <Segmented<'all' | 'lapsed'>
+        label={t('adminBilling.filter')}
+        value={lapsedOnly ? 'lapsed' : 'all'}
+        onChange={(v) => setLapsedOnly(v === 'lapsed')}
+        options={[
+          { value: 'all', label: t('adminBilling.filter.all') },
+          { value: 'lapsed', label: t('billing.state.lapsed') },
+        ]}
+      />
       <div role="listbox" aria-label={t('adminBilling.accounts')} className="-mx-0.5 flex min-h-0 flex-1 mobile:min-h-[120px] flex-col gap-1 overflow-y-auto border-t border-line px-0.5 pb-1 pt-2" data-testid="admin-billing-list">
         {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
         {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{billingErrorText(list.error)}</p> : null}

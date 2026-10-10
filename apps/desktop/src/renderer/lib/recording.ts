@@ -109,6 +109,8 @@ export function stopReasonKey(reason: string): MessageKey {
       return 'rec.stop.empty';
     case 'max_duration':
       return 'rec.stop.maxDuration';
+    case 'plan_inactive':
+      return 'rec.stop.planInactive';
     case 'disabled':
       return 'rec.stop.disabled';
     case 'egress':

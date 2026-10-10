@@ -94,13 +94,14 @@ func likePattern(q string) string {
 }
 
 // listAccounts: GET /api/admin/billing/accounts?q=&status=&cursor=&limit= — q: account id,
-// workspace id, workspace name or owner email.
+// workspace id, workspace name or owner email; status=lapsed: stopped accounts in the restricted
+// mode («тариф не активен», ADR-0086 amendment 1).
 func (h *Handlers) listAccounts(w http.ResponseWriter, r *http.Request) error {
 	lim, before, err := page(r)
 	if err != nil {
 		return err
 	}
-	status, err := oneOf(r, "status", "inactive", "active", "stopped", "suspended", "closed")
+	status, err := oneOf(r, "status", "inactive", "active", "stopped", "suspended", "closed", "lapsed")
 	if err != nil {
 		return err
 	}

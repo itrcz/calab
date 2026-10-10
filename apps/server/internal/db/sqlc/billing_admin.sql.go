@@ -147,7 +147,8 @@ FROM billing_accounts a
 LEFT JOIN workspaces w ON w.id = a.workspace_id
 LEFT JOIN users u ON u.id = w.owner_id
 LEFT JOIN workspace_plans wp ON wp.workspace_id = a.workspace_id AND wp.plan = 'custom'
-WHERE ($1::text = '' OR a.status = $1::text)
+WHERE ($1::text = '' OR a.status = $1::text
+       OR ($1::text = 'lapsed' AND a.status = 'stopped' AND a.lapsed_at IS NOT NULL))
   AND ($2::uuid IS NULL OR a.id < $2::uuid)
   AND ($3::text = ''
     OR a.id::text = $3::text OR a.workspace_id::text = $3::text
@@ -178,7 +179,8 @@ type AdminListBillingAccountsRow struct {
 // provider refund id). Money moves only through the core (internal/billing/core); every
 // write here runs in a transaction that first locks the account (LockBillingAccount).
 // Newest first. q matches the account id, the workspace id (exact) or the workspace name /
-// owner email (pattern is q with LIKE wildcards escaped); an empty status matches any.
+// owner email (pattern is q with LIKE wildcards escaped); an empty status matches any; the pseudo status
+// 'lapsed' is a stopped account in the restricted mode («тариф не активен»).
 func (q *Queries) AdminListBillingAccounts(ctx context.Context, arg AdminListBillingAccountsParams) ([]AdminListBillingAccountsRow, error) {
 	rows, err := q.db.Query(ctx, adminListBillingAccounts,
 		arg.Status,

@@ -325,6 +325,8 @@ export const enBilling: DictShape<typeof ruBilling> = {
   'adminBilling.search': 'Workspace or owner e-mail',
   'adminBilling.accounts': 'Accounts',
   'adminBilling.none': 'No accounts found',
+  'adminBilling.filter': 'Filter accounts',
+  'adminBilling.filter.all': 'All',
   'adminBilling.pick': 'Choose an account in the list',
   'adminBilling.deletedWs': 'Workspace deleted',
   'adminBilling.closed': 'Closed',

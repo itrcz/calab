@@ -13,6 +13,11 @@ import "github.com/calaba/calaba/server/internal/plans"
 // editing and deleting, tasks editing, calendar, and the billing routes — what the owner needs
 // to fit Free or pay. The voice room cap (2) and the audio-only LiveKit grants are in rtc
 // (plans.Info.Lapsed). TestPlanInactiveRoutesClassified keeps the table in sync with the routes.
+//
+// Outside the table, checked where the workspace is known after the handler's own authorization:
+// POST …/oauth/clients (public for the gate: oauthprovider.Config.PlanActive), a picture replaced
+// by PATCH /api/achievements/{id} with file_id (achievements.Service.Plans), submissions of board
+// forms, the account-less room links and every new membership (plans.AdmitSeat, guests.grant).
 var planInactiveRoutes = map[string]string{
 	// writing (messages, threads, reactions, pins, bot buttons)
 	"POST /api/rooms/{id}/messages":               plans.RestrictedSend,
@@ -24,6 +29,12 @@ var planInactiveRoutes = map[string]string{
 	// files
 	"POST /api/workspaces/{id}/files": plans.RestrictedUpload,
 	"POST /api/boards/{id}/files":     plans.RestrictedUpload,
+	// pictures made of an upload: backgrounds, achievement images (an edit that replaces the
+	// picture is refused inside achievements), sticker replacement, bot avatars
+	"POST /api/workspaces/{id}/backgrounds":         plans.RestrictedUpload,
+	"POST /api/workspaces/{id}/achievements":        plans.RestrictedUpload,
+	"PUT /api/sticker-packs/{id}/stickers/{sid}":    plans.RestrictedUpload,
+	"POST /api/workspaces/{id}/bots/{botId}/avatar": plans.RestrictedUpload,
 	// invitations, guests and joining (growth is pointless until the plan is active)
 	"POST /api/workspaces/{id}/invites":                  plans.RestrictedInvite,
 	"POST /api/workspaces/{id}/invites/email":            plans.RestrictedInvite,
