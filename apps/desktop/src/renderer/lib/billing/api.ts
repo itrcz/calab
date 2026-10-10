@@ -1,6 +1,9 @@
 import {
   AdminBillingAccountDetailsSchema,
   AdminBillingAccountsSchema,
+  AdminBillingProvidersSchema,
+  AdminChangeMarketRequestSchema,
+  AdminSetProviderRequestSchema,
   AdminBillingDisputesSchema,
   AdminBillingMutationResultSchema,
   AdminBillingPaymentsSchema,
@@ -42,6 +45,7 @@ import {
   type AdminBillingDisputes,
   type AdminBillingMutationResult,
   type AdminBillingPayments,
+  type AdminBillingProviders,
   type AdminBillingRefundRequests,
   type AdminBillingRefunds,
   type AdminPriceVersion,
@@ -122,6 +126,11 @@ export interface AdminBillingApi {
   discount(id: string, init: Init<typeof AdminDiscountRequestSchema>): Promise<AdminBillingMutationResult>;
   prices(signal?: AbortSignal): Promise<AdminPriceVersions>;
   createPrice(init: Init<typeof AdminCreatePriceRequestSchema>): Promise<AdminPriceVersion>;
+  /** ADR-0083: move an account without payments to another market (409 BILLING_MARKET_FIXED otherwise). */
+  changeMarket(id: string, init: Init<typeof AdminChangeMarketRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** ADR-0083: the acquirers and their «принимать новых клиентов» switches. */
+  providers(signal?: AbortSignal): Promise<AdminBillingProviders>;
+  setProvider(id: string, init: Init<typeof AdminSetProviderRequestSchema>): Promise<AdminBillingMutationResult>;
 }
 
 const W = (ws: string): string => `/api/workspaces/${encodeURIComponent(ws)}/billing`;
@@ -174,6 +183,9 @@ export const restAdminApi: AdminBillingApi = {
   discount: (id, init) => call('PUT', `${A}/accounts/${enc(id)}/discount`, AdminBillingMutationResultSchema, body(AdminDiscountRequestSchema, init)),
   prices: (signal) => call('GET', `${A}/prices`, AdminPriceVersionsSchema, undefined, signal),
   createPrice: (init) => call('POST', `${A}/prices`, AdminPriceVersionSchema, body(AdminCreatePriceRequestSchema, init)),
+  changeMarket: (id, init) => call('POST', `${A}/accounts/${enc(id)}/market`, AdminBillingMutationResultSchema, body(AdminChangeMarketRequestSchema, init)),
+  providers: (signal) => call('GET', `${A}/providers`, AdminBillingProvidersSchema, undefined, signal),
+  setProvider: (id, init) => call('PUT', `${A}/providers/${enc(id)}`, AdminBillingMutationResultSchema, body(AdminSetProviderRequestSchema, init)),
 };
 
 export interface BillingAdapters {

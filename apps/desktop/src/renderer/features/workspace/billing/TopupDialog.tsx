@@ -1,10 +1,11 @@
 import { PaymentMethodKind, type BillingSummary, type PaymentMethodOption } from '@calaba/protocol';
-import { CircleCheck, CircleX, CreditCard, ExternalLink } from 'lucide-react';
+import { CircleCheck, CircleX, CreditCard, ExternalLink, QrCode } from 'lucide-react';
 import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { Button, Field, Input, Modal, Spinner, cx } from '../../../components/ui';
 import { t, type MessageKey } from '../../../i18n';
 import { IDLE, checkoutReducer, nowMs, pollDelay, type CheckoutFlow, type CheckoutOutcome } from '../../../lib/billing/checkout';
 import { billingErrorText } from '../../../lib/billing/errors';
+import { methodLabel, providerTag } from '../../../lib/billing/market';
 import { amountProblem, currencyOf, defaultTopup, offeredMethods, requestId, topupLimits, topupPresets, type AmountProblem } from '../../../lib/billing/model';
 import { clampMinor, formatMinor, inputOf, minorOf, parseMajor } from '../../../lib/billing/money';
 import { openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
@@ -16,12 +17,6 @@ import { openCheckout, ownerBilling, reloadBilling } from '../../../services/bil
  * checkout in the system browser, then the dialog polls GET …/checkouts/{id} until the money is on
  * the balance (the poll pauses while the window is hidden and runs again when it comes back).
  */
-
-const METHOD_KEY: Partial<Record<PaymentMethodKind, MessageKey>> = {
-  [PaymentMethodKind.CARD]: 'billing.method.card',
-  [PaymentMethodKind.SBP]: 'billing.method.sbp',
-  [PaymentMethodKind.BANK_TRANSFER]: 'billing.method.bank',
-};
 
 const PROBLEM_KEY: Record<AmountProblem, MessageKey> = {
   empty: 'billing.topup.err.empty',
@@ -45,9 +40,9 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethodOpti
             value === m.id ? 'border-[var(--color-focus)] bg-[var(--color-card)]' : 'border-line hover:bg-hover',
           )}
         >
-          <CreditCard className="size-4 shrink-0 text-muted" aria-hidden />
-          <span className="min-w-0 flex-1">{t(METHOD_KEY[m.kind] ?? 'billing.method.card')}</span>
-          {m.provider === 'stripe' ? <span className="text-caption text-faint">Stripe</span> : null}
+          {m.kind === PaymentMethodKind.SBP ? <QrCode className="size-4 shrink-0 text-muted" aria-hidden /> : <CreditCard className="size-4 shrink-0 text-muted" aria-hidden />}
+          <span className="min-w-0 flex-1">{t(methodLabel(m))}</span>
+          {providerTag(m.provider) ? <span className="text-caption text-faint">{providerTag(m.provider)}</span> : null}
         </button>
       ))}
     </div>

@@ -1,5 +1,6 @@
 import {
   BillingAccountStatus,
+  BillingSalesMode,
   BillingState,
   DisputeStatus,
   LedgerEntryKind,
@@ -14,7 +15,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate, timestampFromDate, timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Inbox, Search, Tags } from 'lucide-react';
+import { Activity, Inbox, Landmark, Search, Tags } from 'lucide-react';
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, CloseButton, Empty, Field, Input, Modal, Row, Segmented, Select, Spinner, Toggle, cx } from '../../../components/ui';
 import { plural, t, type MessageKey } from '../../../i18n';
@@ -40,7 +41,7 @@ import { MoneyActionDialog, type MoneyActionArgs } from './MoneyAction';
  */
 
 export type AdminSection = 'workspaces' | 'billing';
-export type BillingView = { kind: 'account'; id: string } | { kind: 'requests' } | { kind: 'prices' } | { kind: 'events' } | null;
+export type BillingView = { kind: 'account'; id: string } | { kind: 'requests' } | { kind: 'prices' } | { kind: 'events' } | { kind: 'providers' } | null;
 
 const KEY = {
   accounts: (q: string) => ['admin', 'billing', 'accounts', q] as const,
@@ -52,6 +53,7 @@ const KEY = {
   requests: ['admin', 'billing', 'refund-requests'] as const,
   prices: ['admin', 'billing', 'prices'] as const,
   events: (open: boolean) => ['admin', 'billing', 'events', open] as const,
+  providers: ['admin', 'billing', 'providers'] as const,
 };
 
 /** A price version takes effect at least this far ahead (no price-increase consent flow in v1). */
@@ -178,6 +180,7 @@ export function AdminBillingSide({ view, onView }: { view: BillingView; onView: 
         <NavButton icon={<Inbox className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.requests')} active={view?.kind === 'requests'} onClick={() => onView({ kind: 'requests' })} testId="admin-billing-nav-requests" />
         <NavButton icon={<Tags className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.prices')} active={view?.kind === 'prices'} onClick={() => onView({ kind: 'prices' })} testId="admin-billing-nav-prices" />
         <NavButton icon={<Activity className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.events')} active={view?.kind === 'events'} onClick={() => onView({ kind: 'events' })} testId="admin-billing-nav-events" />
+        <NavButton icon={<Landmark className="size-4 shrink-0" aria-hidden />} label={t('adminBilling.nav.providers')} active={view?.kind === 'providers'} onClick={() => onView({ kind: 'providers' })} testId="admin-billing-nav-providers" />
       </div>
       <div role="listbox" aria-label={t('adminBilling.accounts')} className="-mx-0.5 flex min-h-0 flex-1 mobile:min-h-[120px] flex-col gap-1 overflow-y-auto border-t border-line px-0.5 pb-1 pt-2" data-testid="admin-billing-list">
         {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
@@ -217,11 +220,68 @@ export function AdminBillingPane({ view, onClose, notice }: { view: BillingView;
   if (view?.kind === 'requests') return <RequestsPage onClose={onClose} notice={notice} />;
   if (view?.kind === 'prices') return <PricesPage onClose={onClose} notice={notice} />;
   if (view?.kind === 'events') return <EventsPage onClose={onClose} notice={notice} />;
+  if (view?.kind === 'providers') return <ProvidersPage onClose={onClose} notice={notice} />;
   return (
     <>
       <PaneHeader title={t('adminBilling.section.billing')} onClose={onClose} />
       {notice}
       <div className="grid flex-1 place-items-center">{notice ? null : <Empty>{t('adminBilling.pick')}</Empty>}</div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- acquirers (ADR-0083)
+
+const MODE_KEY: Record<BillingSalesMode, MessageKey> = {
+  [BillingSalesMode.UNSPECIFIED]: 'adminBilling.providers.modeContact',
+  [BillingSalesMode.BOTH]: 'adminBilling.providers.modeBoth',
+  [BillingSalesMode.RU_ONLY]: 'adminBilling.providers.modeRu',
+  [BillingSalesMode.GLOBAL_ONLY]: 'adminBilling.providers.modeGlobal',
+  [BillingSalesMode.CONTACT]: 'adminBilling.providers.modeContact',
+};
+
+const PROVIDER_NAME: Record<string, string> = { stripe: 'Stripe', tochka: 'Точка' };
+
+/** «Эквайеры»: the configured acquirers and their «принимать новых клиентов» switch (audited, with a reason). */
+function ProvidersPage({ onClose, notice }: { onClose: () => void; notice: ReactNode }): ReactNode {
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: KEY.providers, queryFn: ({ signal }) => adminBilling.providers(signal), retry: false });
+  const [toggle, setToggle] = useState<{ id: string; open: boolean } | null>(null);
+  const name = (id: string): string => PROVIDER_NAME[id] ?? id;
+  return (
+    <>
+      <PaneHeader title={t('adminBilling.providers.title')} onClose={onClose} />
+      {notice}
+      <Scroll testId="admin-billing-providers">
+        <Card title={t('adminBilling.providers.title')} footer={t('adminBilling.providers.hint')}>
+          {list.isLoading ? <Spinner className="mx-auto my-3" /> : null}
+          {list.isError && !recentAuthRequired(list.error) ? <p className="px-3 py-3 text-body text-danger-text">{billingErrorText(list.error)}</p> : null}
+          {list.data?.providers.map((p) => (
+            <Row key={p.id} label={name(p.id)} hint={t('adminBilling.providers.markets', { markets: p.markets.join(', ') })}>
+              <Toggle label={t('adminBilling.providers.acceptNew')} checked={p.acceptNew} onChange={(open) => setToggle({ id: p.id, open })} />
+            </Row>
+          ))}
+          {list.data ? (
+            <p className="px-3 py-2 text-caption text-muted" data-testid="admin-billing-providers-mode">
+              {t('adminBilling.providers.mode', { mode: t(MODE_KEY[list.data.mode]) })}
+            </p>
+          ) : null}
+        </Card>
+      </Scroll>
+      {toggle ? (
+        <MoneyActionDialog
+          title={t(toggle.open ? 'adminBilling.providers.openTitle' : 'adminBilling.providers.closeTitle', { name: name(toggle.id) })}
+          text={t(toggle.open ? 'adminBilling.providers.openText' : 'adminBilling.providers.closeText')}
+          action={t('common.save')}
+          currency="USD"
+          amount={false}
+          preview={false}
+          destructive={!toggle.open}
+          run={(x) => adminBilling.setProvider(toggle.id, { acceptNew: toggle.open, reason: x.reason, requestId: x.requestId })}
+          onDone={() => void qc.invalidateQueries({ queryKey: KEY.providers })}
+          onClose={() => setToggle(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -236,6 +296,7 @@ type Dialog =
   | { kind: 'discount' }
   | { kind: 'reconcile' }
   | { kind: 'release'; refund: AdminBillingRefund }
+  | { kind: 'market' }
   | null;
 
 function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => void; notice: ReactNode }): ReactNode {
@@ -299,8 +360,13 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
             <span className="max-w-72 truncate text-body text-muted">{a.ownerEmail}</span>
           </Row>
           <Row label={t('adminBilling.row.market')}>
-            <span className="text-body text-muted">
+            <span className="flex items-center gap-2 text-body text-muted">
               {a.market} · {cur}
+              {a.status === BillingAccountStatus.INACTIVE && minorOf(a.balance) === 0n ? (
+                <Button size="sm" variant="ghost" className="h-5 px-1.5" onClick={() => setDialog({ kind: 'market' })} data-testid="admin-billing-market">
+                  {t('adminBilling.market.change')}
+                </Button>
+              ) : null}
             </span>
           </Row>
           <Row label={t('billing.people')}>
@@ -470,6 +536,7 @@ function AccountDialogs({ a, dialog, currency, onDone, onClose }: { a: AdminBill
   const [discount, setDiscount] = useState(() => String(a.discountBps / 100));
   const [holdDays, setHoldDays] = useState('3');
   const [release, setRelease] = useState(false);
+  const [market, setMarket] = useState<'global' | 'ru'>(a.market === 'ru' ? 'global' : 'ru');
   if (!dialog) return null;
   const money = (m: bigint | null) => ({ minor: m ?? 0n, currency });
   if (dialog.kind === 'credit')
@@ -557,6 +624,30 @@ function AccountDialogs({ a, dialog, currency, onDone, onClose }: { a: AdminBill
       />
     );
   }
+  if (dialog.kind === 'market')
+    return (
+      <MoneyActionDialog
+        title={t('adminBilling.market.title')}
+        text={t('adminBilling.market.text')}
+        action={t('adminBilling.market.change')}
+        currency={currency}
+        amount={false}
+        extra={
+          <Segmented<'global' | 'ru'>
+            label={t('billing.market.label')}
+            value={market}
+            onChange={setMarket}
+            options={[
+              { value: 'global', label: t('billing.market.global') },
+              { value: 'ru', label: t('billing.market.ru') },
+            ]}
+          />
+        }
+        run={(x) => adminBilling.changeMarket(a.accountId, { market, reason: x.reason, requestId: x.requestId, expectedRevision: a.revision, preview: x.preview })}
+        onDone={onDone}
+        onClose={onClose}
+      />
+    );
   if (dialog.kind === 'release') {
     const refundId = dialog.refund.refund?.id ?? '';
     return (

@@ -1,13 +1,14 @@
 import { BillingQuotePurpose, BillingState, PaymentMethodKind, Plan, WorkspaceRole, type BillingPlanOffer, type BillingQuote, type BillingSummary, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { useQuery } from '@tanstack/react-query';
-import { Check, CircleCheck, CirclePause, CreditCard, Minus, Plus, TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
-import { Button, Input, Modal, Spinner, cx } from '../../../components/ui';
-import { t, type MessageKey } from '../../../i18n';
+import { Check, CircleCheck, CirclePause, CreditCard, Mail, Minus, Plus, QrCode, TriangleAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { Button, Input, Modal, Segmented, Spinner, cx } from '../../../components/ui';
+import { t, useLocale, type MessageKey } from '../../../i18n';
 import { audioTierLabel } from '../../../lib/audioTierLabel';
 import { IDLE, checkoutReducer, nowMs } from '../../../lib/billing/checkout';
 import { billingErrorText, billingStale } from '../../../lib/billing/errors';
+import { MARKET_LABEL, MARKET_SELLER, choosableMarkets, contactOnly, methodLabel, offersOf, providerTag, quoteMarket, screenMarket, type Market } from '../../../lib/billing/market';
 import { currencyOf, offeredMethods, requestId, topupLimits } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
 import {
@@ -30,7 +31,10 @@ import {
 } from '../../../lib/billing/plans';
 import { PLAN_LABEL, countText, planKind, storageText } from '../../../lib/plan';
 import { billingMock, billingPaymentsAllowed, loadBilling, openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
+import { openPlanContact, planContact } from '../../../services/plan';
 import { useBilling } from '../../../stores/billing';
+import { usePrefs } from '../../../stores/prefs';
+import { useSession } from '../../../stores/session';
 import { useUi } from '../../../stores/ui';
 import { useWorkspaces } from '../../../stores/workspaces';
 import { useBillingState } from './BillingPaywall';
@@ -70,6 +74,18 @@ export function PlansDialog({ workspaceId, welcome, onClose }: { workspaceId: st
   const entry = useBilling((s) => s.byWs[workspaceId]);
   const [chosen, setChosen] = useState<Chosen | null>(null);
   const [stopping, setStopping] = useState(false);
+  // ADR-0083: the market is the owner's choice before the first payment (remembered per user on
+  // this device), preselected by the UI language only while both markets are open.
+  const userId = useSession((s) => s.me?.user?.id ?? '');
+  const remembered = usePrefs((s) => s.billingMarket[userId]);
+  const locale = useLocale();
+  const chooseMarket = useCallback(
+    (m: Market) => {
+      const p = usePrefs.getState();
+      p.setPrefs({ billingMarket: { ...p.billingMarket, [userId]: m } });
+    },
+    [userId],
+  );
   // A fresh summary each time the screen opens (the owner; members only in a billing workspace).
   useEffect(() => {
     if (owner || billingMock()) void loadBilling(workspaceId);
@@ -101,14 +117,29 @@ export function PlansDialog({ workspaceId, welcome, onClose }: { workspaceId: st
         <p className="py-2 text-body text-muted">{t('billing.plans.unavailable')}</p>
       );
   } else if (chosen) {
-    return <PayStep workspaceId={workspaceId} chosen={chosen} offers={data.offers} onBack={() => setChosen(null)} onClose={onClose} />;
+    const market = screenMarket(data, remembered, locale);
+    return (
+      <PayStep
+        workspaceId={workspaceId}
+        chosen={chosen}
+        offers={offersOf(data.offers, market)}
+        market={quoteMarket(data, market)}
+        onBack={() => setChosen(null)}
+        onClose={onClose}
+      />
+    );
   } else {
     const phase = screenPhase(data);
+    const market = screenMarket(data, remembered, locale);
     body = (
       <PlanGrid
         workspaceId={workspaceId}
         summary={data.summary}
-        offers={data.offers}
+        offers={offersOf(data.offers, market)}
+        market={market}
+        markets={choosableMarkets(data)}
+        onMarket={chooseMarket}
+        contact={contactOnly(data)}
         phase={phase}
         state={data.status?.state ?? state}
         onChoose={(step) => {
@@ -205,6 +236,10 @@ function PlanGrid({
   workspaceId,
   summary,
   offers,
+  market,
+  markets,
+  onMarket,
+  contact,
   phase,
   state,
   onChoose,
@@ -212,6 +247,12 @@ function PlanGrid({
   workspaceId: string;
   summary: BillingSummary | undefined;
   offers: readonly BillingPlanOffer[];
+  market: Market;
+  /** Markets to choose between (both open, nothing paid yet); one or none: no switch. */
+  markets: readonly Market[];
+  onMarket: (m: Market) => void;
+  /** No acquirer takes new clients: paid plans by «contact us». */
+  contact: boolean;
   phase: ScreenPhase;
   state: BillingState;
   onChoose: (s: PlanStep) => void;
@@ -239,6 +280,23 @@ function PlanGrid({
           {t('billing.note.arrears')}
         </Note>
       ) : null}
+      {markets.length > 1 && !contact ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="plans-market">
+          <Segmented<Market>
+            label={t('billing.market.label')}
+            value={market}
+            onChange={onMarket}
+            options={markets.map((m) => ({ value: m, label: t(MARKET_LABEL[m]) }))}
+          />
+          <span className="text-caption text-muted">{t('billing.market.fixedHint')}</span>
+        </div>
+      ) : null}
+      {!contact && (markets.length > 1 || market === 'ru') ? (
+        <p className="text-caption text-muted" data-testid="plans-seller">
+          {t(MARKET_SELLER[market])}
+        </p>
+      ) : null}
+      {contact && payments ? <Note>{t('billing.plans.contactHint')}</Note> : null}
       <div className="grid grid-cols-3 gap-3 mobile:grid-cols-1" role="list" aria-label={t('billing.plans.title')}>
         {TIERS.map((tier) => (
           <PlanCard
@@ -249,6 +307,7 @@ function PlanGrid({
             step={planStep(phase, accountPlan, tier)}
             people={people}
             payments={payments && forSale(offers, tier)}
+            contact={contact}
             onChoose={onChoose}
           />
         ))}
@@ -265,6 +324,7 @@ function PlanCard({
   step,
   people,
   payments,
+  contact,
   onChoose,
 }: {
   tier: PlanTier;
@@ -273,6 +333,7 @@ function PlanCard({
   step: PlanStep;
   people: number;
   payments: boolean;
+  contact: boolean;
   onChoose: (s: PlanStep) => void;
 }): ReactNode {
   const unit = offer?.unitPrice;
@@ -291,6 +352,14 @@ function PlanCard({
     action = step.why === 'debtUpgrade' ? <span className="text-caption text-muted">{t('billing.plans.debtFirst')}</span> : null;
   } else if (!payments) {
     action = paid && !unit ? <span className="text-caption text-muted">{t('billing.plans.notForSale')}</span> : null;
+  } else if (contact && step.kind === 'pay') {
+    // ADR-0083: no acquirer takes new clients — the paid plans by contacting us.
+    action = planContact() ? (
+      <Button variant="secondary" onClick={openPlanContact} data-testid={`plans-contact-${Plan[tier]}`}>
+        <Mail className="size-3.5" aria-hidden />
+        {t('billing.plans.contact')}
+      </Button>
+    ) : null;
   } else if (step.kind === 'stop') {
     action = (
       <Button variant="secondary" onClick={() => onChoose(step)} data-testid="plans-to-free">
@@ -365,18 +434,38 @@ async function applyPlan(ws: string, c: Chosen, q: BillingQuote, reqId: string):
  * (self-serve) and says what the action needs now; the seats only size the top-up (a prepaid
  * month for the planned team — the server charges the actual people each 24 h).
  */
-function PayStep({ workspaceId, chosen, offers, onBack, onClose }: { workspaceId: string; chosen: Chosen; offers: readonly BillingPlanOffer[]; onBack: () => void; onClose: () => void }): ReactNode {
+function PayStep({
+  workspaceId,
+  chosen,
+  offers,
+  market,
+  onBack,
+  onClose,
+}: {
+  workspaceId: string;
+  chosen: Chosen;
+  offers: readonly BillingPlanOffer[];
+  /** The owner's market choice, sent with the ACTIVATE quote before the first payment (ADR-0083). */
+  market: Market | undefined;
+  onBack: () => void;
+  onClose: () => void;
+}): ReactNode {
+  const quoteReq = useMemo(
+    () => ({ purpose: chosen.purpose, plan: chosen.plan, ...(market && chosen.purpose === BillingQuotePurpose.ACTIVATE ? { market } : {}) }),
+    [chosen.purpose, chosen.plan, market],
+  );
   const quote = useQuery({
-    queryKey: ['billing', workspaceId, 'plan-quote', chosen.purpose, chosen.plan],
-    queryFn: () => ownerBilling.quote(workspaceId, { purpose: chosen.purpose, plan: chosen.plan }),
+    queryKey: ['billing', workspaceId, 'plan-quote', chosen.purpose, chosen.plan, market ?? ''],
+    queryFn: () => ownerBilling.quote(workspaceId, quoteReq),
     retry: false,
     gcTime: 0,
     refetchOnWindowFocus: false,
   });
   const summary = useBilling((s) => s.byWs[workspaceId]?.data?.summary);
   const membersBillable = useWorkspaces((s) => billableOf(s.byId[workspaceId]?.members));
-  // A self-serve quote created the account: read its summary (methods, balance, people).
-  const created = !!quote.data && !summary;
+  // A self-serve quote created the account, or moved it to the chosen market: read its summary
+  // (methods, balance, people) again.
+  const created = !!quote.data && (!summary || (!!market && summary.market !== market));
   useEffect(() => {
     if (created) reloadBilling(workspaceId);
   }, [created, workspaceId]);
@@ -416,7 +505,7 @@ function PayStep({ workspaceId, chosen, offers, onBack, onClose }: { workspaceId
     setError(null);
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const fresh = await ownerBilling.quote(workspaceId, { purpose: chosen.purpose, plan: chosen.plan });
+        const fresh = await ownerBilling.quote(workspaceId, quoteReq);
         if (minorOf(fresh.toPay) > 0n) {
           setError(t('billing.pay.stillShort'));
           setPhase('form');
@@ -440,7 +529,7 @@ function PayStep({ workspaceId, chosen, offers, onBack, onClose }: { workspaceId
       }
     }
     setPhase('form');
-  }, [workspaceId, chosen, quote]);
+  }, [workspaceId, chosen, quoteReq, quote]);
 
   // The money is on the balance: activate right away (the person experiences one path).
   const credited = flow.phase === 'done' && flow.outcome === 'credited';
@@ -589,11 +678,6 @@ function SeatsField({ value, range, onChange }: { value: string; range: { min: n
   );
 }
 
-const METHOD_KEY: Partial<Record<PaymentMethodKind, MessageKey>> = {
-  [PaymentMethodKind.CARD]: 'billing.method.card',
-  [PaymentMethodKind.SBP]: 'billing.method.sbp',
-  [PaymentMethodKind.BANK_TRANSFER]: 'billing.method.bank',
-};
 
 /** The methods the server offers for this account (registry capability matrix): a radio list, so more acquirers plug in. */
 function MethodList({ methods, value, onChange }: { methods: ReturnType<typeof offeredMethods>; value: string; onChange: (id: string) => void }): ReactNode {
@@ -614,9 +698,9 @@ function MethodList({ methods, value, onChange }: { methods: ReturnType<typeof o
               value === m.id ? 'border-[var(--color-focus)] bg-[var(--color-card)]' : 'border-line hover:bg-hover',
             )}
           >
-            <CreditCard className="size-4 shrink-0 text-muted" aria-hidden />
-            <span className="min-w-0 flex-1">{t(METHOD_KEY[m.kind] ?? 'billing.method.card')}</span>
-            {m.provider === 'stripe' ? <span className="text-caption text-faint">Stripe</span> : null}
+            {m.kind === PaymentMethodKind.SBP ? <QrCode className="size-4 shrink-0 text-muted" aria-hidden /> : <CreditCard className="size-4 shrink-0 text-muted" aria-hidden />}
+            <span className="min-w-0 flex-1">{t(methodLabel(m))}</span>
+            {providerTag(m.provider) ? <span className="text-caption text-faint">{providerTag(m.provider)}</span> : null}
             {value === m.id ? <Check className="size-4 shrink-0 text-accent-text" aria-hidden /> : null}
           </button>
         ))}
