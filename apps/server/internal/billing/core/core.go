@@ -94,6 +94,10 @@ type Guard interface {
 	// Check refuses target ("team" | "enterprise" | "free") for the workspace: a plan a superadmin
 	// assigned or usage over the target's limits. Runs under the account lock.
 	Check(ctx context.Context, q *sqlc.Queries, workspaceID uuid.UUID, target string, now time.Time) error
+	// Fits reports whether the workspace's usage fits target's limits now, for an automatic
+	// decision that never refuses (the paid days of a stopped account ran out: Free or the
+	// restricted mode, ADR-0086 amendment). Runs under the account lock without Lock.
+	Fits(ctx context.Context, q *sqlc.Queries, workspaceID uuid.UUID, target string, now time.Time) (bool, error)
 }
 
 // Core is the money core of balance billing: the only writer of balances, lots and charges.
@@ -233,7 +237,7 @@ func (s *state) save() error {
 	}
 	acc, err := s.q.UpdateBillingAccountState(s.ctx, sqlc.UpdateBillingAccountStateParams{
 		Status: s.acc.Status, Plan: s.acc.Plan, NegativeSince: s.acc.NegativeSince, SuspendAt: s.acc.SuspendAt,
-		NextDueAt: s.acc.NextDueAt, Now: s.now, ID: s.acc.ID,
+		NextDueAt: s.acc.NextDueAt, LapsedAt: s.acc.LapsedAt, Now: s.now, ID: s.acc.ID,
 	})
 	if err != nil {
 		return err
@@ -246,6 +250,44 @@ func (s *state) setStatus(status string) {
 	if s.acc.Status != status {
 		s.acc.Status, s.dirty = status, true
 	}
+	if status != StatusStopped {
+		s.setLapsed(nil) // only a stopped account is lapsed (CHECK billing_accounts_lapsed_check)
+	}
+}
+
+// setLapsed sets or clears the restricted mode («тариф не активен», ADR-0086 amendment).
+func (s *state) setLapsed(t *time.Time) {
+	if !sameTime(s.acc.LapsedAt, t) {
+		s.acc.LapsedAt, s.dirty = t, true
+	}
+}
+
+// Lapsed reports the restricted mode of an account: stopped, the paid days over, usage over Free
+// when they ran out and not fixed since (ADR-0086 amendment). Enforcement is the caller's
+// (plans: BILLING_ENFORCEMENT_ENABLED).
+func Lapsed(acc sqlc.BillingAccount) bool {
+	return acc.Status == StatusStopped && acc.LapsedAt != nil
+}
+
+// settleFree decides what a stopped account whose paid days are over gives (ADR-0086 amendment,
+// owner 10.10): Free when the workspace fits Free, else the restricted mode (lapsed) from at. An
+// automatic decision: it never refuses. An account already lapsed stays lapsed — leaving it is
+// the owner's move (Activate, or Resume FREE once the usage fits).
+func (s *state) settleFree(at time.Time) error {
+	if s.acc.Status != StatusStopped || s.acc.NextDueAt != nil || s.acc.LapsedAt != nil {
+		return nil
+	}
+	g := s.c.hooks.Guard
+	if g == nil || s.acc.WorkspaceID == nil {
+		return nil
+	}
+	fits, err := g.Fits(s.ctx, s.q, *s.acc.WorkspaceID, PlanFree, s.now)
+	if err != nil || fits {
+		return err
+	}
+	at = at.UTC()
+	s.setLapsed(&at)
+	return nil
 }
 
 func (s *state) setNextDue(t *time.Time) {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -109,11 +110,44 @@ func offerViolations(r *v1.GetBillingResponse, p v1.Plan) []*v1.PlanLimitViolati
 	return nil
 }
 
-// Stop (→ Free when the paid days end) is refused while the workspace has more members than Free
-// allows: the plan screen marks Free, the quote and the commit answer the violations; it passes
-// once the owner removed the extra member.
-func TestTransitionStopOverFreeLimits(t *testing.T) {
-	e := newEnv(t, envOpt{plans: transitionPlans(t)})
+// lapsedPlans is transitionPlans with billing enforcement on (the restricted mode applies).
+func lapsedPlans(t *testing.T) *plans.Service {
+	t.Helper()
+	p := transitionPlans(t)
+	p.SetBilling(plans.Billing{Enabled: true, Enforced: true})
+	return p
+}
+
+// endPaidDays moves the clock past the stopped account's last lot and runs the coverage worker.
+func (e *env) endPaidDays(clock *billing.FakeClock) {
+	e.t.Helper()
+	a := e.account()
+	if a.NextDueAt == nil {
+		e.t.Fatal("no paid days running")
+	}
+	clock.Set(a.NextDueAt.Add(time.Minute))
+	if _, ok, _, err := e.core.ProcessDue(ctx, core.DueCoverage, nil); err != nil || !ok {
+		e.t.Fatalf("coverage: ok=%v err=%v", ok, err)
+	}
+}
+
+// billingState is Workspace.billing.state as GET …/billing shows it.
+func (e *env) billingState() v1.BillingState {
+	e.t.Helper()
+	var got v1.GetBillingResponse
+	if st, r := e.do(e.owner, "GET", e.base(), nil, &got); st != 200 {
+		e.t.Fatalf("GET billing: %d %s", st, r)
+	}
+	return got.GetStatus().GetState()
+}
+
+// Stop is always allowed (ADR-0086 amendment, owner 10.10), also over Free's limits. The paid days
+// run to their end; then the workspace does not fit Free and enters the restricted mode
+// (LAPSED). «Перейти на Free» (resume FREE) is refused with the violations until the owner removes
+// the extra member, then the workspace is on Free.
+func TestTransitionStopOverFreeLimitsLapses(t *testing.T) {
+	clock := billing.NewFakeClock(time.Now())
+	e := newEnv(t, envOpt{plans: lapsedPlans(t), clock: clock})
 	e.paid(1000)
 	if st, ae := e.quoteAct(v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE, v1.Plan_PLAN_TEAM, "/activate"); st != 200 {
 		t.Fatalf("activate Team (Free → Team): %d %v", st, ae)
@@ -128,21 +162,105 @@ func TestTransitionStopOverFreeLimits(t *testing.T) {
 	if v := offerViolations(&got, v1.Plan_PLAN_FREE); len(v) != 1 || v[0].GetKind() != v1.PlanLimitKind_PLAN_LIMIT_KIND_MEMBERS || v[0].GetCurrent() != 3 || v[0].GetLimit() != 2 {
 		t.Fatalf("Free offer violations %v", v)
 	}
-	if v := offerViolations(&got, v1.Plan_PLAN_ENTERPRISE); len(v) != 0 {
-		t.Fatalf("Business offer violations %v", v)
-	}
-	want := map[v1.PlanLimitKind][2]uint64{v1.PlanLimitKind_PLAN_LIMIT_KIND_MEMBERS: {3, 2}}
-	st, ae := e.doErr(e.owner, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP})
-	wantViolations(t, "stop quote", st, ae, want)
-	// The commit checks again under the lock (a stale client, no quote).
-	st, ae = e.doErr(e.owner, "POST", e.base()+"/stop", &v1.BillingActionRequest{RequestId: uuid.NewString()})
-	wantViolations(t, "stop", st, ae, want)
-	if a := e.account(); a.Status != core.StatusActive {
-		t.Fatalf("refused stop changed the account: %s", a.Status)
-	}
-	e.drop(extra)
 	if st, ae := e.quoteAct(v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP, v1.Plan_PLAN_UNSPECIFIED, "/stop"); st != 200 {
-		t.Fatalf("stop after the fix: %d %v", st, ae)
+		t.Fatalf("stop over Free's limits: %d %v", st, ae)
+	}
+	if a := e.account(); a.Status != core.StatusStopped || a.LapsedAt != nil || a.NextDueAt == nil {
+		t.Fatalf("after stop: %s lapsed=%v next=%v", a.Status, a.LapsedAt, a.NextDueAt)
+	}
+	if s := e.billingState(); s != v1.BillingState_BILLING_STATE_STOPPED {
+		t.Fatalf("paid days running: %v", s)
+	}
+
+	e.endPaidDays(clock)
+	if a := e.account(); a.Status != core.StatusStopped || a.LapsedAt == nil || !core.Lapsed(a) {
+		t.Fatalf("paid days over, usage over Free: %s lapsed=%v", a.Status, a.LapsedAt)
+	}
+	if s := e.billingState(); s != v1.BillingState_BILLING_STATE_LAPSED {
+		t.Fatalf("restricted mode: %v", s)
+	}
+	if row, err := e.d.Q.GetWorkspacePlan(ctx, e.ws); err != nil || row.Plan != core.PlanFree {
+		t.Fatalf("plan row %v %v: the limits are Free's", row.Plan, err)
+	}
+
+	// «Перейти на Free»: the quote and the commit refuse with the violations.
+	want := map[v1.PlanLimitKind][2]uint64{v1.PlanLimitKind_PLAN_LIMIT_KIND_MEMBERS: {3, 2}}
+	st, ae := e.doErr(e.owner, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_RESUME_FREE})
+	wantViolations(t, "free quote", st, ae, want)
+	st, ae = e.doErr(e.owner, "POST", e.base()+"/resume", &v1.ResumeBillingRequest{Mode: v1.BillingResumeMode_BILLING_RESUME_MODE_FREE, RequestId: uuid.NewString()})
+	wantViolations(t, "free commit", st, ae, want)
+	if a := e.account(); !core.Lapsed(a) {
+		t.Fatal("a refused move to Free left the restricted mode")
+	}
+
+	e.drop(extra)
+	var q v1.BillingQuote
+	if st, r := e.do(e.owner, "POST", e.base()+"/quote", &v1.BillingQuoteRequest{Purpose: v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_RESUME_FREE}, &q); st != 200 {
+		t.Fatalf("free quote after the fix: %d %s", st, r)
+	}
+	if st, ae := e.doErr(e.owner, "POST", e.base()+"/resume", &v1.ResumeBillingRequest{Mode: v1.BillingResumeMode_BILLING_RESUME_MODE_FREE,
+		QuoteId: q.GetQuoteId(), RequestId: uuid.NewString(), ExpectedRevision: q.GetRevision()}); st != 200 {
+		t.Fatalf("move to Free after the fix: %d %v", st, ae)
+	}
+	if a := e.account(); a.Status != core.StatusStopped || a.LapsedAt != nil {
+		t.Fatalf("on Free: %s lapsed=%v", a.Status, a.LapsedAt)
+	}
+	if s := e.billingState(); s != v1.BillingState_BILLING_STATE_STOPPED {
+		t.Fatalf("on Free: %v", s)
+	}
+}
+
+// A workspace that fits Free when the paid days end goes to Free, never to the restricted mode.
+func TestTransitionStopFitsFree(t *testing.T) {
+	clock := billing.NewFakeClock(time.Now())
+	e := newEnv(t, envOpt{plans: lapsedPlans(t), clock: clock})
+	e.paid(1000)
+	if st, ae := e.quoteAct(v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE, v1.Plan_PLAN_TEAM, "/activate"); st != 200 {
+		t.Fatalf("activate: %d %v", st, ae)
+	}
+	if st, ae := e.quoteAct(v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP, v1.Plan_PLAN_UNSPECIFIED, "/stop"); st != 200 {
+		t.Fatalf("stop: %d %v", st, ae)
+	}
+	e.endPaidDays(clock)
+	if a := e.account(); a.Status != core.StatusStopped || a.LapsedAt != nil || a.NextDueAt != nil {
+		t.Fatalf("fits Free: %s lapsed=%v next=%v", a.Status, a.LapsedAt, a.NextDueAt)
+	}
+	if s := e.billingState(); s != v1.BillingState_BILLING_STATE_STOPPED {
+		t.Fatalf("Free: %v", s)
+	}
+}
+
+// The restricted mode is left by paying: activate on the lapsed account (a usage over Free fits
+// Team) makes it active at once. With enforcement off the account shows STOPPED (shadow mode).
+func TestTransitionLapsedActivate(t *testing.T) {
+	clock := billing.NewFakeClock(time.Now())
+	ps := lapsedPlans(t)
+	e := newEnv(t, envOpt{plans: ps, clock: clock})
+	e.paid(1000)
+	if st, ae := e.quoteAct(v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE, v1.Plan_PLAN_TEAM, "/activate"); st != 200 {
+		t.Fatalf("activate: %d %v", st, ae)
+	}
+	e.addMember(e.user(), "member")
+	if st, ae := e.quoteAct(v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP, v1.Plan_PLAN_UNSPECIFIED, "/stop"); st != 200 {
+		t.Fatalf("stop: %d %v", st, ae)
+	}
+	e.endPaidDays(clock)
+	if !core.Lapsed(e.account()) {
+		t.Fatal("not lapsed")
+	}
+	ps.SetBilling(plans.Billing{Enabled: true, Enforced: false})
+	if s := e.billingState(); s != v1.BillingState_BILLING_STATE_STOPPED {
+		t.Fatalf("enforcement off: %v, want STOPPED", s)
+	}
+	ps.SetBilling(plans.Billing{Enabled: true, Enforced: true})
+	if st, ae := e.quoteAct(v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE, v1.Plan_PLAN_TEAM, "/activate"); st != 200 {
+		t.Fatalf("activate the lapsed account: %d %v", st, ae)
+	}
+	if a := e.account(); a.Status != core.StatusActive || a.LapsedAt != nil {
+		t.Fatalf("after paying: %s lapsed=%v", a.Status, a.LapsedAt)
+	}
+	if s := e.billingState(); s != v1.BillingState_BILLING_STATE_ACTIVE {
+		t.Fatalf("after paying: %v", s)
 	}
 }
 
@@ -309,6 +427,11 @@ func TestTransitionResumeChecks(t *testing.T) {
 	in := &v1.ResumeBillingRequest{Mode: v1.BillingResumeMode_BILLING_RESUME_MODE_FREE, RequestId: uuid.NewString()}
 	if st, r := e.do(e.owner, "POST", e.base()+"/resume", in, &got); st != 200 || got.GetSummary().GetStatus() != v1.BillingAccountStatus_BILLING_ACCOUNT_STATUS_STOPPED {
 		t.Fatalf("free resume over Free's limits: %d %s %v", st, r, &got)
+	}
+	// Never refused (paying the debt off must not require fitting a plan), but the workspace does
+	// not fit Free: the restricted mode (ADR-0086 amendment), not Free over its limits.
+	if a := e.account(); !core.Lapsed(a) {
+		t.Fatalf("free resume over Free's limits: lapsed=%v, want the restricted mode", a.LapsedAt)
 	}
 }
 

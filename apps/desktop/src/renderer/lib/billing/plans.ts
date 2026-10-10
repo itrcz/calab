@@ -24,14 +24,16 @@ export interface BadgeView {
   /** The plan named on the badge (Workspace.plan; Free when unset). */
   plan: Plan;
   tone: BadgeTone;
-  /** A short state after the name: debt, suspended, waiting for the first payment. */
-  note: 'debt' | 'suspended' | 'inactive' | null;
+  /** A short state after the name: debt, suspended, waiting for the first payment, plan not active. */
+  note: 'debt' | 'suspended' | 'inactive' | 'lapsed' | null;
 }
 
 export function badgeView(plan: Plan, state: BillingState): BadgeView {
   const p = plan === Plan.UNSPECIFIED ? Plan.FREE : plan;
   if (state === BillingState.SUSPENDED) return { plan: p, tone: 'danger', note: 'suspended' };
   if (state === BillingState.IN_ARREARS) return { plan: p, tone: 'warn', note: 'debt' };
+  // The restricted mode (ADR-0086 amendment): «не активен», the warn outline like the debt.
+  if (state === BillingState.LAPSED) return { plan: p, tone: 'warn', note: 'lapsed' };
   if (state === BillingState.INACTIVE) return { plan: p, tone: 'free', note: 'inactive' };
   return { plan: p, tone: p === Plan.FREE ? 'free' : 'paid', note: null };
 }
@@ -44,9 +46,10 @@ export function screenPhase(d: GetBillingResponse | null | undefined): ScreenPha
   return cabinetPhase(d.summary, d.status?.state ?? BillingState.UNSPECIFIED);
 }
 
-/** The plan the screen marks as current: the paid one while it runs, Free otherwise. */
-export function currentTier(phase: ScreenPhase, accountPlan: Plan): PlanTier {
+/** The plan the screen marks as current: the paid one while it runs, Free otherwise; none in the restricted mode. */
+export function currentTier(phase: ScreenPhase, accountPlan: Plan): PlanTier | null {
   if (phase === 'active' || phase === 'arrears') return accountPlan === Plan.ENTERPRISE ? Plan.ENTERPRISE : Plan.TEAM;
+  if (phase === 'lapsed') return null;
   return Plan.FREE;
 }
 
@@ -55,8 +58,10 @@ export type PlanStep =
   | { kind: 'current' }
   /** Quote, pay what is missing, then the action — the one pay path. */
   | { kind: 'pay'; purpose: BillingQuotePurpose.ACTIVATE | BillingQuotePurpose.CHANGE_PLAN; plan: Plan.TEAM | Plan.ENTERPRISE }
-  /** Free from a running paid plan: stop it (the existing stop quote). */
+  /** Free from a running paid plan: stop it (the existing stop quote; always allowed, ADR-0086 amendment). */
   | { kind: 'stop' }
+  /** Free out of the restricted mode (resume FREE): only when the workspace fits Free. */
+  | { kind: 'toFree' }
   /** Not offered here: an upgrade with debt, a suspended or closed account (the cabinet handles it). */
   | { kind: 'blocked'; why: 'debtUpgrade' | 'suspended' | 'closed' };
 
@@ -66,7 +71,9 @@ const rank = (p: Plan): number => (p === Plan.ENTERPRISE ? 2 : p === Plan.TEAM ?
 export function planStep(phase: ScreenPhase, accountPlan: Plan, target: PlanTier): PlanStep {
   if (phase === 'closed') return { kind: 'blocked', why: 'closed' };
   if (phase === 'suspended') return { kind: 'blocked', why: 'suspended' };
-  const current = currentTier(phase, accountPlan);
+  // The restricted mode: no plan is current; Free is the way out once the workspace fits it.
+  if (phase === 'lapsed') return target === Plan.FREE ? { kind: 'toFree' } : { kind: 'pay', purpose: BillingQuotePurpose.ACTIVATE, plan: target };
+  const current = currentTier(phase, accountPlan) ?? Plan.FREE;
   if (target === current) return { kind: 'current' };
   if (target === Plan.FREE) return { kind: 'stop' };
   if (phase === 'active' || phase === 'arrears') {

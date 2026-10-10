@@ -232,6 +232,9 @@ type billingInfo struct {
 	state     v1.BillingState
 	source    v1.PlanSource
 	suspendAt *time.Time
+	// lapsed: the restricted mode («тариф не активен», ADR-0086 amendment) — state LAPSED;
+	// only set while enforcement is on.
+	lapsed bool
 }
 
 func (b *billingInfo) proto() *v1.WorkspaceBillingStatus {
@@ -245,8 +248,9 @@ func (b *billingInfo) proto() *v1.WorkspaceBillingStatus {
 	return out
 }
 
-// resolveBilling maps the live account (none: nil, Workspace.billing unset).
-func resolveBilling(row sqlc.GetWorkspaceBillingStatusRow) *billingInfo {
+// resolveBilling maps the live account (none: nil, Workspace.billing unset). enforced:
+// BILLING_ENFORCEMENT_ENABLED — without it a lapsed account shows and acts as STOPPED (Free).
+func resolveBilling(row sqlc.GetWorkspaceBillingStatusRow, enforced bool) *billingInfo {
 	if row.AccountStatus == "" {
 		return nil
 	}
@@ -264,11 +268,67 @@ func resolveBilling(row sqlc.GetWorkspaceBillingStatusRow) *billingInfo {
 		}
 	case "stopped":
 		b.state = v1.BillingState_BILLING_STATE_STOPPED
+		if row.LapsedAt != nil && enforced {
+			b.state, b.lapsed = v1.BillingState_BILLING_STATE_LAPSED, true
+		}
 	case "suspended":
 		b.state = v1.BillingState_BILLING_STATE_SUSPENDED
 	}
-	if b.state == v1.BillingState_BILLING_STATE_IN_ARREARS || b.state == v1.BillingState_BILLING_STATE_SUSPENDED || b.state == v1.BillingState_BILLING_STATE_STOPPED {
+	if b.state == v1.BillingState_BILLING_STATE_IN_ARREARS || b.state == v1.BillingState_BILLING_STATE_SUSPENDED ||
+		b.state == v1.BillingState_BILLING_STATE_STOPPED || b.state == v1.BillingState_BILLING_STATE_LAPSED {
 		b.suspendAt = row.SuspendAt
 	}
 	return b
+}
+
+// LapsedRoomMembers is the voice room cap of the restricted mode (owner, 10.10: «не больше чем 2
+// человека»). Calls already above it stay connected; new joins are refused.
+const LapsedRoomMembers = 2
+
+// Actions the restricted mode refuses: ApiError.message names one of them (logs, bots); the
+// client words its own text by ApiError.reason and the action it tried.
+const (
+	RestrictedSend    = "sending messages"
+	RestrictedUpload  = "uploading files"
+	RestrictedInvite  = "inviting people"
+	RestrictedCreate  = "creating rooms, boards, tasks, bots and stickers"
+	RestrictedMedia   = "video and screen sharing"
+	RestrictedRecord  = "recording"
+	RestrictedConnect = "connecting integrations"
+)
+
+// PlanInactiveError is the refusal of the restricted mode (ADR-0086 amendment): 403 FORBIDDEN,
+// reason WORKSPACE_PLAN_INACTIVE.
+func PlanInactiveError(action string) *httpx.Error {
+	return httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_FORBIDDEN,
+		"the workspace plan is not active: "+action+" is paused until the owner pays for a plan or moves to Free").
+		WithDetails(billing.ReasonWorkspacePlanInactive, 0, 0)
+}
+
+// Lapsed reports the restricted mode of ws (Info.Lapsed; cached like the plan). nil-safe.
+func (s *Service) Lapsed(ctx context.Context, ws uuid.UUID) (bool, error) {
+	if s == nil {
+		return false, nil
+	}
+	i, err := s.Info(ctx, ws)
+	return i.Lapsed, err
+}
+
+// CheckActive refuses action in a workspace in the restricted mode (PlanInactiveError). nil-safe.
+func (s *Service) CheckActive(ctx context.Context, ws uuid.UUID, action string) error {
+	lapsed, err := s.Lapsed(ctx, ws)
+	if err != nil || !lapsed {
+		return err
+	}
+	return PlanInactiveError(action)
+}
+
+// BillingEnforced reports BILLING_ENABLED && BILLING_ENFORCEMENT_ENABLED (the restricted mode and the
+// suspension apply). nil-safe.
+func (s *Service) BillingEnforced() bool {
+	if s == nil {
+		return false
+	}
+	b := s.billingConf()
+	return b.Enabled && b.Enforced
 }

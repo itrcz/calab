@@ -53,14 +53,15 @@ export function BillingCabinet({ workspaceId, summary, state }: { workspaceId: s
 /** Members without BILLING_VIEW: the state only, never amounts or the card. */
 export function MemberBillingStub({ state }: { state: BillingState }): ReactNode {
   const suspended = state === BillingState.SUSPENDED;
+  const lapsed = state === BillingState.LAPSED;
   return (
     <Card title={t('billing.title')}>
       <Note
-        tone={suspended ? 'danger' : 'muted'}
+        tone={suspended ? 'danger' : lapsed ? 'warn' : 'muted'}
         icon={suspended ? <CirclePause className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden /> : undefined}
         testId="billing-member-stub"
       >
-        {suspended ? t('billing.member.suspended') : t('billing.member.text')}
+        {suspended ? t('billing.member.suspended') : lapsed ? t('billing.member.lapsed') : t('billing.member.text')}
       </Note>
     </Card>
   );

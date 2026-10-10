@@ -5,12 +5,13 @@ import { Button, Spinner, cx } from '../../../components/ui';
 import { t } from '../../../i18n';
 import { billingStateOf, tsMs } from '../../../lib/billing/model';
 import { minorOf } from '../../../lib/billing/money';
-import { billingMock, billingPaymentsAllowed, loadBilling } from '../../../services/billing';
+import { billingMock, billingPaymentsAllowed, loadBilling, openPlans } from '../../../services/billing';
 import { useBilling } from '../../../stores/billing';
 import { HOME } from '../../../stores/dms';
 import { useUi } from '../../../stores/ui';
 import { useWorkspaces } from '../../../stores/workspaces';
 import { useBillingBits } from './access';
+import { QuoteDialog } from './QuoteDialog';
 import { TopupDialog } from './TopupDialog';
 import { Countdown, MoneyText } from './parts';
 
@@ -48,10 +49,49 @@ function useOwnerSummary(workspaceId: string, want: boolean) {
   return useBilling((s) => (want ? s.byWs[workspaceId]?.data?.summary : undefined));
 }
 
-/** A bar under the title bar: the debt with the deadline (BILLING_VIEW); the suspension for everyone. */
+/** A bar under the title bar: the debt with the deadline (BILLING_VIEW); the suspension and «тариф не активен» for everyone. */
 export function BillingBanner(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
   const id = wsId && wsId !== HOME ? wsId : null;
+  const lapsed = useBillingState(id) === BillingState.LAPSED;
+  if (id && lapsed) return <LapsedBanner workspaceId={id} />;
+  return <DebtBanner id={id} />;
+}
+
+/**
+ * The restricted mode «тариф не активен» (ADR-0086 amendment, owner 10.10): the same line for
+ * everyone; a BILLING_MANAGE holder gets «Подключить тариф» (the plans) and «Перейти на Free»
+ * (the quote, which lists what does not fit Free). No pay buttons in the iOS shell (App Store rules).
+ */
+function LapsedBanner({ workspaceId }: { workspaceId: string }): ReactNode {
+  const manage = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n;
+  const [toFree, setToFree] = useState(false);
+  const actions = manage && billingPaymentsAllowed();
+  return (
+    <section
+      role="status"
+      aria-label={t('billing.lapsed.bannerShort')}
+      data-testid="billing-lapsed-banner"
+      className="z-[var(--z-sticky)] flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-warn-surface px-3 py-1.5 mobile:py-2"
+    >
+      <TriangleAlert className="size-4 shrink-0 text-warn" aria-hidden />
+      <p className="min-w-0 flex-1 basis-64 text-caption text-fg">{t('billing.lapsed.banner')}</p>
+      {actions ? (
+        <span className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => openPlans(workspaceId)} data-testid="billing-lapsed-connect">
+            {t('billing.lapsed.connect')}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setToFree(true)} data-testid="billing-lapsed-free">
+            {t('billing.lapsed.toFree')}
+          </Button>
+        </span>
+      ) : null}
+      {toFree ? <QuoteDialog workspaceId={workspaceId} action={{ kind: 'toFree' }} onClose={() => setToFree(false)} onTopup={() => setToFree(false)} /> : null}
+    </section>
+  );
+}
+
+function DebtBanner({ id }: { id: string | null }): ReactNode {
   const bits = useBillingBits(id);
   const view = (bits & BILLING_BITS.VIEW) !== 0n;
   // TOPUP holders keep the billing routes under a suspension (VIEW alone does not).

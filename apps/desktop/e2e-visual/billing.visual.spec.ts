@@ -62,7 +62,7 @@ async function setPlan(plan: 'PLAN_FREE' | 'PLAN_TEAM' | 'PLAN_ENTERPRISE' | 'PL
 }
 
 interface Boot {
-  scenario: 'normal' | 'debt' | 'suspended' | 'selfServe' | 'member' | 'memberSuspended';
+  scenario: 'normal' | 'debt' | 'suspended' | 'selfServe' | 'member' | 'memberSuspended' | 'lapsed' | 'memberLapsed';
   plan: 'PLAN_FREE' | 'PLAN_TEAM' | 'PLAN_ENTERPRISE' | 'PLAN_CUSTOM';
   /** ADR-0086 «Индивидуальный тариф»: the account is on its custom plan (mock `?custom=1`). */
   custom?: boolean;
@@ -517,10 +517,58 @@ test('billing-transitions: the plan tab, «Сменить тариф», a downgr
   await expect(page.getByTestId('plan-violations')).toBeVisible();
   await checkpoint(s, 'billing-tr-quote-blocked');
   await closeTop(page);
-  // Stop → Free: several violations at once.
+  // Stop over Free's limits: allowed (ADR-0086 amendment); the dialog warns about «тариф не активен» with what does not fit.
   await tap(cabinet.getByTestId('billing-stop'));
+  await expect(page.getByTestId('billing-stop-over-free')).toBeVisible();
+  await expect(page.getByTestId('billing-quote-confirm')).toBeVisible();
+  await checkpoint(s, 'billing-tr-stop-over-free');
+});
+
+// ---------------------------------------------------------------- «Тариф не активен» (ADR-0086 amendment, owner 10.10)
+
+test('billing-lapsed: the banner, the composer, the 3rd voice join, «Перейти на Free», the cabinet', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'lapsed', plan: 'PLAN_FREE', limits: 'over' });
+  await expect(page.getByTestId('billing-lapsed-banner')).toBeVisible();
+  if (!isPhone()) await expect(page.getByTestId('composer-plan-inactive')).toBeVisible();
+  await checkpoint(s, 'billing-lapsed-owner');
+  // «Перейти на Free» from the banner: the quote answers what does not fit Free.
+  await tap(page.getByTestId('billing-lapsed-banner').getByTestId('billing-lapsed-free'));
   await expect(page.getByTestId('plan-violations')).toBeVisible();
-  await checkpoint(s, 'billing-tr-stop-blocked');
+  await checkpoint(s, 'billing-lapsed-to-free');
+  await closeTop(page);
+  if (!isPhone()) {
+    // The third person in a voice room: the server answers 409 ROOM_FULL / WORKSPACE_PLAN_INACTIVE.
+    await page.route('**/api/rooms/*/join', (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'ERROR_CODE_ROOM_FULL', message: 'the room is full', reason: 'WORKSPACE_PLAN_INACTIVE', used: '2', limit: '2' }),
+      }),
+    );
+    await page.locator('aside').getByRole('button', { name: 'Созвон', exact: true }).hover();
+    await page.locator('aside').getByRole('button', { name: 'Войти в голос «Созвон»' }).click();
+    await expect(page.getByText('Тариф не активен — в голосовой комнате сейчас можно быть только вдвоём').first()).toBeVisible();
+    // axe off: the fixture chat of «Созвон» has a link of its own contrast (not this screen's).
+    await checkpoint(s, 'billing-lapsed-voice-full', { axe: false });
+    await page.unroute('**/api/rooms/*/join');
+    await page.getByTestId('toast').getByRole('button').last().click();
+    await expect(page.getByTestId('toast')).toHaveCount(0);
+    await page.locator('aside').getByRole('button', { name: /общий/ }).first().click();
+  }
+  const settings = await openPlanTab(page);
+  await expect(settings.getByTestId('billing-lapsed-note')).toBeVisible();
+  await settings.getByTestId('billing-lapsed-note').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-lapsed-cabinet');
+});
+
+test('billing-lapsed-member: the banner and the composer without actions', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'memberLapsed', plan: 'PLAN_FREE', email: 'vera@calaba.test' });
+  await expect(page.getByTestId('billing-lapsed-banner')).toBeVisible();
+  await expect(page.getByTestId('billing-lapsed-free')).toHaveCount(0);
+  if (!isPhone()) await expect(page.getByTestId('composer-plan-inactive')).toBeVisible();
+  await checkpoint(s, 'billing-lapsed-member');
 });
 
 test('billing-transitions-money: the pay step lines, the plan change net, the grouped history', async ({ page }) => {

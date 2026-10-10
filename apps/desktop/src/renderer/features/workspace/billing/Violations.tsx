@@ -19,6 +19,7 @@ export const ViolationList = memo(function ViolationList({
   plan,
   violations,
   reveal = false,
+  title,
 }: {
   workspaceId: string;
   /** The target plan's name («Team»). */
@@ -26,6 +27,8 @@ export const ViolationList = memo(function ViolationList({
   violations: readonly PlanLimitViolation[];
   /** Scroll it into view when it appears (asked for below the plan cards). */
   reveal?: boolean;
+  /** Instead of «Перейти на {plan} пока нельзя» (the stop warning, ADR-0086 amendment). */
+  title?: string;
 }): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -35,7 +38,7 @@ export const ViolationList = memo(function ViolationList({
     <div ref={ref} role="alert" className="flex flex-col gap-2 rounded-[var(--radius-card)] bg-warn-surface px-3 py-3" data-testid="plan-violations">
       <p className="flex items-start gap-2 text-body font-semibold">
         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
-        {t('billing.transition.blockedTitle', { plan })}
+        {title ?? t('billing.transition.blockedTitle', { plan })}
       </p>
       <ul className="flex flex-col gap-2 pl-6">
         {violations.map((v) => {

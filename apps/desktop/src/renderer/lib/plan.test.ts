@@ -97,6 +97,13 @@ describe('planErrorNotice (toasts on API errors)', () => {
     expect(planErrorNotice(roomFull, Plan.CUSTOM)?.text).toBe('По тарифу пространства — до 5 человек в комнате');
   });
 
+  it('«тариф не активен» (ADR-0086 amendment): its own wording, no contact', () => {
+    const third = new ApiError('ERROR_CODE_ROOM_FULL', 'full', 409, undefined, { reason: 'WORKSPACE_PLAN_INACTIVE', used: 2, limit: 2 });
+    expect(planErrorNotice(third, Plan.FREE)).toEqual({ text: 'Тариф не активен — в голосовой комнате сейчас можно быть только вдвоём, пока владелец не подключит тариф.', contact: false });
+    const send = new ApiError('ERROR_CODE_FORBIDDEN', 'inactive', 403, undefined, { reason: 'WORKSPACE_PLAN_INACTIVE' });
+    expect(planErrorNotice(send, Plan.FREE)?.contact).toBe(false);
+  });
+
   it('a room over its own user limit is not a plan matter', () => {
     expect(planErrorNotice(new ApiError('ERROR_CODE_ROOM_FULL', 'full', 409), Plan.FREE)).toBeNull();
     expect(planErrorNotice(new Error('x'), Plan.FREE)).toBeNull();

@@ -4,6 +4,7 @@ import {
   RoomType,
   computeMemberRoomPermissions,
   computePermissions,
+  planInactivePermissions,
   tempRoomScope,
   WorkspaceRole,
   has,
@@ -28,6 +29,15 @@ export function roomPerms(roles: readonly RoleBits[] | undefined, userId: string
   // ADR-0029: in a restricted room admins count as members; the owner (built-in owner role) has all.
   // ADR-0078: a private temporary room has no bypass at all (not even the owner).
   return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted, undefined, tempRoomScope(room));
+}
+
+/**
+ * The restricted mode «тариф не активен» (ADR-0086 amendment) on top of computed bits: no writing,
+ * attaching, video, invitations or new rooms / boards / tasks (planInactivePermissions). `lapsed`
+ * comes from Workspace.billing (isLapsed); DMs and notes have no workspace and are never lapsed.
+ */
+export function restrictedPerms(perms: PermissionBits, lapsed: boolean): PermissionBits {
+  return lapsed ? planInactivePermissions(perms) : perms;
 }
 
 /** Workspace-level permissions (no room overrides): the OR of the member's roles. */

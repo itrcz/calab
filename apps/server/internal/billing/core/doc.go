@@ -32,11 +32,13 @@
 //
 //	EnableAccount(ws, market, provider, actor)        superadmin: inactive account (ErrAccountExists)
 //	Activate(acc, plan, requestID, actor)             first day of the uncovered members from advance (ErrInsufficientFunds)
-//	Stop(acc, actor)                                  no new charges; running lots stay, plan Free when they end
+//	Stop(acc, actor)                                  no new charges; running lots stay, then Free if the workspace fits
+//	                                                  it, else the restricted mode (lapsed_at, ADR-0086 amendment)
 //	ChangePlan(acc, plan, requestID, actor)           compensate the rest of the current lots + full day of the new plan;
 //	                                                  upgrade only without debt (ErrChangeIncompatible / ErrInsufficientFunds)
 //	CancelSeats(acc, qty, requestID, actor)           give back unused seats from now (M10); keeps the current team's seats
-//	Resume(acc, free|paid, plan, requestID, actor)    after suspension, debt paid: free → stopped/Free (M21);
+//	Resume(acc, free|paid, plan, requestID, actor)    after suspension, debt paid: free → stopped/Free or lapsed (M21);
+//	                                                  free on a lapsed account: Free once it fits (Guard.Check);
 //	                                                  paid → first day of the team (M17)
 //	AdminCredit / AdminDebit(acc, amount, reason, requestID, actor)   superadmin corrections (debit never creates debt)
 //	ReverseAdminCredit(lot, reason, actor)            take a manual credit back in full (spent part becomes debt)
@@ -63,7 +65,8 @@
 // # Plans
 //
 // PlanFor(acc) is the workspace plan billing gives: active / suspended → the account plan,
-// stopped → the account plan while its lots run, then free; inactive / closed → not managed
+// stopped → the account plan while its lots run, then free (with lapsed_at set when the workspace
+// did not fit Free then: the restricted mode, enforced outside the core); inactive / closed → not managed
 // (the manual row stays). Commands write it into workspace_plans with source = billing in their
 // transaction and call Hooks.PlanChanged there (nothing that locks workspace rows);
 // Hooks.Committed gets planChanged for plans.Invalidate, events and the identity grants of

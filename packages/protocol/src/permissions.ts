@@ -85,6 +85,36 @@ export function billingPermissions(
 }
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
+
+/**
+ * Bits the restricted mode takes from everyone in the workspace («тариф не активен», ADR-0086
+ * amendment), the owner and ADMINISTRATOR included: writing and attaching, screen share and camera
+ * (voice is audio only), inviting members and guests, new temporary rooms, phone calls, new tasks
+ * and boards. Go: perm.PlanInactiveDenied.
+ */
+export const PLAN_INACTIVE_DENIED: PermissionBits =
+  PERMISSION_BITS.SEND_MESSAGES |
+  PERMISSION_BITS.ATTACH_FILES |
+  PERMISSION_BITS.STREAM |
+  PERMISSION_BITS.VIDEO |
+  PERMISSION_BITS.INVITE_MEMBERS |
+  PERMISSION_BITS.INVITE_GUESTS |
+  PERMISSION_BITS.CREATE_TEMP_ROOMS |
+  PERMISSION_BITS.PLACE_CALLS |
+  PERMISSION_BITS.CREATE_TASKS |
+  PERMISSION_BITS.CREATE_BOARDS;
+
+/**
+ * The one restricted-mode rule over computed room / board / workspace bits (Go: perm.PlanInactive;
+ * vectors `planInactive`). Apply it on top of computePermissions when the workspace's
+ * Workspace.billing.state is LAPSED; DMs and notes have no workspace and are not affected. The
+ * server enforces the mode itself (its route table and the voice grants): this only hides and
+ * disables UI.
+ */
+export function planInactivePermissions(bits: PermissionBits): PermissionBits {
+  return bits & ~PLAN_INACTIVE_DENIED;
+}
+
 export type PermissionBits = bigint;
 
 export const ALL_PERMISSIONS: PermissionBits = Object.values(PERMISSION_BITS).reduce((a, b) => a | b, 0n);

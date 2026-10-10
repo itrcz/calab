@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/builtinstickers"
@@ -490,7 +492,9 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/billing/return":                                                 scopePublic,
 }
 
-func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Handler {
+// identityGate classifies and checks every private route. planActive refuses the routes of
+// planInactiveRoutes in a workspace in the restricted mode (plans.Service.CheckActive; nil: none).
+func identityGate(q *sqlc.Queries, a *auth.Service, planActive func(ctx context.Context, ws uuid.UUID, action string) error, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := auth.MustFromContext(r.Context())
 		scope, ok := identityRoutes[r.Pattern]
@@ -598,6 +602,9 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 					err = a.CheckWorkspace(ctx, id, ws, op)
 				}
 			}
+		}
+		if action, ok := planInactiveRoutes[r.Pattern]; ok && err == nil && planActive != nil && mutation.Workspace != uuid.Nil {
+			err = planActive(ctx, mutation.Workspace, action) // the restricted mode (ADR-0086 amendment)
 		}
 		if err != nil {
 			httpx.WriteError(w, r, err)

@@ -16,7 +16,7 @@ const getWorkspaceBillingStatus = `-- name: GetWorkspaceBillingStatus :one
 SELECT
     COALESCE((SELECT wp.source FROM workspace_plans wp WHERE wp.workspace_id = w.id), 'manual')::text AS source,
     COALESCE(a.status, '')::text AS account_status,
-    a.negative_since, a.suspend_at
+    a.negative_since, a.suspend_at, a.lapsed_at
 FROM workspaces w
 LEFT JOIN billing_accounts a ON a.workspace_id = w.id AND a.status <> 'closed'
 WHERE w.id = $1
@@ -27,6 +27,7 @@ type GetWorkspaceBillingStatusRow struct {
 	AccountStatus string
 	NegativeSince *time.Time
 	SuspendAt     *time.Time
+	LapsedAt      *time.Time
 }
 
 // Workspace.billing (WorkspaceBillingStatus, no amounts): the plan source and the live
@@ -39,6 +40,7 @@ func (q *Queries) GetWorkspaceBillingStatus(ctx context.Context, id uuid.UUID) (
 		&i.AccountStatus,
 		&i.NegativeSince,
 		&i.SuspendAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }

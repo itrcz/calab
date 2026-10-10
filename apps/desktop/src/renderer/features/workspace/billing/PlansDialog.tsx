@@ -108,6 +108,8 @@ export function PlansDialog({
   const entry = useBilling((s) => s.byWs[workspaceId]);
   const [chosen, setChosen] = useState<Chosen | null>(null);
   const [stopping, setStopping] = useState(false);
+  // The restricted mode's way out (ADR-0086 amendment): resume FREE once the workspace fits Free.
+  const [toFree, setToFree] = useState(false);
   // ADR-0083: the market is the owner's choice before the first payment (remembered per user on
   // this device), preselected by the UI language only while both markets are open.
   const userId = useSession((s) => s.me?.user?.id ?? '');
@@ -184,6 +186,7 @@ export function PlansDialog({
         onChoose={(step) => {
           if (step.kind === 'pay') setChosen({ plan: step.plan, purpose: step.purpose });
           else if (step.kind === 'stop') setStopping(true);
+          else if (step.kind === 'toFree') setToFree(true);
           else if (step.kind === 'blocked' && step.why === 'suspended') toCabinet();
         }}
       />
@@ -209,6 +212,7 @@ export function PlansDialog({
         </div>
       </Modal>
       {stopping ? <QuoteDialog workspaceId={workspaceId} action={{ kind: 'stop' }} onClose={() => setStopping(false)} onTopup={() => setStopping(false)} /> : null}
+      {toFree ? <QuoteDialog workspaceId={workspaceId} action={{ kind: 'toFree' }} onClose={() => setToFree(false)} onTopup={() => setToFree(false)} /> : null}
     </>
   );
 }
@@ -385,6 +389,10 @@ function PlanGrid({
         <Note tone="warn" icon={<TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />}>
           {t('billing.note.arrears')}
         </Note>
+      ) : phase === 'lapsed' ? (
+        <Note tone="warn" icon={<TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />}>
+          {t('billing.note.lapsed')}
+        </Note>
       ) : null}
       {markets.length > 1 && !contact ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="plans-market">
@@ -453,7 +461,8 @@ function PlanCard({
   const [open, setOpen] = useState(false);
   const paid = tier !== Plan.FREE;
   // The server says the workspace does not fit this plan now (ADR-0086): no way to choose it.
-  const notFit = (step.kind === 'pay' || step.kind === 'stop') && !!offer?.violations.length;
+  // Stopping is always allowed (ADR-0086 amendment): its dialog warns about the restricted mode instead.
+  const notFit = (step.kind === 'pay' || step.kind === 'toFree') && !!offer?.violations.length;
   let action: ReactNode;
   if (step.kind === 'current') {
     action = (
@@ -486,7 +495,7 @@ function PlanCard({
         {t('billing.plans.contact')}
       </Button>
     ) : null;
-  } else if (step.kind === 'stop') {
+  } else if (step.kind === 'stop' || step.kind === 'toFree') {
     action = (
       <Button variant="secondary" onClick={() => onChoose(step)} data-testid="plans-to-free">
         {t('billing.plans.toFree')}

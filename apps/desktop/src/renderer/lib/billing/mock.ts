@@ -66,7 +66,9 @@ const payerSchema = fromJson(PayerSchemaSchema, payerSchemaJson as JsonValue);
  * In-memory billing for dev / QA builds (VITE_BILLING_MOCK=1, services/billing.ts): the owner
  * cabinet and the superadmin pages without a billing server. The scenario comes from
  * `?billing=<name>` or localStorage `calaba-billing-mock`: normal | debt | suspended | inactive |
- * stopped | member | memberSuspended | disabled | selfServe (no account until the first ACTIVATE quote).
+ * stopped | lapsed | member | memberSuspended | memberLapsed | disabled | selfServe (no account until the first
+ * ACTIVATE quote). lapsed: «тариф не активен» (ADR-0086 amendment) — stopped, the paid days over, the
+ * workspace over Free (with `?limits=over` «Перейти на Free» answers the violations).
  * A top-up checkout is «paid» on the second poll.
  * Never imported by a production build.
  */
@@ -130,8 +132,8 @@ const salesOf = (v: string | null): Sales => (v === 'both' || v === 'ru' || v ==
 const ts = (ms: number) => timestampFromMs(ms);
 
 type Market = 'global' | 'ru';
-type Scenario = 'normal' | 'debt' | 'suspended' | 'inactive' | 'stopped' | 'member' | 'memberSuspended' | 'disabled' | 'selfServe';
-const SCENARIOS: readonly Scenario[] = ['normal', 'debt', 'suspended', 'inactive', 'stopped', 'member', 'memberSuspended', 'disabled', 'selfServe'];
+type Scenario = 'normal' | 'debt' | 'suspended' | 'inactive' | 'stopped' | 'lapsed' | 'member' | 'memberSuspended' | 'memberLapsed' | 'disabled' | 'selfServe';
+const SCENARIOS: readonly Scenario[] = ['normal', 'debt', 'suspended', 'inactive', 'stopped', 'lapsed', 'member', 'memberSuspended', 'memberLapsed', 'disabled', 'selfServe'];
 
 function scenario(): Scenario {
   let v: string | null = null;
@@ -149,6 +151,8 @@ const wait = (ms = 180): Promise<void> => new Promise((r) => setTimeout(r, ms));
 interface State {
   sc: Scenario;
   status: BillingAccountStatus;
+  /** Stopped in the restricted mode «тариф не активен» (ADR-0086 amendment). */
+  lapsed: boolean;
   plan: Plan.TEAM | Plan.ENTERPRISE | Plan.CUSTOM;
   balance: bigint;
   /** ADR-0086: the custom plan's price now and its versions (newest first). */
@@ -281,6 +285,7 @@ function initial(): State {
   const s: State = {
     sc,
     status: BillingAccountStatus.ACTIVE,
+    lapsed: false,
     plan: Plan.TEAM,
     balance: 4230n,
     customUnit: market === 'ru' ? 1500n : 25n,
@@ -310,6 +315,7 @@ function initial(): State {
   if (sc === 'inactive' || sc === 'selfServe') Object.assign(s, { status: BillingAccountStatus.INACTIVE, balance: 0n, autoOn: false, cardSaved: false, refundRequests: [] });
   if (sc === 'selfServe') s.account = false;
   if (sc === 'stopped') Object.assign(s, { status: BillingAccountStatus.STOPPED, balance: 1210n, autoOn: false });
+  if (sc === 'lapsed' || sc === 'memberLapsed') Object.assign(s, { status: BillingAccountStatus.STOPPED, lapsed: true, balance: 0n, autoOn: false });
   if (overLimits()) s.plan = Plan.ENTERPRISE; // Business, over Team's and Free's limits (ADR-0086)
   if (customPlan()) {
     const ru = market === 'ru';
@@ -328,7 +334,7 @@ const S = (): State => (st ??= initial());
 function stateOf(s: State): BillingState {
   if (s.status === BillingAccountStatus.SUSPENDED) return BillingState.SUSPENDED;
   if (s.status === BillingAccountStatus.INACTIVE) return BillingState.INACTIVE;
-  if (s.status === BillingAccountStatus.STOPPED) return BillingState.STOPPED;
+  if (s.status === BillingAccountStatus.STOPPED) return s.lapsed ? BillingState.LAPSED : BillingState.STOPPED;
   return s.balance < 0n ? BillingState.IN_ARREARS : BillingState.ACTIVE;
 }
 
@@ -455,8 +461,14 @@ function owner(): OwnerBillingApi {
       await wait();
       const s = S();
       guard(s);
-      if (s.sc === 'member' || s.sc === 'memberSuspended')
-        return create(GetBillingResponseSchema, { status: { state: s.sc === 'member' ? BillingState.ACTIVE : BillingState.SUSPENDED, source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) } });
+      if (s.sc === 'member' || s.sc === 'memberSuspended' || s.sc === 'memberLapsed')
+        return create(GetBillingResponseSchema, {
+          status: {
+            state: s.sc === 'member' ? BillingState.ACTIVE : s.sc === 'memberLapsed' ? BillingState.LAPSED : BillingState.SUSPENDED,
+            source: PlanSource.BILLING,
+            ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}),
+          },
+        });
       if (adminAssigned()) return create(GetBillingResponseSchema, { status: { source: PlanSource.MANUAL }, adminAssigned: true });
       if (!s.account) return create(GetBillingResponseSchema, { status: { source: PlanSource.MANUAL }, selfServe: true, ...salesPart(s) });
       const sales = salesPart(s);
@@ -486,8 +498,10 @@ function owner(): OwnerBillingApi {
       } else if (want && want !== s.market) {
         throw new ApiError('ERROR_CODE_CONFLICT', 'market fixed', 409, undefined, { reason: 'BILLING_MARKET_FIXED' });
       }
-      const target = purpose === BillingQuotePurpose.STOP ? Plan.FREE : purpose === BillingQuotePurpose.RESUME_FREE ? null : (init.plan || s.plan);
-      const over = target === null || target === s.plan ? null : exceeded(target);
+      // A stop is always allowed (ADR-0086 amendment); Free out of the restricted mode is checked.
+      const target =
+        purpose === BillingQuotePurpose.STOP ? null : purpose === BillingQuotePurpose.RESUME_FREE ? (s.lapsed ? Plan.FREE : null) : (init.plan || s.plan);
+      const over = target === null || (target === s.plan && !s.lapsed) ? null : exceeded(target);
       if (over) throw over;
       if (!s.account) {
         if (purpose !== BillingQuotePurpose.ACTIVATE) throw new ApiError('ERROR_CODE_NOT_FOUND', 'billing account not found', 404, undefined, { reason: 'BILLING_ACCOUNT_NOT_FOUND' });
@@ -502,6 +516,7 @@ function owner(): OwnerBillingApi {
       if (init.plan === Plan.TEAM || init.plan === Plan.ENTERPRISE) s.plan = init.plan;
       s.balance -= unit(s.plan) * BigInt(s.members);
       s.status = BillingAccountStatus.ACTIVE;
+      s.lapsed = false;
       bump(s);
     },
     async stop() {
@@ -534,7 +549,12 @@ function owner(): OwnerBillingApi {
       await wait();
       const s = S();
       if (s.balance < 0n) throw new ApiError('ERROR_CODE_CONFLICT', 'insufficient', 409, undefined, { reason: 'BILLING_INSUFFICIENT_FUNDS' });
+      if (init.mode !== BillingResumeMode.PAID && s.lapsed) {
+        const over = exceeded(Plan.FREE);
+        if (over) throw over;
+      }
       s.status = init.mode === BillingResumeMode.PAID ? BillingAccountStatus.ACTIVE : BillingAccountStatus.STOPPED;
+      s.lapsed = false;
       bump(s);
     },
     async payer() {

@@ -63,7 +63,7 @@ func (q *Queries) AdminDecideBillingRefundRequest(ctx context.Context, arg Admin
 }
 
 const adminGetBillingAccount = `-- name: AdminGetBillingAccount :one
-SELECT a.id, a.workspace_id, a.market, a.currency, a.provider, a.plan, a.status, a.balance_minor, a.entry_seq, a.negative_since, a.suspend_at, a.next_due_at, a.hold_until, a.dispute_hold, a.discount_bps, a.revision, a.created_by, a.created_at, a.updated_at, a.closed_at, coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
+SELECT a.id, a.workspace_id, a.market, a.currency, a.provider, a.plan, a.status, a.balance_minor, a.entry_seq, a.negative_since, a.suspend_at, a.next_due_at, a.hold_until, a.dispute_hold, a.discount_bps, a.revision, a.created_by, a.created_at, a.updated_at, a.closed_at, a.lapsed_at, coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
     (SELECT count(*) FROM workspace_members m JOIN users mu ON mu.id = m.user_id
      WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members,
     coalesce(wp.display_name, '')::text AS plan_display_name
@@ -106,6 +106,7 @@ func (q *Queries) AdminGetBillingAccount(ctx context.Context, id uuid.UUID) (Adm
 		&i.BillingAccount.CreatedAt,
 		&i.BillingAccount.UpdatedAt,
 		&i.BillingAccount.ClosedAt,
+		&i.BillingAccount.LapsedAt,
 		&i.WorkspaceName,
 		&i.OwnerEmail,
 		&i.BillableMembers,
@@ -138,7 +139,7 @@ func (q *Queries) AdminGetBillingRefundRequest(ctx context.Context, id uuid.UUID
 
 const adminListBillingAccounts = `-- name: AdminListBillingAccounts :many
 
-SELECT a.id, a.workspace_id, a.market, a.currency, a.provider, a.plan, a.status, a.balance_minor, a.entry_seq, a.negative_since, a.suspend_at, a.next_due_at, a.hold_until, a.dispute_hold, a.discount_bps, a.revision, a.created_by, a.created_at, a.updated_at, a.closed_at, coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
+SELECT a.id, a.workspace_id, a.market, a.currency, a.provider, a.plan, a.status, a.balance_minor, a.entry_seq, a.negative_since, a.suspend_at, a.next_due_at, a.hold_until, a.dispute_hold, a.discount_bps, a.revision, a.created_by, a.created_at, a.updated_at, a.closed_at, a.lapsed_at, coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
     (SELECT count(*) FROM workspace_members m JOIN users mu ON mu.id = m.user_id
      WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members,
     coalesce(wp.display_name, '')::text AS plan_display_name
@@ -214,6 +215,7 @@ func (q *Queries) AdminListBillingAccounts(ctx context.Context, arg AdminListBil
 			&i.BillingAccount.CreatedAt,
 			&i.BillingAccount.UpdatedAt,
 			&i.BillingAccount.ClosedAt,
+			&i.BillingAccount.LapsedAt,
 			&i.WorkspaceName,
 			&i.OwnerEmail,
 			&i.BillableMembers,
@@ -699,7 +701,7 @@ const adminSetBillingAccountDiscount = `-- name: AdminSetBillingAccountDiscount 
 UPDATE billing_accounts SET discount_bps = $1, revision = revision + 1,
     updated_at = $2::timestamptz
 WHERE id = $3
-RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at
+RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at
 `
 
 type AdminSetBillingAccountDiscountParams struct {
@@ -733,6 +735,7 @@ func (q *Queries) AdminSetBillingAccountDiscount(ctx context.Context, arg AdminS
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
@@ -741,7 +744,7 @@ const adminSetBillingAccountHold = `-- name: AdminSetBillingAccountHold :one
 UPDATE billing_accounts SET hold_until = $1, revision = revision + 1,
     updated_at = $2::timestamptz
 WHERE id = $3
-RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at
+RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at
 `
 
 type AdminSetBillingAccountHoldParams struct {
@@ -775,6 +778,7 @@ func (q *Queries) AdminSetBillingAccountHold(ctx context.Context, arg AdminSetBi
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }

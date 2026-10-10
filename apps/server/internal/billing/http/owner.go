@@ -49,7 +49,7 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 	if c.hasAc {
 		acc = &c.acc
 	}
-	resp := &v1.GetBillingResponse{Status: Status(acc, source)}
+	resp := &v1.GetBillingResponse{Status: Status(acc, source, s.cfg.Plans.BillingEnforced())}
 	if !c.can(perm.BillingView) {
 		return resp, nil // ADR-0087: the plan and its status only, no amounts
 	}

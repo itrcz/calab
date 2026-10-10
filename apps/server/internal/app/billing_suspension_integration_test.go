@@ -42,7 +42,7 @@ VALUES ($1, 'global', 'USD', 'stripe', 'team', $2, now() - interval '1 day', now
 func setBillingStatus(t *testing.T, ws string, id uuid.UUID, status string) {
 	t.Helper()
 	if _, err := testDB.Pool.Exec(context.Background(), `UPDATE billing_accounts SET status = $2,
-closed_at = CASE WHEN $2 = 'closed' THEN now() END WHERE id = $1`, id, status); err != nil {
+closed_at = CASE WHEN $2 = 'closed' THEN now() END, lapsed_at = CASE WHEN $2 = 'stopped' THEN lapsed_at END WHERE id = $1`, id, status); err != nil {
 		t.Fatal(err)
 	}
 	if err := testApp.Plans.BillingChanged(context.Background(), testDB.Q, events.Redis{C: testRedis}, uuid.MustParse(ws)); err != nil {

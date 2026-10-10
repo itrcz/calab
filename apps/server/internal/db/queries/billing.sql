@@ -60,7 +60,7 @@ SELECT * FROM billing_accounts WHERE workspace_id = $1 AND status <> 'closed' FO
 UPDATE billing_accounts SET
     status = sqlc.arg('status'), plan = sqlc.arg('plan'),
     negative_since = sqlc.narg('negative_since'), suspend_at = sqlc.narg('suspend_at'),
-    next_due_at = sqlc.narg('next_due_at'),
+    next_due_at = sqlc.narg('next_due_at'), lapsed_at = sqlc.narg('lapsed_at'),
     closed_at = CASE WHEN sqlc.arg('status')::text = 'closed' THEN coalesce(closed_at, sqlc.arg('now')::timestamptz) ELSE NULL END,
     revision = revision + 1, updated_at = sqlc.arg('now')::timestamptz
 WHERE id = sqlc.arg('id')

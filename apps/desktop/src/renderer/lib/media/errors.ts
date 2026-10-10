@@ -20,6 +20,8 @@ export type MediaErrorCode =
   | 'unsupported'
   | 'insecure'
   | 'room-full'
+  /** «Тариф не активен» (ADR-0086 amendment): ApiError.reason WORKSPACE_PLAN_INACTIVE (voice: two at most). */
+  | 'plan-inactive'
   | 'stream-limit'
   | 'forbidden'
   | 'room-missing'
@@ -63,6 +65,8 @@ interface Parts {
   status: number | null;
   /** LiveKit ConnectionError reason name (NotAllowed, ServerUnreachable, Timeout, …). */
   reasonName: string | null;
+  /** ApiError.reason (e.g. WORKSPACE_PLAN_INACTIVE). */
+  apiReason?: string | null;
 }
 
 function parts(err: unknown): Parts {
@@ -74,7 +78,8 @@ function parts(err: unknown): Parts {
   const apiCode = name === 'ApiError' && typeof o['code'] === 'string' ? o['code'] : null;
   const status = typeof o['status'] === 'number' ? o['status'] : null;
   const reasonName = typeof o['reasonName'] === 'string' ? o['reasonName'] : null;
-  return { name, message, apiCode, status, reasonName };
+  const apiReason = apiCode && typeof o['reason'] === 'string' ? o['reason'] : null;
+  return { name, message, apiCode, status, reasonName, apiReason };
 }
 
 /** Classifies a raw error into a code (context-independent where possible). */
@@ -84,6 +89,7 @@ export function classifyMediaError(err: unknown, ctx: MediaContext, env: ErrorEn
 
   // ---- our API (join / stream slot)
   if (p.apiCode) {
+    if (p.apiReason === 'WORKSPACE_PLAN_INACTIVE') return 'plan-inactive';
     switch (p.apiCode) {
       case 'ERROR_CODE_ROOM_FULL':
         return 'room-full';
@@ -169,6 +175,7 @@ export function classifyMediaError(err: unknown, ctx: MediaContext, env: ErrorEn
 
 /** Text key + action for a code in a context. */
 function text(code: MediaErrorCode, ctx: MediaContext, env: ErrorEnv): { key: MessageKey; action: MediaErrorAction | null } {
+  if (code === 'plan-inactive') return { key: ctx === 'voice' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error', action: null };
   const desktop = !env.web;
   switch (ctx) {
     case 'mic':

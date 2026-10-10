@@ -35,6 +35,11 @@ enum BillingState {
   BILLING_STATE_IN_ARREARS = 3;  // paid plan running in debt until suspend_at
   BILLING_STATE_STOPPED = 4;     // the owner stopped the paid plan
   BILLING_STATE_SUSPENDED = 5;   // debt deadline passed: the workspace is closed except owner billing
+  // ADR-0086 amendment: the paid days after a stop ran out while the workspace uses more than Free
+  // allows («тариф не активен»). Restricted mode: no writing in workspace chats, no uploads, no
+  // invitations, at most 2 in a voice room, audio only. Left by paying (activate) or by moving to
+  // Free (resume FREE) once the usage fits. Only while billing enforcement is on.
+  BILLING_STATE_LAPSED = 6;
 }
 
 // Workspace.billing: no amounts (members other than the owner never see money).

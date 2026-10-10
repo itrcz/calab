@@ -40,19 +40,26 @@ export const billingStateOf = (b: WorkspaceBillingStatus | undefined): BillingSt
 
 export const isSuspended = (b: WorkspaceBillingStatus | undefined): boolean => billingStateOf(b) === BillingState.SUSPENDED;
 
+/**
+ * The restricted mode «тариф не активен» (ADR-0086 amendment): the paid days after a stop ran out
+ * while the workspace used more than Free allows. Reading works; writing, uploads, invitations and
+ * video do not; voice takes two. The server enforces it; the client only explains and disables.
+ */
+export const isLapsed = (b: WorkspaceBillingStatus | undefined): boolean => billingStateOf(b) === BillingState.LAPSED;
+
 /** Billing is a paid plan (Team / Business); anything else is shown as Team. */
 export const billingPlan = (p: Plan): Plan.TEAM | Plan.ENTERPRISE => (p === Plan.ENTERPRISE ? Plan.ENTERPRISE : Plan.TEAM);
 
 export const otherPlan = (p: Plan): Plan.TEAM | Plan.ENTERPRISE => (billingPlan(p) === Plan.TEAM ? Plan.ENTERPRISE : Plan.TEAM);
 
 /** What the cabinet offers for the account status. */
-export type CabinetPhase = 'inactive' | 'active' | 'arrears' | 'stopped' | 'suspended' | 'closed';
+export type CabinetPhase = 'inactive' | 'active' | 'arrears' | 'stopped' | 'lapsed' | 'suspended' | 'closed';
 
 export function cabinetPhase(s: BillingSummary, state: BillingState): CabinetPhase {
   if (s.status === BillingAccountStatus.CLOSED) return 'closed';
   if (s.status === BillingAccountStatus.SUSPENDED || state === BillingState.SUSPENDED) return 'suspended';
   if (s.status === BillingAccountStatus.INACTIVE) return 'inactive';
-  if (s.status === BillingAccountStatus.STOPPED) return 'stopped';
+  if (s.status === BillingAccountStatus.STOPPED) return state === BillingState.LAPSED ? 'lapsed' : 'stopped';
   if (minorOf(s.debt) > 0n || state === BillingState.IN_ARREARS) return 'arrears';
   return 'active';
 }

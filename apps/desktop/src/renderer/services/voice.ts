@@ -23,7 +23,8 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
-import { roomPerms, voiceCaps } from '../lib/permissions';
+import { isLapsed } from '../lib/billing/model';
+import { restrictedPerms, roomPerms, voiceCaps } from '../lib/permissions';
 import { MicPipeline } from '../lib/media/micPipeline';
 import type { MicReport } from '../lib/media/micReport';
 import {
@@ -179,6 +180,12 @@ export function defaultStage(roomId: string | null): 'pip' | 'expanded' {
 }
 
 const setLink = (p: Partial<VoiceLink>): void => setVoice({ link: { ...useVoice.getState().link, ...p } });
+
+
+/** «Тариф не активен» (ADR-0086 amendment): audio only — no stream / camera buttons (the server drops the grants too). */
+function lapsedPerms(workspaceId: string, perms: bigint): bigint {
+  return restrictedPerms(perms, isLapsed(useWorkspaces.getState().byId[workspaceId]?.ws.billing));
+}
 
 class VoiceEngine {
   private room: Room | null = null;
@@ -727,7 +734,7 @@ class VoiceEngine {
       token: moved.token,
       canSpeak: true,
       // The camera needs /camera/request in the target anyway (the server re-checks VIDEO + limit).
-      ...voiceCaps(roomPerms(role, me, room), room),
+      ...voiceCaps(lapsedPerms(workspaceId, roomPerms(role, me, room)), room),
       media: { audioBitrateKbps: planAudio(workspaceId, room?.media?.audioBitrateKbps || this.audioBitrateKbps) },
     };
   }
@@ -754,7 +761,7 @@ class VoiceEngine {
       this.applyMicTier();
     }
     if (roles.length === 0) return;
-    const next = voiceCaps(roomPerms(roles, me, room), room);
+    const next = voiceCaps(lapsedPerms(workspaceId, roomPerms(roles, me, room)), room);
     if (next.canStream !== canStream || next.canVideo !== canVideo) setVoice(next);
   }
 
