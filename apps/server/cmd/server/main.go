@@ -3,6 +3,7 @@
 //	server [serve]          run the HTTP server (migrates first unless MIGRATE_ON_START=false)
 //	server migrate [status] apply pending migrations (or print their status) and exit
 //	server healthcheck      GET /readyz on HTTP_ADDR, exit 0 if ready (container healthcheck)
+//	server tochka …         Tochka webhook registration and key check (ADR-0083; TOCHKA_* env only)
 package main
 
 import (
@@ -51,6 +52,9 @@ func run(args []string) error {
 	}
 	if cmd == "healthcheck" { // needs only HTTP_ADDR, not the full config
 		return healthcheck(os.Getenv("HTTP_ADDR"))
+	}
+	if cmd == "tochka" { // needs only TOCHKA_*, not the full config
+		return tochkaCmd(context.Background(), args[1:], os.Stdout)
 	}
 	cfg, err := config.Load()
 	if err != nil {

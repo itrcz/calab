@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/bits"
 	"strconv"
+	"strings"
 )
 
 // Currency is an ISO 4217 code of a supported account currency.
@@ -191,4 +192,75 @@ func Prorate(amount, part, whole int64) (int64, error) {
 		return 0, fmt.Errorf("money: part %d exceeds whole %d", part, whole)
 	}
 	return MulDivHalfUp(amount, part, whole)
+}
+
+// ErrBadDecimal is a decimal amount that is not a plain number of major units with at most the
+// currency's minor digits.
+var ErrBadDecimal = errors.New("money: bad decimal amount")
+
+// ParseDecimal reads a decimal amount in major units ("150", "150.5", "150.50", the JSON
+// number 1.0 of a provider API) into minor units, exactly (no floats). More fractional digits
+// than the currency has are accepted only when they are zeros ("1.000"); a plus sign, an
+// exponent or anything else is ErrBadDecimal.
+func ParseDecimal(s string, cur Currency) (Money, error) {
+	if _, err := ParseCurrency(string(cur)); err != nil {
+		return Money{}, err
+	}
+	exp := cur.Exponent()
+	neg := false
+	if rest, ok := strings.CutPrefix(s, "-"); ok {
+		neg, s = true, rest
+	}
+	whole, frac, dot := strings.Cut(s, ".")
+	if whole == "" || (dot && frac == "") || !digits(whole) || !digits(frac) {
+		return Money{}, fmt.Errorf("%w: %q", ErrBadDecimal, s)
+	}
+	if len(frac) > exp {
+		if strings.Trim(frac[exp:], "0") != "" {
+			return Money{}, fmt.Errorf("%w: %q has more than %d fractional digits", ErrBadDecimal, s, exp)
+		}
+		frac = frac[:exp]
+	}
+	frac += strings.Repeat("0", exp-len(frac))
+	w, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil {
+		return Money{}, fmt.Errorf("%w: %q", ErrOverflow, s)
+	}
+	pow := int64(1)
+	for range exp {
+		pow *= 10
+	}
+	minor, err := MulMinor(w, pow)
+	if err != nil {
+		return Money{}, err
+	}
+	if frac != "" {
+		f, err := strconv.ParseInt(frac, 10, 64)
+		if err != nil {
+			return Money{}, fmt.Errorf("%w: %q", ErrBadDecimal, s)
+		}
+		if minor, err = AddMinor(minor, f); err != nil {
+			return Money{}, err
+		}
+	}
+	if neg {
+		minor = -minor
+	}
+	return Money{Minor: minor, Currency: cur}, nil
+}
+
+func digits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// Decimal formats the amount in major units with exactly the currency's minor digits
+// ("150.00", "-0.05"): the request form of provider APIs that take decimal major units.
+func (m Money) Decimal() string {
+	_, num, _ := strings.Cut(m.String(), " ")
+	return num
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,11 +57,14 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 		if !s.canSelfServe(c) {
 			return resp, nil
 		}
-		offers, err := s.offers(ctx, SelfServeMarket, 0, s.now(ctx))
+		nm, err := s.newMarkets(ctx)
 		if err != nil {
 			return nil, err
 		}
-		resp.SelfServe, resp.Offers = true, offers
+		resp.SelfServe, resp.Markets, resp.SalesMode, resp.DefaultMarket = true, nm.open, nm.mode, nm.def
+		if resp.Offers, err = s.catalog(ctx, nm.catalog, 0); err != nil {
+			return nil, err
+		}
 		return resp, nil
 	}
 	sum, err := s.summary(ctx, c.acc)
@@ -68,10 +72,50 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 		return nil, err
 	}
 	resp.Summary = sum
-	if resp.Offers, err = s.offers(ctx, c.acc.Market, int(c.acc.DiscountBps), s.now(ctx)); err != nil {
+	fixed, err := s.marketFixed(ctx, c.acc)
+	if err != nil {
+		return nil, err
+	}
+	catalog := []string{c.acc.Market}
+	if fixed {
+		resp.Markets = catalog
+	} else {
+		nm, err := s.newMarkets(ctx)
+		if err != nil {
+			return nil, err
+		}
+		resp.Markets, resp.SalesMode, resp.DefaultMarket, catalog = nm.open, nm.mode, nm.def, nm.catalog
+		if slices.Contains(nm.open, c.acc.Market) {
+			resp.DefaultMarket = c.acc.Market
+		}
+	}
+	if resp.Offers, err = s.catalog(ctx, catalog, int(c.acc.DiscountBps)); err != nil {
 		return nil, err
 	}
 	return resp, nil
+}
+
+// catalog are the plan offers of every market of markets.
+func (s *Service) catalog(ctx context.Context, markets []string, discountBps int) ([]*v1.BillingPlanOffer, error) {
+	var out []*v1.BillingPlanOffer
+	for _, m := range markets {
+		offers, err := s.offers(ctx, m, discountBps, s.now(ctx))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, offers...)
+	}
+	return out, nil
+}
+
+// marketFixed: the account's market is fixed by money (ADR-0083) — a ledger entry, a payment
+// or an open checkout — or by a state past the first activation. Informational outside the
+// account lock; core.SwitchMarket and POST …/topups decide under it.
+func (s *Service) marketFixed(ctx context.Context, acc sqlc.BillingAccount) (bool, error) {
+	if acc.Status != core.StatusInactive && acc.Status != core.StatusStopped {
+		return true, nil
+	}
+	return s.db.Q.BillingAccountMarketFixed(ctx, acc.ID)
 }
 
 // summary is the owner's money picture, read in one read-only transaction (no catch-up: the
@@ -188,13 +232,53 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
+	market := req.GetMarket()
+	if market != "" {
+		if req.GetPurpose() != v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE {
+			return httpx.Validation("market", "market is chosen with an ACTIVATE quote only")
+		}
+		if core.MarketCurrency(market) == "" {
+			return httpx.Validation("market", "market must be global or ru")
+		}
+	}
+	// ADR-0083: before the first payment the market comes from the owner's explicit choice
+	// among the open ones (the only open one when unset); the language never decides here.
+	fixed := c.hasAc
+	if c.hasAc {
+		if fixed, err = s.marketFixed(ctx, c.acc); err != nil {
+			return err
+		}
+	}
+	if req.GetPurpose() == v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE && !fixed {
+		nm, err := s.newMarkets(ctx)
+		if err != nil {
+			return err
+		}
+		if market == "" {
+			market = nm.def
+			if c.hasAc && slices.Contains(nm.open, c.acc.Market) {
+				market = c.acc.Market
+			}
+		}
+		if !slices.Contains(nm.open, market) {
+			return billing.ErrMarketUnavailable // contact mode, or a market closed for new clients
+		}
+	}
 	if !c.hasAc {
 		if req.GetPurpose() != v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE {
 			return billing.ErrAccountNotFound
 		}
-		if err := s.startSelfServe(ctx, &c); err != nil {
+		if err := s.startSelfServe(ctx, &c, market); err != nil {
 			return err
 		}
+	}
+	if market != "" && market != c.acc.Market {
+		// ADR-0083: the owner's explicit choice before the first payment (409 once fixed).
+		acc, err := s.core.SwitchMarket(ctx, c.acc.ID, market, s.providerOf(market), 0, &c.user)
+		if err != nil {
+			return err
+		}
+		c.acc = acc
 	}
 	if plan == "" {
 		plan = c.acc.Plan

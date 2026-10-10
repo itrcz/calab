@@ -138,6 +138,9 @@ func (h *Handlers) Handlers() map[string]httpx.HandlerFunc {
 		"GET /api/admin/billing/prices":                                           h.prices,
 		"POST /api/admin/billing/prices":                                          h.createPrice,
 		"POST /api/admin/billing/test-clock":                                      h.testClock,
+		"POST /api/admin/billing/accounts/{id}/market":                            h.changeMarket,
+		"GET /api/admin/billing/providers":                                        h.providers,
+		"PUT /api/admin/billing/providers/{provider}":                             h.setProvider,
 	}
 	for p, f := range m {
 		m[p] = h.guard(f)
@@ -246,6 +249,8 @@ func newCmd(r *http.Request, action string, req proto.Message, target ...string)
 type snapshot struct {
 	Balance     int64      `json:"balance_minor"`
 	Currency    string     `json:"currency"`
+	Market      string     `json:"market,omitempty"`
+	Provider    string     `json:"provider,omitempty"`
 	Status      string     `json:"status"`
 	Plan        string     `json:"plan"`
 	HoldUntil   *time.Time `json:"hold_until,omitempty"`
@@ -256,7 +261,7 @@ type snapshot struct {
 }
 
 func snap(a sqlc.BillingAccount) *snapshot {
-	return &snapshot{Balance: a.BalanceMinor, Currency: a.Currency, Status: a.Status, Plan: a.Plan, HoldUntil: a.HoldUntil,
+	return &snapshot{Balance: a.BalanceMinor, Currency: a.Currency, Market: a.Market, Provider: a.Provider, Status: a.Status, Plan: a.Plan, HoldUntil: a.HoldUntil,
 		DiscountBps: a.DiscountBps, DisputeHold: a.DisputeHold, SuspendAt: a.SuspendAt, Revision: a.Revision}
 }
 

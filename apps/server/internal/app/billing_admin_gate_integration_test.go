@@ -23,6 +23,9 @@ func TestBillingAdminGate(t *testing.T) {
 		{"POST", "/api/admin/billing/payments/" + uuid.NewString() + "/refunds"},
 		{"POST", "/api/admin/billing/refund-requests/" + uuid.NewString() + "/decide"},
 		{"POST", "/api/admin/billing/accounts/" + uuid.NewString() + "/admin-debit"},
+		{"POST", "/api/admin/billing/accounts/" + uuid.NewString() + "/market"}, // ADR-0083
+		{"GET", "/api/admin/billing/providers"},
+		{"PUT", "/api/admin/billing/providers/tochka"},
 	}
 	o := owner(t)
 	for _, r := range routes {

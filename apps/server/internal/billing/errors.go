@@ -41,6 +41,8 @@ const (
 	ReasonPriceEffectiveTooSoon      = "BILLING_PRICE_EFFECTIVE_TOO_SOON"
 	ReasonManualCreditAlreadyReverse = "BILLING_CREDIT_ALREADY_REVERSED"
 	ReasonRefundNotReleasable        = "BILLING_REFUND_NOT_RELEASABLE" // 409: not a needs-review refund, or the provider has a refund it may be
+	ReasonMarketFixed                = "BILLING_MARKET_FIXED"          // 409: the market is fixed by the first credit (ADR-0083)
+	ReasonMarketUnavailable          = "BILLING_MARKET_UNAVAILABLE"    // 422: no enabled provider serves the market
 )
 
 func coded(status int, code v1.ErrorCode, reason, msg string) *httpx.Error {
@@ -70,6 +72,9 @@ var (
 	ErrDisputeHold             = conflict(ReasonDisputeHold, "an open dispute holds the account")
 	ErrRefundExceedsRefundable = conflict(ReasonRefundExceedsRefundable, "amount exceeds the refundable amount")
 	ErrRefundNotReleasable     = conflict(ReasonRefundNotReleasable, "the refund cannot be released")
+	// ErrMarketFixed: another market for an account that has money history or a pending payment
+	// (ADR-0083: the market is fixed by the first credit; afterwards close + new account).
+	ErrMarketFixed = conflict(ReasonMarketFixed, "the account's market is fixed by its payments")
 
 	ErrOwnerRequired = coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_FORBIDDEN, ReasonOwnerRequired, "only the workspace owner manages billing")
 	// ErrWorkspaceBillingSuspended: the debt deadline passed; the workspace is closed except
@@ -77,6 +82,7 @@ var (
 	ErrWorkspaceBillingSuspended = coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED, ReasonWorkspaceBillingSuspended, "workspace suspended for unpaid billing")
 
 	ErrMethodUnavailable     = coded(http.StatusUnprocessableEntity, v1.ErrorCode_ERROR_CODE_VALIDATION, ReasonMethodUnavailable, "payment method not available")
+	ErrMarketUnavailable     = coded(http.StatusUnprocessableEntity, v1.ErrorCode_ERROR_CODE_VALIDATION, ReasonMarketUnavailable, "market not available")
 	ErrAmountOutOfRange      = coded(http.StatusUnprocessableEntity, v1.ErrorCode_ERROR_CODE_VALIDATION, ReasonAmountOutOfRange, "amount out of range")
 	ErrAutoTopupLimit        = coded(http.StatusUnprocessableEntity, v1.ErrorCode_ERROR_CODE_VALIDATION, ReasonAutoTopupLimit, "auto-topup limit out of range")
 	ErrAutoTopupUnavailable  = coded(http.StatusUnprocessableEntity, v1.ErrorCode_ERROR_CODE_VALIDATION, ReasonAutoTopupUnavailable, "auto-topup not available")

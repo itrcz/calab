@@ -278,6 +278,18 @@ func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.Bi
 		slog.WarnContext(ctx, "billing admin: refund past the repost window, left to reconciliation", "refund", ref.ID)
 		return ref, nil
 	default:
+		if !p.Caps().SafeRetry() {
+			// No idempotency at the provider (ADR-0083, Tochka): the refund is sent at most once,
+			// marked before the request; a replay or a lost answer only reads.
+			sent, merr := h.d.Core.MarkRefundDispatched(pctx, ref.ID)
+			if merr != nil {
+				return ref, merr
+			}
+			if !sent {
+				slog.WarnContext(ctx, "billing admin: refund sent before, left to reconciliation", "refund", ref.ID)
+				return ref, nil
+			}
+		}
 		fact, err = p.Refund(pctx, provider.RefundReq{
 			IdemKey: ref.IdemKey, PaymentID: pay.ProviderPaymentID, Amount: bmoney.New(ref.AmountMinor, bmoney.Currency(ref.Currency)),
 			Reason: ref.Reason, Metadata: provider.Metadata{AccountID: ref.AccountID, RefundID: ref.ID},
@@ -285,6 +297,15 @@ func (h *Handlers) execute(ctx context.Context, ref sqlc.BillingRefund) (sqlc.Bi
 	}
 	status := ""
 	switch {
+	case errors.Is(err, provider.ErrNotSupported):
+		// The provider refunds this payment only in its own interface (Tochka: digital ruble):
+		// the money stays reserved, a superadmin refunds by hand; the reconciliation matches
+		// that refund to this row.
+		slog.ErrorContext(ctx, "billing admin: refund needs a manual refund in the provider's interface", "refund", ref.ID, "payment", pay.ProviderPaymentID, "err", err)
+		if _, merr := h.d.Core.MarkRefundNeedsReview(pctx, ref); merr != nil {
+			return ref, merr
+		}
+		return h.d.DB.Q.GetBillingRefund(pctx, ref.ID)
 	case errors.Is(err, provider.ErrUnknownOutcome):
 		slog.WarnContext(ctx, "billing admin: refund outcome unknown, left pending", "refund", ref.ID, "err", err)
 		return ref, nil

@@ -119,7 +119,12 @@ var botRoutes = map[string]botAccess{
 	"GET /api/admin/billing/prices":                                           botDeny,
 	"POST /api/admin/billing/prices":                                          botDeny,
 	"POST /api/admin/billing/test-clock":                                      botDeny,
+	"POST /api/admin/billing/accounts/{id}/market":                            botDeny,
+	"GET /api/admin/billing/providers":                                        botDeny,
+	"PUT /api/admin/billing/providers/{provider}":                             botDeny,
 	"POST /api/billing/stripe/webhook":                                        botPublic,
+	"POST /api/billing/tochka/webhook":                                        botPublic,
+	"GET /api/billing/public/offers":                                          botPublic,
 	"GET /api/billing/return":                                                 botPublic,
 	// outside /api and public
 	"GET /healthz":                                         botPublic,

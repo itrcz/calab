@@ -145,6 +145,8 @@ type BillingCheckout struct {
 	ExpiresAt         *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	NextPollAt        *time.Time
+	Polls             int32
 }
 
 type BillingCustomer struct {
@@ -285,6 +287,13 @@ type BillingProviderEvent struct {
 	Error           string
 }
 
+type BillingProviderSetting struct {
+	Provider  string
+	AcceptNew bool
+	UpdatedBy *uuid.UUID
+	UpdatedAt time.Time
+}
+
 type BillingRefund struct {
 	ID               uuid.UUID
 	AccountID        uuid.UUID
@@ -302,6 +311,7 @@ type BillingRefund struct {
 	UpdatedAt        time.Time
 	SucceededAt      *time.Time
 	NeedsReviewAt    *time.Time
+	DispatchedAt     *time.Time
 }
 
 type BillingRefundRequest struct {

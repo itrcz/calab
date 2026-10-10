@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/billing/provider"
+	"github.com/calaba/calaba/server/internal/billing/sales"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -58,13 +60,23 @@ func (h *Handlers) enable(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	ctx := r.Context()
+	// ADR-0083: a new account only in a market open for new clients (the only open one, else
+	// Global, when unset).
+	open, err := h.sales().Open(ctx, h.d.DB.Q)
+	if err != nil {
+		return err
+	}
 	market := req.GetMarket()
 	if market == "" {
-		market = "global"
+		market = sales.DefaultMarket(open)
 	}
 	currency, ok := markets[market]
 	if !ok {
 		return httpx.Validation("market", "market must be global or ru")
+	}
+	if !slices.Contains(open, market) {
+		return billing.ErrMarketUnavailable
 	}
 	if p := req.GetPlan(); p != v1.Plan_PLAN_UNSPECIFIED && p != v1.Plan_PLAN_TEAM {
 		return httpx.Validation("plan", "the owner chooses the paid plan at activation")
@@ -73,7 +85,6 @@ func (h *Handlers) enable(w http.ResponseWriter, r *http.Request) error {
 	if prov == "" {
 		return httpx.Validation("market", "no provider serves this market (BILLING_PROVIDERS)")
 	}
-	ctx := r.Context()
 	res, replay, err := h.ahead(ctx, c, nil, &wsID, func(q *sqlc.Queries, _ *sqlc.BillingAccount) (*effect, error) {
 		if _, err := q.GetWorkspace(ctx, wsID); err != nil {
 			if db.IsNotFound(err) {

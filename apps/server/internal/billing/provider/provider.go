@@ -1,14 +1,22 @@
-// Package provider is the boundary between the billing core and payment acquirers (Stripe
-// first, Tochka / RUB later). The core never imports a concrete provider: it talks to
-// Provider (and optionally OffSessionCharger) through a Registry built from env.
+// Package provider is the boundary between the billing core and payment acquirers (Stripe for
+// Global / USD, Tochka for RU / RUB, ADR-0083). The core never imports a concrete provider: it
+// talks to Provider (and optionally OffSessionCharger) through a Registry built from env.
 //
 // Contract every adapter keeps:
 //   - no state of its own beyond credentials: facts come from the provider API, money effects
 //     happen only in the core under the account lock;
 //   - every create call takes an idempotency key derived from a local row id (checkout id,
-//     refund id, auto-topup attempt id) so a retry never creates a second object;
+//     refund id, auto-topup attempt id). With CapIdempotentCharge (Stripe) a retry with the
+//     same key never creates a second object. Without it (Tochka, CapReconcilableCharge) the
+//     key is only a reference the provider keeps (paymentLinkId) or nothing at all: the core
+//     sends such a create at most once and resolves a lost answer by reading the payment's
+//     operations, never by a blind retry;
 //   - a lost answer is ErrUnknownOutcome, never a guessed success or failure;
-//   - test keys only unless STRIPE_LIVEMODE_ALLOWED: livemode objects are ErrLivemodeForbidden;
+//   - Stripe: test keys only unless STRIPE_LIVEMODE_ALLOWED (livemode objects are
+//     ErrLivemodeForbidden). Tochka has no test mode for payments: it is live only and gated by
+//     BILLING_TOCHKA_ENABLED plus the configured customer code / merchant id;
+//   - an operation the provider cannot do through its API (Tochka: refund of a digital-ruble
+//     payment) is ErrNotSupported: the core keeps the money reserved for a manual operation;
 //   - webhooks are verified on the raw body (ErrBadSignature) and parsed into Event; the core
 //     re-reads the object (GetPayment / GetCheckout / GetRefund) before acting on it.
 package provider
@@ -58,7 +66,18 @@ const (
 	CapDisputes
 	CapReceipts // the provider issues the receipt (receipt_url)
 	CapListPayments
+	// CapReconcilableCharge: create calls are NOT idempotent, but every payment / refund the
+	// provider made is visible in the payment's operations (Tochka Order[]), so an unknown
+	// outcome is resolved by reading, never by sending again (ADR-0083).
+	CapReconcilableCharge
+	// CapSuccessOnlyWebhooks: the provider pushes only successful payments (no failure,
+	// expiry or refund events): pending checkouts and refunds are polled (ADR-0083).
+	CapSuccessOnlyWebhooks
 )
+
+// SafeRetry reports whether a create call with an unknown outcome may be sent again with the
+// same idempotency key.
+func (c Cap) SafeRetry() bool { return c.Has(CapIdempotentCharge) }
 
 // Has reports whether every bit of want is set.
 func (c Cap) Has(want Cap) bool { return c&want == want }
@@ -74,6 +93,9 @@ var (
 	ErrLivemodeForbidden = errors.New("provider: livemode forbidden")
 	// ErrNotFound: the provider has no such object.
 	ErrNotFound = errors.New("provider: object not found")
+	// ErrNotSupported: the provider cannot do this through its API (Tochka: refund of a
+	// digital-ruble payment). Nothing was sent; the operation is left to an operator.
+	ErrNotSupported = errors.New("provider: operation not supported by the provider API")
 )
 
 // Metadata travels with provider objects (PaymentIntent / Checkout metadata) so a webhook or
@@ -163,6 +185,9 @@ type CheckoutReq struct {
 	ExpiresAt         time.Time
 	Metadata          Metadata
 	Description       string // line item text shown on the hosted page and receipt
+	// ReceiptEmail: where a provider that fiscalizes the payment itself (Tochka, 54-FZ) sends
+	// the receipt — the payer's e-mail, else the owner's. Stripe collects it on its page.
+	ReceiptEmail string
 }
 
 // CheckoutSession is the created page.
