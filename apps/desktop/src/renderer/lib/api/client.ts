@@ -1,5 +1,6 @@
 import { identityRequestBlocked, identityRequestVersion } from './identityGate';
 import { create, fromJson, toJson, type DescMessage, type JsonValue, type MessageInitShape, type MessageShape } from '@bufbuild/protobuf';
+import { PlanLimitViolationsSchema, type PlanLimitViolation } from '@calaba/protocol';
 import { platform } from '../../platform';
 
 /**
@@ -22,7 +23,7 @@ export class ApiError extends Error {
      * that was hit (ROOM_FULL — users; FILE_QUOTA_EXCEEDED — bytes). `retryAfter`: seconds from
      * a 429's `Retry-After` header (ADR-0023: code resend, mail limits).
      */
-    readonly extra: { reason?: string; used?: number; limit?: number; retryAfter?: number } = {},
+    readonly extra: { reason?: string; used?: number; limit?: number; retryAfter?: number; planViolations?: readonly PlanLimitViolation[] } = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -50,12 +51,15 @@ export function retryAfterSeconds(res: Response): number | undefined {
 export async function toApiError(res: Response): Promise<ApiError> {
   const retry = retryAfterSeconds(res);
   try {
-    const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown };
+    const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown; planLimitsExceeded?: unknown };
     // protojson: uint64 as a string.
     const num = (v: unknown): number | undefined => (typeof v === 'string' || typeof v === 'number') && Number.isFinite(Number(v)) ? Number(v) : undefined;
     const used = num(b.used);
     const limit = num(b.limit);
+    // PLAN_LIMITS_EXCEEDED (ADR-0086): what the target plan would exceed, through the generated schema.
+    const planViolations = b.planLimitsExceeded ? fromJson(PlanLimitViolationsSchema, b.planLimitsExceeded as JsonValue, { ignoreUnknownFields: true }).violations : undefined;
     const extra = {
+      ...(planViolations ? { planViolations } : {}),
       ...(b.reason ? { reason: b.reason } : {}),
       ...(used !== undefined ? { used } : {}),
       ...(limit !== undefined ? { limit } : {}),

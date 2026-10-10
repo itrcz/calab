@@ -485,7 +485,7 @@ func TestBoardRules(t *testing.T) {
 		b3 := createBoard(t, o, ws3.GetId(), &v1.CreateBoardRequest{Name: "Down", Key: "DWN"}, 201)
 		r := createRule(t, o, b3.GetId(), &v1.CreateBoardRuleRequest{Name: "r", Trigger: onCreated(),
 			Actions: []*v1.RuleAction{doPriority(v1.TaskPriority_TASK_PRIORITY_HIGH)}}, 201)
-		setPlan(t, ws3.GetId(), &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_FREE})
+		setPlan(t, ws3.GetId(), &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_FREE, OverrideLimits: true}) // over the limits: ADR-0086
 		tk := createTask(t, o, b3.GetId(), &v1.CreateTaskRequest{Title: "без правил"}, 201)
 		if p := getTask(t, o, tk.GetId()).GetTask().GetPriority(); p != v1.TaskPriority_TASK_PRIORITY_NONE {
 			t.Fatalf("a rule ran below Team: %v", p)

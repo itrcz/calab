@@ -35,6 +35,8 @@ import {
   PaymentOrigin,
   PaymentStatus,
   Plan,
+  PlanLimitKind,
+  PlanLimitViolationSchema,
   PlanSource,
   RefundOrigin,
   RefundRequestStatus,
@@ -88,6 +90,30 @@ function param(name: string, key: string): string | null {
     return null;
   }
 }
+/**
+ * ADR-0086 plan transitions: `?limits=over` — the workspace exceeds Team and Free (6 bots, an SSO
+ * connection, rooms of 30, 7 GB of files): those offers carry violations and their quotes answer 409
+ * PLAN_LIMITS_EXCEEDED; `?admin=1` — a superadmin assigned the plan (no self-serve, admin_assigned).
+ */
+const overLimits = (): boolean => param('limits', 'calaba-billing-limits') === 'over';
+const adminAssigned = (): boolean => param('admin', 'calaba-billing-admin') === '1';
+const v = (kind: PlanLimitKind, current: bigint, limit: bigint, rooms = 0) => create(PlanLimitViolationSchema, { kind, current, limit, rooms });
+function violationsFor(p: Plan) {
+  if (!overLimits() || p === Plan.ENTERPRISE) return [];
+  if (p === Plan.TEAM) return [v(PlanLimitKind.BOTS, 6n, 5n), v(PlanLimitKind.ROOM_MEMBERS, 30n, 15n, 2), v(PlanLimitKind.SSO, 1n, 0n)];
+  return [
+    v(PlanLimitKind.BOTS, 6n, 1n),
+    v(PlanLimitKind.STORAGE_MB, 7340n, 5120n),
+    v(PlanLimitKind.ROOM_MEMBERS, 30n, 5n, 2),
+    v(PlanLimitKind.AUTOMATIONS, 3n, 0n),
+    v(PlanLimitKind.SSO, 1n, 0n),
+  ];
+}
+const exceeded = (p: Plan): ApiError | null => {
+  const list = violationsFor(p);
+  return list.length ? new ApiError('ERROR_CODE_CONFLICT', 'the workspace uses more than the plan allows', 409, undefined, { reason: 'PLAN_LIMITS_EXCEEDED', planViolations: list }) : null;
+};
+
 const salesOf = (v: string | null): Sales => (v === 'both' || v === 'ru' || v === 'contact' ? v : 'global');
 const ts = (ms: number) => timestampFromMs(ms);
 
@@ -166,9 +192,9 @@ function offers(m: Market = S().market): BillingPlanOffer[] {
   const team = { members: 100, roomMembers: 15, storageMb: 300n * 1024n, bots: 5, telephonyDisabled: true };
   const biz = { members: 500, roomMembers: 50, storageMb: 1024n * 1024n, bots: 20 };
   return [
-    create(BillingPlanOfferSchema, { plan: Plan.FREE, limits: free, market: m }),
-    create(BillingPlanOfferSchema, { plan: Plan.TEAM, unitPrice: price(unit(Plan.TEAM, m), m), limits: team, market: m }),
-    create(BillingPlanOfferSchema, { plan: Plan.ENTERPRISE, unitPrice: price(unit(Plan.ENTERPRISE, m), m), limits: biz, market: m }),
+    create(BillingPlanOfferSchema, { plan: Plan.FREE, limits: free, market: m, violations: violationsFor(Plan.FREE) }),
+    create(BillingPlanOfferSchema, { plan: Plan.TEAM, unitPrice: price(unit(Plan.TEAM, m), m), limits: team, market: m, violations: violationsFor(Plan.TEAM) }),
+    create(BillingPlanOfferSchema, { plan: Plan.ENTERPRISE, unitPrice: price(unit(Plan.ENTERPRISE, m), m), limits: biz, market: m, violations: violationsFor(Plan.ENTERPRISE) }),
   ];
 }
 
@@ -264,6 +290,7 @@ function initial(): State {
   if (sc === 'inactive' || sc === 'selfServe') Object.assign(s, { status: BillingAccountStatus.INACTIVE, balance: 0n, autoOn: false, cardSaved: false, refundRequests: [] });
   if (sc === 'selfServe') s.account = false;
   if (sc === 'stopped') Object.assign(s, { status: BillingAccountStatus.STOPPED, balance: 1210n, autoOn: false });
+  if (overLimits()) s.plan = Plan.ENTERPRISE; // Business, over Team's and Free's limits (ADR-0086)
   s.ledger = sc === 'inactive' || sc === 'selfServe' ? [] : seedLedger(now, s.balance, members, s.plan, s.market);
   return s;
 }
@@ -394,6 +421,7 @@ function owner(): OwnerBillingApi {
       guard(s);
       if (s.sc === 'member' || s.sc === 'memberSuspended')
         return create(GetBillingResponseSchema, { status: { state: s.sc === 'member' ? BillingState.ACTIVE : BillingState.SUSPENDED, source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) } });
+      if (adminAssigned()) return create(GetBillingResponseSchema, { status: { source: PlanSource.MANUAL }, adminAssigned: true });
       if (!s.account) return create(GetBillingResponseSchema, { status: { source: PlanSource.MANUAL }, selfServe: true, ...salesPart(s) });
       return create(GetBillingResponseSchema, {
         status: { state: stateOf(s), source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) },
@@ -414,6 +442,9 @@ function owner(): OwnerBillingApi {
       } else if (want && want !== s.market) {
         throw new ApiError('ERROR_CODE_CONFLICT', 'market fixed', 409, undefined, { reason: 'BILLING_MARKET_FIXED' });
       }
+      const target = purpose === BillingQuotePurpose.STOP ? Plan.FREE : purpose === BillingQuotePurpose.RESUME_FREE ? null : (init.plan || s.plan);
+      const over = target === null || target === s.plan ? null : exceeded(target);
+      if (over) throw over;
       if (!s.account) {
         if (purpose !== BillingQuotePurpose.ACTIVATE) throw new ApiError('ERROR_CODE_NOT_FOUND', 'billing account not found', 404, undefined, { reason: 'BILLING_ACCOUNT_NOT_FOUND' });
         s.account = true; // self-serve: the ACTIVATE quote starts the account
@@ -438,7 +469,21 @@ function owner(): OwnerBillingApi {
     async changePlan(_ws, init) {
       await wait();
       const s = S();
+      const from = s.plan;
       s.plan = init.plan === Plan.ENTERPRISE ? Plan.ENTERPRISE : Plan.TEAM;
+      // The ledger of a change (ADR-0086 history): a full day of the new plan, the unused rest of the old one back.
+      const charge = unit(s.plan) * BigInt(s.members);
+      const comp = (unit(from) * BigInt(s.members) * 7n) / 10n;
+      const op = `op-${s.revision}`;
+      const now = Date.now();
+      s.balance += comp;
+      s.ledger.unshift(
+        create(LedgerEntrySchema, { id: `${op}-c`, seq: s.revision + 200n, kind: LedgerEntryKind.COMPENSATION, amount: mon(comp), balanceAfter: mon(s.balance), createdAt: ts(now), reason: 'seats returned', sku: from === Plan.ENTERPRISE ? 'seat.enterprise.day' : 'seat.team.day', quantity: s.members, operationId: op }),
+      );
+      s.balance -= charge;
+      s.ledger.unshift(
+        create(LedgerEntrySchema, { id: `${op}-s`, seq: s.revision + 201n, kind: LedgerEntryKind.SEAT_CHARGE, amount: mon(-charge), balanceAfter: mon(s.balance), createdAt: ts(now), reason: 'change_plan', sku: s.plan === Plan.ENTERPRISE ? 'seat.enterprise.day' : 'seat.team.day', quantity: s.members, startsAt: ts(now), endsAt: ts(now + DAY), operationId: op }),
+      );
       bump(s);
     },
     async resume(_ws, init) {

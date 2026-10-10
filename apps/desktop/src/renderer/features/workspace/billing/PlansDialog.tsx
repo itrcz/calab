@@ -1,14 +1,27 @@
-import { BillingQuotePurpose, BillingState, PaymentMethodKind, Plan, WorkspaceRole, type BillingPlanOffer, type BillingQuote, type BillingSummary, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
+import {
+  BillingQuotePurpose,
+  BillingState,
+  PaymentMethodKind,
+  Plan,
+  WorkspaceRole,
+  type BillingPlanOffer,
+  type BillingQuote,
+  type BillingSummary,
+  type PlanLimitViolation,
+  type PlanLimits,
+  type WorkspaceMember,
+} from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { useQuery } from '@tanstack/react-query';
 import { Check, ChevronDown, CircleCheck, CirclePause, CreditCard, Mail, Minus, Plus, QrCode, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { Button, Input, Modal, Segmented, Spinner, cx } from '../../../components/ui';
-import { t, useLocale, type MessageKey } from '../../../i18n';
+import { plural, t, useLocale, type MessageKey } from '../../../i18n';
 import { useMobile } from '../../../lib/mobile';
 import { audioTierLabel } from '../../../lib/audioTierLabel';
 import { IDLE, checkoutReducer, nowMs } from '../../../lib/billing/checkout';
 import { billingErrorText, billingStale } from '../../../lib/billing/errors';
+import { adminAssignedError, violationsOf } from '../../../lib/billing/violations';
 import { MARKET_LABEL, MARKET_SELLER, choosableMarkets, contactOnly, methodLabel, offersOf, providerTag, quoteMarket, screenMarket, type Market } from '../../../lib/billing/market';
 import { currencyOf, offeredMethods, requestId, topupLimits } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
@@ -39,7 +52,8 @@ import { useSession } from '../../../stores/session';
 import { useUi } from '../../../stores/ui';
 import { useWorkspaces } from '../../../stores/workspaces';
 import { useBillingState } from './BillingPaywall';
-import { QuoteDialog } from './QuoteDialog';
+import { ChangeNet, QuoteDialog } from './QuoteDialog';
+import { AdminAssignedNote, ViolationList } from './Violations';
 import { CheckoutProgress, useCheckoutPoll } from './TopupDialog';
 import { MoneyText, Note, StatePill, SumLine } from './parts';
 
@@ -68,7 +82,19 @@ function openCabinet(workspaceId: string): void {
   useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'plan' });
 }
 
-export function PlansDialog({ workspaceId, welcome, onClose }: { workspaceId: string; welcome: boolean; onClose: () => void }): ReactNode {
+export function PlansDialog({
+  workspaceId,
+  welcome,
+  inSettings = false,
+  onClose,
+}: {
+  workspaceId: string;
+  welcome: boolean;
+  /** Opened by «Сменить тариф» in settings → «Тариф» (owner, 10.10): the cabinet is right behind it. */
+  inSettings?: boolean;
+  onClose: () => void;
+}): ReactNode {
+  const toCabinet = useCallback(() => (inSettings ? onClose() : openCabinet(workspaceId)), [inSettings, onClose, workspaceId]);
   const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
   const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name ?? '');
   const state = useBillingState(workspaceId);
@@ -148,14 +174,14 @@ export function PlansDialog({ workspaceId, welcome, onClose }: { workspaceId: st
         onChoose={(step) => {
           if (step.kind === 'pay') setChosen({ plan: step.plan, purpose: step.purpose });
           else if (step.kind === 'stop') setStopping(true);
-          else if (step.kind === 'blocked' && step.why === 'suspended') openCabinet(workspaceId);
+          else if (step.kind === 'blocked' && step.why === 'suspended') toCabinet();
         }}
       />
     );
     footer = (
       <>
-        {data.summary ? (
-          <Button variant="ghost" className="mr-auto mobile:mr-0" onClick={() => openCabinet(workspaceId)} data-testid="plans-details">
+        {data.summary && !inSettings ? (
+          <Button variant="ghost" className="mr-auto mobile:mr-0" onClick={toCabinet} data-testid="plans-details">
             {t('billing.plans.details')}
           </Button>
         ) : null}
@@ -266,6 +292,9 @@ function PlanGrid({
   const current = currentTier(phase, accountPlan);
   const payments = billingPaymentsAllowed();
   const people = summary?.billableMembers ?? billable;
+  // ADR-0086: a plan the workspace does not fit — «Почему нельзя» shows the server's violations under the cards.
+  const [why, setWhy] = useState<PlanTier | null>(null);
+  const whyOffer = why === null ? undefined : offerOf(offers, why);
   return (
     <div className="flex flex-col gap-3">
       {summary ? (
@@ -313,9 +342,11 @@ function PlanGrid({
             payments={payments && forSale(offers, tier)}
             contact={contact}
             onChoose={onChoose}
+            onWhy={setWhy}
           />
         ))}
       </div>
+      {why !== null && whyOffer?.violations.length ? <ViolationList key={why} workspaceId={workspaceId} plan={t(PLAN_LABEL[why])} violations={whyOffer.violations} reveal /> : null}
       {!payments ? <Note>{t('billing.paymentsElsewhere')}</Note> : null}
     </div>
   );
@@ -330,6 +361,7 @@ function PlanCard({
   payments,
   contact,
   onChoose,
+  onWhy,
 }: {
   tier: PlanTier;
   offer: BillingPlanOffer | undefined;
@@ -339,6 +371,7 @@ function PlanCard({
   payments: boolean;
   contact: boolean;
   onChoose: (s: PlanStep) => void;
+  onWhy: (tier: PlanTier) => void;
 }): ReactNode {
   const unit = offer?.unitPrice;
   const cur = unit?.currency ?? '';
@@ -346,6 +379,8 @@ function PlanCard({
   const mobile = useMobile();
   const [open, setOpen] = useState(false);
   const paid = tier !== Plan.FREE;
+  // The server says the workspace does not fit this plan now (ADR-0086): no way to choose it.
+  const notFit = (step.kind === 'pay' || step.kind === 'stop') && !!offer?.violations.length;
   let action: ReactNode;
   if (step.kind === 'current') {
     action = (
@@ -356,6 +391,18 @@ function PlanCard({
     );
   } else if (step.kind === 'blocked') {
     action = step.why === 'debtUpgrade' ? <span className="text-caption text-muted">{t('billing.plans.debtFirst')}</span> : null;
+  } else if (notFit) {
+    action = (
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="inline-flex items-center gap-1 text-caption text-fg">
+          <TriangleAlert className="size-3.5 text-warn" aria-hidden />
+          {t('billing.transition.notFit')}
+        </span>
+        <Button size="sm" variant="secondary" onClick={() => onWhy(tier)} data-testid={`plans-why-${Plan[tier]}`}>
+          {t('billing.transition.why')}
+        </Button>
+      </span>
+    );
   } else if (!payments) {
     action = paid && !unit ? <span className="text-caption text-muted">{t('billing.plans.notForSale')}</span> : null;
   } else if (contact && step.kind === 'pay') {
@@ -518,6 +565,9 @@ function PayStep({
 
   const [phase, setPhase] = useState<PayPhase>('form');
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<readonly PlanLimitViolation[]>([]);
+  const quoteBlocked = violationsOf(quote.error);
+  const violations = blocked.length ? blocked : quoteBlocked;
   const [flow, dispatch] = useReducer(checkoutReducer, IDLE);
   const topupReq = useRef(requestId());
   const actReq = useRef(requestId());
@@ -546,7 +596,10 @@ function PayStep({
           actReq.current = requestId();
           continue;
         }
-        setError(billingErrorText(e));
+        // ADR-0086: the commit re-checks the limits (someone joined since the quote).
+        const v = violationsOf(e);
+        if (v.length) setBlocked(v);
+        else setError(billingErrorText(e));
         setPhase('form');
         void quote.refetch();
         return;
@@ -594,7 +647,7 @@ function PayStep({
   const planName = t(PLAN_LABEL[chosen.plan]);
   const title = chosen.purpose === BillingQuotePurpose.CHANGE_PLAN ? t('billing.pay.titleChange', { plan: planName }) : t('billing.pay.title', { plan: planName });
   const checkoutEnded = flow.phase === 'done' && flow.outcome !== 'credited';
-  const ready = !!q && !!summary && (topup.amount <= 0n || !!method);
+  const ready = !!q && !!summary && (topup.amount <= 0n || !!method) && !violations.length;
 
   let footer: ReactNode;
   if (phase === 'done') footer = <Button onClick={onClose}>{t('billing.topup.close')}</Button>;
@@ -638,19 +691,32 @@ function PayStep({
         ) : (
           <>
             {quote.isLoading || (q && !summary) ? <Spinner className="mx-auto my-4" /> : null}
-            {quote.isError ? <p className="text-body text-danger-text">{billingErrorText(quote.error)}</p> : null}
+            {violations.length ? (
+              <ViolationList workspaceId={workspaceId} plan={planName} violations={violations} />
+            ) : adminAssignedError(quote.error) ? (
+              <AdminAssignedNote />
+            ) : quote.isError ? (
+              <p className="text-body text-danger-text">{billingErrorText(quote.error)}</p>
+            ) : null}
             {checkoutEnded ? <CheckoutProgress flow={flow} onRecheck={() => undefined} /> : null}
-            {q && summary ? (
+            {q && summary && !violations.length ? (
               <>
                 <SeatsField value={seatsRaw} range={range} onChange={setSeatsRaw} />
-                <div className="flex flex-col">
-                  <SumLine label={t('billing.pay.month', { seats, price: formatMoney(unitMoney) })}>{formatMinor(topup.month, currency)}</SumLine>
-                  {minorOf(q.debt) > 0n ? <SumLine label={t('billing.quote.debt')}>{formatMoney(q.debt)}</SumLine> : null}
-                  {minorOf(summary.balance) > 0n ? <SumLine label={t('billing.pay.onBalance')}>{formatMoney(summary.balance, { signed: true })}</SumLine> : null}
-                  <SumLine label={topup.amount > 0n ? t('billing.pay.toPay') : t('billing.pay.covered')} strong>
-                    {formatMinor(topup.amount, currency)}
+                {/* Two separate things (owner, 10.10): the top-up sized for the planned team, and what is charged today for the people actually here. */}
+                <div className="flex flex-col" data-testid="plans-pay-lines">
+                  <SumLine label={t('billing.pay.topupLine')} strong>
+                    {topup.amount > 0n ? formatMinor(topup.amount, currency) : t('billing.pay.noTopup')}
                   </SumLine>
-                  <p className="pt-1 text-caption text-muted">{t('billing.pay.seatsHint', { n: summary.billableMembers })}</p>
+                  <p className="pb-2 text-caption text-muted">
+                    {plural('billing.pay.topupHint', seats)}
+                    {minorOf(q.debt) > 0n ? ` · ${t('billing.quote.debt')} ${formatMoney(q.debt)}` : ''}
+                    {minorOf(summary.balance) > 0n ? ` · ${t('billing.pay.onBalance')} ${formatMoney(summary.balance, { signed: true })}` : ''}
+                  </p>
+                  <SumLine label={t('billing.pay.todayLine')} strong>
+                    {formatMoney(q.charge)}
+                  </SumLine>
+                  <p className="text-caption text-muted">{plural('billing.pay.todayHint', q.seats)}</p>
+                  {chosen.purpose === BillingQuotePurpose.CHANGE_PLAN && summary.plan !== Plan.UNSPECIFIED ? <ChangeNet q={q} from={summary.plan} to={chosen.plan} /> : null}
                 </div>
                 {topup.amount > 0n ? (
                   <MethodList methods={methods} value={method?.id ?? ''} onChange={setMethodId} />
@@ -678,7 +744,7 @@ function SeatsField({ value, range, onChange }: { value: string; range: { min: n
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor="plans-seats" className="text-caption font-medium text-muted">
-        {t('billing.pay.seats')}
+        {t('billing.pay.seatsPlan')}
       </label>
       <div className="flex items-center gap-2">
         <Button variant="secondary" aria-label={t('billing.pay.seatsLess')} disabled={n <= range.min} onClick={() => step(-1)}>

@@ -1,6 +1,9 @@
 package billinghttp
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -241,7 +244,33 @@ func ledgerEntry(e sqlc.ListBillingLedgerPageRow, currency string) *v1.LedgerEnt
 	if e.ChargeQty != nil {
 		out.Quantity = uint32(*e.ChargeQty) //nolint:gosec // qty > 0 (CHECK)
 	}
+	out.OperationId = ledgerOperation(e)
 	return out
+}
+
+// ledgerOperation groups the entries of one owner operation (LedgerEntry.operation_id): the seat
+// charge of an activation / plan change / paid resume (its charge key «{reason}:{account}:{request}»)
+// and the compensation of the previous plan (ledger key «{that key}:comp:{i}»). An opaque digest:
+// the request id is not exposed.
+func ledgerOperation(e sqlc.ListBillingLedgerPageRow) string {
+	key := ""
+	switch e.Kind {
+	case "seat_charge":
+		if e.ChargeKey != nil {
+			key = *e.ChargeKey
+		}
+	case "compensation":
+		if i := strings.Index(e.BusinessKey, ":comp:"); i >= 0 {
+			key = e.BusinessKey[:i]
+		}
+	}
+	for _, p := range []string{core.ReasonActivate + ":", core.ReasonChangePlan + ":", core.ReasonResume + ":"} {
+		if strings.HasPrefix(key, p) {
+			h := sha256.Sum256([]byte(key))
+			return hex.EncodeToString(h[:8])
+		}
+	}
+	return ""
 }
 
 func checkoutState(s string) v1.CheckoutState {

@@ -53,6 +53,10 @@ message AdminSetPlanRequest {
   PlanLimits limits = 2;
   google.protobuf.Timestamp valid_until = 3;
   string note = 4; // ≤ 500 characters
+  // ADR-0086: a plan whose limits the workspace already exceeds is refused (409
+  // PLAN_LIMITS_EXCEEDED with ApiError.plan_violations) unless the superadmin confirms it here;
+  // the override and the violations are written to the plan log.
+  bool override_limits = 5;
 }
 
 message AdminSetPlanResponse {

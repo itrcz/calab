@@ -182,6 +182,76 @@ func (q *Queries) GetWorkspacePlan(ctx context.Context, workspaceID uuid.UUID) (
 	return i, err
 }
 
+const getWorkspacePlanUsage = `-- name: GetWorkspacePlanUsage :one
+SELECT
+    (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = $1::uuid AND m.role <> 'guest')::bigint AS members,
+    (SELECT count(*) FROM workspace_members m JOIN users u ON u.id = m.user_id
+        WHERE m.workspace_id = $1::uuid AND u.is_bot)::bigint AS bots,
+    (SELECT w.storage_used_bytes FROM workspaces w WHERE w.id = $1::uuid)::bigint AS storage_bytes,
+    (SELECT count(*) FROM boards b WHERE b.workspace_id = $1::uuid)::bigint AS boards,
+    (SELECT count(*) FROM sticker_packs p WHERE p.workspace_id = $1::uuid AND p.deleted_at IS NULL)::bigint AS sticker_packs,
+    (SELECT count(*) FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id AND p.deleted_at IS NULL
+        WHERE p.workspace_id = $1::uuid AND s.deleted_at IS NULL)::bigint AS stickers,
+    (SELECT coalesce(array_agg(r.user_limit), '{}') FROM rooms r
+        WHERE r.workspace_id = $1::uuid AND r.type = 'voice' AND r.archived_at IS NULL AND r.user_limit > 0)::integer[] AS room_user_limits,
+    (SELECT coalesce(max(x.n), 0) FROM (SELECT count(*) AS n FROM board_forms f JOIN boards b ON b.id = f.board_id
+        WHERE b.workspace_id = $1::uuid GROUP BY f.board_id) x)::bigint AS max_board_forms,
+    (SELECT count(*) FROM board_rules r JOIN boards b ON b.id = r.board_id
+        WHERE b.workspace_id = $1::uuid AND r.enabled)::bigint AS automations,
+    (SELECT count(*) FROM board_webhooks h JOIN boards b ON b.id = h.board_id
+        WHERE b.workspace_id = $1::uuid AND h.disabled_at IS NULL)::bigint AS board_webhooks,
+    (SELECT count(*) FROM sip_accounts a WHERE a.workspace_id = $1::uuid AND a.enabled)::bigint AS telephony,
+    (SELECT count(*) FROM workspace_identity_connections c WHERE c.workspace_id = $1::uuid AND c.status = 'active')::bigint AS sso,
+    (SELECT count(*) FROM workspace_directories d WHERE d.workspace_id = $1::uuid AND d.disabled_at IS NULL)::bigint AS directories,
+    (SELECT count(*) FROM oauth_clients o WHERE o.workspace_id = $1::uuid AND o.disabled_at IS NULL)::bigint AS oauth_apps,
+    (SELECT coalesce(array_agg(g.feature), '{}') FROM workspace_identity_grants g
+        WHERE g.workspace_id = $1::uuid AND g.source = 'onprem_enterprise' AND g.enabled AND g.revoked_at IS NULL)::text[] AS operator_features
+`
+
+type GetWorkspacePlanUsageRow struct {
+	Members          int64
+	Bots             int64
+	StorageBytes     int64
+	Boards           int64
+	StickerPacks     int64
+	Stickers         int64
+	RoomUserLimits   []int32
+	MaxBoardForms    int64
+	Automations      int64
+	BoardWebhooks    int64
+	Telephony        int64
+	Sso              int64
+	Directories      int64
+	OauthApps        int64
+	OperatorFeatures []string
+}
+
+// What a plan transition is checked against (ADR-0086, plans.Violations): every counted limit and
+// every plan-gated feature in use, in one read. Identity features granted by the operator
+// (onprem_enterprise) do not depend on the plan and come back in operator_features.
+func (q *Queries) GetWorkspacePlanUsage(ctx context.Context, workspaceID uuid.UUID) (GetWorkspacePlanUsageRow, error) {
+	row := q.db.QueryRow(ctx, getWorkspacePlanUsage, workspaceID)
+	var i GetWorkspacePlanUsageRow
+	err := row.Scan(
+		&i.Members,
+		&i.Bots,
+		&i.StorageBytes,
+		&i.Boards,
+		&i.StickerPacks,
+		&i.Stickers,
+		&i.RoomUserLimits,
+		&i.MaxBoardForms,
+		&i.Automations,
+		&i.BoardWebhooks,
+		&i.Telephony,
+		&i.Sso,
+		&i.Directories,
+		&i.OauthApps,
+		&i.OperatorFeatures,
+	)
+	return i, err
+}
+
 const insertPlanLog = `-- name: InsertPlanLog :exec
 INSERT INTO workspace_plan_log (workspace_id, actor_id, plan, limits, valid_until, note)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -259,6 +329,28 @@ func (q *Queries) ListPlanLog(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockWorkspacePlanRow = `-- name: LockWorkspacePlanRow :one
+SELECT workspace_id, plan, limits, valid_until, note, updated_by, updated_at, source FROM workspace_plans WHERE workspace_id = $1 FOR UPDATE
+`
+
+// The plan row under a lock (ADR-0086): a self-serve start decides whether a superadmin assigned the
+// plan while the superadmin's upsert waits for it.
+func (q *Queries) LockWorkspacePlanRow(ctx context.Context, workspaceID uuid.UUID) (WorkspacePlan, error) {
+	row := q.db.QueryRow(ctx, lockWorkspacePlanRow, workspaceID)
+	var i WorkspacePlan
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Plan,
+		&i.Limits,
+		&i.ValidUntil,
+		&i.Note,
+		&i.UpdatedBy,
+		&i.UpdatedAt,
+		&i.Source,
+	)
+	return i, err
 }
 
 const upsertWorkspacePlan = `-- name: UpsertWorkspacePlan :one

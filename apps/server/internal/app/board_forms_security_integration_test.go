@@ -146,10 +146,11 @@ func TestBoardFormsPlansAndWebhook(t *testing.T) {
 	for range 5 {
 		o.must(201, "POST", path, &v1.CreateBoardFormRequest{Definition: d}, nil)
 	}
-	setPlan(t, ws.Id, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	// The board has a webhook (Business only): the superadmin overrides the limits (ADR-0086).
+	setPlan(t, ws.Id, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM, OverrideLimits: true})
 	o.must(409, "POST", path, &v1.CreateBoardFormRequest{Definition: d}, nil)
 	anon.must(200, "GET", "/api/public/forms/"+code, nil, nil)
-	setPlan(t, ws.Id, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_FREE})
+	setPlan(t, ws.Id, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_FREE, OverrideLimits: true})
 	anon.must(409, "GET", "/api/public/forms/"+code, nil, nil)
 	o.must(204, "DELETE", path+"/"+fr.Form.Id, nil, nil)
 }

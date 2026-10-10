@@ -3,6 +3,9 @@ import type { CheckoutWindowOutcome } from '../../shared/ipc';
 import { restAdminApi, restOwnerApi, type AdminBillingApi, type BillingAdapters, type OwnerBillingApi } from '../lib/billing/api';
 import { billingErrorText, billingNotFound, billingUnavailable } from '../lib/billing/errors';
 import { forSale } from '../lib/billing/plans';
+import type { FixPlace } from '../lib/billing/violations';
+import { openSection } from '../features/shell/sectionNav';
+import { openTab } from './phoneNav';
 import { log } from '../lib/log';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
@@ -121,9 +124,33 @@ export function resyncBilling(workspaceIds: ReadonlySet<string>): void {
 /** Money actions are offered here (native mobile companions keep purchases on the website). */
 export const billingPaymentsAllowed = (): boolean => planOffersAllowed();
 
-/** Opens «Тариф и оплата» of a workspace (the plan badge, links). */
+/** Opens «Тариф и оплата» of a workspace (links; the plan step after creating a workspace). */
 export function openPlans(workspaceId: string): void {
   useUi.getState().openDialog({ kind: 'billing-plans', workspaceId });
+}
+
+/**
+ * The plan badge (owner, 10.10): workspace settings → «Тариф» — the plan, its limits against the
+ * usage and the cabinet; the plans comparison opens from «Сменить тариф» there.
+ */
+export function openPlanSettings(workspaceId: string): void {
+  useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'plan' });
+}
+
+/**
+ * Where a plan violation is fixed (ADR-0086, lib/billing/violations): a workspace settings tab, or
+ * the boards section of the workspace (the open dialogs close first).
+ */
+export function openFixPlace(workspaceId: string, place: Exclude<FixPlace, null>): void {
+  const ui = useUi.getState();
+  if (place.kind === 'settings') {
+    ui.openDialog({ kind: 'workspace-settings', workspaceId, tab: place.tab });
+    return;
+  }
+  ui.openDialog(null);
+  if (ui.activeWorkspaceId !== workspaceId) ui.setWorkspace(workspaceId);
+  if (ui.phone.on) openTab('boards');
+  else openSection('boards');
 }
 
 /**

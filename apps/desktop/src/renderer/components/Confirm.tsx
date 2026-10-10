@@ -65,7 +65,7 @@ export function ConfirmHost(): ReactNode {
         </>
       }
     >
-      <p className="text-muted">{req?.text}</p>
+      <p className="whitespace-pre-line text-muted">{req?.text}</p>
       {req?.field ? (
         <div className="mt-3 flex flex-col gap-1.5">
           <label htmlFor={fieldId} className="text-caption font-medium text-muted">

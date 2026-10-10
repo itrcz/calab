@@ -113,7 +113,7 @@ func (c *Core) Activate(ctx context.Context, accountID uuid.UUID, plan string, r
 	if !ValidPaidPlan(plan) {
 		return sqlc.BillingAccount{}, badPlan()
 	}
-	return c.run(ctx, accountID, actor, func(s *state) error {
+	return c.runGuarded(ctx, accountID, actor, func(s *state) error {
 		switch s.acc.Status {
 		case StatusActive:
 			if s.acc.Plan == plan {
@@ -133,6 +133,9 @@ func (c *Core) Activate(ctx context.Context, accountID uuid.UUID, plan string, r
 		}
 		if s.acc.Status == StatusSuspended {
 			return billing.ErrWorkspaceBillingSuspended
+		}
+		if err := s.guard(plan); err != nil {
+			return err
 		}
 		if s.acc.BalanceMinor < 0 {
 			return billing.ErrInsufficientFunds
@@ -195,7 +198,7 @@ func (s *state) clearEpisodeIfPaid() {
 // (the workspace keeps the paid plan until then, Free after). Debt and its deadline stay.
 // Stopping a stopped account is a no-op.
 func (c *Core) Stop(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID) (sqlc.BillingAccount, error) {
-	return c.run(ctx, accountID, actor, func(s *state) error {
+	return c.runGuarded(ctx, accountID, actor, func(s *state) error {
 		switch s.acc.Status {
 		case StatusStopped:
 			return nil
@@ -214,6 +217,10 @@ func (c *Core) Stop(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID) 
 		}
 		if s.acc.Status != StatusActive {
 			return nil // suspended at the deadline just now
+		}
+		// The workspace ends on Free when the paid days run out (ADR-0086): it must fit Free now.
+		if err := s.guard(PlanFree); err != nil {
+			return err
 		}
 		s.setStatus(StatusStopped)
 		end, err := s.lastEnd(s.now)
@@ -235,7 +242,7 @@ func (c *Core) ChangePlan(ctx context.Context, accountID uuid.UUID, plan string,
 	if !ValidPaidPlan(plan) {
 		return sqlc.BillingAccount{}, badPlan()
 	}
-	return c.run(ctx, accountID, actor, func(s *state) error {
+	return c.runGuarded(ctx, accountID, actor, func(s *state) error {
 		if s.acc.Status == StatusSuspended {
 			return billing.ErrWorkspaceBillingSuspended
 		}
@@ -263,6 +270,9 @@ func (c *Core) ChangePlan(ctx context.Context, accountID uuid.UUID, plan string,
 		}
 		if s.acc.Plan == plan {
 			return nil
+		}
+		if err := s.guard(plan); err != nil {
+			return err
 		}
 		upgrade := planRank(plan) > planRank(s.acc.Plan)
 		if upgrade && (s.acc.BalanceMinor < 0 || s.acc.NegativeSince != nil) {
@@ -409,7 +419,11 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 	if mode == ResumePaid && !ValidPaidPlan(plan) {
 		return sqlc.BillingAccount{}, badPlan()
 	}
-	return c.run(ctx, accountID, actor, func(s *state) error {
+	run := c.run
+	if mode == ResumePaid {
+		run = c.runGuarded
+	}
+	return run(ctx, accountID, actor, func(s *state) error {
 		if mode == ResumePaid && s.acc.Status == StatusActive && s.acc.Plan == plan {
 			return nil // replay
 		}
@@ -431,6 +445,11 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 		}
 		if !s.c.cfg.Debits {
 			return billing.ErrDisabled
+		}
+		// A free resume is never checked (ADR-0080 §8: paying the debt off must not require
+		// fitting a plan); a paid one is a transition to plan.
+		if err := s.guard(plan); err != nil {
+			return err
 		}
 		return s.startPaid(plan, ReasonResume, "resume:"+s.acc.ID.String()+":"+requestID.String())
 	})

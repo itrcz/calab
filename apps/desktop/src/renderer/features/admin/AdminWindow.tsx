@@ -31,6 +31,7 @@ import { SuspendedBadge, SuspendedMark, SuspensionCard } from './SuspensionCard'
 import { LocalReauth } from '../identity/SignIn';
 import { AdminBillingPane, AdminBillingSide, AdminBillingWorkspaceCard, AdminSectionSwitch, type AdminSection, type BillingView } from './billing/AdminBilling';
 import { billingStateOf } from '../../lib/billing/model';
+import { violationText, violationsOf } from '../../lib/billing/violations';
 
 /** The search waits this long after the last keystroke (admin API: 60 requests / min). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -351,7 +352,19 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
       void qc.invalidateQueries({ queryKey: ['admin', 'search'] });
       void qc.invalidateQueries({ queryKey: KEY.log(id) });
     },
-    onError: (e) => setError(errorText(e, t('err.ctx.save'))),
+    onError: (e, body) => {
+      // ADR-0086: the workspace already exceeds the plan — never silent: list it and ask once more.
+      const over = violationsOf(e);
+      if (over.length && !body.overrideLimits && form) {
+        const plan = t(PLAN_LABEL[form.plan]);
+        const text = [...over.map((v) => `• ${violationText(v, plan)}`), t('admin.plan.overText')].join('\n');
+        void confirmAction(t('admin.plan.overTitle'), text, t('admin.plan.overConfirm')).then((ok) => {
+          if (ok) save.mutate({ ...body, overrideLimits: true });
+        });
+        return;
+      }
+      setError(errorText(e, t('err.ctx.save')));
+    },
   });
 
   if (!a?.workspace || !form) {

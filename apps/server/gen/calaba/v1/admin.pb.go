@@ -320,13 +320,17 @@ func (x *AdminGetWorkspaceResponse) GetWorkspace() *AdminWorkspace {
 // 0 = no limit); FREE and TEAM take their limits from the server config. valid_until must be
 // in the future (unset = no expiry). Every change is logged; WORKSPACE_UPDATE follows.
 type AdminSetPlanRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Plan          Plan                   `protobuf:"varint,1,opt,name=plan,proto3,enum=calaba.v1.Plan" json:"plan,omitempty"`
-	Limits        *PlanLimits            `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`
-	ValidUntil    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"`
-	Note          string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"` // ≤ 500 characters
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Plan       Plan                   `protobuf:"varint,1,opt,name=plan,proto3,enum=calaba.v1.Plan" json:"plan,omitempty"`
+	Limits     *PlanLimits            `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`
+	ValidUntil *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"`
+	Note       string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"` // ≤ 500 characters
+	// ADR-0086: a plan whose limits the workspace already exceeds is refused (409
+	// PLAN_LIMITS_EXCEEDED with ApiError.plan_violations) unless the superadmin confirms it here;
+	// the override and the violations are written to the plan log.
+	OverrideLimits bool `protobuf:"varint,5,opt,name=override_limits,json=overrideLimits,proto3" json:"override_limits,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AdminSetPlanRequest) Reset() {
@@ -385,6 +389,13 @@ func (x *AdminSetPlanRequest) GetNote() string {
 		return x.Note
 	}
 	return ""
+}
+
+func (x *AdminSetPlanRequest) GetOverrideLimits() bool {
+	if x != nil {
+		return x.OverrideLimits
+	}
+	return false
 }
 
 type AdminSetPlanResponse struct {
@@ -714,13 +725,14 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"workspaces\x18\x01 \x03(\v2\x19.calaba.v1.AdminWorkspaceR\n" +
 	"workspaces\"T\n" +
 	"\x19AdminGetWorkspaceResponse\x127\n" +
-	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\xba\x01\n" +
+	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\xe3\x01\n" +
 	"\x13AdminSetPlanRequest\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +
 	"\vvalid_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"validUntil\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"O\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12'\n" +
+	"\x0foverride_limits\x18\x05 \x01(\bR\x0eoverrideLimits\"O\n" +
 	"\x14AdminSetPlanResponse\x127\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"\xdd\x02\n" +
 	"\fPlanLogEntry\x12\x0e\n" +

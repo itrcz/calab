@@ -23,6 +23,7 @@ import { enMilestones } from './milestones';
 import { enAutomations } from './automations';
 import { enPlan } from './plan';
 import { enBilling } from './billing';
+import { enTransitions } from './transitions';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
@@ -61,6 +62,7 @@ export const en: Dict = {
   ...enMedia,
   ...enPlan,
   ...enBilling,
+  ...enTransitions,
   ...enModeration,
   ...enMail,
   ...enRecording,

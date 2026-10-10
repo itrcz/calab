@@ -1,7 +1,7 @@
 import { Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { ExternalLink, TriangleAlert } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, Row, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { audioTierLabel } from '../../lib/audioTierLabel';
@@ -14,6 +14,8 @@ import { useSession } from '../../stores/session';
 import { useStickers } from '../../stores/stickers';
 import { useWorkspaces } from '../../stores/workspaces';
 import { BillingSection } from './billing/BillingSection';
+import { PlansDialog } from './billing/PlansDialog';
+import { AdminAssignedNote } from './billing/Violations';
 import { useBilling } from '../../stores/billing';
 
 /** Members that take a seat: everyone but guests (bots count, ADR-0024). */
@@ -131,6 +133,32 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
 }
 
 /**
+ * «Сменить тариф» (owner, 10.10): the plans comparison opens over settings from here — the plan
+ * badge leads to this tab. A plan a superadmin assigned is not changed by self-serve (ADR-0086):
+ * the note with «Написать в поддержку» instead. Owner only; primitive selectors.
+ */
+function PlanSwitch({ workspaceId }: { workspaceId: string }): ReactNode {
+  const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+  const assigned = useBilling((s) => !!s.byWs[workspaceId]?.data?.adminAssigned);
+  const canSwitch = useBilling((s) => {
+    const d = s.byWs[workspaceId]?.data;
+    return !!d && (!!d.summary || d.selfServe) && d.offers.length > 0;
+  });
+  const [open, setOpen] = useState(false);
+  if (!owner) return null;
+  if (assigned) return <AdminAssignedNote />;
+  if (!canSwitch) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-3 py-3">
+      <Button onClick={() => setOpen(true)} data-testid="plan-switch">
+        {t('billing.switchPlan')}
+      </Button>
+      {open ? <PlansDialog workspaceId={workspaceId} welcome={false} inSettings onClose={() => setOpen(false)} /> : null}
+    </div>
+  );
+}
+
+/**
  * Workspace settings → «Тариф» (ADR-0024, docs/08 «Тариф»): every member sees the plan, its term,
  * the limits against the live usage and the contact for buying; nothing here is editable (the
  * plan changes only through the superadmin or, later, a payment).
@@ -157,8 +185,6 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const pricing = planOffersAllowed() ? import.meta.env.VITE_PRICING_URL : undefined;
   return (
     <>
-      {/* Balance billing (ADR-0080 v5): the owner's cabinet / the members' stub; nothing without an account. */}
-      <BillingSection workspaceId={workspaceId} />
       <Card title={t('plan.card.current')}>
         <Row label={t('plan.row.plan')}>
           {plan.expired ? <ExpiredBadge /> : null}
@@ -173,7 +199,10 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
             {t('plan.expired', { date: fmt.date(until) })}
           </p>
         ) : null}
+        <PlanSwitch workspaceId={workspaceId} />
       </Card>
+      {/* Balance billing (ADR-0080 v5): the owner's cabinet / the members' stub; nothing without an account. */}
+      <BillingSection workspaceId={workspaceId} />
 
       <section className="flex flex-col gap-1.5" data-settings-row>
         <h3 className="px-1 text-caption font-semibold text-muted" data-settings-label>

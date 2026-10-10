@@ -1,4 +1,4 @@
-import { BillingQuotePurpose, BillingResumeMode, Plan, type BillingQuote } from '@calaba/protocol';
+import { BillingQuotePurpose, BillingResumeMode, Plan, type BillingQuote, type PlanLimitViolation } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState, type ReactNode } from 'react';
@@ -8,9 +8,37 @@ import { billingErrorText, billingStale } from '../../../lib/billing/errors';
 import { nowMs } from '../../../lib/billing/checkout';
 import { requestId } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
+import { adminAssignedError, violationsOf } from '../../../lib/billing/violations';
+import { PLAN_LABEL } from '../../../lib/plan';
 import { ownerBilling, reloadBilling } from '../../../services/billing';
+import { useBilling } from '../../../stores/billing';
 import { toast } from '../../../stores/toasts';
 import { PLAN_NAME, SumLine } from './parts';
+import { AdminAssignedNote, ViolationList } from './Violations';
+
+/**
+ * The net effect of a plan change in one sentence (owner, 10.10): «Вернём 0,07 $ за неиспользованное
+ * время Business, спишем 0,10 $ за сутки Team — итого −0,03 $» (the balance change, signed).
+ */
+export function ChangeNet({ q, from, to }: { q: BillingQuote; from: Plan; to: Plan }): ReactNode {
+  const cur = q.charge?.currency || q.compensation?.currency || '';
+  const total = minorOf(q.compensation) - minorOf(q.charge);
+  return (
+    <p className="pt-2 text-caption text-muted" data-testid="billing-change-net">
+      {t('billing.quote.netChange', {
+        back: formatMoney(q.compensation),
+        from: t(PLAN_LABEL[from]),
+        charge: formatMoney(q.charge),
+        to: t(PLAN_LABEL[to]),
+        total: formatMinor(total, cur, { signed: true }),
+      })}
+    </p>
+  );
+}
+
+/** The target plan's name of a refused transition (Free for a stop). */
+const targetName = (a: QuoteAction, accountPlan: Plan): string =>
+  t(PLAN_LABEL[a.kind === 'change' ? a.plan : a.kind === 'stop' ? Plan.FREE : accountPlan === Plan.UNSPECIFIED ? Plan.TEAM : accountPlan]);
 
 /**
  * Activate / change plan / stop / resume (ADR-0080 §8, §9, lead plan «v1 cut»): the server's quote
@@ -94,8 +122,13 @@ export function QuoteDialog({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ADR-0086: the commit re-checks the limits (a member / bot added since the quote).
+  const [blocked, setBlocked] = useState<readonly PlanLimitViolation[]>([]);
+  const accountPlan = useBilling((s) => s.byWs[workspaceId]?.data?.summary?.plan ?? Plan.UNSPECIFIED);
   const reqId = useRef(requestId());
   const q = quote.data;
+  const quoteBlocked = violationsOf(quote.error);
+  const violations = blocked.length ? blocked : quoteBlocked;
   const cur = q?.charge?.currency || q?.toPay?.currency || '';
   const toPay = minorOf(q?.toPay);
   const net = minorOf(q?.debt) + minorOf(q?.charge) - minorOf(q?.compensation);
@@ -118,7 +151,9 @@ export function QuoteDialog({
         reqId.current = requestId();
         void quote.refetch();
       }
-      setError(billingErrorText(e));
+      const v = violationsOf(e);
+      if (v.length) setBlocked(v);
+      else setError(billingErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -138,7 +173,7 @@ export function QuoteDialog({
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          {q && toPay > 0n ? (
+          {violations.length ? null : q && toPay > 0n ? (
             <Button onClick={() => onTopup(toPay)} data-testid="billing-quote-topup">
               {t('billing.quote.topup', { amount: formatMoney(q.toPay) })}
             </Button>
@@ -152,8 +187,14 @@ export function QuoteDialog({
     >
       <div className="flex flex-col" data-testid="billing-quote">
         {quote.isLoading ? <Spinner className="mx-auto my-4" /> : null}
-        {quote.isError ? <p className="text-body text-danger-text">{billingErrorText(quote.error)}</p> : null}
-        {q ? (
+        {violations.length ? (
+          <ViolationList workspaceId={workspaceId} plan={targetName(action, accountPlan)} violations={violations} />
+        ) : adminAssignedError(quote.error) ? (
+          <AdminAssignedNote />
+        ) : quote.isError ? (
+          <p className="text-body text-danger-text">{billingErrorText(quote.error)}</p>
+        ) : null}
+        {q && !violations.length ? (
           <>
             {minorOf(q.debt) > 0n ? <SumLine label={t('billing.quote.debt')}>{formatMoney(q.debt)}</SumLine> : null}
             {minorOf(q.charge) > 0n ? (
@@ -163,6 +204,7 @@ export function QuoteDialog({
             <SumLine label={toPay > 0n ? t('billing.quote.toPay') : net < 0n ? t('billing.quote.returns') : t('billing.quote.fromBalance')} strong>
               {toPay > 0n ? formatMoney(q.toPay) : formatMinor(net < 0n ? -net : net, cur)}
             </SumLine>
+            {action.kind === 'change' && accountPlan !== Plan.UNSPECIFIED ? <ChangeNet q={q} from={accountPlan} to={action.plan} /> : null}
             {toPay > 0n ? <p className="pt-2 text-caption text-muted">{t('billing.quote.needTopup')}</p> : null}
           </>
         ) : null}

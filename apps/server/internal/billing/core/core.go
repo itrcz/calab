@@ -77,6 +77,20 @@ type Hooks struct {
 	// workspace_plans row. Commands run inside a caller's transaction never call it; their
 	// caller does that after its own commit.
 	Committed func(ctx context.Context, acc sqlc.BillingAccount, planChanged bool)
+	// Guard checks the owner's plan transitions (ADR-0086; plans.Service in the wiring). nil: none.
+	Guard Guard
+}
+
+// Guard checks an owner's plan transition inside the command's transaction (ADR-0086): Activate,
+// ChangePlan, Stop and a paid Resume. Automatic transitions (renewals ending a stopped plan, the
+// debt suspension) and a free Resume are never checked.
+type Guard interface {
+	// Lock runs in the transaction before the account lock (plans.LockUsage: the advisory locks
+	// of members and bots, whose admission locks the account after them).
+	Lock(ctx context.Context, q *sqlc.Queries, workspaceID uuid.UUID) error
+	// Check refuses target ("team" | "enterprise" | "free") for the workspace: a plan a superadmin
+	// assigned or usage over the target's limits. Runs under the account lock.
+	Check(ctx context.Context, q *sqlc.Queries, workspaceID uuid.UUID, target string, now time.Time) error
 }
 
 // Core is the money core of balance billing: the only writer of balances, lots and charges.
@@ -133,8 +147,32 @@ func (c *Core) stateOf(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAcc
 // run executes fn as one transaction on the locked account; the whole command rolls back on
 // any error. Committed runs after the commit.
 func (c *Core) run(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID, fn func(s *state) error) (sqlc.BillingAccount, error) {
+	return c.runTx(ctx, accountID, actor, false, fn)
+}
+
+// runGuarded is run for a plan transition: Guard.Lock takes its locks before the account lock.
+func (c *Core) runGuarded(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID, fn func(s *state) error) (sqlc.BillingAccount, error) {
+	return c.runTx(ctx, accountID, actor, c.hooks.Guard != nil, fn)
+}
+
+func (c *Core) runTx(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID, guarded bool, fn func(s *state) error) (sqlc.BillingAccount, error) {
 	var s *state
 	err := c.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if guarded {
+			// The workspace of an account never changes: read it before locking anything.
+			acc, err := q.GetBillingAccount(ctx, accountID)
+			if db.IsNotFound(err) {
+				return billing.ErrAccountNotFound
+			}
+			if err != nil {
+				return err
+			}
+			if acc.WorkspaceID != nil {
+				if err := c.hooks.Guard.Lock(ctx, q, *acc.WorkspaceID); err != nil {
+					return err
+				}
+			}
+		}
 		var err error
 		if s, err = c.lock(ctx, q, accountID, actor); err != nil {
 			return err
@@ -214,6 +252,15 @@ func sameTime(a, b *time.Time) bool {
 		return a == b
 	}
 	return a.Equal(*b)
+}
+
+// guard runs Hooks.Guard.Check for a transition of the locked account to target.
+func (s *state) guard(target string) error {
+	g := s.c.hooks.Guard
+	if g == nil || s.acc.WorkspaceID == nil {
+		return nil
+	}
+	return g.Check(s.ctx, s.q, *s.acc.WorkspaceID, target, s.now)
 }
 
 // held: an incident hold freezes debits and suspension (renewals, seat purchases).

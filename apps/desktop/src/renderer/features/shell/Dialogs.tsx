@@ -42,7 +42,8 @@ export function Dialogs(): ReactNode {
         node = <JoinWorkspaceDialog onClose={close} initialCode={d.code ?? ''} />;
         break;
       case 'workspace-settings':
-        node = <WorkspaceSettingsWindow.Component onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
+        // Keyed by the tab: a deep link to another tab while it is open (a plan violation «К ботам») opens it.
+        node = <WorkspaceSettingsWindow.Component key={`${d.workspaceId}:${d.tab ?? ''}`} onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
         break;
       case 'room-create':
         node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} categoryId={d.categoryId} />;

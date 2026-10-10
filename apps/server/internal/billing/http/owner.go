@@ -52,8 +52,13 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 	if !c.owner {
 		return resp, nil
 	}
+	assigned, err := s.adminAssigned(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	resp.AdminAssigned = assigned
 	if !c.hasAc {
-		if !s.canSelfServe(c) {
+		if !s.canSelfServe(c) || assigned {
 			return resp, nil
 		}
 		nm, err := s.newMarkets(ctx)
@@ -64,7 +69,7 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 		if resp.Offers, err = s.catalog(ctx, nm.catalog, 0); err != nil {
 			return nil, err
 		}
-		return resp, nil
+		return resp, s.markViolations(ctx, c, resp.Offers)
 	}
 	sum, err := s.summary(ctx, c.acc)
 	if err != nil {
@@ -91,7 +96,7 @@ func (s *Service) response(ctx context.Context, c caller) (*v1.GetBillingRespons
 	if resp.Offers, err = s.catalog(ctx, catalog, int(c.acc.DiscountBps)); err != nil {
 		return nil, err
 	}
-	return resp, nil
+	return resp, s.markViolations(ctx, c, resp.Offers)
 }
 
 // catalog are the plan offers of every market of markets.
@@ -275,10 +280,15 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) error {
 			return billing.ErrMarketUnavailable // contact mode, or a market closed for new clients
 		}
 	}
+	if !c.hasAc && req.GetPurpose() != v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE {
+		return billing.ErrAccountNotFound
+	}
+	// ADR-0086: an admin-assigned plan or usage over the target's limits refuses the quote
+	// (before a self-serve start creates an account); the action re-checks under the lock.
+	if err := s.checkQuoteTransition(ctx, c, req.GetPurpose(), plan); err != nil {
+		return err
+	}
 	if !c.hasAc {
-		if req.GetPurpose() != v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE {
-			return billing.ErrAccountNotFound
-		}
 		if err := s.startSelfServe(ctx, &c, market); err != nil {
 			return err
 		}

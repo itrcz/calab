@@ -23,6 +23,7 @@ import { esMilestones } from './milestones';
 import { esAutomations } from './automations';
 import { esPlan } from './plan';
 import { esBilling } from './billing';
+import { esTransitions } from './transitions';
 import { esShell } from './shell';
 import { esVideo } from './video';
 import { esStickers } from './stickers';
@@ -61,6 +62,7 @@ export const es: Dict = {
   ...esMedia,
   ...esPlan,
   ...esBilling,
+  ...esTransitions,
   ...esModeration,
   ...esMail,
   ...esRecording,
