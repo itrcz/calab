@@ -1,0 +1,626 @@
+import { BillingQuotePurpose, BillingState, PaymentMethodKind, Plan, WorkspaceRole, type BillingPlanOffer, type BillingQuote, type BillingSummary, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
+import { useQuery } from '@tanstack/react-query';
+import { Check, CircleCheck, CirclePause, CreditCard, Minus, Plus, TriangleAlert } from 'lucide-react';
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import { Button, Input, Modal, Spinner, cx } from '../../../components/ui';
+import { t, type MessageKey } from '../../../i18n';
+import { audioTierLabel } from '../../../lib/audioTierLabel';
+import { IDLE, checkoutReducer, nowMs } from '../../../lib/billing/checkout';
+import { billingErrorText, billingStale } from '../../../lib/billing/errors';
+import { currencyOf, offeredMethods, requestId, topupLimits } from '../../../lib/billing/model';
+import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
+import {
+  IDENTITY_FEATURES,
+  TIERS,
+  clampSeats,
+  currentTier,
+  defaultSeats,
+  forSale,
+  monthOf,
+  offerOf,
+  planStep,
+  screenPhase,
+  seatsRange,
+  seatsTopup,
+  type IdentityFeature,
+  type PlanStep,
+  type PlanTier,
+  type ScreenPhase,
+} from '../../../lib/billing/plans';
+import { PLAN_LABEL, countText, planKind, storageText } from '../../../lib/plan';
+import { billingMock, billingPaymentsAllowed, loadBilling, openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
+import { useBilling } from '../../../stores/billing';
+import { useUi } from '../../../stores/ui';
+import { useWorkspaces } from '../../../stores/workspaces';
+import { useBillingState } from './BillingPaywall';
+import { QuoteDialog } from './QuoteDialog';
+import { CheckoutProgress, useCheckoutPoll } from './TopupDialog';
+import { MoneyText, Note, StatePill, SumLine } from './parts';
+
+/**
+ * «Тариф и оплата» (ADR-0080, owner 10.10: «сложно дойти до оплаты»): Free / Team / Business side
+ * by side with the server's price per person per day and the plan's weighty limits, the current one
+ * marked, and one path to pay — choose a plan → seats (Team 5, Business 10, never below the team)
+ * with the price recalculated as you type → a payment method (the server's list, v1 Stripe card) →
+ * «Оплатить»: the hosted checkout tops the balance up (the card is saved for auto-topup), and on
+ * return the plan is activated from the balance (quote → activate / change-plan). Members see the
+ * plan read-only. Opened by the plan badge and right after creating a workspace (`welcome`).
+ * The rest of the cabinet (history, auto-topup, payer) stays in settings → «Тариф».
+ */
+
+type Paid = Plan.TEAM | Plan.ENTERPRISE;
+type Chosen = { plan: Paid; purpose: BillingQuotePurpose.ACTIVATE | BillingQuotePurpose.CHANGE_PLAN };
+
+/** People to pay for by the members list (no guests, no bots): the seats floor before the server's count is known. */
+const billableOf = (members: Record<string, WorkspaceMember> | undefined): number => {
+  let n = 0;
+  for (const m of Object.values(members ?? {})) if (m.role !== WorkspaceRole.GUEST && !m.user?.isBot) n++;
+  return n;
+};
+
+function openCabinet(workspaceId: string): void {
+  useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'plan' });
+}
+
+export function PlansDialog({ workspaceId, welcome, onClose }: { workspaceId: string; welcome: boolean; onClose: () => void }): ReactNode {
+  const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
+  const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name ?? '');
+  const state = useBillingState(workspaceId);
+  const entry = useBilling((s) => s.byWs[workspaceId]);
+  const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [stopping, setStopping] = useState(false);
+  // A fresh summary each time the screen opens (the owner; members only in a billing workspace).
+  useEffect(() => {
+    if (owner || billingMock()) void loadBilling(workspaceId);
+  }, [owner, workspaceId]);
+
+  const title = welcome ? t('billing.plans.welcomeTitle') : t('billing.plans.title');
+  if (!owner) return <MemberView workspaceId={workspaceId} state={state} onClose={onClose} />;
+
+  const data = entry?.data ?? null;
+  const loading = !data && (!entry || entry.load === 'loading');
+  const usable = !!data && (!!data.summary || data.selfServe);
+  let body: ReactNode;
+  let footer: ReactNode = (
+    <Button variant="secondary" onClick={onClose}>
+      {t('common.close')}
+    </Button>
+  );
+  if (loading) body = <Spinner className="mx-auto my-8" />;
+  else if (!usable) {
+    body =
+      entry?.load === 'error' ? (
+        <div className="flex flex-wrap items-center gap-3 py-2">
+          <p className="min-w-0 flex-1 text-body text-danger-text">{entry.error ?? t('err.generic')}</p>
+          <Button size="sm" variant="secondary" onClick={() => void loadBilling(workspaceId)}>
+            {t('common.retry')}
+          </Button>
+        </div>
+      ) : (
+        <p className="py-2 text-body text-muted">{t('billing.plans.unavailable')}</p>
+      );
+  } else if (chosen) {
+    return <PayStep workspaceId={workspaceId} chosen={chosen} offers={data.offers} onBack={() => setChosen(null)} onClose={onClose} />;
+  } else {
+    const phase = screenPhase(data);
+    body = (
+      <PlanGrid
+        workspaceId={workspaceId}
+        summary={data.summary}
+        offers={data.offers}
+        phase={phase}
+        state={data.status?.state ?? state}
+        onChoose={(step) => {
+          if (step.kind === 'pay') setChosen({ plan: step.plan, purpose: step.purpose });
+          else if (step.kind === 'stop') setStopping(true);
+          else if (step.kind === 'blocked' && step.why === 'suspended') openCabinet(workspaceId);
+        }}
+      />
+    );
+    footer = (
+      <>
+        {data.summary ? (
+          <Button variant="ghost" className="mr-auto mobile:mr-0" onClick={() => openCabinet(workspaceId)} data-testid="plans-details">
+            {t('billing.plans.details')}
+          </Button>
+        ) : null}
+        <Button variant={welcome ? 'primary' : 'secondary'} onClick={onClose} data-testid={welcome ? 'plans-start-free' : undefined}>
+          {welcome ? t('billing.plans.startFree') : t('common.close')}
+        </Button>
+      </>
+    );
+  }
+  return (
+    <>
+      <Modal open onClose={onClose} wide title={title} description={welcome ? t('billing.plans.welcomeText', { name }) : t('billing.plans.text')} footer={footer}>
+        <div className="pb-1" data-testid="billing-plans">
+          {body}
+        </div>
+      </Modal>
+      {stopping ? <QuoteDialog workspaceId={workspaceId} action={{ kind: 'stop' }} onClose={() => setStopping(false)} onTopup={() => setStopping(false)} /> : null}
+    </>
+  );
+}
+
+/** Members: the plan and the state, «оплачивает владелец», the limits in settings. */
+function MemberView({ workspaceId, state, onClose }: { workspaceId: string; state: BillingState; onClose: () => void }): ReactNode {
+  const plan = useWorkspaces((s) => planKind(s.byId[workspaceId]?.ws.plan));
+  const suspended = state === BillingState.SUSPENDED;
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t('billing.plans.title')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => openCabinet(workspaceId)}>
+            {t('billing.plans.limits')}
+          </Button>
+          <Button onClick={onClose}>{t('common.close')}</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3 pb-1" data-testid="billing-plans-member">
+        <div className="flex items-center gap-2">
+          <span className="text-headline font-semibold">{t(PLAN_LABEL[plan])}</span>
+          <StatePill state={state} />
+        </div>
+        <Note tone={suspended ? 'danger' : 'muted'} icon={suspended ? <CirclePause className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden /> : undefined}>
+          {suspended ? t('billing.member.suspended') : t('billing.plans.member')}
+        </Note>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- the plans side by side
+
+const IDENTITY_KEY: Record<IdentityFeature, MessageKey> = {
+  sso: 'billing.plans.f.sso',
+  directory: 'billing.plans.f.directory',
+  oauth: 'billing.plans.f.oauth',
+};
+
+/** The weighty lines of a plan (owner 10.10): people, storage, room size, quality, identity, gated features. */
+function highlights(tier: PlanTier, l: PlanLimits | undefined): string[] {
+  const out: string[] = [];
+  if (l) {
+    out.push(t('billing.plans.f.members', { n: countText(l.members) }));
+    out.push(t('billing.plans.f.storage', { size: storageText(l.storageMb) }));
+    out.push(t('billing.plans.f.room', { n: countText(l.roomMembers) }));
+    out.push(l.audioTierMaxKbps ? t('billing.plans.f.audio', { tier: audioTierLabel(l.audioTierMaxKbps) }) : t('billing.plans.f.mediaFree'));
+    out.push(t('billing.plans.f.bots', { n: countText(l.bots) }));
+  }
+  for (const f of IDENTITY_FEATURES[tier]) out.push(t(IDENTITY_KEY[f]));
+  if (l) {
+    if (!l.telephonyDisabled) out.push(t('billing.plans.f.telephony'));
+    if (!l.caldavDisabled) out.push(t('billing.plans.f.caldav'));
+    if (!l.automationsDisabled) out.push(t('billing.plans.f.automations'));
+  }
+  return out;
+}
+
+function PlanGrid({
+  workspaceId,
+  summary,
+  offers,
+  phase,
+  state,
+  onChoose,
+}: {
+  workspaceId: string;
+  summary: BillingSummary | undefined;
+  offers: readonly BillingPlanOffer[];
+  phase: ScreenPhase;
+  state: BillingState;
+  onChoose: (s: PlanStep) => void;
+}): ReactNode {
+  const billable = useWorkspaces((s) => billableOf(s.byId[workspaceId]?.members));
+  const accountPlan = summary?.plan ?? Plan.TEAM;
+  const current = currentTier(phase, accountPlan);
+  const payments = billingPaymentsAllowed();
+  const people = summary?.billableMembers ?? billable;
+  return (
+    <div className="flex flex-col gap-3">
+      {summary ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-body" data-testid="plans-balance">
+          <span className="text-muted">{t('billing.balance')}</span>
+          <MoneyText m={summary.balance} className="font-semibold" />
+          <StatePill state={state} />
+        </div>
+      ) : null}
+      {phase === 'suspended' ? (
+        <Note tone="danger" icon={<CirclePause className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />}>
+          {t('billing.plans.suspended')}
+        </Note>
+      ) : phase === 'arrears' ? (
+        <Note tone="warn" icon={<TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />}>
+          {t('billing.note.arrears')}
+        </Note>
+      ) : null}
+      <div className="grid grid-cols-3 gap-3 mobile:grid-cols-1" role="list" aria-label={t('billing.plans.title')}>
+        {TIERS.map((tier) => (
+          <PlanCard
+            key={tier}
+            tier={tier}
+            offer={offerOf(offers, tier)}
+            current={tier === current}
+            step={planStep(phase, accountPlan, tier)}
+            people={people}
+            payments={payments && forSale(offers, tier)}
+            onChoose={onChoose}
+          />
+        ))}
+      </div>
+      {!payments ? <Note>{t('billing.paymentsElsewhere')}</Note> : null}
+    </div>
+  );
+}
+
+function PlanCard({
+  tier,
+  offer,
+  current,
+  step,
+  people,
+  payments,
+  onChoose,
+}: {
+  tier: PlanTier;
+  offer: BillingPlanOffer | undefined;
+  current: boolean;
+  step: PlanStep;
+  people: number;
+  payments: boolean;
+  onChoose: (s: PlanStep) => void;
+}): ReactNode {
+  const unit = offer?.unitPrice;
+  const cur = unit?.currency ?? '';
+  const lines = highlights(tier, offer?.limits);
+  const paid = tier !== Plan.FREE;
+  let action: ReactNode;
+  if (step.kind === 'current') {
+    action = (
+      <span className="inline-flex h-7 items-center gap-1 text-body font-medium text-muted">
+        <Check className="size-4" aria-hidden />
+        {t('billing.plans.currentBtn')}
+      </span>
+    );
+  } else if (step.kind === 'blocked') {
+    action = step.why === 'debtUpgrade' ? <span className="text-caption text-muted">{t('billing.plans.debtFirst')}</span> : null;
+  } else if (!payments) {
+    action = paid && !unit ? <span className="text-caption text-muted">{t('billing.plans.notForSale')}</span> : null;
+  } else if (step.kind === 'stop') {
+    action = (
+      <Button variant="secondary" onClick={() => onChoose(step)} data-testid="plans-to-free">
+        {t('billing.plans.toFree')}
+      </Button>
+    );
+  } else {
+    action = (
+      <Button onClick={() => onChoose(step)} data-testid={`plans-choose-${Plan[tier]}`}>
+        {step.purpose === BillingQuotePurpose.CHANGE_PLAN ? t('billing.plans.switch', { plan: t(PLAN_LABEL[tier]) }) : t('billing.plans.choose', { plan: t(PLAN_LABEL[tier]) })}
+      </Button>
+    );
+  }
+  return (
+    <section
+      role="listitem"
+      aria-current={current ? 'true' : undefined}
+      data-plan={Plan[tier]}
+      data-testid="plan-card"
+      className={cx('flex flex-col gap-3 rounded-[var(--radius-card)] border bg-[var(--color-card)] p-4', current ? 'border-[var(--color-focus)]' : 'border-line')}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-headline font-semibold">{t(PLAN_LABEL[tier])}</h3>
+        {current ? <span className="inline-flex h-5 items-center rounded-full bg-accent-strong px-2 text-caption font-semibold text-accent-fg">{t('billing.plans.current')}</span> : null}
+      </div>
+      <div className="flex min-h-[64px] flex-col gap-0.5">
+        {!paid ? (
+          <span className="text-title font-semibold">{t('billing.plans.free')}</span>
+        ) : unit ? (
+          <>
+            <span className="flex flex-wrap items-baseline gap-x-1.5">
+              <span className="text-title font-semibold tabular-nums">{formatMoney(unit)}</span>
+              <span className="text-caption text-muted">{t('billing.plans.perSeatDay')}</span>
+            </span>
+            <span className="text-caption text-muted">{t('billing.plans.perMonth', { amount: formatMinor(monthOf(unit.minor), cur) })}</span>
+            {people > 0 ? <span className="text-caption text-muted">{t('billing.plans.forTeam', { n: people, amount: formatMinor(unit.minor * BigInt(people), cur) })}</span> : null}
+          </>
+        ) : (
+          <span className="text-body text-muted">{t('billing.plans.notForSale')}</span>
+        )}
+      </div>
+      {lines.length ? (
+        <ul className="flex flex-1 flex-col gap-1.5 text-body">
+          {lines.map((line) => (
+            <li key={line} className="flex items-start gap-2">
+              <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden />
+              <span className="min-w-0">{line}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="flex-1" />
+      )}
+      <div className="flex min-h-7 items-center mobile:[&>button]:w-full">{action}</div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- the pay path
+
+type PayPhase = 'form' | 'checkout' | 'activating' | 'done';
+
+async function applyPlan(ws: string, c: Chosen, q: BillingQuote, reqId: string): Promise<void> {
+  const base = { quoteId: q.quoteId, requestId: reqId, expectedRevision: q.revision, plan: c.plan };
+  if (c.purpose === BillingQuotePurpose.ACTIVATE) await ownerBilling.activate(ws, base);
+  else await ownerBilling.changePlan(ws, base);
+}
+
+/**
+ * Seats → method → «Оплатить» → (hosted checkout, card saved) → the plan activated from the balance.
+ * The quote (POST …/quote) comes first: for a workspace without an account it starts one
+ * (self-serve) and says what the action needs now; the seats only size the top-up (a prepaid
+ * month for the planned team — the server charges the actual people each 24 h).
+ */
+function PayStep({ workspaceId, chosen, offers, onBack, onClose }: { workspaceId: string; chosen: Chosen; offers: readonly BillingPlanOffer[]; onBack: () => void; onClose: () => void }): ReactNode {
+  const quote = useQuery({
+    queryKey: ['billing', workspaceId, 'plan-quote', chosen.purpose, chosen.plan],
+    queryFn: () => ownerBilling.quote(workspaceId, { purpose: chosen.purpose, plan: chosen.plan }),
+    retry: false,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+  const summary = useBilling((s) => s.byWs[workspaceId]?.data?.summary);
+  const membersBillable = useWorkspaces((s) => billableOf(s.byId[workspaceId]?.members));
+  // A self-serve quote created the account: read its summary (methods, balance, people).
+  const created = !!quote.data && !summary;
+  useEffect(() => {
+    if (created) reloadBilling(workspaceId);
+  }, [created, workspaceId]);
+
+  const offer = offerOf(offers, chosen.plan);
+  const unitMoney = quote.data?.unitPrice ?? offer?.unitPrice;
+  const currency = currencyOf(summary) || unitMoney?.currency || 'USD';
+  const range = seatsRange(summary?.billableMembers ?? membersBillable, offer?.limits?.members ?? 0);
+  // null = untouched: the default follows the range (the server's count of people may arrive later).
+  const [typed, setSeatsRaw] = useState<string | null>(null);
+  const seatsRaw = typed ?? String(defaultSeats(chosen.plan, range));
+  const seats = clampSeats(Number(seatsRaw), range);
+
+  const methods = summary ? offeredMethods(summary) : [];
+  const [methodId, setMethodId] = useState('');
+  const method = methods.find((m) => m.id === methodId) ?? methods[0];
+  const lim = topupLimits(method, currency);
+  const q = quote.data;
+  const topup = seatsTopup(
+    { seats, unit: minorOf(unitMoney), debt: minorOf(q?.debt ?? summary?.debt), balance: minorOf(summary?.balance), toPay: minorOf(q?.toPay) },
+    lim,
+    currency,
+  );
+  // Save the card for auto-topup (T7) when the method can and none is saved yet.
+  const saveCard = !!method?.autoTopupCapable && !summary?.autoTopup?.paymentMethodId;
+
+  const [phase, setPhase] = useState<PayPhase>('form');
+  const [error, setError] = useState<string | null>(null);
+  const [flow, dispatch] = useReducer(checkoutReducer, IDLE);
+  const topupReq = useRef(requestId());
+  const actReq = useRef(requestId());
+  useCheckoutPoll(workspaceId, flow, dispatch);
+
+  /** A fresh quote, then the action; a stale quote is fetched once more. */
+  const activate = useCallback(async (): Promise<void> => {
+    setPhase('activating');
+    setError(null);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const fresh = await ownerBilling.quote(workspaceId, { purpose: chosen.purpose, plan: chosen.plan });
+        if (minorOf(fresh.toPay) > 0n) {
+          setError(t('billing.pay.stillShort'));
+          setPhase('form');
+          void quote.refetch();
+          return;
+        }
+        if (fresh.expiresAt && timestampMs(fresh.expiresAt) <= nowMs()) continue;
+        await applyPlan(workspaceId, chosen, fresh, actReq.current);
+        reloadBilling(workspaceId);
+        setPhase('done');
+        return;
+      } catch (e) {
+        if (billingStale(e) && attempt === 0) {
+          actReq.current = requestId();
+          continue;
+        }
+        setError(billingErrorText(e));
+        setPhase('form');
+        void quote.refetch();
+        return;
+      }
+    }
+    setPhase('form');
+  }, [workspaceId, chosen, quote]);
+
+  // The money is on the balance: activate right away (the person experiences one path).
+  const credited = flow.phase === 'done' && flow.outcome === 'credited';
+  const startedAfterCredit = useRef(false);
+  useEffect(() => {
+    if (!credited || startedAfterCredit.current) return;
+    startedAfterCredit.current = true;
+    reloadBilling(workspaceId);
+    void activate();
+  }, [credited, activate, workspaceId]);
+
+  const pay = async (): Promise<void> => {
+    setError(null);
+    if (topup.amount <= 0n) {
+      void activate();
+      return;
+    }
+    if (!method) return;
+    startedAfterCredit.current = false;
+    // A new click is a new top-up (the seats may have changed; an ended checkout is not reused);
+    // a double click cannot happen — the button is busy, then replaced by the progress.
+    if (flow.phase !== 'idle') topupReq.current = requestId();
+    dispatch({ type: 'reset' });
+    dispatch({ type: 'create' });
+    setPhase('checkout');
+    try {
+      const r = await ownerBilling.topup(workspaceId, { methodId: method.id, amount: { minor: topup.amount, currency }, requestId: topupReq.current, saveMethod: saveCard });
+      dispatch({ type: 'created', checkoutId: r.checkoutId, url: r.url, now: nowMs() });
+      openCheckout(r.url);
+    } catch (e) {
+      dispatch({ type: 'createFailed', message: billingErrorText(e, t('billing.topup.failed')) });
+      topupReq.current = requestId();
+      setError(billingErrorText(e, t('billing.topup.failed')));
+      setPhase('form');
+    }
+  };
+
+  const planName = t(PLAN_LABEL[chosen.plan]);
+  const title = chosen.purpose === BillingQuotePurpose.CHANGE_PLAN ? t('billing.pay.titleChange', { plan: planName }) : t('billing.pay.title', { plan: planName });
+  const checkoutEnded = flow.phase === 'done' && flow.outcome !== 'credited';
+  const ready = !!q && !!summary && (topup.amount <= 0n || !!method);
+
+  let footer: ReactNode;
+  if (phase === 'done') footer = <Button onClick={onClose}>{t('billing.topup.close')}</Button>;
+  else if (phase === 'checkout' && !checkoutEnded)
+    footer = (
+      <Button variant="secondary" onClick={onClose}>
+        {t('billing.topup.later')}
+      </Button>
+    );
+  else
+    footer = (
+      <>
+        <Button variant="secondary" onClick={onBack} disabled={phase === 'activating'}>
+          {t('billing.pay.back')}
+        </Button>
+        <Button busy={phase === 'activating' || (phase === 'checkout' && flow.phase === 'creating')} disabled={!ready} onClick={() => void pay()} data-testid="plans-pay">
+          {topup.amount > 0n ? t('billing.pay.pay', { amount: formatMinor(topup.amount, currency) }) : t('billing.pay.start', { plan: planName })}
+        </Button>
+      </>
+    );
+
+  return (
+    <Modal open onClose={onClose} medium title={title} description={t('billing.pay.how')} footer={footer}>
+      <div className="flex flex-col gap-4 pb-1" data-testid="plans-pay-step">
+        {phase === 'done' ? (
+          <div className="flex flex-col items-center gap-3 py-4 text-center" role="status" data-testid="plans-done">
+            <CircleCheck className="size-8 text-ok" aria-hidden />
+            <p className="text-headline font-semibold">{t('billing.pay.done', { plan: planName })}</p>
+            <p className="text-body text-muted">{t('billing.pay.doneHint')}</p>
+          </div>
+        ) : phase === 'activating' ? (
+          <div className="flex flex-col items-center gap-3 py-6" role="status">
+            <Spinner className="size-6" />
+            <p className="text-body">{t('billing.pay.activating')}</p>
+          </div>
+        ) : phase === 'checkout' && !checkoutEnded ? (
+          <>
+            <CheckoutProgress flow={flow} onRecheck={() => dispatch({ type: 'recheck', now: nowMs() })} />
+            <p className="text-center text-caption text-muted">{t('billing.pay.later')}</p>
+          </>
+        ) : (
+          <>
+            {quote.isLoading || (q && !summary) ? <Spinner className="mx-auto my-4" /> : null}
+            {quote.isError ? <p className="text-body text-danger-text">{billingErrorText(quote.error)}</p> : null}
+            {checkoutEnded ? <CheckoutProgress flow={flow} onRecheck={() => undefined} /> : null}
+            {q && summary ? (
+              <>
+                <SeatsField value={seatsRaw} range={range} onChange={setSeatsRaw} />
+                <div className="flex flex-col">
+                  <SumLine label={t('billing.pay.month', { seats, price: formatMoney(unitMoney) })}>{formatMinor(topup.month, currency)}</SumLine>
+                  {minorOf(q.debt) > 0n ? <SumLine label={t('billing.quote.debt')}>{formatMoney(q.debt)}</SumLine> : null}
+                  {minorOf(summary.balance) > 0n ? <SumLine label={t('billing.pay.onBalance')}>{formatMoney(summary.balance, { signed: true })}</SumLine> : null}
+                  <SumLine label={topup.amount > 0n ? t('billing.pay.toPay') : t('billing.pay.covered')} strong>
+                    {formatMinor(topup.amount, currency)}
+                  </SumLine>
+                  <p className="pt-1 text-caption text-muted">{t('billing.pay.seatsHint', { n: summary.billableMembers })}</p>
+                </div>
+                {topup.amount > 0n ? (
+                  <MethodList methods={methods} value={method?.id ?? ''} onChange={setMethodId} />
+                ) : null}
+                {topup.amount > 0n && saveCard ? <p className="text-caption text-faint">{t('billing.pay.saveCard')}</p> : null}
+                {topup.amount > 0n ? <p className="text-caption text-faint">{t('billing.topup.hosted')}</p> : null}
+              </>
+            ) : null}
+            {error ? (
+              <p role="alert" className="text-caption text-danger-text">
+                {error}
+              </p>
+            ) : null}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/** Seats: typed or ±1; the price follows each keystroke (computed here from the server's price, no request). */
+function SeatsField({ value, range, onChange }: { value: string; range: { min: number; max: number }; onChange: (v: string) => void }): ReactNode {
+  const n = clampSeats(Number(value), range);
+  const step = (d: number): void => onChange(String(clampSeats(n + d, range)));
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor="plans-seats" className="text-caption font-medium text-muted">
+        {t('billing.pay.seats')}
+      </label>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" aria-label={t('billing.pay.seatsLess')} disabled={n <= range.min} onClick={() => step(-1)}>
+          <Minus className="size-3.5" aria-hidden />
+        </Button>
+        <Input
+          id="plans-seats"
+          inputMode="numeric"
+          className="w-24 text-center tabular-nums"
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
+          onBlur={() => onChange(String(n))}
+          data-testid="plans-seats"
+        />
+        <Button variant="secondary" aria-label={t('billing.pay.seatsMore')} disabled={n >= range.max} onClick={() => step(1)}>
+          <Plus className="size-3.5" aria-hidden />
+        </Button>
+        <span className="text-caption text-muted">{t('billing.pay.seatsRange', { min: range.min, max: countText(range.max) })}</span>
+      </div>
+    </div>
+  );
+}
+
+const METHOD_KEY: Partial<Record<PaymentMethodKind, MessageKey>> = {
+  [PaymentMethodKind.CARD]: 'billing.method.card',
+  [PaymentMethodKind.SBP]: 'billing.method.sbp',
+  [PaymentMethodKind.BANK_TRANSFER]: 'billing.method.bank',
+};
+
+/** The methods the server offers for this account (registry capability matrix): a radio list, so more acquirers plug in. */
+function MethodList({ methods, value, onChange }: { methods: ReturnType<typeof offeredMethods>; value: string; onChange: (id: string) => void }): ReactNode {
+  if (methods.length === 0) return <p className="text-body text-muted">{t('billing.topup.noMethods')}</p>;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-caption font-medium text-muted">{t('billing.topup.method')}</span>
+      <div role="radiogroup" aria-label={t('billing.topup.method')} className="flex flex-col gap-1.5" data-testid="plans-methods">
+        {methods.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            role="radio"
+            aria-checked={value === m.id}
+            onClick={() => onChange(m.id)}
+            className={cx(
+              'flex min-h-10 items-center gap-2.5 rounded-[var(--radius-card)] border px-3 py-2 text-left text-body mobile:tap-min-h',
+              value === m.id ? 'border-[var(--color-focus)] bg-[var(--color-card)]' : 'border-line hover:bg-hover',
+            )}
+          >
+            <CreditCard className="size-4 shrink-0 text-muted" aria-hidden />
+            <span className="min-w-0 flex-1">{t(METHOD_KEY[m.kind] ?? 'billing.method.card')}</span>
+            {m.provider === 'stripe' ? <span className="text-caption text-faint">Stripe</span> : null}
+            {value === m.id ? <Check className="size-4 shrink-0 text-accent-text" aria-hidden /> : null}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

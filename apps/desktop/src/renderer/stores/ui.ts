@@ -48,7 +48,12 @@ export type Dialog =
    */
   | { kind: 'event'; workspaceId: string; eventKey?: string; draft?: EventDraftInit }
   /** Add (no `appId`) / edit a web app of the workspace (ADR-0050 §3). */
-  | { kind: 'web-app'; workspaceId: string; appId?: string };
+  | { kind: 'web-app'; workspaceId: string; appId?: string }
+  /**
+   * «Тариф и оплата» (ADR-0080): the plans side by side and the one pay path; `welcome` — the step
+   * right after creating the workspace («Начать бесплатно» first).
+   */
+  | { kind: 'billing-plans'; workspaceId: string; welcome?: boolean };
 
 /** Prefill of the meeting dialog (features/calendar/EventDialog.tsx). */
 export interface EventDraftInit {

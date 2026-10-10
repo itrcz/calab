@@ -54,7 +54,7 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethodOpti
   );
 }
 
-function useCheckoutPoll(workspaceId: string, flow: CheckoutFlow, dispatch: (e: Parameters<typeof checkoutReducer>[1]) => void): void {
+export function useCheckoutPoll(workspaceId: string, flow: CheckoutFlow, dispatch: (e: Parameters<typeof checkoutReducer>[1]) => void): void {
   // The poll: one timeout at a time, none while hidden; coming back polls at once (the person
   // returns from the browser right after paying).
   const id = flow.phase === 'waiting' ? flow.checkoutId : null;
@@ -241,7 +241,7 @@ const OUTCOME: Record<CheckoutOutcome, MessageKey> = {
 };
 
 /** After the checkout opened: waiting / paid / failed, with «open the page again». */
-function CheckoutProgress({ flow, onRecheck }: { flow: CheckoutFlow; onRecheck: () => void }): ReactNode {
+export function CheckoutProgress({ flow, onRecheck }: { flow: CheckoutFlow; onRecheck: () => void }): ReactNode {
   if (flow.phase === 'done') {
     const ok = flow.outcome === 'credited';
     return (

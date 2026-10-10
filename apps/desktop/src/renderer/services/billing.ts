@@ -1,10 +1,12 @@
-import { BillingState, type Workspace } from '@calaba/protocol';
+import { BillingState, Plan, type Workspace } from '@calaba/protocol';
 import { restAdminApi, restOwnerApi, type AdminBillingApi, type BillingAdapters, type OwnerBillingApi } from '../lib/billing/api';
 import { billingErrorText, billingNotFound, billingUnavailable } from '../lib/billing/errors';
+import { forSale } from '../lib/billing/plans';
 import { log } from '../lib/log';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
 import { useBilling } from '../stores/billing';
+import { useUi } from '../stores/ui';
 import { planOffersAllowed } from './plan';
 
 /**
@@ -116,6 +118,26 @@ export function resyncBilling(workspaceIds: ReadonlySet<string>): void {
 
 /** Money actions are offered here (native mobile companions keep purchases on the website). */
 export const billingPaymentsAllowed = (): boolean => planOffersAllowed();
+
+/** Opens «Тариф и оплата» of a workspace (the plan badge, links). */
+export function openPlans(workspaceId: string): void {
+  useUi.getState().openDialog({ kind: 'billing-plans', workspaceId });
+}
+
+/**
+ * Right after the owner created a workspace: the plan choice, when this workspace can be paid for
+ * here (an account or self-serve, a paid plan for sale). Never blocks the creation — the workspace
+ * is already open; a 501 / 404 / error, or another dialog opened meanwhile, shows nothing.
+ */
+export async function offerPlansAfterCreate(workspaceId: string): Promise<void> {
+  if (!billingPaymentsAllowed()) return;
+  await loadBilling(workspaceId);
+  const data = useBilling.getState().byWs[workspaceId]?.data;
+  if (!data || !(data.selfServe || data.summary)) return;
+  if (!forSale(data.offers, Plan.TEAM) && !forSale(data.offers, Plan.ENTERPRISE)) return;
+  if (useUi.getState().dialog !== null) return;
+  useUi.getState().openDialog({ kind: 'billing-plans', workspaceId, welcome: true });
+}
 
 /**
  * Opens the provider's hosted checkout outside the app: the system browser on the desktop, a new

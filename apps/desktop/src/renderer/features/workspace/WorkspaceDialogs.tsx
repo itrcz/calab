@@ -9,6 +9,7 @@ import { workspaceInitials } from '../../lib/initials';
 import { ApiError } from '../../lib/api/client';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
+import { offerPlansAfterCreate } from '../../services/billing';
 import { joinPlaceholder, parseInviteCode, parseRoomInviteCode } from '../../services/links';
 import { RoomLinkPreview } from '../people/RoomLinkPreview';
 import { useSession } from '../../stores/session';
@@ -101,6 +102,8 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
     onSuccess: (r) => {
       if (r.workspace) setWs(r.workspace.id);
       onClose();
+      // ADR-0080: the plan choice right after creating, when it can be paid for here (never blocks).
+      if (r.workspace) void offerPlansAfterCreate(r.workspace.id);
     },
   });
   return (
