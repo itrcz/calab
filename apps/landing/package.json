@@ -15,14 +15,14 @@
     "test": "pnpm test:preferences && pnpm test:offers"
   },
   "dependencies": {
-    "lucide-react": "^1.49.0",
-    "next": "15.5.26",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "lucide-react": "^1.52.0",
+    "next": "15.5.27",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@next/eslint-plugin-next": "16.3.8",
+    "@next/eslint-plugin-next": "16.4.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
@@ -31,6 +31,6 @@
     "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0",
-    "typescript-eslint": "~8.70.1"
+    "typescript-eslint": "~8.71.1"
   }
 }
