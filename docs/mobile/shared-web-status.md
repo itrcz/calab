@@ -7,7 +7,22 @@ full-bleed background and no pre-rounded corners. It is derived from the shared
 `apps/desktop/build/icons/src/icon_other.svg`; the glyph and gradient are unchanged.
 The icon is packaged into a new iOS build and reaches TestFlight through that build.
 
-## Native mobile commercial UI (2026-10-08)
+## Native mobile commercial UI (2026-10-08; iOS-only since 2026-10-10, ADR-0087 §10)
+
+**Current rule (2026-10-10, App Store until IAP):** payment UI is hidden only in the **iOS**
+shell; the Android shell, every browser (Safari on an iPhone too) and the desktop keep it.
+Detection — `apps/desktop/src/renderer/platform/nativeShell.ts`: the host bridge
+`window.CalabHostActivity` plus its new `platform` field (`activityBootstrap(…, Platform.OS)`,
+additive). Fail closed: no field, an iPad desktop UA, or a contradiction → iOS; Android is
+recognized by its user agent, so neither platform needs a new binary. Hidden in iOS: top-up,
+«Оплатить», plan purchase / change / «Сменить тариф», prices and CTAs, auto-topup and saved cards,
+the payer form, the plan step after creating a workspace, sales contacts / pricing links. Shown:
+plan name and status (outline badge), limits, balance and history read-only for `BILLING_VIEW`,
+and a neutral «Управление оплатой доступно в веб-версии и на компьютере» — no link, no button.
+Server unchanged. Tests: `platform/nativeShell.test.ts` (matrix: iOS old/new handshake, Android
+old/new, iPhone Safari, desktop), `services/plan.test.ts`, visual `billing-cabinet-ios` (390).
+
+Earlier (2026-10-08) text, superseded for Android:
 
 The shared web client suppresses sales contact actions and the purchase/pricing card
 when the existing native `sessionActivity` host capability is present. Ordinary web

@@ -910,7 +910,7 @@ generated в commit. Amount int64 minor units, currency account; суммы ус
 | `GET /ledger`, `GET /payments`, `GET /invoices` | Курсорная история пополнений, расходов по дням/SKU/валюте, возвратов и чеков |
 | `POST /refund-requests`, `GET /refund-requests` | Возврат остатка/отказ от неиспользованных услуг, статус и сроки |
 
-Управление деньгами — только owner, обычные auth/identity/step-up и защита CSRF где нужны;
+Управление деньгами — только owner (с ADR-0087 — держатели битов `BILLING_VIEW` / `TOPUP` / `MANAGE`, у владельца — все три), обычные auth/identity/step-up и защита CSRF где нужны;
 MANAGE_WORKSPACE, guest, bot, integration token не дают доступа к карте/балансу.
 Авторизованный администратор может добавлять людей и тем самым тратить **имеющийся** баланс на места:
 владелец принимает это при включении платного тарифа; операция записывает реального actor.
@@ -938,7 +938,7 @@ Webhook `/api/billing/stripe/webhook` (v1) и `/api/billing/tochka/webhook` (RU 
 `BILLING_RECONCILING`, `BILLING_PAYMENT_PENDING`, `BILLING_PAYMENT_UNKNOWN`,
 `BILLING_CHANGE_INCOMPATIBLE`, `BILLING_PRICE_CONFIRMATION_REQUIRED`,
 `BILLING_SEAT_GROWTH_REQUIRES_FUNDS`.
-403: `BILLING_OWNER_REQUIRED`, `WORKSPACE_BILLING_SUSPENDED`.
+403: `BILLING_OWNER_REQUIRED` (с ADR-0087 — `BILLING_PERMISSION_REQUIRED`), `WORKSPACE_BILLING_SUSPENDED`.
 503: provider unavailable; 422 validation; 429 rate limit. Повтор request_id с другим body — 409.
 
 Кабинет показывает balance в валюте account, зарезервированные суммы, «примерно на N дней» с явной

@@ -245,6 +245,16 @@ export const Permission = {
   MANAGE_RECORDINGS: 1n << 31n, // удалять записи любой видимой комнаты, allow_recording
   // proto-enum int32: MANAGE_RECORDINGS там = -2147483648 (читается как беззнаковое); биты от 1 << 32 enum не вмещает
 } as const;
+
+// Оплата (ADR-0087): биты ≥ 32 — вне proto-enum (список в комментарии enum Permission), отдельно от
+// PERMISSION_BITS: ADMINISTRATOR их не даёт (ALL_PERMISSIONS / perm.All — до бита 31), переопределения
+// не трогают, выдаёт и назначает только владелец; у владельца — всегда все три; гостям и ботам — никогда.
+// Читаются только через billingPermissions (TS) / perm.BillingOf (Go), векторы `billing` в permissions.json.
+const BILLING_BITS = {
+  VIEW:   1n << 32n,  // шильдик с состоянием, «Тариф»: баланс, история, тариф, чеки (чтение)
+  TOPUP:  1n << 33n,  // пополнение через страницу оплаты (карта / СБП); включает VIEW
+  MANAGE: 1n << 34n,  // тариф, оплата в один клик, автопополнение, карты, плательщик, возвраты; включает VIEW + TOPUP
+} as const;
 ```
 
 Дефолты встроенных ролей — в таблице «Роли workspace» выше (права `member`/`guest` редактируются).

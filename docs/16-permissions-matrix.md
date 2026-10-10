@@ -138,6 +138,20 @@
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (закрытая — только допущенные) | `files.CanRead`, `recording.transcript` | — |
 | Удалить запись встречи (docs/09 #50) | запустивший, владелец, `MANAGE_MESSAGES` room или `MANAGE_RECORDINGS` ws (ADR-0048) — всегда при `VIEW_ROOM` (закрытая без переопределения — 404) | `recording.remove` | `mayDeleteRecording` |
 
+## Оплата (ADR-0087)
+
+Биты `BILLING_VIEW` / `BILLING_TOPUP` / `BILLING_MANAGE` — уровень пространства, вне `ADMINISTRATOR`; владелец — все три всегда; MANAGE ⊃ TOPUP ⊃ VIEW; гости и боты — никогда. Выдаёт / снимает / назначает / удаляет роль с ними — только владелец (`internal/workspaces/roles.go`). Отказ — `403 BILLING_PERMISSION_REQUIRED`.
+
+| Действие | Бит | Сервер | Клиент |
+|---|---|---|---|
+| Статус оплаты (`GET …/billing` без сумм), шильдик с тарифом | участник | `billinghttp.get` | `PlanBadge`, `MemberBillingStub` |
+| Сводка, история, платежи, чеки, заявки на возврат, плательщик, карты, автопополнение — смотреть; «долг» на шильдике и полоса долга | `BILLING_VIEW` | `holderOf(perm.BillingView)` | `BillingCabinet` (только чтение) |
+| Пополнить через страницу оплаты, статус checkout; «Оплатить» на полосе долга и пейволле; маршруты оплаты при приостановке | `BILLING_TOPUP` | `holderOf(perm.BillingTopup)`, `identitypolicy.State.BillingPayer` | `BalanceCard`, `TopupDialog` (без карты в один клик и «сохранить»), `BillingPaywall` |
+| Квота, подключить / сменить / остановить / возобновить тариф, self-serve старт, рынок до первой оплаты, оплата в один клик, сохранить карту, автопополнение, удалить карту, изменить плательщика, заявка на возврат; письма о долге / приостановке / автопополнении | `BILLING_MANAGE` | `holderOf(perm.BillingManage)`, `inbox.ManagersCopied` | `PlansDialog`, `PlanSwitch`, `AutoTopupCard`, `PayerCard`, `HistoryCard` |
+| Поставить / снять биты на роли, назначить / снять / удалить такую роль | владелец | `checkGrant`, `setMemberRoles`, `deleteRole` | группа «Биллинг» в карточке роли (`billingEditableBits`) |
+
+В оболочке iOS (`platform/nativeShell`) клиент не показывает ни одного действия с деньгами, что бы ни было в битах (ADR-0087 §10).
+
 ## Телефония
 
 | Действие | Бит | Сервер | Клиент |
