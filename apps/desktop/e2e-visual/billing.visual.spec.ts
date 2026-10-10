@@ -68,12 +68,23 @@ interface Boot {
   /** ADR-0086: the workspace exceeds Team / Free (mock `?limits=over`), the plan is admin-assigned (`?admin=1`). */
   limits?: 'over';
   admin?: boolean;
+  /** The iOS native shell (apps/mobile): its host bridge declared before the page loads (owner 10.10: no payment UI there). */
+  iosShell?: boolean;
 }
 
 /** One page load: the billing scenario, the theme, the sign-in, the workspace's main screen. */
 async function boot(page: Page, o: Boot): Promise<Shot> {
   const theme: Theme = isLight() ? 'light' : 'dark';
   await setPlan(o.plan);
+  if (o.iosShell) {
+    // What apps/mobile activityBootstrap declares (platform field of 2026-10-10); the WebKit
+    // project's iPhone user agent completes the signal (platform/nativeShell).
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'CalabHostActivity', {
+        value: Object.freeze({ version: 1, host: 1, platform: 'ios', document: 'visual', rotateDocument: () => undefined, send: () => undefined }),
+      });
+    });
+  }
   await page.clock.setFixedTime(NOW);
   await page.goto(`${mock.url}/?visual-test`);
   await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
@@ -174,7 +185,8 @@ test('billing-free: badge, plan choice, pay step', async ({ page }) => {
 
 test('billing-team: badge, plans, cabinet, top-up, quotes', async ({ page }) => {
   const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM' });
-  if (!isLight()) await checkpoint(s, 'billing-badge-team');
+  // The outline badge (owner 10.10) in both themes: the light one only here.
+  await checkpoint(s, 'billing-badge-team');
   await openPlans(page);
   await checkpoint(s, 'billing-plans-team');
   if (isLight()) return;
@@ -538,4 +550,92 @@ test('billing-transitions-admin: a plan assigned by a superadmin', async ({ page
   await expect(note).toBeVisible();
   await note.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await checkpoint(s, 'billing-tr-admin-assigned');
+});
+
+// ---------------------------------------------------------------- Billing permissions (ADR-0087)
+
+/** The owner gives Вера a custom role «Финансы» with billing `bits` (REST, before Вера signs in). */
+async function grantVera(bits: bigint): Promise<void> {
+  const json = { 'content-type': 'application/json' };
+  const login = await fetch(`${mock.url}/api/auth/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'owner@calaba.test', password: PASSWORD }) });
+  const token = ((await login.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
+  const auth = { ...json, authorization: `Bearer ${token}` };
+  const created = await fetch(`${mock.url}/api/workspaces/${IDS.workspaces.main}/roles`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ name: 'Финансы', color: 0x34c759, permissions: bits.toString() }),
+  });
+  expect(created.status, 'create the billing role').toBe(201);
+  const role = ((await created.json()) as { role: { id: string } }).role;
+  const put = await fetch(`${mock.url}/api/workspaces/${IDS.workspaces.main}/members/${IDS.users.vera}/roles`, {
+    method: 'PUT',
+    headers: auth,
+    body: JSON.stringify({ roleIds: [role.id] }),
+  });
+  expect(put.status, 'assign the billing role').toBe(200);
+}
+
+const BILLING_VIEW = 1n << 32n;
+const BILLING_TOPUP = 1n << 33n;
+
+test('billing-roles: the «Биллинг» group of the role card', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM' });
+  await tap(page.getByTestId(isPhone() ? 'phone-ws-switcher' : 'titlebar-title'));
+  await tap(page.getByRole('menuitem', { name: 'Настройки', exact: true }));
+  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await tap(settings.getByText('Роли', { exact: true }).first());
+  await tap(settings.getByRole('button', { name: 'Дизайн', exact: true }));
+  const group = settings.getByTestId('role-billing-group');
+  // The owner ticks «Пополнять баланс»: «Видеть оплату» comes with it (TOPUP implies VIEW).
+  await tap(group.getByTestId('role-perm-BILLING_TOPUP'));
+  await expect(group.getByTestId('role-perm-BILLING_VIEW')).toBeChecked();
+  await expect(group.getByTestId('role-perm-BILLING_MANAGE')).not.toBeChecked();
+  await group.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-roles-group');
+});
+
+test('billing-member-view: a member with «Видеть оплату»', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  await grantVera(BILLING_VIEW);
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', email: 'vera@calaba.test' });
+  await checkpoint(s, 'billing-badge-member-view');
+  const settings = await openPlanTab(page);
+  const cabinet = settings.getByTestId('billing-cabinet');
+  await expect(cabinet).toBeVisible();
+  await expect(cabinet.getByTestId('billing-access-note')).toBeVisible();
+  await expect(cabinet.getByTestId('billing-topup-open')).toHaveCount(0);
+  await expect(cabinet.getByTestId('billing-stop')).toHaveCount(0);
+  await cabinet.getByTestId('billing-access-note').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-cabinet-member-view');
+});
+
+test('billing-member-topup: a member with «Пополнять баланс»', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  await grantVera(BILLING_TOPUP);
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', email: 'vera@calaba.test' });
+  const settings = await openPlanTab(page);
+  const cabinet = settings.getByTestId('billing-cabinet');
+  await expect(cabinet.getByTestId('billing-topup-open')).toBeVisible();
+  await expect(cabinet.getByTestId('billing-change-plan')).toHaveCount(0);
+  await expect(settings.getByTestId('plan-switch')).toHaveCount(0);
+  await cabinet.getByTestId('billing-actions').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-cabinet-member-topup');
+  // The hosted page only: no saved card to charge, nothing to save.
+  await tap(cabinet.getByTestId('billing-topup-open'));
+  await expect(page.getByTestId('billing-topup')).toBeVisible();
+  await checkpoint(s, 'billing-topup-member');
+});
+
+test('billing-ios-shell: the plan tab without payment UI', async ({ page }) => {
+  test.skip(!isPhone(), 'the iOS shell: iPhone 14 only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', iosShell: true });
+  const settings = await openPlanTab(page);
+  await expect(settings.getByTestId('billing-cabinet')).toBeVisible();
+  await expect(settings.getByTestId('billing-payments-elsewhere')).toBeVisible();
+  await expect(settings.getByTestId('billing-topup-open')).toHaveCount(0);
+  await expect(settings.getByTestId('plan-switch')).toHaveCount(0);
+  await expect(settings.getByTestId('billing-payer-edit')).toHaveCount(0);
+  await settings.getByTestId('billing-payments-elsewhere').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-cabinet-ios');
 });
