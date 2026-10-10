@@ -1,6 +1,7 @@
 import { BillingState, Plan, type Workspace } from '@calaba/protocol';
 import type { CheckoutWindowOutcome } from '../../shared/ipc';
 import { restAdminApi, restOwnerApi, type AdminBillingApi, type BillingAdapters, type OwnerBillingApi } from '../lib/billing/api';
+import type { CheckoutPlace } from '../lib/billing/checkout';
 import { billingErrorText, billingNotFound, billingUnavailable } from '../lib/billing/errors';
 import { forSale } from '../lib/billing/plans';
 import type { FixPlace } from '../lib/billing/violations';
@@ -182,12 +183,40 @@ export function onCheckoutReturn(cb: (outcome: CheckoutWindowOutcome) => void): 
   return () => checkoutReturnListeners.delete(cb);
 }
 
+// Where the last opened checkout page is (lib/billing/checkout CheckoutPlace): the dialog's wording.
+let checkoutPlace: CheckoutPlace = platform.kind === 'electron' ? 'window' : 'browser';
+const placeListeners = new Set<() => void>();
+
+function setCheckoutPlace(p: CheckoutPlace): void {
+  if (p === checkoutPlace) return;
+  checkoutPlace = p;
+  for (const cb of [...placeListeners]) cb();
+}
+
+/** The current CheckoutPlace (a primitive: subscribers re-render only on a change). */
+export const getCheckoutPlace = (): CheckoutPlace => checkoutPlace;
+
+/** useSyncExternalStore subscription of CheckoutPlace. */
+export function subscribeCheckoutPlace(cb: () => void): () => void {
+  placeListeners.add(cb);
+  return () => placeListeners.delete(cb);
+}
+
+/** The window's outcome as a place: only the return page means «check the payment now». */
+export function placeOf(outcome: CheckoutWindowOutcome): CheckoutPlace {
+  if (outcome === 'external') return 'browser';
+  return outcome === 'returned' || outcome === 'success' ? 'returned' : 'closed';
+}
+
+let openSeq = 0;
+
 /**
  * Opens the provider's hosted checkout (ADR-0084): the in-app checkout window on the desktop, a
  * new tab on the web (a popup blocker may stop it after the async POST — the dialog keeps a
  * «Открыть страницу оплаты» button, a direct click, for that case). Only https links are opened;
  * a URL main does not take for the window (a provider host off its allowlist) goes to the system
- * browser as before.
+ * browser as before. Asking again for the checkout whose window is open brings that window
+ * forward (main shares its outcome); only the latest call reports the outcome.
  */
 export function openCheckout(url: string): void {
   const u = url.trim();
@@ -195,13 +224,18 @@ export function openCheckout(url: string): void {
     log.warn('[billing] refused a non-https checkout url');
     return;
   }
+  const seq = ++openSeq;
+  setCheckoutPlace(platform.kind === 'electron' ? 'window' : 'browser');
   platform.app.openCheckout(u).then(
     (outcome) => {
+      if (seq !== openSeq) return; // a later call took the window over (focused or replaced it)
+      setCheckoutPlace(placeOf(outcome));
       if (outcome === 'external') return;
       for (const cb of [...checkoutReturnListeners]) cb(outcome);
     },
     (e: unknown) => {
       log.warn('[billing] checkout window refused, opening the browser', e);
+      if (seq === openSeq) setCheckoutPlace('browser');
       void platform.app.openExternal(u);
     },
   );

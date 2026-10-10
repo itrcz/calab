@@ -1,7 +1,27 @@
 import { create } from '@bufbuild/protobuf';
 import { CheckoutState, CheckoutStatusSchema } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { IDLE, POLL_GIVE_UP_MS, checkoutReducer, pollDelay, polling, type CheckoutEvent, type CheckoutFlow } from './checkout';
+import { IDLE, POLL_GIVE_UP_MS, checkoutReducer, checkoutWaitingView, pollDelay, polling, type CheckoutEvent, type CheckoutFlow } from './checkout';
+
+describe('checkout waiting wording (ADR-0084: the desktop window is not the browser)', () => {
+  const base = { phase: 'waiting', paid: false, saved: false, hasUrl: true } as const;
+  it('window open: «open in a separate window» + «show the window», no external icon', () => {
+    expect(checkoutWaitingView({ ...base, place: 'window' })).toEqual({ text: 'billing.checkout.window', button: 'billing.checkout.showWindow', external: false, spinner: true });
+  });
+  it('back from the return page: checking; closed by the person: not finished + open again, no spinner', () => {
+    expect(checkoutWaitingView({ ...base, place: 'returned' })).toMatchObject({ text: 'billing.checkout.checking', button: 'billing.checkout.reopen', spinner: true });
+    expect(checkoutWaitingView({ ...base, place: 'closed' })).toEqual({ text: 'billing.checkout.notFinished', button: 'billing.checkout.reopen', external: false, spinner: false });
+  });
+  it('a browser tab keeps «waiting in the browser» with the external page button', () => {
+    expect(checkoutWaitingView({ ...base, place: 'browser' })).toEqual({ text: 'billing.checkout.waiting', button: 'billing.checkout.open', external: true, spinner: true });
+    expect(checkoutWaitingView({ ...base, saved: true, place: 'browser' })).toMatchObject({ text: 'billing.saved.waiting', button: 'billing.saved.open' });
+  });
+  it('paid, stalled and a one-click charge without a page', () => {
+    expect(checkoutWaitingView({ ...base, paid: true, place: 'closed' })).toMatchObject({ text: 'billing.checkout.crediting', button: null });
+    expect(checkoutWaitingView({ ...base, phase: 'stalled', place: 'window' })).toMatchObject({ text: 'billing.checkout.stalled', button: 'billing.checkout.showWindow', spinner: false });
+    expect(checkoutWaitingView({ ...base, saved: true, hasUrl: false, place: 'closed' })).toMatchObject({ text: 'billing.saved.processing', button: null });
+  });
+});
 
 const status = (state: CheckoutState, credited = false, checkoutId = 'co-1') => create(CheckoutStatusSchema, { checkoutId, state, credited });
 const run = (events: CheckoutEvent[], from: CheckoutFlow = IDLE): CheckoutFlow => events.reduce(checkoutReducer, from);

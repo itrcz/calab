@@ -80,7 +80,18 @@ vi.mock("electron", () => {
     isDestroyed(): boolean {
       return this.destroyed;
     }
-    show(): void {}
+    shown = 0;
+    focused = 0;
+    show(): void {
+      this.shown++;
+    }
+    focus(): void {
+      this.focused++;
+    }
+    isMinimized(): boolean {
+      return false;
+    }
+    restore(): void {}
     close(): void {
       this.destroyed = true;
       this.emit("closed");
@@ -302,6 +313,41 @@ describe("checkout window (ADR-0084)", () => {
       ),
     ).toBe(true);
     await expect(done).resolves.toBe("closed");
+  });
+
+  it("the same checkout asked again focuses the open window, never closes or reloads it", async () => {
+    const url = "https://merch.tochka.com/order/?uuid=op-1";
+    const first = open(url);
+    const loads = first.page.loaded.length;
+    const again = openCheckoutWindow({} as never, url);
+    expect(h.windows).toHaveLength(1);
+    const win = first.win as unknown as { destroyed: boolean; focused: number; shown: number };
+    expect(win.destroyed).toBe(false);
+    expect(win.focused).toBe(1);
+    expect(first.page.loaded).toHaveLength(loads);
+    // Both callers learn the one outcome when the page reaches the return URL.
+    nav(first.page, "will-navigate", "https://app.calab.test/api/billing/return?checkout=1");
+    await expect(first.done).resolves.toBe("returned");
+    await expect(again).resolves.toBe("returned");
+  });
+
+  it("reopens a closed checkout in a new window", async () => {
+    const url = "https://merch.tochka.com/order/?uuid=op-2";
+    const first = open(url);
+    first.win.close();
+    await expect(first.done).resolves.toBe("closed");
+    const second = open(url);
+    expect(h.windows).toHaveLength(2);
+    expect(second.page.loaded.at(-1)).toBe(url);
+    second.win.close();
+  });
+
+  it("another checkout replaces the open one (that one resolves closed)", async () => {
+    const first = open("https://merch.tochka.com/order/?uuid=op-3");
+    const second = open("https://merch.tochka.com/order/?uuid=op-4");
+    await expect(first.done).resolves.toBe("closed");
+    expect((second.win as unknown as { destroyed: boolean }).destroyed).toBe(false);
+    second.win.close();
   });
 
   it("wipes the page session when the window closes", () => {

@@ -1,4 +1,5 @@
 import { CheckoutState, type CheckoutStatus } from '@calaba/protocol';
+import type { MessageKey } from '../../i18n';
 
 /**
  * The hosted checkout of a manual top-up (ADR-0080 §13): POST …/topups gives a checkout id and
@@ -77,3 +78,48 @@ export function pollDelay(s: CheckoutFlow): number | null {
 
 /** The poll keeps going (a timer is due). */
 export const polling = (s: CheckoutFlow): boolean => s.phase === 'waiting';
+
+/**
+ * Where the payment page of the last opened checkout is (ADR-0084; services/billing tracks it):
+ * - `window`: the in-app checkout window is open (desktop);
+ * - `returned`: it closed on the provider's return page — the dialog is checking the payment;
+ * - `closed`: the person closed it (or the page reported a failure) — not paid yet, open again;
+ * - `browser`: a browser tab / the system browser (web, or main refused the window).
+ */
+export type CheckoutPlace = 'window' | 'returned' | 'closed' | 'browser';
+
+export interface CheckoutWaitingView {
+  text: MessageKey;
+  /** The page button (null: none); `external` adds the «leaves the app» icon. */
+  button: MessageKey | null;
+  external: boolean;
+  spinner: boolean;
+}
+
+/**
+ * The wording of the waiting / stalled dialog (2026-10-10: the desktop said «Ждём оплату в
+ * браузере…» over the in-app window, and its button closed the form): the window is open → «open
+ * in a separate window» + «show the window» (main focuses it); back from the return page →
+ * «checking»; closed by the person → «not finished» + «open again»; a browser → as before.
+ * `hasUrl`: the flow has a page (a one-click charge without 3-D Secure has none).
+ */
+export function checkoutWaitingView(v: { phase: 'waiting' | 'stalled'; paid: boolean; saved: boolean; hasUrl: boolean; place: CheckoutPlace }): CheckoutWaitingView {
+  const waiting = v.phase === 'waiting';
+  if (v.paid) return { text: 'billing.checkout.crediting', button: null, external: false, spinner: waiting };
+  if (v.saved && !v.hasUrl) return { text: 'billing.saved.processing', button: null, external: false, spinner: waiting };
+  switch (v.place) {
+    case 'window':
+      return { text: !waiting ? 'billing.checkout.stalled' : v.saved ? 'billing.saved.waiting' : 'billing.checkout.window', button: 'billing.checkout.showWindow', external: false, spinner: waiting };
+    case 'returned':
+      return { text: waiting ? 'billing.checkout.checking' : 'billing.checkout.stalled', button: 'billing.checkout.reopen', external: false, spinner: waiting };
+    case 'closed':
+      return { text: 'billing.checkout.notFinished', button: 'billing.checkout.reopen', external: false, spinner: false };
+    case 'browser':
+      return {
+        text: !waiting ? 'billing.checkout.stalled' : v.saved ? 'billing.saved.waiting' : 'billing.checkout.waiting',
+        button: v.saved ? 'billing.saved.open' : 'billing.checkout.open',
+        external: true,
+        spinner: waiting,
+      };
+  }
+}

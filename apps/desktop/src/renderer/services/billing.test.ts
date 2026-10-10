@@ -8,10 +8,10 @@ vi.mock('../lib/billing/api', () => ({ restOwnerApi: { get: (...a: unknown[]): u
 const openExternal = vi.fn((_url: string) => Promise.resolve());
 const openCheckoutWindow = vi.fn((_url: string): Promise<string> => Promise.resolve('returned'));
 vi.mock('../platform', () => ({
-  platform: { app: { openExternal: (url: string) => openExternal(url), openCheckout: (url: string) => openCheckoutWindow(url) } },
+  platform: { kind: 'electron', app: { openExternal: (url: string) => openExternal(url), openCheckout: (url: string) => openCheckoutWindow(url) } },
 }));
 
-const { loadBilling, onBillingUpdate, onCheckoutReturn, openCheckout, openReceipt, resyncBilling } = await import('./billing');
+const { getCheckoutPlace, loadBilling, onBillingUpdate, onCheckoutReturn, openCheckout, openReceipt, placeOf, resyncBilling, subscribeCheckoutPlace } = await import('./billing');
 
 const off = () => new ApiError('NOT_IMPLEMENTED', 'billing off', 501, undefined, { reason: 'BILLING_DISABLED' });
 const noAccount = () => new ApiError('NOT_FOUND', 'no account', 404, undefined, { reason: 'BILLING_ACCOUNT_NOT_FOUND' });
@@ -86,6 +86,47 @@ describe('openCheckout (ADR-0084: the checkout window and its outcome)', () => {
     openCheckout('https://pay.sandbox.example/x');
     await flush();
     expect(openExternal).toHaveBeenCalledWith('https://pay.sandbox.example/x');
+  });
+
+  it('tracks where the page is: window → returned / closed; a refusal → browser', async () => {
+    const places: string[] = [];
+    const off = subscribeCheckoutPlace(() => places.push(getCheckoutPlace()));
+    let close!: (o: string) => void;
+    openCheckoutWindow.mockReturnValueOnce(new Promise((r) => (close = r)));
+    openCheckout('https://merch.tochka.com/order/?uuid=1');
+    expect(getCheckoutPlace()).toBe('window');
+    close('closed'); // the person closed the window: not paid yet, «open again»
+    await flush();
+    expect(getCheckoutPlace()).toBe('closed');
+    openCheckoutWindow.mockResolvedValueOnce('returned');
+    openCheckout('https://merch.tochka.com/order/?uuid=1');
+    expect(getCheckoutPlace()).toBe('window');
+    await flush();
+    expect(getCheckoutPlace()).toBe('returned');
+    openCheckoutWindow.mockRejectedValueOnce(new Error('checkout: not a provider checkout url'));
+    openCheckout('https://pay.sandbox.example/x');
+    await flush();
+    expect(getCheckoutPlace()).toBe('browser');
+    expect(places).toEqual(['window', 'closed', 'window', 'returned', 'window', 'browser']);
+    off();
+    expect([placeOf('success'), placeOf('fail'), placeOf('external')]).toEqual(['returned', 'closed', 'browser']);
+  });
+
+  it('asking again while the window is open: only the latest call reports, once', async () => {
+    const seen: string[] = [];
+    const off = onCheckoutReturn((o) => seen.push(o));
+    // main focuses the open window and both calls resolve with its one outcome.
+    let close!: (o: string) => void;
+    const shared = new Promise<string>((r) => (close = r));
+    openCheckoutWindow.mockReturnValueOnce(shared).mockReturnValueOnce(shared);
+    openCheckout('https://merch.tochka.com/order/?uuid=2');
+    openCheckout('https://merch.tochka.com/order/?uuid=2');
+    expect(getCheckoutPlace()).toBe('window');
+    close('returned');
+    await flush();
+    expect(seen).toEqual(['returned']);
+    expect(getCheckoutPlace()).toBe('returned');
+    off();
   });
 
   it('non-https is never opened; receipts go to the browser', async () => {

@@ -1,15 +1,15 @@
 import { PaymentMethodKind, SavedMethodTopupState, type BillingSummary, type CheckoutStatus, type PaymentMethodOption, type SavedPaymentMethod } from '@calaba/protocol';
 import { CircleCheck, CircleX, CreditCard, ExternalLink, QrCode } from 'lucide-react';
-import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Button, Field, Input, Modal, Spinner, cx } from '../../../components/ui';
 import { t, type MessageKey } from '../../../i18n';
-import { IDLE, checkoutReducer, nowMs, pollDelay, type CheckoutFlow, type CheckoutOutcome } from '../../../lib/billing/checkout';
+import { IDLE, checkoutReducer, checkoutWaitingView, nowMs, pollDelay, type CheckoutFlow, type CheckoutOutcome } from '../../../lib/billing/checkout';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { methodLabel, providerTag } from '../../../lib/billing/market';
 import { amountProblem, currencyOf, defaultTopup, offeredMethods, requestId, topupLimits, topupPresets, type AmountProblem } from '../../../lib/billing/model';
 import { clampMinor, formatMinor, inputOf, minorOf, parseMajor } from '../../../lib/billing/money';
 import { asCheckoutStatus, cardLabel, optionForSaved, savedChoices, savedFailureKey } from '../../../lib/billing/savedTopup';
-import { onCheckoutReturn, openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
+import { getCheckoutPlace, onCheckoutReturn, openCheckout, ownerBilling, reloadBilling, subscribeCheckoutPlace } from '../../../services/billing';
 
 /**
  * «Пополнить баланс» (ADR-0080 §13): a method from GET …/billing methods[] (only what the server
@@ -352,19 +352,25 @@ export function CheckoutProgress({ flow, saved = false, failure = '', onRecheck 
       </div>
     );
   }
+  return <CheckoutWaiting flow={flow} saved={saved} onRecheck={onRecheck} />;
+}
+
+/** The waiting / stalled state, worded by where the payment page is (services/billing CheckoutPlace). */
+function CheckoutWaiting({ flow, saved, onRecheck }: { flow: CheckoutFlow; saved: boolean; onRecheck: () => void }): ReactNode {
+  const place = useSyncExternalStore(subscribeCheckoutPlace, getCheckoutPlace);
   const url = flow.phase === 'waiting' || flow.phase === 'stalled' ? flow.url : '';
   const paid = (flow.phase === 'waiting' || flow.phase === 'stalled') && flow.paid;
-  const waiting = saved ? (url ? 'billing.saved.waiting' : 'billing.saved.processing') : 'billing.checkout.waiting';
+  const view = checkoutWaitingView({ phase: flow.phase === 'stalled' ? 'stalled' : 'waiting', paid, saved, hasUrl: !!url, place });
   return (
-    <div className="flex flex-col items-center gap-3 py-2 text-center" role="status" data-testid="billing-checkout-waiting">
-      {flow.phase === 'waiting' ? <Spinner className="size-6" /> : null}
-      <p className="text-body">{paid ? t('billing.checkout.crediting') : flow.phase === 'stalled' ? t('billing.checkout.stalled') : t(waiting)}</p>
+    <div className="flex flex-col items-center gap-3 py-2 text-center" role="status" data-testid="billing-checkout-waiting" data-place={place}>
+      {view.spinner ? <Spinner className="size-6" /> : null}
+      <p className="text-body">{t(view.text)}</p>
       <p className="text-caption text-muted">{t('billing.checkout.hint')}</p>
       <div className="flex flex-wrap justify-center gap-2">
-        {url && !paid ? (
-          <Button variant="secondary" onClick={() => openCheckout(url)}>
-            {t(saved ? 'billing.saved.open' : 'billing.checkout.open')}
-            <ExternalLink className="size-3.5" aria-hidden />
+        {url && view.button ? (
+          <Button variant="secondary" onClick={() => openCheckout(url)} data-testid="billing-checkout-open">
+            {t(view.button)}
+            {view.external ? <ExternalLink className="size-3.5" aria-hidden /> : null}
           </Button>
         ) : null}
         {flow.phase === 'stalled' ? (

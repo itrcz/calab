@@ -26,6 +26,7 @@ const REASON: Record<string, MessageKey> = {
   BILLING_DISABLED: 'billing.soon',
   BILLING_NOT_IMPLEMENTED: 'billing.soon',
   BILLING_PROVIDER_UNAVAILABLE: 'billing.err.provider',
+  BILLING_PROVIDER_ACCOUNT_CHANGED: 'billing.err.providerAccount',
   BILLING_AUTO_TOPUP_LIMIT: 'billing.err.autoLimit',
   BILLING_AUTO_TOPUP_UNAVAILABLE: 'billing.err.autoUnavailable',
   BILLING_REFUND_EXCEEDS_REFUNDABLE: 'billing.err.refundExceeds',

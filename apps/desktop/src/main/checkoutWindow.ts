@@ -22,7 +22,8 @@ import { mainStrings } from './strings';
  * renderer polls the checkout for the truth.
  */
 
-let current: { win: BrowserWindow; finish: (o: CheckoutWindowOutcome) => void } | null = null;
+/** The open window: its start URL and the outcome every caller of that checkout waits for. */
+let current: { win: BrowserWindow; url: string; done: Promise<CheckoutWindowOutcome>; finish: (o: CheckoutWindowOutcome) => void } | null = null;
 
 const DEV_TOOLS = !app.isPackaged;
 
@@ -129,95 +130,109 @@ function barUrl(address: { host: string; secure: boolean }): string {
 
 /**
  * Opens `url` (already checked against the start allowlist) over `parent`. Resolves when the
- * window is gone, once. A second checkout replaces the first (that one resolves `closed`).
+ * window is gone, once. The same checkout asked again while its window is open (the dialog's
+ * «show the payment window») only brings that window forward and shares its outcome — never
+ * closes or reloads it (2026-10-10: reopening closed the form mid-payment). Another checkout
+ * replaces the open one (that one resolves `closed`).
  */
 export function openCheckoutWindow(parent: BrowserWindow, url: string): Promise<CheckoutWindowOutcome> {
+  if (current && current.url === url && !current.win.isDestroyed()) {
+    const { win } = current;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    log.info('[checkout] window focused', { host: addressOf(url).host });
+    return current.done;
+  }
   current?.finish('closed');
-  return new Promise((resolve) => {
-    const ses = pageSession();
-    const barSession = session.fromPartition('checkout-bar', { cache: false });
-    const win = new BrowserWindow({
-      parent,
-      modal: true,
-      show: false,
-      width: 520,
-      height: 760,
-      minWidth: 400,
-      minHeight: 520,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      autoHideMenuBar: true,
-      title: mainStrings().checkoutTitle,
-      backgroundColor: '#ffffff',
-      webPreferences: { session: barSession, sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false, devTools: false, spellcheck: false },
-    });
-    const page = new WebContentsView({ webPreferences: pagePreferences(ses) });
-    page.setBackgroundColor('#ffffff');
-    win.contentView.addChildView(page);
-    const layout = (): void => {
-      const [w = 0, h = 0] = win.getContentSize();
-      page.setBounds({ x: 0, y: BAR_HEIGHT, width: w, height: Math.max(0, h - BAR_HEIGHT) });
-    };
-    layout();
-    win.on('resize', layout);
-
-    let outcome: CheckoutWindowOutcome | null = null;
-    const finish = (o: CheckoutWindowOutcome): void => {
-      if (outcome) return;
-      outcome = o;
-      if (!win.isDestroyed()) win.close();
-    };
-    current = { win, finish };
-    guardPage(page.webContents, finish);
-
-    // The title bar: «Отмена» is a link main catches; the host follows the page.
-    const bar = win.webContents;
-    bar.on('will-navigate', (e, to) => {
-      e.preventDefault();
-      if (to === CANCEL_URL) finish('closed');
-    });
-    // Shift/middle-click on «Отмена» would open a window (windows.ts would hand it to the OS).
-    bar.setWindowOpenHandler(() => ({ action: 'deny' }));
-    let shownHost = '';
-    const showAddress = (to: string): void => {
-      const a = addressOf(to);
-      const key = `${a.secure}|${a.host}`;
-      if (key === shownHost || !a.host) return;
-      shownHost = key;
-      void bar.loadURL(barUrl(a)).catch(() => undefined);
-    };
-    // Only a committed main-frame navigation moves the host: a pending one may never commit (a
-    // 204, a refused redirect) and would leave another host's name over the current page.
-    page.webContents.on('did-navigate', (_e, to) => showAddress(to));
-    // Cmd/Ctrl+W and Esc in the title bar or the page close the window like «Отмена».
-    const onKey = (e: Electron.Event, input: Electron.Input): void => {
-      if (input.type === 'keyDown' && (input.meta || input.control) && input.key.toLowerCase() === 'w') {
-        e.preventDefault();
-        finish('closed');
-      }
-    };
-    bar.on('before-input-event', onKey);
-    page.webContents.on('before-input-event', onKey);
-
-    win.once('ready-to-show', () => win.show());
-    win.on('closed', () => {
-      if (current?.win === win) current = null;
-      if (!page.webContents.isDestroyed()) page.webContents.close();
-      // In memory anyway; cleared at once so nothing of the payment lingers until quit — unless
-      // a newer checkout already uses the session.
-      if (!current) {
-        void ses.clearStorageData().catch(() => undefined);
-        void ses.clearCache().catch(() => undefined);
-      }
-      resolve(outcome ?? 'closed');
-    });
-
-    showAddress(url);
-    page.webContents.loadURL(url).catch((err: unknown) => {
-      // ERR_ABORTED is a redirect we refused or the window closing; anything else stays on screen.
-      log.warn('[checkout] page load failed', err instanceof Error ? err.message : err);
-    });
-    log.info('[checkout] window opened', { host: addressOf(url).host });
+  let resolve!: (o: CheckoutWindowOutcome) => void;
+  const done = new Promise<CheckoutWindowOutcome>((r) => {
+    resolve = r;
   });
+  const ses = pageSession();
+  const barSession = session.fromPartition('checkout-bar', { cache: false });
+  const win = new BrowserWindow({
+    parent,
+    modal: true,
+    show: false,
+    width: 520,
+    height: 760,
+    minWidth: 400,
+    minHeight: 520,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    title: mainStrings().checkoutTitle,
+    backgroundColor: '#ffffff',
+    webPreferences: { session: barSession, sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false, devTools: false, spellcheck: false },
+  });
+  const page = new WebContentsView({ webPreferences: pagePreferences(ses) });
+  page.setBackgroundColor('#ffffff');
+  win.contentView.addChildView(page);
+  const layout = (): void => {
+    const [w = 0, h = 0] = win.getContentSize();
+    page.setBounds({ x: 0, y: BAR_HEIGHT, width: w, height: Math.max(0, h - BAR_HEIGHT) });
+  };
+  layout();
+  win.on('resize', layout);
+
+  let outcome: CheckoutWindowOutcome | null = null;
+  const finish = (o: CheckoutWindowOutcome): void => {
+    if (outcome) return;
+    outcome = o;
+    if (!win.isDestroyed()) win.close();
+  };
+  current = { win, url, done, finish };
+  guardPage(page.webContents, finish);
+
+  // The title bar: «Отмена» is a link main catches; the host follows the page.
+  const bar = win.webContents;
+  bar.on('will-navigate', (e, to) => {
+    e.preventDefault();
+    if (to === CANCEL_URL) finish('closed');
+  });
+  // Shift/middle-click on «Отмена» would open a window (windows.ts would hand it to the OS).
+  bar.setWindowOpenHandler(() => ({ action: 'deny' }));
+  let shownHost = '';
+  const showAddress = (to: string): void => {
+    const a = addressOf(to);
+    const key = `${a.secure}|${a.host}`;
+    if (key === shownHost || !a.host) return;
+    shownHost = key;
+    void bar.loadURL(barUrl(a)).catch(() => undefined);
+  };
+  // Only a committed main-frame navigation moves the host: a pending one may never commit (a
+  // 204, a refused redirect) and would leave another host's name over the current page.
+  page.webContents.on('did-navigate', (_e, to) => showAddress(to));
+  // Cmd/Ctrl+W and Esc in the title bar or the page close the window like «Отмена».
+  const onKey = (e: Electron.Event, input: Electron.Input): void => {
+    if (input.type === 'keyDown' && (input.meta || input.control) && input.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      finish('closed');
+    }
+  };
+  bar.on('before-input-event', onKey);
+  page.webContents.on('before-input-event', onKey);
+
+  win.once('ready-to-show', () => win.show());
+  win.on('closed', () => {
+    if (current?.win === win) current = null;
+    if (!page.webContents.isDestroyed()) page.webContents.close();
+    // In memory anyway; cleared at once so nothing of the payment lingers until quit — unless
+    // a newer checkout already uses the session.
+    if (!current) {
+      void ses.clearStorageData().catch(() => undefined);
+      void ses.clearCache().catch(() => undefined);
+    }
+    resolve(outcome ?? 'closed');
+  });
+
+  showAddress(url);
+  page.webContents.loadURL(url).catch((err: unknown) => {
+    // ERR_ABORTED is a redirect we refused or the window closing; anything else stays on screen.
+    log.warn('[checkout] page load failed', err instanceof Error ? err.message : err);
+  });
+  log.info('[checkout] window opened', { host: addressOf(url).host });
+  return done;
 }
