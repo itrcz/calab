@@ -1,4 +1,5 @@
 import {
+  AutoTopupAttemptStatus,
   BillingAccountStatus,
   BillingSalesMode,
   BillingState,
@@ -7,6 +8,7 @@ import {
   Plan,
   RefundStatus,
   type AdminBillingAccount,
+  type AdminChargeAttempt,
   type AdminBillingPayment,
   type AdminManualRefund,
   type AdminBillingIssue,
@@ -24,7 +26,7 @@ import { plural, t, type MessageKey } from '../../../i18n';
 import { recentAuthRequired } from '../../../lib/api/errors';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { nowMs } from '../../../lib/billing/checkout';
-import { refundableMinor } from '../../../lib/billing/model';
+import { chargebackableMinor, refundableMinor } from '../../../lib/billing/model';
 import { refundOutcome } from '../../../lib/billing/adminForm';
 import { providerTag } from '../../../lib/billing/market';
 import { formatMinor, formatMoney, minorOf, parseMajor } from '../../../lib/billing/money';
@@ -355,6 +357,9 @@ type Dialog =
   | { kind: 'reconcile' }
   | { kind: 'issue'; issue: AdminBillingIssue; action: 'import' | 'dismiss' }
   | { kind: 'market' }
+  | { kind: 'checkCharge'; attemptId: string }
+  | { kind: 'chargeback'; payment: AdminBillingPayment; max: bigint }
+  | { kind: 'closeDispute'; disputeId: string }
   | null;
 
 function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => void; notice: ReactNode }): ReactNode {
@@ -458,6 +463,7 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
               </span>
             </Row>
           ))}
+          {details.lastCharge ? <ChargeRow c={details.lastCharge} onCheck={(attemptId) => setDialog({ kind: 'checkCharge', attemptId })} /> : null}
           <Row label={t('adminBilling.row.discount')}>
             <span className="text-body tabular-nums text-muted">{a.discountBps ? `${fmt.number(a.discountBps / 100)} %` : '—'}</span>
           </Row>
@@ -497,15 +503,25 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
             {payments.data?.payments.map((p) => {
               if (!p.payment) return null;
               const refundable = refundableMinor(p.payment, disputeList, refundList);
+              const chargeable = chargebackableMinor(p.payment, disputeList);
               return (
                 <PaymentRow
                   key={p.payment.id}
                   p={p.payment}
                   extra={
-                    refundable > 0n ? (
-                      <Button size="sm" variant="destructive" onClick={() => setDialog({ kind: 'refund', payment: p, refundable })} data-testid="admin-billing-refund">
-                        {t('adminBilling.refund')}
-                      </Button>
+                    refundable > 0n || chargeable > 0n ? (
+                      <span className="flex shrink-0 gap-1.5 mobile:order-last mobile:w-full mobile:justify-end">
+                        {chargeable > 0n ? (
+                          <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: 'chargeback', payment: p, max: chargeable })} data-testid="admin-billing-chargeback">
+                            {t('adminBilling.chargeback')}
+                          </Button>
+                        ) : null}
+                        {refundable > 0n ? (
+                          <Button size="sm" variant="destructive" onClick={() => setDialog({ kind: 'refund', payment: p, refundable })} data-testid="admin-billing-refund">
+                            {t('adminBilling.refund')}
+                          </Button>
+                        ) : null}
+                      </span>
                     ) : null
                   }
                 />
@@ -537,6 +553,13 @@ function AccountDetail({ id, onClose, notice }: { id: string; onClose: () => voi
                     status={t(DISPUTE_STATUS[d.dispute.status])}
                     danger={d.dispute.status === DisputeStatus.OPEN}
                     sub={[d.dispute.createdAt ? fmt.dateTime(timestampDate(d.dispute.createdAt), 'short') : '', d.providerDisputeId].filter(Boolean).join(' · ')}
+                    extra={
+                      d.dispute.status === DisputeStatus.OPEN && d.providerDisputeId.startsWith(MANUAL_DISPUTE) ? (
+                        <Button size="sm" variant="secondary" onClick={() => setDialog({ kind: 'closeDispute', disputeId: d.dispute?.id ?? '' })} data-testid="admin-billing-dispute-close">
+                          {t('adminBilling.dispute.close')}
+                        </Button>
+                      ) : null
+                    }
                   />
                 ) : null,
               )}
@@ -584,6 +607,49 @@ const DISPUTE_STATUS: Record<DisputeStatus, MessageKey> = {
   [DisputeStatus.WITHDRAWN]: 'adminBilling.dispute.withdrawn',
 };
 
+/** A chargeback recorded by hand (POST …/payments/{id}/chargebacks): only these are closed here. */
+const MANUAL_DISPUTE = 'manual:';
+
+const CHARGE_STATUS: Record<AutoTopupAttemptStatus, MessageKey> = {
+  [AutoTopupAttemptStatus.UNSPECIFIED]: 'adminBilling.charge.status.open',
+  [AutoTopupAttemptStatus.PREPARED]: 'adminBilling.charge.status.open',
+  [AutoTopupAttemptStatus.DISPATCHED]: 'adminBilling.charge.status.open',
+  [AutoTopupAttemptStatus.REQUIRES_ACTION]: 'adminBilling.charge.status.open',
+  [AutoTopupAttemptStatus.UNKNOWN]: 'adminBilling.charge.status.unknown',
+  [AutoTopupAttemptStatus.SUCCEEDED]: 'adminBilling.charge.status.succeeded',
+  [AutoTopupAttemptStatus.FAILED]: 'adminBilling.charge.status.failed',
+};
+
+/** The newest saved-card charge of the account (audit M6): its state and «Проверить списание сейчас». */
+const ChargeRow = memo(function ChargeRow({ c, onCheck }: { c: AdminChargeAttempt; onCheck: (attemptId: string) => void }): ReactNode {
+  const att = c.attempt;
+  if (!att) return null;
+  const status = att.status;
+  const open = status === AutoTopupAttemptStatus.UNKNOWN || status === AutoTopupAttemptStatus.DISPATCHED || status === AutoTopupAttemptStatus.PREPARED || status === AutoTopupAttemptStatus.REQUIRES_ACTION;
+  const sub = [
+    t(c.kind === 'manual' ? 'adminBilling.charge.kind.manual' : 'adminBilling.charge.kind.auto'),
+    att.createdAt ? fmt.dateTime(timestampDate(att.createdAt), 'short') : '',
+    att.failureCode,
+    open && c.resolveBy ? t('adminBilling.charge.resolveBy', { when: fmt.dateTime(timestampDate(c.resolveBy), 'short') }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <Row label={t('adminBilling.row.charge')} hint={sub}>
+      <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1" data-testid="admin-billing-charge">
+        <span className={cx('whitespace-nowrap text-body tabular-nums', status === AutoTopupAttemptStatus.UNKNOWN ? 'text-warn' : 'text-muted')}>
+          {formatMoney(att.amount)} · {t(CHARGE_STATUS[status])}
+        </span>
+        {c.checkable ? (
+          <Button size="sm" variant="ghost" className="h-5 px-1.5" onClick={() => onCheck(att.id)} data-testid="admin-billing-check-charge">
+            {t('adminBilling.charge.check')}
+          </Button>
+        ) : null}
+      </span>
+    </Row>
+  );
+});
+
 const SimpleRow = memo(function SimpleRow({ title, status, sub, error, danger, extra }: { title: string; status?: string; sub?: string; error?: string; danger?: boolean; extra?: ReactNode }): ReactNode {
   return (
     <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0">
@@ -609,6 +675,8 @@ function AccountDialogs({ a, dialog, currency, onDone, onClose }: { a: AdminBill
   const [holdDays, setHoldDays] = useState('3');
   const [release, setRelease] = useState(false);
   const [market, setMarket] = useState<'global' | 'ru'>(a.market === 'ru' ? 'global' : 'ru');
+  const [bankRef, setBankRef] = useState('');
+  const [outcome, setOutcome] = useState<'won' | 'lost'>('won');
   if (!dialog) return null;
   const money = (m: bigint | null) => ({ minor: m ?? 0n, currency });
   if (dialog.kind === 'credit')
@@ -717,6 +785,79 @@ function AccountDialogs({ a, dialog, currency, onDone, onClose }: { a: AdminBill
           />
         }
         run={(x) => adminBilling.changeMarket(a.accountId, { market, reason: x.reason, requestId: x.requestId, expectedRevision: a.revision, preview: x.preview })}
+        onDone={onDone}
+        onClose={onClose}
+      />
+    );
+  if (dialog.kind === 'checkCharge')
+    return (
+      <MoneyActionDialog
+        title={t('adminBilling.charge.checkTitle')}
+        text={t('adminBilling.charge.checkText')}
+        action={t('adminBilling.charge.check')}
+        currency={currency}
+        amount={false}
+        preview={false}
+        run={(x) => adminBilling.checkCharge(a.accountId, dialog.attemptId, { reason: x.reason, requestId: x.requestId })}
+        onDone={onDone}
+        onClose={onClose}
+      />
+    );
+  if (dialog.kind === 'chargeback') {
+    const refOk = bankRef.trim().length >= 3 && bankRef.trim().length <= 100;
+    return (
+      <MoneyActionDialog
+        title={t('adminBilling.chargebackTitle')}
+        text={t('adminBilling.chargebackText')}
+        action={t('adminBilling.chargeback')}
+        currency={currency}
+        amount
+        maxAmount={dialog.max}
+        destructive
+        extra={
+          <Field label={t('adminBilling.bankReference')} error={bankRef !== '' && !refOk ? t('adminBilling.bankReferenceInvalid') : null}>
+            <Input value={bankRef} maxLength={100} onChange={(e) => setBankRef(e.target.value)} data-testid="admin-billing-bank-reference" />
+          </Field>
+        }
+        run={(x) => {
+          if (!refOk) return Promise.reject(new Error(t('adminBilling.bankReferenceInvalid')));
+          return adminBilling.recordChargeback(dialog.payment.payment?.id ?? '', {
+            amount: money(x.amount),
+            bankReference: bankRef.trim(),
+            reason: x.reason,
+            requestId: x.requestId,
+            expectedRevision: a.revision,
+            preview: x.preview,
+          });
+        }}
+        onDone={onDone}
+        onClose={onClose}
+      />
+    );
+  }
+  if (dialog.kind === 'closeDispute')
+    return (
+      <MoneyActionDialog
+        title={t('adminBilling.dispute.closeTitle')}
+        text={t('adminBilling.dispute.closeText')}
+        action={t('adminBilling.dispute.close')}
+        currency={currency}
+        amount={false}
+        preview={false}
+        extra={
+          <Segmented<'won' | 'lost'>
+            label={t('adminBilling.dispute.outcome')}
+            value={outcome}
+            onChange={setOutcome}
+            options={[
+              { value: 'won', label: t('adminBilling.dispute.won') },
+              { value: 'lost', label: t('adminBilling.dispute.lost') },
+            ]}
+          />
+        }
+        run={(x) =>
+          adminBilling.closeDispute(dialog.disputeId, { outcome: outcome === 'won' ? DisputeStatus.WON : DisputeStatus.LOST, reason: x.reason, requestId: x.requestId })
+        }
         onDone={onDone}
         onClose={onClose}
       />

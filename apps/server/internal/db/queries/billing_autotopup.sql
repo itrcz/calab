@@ -84,22 +84,44 @@ RETURNING *;
 
 -- name: ListBillingAutoTopupAttemptsToRecover :many
 -- Open attempts older than `before`: prepared ones were never sent (abandoned), dispatched /
--- unknown ones are resolved with the same idempotency key or a provider lookup.
+-- unknown ones are resolved with the same idempotency key or a provider lookup. Keyset pages by
+-- id (audit M2): attempts waiting on their backoff never hide the others.
 SELECT * FROM billing_autotopup_attempts
 WHERE status IN ('prepared', 'dispatched', 'requires_action', 'unknown') AND created_at < sqlc.arg('before')::timestamptz
-ORDER BY created_at
+  AND id > sqlc.arg('after')::uuid
+ORDER BY id
 LIMIT sqlc.arg('lim');
 
 -- name: ListBillingReconcilableAttemptsToRecheck :many
 -- Failed charges of a provider without idempotency keys (order_snapshot set: the request may have
 -- been sent) closed since `since`, of accounts with no charge in flight: a late approval in the
--- method's charges is still credited to them (ADR-0083 phase 2).
+-- method's charges is still credited to them (ADR-0083 phase 2). A charge the bank refused
+-- before processing (not_sent: 429, no connection) charged nothing and is not read again. Keyset
+-- pages by id (audit M2).
 SELECT x.* FROM billing_autotopup_attempts x
 WHERE x.status = 'failed' AND x.order_snapshot IS NOT NULL AND x.finished_at >= sqlc.arg('since')::timestamptz
+  AND x.failure_code <> 'not_sent'
+  AND x.id > sqlc.arg('after')::uuid
   AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts o
                   WHERE o.account_id = x.account_id AND o.status IN ('prepared', 'dispatched', 'requires_action', 'unknown'))
-ORDER BY x.finished_at DESC
+ORDER BY x.id
 LIMIT sqlc.arg('lim');
+
+-- name: CountBillingAutoTopupAttemptsFailedSince :one
+-- Failed auto-topup attempts of the account with this code since `since` (the not_sent backoff).
+SELECT count(*)::integer FROM billing_autotopup_attempts
+WHERE account_id = sqlc.arg('account_id') AND kind = 'auto' AND status = 'failed'
+  AND failure_code = sqlc.arg('failure_code') AND finished_at >= sqlc.arg('since')::timestamptz;
+
+-- name: PullBillingAutoTopupNotBefore :exec
+-- An attempt the provider never processed (not_sent) charged nothing: the next one may start at
+-- not_before (earlier than the 24 h set at prepare; never later than it already is).
+UPDATE billing_autotopup SET not_before = sqlc.arg('not_before')::timestamptz, updated_at = sqlc.arg('now')::timestamptz
+WHERE account_id = sqlc.arg('account_id') AND (not_before IS NULL OR not_before > sqlc.arg('not_before')::timestamptz);
+
+-- name: GetLastBillingChargeAttempt :one
+-- The newest charge of a saved card of the account (auto or one-click), for the superadmin.
+SELECT * FROM billing_autotopup_attempts WHERE account_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1;
 
 -- name: GetBillingCustomerByID :one
 SELECT * FROM billing_customers WHERE id = $1;

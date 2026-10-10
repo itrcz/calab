@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/calaba/calaba/server/internal/billing/provider"
@@ -56,6 +57,10 @@ const (
 	// simplified system «доходы» (TOCHKA_TAX_SYSTEM overrides it).
 	DefaultTaxSystem = "usn_income"
 	DefaultVatType   = "none"
+	// DefaultReceiptPaymentMethod is the 54-FZ «признак способа расчёта» of the top-up line: a
+	// full prepayment (TOCHKA_RECEIPT_PAYMENT_METHOD overrides it; the bank's API accepts
+	// full_prepayment and full_payment only — swagger 2026-10-10, enum PaymentMethod).
+	DefaultReceiptPaymentMethod = "full_prepayment"
 	// DefaultLineItem is the receipt line and payment purpose when CheckoutReq.Description is empty.
 	DefaultLineItem = "Пополнение баланса Calab"
 	// MaxWebhookBody bounds the webhook body the HTTP handler reads (a JWT of a few KiB).
@@ -90,6 +95,7 @@ var (
 	customerCodeRe = regexp.MustCompile(`^[0-9A-Za-z]{9}$`)
 	merchantIDRe   = regexp.MustCompile(`^[0-9]{15}$`)
 	taxSystems     = map[string]bool{"osn": true, "usn_income": true, "usn_income_outcome": true, "esn": true, "patent": true}
+	receiptMethods = map[string]bool{"full_prepayment": true, "full_payment": true}
 	vatTypes       = map[string]bool{"none": true, "vat0": true, "vat5": true, "vat7": true, "vat10": true, "vat22": true, "vat105": true, "vat107": true, "vat110": true, "vat122": true}
 )
 
@@ -101,6 +107,10 @@ type Config struct {
 	MerchantID   string // TOCHKA_MERCHANT_ID: 15 digits, the internet-acquiring retail point
 	TaxSystem    string // TOCHKA_TAX_SYSTEM; default DefaultTaxSystem
 	VatType      string // TOCHKA_VAT_TYPE; default DefaultVatType
+	// ReceiptPaymentMethod (TOCHKA_RECEIPT_PAYMENT_METHOD): paymentMethod of the receipt line;
+	// default DefaultReceiptPaymentMethod. The accountant decides (audit M7); the bank's answer is
+	// logged once per distinct value (receipt echo) and checked on the first live receipt.
+	ReceiptPaymentMethod string
 	// WebhookKey: the bank's signing key as a JWK (TOCHKA_WEBHOOK_PUBLIC_KEY); default
 	// DefaultWebhookKey. Several keys during a rotation: a JSON array or {"keys":[…]}.
 	WebhookKey string
@@ -121,6 +131,8 @@ type Provider struct {
 	merchant   string
 	taxSystem  string
 	vatType    string
+	receiptPM  string
+	echoes     sync.Map // receipt echo values already logged (noteReceipt)
 	clientID   string
 	live       bool
 	recurring  bool
@@ -170,6 +182,13 @@ func New(cfg Config) (*Provider, error) {
 	if !vatTypes[vat] {
 		return nil, fmt.Errorf("%w: TOCHKA_VAT_TYPE %q is not a receipt VAT type", ErrInvalidRequest, vat)
 	}
+	rpm := cfg.ReceiptPaymentMethod
+	if rpm == "" {
+		rpm = DefaultReceiptPaymentMethod
+	}
+	if !receiptMethods[rpm] {
+		return nil, fmt.Errorf("%w: TOCHKA_RECEIPT_PAYMENT_METHOD %q: the bank accepts full_prepayment or full_payment", ErrInvalidRequest, rpm)
+	}
 	keySpec := cfg.WebhookKey
 	if strings.TrimSpace(keySpec) == "" {
 		keySpec = DefaultWebhookKey
@@ -197,7 +216,7 @@ func New(cfg Config) (*Provider, error) {
 		clientID = tokenIssuer(token)
 	}
 	return &Provider{
-		base: base, token: token, customer: cfg.CustomerCode, merchant: cfg.MerchantID, taxSystem: tax, vatType: vat,
+		base: base, token: token, customer: cfg.CustomerCode, merchant: cfg.MerchantID, taxSystem: tax, vatType: vat, receiptPM: rpm,
 		clientID: clientID, live: !strings.Contains(base, "/sandbox/"), hc: hc, webhookKey: keys, recurring: cfg.Recurring,
 	}, nil
 }

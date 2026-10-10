@@ -21,21 +21,26 @@ WHERE id = sqlc.arg('id') AND status = 'processing'
 RETURNING *;
 
 -- name: ListBillingCheckoutsToReconcile :many
--- Open checkouts older than `before` (abandoned hosted pages, lost success redirects).
+-- Open checkouts older than `before` (abandoned hosted pages, lost success redirects). Keyset
+-- pages by id (after = the last id of the previous page, uuid nil first): a pass walks every
+-- row, so rows that stay open cannot starve the others (audit M2).
 SELECT * FROM billing_checkouts
-WHERE status = 'open' AND created_at < sqlc.arg('before')::timestamptz
-ORDER BY created_at
+WHERE status = 'open' AND created_at < sqlc.arg('before')::timestamptz AND id > sqlc.arg('after')::uuid
+ORDER BY id
 LIMIT sqlc.arg('lim');
 
 -- name: ListBillingPaymentsProcessing :many
-SELECT * FROM billing_payments WHERE status = 'processing' ORDER BY id LIMIT sqlc.arg('lim');
+-- Keyset pages by id, like ListBillingCheckoutsToReconcile.
+SELECT * FROM billing_payments WHERE status = 'processing' AND id > sqlc.arg('after')::uuid ORDER BY id LIMIT sqlc.arg('lim');
 
 -- name: ListBillingDirtyCustomers :many
 -- Customers with recent payment activity (a checkout or a payment since `since`): the periodic
--- import lists their payments to find the ones whose webhooks were lost.
+-- import lists their payments to find the ones whose webhooks were lost. Keyset pages by id:
+-- every active customer is imported, the newest included (audit M2).
 SELECT c.* FROM billing_customers c
-WHERE EXISTS (SELECT 1 FROM billing_checkouts k WHERE k.account_id = c.account_id AND k.created_at >= sqlc.arg('since')::timestamptz)
-   OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = c.account_id AND p.created_at >= sqlc.arg('since')::timestamptz)
+WHERE (EXISTS (SELECT 1 FROM billing_checkouts k WHERE k.account_id = c.account_id AND k.created_at >= sqlc.arg('since')::timestamptz)
+    OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = c.account_id AND p.created_at >= sqlc.arg('since')::timestamptz))
+  AND c.id > sqlc.arg('after')::uuid
 ORDER BY c.id
 LIMIT sqlc.arg('lim');
 
@@ -147,11 +152,15 @@ WHERE account_id = sqlc.arg('account_id') AND revoked_at IS NULL;
 -- name: ListBillingRefundsToRetry :many
 -- Calab refunds still waiting for the provider (lost answer, provider down): reconciliation
 -- asks again with the same idempotency key, or re-reads them by provider id. account_id NULL =
--- every account; only rows not touched since `before`.
+-- every account; only rows not touched since `before`. Keyset pages by id (audit M2: rows that
+-- stay pending cannot hold the first page forever); with_review = false leaves out the rows
+-- already marked needs_review (re-read hourly, not every pass).
 SELECT * FROM billing_refunds
 WHERE origin = 'calab' AND status IN ('pending', 'requires_action')
   AND (sqlc.narg('account_id')::uuid IS NULL OR account_id = sqlc.narg('account_id')::uuid)
   AND updated_at < sqlc.arg('before')::timestamptz
+  AND (sqlc.arg('with_review')::boolean OR needs_review_at IS NULL)
+  AND id > sqlc.arg('after')::uuid
 ORDER BY id
 LIMIT sqlc.arg('lim');
 

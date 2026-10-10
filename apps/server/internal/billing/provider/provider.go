@@ -98,6 +98,12 @@ var (
 	ErrNotSupported = errors.New("provider: operation not supported by the provider API")
 	// ErrRateLimited: the provider answered 429 (wrapped with ErrUnknownOutcome): back off.
 	ErrRateLimited = errors.New("provider: rate limited")
+	// ErrNotSent: the provider certainly did not process the request — its rate limiter refused
+	// it (429) or the connection failed before the request was written. Always wrapped together
+	// with ErrUnknownOutcome, so a caller that does not tell the two apart behaves as before; a
+	// charge without an idempotency key may treat it as «nothing happened, try later»
+	// (audit M6, ADR-0083 amendment 2026-10-10 «Неизвестный исход списания»).
+	ErrNotSent = errors.New("provider: request not sent")
 )
 
 // Metadata travels with provider objects (PaymentIntent / Checkout metadata) so a webhook or

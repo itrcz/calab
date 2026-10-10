@@ -60,6 +60,10 @@ type Billing struct {
 	// defaults usn_income / none (ООО «Громтех», АУСН without VAT, public offer).
 	TochkaTaxSystem string `env:"TOCHKA_TAX_SYSTEM"`
 	TochkaVatType   string `env:"TOCHKA_VAT_TYPE"`
+	// TOCHKA_RECEIPT_PAYMENT_METHOD: 54-FZ «признак способа расчёта» of the top-up receipt line,
+	// full_prepayment (default) or full_payment — the only values the bank's API accepts. The
+	// accountant decides; check the bank's answer on the first live receipt (audit M7).
+	TochkaReceiptPaymentMethod string `env:"TOCHKA_RECEIPT_PAYMENT_METHOD"`
 	// TOCHKA_WEBHOOK_PUBLIC_KEY: the bank's webhook signing key (JWK, or a JSON array / JWK set
 	// during a rotation); empty = the key pinned in the adapter (published 2026-10-10).
 	TochkaWebhookKey string `env:"TOCHKA_WEBHOOK_PUBLIC_KEY"`

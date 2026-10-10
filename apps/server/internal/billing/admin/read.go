@@ -176,6 +176,17 @@ func (h *Handlers) getAccount(w http.ResponseWriter, r *http.Request) error {
 	if out.CustomPlan, err = customPlanDetails(ctx, q, acc, id); err != nil {
 		return err
 	}
+	if att, err := q.GetLastBillingChargeAttempt(ctx, id); err == nil {
+		now, err := h.now(ctx, q)
+		if err != nil {
+			return err
+		}
+		if out.LastCharge, err = chargeProto(ctx, q, att, now); err != nil {
+			return err
+		}
+	} else if !db.IsNotFound(err) {
+		return err
+	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
 }

@@ -640,6 +640,23 @@ message AdminBillingAccountDetails {
   Money pending_refunds = 6;                      // reserved by refunds not final yet
   repeated SavedPaymentMethod saved_methods = 7;  // saved cards, detached ones left out
   AdminCustomPlan custom_plan = 8;                // the account's custom plan and its price history
+  AdminChargeAttempt last_charge = 9;             // the newest charge of a saved card (auto-topup or one-click), unset if none
+}
+
+// A charge of a saved card (auto-topup or one-click) as the superadmin sees it (ADR-0083
+// amendment «Неизвестный исход списания»). POST …/accounts/{id}/charges/{attempt_id}/check reads
+// it at the provider now («Проверить списание сейчас»).
+message AdminChargeAttempt {
+  AutoTopupAttempt attempt = 1;
+  string kind = 2;                             // "auto" | "manual" (one-click)
+  string provider = 3;                         // provider of the card ("stripe" | "tochka")
+  google.protobuf.Timestamp dispatched_at = 4; // sent to the provider; unset = never sent
+  // The provider has no idempotency keys (Tochka): the charge is found by reading the bank and
+  // never sent again. An open one blocks the account's other charges until it is found or closed
+  // as not found at resolve_by (24 h after it was sent).
+  bool reconcilable = 5;
+  google.protobuf.Timestamp resolve_by = 6;
+  bool checkable = 7;                          // the check reads something now (open, or failed and still re-read)
 }
 
 // The custom plan of an account (ADR-0086 «Индивидуальный тариф»).
@@ -953,6 +970,39 @@ message AdminBillingMutationResult {
   Money compensation = 15;                       // plan switch: the rest of the old lots back on the balance
   AdminBillingIssue issue = 16;                  // resolved «Требует внимания» item
   AdminManualRefund manual_refund = 17;          // refund: the provider does not make it through its API
+  AdminChargeAttempt charge = 18;                // charge check: the charge after it
+  AdminBillingDispute dispute = 19;              // chargeback recorded or closed
+}
+
+// POST /api/admin/billing/accounts/{id}/charges/{attemptId}/check: «Проверить списание сейчас» —
+// the charge is read at the provider at once (never sent again); found → credited, an open one
+// past its window → closed as not found.
+message AdminCheckChargeRequest {
+  string reason = 1;
+  string request_id = 2;
+}
+
+// POST /api/admin/billing/payments/{id}/chargebacks: «Зафиксировать чарджбэк» — a chargeback the
+// bank reported outside its API (Tochka has no dispute API: letter, statement, chargeback
+// registry). The amount leaves the balance at once (debt if spent), the account gets the dispute
+// hold: no auto-topup, no refunds until it is closed.
+message AdminRecordChargebackRequest {
+  Money amount = 1;          // > 0, account currency, at most the payment's amount not disputed yet
+  string bank_reference = 2; // the bank's reference of the chargeback (3..100 characters)
+  string reason = 3;
+  string request_id = 4;
+  uint64 expected_revision = 5;
+  bool preview = 6;
+}
+
+// POST /api/admin/billing/disputes/{id}/close: the outcome of a chargeback recorded by hand
+// (a provider's dispute is closed by its webhook). WON / WITHDRAWN return the money, LOST keeps
+// it taken; the dispute hold ends with the account's last open dispute.
+message AdminCloseDisputeRequest {
+  DisputeStatus outcome = 1; // WON | LOST | WITHDRAWN
+  string reason = 2;
+  string request_id = 3;
+  bool preview = 4;
 }
 
 // A refund the provider makes only in its own interface (ADR-0083 amendment 2026-10-10: Tochka

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -60,10 +62,30 @@ func (d decimal) money() (money.Money, error) {
 		return money.Money{}, fmt.Errorf("tochka: amount missing: %w", provider.ErrUnknownOutcome)
 	}
 	m, err := money.ParseDecimal(string(d), money.RUB)
-	if err != nil {
-		return money.Money{}, fmt.Errorf("tochka: amount %q: %w", string(d), err)
+	if err == nil {
+		return m, nil
 	}
-	return m, nil
+	if k, ok := denoise(string(d)); ok {
+		// A JSON float the bank serialized with binary noise past the kopecks (audit m8).
+		slog.Warn("tochka: amount with float noise rounded to kopecks", "amount", string(d), "kopecks", k)
+		return money.New(k, money.RUB), nil
+	}
+	return money.Money{}, fmt.Errorf("tochka: amount %q: %w", string(d), err)
+}
+
+// denoise reads an amount that is not an exact decimal of kopecks but a float with noise past
+// them (150.29999999999998, 1.5e2): the kopecks if it is within 1e-6 of a whole kopeck. Anything
+// else (0.333, NaN, out of range) is not an amount.
+func denoise(s string) (int64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || math.Abs(f) > 1e13 {
+		return 0, false
+	}
+	k := math.Round(f * 100)
+	if math.Abs(f*100-k) > 1e-6 {
+		return 0, false
+	}
+	return int64(k), true
 }
 
 // operation is the part of a payment operation we read (AcquiringGetPaymentOperationListItemModel).
@@ -84,6 +106,34 @@ type operation struct {
 	Order         []order `json:"Order"`
 	// CofToken: the card bound to a paid subscription without a schedule (phase 2).
 	CofToken *cofToken `json:"CofToken"`
+	// Items: the receipt lines as the bank reports them (audit M7: logged, never trusted).
+	Items []receiptEcho `json:"Items"`
+}
+
+// receiptEcho is the part of a receipt line the bank reports back on an operation.
+type receiptEcho struct {
+	PaymentMethod string `json:"paymentMethod"`
+	PaymentObject string `json:"paymentObject"`
+}
+
+// noteReceipt logs, once per process and distinct value, how the bank reports the receipt line of
+// a paid operation next to what we send (TOCHKA_RECEIPT_PAYMENT_METHOD): the 54-FZ «признак
+// способа расчёта» must be checked on the first live receipt (audit M7; 10.10 the bank showed
+// full_payment for a link sent with full_prepayment). Info when they agree, Warn when not. No
+// operation id in the log (a saved card's subscription id is a charge reference).
+func (p *Provider) noteReceipt(op operation) {
+	for _, it := range op.Items {
+		key := it.PaymentMethod + "|" + it.PaymentObject
+		if _, seen := p.echoes.LoadOrStore(key, true); seen {
+			continue
+		}
+		level := slog.LevelInfo
+		if it.PaymentMethod != p.receiptPM {
+			level = slog.LevelWarn
+		}
+		slog.Log(context.Background(), level, "tochka receipt: the bank reports the top-up line of a paid operation as",
+			"sent_payment_method", p.receiptPM, "bank_payment_method", it.PaymentMethod, "bank_payment_object", it.PaymentObject)
+	}
 }
 
 // cofToken is the card of a subscription without a schedule (CofTokenModel).
@@ -288,7 +338,7 @@ func (p *Provider) CreateCheckout(ctx context.Context, req provider.CheckoutReq)
 		TaxSystemCode: p.taxSystem, Client: receiptClient{Name: clip(req.ReceiptName, 256), Email: req.ReceiptEmail},
 		Items: []receiptItem{{
 			Name: clip(line, 256), Amount: amt, Quantity: "1", VatType: p.vatType,
-			PaymentMethod: "full_prepayment", PaymentObject: "service", Measure: "шт.",
+			PaymentMethod: p.receiptPM, PaymentObject: "service", Measure: "шт.",
 		}},
 	}}
 	var a createAnswer
@@ -417,6 +467,7 @@ func (p *Provider) paymentFact(op operation) (provider.PaymentFact, error) {
 	}
 	switch op.Status {
 	case statusApproved, statusOnRefund, statusRefunded, statusRefundedPartial:
+		p.noteReceipt(op)
 		f.Status, f.AmountReceived = provider.PaymentSucceeded, amt
 		if f.SucceededAt = parseTime(op.PaidAt); f.SucceededAt.IsZero() {
 			f.SucceededAt = f.Created
@@ -515,6 +566,8 @@ func (p *Provider) Refund(ctx context.Context, req provider.RefundReq) (provider
 	}
 	switch op.Status {
 	case statusApproved, statusRefundedPartial, statusOnRefund:
+		// The docs (2026-10-10) allow a refund only in APPROVED; a second partial refund is still
+		// sent and a refusal shows as failed (audit m2, docs/12: check on the first live one).
 	default:
 		return provider.RefundFact{}, &APIError{Op: "refund", Status: 409, Message: "payment status " + op.Status + " cannot be refunded"}
 	}
@@ -534,8 +587,11 @@ func (p *Provider) Refund(ctx context.Context, req provider.RefundReq) (provider
 	if a.Data.OrderID == "" {
 		return provider.RefundFact{}, fmt.Errorf("tochka refund: accepted without an order id: %w", provider.ErrUnknownOutcome)
 	}
+	// Data.amount is documented as the payment's amount, not the refund's (audit m1): either is fine.
 	if got, err := a.Data.Amount.money(); err == nil && got != req.Amount {
-		return provider.RefundFact{}, fmt.Errorf("tochka refund: accepted %s for %s: %w", got, req.Amount, provider.ErrUnknownOutcome)
+		if paid, perr := op.Amount.money(); perr != nil || got != paid {
+			return provider.RefundFact{}, fmt.Errorf("tochka refund: accepted %s for %s: %w", got, req.Amount, provider.ErrUnknownOutcome)
+		}
 	}
 	// The answer's orderId is trusted as the refund id only once the payment lists a refund of
 	// that orderId and amount (Order[]). The bank does not document that the two ids agree; a

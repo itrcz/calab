@@ -92,6 +92,14 @@ WHERE (sqlc.narg('account_id')::uuid IS NULL OR account_id = sqlc.narg('account_
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 
+-- name: AdminGetBillingDispute :one
+SELECT * FROM billing_disputes WHERE id = $1;
+
+-- name: AdminBillingDisputedOfPayment :one
+-- Money of the payment taken by disputes that are open or lost (a won / withdrawn one gave it back).
+SELECT coalesce(sum(amount_minor), 0)::bigint FROM billing_disputes
+WHERE payment_id = $1 AND (status = 'open' OR outcome = 'lost');
+
 -- name: AdminListBillingProviderEvents :many
 -- Ops view of the webhook inbox; filters for failing (error set) and unprocessed events.
 SELECT * FROM billing_provider_events

@@ -105,6 +105,8 @@ type Deps struct {
 	// RefundDone queues the owner's «refund done» mail of an admin refund the provider executed
 	// (inbox.Inbox.NotifyRefundDone; nil = no mail).
 	RefundDone func(ctx context.Context, ref sqlc.BillingRefund)
+	// Charges resolves a saved-card charge now («Проверить списание сейчас»; nil: 501).
+	Charges ChargeChecker
 }
 
 // TestClockAllowed reports whether the test clock endpoint may exist (BILLING_TEST_CLOCK=1, never with live
@@ -151,6 +153,9 @@ func (h *Handlers) Handlers() map[string]httpx.HandlerFunc {
 		"GET /api/admin/billing/issues":                                           h.issues,
 		"POST /api/admin/billing/issues/{id}/import":                              h.importIssue,
 		"POST /api/admin/billing/issues/{id}/dismiss":                             h.dismissIssue,
+		"POST /api/admin/billing/accounts/{id}/charges/{attemptId}/check":         h.checkCharge,
+		"POST /api/admin/billing/payments/{id}/chargebacks":                       h.recordChargeback,
+		"POST /api/admin/billing/disputes/{id}/close":                             h.closeDispute,
 	}
 	for p, f := range m {
 		m[p] = h.guard(f)

@@ -25,6 +25,26 @@ func (q *Queries) BillingAutoTopupReconciled(ctx context.Context, marker string)
 	return column_1, err
 }
 
+const countBillingAutoTopupAttemptsFailedSince = `-- name: CountBillingAutoTopupAttemptsFailedSince :one
+SELECT count(*)::integer FROM billing_autotopup_attempts
+WHERE account_id = $1 AND kind = 'auto' AND status = 'failed'
+  AND failure_code = $2 AND finished_at >= $3::timestamptz
+`
+
+type CountBillingAutoTopupAttemptsFailedSinceParams struct {
+	AccountID   uuid.UUID
+	FailureCode string
+	Since       time.Time
+}
+
+// Failed auto-topup attempts of the account with this code since `since` (the not_sent backoff).
+func (q *Queries) CountBillingAutoTopupAttemptsFailedSince(ctx context.Context, arg CountBillingAutoTopupAttemptsFailedSinceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countBillingAutoTopupAttemptsFailedSince, arg.AccountID, arg.FailureCode, arg.Since)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const failBillingAutoTopupAttemptPrepared = `-- name: FailBillingAutoTopupAttemptPrepared :one
 UPDATE billing_autotopup_attempts SET status = 'failed', failure_code = $1,
     finished_at = $2::timestamptz
@@ -117,6 +137,36 @@ func (q *Queries) GetBillingCustomerByID(ctx context.Context, id uuid.UUID) (Bil
 	return i, err
 }
 
+const getLastBillingChargeAttempt = `-- name: GetLastBillingChargeAttempt :one
+SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts WHERE account_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1
+`
+
+// The newest charge of a saved card of the account (auto or one-click), for the superadmin.
+func (q *Queries) GetLastBillingChargeAttempt(ctx context.Context, accountID uuid.UUID) (BillingAutotopupAttempt, error) {
+	row := q.db.QueryRow(ctx, getLastBillingChargeAttempt, accountID)
+	var i BillingAutotopupAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PmID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.ProviderPaymentID,
+		&i.FailureCode,
+		&i.CreatedAt,
+		&i.DispatchedAt,
+		&i.FinishedAt,
+		&i.Kind,
+		&i.RequestID,
+		&i.BodyHash,
+		&i.CreatedBy,
+		&i.ActionUrl,
+		&i.OrderSnapshot,
+	)
+	return i, err
+}
+
 const getOpenBillingManualCharge = `-- name: GetOpenBillingManualCharge :one
 SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts
 WHERE account_id = $1 AND kind = 'manual' AND status IN ('prepared', 'dispatched', 'requires_action', 'unknown')
@@ -205,19 +255,22 @@ func (q *Queries) InsertBillingManualCharge(ctx context.Context, arg InsertBilli
 const listBillingAutoTopupAttemptsToRecover = `-- name: ListBillingAutoTopupAttemptsToRecover :many
 SELECT id, account_id, pm_id, amount_minor, currency, status, provider_payment_id, failure_code, created_at, dispatched_at, finished_at, kind, request_id, body_hash, created_by, action_url, order_snapshot FROM billing_autotopup_attempts
 WHERE status IN ('prepared', 'dispatched', 'requires_action', 'unknown') AND created_at < $1::timestamptz
-ORDER BY created_at
-LIMIT $2
+  AND id > $2::uuid
+ORDER BY id
+LIMIT $3
 `
 
 type ListBillingAutoTopupAttemptsToRecoverParams struct {
 	Before time.Time
+	After  uuid.UUID
 	Lim    int32
 }
 
 // Open attempts older than `before`: prepared ones were never sent (abandoned), dispatched /
-// unknown ones are resolved with the same idempotency key or a provider lookup.
+// unknown ones are resolved with the same idempotency key or a provider lookup. Keyset pages by
+// id (audit M2): attempts waiting on their backoff never hide the others.
 func (q *Queries) ListBillingAutoTopupAttemptsToRecover(ctx context.Context, arg ListBillingAutoTopupAttemptsToRecoverParams) ([]BillingAutotopupAttempt, error) {
-	rows, err := q.db.Query(ctx, listBillingAutoTopupAttemptsToRecover, arg.Before, arg.Lim)
+	rows, err := q.db.Query(ctx, listBillingAutoTopupAttemptsToRecover, arg.Before, arg.After, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -346,22 +399,27 @@ func (q *Queries) ListBillingAutoTopupReconcileCustomers(ctx context.Context, si
 const listBillingReconcilableAttemptsToRecheck = `-- name: ListBillingReconcilableAttemptsToRecheck :many
 SELECT x.id, x.account_id, x.pm_id, x.amount_minor, x.currency, x.status, x.provider_payment_id, x.failure_code, x.created_at, x.dispatched_at, x.finished_at, x.kind, x.request_id, x.body_hash, x.created_by, x.action_url, x.order_snapshot FROM billing_autotopup_attempts x
 WHERE x.status = 'failed' AND x.order_snapshot IS NOT NULL AND x.finished_at >= $1::timestamptz
+  AND x.failure_code <> 'not_sent'
+  AND x.id > $2::uuid
   AND NOT EXISTS (SELECT 1 FROM billing_autotopup_attempts o
                   WHERE o.account_id = x.account_id AND o.status IN ('prepared', 'dispatched', 'requires_action', 'unknown'))
-ORDER BY x.finished_at DESC
-LIMIT $2
+ORDER BY x.id
+LIMIT $3
 `
 
 type ListBillingReconcilableAttemptsToRecheckParams struct {
 	Since time.Time
+	After uuid.UUID
 	Lim   int32
 }
 
 // Failed charges of a provider without idempotency keys (order_snapshot set: the request may have
 // been sent) closed since `since`, of accounts with no charge in flight: a late approval in the
-// method's charges is still credited to them (ADR-0083 phase 2).
+// method's charges is still credited to them (ADR-0083 phase 2). A charge the bank refused
+// before processing (not_sent: 429, no connection) charged nothing and is not read again. Keyset
+// pages by id (audit M2).
 func (q *Queries) ListBillingReconcilableAttemptsToRecheck(ctx context.Context, arg ListBillingReconcilableAttemptsToRecheckParams) ([]BillingAutotopupAttempt, error) {
-	rows, err := q.db.Query(ctx, listBillingReconcilableAttemptsToRecheck, arg.Since, arg.Lim)
+	rows, err := q.db.Query(ctx, listBillingReconcilableAttemptsToRecheck, arg.Since, arg.After, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -450,6 +508,24 @@ func (q *Queries) MarkBillingAutoTopupAttemptDispatched(ctx context.Context, arg
 		&i.OrderSnapshot,
 	)
 	return i, err
+}
+
+const pullBillingAutoTopupNotBefore = `-- name: PullBillingAutoTopupNotBefore :exec
+UPDATE billing_autotopup SET not_before = $1::timestamptz, updated_at = $2::timestamptz
+WHERE account_id = $3 AND (not_before IS NULL OR not_before > $1::timestamptz)
+`
+
+type PullBillingAutoTopupNotBeforeParams struct {
+	NotBefore time.Time
+	Now       time.Time
+	AccountID uuid.UUID
+}
+
+// An attempt the provider never processed (not_sent) charged nothing: the next one may start at
+// not_before (earlier than the 24 h set at prepare; never later than it already is).
+func (q *Queries) PullBillingAutoTopupNotBefore(ctx context.Context, arg PullBillingAutoTopupNotBeforeParams) error {
+	_, err := q.db.Exec(ctx, pullBillingAutoTopupNotBefore, arg.NotBefore, arg.Now, arg.AccountID)
+	return err
 }
 
 const setBillingAttemptRequiresAction = `-- name: SetBillingAttemptRequiresAction :one

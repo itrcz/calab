@@ -3,6 +3,7 @@
 package autotopup_test
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -10,10 +11,12 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/autotopup"
 	"github.com/calaba/calaba/server/internal/billing/money"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/billing/provider/fake"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/mail"
 )
 
@@ -67,20 +70,20 @@ func TestReconcilableUnknownResolvedByReading(t *testing.T) {
 	}
 }
 
-// Nothing was charged and the answer was lost: the attempt stays open (blocking any other charge)
-// past GiveUpAfter, never re-sent, and is closed as not_found after ReconcileGiveUp.
+// Nothing was charged and the answer was lost: the attempt stays open (blocking any other charge),
+// is never re-sent, and is closed as not_found after UnknownCap (24 h, audit M6 — not 7 days).
 func TestReconcilableUnknownNotFound(t *testing.T) {
 	e := newEnv(t, opts{caps: reconcilableCaps})
 	e.fake.Queue(fake.OpCharge, fake.Unknown)
 	e.tick(1)
-	for _, step := range []time.Duration{3 * time.Minute, 25 * time.Hour, 3 * 24 * time.Hour} {
+	for _, step := range []time.Duration{3 * time.Minute, 2 * time.Hour, 20 * time.Hour} {
 		e.clk.Advance(step)
 		e.tick(0)
 		if a := e.attempts(); len(a) != 1 || a[0].Status != "unknown" {
 			t.Fatalf("after %v: %+v", step, a)
 		}
 	}
-	e.clk.Advance(4 * 24 * time.Hour)
+	e.clk.Advance(2 * time.Hour)
 	if err := e.job.Recover(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +92,106 @@ func TestReconcilableUnknownNotFound(t *testing.T) {
 	}
 	if e.fake.Calls("ChargeOffSession") != 1 || e.mails(string(mail.TemplateBillingAutoTopupFailed)) != 0 {
 		t.Fatalf("charges %d mails %d", e.fake.Calls("ChargeOffSession"), e.mails(string(mail.TemplateBillingAutoTopupFailed)))
+	}
+}
+
+// Audit M6: a 429 (or a connection that failed before the request was written) is «not sent»: the
+// attempt is closed at once without a mail, and the next auto-topup starts after NotSentBackoff,
+// not after 24 h or a 7-day unknown window.
+func TestReconcilableNotSentRetriedSoon(t *testing.T) {
+	e := newEnv(t, opts{caps: reconcilableCaps})
+	e.fake.Queue(fake.OpCharge, fake.NotSent)
+	e.tick(1)
+	a := e.attempts()
+	if len(a) != 1 || a[0].Status != "failed" || a[0].FailureCode != autotopup.CodeNotSent {
+		t.Fatalf("attempts %+v", a)
+	}
+	if e.mails(string(mail.TemplateBillingAutoTopupFailed)) != 0 {
+		t.Fatal("a charge never processed mailed the owner")
+	}
+	if nb := e.consentRow().NotBefore; nb == nil || nb.Sub(e.clk.Time()) > autotopup.NotSentBackoff || nb.Sub(e.clk.Time()) < autotopup.NotSentBackoff-time.Minute {
+		t.Fatalf("not_before %v, now %v", nb, e.clk.Time())
+	}
+	e.tick(0) // still inside the backoff
+	e.clk.Advance(autotopup.NotSentBackoff + time.Minute)
+	e.tick(1)
+	if a := e.attempts(); len(a) != 2 || a[1].Status != "succeeded" {
+		t.Fatalf("attempts %+v", a)
+	}
+	e.wantBalance(900)
+	// The not-sent attempt is never re-read for a late approval.
+	e.clk.Advance(2 * time.Hour)
+	e.tick(0)
+	if a := e.attempts(); a[0].Status != "failed" || a[0].FailureCode != autotopup.CodeNotSent {
+		t.Fatalf("attempts %+v", a)
+	}
+	// A second not_sent within 24 h doubles the wait.
+	e.drain()
+	e.clk.Advance(autotopup.MinInterval)
+	e.fake.Queue(fake.OpCharge, fake.NotSent)
+	e.tick(1)
+	e.fake.Queue(fake.OpCharge, fake.NotSent)
+	e.clk.Advance(autotopup.NotSentBackoff + time.Minute)
+	e.tick(1)
+	if nb := e.consentRow().NotBefore; nb == nil || nb.Sub(e.clk.Time()) < 2*autotopup.NotSentBackoff-time.Minute {
+		t.Fatalf("second not_before %v, now %v", nb, e.clk.Time())
+	}
+}
+
+// Audit m5: the bank no longer knows the card's subscription — the card is detached, the consent
+// revoked, the owner told once; no charge every 24 h forever.
+func TestReconcilableMethodGone(t *testing.T) {
+	e := newEnv(t, opts{caps: reconcilableCaps})
+	e.fake.Queue(fake.OpCharge, fake.Gone)
+	e.tick(1)
+	if a := e.attempts(); len(a) != 1 || a[0].Status != "failed" || a[0].FailureCode != autotopup.CodeMethodGone {
+		t.Fatalf("attempts %+v", a)
+	}
+	if c := e.consentRow(); c.RevokedAt == nil || c.RevokedReason != autotopup.CodeMethodGone {
+		t.Fatalf("consent %+v", c)
+	}
+	if ms, err := e.d.Q.ListBillingPaymentMethods(ctx, e.acc); err != nil || len(ms) != 0 {
+		t.Fatalf("methods %v %v", ms, err)
+	}
+	if e.mails(string(mail.TemplateBillingAutoTopupFailed)) != 1 {
+		t.Fatal("mail")
+	}
+	e.clk.Advance(autotopup.MinInterval + time.Hour)
+	e.tick(0)
+}
+
+// Audit M6: «Проверить списание сейчас» reads an unknown charge at once (no backoff, no grace)
+// and credits it; another account's attempt is not found.
+func TestCheckAttemptNow(t *testing.T) {
+	e := newEnv(t, opts{caps: reconcilableCaps})
+	e.fake.Queue(fake.OpCharge, fake.Timeout)
+	e.p.hooks(nil, func() { e.fake.Queue(fake.OpGet, fake.Unknown) })
+	e.tick(1)
+	e.p.hooks(nil, nil)
+	a := e.attempts()
+	if len(a) != 1 || a[0].Status != "unknown" {
+		t.Fatalf("attempts %+v", a)
+	}
+	row, err := e.d.Q.GetBillingAutoTopupAttemptOfAccount(ctx, sqlc.GetBillingAutoTopupAttemptOfAccountParams{ID: a[0].ID, AccountID: e.acc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := autotopup.Describe(row, e.clk.Time()); !v.Reconcilable || !v.Checkable || v.ResolveBy == nil {
+		t.Fatalf("view %+v", v)
+	}
+	if _, err := e.job.CheckAttempt(ctx, uuid.New(), a[0].ID); !errors.Is(err, billing.ErrAttemptNotFound) {
+		t.Fatalf("other account: %v", err)
+	}
+	got, err := e.job.CheckAttempt(ctx, e.acc, a[0].ID)
+	if err != nil || got.Status != "succeeded" {
+		t.Fatalf("checked %+v %v", got, err)
+	}
+	e.wantBalance(900)
+	if v := autotopup.Describe(got, e.clk.Time()); v.Checkable {
+		t.Fatalf("view after %+v", v)
+	}
+	if e.fake.Calls("ChargeOffSession") != 1 {
+		t.Fatal("the check sent the charge again")
 	}
 }
 

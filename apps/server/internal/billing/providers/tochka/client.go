@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/calaba/calaba/server/internal/billing/provider"
 )
@@ -72,6 +74,8 @@ func redact(s string) string {
 // answer into out. Errors:
 //   - transport errors, timeouts, 5xx, 429 and undecodable 2xx bodies: provider.ErrUnknownOutcome
 //     (the request may have happened);
+//   - of those, a 429 and a transport error before the request was written also wrap
+//     provider.ErrNotSent: the bank certainly did not process it (audit M6);
 //   - 404, or 424 whose message says the object is not found: provider.ErrNotFound;
 //   - 424 «… существует» on a create: errDuplicate (with *APIError);
 //   - other 4xx (and 424): *APIError, a definite refusal.
@@ -93,8 +97,22 @@ func (p *Provider) do(ctx context.Context, op, method, path string, body, out an
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// written: the whole request (headers and body) went out; before that the bank cannot have
+	// acted on it (a create / charge needs the complete JSON body).
+	var written atomic.Bool
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		WroteRequest: func(i httptrace.WroteRequestInfo) {
+			if i.Err == nil {
+				written.Store(true)
+			}
+		},
+	}))
 	resp, err := p.hc.Do(req)
 	if err != nil {
+		sent := provider.ErrUnknownOutcome
+		if !written.Load() {
+			sent = fmt.Errorf("%w: %w", provider.ErrUnknownOutcome, provider.ErrNotSent)
+		}
 		var cause error
 		switch {
 		case errors.Is(err, context.Canceled):
@@ -103,9 +121,9 @@ func (p *Provider) do(ctx context.Context, op, method, path string, body, out an
 			cause = context.DeadlineExceeded
 		}
 		if cause != nil {
-			return fmt.Errorf("tochka %s: %w: %w", op, provider.ErrUnknownOutcome, cause)
+			return fmt.Errorf("tochka %s: %w: %w", op, sent, cause)
 		}
-		return fmt.Errorf("tochka %s: %w: %s", op, provider.ErrUnknownOutcome, redact(err.Error()))
+		return fmt.Errorf("tochka %s: %w: %s", op, sent, redact(err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
@@ -132,7 +150,8 @@ func (p *Provider) do(ctx context.Context, op, method, path string, body, out an
 	low := strings.ToLower(msg)
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return fmt.Errorf("%w: %w: %w", provider.ErrUnknownOutcome, provider.ErrRateLimited, ae)
+		// The bank's rate limiter refused the request before processing it.
+		return fmt.Errorf("%w: %w: %w: %w", provider.ErrUnknownOutcome, provider.ErrRateLimited, provider.ErrNotSent, ae)
 	case resp.StatusCode >= http.StatusInternalServerError:
 		return fmt.Errorf("%w: %w", provider.ErrUnknownOutcome, ae)
 	case resp.StatusCode == http.StatusNotFound,

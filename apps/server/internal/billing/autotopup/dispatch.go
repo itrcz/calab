@@ -479,8 +479,20 @@ func (j *Job) findCharge(ctx context.Context, t target, att sqlc.BillingAutotopu
 // answer never identifies the payment: the charge is looked up right away and, if not visible yet,
 // by the recovery. A definite refusal (4xx) charged nothing; a «declined» answer is trusted only
 // once no new charge is visible.
+//
+// The bank refused it before processing (provider.ErrNotSent: 429, no connection) → failed
+// not_sent, no mail, the next auto-topup after a short backoff (audit M6); the bank no longer knows
+// the saved method (provider.ErrNotFound) → the card is detached and the consent revoked (m5).
 func (j *Job) outcomeReconcilable(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt, fact provider.PaymentFact, err error) error {
-	if err != nil && !errors.Is(err, provider.ErrUnknownOutcome) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+	switch {
+	case errors.Is(err, provider.ErrNotSent):
+		slog.WarnContext(ctx, "billing auto-topup: charge not processed by the provider (rate limited or no connection), a new attempt later",
+			"attempt", att.ID, "account", att.AccountID, "err", err)
+		return j.notSent(ctx, att)
+	case errors.Is(err, provider.ErrNotFound) && !errors.Is(err, provider.ErrUnknownOutcome):
+		slog.WarnContext(ctx, "billing auto-topup: the provider no longer knows the saved method, detaching it", "attempt", att.ID, "account", att.AccountID, "err", err)
+		return j.methodGone(ctx, att)
+	case err != nil && !errors.Is(err, provider.ErrUnknownOutcome) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled):
 		slog.WarnContext(ctx, "billing auto-topup: refused", "attempt", att.ID, "account", att.AccountID, "err", err)
 		return j.fail(ctx, att, nil, CodeRefused, j.failMail(att, mail.TemplateBillingAutoTopupFailed))
 	}
@@ -501,6 +513,65 @@ func (j *Job) outcomeReconcilable(ctx context.Context, t target, att sqlc.Billin
 		return j.fail(ctx, att, nil, code, j.failMail(att, mail.TemplateBillingAutoTopupFailed))
 	}
 	return nil // accepted, not listed yet: dispatched until the recovery finds it
+}
+
+// notSent closes an attempt the provider never processed (failed not_sent, no mail): nothing was
+// charged. An auto-topup may start again after NotSentBackoff, doubling with every not_sent of the
+// account in the last 24 h (≤ MinInterval) — not the 24 h of a charge that may have happened.
+func (j *Job) notSent(ctx context.Context, att sqlc.BillingAutotopupAttempt) error {
+	return j.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockBillingAccount(ctx, att.AccountID); err != nil {
+			return err
+		}
+		now, err := j.clock.Now(ctx, q)
+		if err != nil {
+			return err
+		}
+		_, err = q.SetBillingAutoTopupAttemptStatus(ctx, sqlc.SetBillingAutoTopupAttemptStatusParams{
+			Status: statusFailed, FailureCode: CodeNotSent, Now: now, ID: att.ID,
+		})
+		if db.IsNotFound(err) {
+			return nil // final already
+		}
+		if err != nil {
+			return err
+		}
+		attempts.WithLabelValues(CodeNotSent).Inc()
+		if att.Kind == KindManual {
+			return nil // the owner sees FAILED in the app and may press again
+		}
+		n, err := q.CountBillingAutoTopupAttemptsFailedSince(ctx, sqlc.CountBillingAutoTopupAttemptsFailedSinceParams{
+			AccountID: att.AccountID, FailureCode: CodeNotSent, Since: now.Add(-MinInterval),
+		})
+		if err != nil {
+			return err
+		}
+		wait := min(NotSentBackoff<<min(max(n-1, 0), 8), MinInterval)
+		return q.PullBillingAutoTopupNotBefore(ctx, sqlc.PullBillingAutoTopupNotBeforeParams{NotBefore: now.Add(wait), Now: now, AccountID: att.AccountID})
+	})
+}
+
+// methodGone closes an attempt whose saved method the provider no longer knows: failed
+// method_gone (the owner's mail of a failed auto-topup once), the card detached and the
+// auto-topup consent on it revoked — it is never charged again.
+func (j *Job) methodGone(ctx context.Context, att sqlc.BillingAutotopupAttempt) error {
+	if err := j.fail(ctx, att, nil, CodeMethodGone, j.failMail(att, mail.TemplateBillingAutoTopupFailed)); err != nil {
+		return err
+	}
+	return j.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockBillingAccount(ctx, att.AccountID); err != nil {
+			return err
+		}
+		now, err := j.clock.Now(ctx, q)
+		if err != nil {
+			return err
+		}
+		if _, err := q.DetachBillingPaymentMethod(ctx, sqlc.DetachBillingPaymentMethodParams{Now: now, ID: att.PmID}); err != nil {
+			return err
+		}
+		_, err = q.RevokeBillingAutoTopupForMethod(ctx, sqlc.RevokeBillingAutoTopupForMethodParams{Now: now, Reason: CodeMethodGone, PmID: att.PmID})
+		return err
+	})
 }
 
 // credit applies a charge found by reading (reconcilable providers): the inbox credit path with the

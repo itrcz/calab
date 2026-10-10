@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import {
   amountProblem,
   autoTopupFailure,
+  chargebackableMinor,
   autoTopupLimits,
   billingPlan,
   cabinetPhase,
@@ -166,6 +167,20 @@ describe('refundableMinor', () => {
     expect(refundableMinor(pay(), [dispute(DisputeStatus.OPEN)], [])).toBe(0n);
     expect(refundableMinor(pay(), [dispute(DisputeStatus.WON), dispute(DisputeStatus.LOST, 'other')], [])).toBe(1000n);
     expect(refundableMinor(undefined, [], [])).toBe(0n);
+  });
+});
+
+describe('chargebackableMinor', () => {
+  const pay = (refunded = 0n, status = PaymentStatus.SUCCEEDED) => create(BillingPaymentSchema, { id: 'p1', amount: usd(1000n), refunded: usd(refunded), status });
+  const dispute = (amount: bigint, status: DisputeStatus, paymentId = 'p1') => create(BillingDisputeSchema, { id: 'd', paymentId, amount: usd(amount), status });
+
+  it('is paid minus refunded minus what open or lost disputes took', () => {
+    expect(chargebackableMinor(pay(), [])).toBe(1000n);
+    expect(chargebackableMinor(pay(200n), [dispute(300n, DisputeStatus.OPEN), dispute(100n, DisputeStatus.LOST), dispute(400n, DisputeStatus.WON)])).toBe(400n);
+    expect(chargebackableMinor(pay(), [dispute(900n, DisputeStatus.OPEN, 'other')])).toBe(1000n);
+    expect(chargebackableMinor(pay(1000n), [])).toBe(0n);
+    expect(chargebackableMinor(pay(0n, PaymentStatus.PROCESSING), [])).toBe(0n);
+    expect(chargebackableMinor(undefined, [])).toBe(0n);
   });
 });
 

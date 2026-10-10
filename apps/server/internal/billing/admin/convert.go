@@ -245,3 +245,21 @@ func savedMethodProto(m sqlc.BillingPaymentMethod) *v1.SavedPaymentMethod {
 	}
 	return out
 }
+
+func attemptStatus(s string) v1.AutoTopupAttemptStatus {
+	switch s {
+	case "prepared":
+		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_PREPARED
+	case "dispatched":
+		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_DISPATCHED
+	case "succeeded":
+		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_SUCCEEDED
+	case "failed":
+		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_FAILED
+	case "unknown":
+		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_UNKNOWN
+	case "requires_action":
+		return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_REQUIRES_ACTION
+	}
+	return v1.AutoTopupAttemptStatus_AUTO_TOPUP_ATTEMPT_STATUS_UNSPECIFIED
+}

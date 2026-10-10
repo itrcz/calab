@@ -25,6 +25,10 @@ const AccountImportWindow = 30 * 24 * time.Hour
 // refundRetryAfter: a Calab refund untouched for this long is asked again (same key).
 const refundRetryAfter = 10 * time.Minute
 
+// RefundReviewEvery is how often the reconciliation re-reads Calab refunds already marked
+// needs_review (a superadmin decides them; the others are read every pass).
+const RefundReviewEvery = time.Hour
+
 // ReconcileAccount re-reads one account's provider objects and applies what is missing
 // (admin.Reconciler, POST /api/admin/billing/accounts/{id}/reconcile): open checkouts,
 // processing payments, the customer's payments of the last 30 days, and Calab refunds still
@@ -54,7 +58,7 @@ func (in *Inbox) ReconcileAccount(ctx context.Context, accountID uuid.UUID) erro
 		}
 		errs = append(errs, in.importCustomer(ctx, p, c, time.Now().Add(-AccountImportWindow)))
 	}
-	errs = append(errs, in.retryRefunds(ctx, &accountID, time.Now()))
+	errs = append(errs, in.retryRefunds(ctx, &accountID, time.Now(), true))
 	// «Сверить»: the refund polling of the account's providers at once (one pass per merchant).
 	scanned := map[provider.ID]bool{}
 	for _, c := range custs {
@@ -75,11 +79,7 @@ func (in *Inbox) ReconcileAccount(ctx context.Context, accountID uuid.UUID) erro
 // Refund with the same idempotency key (a lost answer returns the same refund) while inside
 // core.RefundRepostWindow, then only a lookup; with one a fresh read. account nil = every
 // account (and the needs-review gauge is refreshed).
-func (in *Inbox) retryRefunds(ctx context.Context, account *uuid.UUID, before time.Time) error {
-	refs, err := in.db.Q.ListBillingRefundsToRetry(ctx, sqlc.ListBillingRefundsToRetryParams{AccountID: account, Before: before, Lim: reconcileBatch})
-	if err != nil {
-		return err
-	}
+func (in *Inbox) retryRefunds(ctx context.Context, account *uuid.UUID, before time.Time, withReview bool) error {
 	if account == nil {
 		defer func() {
 			if n, err := in.db.Q.CountBillingRefundsNeedingReview(ctx); err == nil {
@@ -88,15 +88,34 @@ func (in *Inbox) retryRefunds(ctx context.Context, account *uuid.UUID, before ti
 		}()
 	}
 	var first error
-	for _, ref := range refs {
+	err := billing.WalkByID(ctx, reconcileBatch, func(after uuid.UUID, lim int32) ([]sqlc.BillingRefund, error) {
+		return in.db.Q.ListBillingRefundsToRetry(ctx, sqlc.ListBillingRefundsToRetryParams{
+			AccountID: account, Before: before, WithReview: withReview, After: after, Lim: lim,
+		})
+	}, func(ref sqlc.BillingRefund) uuid.UUID { return ref.ID }, func(ref sqlc.BillingRefund) {
 		if err := in.RetryRefund(ctx, ref); err != nil {
 			slog.WarnContext(ctx, "billing reconcile: refund", "refund", ref.ID, "err", err)
 			if first == nil {
 				first = err
 			}
 		}
+	})
+	if err != nil {
+		return err
 	}
 	return first
+}
+
+// reviewDue reports whether this pass re-reads the refunds marked needs_review too (at most
+// every RefundReviewEvery; the other passes leave them out).
+func (in *Inbox) reviewDue(now time.Time) bool {
+	in.reviewMu.Lock()
+	defer in.reviewMu.Unlock()
+	if now.Before(in.reviewAt) {
+		return false
+	}
+	in.reviewAt = now.Add(RefundReviewEvery)
+	return true
 }
 
 // RetryRefund finishes one pending Calab refund through the provider (same Idempotency-Key as
@@ -275,7 +294,7 @@ func (in *Inbox) lookupRefund(ctx context.Context, p provider.Provider, pay sqlc
 		if marked {
 			refundsMarkedForReview.Inc()
 			slog.ErrorContext(ctx, "billing: refund not visible at the provider 24 h after it was sent; money stays reserved, superadmin review needed",
-				"refund", ref.ID, "account", ref.AccountID, "payment", pay.ProviderPaymentID, "amount_minor", ref.AmountMinor)
+				"refund", ref.ID, "account", ref.AccountID, "payment", pay.ID, "amount_minor", ref.AmountMinor)
 		}
 		return false, err
 	}
@@ -307,7 +326,7 @@ func (in *Inbox) lookupRefund(ctx context.Context, p provider.Provider, pay sqlc
 	if marked {
 		refundsMarkedForReview.Inc()
 		slog.ErrorContext(ctx, "billing: refund outcome unknown past the idempotency window and not found at the provider; money stays reserved, superadmin review needed",
-			"refund", ref.ID, "account", ref.AccountID, "payment", pay.ProviderPaymentID, "amount_minor", ref.AmountMinor)
+			"refund", ref.ID, "account", ref.AccountID, "payment", pay.ID, "amount_minor", ref.AmountMinor)
 	}
 	return false, err
 }

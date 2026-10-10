@@ -43,10 +43,23 @@ const (
 	DefaultChargeTimeout = 90 * time.Second
 	// DefaultActionTimeout: a one-click charge waiting for 3-D Secure longer than this is canceled.
 	DefaultActionTimeout = 30 * time.Minute
-	// DefaultReconcileGiveUp: a charge of a provider without idempotency keys (Tochka) whose
-	// outcome is not visible in the method's charges is read this long (logged as an error after
-	// GiveUpAfter) before it is closed as not_found — never sent again.
+	// DefaultReconcileGiveUp: failed charges of a provider without idempotency keys (Tochka) are
+	// read again for a late approval this long after they were closed (RecheckEvery).
 	DefaultReconcileGiveUp = 7 * 24 * time.Hour
+	// DefaultUnknownCap: a charge of a provider without idempotency keys whose outcome is not
+	// visible in the method's charges is read this long before it is closed as not_found — never
+	// sent again; a late approval is still credited to it by the recheck (audit M6: 24 h, not 7 days).
+	DefaultUnknownCap = 24 * time.Hour
+	// AlertAfter: an open charge of a provider without idempotency keys older than this is logged as
+	// an error on every pass and counted in calaba_billing_autotopup_unknown_overdue.
+	AlertAfter = time.Hour
+	// ReconcilableBackoff: the longest pause between two reads of an open charge of a provider
+	// without idempotency keys.
+	ReconcilableBackoff = 2 * time.Minute
+	// NotSentBackoff: the first pause before a new auto-topup attempt after the provider refused
+	// one before processing it (429, no connection); doubles with each such refusal in 24 h, up to
+	// MinInterval.
+	NotSentBackoff = 15 * time.Minute
 	// RecheckEvery: how often failed charges of a provider without idempotency keys are read again
 	// for a late approval (for ReconcileGiveUp after they were closed).
 	RecheckEvery = time.Hour
@@ -65,12 +78,24 @@ const (
 	CodeNotFound     = "not_found"
 	CodeRefused      = "provider_refused"
 	CodeUnavailable  = "provider_unavailable" // the charges of the method could not be read before the send
+	// CodeNotSent: the provider refused the charge before processing it (429 rate limit, no
+	// connection): nothing was charged, no owner mail; the next auto-topup may start after
+	// NotSentBackoff (audit M6).
+	CodeNotSent = "not_sent"
+	// CodeMethodGone: the provider no longer knows the saved method (Tochka 424 «Subscription not
+	// found»): the card is detached and the consent revoked, the owner is told once (audit m5).
+	CodeMethodGone = "method_gone"
 )
 
 var attempts = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "calaba_billing_autotopup_attempts_total",
 	Help: "Billing auto-topup attempts by result (dispatched, succeeded, failed, requires_action, unknown, superseded, abandoned, not_found).",
 }, []string{"result"})
+
+var unknownOverdue = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "calaba_billing_autotopup_unknown_overdue",
+	Help: "Open saved-card charges of a provider without idempotency keys (Tochka) sent more than AlertAfter (1 h) ago and not resolved by reading the bank yet. Alert on > 0; «Проверить списание сейчас» on the account page reads at once.",
+})
 
 // Options of the job; zero durations take the defaults.
 type Options struct {
@@ -88,9 +113,12 @@ type Options struct {
 	ChargeTimeout time.Duration
 	// ActionTimeout: a one-click charge left in 3-D Secure longer than this is canceled.
 	ActionTimeout time.Duration
-	// ReconcileGiveUp: how long an unresolved charge of a provider without idempotency keys is
-	// read before it is closed (DefaultReconcileGiveUp).
+	// ReconcileGiveUp: how long a failed charge of a provider without idempotency keys is read
+	// again for a late approval (DefaultReconcileGiveUp).
 	ReconcileGiveUp time.Duration
+	// UnknownCap: how long an unresolved charge of a provider without idempotency keys is read
+	// before it is closed as not_found (DefaultUnknownCap).
+	UnknownCap time.Duration
 	// ReturnURL (BILLING_PUBLIC_RETURN_URL): where a 3-D Secure page returns the payer.
 	ReturnURL string
 }
@@ -143,6 +171,9 @@ func New(d *db.DB, c *core.Core, reg *provider.Registry, in *inbox.Inbox, clock 
 	}
 	if opts.ReconcileGiveUp <= 0 {
 		opts.ReconcileGiveUp = DefaultReconcileGiveUp
+	}
+	if opts.UnknownCap <= 0 {
+		opts.UnknownCap = DefaultUnknownCap
 	}
 	return &Job{db: d, core: c, reg: reg, inbox: in, clock: clock, opts: opts, wake: make(chan struct{}, 1),
 		retry: map[uuid.UUID]retryState{}}

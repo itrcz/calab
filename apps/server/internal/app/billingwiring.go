@@ -156,7 +156,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	rt.Handlers.Admin = admin.New(admin.Deps{
 		DB: d.DB, Core: rt.Core, Clock: rt.Clock, Providers: reg, ProviderSpec: b.Providers, Reconciler: rt.Inbox,
 		TestClock: testClock, Limiter: redisx.NewRateLimiter(d.Redis, "rl:billing-admin:", 60, 60), // 60 per minute
-		Committed: committed, Plans: planSvc, RefundDone: rt.Inbox.NotifyRefundDone,
+		Committed: committed, Plans: planSvc, RefundDone: rt.Inbox.NotifyRefundDone, Charges: rt.AutoTopup,
 	}).Handlers()
 	rt.Handlers.Admin[autotopup.ReconcileRoute] = rt.AutoTopup.ReconcileHandler()
 	rt.due = worker.New(rt.Core, worker.Options{Suspend: b.EnforcementEnabled})
@@ -251,7 +251,7 @@ func TochkaConfig(b config.Billing) tochka.Config {
 	return tochka.Config{
 		BaseURL: b.TochkaAPIURL, Token: b.TochkaAPIToken, CustomerCode: b.TochkaCustomerCode, MerchantID: b.TochkaMerchantID,
 		TaxSystem: b.TochkaTaxSystem, VatType: b.TochkaVatType, WebhookKey: b.TochkaWebhookKey, ClientID: b.TochkaClientID,
-		Recurring: b.TochkaRecurring,
+		Recurring: b.TochkaRecurring, ReceiptPaymentMethod: b.TochkaReceiptPaymentMethod,
 	}
 }
 

@@ -12,6 +12,19 @@ import (
 	"github.com/google/uuid"
 )
 
+const adminBillingDisputedOfPayment = `-- name: AdminBillingDisputedOfPayment :one
+SELECT coalesce(sum(amount_minor), 0)::bigint FROM billing_disputes
+WHERE payment_id = $1 AND (status = 'open' OR outcome = 'lost')
+`
+
+// Money of the payment taken by disputes that are open or lost (a won / withdrawn one gave it back).
+func (q *Queries) AdminBillingDisputedOfPayment(ctx context.Context, paymentID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, adminBillingDisputedOfPayment, paymentID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const adminBillingPendingRefunds = `-- name: AdminBillingPendingRefunds :one
 SELECT coalesce(sum(amount_minor), 0)::bigint AS minor FROM billing_refunds
 WHERE account_id = $1 AND status IN ('pending', 'requires_action')
@@ -111,6 +124,28 @@ func (q *Queries) AdminGetBillingAccount(ctx context.Context, id uuid.UUID) (Adm
 		&i.OwnerEmail,
 		&i.BillableMembers,
 		&i.PlanDisplayName,
+	)
+	return i, err
+}
+
+const adminGetBillingDispute = `-- name: AdminGetBillingDispute :one
+SELECT id, account_id, payment_id, provider_dispute_id, amount_minor, currency, status, outcome, created_at, closed_at FROM billing_disputes WHERE id = $1
+`
+
+func (q *Queries) AdminGetBillingDispute(ctx context.Context, id uuid.UUID) (BillingDispute, error) {
+	row := q.db.QueryRow(ctx, adminGetBillingDispute, id)
+	var i BillingDispute
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.PaymentID,
+		&i.ProviderDisputeID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.Outcome,
+		&i.CreatedAt,
+		&i.ClosedAt,
 	)
 	return i, err
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -23,29 +24,32 @@ func (j *Job) Recover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	atts, err := j.db.Q.ListBillingAutoTopupAttemptsToRecover(ctx, sqlc.ListBillingAutoTopupAttemptsToRecoverParams{
-		Before: now.Add(-j.opts.Grace), Lim: recoverBatch,
-	})
-	if err != nil {
-		return err
-	}
 	var first error
-	for _, att := range atts {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	overdue := 0
+	err = billing.WalkByID(ctx, recoverBatch, func(after uuid.UUID, lim int32) ([]sqlc.BillingAutotopupAttempt, error) {
+		return j.db.Q.ListBillingAutoTopupAttemptsToRecover(ctx, sqlc.ListBillingAutoTopupAttemptsToRecoverParams{
+			Before: now.Add(-j.opts.Grace), After: after, Lim: lim,
+		})
+	}, func(att sqlc.BillingAutotopupAttempt) uuid.UUID { return att.ID }, func(att sqlc.BillingAutotopupAttempt) {
+		if att.OrderSnapshot != nil && att.Status != statusPrepared && now.Sub(attemptSince(att)) >= AlertAfter {
+			overdue++
 		}
 		if !j.due(att.ID, now) {
-			continue
+			return
 		}
 		done, err := j.resolve(ctx, att, now)
-		j.after(att.ID, now, done)
+		j.after(att, now, done)
 		if err != nil {
 			slog.WarnContext(ctx, "billing auto-topup: resolve attempt", "attempt", att.ID, "status", att.Status, "err", err)
 			if first == nil {
 				first = err
 			}
 		}
+	})
+	if err != nil {
+		return err
 	}
+	unknownOverdue.Set(float64(overdue))
 	if err := j.recheck(ctx, now); err != nil && first == nil {
 		first = err
 	}
@@ -67,20 +71,15 @@ func (j *Job) recheck(ctx context.Context, now time.Time) error {
 	if !due {
 		return nil
 	}
-	atts, err := j.db.Q.ListBillingReconcilableAttemptsToRecheck(ctx, sqlc.ListBillingReconcilableAttemptsToRecheckParams{
-		Since: now.Add(-j.opts.ReconcileGiveUp), Lim: recoverBatch,
-	})
-	if err != nil {
-		return err
-	}
 	var errs []error
-	for _, att := range atts {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+	err := billing.WalkByID(ctx, recoverBatch, func(after uuid.UUID, lim int32) ([]sqlc.BillingAutotopupAttempt, error) {
+		return j.db.Q.ListBillingReconcilableAttemptsToRecheck(ctx, sqlc.ListBillingReconcilableAttemptsToRecheckParams{
+			Since: now.Add(-j.opts.ReconcileGiveUp), After: after, Lim: lim,
+		})
+	}, func(att sqlc.BillingAutotopupAttempt) uuid.UUID { return att.ID }, func(att sqlc.BillingAutotopupAttempt) {
 		errs = append(errs, j.recheckOne(ctx, att))
-	}
-	return errors.Join(errs...)
+	})
+	return errors.Join(append(errs, err)...)
 }
 
 func (j *Job) recheckOne(ctx context.Context, att sqlc.BillingAutotopupAttempt) error {
@@ -113,18 +112,32 @@ func (j *Job) due(id uuid.UUID, now time.Time) bool {
 }
 
 // after records a resolution pass: done forgets the attempt, else the next pass waits 1 min
-// doubling up to 30 min.
-func (j *Job) after(id uuid.UUID, now time.Time, done bool) {
+// doubling up to 30 min — up to ReconcilableBackoff for a charge of a provider without
+// idempotency keys (order_snapshot set): its outcome is read, never re-sent, and an account waits
+// on it, so it is read again within minutes (audit M6).
+func (j *Job) after(att sqlc.BillingAutotopupAttempt, now time.Time, done bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if done {
-		delete(j.retry, id)
+		delete(j.retry, att.ID)
 		return
 	}
-	r := j.retry[id]
-	r.next = now.Add(min(time.Minute<<min(r.n, 5), 30*time.Minute))
+	ceiling := 30 * time.Minute
+	if att.OrderSnapshot != nil {
+		ceiling = ReconcilableBackoff
+	}
+	r := j.retry[att.ID]
+	r.next = now.Add(min(time.Minute<<min(r.n, 5), ceiling))
 	r.n++
-	j.retry[id] = r
+	j.retry[att.ID] = r
+}
+
+// attemptSince is when an attempt was sent (created, if never marked).
+func attemptSince(att sqlc.BillingAutotopupAttempt) time.Time {
+	if att.DispatchedAt != nil {
+		return *att.DispatchedAt
+	}
+	return att.CreatedAt
 }
 
 // resolve tries to finish one open attempt. done = it is final now.
@@ -217,9 +230,11 @@ func (j *Job) resolve(ctx context.Context, att sqlc.BillingAutotopupAttempt, now
 }
 
 // resolveReconcilable resolves an open charge of a provider without idempotency keys by reading
-// the method's charges only (ADR-0083): found → credited; nothing after GiveUpAfter → logged as
-// an error on every pass (an operator compares with the bank); nothing after ReconcileGiveUp →
-// failed not_found. The attempt stays open meanwhile, so no other charge of the account starts.
+// the method's charges only (ADR-0083): found → credited; nothing after AlertAfter → logged as
+// an error on every pass (an operator compares with the bank, «Проверить списание сейчас»);
+// nothing after UnknownCap (24 h) → failed not_found, so the account's top-ups are not blocked
+// for days. The attempt stays open meanwhile, so no other charge of the account starts; a late
+// approval is still credited to it by the hourly recheck (failed → succeeded).
 func (j *Job) resolveReconcilable(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt, age time.Duration) (bool, error) {
 	f, found, err := j.findCharge(ctx, t, att)
 	if err != nil {
@@ -229,12 +244,12 @@ func (j *Job) resolveReconcilable(ctx context.Context, t target, att sqlc.Billin
 		return true, j.credit(ctx, t, att, f)
 	}
 	switch {
-	case age >= j.opts.ReconcileGiveUp:
+	case age >= j.opts.UnknownCap:
 		slog.ErrorContext(ctx, "billing auto-topup: charge never appeared in the method's charges, closing it",
 			"attempt", att.ID, "account", att.AccountID, "kind", att.Kind)
 		attempts.WithLabelValues(CodeNotFound).Inc()
 		return true, j.fail(ctx, att, nil, CodeNotFound, "")
-	case age >= j.opts.GiveUpAfter:
+	case age >= AlertAfter:
 		slog.ErrorContext(ctx, "billing auto-topup: charge outcome still unknown, check the bank (no retry is ever sent)",
 			"attempt", att.ID, "account", att.AccountID, "kind", att.Kind, "status", att.Status)
 	}
@@ -306,4 +321,78 @@ func (j *Job) lookup(ctx context.Context, t target, att sqlc.BillingAutotopupAtt
 		cursor = next
 	}
 	return provider.PaymentFact{}, false, nil
+}
+
+// CheckAttempt resolves one charge of the account now, for the superadmin's «Проверить списание
+// сейчас» (audit M6): an open attempt is resolved as the recovery would (a provider without
+// idempotency keys: its charges are read, never sent again), skipping the backoff; a failed
+// charge of such a provider still inside ReconcileGiveUp is read for a late approval. A prepared
+// attempt younger than Grace is left to its dispatcher. Returns the attempt as it is after the
+// check; billing.ErrAttemptNotFound if it is not the account's.
+func (j *Job) CheckAttempt(ctx context.Context, accountID, attemptID uuid.UUID) (sqlc.BillingAutotopupAttempt, error) {
+	get := func() (sqlc.BillingAutotopupAttempt, error) {
+		att, err := j.db.Q.GetBillingAutoTopupAttemptOfAccount(ctx, sqlc.GetBillingAutoTopupAttemptOfAccountParams{ID: attemptID, AccountID: accountID})
+		if db.IsNotFound(err) {
+			return att, billing.ErrAttemptNotFound
+		}
+		return att, err
+	}
+	att, err := get()
+	if err != nil {
+		return att, err
+	}
+	now, err := j.clock.Now(ctx, j.db.Q)
+	if err != nil {
+		return att, err
+	}
+	switch att.Status {
+	case statusPrepared, statusDispatched, statusRequiresAction, statusUnknown:
+		if att.Status == statusPrepared && now.Sub(att.CreatedAt) < j.opts.Grace {
+			return att, nil
+		}
+		done, err := j.resolve(ctx, att, now)
+		if done {
+			j.after(att, now, true)
+		}
+		if err != nil {
+			return att, err
+		}
+	case statusFailed:
+		if att.OrderSnapshot != nil && att.FailureCode != CodeNotSent && att.FinishedAt != nil && now.Sub(*att.FinishedAt) < j.opts.ReconcileGiveUp {
+			if err := j.recheckOne(ctx, att); err != nil {
+				return att, err
+			}
+		}
+	}
+	return get()
+}
+
+// View is how the superadmin sees a charge of a saved card (account page, audit M6).
+type View struct {
+	// Reconcilable: sent to a provider without idempotency keys (order_snapshot stored): found by
+	// reading the bank, never sent again.
+	Reconcilable bool
+	// ResolveBy: an open reconcilable charge is closed as not found at this time unless the bank
+	// lists it first (sent + DefaultUnknownCap).
+	ResolveBy *time.Time
+	// Checkable: CheckAttempt reads something now (open, or a failed reconcilable charge still re-read).
+	Checkable bool
+}
+
+// Describe is the View of an attempt at now (default windows of the job).
+func Describe(att sqlc.BillingAutotopupAttempt, now time.Time) View {
+	v := View{Reconcilable: att.OrderSnapshot != nil}
+	switch att.Status {
+	case statusPrepared:
+		v.Checkable = now.Sub(att.CreatedAt) >= DefaultGrace
+	case statusDispatched, statusRequiresAction, statusUnknown:
+		v.Checkable = true
+		if v.Reconcilable {
+			by := attemptSince(att).Add(DefaultUnknownCap)
+			v.ResolveBy = &by
+		}
+	case statusFailed:
+		v.Checkable = v.Reconcilable && att.FailureCode != CodeNotSent && att.FinishedAt != nil && now.Sub(*att.FinishedAt) < DefaultReconcileGiveUp
+	}
+	return v
 }

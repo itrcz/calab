@@ -112,6 +112,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `TOCHKA_CUSTOMER_CODE` / `TOCHKA_MERCHANT_ID` | — | код клиента (9 символов) и торговая точка (15 цифр); чужие операции не принимаются |
 | `TOCHKA_API_URL` | `https://enter.tochka.com/uapi` | песочница `https://enter.tochka.com/sandbox/v2` отвечает заготовками (только формат) |
 | `TOCHKA_TAX_SYSTEM` / `TOCHKA_VAT_TYPE` | `usn_income` / `none` | система налогообложения и НДС в чеке (оферта: ООО «Громтех», АУСН, без НДС) |
+| `TOCHKA_RECEIPT_PAYMENT_METHOD` | `full_prepayment` | признак способа расчёта строки чека: `full_prepayment` или `full_payment` (других банк не принимает); решает бухгалтер, ответ банка пишется в лог `tochka receipt` — сверить на первом живом чеке |
 | `TOCHKA_WEBHOOK_PUBLIC_KEY` | ключ в адаптере | JWK банка для RS256 вебхуков; ротация — массив `[старый, новый]` и выкладка |
 | `TOCHKA_CLIENT_ID` | `iss` токена | client_id для API вебхуков |
 

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/db"
@@ -12,7 +14,8 @@ import (
 	"github.com/calaba/calaba/server/internal/mail"
 )
 
-// reconcileBatch bounds the rows one reconciliation pass looks at per kind.
+// reconcileBatch is the page size of a reconciliation pass; a pass walks every page
+// (billing.WalkByID).
 const reconcileBatch = 100
 
 // RunReconcile pulls what webhooks may have missed until ctx is done: every ReconcileEvery the
@@ -45,11 +48,9 @@ func (in *Inbox) Reconcile(ctx context.Context) {
 		slog.WarnContext(ctx, "billing reconcile: clock", "err", err)
 		return
 	}
-	cos, err := in.db.Q.ListBillingCheckoutsToReconcile(ctx, sqlc.ListBillingCheckoutsToReconcileParams{Before: now.Add(-in.opts.StaleCheckout), Lim: reconcileBatch})
-	if err != nil {
-		slog.WarnContext(ctx, "billing reconcile: checkouts", "err", err)
-	}
-	for _, co := range cos {
+	err = billing.WalkByID(ctx, reconcileBatch, func(after uuid.UUID, lim int32) ([]sqlc.BillingCheckout, error) {
+		return in.db.Q.ListBillingCheckoutsToReconcile(ctx, sqlc.ListBillingCheckoutsToReconcileParams{Before: now.Add(-in.opts.StaleCheckout), After: after, Lim: lim})
+	}, func(co sqlc.BillingCheckout) uuid.UUID { return co.ID }, func(co sqlc.BillingCheckout) {
 		if co.ProviderSessionID == nil {
 			// The provider call never answered: the payer has no page to pay on.
 			if _, err := db.GuardValue(ctx, in.db, func(q *sqlc.Queries) (sqlc.BillingCheckout, error) {
@@ -57,26 +58,30 @@ func (in *Inbox) Reconcile(ctx context.Context) {
 			}); err != nil && !db.IsNotFound(err) {
 				slog.WarnContext(ctx, "billing reconcile: cancel checkout", "checkout", co.ID, "err", err)
 			}
-			continue
+			return
 		}
 		if _, err := in.SyncCheckout(ctx, co, "reconcile"); err != nil {
 			slog.WarnContext(ctx, "billing reconcile: checkout", "checkout", co.ID, "err", err)
 		}
+	})
+	if err != nil && ctx.Err() == nil {
+		slog.WarnContext(ctx, "billing reconcile: checkouts", "err", err)
 	}
-	pays, err := in.db.Q.ListBillingPaymentsProcessing(ctx, reconcileBatch)
-	if err != nil {
-		slog.WarnContext(ctx, "billing reconcile: payments", "err", err)
-	}
-	for _, pay := range pays {
+	err = billing.WalkByID(ctx, reconcileBatch, func(after uuid.UUID, lim int32) ([]sqlc.BillingPayment, error) {
+		return in.db.Q.ListBillingPaymentsProcessing(ctx, sqlc.ListBillingPaymentsProcessingParams{After: after, Lim: lim})
+	}, func(pay sqlc.BillingPayment) uuid.UUID { return pay.ID }, func(pay sqlc.BillingPayment) {
 		p, ok := in.reg.Provider(provider.ID(pay.Provider))
 		if !ok {
-			continue
+			return
 		}
 		if _, err := in.SyncPayment(ctx, p, pay.ProviderPaymentID, "reconcile"); err != nil {
 			slog.WarnContext(ctx, "billing reconcile: payment", "payment", pay.ID, "err", err)
 		}
+	})
+	if err != nil && ctx.Err() == nil {
+		slog.WarnContext(ctx, "billing reconcile: payments", "err", err)
 	}
-	if err := in.retryRefunds(ctx, nil, now.Add(-refundRetryAfter)); err != nil {
+	if err := in.retryRefunds(ctx, nil, now.Add(-refundRetryAfter), in.reviewDue(time.Now())); err != nil {
 		slog.WarnContext(ctx, "billing reconcile: refunds", "err", err)
 	}
 	if in.Mail != nil {
@@ -112,19 +117,19 @@ func (in *Inbox) Import(ctx context.Context) {
 		return
 	}
 	since := now.Add(-in.opts.ImportWindow)
-	custs, err := in.db.Q.ListBillingDirtyCustomers(ctx, sqlc.ListBillingDirtyCustomersParams{Since: since, Lim: reconcileBatch})
-	if err != nil {
-		slog.WarnContext(ctx, "billing import: customers", "err", err)
-		return
-	}
-	for _, c := range custs {
+	err = billing.WalkByID(ctx, reconcileBatch, func(after uuid.UUID, lim int32) ([]sqlc.BillingCustomer, error) {
+		return in.db.Q.ListBillingDirtyCustomers(ctx, sqlc.ListBillingDirtyCustomersParams{Since: since, After: after, Lim: lim})
+	}, func(c sqlc.BillingCustomer) uuid.UUID { return c.ID }, func(c sqlc.BillingCustomer) {
 		p, ok := in.reg.Provider(provider.ID(c.Provider))
 		if !ok || !p.Caps().Has(provider.CapListPayments) {
-			continue
+			return
 		}
 		if err := in.importCustomer(ctx, p, c, since); err != nil {
 			slog.WarnContext(ctx, "billing import: customer", "customer", c.ID, "err", err)
 		}
+	})
+	if err != nil && ctx.Err() == nil {
+		slog.WarnContext(ctx, "billing import: customers", "err", err)
 	}
 }
 

@@ -206,6 +206,17 @@ export function refundableMinor(
   return left > 0n ? left : 0n;
 }
 
+/**
+ * How much of a payment a chargeback can still take (the server's cap): paid − refunded − what
+ * open or lost disputes took. 0 for a payment that did not succeed.
+ */
+export function chargebackableMinor(p: BillingPayment | undefined, disputes: readonly (BillingDispute | undefined)[]): bigint {
+  if (!p || p.status !== PaymentStatus.SUCCEEDED) return 0n;
+  const taken = disputes.reduce((a, d) => (d?.paymentId === p.id && (d.status === DisputeStatus.OPEN || d.status === DisputeStatus.LOST) ? a + minorOf(d.amount) : a), 0n);
+  const left = minorOf(p.amount) - minorOf(p.refunded) - taken;
+  return left > 0n ? left : 0n;
+}
+
 /** Auto-topup failure codes the owner gets a sentence for; anything else reads as «generic». */
 export type AutoTopupFailure = 'authentication_required' | 'card_declined' | 'insufficient_funds' | 'expired_card' | 'generic';
 

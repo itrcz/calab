@@ -82,6 +82,9 @@ var AdminRoutes = []string{
 	"GET /api/admin/billing/issues",
 	"POST /api/admin/billing/issues/{id}/import",
 	"POST /api/admin/billing/issues/{id}/dismiss",
+	"POST /api/admin/billing/accounts/{id}/charges/{attemptId}/check",
+	"POST /api/admin/billing/payments/{id}/chargebacks",
+	"POST /api/admin/billing/disputes/{id}/close",
 	"GET /api/admin/billing/prices",
 	"POST /api/admin/billing/prices",
 	"POST /api/admin/billing/test-clock", // BILLING_TEST_CLOCK=1 only, else 404

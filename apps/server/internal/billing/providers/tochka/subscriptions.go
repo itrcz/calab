@@ -96,7 +96,7 @@ func (p *Provider) createSubscription(ctx context.Context, req provider.Checkout
 		TaxSystemCode: p.taxSystem, Client: receiptClient{Name: clip(req.ReceiptName, 256), Email: req.ReceiptEmail},
 		Items: []receiptItem{{
 			Name: clip(line, 256), Amount: amt, Quantity: "1", VatType: p.vatType,
-			PaymentMethod: "full_prepayment", PaymentObject: "service", Measure: "шт.",
+			PaymentMethod: p.receiptPM, PaymentObject: "service", Measure: "шт.",
 		}},
 	}}
 	var a createAnswer
@@ -163,8 +163,9 @@ func (p *Provider) getCharge(ctx context.Context, opID, orderID string) (provide
 }
 
 // ListCharges implements provider.ChargeLister: the charges of the subscription, oldest first —
-// the approvals in its Order[] except the first one, which is the binding payment (credited
-// under the operation id, like any payment link).
+// the approvals in its Order[] except the binding payment (credited under the operation id, like
+// any payment link): the approval of the operation's amount at its paidAt (±2 min), else the
+// earliest one (audit m4: not by position alone).
 func (p *Provider) ListCharges(ctx context.Context, customer provider.CustomerRef, subscriptionID string) ([]provider.PaymentFact, error) {
 	op, err := p.getOperation(ctx, "list charges", subscriptionID)
 	if err != nil {
@@ -177,8 +178,22 @@ func (p *Provider) ListCharges(ctx context.Context, customer provider.CustomerRe
 	if err != nil || len(facts) == 0 {
 		return nil, err
 	}
-	return facts[1:], nil
+	bind := 0
+	if paid := parseTime(op.PaidAt); !paid.IsZero() {
+		if amt, err := op.Amount.money(); err == nil {
+			for i, f := range facts {
+				if d := f.Created.Sub(paid); f.Amount == amt && d <= bindingSkew && d >= -bindingSkew {
+					bind = i
+					break
+				}
+			}
+		}
+	}
+	return append(facts[:bind:bind], facts[bind+1:]...), nil
 }
+
+// bindingSkew: the binding payment's approval time and the operation's paidAt agree within this.
+const bindingSkew = 2 * time.Minute
 
 type subscriptionsAnswer struct {
 	Data struct {

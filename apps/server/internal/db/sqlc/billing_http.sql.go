@@ -375,19 +375,22 @@ func (q *Queries) ListBillingAccountsSuspendingSoon(ctx context.Context, arg Lis
 
 const listBillingCheckoutsToReconcile = `-- name: ListBillingCheckoutsToReconcile :many
 SELECT id, account_id, request_id, body_hash, purpose, method_id, provider, amount_minor, currency, save_method, status, provider_session_id, url, payer_snapshot, created_by, expires_at, created_at, updated_at, next_poll_at, polls FROM billing_checkouts
-WHERE status = 'open' AND created_at < $1::timestamptz
-ORDER BY created_at
-LIMIT $2
+WHERE status = 'open' AND created_at < $1::timestamptz AND id > $2::uuid
+ORDER BY id
+LIMIT $3
 `
 
 type ListBillingCheckoutsToReconcileParams struct {
 	Before time.Time
+	After  uuid.UUID
 	Lim    int32
 }
 
-// Open checkouts older than `before` (abandoned hosted pages, lost success redirects).
+// Open checkouts older than `before` (abandoned hosted pages, lost success redirects). Keyset
+// pages by id (after = the last id of the previous page, uuid nil first): a pass walks every
+// row, so rows that stay open cannot starve the others (audit M2).
 func (q *Queries) ListBillingCheckoutsToReconcile(ctx context.Context, arg ListBillingCheckoutsToReconcileParams) ([]BillingCheckout, error) {
-	rows, err := q.db.Query(ctx, listBillingCheckoutsToReconcile, arg.Before, arg.Lim)
+	rows, err := q.db.Query(ctx, listBillingCheckoutsToReconcile, arg.Before, arg.After, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -461,21 +464,24 @@ func (q *Queries) ListBillingCustomersOfAccount(ctx context.Context, accountID u
 
 const listBillingDirtyCustomers = `-- name: ListBillingDirtyCustomers :many
 SELECT c.id, c.account_id, c.provider, c.provider_account, c.livemode, c.customer_id, c.created_at FROM billing_customers c
-WHERE EXISTS (SELECT 1 FROM billing_checkouts k WHERE k.account_id = c.account_id AND k.created_at >= $1::timestamptz)
-   OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = c.account_id AND p.created_at >= $1::timestamptz)
+WHERE (EXISTS (SELECT 1 FROM billing_checkouts k WHERE k.account_id = c.account_id AND k.created_at >= $1::timestamptz)
+    OR EXISTS (SELECT 1 FROM billing_payments p WHERE p.account_id = c.account_id AND p.created_at >= $1::timestamptz))
+  AND c.id > $2::uuid
 ORDER BY c.id
-LIMIT $2
+LIMIT $3
 `
 
 type ListBillingDirtyCustomersParams struct {
 	Since time.Time
+	After uuid.UUID
 	Lim   int32
 }
 
 // Customers with recent payment activity (a checkout or a payment since `since`): the periodic
-// import lists their payments to find the ones whose webhooks were lost.
+// import lists their payments to find the ones whose webhooks were lost. Keyset pages by id:
+// every active customer is imported, the newest included (audit M2).
 func (q *Queries) ListBillingDirtyCustomers(ctx context.Context, arg ListBillingDirtyCustomersParams) ([]BillingCustomer, error) {
-	rows, err := q.db.Query(ctx, listBillingDirtyCustomers, arg.Since, arg.Lim)
+	rows, err := q.db.Query(ctx, listBillingDirtyCustomers, arg.Since, arg.After, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -663,11 +669,17 @@ func (q *Queries) ListBillingPaymentMethods(ctx context.Context, accountID uuid.
 }
 
 const listBillingPaymentsProcessing = `-- name: ListBillingPaymentsProcessing :many
-SELECT id, account_id, provider, provider_account, livemode, provider_payment_id, provider_charge_id, amount_minor, currency, status, origin, checkout_id, attempt_id, receipt_url, refunded_minor, succeeded_at, created_at, updated_at FROM billing_payments WHERE status = 'processing' ORDER BY id LIMIT $1
+SELECT id, account_id, provider, provider_account, livemode, provider_payment_id, provider_charge_id, amount_minor, currency, status, origin, checkout_id, attempt_id, receipt_url, refunded_minor, succeeded_at, created_at, updated_at FROM billing_payments WHERE status = 'processing' AND id > $1::uuid ORDER BY id LIMIT $2
 `
 
-func (q *Queries) ListBillingPaymentsProcessing(ctx context.Context, lim int32) ([]BillingPayment, error) {
-	rows, err := q.db.Query(ctx, listBillingPaymentsProcessing, lim)
+type ListBillingPaymentsProcessingParams struct {
+	After uuid.UUID
+	Lim   int32
+}
+
+// Keyset pages by id, like ListBillingCheckoutsToReconcile.
+func (q *Queries) ListBillingPaymentsProcessing(ctx context.Context, arg ListBillingPaymentsProcessingParams) ([]BillingPayment, error) {
+	rows, err := q.db.Query(ctx, listBillingPaymentsProcessing, arg.After, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -793,21 +805,33 @@ SELECT id, account_id, payment_id, lot_id, amount_minor, currency, status, origi
 WHERE origin = 'calab' AND status IN ('pending', 'requires_action')
   AND ($1::uuid IS NULL OR account_id = $1::uuid)
   AND updated_at < $2::timestamptz
+  AND ($3::boolean OR needs_review_at IS NULL)
+  AND id > $4::uuid
 ORDER BY id
-LIMIT $3
+LIMIT $5
 `
 
 type ListBillingRefundsToRetryParams struct {
-	AccountID *uuid.UUID
-	Before    time.Time
-	Lim       int32
+	AccountID  *uuid.UUID
+	Before     time.Time
+	WithReview bool
+	After      uuid.UUID
+	Lim        int32
 }
 
 // Calab refunds still waiting for the provider (lost answer, provider down): reconciliation
 // asks again with the same idempotency key, or re-reads them by provider id. account_id NULL =
-// every account; only rows not touched since `before`.
+// every account; only rows not touched since `before`. Keyset pages by id (audit M2: rows that
+// stay pending cannot hold the first page forever); with_review = false leaves out the rows
+// already marked needs_review (re-read hourly, not every pass).
 func (q *Queries) ListBillingRefundsToRetry(ctx context.Context, arg ListBillingRefundsToRetryParams) ([]BillingRefund, error) {
-	rows, err := q.db.Query(ctx, listBillingRefundsToRetry, arg.AccountID, arg.Before, arg.Lim)
+	rows, err := q.db.Query(ctx, listBillingRefundsToRetry,
+		arg.AccountID,
+		arg.Before,
+		arg.WithReview,
+		arg.After,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -764,6 +764,19 @@ function admin(): AdminBillingApi {
         freeAdvance: usd(a.balance && a.balance.minor > 0n ? a.balance.minor : 0n),
         pendingRefunds: usd(0n),
         savedMethods: id === 'acc-1' && S().cardSaved ? [savedCard(S())] : [],
+        ...(id === 'acc-5'
+          ? {
+              lastCharge: {
+                attempt: { id: 'att-5', amount: usd(15000n), status: AutoTopupAttemptStatus.UNKNOWN, createdAt: ts(Date.now() - 2 * 3_600_000) },
+                kind: 'auto',
+                provider: 'tochka',
+                dispatchedAt: ts(Date.now() - 2 * 3_600_000),
+                reconcilable: true,
+                resolveBy: ts(Date.now() + 22 * 3_600_000),
+                checkable: true,
+              },
+            }
+          : {}),
         customPlan:
           id === 'acc-1'
             ? {
@@ -831,7 +844,7 @@ function admin(): AdminBillingApi {
         $typeName: 'calaba.v1.AdminBillingDisputes',
         disputes:
           q.accountId === 'acc-5'
-            ? [create(AdminBillingDisputeSchema, { dispute: { id: 'dp-1', paymentId: 'pay-0', amount: usd(2500n), status: DisputeStatus.OPEN, createdAt: ts(Date.now() - 3 * DAY) }, accountId: 'acc-5', providerDisputeId: 'du_mock' })]
+            ? [create(AdminBillingDisputeSchema, { dispute: { id: 'dp-1', paymentId: 'pay-0', amount: usd(2500n), status: DisputeStatus.OPEN, createdAt: ts(Date.now() - 3 * DAY) }, accountId: 'acc-5', providerDisputeId: 'manual:pay-0:CB-1042' })]
             : [],
         nextCursor: '',
       };
@@ -880,6 +893,22 @@ function admin(): AdminBillingApi {
       await wait();
       const a = find(id);
       return result(a, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, false);
+    },
+    async checkCharge(id) {
+      await wait();
+      const a = find(id);
+      return result(a, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, false);
+    },
+    async recordChargeback(_pid, init) {
+      await wait();
+      const a = find('acc-1');
+      const b = a.balance?.minor ?? 0n;
+      return result(a, b, b - (init.amount?.minor ?? 0n), !!init.preview);
+    },
+    async closeDispute(_did, init) {
+      await wait();
+      const a = find('acc-5');
+      return result(a, a.balance?.minor ?? 0n, a.balance?.minor ?? 0n, !!init.preview);
     },
     async discount(id, init) {
       await wait();

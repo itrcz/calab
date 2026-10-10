@@ -3,6 +3,9 @@ import {
   AdminBillingAccountsSchema,
   AdminBillingProvidersSchema,
   AdminChangeMarketRequestSchema,
+  AdminCheckChargeRequestSchema,
+  AdminCloseDisputeRequestSchema,
+  AdminRecordChargebackRequestSchema,
   AdminSetProviderRequestSchema,
   AdminSetCustomPlanRequestSchema,
   AdminSetAccountPlanRequestSchema,
@@ -140,6 +143,12 @@ export interface AdminBillingApi {
   dismissIssue(id: string, init: Init<typeof AdminResolveIssueRequestSchema>): Promise<AdminBillingMutationResult>;
   hold(id: string, init: Init<typeof AdminHoldRequestSchema>): Promise<AdminBillingMutationResult>;
   reconcile(id: string, init: Init<typeof AdminReconcileRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Проверить списание сейчас»: read a saved-card charge at the provider now (never sent again). */
+  checkCharge(id: string, attemptId: string, init: Init<typeof AdminCheckChargeRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Зафиксировать чарджбэк» of a payment (the provider has no dispute API): money off, dispute hold. */
+  recordChargeback(paymentId: string, init: Init<typeof AdminRecordChargebackRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** The outcome of a chargeback recorded by hand (won / lost / withdrawn). */
+  closeDispute(disputeId: string, init: Init<typeof AdminCloseDisputeRequestSchema>): Promise<AdminBillingMutationResult>;
   discount(id: string, init: Init<typeof AdminDiscountRequestSchema>): Promise<AdminBillingMutationResult>;
   prices(signal?: AbortSignal): Promise<AdminPriceVersions>;
   createPrice(init: Init<typeof AdminCreatePriceRequestSchema>): Promise<AdminPriceVersion>;
@@ -202,6 +211,10 @@ export const restAdminApi: AdminBillingApi = {
   dismissIssue: (id, init) => call('POST', `${A}/issues/${enc(id)}/dismiss`, AdminBillingMutationResultSchema, body(AdminResolveIssueRequestSchema, init)),
   hold: (id, init) => call('POST', `${A}/accounts/${enc(id)}/hold`, AdminBillingMutationResultSchema, body(AdminHoldRequestSchema, init)),
   reconcile: (id, init) => call('POST', `${A}/accounts/${enc(id)}/reconcile`, AdminBillingMutationResultSchema, body(AdminReconcileRequestSchema, init)),
+  checkCharge: (id, att, init) =>
+    call('POST', `${A}/accounts/${enc(id)}/charges/${enc(att)}/check`, AdminBillingMutationResultSchema, body(AdminCheckChargeRequestSchema, init)),
+  recordChargeback: (pid, init) => call('POST', `${A}/payments/${enc(pid)}/chargebacks`, AdminBillingMutationResultSchema, body(AdminRecordChargebackRequestSchema, init)),
+  closeDispute: (did, init) => call('POST', `${A}/disputes/${enc(did)}/close`, AdminBillingMutationResultSchema, body(AdminCloseDisputeRequestSchema, init)),
   discount: (id, init) => call('PUT', `${A}/accounts/${enc(id)}/discount`, AdminBillingMutationResultSchema, body(AdminDiscountRequestSchema, init)),
   prices: (signal) => call('GET', `${A}/prices`, AdminPriceVersionsSchema, undefined, signal),
   createPrice: (init) => call('POST', `${A}/prices`, AdminPriceVersionSchema, body(AdminCreatePriceRequestSchema, init)),

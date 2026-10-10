@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -97,6 +98,9 @@ type Inbox struct {
 	core *core.Core
 	opts Options
 	wake chan struct{}
+
+	reviewMu sync.Mutex
+	reviewAt time.Time // the next reconciliation pass that re-reads needs_review refunds
 
 	// Committed runs after a transaction of the inbox changed an account (credit, refund,
 	// dispute): plans.Invalidate, WORKSPACE_UPDATE / BILLING_UPDATE and state mails (wiring).

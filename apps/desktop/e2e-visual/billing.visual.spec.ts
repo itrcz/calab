@@ -493,6 +493,15 @@ test('billing-admin: accounts list and the account page', async ({ page }) => {
   await checkpoint(s, 'billing-admin-payments');
   await scrollEnd(admin);
   await checkpoint(s, 'billing-admin-account-end');
+  // Audit M5/M6 (Pixel Forge): the newest card charge with an unknown outcome and «Проверить
+  // списание сейчас»; a chargeback recorded by hand with «Закрыть».
+  if (isPhone()) await tap(admin.getByTestId('admin-billing-back'));
+  await tap(admin.getByTestId('admin-billing-account').filter({ hasText: 'Pixel Forge' }));
+  await expect(admin.getByTestId('admin-billing-check-charge')).toBeVisible();
+  await checkpoint(s, 'billing-admin-charge');
+  await admin.getByTestId('admin-billing-dispute-close').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await expect(admin.getByTestId('admin-billing-dispute-close')).toBeVisible();
+  await checkpoint(s, 'billing-admin-dispute');
   // ADR-0083: «Эквайеры» and the market change of an account without payments (Orbit, inactive).
   if (isPhone()) await tap(admin.getByTestId('admin-billing-back'));
   await tap(admin.getByTestId('admin-billing-nav-providers'));

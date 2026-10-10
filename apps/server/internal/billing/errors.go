@@ -98,6 +98,10 @@ var (
 	ErrPriceEffectiveTooSoon = coded(http.StatusUnprocessableEntity, v1.ErrorCode_ERROR_CODE_VALIDATION, ReasonPriceEffectiveTooSoon, "a new price takes effect at least 10 days ahead")
 
 	ErrAccountNotFound = coded(http.StatusNotFound, v1.ErrorCode_ERROR_CODE_NOT_FOUND, ReasonAccountNotFound, "billing account not found")
+	// ErrAttemptNotFound: no such saved-card charge of the account (superadmin «Проверить списание»).
+	ErrAttemptNotFound = httpx.NotFound("charge attempt")
+	// ErrDisputeNotFound: no such dispute (superadmin «Закрыть чарджбэк»).
+	ErrDisputeNotFound = httpx.NotFound("dispute")
 
 	ErrDisabled       = coded(http.StatusNotImplemented, v1.ErrorCode_ERROR_CODE_UNAVAILABLE, ReasonDisabled, "billing is not enabled")
 	ErrNotImplemented = coded(http.StatusNotImplemented, v1.ErrorCode_ERROR_CODE_UNAVAILABLE, ReasonNotImplemented, "not implemented yet")
