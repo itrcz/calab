@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -64,6 +65,11 @@ type Billing struct {
 	TochkaWebhookKey string `env:"TOCHKA_WEBHOOK_PUBLIC_KEY"`
 	// TOCHKA_CLIENT_ID: client id of the webhook API; empty = the token's iss claim.
 	TochkaClientID string `env:"TOCHKA_CLIENT_ID"`
+	// TOCHKA_WEBHOOK_URL: https URL of POST /api/billing/tochka/webhook that the server registers
+	// at the bank itself after it starts listening (and re-checks every 6 h). Empty (default) =
+	// the server never touches the bank's webhook (dev servers with a live token); `server tochka
+	// webhook …` still works. Needs BILLING_TOCHKA_ENABLED.
+	TochkaWebhookURL string `env:"TOCHKA_WEBHOOK_URL"`
 
 	// TOCHKA_RECURRING_ENABLED: card binding (subscription without a schedule) and its charges —
 	// auto-topup and one-click top-ups in RU (ADR-0083 phase 2). Turn on after the live check
@@ -164,6 +170,15 @@ func (b *Billing) validate() error {
 		}
 		if !tochkaMerchantID.MatchString(b.TochkaMerchantID) {
 			errs = append(errs, errors.New("TOCHKA_MERCHANT_ID must be the 15-digit merchant id (BILLING_TOCHKA_ENABLED=true)"))
+		}
+	}
+	if b.TochkaWebhookURL != "" {
+		if !b.TochkaEnabled {
+			errs = append(errs, errors.New("TOCHKA_WEBHOOK_URL requires BILLING_TOCHKA_ENABLED=true"))
+		}
+		if u, err := url.Parse(b.TochkaWebhookURL); err != nil || u.Scheme != "https" || u.Host == "" ||
+			(u.Port() != "" && u.Port() != "443") {
+			errs = append(errs, errors.New("TOCHKA_WEBHOOK_URL must be an absolute https URL on port 443"))
 		}
 	}
 	errs = append(errs, b.validateTochkaPay()...)

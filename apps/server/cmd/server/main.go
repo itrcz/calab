@@ -139,13 +139,18 @@ func serve(ctx context.Context, cfg *config.Config) error {
 		// No WriteTimeout: gateway sockets and file downloads are long-lived; handlers set
 		// their own deadlines via http.ResponseController.
 	}
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.HTTPAddr)
+	if err != nil {
+		return err
+	}
 	errc := make(chan error, 1)
 	go func() {
 		slog.Info("listening", "addr", cfg.HTTPAddr, "version", buildinfo.Version, "commit", buildinfo.Info().GetCommit(),
 			"registration", cfg.RegistrationMode,
 			"storage", cfg.StorageDriver, "livekit", cfg.LiveKitEnabled(), "mail", cfg.MailEnabled())
-		errc <- srv.ListenAndServe()
+		errc <- srv.Serve(ln)
 	}()
+	a.RunAfterListen(bg) // the socket is bound: early connections queue until Serve accepts
 	select {
 	case err := <-errc:
 		if !errors.Is(err, http.ErrServerClosed) {

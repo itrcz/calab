@@ -25,6 +25,8 @@ import (
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/google/uuid"
+	"github.com/redis/rueidis"
 )
 
 // billingRuntime is balance billing assembled from config.Billing (ADR-0080 v5). With
@@ -39,6 +41,9 @@ type billingRuntime struct {
 	Clock    billing.Clock // *billing.SwitchClock when admin.TestClockAllowed (T6 test-clock route)
 	due      *worker.Worker
 	stripe   *stripe.Provider
+	// webhook keeps the bank's webhook URL equal to TOCHKA_WEBHOOK_URL (nil while unset); started
+	// by RunAfterListen, not Run: the bank's test webhook must find the listener.
+	webhook *tochka.Registrar
 	// AutoTopup runs the off-session attempts (T7); its recovery runs whenever billing is on,
 	// new attempts only with BILLING_AUTO_TOPUP_ENABLED.
 	AutoTopup *autotopup.Job
@@ -70,6 +75,10 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 			panic(err)
 		}
 		providers = append(providers, tp)
+		if b.TochkaWebhookURL != "" {
+			rt.webhook = tochka.NewRegistrar(tp, b.TochkaWebhookURL)
+			rt.webhook.Lock = redisWebhookLock(d.Redis)
+		}
 	}
 	rows := provider.DefaultMatrix()
 	if b.TochkaSBPBindingEnabled {
@@ -164,6 +173,32 @@ func (rt *billingRuntime) Run(ctx context.Context) {
 	}
 	go rt.due.RunIntegrity(ctx)
 	go rt.AutoTopup.Run(ctx)
+}
+
+// RunAfterListen starts the jobs that need the HTTP listener serving: the automatic Tochka webhook
+// registration (the bank calls our URL during registration). No-op without TOCHKA_WEBHOOK_URL.
+func (rt *billingRuntime) RunAfterListen(ctx context.Context) {
+	if rt.cfg.Enabled && rt.webhook != nil {
+		go rt.webhook.Run(ctx)
+	}
+}
+
+// redisWebhookLock lets one replica at a time run a registration attempt (Redis SET NX, like the
+// other singleton sweepers); released by comparing the token, expires on its own if we die.
+func redisWebhookLock(r rueidis.Client) func(context.Context) (func(), bool) {
+	const hold = 3 * time.Minute // an attempt is bounded by 2 min
+	return func(ctx context.Context) (func(), bool) {
+		key, token := redisx.Key("tochka:webhook"), uuid.NewString()
+		if err := r.Do(ctx, r.B().Set().Key(key).Value(token).Nx().Px(hold).Build()).Error(); err != nil {
+			return nil, false
+		}
+		return func() {
+			ctx := context.WithoutCancel(ctx)
+			if v, err := r.Do(ctx, r.B().Get().Key(key).Build()).ToString(); err == nil && v == token {
+				_ = r.Do(ctx, r.B().Del().Key(key).Build()).Error()
+			}
+		}, true
+	}
 }
 
 // TochkaConfig is the adapter config of the env (also used by `server tochka …`).

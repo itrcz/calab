@@ -122,9 +122,13 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 Шаги оператора (`server tochka …` читает только `TOCHKA_*`, токен не печатает):
 
 1. `server tochka key` — закреплённый ключ вебхуков совпадает с опубликованным банком.
-2. Выкатить сервер с `BILLING_TOCHKA_ENABLED=true`, затем `server tochka webhook set https://app.calab.io/api/billing/tochka/webhook`.
+2. Выкатить сервер с `BILLING_TOCHKA_ENABLED=true` и `TOCHKA_WEBHOOK_URL=https://app.calab.io/api/billing/tochka/webhook`:
+   после старта слушателя сервер сам читает вебхук банка и, если URL другой или нет события `acquiringInternetPayment`,
+   ставит его (одна реплика за раз — Redis-замок `tochka:webhook`; при ошибке повтор через 10 с, 30 с, 1 мин, 5 мин, затем раз в 30 мин;
+   сверка раз в 6 ч, если кто-то поменял URL в кабинете банка). Пусто = сервер вебхук не трогает (по умолчанию; для dev с боевым токеном).
    Один URL на `client_id`; банк шлёт тестовый вебхук и сохраняет URL, только если получил 200
-   (с выключенной Точкой маршрут отвечает 501 — регистрация не пройдёт). Проверка: `server tochka webhook get` / `webhook test`.
+   (с выключенной Точкой маршрут отвечает 501 — регистрация не пройдёт). Вручную по-прежнему:
+   `server tochka webhook set <url>`; проверка: `server tochka webhook get` / `webhook test`.
 3. Без вебхуков всё работает опросом: открытые оплаты опрашиваются через 30 с, 1, 2, 4, 8 мин, затем раз в 15 мин.
    Не-200 банк повторяет 30 раз раз в 10 с и бросает — деньги дойдут опросом.
 
@@ -152,6 +156,7 @@ auto/manual): на счёт не больше одного списания в �
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
+| `TOCHKA_WEBHOOK_URL` | — | https-URL `/api/billing/tochka/webhook`, который сервер сам регистрирует в банке после старта и сверяет раз в 6 ч; пусто = не трогать; нужен `BILLING_TOCHKA_ENABLED` |
 | `BILLING_TOCHKA_SBP_BINDING_ENABLED` | `false` | провайдер `tochkapay`, его строка матрицы (RU, СБП, только автопополнение) и вебхук `/api/billing/tochkapay/webhook`; нужен `BILLING_TOCHKA_ENABLED` |
 | `TOCHKA_PAY_SITE_UID` | — | сайт, выданный банком (тестовый, затем боевой) |
 | `TOCHKA_PAY_SIGNING_KEY` | — | наш приватный RSA-2048 (PEM или base64 PEM), подпись `Signature` списаний и возвратов. Только в секретах |
