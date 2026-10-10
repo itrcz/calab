@@ -20,7 +20,8 @@ const REASON: Record<string, MessageKey> = {
   BILLING_PLAN_MANAGED: 'billing.err.planManaged',
   BILLING_ACCOUNT_EXISTS: 'billing.err.exists',
   BILLING_METHOD_UNAVAILABLE: 'billing.err.method',
-  BILLING_OWNER_REQUIRED: 'billing.err.owner',
+  BILLING_OWNER_REQUIRED: 'billing.err.owner', // servers before ADR-0087
+  BILLING_PERMISSION_REQUIRED: 'billing.err.permission',
   WORKSPACE_BILLING_SUSPENDED: 'billing.err.suspended',
   BILLING_DISABLED: 'billing.soon',
   BILLING_NOT_IMPLEMENTED: 'billing.soon',

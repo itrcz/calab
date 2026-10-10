@@ -1658,6 +1658,12 @@ test('settings-role-edit', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('role-perm-MANAGE_ROLES')).not.toBeChecked();
   await expect(dialog.getByTestId('role-member')).toHaveCount(2);
   await checkpoint(shot, 'settings-role-edit');
+  // ADR-0087: the «Биллинг» group closes the matrix — the owner's toggles with «что даёт».
+  const billing = dialog.getByTestId('role-billing-group');
+  await billing.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await expect(billing.getByTestId('role-perm-BILLING_MANAGE')).toBeEnabled();
+  await expect(billing.getByTestId('role-perm-BILLING_VIEW')).not.toBeChecked();
+  await checkpoint(shot, 'settings-role-edit-billing');
 });
 
 /** ADR-0048: «Создать роль» → the draft with «Шаблон» «Менеджер отдела» applied and the preview. */

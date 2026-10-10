@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const openExternal = vi.fn((_url: string) => Promise.resolve());
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { openExternal: (u: string) => openExternal(u), log: () => undefined } } }));
+const shell = vi.hoisted(() => ({ ios: false }));
+vi.mock('../platform/nativeShell', () => ({ iosNativeShell: () => shell.ios }));
 vi.mock('../lib/log', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const { ApiError } = await import('../lib/api/client');
 const { reportPlanError, planOffersAllowed, planContact, openPlanContact } = await import('./plan');
-const { platform } = await import('../platform');
 const { useSession } = await import('../stores/session');
 const { useToasts } = await import('../stores/toasts');
 
@@ -17,7 +18,7 @@ const roomFull = new ApiError('ERROR_CODE_ROOM_FULL', 'full', 409, undefined, { 
 beforeEach(() => {
   useToasts.setState({ items: [] });
   openExternal.mockClear();
-  delete platform.sessionActivity;
+  shell.ios = false;
 });
 
 describe('reportPlanError', () => {
@@ -43,8 +44,8 @@ describe('reportPlanError', () => {
     expect(useToasts.getState().items).toHaveLength(0);
   });
 
-  it('keeps limits but removes sales actions in the native companion client', () => {
-    platform.sessionActivity = { publish: vi.fn(), clear: vi.fn() };
+  it('keeps limits but removes sales actions in the iOS shell', () => {
+    shell.ios = true;
     useSession.getState().set({ planContact: 'mailto:it@gptunnel.ai' });
     expect(planOffersAllowed()).toBe(false);
     expect(planContact()).toBeNull();

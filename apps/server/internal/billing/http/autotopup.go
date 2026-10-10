@@ -14,6 +14,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // Auto-topup consent (…/billing/auto-topup). This stores and revokes the owner's consent only;
@@ -23,7 +24,7 @@ import (
 
 // autoTopup: GET …/auto-topup.
 func (s *Service) autoTopup(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingView)
 	if err != nil {
 		return err
 	}
@@ -57,7 +58,7 @@ func (s *Service) writeAutoTopup(w http.ResponseWriter, r *http.Request, c calle
 // The card must be a saved card of this account, the cap within the currency's limits and the
 // account's payment method auto-topup capable.
 func (s *Service) putAutoTopup(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}
@@ -133,7 +134,7 @@ func (s *Service) putAutoTopup(w http.ResponseWriter, r *http.Request) error {
 
 // deleteAutoTopup: DELETE …/auto-topup revokes the consent at once (no new attempt starts).
 func (s *Service) deleteAutoTopup(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}

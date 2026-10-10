@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // Charger runs one-click top-ups (autotopup.Job: the same dispatcher, recovery and
@@ -39,7 +40,7 @@ type Charger interface {
 //     subscription's operations) and the answer is the charge's state. Money arrives through the
 //     inbox credit path only.
 func (s *Service) savedTopup(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}
@@ -103,7 +104,7 @@ func (s *Service) savedTopup(w http.ResponseWriter, r *http.Request) error {
 // savedTopupStatus: GET …/billing/saved-method-topups/{tid}. Re-reads the provider while the
 // charge is not final (after the 3-D Secure page, or while the provider's answer is pending).
 func (s *Service) savedTopupStatus(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}

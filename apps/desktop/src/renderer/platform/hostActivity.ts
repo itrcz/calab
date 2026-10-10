@@ -2,7 +2,7 @@ import { parseCallsState, type HostCallsCapability, type HostCallsOperation, typ
 import { parseNotificationState, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
 export interface HostActivityBridge {
-  version: number; host: number; document: string; notificationsVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
+  version: number; host: number; document: string; platform?: string; notificationsVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
   rotateDocument(): void;
   send(data: string): void;
 }

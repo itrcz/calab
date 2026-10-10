@@ -15,6 +15,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // pageSize of the owner history lists.
@@ -22,7 +23,7 @@ const pageSize = 50
 
 // ledger: GET …/billing/ledger?cursor= (cursor = the seq to continue below).
 func (s *Service) ledger(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingView)
 	if err != nil {
 		return err
 	}
@@ -50,7 +51,7 @@ func (s *Service) ledger(w http.ResponseWriter, r *http.Request) error {
 
 // payments: GET …/billing/payments?cursor= (cursor = the payment id to continue below).
 func (s *Service) payments(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingView)
 	if err != nil {
 		return err
 	}
@@ -79,7 +80,7 @@ func (s *Service) payments(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) refundRequests(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingView)
 	if err != nil {
 		return err
 	}
@@ -99,7 +100,7 @@ func (s *Service) refundRequests(w http.ResponseWriter, r *http.Request) error {
 // superadmin decides (T6) and refunds it to the original payments. The amount may not exceed
 // the free advance now; request_id makes a retry return the same request.
 func (s *Service) createRefundRequest(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}
@@ -162,7 +163,7 @@ func (s *Service) createRefundRequest(w http.ResponseWriter, r *http.Request) er
 
 // methods: GET …/billing/payment-methods (cards saved by checkouts with save_method).
 func (s *Service) methods(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingView)
 	if err != nil {
 		return err
 	}
@@ -184,7 +185,7 @@ func (s *Service) methods(w http.ResponseWriter, r *http.Request) error {
 // cancel a subscription without a schedule: the card stays bound at the bank but is never
 // charged again (ADR-0083 phase 2).
 func (s *Service) deleteMethod(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}

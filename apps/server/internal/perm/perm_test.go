@@ -47,6 +47,11 @@ type vector struct {
 		Archived    bool `json:"archived"`
 		CommentsOff bool `json:"commentsOff"`
 	} `json:"taskRoom"`
+	// ADR-0087: a billing vector (BillingOf over the roles' raw bits).
+	Billing *struct {
+		Owner bool `json:"owner"`
+		Guest bool `json:"guest"`
+	} `json:"billing"`
 	Expected Bits `json:"expected"`
 }
 
@@ -64,9 +69,18 @@ func loadVectors(t *testing.T) []vector {
 }
 
 func TestComputeVectors(t *testing.T) {
-	n, boards, taskRooms := 0, 0, 0
+	n, boards, taskRooms, billing := 0, 0, 0, 0
 	for _, v := range loadVectors(t) {
 		switch {
+		case v.Billing != nil:
+			billing++
+			roles := make([]RoleBits, len(v.Roles))
+			for i, r := range v.Roles {
+				roles[i] = RoleBits(r)
+			}
+			if got := BillingOf(RawBits(roles), v.Billing.Owner, v.Billing.Guest); got != v.Expected {
+				t.Errorf("%s: BillingOf got %d want %d", v.Name, got, v.Expected)
+			}
 		case v.TaskRoom != nil:
 			taskRooms++
 			if got := TaskRoom(v.TaskRoom.Board, v.TaskRoom.Archived, v.TaskRoom.CommentsOff); got != v.Expected {
@@ -144,8 +158,8 @@ func TestComputeVectors(t *testing.T) {
 			}
 		}
 	}
-	if n < 12 || boards < 15 || taskRooms < 8 {
-		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors", n, boards, taskRooms)
+	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 {
+		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors", n, boards, taskRooms, billing)
 	}
 }
 
@@ -159,6 +173,9 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	}
 	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<32-1 || RoomOnly&RolesV2 != 0 || BoardOnly&RolesV2 != 0 || GuestMax&RolesV2 != 0 || RoleDefaults[RoleMember]&RolesV2 != 0 || RolesV2 != 0xFE000000 || RoomOnly&PlaceCalls == 0 || GuestMax&PlaceCalls != 0 || RoleDefaults[RoleMember].Has(PlaceCalls) || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
 		t.Fatal("workspace-level bits must not be settable per room")
+	}
+	if All&Billing != 0 || RoomOnly&Billing != 0 || BoardOnly&Billing != 0 || GuestMax&Billing != 0 || RoleDefaults[RoleMember]&Billing != 0 || RoleDefaults[RoleAdmin]&Billing != 0 || Known != 1<<35-1 {
+		t.Fatal("billing bits stand apart: not in All, overrides, guest bounds or the defaults")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {
 		t.Fatal("guest bounds")

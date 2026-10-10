@@ -16,6 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // Sync warnings of PUT …/payer (PayerProfile.sync_warning): the payer is saved either way.
@@ -30,7 +31,7 @@ const customerSyncTimeout = 8 * time.Second
 // payerSchema: GET …/billing/payer-schema — the country requisites the payer form renders
 // and checks (internal/billing/payer, ADR-0080 §0.1). The same for every account.
 func (s *Service) payerSchema(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.ownerOf(r); err != nil {
+	if _, err := s.holderOf(r, perm.BillingView); err != nil {
 		return err
 	}
 	httpx.Write(w, http.StatusOK, payer.Schema())
@@ -38,7 +39,7 @@ func (s *Service) payerSchema(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) getPayer(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingView)
 	if err != nil {
 		return err
 	}
@@ -59,7 +60,7 @@ func (s *Service) getPayer(w http.ResponseWriter, r *http.Request) error {
 // version) and brings the provider customer in line (name, e-mail, tax ids). A provider that
 // refuses a tax id or does not answer does not undo the save: the answer carries sync_warning.
 func (s *Service) putPayer(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingManage)
 	if err != nil {
 		return err
 	}

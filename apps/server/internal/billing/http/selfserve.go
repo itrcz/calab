@@ -12,6 +12,7 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/sales"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // The plan screen of the client: the plan offers of GET …/billing and the self-serve start
@@ -22,10 +23,11 @@ import (
 // providerOf is the configured provider serving market (BILLING_PROVIDERS), "" if none.
 func (s *Service) providerOf(market string) string { return string(s.sales.ProviderOf(market)) }
 
-// canSelfServe: the owner of a workspace without a live account may start billing (some
-// provider is configured; whether one takes new clients is the sales mode of GET …/billing).
+// canSelfServe: a BILLING_MANAGE holder (the owner included, ADR-0087) of a workspace without a
+// live account may start billing (some provider is configured; whether one takes new clients is
+// the sales mode of GET …/billing).
 func (s *Service) canSelfServe(c caller) bool {
-	return s.cfg.SelfServe && c.owner && !c.hasAc && len(s.sales.Served()) > 0
+	return s.cfg.SelfServe && c.can(perm.BillingManage) && !c.hasAc && len(s.sales.Served()) > 0
 }
 
 // newMarkets is the sales picture for an account not fixed by a payment yet (ADR-0083): the

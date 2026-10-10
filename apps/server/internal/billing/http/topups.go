@@ -20,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // topup: POST …/billing/topups. Opens a hosted checkout for a manual top-up:
@@ -35,7 +36,7 @@ import (
 //     same session);
 //  4. the session is stored on the row. Money arrives only through the inbox / pull-sync.
 func (s *Service) topup(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingTopup)
 	if err != nil {
 		return err
 	}
@@ -68,6 +69,9 @@ func (s *Service) topup(w http.ResponseWriter, r *http.Request) error {
 	}
 	if amt.GetMinor() < opt.Min || amt.GetMinor() > opt.Max {
 		return billing.ErrAmountOutOfRange
+	}
+	if req.GetSaveMethod() && !c.can(perm.BillingManage) {
+		return billing.ErrPermissionRequired // saving a method for later charges is MANAGE (ADR-0087)
 	}
 	if req.GetSaveMethod() && !opt.AutoTopupCapable {
 		return billing.ErrAutoTopupUnavailable
@@ -313,7 +317,7 @@ func returnURL(base string, checkout uuid.UUID) string {
 // or its payment not credited yet (the success redirect lands here through the app) — the same
 // path as the webhook, so whichever comes first credits, once.
 func (s *Service) checkout(w http.ResponseWriter, r *http.Request) error {
-	c, err := s.ownerOf(r)
+	c, err := s.holderOf(r, perm.BillingTopup)
 	if err != nil {
 		return err
 	}

@@ -5,8 +5,10 @@
 //
 // Classification (internal/app):
 //   - /api/workspaces/{id}/billing/…: private, people only (bots denied), identity scope
-//     "billing" (workspace of {id}; the owner keeps it under billing suspension). Handlers check
-//     owner (403 BILLING_OWNER_REQUIRED) except GET /, which shows members the status only.
+//     "billing" (workspace of {id}; the owner and BILLING_TOPUP / MANAGE holders keep it under a
+//     billing suspension). Handlers check
+//     the caller's billing bit of the route (ADR-0087: 403 BILLING_PERMISSION_REQUIRED) except
+//     GET /, which shows members without BILLING_VIEW the status only.
 //   - POST /api/billing/{stripe,tochka,tochkapay}/webhook, GET /api/billing/public/offers and GET
 //     /api/billing/return: public, no session; a webhook reads the raw body and verifies the
 //     provider signature itself.

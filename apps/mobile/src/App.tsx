@@ -224,7 +224,7 @@ function Host({ origin }: { origin: string }) {
         onRenderProcessGone={onProcessGone}
         {...(hostChannelEnabled ? {
           onMessage,
-          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled),
+          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled, Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null),
           injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true,
         } : {})}
         // Persistent session: the default (non-incognito) website data store keeps the HttpOnly cookie.

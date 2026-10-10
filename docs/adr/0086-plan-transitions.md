@@ -33,7 +33,7 @@
 | Эквайер закрыт для новых / режим «связаться» | Квота ACTIVATE без открытого рынка → `BILLING_MARKET_UNAVAILABLE`; существующий аккаунт меняет тариф как обычно | Карточки «Связаться» | `TestSalesModes` |
 | Тариф назначен суперадмином (manual / custom) | Self-serve → `BILLING_PLAN_ADMIN_ASSIGNED`, ни квота, ни коммит не перезаписывают строку; истёкший — можно | «Тариф назначен администратором, обратитесь в поддержку» | `TestTransitionAdminAssignedPlan` |
 | Суперадмин понижает сверх лимитов | `409 PLAN_LIMITS_EXCEEDED` без `override_limits`; с ним — проводится, превышение в журнале тарифа и `WARN`; тариф биллинга (`source = billing`) суперадмин не правит (`BILLING_PLAN_MANAGED`) | Подтверждение со списком «Назначить всё равно» | `TestBoardWebhook` (app) |
-| Владелец / участник | Деньги и переходы — только владелец (`BILLING_OWNER_REQUIRED`); участник видит статус без сумм | Участник: шильдик → «Тариф» с заглушкой | `TestOwnerOnly`, `TestTransitionOwnerOnly` |
+| Владелец / участник | Деньги и переходы — только владелец (`BILLING_OWNER_REQUIRED`); участник видит статус без сумм. С ADR-0087 — по битам `BILLING_VIEW` / `TOPUP` / `MANAGE` (`BILLING_PERMISSION_REQUIRED`) | Участник: шильдик → «Тариф» с заглушкой | `TestOwnerOnly`, `TestTransitionOwnerOnly` |
 | Параллельные изменения | `expected_revision` действия против ревизии аккаунта → `BILLING_REVISION_CONFLICT`; квота живёт 10 мин (`BILLING_QUOTE_EXPIRED`); повтор `request_id` с другим телом → `BILLING_REQUEST_REUSED`; лимиты — повторно под локами (п. 3) | Устаревшая квота перезапрашивается один раз | `TestOwnerFlow`, `TestIdempotency`, `TestTransitionDowngradeRechecksAtCommit` |
 
 ## Последствия

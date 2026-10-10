@@ -51,8 +51,9 @@ const (
 	scopeBilling
 )
 
-// billingRecoveryRoutes: workspace routes besides scopeBilling the owner keeps under a billing
-// suspension (the paywall shows the workspace's name and icon). Everyone else gets 403
+// billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
+// MANAGE holder, ADR-0087) keeps under a billing suspension (the paywall shows the workspace's
+// name and icon). Everyone else gets 403
 // WORKSPACE_SUSPENDED / WORKSPACE_BILLING_SUSPENDED there too.
 var billingRecoveryRoutes = map[string]bool{
 	"GET /api/workspaces/{id}": true,
@@ -504,7 +505,8 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 			op = identitypolicy.WorkspaceRead
 		}
 		if scope == scopeBilling || billingRecoveryRoutes[r.Pattern] {
-			// The owner's recovery scope stays open under a billing suspension (ADR-0080 §12).
+			// The recovery scope of the owner and of BILLING_TOPUP / MANAGE holders stays open under a
+			// billing suspension (ADR-0080 §12, ADR-0087).
 			op = identitypolicy.BillingWrite
 			if r.Method == http.MethodGet || r.Method == http.MethodHead {
 				op = identitypolicy.BillingRead

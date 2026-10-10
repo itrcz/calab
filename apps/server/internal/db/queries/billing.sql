@@ -404,3 +404,19 @@ RETURNING *;
 SELECT count(*)::integer FROM workspace_members m
 JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1 AND m.role <> 'guest' AND NOT u.is_bot;
+
+-- name: ListBillingManagerRecipients :many
+-- ADR-0087: members other than the owner whose roles carry BILLING_MANAGE (bit 34) and who can
+-- get mail (not guests, bots or disabled, with an e-mail): the copy recipients of the owner's
+-- billing warnings (debt, suspension, failed auto-topup). Capped: a role given to a crowd must
+-- not turn one warning into a mass mailing.
+SELECT u.email::text AS email, coalesce(u.locale, '')::text AS locale FROM workspace_members m
+JOIN users u ON u.id = m.user_id
+JOIN workspaces w ON w.id = m.workspace_id
+WHERE m.workspace_id = $1 AND m.user_id <> w.owner_id AND m.role <> 'guest'
+  AND NOT u.is_bot AND NOT u.is_guest AND u.disabled_at IS NULL AND u.email IS NOT NULL AND u.email <> ''
+  AND EXISTS (SELECT FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+              WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id
+                AND (wr.permissions & 17179869184::bigint) <> 0)
+ORDER BY u.id
+LIMIT 20;
