@@ -1,0 +1,364 @@
+# Community-maintained: Calab behind the Traefik that Dokploy already runs.
+# Not covered by the project CI; keep it in step with infra/docker/compose.yml (see README.md).
+#
+# Differences from infra/docker/compose.yml:
+#   * no Caddy: Traefik (labels below) routes and terminates TLS, nginx serves the SPA
+#   * livekit and api run on a bridge network (not host) and talk over calab-* aliases
+#   * LiveKit config is passed in LIVEKIT_CONFIG (no envsubst / deploy.sh)
+#   * no egress (meeting recording) and no SIP
+#
+# Dokploy: Compose -> Git provider -> Compose Path: ./infra/contrib/dokploy/compose.yml
+# Variables: Environment tab (see .env.example next to this file).
+# Do not add domains in the Dokploy UI for this service: routing is defined here.
+
+# Baseline for every service we run (security review L6), as in infra/docker/compose.yml.
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  read_only: true
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+
+  # ============================================================
+  # WEB: SPA static files (nginx). Traefik sends everything that is not
+  # /api, /gateway, /healthz or the identity provider paths here.
+  # ============================================================
+  web:
+    build:
+      context: ../../..
+      dockerfile: infra/contrib/dokploy/web/Dockerfile
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      - DOMAIN=${DOMAIN:?}          # used for the CSP connect-src (wss://rtc.<DOMAIN>)
+    deploy:
+      resources:
+        limits: { memory: 256m }
+    networks:
+      - dokploy-network
+    logging: *logging
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "dokploy-network"
+
+      # HTTP -> HTTPS for the whole host (including /api and /gateway)
+      traefik.http.routers.calab-http.rule: "Host(`${DOMAIN}`)"
+      traefik.http.routers.calab-http.entrypoints: "web"
+      traefik.http.routers.calab-http.middlewares: "redirect-to-https@file"
+
+      # HTTPS: static files
+      traefik.http.routers.calab.rule: "Host(`${DOMAIN}`)"
+      traefik.http.routers.calab.entrypoints: "websecure"
+      traefik.http.routers.calab.tls: "true"
+      traefik.http.routers.calab.tls.certresolver: "letsencrypt"
+      traefik.http.routers.calab.middlewares: "${TRAEFIK_MIDDLEWARES:-}"
+      traefik.http.routers.calab.service: "calab"
+      traefik.http.services.calab.loadbalancer.server.port: "80"
+
+  # ============================================================
+  # API: same host, only /api, /gateway, /healthz and the identity provider paths.
+  # /metrics and /readyz are not exposed (as in the Caddyfile).
+  # ============================================================
+  api:
+    build:
+      context: ../../..
+      dockerfile: apps/server/Dockerfile
+      args:
+        # Stamped into GET /api/version; set CALABA_VERSION / CALABA_COMMIT in the Environment tab.
+        VERSION: ${CALABA_VERSION:-}
+        COMMIT: ${CALABA_COMMIT:-}
+    restart: unless-stopped
+    <<: *hardening                 # distroless nonroot (65532)
+    tmpfs: [/tmp]
+    environment:
+      - HTTP_ADDR=0.0.0.0:3000
+      - PUBLIC_APP_URL=https://${DOMAIN:?}
+      - PUBLIC_APP_URL_ALT=
+      - PUBLIC_APP_URLS=https://${DOMAIN:?}
+      - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD:?}@calab-postgres:5432/calaba
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?}@calab-valkey:6379
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-}
+      - JWT_SECRET=${JWT_SECRET:?}
+      - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-24h}
+      - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL:-8760h}
+      - LIVEKIT_URL=wss://rtc.${DOMAIN:?}
+      - LIVEKIT_INTERNAL_URL=http://calab-livekit:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?}
+      - STORAGE_DRIVER=fs
+      - STORAGE_PATH=/data/files
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      - STORAGE_MAX_TOTAL_BYTES=${STORAGE_MAX_TOTAL_BYTES:-53687091200}
+      - REGISTRATION_MODE=${REGISTRATION_MODE:-invite}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_TLS=${SMTP_TLS:-tls}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - PLAN_FREE_LIMITS=${PLAN_FREE_LIMITS:-}
+      - PLAN_TEAM_LIMITS=${PLAN_TEAM_LIMITS:-}
+      - PLAN_CONTACT_URL=${PLAN_CONTACT_URL:-}
+      - PLAN_CONTACT_EMAIL=${PLAN_CONTACT_EMAIL:-}
+      - SUPERADMIN_EMAILS=${SUPERADMIN_EMAILS:-}
+      # Identity 2.0 (docs/06-deployment.md, "Identity 2.0"). All empty = off. Set the whole
+      # group at once: a partial configuration stops the API at startup.
+      - IDENTITY_PUBLIC_ORIGIN=${IDENTITY_PUBLIC_ORIGIN:-}
+      - IDENTITY_ENCRYPTION_KEYS=${IDENTITY_ENCRYPTION_KEYS:-}
+      - IDENTITY_ENCRYPTION_ACTIVE_KID=${IDENTITY_ENCRYPTION_ACTIVE_KID:-}
+      - OAUTH_SIGNING_KEYS=${OAUTH_SIGNING_KEYS:-}
+      - OAUTH_SIGNING_ACTIVE_KID=${OAUTH_SIGNING_ACTIVE_KID:-}
+      - IDENTITY_ENDPOINTS=${IDENTITY_ENDPOINTS:-}
+      - IDENTITY_DIRECTORY_HOSTS=${IDENTITY_DIRECTORY_HOSTS:-}
+      - IDENTITY_EDITION=${IDENTITY_EDITION:-}
+      - IDENTITY_ENTERPRISE_WORKSPACE_IDS=${IDENTITY_ENTERPRISE_WORKSPACE_IDS:-}
+      # Meeting recording (ADR-0025): same defaults as infra/docker/compose.yml. The egress
+      # service is not part of this stack, so starting a recording fails; nothing else is affected.
+      - GPTUNNEL_API_URL=${GPTUNNEL_API_URL:-https://gptunnel.ru}
+      - GPTUNNEL_WEB_URL=${GPTUNNEL_WEB_URL:-https://gptunnel.ru}
+      - RECORDING_MAX_CONCURRENT=${RECORDING_MAX_CONCURRENT:-3}
+      - RECORDING_KEEP_DAYS=${RECORDING_KEEP_DAYS:-30}
+      - RECORDINGS_PATH=/data/recordings
+      - RECORDING_EGRESS_DIR=/out
+      - BOT_RATE_PER_SEC=${BOT_RATE_PER_SEC:-30}
+      - BOT_MESSAGES_PER_MIN=${BOT_MESSAGES_PER_MIN:-20}
+    volumes:
+      - files_data:/data/files
+      - recordings_data:/data/recordings
+    deploy:
+      resources:
+        limits: { memory: 1g }
+    healthcheck:
+      test: ["CMD", "/server", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+      recordings-init: { condition: service_completed_successfully }
+      livekit: { condition: service_started }
+    networks:
+      calab-internal:
+        aliases: [calab-api]       # unique name: dokploy-network may hold other projects' "api"
+      dokploy-network:
+    logging: *logging
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "dokploy-network"
+
+      traefik.http.routers.calab-api.rule: "Host(`${DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/gateway`) || Path(`/healthz`))"
+      traefik.http.routers.calab-api.priority: "100"
+      traefik.http.routers.calab-api.entrypoints: "websecure"
+      traefik.http.routers.calab-api.tls: "true"
+      traefik.http.routers.calab-api.tls.certresolver: "letsencrypt"
+      traefik.http.routers.calab-api.middlewares: "${TRAEFIK_MIDDLEWARES:-}"
+      traefik.http.routers.calab-api.service: "calab-api"
+      traefik.http.services.calab-api.loadbalancer.server.port: "3000"
+
+      # Identity provider routes (docs/06-deployment.md): must reach the API before the SPA
+      # fallback, with no-store / no-referrer / frame-ancestors. Inert while identity is off
+      # (the API answers 503).
+      traefik.http.routers.calab-oidc.rule: "Host(`${DOMAIN}`) && (PathPrefix(`/oidc/`) || PathPrefix(`/.well-known/oauth-authorization-server/oidc/`))"
+      traefik.http.routers.calab-oidc.priority: "100"
+      traefik.http.routers.calab-oidc.entrypoints: "websecure"
+      traefik.http.routers.calab-oidc.tls: "true"
+      traefik.http.routers.calab-oidc.tls.certresolver: "letsencrypt"
+      traefik.http.routers.calab-oidc.middlewares: "calab-oidc-headers@docker${TRAEFIK_MIDDLEWARES:+,}${TRAEFIK_MIDDLEWARES:-}"
+      traefik.http.routers.calab-oidc.service: "calab-api"
+      traefik.http.middlewares.calab-oidc-headers.headers.customresponseheaders.Cache-Control: "no-store"
+      traefik.http.middlewares.calab-oidc-headers.headers.customresponseheaders.Referrer-Policy: "no-referrer"
+      traefik.http.middlewares.calab-oidc-headers.headers.customresponseheaders.Content-Security-Policy: "frame-ancestors 'none'"
+
+  # One-shot: recordings_data belongs to the API user (65532). Same as infra/docker/compose.yml.
+  recordings-init:
+    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    network_mode: none
+    restart: "no"
+    user: "0:0"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    entrypoint: ["sh", "-c", "chmod 0755 /out && chown 65532:65532 /out"]
+    volumes:
+      - recordings_data:/out
+    logging: *logging
+
+  # ============================================================
+  # LIVEKIT
+  # signal (wss) goes through Traefik; media (7881/tcp, 7882/udp) and TURN/UDP are published;
+  # TURN/TLS: Traefik terminates TLS on :443 by SNI turn.<DOMAIN> and forwards plain TCP to 5349
+  # (external_tls: true).
+  # ============================================================
+  livekit:
+    image: livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { memory: 4g }
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?}: ${LIVEKIT_API_SECRET:?}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?}"      # livekit-server reads the Valkey password itself
+      # Mirrors infra/docker/livekit/livekit.yaml.tpl. Compose substitutes ${...}.
+      LIVEKIT_CONFIG: |
+        port: 7880
+        bind_addresses:
+          - "0.0.0.0"          # bridge network: signal must not be loopback-only; the port is not published
+
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: true
+          allow_tcp_fallback: true
+          # No ips.excludes on purpose: on a bridge network the container's only interface is
+          # inside the ranges the host-network template excludes, so excluding them leaves
+          # LiveKit without ICE candidates.
+
+        redis:
+          address: calab-valkey:6379
+          db: 1
+
+        turn:
+          enabled: true
+          domain: turn.${DOMAIN}
+          tls_port: 5349
+          external_tls: true
+          udp_port: ${TURN_UDP_PORT:-3478}
+          relay_range_start: 20000
+          relay_range_end: 20099
+
+        room:
+          auto_create: false
+          empty_timeout: 300
+          max_participants: 100
+
+        audio:
+          active_level: 40
+          min_percentile: 40
+          update_interval: 150
+          smooth_intervals: 2
+
+        webhook:
+          api_key: ${LIVEKIT_API_KEY}
+          urls:
+            - http://calab-api:3000/api/rtc/webhook
+
+        prometheus:
+          port: 6789
+
+        logging:
+          level: info
+          json: true
+    ports:
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+      - "${TURN_UDP_PORT:-3478}:${TURN_UDP_PORT:-3478}/udp"
+      # Narrow on purpose: Docker starts a docker-proxy per published UDP port.
+      - "20000-20099:20000-20099/udp"
+    depends_on:
+      valkey: { condition: service_healthy }
+    networks:
+      calab-internal:
+        aliases: [calab-livekit]
+      dokploy-network:
+    logging: *logging
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "dokploy-network"
+
+      # signal (WebSocket)
+      traefik.http.routers.calab-rtc.rule: "Host(`rtc.${DOMAIN}`)"
+      traefik.http.routers.calab-rtc.entrypoints: "websecure"
+      traefik.http.routers.calab-rtc.tls: "true"
+      traefik.http.routers.calab-rtc.tls.certresolver: "letsencrypt"
+      traefik.http.routers.calab-rtc.middlewares: "${TRAEFIK_MIDDLEWARES:-}"
+      traefik.http.routers.calab-rtc.service: "calab-rtc"
+      traefik.http.services.calab-rtc.loadbalancer.server.port: "7880"
+
+      # TURN/TLS (external_tls: true)
+      traefik.tcp.routers.calab-turn.rule: "HostSNI(`turn.${DOMAIN}`)"
+      traefik.tcp.routers.calab-turn.entrypoints: "websecure"
+      traefik.tcp.routers.calab-turn.tls: "true"
+      traefik.tcp.routers.calab-turn.tls.certresolver: "letsencrypt"
+      traefik.tcp.routers.calab-turn.service: "calab-turn"
+      traefik.tcp.services.calab-turn.loadbalancer.server.port: "5349"
+
+  # ============================================================
+  # POSTGRES / VALKEY: as in infra/docker/compose.yml, without host port publishing
+  # ============================================================
+  postgres:
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    restart: unless-stopped
+    <<: *hardening
+    user: "70:70"
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql:uid=70,gid=70,mode=2775
+    environment:
+      - POSTGRES_USER=calaba
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?}
+      - POSTGRES_DB=calaba
+    volumes:
+      - pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calaba"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { memory: 2g }
+    networks:
+      calab-internal:
+        aliases: [calab-postgres]
+    logging: *logging
+
+  valkey:
+    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    restart: unless-stopped
+    <<: *hardening
+    user: "999:1000"
+    tmpfs: [/tmp]
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?}
+    command:
+      - sh
+      - -c
+      - |
+        umask 077
+        pw=$$(printf '%s' "$$REDIS_PASSWORD" | sed 's/[\\"]/\\&/g')
+        printf 'requirepass "%s"\n' "$$pw" > /tmp/auth.conf
+        exec valkey-server /tmp/auth.conf --save 60 1 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    volumes:
+      - valkey_data:/data
+    deploy:
+      resources:
+        limits: { memory: 768m }
+    healthcheck:
+      test: ["CMD-SHELL", "VALKEYCLI_AUTH=\"$$REDIS_PASSWORD\" valkey-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      calab-internal:
+        aliases: [calab-valkey]
+    logging: *logging
+
+networks:
+  dokploy-network:
+    external: true
+  calab-internal:
+    driver: bridge
+
+volumes:
+  pg_data:
+  valkey_data:
+  files_data:          # uploaded files: back up (see docs/06)
+  recordings_data:
