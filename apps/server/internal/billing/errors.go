@@ -23,6 +23,7 @@ const (
 	ReasonSeatGrowthRequiresFunds    = "BILLING_SEAT_GROWTH_REQUIRES_FUNDS"
 	ReasonRequestReused              = "BILLING_REQUEST_REUSED"       // same request_id, another body
 	ReasonPlanManagedByBilling       = "BILLING_PLAN_MANAGED"         // manual plan change of a billing workspace
+	ReasonPlanAdminAssigned          = "BILLING_PLAN_ADMIN_ASSIGNED"  // 409: a superadmin assigned the plan (ADR-0086)
 	ReasonAccountExists              = "BILLING_ACCOUNT_EXISTS"       // superadmin enable twice
 	ReasonMethodUnavailable          = "BILLING_METHOD_UNAVAILABLE"   // 422: method_id not offered to this account
 	ReasonOwnerRequired              = "BILLING_OWNER_REQUIRED"       // 403
@@ -68,6 +69,9 @@ var (
 	ErrSeatGrowthRequiresFunds = conflict(ReasonSeatGrowthRequiresFunds, "adding a paid member needs a positive balance")
 	ErrRequestReused           = conflict(ReasonRequestReused, "request_id was used with another body")
 	ErrPlanManagedByBilling    = conflict(ReasonPlanManagedByBilling, "the plan is managed by billing")
+	// ErrPlanAdminAssigned: the plan was assigned by a superadmin (a manual plan other than Free,
+	// not expired); self-serve never overrides it — the owner contacts support (ADR-0086).
+	ErrPlanAdminAssigned       = conflict(ReasonPlanAdminAssigned, "the plan was assigned by an administrator: contact support")
 	ErrAccountExists           = conflict(ReasonAccountExists, "billing is already enabled")
 	ErrDisputeHold             = conflict(ReasonDisputeHold, "an open dispute holds the account")
 	ErrRefundExceedsRefundable = conflict(ReasonRefundExceedsRefundable, "amount exceeds the refundable amount")

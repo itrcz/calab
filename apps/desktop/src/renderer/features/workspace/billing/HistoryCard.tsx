@@ -10,11 +10,13 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink } from 'lucide-react';
-import { memo, useRef, useState, type ReactNode } from 'react';
+import { ChevronDown, ExternalLink } from 'lucide-react';
+import { memo, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, Field, Input, Modal, Segmented, Spinner, cx } from '../../../components/ui';
 import { plural, t, type MessageKey } from '../../../i18n';
 import { billingErrorText } from '../../../lib/billing/errors';
+import { groupLedger, type LedgerItem } from '../../../lib/billing/history';
+import { PLAN_LABEL } from '../../../lib/plan';
 import { amountProblem, requestId } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, minorOf, parseMajor } from '../../../lib/billing/money';
 import { fmt } from '../../../lib/format';
@@ -50,6 +52,8 @@ export function ledgerDetail(e: LedgerEntry): string {
     const period = e.endsAt ? t('billing.until', { when: fmt.dateTime(timestampDate(e.endsAt), 'short') }) : '';
     return [plural('billing.nSeats', e.quantity), e.sku ? skuPlan(e.sku) : '', period].filter(Boolean).join(' · ');
   }
+  // The unused rest of a lot (a plan change / stop): which seats of which plan came back.
+  if (e.kind === LedgerEntryKind.COMPENSATION && e.sku) return [e.quantity > 0 ? plural('billing.nSeats', e.quantity) : '', skuPlan(e.sku)].filter(Boolean).join(' · ');
   return e.reason;
 }
 
@@ -84,6 +88,58 @@ export const LedgerRow = memo(function LedgerRow({ e, action }: { e: LedgerEntry
   );
 });
 
+type OpItem = Extract<LedgerItem, { kind: 'op' }>;
+
+const opTitle = (g: OpItem): string =>
+  g.op === 'change'
+    ? t('billing.history.op.change', { from: t(PLAN_LABEL[g.from]), to: t(PLAN_LABEL[g.to]) })
+    : t(g.op === 'resume' ? 'billing.history.op.resume' : 'billing.history.op.activate', { plan: t(PLAN_LABEL[g.to]) });
+
+/**
+ * One operation (owner, 10.10): «Смена тарифа Business → Team: −0,03 $», expandable to its seat
+ * charge and the compensation of the previous plan. Own expanded state: a toggle re-renders this row only.
+ */
+const OpRow = memo(function OpRow({ g, action }: { g: OpItem; action?: ((e: LedgerEntry) => ReactNode) | undefined }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const head = g.entries[0];
+  const at = head?.createdAt ? fmt.dateTime(timestampDate(head.createdAt), 'short') : '—';
+  return (
+    <div className="border-b border-[var(--color-card-line)] last:border-b-0" data-testid="billing-ledger-op">
+      <div role="row" className={cx(cols, 'min-h-10 px-3 py-1.5')}>
+        <span role="cell" className="whitespace-nowrap tabular-nums text-caption text-muted mobile:hidden">
+          {at}
+        </span>
+        <span role="cell" className="flex min-w-0 flex-col">
+          <span className="truncate text-body">{opTitle(g)}</span>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex items-center gap-1 self-start rounded-[var(--radius-control)] text-caption text-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
+          >
+            <span className="hidden mobile:inline">{at} · </span>
+            {open ? t('billing.history.op.hide') : t('billing.history.op.details')}
+            <ChevronDown className={cx('size-3 transition-transform', open && 'rotate-180')} aria-hidden />
+          </button>
+        </span>
+        <span role="cell" className="text-right tabular-nums text-body">
+          {formatMinor(g.total, g.currency, { signed: true })}
+        </span>
+        <span role="cell" className={cx('text-right tabular-nums text-caption mobile:hidden', minorOf(head?.balanceAfter) < 0n ? 'text-danger-text' : 'text-muted')}>
+          {formatMoney(head?.balanceAfter)}
+        </span>
+      </div>
+      {open ? (
+        <div className="ml-3 border-l-2 border-[var(--color-card-line)]">
+          {g.entries.map((e) => (
+            <LedgerRow key={e.id} e={e} action={action} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
 /** A ledger table with «Показать ещё» (cursor pages). Shared with the superadmin account page. */
 export function LedgerTable({
   queryKey,
@@ -101,7 +157,8 @@ export function LedgerTable({
     getNextPageParam: (last) => last.nextCursor || undefined,
     retry: false,
   });
-  const entries = q.data?.pages.flatMap((p) => p.entries) ?? [];
+  const entries = useMemo(() => q.data?.pages.flatMap((p) => p.entries) ?? [], [q.data]);
+  const items = useMemo(() => groupLedger(entries), [entries]);
   if (q.isLoading) return <Spinner className="mx-auto my-4" />;
   if (q.isError) return <p className="px-3 py-3 text-body text-danger-text">{billingErrorText(q.error)}</p>;
   if (entries.length === 0) return <p className="px-3 py-3 text-body text-muted">{t('billing.history.empty')}</p>;
@@ -118,9 +175,7 @@ export function LedgerTable({
             {t('billing.col.balance')}
           </span>
         </div>
-        {entries.map((e) => (
-          <LedgerRow key={e.id} e={e} action={action} />
-        ))}
+        {items.map((it) => (it.kind === 'op' ? <OpRow key={it.id} g={it} action={action} /> : <LedgerRow key={it.entry.id} e={it.entry} action={action} />))}
       </div>
       {q.hasNextPage ? (
         <div className="flex justify-center py-2">

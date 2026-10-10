@@ -65,6 +65,9 @@ interface Boot {
   market?: 'ru';
   /** ADR-0083 phase 2: the mock's one-click answer (default: paid at once). */
   oneclick?: '3ds' | 'decline';
+  /** ADR-0086: the workspace exceeds Team / Free (mock `?limits=over`), the plan is admin-assigned (`?admin=1`). */
+  limits?: 'over';
+  admin?: boolean;
 }
 
 /** One page load: the billing scenario, the theme, the sign-in, the workspace's main screen. */
@@ -74,7 +77,7 @@ async function boot(page: Page, o: Boot): Promise<Shot> {
   await page.clock.setFixedTime(NOW);
   await page.goto(`${mock.url}/?visual-test`);
   await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
-  const extra = `${o.sales ? `&sales=${o.sales}` : ''}${o.market ? `&market=${o.market}` : ''}${o.oneclick ? `&oneclick=${o.oneclick}` : ''}`;
+  const extra = `${o.sales ? `&sales=${o.sales}` : ''}${o.market ? `&market=${o.market}` : ''}${o.oneclick ? `&oneclick=${o.oneclick}` : ''}${o.limits ? `&limits=${o.limits}` : ''}${o.admin ? '&admin=1' : ''}`;
   await page.goto(`${mock.url}/?visual-test&billing=${o.scenario}${extra}`);
   if (isPhone()) {
     await page.addStyleTag({ content: `@media (max-width: 768px) { :root.web:not(.kb-open) { --safe-top: ${INSETS.top}px; --safe-bottom: ${INSETS.bottom}px; } }` });
@@ -107,11 +110,30 @@ async function scrollEnd(root: Locator): Promise<void> {
 
 const dialog = (page: Page): Locator => page.getByRole('dialog').last();
 
-/** The plan dialog from the badge. */
-async function openPlans(page: Page): Promise<Locator> {
+/** Settings → «Тариф» from the badge (owner, 10.10: the badge leads to the plan tab). */
+async function openPlanTab(page: Page): Promise<Locator> {
   await tap(page.getByTestId('plan-badge'));
+  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await expect(settings.getByTestId('plan-limits')).toBeVisible();
+  return settings;
+}
+
+/** The plan dialog: the badge → settings → «Сменить тариф». */
+async function openPlans(page: Page): Promise<Locator> {
+  const settings = await openPlanTab(page);
+  const button = settings.getByTestId('plan-switch');
+  await button.scrollIntoViewIfNeeded();
+  await tap(button);
   await expect(page.getByTestId('billing-plans')).toBeVisible();
   return page.getByTestId('billing-plans');
+}
+
+/** From the plan dialog (opened over settings) back to the cabinet under it. */
+async function backToCabinet(page: Page): Promise<Locator> {
+  await closeTop(page);
+  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await settings.evaluate((el) => [el, ...el.querySelectorAll<HTMLElement>('*')].forEach((e) => (e.scrollTop = 0)));
+  return settings;
 }
 
 /** Closes the top dialog with Escape (every billing dialog must answer it: the close box does not hold the focus). */
@@ -119,7 +141,7 @@ async function closeTop(page: Page): Promise<void> {
   // A dialog over a dialog hides the one below from the a11y tree: hold the top one by handle.
   const top = await dialog(page).elementHandle();
   await page.keyboard.press('Escape');
-  await top?.waitForElementState('hidden', { timeout: 10_000 });
+  await top.waitForElementState('hidden', { timeout: 10_000 });
 }
 
 // ---------------------------------------------------------------- Free: the badge, the plan choice, the payment step
@@ -164,9 +186,8 @@ test('billing-team: badge, plans, cabinet, top-up, quotes', async ({ page }) => 
   await expect(page.getByTestId('plans-pay-step')).toBeVisible();
   await checkpoint(s, 'billing-pay-change');
   await tap(page.getByRole('button', { name: 'Назад' }));
-  // «Подробнее о балансе» → the cabinet in settings.
-  await tap(page.getByTestId('plans-details'));
-  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  // The plan dialog opened over settings → «Тариф»: the cabinet is right under it.
+  const settings = await backToCabinet(page);
   const cabinet = settings.getByTestId('billing-cabinet');
   await expect(cabinet).toBeVisible();
   await expect(cabinet.getByTestId('billing-ledger-row').first()).toBeVisible();
@@ -216,8 +237,7 @@ test('billing-debt: badge, bar, plans, cabinet, top-up', async ({ page }) => {
   await checkpoint(s, 'billing-badge-debt');
   await openPlans(page);
   await checkpoint(s, 'billing-plans-debt');
-  await tap(page.getByTestId('plans-details'));
-  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  const settings = await backToCabinet(page);
   await expect(settings.getByTestId('billing-cabinet')).toBeVisible();
   await checkpoint(s, 'billing-cabinet-debt');
   await tap(settings.getByTestId('billing-topup-open'));
@@ -232,12 +252,13 @@ test('billing-suspended: paywall, badge, plans, top-up', async ({ page }) => {
   const s = await boot(page, { scenario: 'suspended', plan: 'PLAN_TEAM' });
   await expect(page.getByTestId('billing-paywall')).toBeVisible();
   await checkpoint(s, 'billing-paywall-owner');
-  await openPlans(page);
-  await checkpoint(s, 'billing-plans-suspended');
-  await closeTop(page);
   await tap(page.getByTestId('billing-paywall-topup'));
   await expect(page.getByTestId('billing-topup')).toBeVisible();
   await checkpoint(s, 'billing-paywall-topup');
+  await closeTop(page);
+  // The plans open over settings → «Тариф» (ADR-0086): last, as settings stay under them.
+  await openPlans(page);
+  await checkpoint(s, 'billing-plans-suspended');
 });
 
 test('billing-suspended-member: the stub', async ({ page }) => {
@@ -249,16 +270,12 @@ test('billing-suspended-member: the stub', async ({ page }) => {
 
 // ---------------------------------------------------------------- A member: the read-only dialog and the stub
 
-test('billing-member: read-only plans and the settings stub', async ({ page }) => {
+test('billing-member: the badge leads to the plan tab with the stub', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
   const s = await boot(page, { scenario: 'member', plan: 'PLAN_TEAM', email: 'vera@calaba.test' });
-  if (!isLight()) await checkpoint(s, 'billing-badge-member');
-  await tap(page.getByTestId('plan-badge'));
-  await expect(page.getByTestId('billing-plans-member')).toBeVisible();
-  await checkpoint(s, 'billing-plans-member');
-  if (isLight()) return;
-  // «Лимиты тарифа» → settings → «Тариф» (a member has no workspace menu entry for it).
-  await tap(page.getByRole('button', { name: 'Лимиты тарифа' }));
-  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await checkpoint(s, 'billing-badge-member');
+  // The badge → settings → «Тариф» (a member has no workspace menu entry for it).
+  const settings = await openPlanTab(page);
   await expect(settings.getByTestId('billing-member-stub')).toBeVisible();
   await checkpoint(s, 'billing-cabinet-member');
 });
@@ -295,9 +312,7 @@ test('billing-ru: market switch and the RU pay step', async ({ page }) => {
 test('billing-ru-cabinet: the RU top-up dialog', async ({ page }) => {
   test.skip(isLight(), 'dark only');
   const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', market: 'ru' });
-  await openPlans(page);
-  await tap(page.getByTestId('plans-details'));
-  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  const settings = await openPlanTab(page);
   await tap(settings.getByTestId('billing-topup-open'));
   await expect(page.getByTestId('billing-topup')).toBeVisible();
   await checkpoint(s, 'billing-topup-ru');
@@ -307,9 +322,7 @@ test('billing-ru-cabinet: the RU top-up dialog', async ({ page }) => {
 
 /** The cabinet's top-up dialog with the saved card preselected. */
 async function openTopup(page: Page): Promise<Locator> {
-  await openPlans(page);
-  await tap(page.getByTestId('plans-details'));
-  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  const settings = await openPlanTab(page);
   await tap(settings.getByTestId('billing-topup-open'));
   const d = page.getByTestId('billing-topup');
   await expect(d).toBeVisible();
@@ -375,9 +388,8 @@ test('billing-payer: requisites form by country', async ({ page }) => {
   test.skip(isLight(), 'dark only');
   // The RU account: the saved payer is a Russian company (ИНН, КПП, ОГРН, юридический адрес).
   const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', market: 'ru' });
-  await openPlans(page);
-  await tap(page.getByTestId('plans-details'));
-  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  // The badge opens settings → «Тариф» with the cabinet (ADR-0086).
+  const settings = await openPlanTab(page);
   await tap(settings.getByTestId('billing-payer-edit'));
   const form = page.getByTestId('billing-payer-form');
   await expect(form.getByTestId('billing-payer-type')).toBeVisible();
@@ -459,4 +471,71 @@ test('billing-admin: accounts list and the account page', async ({ page }) => {
   await tap(admin.getByTestId('admin-billing-market'));
   await expect(page.getByRole('dialog').last()).toBeVisible();
   await checkpoint(s, 'billing-admin-market');
+});
+
+// ---------------------------------------------------------------- Plan transitions (ADR-0086)
+
+test('billing-transitions: the plan tab, «Сменить тариф», a downgrade over the limits', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  // Business, over Team's and Free's limits (6 bots, rooms of 30, SSO, 7 GB of files, automations).
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_ENTERPRISE', limits: 'over' });
+  const settings = await openPlanTab(page);
+  const button = settings.getByTestId('plan-switch');
+  await button.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-tr-plan-tab');
+  await tap(button);
+  await expect(page.getByTestId('billing-plans')).toBeVisible();
+  await expect(page.getByTestId('plans-why-TEAM')).toBeVisible();
+  await checkpoint(s, 'billing-tr-plans');
+  await tap(page.getByTestId('plans-why-TEAM'));
+  await expect(page.getByTestId('plan-violations')).toBeVisible();
+  await checkpoint(s, 'billing-tr-plans-why');
+  const cabinet = await backToCabinet(page);
+  // Business → Team from the cabinet: the quote is refused with the violations and where to fix them.
+  await tap(cabinet.getByTestId('billing-change-plan'));
+  await expect(page.getByTestId('plan-violations')).toBeVisible();
+  await checkpoint(s, 'billing-tr-quote-blocked');
+  await closeTop(page);
+  // Stop → Free: several violations at once.
+  await tap(cabinet.getByTestId('billing-stop'));
+  await expect(page.getByTestId('plan-violations')).toBeVisible();
+  await checkpoint(s, 'billing-tr-stop-blocked');
+});
+
+test('billing-transitions-money: the pay step lines, the plan change net, the grouped history', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'selfServe', plan: 'PLAN_FREE' });
+  await openPlans(page);
+  await tap(page.getByTestId('plans-choose-TEAM'));
+  await expect(page.getByTestId('plans-pay-lines')).toBeVisible();
+  await checkpoint(s, 'billing-tr-pay-lines');
+});
+
+test('billing-transitions-change: the net of a plan change and its history row', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM' });
+  const cabinet = await openPlanTab(page);
+  await tap(cabinet.getByTestId('billing-change-plan'));
+  await expect(page.getByTestId('billing-change-net')).toBeVisible();
+  await checkpoint(s, 'billing-tr-quote-net');
+  await tap(page.getByTestId('billing-quote-confirm'));
+  await expect(page.getByTestId('billing-quote')).toBeHidden();
+  const op = cabinet.getByTestId('billing-ledger-op').first();
+  await expect(op).toBeVisible();
+  await tap(op.getByRole('button', { name: 'Подробнее' }));
+  await op.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-tr-history-op');
+});
+
+test('billing-transitions-admin: a plan assigned by a superadmin', async ({ page }) => {
+  test.skip(isLight(), 'dark only');
+  const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', admin: true, badge: false });
+  await tap(page.getByTestId(isPhone() ? 'phone-ws-switcher' : 'titlebar-title'));
+  await tap(page.getByRole('menuitem', { name: 'Настройки', exact: true }));
+  const settings = isPhone() ? page.getByTestId('settings-page') : page.getByRole('dialog').last();
+  await tap(settings.getByText('Тариф', { exact: true }).first());
+  const note = settings.getByTestId('plan-admin-assigned');
+  await expect(note).toBeVisible();
+  await note.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(s, 'billing-tr-admin-assigned');
 });

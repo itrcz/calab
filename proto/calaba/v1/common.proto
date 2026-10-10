@@ -134,6 +134,43 @@ message ApiError {
   // Absent when not meaningful.
   optional uint64 used = 5;
   optional uint64 limit = 6;
+  // PLAN_LIMITS_EXCEEDED (CONFLICT, ADR-0086): a plan change refused because the workspace uses
+  // more than the target plan allows — one entry per exceeded limit or feature in use. A message
+  // (absent otherwise), so other errors keep their JSON.
+  PlanLimitViolations plan_limits_exceeded = 7;
+}
+
+// ApiError.plan_limits_exceeded.
+message PlanLimitViolations {
+  repeated PlanLimitViolation violations = 1;
+}
+
+// What a plan transition would exceed (ADR-0086 «Переходы тарифов»). Counted limits carry the
+// usage and the target plan's limit; a feature the target plan lacks carries current = the items
+// in use (active connections, rules, …) and limit = 0.
+enum PlanLimitKind {
+  PLAN_LIMIT_KIND_UNSPECIFIED = 0;
+  PLAN_LIMIT_KIND_MEMBERS = 1;        // members without guests, bots included
+  PLAN_LIMIT_KIND_BOTS = 2;
+  PLAN_LIMIT_KIND_STORAGE_MB = 3;     // workspace files, MiB rounded up
+  PLAN_LIMIT_KIND_BOARDS = 4;         // task boards, live and archived
+  PLAN_LIMIT_KIND_STICKER_PACKS = 5;
+  PLAN_LIMIT_KIND_STICKERS = 6;
+  PLAN_LIMIT_KIND_ROOM_MEMBERS = 7;   // voice rooms set above the plan's room size: current = the largest setting, rooms = how many
+  PLAN_LIMIT_KIND_BOARD_FORMS = 8;    // board forms: current = most forms on one board (limit 0: forms are not in the plan)
+  PLAN_LIMIT_KIND_SSO = 9;            // an active SSO connection (Business)
+  PLAN_LIMIT_KIND_DIRECTORY_SYNC = 10; // an enabled directory sync (Business)
+  PLAN_LIMIT_KIND_OAUTH_APPS = 11;    // enabled OAuth applications (Business)
+  PLAN_LIMIT_KIND_TELEPHONY = 12;     // an enabled SIP trunk (Business)
+  PLAN_LIMIT_KIND_BOARD_WEBHOOKS = 13; // enabled board webhooks (Business)
+  PLAN_LIMIT_KIND_AUTOMATIONS = 14;   // enabled board automation rules (Team and above)
+}
+
+message PlanLimitViolation {
+  PlanLimitKind kind = 1;
+  uint64 current = 2;
+  uint64 limit = 3;
+  uint32 rooms = 4; // ROOM_MEMBERS: voice rooms over the limit
 }
 
 // Cursor pagination over time-ordered ids (uuidv7). At most one of before/after is set.

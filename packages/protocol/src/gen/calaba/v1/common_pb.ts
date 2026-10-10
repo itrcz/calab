@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/common.proto.
  */
 export const file_calaba_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChZjYWxhYmEvdjEvY29tbW9uLnByb3RvEgljYWxhYmEudjEiqAEKCEFwaUVycm9yEiIKBGNvZGUYASABKA4yFC5jYWxhYmEudjEuRXJyb3JDb2RlEg8KB21lc3NhZ2UYAiABKAkSDQoFZmllbGQYAyABKAkSEwoGcmVhc29uGAQgASgJSACIAQESEQoEdXNlZBgFIAEoBEgBiAEBEhIKBWxpbWl0GAYgASgESAKIAQFCCQoHX3JlYXNvbkIHCgVfdXNlZEIICgZfbGltaXQiOwoLUGFnZVJlcXVlc3QSDgoGYmVmb3JlGAEgASgJEg0KBWFmdGVyGAIgASgJEg0KBWxpbWl0GAMgASgNIhwKCFBhZ2VJbmZvEhAKCGhhc19tb3JlGAEgASgIIgcKBUVtcHR5IqsBChJHZXRWZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIOCgZjb21taXQYAiABKAkSDwoHbGljZW5zZRgDIAEoCRIaChJjb21tZXJjaWFsX2xpY2Vuc2UYBCABKAkSEwoLYXR0cmlidXRpb24YBSABKAkSCwoDdXJsGAYgASgJEg8KB3Byb2R1Y3QYByABKAkSFAoMcGxhbl9jb250YWN0GAggASgJKvUNCglFcnJvckNvZGUSGgoWRVJST1JfQ09ERV9VTlNQRUNJRklFRBAAEhcKE0VSUk9SX0NPREVfSU5URVJOQUwQARIaChZFUlJPUl9DT0RFX0JBRF9SRVFVRVNUEAISGQoVRVJST1JfQ09ERV9WQUxJREFUSU9OEAMSHgoaRVJST1JfQ09ERV9VTkFVVEhFTlRJQ0FURUQQBBIYChRFUlJPUl9DT0RFX0ZPUkJJRERFThAFEhgKFEVSUk9SX0NPREVfTk9UX0ZPVU5EEAYSFwoTRVJST1JfQ09ERV9DT05GTElDVBAHEhsKF0VSUk9SX0NPREVfUkFURV9MSU1JVEVEEAgSIgoeRVJST1JfQ09ERV9JTlZBTElEX0NSRURFTlRJQUxTEAkSJAogRVJST1JfQ09ERV9JTlZBTElEX1JFRlJFU0hfVE9LRU4QChIiCh5FUlJPUl9DT0RFX1JFR0lTVFJBVElPTl9DTE9TRUQQCxIdChlFUlJPUl9DT0RFX0lOVklURV9JTlZBTElEEAwSHQoZRVJST1JfQ09ERV9GSUxFX1RPT19MQVJHRRANEiIKHkVSUk9SX0NPREVfRklMRV9RVU9UQV9FWENFRURFRBAOEiAKHEVSUk9SX0NPREVfUEFZTE9BRF9UT09fTEFSR0UQDxIaChZFUlJPUl9DT0RFX1VOQVZBSUxBQkxFEBASGAoURVJST1JfQ09ERV9ST09NX0ZVTEwQERIeChpFUlJPUl9DT0RFX1dPUktTUEFDRV9MSU1JVBASEhsKF0VSUk9SX0NPREVfU1RPUkFHRV9GVUxMEBMSIQodRVJST1JfQ09ERV9FTUFJTF9OT1RfVkVSSUZJRUQQFBIbChdFUlJPUl9DT0RFX0NPREVfSU5WQUxJRBAVEhsKF0VSUk9SX0NPREVfQ09ERV9FWFBJUkVEEBYSGQoVRVJST1JfQ09ERV9OT1RfUEFJUkVEEBcSIAocRVJST1JfQ09ERV9BTFJFQURZX1JFQ09SRElORxAYEh4KGkVSUk9SX0NPREVfUkVDT1JESU5HX0xJTUlUEBkSIgoeRVJST1JfQ09ERV9XT1JLU1BBQ0VfU1VTUEVOREVEEBoSFQoRRVJST1JfQ09ERV9CQU5ORUQQGxIkCiBFUlJPUl9DT0RFX0lOVklURV9FTUFJTF9NSVNNQVRDSBAcEhgKFEVSUk9SX0NPREVfRklMRV9HT05FEB0SHwobRVJST1JfQ09ERV9BTFJFQURZX1VQTE9BREVEEB4SGgoWRVJST1JfQ09ERV9CT1RfQkxPQ0tFRBAoEhMKD0VSUk9SX0NPREVfQlVTWRApEhYKEkVSUk9SX0NPREVfSU5fQ0FMTBAqEh4KGkVSUk9SX0NPREVfQ0FMTF9OT1RfQUNUSVZFECsSHgoaRVJST1JfQ09ERV9TRVNTSU9OX1JFVk9LRUQQLBIZChVFUlJPUl9DT0RFX0VWRU5UX09WRVIQMhIjCh9FUlJPUl9DT0RFX0lOVklURV9OT1RfWUVUX1ZBTElEEDMSHgoaRVJST1JfQ09ERV9OT19DT01NT05fSE9VUlMQNBIeChpFUlJPUl9DT0RFX1RFTVBfUk9PTV9MSU1JVBA1EhwKGEVSUk9SX0NPREVfUk9PTV9BUkNISVZFRBA2EhsKF0VSUk9SX0NPREVfU0lQX0RJU0FCTEVEEDcSHgoaRVJST1JfQ09ERV9TSVBfQ0FMTF9BQ1RJVkUQOBIlCiFFUlJPUl9DT0RFX1NJUF9OVU1CRVJfTk9UX0FMTE9XRUQQORIfChtFUlJPUl9DT0RFX1NJUF9SQVRFX0xJTUlURUQQOhIhCh1FUlJPUl9DT0RFX1NJUF9QUk9WSURFUl9FUlJPUhA7EhsKF0VSUk9SX0NPREVfU1NPX1JFUVVJUkVEEDwSJAogRVJST1JfQ09ERV9JREVOVElUWV9TQ09QRV9ERU5JRUQQPRImCiJFUlJPUl9DT0RFX0RJUkVDVE9SWV9BQ0NFU1NfREVOSUVEED4SHAoYRVJST1JfQ09ERV9SRUNPVkVSWV9PTkxZED8SJgoiRVJST1JfQ09ERV9JREVOVElUWV9DT05GSUdfQ0hBTkdFRBBAEiIKHkVSUk9SX0NPREVfSURFTlRJVFlfTk9UX0xJTktFRBBBEi4KKkVSUk9SX0NPREVfSURFTlRJVFlfREVQRU5ERU5DWV9VTkFWQUlMQUJMRRBCEiMKH0VSUk9SX0NPREVfUkVDRU5UX0FVVEhfUkVRVUlSRUQQQxIdChlFUlJPUl9DT0RFX1VTRVJOQU1FX1RBS0VOEEQSHwobRVJST1JfQ09ERV9VU0VSTkFNRV9JTlZBTElEEEVCmQEKDWNvbS5jYWxhYmEudjFCC0NvbW1vblByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw");
+  fileDesc("ChZjYWxhYmEvdjEvY29tbW9uLnByb3RvEgljYWxhYmEudjEi5gEKCEFwaUVycm9yEiIKBGNvZGUYASABKA4yFC5jYWxhYmEudjEuRXJyb3JDb2RlEg8KB21lc3NhZ2UYAiABKAkSDQoFZmllbGQYAyABKAkSEwoGcmVhc29uGAQgASgJSACIAQESEQoEdXNlZBgFIAEoBEgBiAEBEhIKBWxpbWl0GAYgASgESAKIAQESPAoUcGxhbl9saW1pdHNfZXhjZWVkZWQYByABKAsyHi5jYWxhYmEudjEuUGxhbkxpbWl0VmlvbGF0aW9uc0IJCgdfcmVhc29uQgcKBV91c2VkQggKBl9saW1pdCJIChNQbGFuTGltaXRWaW9sYXRpb25zEjEKCnZpb2xhdGlvbnMYASADKAsyHS5jYWxhYmEudjEuUGxhbkxpbWl0VmlvbGF0aW9uImsKElBsYW5MaW1pdFZpb2xhdGlvbhImCgRraW5kGAEgASgOMhguY2FsYWJhLnYxLlBsYW5MaW1pdEtpbmQSDwoHY3VycmVudBgCIAEoBBINCgVsaW1pdBgDIAEoBBINCgVyb29tcxgEIAEoDSI7CgtQYWdlUmVxdWVzdBIOCgZiZWZvcmUYASABKAkSDQoFYWZ0ZXIYAiABKAkSDQoFbGltaXQYAyABKA0iHAoIUGFnZUluZm8SEAoIaGFzX21vcmUYASABKAgiBwoFRW1wdHkiqwEKEkdldFZlcnNpb25SZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEg4KBmNvbW1pdBgCIAEoCRIPCgdsaWNlbnNlGAMgASgJEhoKEmNvbW1lcmNpYWxfbGljZW5zZRgEIAEoCRITCgthdHRyaWJ1dGlvbhgFIAEoCRILCgN1cmwYBiABKAkSDwoHcHJvZHVjdBgHIAEoCRIUCgxwbGFuX2NvbnRhY3QYCCABKAkq9Q0KCUVycm9yQ29kZRIaChZFUlJPUl9DT0RFX1VOU1BFQ0lGSUVEEAASFwoTRVJST1JfQ09ERV9JTlRFUk5BTBABEhoKFkVSUk9SX0NPREVfQkFEX1JFUVVFU1QQAhIZChVFUlJPUl9DT0RFX1ZBTElEQVRJT04QAxIeChpFUlJPUl9DT0RFX1VOQVVUSEVOVElDQVRFRBAEEhgKFEVSUk9SX0NPREVfRk9SQklEREVOEAUSGAoURVJST1JfQ09ERV9OT1RfRk9VTkQQBhIXChNFUlJPUl9DT0RFX0NPTkZMSUNUEAcSGwoXRVJST1JfQ09ERV9SQVRFX0xJTUlURUQQCBIiCh5FUlJPUl9DT0RFX0lOVkFMSURfQ1JFREVOVElBTFMQCRIkCiBFUlJPUl9DT0RFX0lOVkFMSURfUkVGUkVTSF9UT0tFThAKEiIKHkVSUk9SX0NPREVfUkVHSVNUUkFUSU9OX0NMT1NFRBALEh0KGUVSUk9SX0NPREVfSU5WSVRFX0lOVkFMSUQQDBIdChlFUlJPUl9DT0RFX0ZJTEVfVE9PX0xBUkdFEA0SIgoeRVJST1JfQ09ERV9GSUxFX1FVT1RBX0VYQ0VFREVEEA4SIAocRVJST1JfQ09ERV9QQVlMT0FEX1RPT19MQVJHRRAPEhoKFkVSUk9SX0NPREVfVU5BVkFJTEFCTEUQEBIYChRFUlJPUl9DT0RFX1JPT01fRlVMTBAREh4KGkVSUk9SX0NPREVfV09SS1NQQUNFX0xJTUlUEBISGwoXRVJST1JfQ09ERV9TVE9SQUdFX0ZVTEwQExIhCh1FUlJPUl9DT0RFX0VNQUlMX05PVF9WRVJJRklFRBAUEhsKF0VSUk9SX0NPREVfQ09ERV9JTlZBTElEEBUSGwoXRVJST1JfQ09ERV9DT0RFX0VYUElSRUQQFhIZChVFUlJPUl9DT0RFX05PVF9QQUlSRUQQFxIgChxFUlJPUl9DT0RFX0FMUkVBRFlfUkVDT1JESU5HEBgSHgoaRVJST1JfQ09ERV9SRUNPUkRJTkdfTElNSVQQGRIiCh5FUlJPUl9DT0RFX1dPUktTUEFDRV9TVVNQRU5ERUQQGhIVChFFUlJPUl9DT0RFX0JBTk5FRBAbEiQKIEVSUk9SX0NPREVfSU5WSVRFX0VNQUlMX01JU01BVENIEBwSGAoURVJST1JfQ09ERV9GSUxFX0dPTkUQHRIfChtFUlJPUl9DT0RFX0FMUkVBRFlfVVBMT0FERUQQHhIaChZFUlJPUl9DT0RFX0JPVF9CTE9DS0VEECgSEwoPRVJST1JfQ09ERV9CVVNZECkSFgoSRVJST1JfQ09ERV9JTl9DQUxMECoSHgoaRVJST1JfQ09ERV9DQUxMX05PVF9BQ1RJVkUQKxIeChpFUlJPUl9DT0RFX1NFU1NJT05fUkVWT0tFRBAsEhkKFUVSUk9SX0NPREVfRVZFTlRfT1ZFUhAyEiMKH0VSUk9SX0NPREVfSU5WSVRFX05PVF9ZRVRfVkFMSUQQMxIeChpFUlJPUl9DT0RFX05PX0NPTU1PTl9IT1VSUxA0Eh4KGkVSUk9SX0NPREVfVEVNUF9ST09NX0xJTUlUEDUSHAoYRVJST1JfQ09ERV9ST09NX0FSQ0hJVkVEEDYSGwoXRVJST1JfQ09ERV9TSVBfRElTQUJMRUQQNxIeChpFUlJPUl9DT0RFX1NJUF9DQUxMX0FDVElWRRA4EiUKIUVSUk9SX0NPREVfU0lQX05VTUJFUl9OT1RfQUxMT1dFRBA5Eh8KG0VSUk9SX0NPREVfU0lQX1JBVEVfTElNSVRFRBA6EiEKHUVSUk9SX0NPREVfU0lQX1BST1ZJREVSX0VSUk9SEDsSGwoXRVJST1JfQ09ERV9TU09fUkVRVUlSRUQQPBIkCiBFUlJPUl9DT0RFX0lERU5USVRZX1NDT1BFX0RFTklFRBA9EiYKIkVSUk9SX0NPREVfRElSRUNUT1JZX0FDQ0VTU19ERU5JRUQQPhIcChhFUlJPUl9DT0RFX1JFQ09WRVJZX09OTFkQPxImCiJFUlJPUl9DT0RFX0lERU5USVRZX0NPTkZJR19DSEFOR0VEEEASIgoeRVJST1JfQ09ERV9JREVOVElUWV9OT1RfTElOS0VEEEESLgoqRVJST1JfQ09ERV9JREVOVElUWV9ERVBFTkRFTkNZX1VOQVZBSUxBQkxFEEISIwofRVJST1JfQ09ERV9SRUNFTlRfQVVUSF9SRVFVSVJFRBBDEh0KGUVSUk9SX0NPREVfVVNFUk5BTUVfVEFLRU4QRBIfChtFUlJPUl9DT0RFX1VTRVJOQU1FX0lOVkFMSUQQRSroAwoNUGxhbkxpbWl0S2luZBIfChtQTEFOX0xJTUlUX0tJTkRfVU5TUEVDSUZJRUQQABIbChdQTEFOX0xJTUlUX0tJTkRfTUVNQkVSUxABEhgKFFBMQU5fTElNSVRfS0lORF9CT1RTEAISHgoaUExBTl9MSU1JVF9LSU5EX1NUT1JBR0VfTUIQAxIaChZQTEFOX0xJTUlUX0tJTkRfQk9BUkRTEAQSIQodUExBTl9MSU1JVF9LSU5EX1NUSUNLRVJfUEFDS1MQBRIcChhQTEFOX0xJTUlUX0tJTkRfU1RJQ0tFUlMQBhIgChxQTEFOX0xJTUlUX0tJTkRfUk9PTV9NRU1CRVJTEAcSHwobUExBTl9MSU1JVF9LSU5EX0JPQVJEX0ZPUk1TEAgSFwoTUExBTl9MSU1JVF9LSU5EX1NTTxAJEiIKHlBMQU5fTElNSVRfS0lORF9ESVJFQ1RPUllfU1lOQxAKEh4KGlBMQU5fTElNSVRfS0lORF9PQVVUSF9BUFBTEAsSHQoZUExBTl9MSU1JVF9LSU5EX1RFTEVQSE9OWRAMEiIKHlBMQU5fTElNSVRfS0lORF9CT0FSRF9XRUJIT09LUxANEh8KG1BMQU5fTElNSVRfS0lORF9BVVRPTUFUSU9OUxAOQpkBCg1jb20uY2FsYWJhLnYxQgtDb21tb25Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM");
 
 /**
  * Error body of every non-2xx REST response.
@@ -74,6 +74,15 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
    * @generated from field: optional uint64 limit = 6;
    */
   limit?: bigint | undefined;
+
+  /**
+   * PLAN_LIMITS_EXCEEDED (CONFLICT, ADR-0086): a plan change refused because the workspace uses
+   * more than the target plan allows — one entry per exceeded limit or feature in use. A message
+   * (absent otherwise), so other errors keep their JSON.
+   *
+   * @generated from field: calaba.v1.PlanLimitViolations plan_limits_exceeded = 7;
+   */
+  planLimitsExceeded?: PlanLimitViolations | undefined;
 };
 
 /**
@@ -82,6 +91,59 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
  */
 export const ApiErrorSchema: GenMessage<ApiError> = /*@__PURE__*/
   messageDesc(file_calaba_v1_common, 0);
+
+/**
+ * ApiError.plan_limits_exceeded.
+ *
+ * @generated from message calaba.v1.PlanLimitViolations
+ */
+export type PlanLimitViolations = Message<"calaba.v1.PlanLimitViolations"> & {
+  /**
+   * @generated from field: repeated calaba.v1.PlanLimitViolation violations = 1;
+   */
+  violations: PlanLimitViolation[];
+};
+
+/**
+ * Describes the message calaba.v1.PlanLimitViolations.
+ * Use `create(PlanLimitViolationsSchema)` to create a new message.
+ */
+export const PlanLimitViolationsSchema: GenMessage<PlanLimitViolations> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_common, 1);
+
+/**
+ * @generated from message calaba.v1.PlanLimitViolation
+ */
+export type PlanLimitViolation = Message<"calaba.v1.PlanLimitViolation"> & {
+  /**
+   * @generated from field: calaba.v1.PlanLimitKind kind = 1;
+   */
+  kind: PlanLimitKind;
+
+  /**
+   * @generated from field: uint64 current = 2;
+   */
+  current: bigint;
+
+  /**
+   * @generated from field: uint64 limit = 3;
+   */
+  limit: bigint;
+
+  /**
+   * ROOM_MEMBERS: voice rooms over the limit
+   *
+   * @generated from field: uint32 rooms = 4;
+   */
+  rooms: number;
+};
+
+/**
+ * Describes the message calaba.v1.PlanLimitViolation.
+ * Use `create(PlanLimitViolationSchema)` to create a new message.
+ */
+export const PlanLimitViolationSchema: GenMessage<PlanLimitViolation> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_common, 2);
 
 /**
  * Cursor pagination over time-ordered ids (uuidv7). At most one of before/after is set.
@@ -116,7 +178,7 @@ export type PageRequest = Message<"calaba.v1.PageRequest"> & {
  * Use `create(PageRequestSchema)` to create a new message.
  */
 export const PageRequestSchema: GenMessage<PageRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_common, 1);
+  messageDesc(file_calaba_v1_common, 3);
 
 /**
  * @generated from message calaba.v1.PageInfo
@@ -133,7 +195,7 @@ export type PageInfo = Message<"calaba.v1.PageInfo"> & {
  * Use `create(PageInfoSchema)` to create a new message.
  */
 export const PageInfoSchema: GenMessage<PageInfo> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_common, 2);
+  messageDesc(file_calaba_v1_common, 4);
 
 /**
  * Empty response body (e.g. logout, delete).
@@ -148,7 +210,7 @@ export type Empty = Message<"calaba.v1.Empty"> & {
  * Use `create(EmptySchema)` to create a new message.
  */
 export const EmptySchema: GenMessage<Empty> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_common, 3);
+  messageDesc(file_calaba_v1_common, 5);
 
 /**
  * GET /api/version (public, no auth): build and license information. Clients show the
@@ -219,7 +281,7 @@ export type GetVersionResponse = Message<"calaba.v1.GetVersionResponse"> & {
  * Use `create(GetVersionResponseSchema)` to create a new message.
  */
 export const GetVersionResponseSchema: GenMessage<GetVersionResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_common, 4);
+  messageDesc(file_calaba_v1_common, 6);
 
 /**
  * Machine-readable error code. REST errors are returned as `ApiError` with a matching
@@ -630,4 +692,116 @@ export enum ErrorCode {
  */
 export const ErrorCodeSchema: GenEnum<ErrorCode> = /*@__PURE__*/
   enumDesc(file_calaba_v1_common, 0);
+
+/**
+ * What a plan transition would exceed (ADR-0086 «Переходы тарифов»). Counted limits carry the
+ * usage and the target plan's limit; a feature the target plan lacks carries current = the items
+ * in use (active connections, rules, …) and limit = 0.
+ *
+ * @generated from enum calaba.v1.PlanLimitKind
+ */
+export enum PlanLimitKind {
+  /**
+   * @generated from enum value: PLAN_LIMIT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * members without guests, bots included
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_MEMBERS = 1;
+   */
+  MEMBERS = 1,
+
+  /**
+   * @generated from enum value: PLAN_LIMIT_KIND_BOTS = 2;
+   */
+  BOTS = 2,
+
+  /**
+   * workspace files, MiB rounded up
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_STORAGE_MB = 3;
+   */
+  STORAGE_MB = 3,
+
+  /**
+   * task boards, live and archived
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_BOARDS = 4;
+   */
+  BOARDS = 4,
+
+  /**
+   * @generated from enum value: PLAN_LIMIT_KIND_STICKER_PACKS = 5;
+   */
+  STICKER_PACKS = 5,
+
+  /**
+   * @generated from enum value: PLAN_LIMIT_KIND_STICKERS = 6;
+   */
+  STICKERS = 6,
+
+  /**
+   * voice rooms set above the plan's room size: current = the largest setting, rooms = how many
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_ROOM_MEMBERS = 7;
+   */
+  ROOM_MEMBERS = 7,
+
+  /**
+   * board forms: current = most forms on one board (limit 0: forms are not in the plan)
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_BOARD_FORMS = 8;
+   */
+  BOARD_FORMS = 8,
+
+  /**
+   * an active SSO connection (Business)
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_SSO = 9;
+   */
+  SSO = 9,
+
+  /**
+   * an enabled directory sync (Business)
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_DIRECTORY_SYNC = 10;
+   */
+  DIRECTORY_SYNC = 10,
+
+  /**
+   * enabled OAuth applications (Business)
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_OAUTH_APPS = 11;
+   */
+  OAUTH_APPS = 11,
+
+  /**
+   * an enabled SIP trunk (Business)
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_TELEPHONY = 12;
+   */
+  TELEPHONY = 12,
+
+  /**
+   * enabled board webhooks (Business)
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_BOARD_WEBHOOKS = 13;
+   */
+  BOARD_WEBHOOKS = 13,
+
+  /**
+   * enabled board automation rules (Team and above)
+   *
+   * @generated from enum value: PLAN_LIMIT_KIND_AUTOMATIONS = 14;
+   */
+  AUTOMATIONS = 14,
+}
+
+/**
+ * Describes the enum calaba.v1.PlanLimitKind.
+ */
+export const PlanLimitKindSchema: GenEnum<PlanLimitKind> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_common, 1);
 

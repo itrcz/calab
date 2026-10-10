@@ -23,11 +23,17 @@ type Error struct {
 	// limit (ADR-0024).
 	Reason      string
 	Used, Limit uint64
-	base        *Error // the error WithDetails copied (errors.Is matches it)
+	// PlanViolations: ApiError.plan_violations of PLAN_LIMITS_EXCEEDED (ADR-0086).
+	PlanViolations []*v1.PlanLimitViolation
+	base           *Error // the error WithDetails copied (errors.Is matches it)
 }
 
 // ReasonPlanLimit marks errors caused by a limit of the workspace plan (ADR-0024).
 const ReasonPlanLimit = "PLAN_LIMIT"
+
+// ReasonPlanLimitsExceeded marks a refused plan transition (ADR-0086): the workspace uses more
+// than the target plan allows; ApiError.plan_violations lists what.
+const ReasonPlanLimitsExceeded = "PLAN_LIMITS_EXCEEDED"
 
 // ReasonIdentityNotConfigured marks a CONFLICT from an SSO / directory / OAuth provider route
 // of a server without the identity operator configuration (ADR-0054): a normal state of the
@@ -71,6 +77,9 @@ func (e *Error) Proto() *v1.ApiError {
 	}
 	if e.Limit > 0 {
 		p.Used, p.Limit = &e.Used, &e.Limit
+	}
+	if len(e.PlanViolations) > 0 {
+		p.PlanLimitsExceeded = &v1.PlanLimitViolations{Violations: e.PlanViolations}
 	}
 	return p
 }

@@ -271,6 +271,94 @@ func (ErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
+// What a plan transition would exceed (ADR-0086 «Переходы тарифов»). Counted limits carry the
+// usage and the target plan's limit; a feature the target plan lacks carries current = the items
+// in use (active connections, rules, …) and limit = 0.
+type PlanLimitKind int32
+
+const (
+	PlanLimitKind_PLAN_LIMIT_KIND_UNSPECIFIED    PlanLimitKind = 0
+	PlanLimitKind_PLAN_LIMIT_KIND_MEMBERS        PlanLimitKind = 1 // members without guests, bots included
+	PlanLimitKind_PLAN_LIMIT_KIND_BOTS           PlanLimitKind = 2
+	PlanLimitKind_PLAN_LIMIT_KIND_STORAGE_MB     PlanLimitKind = 3 // workspace files, MiB rounded up
+	PlanLimitKind_PLAN_LIMIT_KIND_BOARDS         PlanLimitKind = 4 // task boards, live and archived
+	PlanLimitKind_PLAN_LIMIT_KIND_STICKER_PACKS  PlanLimitKind = 5
+	PlanLimitKind_PLAN_LIMIT_KIND_STICKERS       PlanLimitKind = 6
+	PlanLimitKind_PLAN_LIMIT_KIND_ROOM_MEMBERS   PlanLimitKind = 7  // voice rooms set above the plan's room size: current = the largest setting, rooms = how many
+	PlanLimitKind_PLAN_LIMIT_KIND_BOARD_FORMS    PlanLimitKind = 8  // board forms: current = most forms on one board (limit 0: forms are not in the plan)
+	PlanLimitKind_PLAN_LIMIT_KIND_SSO            PlanLimitKind = 9  // an active SSO connection (Business)
+	PlanLimitKind_PLAN_LIMIT_KIND_DIRECTORY_SYNC PlanLimitKind = 10 // an enabled directory sync (Business)
+	PlanLimitKind_PLAN_LIMIT_KIND_OAUTH_APPS     PlanLimitKind = 11 // enabled OAuth applications (Business)
+	PlanLimitKind_PLAN_LIMIT_KIND_TELEPHONY      PlanLimitKind = 12 // an enabled SIP trunk (Business)
+	PlanLimitKind_PLAN_LIMIT_KIND_BOARD_WEBHOOKS PlanLimitKind = 13 // enabled board webhooks (Business)
+	PlanLimitKind_PLAN_LIMIT_KIND_AUTOMATIONS    PlanLimitKind = 14 // enabled board automation rules (Team and above)
+)
+
+// Enum value maps for PlanLimitKind.
+var (
+	PlanLimitKind_name = map[int32]string{
+		0:  "PLAN_LIMIT_KIND_UNSPECIFIED",
+		1:  "PLAN_LIMIT_KIND_MEMBERS",
+		2:  "PLAN_LIMIT_KIND_BOTS",
+		3:  "PLAN_LIMIT_KIND_STORAGE_MB",
+		4:  "PLAN_LIMIT_KIND_BOARDS",
+		5:  "PLAN_LIMIT_KIND_STICKER_PACKS",
+		6:  "PLAN_LIMIT_KIND_STICKERS",
+		7:  "PLAN_LIMIT_KIND_ROOM_MEMBERS",
+		8:  "PLAN_LIMIT_KIND_BOARD_FORMS",
+		9:  "PLAN_LIMIT_KIND_SSO",
+		10: "PLAN_LIMIT_KIND_DIRECTORY_SYNC",
+		11: "PLAN_LIMIT_KIND_OAUTH_APPS",
+		12: "PLAN_LIMIT_KIND_TELEPHONY",
+		13: "PLAN_LIMIT_KIND_BOARD_WEBHOOKS",
+		14: "PLAN_LIMIT_KIND_AUTOMATIONS",
+	}
+	PlanLimitKind_value = map[string]int32{
+		"PLAN_LIMIT_KIND_UNSPECIFIED":    0,
+		"PLAN_LIMIT_KIND_MEMBERS":        1,
+		"PLAN_LIMIT_KIND_BOTS":           2,
+		"PLAN_LIMIT_KIND_STORAGE_MB":     3,
+		"PLAN_LIMIT_KIND_BOARDS":         4,
+		"PLAN_LIMIT_KIND_STICKER_PACKS":  5,
+		"PLAN_LIMIT_KIND_STICKERS":       6,
+		"PLAN_LIMIT_KIND_ROOM_MEMBERS":   7,
+		"PLAN_LIMIT_KIND_BOARD_FORMS":    8,
+		"PLAN_LIMIT_KIND_SSO":            9,
+		"PLAN_LIMIT_KIND_DIRECTORY_SYNC": 10,
+		"PLAN_LIMIT_KIND_OAUTH_APPS":     11,
+		"PLAN_LIMIT_KIND_TELEPHONY":      12,
+		"PLAN_LIMIT_KIND_BOARD_WEBHOOKS": 13,
+		"PLAN_LIMIT_KIND_AUTOMATIONS":    14,
+	}
+)
+
+func (x PlanLimitKind) Enum() *PlanLimitKind {
+	p := new(PlanLimitKind)
+	*p = x
+	return p
+}
+
+func (x PlanLimitKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanLimitKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_common_proto_enumTypes[1].Descriptor()
+}
+
+func (PlanLimitKind) Type() protoreflect.EnumType {
+	return &file_calaba_v1_common_proto_enumTypes[1]
+}
+
+func (x PlanLimitKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanLimitKind.Descriptor instead.
+func (PlanLimitKind) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
 // Error body of every non-2xx REST response.
 type ApiError struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
@@ -302,10 +390,14 @@ type ApiError struct {
 	// ADMISSION_QUEUE_FULL — the waiting guests and the cap (50). NOTES_LIMIT — the caller's
 	// shelves and the cap (20).
 	// Absent when not meaningful.
-	Used          *uint64 `protobuf:"varint,5,opt,name=used,proto3,oneof" json:"used,omitempty"`
-	Limit         *uint64 `protobuf:"varint,6,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Used  *uint64 `protobuf:"varint,5,opt,name=used,proto3,oneof" json:"used,omitempty"`
+	Limit *uint64 `protobuf:"varint,6,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
+	// PLAN_LIMITS_EXCEEDED (CONFLICT, ADR-0086): a plan change refused because the workspace uses
+	// more than the target plan allows — one entry per exceeded limit or feature in use. A message
+	// (absent otherwise), so other errors keep their JSON.
+	PlanLimitsExceeded *PlanLimitViolations `protobuf:"bytes,7,opt,name=plan_limits_exceeded,json=planLimitsExceeded,proto3" json:"plan_limits_exceeded,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ApiError) Reset() {
@@ -380,6 +472,126 @@ func (x *ApiError) GetLimit() uint64 {
 	return 0
 }
 
+func (x *ApiError) GetPlanLimitsExceeded() *PlanLimitViolations {
+	if x != nil {
+		return x.PlanLimitsExceeded
+	}
+	return nil
+}
+
+// ApiError.plan_limits_exceeded.
+type PlanLimitViolations struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Violations    []*PlanLimitViolation  `protobuf:"bytes,1,rep,name=violations,proto3" json:"violations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanLimitViolations) Reset() {
+	*x = PlanLimitViolations{}
+	mi := &file_calaba_v1_common_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanLimitViolations) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanLimitViolations) ProtoMessage() {}
+
+func (x *PlanLimitViolations) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_common_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanLimitViolations.ProtoReflect.Descriptor instead.
+func (*PlanLimitViolations) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PlanLimitViolations) GetViolations() []*PlanLimitViolation {
+	if x != nil {
+		return x.Violations
+	}
+	return nil
+}
+
+type PlanLimitViolation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          PlanLimitKind          `protobuf:"varint,1,opt,name=kind,proto3,enum=calaba.v1.PlanLimitKind" json:"kind,omitempty"`
+	Current       uint64                 `protobuf:"varint,2,opt,name=current,proto3" json:"current,omitempty"`
+	Limit         uint64                 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Rooms         uint32                 `protobuf:"varint,4,opt,name=rooms,proto3" json:"rooms,omitempty"` // ROOM_MEMBERS: voice rooms over the limit
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanLimitViolation) Reset() {
+	*x = PlanLimitViolation{}
+	mi := &file_calaba_v1_common_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanLimitViolation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanLimitViolation) ProtoMessage() {}
+
+func (x *PlanLimitViolation) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_common_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanLimitViolation.ProtoReflect.Descriptor instead.
+func (*PlanLimitViolation) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PlanLimitViolation) GetKind() PlanLimitKind {
+	if x != nil {
+		return x.Kind
+	}
+	return PlanLimitKind_PLAN_LIMIT_KIND_UNSPECIFIED
+}
+
+func (x *PlanLimitViolation) GetCurrent() uint64 {
+	if x != nil {
+		return x.Current
+	}
+	return 0
+}
+
+func (x *PlanLimitViolation) GetLimit() uint64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *PlanLimitViolation) GetRooms() uint32 {
+	if x != nil {
+		return x.Rooms
+	}
+	return 0
+}
+
 // Cursor pagination over time-ordered ids (uuidv7). At most one of before/after is set.
 type PageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -392,7 +604,7 @@ type PageRequest struct {
 
 func (x *PageRequest) Reset() {
 	*x = PageRequest{}
-	mi := &file_calaba_v1_common_proto_msgTypes[1]
+	mi := &file_calaba_v1_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -404,7 +616,7 @@ func (x *PageRequest) String() string {
 func (*PageRequest) ProtoMessage() {}
 
 func (x *PageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_common_proto_msgTypes[1]
+	mi := &file_calaba_v1_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -417,7 +629,7 @@ func (x *PageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PageRequest.ProtoReflect.Descriptor instead.
 func (*PageRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PageRequest) GetBefore() string {
@@ -450,7 +662,7 @@ type PageInfo struct {
 
 func (x *PageInfo) Reset() {
 	*x = PageInfo{}
-	mi := &file_calaba_v1_common_proto_msgTypes[2]
+	mi := &file_calaba_v1_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -462,7 +674,7 @@ func (x *PageInfo) String() string {
 func (*PageInfo) ProtoMessage() {}
 
 func (x *PageInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_common_proto_msgTypes[2]
+	mi := &file_calaba_v1_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -475,7 +687,7 @@ func (x *PageInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PageInfo.ProtoReflect.Descriptor instead.
 func (*PageInfo) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PageInfo) GetHasMore() bool {
@@ -494,7 +706,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_calaba_v1_common_proto_msgTypes[3]
+	mi := &file_calaba_v1_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -506,7 +718,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_common_proto_msgTypes[3]
+	mi := &file_calaba_v1_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -519,7 +731,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{5}
 }
 
 // GET /api/version (public, no auth): build and license information. Clients show the
@@ -541,7 +753,7 @@ type GetVersionResponse struct {
 
 func (x *GetVersionResponse) Reset() {
 	*x = GetVersionResponse{}
-	mi := &file_calaba_v1_common_proto_msgTypes[4]
+	mi := &file_calaba_v1_common_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -553,7 +765,7 @@ func (x *GetVersionResponse) String() string {
 func (*GetVersionResponse) ProtoMessage() {}
 
 func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_common_proto_msgTypes[4]
+	mi := &file_calaba_v1_common_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -566,7 +778,7 @@ func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetVersionResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_common_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetVersionResponse) GetVersion() string {
@@ -629,17 +841,27 @@ var File_calaba_v1_common_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/common.proto\x12\tcalaba.v1\"\xd3\x01\n" +
+	"\x16calaba/v1/common.proto\x12\tcalaba.v1\"\xa5\x02\n" +
 	"\bApiError\x12(\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x14.calaba.v1.ErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
 	"\x05field\x18\x03 \x01(\tR\x05field\x12\x1b\n" +
 	"\x06reason\x18\x04 \x01(\tH\x00R\x06reason\x88\x01\x01\x12\x17\n" +
 	"\x04used\x18\x05 \x01(\x04H\x01R\x04used\x88\x01\x01\x12\x19\n" +
-	"\x05limit\x18\x06 \x01(\x04H\x02R\x05limit\x88\x01\x01B\t\n" +
+	"\x05limit\x18\x06 \x01(\x04H\x02R\x05limit\x88\x01\x01\x12P\n" +
+	"\x14plan_limits_exceeded\x18\a \x01(\v2\x1e.calaba.v1.PlanLimitViolationsR\x12planLimitsExceededB\t\n" +
 	"\a_reasonB\a\n" +
 	"\x05_usedB\b\n" +
-	"\x06_limit\"Q\n" +
+	"\x06_limit\"T\n" +
+	"\x13PlanLimitViolations\x12=\n" +
+	"\n" +
+	"violations\x18\x01 \x03(\v2\x1d.calaba.v1.PlanLimitViolationR\n" +
+	"violations\"\x88\x01\n" +
+	"\x12PlanLimitViolation\x12,\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x18.calaba.v1.PlanLimitKindR\x04kind\x12\x18\n" +
+	"\acurrent\x18\x02 \x01(\x04R\acurrent\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x04R\x05limit\x12\x14\n" +
+	"\x05rooms\x18\x04 \x01(\rR\x05rooms\"Q\n" +
 	"\vPageRequest\x12\x16\n" +
 	"\x06before\x18\x01 \x01(\tR\x06before\x12\x14\n" +
 	"\x05after\x18\x02 \x01(\tR\x05after\x12\x14\n" +
@@ -713,7 +935,24 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"*ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE\x10B\x12#\n" +
 	"\x1fERROR_CODE_RECENT_AUTH_REQUIRED\x10C\x12\x1d\n" +
 	"\x19ERROR_CODE_USERNAME_TAKEN\x10D\x12\x1f\n" +
-	"\x1bERROR_CODE_USERNAME_INVALID\x10EB\x99\x01\n" +
+	"\x1bERROR_CODE_USERNAME_INVALID\x10E*\xe8\x03\n" +
+	"\rPlanLimitKind\x12\x1f\n" +
+	"\x1bPLAN_LIMIT_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17PLAN_LIMIT_KIND_MEMBERS\x10\x01\x12\x18\n" +
+	"\x14PLAN_LIMIT_KIND_BOTS\x10\x02\x12\x1e\n" +
+	"\x1aPLAN_LIMIT_KIND_STORAGE_MB\x10\x03\x12\x1a\n" +
+	"\x16PLAN_LIMIT_KIND_BOARDS\x10\x04\x12!\n" +
+	"\x1dPLAN_LIMIT_KIND_STICKER_PACKS\x10\x05\x12\x1c\n" +
+	"\x18PLAN_LIMIT_KIND_STICKERS\x10\x06\x12 \n" +
+	"\x1cPLAN_LIMIT_KIND_ROOM_MEMBERS\x10\a\x12\x1f\n" +
+	"\x1bPLAN_LIMIT_KIND_BOARD_FORMS\x10\b\x12\x17\n" +
+	"\x13PLAN_LIMIT_KIND_SSO\x10\t\x12\"\n" +
+	"\x1ePLAN_LIMIT_KIND_DIRECTORY_SYNC\x10\n" +
+	"\x12\x1e\n" +
+	"\x1aPLAN_LIMIT_KIND_OAUTH_APPS\x10\v\x12\x1d\n" +
+	"\x19PLAN_LIMIT_KIND_TELEPHONY\x10\f\x12\"\n" +
+	"\x1ePLAN_LIMIT_KIND_BOARD_WEBHOOKS\x10\r\x12\x1f\n" +
+	"\x1bPLAN_LIMIT_KIND_AUTOMATIONS\x10\x0eB\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -729,23 +968,29 @@ func file_calaba_v1_common_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_common_proto_rawDescData
 }
 
-var file_calaba_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_calaba_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_calaba_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_calaba_v1_common_proto_goTypes = []any{
-	(ErrorCode)(0),             // 0: calaba.v1.ErrorCode
-	(*ApiError)(nil),           // 1: calaba.v1.ApiError
-	(*PageRequest)(nil),        // 2: calaba.v1.PageRequest
-	(*PageInfo)(nil),           // 3: calaba.v1.PageInfo
-	(*Empty)(nil),              // 4: calaba.v1.Empty
-	(*GetVersionResponse)(nil), // 5: calaba.v1.GetVersionResponse
+	(ErrorCode)(0),              // 0: calaba.v1.ErrorCode
+	(PlanLimitKind)(0),          // 1: calaba.v1.PlanLimitKind
+	(*ApiError)(nil),            // 2: calaba.v1.ApiError
+	(*PlanLimitViolations)(nil), // 3: calaba.v1.PlanLimitViolations
+	(*PlanLimitViolation)(nil),  // 4: calaba.v1.PlanLimitViolation
+	(*PageRequest)(nil),         // 5: calaba.v1.PageRequest
+	(*PageInfo)(nil),            // 6: calaba.v1.PageInfo
+	(*Empty)(nil),               // 7: calaba.v1.Empty
+	(*GetVersionResponse)(nil),  // 8: calaba.v1.GetVersionResponse
 }
 var file_calaba_v1_common_proto_depIdxs = []int32{
 	0, // 0: calaba.v1.ApiError.code:type_name -> calaba.v1.ErrorCode
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 1: calaba.v1.ApiError.plan_limits_exceeded:type_name -> calaba.v1.PlanLimitViolations
+	4, // 2: calaba.v1.PlanLimitViolations.violations:type_name -> calaba.v1.PlanLimitViolation
+	1, // 3: calaba.v1.PlanLimitViolation.kind:type_name -> calaba.v1.PlanLimitKind
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_common_proto_init() }
@@ -759,8 +1004,8 @@ func file_calaba_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_common_proto_rawDesc), len(file_calaba_v1_common_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   5,
+			NumEnums:      2,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

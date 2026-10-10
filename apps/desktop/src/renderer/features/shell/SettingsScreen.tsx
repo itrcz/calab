@@ -23,7 +23,7 @@ export function SettingsScreen({ section }: { section: string | null }): ReactNo
   };
   let node: ReactNode = null;
   if (d?.kind === 'settings') node = <AppSettingsWindow.Component onClose={close} tab={d.tab} />;
-  else if (d?.kind === 'workspace-settings') node = <WorkspaceSettingsWindow.Component onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
+  else if (d?.kind === 'workspace-settings') node = <WorkspaceSettingsWindow.Component key={`${d.workspaceId}:${d.tab ?? ''}`} onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
   else if (d?.kind === 'room-settings') node = <RoomSettingsDialog onClose={close} roomId={d.roomId} tab={d.tab} />;
   else if (board) node = <BoardSettingsHost screen />;
   return <SettingsPageProvider value={{ section }}>{node}</SettingsPageProvider>;

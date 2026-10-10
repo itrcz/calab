@@ -5,7 +5,7 @@ import { cx } from '../../../components/ui';
 import { t } from '../../../i18n';
 import { badgeShown, badgeView, selfServeOf } from '../../../lib/billing/plans';
 import { PLAN_LABEL, planKind } from '../../../lib/plan';
-import { billingMock, loadBilling, openPlans } from '../../../services/billing';
+import { billingMock, loadBilling, openPlanSettings } from '../../../services/billing';
 import { useBilling } from '../../../stores/billing';
 import { useContextWorkspace } from '../../../stores/sections';
 import { useSession } from '../../../stores/session';
@@ -15,9 +15,9 @@ import { useBillingState } from './BillingPaywall';
 
 /**
  * The plan badge beside the open workspace's name (ADR-0080, docs/08 «Тариф»): «Free» / «Team» /
- * «Business», plus «долг» / «приостановлено» when it needs attention; a click opens «Тариф и
- * оплата». Only where billing exists for this workspace: Workspace.billing (every member) or an
- * owner who may start billing (READY.billing_self_serve, then GET …/billing self_serve). Billing off
+ * «Business», plus «долг» / «приостановлено» when it needs attention; a click opens settings →
+ * «Тариф» (owner, 10.10; «Сменить тариф» there opens the plans). Only where billing exists for
+ * this workspace: Workspace.billing (every member) or an owner who may start billing (READY.billing_self_serve, then GET …/billing self_serve). Billing off
  * on the server, no account and no self-serve — nothing at all and no request; the header stays as it was.
  * A leaf: primitive selectors only (plan kind, state, two booleans) — a presence / voice / member
  * change re-renders nothing here; the owner's GET runs once per workspace (stores/billing).
@@ -44,7 +44,7 @@ export function PlanBadge({ phone = false }: { phone?: boolean }): ReactNode {
   return (
     <button
       type="button"
-      onClick={() => openPlans(id)}
+      onClick={() => openPlanSettings(id)}
       aria-label={label}
       title={label}
       data-testid="plan-badge"

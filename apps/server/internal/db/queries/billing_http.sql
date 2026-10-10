@@ -86,8 +86,8 @@ SELECT * FROM billing_refund_requests WHERE account_id = $1 AND request_id = $2;
 -- name: ListBillingLedgerPage :many
 -- Newest first (before_seq = 0: from the newest) with what the owner history shows: the seat
 -- lot of a charge and the payment of a funding lot.
-SELECT l.id, l.seq, l.kind, l.amount_minor, l.balance_after, l.created_at, l.reason, l.actor_id, l.refund_id,
-    c.sku AS charge_sku, c.qty AS charge_qty, c.starts_at AS charge_starts_at, c.ends_at AS charge_ends_at,
+SELECT l.id, l.seq, l.kind, l.amount_minor, l.balance_after, l.created_at, l.reason, l.actor_id, l.refund_id, l.business_key,
+    c.sku AS charge_sku, c.qty AS charge_qty, c.starts_at AS charge_starts_at, c.ends_at AS charge_ends_at, c.business_key AS charge_key,
     f.payment_id AS lot_payment_id
 FROM billing_ledger l
 LEFT JOIN billing_charges c ON c.id = l.charge_id

@@ -55,3 +55,36 @@ JOIN users u ON u.id = w.owner_id
 LEFT JOIN workspace_plans p ON p.workspace_id = w.id
 LEFT JOIN users sb ON sb.id = w.suspended_by
 WHERE w.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: GetWorkspacePlanUsage :one
+-- What a plan transition is checked against (ADR-0086, plans.Violations): every counted limit and
+-- every plan-gated feature in use, in one read. Identity features granted by the operator
+-- (onprem_enterprise) do not depend on the plan and come back in operator_features.
+SELECT
+    (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = sqlc.arg('workspace_id')::uuid AND m.role <> 'guest')::bigint AS members,
+    (SELECT count(*) FROM workspace_members m JOIN users u ON u.id = m.user_id
+        WHERE m.workspace_id = sqlc.arg('workspace_id')::uuid AND u.is_bot)::bigint AS bots,
+    (SELECT w.storage_used_bytes FROM workspaces w WHERE w.id = sqlc.arg('workspace_id')::uuid)::bigint AS storage_bytes,
+    (SELECT count(*) FROM boards b WHERE b.workspace_id = sqlc.arg('workspace_id')::uuid)::bigint AS boards,
+    (SELECT count(*) FROM sticker_packs p WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid AND p.deleted_at IS NULL)::bigint AS sticker_packs,
+    (SELECT count(*) FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id AND p.deleted_at IS NULL
+        WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid AND s.deleted_at IS NULL)::bigint AS stickers,
+    (SELECT coalesce(array_agg(r.user_limit), '{}') FROM rooms r
+        WHERE r.workspace_id = sqlc.arg('workspace_id')::uuid AND r.type = 'voice' AND r.archived_at IS NULL AND r.user_limit > 0)::integer[] AS room_user_limits,
+    (SELECT coalesce(max(x.n), 0) FROM (SELECT count(*) AS n FROM board_forms f JOIN boards b ON b.id = f.board_id
+        WHERE b.workspace_id = sqlc.arg('workspace_id')::uuid GROUP BY f.board_id) x)::bigint AS max_board_forms,
+    (SELECT count(*) FROM board_rules r JOIN boards b ON b.id = r.board_id
+        WHERE b.workspace_id = sqlc.arg('workspace_id')::uuid AND r.enabled)::bigint AS automations,
+    (SELECT count(*) FROM board_webhooks h JOIN boards b ON b.id = h.board_id
+        WHERE b.workspace_id = sqlc.arg('workspace_id')::uuid AND h.disabled_at IS NULL)::bigint AS board_webhooks,
+    (SELECT count(*) FROM sip_accounts a WHERE a.workspace_id = sqlc.arg('workspace_id')::uuid AND a.enabled)::bigint AS telephony,
+    (SELECT count(*) FROM workspace_identity_connections c WHERE c.workspace_id = sqlc.arg('workspace_id')::uuid AND c.status = 'active')::bigint AS sso,
+    (SELECT count(*) FROM workspace_directories d WHERE d.workspace_id = sqlc.arg('workspace_id')::uuid AND d.disabled_at IS NULL)::bigint AS directories,
+    (SELECT count(*) FROM oauth_clients o WHERE o.workspace_id = sqlc.arg('workspace_id')::uuid AND o.disabled_at IS NULL)::bigint AS oauth_apps,
+    (SELECT coalesce(array_agg(g.feature), '{}') FROM workspace_identity_grants g
+        WHERE g.workspace_id = sqlc.arg('workspace_id')::uuid AND g.source = 'onprem_enterprise' AND g.enabled AND g.revoked_at IS NULL)::text[] AS operator_features;
+
+-- name: LockWorkspacePlanRow :one
+-- The plan row under a lock (ADR-0086): a self-serve start decides whether a superadmin assigned the
+-- plan while the superadmin's upsert waits for it.
+SELECT * FROM workspace_plans WHERE workspace_id = $1 FOR UPDATE;

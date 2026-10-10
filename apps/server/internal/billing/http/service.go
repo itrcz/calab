@@ -22,6 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 // Config of the owner and public handlers.
@@ -45,6 +46,9 @@ type Config struct {
 	// PlanLimits are the limits of a plan on this server (plans.Service.PlanLimits) for the plan
 	// offers of GET …/billing; nil sends offers without limits.
 	PlanLimits func(v1.Plan) *v1.PlanLimits
+	// Plans checks the owner's plan transitions in the quote and lists the violations of the
+	// offers (ADR-0086; the commit is checked by core.Hooks.Guard). nil: no checks.
+	Plans *plans.Service
 	// Contact is the «contact us» link of paid plans (config.PlanContact) for the public offers.
 	Contact string
 	// LandingOrigins (PUBLIC_LANDING_URLS) are the browser origins of the marketing landing, which

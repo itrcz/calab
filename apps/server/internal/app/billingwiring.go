@@ -102,6 +102,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 	}
 	rt.Core = core.New(d.DB, rt.Clock, core.Config{Debits: b.DebitsEnabled, Enforcement: b.EnforcementEnabled}, core.Hooks{
 		Committed: func(ctx context.Context, acc sqlc.BillingAccount, _ bool) { committed(ctx, acc) },
+		Guard:     plans.TransitionGuard{S: planSvc},
 	})
 	if d.Seats == nil {
 		// Admission charges paid seats through the core (T3 hook; tests inject Deps.Seats).
@@ -117,6 +118,7 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		Checkouts: b.StripeEnabled || b.TochkaEnabled, ReturnURL: b.PublicReturnURL, AppURL: d.Config.PublicAppURL,
 		SelfServe:  b.SelfServe,
 		PlanLimits: func(p v1.Plan) *v1.PlanLimits { return planSvc.PlanLimits(p).Proto() },
+		Plans:      planSvc,
 		Committed:  committed,
 		Contact:    d.Config.PlanContact(),
 

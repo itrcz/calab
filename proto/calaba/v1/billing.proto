@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/common.proto";
 import "calaba/v1/plan.proto";
 
 // Balance billing v1 (ADR-0080 v5 «v1 cut», migration 00074). A workspace billing account has
@@ -377,6 +378,10 @@ message GetBillingResponse {
   // the Global catalog). UNSPECIFIED once the market is fixed.
   BillingSalesMode sales_mode = 6;
   string default_market = 7;
+  // Owner only (ADR-0086): a superadmin assigned the plan (a manual plan other than Free, not
+  // expired). Self-serve does not override it: no self_serve, actions answer 409
+  // BILLING_PLAN_ADMIN_ASSIGNED; the owner contacts support.
+  bool admin_assigned = 30;
 }
 
 // GET /api/billing/public/offers (no session, cacheable, rate-limited): the prices the landing
@@ -394,6 +399,9 @@ message BillingPlanOffer {
   Money unit_price = 2;  // per seat per 24 h after the account discount; unset for Free
   PlanLimits limits = 3; // the plan's limits on this server
   string market = 4;     // "global" | "ru": the market of unit_price
+  // ADR-0086: what the workspace uses beyond this plan's limits now (empty = it fits). Moving to
+  // a plan with violations is refused (409 PLAN_LIMITS_EXCEEDED) until they are fixed.
+  repeated PlanLimitViolation violations = 30;
 }
 
 // POST …/billing/quote
@@ -514,6 +522,10 @@ message LedgerEntry {
   google.protobuf.Timestamp ends_at = 12;
   string payment_id = 13;
   string refund_id = 14;
+  // The owner operation the entry belongs to (activation, plan change, paid resume): its seat
+  // charge and the compensation of the previous plan share it, so the history shows them as one
+  // row. Empty for entries of their own (top-ups, renewals, refunds, …).
+  string operation_id = 30;
 }
 
 // GET …/billing/ledger?cursor=

@@ -444,8 +444,8 @@ func (q *Queries) ListBillingDirtyCustomers(ctx context.Context, arg ListBilling
 }
 
 const listBillingLedgerPage = `-- name: ListBillingLedgerPage :many
-SELECT l.id, l.seq, l.kind, l.amount_minor, l.balance_after, l.created_at, l.reason, l.actor_id, l.refund_id,
-    c.sku AS charge_sku, c.qty AS charge_qty, c.starts_at AS charge_starts_at, c.ends_at AS charge_ends_at,
+SELECT l.id, l.seq, l.kind, l.amount_minor, l.balance_after, l.created_at, l.reason, l.actor_id, l.refund_id, l.business_key,
+    c.sku AS charge_sku, c.qty AS charge_qty, c.starts_at AS charge_starts_at, c.ends_at AS charge_ends_at, c.business_key AS charge_key,
     f.payment_id AS lot_payment_id
 FROM billing_ledger l
 LEFT JOIN billing_charges c ON c.id = l.charge_id
@@ -472,10 +472,12 @@ type ListBillingLedgerPageRow struct {
 	Reason         string
 	ActorID        *uuid.UUID
 	RefundID       *uuid.UUID
+	BusinessKey    string
 	ChargeSku      *string
 	ChargeQty      *int32
 	ChargeStartsAt *time.Time
 	ChargeEndsAt   *time.Time
+	ChargeKey      *string
 	LotPaymentID   *uuid.UUID
 }
 
@@ -500,10 +502,12 @@ func (q *Queries) ListBillingLedgerPage(ctx context.Context, arg ListBillingLedg
 			&i.Reason,
 			&i.ActorID,
 			&i.RefundID,
+			&i.BusinessKey,
 			&i.ChargeSku,
 			&i.ChargeQty,
 			&i.ChargeStartsAt,
 			&i.ChargeEndsAt,
+			&i.ChargeKey,
 			&i.LotPaymentID,
 		); err != nil {
 			return nil, err

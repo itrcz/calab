@@ -35,6 +35,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/dbtest"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 func TestMain(m *testing.M) { os.Exit(dbtest.Run(m)) }
@@ -83,6 +84,8 @@ type envOpt struct {
 	// recurring: the Tochka adapter charges saved cards (TOCHKA_RECURRING_ENABLED); charger:
 	// one-click top-ups on (BILLING_SAVED_METHOD_TOPUP_ENABLED) through an auto-topup job.
 	recurring, charger bool
+	// plans: plan transitions are checked (ADR-0086): core.Hooks.Guard and Config.Plans.
+	plans *plans.Service
 }
 
 func newEnv(t *testing.T, opts ...envOpt) *env {
@@ -102,7 +105,11 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	var tp, pp provider.Provider
 	rows := provider.DefaultMatrix()
 	charger := false
+	var hooks core.Hooks
 	for _, o := range opts {
+		if o.plans != nil {
+			hooks.Guard, cfg.Plans = plans.TransitionGuard{S: o.plans}, o.plans
+		}
 		noAccount = noAccount || o.noAccount
 		charger = charger || o.charger
 		if o.bank != nil {
@@ -144,7 +151,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	// The provider switches are global to the package database: every test starts open.
 	_, _ = d.Pool.Exec(ctx, `DELETE FROM billing_provider_settings`)
 	t.Cleanup(func() { _, _ = d.Pool.Exec(ctx, `DELETE FROM billing_provider_settings`) })
-	e.core = core.New(d, clock, core.Config{Debits: true, Enforcement: true}, core.Hooks{})
+	e.core = core.New(d, clock, core.Config{Debits: true, Enforcement: true}, hooks)
 	e.in = inbox.New(d, reg, e.core, inbox.Options{})
 	e.mail = mail.New(mail.Config{Secret: []byte("billing-test-secret-billing-test-secret")}, d, nil, mail.NewFake())
 	e.in.Mail = inbox.NewNotifier(d, e.mail, "https://app.calab.test")
