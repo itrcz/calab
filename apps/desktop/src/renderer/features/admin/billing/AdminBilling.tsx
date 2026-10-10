@@ -20,6 +20,7 @@ import { createContext, memo, useCallback, useContext, useEffect, useState, type
 import { Button, Card, CloseButton, Empty, Field, Input, Modal, Row, Segmented, Select, Spinner, Toggle, cx } from '../../../components/ui';
 import { plural, t, type MessageKey } from '../../../i18n';
 import { recentAuthRequired } from '../../../lib/api/errors';
+import { refundManualOnly } from '../../../lib/billing/adminForm';
 import { billingErrorText } from '../../../lib/billing/errors';
 import { nowMs } from '../../../lib/billing/checkout';
 import { refundableMinor, rejectRefundRequest } from '../../../lib/billing/model';
@@ -762,16 +763,28 @@ function RefundDialog({
   onClose: () => void;
 }): ReactNode {
   const want = minorOf(request?.request?.amount);
+  const manual = refundManualOnly(payment);
   return (
     <MoneyActionDialog
       title={t('adminBilling.refundTitle')}
-      text={t('adminBilling.refundText', { amount: formatMoney(payment.payment?.amount), id: payment.providerPaymentId })}
+      text={t(manual ? 'adminBilling.refundTextManual' : 'adminBilling.refundText', { amount: formatMoney(payment.payment?.amount), id: payment.providerPaymentId })}
       action={t('adminBilling.refund')}
       currency={currency}
       amount
       maxAmount={refundable}
       initialAmount={want > 0n && want <= refundable ? want : refundable}
-      extra={extra}
+      extra={
+        manual ? (
+          <>
+            <p role="note" className="rounded-[var(--radius-card)] bg-warn-surface px-3 py-2 text-caption" data-testid="admin-refund-manual">
+              {t('adminBilling.refundManual')}
+            </p>
+            {extra}
+          </>
+        ) : (
+          extra
+        )
+      }
       run={(x) =>
         adminBilling.refund(payment.payment?.id ?? '', {
           amount: { minor: x.amount ?? 0n, currency },

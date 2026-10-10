@@ -5,10 +5,9 @@ import { memo, useRef, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../../components/Confirm';
 import { Button, Card, Field, Input, Modal, Row, Segmented, cx } from '../../../components/ui';
 import { t, type MessageKey } from '../../../i18n';
-import { recentAuthRequired } from '../../../lib/api/errors';
 import { nowMs } from '../../../lib/billing/checkout';
 import { CUSTOM_UNIT_CAP, customPriceAt, localInputMs, nextCustomPrice, priceStatus, type PriceStatus } from '../../../lib/billing/customPlan';
-import { billingErrorText } from '../../../lib/billing/errors';
+import { REASON_MAX, adminFormError, reasonError, reasonHint, reasonProblem, type AdminFormError } from '../../../lib/billing/adminForm';
 import { requestId } from '../../../lib/billing/model';
 import { formatMinor, formatMoney, inputOf, parseMajor } from '../../../lib/billing/money';
 import { violationText, violationsOf } from '../../../lib/billing/violations';
@@ -142,7 +141,7 @@ function CustomPlanDialog({ a, cp, active, onDone, onClose }: { a: AdminBillingA
   const [reason, setReason] = useState('');
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AdminFormError | null>(null);
   const [shown, setShown] = useState<AdminBillingMutationResult | null>(null);
   const [over, setOver] = useState<readonly PlanLimitViolation[] | null>(null);
   const override = useRef(false);
@@ -153,7 +152,8 @@ function CustomPlanDialog({ a, cp, active, onDone, onClose }: { a: AdminBillingA
   const fromMs = from ? localInputMs(from) : null;
   const fromBad = from !== '' && (fromMs === null || fromMs < now - 60_000);
   const lim = limitsFromForm(limits);
-  const reasonBad = reason.trim().length < 5;
+  const reasonBad = reasonProblem(reason) !== null;
+  const fieldError = (f: string): string | null => (error?.field === f ? error.text : null);
   const plan = planDisplayName(Plan.CUSTOM, name);
 
   const go = async (preview: boolean): Promise<void> => {
@@ -183,7 +183,11 @@ function CustomPlanDialog({ a, cp, active, onDone, onClose }: { a: AdminBillingA
     } catch (e) {
       const list = violationsOf(e);
       if (list.length && !override.current) setOver(list);
-      else setError(recentAuthRequired(e) ? t('adminBilling.reauth') : billingErrorText(e));
+      else {
+        const fe = adminFormError(e);
+        setError(fe);
+        if (fe.field) setShown(null); // back to the form, the error at its field
+      }
     } finally {
       setBusy(false);
     }
@@ -264,12 +268,12 @@ function CustomPlanDialog({ a, cp, active, onDone, onClose }: { a: AdminBillingA
               <Field
                 label={t('adminCustom.price', { currency })}
                 hint={active ? `${t('adminCustom.priceHint')} ${t('adminCustom.priceKeep')}` : t('adminCustom.priceHint')}
-                error={touched && priceBad ? t('adminCustom.priceInvalid', { max: formatMinor(cap, currency) }) : null}
+                error={touched && priceBad ? t('adminCustom.priceInvalid', { max: formatMinor(cap, currency) }) : fieldError('unit')}
               >
                 <Input inputMode="decimal" className="tabular-nums" value={price} onChange={(e) => setPrice(e.target.value)} data-testid="admin-custom-price-input" />
               </Field>
               {active ? (
-                <Field label={t('adminCustom.from')} hint={t('adminCustom.fromHint')} error={touched && fromBad ? t('adminCustom.fromHint') : null}>
+                <Field label={t('adminCustom.from')} hint={t('adminCustom.fromHint')} error={touched && fromBad ? t('adminCustom.fromHint') : fieldError('effectiveFrom')}>
                   <Input type="datetime-local" className="[color-scheme:inherit]" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="admin-custom-from" />
                 </Field>
               ) : (
@@ -287,14 +291,21 @@ function CustomPlanDialog({ a, cp, active, onDone, onClose }: { a: AdminBillingA
                 </p>
               ) : null}
             </section>
-            <Field label={t('adminBilling.reason')} error={touched && reasonBad ? t('adminBilling.reasonRequired') : null}>
-              <Input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder={t('adminBilling.reasonPh')} data-testid="admin-custom-reason" />
+            <Field label={t('adminBilling.reason')} hint={reasonHint(reason)} error={reasonError(reason, touched) ?? fieldError('reason')}>
+              <Input
+                value={reason}
+                maxLength={REASON_MAX}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={t('adminBilling.reasonPh')}
+                aria-required
+                data-testid="admin-custom-reason"
+              />
             </Field>
           </>
         )}
-        {error ? (
+        {error && !['reason', 'unit', ...(active ? ['effectiveFrom'] : [])].includes(error.field ?? '') ? (
           <p role="alert" className="text-caption text-danger-text">
-            {error}
+            {error.text}
           </p>
         ) : null}
       </div>
