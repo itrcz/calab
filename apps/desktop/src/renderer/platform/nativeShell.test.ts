@@ -24,9 +24,13 @@ describe('detectNativeShell', () => {
     expect(detectNativeShell({ version: 1 }, ANDROID_WV)).toBe('android');
     expect(detectNativeShell({ version: 1, platform: 'android' }, ANDROID_WV)).toBe('android');
   });
-  it('no shell: Safari on an iPhone, the desktop, an unknown bridge version', () => {
+  it('no shell: Safari on an iPhone, the desktop', () => {
     expect(detectNativeShell(undefined, IPHONE_SAFARI)).toBeNull();
     expect(detectNativeShell(undefined, DESKTOP)).toBeNull();
-    expect(detectNativeShell({ version: 2 }, IPHONE_WK)).toBeNull();
+  });
+  it('a bridge of an unknown version is still a shell (fail closed on iOS)', () => {
+    expect(detectNativeShell({ version: 2 }, IPHONE_WK)).toBe('ios');
+    expect(detectNativeShell({}, IPHONE_WK)).toBe('ios');
+    expect(detectNativeShell({ version: 2 }, ANDROID_WV)).toBe('android');
   });
 });

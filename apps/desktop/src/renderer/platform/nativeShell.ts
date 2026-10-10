@@ -7,7 +7,8 @@
  * The signal: the native host bridge `window.CalabHostActivity` (declared only by the shell, main
  * frame only) and its `platform` field (Platform.OS, added 2026-10-10). Fail closed on iOS: a
  * shell is Android only when its user agent says Android too and the bridge does not say iOS — an
- * older binary without the field, an iPad with a desktop user agent, anything unproven is iOS.
+ * older binary without the field, a newer bridge version, an iPad with a desktop user agent,
+ * anything unproven is iOS.
  * No new binary is needed for either platform: the user agent tells Android shells apart.
  */
 
@@ -19,7 +20,8 @@ interface ShellBridge {
 }
 
 export function detectNativeShell(bridge: ShellBridge | undefined, userAgent: string): NativeShell {
-  if (!bridge || bridge.version !== 1) return null;
+  // Any bridge is a shell, whatever its version: a newer handshake must not show payments in iOS.
+  if (bridge == null) return null;
   const androidUa = /\bAndroid\b/i.test(userAgent);
   if (androidUa && bridge.platform !== 'ios') return 'android';
   return 'ios';
