@@ -37,6 +37,18 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
   locale: `public/og/<lang>.png`. The home page carries schema.org `SoftwareApplication` JSON-LD in its language.
 - `public/llms.txt` (summary + links, llmstxt.org format) and `public/llms-full.txt` (full text) are served at the site root as-is; keep their plan table, limits and feature list in sync with `src/i18n/en.ts` and the README, and mark unreleased features as planned.
 
+## Plan prices from the server (ADR-0083)
+
+Team/Business prices, the «≈ per 30 days» line, the ₽/$ switch and the paid buttons come from `GET {APP_URL}/api/billing/public/offers`
+(`lib/offers.ts` parse/pick/format, `lib/offers-store.ts` one lazy fetch after hydration, `components/plan-prices.tsx` leaves).
+The page is prerendered with a build-time snapshot (`SNAPSHOT`, equal to the dictionaries' prices; paid buttons = the intake form), so
+first paint is final and nothing shifts; the answer only swaps text. Mode: `both` → ₽ for `ru`, $ otherwise, an explicit switch
+click wins and is kept in the `calab_market` cookie (only with the «preferences» permission); `ru_only` → ₽, `global_only` → $, `contact` → $ and
+«On request» to the server's contact link. Open sales → «Set up in the app». Cross-origin: the server sends CORS for this one GET to
+`PUBLIC_LANDING_URLS` (compose: `https://$LANDING_HOST`), the landing CSP `connect-src` allows the app origin (`APP_ORIGIN` in Caddy
+entrypoint). Unreachable/invalid answer → the snapshot stays. `pnpm test:offers` checks the mode → market/currency rules.
+Payment return pages `/onpay/success/` and `/onpay/fail/` (Tochka merchant URLs): static, noindex, language picked in the browser, no query echo.
+
 ## Public agreements and browser preferences
 
 RU uses Gromtekh / RUB 6 and 18 per employee/day; other locales use Unne / USD $0.10 and $0.30.

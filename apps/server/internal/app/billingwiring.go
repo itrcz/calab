@@ -107,6 +107,8 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		PlanLimits: func(p v1.Plan) *v1.PlanLimits { return planSvc.PlanLimits(p).Proto() },
 		Committed:  committed,
 		Contact:    d.Config.PlanContact(),
+
+		LandingOrigins: d.Config.LandingOrigins(),
 		// The landing reads it: 30 per minute and IP is plenty with Cache-Control max-age=300.
 		PublicLimiter: redisx.NewRateLimiter(d.Redis, "rl:billing-public:", 30, 30),
 	})

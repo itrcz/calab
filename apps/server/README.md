@@ -71,6 +71,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `PUBLIC_APP_URL` | `http://localhost:3000` | внешний URL веб-клиента; его origin разрешён для cookie-auth (CSRF) и WS-апгрейда |
 | `PUBLIC_APP_URL_ALT` | — | запасной домен веб-клиента (совместимость), разрешён так же |
 | `PUBLIC_APP_URLS` | — | все origin веб-клиента через запятую (`https://app.calab.io,https://colaba.gptunnel.ai,…`); разрешённый список = `PUBLIC_APP_URL` + `PUBLIC_APP_URL_ALT` + этот; `PUBLIC_APP_URL` остаётся основным (ссылки) |
+| `PUBLIC_LANDING_URLS` | — | origin лендинга через запятую (`https://calab.io`): только `GET /api/billing/public/offers` отвечает им CORS-заголовком (без credentials), ADR-0083 |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error`, JSON в stdout |
 | `MIGRATE_ON_START` | `true` | применять миграции при `serve` |
 | `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011): `fs` — каталог, `s3` — бакет S3 (`STORAGE_S3_*`, docs/06 «Файлы в S3») |

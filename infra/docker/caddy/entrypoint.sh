@@ -155,5 +155,7 @@ RELEASES_ORIGIN=""
 
 # shellcheck disable=SC2086
 APP_HOSTS="$(addr $APP_HOSTS)"
-export APP_HOSTS RTC_HOSTS TURN_HOSTS RTC_ORIGINS RELEASES_ORIGIN
+# The landing also reads APP_HOST /api/billing/public/offers (CORS on the server: PUBLIC_LANDING_URLS).
+APP_ORIGIN=" https://${APP_HOST:-$DOMAIN}"
+export APP_HOSTS RTC_HOSTS TURN_HOSTS RTC_ORIGINS RELEASES_ORIGIN APP_ORIGIN
 exec "$@"

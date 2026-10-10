@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/billing"
@@ -51,6 +52,15 @@ func (s *Service) tochkaWebhook(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// allowLanding lets the landing origin read the public offers cross-origin: a simple GET, so no
+// preflight; credentials are never allowed. The response varies by Origin (shared caches).
+func allowLanding(w http.ResponseWriter, r *http.Request, origins []string) {
+	w.Header().Add("Vary", "Origin")
+	if o := r.Header.Get("Origin"); o != "" && slices.Contains(origins, o) {
+		w.Header().Set("Access-Control-Allow-Origin", o)
+	}
+}
+
 // publicOffers: GET /api/billing/public/offers — what the landing shows (ADR-0083): the sales
 // mode for new clients, the per-seat-day prices of the open markets (the Global catalog in
 // contact mode) and the contact link. No session, no account data; cacheable for 5 minutes and
@@ -75,6 +85,7 @@ func (s *Service) publicOffers(w http.ResponseWriter, r *http.Request) error {
 		out.Markets = nil
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
+	allowLanding(w, r, s.cfg.LandingOrigins)
 	httpx.Write(w, http.StatusOK, out)
 	return nil
 }

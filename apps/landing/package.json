@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:preferences": "node scripts/check-site-preferences.mjs",
-    "test": "pnpm test:preferences"
+    "test:offers": "node scripts/check-offers.mjs",
+    "test": "pnpm test:preferences && pnpm test:offers"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",
