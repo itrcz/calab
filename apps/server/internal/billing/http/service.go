@@ -47,6 +47,10 @@ type Config struct {
 	PlanLimits func(v1.Plan) *v1.PlanLimits
 	// Contact is the «contact us» link of paid plans (config.PlanContact) for the public offers.
 	Contact string
+	// LandingOrigins (PUBLIC_LANDING_URLS) are the browser origins of the marketing landing, which
+	// lives on another host than the app: GET /api/billing/public/offers answers them with CORS
+	// (no credentials). Nothing else is opened.
+	LandingOrigins []string
 	// PublicLimiter rate-limits GET /api/billing/public/offers per client IP (nil: none).
 	PublicLimiter interface {
 		Take(ctx context.Context, key string) error

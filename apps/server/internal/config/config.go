@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +57,10 @@ type Config struct {
 	// CSRF / gateway Origin checks accept these plus PUBLIC_APP_URL and PUBLIC_APP_URL_ALT;
 	// PUBLIC_APP_URL stays the primary one (links).
 	PublicAppURLs []string `env:"PUBLIC_APP_URLS" envSeparator:","`
-	LogLevel      string   `env:"LOG_LEVEL" envDefault:"info"`
+	// Origins of the marketing landing (comma-separated): only GET /api/billing/public/offers
+	// answers them with CORS (ADR-0083). Empty: same-origin only.
+	PublicLandingURLs []string `env:"PUBLIC_LANDING_URLS" envSeparator:","`
+	LogLevel          string   `env:"LOG_LEVEL" envDefault:"info"`
 
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	RedisURL    string `env:"REDIS_URL,required"`
@@ -285,6 +289,11 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("PUBLIC_APP_URLS: %q is not an absolute http(s) URL", u))
 		}
 	}
+	for _, u := range c.PublicLandingURLs {
+		if strings.TrimSpace(u) != "" && Origin(u) == "" {
+			errs = append(errs, fmt.Errorf("PUBLIC_LANDING_URLS: %q is not an absolute http(s) URL", u))
+		}
+	}
 	switch c.StorageDriver {
 	case "fs":
 		if c.StoragePath == "" {
@@ -397,6 +406,17 @@ func (c *Config) AllowedOrigins() []string {
 	for _, u := range append([]string{c.PublicAppURL, c.PublicAppURLAlt}, c.PublicAppURLs...) {
 		if o := Origin(u); o != "" && !seen[o] {
 			seen[o] = true
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// LandingOrigins returns the normalized origins of PUBLIC_LANDING_URLS.
+func (c *Config) LandingOrigins() []string {
+	var out []string
+	for _, u := range c.PublicLandingURLs {
+		if o := Origin(u); o != "" && !slices.Contains(out, o) {
 			out = append(out, o)
 		}
 	}

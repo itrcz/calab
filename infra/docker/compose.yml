@@ -173,6 +173,8 @@ services:
       - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://${DOMAIN_ALT}}   # empty when no alias host
       # every browser origin of the web client (server: PUBLIC_APP_URLS, comma-separated); empty parts skipped
       - PUBLIC_APP_URLS=https://${APP_HOST:-${DOMAIN}}${DOMAIN_ALT:+,https://${DOMAIN_ALT}}${DOMAIN_LEGACY:+,https://${DOMAIN_LEGACY}}
+      # landing origin: may read GET /api/billing/public/offers cross-origin (no credentials); empty = none
+      - PUBLIC_LANDING_URLS=${LANDING_HOST:+https://${LANDING_HOST}}
       - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
       - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-}   # key/channel namespace for a shared Valkey (docs/06); empty = none
