@@ -13,8 +13,8 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/provider"
 )
 
-// Webhook registration (an operator step, `server tochka webhook …`, never automatic on start):
-// one URL per client_id of the JWT key. Creating or editing it makes the bank send one test
+// Webhook registration (`server tochka webhook …`, or automatic with TOCHKA_WEBHOOK_URL, see
+// autoregister.go; nothing happens on start without it): one URL per client_id of the JWT key. Creating or editing it makes the bank send one test
 // webhook per type to the URL and keep the change only if every one is answered 200, so the
 // server behind the URL must run with BILLING_TOCHKA_ENABLED first.
 

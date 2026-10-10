@@ -42,6 +42,37 @@ func TestBillingTochkaValidation(t *testing.T) {
 	}
 }
 
+func TestBillingTochkaWebhookURL(t *testing.T) {
+	billingEnv(t)
+	t.Setenv("BILLING_ENABLED", "true")
+	t.Setenv("BILLING_TOCHKA_ENABLED", "true")
+	t.Setenv("BILLING_PROVIDERS", "tochka:ru")
+	t.Setenv("TOCHKA_API_TOKEN", "header.payload.signature")
+	t.Setenv("TOCHKA_CUSTOMER_CODE", "300123123")
+	t.Setenv("TOCHKA_MERCHANT_ID", "200000000001234")
+	t.Setenv("BILLING_PUBLIC_RETURN_URL", "https://app.calab.test/api/billing/return")
+	c, err := Load()
+	if err != nil || c.Billing.TochkaWebhookURL != "" {
+		t.Fatalf("default must be empty: %v", err)
+	}
+	t.Setenv("TOCHKA_WEBHOOK_URL", "https://app.calab.test/api/billing/tochka/webhook")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"http://app.calab.test/x", "/api/billing/tochka/webhook", "https://app.calab.test:8443/x", "https://"} {
+		t.Setenv("TOCHKA_WEBHOOK_URL", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "TOCHKA_WEBHOOK_URL") {
+			t.Fatalf("%q: err = %v", bad, err)
+		}
+	}
+	t.Setenv("TOCHKA_WEBHOOK_URL", "https://app.calab.test/x")
+	t.Setenv("BILLING_TOCHKA_ENABLED", "false")
+	t.Setenv("BILLING_PROVIDERS", "")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "TOCHKA_WEBHOOK_URL requires") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestBillingTochkaDefaultOff(t *testing.T) {
 	billingEnv(t)
 	c, err := Load()

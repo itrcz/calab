@@ -193,6 +193,12 @@ func (a *App) Run(ctx context.Context) {
 	}
 }
 
+// RunAfterListen starts the background work that needs the HTTP listener already serving
+// (Tochka webhook registration: the bank sends a test webhook to our URL).
+func (a *App) RunAfterListen(ctx context.Context) {
+	a.billing.RunAfterListen(ctx)
+}
+
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
 func mailSender(d Deps) (mail.Sender, error) {
 	if d.Mail != nil {
