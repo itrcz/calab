@@ -93,6 +93,7 @@ export function MoneyActionDialog({
   return (
     <Modal
       open
+      initialFocus="body"
       onClose={onClose}
       title={title}
       description={text}

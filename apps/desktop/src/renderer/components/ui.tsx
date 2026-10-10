@@ -3,7 +3,7 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
-import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useCallback, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
@@ -88,8 +88,8 @@ const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent-strong text-accent-fg hover:brightness-110 active:brightness-95',
   secondary: 'bg-hover text-fg hover:bg-[var(--color-fill-hover)] active:brightness-95',
   // HIG: destructive actions are red *text* on a neutral control.
-  // macOS: destructive = red text (docs/08); a faint red tint keeps the text ≥ 4.5:1 on any surface.
-  destructive: 'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-danger-text hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] active:brightness-95',
+  // macOS: destructive = red text on a neutral fill (docs/08): a red tint over a dark card turns muddy and loses contrast.
+  destructive: 'bg-transparent text-danger-text ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-danger)_50%,transparent)] hover:bg-hover active:brightness-95',
   ghost: 'bg-transparent text-muted hover:bg-hover hover:text-fg',
   // An invitation to set something up (docs/08 «Цвета»: orange, e.g. «Подключить свой календарь»).
   attention: 'bg-attention text-attention-fg hover:brightness-110 active:brightness-95',
@@ -580,6 +580,9 @@ function trackScrollEdges(el: HTMLDivElement | null): (() => void) | undefined {
   const update = (): void => {
     const top = el.scrollTop > 1;
     const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    // A scrolling region must be reachable by keyboard (axe scrollable-region-focusable); -1 keeps it focusable by code.
+    const tab = el.scrollHeight > el.clientHeight + 1 ? 0 : -1;
+    if (el.tabIndex !== tab) el.tabIndex = tab;
     if (top !== el.hasAttribute('data-scroll-top')) el.toggleAttribute('data-scroll-top', top);
     if (bottom !== el.hasAttribute('data-scroll-bottom')) el.toggleAttribute('data-scroll-bottom', bottom);
   };
@@ -620,8 +623,11 @@ export function Modal({
   footer?: ReactNode;
   /** macOS alerts have no close box (confirmations): only «Отмена» and the action. */
   closeButton?: boolean;
-  /** Field focused on open (Radix would focus the close box first — and show its tooltip). */
-  initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Field focused on open (Radix would focus the close box first — and show its tooltip, which then
+   * eats the first Escape). `'body'`: the scrolling body itself, for a dialog with nothing to type into.
+   */
+  initialFocus?: RefObject<HTMLElement | null> | 'body';
   /**
    * A list dialog (docs/09 #52): the body is a flex column, so a child with `flex-1 min-h-0`
    * (PickerPanel with `fill`) takes the height left under the header, down to the bottom
@@ -637,6 +643,14 @@ export function Modal({
   nonModal?: boolean;
   keepOpen?: (target: Element) => boolean;
 }): ReactNode {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const setBody = useCallback(
+    (el: HTMLDivElement | null) => {
+      bodyRef.current = el;
+      return fill ? undefined : trackScrollEdges(el);
+    },
+    [fill],
+  );
   return (
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()} modal={!nonModal}>
       <DialogP.Portal>
@@ -653,9 +667,10 @@ export function Modal({
               (e.currentTarget as HTMLElement | null)?.focus();
               return;
             }
-            if (!initialFocus?.current) return;
+            const target = initialFocus === 'body' ? bodyRef.current : initialFocus?.current;
+            if (!target) return;
             e.preventDefault();
-            initialFocus.current.focus();
+            target.focus();
           }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
@@ -683,9 +698,10 @@ export function Modal({
               edge with more content past it is the scroll cue — set on the node, no re-render; `-my-px`
               keeps the transparent borders out of the layout. */}
           <div
-            ref={fill ? undefined : trackScrollEdges}
+            ref={setBody}
+            tabIndex={-1}
             className={cx(
-              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 mobile:px-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
+              '-my-px min-h-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-focus)] flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 mobile:px-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
               fill && 'flex flex-col',
               !footer && 'pb-5',
             )}

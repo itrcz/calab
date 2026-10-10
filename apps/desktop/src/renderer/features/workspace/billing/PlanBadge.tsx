@@ -58,7 +58,7 @@ export function PlanBadge({ phone = false }: { phone?: boolean }): ReactNode {
           : v.tone === 'danger'
             ? 'bg-danger-fill text-white'
             : v.tone === 'warn'
-              ? 'bg-[color-mix(in_srgb,var(--color-warn)_22%,transparent)] text-fg'
+              ? 'bg-warn-surface text-fg ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-warn)_45%,transparent)]'
               : 'bg-[var(--color-fill-hover)] text-fg hover:bg-active',
       )}
     >

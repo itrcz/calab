@@ -89,10 +89,13 @@ export function parseMajor(input: string, currency: string): bigint | null {
   return BigInt(whole) * 10n ** BigInt(digits) + (frac ? BigInt(frac.padEnd(digits, '0')) : 0n);
 }
 
-/** The plain editable text of an amount: 1250n USD → "12.50", 50000n → "500". */
-export function inputOf(minor: bigint, currency: string): string {
+/** The plain editable text of an amount in the UI language's decimal mark: 1250n USD → "12.50" (en) / "12,50" (ru), 50000n → "500". */
+export function inputOf(minor: bigint, currency: string, locale: string = getLocale()): string {
   const s = majorString(minor, currency);
-  return s.endsWith('.00') ? s.slice(0, -3) : s;
+  const plain = s.endsWith('.00') ? s.slice(0, -3) : s;
+  if (!plain.includes('.')) return plain;
+  const mark = new Intl.NumberFormat(locale).formatToParts(1.1).find((p) => p.type === 'decimal')?.value ?? '.';
+  return plain.replace('.', mark);
 }
 
 export const maxMinor = (a: bigint, b: bigint): bigint => (a > b ? a : b);
