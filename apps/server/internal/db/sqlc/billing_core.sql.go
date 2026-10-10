@@ -152,7 +152,7 @@ func (q *Queries) CancelBillingChargeSeats(ctx context.Context, arg CancelBillin
 }
 
 const claimBillingRenewal = `-- name: ClaimBillingRenewal :one
-SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at FROM billing_accounts
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts
 WHERE status = $1 AND next_due_at <= $2::timestamptz
   AND (hold_until IS NULL OR hold_until <= $2::timestamptz)
   AND id <> ALL($3::uuid[])
@@ -194,12 +194,13 @@ func (q *Queries) ClaimBillingRenewal(ctx context.Context, arg ClaimBillingRenew
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
 
 const claimBillingSuspension = `-- name: ClaimBillingSuspension :one
-SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at FROM billing_accounts
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts
 WHERE suspend_at <= $1::timestamptz AND status IN ('active', 'stopped')
   AND (hold_until IS NULL OR hold_until <= $1::timestamptz)
   AND id <> ALL($2::uuid[])
@@ -238,6 +239,7 @@ func (q *Queries) ClaimBillingSuspension(ctx context.Context, arg ClaimBillingSu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
@@ -770,7 +772,7 @@ const setBillingAccountDisputeHold = `-- name: SetBillingAccountDisputeHold :one
 UPDATE billing_accounts SET dispute_hold = $1, revision = revision + 1,
     updated_at = $2::timestamptz
 WHERE id = $3
-RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at
+RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at
 `
 
 type SetBillingAccountDisputeHoldParams struct {
@@ -803,6 +805,7 @@ func (q *Queries) SetBillingAccountDisputeHold(ctx context.Context, arg SetBilli
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }

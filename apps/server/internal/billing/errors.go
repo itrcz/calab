@@ -28,6 +28,7 @@ const (
 	ReasonMethodUnavailable          = "BILLING_METHOD_UNAVAILABLE"   // 422: method_id not offered to this account
 	ReasonPermissionRequired         = "BILLING_PERMISSION_REQUIRED"  // 403: the caller lacks the route's billing bit (ADR-0087)
 	ReasonWorkspaceBillingSuspended  = "WORKSPACE_BILLING_SUSPENDED"  // 403
+	ReasonWorkspacePlanInactive      = "WORKSPACE_PLAN_INACTIVE"      // 403 (409 ROOM_FULL in voice): restricted mode «тариф не активен» (ADR-0086 amendment)
 	ReasonDisabled                   = "BILLING_DISABLED"             // 501: BILLING_ENABLED=false or the flag of the feature is off
 	ReasonNotImplemented             = "BILLING_NOT_IMPLEMENTED"      // 501: route registered, handler not built yet
 	ReasonProviderUnavailable        = "BILLING_PROVIDER_UNAVAILABLE" // 503

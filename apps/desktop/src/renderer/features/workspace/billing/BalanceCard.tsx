@@ -161,6 +161,12 @@ export function BalanceCard({
 function PhaseNote({ phase }: { phase: CabinetPhase }): ReactNode {
   if (phase === 'inactive') return <Note>{t('billing.note.inactive')}</Note>;
   if (phase === 'stopped') return <Note icon={<CirclePause className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />}>{t('billing.note.stopped')}</Note>;
+  if (phase === 'lapsed')
+    return (
+      <Note tone="warn" icon={<TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />} testId="billing-lapsed-note">
+        {t('billing.note.lapsed')}
+      </Note>
+    );
   if (phase === 'arrears')
     return (
       <Note tone="warn" icon={<TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />}>
@@ -217,6 +223,21 @@ function Actions({
         </Button>
         <Button variant="secondary" onClick={() => onQuote({ kind: 'resume', mode: BillingResumeMode.FREE })} data-testid="billing-resume-free">
           {t('billing.resumeFree')}
+        </Button>
+        <Button variant="ghost" onClick={onTopup}>
+          {t('billing.topup.open')}
+        </Button>
+      </>
+    );
+  // The restricted mode (ADR-0086 amendment): pay again, or Free once the workspace fits it.
+  if (phase === 'lapsed')
+    return (
+      <>
+        <Button onClick={() => onQuote({ kind: 'resume', mode: BillingResumeMode.PAID })} data-testid="billing-lapsed-connect">
+          {t('billing.lapsed.connect')}
+        </Button>
+        <Button variant="secondary" onClick={() => onQuote({ kind: 'toFree' })} data-testid="billing-lapsed-free">
+          {t('billing.lapsed.toFree')}
         </Button>
         <Button variant="ghost" onClick={onTopup}>
           {t('billing.topup.open')}

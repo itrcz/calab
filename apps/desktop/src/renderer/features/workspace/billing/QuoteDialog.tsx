@@ -36,9 +36,12 @@ export function ChangeNet({ q, from, to }: { q: BillingQuote; from: Plan; to: Pl
   );
 }
 
-/** The target plan's name of a refused transition (Free for a stop). */
+/** The target plan's name of a refused transition (Free for a stop / the way out of the restricted mode). */
 const targetName = (a: QuoteAction, accountPlan: Plan): string =>
-  t(PLAN_LABEL[a.kind === 'change' ? a.plan : a.kind === 'stop' ? Plan.FREE : accountPlan === Plan.UNSPECIFIED ? Plan.TEAM : accountPlan]);
+  t(PLAN_LABEL[a.kind === 'change' ? a.plan : a.kind === 'stop' || a.kind === 'toFree' ? Plan.FREE : accountPlan === Plan.UNSPECIFIED ? Plan.TEAM : accountPlan]);
+
+/** No Free violations: a stable empty list (a selector must not return a new array each time). */
+const NONE: readonly PlanLimitViolation[] = [];
 
 /**
  * Activate / change plan / stop / resume (ADR-0080 §8, §9, lead plan «v1 cut»): the server's quote
@@ -51,6 +54,8 @@ export type QuoteAction =
   | { kind: 'activate' }
   | { kind: 'change'; plan: Plan.TEAM | Plan.ENTERPRISE }
   | { kind: 'stop' }
+  /** Out of the restricted mode to Free (ADR-0086 amendment): resume FREE, refused with the violations. */
+  | { kind: 'toFree' }
   | { kind: 'resume'; mode: BillingResumeMode.FREE | BillingResumeMode.PAID };
 
 const PURPOSE = (a: QuoteAction): BillingQuotePurpose =>
@@ -60,7 +65,9 @@ const PURPOSE = (a: QuoteAction): BillingQuotePurpose =>
       ? BillingQuotePurpose.CHANGE_PLAN
       : a.kind === 'stop'
         ? BillingQuotePurpose.STOP
-        : a.mode === BillingResumeMode.PAID
+        : a.kind === 'toFree'
+          ? BillingQuotePurpose.RESUME_FREE
+          : a.mode === BillingResumeMode.PAID
           ? BillingQuotePurpose.RESUME_PAID
           : BillingQuotePurpose.RESUME_FREE;
 
@@ -96,6 +103,7 @@ async function apply(ws: string, a: QuoteAction, q: BillingQuote, reqId: string)
   if (a.kind === 'activate') await ownerBilling.activate(ws, base);
   else if (a.kind === 'stop') await ownerBilling.stop(ws, base);
   else if (a.kind === 'change') await ownerBilling.changePlan(ws, { ...base, plan: a.plan });
+  else if (a.kind === 'toFree') await ownerBilling.resume(ws, { ...base, mode: BillingResumeMode.FREE });
   else await ownerBilling.resume(ws, { ...base, mode: a.mode });
 }
 
@@ -125,6 +133,11 @@ export function QuoteDialog({
   // ADR-0086: the commit re-checks the limits (a member / bot added since the quote).
   const [blocked, setBlocked] = useState<readonly PlanLimitViolation[]>([]);
   const accountPlan = useBilling((s) => s.byWs[workspaceId]?.data?.summary?.plan ?? Plan.UNSPECIFIED);
+  // A stop over Free's limits is allowed, but the paid days then end in the restricted mode
+  // (ADR-0086 amendment): say so with what does not fit (the plan screen's Free offer).
+  const overFree = useBilling((s) =>
+    action.kind === 'stop' ? (s.byWs[workspaceId]?.data?.offers.find((o) => o.plan === Plan.FREE)?.violations ?? NONE) : NONE,
+  );
   const reqId = useRef(requestId());
   const q = quote.data;
   const quoteBlocked = violationsOf(quote.error);
@@ -160,13 +173,16 @@ export function QuoteDialog({
   };
 
   const destructive = purpose === BillingQuotePurpose.STOP;
+  const titleKey = action.kind === 'toFree' ? 'billing.quote.title.toFree' : TITLE[purpose];
+  const textKey = action.kind === 'toFree' ? 'billing.quote.text.toFree' : TEXT[purpose];
+  const actionKey = action.kind === 'toFree' ? 'billing.quote.do.toFree' : ACTION[purpose];
   return (
     <Modal
       open
       initialFocus="body"
       onClose={onClose}
-      title={t(TITLE[purpose], action.kind === 'change' ? { plan: t(PLAN_NAME[action.plan]) } : undefined)}
-      description={t(TEXT[purpose])}
+      title={t(titleKey, action.kind === 'change' ? { plan: t(PLAN_NAME[action.plan]) } : undefined)}
+      description={t(textKey)}
       closeButton={false}
       footer={
         <>
@@ -179,7 +195,7 @@ export function QuoteDialog({
             </Button>
           ) : (
             <Button variant={destructive ? 'destructive' : 'primary'} busy={busy} disabled={!q} onClick={() => void confirm()} data-testid="billing-quote-confirm">
-              {t(ACTION[purpose])}
+              {t(actionKey)}
             </Button>
           )}
         </>
@@ -187,6 +203,12 @@ export function QuoteDialog({
     >
       <div className="flex flex-col" data-testid="billing-quote">
         {quote.isLoading ? <Spinner className="mx-auto my-4" /> : null}
+        {overFree.length && !violations.length ? (
+          <div className="mb-3 flex flex-col gap-2" data-testid="billing-stop-over-free">
+            <p className="text-body text-muted">{t('billing.stop.overFreeText')}</p>
+            <ViolationList workspaceId={workspaceId} plan={t(PLAN_LABEL[Plan.FREE])} violations={overFree} title={t('billing.stop.overFreeTitle')} />
+          </div>
+        ) : null}
         {violations.length ? (
           <ViolationList workspaceId={workspaceId} plan={targetName(action, accountPlan)} violations={violations} />
         ) : adminAssignedError(quote.error) ? (

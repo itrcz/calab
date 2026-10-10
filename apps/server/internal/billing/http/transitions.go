@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	"github.com/calaba/calaba/server/internal/plans"
 )
@@ -21,7 +22,9 @@ func (s *Service) adminAssigned(ctx context.Context, c caller) (bool, error) {
 }
 
 // quoteTarget is the plan a quote of purpose moves the workspace to ("" = no transition to check:
-// RESUME_FREE, a replay of the current state, an unknown purpose).
+// STOP — always allowed, the end of the paid days decides between Free and the restricted mode
+// (ADR-0086 amendment); RESUME_FREE of a suspension; a replay of the current state; an unknown
+// purpose). RESUME_FREE of a lapsed account is the move to Free out of the restricted mode.
 func quoteTarget(c caller, purpose v1.BillingQuotePurpose, plan string) string {
 	switch purpose {
 	case v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_ACTIVATE:
@@ -44,8 +47,8 @@ func quoteTarget(c caller, purpose v1.BillingQuotePurpose, plan string) string {
 		if c.hasAc {
 			return c.acc.Plan
 		}
-	case v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP:
-		if c.hasAc && c.acc.Status == core.StatusActive {
+	case v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_RESUME_FREE:
+		if c.hasAc && core.Lapsed(c.acc) {
 			return core.PlanFree
 		}
 	}
@@ -56,6 +59,9 @@ func quoteTarget(c caller, purpose v1.BillingQuotePurpose, plan string) string {
 // (BILLING_PLAN_ADMIN_ASSIGNED, PLAN_LIMITS_EXCEEDED with the violations). It runs before a
 // self-serve start, so a refused quote creates no account.
 func (s *Service) checkQuoteTransition(ctx context.Context, c caller, purpose v1.BillingQuotePurpose, plan string) error {
+	if purpose == v1.BillingQuotePurpose_BILLING_QUOTE_PURPOSE_STOP && c.hasAc && c.acc.Plan == core.PlanCustom {
+		return billing.ErrPlanAdminAssigned // a custom plan is stopped by a superadmin (ADR-0086 «Дополнение»)
+	}
 	target := quoteTarget(c, purpose, plan)
 	if target == "" || s.cfg.Plans == nil {
 		return nil

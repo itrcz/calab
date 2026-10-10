@@ -299,6 +299,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (e.value.workspace) {
         useWorkspaces.getState().updateWorkspace(e.value.workspace);
         onWorkspaceBilling(e.value.workspace);
+        // «Тариф не активен» starts / ends live: the stream / camera buttons of my call follow.
+        if (e.value.workspace.id === useVoice.getState().workspaceId) voice.refreshRights();
       }
       return;
     case 'billingUpdate':

@@ -19,6 +19,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -117,6 +118,9 @@ type wsRoom struct {
 	WorkspaceID uuid.UUID // shadows the nullable Room.WorkspaceID
 	// Plan: effective limits of the workspace plan (ADR-0024); set by roomInfo only.
 	Plan plans.Limits
+	// Lapsed: the workspace is in the restricted mode (ADR-0086 amendment): Plan.RoomMembers is
+	// capped at 2 and the room is audio only (no streams, no cameras); set by roomInfo only.
+	Lapsed bool
 }
 
 func (s *Service) getRoom(ctx context.Context, roomID uuid.UUID) (wsRoom, error) {
@@ -142,16 +146,37 @@ func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (wsRoom, *v1.R
 		return room, nil, err
 	}
 	if s.Plans != nil {
-		if room.Plan, err = s.Plans.Effective(ctx, room.WorkspaceID); err != nil {
+		info, err := s.Plans.Info(ctx, room.WorkspaceID)
+		if err != nil {
 			return room, nil, err
 		}
+		room.Plan, room.Lapsed = info.Limits, info.Lapsed
 	}
 	return room, room.Plan.CapMedia(pbconv.EffectiveMedia(room.Room, pbconv.WorkspaceDefaults(ws))), nil
 }
 
+// lapsed reports the restricted mode of a workspace for the LiveKit grants: the bits lose STREAM
+// and VIDEO (perm.PlanInactive), so no screen share and no camera sources (ADR-0086 amendment).
+// A read error keeps the grant as it is (the API routes that hand out these sources are refused
+// by the identity gate anyway).
+func (s *Service) lapsed(ctx context.Context, wid uuid.UUID) bool {
+	if s.Plans == nil {
+		return false
+	}
+	l, err := s.Plans.Lapsed(ctx, wid)
+	if err != nil {
+		slog.WarnContext(ctx, "read plan state for the voice grant", "workspace", wid, "err", err)
+	}
+	return l
+}
+
 // admission is the occupancy check of a voice room: the room's user_limit (0 = none or the
-// caller is exempt) and the plan's room_members (0 = none), which applies to everyone.
-type admission struct{ room, plan int }
+// caller is exempt) and the plan's room_members (0 = none), which applies to everyone. lapsed:
+// the plan cap is the restricted mode's (refused with reason WORKSPACE_PLAN_INACTIVE).
+type admission struct {
+	room, plan int
+	lapsed     bool
+}
 
 func (a admission) active() bool { return a.room > 0 || a.plan > 0 }
 
@@ -165,7 +190,7 @@ func limitExempt(acc perm.RoomAccess) bool {
 }
 
 func admissionFor(room wsRoom, exempt bool) admission {
-	a := admission{plan: int(room.Plan.RoomMembers)}
+	a := admission{plan: int(room.Plan.RoomMembers), lapsed: room.Lapsed}
 	if room.UserLimit > 0 && !exempt {
 		a.room = int(room.UserLimit)
 	}
@@ -227,6 +252,9 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	}
 	if room.Type != "voice" {
 		return httpx.Validation("id", "not a voice room")
+	}
+	if room.Lapsed { // the restricted mode: audio only (ADR-0086 amendment)
+		acc.Bits = perm.PlanInactive(acc.Bits)
 	}
 	id := auth.MustFromContext(r.Context())
 	identity := voice.Identity(id.UserID, id.SessionID)
@@ -404,6 +432,9 @@ func (s *Service) pushGrant(ctx context.Context, lkRoom, identity string, wid, u
 	sm, cam := s.serverMuted(ctx, wid, uid), s.cameraHeld(ctx, lkRoom, identity)
 	if voice.IsDMRoomName(lkRoom) { // a call keeps its camera source (dm.go)
 		return s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(bits, slot, true))
+	}
+	if s.lapsed(ctx, wid) { // the restricted mode: microphone only (ADR-0086 amendment)
+		bits = perm.PlanInactive(bits)
 	}
 	for range 3 {
 		b := bits
@@ -827,6 +858,9 @@ func (s *Service) removeIdentities(ctx context.Context, room string, ids []strin
 var (
 	errRoomFull     = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full")
 	errRoomFullPlan = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full: the workspace plan limits users in a room")
+	// errRoomFullInactive: the restricted mode admits two in a room (ADR-0086 amendment).
+	errRoomFullInactive = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL,
+		"the room is full: the workspace plan is not active, voice rooms take two people until the owner pays or moves to Free")
 )
 
 // admit fails with ROOM_FULL when the room already has as many distinct users other than
@@ -849,6 +883,8 @@ func (s *Service) admit(ctx context.Context, wid, rid, self uuid.UUID, adm admis
 	}
 	n := len(users)
 	switch {
+	case adm.plan > 0 && n >= adm.plan && adm.lapsed:
+		return errRoomFullInactive.WithDetails(billing.ReasonWorkspacePlanInactive, uint64(n), uint64(adm.plan))
 	case adm.plan > 0 && n >= adm.plan:
 		return errRoomFullPlan.WithDetails(httpx.ReasonPlanLimit, uint64(n), uint64(adm.plan))
 	case adm.room > 0 && n >= adm.room:

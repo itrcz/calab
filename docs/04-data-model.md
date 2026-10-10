@@ -259,6 +259,8 @@ const BILLING_BITS = {
 
 Дефолты встроенных ролей — в таблице «Роли workspace» выше (права `member`/`guest` редактируются).
 
+«Тариф не активен» (ADR-0086, поправка 1): поверх вычисленных прав — `planInactivePermissions` (TS) / `perm.PlanInactive` (Go), векторы `planInactive` в permissions.json: снимает у всех в пространстве (владельца и ADMINISTRATOR тоже) `SEND_MESSAGES | ATTACH_FILES | STREAM | VIDEO | INVITE_MEMBERS | INVITE_GUESTS | CREATE_TEMP_ROOMS | PLACE_CALLS | CREATE_TASKS | CREATE_BOARDS` (`PLAN_INACTIVE_DENIED`). Сервер применяет его к грантам LiveKit (`rtc.pushGrant`, `/join`), маршруты закрывает таблицей `app.planInactiveRoutes` (403 `WORKSPACE_PLAN_INACTIVE`); клиент — к UI комнаты и звонка, когда `Workspace.billing.state = LAPSED`. Состояние — `billing_accounts.lapsed_at` (только у `stopped`, миграция 00081). DM и полки не затрагивает.
+
 Где какой бит проверяется (сервер, клиент, LiveKit grant) — `docs/16-permissions-matrix.md`.
 
 Вычисление эффективных прав в комнате (единственная функция `computePermissions` в `packages/protocol`, зеркало — Go `internal/perm`, общие тест-векторы `proto/testdata/permissions.json`; сервер проверяет, клиент — для UI):

@@ -33,6 +33,11 @@ type Info struct {
 	// DisplayName / Description: a custom plan's name and description (ADR-0086 «Индивидуальный
 	// тариф»); empty = the client's localized name.
 	DisplayName, Description string
+	// Lapsed: the restricted mode of the workspace («тариф не активен», ADR-0086 amendment):
+	// a stopped billing account whose paid days ran out while the usage exceeded Free, with
+	// BILLING_ENABLED and BILLING_ENFORCEMENT_ENABLED. Limits then are Free's with RoomMembers
+	// capped at LapsedRoomMembers; what else is refused is restrictedRoutes (app) and rtc.
+	Lapsed bool
 	// billing: Workspace.billing (BILLING_ENABLED and a live billing account), else nil.
 	billing *billingInfo
 }
@@ -190,7 +195,7 @@ func (s *Service) Info(ctx context.Context, wsID uuid.UUID) (Info, error) {
 	s.mu.Lock()
 	c, ok := s.cache[wsID]
 	gen := s.gen
-	billingOn := s.bill.Enabled
+	billingOn, enforced := s.bill.Enabled, s.bill.Enabled && s.bill.Enforced
 	s.mu.Unlock()
 	if ok && now.Before(c.until) {
 		return c.info, nil
@@ -205,12 +210,18 @@ func (s *Service) Info(ctx context.Context, wsID uuid.UUID) (Info, error) {
 		if err != nil && !db.IsNotFound(err) {
 			return Info{}, err
 		}
-		bill = resolveBilling(row)
+		bill = resolveBilling(row, enforced)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	info := s.resolveLocked(ctx, rp, now)
 	info.billing = bill
+	if bill != nil && bill.lapsed {
+		info.Lapsed = true
+		if info.Limits.RoomMembers == 0 || info.Limits.RoomMembers > LapsedRoomMembers {
+			info.Limits.RoomMembers = LapsedRoomMembers
+		}
+	}
 	until := now.Add(CacheTTL)
 	if info.ValidUntil != nil && !info.Expired && info.ValidUntil.Before(until) {
 		until = *info.ValidUntil // re-resolve the moment the plan expires

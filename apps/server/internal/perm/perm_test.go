@@ -52,6 +52,10 @@ type vector struct {
 		Owner bool `json:"owner"`
 		Guest bool `json:"guest"`
 	} `json:"billing"`
+	// ADR-0086 amendment: a restricted-mode vector (PlanInactive over computed bits).
+	PlanInactive *struct {
+		Bits Bits `json:"bits"`
+	} `json:"planInactive"`
 	Expected Bits `json:"expected"`
 }
 
@@ -69,9 +73,14 @@ func loadVectors(t *testing.T) []vector {
 }
 
 func TestComputeVectors(t *testing.T) {
-	n, boards, taskRooms, billing := 0, 0, 0, 0
+	n, boards, taskRooms, billing, inactive := 0, 0, 0, 0, 0
 	for _, v := range loadVectors(t) {
 		switch {
+		case v.PlanInactive != nil:
+			inactive++
+			if got := PlanInactive(v.PlanInactive.Bits); got != v.Expected {
+				t.Errorf("%s: PlanInactive got %d want %d", v.Name, got, v.Expected)
+			}
 		case v.Billing != nil:
 			billing++
 			roles := make([]RoleBits, len(v.Roles))
@@ -158,8 +167,9 @@ func TestComputeVectors(t *testing.T) {
 			}
 		}
 	}
-	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 {
-		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors", n, boards, taskRooms, billing)
+	if n < 12 || boards < 15 || taskRooms < 8 || billing < 8 || inactive < 4 {
+		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors, %d billing vectors, %d restricted-mode vectors",
+			n, boards, taskRooms, billing, inactive)
 	}
 }
 

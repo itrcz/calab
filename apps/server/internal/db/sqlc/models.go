@@ -53,6 +53,7 @@ type BillingAccount struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	ClosedAt      *time.Time
+	LapsedAt      *time.Time
 }
 
 type BillingAllocation struct {

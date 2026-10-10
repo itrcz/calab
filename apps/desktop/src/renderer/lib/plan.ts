@@ -205,6 +205,9 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
   const e = apiLike(err);
   if (!e) return null;
   const x = e.extra ?? {};
+  // «Тариф не активен» (ADR-0086 amendment): nothing to buy from here — the owner pays or moves to Free.
+  if (x.reason === 'WORKSPACE_PLAN_INACTIVE')
+    return { text: t(e.code === 'ERROR_CODE_ROOM_FULL' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error'), contact: false };
   const byPlan = x.reason === 'PLAN_LIMIT';
   if (e.code === 'ERROR_CODE_ROOM_FULL' && byPlan) {
     const n = x.limit ?? 0;

@@ -225,6 +225,17 @@ func (g TransitionGuard) Check(ctx context.Context, q *sqlc.Queries, ws uuid.UUI
 	return g.S.CheckTransition(ctx, q, ws, target, now, true)
 }
 
+// Fits reports whether ws fits target without locks (core.Guard.Fits: the end of a stopped
+// account's paid days decides between Free and the restricted mode, never refusing).
+func (g TransitionGuard) Fits(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, target string, _ time.Time) (bool, error) {
+	u, err := ReadUsage(ctx, q, ws)
+	if err != nil {
+		return false, err
+	}
+	lim, identity := g.S.TargetLimits(target)
+	return len(u.Violations(lim, identity)) == 0, nil
+}
+
 // OfferViolations are the violations of every self-serve plan for the plan screen (GET …/billing).
 func (s *Service) OfferViolations(ctx context.Context, q *sqlc.Queries, ws uuid.UUID) (map[v1.Plan][]*v1.PlanLimitViolation, error) {
 	if s == nil {

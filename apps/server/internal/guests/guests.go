@@ -404,6 +404,11 @@ func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomIn
 			return granted{}, nil // (a) already has access: nothing to change, no use consumed
 		}
 	}
+	// The restricted mode (ADR-0086 amendment) lets nobody new in by a room link, guests
+	// included; who already has access (a) passed above.
+	if err := s.Plans.CheckActive(ctx, wsID, plans.RestrictedInvite); err != nil {
+		return granted{}, err
+	}
 	// Members of the workspace never wait (not in v1: ADR-0040); guests (b)/(c) do.
 	wait := RequiresApproval(row.Room.GuestApproval, row.RoomInvite.RequireApproval) &&
 		(!isMember || member.Role == string(perm.RoleGuest))

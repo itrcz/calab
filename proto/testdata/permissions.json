@@ -186,5 +186,11 @@
   {"name": "billing: roles are OR-ed", "billing": {"owner": false, "guest": false}, "roles": [{"id": "member", "position": 1, "permissions": 16503}, {"id": "acc", "position": 2, "permissions": 4294967296}, {"id": "pay", "position": 3, "permissions": 8589934593}], "expected": 12884901888},
   {"name": "billing: an admin with a MANAGE role", "billing": {"owner": false, "guest": false}, "roles": [{"id": "member", "position": 1, "permissions": 16503}, {"id": "fin", "position": 2, "permissions": 17179869184}, {"id": "admin", "position": 1000, "permissions": 1024}], "expected": 30064771072},
   {"name": "billing: guests never, whatever the roles", "billing": {"owner": false, "guest": true}, "roles": [{"id": "guest", "position": 0, "permissions": 48}, {"id": "fin", "position": 2, "permissions": 17179869184}], "expected": 0},
-  {"name": "billing: billing bits on the member role", "billing": {"owner": false, "guest": false}, "roles": [{"id": "member", "position": 1, "permissions": 4294983799}], "expected": 4294967296}
+  {"name": "billing: billing bits on the member role", "billing": {"owner": false, "guest": false}, "roles": [{"id": "member", "position": 1, "permissions": 4294983799}], "expected": 4294967296},
+  {"name": "planInactive: the owner / ADMINISTRATOR loses writing, video and invitations too", "planInactive": {"bits": 4294967295}, "expected": 4229676985},
+  {"name": "planInactive: member defaults keep reading, connecting and speaking", "planInactive": {"bits": 8798327}, "expected": 131121},
+  {"name": "planInactive: voice bits become audio only", "planInactive": {"bits": 16497}, "expected": 49},
+  {"name": "planInactive: cleanup rights stay (manage messages)", "planInactive": {"bits": 15}, "expected": 9},
+  {"name": "planInactive: board bits lose task and board creation", "planInactive": {"bits": 35520512}, "expected": 1703936},
+  {"name": "planInactive: nothing stays nothing", "planInactive": {"bits": 0}, "expected": 0}
 ]

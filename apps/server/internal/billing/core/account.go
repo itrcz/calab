@@ -196,8 +196,9 @@ func (s *state) clearEpisodeIfPaid() {
 }
 
 // Stop ends the paid plan: no new charges or renewals; the running lots stay until their end
-// (the workspace keeps the paid plan until then, Free after). Debt and its deadline stay.
-// Stopping a stopped account is a no-op.
+// (the workspace keeps the paid plan until then; after that Free if it fits Free, else the
+// restricted mode — ADR-0086 amendment, owner 10.10: stopping is always allowed). Debt and its
+// deadline stay. Stopping a stopped account is a no-op.
 func (c *Core) Stop(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID) (sqlc.BillingAccount, error) {
 	return c.runGuarded(ctx, accountID, actor, func(s *state) error {
 		switch s.acc.Status {
@@ -209,6 +210,11 @@ func (c *Core) Stop(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID) 
 		default:
 			return billing.ErrChangeIncompatible
 		}
+		// A custom plan is the superadmin's assignment (ADR-0086 «Дополнение»): the owner does not
+		// stop it; stopping is always allowed for the standard paid plans only.
+		if s.acc.Plan == PlanCustom {
+			return billing.ErrPlanAdminAssigned
+		}
 		done, err := s.catchUp(s.now)
 		if err != nil {
 			return err
@@ -219,17 +225,13 @@ func (c *Core) Stop(ctx context.Context, accountID uuid.UUID, actor *uuid.UUID) 
 		if s.acc.Status != StatusActive {
 			return nil // suspended at the deadline just now
 		}
-		// The workspace ends on Free when the paid days run out (ADR-0086): it must fit Free now.
-		if err := s.guard(PlanFree); err != nil {
-			return err
-		}
 		s.setStatus(StatusStopped)
 		end, err := s.lastEnd(s.now)
 		if err != nil {
 			return err
 		}
 		s.setNextDue(end)
-		return nil
+		return s.settleFree(s.now) // no paid days left: Free or the restricted mode at once
 	})
 }
 
@@ -410,9 +412,14 @@ const (
 )
 
 // Resume lifts a billing suspension once the debt is paid (balance >= 0, else
-// billing.ErrInsufficientFunds): free → stopped on the Free plan without buying seats (M21);
-// paid → active on plan with the first day of every billable member bought from the free
-// advance (M17: quote = debt + first day). Nothing is charged for the suspended time.
+// billing.ErrInsufficientFunds): free → stopped on the Free plan without buying seats (M21),
+// or in the restricted mode when the workspace does not fit Free (never refused: paying the
+// debt off must not require fitting a plan, ADR-0080 §8); paid → active on plan with the first
+// day of every billable member bought from the free advance (M17: quote = debt + first day).
+// Nothing is charged for the suspended time.
+//
+// Free on a lapsed account (ADR-0086 amendment) is the owner's way out of the restricted mode:
+// refused with the violations (PLAN_LIMITS_EXCEEDED) until the workspace fits Free.
 func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan string, requestID uuid.UUID, actor *uuid.UUID) (sqlc.BillingAccount, error) {
 	if mode != ResumeFree && mode != ResumePaid {
 		return sqlc.BillingAccount{}, httpx.Validation("mode", "mode must be free or paid")
@@ -422,11 +429,7 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 	if mode == ResumePaid && !ValidPaidPlan(plan) && plan != PlanCustom {
 		return sqlc.BillingAccount{}, badPlan()
 	}
-	run := c.run
-	if mode == ResumePaid {
-		run = c.runGuarded
-	}
-	return run(ctx, accountID, actor, func(s *state) error {
+	return c.runGuarded(ctx, accountID, actor, func(s *state) error {
 		if mode == ResumePaid && s.acc.Status == StatusActive && s.acc.Plan == plan {
 			return nil // replay
 		}
@@ -434,6 +437,12 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 			return badPlan()
 		}
 		if mode == ResumeFree && s.acc.Status == StatusStopped && s.acc.BalanceMinor >= 0 {
+			if s.acc.LapsedAt != nil {
+				if err := s.guard(PlanFree); err != nil {
+					return err
+				}
+				s.setLapsed(nil)
+			}
 			s.clearEpisode()
 			return nil
 		}
@@ -447,7 +456,7 @@ func (c *Core) Resume(ctx context.Context, accountID uuid.UUID, mode, plan strin
 			s.setStatus(StatusStopped)
 			s.setNextDue(nil)
 			s.clearEpisode()
-			return nil
+			return s.settleFree(s.now)
 		}
 		if !s.c.cfg.Debits {
 			return billing.ErrDisabled

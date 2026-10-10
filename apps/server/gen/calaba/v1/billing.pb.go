@@ -82,6 +82,11 @@ const (
 	BillingState_BILLING_STATE_IN_ARREARS  BillingState = 3 // paid plan running in debt until suspend_at
 	BillingState_BILLING_STATE_STOPPED     BillingState = 4 // the owner stopped the paid plan
 	BillingState_BILLING_STATE_SUSPENDED   BillingState = 5 // debt deadline passed: the workspace is closed except owner billing
+	// ADR-0086 amendment: the paid days after a stop ran out while the workspace uses more than Free
+	// allows («тариф не активен»). Restricted mode: no writing in workspace chats, no uploads, no
+	// invitations, at most 2 in a voice room, audio only. Left by paying (activate) or by moving to
+	// Free (resume FREE) once the usage fits. Only while billing enforcement is on.
+	BillingState_BILLING_STATE_LAPSED BillingState = 6
 )
 
 // Enum value maps for BillingState.
@@ -93,6 +98,7 @@ var (
 		3: "BILLING_STATE_IN_ARREARS",
 		4: "BILLING_STATE_STOPPED",
 		5: "BILLING_STATE_SUSPENDED",
+		6: "BILLING_STATE_LAPSED",
 	}
 	BillingState_value = map[string]int32{
 		"BILLING_STATE_UNSPECIFIED": 0,
@@ -101,6 +107,7 @@ var (
 		"BILLING_STATE_IN_ARREARS":  3,
 		"BILLING_STATE_STOPPED":     4,
 		"BILLING_STATE_SUSPENDED":   5,
+		"BILLING_STATE_LAPSED":      6,
 	}
 )
 
@@ -7504,14 +7511,15 @@ const file_calaba_v1_billing_proto_rawDesc = "" +
 	"PlanSource\x12\x1b\n" +
 	"\x17PLAN_SOURCE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12PLAN_SOURCE_MANUAL\x10\x01\x12\x17\n" +
-	"\x13PLAN_SOURCE_BILLING\x10\x02*\xb9\x01\n" +
+	"\x13PLAN_SOURCE_BILLING\x10\x02*\xd3\x01\n" +
 	"\fBillingState\x12\x1d\n" +
 	"\x19BILLING_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16BILLING_STATE_INACTIVE\x10\x01\x12\x18\n" +
 	"\x14BILLING_STATE_ACTIVE\x10\x02\x12\x1c\n" +
 	"\x18BILLING_STATE_IN_ARREARS\x10\x03\x12\x19\n" +
 	"\x15BILLING_STATE_STOPPED\x10\x04\x12\x1b\n" +
-	"\x17BILLING_STATE_SUSPENDED\x10\x05*\xf3\x01\n" +
+	"\x17BILLING_STATE_SUSPENDED\x10\x05\x12\x18\n" +
+	"\x14BILLING_STATE_LAPSED\x10\x06*\xf3\x01\n" +
 	"\x14BillingAccountStatus\x12&\n" +
 	"\"BILLING_ACCOUNT_STATUS_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fBILLING_ACCOUNT_STATUS_INACTIVE\x10\x01\x12!\n" +

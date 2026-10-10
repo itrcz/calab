@@ -30,6 +30,8 @@ describe('badge', () => {
     expect(badgeView(Plan.TEAM, BillingState.IN_ARREARS).note).toBe('debt');
     expect(badgeView(Plan.ENTERPRISE, BillingState.SUSPENDED)).toEqual({ plan: Plan.ENTERPRISE, tone: 'danger', note: 'suspended' });
     expect(badgeView(Plan.FREE, BillingState.INACTIVE).note).toBe('inactive');
+    // ADR-0086 amendment: «не активен» in the warn outline.
+    expect(badgeView(Plan.FREE, BillingState.LAPSED)).toEqual({ plan: Plan.FREE, tone: 'warn', note: 'lapsed' });
   });
 });
 
@@ -46,6 +48,12 @@ describe('planStep', () => {
     expect(planStep('active', Plan.ENTERPRISE, Plan.FREE)).toEqual({ kind: 'stop' });
     expect(planStep('arrears', Plan.TEAM, Plan.ENTERPRISE)).toEqual({ kind: 'blocked', why: 'debtUpgrade' });
     expect(planStep('arrears', Plan.ENTERPRISE, Plan.TEAM)).toEqual({ kind: 'pay', purpose: BillingQuotePurpose.CHANGE_PLAN, plan: Plan.TEAM });
+  });
+  it('the restricted mode: no current plan; Free is the way out (toFree), a paid plan starts it again', () => {
+    expect(currentTier('lapsed', Plan.TEAM)).toBeNull();
+    expect(planStep('lapsed', Plan.TEAM, Plan.FREE)).toEqual({ kind: 'toFree' });
+    expect(planStep('lapsed', Plan.TEAM, Plan.TEAM)).toEqual({ kind: 'pay', purpose: BillingQuotePurpose.ACTIVATE, plan: Plan.TEAM });
+    expect(screenPhase(resp(BillingAccountStatus.STOPPED, BillingState.LAPSED))).toBe('lapsed');
   });
   it('leaves suspended and closed accounts to the cabinet', () => {
     expect(planStep('suspended', Plan.TEAM, Plan.TEAM)).toEqual({ kind: 'blocked', why: 'suspended' });

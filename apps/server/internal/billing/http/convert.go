@@ -34,7 +34,8 @@ func idStr(id *uuid.UUID) string {
 // Status is the WorkspaceBillingStatus of an account in GET …/billing (nil account = no
 // billing): the state every member may see, without amounts, mapped like Workspace.billing
 // (plans.resolveBilling). source is workspace_plans.source ("" = no plan row).
-func Status(acc *sqlc.BillingAccount, source string) *v1.WorkspaceBillingStatus {
+// enforced: BILLING_ENFORCEMENT_ENABLED (a lapsed account is LAPSED only then).
+func Status(acc *sqlc.BillingAccount, source string, enforced bool) *v1.WorkspaceBillingStatus {
 	st := &v1.WorkspaceBillingStatus{Source: v1.PlanSource_PLAN_SOURCE_MANUAL}
 	if source == "billing" {
 		st.Source = v1.PlanSource_PLAN_SOURCE_BILLING
@@ -52,6 +53,9 @@ func Status(acc *sqlc.BillingAccount, source string) *v1.WorkspaceBillingStatus 
 		}
 	case core.StatusStopped:
 		st.State, st.SuspendAt = v1.BillingState_BILLING_STATE_STOPPED, ts(acc.SuspendAt)
+		if core.Lapsed(*acc) && enforced {
+			st.State = v1.BillingState_BILLING_STATE_LAPSED
+		}
 	case core.StatusSuspended:
 		st.State, st.SuspendAt = v1.BillingState_BILLING_STATE_SUSPENDED, ts(acc.SuspendAt)
 	}

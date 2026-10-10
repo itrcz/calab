@@ -364,7 +364,7 @@ func New(d Deps) *App {
 		hub.IdentityInvalidated = rtcSvc.IdentityChanged
 	}
 	private := func(h http.Handler) http.Handler {
-		g := identityGate(d.DB.Q, authSvc, guard(h))
+		g := identityGate(d.DB.Q, authSvc, planSvc.CheckActive, guard(h))
 		return authSvc.Require(botGate(d.DB.Q, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.ServeHTTP(w, r.WithContext(perm.WithResolver(r.Context(), d.DB.Q)))
 		})))

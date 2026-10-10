@@ -28,7 +28,7 @@ func TestBillable(t *testing.T) {
 
 func TestResolveBilling(t *testing.T) {
 	at := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
-	if b := resolveBilling(sqlc.GetWorkspaceBillingStatusRow{Source: "manual"}); b != nil {
+	if b := resolveBilling(sqlc.GetWorkspaceBillingStatusRow{Source: "manual"}, true); b != nil {
 		t.Fatal("no account must leave Workspace.billing unset")
 	}
 	for _, c := range []struct {
@@ -43,7 +43,7 @@ func TestResolveBilling(t *testing.T) {
 		{sqlc.GetWorkspaceBillingStatusRow{Source: "manual", AccountStatus: "stopped", NegativeSince: &at, SuspendAt: &at}, v1.BillingState_BILLING_STATE_STOPPED, v1.PlanSource_PLAN_SOURCE_MANUAL, true},
 		{sqlc.GetWorkspaceBillingStatusRow{Source: "billing", AccountStatus: "suspended", NegativeSince: &at, SuspendAt: &at}, v1.BillingState_BILLING_STATE_SUSPENDED, v1.PlanSource_PLAN_SOURCE_BILLING, true},
 	} {
-		p := resolveBilling(c.row).proto()
+		p := resolveBilling(c.row, true).proto()
 		if p.GetState() != c.state || p.GetSource() != c.source || (p.GetSuspendAt() != nil) != c.due {
 			t.Errorf("%+v → %v", c.row, p)
 		}

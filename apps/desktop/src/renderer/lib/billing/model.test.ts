@@ -61,6 +61,7 @@ describe('cabinet phase', () => {
     expect(cabinetPhase(summary(), BillingState.SUSPENDED)).toBe('suspended');
     expect(cabinetPhase(summary({ status: BillingAccountStatus.INACTIVE }), BillingState.INACTIVE)).toBe('inactive');
     expect(cabinetPhase(summary({ status: BillingAccountStatus.STOPPED }), BillingState.STOPPED)).toBe('stopped');
+    expect(cabinetPhase(summary({ status: BillingAccountStatus.STOPPED }), BillingState.LAPSED)).toBe('lapsed');
     expect(cabinetPhase(summary({ status: BillingAccountStatus.CLOSED }), BillingState.UNSPECIFIED)).toBe('closed');
   });
 

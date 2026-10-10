@@ -47,9 +47,18 @@ export function PlanBadge({ phone = false }: { phone?: boolean }): ReactNode {
     if (ask && !useBilling.getState().byWs[id]) void loadBilling(id);
   }, [ask, id]);
   if (!id || !badgeShown(state, selfServe)) return null;
-  // Without BILLING_VIEW a debt is not shown (money); the suspension is (everyone is closed out).
+  // Without BILLING_VIEW a debt is not shown (money); the suspension and «не активен» are (they restrict everyone).
   const v = badgeView(plan, !view && state === BillingState.IN_ARREARS ? BillingState.UNSPECIFIED : state);
-  const note = v.note === 'debt' ? t('billing.badge.debt') : v.note === 'suspended' ? t('billing.badge.suspended') : v.note === 'inactive' && manage ? t('billing.badge.inactive') : '';
+  const note =
+    v.note === 'debt'
+      ? t('billing.badge.debt')
+      : v.note === 'suspended'
+        ? t('billing.badge.suspended')
+        : v.note === 'lapsed'
+          ? t('billing.badge.lapsed')
+          : v.note === 'inactive' && manage
+            ? t('billing.badge.inactive')
+            : '';
   const name = planDisplayName(v.plan, customName);
   const label = t('billing.badge.label', { plan: note ? `${name}, ${note}` : name });
   return (

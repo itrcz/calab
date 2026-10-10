@@ -24,8 +24,12 @@ func (s *state) catchUp(until time.Time) (done bool, err error) {
 		}
 		b := due.UTC()
 		if s.acc.Status == StatusStopped {
-			// The paid coverage of a stopped account ended: Free from now on.
+			// The paid coverage of a stopped account ended: Free from now on, or the restricted
+			// mode when the workspace does not fit Free (ADR-0086 amendment).
 			s.setNextDue(nil)
+			if err := s.settleFree(b); err != nil {
+				return false, err
+			}
 			continue
 		}
 		if s.deadlinePassed(b) {

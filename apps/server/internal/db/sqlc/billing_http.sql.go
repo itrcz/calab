@@ -259,7 +259,7 @@ func (q *Queries) GetBillingRefundRequestByRequest(ctx context.Context, arg GetB
 }
 
 const listBillingAccountsSuspendingSoon = `-- name: ListBillingAccountsSuspendingSoon :many
-SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at FROM billing_accounts
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts
 WHERE suspend_at > $1::timestamptz AND suspend_at <= $2::timestamptz
   AND status IN ('active', 'stopped') AND balance_minor < 0
 ORDER BY suspend_at
@@ -303,6 +303,7 @@ func (q *Queries) ListBillingAccountsSuspendingSoon(ctx context.Context, arg Lis
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ClosedAt,
+			&i.LapsedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -19,6 +19,7 @@ import {
   computeMemberRoomPermissions,
   computePermissions,
   billingPermissions,
+  planInactivePermissions,
   BILLING_BITS,
   BILLING_PERMISSIONS,
   tempRoomScope,
@@ -51,6 +52,8 @@ interface Vector {
   taskRoom?: { board: number; archived: boolean; commentsOff: boolean };
   // ADR-0087: a billing vector (billingPermissions over the roles).
   billing?: { owner: boolean; guest: boolean };
+  // ADR-0086 amendment: a restricted-mode vector (planInactivePermissions over computed bits).
+  planInactive?: { bits: number };
   expected: number;
 }
 
@@ -79,6 +82,10 @@ const toRoles = (rs: NonNullable<Vector['roles']>) =>
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
+      if (v.planInactive) {
+        expect(planInactivePermissions(BigInt(v.planInactive.bits))).toBe(BigInt(v.expected));
+        return;
+      }
       if (v.billing) {
         expect(billingPermissions(toRoles(v.roles ?? []), v.billing)).toBe(BigInt(v.expected));
         return;

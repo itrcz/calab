@@ -1,7 +1,8 @@
+import { BillingState } from '@calaba/protocol';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { can, roomPerms } from '../../lib/permissions';
+import { can, restrictedPerms, roomPerms } from '../../lib/permissions';
 import { openRoom, type OutgoingFile } from '../../services/chat';
 import { subscribeRooms } from '../../services/gateway';
 import { useRooms } from '../../stores/rooms';
@@ -10,6 +11,7 @@ import { useMediaQuery } from '../../lib/useMediaQuery';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useMemberRoles } from '../../stores/workspaces';
+import { useBillingState } from '../workspace/billing/BillingPaywall';
 import { StatsOverlay } from '../voice/StatsOverlay';
 import { StreamArea } from '../voice/StreamArea';
 import { MeetingBanner } from '../voice/MeetingBanner';
@@ -73,7 +75,9 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
     return () => window.removeEventListener('keydown', onKey);
   }, [roomId]);
 
-  const perms = useMemo(() => roomPerms(role, me, room), [role, me, room]);
+  // «Тариф не активен» (ADR-0086 amendment): no writing, attaching, video or invitations (UI only).
+  const planInactive = useBillingState(workspaceId) === BillingState.LAPSED;
+  const perms = useMemo(() => restrictedPerms(roomPerms(role, me, room), planInactive), [role, me, room, planInactive]);
   const canAttach = can(perms, 'ATTACH_FILES');
 
   const addFiles = useCallback(

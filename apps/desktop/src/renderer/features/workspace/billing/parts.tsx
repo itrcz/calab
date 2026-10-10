@@ -85,6 +85,7 @@ const STATE_KEY: Record<BillingState, MessageKey | null> = {
   [BillingState.IN_ARREARS]: 'billing.state.arrears',
   [BillingState.STOPPED]: 'billing.state.stopped',
   [BillingState.SUSPENDED]: 'billing.state.suspended',
+  [BillingState.LAPSED]: 'billing.state.lapsed',
 };
 
 /** The billing state as a pill: active green, arrears amber, suspended red, others neutral. */
@@ -100,7 +101,7 @@ export function StatePill({ state }: { state: BillingState }): ReactNode {
           ? 'bg-ok-fill text-white'
           : state === BillingState.SUSPENDED
             ? 'bg-danger-fill text-white'
-            : state === BillingState.IN_ARREARS
+            : state === BillingState.IN_ARREARS || state === BillingState.LAPSED
               ? 'bg-warn-surface text-fg ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-warn)_45%,transparent)]'
               : 'bg-[var(--color-fill-hover)] text-fg',
       )}

@@ -344,7 +344,7 @@ func (q *Queries) FundBillingCharge(ctx context.Context, arg FundBillingChargePa
 }
 
 const getBillingAccount = `-- name: GetBillingAccount :one
-SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at FROM billing_accounts WHERE id = $1
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts WHERE id = $1
 `
 
 func (q *Queries) GetBillingAccount(ctx context.Context, id uuid.UUID) (BillingAccount, error) {
@@ -371,6 +371,7 @@ func (q *Queries) GetBillingAccount(ctx context.Context, id uuid.UUID) (BillingA
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
@@ -874,7 +875,7 @@ func (q *Queries) GetLastBillingAutoTopupAttempt(ctx context.Context, accountID 
 }
 
 const getLiveBillingAccountByWorkspace = `-- name: GetLiveBillingAccountByWorkspace :one
-SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at FROM billing_accounts WHERE workspace_id = $1 AND status <> 'closed'
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts WHERE workspace_id = $1 AND status <> 'closed'
 `
 
 func (q *Queries) GetLiveBillingAccountByWorkspace(ctx context.Context, workspaceID *uuid.UUID) (BillingAccount, error) {
@@ -901,6 +902,7 @@ func (q *Queries) GetLiveBillingAccountByWorkspace(ctx context.Context, workspac
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
@@ -1004,7 +1006,7 @@ func (q *Queries) GetOpenBillingCheckout(ctx context.Context, accountID uuid.UUI
 const insertBillingAccount = `-- name: InsertBillingAccount :one
 INSERT INTO billing_accounts (workspace_id, market, currency, provider, plan, created_by)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at
+RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at
 `
 
 type InsertBillingAccountParams struct {
@@ -1047,6 +1049,7 @@ func (q *Queries) InsertBillingAccount(ctx context.Context, arg InsertBillingAcc
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
@@ -2153,7 +2156,7 @@ func (q *Queries) ListBillingPrices(ctx context.Context) ([]BillingPrice, error)
 }
 
 const lockBillingAccount = `-- name: LockBillingAccount :one
-SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at FROM billing_accounts WHERE id = $1 FOR UPDATE
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts WHERE id = $1 FOR UPDATE
 `
 
 // The single lock of every money mutation of the account (ADR-0080 §10).
@@ -2181,12 +2184,13 @@ func (q *Queries) LockBillingAccount(ctx context.Context, id uuid.UUID) (Billing
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
 
 const lockLiveBillingAccountByWorkspace = `-- name: LockLiveBillingAccountByWorkspace :one
-SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at FROM billing_accounts WHERE workspace_id = $1 AND status <> 'closed' FOR UPDATE
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts WHERE workspace_id = $1 AND status <> 'closed' FOR UPDATE
 `
 
 func (q *Queries) LockLiveBillingAccountByWorkspace(ctx context.Context, workspaceID *uuid.UUID) (BillingAccount, error) {
@@ -2213,6 +2217,7 @@ func (q *Queries) LockLiveBillingAccountByWorkspace(ctx context.Context, workspa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
@@ -2562,7 +2567,7 @@ UPDATE billing_accounts
 SET market = $1, currency = $2, provider = $3,
     revision = revision + 1, updated_at = $4
 WHERE id = $5 AND status IN ('inactive', 'stopped') AND entry_seq = 0
-RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at
+RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at
 `
 
 type SwitchBillingAccountMarketParams struct {
@@ -2605,6 +2610,7 @@ func (q *Queries) SwitchBillingAccountMarket(ctx context.Context, arg SwitchBill
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
@@ -2613,11 +2619,11 @@ const updateBillingAccountState = `-- name: UpdateBillingAccountState :one
 UPDATE billing_accounts SET
     status = $1, plan = $2,
     negative_since = $3, suspend_at = $4,
-    next_due_at = $5,
-    closed_at = CASE WHEN $1::text = 'closed' THEN coalesce(closed_at, $6::timestamptz) ELSE NULL END,
-    revision = revision + 1, updated_at = $6::timestamptz
-WHERE id = $7
-RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at
+    next_due_at = $5, lapsed_at = $6,
+    closed_at = CASE WHEN $1::text = 'closed' THEN coalesce(closed_at, $7::timestamptz) ELSE NULL END,
+    revision = revision + 1, updated_at = $7::timestamptz
+WHERE id = $8
+RETURNING id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at
 `
 
 type UpdateBillingAccountStateParams struct {
@@ -2626,6 +2632,7 @@ type UpdateBillingAccountStateParams struct {
 	NegativeSince *time.Time
 	SuspendAt     *time.Time
 	NextDueAt     *time.Time
+	LapsedAt      *time.Time
 	Now           time.Time
 	ID            uuid.UUID
 }
@@ -2639,6 +2646,7 @@ func (q *Queries) UpdateBillingAccountState(ctx context.Context, arg UpdateBilli
 		arg.NegativeSince,
 		arg.SuspendAt,
 		arg.NextDueAt,
+		arg.LapsedAt,
 		arg.Now,
 		arg.ID,
 	)
@@ -2664,6 +2672,7 @@ func (q *Queries) UpdateBillingAccountState(ctx context.Context, arg UpdateBilli
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.LapsedAt,
 	)
 	return i, err
 }
