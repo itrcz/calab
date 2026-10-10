@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/core"
@@ -35,7 +36,20 @@ type Config struct {
 	// CheckoutTTL: lifetime of a hosted page (Stripe: 30 min .. 24 h). Default 35 min: one open
 	// checkout per account, so a short page lets the owner change the amount soon.
 	CheckoutTTL time.Duration
+	// SelfServe (BILLING_SELF_SERVE): an owner without a live account may start billing — GET
+	// answers self_serve, a quote with purpose ACTIVATE creates the inactive account (market
+	// SelfServeMarket) like the superadmin's enable. Off: only a superadmin enables a workspace.
+	SelfServe bool
+	// PlanLimits are the limits of a plan on this server (plans.Service.PlanLimits) for the plan
+	// offers of GET …/billing; nil sends offers without limits.
+	PlanLimits func(v1.Plan) *v1.PlanLimits
+	// Committed runs after a self-serve account was created (WORKSPACE_UPDATE with
+	// Workspace.billing, BILLING_UPDATE) — core.Hooks.Committed of the wiring.
+	Committed func(ctx context.Context, acc sqlc.BillingAccount)
 }
+
+// SelfServeMarket is the market of a self-serve account (v1: Global / USD, ADR-0080 §0).
+const SelfServeMarket = "global"
 
 // QuoteTTL is how long a quote id is accepted by the actions.
 const QuoteTTL = 10 * time.Minute

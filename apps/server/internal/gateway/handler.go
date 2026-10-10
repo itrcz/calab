@@ -385,7 +385,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err != nil {
 		return nil, err
 	}
-	ready := &v1.Ready{SessionId: s.id.String(), Me: me, PlanContact: h.cfg.PlanContact}
+	ready := &v1.Ready{SessionId: s.id.String(), Me: me, PlanContact: h.cfg.PlanContact, BillingSelfServe: h.cfg.BillingSelfServe}
 	if s.principal.Authority == identitypolicy.WorkspaceSSO {
 		ready.Me = pbconv.ScopedMe(u)
 	}

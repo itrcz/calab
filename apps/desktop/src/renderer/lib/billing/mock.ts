@@ -12,6 +12,7 @@ import {
   AutoTopupSettingsSchema,
   BillingAccountStatus,
   BillingPaymentSchema,
+  BillingPlanOfferSchema,
   BillingQuotePurpose,
   BillingQuoteSchema,
   BillingRefundRequestSchema,
@@ -36,6 +37,7 @@ import {
   RefundStatus,
   SavedPaymentMethodSchema,
   type AdminBillingAccount,
+  type BillingPlanOffer,
   type BillingSummary,
   type LedgerEntry,
   type Money,
@@ -49,7 +51,8 @@ import type { AdminBillingApi, BillingAdapters, OwnerBillingApi } from './api';
  * In-memory billing for dev / QA builds (VITE_BILLING_MOCK=1, services/billing.ts): the owner
  * cabinet and the superadmin pages without a billing server. The scenario comes from
  * `?billing=<name>` or localStorage `calaba-billing-mock`: normal | debt | suspended | inactive |
- * stopped | member | memberSuspended | disabled. A top-up checkout is «paid» on the second poll.
+ * stopped | member | memberSuspended | disabled | selfServe (no account until the first ACTIVATE quote).
+ * A top-up checkout is «paid» on the second poll.
  * Never imported by a production build.
  */
 
@@ -58,8 +61,8 @@ const USD = 'USD';
 const usd = (minor: bigint): Money => ({ $typeName: 'calaba.v1.Money', minor, currency: USD });
 const ts = (ms: number) => timestampFromMs(ms);
 
-type Scenario = 'normal' | 'debt' | 'suspended' | 'inactive' | 'stopped' | 'member' | 'memberSuspended' | 'disabled';
-const SCENARIOS: readonly Scenario[] = ['normal', 'debt', 'suspended', 'inactive', 'stopped', 'member', 'memberSuspended', 'disabled'];
+type Scenario = 'normal' | 'debt' | 'suspended' | 'inactive' | 'stopped' | 'member' | 'memberSuspended' | 'disabled' | 'selfServe';
+const SCENARIOS: readonly Scenario[] = ['normal', 'debt', 'suspended', 'inactive', 'stopped', 'member', 'memberSuspended', 'disabled', 'selfServe'];
 
 function scenario(): Scenario {
   let v: string | null = null;
@@ -86,12 +89,26 @@ interface State {
   autoOn: boolean;
   cap: bigint;
   cardSaved: boolean;
+  /** A billing account exists (selfServe: created by the first ACTIVATE quote). */
+  account: boolean;
   checkouts: Map<string, { amount: bigint; polls: number; save: boolean }>;
   ledger: LedgerEntry[];
   refundRequests: Array<ReturnType<typeof create<typeof BillingRefundRequestSchema>>>;
 }
 
 const unit = (p: Plan): bigint => (p === Plan.ENTERPRISE ? 30n : 10n);
+
+/** The plan offers of GET …/billing (built-in default limits of the server, plans/limits.go). */
+function offers(): BillingPlanOffer[] {
+  const free = { members: 50, roomMembers: 5, storageMb: 5n * 1024n, bots: 1, audioTierMaxKbps: 16, caldavDisabled: true, telephonyDisabled: true, automationsDisabled: true };
+  const team = { members: 100, roomMembers: 15, storageMb: 300n * 1024n, bots: 5, telephonyDisabled: true };
+  const biz = { members: 500, roomMembers: 50, storageMb: 1024n * 1024n, bots: 20 };
+  return [
+    create(BillingPlanOfferSchema, { plan: Plan.FREE, limits: free }),
+    create(BillingPlanOfferSchema, { plan: Plan.TEAM, unitPrice: usd(unit(Plan.TEAM)), limits: team }),
+    create(BillingPlanOfferSchema, { plan: Plan.ENTERPRISE, unitPrice: usd(unit(Plan.ENTERPRISE)), limits: biz }),
+  ];
+}
 
 function seedLedger(now: number, balance: bigint, members: number, plan: Plan): LedgerEntry[] {
   const out: LedgerEntry[] = [];
@@ -140,6 +157,7 @@ function initial(): State {
     autoOn: true,
     cap: 50_000n,
     cardSaved: true,
+    account: true,
     checkouts: new Map(),
     ledger: [],
     refundRequests: [
@@ -149,9 +167,10 @@ function initial(): State {
   if (sc === 'debt') Object.assign(s, { balance: -320n, negativeSince: now - 3 * DAY - 19 * 3_600_000, suspendAt: now + 3 * DAY + 5 * 3_600_000, autoOn: false });
   if (sc === 'suspended' || sc === 'memberSuspended')
     Object.assign(s, { status: BillingAccountStatus.SUSPENDED, balance: -560n, negativeSince: now - 8 * DAY, suspendAt: now - DAY, autoOn: false, cardSaved: false });
-  if (sc === 'inactive') Object.assign(s, { status: BillingAccountStatus.INACTIVE, balance: 0n, autoOn: false, cardSaved: false });
+  if (sc === 'inactive' || sc === 'selfServe') Object.assign(s, { status: BillingAccountStatus.INACTIVE, balance: 0n, autoOn: false, cardSaved: false, refundRequests: [] });
+  if (sc === 'selfServe') s.account = false;
   if (sc === 'stopped') Object.assign(s, { status: BillingAccountStatus.STOPPED, balance: 1210n, autoOn: false });
-  s.ledger = sc === 'inactive' ? [] : seedLedger(now, s.balance, members, s.plan);
+  s.ledger = sc === 'inactive' || sc === 'selfServe' ? [] : seedLedger(now, s.balance, members, s.plan);
   return s;
 }
 
@@ -255,18 +274,28 @@ function owner(): OwnerBillingApi {
       guard(s);
       if (s.sc === 'member' || s.sc === 'memberSuspended')
         return create(GetBillingResponseSchema, { status: { state: s.sc === 'member' ? BillingState.ACTIVE : BillingState.SUSPENDED, source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) } });
+      if (!s.account) return create(GetBillingResponseSchema, { status: { source: PlanSource.MANUAL }, selfServe: true, offers: offers() });
       return create(GetBillingResponseSchema, {
         status: { state: stateOf(s), source: PlanSource.BILLING, ...(s.suspendAt ? { suspendAt: ts(s.suspendAt) } : {}) },
         summary: summary(s),
+        offers: offers(),
       });
     },
     async quote(_ws, init) {
       await wait();
-      return quoteOf(S(), init.purpose ?? BillingQuotePurpose.ACTIVATE, init.plan ?? Plan.UNSPECIFIED);
+      const s = S();
+      const purpose = init.purpose ?? BillingQuotePurpose.ACTIVATE;
+      if (!s.account) {
+        if (purpose !== BillingQuotePurpose.ACTIVATE) throw new ApiError('ERROR_CODE_NOT_FOUND', 'billing account not found', 404, undefined, { reason: 'BILLING_ACCOUNT_NOT_FOUND' });
+        s.account = true; // self-serve: the ACTIVATE quote starts the account
+        bump(s);
+      }
+      return quoteOf(s, purpose, init.plan ?? Plan.UNSPECIFIED);
     },
-    async activate() {
+    async activate(_ws, init) {
       await wait();
       const s = S();
+      if (init.plan === Plan.TEAM || init.plan === Plan.ENTERPRISE) s.plan = init.plan;
       s.balance -= unit(s.plan) * BigInt(s.members);
       s.status = BillingAccountStatus.ACTIVE;
       bump(s);

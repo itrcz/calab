@@ -115,6 +115,7 @@ import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
 import { RestrictedMark } from '../workspace/AccessLevel';
+import { PlanBadge } from '../workspace/billing/PlanBadge';
 
 export { menuBox, menuItem };
 
@@ -363,7 +364,11 @@ export function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId
   if (mobile) {
     return (
       <Bar className="justify-between">
-        <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+        <div className="flex min-w-0 items-center gap-1">
+          <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+          {/* The plan badge (ADR-0080): nothing unless billing exists for this workspace. */}
+          <PlanBadge phone />
+        </div>
         <div className={BAR_GROUP}>
           <PhoneSearchButton />
           {create}

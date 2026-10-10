@@ -3378,8 +3378,12 @@ type Ready struct {
 	// only after the confirmation (ADR-0027), so the client asks for it even when
 	// email_verification_optional. Set only when email_verification_optional.
 	EmailInvitePending bool `protobuf:"varint,16,opt,name=email_invite_pending,json=emailInvitePending,proto3" json:"email_invite_pending,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// ADR-0080: owners may start billing themselves here (BILLING_ENABLED and
+	// BILLING_SELF_SERVE): the client asks GET /api/workspaces/{id}/billing for a workspace
+	// without Workspace.billing only when set, so a server with billing off sees no extra request.
+	BillingSelfServe bool `protobuf:"varint,17,opt,name=billing_self_serve,json=billingSelfServe,proto3" json:"billing_self_serve,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Ready) Reset() {
@@ -3520,6 +3524,13 @@ func (x *Ready) GetEmailVerificationOptional() bool {
 func (x *Ready) GetEmailInvitePending() bool {
 	if x != nil {
 		return x.EmailInvitePending
+	}
+	return false
+}
+
+func (x *Ready) GetBillingSelfServe() bool {
+	if x != nil {
+		return x.BillingSelfServe
 	}
 	return false
 }
@@ -7288,7 +7299,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1a]\n" +
 	"\x15RoomLastMessagesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12.\n" +
-	"\x05value\x18\x02 \x01(\v2\x18.calaba.v1.DmLastMessageR\x05value:\x028\x01\"\x90\a\n" +
+	"\x05value\x18\x02 \x01(\v2\x18.calaba.v1.DmLastMessageR\x05value:\x028\x01\"\xbe\a\n" +
 	"\x05Ready\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -7311,7 +7322,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x05notes\x18\r \x03(\v2\x15.calaba.v1.NotesShelfR\x05notes\x12K\n" +
 	"\x0fidentity_access\x18\x0e \x03(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\x12>\n" +
 	"\x1bemail_verification_optional\x18\x0f \x01(\bR\x19emailVerificationOptional\x120\n" +
-	"\x14email_invite_pending\x18\x10 \x01(\bR\x12emailInvitePending\"N\n" +
+	"\x14email_invite_pending\x18\x10 \x01(\bR\x12emailInvitePending\x12,\n" +
+	"\x12billing_self_serve\x18\x11 \x01(\bR\x10billingSelfServe\"N\n" +
 	"\x14RoomAdmissionRequest\x126\n" +
 	"\tadmission\x18\x01 \x01(\v2\x18.calaba.v1.RoomAdmissionR\tadmission\"N\n" +
 	"\x14RoomAdmissionDecided\x126\n" +

@@ -58,6 +58,10 @@ type env struct {
 type envOpt struct {
 	wrap  func(*fake.Provider) provider.Provider
 	clock billing.Clock // default DBClock
+	// noAccount: the workspace starts without a billing account (self-serve tests).
+	noAccount bool
+	// cfg adjusts the handlers' config (self-serve, plan limits, the committed hook).
+	cfg func(*billinghttp.Config)
 }
 
 func newEnv(t *testing.T, opts ...envOpt) *env {
@@ -69,7 +73,15 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	e.fake = fake.New(fake.Options{ID: provider.Stripe, Account: e.merchant})
 	e.fp = e.fake
 	var clock billing.Clock = billing.DBClock{}
+	noAccount := false
+	cfg := billinghttp.Config{
+		Checkouts: true, ReturnURL: "https://app.calab.test/api/billing/return", AppURL: "https://app.calab.test",
+	}
 	for _, o := range opts {
+		noAccount = noAccount || o.noAccount
+		if o.cfg != nil {
+			o.cfg(&cfg)
+		}
 		if o.wrap != nil {
 			e.fp = o.wrap(e.fake)
 		}
@@ -85,9 +97,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	e.in = inbox.New(d, reg, e.core, inbox.Options{})
 	e.mail = mail.New(mail.Config{Secret: []byte("billing-test-secret-billing-test-secret")}, d, nil, mail.NewFake())
 	e.in.Mail = inbox.NewNotifier(d, e.mail, "https://app.calab.test")
-	svc := billinghttp.New(d, e.core, reg, e.in, clock, billinghttp.Config{
-		Checkouts: true, ReturnURL: "https://app.calab.test/api/billing/return", AppURL: "https://app.calab.test",
-	})
+	svc := billinghttp.New(d, e.core, reg, e.in, clock, cfg)
 	h := &billinghttp.Handlers{Enabled: true, Owner: svc.Owner(), Public: svc.Public()}
 	mux := http.NewServeMux()
 	h.Routes(mux, func(next http.Handler) http.Handler {
@@ -114,14 +124,17 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	e.member = e.user()
 	e.addMember(e.member, "member")
 	e.addMember(e.user(), "guest")
+	t.Cleanup(func() {
+		_, _ = d.Pool.Exec(ctx, `UPDATE billing_accounts SET status = 'closed', closed_at = now(), next_due_at = NULL WHERE workspace_id = $1`, ws.ID)
+	})
+	if noAccount {
+		return e
+	}
 	acc, err := e.core.EnableAccount(ctx, ws.ID, "global", "stripe", &e.owner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.acc = acc.ID
-	t.Cleanup(func() {
-		_, _ = d.Pool.Exec(ctx, `UPDATE billing_accounts SET status = 'closed', closed_at = now(), next_due_at = NULL WHERE id = $1`, acc.ID)
-	})
 	return e
 }
 

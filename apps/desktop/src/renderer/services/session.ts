@@ -246,6 +246,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
       loggedOutReason: reason,
       emailVerificationOptional: false,
       emailInvitePending: false,
+      billingSelfServe: false,
     });
   const notice = logoutToastKey(reason);
   if (notice) toast.info(t(notice));

@@ -16,6 +16,7 @@ import { popoverBox } from './menu';
 import { AppSettingsWindow } from './lazyWindows';
 import { InboxButton } from './InboxPopover';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { PlanBadge } from '../workspace/billing/PlanBadge';
 
 /**
  * Window title bar (docs/09 #1; owner 07.10 — a taller, airier bar): 46 px across the whole window,
@@ -94,7 +95,13 @@ function TitleBarWorkspace(): ReactNode {
       </div>
     );
   }
-  return <WorkspaceSwitcher testId="titlebar-title" />;
+  return (
+    <>
+      <WorkspaceSwitcher testId="titlebar-title" />
+      {/* The plan badge (ADR-0080): only where billing exists for this workspace; renders nothing otherwise. */}
+      <PlanBadge />
+    </>
+  );
 }
 
 /**

@@ -21,6 +21,8 @@ export interface SessionState {
   emailVerificationOptional: boolean;
   /** An email invitation waits for the unconfirmed address (ADR-0065): asked even when optional. */
   emailInvitePending: boolean;
+  /** READY.billing_self_serve (ADR-0080): owners may start billing — the plan badge asks the server only then. */
+  billingSelfServe: boolean;
   gateway: GatewayStatus;
   /** «Нет соединения с сервером» banner (lib/gateway/banner.ts decides). */
   reconnectBanner: boolean;
@@ -46,6 +48,7 @@ export const useSession = create<SessionState>()((set) => ({
   planContact: '',
   emailVerificationOptional: false,
   emailInvitePending: false,
+  billingSelfServe: false,
   gateway: 'idle',
   reconnectBanner: false,
   ready: false,

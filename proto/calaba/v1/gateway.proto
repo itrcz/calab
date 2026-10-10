@@ -446,6 +446,10 @@ message Ready {
   // only after the confirmation (ADR-0027), so the client asks for it even when
   // email_verification_optional. Set only when email_verification_optional.
   bool email_invite_pending = 16;
+  // ADR-0080: owners may start billing themselves here (BILLING_ENABLED and
+  // BILLING_SELF_SERVE): the client asks GET /api/workspaces/{id}/billing for a workspace
+  // without Workspace.billing only when set, so a server with billing off sees no extra request.
+  bool billing_self_serve = 17;
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.

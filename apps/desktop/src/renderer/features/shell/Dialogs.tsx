@@ -20,6 +20,7 @@ import { useSession } from '../../stores/session';
 import { EventDialog } from '../calendar/EventDialog';
 import { SETTINGS_DIALOG_KINDS } from './SettingsScreen';
 import { AppDialog } from '../webapps/AppDialog';
+import { PlansDialog } from '../workspace/billing/PlansDialog';
 
 const RecordingResult = lazy(() => import('../chat/RecordingResult'));
 
@@ -96,6 +97,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'web-app':
         node = <AppDialog key={d.appId ?? 'new'} workspaceId={d.workspaceId} appId={d.appId} onClose={close} />;
+        break;
+      case 'billing-plans':
+        node = <PlansDialog key={d.workspaceId} workspaceId={d.workspaceId} welcome={d.welcome ?? false} onClose={close} />;
         break;
       case 'image': {
         const inChat = d.inChat;
