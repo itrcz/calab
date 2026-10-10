@@ -154,7 +154,8 @@ const site = "/v1.0/sites/tochka-site-00"
 func TestDocFixtures(t *testing.T) {
 	bindingID := uuid.MustParse("0192a4c0-7e1d-7c3a-9b1e-3f6a2d8c5b10")
 	p, _ := newStub(t, map[string]stubReply{
-		"POST " + site + "/sbp/qrc": {200, "doc_create_qr_token.json"},
+		"POST " + site + "/sbp/qrc":                                               {200, "doc_create_qr_token.json"},
+		"GET " + site + "/sbp/qrc/" + bindingID.String():                          {200, "doc_create_qr_token.json"},
 		"GET " + site + "/sbp/qrc/" + bindingID.String() + "/tokenization/result": {200, "doc_tokenization_accepted.json"},
 		"GET " + site + "/payments/977639EE70494C67":                              {200, "doc_payment_sbp_token_completed.json"},
 		"GET " + site + "/payments/977639EE70494C67/refunds/8H7GSEE7018GC67":      {200, "doc_refund_completed.json"},
@@ -471,6 +472,23 @@ func TestModes(t *testing.T) {
 	}
 	if q := tb.QR(req.ID.String()); q.Purpose != tochkapay.DefaultPurpose {
 		t.Fatalf("scenario sent on a live config: %q", q.Purpose)
+	}
+}
+
+// Fail closed on the mode: a payment without isTest is never credited on a test config, and an
+// accepted binding token is released only after its QR code proves the mode.
+func TestModeFailsClosed(t *testing.T) {
+	bindingID := uuid.MustParse("0192a4c0-7e1d-7c3a-9b1e-3f6a2d8c5b10")
+	p, _ := newStub(t, map[string]stubReply{
+		"GET " + site + "/payments/977639EE70494C67":                              {200, "mode_payment_no_istest.json"},
+		"GET " + site + "/sbp/qrc/" + bindingID.String():                          {200, "mode_qr_live.json"},
+		"GET " + site + "/sbp/qrc/" + bindingID.String() + "/tokenization/result": {200, "doc_tokenization_accepted.json"},
+	})
+	if _, err := p.GetPayment(ctx, "977639EE70494C67"); !errors.Is(err, provider.ErrLivemodeForbidden) {
+		t.Fatalf("payment without isTest: %v", err)
+	}
+	if f, err := p.GetBinding(ctx, bindingID); !errors.Is(err, provider.ErrLivemodeForbidden) || f.Method.ID != "" {
+		t.Fatalf("live token on a test config: %+v %v", f, err)
 	}
 }
 

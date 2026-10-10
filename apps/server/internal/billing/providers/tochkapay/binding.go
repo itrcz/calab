@@ -80,12 +80,15 @@ type wrapped[T any] struct {
 	Data T `json:"Data"`
 }
 
-// checkMode compares the bank's isTest with the configured mode.
+// checkMode compares the bank's isTest with the configured mode. Payments and QR codes always
+// carry isTest (API 1.0); an answer without it is refused in both modes (fail closed): on a test
+// config it may be a production object, on a live config a test object must never be stamped
+// livemode. Objects without the field (tokenization result, refunds) are checked through their
+// QR code / payment instead.
 func (p *Provider) checkMode(op string, isTest *bool) error {
-	if isTest == nil {
-		return nil // the object carries no mode (tokenization result, refunds)
-	}
 	switch {
+	case isTest == nil:
+		return fmt.Errorf("tochkapay %s: %w: answer without isTest", op, provider.ErrLivemodeForbidden)
 	case !*isTest && !p.live:
 		return fmt.Errorf("tochkapay %s: live object while TOCHKA_PAY_LIVE=false: %w", op, provider.ErrLivemodeForbidden)
 	case *isTest && p.live:
@@ -219,6 +222,15 @@ func (p *Provider) GetBinding(ctx context.Context, bindingID uuid.UUID) (provide
 	case tokenAccepted:
 		if d.Token == "" {
 			return provider.BindingFact{}, fmt.Errorf("tochkapay get binding: %w: ACCEPTED without a token", provider.ErrUnknownOutcome)
+		}
+		// The result carries no isTest: the token is released only after its code proves the
+		// mode, so a production token never reaches a test config (and the reverse).
+		var qr wrapped[qrDTO]
+		if err := p.do(ctx, "get binding code", http.MethodGet, p.sitePath("sbp", "qrc", id)+"?qrcIdType=MERCHANT", nil, false, &qr); err != nil {
+			return provider.BindingFact{}, err
+		}
+		if err := p.checkMode("get binding code", qr.Data.IsTest); err != nil {
+			return provider.BindingFact{}, err
 		}
 		fact.Status = provider.BindingAccepted
 		fact.Method = provider.SavedMethod{ID: d.Token, CustomerID: fact.Metadata.AccountID.String(), Kind: provider.MethodSBP, Brand: d.MemberID}
