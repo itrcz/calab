@@ -48,6 +48,7 @@ const api: CalabaApi = {
     networkOnline: () => void ipcRenderer.invoke(IPC.appNetworkOnline),
     log: (level, message) => void ipcRenderer.invoke(IPC.appLog, { level, message }),
     openExternal: (url) => ipcRenderer.invoke(IPC.appOpenExternal, url),
+    openCheckout: (url) => ipcRenderer.invoke(IPC.appOpenCheckout, url),
     legal: () => ipcRenderer.invoke(IPC.appLegal),
     attention: () => void ipcRenderer.invoke(IPC.appAttention),
     setBadge: (n) => void ipcRenderer.invoke(IPC.appSetBadge, n),

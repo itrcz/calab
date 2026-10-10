@@ -741,4 +741,6 @@ export const ru = {
   'main.webAppOpenLink': 'Открыть ссылку в браузере',
   'main.webAppCopyLink': 'Копировать адрес ссылки',
   'main.webAppOpenPage': 'Открыть страницу в браузере',
+  'main.checkoutTitle': 'Оплата',
+  'main.checkoutCancel': 'Отмена',
 } as const;

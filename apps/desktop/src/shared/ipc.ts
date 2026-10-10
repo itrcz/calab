@@ -55,6 +55,8 @@ export const IPC = {
   appNetworkOnline: 'app:network-online',
   appLog: 'app:log',
   appOpenExternal: 'app:open-external',
+  /** A provider's hosted checkout in the in-app checkout window (ADR-0084) → CheckoutWindowOutcome on close. */
+  appOpenCheckout: 'app:open-checkout',
   appLegal: 'app:legal',
   appAttention: 'app:attention',
   /** Mentions + unread DM messages → Dock badge / badge count / tray tooltip (docs/09 item 22). */
@@ -412,6 +414,10 @@ export interface MainStrings {
   webAppOpenLink: string;
   webAppCopyLink: string;
   webAppOpenPage: string;
+  /** The checkout window's title (ADR-0084). */
+  checkoutTitle: string;
+  /** Its title bar's cancel button. */
+  checkoutCancel: string;
 }
 
 export const MAIN_STRING_KEYS = [
@@ -493,7 +499,17 @@ export const MAIN_STRING_KEYS = [
   'webAppOpenLink',
   'webAppCopyLink',
   'webAppOpenPage',
+  'checkoutTitle',
+  'checkoutCancel',
 ] as const satisfies ReadonlyArray<keyof MainStrings>;
+
+/**
+ * How the in-app checkout window ended (ADR-0084): `returned` = our return page (success and
+ * cancel share it), `success` / `fail` = the landing's return pages, `closed` = the person closed
+ * the window, `external` = no window here (the web: a new tab). Never the payment's truth — the
+ * renderer polls the checkout on every outcome.
+ */
+export type CheckoutWindowOutcome = 'returned' | 'success' | 'fail' | 'closed' | 'external';
 
 export type PowerEvent = 'suspend' | 'resume' | 'lock-screen' | 'unlock-screen';
 

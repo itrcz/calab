@@ -38,6 +38,8 @@ import { parseOverlayEvent, parseOverlayTarget } from '../shared/annot';
 import { closeOverlay, closeOverlayWith, openOverlay, refitOverlay, sendOverlay } from './annotOverlay';
 import { armSelection, listSources, requestScreenAccess, screenAccess, systemAudioSupport } from './capture';
 import { parseThumbRequest } from '../shared/captureThumb';
+import { extraStartHosts, parseCheckoutStart } from './checkoutPolicy';
+import { openCheckoutWindow } from './checkoutWindow';
 import { takePendingDeepLink } from './deeplink';
 import { fullscreenFor } from './fullscreen';
 import { systemLocales } from './systemLocales';
@@ -255,6 +257,16 @@ export function registerIpc(): void {
     // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
     if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
     return shell.openExternal(url);
+  });
+  // ADR-0084: the provider's hosted checkout in the in-app checkout window, from the main window
+  // only, and only on an allowlisted provider host (a refusal makes the renderer fall back to the
+  // system browser). Resolves with the outcome when the window closes.
+  handle(IPC.appOpenCheckout, (e, a) => {
+    const win = getMainWindow();
+    if (!win || BrowserWindow.fromWebContents(e.sender) !== win) throw new Error('checkout: main window only');
+    const url = parseCheckoutStart(a, extraStartHosts(process.env['CALABA_CHECKOUT_HOSTS']));
+    if (!url) throw new Error('checkout: not a provider checkout url');
+    return openCheckoutWindow(win, url);
   });
   handle(IPC.appLegal, (): LegalTexts => {
     // Packaged: copied into resources by electron-builder (extraResources). Dev: the repo

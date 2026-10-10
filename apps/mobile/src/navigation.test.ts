@@ -159,3 +159,18 @@ describe('decideNewWindow', () => {
     expect(decideNewWindow(url, ORIGIN)).toBe('block');
   });
 });
+
+describe('SBP bank apps (ADR-0084)', () => {
+  it('a bank-app link of the NSPK registry and the NSPK chooser leave for the OS', () => {
+    expect(decideNavigation({ url: 'bank100000000111://qr.nspk.ru/AD10006M8KH?type=02' }, ORIGIN)).toBe('external');
+    expect(decideNewWindow('bank100000000004://qr.nspk.ru/AD1', ORIGIN)).toBe('external');
+    expect(decideNavigation({ url: 'https://qr.nspk.ru/AD10006M8KH?type=02' }, ORIGIN)).toBe('external');
+  });
+
+  it('lookalike schemes still go nowhere', () => {
+    for (const url of ['bank1://x', 'bankx100000000111://x', 'bank1000000001112345://x', 'bank100000000111://u:p@qr.nspk.ru/']) {
+      expect(decideNavigation({ url }, ORIGIN)).toBe('block');
+      expect(decideNewWindow(url, ORIGIN)).toBe('block');
+    }
+  });
+});

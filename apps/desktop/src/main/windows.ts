@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME, IPC } from '../shared/ipc';
 import { vibrancyWanted } from '../shared/windowMaterial';
-import { isAppSession } from './appSessions';
+import { isAppSession, isCheckoutSession } from './appSessions';
 import { windowIconPath } from './icons';
 import { mainStrings } from './strings';
 
@@ -252,8 +252,9 @@ export function createMainWindow(): BrowserWindow {
  */
 export function guardWebContents(wc: WebContents): void {
   // A workspace web app (ADR-0050 §4): its own, separate guard set (main/webApps.ts); it never
-  // shows our page, has no preload and no IPC.
-  if (isAppSession(wc.session)) return;
+  // shows our page, has no preload and no IPC. The same for the checkout window's page (ADR-0084,
+  // main/checkoutWindow.ts).
+  if (isAppSession(wc.session) || isCheckoutSession(wc.session)) return;
   wc.on('will-navigate', (e, url) => {
     if (!isOwnPage(url)) e.preventDefault();
   });
