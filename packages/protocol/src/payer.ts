@@ -41,7 +41,7 @@ export function payerFields(schema: PayerSchema, country: string, type: PayerTyp
 }
 
 /**
- * The stored form of a value: TEXT trims and collapses whitespace; DIGITS / CODE drop spaces,
+ * The stored form of a value: TEXT turns control characters into spaces, trims and collapses whitespace; DIGITS / CODE drop spaces,
  * dashes, dots and slashes, CODE upper-cases and puts the VAT prefix in front («GR…» → «EL…»).
  */
 export function normalizeRequisite(f: PayerFieldSpec, country: string, raw: string): string {
@@ -56,7 +56,13 @@ export function normalizeRequisite(f: PayerFieldSpec, country: string, raw: stri
     }
     return v;
   }
-  return raw.trim().split(/\s+/).filter(Boolean).join(' ');
+  return normalizeText(raw);
+}
+
+/** Control characters (C0, DEL, C1) become spaces, then whitespace is trimmed and collapsed (Go normalizeText). */
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
+function normalizeText(raw: string): string {
+  return raw.replace(CONTROL, ' ').trim().split(/\s+/).filter(Boolean).join(' ');
 }
 
 const patterns = new Map<string, RegExp>();
@@ -182,7 +188,7 @@ export interface CheckedPayer {
 }
 
 function validEmail(e: string): boolean {
-  if (e.length < 3 || e.length > PAYER_MAX_EMAIL || /\s/.test(e)) return false;
+  if (e.length < 3 || e.length > PAYER_MAX_EMAIL || /[\s\u0000-\u001f\u007f-\u009f]/.test(e)) return false;
   const at = e.lastIndexOf('@');
   return at > 0 && at < e.length - 1;
 }
@@ -197,7 +203,7 @@ export function checkPayer(schema: PayerSchema, input: PayerInput): { payer: Che
   if (!schema.allCountries.includes(country)) return { payer: null, problems: [{ field: 'payer.country', reason: 'PAYER_COUNTRY' }] };
   const fields = payerFields(schema, country, input.type);
   if (!fields) return { payer: null, problems: [{ field: 'payer.type', reason: 'PAYER_TYPE_UNAVAILABLE' }] };
-  const name = input.name.trim().split(/\s+/).filter(Boolean).join(' ');
+  const name = normalizeText(input.name);
   if (!name) problems.push({ field: 'payer.name', reason: 'PAYER_REQUIRED' });
   else if ([...name].length > PAYER_MAX_NAME) problems.push({ field: 'payer.name', reason: 'PAYER_TOO_LONG' });
   const email = input.email.trim();

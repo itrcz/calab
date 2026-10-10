@@ -60,6 +60,18 @@
         "requisites": { "inn": "500100732259", "ogrnip": "304500116000157", "address": "Тверь, ул. Советская, 1" } }
     },
     {
+      "name": "RU sole proprietor: control characters become spaces (receipt name, NUL refused by Postgres)",
+      "in": { "type": "PAYER_TYPE_SOLE_PROPRIETOR", "name": "ИП\tИванов\u0007Иван\u0085", "country": "RU", "email": "ip@ivanov.test",
+        "requisites": { "inn": "500100732259", "ogrnip": "304500116000157", "address": "Тверь,\u0000ул. Советская,\u001b 1" } },
+      "out": { "name": "ИП Иванов Иван", "country": "RU", "email": "ip@ivanov.test", "taxId": "500100732259",
+        "requisites": { "inn": "500100732259", "ogrnip": "304500116000157", "address": "Тверь, ул. Советская, 1" } }
+    },
+    {
+      "name": "e-mail with a control character",
+      "in": { "type": "PAYER_TYPE_PERSON", "name": "Иван", "country": "RU", "email": "ivan\u0000@example.test" },
+      "error": { "field": "payer.email", "reason": "PAYER_EMAIL" }
+    },
+    {
       "name": "RU sole proprietor: wrong OGRNIP",
       "in": { "type": "PAYER_TYPE_SOLE_PROPRIETOR", "name": "ИП Иванов", "country": "RU", "email": "ip@ivanov.test",
         "requisites": { "inn": "500100732259", "ogrnip": "304500116000158", "address": "Тверь" } },

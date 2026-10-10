@@ -57,7 +57,7 @@ type Problem struct {
 func (p *Problem) Error() string { return p.Field + ": " + p.Reason }
 
 // Normalize brings a requisite value to its stored form (the client does the same while
-// typing): TEXT trims and collapses whitespace; DIGITS and CODE drop spaces, dashes, dots and
+// typing): TEXT turns control characters into spaces, trims and collapses whitespace; DIGITS and CODE drop spaces, dashes, dots and
 // slashes, CODE also upper-cases and puts the VAT prefix in front (a Greek «GR…» becomes «EL…»).
 func Normalize(f Field, country, raw string) string {
 	switch f.Input {
@@ -81,8 +81,19 @@ func Normalize(f Field, country, raw string) string {
 		}
 		return v
 	default:
-		return strings.Join(strings.Fields(raw), " ")
+		return normalizeText(raw)
 	}
+}
+
+// normalizeText turns control characters (C0, DEL, C1: a NUL Postgres refuses, a stray tab or
+// bell a 54-FZ receipt should not carry) into spaces, then trims and collapses whitespace.
+func normalizeText(raw string) string {
+	return strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, raw)), " ")
 }
 
 // Check validates one normalized value of a field: "" when it passes (an empty optional value
@@ -118,7 +129,7 @@ func Validate(in Input) (Payer, *Problem) {
 	if !ok {
 		return out, &Problem{"payer.type", ReasonTypeUnavailable}
 	}
-	out.Name = strings.Join(strings.Fields(in.Name), " ")
+	out.Name = normalizeText(in.Name)
 	switch n := utf8.RuneCountInString(out.Name); {
 	case n == 0:
 		return out, &Problem{"payer.name", ReasonRequired}
@@ -150,7 +161,7 @@ func Validate(in Input) (Payer, *Problem) {
 }
 
 func validEmail(e string) bool {
-	if len(e) < 3 || len(e) > MaxEmail || strings.ContainsAny(e, " \t\r\n") {
+	if len(e) < 3 || len(e) > MaxEmail || strings.IndexFunc(e, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
 		return false
 	}
 	at := strings.LastIndexByte(e, '@')
