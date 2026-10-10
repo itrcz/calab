@@ -108,6 +108,13 @@ function guardPage(wc: WebContents, done: (o: CheckoutWindowOutcome) => void): v
     if (back) done(back);
   });
   wc.on('will-attach-webview', (e) => e.preventDefault());
+  // A TLS client certificate (a bank-client token, a corporate cert) is never offered to the
+  // page: Electron's default picks the first one silently, and the page may be any https host.
+  wc.on('select-client-certificate', (e, _url, _list, cb) => {
+    e.preventDefault();
+    // No argument = continue without a certificate (Electron's binding; the typings demand one).
+    (cb as () => void)();
+  });
   wc.on('select-bluetooth-device', (e, _devices, cb) => {
     e.preventDefault();
     cb('');
@@ -170,6 +177,8 @@ export function openCheckoutWindow(parent: BrowserWindow, url: string): Promise<
       e.preventDefault();
       if (to === CANCEL_URL) finish('closed');
     });
+    // Shift/middle-click on «Отмена» would open a window (windows.ts would hand it to the OS).
+    bar.setWindowOpenHandler(() => ({ action: 'deny' }));
     let shownHost = '';
     const showAddress = (to: string): void => {
       const a = addressOf(to);
@@ -178,10 +187,9 @@ export function openCheckoutWindow(parent: BrowserWindow, url: string): Promise<
       shownHost = key;
       void bar.loadURL(barUrl(a)).catch(() => undefined);
     };
+    // Only a committed main-frame navigation moves the host: a pending one may never commit (a
+    // 204, a refused redirect) and would leave another host's name over the current page.
     page.webContents.on('did-navigate', (_e, to) => showAddress(to));
-    page.webContents.on('did-start-navigation', (d) => {
-      if (d.isMainFrame && !d.isSameDocument) showAddress(d.url);
-    });
     // Cmd/Ctrl+W and Esc in the title bar or the page close the window like «Отмена».
     const onKey = (e: Electron.Event, input: Electron.Input): void => {
       if (input.type === 'keyDown' && (input.meta || input.control) && input.key.toLowerCase() === 'w') {
