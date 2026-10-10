@@ -128,6 +128,7 @@ export function QuoteDialog({
   return (
     <Modal
       open
+      initialFocus="body"
       onClose={onClose}
       title={t(TITLE[purpose], action.kind === 'change' ? { plan: t(PLAN_NAME[action.plan]) } : undefined)}
       description={t(TEXT[purpose])}

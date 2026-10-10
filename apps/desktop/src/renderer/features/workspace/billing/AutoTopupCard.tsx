@@ -161,6 +161,7 @@ function ConsentDialog({ workspaceId, summary, cards, initial, onClose }: { work
   return (
     <Modal
       open
+      initialFocus="body"
       onClose={onClose}
       title={t('billing.auto.consentTitle')}
       footer={

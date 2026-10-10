@@ -27,6 +27,8 @@ import { WorkspaceLock } from '../identity/WorkspaceLock';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
 import { BillingBanner, BillingPaywall, useBillingSuspended } from '../workspace/billing/BillingPaywall';
+import { PlanBadge } from '../workspace/billing/PlanBadge';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ChatPane } from '../chat/ChatPane';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { DmSidebar } from '../dm/DmSidebar';
@@ -155,7 +157,16 @@ function ChatsRoot({ welcome }: { welcome: ReactNode }): ReactNode {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-chats">
       {billing && ws ? (
-        <BillingPaywall workspaceId={ws} />
+        <>
+          {/* The paywall replaces the room list and its header: keep the switcher and the plan badge (a way to another workspace / «Тариф и оплата»). */}
+          <Bar className="justify-between">
+            <div className="flex min-w-0 items-center gap-1">
+              <WorkspaceSwitcher phone testId="phone-ws-switcher" />
+              <PlanBadge phone />
+            </div>
+          </Bar>
+          <BillingPaywall workspaceId={ws} />
+        </>
       ) : locked && ws ? (
         <WorkspaceLock workspaceId={ws} />
       ) : ws ? (

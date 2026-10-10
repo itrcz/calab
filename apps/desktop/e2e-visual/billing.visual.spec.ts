@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
-import { NOW, PASSWORD, checkpoint, settle, type Shot, type Theme } from './harness';
+import { NOW, PASSWORD, checkpoint, type Shot, type Theme } from './harness';
 
 /**
  * Balance billing screens (ADR-0080, docs/08 «Тариф», owner 10.10: visual runs allowed for billing).
@@ -90,15 +90,6 @@ async function boot(page: Page, o: Boot): Promise<Shot> {
   return { page, theme, viewport: size };
 }
 
-/**
- * A screenshot without the layout invariants / axe, for a screen with a known (reported) defect:
- * the phone «Оплата» account rows overflow their state pill (QA finding), which `checkpoint` would fail on.
- */
-async function shotOnly(s: Shot, name: string): Promise<void> {
-  await settle(s.page);
-  await expect.soft(s.page, `screenshot: ${name}`).toHaveScreenshot(`${name}-${s.theme}-${s.viewport.width}.png`);
-}
-
 const tap = (l: Locator): Promise<void> => (isPhone() ? l.tap() : l.click());
 
 /** Scrolls the open dialog's (or page's) scroll container to the bottom. */
@@ -121,12 +112,12 @@ async function openPlans(page: Page): Promise<Locator> {
   return page.getByTestId('billing-plans');
 }
 
-/**
- * Closes the top dialog with its «Закрыть» / «Отмена» button. Not Escape: the plan dialog ignores Escape
- * (the settings dialog does not) — reported by this spec's author, see the QA notes.
- */
+/** Closes the top dialog with Escape (every billing dialog must answer it: the close box does not hold the focus). */
 async function closeTop(page: Page): Promise<void> {
-  await dialog(page).getByRole('button', { name: /^(Закрыть|Отмена)/ }).first().click();
+  // A dialog over a dialog hides the one below from the a11y tree: hold the top one by handle.
+  const top = await dialog(page).elementHandle();
+  await page.keyboard.press('Escape');
+  await top?.waitForElementState('hidden', { timeout: 10_000 });
 }
 
 // ---------------------------------------------------------------- Free: the badge, the plan choice, the payment step
@@ -236,16 +227,12 @@ test('billing-debt: badge, bar, plans, cabinet, top-up', async ({ page }) => {
 
 test('billing-suspended: paywall, badge, plans, top-up', async ({ page }) => {
   test.skip(isLight(), 'dark only');
-  // The phone paywall replaces the whole shell: no plan badge there (a finding), so no plan dialog.
-  const s = await boot(page, { scenario: 'suspended', plan: 'PLAN_TEAM', badge: !isPhone() });
+  const s = await boot(page, { scenario: 'suspended', plan: 'PLAN_TEAM' });
   await expect(page.getByTestId('billing-paywall')).toBeVisible();
   await checkpoint(s, 'billing-paywall-owner');
-  if (!isPhone()) await openPlans(page);
-  // axe scrollable-region-focusable: every plan card is blocked, the scrolling body has nothing focusable (QA finding).
-  if (!isPhone()) {
-    await checkpoint(s, 'billing-plans-suspended', { axe: false });
-    await closeTop(page);
-  }
+  await openPlans(page);
+  await checkpoint(s, 'billing-plans-suspended');
+  await closeTop(page);
   await tap(page.getByTestId('billing-paywall-topup'));
   await expect(page.getByTestId('billing-topup')).toBeVisible();
   await checkpoint(s, 'billing-paywall-topup');
@@ -337,20 +324,22 @@ test('billing-admin: accounts list and the account page', async ({ page }) => {
   await expect(admin).toBeVisible();
   await tap(admin.getByRole('radio', { name: 'Оплата' }));
   await expect(admin.getByTestId('admin-billing-list')).toBeVisible();
-  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-list');
+  await checkpoint(s, 'billing-admin-list');
   await tap(admin.getByTestId('admin-billing-account').first());
   await expect(admin.getByTestId('admin-billing-actions')).toBeVisible();
-  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-account');
+  await checkpoint(s, 'billing-admin-account');
   await admin.getByTestId('admin-billing-payments').scrollIntoViewIfNeeded();
-  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-payments');
+  await checkpoint(s, 'billing-admin-payments');
   await scrollEnd(admin);
-  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-account-end');
+  await checkpoint(s, 'billing-admin-account-end');
   // ADR-0083: «Эквайеры» and the market change of an account without payments (Orbit, inactive).
+  if (isPhone()) await tap(admin.getByTestId('admin-billing-back'));
   await tap(admin.getByTestId('admin-billing-nav-providers'));
   await expect(admin.getByTestId('admin-billing-providers-mode')).toBeVisible();
-  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-providers');
+  await checkpoint(s, 'billing-admin-providers');
+  if (isPhone()) await tap(admin.getByTestId('admin-billing-back'));
   await tap(admin.getByTestId('admin-billing-account').nth(3));
   await tap(admin.getByTestId('admin-billing-market'));
   await expect(page.getByRole('dialog').last()).toBeVisible();
-  await (isPhone() ? shotOnly : checkpoint)(s, 'billing-admin-market');
+  await checkpoint(s, 'billing-admin-market');
 });

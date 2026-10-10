@@ -417,6 +417,8 @@ export const zhBilling: DictShape<typeof ruBilling> = {
   'billing.plans.switch': '切换到 {plan}',
   'billing.plans.choose': '选择 {plan}',
   'billing.plans.free': '免费',
+  'billing.plans.freeNote': '无需付费，不限时间',
+  'billing.plans.includes': '包含内容',
   'billing.plans.perSeatDay': '每人每天',
   'billing.plans.perMonth': '每人 30 天约 {amount}',
   'billing.plans.forTeam': '你的团队（{n}）：每天 {amount}',

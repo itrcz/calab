@@ -53,7 +53,7 @@ export function ledgerDetail(e: LedgerEntry): string {
   return e.reason;
 }
 
-const cols = 'grid grid-cols-[96px_minmax(0,1fr)_96px_96px] items-center gap-3 mobile:grid-cols-[minmax(0,1fr)_auto]';
+const cols = 'grid grid-cols-[152px_minmax(0,1fr)_96px_96px] items-center gap-3 mobile:grid-cols-[minmax(0,1fr)_auto]';
 
 /** `action`: a stable render prop for a per-row control (the superadmin's «Отменить» of a credit). */
 export const LedgerRow = memo(function LedgerRow({ e, action }: { e: LedgerEntry; action?: ((e: LedgerEntry) => ReactNode) | undefined }): ReactNode {
@@ -61,7 +61,7 @@ export const LedgerRow = memo(function LedgerRow({ e, action }: { e: LedgerEntry
   const detail = ledgerDetail(e);
   return (
     <div role="row" className={cx(cols, 'min-h-10 border-b border-[var(--color-card-line)] px-3 py-1.5 last:border-b-0')} data-testid="billing-ledger-row">
-      <span role="cell" className="tabular-nums text-caption text-muted mobile:hidden">
+      <span role="cell" className="whitespace-nowrap tabular-nums text-caption text-muted mobile:hidden">
         {e.createdAt ? fmt.dateTime(timestampDate(e.createdAt), 'short') : '—'}
       </span>
       <span role="cell" className="flex min-w-0 flex-col">
@@ -279,6 +279,7 @@ function RefundRequestDialog({ workspaceId, currency, onClose }: { workspaceId: 
   return (
     <Modal
       open
+      initialFocus="body"
       onClose={onClose}
       title={t('billing.rr.title')}
       description={t('billing.rr.text')}

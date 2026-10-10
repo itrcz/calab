@@ -104,7 +104,10 @@ export function TopupDialog({
   const [methodId, setMethodId] = useState(methods[0]?.id ?? '');
   const method = methods.find((m) => m.id === methodId);
   const lim = topupLimits(method, currency);
-  const presets = topupPresets(summary, lim, currency);
+  const basePresets = topupPresets(summary, lim, currency);
+  // A quote's «to pay» opens the form: that exact amount is the first chip, so the chips and the field agree.
+  const quoted = initialAmount && initialAmount > 0n ? clampMinor(initialAmount, lim.min, lim.max) : null;
+  const presets = quoted !== null && !basePresets.some((p) => p.minor === quoted) ? [{ minor: quoted, reserve: false }, ...basePresets] : basePresets;
   const [raw, setRaw] = useState(() => inputOf(initialAmount && initialAmount > 0n ? clampMinor(initialAmount, lim.min, lim.max) : defaultTopup(summary, lim, currency), currency));
   const [save, setSave] = useState(false);
   const [touched, setTouched] = useState(false);
@@ -156,7 +159,7 @@ export function TopupDialog({
   );
 
   return (
-    <Modal open onClose={onClose} title={t('billing.topup.title')} footer={footer}>
+    <Modal open initialFocus="body" onClose={onClose} title={t('billing.topup.title')} footer={footer}>
       <div className="flex flex-col gap-4" data-testid="billing-topup">
         {form ? (
           <>

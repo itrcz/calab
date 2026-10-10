@@ -99,6 +99,7 @@ function PayerDialog({ workspaceId, payer, onClose }: { workspaceId: string; pay
   return (
     <Modal
       open
+      initialFocus="body"
       onClose={onClose}
       title={t('billing.payer.title')}
       footer={

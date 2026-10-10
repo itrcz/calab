@@ -1,7 +1,7 @@
 import { BillingState, WorkspaceRole } from '@calaba/protocol';
 import { CirclePause, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Spinner } from '../../../components/ui';
+import { Button, Spinner, cx } from '../../../components/ui';
 import { t } from '../../../i18n';
 import { billingStateOf, tsMs } from '../../../lib/billing/model';
 import { minorOf } from '../../../lib/billing/money';
@@ -66,20 +66,18 @@ export function BillingBanner(): ReactNode {
       role="status"
       aria-label={suspended ? t('billing.paywall.title') : t('billing.banner.arrears')}
       data-testid="billing-banner"
-      className="z-[var(--z-sticky)] flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-mention px-3 py-1.5 mobile:py-2"
+      // Solid warning / danger surfaces (tokens), not a yellow tint over the dark window.
+      className={cx('z-[var(--z-sticky)] flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-3 py-1.5 mobile:py-2', suspended ? 'bg-danger-surface' : 'bg-warn-surface')}
     >
       {suspended ? <CirclePause className="size-4 shrink-0 text-danger" aria-hidden /> : <TriangleAlert className="size-4 shrink-0 text-warn" aria-hidden />}
+      {/* Suspended: the stub under the bar is the message — the bar only names the state. */}
       <p className="min-w-0 flex-1 text-caption text-fg">
-        <span className="font-semibold">{suspended ? t('billing.paywall.title') : t('billing.banner.arrears')}</span>
-        {' · '}
         {suspended ? (
-          owner ? (
-            t('billing.banner.ownerSuspended')
-          ) : (
-            t('billing.banner.member')
-          )
+          <span className="font-semibold">{t('billing.state.suspended')}</span>
         ) : (
           <>
+            <span className="font-semibold">{t('billing.banner.arrears')}</span>
+            {' · '}
             {summary?.debt ? <MoneyText m={summary.debt} danger className="font-semibold" /> : null}
             {summary?.debt && deadline ? ' · ' : null}
             {deadline ? (
@@ -91,7 +89,7 @@ export function BillingBanner(): ReactNode {
         )}
       </p>
       {owner ? (
-        <Button size="sm" variant={suspended ? 'primary' : 'secondary'} onClick={() => openCabinet(id)} data-testid="billing-banner-pay">
+        <Button size="sm" onClick={() => openCabinet(id)} data-testid="billing-banner-pay">
           {t('billing.banner.pay')}
         </Button>
       ) : null}

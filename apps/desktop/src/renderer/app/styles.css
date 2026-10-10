@@ -130,6 +130,9 @@
   --color-role-owner: #f2c94c;
   --color-role-admin: #6cb4ff;
   --color-mention: rgb(255 214 10 / 12%);
+  /* solid warning / danger surfaces (billing bars, badges): no yellow-over-dark mud; text on them is fg (≥ 4.5:1) */
+  --color-warn-surface: #3a2c0e;
+  --color-danger-surface: #4a1d1b;
   /* in-room search hits (CHAT-SHELL): tint keeps bubble text ≥ 4.5:1; the current hit is solid */
   --color-search-hit: rgb(255 214 10 / 20%);
   --color-search-current: #ffd60a;
@@ -275,6 +278,8 @@
   --color-role-owner: #7a4a00;
   --color-role-admin: #0058b0;
   --color-mention: rgb(255 204 0 / 16%);
+  --color-warn-surface: #fff1c9;
+  --color-danger-surface: #ffe1de;
   --color-search-hit: rgb(255 204 0 / 38%);
   --color-search-current: #ffcc00;
   --color-code: rgb(118 118 128 / 12%);
@@ -347,6 +352,8 @@
   --color-role-owner: var(--color-role-owner);
   --color-role-admin: var(--color-role-admin);
   --color-mention: var(--color-mention);
+  --color-warn-surface: var(--color-warn-surface);
+  --color-danger-surface: var(--color-danger-surface);
   --color-code: var(--color-code);
   --color-code-block: var(--color-code-block);
   --color-scrim: var(--color-scrim);

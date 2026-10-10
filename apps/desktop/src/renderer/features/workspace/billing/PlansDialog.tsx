@@ -1,10 +1,11 @@
 import { BillingQuotePurpose, BillingState, PaymentMethodKind, Plan, WorkspaceRole, type BillingPlanOffer, type BillingQuote, type BillingSummary, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { useQuery } from '@tanstack/react-query';
-import { Check, CircleCheck, CirclePause, CreditCard, Mail, Minus, Plus, QrCode, TriangleAlert } from 'lucide-react';
+import { Check, ChevronDown, CircleCheck, CirclePause, CreditCard, Mail, Minus, Plus, QrCode, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { Button, Input, Modal, Segmented, Spinner, cx } from '../../../components/ui';
 import { t, useLocale, type MessageKey } from '../../../i18n';
+import { useMobile } from '../../../lib/mobile';
 import { audioTierLabel } from '../../../lib/audioTierLabel';
 import { IDLE, checkoutReducer, nowMs } from '../../../lib/billing/checkout';
 import { billingErrorText, billingStale } from '../../../lib/billing/errors';
@@ -79,6 +80,8 @@ export function PlansDialog({ workspaceId, welcome, onClose }: { workspaceId: st
   const userId = useSession((s) => s.me?.user?.id ?? '');
   const remembered = usePrefs((s) => s.billingMarket[userId]);
   const locale = useLocale();
+  // Phone: no lead-in text under the title — the plans and their buttons get the room (the cards say «за человека в сутки»).
+  const mobile = useMobile();
   const chooseMarket = useCallback(
     (m: Market) => {
       const p = usePrefs.getState();
@@ -164,7 +167,7 @@ export function PlansDialog({ workspaceId, welcome, onClose }: { workspaceId: st
   }
   return (
     <>
-      <Modal open onClose={onClose} wide title={title} description={welcome ? t('billing.plans.welcomeText', { name }) : t('billing.plans.text')} footer={footer}>
+      <Modal open initialFocus="body" onClose={onClose} wide title={title} description={mobile ? undefined : welcome ? t('billing.plans.welcomeText', { name }) : t('billing.plans.text')} footer={footer}>
         <div className="pb-1" data-testid="billing-plans">
           {body}
         </div>
@@ -181,6 +184,7 @@ function MemberView({ workspaceId, state, onClose }: { workspaceId: string; stat
   return (
     <Modal
       open
+      initialFocus="body"
       onClose={onClose}
       title={t('billing.plans.title')}
       footer={
@@ -339,6 +343,8 @@ function PlanCard({
   const unit = offer?.unitPrice;
   const cur = unit?.currency ?? '';
   const lines = highlights(tier, offer?.limits);
+  const mobile = useMobile();
+  const [open, setOpen] = useState(false);
   const paid = tier !== Plan.FREE;
   let action: ReactNode;
   if (step.kind === 'current') {
@@ -379,15 +385,19 @@ function PlanCard({
       aria-current={current ? 'true' : undefined}
       data-plan={Plan[tier]}
       data-testid="plan-card"
-      className={cx('flex flex-col gap-3 rounded-[var(--radius-card)] border bg-[var(--color-card)] p-4', current ? 'border-[var(--color-focus)]' : 'border-line')}
+      // Phone: the current plan first and Free (a step down) last, so «Выбрать …» of the next paid plan is on the first screen.
+      className={cx('flex flex-col gap-3 rounded-[var(--radius-card)] border bg-[var(--color-card)] p-4', current ? 'border-[var(--color-focus)] mobile:order-first' : 'border-line', !paid && !current && 'mobile:order-last')}
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-headline font-semibold">{t(PLAN_LABEL[tier])}</h3>
         {current ? <span className="inline-flex h-5 items-center rounded-full bg-accent-strong px-2 text-caption font-semibold text-accent-fg">{t('billing.plans.current')}</span> : null}
       </div>
-      <div className="flex min-h-[64px] flex-col gap-0.5">
+      <div className="flex min-h-[64px] flex-col gap-0.5 mobile:min-h-0">
         {!paid ? (
-          <span className="text-title font-semibold">{t('billing.plans.free')}</span>
+          <>
+            <span className="text-title font-semibold">{t('billing.plans.free')}</span>
+            <span className="text-caption text-muted mobile:hidden">{t('billing.plans.freeNote')}</span>
+          </>
         ) : unit ? (
           <>
             <span className="flex flex-wrap items-baseline gap-x-1.5">
@@ -401,19 +411,33 @@ function PlanCard({
           <span className="text-body text-muted">{t('billing.plans.notForSale')}</span>
         )}
       </div>
+      {/* The action right under the price: in view without scrolling the plan list (docs/08). The «your plan» mark duplicates the pill on a phone. */}
+      {action ? <div className={cx('flex min-h-7 items-center mobile:[&>button]:w-full', step.kind === 'current' && 'mobile:hidden')}>{action}</div> : null}
       {lines.length ? (
-        <ul className="flex flex-1 flex-col gap-1.5 text-body">
-          {lines.map((line) => (
-            <li key={line} className="flex items-start gap-2">
-              <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden />
-              <span className="min-w-0">{line}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="flex-1" />
-      )}
-      <div className="flex min-h-7 items-center mobile:[&>button]:w-full">{action}</div>
+        <>
+          {mobile ? (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+              className="-mx-1 inline-flex h-8 items-center gap-1 self-start rounded-[var(--radius-control)] px-1 text-body text-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
+            >
+              {t('billing.plans.includes')}
+              <ChevronDown className={cx('size-4 transition-transform', open && 'rotate-180')} aria-hidden />
+            </button>
+          ) : null}
+          {!mobile || open ? (
+            <ul className="flex flex-1 flex-col gap-1.5 text-body">
+              {lines.map((line) => (
+                <li key={line} className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden />
+                  <span className="min-w-0">{line}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -593,7 +617,7 @@ function PayStep({
     );
 
   return (
-    <Modal open onClose={onClose} medium title={title} description={t('billing.pay.how')} footer={footer}>
+    <Modal open initialFocus="body" onClose={onClose} medium title={title} description={t('billing.pay.how')} footer={footer}>
       <div className="flex flex-col gap-4 pb-1" data-testid="plans-pay-step">
         {phase === 'done' ? (
           <div className="flex flex-col items-center gap-3 py-4 text-center" role="status" data-testid="plans-done">

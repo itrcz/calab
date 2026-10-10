@@ -417,6 +417,8 @@ export const enBilling: DictShape<typeof ruBilling> = {
   'billing.plans.switch': 'Switch to {plan}',
   'billing.plans.choose': 'Choose {plan}',
   'billing.plans.free': 'Free',
+  'billing.plans.freeNote': 'No payment, no time limit',
+  'billing.plans.includes': "What's included",
   'billing.plans.perSeatDay': 'per person per day',
   'billing.plans.perMonth': '≈ {amount} per person for 30 days',
   'billing.plans.forTeam': 'Your team ({n}): {amount} a day',

@@ -51,7 +51,8 @@ describe('billing money (int64 minor units, no floats)', () => {
 
   it('gives the editable text of an amount', () => {
     expect(inputOf(50_000n, 'USD')).toBe('500');
-    expect(inputOf(1250n, 'USD')).toBe('12.50');
+    expect(inputOf(1250n, 'USD', 'en')).toBe('12.50');
+    expect(inputOf(1250n, 'USD', 'ru')).toBe('12,50');
     expect(inputOf(7n, 'JPY')).toBe('7');
   });
 

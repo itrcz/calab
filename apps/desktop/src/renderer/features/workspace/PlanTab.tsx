@@ -181,7 +181,7 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
         </h3>
         {/* A macOS-like table: header row in secondary text, hairlines between rows, numbers right-aligned. */}
         <div role="table" aria-label={t('plan.card.limits')} className="overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)] text-body" data-testid="plan-limits">
-          <div role="row" className="grid grid-cols-[minmax(0,1fr)_128px_148px] gap-3 border-b border-[var(--color-card-line)] px-3 py-1.5 text-caption font-medium text-muted">
+          <div role="row" className="grid grid-cols-[minmax(0,1fr)_128px_148px] gap-3 border-b mobile:hidden border-[var(--color-card-line)] px-3 py-1.5 text-caption font-medium text-muted">
             <span role="columnheader">{t('plan.col.limit')}</span>
             <span role="columnheader" className="text-right">
               {t('plan.col.used')}
@@ -190,20 +190,24 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
               {t('plan.col.max')}
             </span>
           </div>
-          {rows.map((r) => (
-            <div key={r.label} role="row" className="grid min-h-10 grid-cols-[minmax(0,1fr)_128px_148px] items-center gap-3 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0">
-              <span role="cell" className="min-w-0 truncate" data-settings-label>
-                {r.label}
-              </span>
-              <span role="cell" className="text-right tabular-nums text-muted">
-                {r.used}
-                {r.meter ? <Meter used={r.meter.used} limit={r.meter.limit} /> : null}
-              </span>
-              <span role="cell" className="text-right tabular-nums">
-                {r.max}
-              </span>
-            </div>
-          ))}
+          {rows.map((r) => {
+            const noUse = r.used === '—';
+            return (
+              // Phone: the label on its own line (it never truncates), the values under it.
+              <div key={r.label} role="row" className="grid min-h-10 grid-cols-[minmax(0,1fr)_128px_148px] items-center gap-3 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0 mobile:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] mobile:gap-y-1">
+                <span role="cell" className="min-w-0 truncate mobile:col-span-2 mobile:whitespace-normal" data-settings-label>
+                  {r.label}
+                </span>
+                <span role="cell" className={cx('text-right tabular-nums text-muted mobile:text-left', noUse && 'mobile:hidden')}>
+                  {r.used}
+                  {r.meter ? <Meter used={r.meter.used} limit={r.meter.limit} /> : null}
+                </span>
+                <span role="cell" className={cx('text-right tabular-nums', noUse && 'mobile:col-span-2 mobile:text-left')}>
+                  {r.max}
+                </span>
+              </div>
+            );
+          })}
         </div>
         <p className="px-1 text-caption text-faint">{t('plan.limitsFooter')}</p>
       </section>

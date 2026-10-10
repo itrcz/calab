@@ -101,7 +101,7 @@ export function StatePill({ state }: { state: BillingState }): ReactNode {
           : state === BillingState.SUSPENDED
             ? 'bg-danger-fill text-white'
             : state === BillingState.IN_ARREARS
-              ? 'bg-[color-mix(in_srgb,var(--color-warn)_22%,transparent)] text-fg'
+              ? 'bg-warn-surface text-fg ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-warn)_45%,transparent)]'
               : 'bg-[var(--color-fill-hover)] text-fg',
       )}
     >

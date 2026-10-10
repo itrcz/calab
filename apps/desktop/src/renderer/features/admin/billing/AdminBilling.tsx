@@ -15,8 +15,8 @@ import {
 } from '@calaba/protocol';
 import { timestampDate, timestampFromDate, timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Inbox, Landmark, Search, Tags } from 'lucide-react';
-import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Activity, ChevronLeft, Inbox, Landmark, Search, Tags } from 'lucide-react';
+import { createContext, memo, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, CloseButton, Empty, Field, Input, Modal, Row, Segmented, Select, Spinner, Toggle, cx } from '../../../components/ui';
 import { plural, t, type MessageKey } from '../../../i18n';
 import { recentAuthRequired } from '../../../lib/api/errors';
@@ -121,7 +121,7 @@ const AccountCard = memo(function AccountCard({ a, selected, onSelect }: { a: Ad
       </span>
       <span className={cx('flex min-w-0 items-center gap-2 text-caption', selected ? 'text-accent-fg' : 'text-muted')}>
         <span className="min-w-0 flex-1 truncate">{a.ownerEmail}</span>
-        <span className="shrink-0">{t(accountState(a) === BillingState.IN_ARREARS ? 'billing.state.arrears' : STATUS_KEY[a.status])}</span>
+        <span className="shrink-0 whitespace-nowrap">{t(accountState(a) === BillingState.IN_ARREARS ? 'billing.state.arrears' : STATUS_KEY[a.status])}</span>
       </span>
     </button>
   );
@@ -194,11 +194,29 @@ export function AdminBillingSide({ view, onView }: { view: BillingView; onView: 
   );
 }
 
+/**
+ * Phone (≤ 768 px): the list and an account page are separate screens; the pane's header carries a
+ * «back» to the list (`mobile:` only — the desktop keeps both columns).
+ */
+const BackToList = createContext<(() => void) | null>(null);
+
 function PaneHeader({ title, onClose, children }: { title: string; onClose: () => void; children?: ReactNode }): ReactNode {
+  const back = useContext(BackToList);
   return (
-    <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line pl-6 pr-3 mobile:pl-4">
-      <h2 className="flex min-w-0 items-center gap-2 text-headline font-semibold">
-        <span className="truncate">{title}</span>
+    <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line pl-6 pr-3 mobile:pl-2">
+      {back ? (
+        <button
+          type="button"
+          onClick={back}
+          aria-label={t('adminBilling.back')}
+          className="hidden size-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] mobile:inline-flex"
+          data-testid="admin-billing-back"
+        >
+          <ChevronLeft className="size-5" aria-hidden />
+        </button>
+      ) : null}
+      <h2 className="flex min-w-0 flex-1 items-center gap-2 text-headline font-semibold mobile:flex-wrap mobile:gap-y-0.5">
+        <span className="min-w-0 truncate">{title}</span>
         {children}
       </h2>
       <CloseButton label={t('settings.close')} onClick={onClose} />
@@ -215,7 +233,15 @@ function Scroll({ children, testId }: { children: ReactNode; testId?: string }):
 }
 
 /** The right pane of the billing section. */
-export function AdminBillingPane({ view, onClose, notice }: { view: BillingView; onClose: () => void; notice: ReactNode }): ReactNode {
+export function AdminBillingPane({ view, onClose, onBack, notice }: { view: BillingView; onClose: () => void; onBack: () => void; notice: ReactNode }): ReactNode {
+  return (
+    <BackToList.Provider value={onBack}>
+      <BillingPaneBody view={view} onClose={onClose} notice={notice} />
+    </BackToList.Provider>
+  );
+}
+
+function BillingPaneBody({ view, onClose, notice }: { view: BillingView; onClose: () => void; notice: ReactNode }): ReactNode {
   if (view?.kind === 'account') return <AccountDetail key={view.id} id={view.id} onClose={onClose} notice={notice} />;
   if (view?.kind === 'requests') return <RequestsPage onClose={onClose} notice={notice} />;
   if (view?.kind === 'prices') return <PricesPage onClose={onClose} notice={notice} />;
@@ -806,7 +832,7 @@ function DecideDialog({ r, onClose, onDone }: { r: AdminBillingRefundRequest; on
   if (payments.isLoading || disputes.isLoading || refunds.isLoading) return null;
   if (!chosen) {
     return (
-      <Modal open onClose={onClose} title={t('adminBilling.decide')} footer={<Button onClick={onClose}>{t('common.close')}</Button>}>
+      <Modal open initialFocus="body" onClose={onClose} title={t('adminBilling.decide')} footer={<Button onClick={onClose}>{t('common.close')}</Button>}>
         <p className="text-body text-muted">{payments.isError ? billingErrorText(payments.error) : t('adminBilling.noRefundable')}</p>
       </Modal>
     );
