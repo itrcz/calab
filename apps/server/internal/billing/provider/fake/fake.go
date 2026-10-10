@@ -55,7 +55,7 @@ const (
 	Processing                    // payment: processing (settle later with SettlePayment)
 	Unknown                       // ErrUnknownOutcome, nothing happened at the provider
 	Timeout                       // ErrUnknownOutcome, but the operation did happen (answer lost)
-	NotSent                       // ErrUnknownOutcome + ErrNotSent: refused before processing (429), nothing happened
+	NotSent                       // ErrUnknownOutcome + ErrNotSent: never reached the provider (no connection), nothing happened
 	Gone                          // charge: ErrNotFound — the provider no longer knows the saved method
 )
 
@@ -759,7 +759,7 @@ func (p *Provider) chargeReconcilable(req provider.OffSessionReq) (provider.Paym
 	case Unknown:
 		return provider.PaymentFact{}, provider.ErrUnknownOutcome
 	case NotSent:
-		return provider.PaymentFact{}, fmt.Errorf("fake: rate limited: %w: %w: %w", provider.ErrUnknownOutcome, provider.ErrRateLimited, provider.ErrNotSent)
+		return provider.PaymentFact{}, fmt.Errorf("fake: no connection: %w: %w", provider.ErrUnknownOutcome, provider.ErrNotSent)
 	case Gone:
 		return provider.PaymentFact{}, fmt.Errorf("fake: subscription not found: %w", provider.ErrNotFound)
 	case Decline:

@@ -15,6 +15,7 @@ import (
 	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/billing/autotopup"
 	"github.com/calaba/calaba/server/internal/billing/core"
+	"github.com/calaba/calaba/server/internal/billing/provider"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -134,6 +135,18 @@ func bankReference(s string) (string, error) {
 	return s, nil
 }
 
+// disputesByAPI reports whether the payment's provider sends its disputes (CapDisputes: Stripe),
+// so a chargeback of it is never recorded by hand. A provider not registered now is judged by
+// name: Stripe always has the dispute API.
+func disputesByAPI(reg *provider.Registry, name string) bool {
+	if reg != nil {
+		if p, ok := reg.Provider(provider.ID(name)); ok {
+			return p.Caps().Has(provider.CapDisputes)
+		}
+	}
+	return provider.ID(name) == provider.Stripe
+}
+
 // recordChargeback: POST /api/admin/billing/payments/{id}/chargebacks — «Зафиксировать
 // чарджбэк» of a payment whose provider reports chargebacks outside its API (Tochka: letter,
 // statement, chargeback registry). core.OpenDispute in this package's transaction: the amount
@@ -181,6 +194,11 @@ func (h *Handlers) recordChargeback(w http.ResponseWriter, r *http.Request) erro
 		}
 		if pay.Status != "succeeded" {
 			return nil, conflict("only a succeeded payment can be charged back")
+		}
+		if disputesByAPI(h.d.Providers, pay.Provider) {
+			// Its webhook records the dispute (another provider_dispute_id): a manual one too
+			// would take the money twice.
+			return nil, conflict("this provider reports chargebacks through its API; they are recorded by its webhook")
 		}
 		disputed, err := q.AdminBillingDisputedOfPayment(ctx, pay.ID)
 		if err != nil {

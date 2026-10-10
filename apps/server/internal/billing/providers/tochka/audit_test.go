@@ -3,6 +3,7 @@ package tochka
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,9 +14,10 @@ import (
 	"github.com/calaba/calaba/server/internal/billing/provider"
 )
 
-// Audit M6: a 429 and a connection that failed before the request was written are «not sent»
-// (wrapped with ErrUnknownOutcome too); a 5xx or a connection lost after the request was written
-// stays a plain unknown outcome.
+// Audit M6: only a connection that was never obtained is «not sent» (wrapped with
+// ErrUnknownOutcome too). A 429 (the bank documents none, so it may come after processing), a
+// 5xx, a connection lost after the request was written and a deadline while the bank holds a
+// fully sent request (HTTP/1 and HTTP/2) all stay a plain unknown outcome.
 func TestNotSentClassification(t *testing.T) {
 	ctx := context.Background()
 	req := provider.OffSessionReq{IdemKey: "a1", Customer: customer(), PaymentMethodID: subID, Amount: money.New(15000, money.RUB)}
@@ -26,7 +28,7 @@ func TestNotSentClassification(t *testing.T) {
 		},
 	})
 	_, err := p.ChargeOffSession(ctx, req)
-	if !errors.Is(err, provider.ErrNotSent) || !errors.Is(err, provider.ErrUnknownOutcome) || !errors.Is(err, provider.ErrRateLimited) || strings.Contains(err.Error(), subID) {
+	if errors.Is(err, provider.ErrNotSent) || !errors.Is(err, provider.ErrUnknownOutcome) || !errors.Is(err, provider.ErrRateLimited) || strings.Contains(err.Error(), subID) {
 		t.Fatalf("429: %v", err)
 	}
 	status = 503
@@ -70,6 +72,43 @@ func TestNotSentClassification(t *testing.T) {
 	}
 	if _, err := pl.ChargeOffSession(ctx, req); !errors.Is(err, provider.ErrUnknownOutcome) || errors.Is(err, provider.ErrNotSent) {
 		t.Fatalf("dropped after the request: %v", err)
+	}
+
+	// The bank read the whole request and holds it past the deadline: it may be charging.
+	for _, h2 := range []bool{false, true} {
+		got := make(chan struct{}, 1)
+		release := make(chan struct{})
+		hs := httptest.NewUnstartedServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			_, _ = io.ReadAll(r.Body)
+			got <- struct{}{}
+			<-release
+		}))
+		hs.EnableHTTP2 = h2
+		hs.StartTLS()
+		ph, err := New(Config{BaseURL: hs.URL, Token: "test.token.value", CustomerCode: testCustomer, MerchantID: testMerchant, ClientID: "client-1", HTTPClient: hs.Client(), Recurring: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cctx, cancel := context.WithCancel(ctx)
+		go func() { <-got; cancel() }()
+		_, err = ph.ChargeOffSession(cctx, req)
+		cancel()
+		close(release)
+		hs.Close()
+		if !errors.Is(err, provider.ErrUnknownOutcome) || errors.Is(err, provider.ErrNotSent) {
+			t.Fatalf("held after the request (h2 %t): %v", h2, err)
+		}
+	}
+
+	// A TLS handshake that fails never carried the request.
+	bad := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(bad.Close)
+	pt, err := New(Config{BaseURL: bad.URL, Token: "test.token.value", CustomerCode: testCustomer, MerchantID: testMerchant, ClientID: "client-1", Recurring: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pt.ChargeOffSession(ctx, req); !errors.Is(err, provider.ErrNotSent) || !errors.Is(err, provider.ErrUnknownOutcome) {
+		t.Fatalf("untrusted certificate: %v", err)
 	}
 }
 

@@ -28,6 +28,12 @@ func TestChargebackRecordedByHand(t *testing.T) {
 		return &v1.AdminRecordChargebackRequest{Amount: usd(amount), BankReference: ref, Reason: "bank letter of 10.10", RequestId: rid}
 	}
 
+	// Stripe reports its disputes by webhook: a manual chargeback too would take the money twice.
+	e.wantErr(409, "", "POST", path, cb(400, "CB-2026-1", uuid.NewString()))
+	if _, err := e.d.Pool.Exec(ctx, `UPDATE billing_payments SET provider = 'tochka' WHERE id = $1`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+
 	var res v1.AdminBillingMutationResult
 	e.must("POST", path+"?preview=1", cb(400, "CB-2026-1", uuid.NewString()), &res)
 	if !res.GetPreview() || res.GetBalanceAfter().GetMinor() != 600 || e.account().BalanceMinor != 1000 || e.account().DisputeHold {

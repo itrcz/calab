@@ -57,7 +57,7 @@ const (
 	// without idempotency keys.
 	ReconcilableBackoff = 2 * time.Minute
 	// NotSentBackoff: the first pause before a new auto-topup attempt after the provider refused
-	// one before processing it (429, no connection); doubles with each such refusal in 24 h, up to
+	// one before it reached the bank (no connection was obtained); doubles with each such refusal in 24 h, up to
 	// MinInterval.
 	NotSentBackoff = 15 * time.Minute
 	// RecheckEvery: how often failed charges of a provider without idempotency keys are read again
@@ -78,8 +78,8 @@ const (
 	CodeNotFound     = "not_found"
 	CodeRefused      = "provider_refused"
 	CodeUnavailable  = "provider_unavailable" // the charges of the method could not be read before the send
-	// CodeNotSent: the provider refused the charge before processing it (429 rate limit, no
-	// connection): nothing was charged, no owner mail; the next auto-topup may start after
+	// CodeNotSent: the charge never reached the provider (no connection was obtained; a 429 is
+	// unknown, not this): nothing was charged, no owner mail; the next auto-topup may start after
 	// NotSentBackoff (audit M6).
 	CodeNotSent = "not_sent"
 	// CodeMethodGone: the provider no longer knows the saved method (Tochka 424 «Subscription not

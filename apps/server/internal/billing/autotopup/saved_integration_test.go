@@ -95,7 +95,7 @@ func TestReconcilableUnknownNotFound(t *testing.T) {
 	}
 }
 
-// Audit M6: a 429 (or a connection that failed before the request was written) is «not sent»: the
+// Audit M6: a charge that never reached the bank (no connection obtained) is «not sent»: the
 // attempt is closed at once without a mail, and the next auto-topup starts after NotSentBackoff,
 // not after 24 h or a 7-day unknown window.
 func TestReconcilableNotSentRetriedSoon(t *testing.T) {
@@ -261,6 +261,21 @@ func TestOneClickTopup(t *testing.T) {
 		PaymentMethodId: e.pm.String(), Amount: &v1.Money{Minor: 2000, Currency: "USD"}, RequestId: uuid.NewString(),
 	}, nil); st != http.StatusForbidden {
 		t.Fatalf("member: %d", st)
+	}
+}
+
+// An open chargeback (dispute hold) stops one-click charges of the saved card too, not only
+// auto-topups; the owner may still pay on the provider's page.
+func TestOneClickDisputeHold(t *testing.T) {
+	e := newEnv(t, opts{noConsent: true})
+	if _, err := e.d.Pool.Exec(ctx, `UPDATE billing_accounts SET dispute_hold = true WHERE id = $1`, e.acc); err != nil {
+		t.Fatal(err)
+	}
+	if st, r := e.savedTopup(uuid.NewString(), 2000, nil); st != http.StatusConflict {
+		t.Fatalf("under a dispute: %d %s", st, r)
+	}
+	if e.fake.Calls("ChargeOffSession") != 0 {
+		t.Fatal("charged under a dispute")
 	}
 }
 

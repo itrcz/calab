@@ -45,6 +45,9 @@ type verdict struct {
 
 func (v verdict) ok() bool { return v.skip == "" && v.revoke == "" }
 
+// skipDisputeHold: an open dispute (chargeback) stops every saved-card charge of the account.
+const skipDisputeHold = "dispute_hold"
+
 // check decides whether acc may be charged now. own is the attempt being fenced (nil when
 // deciding a new one: then not_before and the open attempt count too). q may be read-only.
 func (j *Job) check(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, now time.Time, own *sqlc.BillingAutotopupAttempt) (plan, verdict, error) {
@@ -53,7 +56,7 @@ func (j *Job) check(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccoun
 	case acc.Status != core.StatusActive:
 		return p, verdict{skip: "status_" + acc.Status}, nil
 	case acc.DisputeHold:
-		return p, verdict{skip: "dispute_hold"}, nil
+		return p, verdict{skip: skipDisputeHold}, nil
 	case acc.HoldUntil != nil && acc.HoldUntil.After(now):
 		return p, verdict{skip: "hold"}, nil
 	case acc.WorkspaceID == nil:
@@ -480,13 +483,13 @@ func (j *Job) findCharge(ctx context.Context, t target, att sqlc.BillingAutotopu
 // by the recovery. A definite refusal (4xx) charged nothing; a «declined» answer is trusted only
 // once no new charge is visible.
 //
-// The bank refused it before processing (provider.ErrNotSent: 429, no connection) → failed
+// The request never reached the bank (provider.ErrNotSent: no connection obtained) → failed
 // not_sent, no mail, the next auto-topup after a short backoff (audit M6); the bank no longer knows
 // the saved method (provider.ErrNotFound) → the card is detached and the consent revoked (m5).
 func (j *Job) outcomeReconcilable(ctx context.Context, t target, att sqlc.BillingAutotopupAttempt, fact provider.PaymentFact, err error) error {
 	switch {
 	case errors.Is(err, provider.ErrNotSent):
-		slog.WarnContext(ctx, "billing auto-topup: charge not processed by the provider (rate limited or no connection), a new attempt later",
+		slog.WarnContext(ctx, "billing auto-topup: charge never reached the provider (no connection), a new attempt later",
 			"attempt", att.ID, "account", att.AccountID, "err", err)
 		return j.notSent(ctx, att)
 	case errors.Is(err, provider.ErrNotFound) && !errors.Is(err, provider.ErrUnknownOutcome):

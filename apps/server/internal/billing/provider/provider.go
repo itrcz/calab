@@ -98,8 +98,9 @@ var (
 	ErrNotSupported = errors.New("provider: operation not supported by the provider API")
 	// ErrRateLimited: the provider answered 429 (wrapped with ErrUnknownOutcome): back off.
 	ErrRateLimited = errors.New("provider: rate limited")
-	// ErrNotSent: the provider certainly did not process the request — its rate limiter refused
-	// it (429) or the connection failed before the request was written. Always wrapped together
+	// ErrNotSent: the provider certainly did not get the request — no connection to it was ever
+	// obtained (DNS, dial, TLS handshake, proxy). Anything after a connection (a write or read
+	// error, a timeout, a 429, a 5xx) is not this. Always wrapped together
 	// with ErrUnknownOutcome, so a caller that does not tell the two apart behaves as before; a
 	// charge without an idempotency key may treat it as «nothing happened, try later»
 	// (audit M6, ADR-0083 amendment 2026-10-10 «Неизвестный исход списания»).

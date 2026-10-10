@@ -51,6 +51,11 @@ func (j *Job) checkManual(ctx context.Context, q *sqlc.Queries, acc sqlc.Billing
 	if acc.Status == core.StatusClosed {
 		return verdict{skip: "status_" + acc.Status}, nil
 	}
+	if acc.DisputeHold {
+		// A chargeback is open (ADR-0080, ADR-0083 amendment «Аудит»): no saved-card charge
+		// until it is closed; the owner may still pay on the provider's page.
+		return verdict{skip: skipDisputeHold}, nil
+	}
 	pm, err := q.GetBillingPaymentMethod(ctx, pmID)
 	if err != nil {
 		return verdict{}, err
@@ -65,7 +70,7 @@ func (j *Job) checkManual(ctx context.Context, q *sqlc.Queries, acc sqlc.Billing
 }
 
 // StartManual records the owner's one-click top-up and sends it (or returns the charge of the
-// same request). Errors: billing.ErrRequestReused, billing.ErrPaymentPending (another charge of
+// same request). Errors: billing.ErrRequestReused, billing.ErrDisputeHold, billing.ErrPaymentPending (another charge of
 // a saved card in flight), billing.ErrAccountNotFound, billing.ErrMethodUnavailable.
 func (j *Job) StartManual(ctx context.Context, r ManualRequest) (sqlc.BillingAutotopupAttempt, error) {
 	var att sqlc.BillingAutotopupAttempt
@@ -89,6 +94,9 @@ func (j *Job) StartManual(ctx context.Context, r ManualRequest) (sqlc.BillingAut
 		v, err := j.checkManual(ctx, q, acc, r.PmID)
 		if err != nil {
 			return err
+		}
+		if v.skip == skipDisputeHold {
+			return billing.ErrDisputeHold
 		}
 		if !v.ok() {
 			return billing.ErrMethodUnavailable
