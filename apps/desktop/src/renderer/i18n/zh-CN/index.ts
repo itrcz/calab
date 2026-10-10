@@ -748,4 +748,6 @@ export const zhCN: Dict = {
   'main.webAppOpenLink': '在浏览器中打开链接',
   'main.webAppCopyLink': '复制链接地址',
   'main.webAppOpenPage': '在浏览器中打开页面',
+  'main.checkoutTitle': '付款',
+  'main.checkoutCancel': '取消',
 };

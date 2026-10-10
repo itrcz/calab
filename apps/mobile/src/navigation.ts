@@ -19,6 +19,8 @@ export type Decision = 'load' | 'external' | 'block';
 
 /** Handed to the OS: the system browser (http/https) or the mail app (mailto, the plan contact). */
 const EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:']);
+/** SBP bank apps (NSPK registry schemes, `bank` + the bank's 9–12 digit id). */
+const SBP_BANK_SCHEME = /^bank\d{9,12}:$/;
 /** Empty documents a page may put in an iframe (`<iframe srcdoc>`, a frame not navigated yet). */
 const BLANK_FRAMES = new Set(['about:blank', 'about:srcdoc']);
 
@@ -38,6 +40,8 @@ export function isAppUrl(raw: string, origin: string): boolean {
 
 /** May leave the app for the OS. `mailto:` needs an address, credentials in a web link are refused. */
 function isExternal(url: URL): boolean {
+  // SBP (ADR-0084): a bank-app link of the NSPK registry (`bank100000000111://…`) opens the bank app.
+  if (SBP_BANK_SCHEME.test(url.protocol)) return !url.username && !url.password;
   if (!EXTERNAL_PROTOCOLS.has(url.protocol)) return false;
   if (url.protocol === 'mailto:') return /^[^\s/@%]+@[^\s/@%]+$/.test(url.pathname);
   return !url.username && !url.password;

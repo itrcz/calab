@@ -17,6 +17,15 @@ a contact-sales instruction. This is a web-client change and needs web deploymen
 it does not require a new iPhone binary.
 
 
+## Checkout and SBP (2026-10-10, ADR-0084)
+
+iOS keeps purchases hidden (above). On Android the hosted checkout opens in the
+system browser; Tochka's page offers the bank chooser and `qr.nspk.ru` / `bankNNN://`
+links open the bank app. The host now hands `bankNNN://` links to the OS instead of
+blocking them. Back in Calab, the dialog polls on `visibilitychange`. Custom Tabs /
+SFSafariViewController (`expo-web-browser`) is a follow-up: it needs a new native
+dependency and binary, and a return to the app from an https URL needs App Links.
+
 ## R19 final polish: bounded connecting cue
 
 - **Implemented locally:** quiet native connecting pulse after CallKit activation

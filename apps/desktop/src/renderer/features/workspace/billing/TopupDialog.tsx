@@ -8,7 +8,7 @@ import { billingErrorText } from '../../../lib/billing/errors';
 import { methodLabel, providerTag } from '../../../lib/billing/market';
 import { amountProblem, currencyOf, defaultTopup, offeredMethods, requestId, topupLimits, topupPresets, type AmountProblem } from '../../../lib/billing/model';
 import { clampMinor, formatMinor, inputOf, minorOf, parseMajor } from '../../../lib/billing/money';
-import { openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
+import { onCheckoutReturn, openCheckout, ownerBilling, reloadBilling } from '../../../services/billing';
 
 /**
  * «Пополнить баланс» (ADR-0080 §13): a method from GET …/billing methods[] (only what the server
@@ -51,7 +51,7 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethodOpti
 
 export function useCheckoutPoll(workspaceId: string, flow: CheckoutFlow, dispatch: (e: Parameters<typeof checkoutReducer>[1]) => void): void {
   // The poll: one timeout at a time, none while hidden; coming back polls at once (the person
-  // returns from the browser right after paying).
+  // returns from the browser or the checkout window right after paying).
   const id = flow.phase === 'waiting' ? flow.checkoutId : null;
   const delay = pollDelay(flow);
   const polls = flow.phase === 'waiting' ? flow.polls : -1;
@@ -78,7 +78,10 @@ export function useCheckoutPoll(workspaceId: string, flow: CheckoutFlow, dispatc
     arm();
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onVisibility);
+    // Back from the in-app checkout window (ADR-0084): poll at once.
+    const offReturn = onCheckoutReturn(poll);
     return () => {
+      offReturn();
       ac.abort();
       window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);

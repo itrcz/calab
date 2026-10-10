@@ -1,4 +1,5 @@
 import { BillingState, Plan, type Workspace } from '@calaba/protocol';
+import type { CheckoutWindowOutcome } from '../../shared/ipc';
 import { restAdminApi, restOwnerApi, type AdminBillingApi, type BillingAdapters, type OwnerBillingApi } from '../lib/billing/api';
 import { billingErrorText, billingNotFound, billingUnavailable } from '../lib/billing/errors';
 import { forSale } from '../lib/billing/plans';
@@ -142,18 +143,48 @@ export async function offerPlansAfterCreate(workspaceId: string): Promise<void> 
   useUi.getState().openDialog({ kind: 'billing-plans', workspaceId, welcome: true });
 }
 
+const checkoutReturnListeners = new Set<(outcome: CheckoutWindowOutcome) => void>();
+
 /**
- * Opens the provider's hosted checkout outside the app: the system browser on the desktop, a new
- * tab on the web (a popup blocker may stop it after the async POST — the dialog keeps a «Открыть
- * страницу оплаты» button, a direct click, for that case). Only https links are opened.
+ * The person is back from the checkout window (ADR-0084): the open checkout dialog polls at once
+ * (useCheckoutPoll) instead of waiting for its timer. The outcome is only a hint — the poll is
+ * the truth, and the dialog's own guards keep the activation to one.
+ */
+export function onCheckoutReturn(cb: (outcome: CheckoutWindowOutcome) => void): () => void {
+  checkoutReturnListeners.add(cb);
+  return () => checkoutReturnListeners.delete(cb);
+}
+
+/**
+ * Opens the provider's hosted checkout (ADR-0084): the in-app checkout window on the desktop, a
+ * new tab on the web (a popup blocker may stop it after the async POST — the dialog keeps a
+ * «Открыть страницу оплаты» button, a direct click, for that case). Only https links are opened;
+ * a URL main does not take for the window (a provider host off its allowlist) goes to the system
+ * browser as before.
  */
 export function openCheckout(url: string): void {
-  if (!/^https:\/\//i.test(url.trim())) {
+  const u = url.trim();
+  if (!/^https:\/\//i.test(u)) {
     log.warn('[billing] refused a non-https checkout url');
+    return;
+  }
+  platform.app.openCheckout(u).then(
+    (outcome) => {
+      if (outcome === 'external') return;
+      for (const cb of [...checkoutReturnListeners]) cb(outcome);
+    },
+    (e: unknown) => {
+      log.warn('[billing] checkout window refused, opening the browser', e);
+      void platform.app.openExternal(u);
+    },
+  );
+}
+
+/** Receipts (BillingPayment.receipt_url) open in the browser (to print or save). */
+export function openReceipt(url: string): void {
+  if (!/^https:\/\//i.test(url.trim())) {
+    log.warn('[billing] refused a non-https receipt url');
     return;
   }
   void platform.app.openExternal(url.trim());
 }
-
-/** Receipts (BillingPayment.receipt_url) open the same way. */
-export const openReceipt = openCheckout;

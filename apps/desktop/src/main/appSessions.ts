@@ -15,3 +15,17 @@ export function markAppSession(ses: Session): void {
 export function isAppSession(ses: Session | undefined): boolean {
   return !!ses && appSessions.has(ses);
 }
+
+/**
+ * The in-memory session of the checkout window's page (ADR-0084, main/checkoutWindow.ts): it gets
+ * the checkout guards (https navigation for card 3DS), not windows.ts guardWebContents.
+ */
+const checkoutSessions = new WeakSet<Session>();
+
+export function markCheckoutSession(ses: Session): void {
+  checkoutSessions.add(ses);
+}
+
+export function isCheckoutSession(ses: Session | undefined): boolean {
+  return !!ses && checkoutSessions.has(ses);
+}

@@ -749,4 +749,6 @@ export const en: Dict = {
   'main.webAppOpenLink': 'Open link in browser',
   'main.webAppCopyLink': 'Copy link address',
   'main.webAppOpenPage': 'Open page in browser',
+  'main.checkoutTitle': 'Payment',
+  'main.checkoutCancel': 'Cancel',
 };

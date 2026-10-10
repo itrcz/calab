@@ -4,6 +4,7 @@ import type {
   AuthSession,
   CaptureSelection,
   CaptureSource,
+  CheckoutWindowOutcome,
   DownloadArgs,
   LegalTexts,
   DownloadProgress,
@@ -89,6 +90,12 @@ export interface CalabaApi {
     networkOnline(): void;
     log(level: 'info' | 'warn' | 'error', message: string): void;
     openExternal(url: string): Promise<void>;
+    /**
+     * A provider's hosted checkout (ADR-0084): the in-app checkout window on the desktop (rejects
+     * for a URL off the provider allowlist), a new tab on the web (`external`). Resolves when the
+     * person is back; the outcome is a hint, the checkout poll is the truth.
+     */
+    openCheckout(url: string): Promise<CheckoutWindowOutcome>;
     /** LICENSE, NOTICE and THIRD-PARTY-NOTICES.txt texts («О программе»). */
     legal(): Promise<LegalTexts>;
     /** Bounce the dock / flash the taskbar when the window is not focused. */

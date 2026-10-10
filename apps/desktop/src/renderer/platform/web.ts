@@ -653,6 +653,13 @@ export function createWebPlatform(): Platform {
         else if (/^mailto:[^\s/]+@/i.test(url)) location.href = url;
         return Promise.resolve();
       },
+      // ADR-0084: the web keeps the hosted checkout in a new tab (the phone host hands that to the
+      // system browser); the dialog's poll notices the payment.
+      openCheckout: (raw) => {
+        const url = raw.trim();
+        if (/^https:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+        return Promise.resolve('external');
+      },
       attention: () => undefined,
       // Installed PWA: the app icon badge (Badging API, where supported).
       setBadge: (n) => {

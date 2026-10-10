@@ -84,6 +84,8 @@ let strings: MainStrings = {
   webAppOpenLink: 'Открыть ссылку в браузере',
   webAppCopyLink: 'Копировать адрес ссылки',
   webAppOpenPage: 'Открыть страницу в браузере',
+  checkoutTitle: 'Оплата',
+  checkoutCancel: 'Отмена',
 };
 
 const listeners = new Set<() => void>();
