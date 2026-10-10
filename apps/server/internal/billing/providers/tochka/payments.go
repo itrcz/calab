@@ -505,7 +505,22 @@ func (p *Provider) Refund(ctx context.Context, req provider.RefundReq) (provider
 	if got, err := a.Data.Amount.money(); err == nil && got != req.Amount {
 		return provider.RefundFact{}, fmt.Errorf("tochka refund: accepted %s for %s: %w", got, req.Amount, provider.ErrUnknownOutcome)
 	}
-	f.ID = refundID(req.PaymentID, a.Data.OrderID)
+	// The answer's orderId is trusted as the refund id only once the payment lists a refund of
+	// that orderId and amount (Order[]). The bank does not document that the two ids agree; a
+	// stored id that never appears in Order[] would let the reconciliation import the listed
+	// refund a second time as a dashboard refund (double debit). Unconfirmed: no id, pending —
+	// the reconciliation matches the listed refund to this Calab refund by payment and amount.
+	id := refundID(req.PaymentID, a.Data.OrderID)
+	if after, err := p.getOperation(ctx, "refund (confirm)", req.PaymentID); err == nil {
+		if facts, err := p.refundFacts(after); err == nil {
+			for _, x := range facts {
+				if x.ID == id && x.Amount == req.Amount {
+					f.ID = id
+					break
+				}
+			}
+		}
+	}
 	return f, nil
 }
 

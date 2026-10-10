@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
 	"github.com/calaba/calaba/server/internal/billing/money"
@@ -370,6 +371,8 @@ func TestRefund(t *testing.T) {
 	digital := strings.Replace(approved, `"paymentType":"card"`, `"paymentType":"digitalRuble"`, 1)
 	var refundCalls int
 	state := approved
+	// The bank answers orderId 20; the payment then lists the refund (Order[]) or not yet.
+	answer, afterPost := fixture(t, "sandbox_refund.json"), refunded
 	var mu sync.Mutex
 	p, b := newTest(t, map[string]func(http.ResponseWriter, call){
 		"GET /acquiring/v1.0/payments/b26287ee-bdd0-3482-a10d-3c462f5ba6db": func(w http.ResponseWriter, c call) {
@@ -382,7 +385,10 @@ func TestRefund(t *testing.T) {
 			if d := c.body["Data"].(map[string]any); d["amount"] != 1.0 {
 				t.Errorf("refund amount %v", d["amount"])
 			}
-			reply(200, fixture(t, "sandbox_refund.json"))(w, c)
+			mu.Lock()
+			state = afterPost
+			mu.Unlock()
+			reply(200, answer)(w, c)
 		},
 	})
 	ctx := context.Background()
@@ -390,6 +396,22 @@ func TestRefund(t *testing.T) {
 	f, err := p.Refund(ctx, req)
 	if err != nil || f.ID != "b26287ee-bdd0-3482-a10d-3c462f5ba6db:20" || f.Status != provider.RefundPending || f.Amount.Minor != 100 {
 		t.Fatalf("refund %+v %v", f, err)
+	}
+	// The answer's orderId is not (yet) in Order[], or another one is: no id, pending — the
+	// reconciliation matches the listed refund by payment and amount (never a second POST).
+	for name, ans := range map[string]string{
+		"not listed yet": fixture(t, "sandbox_refund.json"),
+		"other order id": strings.Replace(fixture(t, "sandbox_refund.json"), `"orderId":"20"`, `"orderId":"21"`, 1),
+	} {
+		mu.Lock()
+		state, answer, afterPost = approved, ans, approved
+		if name == "other order id" {
+			afterPost = refunded
+		}
+		mu.Unlock()
+		if u, err := p.Refund(ctx, req); err != nil || u.ID != "" || u.Status != provider.RefundPending || u.PaymentID != req.PaymentID {
+			t.Fatalf("%s: %+v %v", name, u, err)
+		}
 	}
 	// The payment turns REFUNDED_PARTIALLY with the refund in Order[]: succeeded.
 	mu.Lock()
@@ -413,7 +435,7 @@ func TestRefund(t *testing.T) {
 	if _, err := p.Refund(ctx, req); !errors.Is(err, provider.ErrNotSupported) {
 		t.Fatalf("digital ruble: %v", err)
 	}
-	if refundCalls != 1 || b.count("POST", "/acquiring/v1.0/payments/b26287ee-bdd0-3482-a10d-3c462f5ba6db/refund") != 1 {
+	if refundCalls != 3 || b.count("POST", "/acquiring/v1.0/payments/b26287ee-bdd0-3482-a10d-3c462f5ba6db/refund") != 3 {
 		t.Fatalf("refund POSTs %d", refundCalls)
 	}
 }
@@ -466,7 +488,21 @@ func TestParseWebhook(t *testing.T) {
 		flip[20] = 'A'
 	}
 	tampered := parts[0] + "." + string(flip) + "." + parts[2]
-	for name, body := range map[string]string{"tampered": tampered, "garbage": "hello", "empty": "", "alg none": parts[0] + "." + parts[1] + "."} {
+	// Algorithm confusion: the same claims as HS256 with the public key's JWK text as the HMAC
+	// secret, and as "none".
+	hs, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"webhookType": WebhookTypeAcquiring, "customerCode": testCustomer, "operationId": "x", "status": "APPROVED", "amount": "1.00",
+	}).SignedString([]byte(DefaultWebhookKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	none, err := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.MapClaims{"webhookType": WebhookTypeAcquiring, "customerCode": testCustomer}).
+		SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"tampered": tampered, "garbage": "hello", "empty": "", "alg none": parts[0] + "." + parts[1] + ".",
+		"HS256 with the public key": hs, "none": none} {
 		if _, err := p.ParseWebhook(ctx, nil, []byte(body)); !errors.Is(err, provider.ErrBadSignature) {
 			t.Errorf("%s: %v", name, err)
 		}

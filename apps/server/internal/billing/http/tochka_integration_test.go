@@ -330,6 +330,36 @@ func TestTochkaRefundsOnce(t *testing.T) {
 	}
 }
 
+// The refund answer's orderId differs from the refund's entry in Order[] (the bank does not
+// document that they agree): the answer's id is not stored, the listed refund is matched to the
+// Calab refund by payment and amount — never imported a second time as a dashboard refund.
+func TestTochkaRefundAnswerOtherOrderID(t *testing.T) {
+	e := ruEnv(t)
+	pay := e.payRU(15000)
+	e.bank.RefundAnswerOtherOrder = true
+	ref := e.reserveRU(pay, 5000)
+	if err := e.in.RetryRefund(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+	ref = e.refundRow(ref.ID)
+	if ref.ProviderRefundID != nil || ref.DispatchedAt == nil || ref.Status != core.RefundPending {
+		t.Fatalf("unconfirmed answer: %+v", ref)
+	}
+	if err := e.in.RetryRefund(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+	ref = e.refundRow(ref.ID)
+	if ref.Status != core.RefundSucceeded || ref.ProviderRefundID == nil || e.bank.RefundPosts != 1 {
+		t.Fatalf("matched by listing: %+v posts %d", ref, e.bank.RefundPosts)
+	}
+	if n := e.count(`SELECT count(*) FROM billing_refunds WHERE account_id = $1`, e.acc); n != 1 {
+		t.Fatalf("refund rows %d (the listed refund imported as a dashboard refund)", n)
+	}
+	if acc := e.account(); acc.BalanceMinor != 10000 {
+		t.Fatalf("balance %d", acc.BalanceMinor)
+	}
+}
+
 // A digital-ruble payment is refunded only in the bank's interface: needs_review, nothing sent;
 // the operator's refund in the bank is then matched to the reserved row.
 func TestTochkaDigitalRubleRefundNeedsReview(t *testing.T) {

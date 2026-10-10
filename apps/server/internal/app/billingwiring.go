@@ -138,7 +138,9 @@ func (rt *billingRuntime) Run(ctx context.Context) {
 	}
 	go rt.Inbox.Run(ctx)
 	go rt.Inbox.RunReconcile(ctx)
-	go rt.Inbox.RunPoll(ctx) // ADR-0083: open checkouts of providers without failure webhooks
+	if rt.cfg.TochkaEnabled {
+		go rt.Inbox.RunPoll(ctx) // ADR-0083: open checkouts of providers without failure webhooks
+	}
 	if worker.Enabled(rt.cfg) {
 		go rt.due.Run(ctx)
 	}

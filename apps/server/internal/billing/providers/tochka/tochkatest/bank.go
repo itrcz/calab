@@ -60,6 +60,9 @@ type Bank struct {
 	RefundsSettle bool
 	// HideOrders: Order[] stays empty (the sandbox shows refunded payments so).
 	HideOrders bool
+	// RefundAnswerOtherOrder: the refund answer carries another orderId than the refund's entry
+	// in Order[] (the bank does not document that they agree).
+	RefundAnswerOtherOrder bool
 }
 
 // New starts the bank; closed by t.Cleanup.
@@ -301,6 +304,9 @@ func (b *Bank) serve(w http.ResponseWriter, r *http.Request) {
 			b.LoseNextRefund = false
 			w.WriteHeader(http.StatusBadGateway)
 			return
+		}
+		if b.RefundAnswerOtherOrder {
+			ord = "9" + ord
 		}
 		write(w, 200, map[string]any{"Data": map[string]any{"isRefund": true, "operationId": uuid.NewString(), "amount": json.Number(amt),
 			"date": time.Now().Format("2006-01-02"), "orderId": ord}})
