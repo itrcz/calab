@@ -197,6 +197,11 @@ func (s *Service) createClient(w http.ResponseWriter, r *http.Request) {
 	}
 	out := &v1.OAuthClientSecretResponse{}
 	err := s.management(w, r, func(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, p identitypolicy.Principal) error {
+		if s.c.PlanActive != nil {
+			if err := s.c.PlanActive(ctx, ws, "connecting integrations"); err != nil { // plans.RestrictedConnect
+				return err
+			}
+		}
 		clients, err := q.ListOAuthClients(ctx, ws)
 		if err != nil {
 			return err

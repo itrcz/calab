@@ -320,6 +320,11 @@ func New(d Deps) *App {
 	}
 	recSvc := recording.New(recCfg, d.DB, d.Redis, egress, gptunnel.New(d.Config.GPTunnelAPIURL), pub)
 	recSvc.KeepAudio = time.Duration(d.Config.RecordingKeepDays) * 24 * time.Hour
+	recSvc.PlanInactive = func(ctx context.Context, ws uuid.UUID) bool {
+		l, err := planSvc.Lapsed(ctx, ws)
+		return err == nil && l
+	}
+	billingRT.onLapsed = recSvc.StopPlanInactive // the restricted mode ends a running meeting recording
 	if rtcSvc != nil {
 		rtcSvc.OnEgress = recSvc.HandleEgress
 	}
@@ -379,7 +384,7 @@ func New(d Deps) *App {
 
 	ah := auth.NewHandlers(authSvc, authLimiter, accountLimiter, d.Config.AllowedOrigins())
 	ah.IdentityOrigin = d.Config.IdentityPublicOrigin
-	rp, ds, op := wireIdentity(d, mux, authSvc)
+	rp, ds, op := wireIdentity(d, mux, authSvc, planSvc.CheckActive)
 	ah.Public(mux)
 	ah.Private(mux, private)
 	pushSvc.Routes(mux, private)
@@ -443,6 +448,7 @@ func New(d Deps) *App {
 	// Balance billing (ADR-0080 v5): every route registered; 501 while BILLING_ENABLED=false.
 	billingRT.Routes(mux, private)
 	achSvc := achievements.New(d.DB, d.Blob, filesSvc, pub, voice.Store{C: d.Redis}.Rooms)
+	achSvc.Plans = planSvc
 	achSvc.Routes(mux, private)
 	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)})

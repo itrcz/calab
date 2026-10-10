@@ -4,6 +4,7 @@
 package achievements
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -55,6 +56,13 @@ type Service struct {
 	events events.Publisher
 	system *messages.System
 	voice  rooms.VoiceRooms
+	// Plans refuses a new picture in a workspace in the restricted mode («тариф не активен»,
+	// ADR-0086 amendment 1; plans.Service.CheckActive); nil = none. The create route is in the
+	// identity gate's table (app.planInactiveRoutes); an edit that replaces the picture is
+	// checked here, a rename stays open.
+	Plans interface {
+		CheckActive(ctx context.Context, ws uuid.UUID, action string) error
+	}
 }
 
 // New creates the service. fs stores the pictures as workspace files; voice lets guests see the

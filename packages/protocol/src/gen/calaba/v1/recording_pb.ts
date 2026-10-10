@@ -58,7 +58,8 @@ export type RoomRecording = Message<"calaba.v1.RoomRecording"> & {
 
   /**
    * STOPPED only: why — "user" (POST …/recording/stop), "empty" (nobody in the call for
-   * 2 min), "max_duration" (4 h), "disabled" (recording forbidden in the room), "egress"
+   * 2 min), "max_duration" (4 h), "disabled" (recording forbidden in the room),
+   * "plan_inactive" (the workspace plan stopped being active, ADR-0086 amendment 1), "egress"
    * (the recorder ended by itself, e.g. the call ended), "lost" (the recorder is gone).
    *
    * @generated from field: string stop_reason = 7;

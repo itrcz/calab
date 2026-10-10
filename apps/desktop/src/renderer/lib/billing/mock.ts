@@ -736,11 +736,14 @@ function accounts(): AdminBillingAccount[] {
     mk(1, 'Calab Team', 'owner@calaba.test', s.status, s.balance, s.plan, {
       ...(s.suspendAt ? { suspendAt: ts(s.suspendAt), negativeSince: ts(s.negativeSince ?? now) } : {}),
       ...(s.plan === Plan.CUSTOM ? { planDisplayName: MOCK_CUSTOM_NAME } : {}),
+      ...(s.status === BillingAccountStatus.STOPPED && s.lapsed ? { lapsed: true, lapsedAt: ts(now - DAY) } : {}),
     }),
     mk(2, 'Studio North', 'anna@north.test', BillingAccountStatus.ACTIVE, -1240n, Plan.ENTERPRISE, { negativeSince: ts(now - 2 * DAY), suspendAt: ts(now + 5 * DAY), discountBps: 1500 }),
     mk(3, 'Garage Lab', 'dev@garage.test', BillingAccountStatus.SUSPENDED, -880n, Plan.TEAM, { suspendAt: ts(now - DAY), negativeSince: ts(now - 8 * DAY) }),
     mk(4, 'Orbit', 'cto@orbit.test', BillingAccountStatus.INACTIVE, 0n, Plan.TEAM, s.orbitRu ? { market: 'ru', balance: price(0n, 'ru'), debt: price(0n, 'ru') } : {}),
     mk(5, 'Pixel Forge', 'hi@pixel.test', BillingAccountStatus.ACTIVE, 98_120n, Plan.ENTERPRISE, { holdUntil: ts(now + 2 * DAY), disputeHold: true }),
+    // «Тариф не активен»: stopped, the paid days over, usage over Free (ADR-0086 amendment 1).
+    mk(6, 'Quiet Co', 'ops@quiet.test', BillingAccountStatus.STOPPED, 0n, Plan.TEAM, { lapsed: true, lapsedAt: ts(now - 2 * DAY) }),
   ];
 }
 
@@ -766,7 +769,7 @@ function admin(): AdminBillingApi {
       await wait();
       guard(S());
       const needle = (q.q ?? '').toLowerCase();
-      return { $typeName: 'calaba.v1.AdminBillingAccounts', accounts: accounts().filter((a) => !needle || `${a.workspaceName} ${a.ownerEmail}`.toLowerCase().includes(needle)), nextCursor: '' };
+      return { $typeName: 'calaba.v1.AdminBillingAccounts', accounts: accounts().filter((a) => (!q.lapsed || a.lapsed) && (!needle || `${a.workspaceName} ${a.ownerEmail}`.toLowerCase().includes(needle))), nextCursor: '' };
     },
     async account(id) {
       await wait();

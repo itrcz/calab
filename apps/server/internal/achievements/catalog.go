@@ -228,6 +228,11 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	var prep *files.PreparedFile
 	size := 0
 	if req.FileId != nil {
+		if s.Plans != nil {
+			if err := s.Plans.CheckActive(ctx, cur.WorkspaceID, "uploading files"); err != nil { // plans.RestrictedUpload
+				return err
+			}
+		}
 		if prep, size, err = s.prepare(r, cur.WorkspaceID, req.GetFileId()); err != nil {
 			return err
 		}

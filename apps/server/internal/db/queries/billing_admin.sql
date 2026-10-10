@@ -5,7 +5,8 @@
 
 -- name: AdminListBillingAccounts :many
 -- Newest first. q matches the account id, the workspace id (exact) or the workspace name /
--- owner email (pattern is q with LIKE wildcards escaped); an empty status matches any.
+-- owner email (pattern is q with LIKE wildcards escaped); an empty status matches any; the pseudo status
+-- 'lapsed' is a stopped account in the restricted mode («тариф не активен»).
 SELECT sqlc.embed(a), coalesce(w.name, '')::text AS workspace_name, coalesce(u.email::text, '')::text AS owner_email,
     (SELECT count(*) FROM workspace_members m JOIN users mu ON mu.id = m.user_id
      WHERE m.workspace_id = a.workspace_id AND m.role <> 'guest' AND NOT mu.is_bot)::integer AS billable_members,
@@ -14,7 +15,8 @@ FROM billing_accounts a
 LEFT JOIN workspaces w ON w.id = a.workspace_id
 LEFT JOIN users u ON u.id = w.owner_id
 LEFT JOIN workspace_plans wp ON wp.workspace_id = a.workspace_id AND wp.plan = 'custom'
-WHERE (sqlc.arg('status')::text = '' OR a.status = sqlc.arg('status')::text)
+WHERE (sqlc.arg('status')::text = '' OR a.status = sqlc.arg('status')::text
+       OR (sqlc.arg('status')::text = 'lapsed' AND a.status = 'stopped' AND a.lapsed_at IS NOT NULL))
   AND (sqlc.narg('before_id')::uuid IS NULL OR a.id < sqlc.narg('before_id')::uuid)
   AND (sqlc.arg('q')::text = ''
     OR a.id::text = sqlc.arg('q')::text OR a.workspace_id::text = sqlc.arg('q')::text

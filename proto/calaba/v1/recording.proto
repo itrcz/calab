@@ -25,7 +25,8 @@ message RoomRecording {
   string by_user_id = 5; // who started it (empty if that account is gone)
   google.protobuf.Timestamp since = 6; // when it started: clients count the REC timer from it
   // STOPPED only: why — "user" (POST …/recording/stop), "empty" (nobody in the call for
-  // 2 min), "max_duration" (4 h), "disabled" (recording forbidden in the room), "egress"
+  // 2 min), "max_duration" (4 h), "disabled" (recording forbidden in the room),
+  // "plan_inactive" (the workspace plan stopped being active, ADR-0086 amendment 1), "egress"
   // (the recorder ended by itself, e.g. the call ended), "lost" (the recorder is gone).
   string stop_reason = 7;
   string stopped_by = 8; // "user": who stopped it

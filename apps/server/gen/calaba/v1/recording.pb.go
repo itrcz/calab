@@ -143,7 +143,8 @@ type RoomRecording struct {
 	ByUserId    string                 `protobuf:"bytes,5,opt,name=by_user_id,json=byUserId,proto3" json:"by_user_id,omitempty"` // who started it (empty if that account is gone)
 	Since       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=since,proto3" json:"since,omitempty"`                         // when it started: clients count the REC timer from it
 	// STOPPED only: why — "user" (POST …/recording/stop), "empty" (nobody in the call for
-	// 2 min), "max_duration" (4 h), "disabled" (recording forbidden in the room), "egress"
+	// 2 min), "max_duration" (4 h), "disabled" (recording forbidden in the room),
+	// "plan_inactive" (the workspace plan stopped being active, ADR-0086 amendment 1), "egress"
 	// (the recorder ended by itself, e.g. the call ended), "lost" (the recorder is gone).
 	StopReason    string `protobuf:"bytes,7,opt,name=stop_reason,json=stopReason,proto3" json:"stop_reason,omitempty"`
 	StoppedBy     string `protobuf:"bytes,8,opt,name=stopped_by,json=stoppedBy,proto3" json:"stopped_by,omitempty"` // "user": who stopped it

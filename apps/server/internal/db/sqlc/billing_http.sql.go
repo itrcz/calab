@@ -258,6 +258,64 @@ func (q *Queries) GetBillingRefundRequestByRequest(ctx context.Context, arg GetB
 	return i, err
 }
 
+const listBillingAccountsLapsingSoon = `-- name: ListBillingAccountsLapsingSoon :many
+SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts
+WHERE status = 'stopped' AND lapsed_at IS NULL AND workspace_id IS NOT NULL
+  AND next_due_at > $1::timestamptz AND next_due_at <= $2::timestamptz
+ORDER BY next_due_at
+LIMIT $3
+`
+
+type ListBillingAccountsLapsingSoonParams struct {
+	Now   time.Time
+	Until time.Time
+	Lim   int32
+}
+
+// Stopped accounts whose last paid day ends within (now, until] and which are not lapsed yet: the
+// «tomorrow the plan stops being active» heads-up (sent only when the usage does not fit Free).
+func (q *Queries) ListBillingAccountsLapsingSoon(ctx context.Context, arg ListBillingAccountsLapsingSoonParams) ([]BillingAccount, error) {
+	rows, err := q.db.Query(ctx, listBillingAccountsLapsingSoon, arg.Now, arg.Until, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingAccount{}
+	for rows.Next() {
+		var i BillingAccount
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Market,
+			&i.Currency,
+			&i.Provider,
+			&i.Plan,
+			&i.Status,
+			&i.BalanceMinor,
+			&i.EntrySeq,
+			&i.NegativeSince,
+			&i.SuspendAt,
+			&i.NextDueAt,
+			&i.HoldUntil,
+			&i.DisputeHold,
+			&i.DiscountBps,
+			&i.Revision,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ClosedAt,
+			&i.LapsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingAccountsSuspendingSoon = `-- name: ListBillingAccountsSuspendingSoon :many
 SELECT id, workspace_id, market, currency, provider, plan, status, balance_minor, entry_seq, negative_since, suspend_at, next_due_at, hold_until, dispute_hold, discount_bps, revision, created_by, created_at, updated_at, closed_at, lapsed_at FROM billing_accounts
 WHERE suspend_at > $1::timestamptz AND suspend_at <= $2::timestamptz

@@ -327,6 +327,8 @@ export const ruBilling = {
   'adminBilling.search': 'Пространство или почта',
   'adminBilling.accounts': 'Счета',
   'adminBilling.none': 'Счетов не найдено',
+  'adminBilling.filter': 'Фильтр счетов',
+  'adminBilling.filter.all': 'Все',
   'adminBilling.pick': 'Выберите счёт в списке',
   'adminBilling.deletedWs': 'Пространство удалено',
   'adminBilling.closed': 'Закрыт',

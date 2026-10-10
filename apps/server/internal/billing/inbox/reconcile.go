@@ -91,6 +91,15 @@ func (in *Inbox) Reconcile(ctx context.Context) {
 				slog.WarnContext(ctx, "billing reconcile: mail", "account", acc.ID, "err", err)
 			}
 		}
+		lapsing, err := in.db.Q.ListBillingAccountsLapsingSoon(ctx, sqlc.ListBillingAccountsLapsingSoonParams{Now: now, Until: now.Add(billing.Day), Lim: reconcileBatch})
+		if err != nil {
+			slog.WarnContext(ctx, "billing reconcile: lapsing soon", "err", err)
+		}
+		for _, acc := range lapsing {
+			if err := in.Mail.LapseSoon(ctx, acc); err != nil {
+				slog.WarnContext(ctx, "billing reconcile: lapse mail", "account", acc.ID, "err", err)
+			}
+		}
 	}
 }
 

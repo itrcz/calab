@@ -325,6 +325,8 @@ export const zhBilling: DictShape<typeof ruBilling> = {
   'adminBilling.search': '空间或所有者邮箱',
   'adminBilling.accounts': '账户',
   'adminBilling.none': '未找到账户',
+  'adminBilling.filter': '筛选账户',
+  'adminBilling.filter.all': '全部',
   'adminBilling.pick': '在列表中选择账户',
   'adminBilling.deletedWs': '空间已删除',
   'adminBilling.closed': '已关闭',

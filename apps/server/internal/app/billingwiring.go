@@ -47,6 +47,9 @@ type billingRuntime struct {
 	// AutoTopup runs the off-session attempts (T7); its recovery runs whenever billing is on,
 	// new attempts only with BILLING_AUTO_TOPUP_ENABLED.
 	AutoTopup *autotopup.Job
+	// onLapsed is told about a workspace in the restricted mode after a committed change (the
+	// running meeting recording stops, ADR-0086 amendment 1); set by app.New once recording exists.
+	onLapsed func(ctx context.Context, workspace uuid.UUID)
 }
 
 // newBilling wires the providers (BILLING_PROVIDERS; Stripe when BILLING_STRIPE_ENABLED), the
@@ -103,8 +106,14 @@ func newBilling(d Deps, planSvc *plans.Service, pub events.Publisher, mailSvc *m
 		rt.Clock = testClock
 	}
 	notifier := inbox.NewNotifier(d.DB, mailSvc, d.Config.PublicAppURL)
+	if notifier != nil {
+		notifier.Enforced = b.EnforcementEnabled
+		notifier.FreeBlockers = func(ctx context.Context, ws uuid.UUID) ([]*v1.PlanLimitViolation, error) {
+			return planSvc.FreeViolations(ctx, d.DB.Q, ws)
+		}
+	}
 	committed := func(ctx context.Context, acc sqlc.BillingAccount) {
-		billingCommitted(ctx, d, planSvc, pub, notifier, acc)
+		billingCommitted(ctx, d, planSvc, pub, notifier, acc, rt.onLapsed)
 		if rt.AutoTopup != nil {
 			rt.AutoTopup.Wake() // a renewal debit may have lowered the balance
 		}
@@ -242,7 +251,7 @@ func resolveStripeAccount(ctx context.Context, p *stripe.Provider) {
 // plan edit; never inside the core's transaction, which holds the account lock), the plan
 // cache, the members' Workspace.billing (WORKSPACE_UPDATE, no amounts), the owner's
 // BILLING_UPDATE and the owner mails of the new state (debt started, suspended).
-func billingCommitted(ctx context.Context, d Deps, planSvc *plans.Service, pub events.Publisher, n *inbox.Notifier, acc sqlc.BillingAccount) {
+func billingCommitted(ctx context.Context, d Deps, planSvc *plans.Service, pub events.Publisher, n *inbox.Notifier, acc sqlc.BillingAccount, onLapsed func(context.Context, uuid.UUID)) {
 	if acc.WorkspaceID == nil {
 		return
 	}
@@ -254,6 +263,11 @@ func billingCommitted(ctx context.Context, d Deps, planSvc *plans.Service, pub e
 	}
 	if err := planSvc.BillingChanged(ctx, d.DB.Q, pub, wsID); err != nil {
 		slog.WarnContext(ctx, "billing: committed: workspace update", "workspace", wsID, "err", err)
+	}
+	if onLapsed != nil {
+		if lapsed, err := planSvc.Lapsed(ctx, wsID); err == nil && lapsed {
+			onLapsed(ctx, wsID)
+		}
 	}
 	ws, err := d.DB.Q.GetWorkspace(ctx, wsID)
 	if err != nil {

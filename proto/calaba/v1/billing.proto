@@ -626,6 +626,8 @@ message AdminBillingAccount {
   uint32 billable_members = 18;
   string provider = 19;        // provider id of the market ("stripe")
   string plan_display_name = 20; // PLAN_CUSTOM: the name members see (empty = «Индивидуальный»)
+  bool lapsed = 21;              // stopped, the paid days over, usage over Free: «тариф не активен» (ADR-0086 amendment 1)
+  google.protobuf.Timestamp lapsed_at = 22; // since when; set with lapsed
 }
 
 // GET /api/admin/billing/accounts/{id}

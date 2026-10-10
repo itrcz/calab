@@ -157,15 +157,18 @@ func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (wsRoom, *v1.R
 
 // lapsed reports the restricted mode of a workspace for the LiveKit grants: the bits lose STREAM
 // and VIDEO (perm.PlanInactive), so no screen share and no camera sources (ADR-0086 amendment).
-// A read error keeps the grant as it is (the API routes that hand out these sources are refused
-// by the identity gate anyway).
+// A read error fails closed: the grant is the restricted one (microphone only) until the next
+// sync reads the plan — a short-lived loss of camera / screen beats keeping them in a workspace
+// that may be restricted. A user who is not restricted gets the full grant back on the next
+// permission sync (any role / membership change, rejoin).
 func (s *Service) lapsed(ctx context.Context, wid uuid.UUID) bool {
 	if s.Plans == nil {
 		return false
 	}
 	l, err := s.Plans.Lapsed(ctx, wid)
 	if err != nil {
-		slog.WarnContext(ctx, "read plan state for the voice grant", "workspace", wid, "err", err)
+		slog.WarnContext(ctx, "read plan state for the voice grant, granting the microphone only", "workspace", wid, "err", err)
+		return true
 	}
 	return l
 }

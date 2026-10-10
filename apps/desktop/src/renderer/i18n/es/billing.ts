@@ -325,6 +325,8 @@ export const esBilling: DictShape<typeof ruBilling> = {
   'adminBilling.search': 'Espacio o correo',
   'adminBilling.accounts': 'Cuentas',
   'adminBilling.none': 'No se encontraron cuentas',
+  'adminBilling.filter': 'Filtrar cuentas',
+  'adminBilling.filter.all': 'Todas',
   'adminBilling.pick': 'Elige una cuenta de la lista',
   'adminBilling.deletedWs': 'Espacio eliminado',
   'adminBilling.closed': 'Cerrada',

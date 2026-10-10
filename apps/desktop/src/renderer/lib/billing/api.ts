@@ -117,6 +117,8 @@ export interface AdminListQuery {
   cursor?: string;
   /** refund-requests: only REQUESTED ones; events: only failed ones. */
   open?: boolean;
+  /** accounts: only «тариф не активен» ones (a stopped account in the restricted mode). */
+  lapsed?: boolean;
 }
 
 export interface AdminBillingApi {
@@ -181,7 +183,7 @@ export const restOwnerApi: OwnerBillingApi = {
 };
 
 const listQs = (q: AdminListQuery): string =>
-  qs({ q: q.q, account_id: q.accountId, cursor: q.cursor, ...(q.open ? { open: 'true' } : {}) });
+  qs({ q: q.q, account_id: q.accountId, cursor: q.cursor, ...(q.open ? { open: 'true' } : {}), ...(q.lapsed ? { status: 'lapsed' } : {}) });
 
 export const restAdminApi: AdminBillingApi = {
   accounts: (q, signal) => call('GET', `${A}/accounts${listQs(q)}`, AdminBillingAccountsSchema, undefined, signal),

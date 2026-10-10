@@ -2,10 +2,13 @@ package inbox
 
 import (
 	"context"
+	"log/slog"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/billing/core"
 	billingmoney "github.com/calaba/calaba/server/internal/billing/money"
 	"github.com/calaba/calaba/server/internal/db"
@@ -26,6 +29,13 @@ type Notifier struct {
 	db     *db.DB
 	mail   Mailer
 	appURL string // the link of every billing mail (PUBLIC_APP_URL)
+
+	// Enforced: BILLING_ENFORCEMENT_ENABLED. Without it a lapsed account acts as plain Free
+	// (plans.Info), so «the plan is not active» mails would be false: none are sent.
+	Enforced bool
+	// FreeBlockers lists what keeps a workspace from fitting Free (plans.Service.FreeViolations),
+	// worded for the mail. nil = the mail goes without the list.
+	FreeBlockers func(ctx context.Context, ws uuid.UUID) ([]*v1.PlanLimitViolation, error)
 }
 
 // NewNotifier creates the notifier; nil when mail is disabled (every method is a no-op on nil).
@@ -37,12 +47,12 @@ func NewNotifier(d *db.DB, m Mailer, appURL string) *Notifier {
 }
 
 // ManagersCopied reports the warnings that need someone to act — a debt started, the suspension near or
-// done, a failed or blocked auto-topup — go to the BILLING_MANAGE holders too (ADR-0087); the
+// done, the plan not active (or about to be), a failed or blocked auto-topup — go to the BILLING_MANAGE holders too (ADR-0087); the
 // rest (payment received, refund, dispute) stays the owner's.
 func ManagersCopied(t mail.Template) bool {
 	switch t {
 	case mail.TemplateBillingDebtStarted, mail.TemplateBillingSuspendSoon, mail.TemplateBillingSuspended,
-		mail.TemplateBillingAutoTopupFailed, mail.TemplateBillingAutoTopupActionRequired:
+		mail.TemplateBillingLapsed, mail.TemplateBillingLapseSoon, mail.TemplateBillingAutoTopupFailed, mail.TemplateBillingAutoTopupActionRequired:
 		return true
 	}
 	return false
@@ -53,6 +63,11 @@ func ManagersCopied(t mail.Template) bool {
 // The caller's transaction must hold the account lock (so two notifications of one key cannot
 // race); the mail commits or rolls back with it.
 func (n *Notifier) Notify(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, key string, t mail.Template, p mail.Params) error {
+	return n.notify(ctx, q, acc, key, t, p, nil)
+}
+
+// notify is Notify with per: extra params worded for each recipient's locale (nil = none).
+func (n *Notifier) notify(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, key string, t mail.Template, p mail.Params, per func(locale string) mail.Params) error {
 	if n == nil || acc.WorkspaceID == nil {
 		return nil
 	}
@@ -95,7 +110,12 @@ func (n *Notifier) Notify(ctx context.Context, q *sqlc.Queries, acc sqlc.Billing
 	}
 	var first uuid.UUID // billing_notifications points at the first mail (the owner's when they have an e-mail)
 	for _, r := range to {
-		id, err := n.mail.EnqueueFinancial(ctx, q, mail.Mail{To: r.Email, Template: t, Locale: r.Locale, Params: params, TTL: mail.FinancialTTL})
+		rp := params
+		if per != nil {
+			rp = maps.Clone(params)
+			maps.Copy(rp, per(r.Locale))
+		}
+		id, err := n.mail.EnqueueFinancial(ctx, q, mail.Mail{To: r.Email, Template: t, Locale: r.Locale, Params: rp, TTL: mail.FinancialTTL})
 		if err != nil {
 			return err
 		}
@@ -112,6 +132,10 @@ func (n *Notifier) Notify(ctx context.Context, q *sqlc.Queries, acc sqlc.Billing
 
 // NotifyTx is Notify in its own transaction (locks the account).
 func (n *Notifier) NotifyTx(ctx context.Context, accountID uuid.UUID, key string, t mail.Template, p mail.Params) error {
+	return n.notifyTx(ctx, accountID, key, t, p, nil)
+}
+
+func (n *Notifier) notifyTx(ctx context.Context, accountID uuid.UUID, key string, t mail.Template, p mail.Params, per func(locale string) mail.Params) error {
 	if n == nil {
 		return nil
 	}
@@ -120,7 +144,7 @@ func (n *Notifier) NotifyTx(ctx context.Context, accountID uuid.UUID, key string
 		if err != nil {
 			return err
 		}
-		return n.Notify(ctx, q, acc, key, t, p)
+		return n.notify(ctx, q, acc, key, t, p, per)
 	})
 	if err == nil {
 		n.mail.Wake()
@@ -133,6 +157,12 @@ func (n *Notifier) NotifyTx(ctx context.Context, accountID uuid.UUID, key string
 func (n *Notifier) StateChanged(ctx context.Context, acc sqlc.BillingAccount) error {
 	if n == nil {
 		return nil
+	}
+	if core.Lapsed(acc) && n.Enforced && acc.WorkspaceID != nil {
+		// The restricted mode started (once per episode: the key is the moment it began).
+		if err := n.notifyTx(ctx, acc.ID, "lapsed:"+stamp(*acc.LapsedAt), mail.TemplateBillingLapsed, nil, n.blockers(ctx, *acc.WorkspaceID)); err != nil {
+			return err
+		}
 	}
 	debt := ""
 	if acc.BalanceMinor < 0 {
@@ -147,6 +177,36 @@ func (n *Notifier) StateChanged(ctx context.Context, acc sqlc.BillingAccount) er
 		})
 	}
 	return nil
+}
+
+// blockers words what does not fit Free per recipient locale; nil when unknown (the mail then
+// goes without the list: it still says what happened).
+func (n *Notifier) blockers(ctx context.Context, ws uuid.UUID) func(locale string) mail.Params {
+	if n.FreeBlockers == nil {
+		return nil
+	}
+	vs, err := n.FreeBlockers(ctx, ws)
+	if err != nil {
+		slog.WarnContext(ctx, "billing mail: what does not fit Free", "workspace", ws, "err", err)
+		return nil
+	}
+	return func(locale string) mail.Params { return mail.Params{"reasons": mail.FreeBlockers(locale, vs)} }
+}
+
+// LapseSoon mails the heads-up a day before the last paid day of a stopped account ends, when
+// the workspace does not fit Free (ADR-0086 amendment 1): once per end of the paid days. A
+// workspace that fits Free just moves to Free then, and nothing is said.
+func (n *Notifier) LapseSoon(ctx context.Context, acc sqlc.BillingAccount) error {
+	if n == nil || !n.Enforced || n.FreeBlockers == nil || acc.WorkspaceID == nil || acc.NextDueAt == nil ||
+		acc.Status != core.StatusStopped || acc.LapsedAt != nil {
+		return nil
+	}
+	vs, err := n.FreeBlockers(ctx, *acc.WorkspaceID)
+	if err != nil || len(vs) == 0 {
+		return err
+	}
+	return n.notifyTx(ctx, acc.ID, "lapse_soon:"+stamp(*acc.NextDueAt), mail.TemplateBillingLapseSoon, mail.Params{"deadline": deadline(*acc.NextDueAt)},
+		func(locale string) mail.Params { return mail.Params{"reasons": mail.FreeBlockers(locale, vs)} })
 }
 
 // Wake makes the mail worker send now.

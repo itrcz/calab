@@ -475,6 +475,17 @@ test('billing-admin: accounts list and the account page', async ({ page }) => {
   await tap(admin.getByRole('radio', { name: 'Оплата' }));
   await expect(admin.getByTestId('admin-billing-list')).toBeVisible();
   await checkpoint(s, 'billing-admin-list');
+  // «Тариф не активен» (ADR-0086 amendment 1): the filter leaves only the lapsed account, its page shows the pill.
+  await tap(admin.getByRole('radio', { name: 'Не активен' }));
+  await expect(admin.getByTestId('admin-billing-account')).toHaveCount(1);
+  await expect(admin.getByTestId('admin-billing-account').first()).toContainText('Quiet Co');
+  await checkpoint(s, 'billing-admin-lapsed-filter');
+  await tap(admin.getByTestId('admin-billing-account').first());
+  await expect(admin.getByTestId('admin-billing-detail')).toContainText('ops@quiet.test');
+  await checkpoint(s, 'billing-admin-lapsed-account');
+  if (isPhone()) await tap(admin.getByTestId('admin-billing-back'));
+  await tap(admin.getByRole('radio', { name: 'Все' }));
+  await expect(admin.getByTestId('admin-billing-account')).toHaveCount(6);
   await tap(admin.getByTestId('admin-billing-account').first());
   await expect(admin.getByTestId('admin-billing-actions')).toBeVisible();
   await checkpoint(s, 'billing-admin-account');

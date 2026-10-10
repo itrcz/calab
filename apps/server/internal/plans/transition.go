@@ -252,3 +252,13 @@ func (s *Service) OfferViolations(ctx context.Context, q *sqlc.Queries, ws uuid.
 	}
 	return out, nil
 }
+
+// FreeViolations is what keeps ws from fitting Free now (the mails of the restricted mode).
+func (s *Service) FreeViolations(ctx context.Context, q *sqlc.Queries, ws uuid.UUID) ([]*v1.PlanLimitViolation, error) {
+	u, err := ReadUsage(ctx, q, ws)
+	if err != nil {
+		return nil, err
+	}
+	lim, identity := s.TargetLimits("free")
+	return u.Violations(lim, identity), nil
+}
