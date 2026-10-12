@@ -1,0 +1,107 @@
+# Manual Windows smoke test of a released desktop build (TESTING.md «Windows smoke»).
+# Never part of required CI: we have no Windows machine, this is how a Windows crash is reproduced.
+#
+#   gh workflow run win-smoke.yml --ref <branch> -f version=3.1.2 [-f from=3.0.9]
+#
+# Installs Calab-Setup-<version>-x64.exe from the GitHub release silently (optionally over <from>,
+# which is launched first so the upgrade path sees an existing userData), launches it, simulates a
+# second instance + a mail deep link, and uploads main.log, crash dumps, stdout/stderr, the process
+# list and the Windows «Application Error» / WER events.
+name: win-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Released version to test (e.g. 3.1.2)'
+        required: true
+      from:
+        description: 'Optional: install and run this version first, then upgrade over it'
+        required: false
+        default: ''
+      wait:
+        description: 'Seconds to keep the app running per phase'
+        required: false
+        default: '60'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      FROM: ${{ inputs.from }}
+      WAIT: ${{ inputs.wait }}
+    steps:
+      - name: Smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = Join-Path $env:RUNNER_TEMP 'smoke'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $started = Get-Date
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Calab\Calab.exe'
+          $ud = Join-Path $env:APPDATA 'Calaba'   # default userData (src/main/index.ts), the real-user path
+
+          function Install-Calab([string]$v) {
+            $setup = Join-Path $env:RUNNER_TEMP "Calab-Setup-$v-x64.exe"
+            gh release download "v$v" -R $env:GITHUB_REPOSITORY -p "Calab-Setup-$v-x64.exe" -D $env:RUNNER_TEMP --clobber
+            $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+            "install $v exit=$($p.ExitCode) exe=$(Test-Path $exe)" | Tee-Object -Append (Join-Path $out 'summary.txt')
+          }
+
+          function Snapshot([string]$phase) {
+            Get-CimInstance Win32_Process -Filter "Name='Calab.exe'" |
+              Select-Object ProcessId, ParentProcessId, CommandLine |
+              Format-List | Out-File (Join-Path $out "processes-$phase.txt") -Width 4096
+            $n = @(Get-Process -Name Calab -ErrorAction SilentlyContinue).Count
+            "$phase alive processes=$n" | Tee-Object -Append (Join-Path $out 'summary.txt')
+          }
+
+          function Run-Phase([string]$phase) {
+            $p = Start-Process -FilePath $exe -ArgumentList '--enable-logging', '--v=0' -PassThru `
+              -RedirectStandardOutput (Join-Path $out "$phase-stdout.txt") -RedirectStandardError (Join-Path $out "$phase-stderr.txt")
+            Start-Sleep -Seconds ([int]$env:WAIT)
+            "$phase main pid=$($p.Id) exited=$($p.HasExited) exit=$(if ($p.HasExited) { '0x{0:X}' -f $p.ExitCode })" | Tee-Object -Append (Join-Path $out 'summary.txt')
+            Snapshot "$phase-after-start"
+            # Second instance with a deep link (Windows delivers deep links this way).
+            Start-Process -FilePath $exe -ArgumentList 'calab://mail/inbox' | Out-Null
+            Start-Sleep -Seconds 15
+            "$phase after deep link: main exited=$($p.HasExited) exit=$(if ($p.HasExited) { '0x{0:X}' -f $p.ExitCode })" | Tee-Object -Append (Join-Path $out 'summary.txt')
+            Snapshot "$phase-after-deeplink"
+            Get-Process -Name Calab -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 3
+            if (Test-Path $ud) { Copy-Item -Recurse -Force (Join-Path $ud 'logs') (Join-Path $out "$phase-logs") -ErrorAction SilentlyContinue }
+          }
+
+          if ($env:FROM) {
+            Install-Calab $env:FROM
+            Run-Phase "from-$env:FROM"
+          }
+          Install-Calab $env:VERSION
+          Run-Phase "v$env:VERSION"
+          # Same build again on the now-existing userData (second launch).
+          Run-Phase "v$env:VERSION-relaunch"
+
+          Get-ChildItem -Recurse $ud -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize |
+            Out-File (Join-Path $out 'userdata-tree.txt') -Width 4096
+          foreach ($provider in 'Application Error', 'Windows Error Reporting', 'Application Hang') {
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = $provider; StartTime = $started } -ErrorAction SilentlyContinue |
+              Format-List TimeCreated, Id, ProviderName, Message |
+              Out-File -Append (Join-Path $out 'events.txt') -Width 4096
+          }
+          Get-Content (Join-Path $out 'summary.txt')
+          if (Test-Path (Join-Path $out 'events.txt')) { Get-Content (Join-Path $out 'events.txt') | Select-String -Pattern 'Calab|Faulting|Exception|P1|P4' }
+          Get-ChildItem -Recurse -Filter main.log $out | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 80 }
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
+        with:
+          name: win-smoke-${{ inputs.version }}
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: warn
