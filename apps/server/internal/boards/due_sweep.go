@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/notifications"
 )
@@ -70,7 +71,10 @@ func dueDay(now time.Time, loc *time.Location) (pgtype.Date, bool) {
 
 // DeliverDueNotices claims and sends the due notices of today and returns how many went out.
 func (s *Service) DeliverDueNotices(ctx context.Context, loc *time.Location) (int, error) {
-	if _, err := s.db.Q.PurgeTaskDueNotices(ctx); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		_, err := guarded.PurgeTaskDueNotices(ctx)
+		return err
+	}); err != nil {
 		return 0, err
 	}
 	return s.DeliverDueNoticesAt(ctx, s.Now(), loc)
