@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
+import type { UpdateChannel } from '../../../shared/updateFeed';
 import { Avatar } from '../../components/Avatar';
 import { AvatarButtons } from '../../components/AvatarPicker';
 import { confirmAction } from '../../components/Confirm';
@@ -978,6 +979,18 @@ function DesktopAppCards({
             label={t('app.autoUpdate')}
             checked={settings?.autoUpdate ?? true}
             onChange={(v) => void save({ autoUpdate: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+          />
+        </Row>
+        {/* Both sources are pinned at build time (shared/updateFeed.ts); a change re-checks in main. */}
+        <Row label={t('app.updateChannel')} hint={t('app.updateChannelHint')}>
+          <Segmented<UpdateChannel>
+            label={t('app.updateChannel')}
+            value={settings?.updateChannel ?? 'github'}
+            options={[
+              { value: 'github', label: t('app.updateChannelGithub') },
+              { value: 's3', label: t('app.updateChannelS3') },
+            ]}
+            onChange={(v) => void save({ updateChannel: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
           />
         </Row>
       </Card>

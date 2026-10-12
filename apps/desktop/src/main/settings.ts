@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import type { AppSettings } from '../shared/ipc';
+import { DEFAULT_UPDATE_CHANNEL, parseUpdateChannel } from '../shared/updateFeed';
 
 /**
  * Device-level app settings (userData/settings.json). Configuration comes from
@@ -23,6 +24,8 @@ const DEFAULTS = (): AppSettings => ({
   autostart: false,
   autoUpdate: true,
   autoCheckUpdates: true,
+  // Installs from before 3.1.3 have no key: they get GitHub too (owner 12.10).
+  updateChannel: DEFAULT_UPDATE_CHANNEL,
   closeToTray: true,
   trayHintShown: false,
 });
@@ -44,6 +47,8 @@ export function getSettings(): AppSettings {
   cache = { ...DEFAULTS(), ...stored };
   // Retired setting (ADR-0075: vibrancy is always on): drop it from old files.
   delete (cache as unknown as Record<string, unknown>)['windowTranslucency'];
+  // A hand-edited / unknown value → the default (never a URL: the sources are pinned at build time).
+  cache.updateChannel = parseUpdateChannel(cache.updateChannel);
   // Explicit env wins over a stored value (tests, staging builds).
   if (process.env['CALABA_SERVER_URL']) cache.serverUrl = defaultServerUrl();
   return cache;

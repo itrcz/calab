@@ -52,7 +52,7 @@ import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
 import { setMenuState } from './appMenu';
 import { parseMenuState } from '../shared/menu';
-import { checkForUpdates, downloadUpdate, installUpdate, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
+import { checkForUpdates, downloadUpdate, installUpdate, updateChannelChanged, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
 import { hideTip, showTip } from './tipOverlay';
@@ -133,6 +133,11 @@ function parseSettings(v: unknown): Partial<AppSettings> {
   if (r['autostart'] !== undefined) out.autostart = Boolean(r['autostart']);
   if (r['autoUpdate'] !== undefined) out.autoUpdate = Boolean(r['autoUpdate']);
   if (r['autoCheckUpdates'] !== undefined) out.autoCheckUpdates = Boolean(r['autoCheckUpdates']);
+  // A channel name only — both sources are pinned at build time (shared/updateFeed.ts).
+  if (r['updateChannel'] !== undefined) {
+    if (r['updateChannel'] !== 'github' && r['updateChannel'] !== 's3') throw new Error('updateChannel must be github or s3');
+    out.updateChannel = r['updateChannel'];
+  }
   if (r['closeToTray'] !== undefined) out.closeToTray = Boolean(r['closeToTray']);
   return out;
 }
@@ -229,8 +234,10 @@ export function registerIpc(): void {
   handle(IPC.appSetSettings, (_e, a) => {
     if (obj(a)['serverUrl'] !== undefined) invalidateSsoServer();
     const patch = parseSettings(a);
+    const channelChanged = patch.updateChannel !== undefined && patch.updateChannel !== getSettings().updateChannel;
     const next = updateSettings(patch);
     if (patch.autoUpdate !== undefined || patch.autoCheckUpdates !== undefined) updateSettingsChanged();
+    if (channelChanged) updateChannelChanged();
     reloadIfServerChanged();
     return next;
   });

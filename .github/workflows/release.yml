@@ -269,11 +269,13 @@ jobs:
           { echo "sign=$sign"; echo "args=$args"; echo "trusted=$trusted"; } >> "$GITHUB_OUTPUT"
 
       # build:app = electron-vite build + build/.gen/THIRD-PARTY-NOTICES.txt (packaged as extraResources)
-      # MAIN_VITE_* are baked in at build time (main process): the update feed, and whether auto-install
+      # MAIN_VITE_* are baked in at build time (main process): the update sources (S3 feed + the GitHub
+      # repo of this release — «Источник обновлений», shared/updateFeed.ts), and whether auto-install
       # may be offered — only when THIS platform's build is really signed (client, electron-vite env).
       - name: build:app (electron-vite + third-party notices)
         env:
           MAIN_VITE_UPDATE_FEED: ${{ env.UPDATE_URL }}
+          MAIN_VITE_UPDATE_GITHUB: ${{ env.RELEASE_REPO }}
           MAIN_VITE_DEFAULT_SERVER_URL: ${{ env.APP_ORIGIN }}   # the host the preflight job checked
           MAIN_VITE_UPDATES_SIGNED: ${{ steps.sign.outputs.trusted == '1' && '1' || '' }}
         run: pnpm -F @calaba/desktop run build:app
@@ -340,6 +342,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -l dist-release
+          # The GitHub update channel (electron-updater `github` provider) resolves each url:/path: as an asset
+          # of this release: they must be bare file names. Only publish-s3 rewrites its own copies to releases/<ver>/.
+          if grep -EHn '^\s*(- url|path): *\S*/' dist-release/*.yml; then
+            echo "::error::latest*.yml file URLs must be bare asset names on the GitHub release"; exit 1
+          fi
           # update feeds are per channel: latest*.yml, or rc*/beta*/alpha* for prerelease versions
           ver=$(sed -n 's/^version: //p' dist-release/*-linux.yml | head -1); [[ -n "$ver" ]]
           # Always a DRAFT: publishing a release for a tag push with the Actions token fails with

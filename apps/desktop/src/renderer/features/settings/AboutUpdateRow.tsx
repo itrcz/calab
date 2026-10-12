@@ -15,6 +15,8 @@ import { updateAction, updateLabel } from './format';
  */
 export function AboutUpdateRow({ version }: { version: string }): ReactNode {
   const update = useSession((s) => s.update);
+  // «Источник обновлений» (Settings → «Основное»): shown next to the status, so «нет обновлений» says where it looked.
+  const channel = useSession((s) => s.settings?.updateChannel ?? 'github');
   const inVoice = useVoice((s) => s.roomId !== null);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -83,9 +85,21 @@ export function AboutUpdateRow({ version }: { version: string }): ReactNode {
     ) : (
       (line ?? undefined)
     );
+  // Not while nothing is checked (dev / self-built: 'disabled').
+  const source =
+    update.state === 'disabled' ? null : t('about.updateSource', { source: channel === 's3' ? t('app.updateChannelS3') : t('app.updateChannelGithub') });
+  const hintWithSource =
+    source === null ? hint : (
+      <span className="flex flex-col gap-0.5">
+        {hint ?? null}
+        <span data-testid="update-source">
+          {source}
+        </span>
+      </span>
+    );
 
   return (
-    <Row label={t('about.version', { v: version })} hint={hint}>
+    <Row label={t('about.version', { v: version })} hint={hintWithSource}>
       {action === 'install' && update.state === 'available' ? (
         <Button onClick={download} data-testid="update-install">
           {t('about.install', { v: update.version })}

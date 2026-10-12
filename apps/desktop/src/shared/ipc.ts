@@ -1,5 +1,6 @@
 import type { KeySource } from './keySource';
 import type { PttMode } from './pttGate';
+import type { UpdateChannel } from './updateFeed';
 
 /**
  * IPC contract between main and renderer (via preload). Keep it narrow:
@@ -285,6 +286,12 @@ export interface AppSettings {
   serverUrl: string;
   /** electron-updater generic feed URL; empty = updates off. */
   updateUrl: string;
+  /**
+   * «Источник обновлений» (owner 12.10): 'github' (default; GitHub Releases) or 's3' (the Calab
+   * feed, releases.calab.io). Both are pinned at build time (shared/updateFeed.ts); a file
+   * without the key reads as 'github'.
+   */
+  updateChannel: UpdateChannel;
   autostart: boolean;
   /**
    * «Автоматически обновлять» (default on): download in the background and install on restart /

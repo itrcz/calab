@@ -2,9 +2,17 @@
  * Update feed rules (security review M3, review pass 3 B1), pure for tests.
  *
  * Trust model:
- * - The build-time feed (MAIN_VITE_UPDATE_FEED, `https://releases.calab.io/` in release builds,
- *   empty in dev) is the ONLY feed an update may be downloaded and installed from automatically.
- *   It is baked into the bundle; neither the server, the renderer nor a runtime env can change it.
+ * - Two PINNED sources, both baked into the bundle at build time and never changeable by the
+ *   server, the renderer or a runtime env; only these may download and install automatically:
+ *   - «GitHub» (default, `updateChannel: 'github'`): electron-updater's `github` provider for the
+ *     repo MAIN_VITE_UPDATE_GITHUB (`itrcz/calab`, public, no token). It sees published releases
+ *     only — the draft release.yml creates is invisible until the lead publishes it.
+ *   - «Сервер Calab» (`'s3'`): the generic feed MAIN_VITE_UPDATE_FEED (`https://releases.calab.io/`,
+ *     the S3 bucket behind Caddy; https only).
+ *   Both serve the same signed artifacts from the same build; electron-updater checks the sha512
+ *   from latest*.yml (and the publisher on a signed Windows build), Squirrel.Mac the signature.
+ *   The user picks the channel (Settings → «Основное» → «Обновления»); one that is not baked in
+ *   falls back to the other (pinnedSource). Neither baked (dev / self-built) → no auto-install.
  * - The feed derived from the server the app is connected to is notify-only: it can at most show
  *   «Доступна версия X — Скачать», which opens a download page in the browser.
  *   `https://app.X[:port]` → `https://releases.X[:port]/` (the releases.<domain> vhost, see
@@ -13,6 +21,46 @@
  *   auto-install.
  * https only everywhere.
  */
+
+/** «Источник обновлений» (AppSettings.updateChannel). */
+export type UpdateChannel = 'github' | 's3';
+
+export const UPDATE_CHANNELS: readonly UpdateChannel[] = ['github', 's3'];
+export const DEFAULT_UPDATE_CHANNEL: UpdateChannel = 'github';
+
+/** A stored / sent value → a known channel (anything else → the default). */
+export function parseUpdateChannel(v: unknown): UpdateChannel {
+  return v === 'github' || v === 's3' ? v : DEFAULT_UPDATE_CHANNEL;
+}
+
+/** What electron-updater's setFeedURL gets. */
+export type FeedSource = { provider: 'generic'; url: string } | { provider: 'github'; owner: string; repo: string };
+
+/** Identity of a source (compares sources, logs). */
+export function feedKey(s: FeedSource): string {
+  return s.provider === 'github' ? `github:${s.owner}/${s.repo}` : s.url;
+}
+
+/** `owner/repo` (GitHub's allowed characters) → the github source, else null (empty, malformed). */
+export function githubSource(raw: string): FeedSource | null {
+  const m = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})$/.exec(raw.trim());
+  if (!m || m[2] === '.' || m[2] === '..') return null;
+  return { provider: 'github', owner: m[1] ?? '', repo: m[2] ?? '' };
+}
+
+/**
+ * The pinned source for the chosen channel: that channel when it is baked into the build, else the
+ * other pinned one; null when neither is (dev / self-built → notify-only).
+ */
+export function pinnedSource(channel: UpdateChannel, buildFeed: string | null, github: FeedSource | null): FeedSource | null {
+  const s3: FeedSource | null = buildFeed ? { provider: 'generic', url: buildFeed } : null;
+  return channel === 's3' ? (s3 ?? github) : (github ?? s3);
+}
+
+/** Human page of a source's releases (the notification / «Скачать» fallback when there is no server). */
+export function sourcePage(s: FeedSource): string {
+  return s.provider === 'github' ? `https://github.com/${s.owner}/${s.repo}/releases/latest` : s.url;
+}
 
 /** https URL with a trailing slash on the path, or null (empty, malformed, not https). */
 export function httpsFeed(raw: string): string | null {
@@ -55,9 +103,10 @@ export function feedUrl(serverUrl: string, override: string): string | null {
 
 /**
  * Human download page for the «Скачать» notification / «О программе» button (never a feed root):
- * `https://<server host>/download/` when an https server is set, else the build-time feed. null → none.
+ * `https://<server host>/download/` when an https server is set, else `fallback` (the pinned source's
+ * page, sourcePage). null → none.
  */
-export function downloadPage(serverUrl: string, buildFeed: string | null): string | null {
+export function downloadPage(serverUrl: string, fallback: string | null): string | null {
   const s = serverUrl.trim();
   if (s) {
     try {
@@ -67,5 +116,5 @@ export function downloadPage(serverUrl: string, buildFeed: string | null): strin
       // fall through to the build feed
     }
   }
-  return buildFeed;
+  return fallback;
 }
