@@ -29,6 +29,9 @@ describe('currentSection', () => {
   it('an open web app selects no section', () => {
     expect(currentSection({ home: false, boards: false, calendar: false, app: true })).toBeNull();
   });
+  it('«Почта» (ADR-0080) covers everything while on', () => {
+    expect(currentSection({ home: true, boards: true, calendar: true, app: true, mail: true })).toBe('mail');
+  });
 });
 
 describe('section memory', () => {

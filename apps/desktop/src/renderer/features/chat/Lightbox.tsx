@@ -11,6 +11,16 @@ import { toast } from '../../stores/toasts';
 import { dragOutAttrs, dragOutHandlers } from './imageDragOut';
 import { dimsOf, fitFrame, isTap, lightboxLayers, stepImage, type Dims, type LightboxImage, type LoadState } from '../../lib/lightbox';
 
+/** A URL image saved through the standard download path (main applies quarantine / Mark-of-the-Web). */
+function saveUrl(url: string, name: string): void {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
 
 /**
@@ -34,11 +44,16 @@ export function Lightbox({ images, index: start, onClose, onShowInChat }: { imag
   const closeOnBackdrop = (e: MouseEvent): void => {
     if (e.target === e.currentTarget && pressedOn.current === e.target) onClose();
   };
-  const download = (): void =>
+  const download = (): void => {
+    if (img.src) {
+      saveUrl(img.src, img.name);
+      return;
+    }
     void platform.files.download({ fileId: img.fileId, name: img.name }).then(
       () => toast.success(t('chat.downloaded', { name: img.name })),
       (e: unknown) => toast.fail(e, t('err.ctx.download')),
     );
+  };
   const gallery = images.length > 1;
   const electron = platform.kind === 'electron';
   const mac = electron && os === 'darwin';
@@ -128,8 +143,11 @@ function ImageStage({
   const [full, setFull] = useState<LoadState>('loading');
   const [thumbAspect, setThumbAspect] = useState<Dims | null>(null);
   const [natural, setNatural] = useState<Dims | null>(null);
-  const thumbSrc = useMediaUrl(thumbnailPath(img.fileId));
-  const fullSrc = useMediaUrl(filePath(img.fileId), () => setFull('error'));
+  // A ready URL (a mail attachment) has no thumbnail: the full image only.
+  const apiThumb = useMediaUrl(img.src ? null : thumbnailPath(img.fileId));
+  const apiFull = useMediaUrl(img.src ? null : filePath(img.fileId), () => setFull('error'));
+  const thumbSrc = img.src ? undefined : apiThumb;
+  const fullSrc = img.src ?? apiFull;
   const known = dimsOf(img.width, img.height) ?? natural;
   const frame = fitFrame(known ?? thumbAspect, !!known);
   const layers = lightboxLayers(thumb, full);
@@ -200,7 +218,7 @@ function ImageStage({
           />
         ) : null}
         {fullSrc && layers.full ? (
-          <img src={fullSrc} alt={img.name} {...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime })} {...dragOutHandlers} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
+          <img src={fullSrc} alt={img.name} {...(img.src ? { draggable: false } : { ...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime }), ...dragOutHandlers })} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
         ) : null}
         {layers.spinner ? (
           <span className="absolute inset-0 grid place-items-center">

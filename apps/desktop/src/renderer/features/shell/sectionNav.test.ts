@@ -1,6 +1,7 @@
 import { WorkspaceRole } from '@calaba/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useBoardsUi } from '../../stores/boardsUi';
+import { useMailUi } from '../../stores/mailUi';
 import { HOME } from '../../stores/dms';
 import { useSections } from '../../stores/sections';
 import { useUi } from '../../stores/ui';
@@ -16,6 +17,7 @@ const entry = (id: string, role = WorkspaceRole.MEMBER) => ({ ws: { id, name: id
 describe('desktop sections (ADR-0074)', () => {
   beforeEach(async () => {
     useBoardsUi.setState({ active: false });
+    useMailUi.setState({ active: false });
     useWebApps.setState({ open: null });
     useWorkspaces.setState({ order: ['a', 'b', 'g'], byId: { a: entry('a'), b: entry('b'), g: entry('g', WorkspaceRole.GUEST) } });
     useUi.setState({ activeWorkspaceId: 'a', calDay: null, calEvent: null, miniCal: false, lastRoom: { a: 'r1', b: 'r2' } });
@@ -76,6 +78,26 @@ describe('desktop sections (ADR-0074)', () => {
     useWebApps.setState({ open: 'app1' });
     openSection('chats');
     expect(useWebApps.getState().open).toBeNull();
+  });
+
+  it('«Почта» is personal and exclusive: rooms, days, boards and other sections leave it (ADR-0080 §8)', async () => {
+    openSection('mail');
+    expect(useMailUi.getState().active).toBe(true);
+    expect(useUi.getState().activeWorkspaceId).toBe('a');
+    await settle();
+    expect(useSections.getState().of).toEqual({});
+    useUi.getState().openRoom('a', 'r1');
+    expect(useMailUi.getState().active).toBe(false);
+    openSection('mail');
+    useBoardsUi.getState().setActive(true);
+    expect(useMailUi.getState().active).toBe(false);
+    openSection('mail');
+    openSection('calendar');
+    expect(useMailUi.getState().active).toBe(false);
+    expect(useUi.getState().calDay).not.toBeNull();
+    openSection('mail');
+    useWebApps.getState().setOpen('app1');
+    expect(useMailUi.getState().active).toBe(false);
   });
 
   it('a navigation that flips several flags remembers only where it ends', async () => {

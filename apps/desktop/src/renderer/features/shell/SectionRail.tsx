@@ -6,6 +6,8 @@ import {
   BoardsIdleIcon,
   CalendarActiveIcon,
   CalendarIdleIcon,
+  MailActiveIcon,
+  MailIdleIcon,
   PersonalActiveIcon,
   PersonalIdleIcon,
   TeamActiveIcon,
@@ -25,6 +27,9 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useOpenApp } from '../../stores/webApps';
+import { inboxUnread, useMail } from '../../stores/mail';
+import { useMailUi } from '../../stores/mailUi';
+import { mailAvailable } from '../mail/api';
 import { useWorkspaces } from '../../stores/workspaces';
 import { useHomeDrop } from '../notes/HomeDrop';
 import { WorkspaceAppsColumn } from '../webapps/AppRail';
@@ -62,6 +67,8 @@ export function SectionRail(): ReactNode {
         {local ? <DmsTile active={section === 'dms'} /> : null}
         {ws && !guestWs ? <CalendarTile active={section === 'calendar'} /> : null}
         {ws && !guestWs ? <BoardsTile ws={ws} active={section === 'boards'} /> : null}
+        {/* «Почта» (ADR-0080 §8): personal, desktop app only — after «Доски», with or without a workspace. */}
+        {MAIL ? <MailTile active={section === 'mail'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
       </nav>
@@ -74,9 +81,13 @@ function useSection(ws: string | null): Section | null {
   const home = useUi((s) => s.activeWorkspaceId === HOME);
   const calendar = useUi((s) => s.calDay !== null);
   const boards = useBoardsUi((s) => s.active);
+  const mail = useMailUi((s) => s.active);
   const app = useOpenApp(home ? null : ws) !== null;
-  return currentSection({ home, boards, calendar, app });
+  return currentSection({ home, boards, calendar, app, mail });
 }
+
+/** Resolved once per page load (the API never appears later). */
+const MAIL = mailAvailable();
 
 /** The hairline above the web apps: drawn by the apps column, only when it has something to show. */
 const APPS_LINE = <div className="my-1 h-px w-8 shrink-0 bg-line" aria-hidden />;
@@ -89,6 +100,7 @@ const TEAM: NavIcons = [TeamIdleIcon, TeamActiveIcon];
 const PERSONAL: NavIcons = [PersonalIdleIcon, PersonalActiveIcon];
 const CALENDAR: NavIcons = [CalendarIdleIcon, CalendarActiveIcon];
 const BOARDS: NavIcons = [BoardsIdleIcon, BoardsActiveIcon];
+const MAIL_ICONS: NavIcons = [MailIdleIcon, MailActiveIcon];
 
 function NavIcon({ icons, active, className }: { icons: NavIcons; active: boolean; className: string }): ReactNode {
   const Icon = icons[active ? 1 : 0];
@@ -251,6 +263,20 @@ const BoardsTile = memo(function BoardsTile({ ws, active }: { ws: string; active
     <Slot active={active}>
       <Tip label={label} side="right">
         <TileButton section="boards" icons={BOARDS} name={unread > 0 ? plural('boards.unreadCount', unread) : label} active={active} count={unread} tone="accent" testId="section-boards" />
+      </Tip>
+    </Slot>
+  );
+});
+
+/** «Почта» (ADR-0080 §8): the red count is the unread mail in the inboxes of every account (one number). */
+const MailTile = memo(function MailTile({ active }: { active: boolean }): ReactNode {
+  useLocale();
+  const unread = useMail(inboxUnread);
+  const label = t('mbox.section');
+  return (
+    <Slot active={active}>
+      <Tip label={label} side="right">
+        <TileButton section="mail" icons={MAIL_ICONS} name={unread > 0 ? plural('mbox.unreadCount', unread) : label} active={active} count={unread} testId="section-mail" />
       </Tip>
     </Slot>
   );

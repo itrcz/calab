@@ -69,3 +69,25 @@ export function BoardsIdleIcon({ className }: IconProps): ReactNode {
     </svg>
   );
 }
+
+// «Почта» (ADR-0080 §8): drawn to match the set — the same 3…41 frame with radius 6 and 2-unit
+// lines as «Доски»; idle = outline envelope, active = filled with the flap cut out.
+export function MailIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <rect x="4" y="9" width="36" height="26" rx="5" />
+      <path d="M6.5 12.5L20.1 22.6C21.23 23.44 22.77 23.44 23.9 22.6L37.5 12.5" />
+    </svg>
+  );
+}
+
+export function MailActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
+      <path
+        fillRule="evenodd"
+        d="M9 8C5.69 8 3 10.69 3 14V30C3 33.31 5.69 36 9 36H35C38.31 36 41 33.31 41 30V14C41 10.69 38.31 8 35 8H9ZM7.7 12.2C7.04 11.71 6.11 11.85 5.62 12.51C5.13 13.18 5.27 14.11 5.94 14.6L19.21 24.45C20.87 25.68 23.13 25.68 24.79 24.45L38.06 14.6C38.73 14.11 38.87 13.18 38.38 12.51C37.89 11.85 36.96 11.71 36.3 12.2L23.02 22.04C22.42 22.49 21.58 22.49 20.98 22.04L7.7 12.2Z"
+      />
+    </svg>
+  );
+}

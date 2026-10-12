@@ -14,6 +14,9 @@ import { useVoice } from '../stores/voice';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { IS_MAC } from './hotkeys';
 import { voice } from './voice';
+import { useMail } from '../stores/mail';
+import { useMailUi } from '../stores/mailUi';
+import { composeNew } from '../features/mail/actions';
 
 /**
  * The macOS menu bar / Dock menu (docs/08 «Меню macOS», shared/menu.ts): pushes a small state
@@ -103,6 +106,11 @@ export function runMenuAction(a: MenuAction): void {
       ui.openDialog({ kind: 'settings', tab: 'hotkeys' });
       return;
     case 'new-message':
+      // ⌘N in «Почта» is a new letter (ADR-0080 §8, Apple Mail).
+      if (useMailUi.getState().active) {
+        if (useMail.getState().accountIds.length) composeNew();
+        return;
+      }
       if (!localAuthority(useSession.getState().authority)) return;
       ui.openDialog({ kind: 'new-dm' });
       return;

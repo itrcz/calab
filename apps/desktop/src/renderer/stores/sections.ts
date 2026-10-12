@@ -26,7 +26,7 @@ function record(): void {
   const ws = ui.activeWorkspaceId;
   if (!ws || ws === HOME) return;
   const section = currentSection({ home: false, boards: useBoardsUi.getState().active, calendar: ui.calDay !== null });
-  if (section === null || section === 'dms') return;
+  if (section === null || section === 'dms' || section === 'mail') return;
   const s = useSections.getState();
   const of = rememberSection(s.of, ws, section);
   if (of !== s.of || s.lastWs !== ws) useSections.setState({ of, lastWs: ws });

@@ -51,6 +51,8 @@ import { useOpenApp } from '../../stores/webApps';
 import { StreamPopout } from '../voice/StreamArea';
 import { SearchResultsPanel } from '../search/SearchResultsPanel';
 import { useSearchPanel } from '../../stores/searchPanel';
+import { useMailUi } from '../../stores/mailUi';
+import { MAIL_ENABLED, MailScreenLazy, startMail } from '../mail/boot';
 
 export function AppShell(): ReactNode {
   return (
@@ -98,6 +100,9 @@ function ShellLayout(): ReactNode {
   // «Результаты поиска» (ADR-0062 §4): the right panel in place of the members list.
   const searchOpen = useSearchPanel((s) => s.open);
   const searchSeq = useSearchPanel((s) => s.seq);
+  // «Почта» (ADR-0080 §8): personal and local — it covers the column and the centre whatever the
+  // workspace, and does not wait for the Calab server (the mail engine is on this computer).
+  const mailOn = useMailUi((s) => s.active) && MAIL_ENABLED;
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -110,6 +115,7 @@ function ShellLayout(): ReactNode {
   useEffect(() => installPresenceTimer(), []);
   useEffect(() => installEmail(), []);
   useEffect(() => installWebApps(), []);
+  useEffect(() => startMail(), []);
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   useEffect(() => (ready ? whenIdle(() => preloadWindows(superadmin)) : undefined), [ready, superadmin]);
 
@@ -149,7 +155,9 @@ function ShellLayout(): ReactNode {
           rail and the column. */}
       <div className="mat-rail relative flex min-h-0 flex-1">
         <SectionRail />
-        {!ready ? (
+        {mailOn ? (
+          <MailScreenLazy.Component />
+        ) : !ready ? (
           <div className="mat-content grid flex-1 place-items-center mobile:px-6">
             <div className="flex flex-col items-center gap-3 text-body text-muted">
               <Spinner className="size-6" />
@@ -214,7 +222,7 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || (calDay !== null && !guestWs)} /> : null}
+        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>

@@ -4,7 +4,7 @@ import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
@@ -59,6 +59,8 @@ import { MyStickersCard } from './MyStickersCard';
 import { BirthdaySettings } from './BirthdaySettings';
 import { RemindersCard } from '../calendar/RemindersCard';
 import { CalendarTab } from './CalendarSettings';
+import { MailTab } from './MailSettings';
+import { MAIL_ENABLED } from '../mail/boot';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -77,6 +79,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     // Settings → Календарь (ADR-0041): work hours, the external CalDAV calendar; not for guests.
     ...(guest ? [] : [{ id: 'calendar', label: t('settings.calendar'), icon: CalendarDays, content: <CalendarTab /> }]),
+    // Settings → Почта (ADR-0080 §8): the local mail client — desktop app only.
+    ...(MAIL_ENABLED ? [{ id: 'mail', label: t('mbox.section'), icon: Mail, content: <MailTab />, keywords: t('mbox.settings.keywords') }] : []),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
     // «OAuth-приложения» (ADR-0054): near the end — rarely needed; Business only (PlanLock).

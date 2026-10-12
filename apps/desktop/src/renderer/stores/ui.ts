@@ -8,6 +8,7 @@ import { useRooms } from './rooms';
 import type { LightboxImage } from '../lib/lightbox';
 import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
+import { leaveMail } from './mailUi';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -173,6 +174,7 @@ export const useUi = create<UiState>()(
       openCalendarDay: (day, eventKey) =>
         set((s) => {
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+          leaveMail();
           return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), membersOverlay: false, editing: null };
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
@@ -181,6 +183,7 @@ export const useUi = create<UiState>()(
         set((s) => {
           // A click on a workspace (the open one too) leads back to its rooms (ADR-0050 §3).
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+          leaveMail();
           return {
           calDay: null,
           calEvent: null,
@@ -194,6 +197,7 @@ export const useUi = create<UiState>()(
           // a web app (ADR-0050).
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+          leaveMail();
           return {
           calDay: null,
           calEvent: null,
@@ -264,6 +268,7 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   const r = step(s.history, here(s), dir, reachable);
   if (!r) return {};
   if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+  leaveMail();
   const { ws, room } = r.to;
   return {
     calDay: null,

@@ -4,19 +4,25 @@ import { showsUnread } from '../stores/rooms';
 
 /**
  * The sections of the desktop rail (ADR-0074): the phone's tabs (ADR-0073) except «Профиль» —
- * «Команда», «Личные», «Календарь», «Доски». Pure helpers: which section is on screen, the section
- * remembered per workspace, the workspace the sections work in, and the rail / switcher badges.
+ * «Команда», «Личные», «Календарь», «Доски» — and the desktop-only «Почта» (ADR-0080 §8, Electron
+ * only, no phone tab). Pure helpers: which section is on screen, the section remembered per
+ * workspace, the workspace the sections work in, and the rail / switcher badges.
  */
-export type Section = Exclude<PhoneTab, 'profile'>;
-/** Sections that live inside a workspace («Личные» is the HOME pseudo-workspace). */
-export type WsSection = Exclude<Section, 'dms'>;
+export type Section = Exclude<PhoneTab, 'profile'> | 'mail';
+/**
+ * Sections that live inside a workspace («Личные» is the HOME pseudo-workspace; «Почта» is personal
+ * and not remembered per workspace, like «Личные»).
+ */
+export type WsSection = Exclude<Section, 'dms' | 'mail'>;
 
 /**
- * The section on screen, from the state that already decides the content: «Личные» = HOME, the
- * boards mode wins over a day view (as the centre does), else the rooms. `app`: a web app of the
- * workspace fills the screen — no section is selected (its icon carries the mark).
+ * The section on screen, from the state that already decides the content: «Почта» covers
+ * everything while on (ADR-0080 §8), «Личные» = HOME, the boards mode wins over a day view (as the
+ * centre does), else the rooms. `app`: a web app of the workspace fills the screen — no section is
+ * selected (its icon carries the mark).
  */
-export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean }): Section | null {
+export function currentSection(s: { home: boolean; boards: boolean; calendar: boolean; app?: boolean; mail?: boolean }): Section | null {
+  if (s.mail) return 'mail';
   if (s.home) return 'dms';
   if (s.app) return null;
   return s.boards ? 'boards' : s.calendar ? 'calendar' : 'chats';

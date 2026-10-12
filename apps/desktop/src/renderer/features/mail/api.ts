@@ -30,3 +30,11 @@ export function getMailApi(): MailApi | undefined {
   if (api === null) api = mockEnabled() ? createMockMailApi() : platform.mail;
   return api;
 }
+
+/**
+ * The «Почта» section exists (ADR-0080 §1, §8): a mail API (Electron, or the dev mock) outside the
+ * web build — the web client and the phone never show it.
+ */
+export function mailAvailable(): boolean {
+  return platform.kind !== 'web' && getMailApi() !== undefined;
+}
