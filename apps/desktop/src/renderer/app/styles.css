@@ -133,6 +133,10 @@
   /* solid warning / danger surfaces (billing bars, badges): no yellow-over-dark mud; text on them is fg (≥ 4.5:1) */
   --color-warn-surface: #3a2c0e;
   --color-danger-surface: #4a1d1b;
+  /* solid success surface (the approved band of a task, ADR-0049): green-text on it ≥ 4.5:1 */
+  --color-ok-surface: #133a1f;
+  /* orange text / outline of a pending state (task approvals): ≥ 4.5:1 on bg and cards */
+  --color-warn-text: #ff9f0a;
   /* in-room search hits (CHAT-SHELL): tint keeps bubble text ≥ 4.5:1; the current hit is solid */
   --color-search-hit: rgb(255 214 10 / 20%);
   --color-search-current: #ffd60a;
@@ -280,6 +284,8 @@
   --color-mention: rgb(255 204 0 / 16%);
   --color-warn-surface: #fff1c9;
   --color-danger-surface: #ffe1de;
+  --color-ok-surface: #e2f5e6;
+  --color-warn-text: #a04a00;
   --color-search-hit: rgb(255 204 0 / 38%);
   --color-search-current: #ffcc00;
   --color-code: rgb(118 118 128 / 12%);
@@ -354,6 +360,8 @@
   --color-mention: var(--color-mention);
   --color-warn-surface: var(--color-warn-surface);
   --color-danger-surface: var(--color-danger-surface);
+  --color-ok-surface: var(--color-ok-surface);
+  --color-warn-text: var(--color-warn-text);
   --color-code: var(--color-code);
   --color-code-block: var(--color-code-block);
   --color-scrim: var(--color-scrim);

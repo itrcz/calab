@@ -4,7 +4,8 @@ import { Check, ChevronDown, Clock3, Plus, X } from 'lucide-react';
 import { memo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Button, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { approvalBadge, approvalControls, approvedCount, clampRequired, quorumChoices, quorumOf, rejecters, toggleApprover, MAX_REJECT_COMMENT } from '../../lib/boards/approvals';
+import { approvalBadge, approvalControls, approvalTagKey, approvedCount, clampRequired, parseApprovalTag, quorumChoices, quorumOf, rejecters, toggleApprover, MAX_REJECT_COMMENT } from '../../lib/boards/approvals';
+import { useBoards } from '../../stores/boards';
 import { setApprovers, voteApproval } from '../../services/boards';
 import { myUserId } from '../../stores/session';
 import { memberName, useMemberName } from '../../stores/workspaces';
@@ -14,54 +15,63 @@ import { ApproverMenu, MemberAvatar } from './menus';
 import { hasBit, VIEW_BOARD } from './model';
 
 /**
- * Task approvals UI (ADR-0049 §6, docs/08 «Доски»): the card / row badge and the panel section
- * «Согласование» — approvers with their vote marks, «Нужно: Все ▾ / N из M», «+ Согласующий» and,
+ * Task approvals UI (ADR-0049 §6, docs/08 «Доски»): the card / row tag and the panel section
+ * «Согласующие» — the state band / approvers with their votes, «Нужно: Все ▾ / N из M», «+ Согласующий» and,
  * for me as an approver, «Согласовать» / «Отклонить» (a comment is required) / «Отозвать».
  */
 
-// ------------------------------------------------------------------ badge (card, list row)
+// ------------------------------------------------------------------ tag (card, list row)
 
 /**
- * `✓ 1/2` while waiting, a green ✓ once approved, a red ✗ after a veto; nothing without approvers.
- * Memo on primitives: the card re-renders on its own TASK_UPDATE; the badge only when these change.
+ * «✓ 3/3» filled green once approved, «2/3» outlined orange while waiting, «✕ 1/3» outlined red
+ * after a veto; nothing without approvers. Reads its task by id through a primitive selector
+ * (approvalTagKey): a card's TASK_UPDATE re-renders the tag only when the tag itself changes.
  */
-export const ApprovalBadge = memo(function ApprovalBadge({ task, compact = false }: { task: Pick<Task, 'workspaceId' | 'approvers' | 'approvalRequired' | 'approvalState'>; compact?: boolean }): ReactNode {
-  const b = approvalBadge(task);
-  const vetoed = b?.kind === 'rejected' ? rejecters(task).map((u) => memberName(task.workspaceId, u)).join(', ') : '';
-  return b ? <BadgeView kind={b.kind} approved={b.kind === 'pending' ? b.approved : 0} quorum={b.kind === 'pending' ? b.quorum : 0} who={vetoed} compact={compact} /> : null;
+export const ApprovalTag = memo(function ApprovalTag({ id, compact = false }: { id: string; compact?: boolean }): ReactNode {
+  const key = useBoards((s) => approvalTagKey(s.tasks[id]));
+  return key ? <TagView tag={key} id={id} compact={compact} /> : null;
 });
 
-const BadgeView = memo(function BadgeView({ kind, approved, quorum, who, compact }: { kind: 'pending' | 'approved' | 'rejected'; approved: number; quorum: number; who: string; compact: boolean }): ReactNode {
-  const label = kind === 'pending' ? t('boards.approvalProgress', { n: approved, m: quorum }) : kind === 'approved' ? t('boards.approvalDone') : t('boards.gate.rejected', { name: who });
+/** The tag's markup (exported for tests: the SSR render needs no store). */
+export function TagView({ tag, id, compact }: { tag: string; id: string; compact: boolean }): ReactNode {
+  const p = parseApprovalTag(tag);
+  if (!p) return null;
+  const { kind, n, m } = p;
+  // Who vetoed — only for the tooltip, read once when the tag (re-)renders.
+  const task = kind === 'rejected' ? useBoards.getState().tasks[id] : undefined;
+  const who = task ? rejecters(task).map((u) => memberName(task.workspaceId, u)).join(', ') : '';
+  const label = kind === 'pending' ? t('boards.approvalProgress', { n, m }) : kind === 'approved' ? t('boards.approvalDoneN', { n, m }) : t('boards.gate.rejected', { name: who });
   return (
     <span
       role="img"
       aria-label={label}
       title={label}
       className={cx(
-        'inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-micro tabular-nums',
-        kind === 'pending' && 'border-line text-muted',
-        kind === 'approved' && 'border-[color-mix(in_srgb,var(--color-green)_45%,transparent)] text-[var(--color-green-text)]',
-        kind === 'rejected' && 'border-[color-mix(in_srgb,var(--color-red)_45%,transparent)] text-danger-text',
+        'inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-micro font-medium tabular-nums',
+        kind === 'approved' && 'border-transparent bg-ok-fill text-white',
+        kind === 'pending' && 'border-[color-mix(in_srgb,var(--color-warn-text)_60%,transparent)] text-[var(--color-warn-text)]',
+        kind === 'rejected' && 'border-[color-mix(in_srgb,var(--color-red)_55%,transparent)] text-danger-text',
         compact && 'px-1',
       )}
       data-testid="approval-badge"
       data-state={kind}
     >
-      {kind === 'rejected' ? <X className="size-3" aria-hidden /> : <Check className="size-3" aria-hidden />}
-      {kind === 'pending' ? `${approved}/${quorum}` : null}
+      {kind === 'approved' ? <Check className="size-3" strokeWidth={3} aria-hidden /> : kind === 'rejected' ? <X className="size-3" strokeWidth={3} aria-hidden /> : null}
+      {n}/{m}
     </span>
   );
-});
+}
 
 // ------------------------------------------------------------------ panel section
 
 const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
 
 /**
- * «Согласование» under the assignees (a properties row): shown when there are approvers or the
- * viewer may add them; editing follows the task's edit right; a member dragged here becomes an
- * approver (as onto «Исполнители»).
+ * «Согласующие» — the last part of the properties block (after the dates, the milestone, the
+ * parent): shown when there are approvers or the viewer may add them. Approved: a full-width green
+ * band «Согласовано · 3 из 3» with the approvers' avatars; rejected: a red band with who rejected
+ * and the comment; pending: the approvers with their votes and «N из M согласовали» in orange.
+ * Editing follows the task's edit right; a member dragged here becomes an approver.
  */
 export function ApprovalsSection({ task, canEdit, perms }: { task: Task; canEdit: boolean; perms: bigint | undefined }): ReactNode {
   const me = myUserId();
@@ -83,33 +93,124 @@ export function ApprovalsSection({ task, canEdit, perms }: { task: Task; canEdit
     e.preventDefault();
     if (!ids.includes(userId)) save(toggleApprover(ids, userId));
   };
+  const state = approvalBadge(task)?.kind ?? null;
+  const quorum = quorumOf(task);
+  const approved = approvedCount(task);
   return (
-    <div className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)]', over && 'ring-2 ring-accent')} onDragOver={onDragOver} onDragLeave={() => setOver(false)} onDrop={onDrop} data-testid="prop-approvals">
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-[88px]">{t('boards.approvals')}</span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {task.approvers.map((a) => (
-          <ApproverRow key={a.userId} workspaceId={task.workspaceId} userId={a.userId} state={a.state} comment={a.comment} onRemove={c.edit ? () => save(ids.filter((x) => x !== a.userId)) : undefined} />
-        ))}
-        <div className="flex flex-wrap items-center gap-1">
-          {c.edit ? (
-            <ApproverMenu workspaceId={task.workspaceId} boardId={task.boardId} value={ids} onToggle={(u) => save(toggleApprover(ids, u))}>
-              <button type="button" className={cx(valueBtn, 'text-muted')} data-testid="approver-add">
-                <Plus className="size-3.5" aria-hidden /> {t('boards.addApprover')}
-              </button>
-            </ApproverMenu>
-          ) : null}
-          {task.approvers.length > 1 ? <QuorumMenu n={task.approvers.length} value={task.approvalRequired} disabled={!c.edit} onPick={(r) => save(ids, r)} /> : null}
-          {task.approvers.length ? <Progress task={task} /> : null}
-        </div>
-        {c.vote ? <VoteBar task={task} mine={c.mine} /> : null}
+    <div
+      className={cx('mt-1 flex flex-col gap-1 rounded-[var(--radius-row)] border-t border-line pt-2', over && 'ring-2 ring-accent')}
+      onDragOver={onDragOver}
+      onDragLeave={() => setOver(false)}
+      onDrop={onDrop}
+      data-testid="prop-approvals"
+      data-state={state ?? 'none'}
+    >
+      <div className="flex min-h-7 flex-wrap items-center gap-1">
+        <span className="mr-auto pl-1 text-caption text-muted">{t('boards.approvers')}</span>
+        {task.approvers.length > 1 ? <QuorumMenu n={task.approvers.length} value={task.approvalRequired} disabled={!c.edit} onPick={(r) => save(ids, r)} /> : null}
+        {c.edit ? (
+          <ApproverMenu workspaceId={task.workspaceId} boardId={task.boardId} value={ids} onToggle={(u) => save(toggleApprover(ids, u))}>
+            <button type="button" className={cx(valueBtn, 'text-muted')} data-testid="approver-add">
+              <Plus className="size-3.5" aria-hidden /> {t('boards.addApprover')}
+            </button>
+          </ApproverMenu>
+        ) : null}
       </div>
+      <ApprovalsBody task={task} state={state} quorum={quorum} approved={approved} onRemove={c.edit ? (u) => save(ids.filter((x) => x !== u)) : undefined} />
+      {c.vote ? <VoteBar task={task} mine={c.mine} /> : null}
     </div>
   );
 }
 
-const ApproverRow = memo(function ApproverRow({ workspaceId, userId, state, comment, onRemove }: { workspaceId: string; userId: string; state: ApproverState; comment: string; onRemove: (() => void) | undefined }): ReactNode {
+/** The state part of «Согласующие» (exported for tests: rendered without the store). */
+export function ApprovalsBody({
+  task,
+  state,
+  quorum,
+  approved,
+  onRemove,
+}: {
+  task: Pick<Task, 'workspaceId' | 'approvers'>;
+  state: 'pending' | 'approved' | 'rejected' | null;
+  quorum: number;
+  approved: number;
+  onRemove: ((userId: string) => void) | undefined;
+}): ReactNode {
+  if (state === 'approved') {
+    const yes = task.approvers.filter((a) => a.state === ApproverState.APPROVED);
+    return (
+      <div className="flex min-h-10 w-full items-center gap-2 rounded-[var(--radius-card)] bg-ok-surface px-3 py-2 text-[var(--color-green-text)]" role="status" data-testid="approval-band" data-state="approved">
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-ok-fill text-white" aria-hidden>
+          <Check className="size-3.5" strokeWidth={3} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-control font-semibold">{t('boards.approvalBand', { n: Math.min(approved, quorum), m: quorum })}</span>
+        <span className="flex shrink-0 -space-x-1.5">
+          {yes.map((a) => (
+            <BandAvatar key={a.userId} workspaceId={task.workspaceId} userId={a.userId} />
+          ))}
+        </span>
+      </div>
+    );
+  }
+  const rows = task.approvers.map((a) => (
+    <ApproverRow key={a.userId} workspaceId={task.workspaceId} userId={a.userId} state={a.state} comment={state === 'rejected' ? '' : a.comment} onRemove={onRemove} />
+  ));
+  if (state === 'rejected') {
+    const no = task.approvers.filter((a) => a.state === ApproverState.REJECTED);
+    return (
+      <>
+        <div className="flex w-full flex-col gap-1 rounded-[var(--radius-card)] bg-danger-surface px-3 py-2" role="status" data-testid="approval-band" data-state="rejected">
+          {no.map((a) => (
+            <RejectLine key={a.userId} workspaceId={task.workspaceId} userId={a.userId} comment={a.comment} />
+          ))}
+        </div>
+        {rows}
+      </>
+    );
+  }
+  return (
+    <>
+      {rows}
+      {state === 'pending' ? (
+        <span className="px-1 text-caption font-medium tabular-nums text-[var(--color-warn-text)]" data-testid="approval-progress">
+          {t('boards.approvalPending', { n: approved, m: quorum })}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+const BandAvatar = memo(function BandAvatar({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
+  const name = useMemberName(workspaceId, userId);
+  return (
+    <Tip label={t('boards.apvState.approved', { name })}>
+      <span className="rounded-full ring-2 ring-[var(--color-ok-surface)]" tabIndex={0} aria-label={t('boards.apvState.approved', { name })}>
+        <MemberAvatar workspaceId={workspaceId} userId={userId} size={22} />
+      </span>
+    </Tip>
+  );
+});
+
+/** «✕ Анна отклонила» + the comment (the red band). */
+const RejectLine = memo(function RejectLine({ workspaceId, userId, comment }: { workspaceId: string; userId: string; comment: string }): ReactNode {
+  const name = useMemberName(workspaceId, userId);
+  return (
+    <div className="flex min-w-0 items-start gap-2" data-testid="approval-reject-line">
+      <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-danger-fill text-white" aria-hidden>
+        <X className="size-3.5" strokeWidth={3} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-control font-semibold text-danger-text">{t('boards.rejectedBy', { name })}</div>
+        {comment ? <div className="selectable whitespace-pre-wrap break-words text-control text-fg">{comment}</div> : null}
+      </div>
+    </div>
+  );
+});
+
+const ApproverRow = memo(function ApproverRow({ workspaceId, userId, state, comment, onRemove }: { workspaceId: string; userId: string; state: ApproverState; comment: string; onRemove: ((userId: string) => void) | undefined }): ReactNode {
   const name = useMemberName(workspaceId, userId);
   const tip = state === ApproverState.APPROVED ? t('boards.apvState.approved', { name }) : state === ApproverState.REJECTED ? t('boards.apvState.rejected', { name, comment }) : t('boards.apvState.pending', { name });
+  const status = state === ApproverState.APPROVED ? t('boards.apv.approved') : state === ApproverState.REJECTED ? t('boards.apv.rejected') : t('boards.apv.pending');
   return (
     <div className="group/ap flex min-h-8 items-center gap-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="approver-row" data-user={userId} data-state={ApproverState[state].toLowerCase()}>
       <Tip label={tip}>
@@ -125,9 +226,11 @@ const ApproverRow = memo(function ApproverRow({ workspaceId, userId, state, comm
             {comment}
           </span>
         </Tip>
-      ) : null}
+      ) : (
+        <span className={cx('shrink-0 text-caption', state === ApproverState.APPROVED ? 'text-[var(--color-green-text)]' : state === ApproverState.REJECTED ? 'text-danger-text' : 'text-muted')}>{status}</span>
+      )}
       {onRemove ? (
-        <button type="button" aria-label={t('boards.removeApprover', { name })} onClick={onRemove} className="grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/ap:opacity-100 mobile:opacity-100" data-testid="approver-remove">
+        <button type="button" aria-label={t('boards.removeApprover', { name })} onClick={() => onRemove(userId)} className="grid size-6 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/ap:opacity-100 mobile:opacity-100" data-testid="approver-remove">
           <X className="size-3.5" aria-hidden />
         </button>
       ) : null}
@@ -170,7 +273,7 @@ function QuorumMenu({ n, value, disabled, onPick }: { n: number; value: number; 
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-40')} sideOffset={4} align="start" collisionPadding={16}>
+        <Dropdown.Content className={cx(menuBox, 'w-40')} sideOffset={4} align="end" collisionPadding={16}>
           {quorumChoices(n).map((r) => (
             <Dropdown.Item key={r} className={menuItem} onSelect={() => r !== current && onPick(r)}>
               {r === current ? <Check className="size-3.5" aria-hidden /> : <span className="size-3.5" />}
@@ -180,20 +283,6 @@ function QuorumMenu({ n, value, disabled, onPick }: { n: number; value: number; 
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
-  );
-}
-
-/** «Согласовано 1 из 2» / «Согласовано» / «Отклонено». */
-function Progress({ task }: { task: Task }): ReactNode {
-  const b = approvalBadge(task);
-  if (!b) return null;
-  return (
-    <span
-      className={cx('ml-auto px-1 text-caption tabular-nums', b.kind === 'approved' ? 'text-[var(--color-green-text)]' : b.kind === 'rejected' ? 'text-danger-text' : 'text-muted')}
-      data-testid="approval-progress"
-    >
-      {b.kind === 'pending' ? t('boards.approvalProgress', { n: approvedCount(task), m: quorumOf(task) }) : b.kind === 'approved' ? t('boards.approvalDone') : t('boards.approvalRejected')}
-    </span>
   );
 }
 

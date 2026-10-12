@@ -149,6 +149,8 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
           {/* Git links (ADR-0060 §4): under the attachments; its own subscriber, nothing when none. */}
           {on(BoardFeature.GIT_LINKS) ? <GitSection taskId={task.id} /> : null}
           <Properties task={task} canEdit={canEdit} perms={perms} scoped={scoped} disabled={disabled} />
+          {/* Watchers (ADR-0076): their own collapsible section, collapsed by default. */}
+          <WatchersSection task={task} canEdit={canEdit} />
           {/* Milestones inside the task (ADR-0063): top-level tasks only; their own subscriber. */}
           {on(BoardFeature.MILESTONES) && !task.parentId ? <TaskMilestones taskId={task.id} canEdit={canEdit} /> : null}
           {/* Checklists: their own subscriber (a toggle re-renders that section only, ADR-0058 §2). */}
@@ -498,8 +500,6 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
         </Prop>
       ) : null}
       <Assignees task={task} canEdit={canEdit} req={req('assignee')} />
-      {on(BoardFeature.APPROVALS) ? <ApprovalsSection task={task} canEdit={canEdit} perms={perms} /> : null}
-      <WatchersSection task={task} canEdit={canEdit} />
       {on(BoardFeature.LABELS) ? (
         <Prop label={t('boards.f.label')}>
           {mine.map((l) => (
@@ -577,6 +577,8 @@ function Properties({ task, canEdit, perms, scoped, disabled }: { task: Task; ca
           ) : null}
         </Prop>
       ) : null}
+      {/* Approvals last (docs/08): the state band closes the block. */}
+      {on(BoardFeature.APPROVALS) ? <ApprovalsSection task={task} canEdit={canEdit} perms={perms} /> : null}
     </section>
   );
 }

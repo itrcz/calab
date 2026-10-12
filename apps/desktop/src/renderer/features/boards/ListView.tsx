@@ -1,3 +1,4 @@
+import { statusShown } from '../../lib/boards/completion';
 import { BoardFeature, TaskPriority, type Board, type Task } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { Archive, CalendarClock, Check, ChevronDown, CircleSlash, Tag, UserRound, X } from 'lucide-react';
@@ -15,7 +16,7 @@ import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS } from './model';
-import { ApprovalBadge } from './Approvals';
+import { ApprovalTag } from './Approvals';
 import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
 import { ChecklistBadge, MilestoneBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
@@ -168,7 +169,7 @@ export function useListIds(boardId: string, workspaceId: string): { items: Item[
 function visibleOf(s: ReturnType<typeof useBoards.getState>, b: Board, prefs: BoardPrefs, ctx: MatchCtx): Task[] {
   const out: Task[] = [];
   for (const st of b.statuses) {
-    if (!prefs.showCompleted && doneType(st.type)) continue;
+    if (!statusShown(prefs.completion, st.type)) continue;
     for (const id of s.columns[b.id]?.[st.id] ?? []) {
       const x = s.tasks[id];
       if (x && matchTask(x, prefs.filter, ctx)) out.push(x);
@@ -320,7 +321,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         {/* phone: the meta (badges, date) wraps under the title, aligned with it */}
         <span className="hidden h-0 basis-full mobile:block" aria-hidden />
         <span className="hidden w-[56px] shrink-0 mobile:block" aria-hidden />
-        {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} compact /> : null}
+        {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} compact /> : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
         {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
         {on(BoardFeature.LABELS) && (mine.length || menu === 'label') ? (

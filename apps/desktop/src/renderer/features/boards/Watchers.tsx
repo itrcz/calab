@@ -1,5 +1,5 @@
 import type { Task } from '@calaba/protocol';
-import { EyeOff, Plus, X } from 'lucide-react';
+import { ChevronRight, Eye, EyeOff, Plus, X } from 'lucide-react';
 import { memo, useState, type DragEvent, type ReactNode } from 'react';
 import { ProfileTarget } from '../../components/ProfileTarget';
 import { cx } from '../../components/ui';
@@ -8,18 +8,21 @@ import { mayRemoveWatcher, watcherControls } from '../../lib/boards/watchers';
 import { setWatcher } from '../../services/boards';
 import { myUserId } from '../../stores/session';
 import { useMemberName } from '../../stores/workspaces';
+import { useBoardsUi } from '../../stores/boardsUi';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { MemberAvatar, WatcherMenu } from './menus';
 
 /**
- * «Наблюдатели» (ADR-0076 §7, docs/08 «Доски»): a properties row under «Исполнители» /
- * «Согласование» — watcher chips (avatar + name, ✕ on hover; always on the phone), «+ Добавить»
- * for whoever may edit the task, and «Перестать наблюдать» for me as a watcher. A member dragged
- * here becomes a watcher (as onto «Исполнители»).
+ * «Наблюдатели» (ADR-0076 §7, docs/08 «Доски»): a section of its own under the properties block,
+ * collapsed by default — the header «Наблюдатели · N» toggles it (remembered, boardsUi). Open:
+ * watcher chips (avatar + name, ✕ on hover; always on the phone), «+ Добавить» for whoever may
+ * edit the task, and «Перестать наблюдать» for me as a watcher. A member dragged onto the section
+ * becomes a watcher (as onto «Исполнители»).
  */
 export function WatchersSection({ task, canEdit }: { task: Pick<Task, 'id' | 'workspaceId' | 'boardId' | 'watcherIds' | 'archivedAt'>; canEdit: boolean }): ReactNode {
   const me = myUserId();
   const c = watcherControls(task, canEdit, me);
+  const open = useBoardsUi((s) => s.watchersOpen);
   const [over, setOver] = useState(false);
   if (!c.visible) return null;
   const onDragOver = (e: DragEvent): void => {
@@ -36,32 +39,56 @@ export function WatchersSection({ task, canEdit }: { task: Pick<Task, 'id' | 'wo
     void setWatcher(task.id, userId, true);
   };
   return (
-    <div
-      className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)] mobile:flex-col mobile:gap-0.5 mobile:py-1', over && 'ring-2 ring-accent')}
+    <section
+      className={cx('-mt-2 flex flex-col gap-1 rounded-[var(--radius-row)]', over && 'ring-2 ring-accent')}
       onDragOver={onDragOver}
       onDragLeave={() => setOver(false)}
       onDrop={onDrop}
+      aria-label={t('boards.watchers')}
       data-testid="prop-watchers"
+      data-open={open ? 'true' : 'false'}
     >
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-auto mobile:pt-0">{t('boards.watchers')}</span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 mobile:w-full">
-        {task.watcherIds.map((u) => (
-          <WatcherChip key={u} workspaceId={task.workspaceId} taskId={task.id} userId={u} removable={mayRemoveWatcher(task, canEdit, me, u)} />
-        ))}
-        {c.add ? (
-          <WatcherMenu workspaceId={task.workspaceId} boardId={task.boardId} value={task.watcherIds} onToggle={(u) => void setWatcher(task.id, u, !task.watcherIds.includes(u))}>
-            <button type="button" className={cx(valueBtn, 'text-muted')} data-testid="watcher-add">
-              <Plus className="size-3.5" aria-hidden /> {t('boards.addWatcher')}
+      <WatchersHeader n={task.watcherIds.length} open={open} />
+      {open ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-1 pl-1" data-testid="watchers-body">
+          {task.watcherIds.map((u) => (
+            <WatcherChip key={u} workspaceId={task.workspaceId} taskId={task.id} userId={u} removable={mayRemoveWatcher(task, canEdit, me, u)} />
+          ))}
+          {c.add ? (
+            <WatcherMenu workspaceId={task.workspaceId} boardId={task.boardId} value={task.watcherIds} onToggle={(u) => void setWatcher(task.id, u, !task.watcherIds.includes(u))}>
+              <button type="button" className={cx(valueBtn, 'text-muted')} data-testid="watcher-add">
+                <Plus className="size-3.5" aria-hidden /> {t('boards.addWatcher')}
+              </button>
+            </WatcherMenu>
+          ) : null}
+          {c.watching ? (
+            <button type="button" onClick={() => void setWatcher(task.id, me, false)} className={cx(valueBtn, 'text-muted')} data-testid="watcher-leave">
+              <EyeOff className="size-3.5" aria-hidden /> {t('boards.stopWatching')}
             </button>
-          </WatcherMenu>
-        ) : null}
-        {c.watching ? (
-          <button type="button" onClick={() => void setWatcher(task.id, me, false)} className={cx(valueBtn, 'text-muted')} data-testid="watcher-leave">
-            <EyeOff className="size-3.5" aria-hidden /> {t('boards.stopWatching')}
-          </button>
-        ) : null}
-      </div>
-    </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** «▸ 👁 Наблюдатели  3» — the toggle (exported for tests: SSR without the store). */
+export function WatchersHeader({ n, open, onToggle }: { n: number; open: boolean; onToggle?: () => void }): ReactNode {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle ?? (() => useBoardsUi.getState().setWatchersOpen(!open))}
+      className="flex h-8 items-center gap-1.5 self-start rounded-[var(--radius-row)] px-1 text-caption font-semibold text-muted hover:bg-hover hover:text-fg"
+      data-testid="watchers-toggle"
+    >
+      <ChevronRight className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', open && 'rotate-90')} aria-hidden />
+      <Eye className="size-3.5" aria-hidden />
+      {t('boards.watchers')}
+      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-micro font-medium tabular-nums text-fg" data-testid="watchers-count">
+        {n}
+      </span>
+    </button>
   );
 }
 
