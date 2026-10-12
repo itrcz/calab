@@ -135,7 +135,7 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
     error?.code === 'EMAIL' ? t('mbox.add.invalidEmail') : error?.code === 'ALREADY' || already ? t('mbox.add.already') : error ? mailErrorText(error.code) : null;
 
   return (
-    <div className="m-auto flex w-full max-w-[420px] flex-col gap-5 px-6 py-10" data-testid="mail-add-account-card">
+    <div className="m-auto flex w-full max-w-[460px] flex-col gap-5 px-6 py-10" data-testid="mail-add-account-card">
       <div className="flex flex-col items-center gap-2 text-center">
         <span className="grid size-14 place-items-center rounded-full bg-hover text-muted">
           <Mail className="size-7" strokeWidth={1.5} aria-hidden />

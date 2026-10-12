@@ -163,19 +163,9 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
   const dirty = !sameForm(form, initial);
   const size = attachmentsSize(form.attachments);
 
-  // Focus: «Кому» when empty (new / forward), else the text start (reply).
-  useEffect(() => {
-    if (!form.to.length) toRef.current?.focus();
-    else {
-      const el = textRef.current;
-      if (el) {
-        el.focus();
-        el.setSelectionRange(0, 0);
-      }
-    }
-    // Once, on open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Focus on open (the sheet's initialFocus, not the «×» with its tooltip): «Кому» when empty (new /
+  // forward), else the start of the text (a reply, the signature below the caret).
+  const [focusTo] = useState(() => form.to.length === 0);
 
   const addFiles = async (files: FileList | File[]): Promise<void> => {
     const list = Array.from(files);
@@ -251,6 +241,7 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
         medium
         nonModal
         keepOpen={() => true}
+        initialFocus={focusTo ? toRef : textRef}
         footer={
           <>
             <input ref={fileRef} type="file" multiple hidden onChange={(e) => {
@@ -340,6 +331,10 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
             spellCheck
             className="selectable mt-3 min-h-[200px] w-full resize-y bg-transparent text-[14px] leading-[1.5] text-fg outline-none"
             data-testid="compose-text"
+            onFocus={(e) => {
+              // The first focus lands before the signature, not after it.
+              if (e.currentTarget.selectionStart === e.currentTarget.value.length && e.currentTarget.value.startsWith('\n')) e.currentTarget.setSelectionRange(0, 0);
+            }}
           />
           {form.ref?.quote && orig ? <QuotePreview orig={orig} kind={form.ref.kind} onRemove={() => form.ref && patch({ ref: { ...form.ref, quote: false } })} /> : null}
           {form.attachments.length ? (
