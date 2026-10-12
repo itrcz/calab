@@ -3,7 +3,7 @@
  * store + sync + outbox per account, the `MailHandlers` table for renderer calls, and main's own
  * `verify` / `attachment` requests. Runs inside the utilityProcess (engine.ts); no Electron APIs.
  */
-import { mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   DEFAULT_MAIL_SETTINGS,
@@ -195,7 +195,13 @@ export class MailEngine {
   private readonly log: (message: string, meta?: Record<string, unknown>) => void;
 
   constructor(private readonly deps: EngineDeps) {
-    mkdirSync(deps.dataDir, { recursive: true });
+    // userData/mail holds every account's cache (bodies, addresses): owner-only where POSIX modes apply.
+    mkdirSync(deps.dataDir, { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(deps.dataDir, 0o700);
+    } catch {
+      // Windows: the profile's ACLs already restrict it.
+    }
     this.now = deps.now ?? (() => Date.now());
     this.log = deps.log ?? (() => undefined);
     this.settingsDb = new SettingsDb(join(deps.dataDir, 'settings.sqlite'));

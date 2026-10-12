@@ -6,7 +6,7 @@
  * Passwords leave main only towards the engine (`MailToEngine.accounts`), never to the renderer
  * or the log.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { MailEngineAccount, MailProvider, MailSecurity } from '../../shared/mail';
 
@@ -108,10 +108,16 @@ export class MailAccountsFile {
       this.warned = true;
       return;
     }
-    mkdirSync(dirname(this.file), { recursive: true });
+    // Owner-only where POSIX modes apply: the directory also holds the mail caches (engine).
+    mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(dirname(this.file), 0o700);
+    } catch {
+      // Windows: the profile's ACLs already restrict it.
+    }
     // Atomic: a crash mid-write leaves the previous list, not a truncated file.
     const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, this.box.encrypt(JSON.stringify({ v: 1, accounts: this.list })));
+    writeFileSync(tmp, this.box.encrypt(JSON.stringify({ v: 1, accounts: this.list })), { mode: 0o600 });
     renameSync(tmp, this.file);
   }
 }

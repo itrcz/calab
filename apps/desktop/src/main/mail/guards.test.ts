@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -140,6 +140,10 @@ describe('accounts file', () => {
     const a = new MailAccountsFile(file, box(), vi.fn());
     a.put(acc);
     expect(readFileSync(file).toString()).not.toContain('secret-pass');
+    if (process.platform !== 'win32') {
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(statSync(join(dir, 'mail')).mode & 0o777).toBe(0o700);
+    }
     const b = new MailAccountsFile(file, box(), vi.fn());
     expect(b.byEmail('ME@x.org')?.password).toBe('secret-pass');
     expect(b.remove(acc.id)).toBe(true);
