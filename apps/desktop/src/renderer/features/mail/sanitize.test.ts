@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { linkify, mailCsp, mailSrcdoc, sanitizeCss, sanitizeMailHtml, type SanitizeOptions } from './sanitize';
+import { mailRemoteImageUrl } from '../../../shared/mail';
+import { linkify, MAIL_CSP, mailSrcdoc, sanitizeCss, sanitizeMailHtml, type SanitizeOptions } from './sanitize';
 
 const opts = (remote = false): SanitizeOptions => ({ remote, cid: (id) => (id === 'logo@x' ? 'calaba-mail://attachment/m1/a1' : null) });
 const clean = (html: string, remote = false) => sanitizeMailHtml(html, opts(remote));
@@ -28,9 +29,12 @@ describe('sanitizeMailHtml (ADR-0080 §10)', () => {
     expect(off.html).not.toMatch(/https?:\/\//);
     expect(off.html).toContain('color:red');
     expect(off.blocked).toBe(3);
+    // Allowed: through main's cookie-less fetch (calaba-mail://remote/…), never straight from https.
     const on = clean(src, true);
-    expect(on.html).toContain('https://track.example/p.gif');
-    expect(on.html).toContain('url(&quot;https://x.example/bg.png&quot;)');
+    expect(on.html).not.toMatch(/https?:\/\//);
+    expect(on.html).toContain(`src="${mailRemoteImageUrl('https://track.example/p.gif')}"`);
+    expect(on.html).toContain(`url(&quot;${mailRemoteImageUrl('https://x.example/bg.png')}&quot;)`);
+    expect(on.html).toContain(`background="${mailRemoteImageUrl('http://x.example/t.png')}"`);
     expect(on.blocked).toBe(0);
   });
 
@@ -66,10 +70,36 @@ describe('sanitizeCss', () => {
   });
 });
 
+describe('own colours (dark theme, §8)', () => {
+  it('a plain HTML message is not styled; colours, backgrounds, bgcolor and <font color> are', () => {
+    expect(clean('<div dir="ltr">Hi<br><a href="https://a.example">a</a></div><blockquote style="border-left:1px solid #ccc;margin:0">q</blockquote>').styled).toBe(false);
+    expect(clean('<p style="color:#333">x</p>').styled).toBe(true);
+    expect(clean('<p style="border-color:red;background: transparent">x</p>').styled).toBe(false);
+    expect(clean('<table bgcolor="#f4f4f4"><tr><td>x</td></tr></table>').styled).toBe(true);
+    expect(clean('<font color="red">x</font>').styled).toBe(true);
+    expect(clean('<html><head><style>.a{background-color:#fff}</style></head><body><p class="a">x</p></body></html>').styled).toBe(true);
+    expect(clean('<html><body style="background:#eee"><p>x</p></body></html>').styled).toBe(true);
+  });
+
+  it('showing remote images does not change the verdict', () => {
+    const src = '<div style="background:url(https://x.example/bg.png)">t</div>';
+    expect(clean(src).styled).toBe(clean(src, true).styled);
+  });
+});
+
 describe('srcdoc', () => {
-  it('starts with the CSP meta; https only when remote images are allowed', () => {
-    expect(mailSrcdoc('<p>x</p>', false)).toMatch(/^<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: calaba-mail:; style-src 'unsafe-inline'">/);
-    expect(mailCsp(true)).toBe("default-src 'none'; img-src data: calaba-mail: https:; style-src 'unsafe-inline'");
+  it('starts with the CSP meta and never allows https:', () => {
+    expect(mailSrcdoc('<p>x</p>')).toMatch(/^<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: calaba-mail:; style-src 'unsafe-inline'">/);
+    expect(MAIL_CSP).not.toContain('https:');
+  });
+
+  it('a styled message gets the white page, a plain one the theme colours (literals only)', () => {
+    expect(mailSrcdoc('<p>x</p>')).toContain('color-scheme:light}body{color:#1d1d1f;background:#fff}');
+    const dark = mailSrcdoc('<p>x</p>', { scheme: 'dark', fg: 'rgb(236, 236, 240)', muted: 'rgb(180, 180, 185)', link: 'rgb(64, 156, 255)', line: 'rgba(255, 255, 255, 0.08)' });
+    expect(dark).toContain('html{color-scheme:dark}body{color:rgb(236, 236, 240);background:transparent}a{color:rgb(64, 156, 255)}');
+    const evil = mailSrcdoc('<p>x</p>', { scheme: 'dark', fg: 'red}</style><script>', muted: '', link: '', line: '' });
+    expect(evil).not.toContain('<script>');
+    expect(evil).toContain('body{color:#ececf0;');
   });
 });
 

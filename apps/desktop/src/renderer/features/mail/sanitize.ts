@@ -1,12 +1,14 @@
 import DOMPurify, { type Config, type DOMPurify as Purifier } from 'dompurify';
+import { mailRemoteImageUrl } from '../../../shared/mail';
 
 /**
  * HTML of a mail message → what the sandboxed iframe shows (ADR-0080 §10). The message HTML is
  * hostile input: DOMPurify with a strict HTML-only profile, then our own rules on top —
  * - no scripts, forms, frames, objects, external CSS, `<base>`, `<meta>`, media elements;
  * - `cid:` images → the attachment URL (`MailApi.attachmentUrl`), unknown cids dropped;
- * - remote (http/https) images and CSS `url()` only when the user allowed them, else removed (so
- *   a tracking pixel never loads), and counted;
+ * - remote (http/https) images and CSS `url()` only when the user allowed them — then through main
+ *   (`calaba-mail://remote/…`, cookie-less, no referrer), else removed (so a tracking pixel never
+ *   loads), and counted;
  * - links keep http(s) / mailto only, lose `target` (a click navigates the frame itself, main
  *   cancels it and opens the browser, §10) and get `rel=noopener noreferrer`.
  * The result goes into `srcdoc` behind a CSP meta (`mailSrcdoc`) and `sandbox=""` — the second
@@ -24,6 +26,12 @@ export interface Sanitized {
   html: string;
   /** Remote resources removed because they were not allowed (the «Картинки скрыты» bar). */
   blocked: number;
+  /**
+   * The message sets its own text or background colours (inline styles, `<style>`, `bgcolor`,
+   * `<font color>`): it keeps the white page. Otherwise it is shown in the app's theme (§8, like
+   * Apple Mail in dark mode).
+   */
+  styled: boolean;
 }
 
 const FORBID_TAGS = [
@@ -44,7 +52,7 @@ function imageUrl(raw: string, opts: SanitizeOptions, state: { blocked: number }
   const url = raw.trim();
   if (CID.test(url)) return opts.cid(decodeCid(url.slice(4)));
   if (REMOTE.test(url) || url.startsWith('//')) {
-    if (opts.remote && REMOTE.test(url)) return url;
+    if (opts.remote && REMOTE.test(url)) return mailRemoteImageUrl(url);
     state.blocked++;
     return null;
   }
@@ -59,6 +67,9 @@ function decodeCid(v: string): string {
     return v.replace(/^<|>$/g, '');
   }
 }
+
+/** A CSS declaration of a text / background colour (`border-color` and the like do not count). */
+const CSS_COLOUR = /(?:^|[\s;{"'])(?:color|background(?:-color|-image)?)\s*:\s*(?!\s*(?:transparent|inherit|initial|unset|none)\s*(?:!important\s*)?(?:;|}|$))/i;
 
 /** CSS text with `url()`s rewritten (cid → attachment, remote → kept only when allowed) and dangerous constructs removed. */
 export function sanitizeCss(css: string, opts: SanitizeOptions, state: { blocked: number } = { blocked: 0 }): string {
@@ -95,14 +106,23 @@ const CONFIG: Config = {
  */
 export function sanitizeMailHtml(html: string, opts: SanitizeOptions, purify: Purifier = purifierFor()): Sanitized {
   const state = { blocked: 0 };
+  let styled = false;
   purify.removeAllHooks();
   purify.addHook('uponSanitizeElement', (node, data) => {
-    if (data.tagName === 'style') node.textContent = sanitizeCss(node.textContent ?? '', opts, state);
+    if (data.tagName !== 'style') return;
+    const css = node.textContent ?? '';
+    // Judged on the CSS as sent: showing the remote images must not flip the page's colours.
+    if (!styled && CSS_COLOUR.test(css)) styled = true;
+    node.textContent = sanitizeCss(css, opts, state);
   });
   purify.addHook('afterSanitizeAttributes', (node) => {
     const el = node;
     if (typeof el.getAttribute !== 'function') return;
     const tag = el.tagName.toLowerCase();
+    if (!styled) {
+      const raw = el.getAttribute('style');
+      styled = el.hasAttribute('bgcolor') || el.hasAttribute('background') || (tag === 'font' && el.hasAttribute('color')) || (raw !== null && CSS_COLOUR.test(raw));
+    }
     for (const attr of ['src', 'background', 'poster']) {
       const v = el.getAttribute(attr);
       if (v === null) continue;
@@ -134,7 +154,7 @@ export function sanitizeMailHtml(html: string, opts: SanitizeOptions, purify: Pu
     const bg = body?.getAttribute('bgcolor');
     const wrapStyle = [bg && /^#?[0-9a-z]+$/i.test(bg) ? `background-color:${bg}` : '', bodyStyle ?? ''].filter(Boolean).join(';');
     const content = body ? body.innerHTML : root.innerHTML;
-    return { html: `${styles}${wrapStyle ? `<div style="${escapeAttr(wrapStyle)}">${content}</div>` : content}`, blocked: state.blocked };
+    return { html: `${styles}${wrapStyle ? `<div style="${escapeAttr(wrapStyle)}">${content}</div>` : content}`, blocked: state.blocked, styled };
   } finally {
     purify.removeAllHooks();
   }
@@ -142,18 +162,49 @@ export function sanitizeMailHtml(html: string, opts: SanitizeOptions, purify: Pu
 
 const escapeAttr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
-/** The iframe's CSP (§10): nothing but images (data:, our attachments, https: when allowed) and inline styles. */
-export function mailCsp(remote: boolean): string {
-  return `default-src 'none'; img-src data: calaba-mail:${remote ? ' https:' : ''}; style-src 'unsafe-inline'`;
+/**
+ * The iframe's CSP (§10): nothing but images (data:, our attachments and remote images — both
+ * served by main under `calaba-mail:`) and inline styles. Never `https:`: a remote image goes through
+ * main or not at all (the srcdoc also inherits the app's CSP, which has no `https:` in `img-src`).
+ */
+export const MAIL_CSP = "default-src 'none'; img-src data: calaba-mail:; style-src 'unsafe-inline'";
+
+/**
+ * The app theme a plain message is drawn in: resolved colours (`rgb(…)` / `#hex`), not variables —
+ * the frame is another document and cannot see the app's CSS.
+ */
+export interface MailTheme {
+  scheme: 'dark' | 'light';
+  fg: string;
+  muted: string;
+  link: string;
+  line: string;
 }
 
-/** Base look of a message: Apple Mail's white page whatever the app theme (mail HTML assumes it). */
-const BASE_CSS =
-  'html{color-scheme:light}body{margin:0;padding:16px 20px;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:#1d1d1f;background:#fff;overflow-wrap:anywhere;overflow-y:auto;overflow-x:auto}img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}a{color:#0066cc}blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid #c7c7cc;color:#555}';
+const LAYOUT_CSS =
+  'body{margin:0;padding:16px 20px;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;overflow-wrap:anywhere;overflow-y:auto;overflow-x:auto}img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid}';
 
-/** The iframe document: the CSP meta first (before any content can be parsed), then the sanitized body. */
-export function mailSrcdoc(sanitizedHtml: string, remote: boolean): string {
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${mailCsp(remote)}"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>${BASE_CSS}</style></head><body>${sanitizedHtml}</body></html>`;
+/** A styled message: Apple Mail's white page whatever the app theme (its own colours assume it). */
+const PAPER_CSS = 'html{color-scheme:light}body{color:#1d1d1f;background:#fff}a{color:#0066cc}blockquote{border-left-color:#c7c7cc;color:#555}';
+
+const SAFE_COLOUR = /^(?:#[0-9a-f]{3,8}|rgba?\([0-9.,\s/%]+\))$/i;
+
+/** Theme colours for the frame (only literal colours get through: they are written into CSS). */
+function themeCss(th: MailTheme): string {
+  const c = (v: string, fallback: string): string => (SAFE_COLOUR.test(v.trim()) ? v.trim() : fallback);
+  const dark = th.scheme === 'dark';
+  // Transparent page over the message card: the frame's colour scheme equals the app's, so Chromium
+  // does not paint an opaque canvas behind it.
+  return `html{color-scheme:${dark ? 'dark' : 'light'}}body{color:${c(th.fg, dark ? '#ececf0' : '#1d1d1f')};background:transparent}a{color:${c(th.link, dark ? '#409cff' : '#0066cc')}}blockquote{border-left-color:${c(th.line, dark ? '#48484a' : '#c7c7cc')};color:${c(th.muted, dark ? '#b4b4b9' : '#555')}}`;
+}
+
+/**
+ * The iframe document: the CSP meta first (before any content can be parsed), then the sanitized
+ * body. `theme` = draw it in the app's colours (a message without its own); null = the white page.
+ */
+export function mailSrcdoc(sanitizedHtml: string, theme: MailTheme | null = null): string {
+  const css = LAYOUT_CSS + (theme ? themeCss(theme) : PAPER_CSS);
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${MAIL_CSP}"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>${css}</style></head><body>${sanitizedHtml}</body></html>`;
 }
 
 // ---------------------------------------------------------------- plain text
