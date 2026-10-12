@@ -47,5 +47,5 @@ export function parseMailHash(hash: string): MailLinkResult | null {
   return payload === null ? null : parseMailPayload(payload);
 }
 
-/** Deep link into the desktop app; the payload stays in the fragment exactly as received. */
-export const mailDeepLink = (payload: string): string => `calab://mail/add#c=${payload}`;
+/** Deep link into the desktop app; the payload goes in the path exactly as received. */
+export const mailDeepLink = (payload: string): string => `calab://mail/${payload}`;

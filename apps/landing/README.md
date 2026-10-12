@@ -51,7 +51,7 @@ Payment return pages `/onpay/success/` and `/onpay/fail/` (Tochka merchant URLs)
 
 ## «Add mail to Calab» link (ADR-0080 §12)
 
-`/<locale>/#mail=<base64url(email[:password])>` shows `components/mail-link-card.tsx` (parse: `lib/mail-link.ts`, `pnpm test:mail-link`): the address, a `calab://mail/add#c=<payload>` button, a download fallback; phones get a hint instead. Only the fragment is read (`?mail=` is ignored); the password is never decoded, stored or sent; closing the card removes the fragment.
+`/<locale>/#mail=<base64url(email[:password])>` shows `components/mail-link-card.tsx` (parse: `lib/mail-link.ts`, `pnpm test:mail-link`): the address, a `calab://mail/<payload>` button, a download fallback; phones get a hint instead. Only the fragment is read (`?mail=` is ignored); the password is never decoded, stored or sent; closing the card removes the fragment.
 
 ## Public agreements and browser preferences
 

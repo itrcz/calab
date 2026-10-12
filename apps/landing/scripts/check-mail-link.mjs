@@ -27,5 +27,5 @@ assert.equal(parseMailHash('#mail=!!!').error, 'malformed');
 assert.equal(parseMailHash(`#mail=${b64u('not-an-email:pw')}`).error, 'malformed');
 assert.equal(parseMailHash('#mail=').error, 'malformed');
 assert.equal(parseMailHash('#download'), null);
-assert.equal(mailDeepLink('abc'), 'calab://mail/add#c=abc');
+assert.equal(mailDeepLink('abc'), 'calab://mail/abc');
 console.log('mail-link: ok');
