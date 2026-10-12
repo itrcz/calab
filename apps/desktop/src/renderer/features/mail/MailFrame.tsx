@@ -64,7 +64,7 @@ export function MailFrame({ message, remote }: { message: MailMessage; remote: b
   }, [message, remote]);
   // A message with its own colours keeps the white page; a plain one follows the app theme (§8).
   const themed = !clean.styled;
-  const srcdoc = useMemo(() => mailSrcdoc(clean.html, themed ? resolveTheme(themeKey) : null), [clean, themed, themeKey]);
+  const srcdoc = useMemo(() => mailSrcdoc(clean.html, themed ? resolveTheme(themeKey) : null, remote), [clean, themed, themeKey, remote]);
   const box = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(MIN_HEIGHT);
   const [width, setWidth] = useState(0);

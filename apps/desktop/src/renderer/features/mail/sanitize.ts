@@ -163,11 +163,19 @@ export function sanitizeMailHtml(html: string, opts: SanitizeOptions, purify: Pu
 const escapeAttr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 /**
- * The iframe's CSP (§10): nothing but images (data:, our attachments and remote images — both
- * served by main under `calaba-mail:`) and inline styles. Never `https:`: a remote image goes through
- * main or not at all (the srcdoc also inherits the app's CSP, which has no `https:` in `img-src`).
+ * The iframe's CSP (§10): nothing but images (data:, our attachments and — only when the user
+ * allowed them — remote images, both served by main under `calaba-mail:`) and inline styles. Never
+ * `https:`: a remote image goes through main or not at all (the srcdoc also inherits the app's CSP,
+ * which has no `https:` in `img-src`). The remote proxy is a separate host source, not the whole
+ * scheme: the CSS rewrite above is a regex, and CSS has ways to name an image it does not see
+ * (`image-set("…")`, escapes like `\75rl(…)`) — the CSP is what keeps a tracker out before consent.
  */
-export const MAIL_CSP = "default-src 'none'; img-src data: calaba-mail:; style-src 'unsafe-inline'";
+export function mailCsp(remote: boolean): string {
+  return `default-src 'none'; img-src data: calaba-mail://attachment${remote ? ' calaba-mail://remote' : ''}; style-src 'unsafe-inline'`;
+}
+
+/** The CSP of a message whose remote images are not allowed. */
+export const MAIL_CSP = mailCsp(false);
 
 /**
  * The app theme a plain message is drawn in: resolved colours (`rgb(…)` / `#hex`), not variables —
@@ -201,10 +209,11 @@ function themeCss(th: MailTheme): string {
 /**
  * The iframe document: the CSP meta first (before any content can be parsed), then the sanitized
  * body. `theme` = draw it in the app's colours (a message without its own); null = the white page.
+ * `remote` = the user allowed remote images for this message (the same flag the sanitizer got).
  */
-export function mailSrcdoc(sanitizedHtml: string, theme: MailTheme | null = null): string {
+export function mailSrcdoc(sanitizedHtml: string, theme: MailTheme | null = null, remote = false): string {
   const css = LAYOUT_CSS + (theme ? themeCss(theme) : PAPER_CSS);
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${MAIL_CSP}"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>${css}</style></head><body>${sanitizedHtml}</body></html>`;
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${mailCsp(remote)}"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>${css}</style></head><body>${sanitizedHtml}</body></html>`;
 }
 
 // ---------------------------------------------------------------- plain text

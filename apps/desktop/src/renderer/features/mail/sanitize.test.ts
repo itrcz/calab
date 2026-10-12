@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { mailRemoteImageUrl } from '../../../shared/mail';
-import { linkify, MAIL_CSP, mailSrcdoc, sanitizeCss, sanitizeMailHtml, type SanitizeOptions } from './sanitize';
+import { linkify, MAIL_CSP, mailCsp, mailSrcdoc, sanitizeCss, sanitizeMailHtml, type SanitizeOptions } from './sanitize';
 
 const opts = (remote = false): SanitizeOptions => ({ remote, cid: (id) => (id === 'logo@x' ? 'calaba-mail://attachment/m1/a1' : null) });
 const clean = (html: string, remote = false) => sanitizeMailHtml(html, opts(remote));
@@ -89,8 +89,18 @@ describe('own colours (dark theme, §8)', () => {
 
 describe('srcdoc', () => {
   it('starts with the CSP meta and never allows https:', () => {
-    expect(mailSrcdoc('<p>x</p>')).toMatch(/^<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: calaba-mail:; style-src 'unsafe-inline'">/);
+    expect(mailSrcdoc('<p>x</p>')).toMatch(/^<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: calaba-mail:\/\/attachment; style-src 'unsafe-inline'">/);
     expect(MAIL_CSP).not.toContain('https:');
+  });
+
+  it('the remote-image proxy is in the CSP only after consent (CSS the rewrite misses stays blocked)', () => {
+    // CSS forms a regex rewrite can miss: the CSP keeps them from reaching the proxy.
+    const sneaky = clean('<p style="background:image-set(\'calaba-mail://remote/abc\' 1x)">a</p><p style="background:\\75rl(calaba-mail://remote/abc)">b</p>');
+    const before = mailSrcdoc(sneaky.html);
+    expect(before).toContain("img-src data: calaba-mail://attachment;");
+    expect(before).not.toMatch(/img-src[^;]*(calaba-mail:\/\/remote|calaba-mail:[ ;])/);
+    expect(mailSrcdoc('<p>x</p>', null, true)).toContain("img-src data: calaba-mail://attachment calaba-mail://remote;");
+    expect(mailCsp(true)).not.toContain('https:');
   });
 
   it('a styled message gets the white page, a plain one the theme colours (literals only)', () => {
