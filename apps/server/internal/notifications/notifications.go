@@ -9,6 +9,7 @@ package notifications
 
 import (
 	"errors"
+	"slices"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -147,7 +148,72 @@ const (
 	// TaskRule: an automation rule's «notify» action addressed the recipient (ADR-0060); like an
 	// assignment.
 	TaskRule TaskKind = "rule"
+	// ADR-0089, addressed to the recipient («Мне лично»).
+	TaskUnassigned   TaskKind = "unassigned"    // removed from the assignees or from the lead by someone else
+	TaskWatcherAdded TaskKind = "watcher_added" // made a watcher by someone else (not by a mention)
+	TaskDueSoon      TaskKind = "due_soon"      // due tomorrow or today (the due sweep)
+	TaskOverdue      TaskKind = "overdue"       // past due (the due sweep, once)
+	// ADR-0089, to subscribers («Задачи, в которых участвую»).
+	TaskDueChanged TaskKind = "due_changed" // the due date was set, moved or removed
+	TaskPriority   TaskKind = "priority"
+	TaskMilestone  TaskKind = "milestone"
+	TaskMoved      TaskKind = "moved"      // moved to another board
+	TaskEdited     TaskKind = "edited"     // the title or the description (once per coalesced journal entry)
+	TaskAttachment TaskKind = "attachment" // a file was attached
+	TaskArchived   TaskKind = "archived"
 )
+
+// taskKinds maps every kind to its wire value (TaskNoticeKind).
+var taskKinds = map[TaskKind]v1.TaskNoticeKind{
+	TaskAssigned:          v1.TaskNoticeKind_TASK_NOTICE_KIND_ASSIGNED,
+	TaskMentioned:         v1.TaskNoticeKind_TASK_NOTICE_KIND_MENTIONED,
+	TaskComment:           v1.TaskNoticeKind_TASK_NOTICE_KIND_COMMENT,
+	TaskStatus:            v1.TaskNoticeKind_TASK_NOTICE_KIND_STATUS,
+	TaskApprovalRequested: v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED,
+	TaskApproved:          v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVED,
+	TaskRejected:          v1.TaskNoticeKind_TASK_NOTICE_KIND_REJECTED,
+	TaskRule:              v1.TaskNoticeKind_TASK_NOTICE_KIND_RULE,
+	TaskUnassigned:        v1.TaskNoticeKind_TASK_NOTICE_KIND_UNASSIGNED,
+	TaskWatcherAdded:      v1.TaskNoticeKind_TASK_NOTICE_KIND_WATCHER_ADDED,
+	TaskDueSoon:           v1.TaskNoticeKind_TASK_NOTICE_KIND_DUE_SOON,
+	TaskOverdue:           v1.TaskNoticeKind_TASK_NOTICE_KIND_OVERDUE,
+	TaskDueChanged:        v1.TaskNoticeKind_TASK_NOTICE_KIND_DUE_CHANGED,
+	TaskPriority:          v1.TaskNoticeKind_TASK_NOTICE_KIND_PRIORITY,
+	TaskMilestone:         v1.TaskNoticeKind_TASK_NOTICE_KIND_MILESTONE,
+	TaskMoved:             v1.TaskNoticeKind_TASK_NOTICE_KIND_MOVED,
+	TaskEdited:            v1.TaskNoticeKind_TASK_NOTICE_KIND_EDITED,
+	TaskAttachment:        v1.TaskNoticeKind_TASK_NOTICE_KIND_ATTACHMENT,
+	TaskArchived:          v1.TaskNoticeKind_TASK_NOTICE_KIND_ARCHIVED,
+}
+
+// Notice is the wire value of k (UNSPECIFIED for an unknown kind).
+func (k TaskKind) Notice() v1.TaskNoticeKind { return taskKinds[k] }
+
+// TaskKindOf is the kind of a wire value; false for UNSPECIFIED and unknown values.
+func TaskKindOf(n v1.TaskNoticeKind) (TaskKind, bool) {
+	for k, v := range taskKinds {
+		if v == n {
+			return k, true
+		}
+	}
+	return "", false
+}
+
+// Mandatory reports whether k may never be switched off (ADR-0089 §2): approval requests and
+// their outcome (for the creator and the lead; others get those by their level).
+func (k TaskKind) Mandatory() bool {
+	return k == TaskApprovalRequested || k == TaskApproved || k == TaskRejected
+}
+
+// direct reports whether k is addressed to the recipient («Мне лично», ADR-0089 §1): it
+// notifies with task level ALL and MENTIONS, with or without a subscription.
+func (k TaskKind) direct() bool {
+	switch k {
+	case TaskAssigned, TaskMentioned, TaskRule, TaskUnassigned, TaskWatcherAdded, TaskDueSoon, TaskOverdue:
+		return true
+	}
+	return false
+}
 
 // TaskFacts are one task change by someone else, as seen by one recipient.
 type TaskFacts struct {
@@ -159,30 +225,73 @@ type TaskFacts struct {
 	// Mandatory: an APPROVED / REJECTED notice to the task's creator or lead assignee (ADR-0049
 	// §5) — delivered whatever the level, the task's «Отписаться» and a muted workspace.
 	Mandatory bool
+	// Off: the recipient switched this kind off (users.task_notify_off, ADR-0089 §2); no effect
+	// on mandatory notices.
+	Off bool
 }
 
 // TaskNotifies reports whether a task change notifies the recipient (the unread badge of the
-// boards icon and a system notification): nothing with level NONE or a muted workspace;
-// assignments and mentions with ALL and MENTIONS, even when unsubscribed; comments and
-// status changes with ALL only, to subscribers who did not mute the task. Approvals (ADR-0049
-// §5) are mandatory like a direct mention, bypassing levels and mutes: APPROVAL_REQUESTED
-// always, APPROVED / REJECTED for the creator and the lead (Mandatory); others get those like
-// a status change.
+// boards icon and a system notification). Approvals (ADR-0049 §5) are mandatory like a direct
+// mention, bypassing levels, mutes and Off: APPROVAL_REQUESTED always, APPROVED / REJECTED for
+// the creator and the lead (Mandatory). Otherwise nothing for a kind switched off (ADR-0089),
+// with level NONE or a muted workspace; the kinds addressed to the recipient (assigned,
+// mentioned, rule, unassigned, watcher_added, due_soon, overdue) with ALL and MENTIONS, even
+// when unsubscribed; the rest (comments, status, the other approvals, field changes) with ALL
+// only, to subscribers who did not mute the task.
 func TaskNotifies(f TaskFacts) bool {
 	if f.Kind == TaskApprovalRequested || (f.Mandatory && (f.Kind == TaskApproved || f.Kind == TaskRejected)) {
 		return true
 	}
 	level := orDefault(f.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL)
-	if f.Workspace || level == v1.NotificationLevel_NOTIFICATION_LEVEL_NONE {
+	if f.Off || f.Workspace || level == v1.NotificationLevel_NOTIFICATION_LEVEL_NONE {
 		return false
 	}
-	switch f.Kind {
-	case TaskAssigned, TaskMentioned, TaskRule:
-		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL || level == v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS
-	case TaskComment, TaskStatus, TaskApproved, TaskRejected:
-		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL && f.Subscribed && !f.Muted
+	if _, known := taskKinds[f.Kind]; !known {
+		return false
 	}
-	return false
+	if f.Kind.direct() {
+		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL || level == v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS
+	}
+	return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL && f.Subscribed && !f.Muted
+}
+
+// MaxTaskNotifyOff bounds users.task_notify_off.
+const MaxTaskNotifyOff = 64
+
+// ErrTaskNotifyOff: an UNSPECIFIED or unknown kind, or too many.
+var ErrTaskNotifyOff = errors.New("task notification kinds must be known TaskNoticeKind values, at most 64")
+
+// TaskNotifyOff validates a requested list of switched-off kinds (UpdateMeRequest
+// .task_notify_off) and returns it as stored: distinct names, the mandatory kinds dropped.
+func TaskNotifyOff(in []int32) ([]string, error) {
+	if len(in) > MaxTaskNotifyOff {
+		return nil, ErrTaskNotifyOff
+	}
+	out := make([]string, 0, len(in))
+	for _, n := range in {
+		k, ok := TaskKindOf(v1.TaskNoticeKind(n))
+		if !ok {
+			return nil, ErrTaskNotifyOff
+		}
+		if !k.Mandatory() && !slices.Contains(out, string(k)) {
+			out = append(out, string(k))
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// TaskNotifyOffWire is the stored list as wire values (UserSettings.task_notify_off); names
+// this version does not know are left out.
+func TaskNotifyOffWire(stored []string) []int32 {
+	out := make([]int32, 0, len(stored))
+	for _, s := range stored {
+		if n := TaskKind(s).Notice(); n != v1.TaskNoticeKind_TASK_NOTICE_KIND_UNSPECIFIED {
+			out = append(out, int32(n))
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Facts about one incoming message from someone else, as seen by one recipient.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ type vector struct {
 		Muted          bool   `json:"muted"`
 		WorkspaceMuted bool   `json:"workspaceMuted"`
 		Mandatory      bool   `json:"mandatory"`
+		Off            bool   `json:"off"`
 	} `json:"task"`
 }
 
@@ -52,7 +54,7 @@ func TestVectors(t *testing.T) {
 	for _, v := range vs {
 		if tv := v.Task; tv != nil {
 			tasks++
-			f := TaskFacts{Kind: TaskKind(tv.Kind), Level: lvl(tv.Level), Subscribed: tv.Subscribed, Muted: tv.Muted, Workspace: tv.WorkspaceMuted, Mandatory: tv.Mandatory}
+			f := TaskFacts{Kind: TaskKind(tv.Kind), Level: lvl(tv.Level), Subscribed: tv.Subscribed, Muted: tv.Muted, Workspace: tv.WorkspaceMuted, Mandatory: tv.Mandatory, Off: tv.Off}
 			if got := TaskNotifies(f); got != v.Notifies {
 				t.Errorf("%s: task notifies %v, want %v", v.Name, got, v.Notifies)
 			}
@@ -110,5 +112,38 @@ func TestParseMute(t *testing.T) {
 	}
 	if _, err := ParseMute(&timestamppb.Timestamp{Seconds: 1, Nanos: -1}, now); !errors.Is(err, ErrMuteInvalid) {
 		t.Fatal("invalid")
+	}
+}
+
+// Every wire kind has a TaskKind (a new TaskNoticeKind must be added to taskKinds).
+func TestTaskKindsCoverWire(t *testing.T) {
+	for n := range v1.TaskNoticeKind_name {
+		if n == 0 {
+			continue
+		}
+		k, ok := TaskKindOf(v1.TaskNoticeKind(n))
+		if !ok || k.Notice() != v1.TaskNoticeKind(n) {
+			t.Errorf("TaskNoticeKind %d has no TaskKind", n)
+		}
+	}
+}
+
+func TestTaskNotifyOff(t *testing.T) {
+	got, err := TaskNotifyOff([]int32{
+		int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_EDITED), int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVED),
+		int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_DUE_SOON), int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_EDITED),
+		int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED), int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_REJECTED),
+	})
+	if err != nil || !slices.Equal(got, []string{"due_soon", "edited"}) {
+		t.Fatalf("TaskNotifyOff = %v, %v", got, err)
+	}
+	wire := TaskNotifyOffWire(append(got, "from_the_future"))
+	if !slices.Equal(wire, []int32{int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_DUE_SOON), int32(v1.TaskNoticeKind_TASK_NOTICE_KIND_EDITED)}) {
+		t.Fatalf("TaskNotifyOffWire = %v", wire)
+	}
+	for _, bad := range [][]int32{{0}, {999}, make([]int32, MaxTaskNotifyOff+1)} {
+		if _, err := TaskNotifyOff(bad); err == nil {
+			t.Errorf("TaskNotifyOff(%v): no error", bad)
+		}
 	}
 }

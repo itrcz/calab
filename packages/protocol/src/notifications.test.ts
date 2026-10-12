@@ -22,6 +22,7 @@ interface Vector {
     muted: boolean;
     workspaceMuted: boolean;
     mandatory?: boolean;
+    off?: boolean;
   };
 }
 

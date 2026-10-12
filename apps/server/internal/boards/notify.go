@@ -29,18 +29,6 @@ type notice struct {
 	reRequested bool
 }
 
-var noticeKinds = map[notifications.TaskKind]v1.TaskNoticeKind{
-	notifications.TaskAssigned:  v1.TaskNoticeKind_TASK_NOTICE_KIND_ASSIGNED,
-	notifications.TaskMentioned: v1.TaskNoticeKind_TASK_NOTICE_KIND_MENTIONED,
-	notifications.TaskComment:   v1.TaskNoticeKind_TASK_NOTICE_KIND_COMMENT,
-	notifications.TaskStatus:    v1.TaskNoticeKind_TASK_NOTICE_KIND_STATUS,
-
-	notifications.TaskApprovalRequested: v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED,
-	notifications.TaskApproved:          v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVED,
-	notifications.TaskRejected:          v1.TaskNoticeKind_TASK_NOTICE_KIND_REJECTED,
-	notifications.TaskRule:              v1.TaskNoticeKind_TASK_NOTICE_KIND_RULE,
-}
-
 func actsOf(acts []sqlc.TaskActivity, taskID uuid.UUID) []sqlc.TaskActivity {
 	var out []sqlc.TaskActivity
 	for _, a := range acts {
@@ -177,7 +165,7 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 		if err != nil {
 			return
 		}
-		tn := &v1.TaskNotice{Kind: noticeKinds[n.kind]}
+		tn := &v1.TaskNotice{Kind: n.kind.Notice()}
 		if n.actor != uuid.Nil { // the approval reminder has no actor
 			tn.ActorId = n.actor.String()
 		}

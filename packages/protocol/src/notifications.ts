@@ -18,7 +18,7 @@ export function effectiveNotificationLevel(
   return !workspace || workspace === NotificationLevel.INHERIT ? NotificationLevel.MENTIONS : workspace;
 }
 
-/** What happened in a task, as far as notifications are concerned (ADR-0042 §4). */
+/** What happened in a task, as far as notifications are concerned (ADR-0042 §4, ADR-0089). */
 export type TaskNotifyKind =
   | 'assigned'
   | 'mentioned'
@@ -27,7 +27,24 @@ export type TaskNotifyKind =
   | 'approval_requested'
   | 'approved'
   | 'rejected'
-  | 'rule';
+  | 'rule'
+  | 'unassigned'
+  | 'watcher_added'
+  | 'due_soon'
+  | 'overdue'
+  | 'due_changed'
+  | 'priority'
+  | 'milestone'
+  | 'moved'
+  | 'edited'
+  | 'attachment'
+  | 'archived';
+
+/** Kinds addressed to the recipient («Мне лично», ADR-0089 §1): ALL and MENTIONS, no subscription needed. */
+export const TASK_DIRECT_KINDS: readonly TaskNotifyKind[] = ['assigned', 'mentioned', 'rule', 'unassigned', 'watcher_added', 'due_soon', 'overdue'];
+
+/** Kinds that cannot be switched off (ADR-0089 §2). */
+export const TASK_MANDATORY_KINDS: readonly TaskNotifyKind[] = ['approval_requested', 'approved', 'rejected'];
 
 /** One task change by someone else, as seen by one recipient. */
 export interface TaskNotifyFacts {
@@ -42,33 +59,25 @@ export interface TaskNotifyFacts {
   workspaceMuted: boolean;
   /** APPROVED / REJECTED to the task's creator or lead assignee (ADR-0049 §5): bypasses levels and mutes. */
   mandatory?: boolean;
+  /** The recipient switched this kind off (UserSettings.taskNotifyOff, ADR-0089); no effect on mandatory notices. */
+  off?: boolean;
 }
 
 /**
- * Whether a task change notifies the recipient (Go notifications.TaskNotifies): nothing with
- * NONE or a muted workspace; assignments and mentions with ALL and MENTIONS, even unsubscribed;
- * comments and status changes with ALL, to subscribers who did not mute the task. Approvals
- * (ADR-0049 §5) are mandatory: APPROVAL_REQUESTED always, APPROVED / REJECTED with `mandatory`;
- * otherwise those follow the status rule.
+ * Whether a task change notifies the recipient (Go notifications.TaskNotifies). Approvals
+ * (ADR-0049 §5) are mandatory: APPROVAL_REQUESTED always, APPROVED / REJECTED with `mandatory`.
+ * Otherwise nothing for a kind switched off (ADR-0089), with NONE or a muted workspace; the
+ * kinds addressed to the recipient with ALL and MENTIONS, even unsubscribed; the rest with ALL,
+ * to subscribers who did not mute the task.
  */
 export function taskNotifies(f: TaskNotifyFacts): boolean {
   if (f.kind === 'approval_requested' || (f.mandatory && (f.kind === 'approved' || f.kind === 'rejected'))) {
     return true;
   }
   const level = !f.level ? NotificationLevel.ALL : f.level;
-  if (f.workspaceMuted || level === NotificationLevel.NONE) return false;
-  switch (f.kind) {
-    case 'assigned':
-    case 'mentioned':
-    case 'rule':
-      return level === NotificationLevel.ALL || level === NotificationLevel.MENTIONS;
-    case 'comment':
-    case 'status':
-    case 'approved':
-    case 'rejected':
-      return level === NotificationLevel.ALL && f.subscribed && !f.muted;
-  }
-  return false;
+  if (f.off || f.workspaceMuted || level === NotificationLevel.NONE) return false;
+  if (TASK_DIRECT_KINDS.includes(f.kind)) return level === NotificationLevel.ALL || level === NotificationLevel.MENTIONS;
+  return level === NotificationLevel.ALL && f.subscribed && !f.muted;
 }
 
 /** Facts about one incoming message from someone else, as seen by its recipient. */
