@@ -1,5 +1,5 @@
 import { moveMessages, moveRows, openRow, setMessageFlags, setRowFlags, useMail, type MoveOp } from '../../stores/mail';
-import { useMailUi } from '../../stores/mailUi';
+import { actionKeys, clearPicked, useMailUi } from '../../stores/mailUi';
 
 /**
  * The thread actions shared by the action bar and the hotkeys (ADR-0088 §8). Reply / flags /
@@ -19,8 +19,36 @@ export function composeNew(): void {
   useMailUi.getState().openCompose({ kind: 'new', ...(accountId ? { accountId } : {}) });
 }
 
-/** Moves the thread on screen: the row (selection follows), else the open message. */
+/** Several rows picked (⌘-click / ⇧-click / ⌘A): actions apply to all of them. */
+const multi = (): string[] | null => {
+  const keys = useMailUi.getState().picked.size > 1 ? actionKeys() : [];
+  return keys.length ? keys : null;
+};
+
+/** Read ↔ unread for rows: any unread → all read, else all unread (Apple Mail). One call. */
+export function toggleRowsRead(keys: string[]): void {
+  const rows = useMail.getState().rows;
+  void setRowFlags(keys, { seen: keys.some((k) => rows[k]?.unread) });
+}
+
+/** Flag ↔ unflag for rows: any without a flag → flag all, else clear all. One call. */
+export function toggleRowsFlag(keys: string[]): void {
+  const rows = useMail.getState().rows;
+  void setRowFlags(keys, { flagged: keys.some((k) => !rows[k]?.flagged) });
+}
+
+/** Archive / trash / move rows (the picked ones leave the selection with the list). */
+export function moveKeys(keys: string[], op: MoveOp): void {
+  void moveRows(keys, op);
+}
+
+/** Moves the thread on screen: the picked rows, the row (selection follows), else the open message. */
 export function moveOpen(op: MoveOp): void {
+  const many = multi();
+  if (many) {
+    moveKeys(many, op);
+    return;
+  }
   const s = useMail.getState();
   const key = s.thread?.rowKey ?? s.selected;
   if (key && s.rows[key]) {
@@ -32,6 +60,11 @@ export function moveOpen(op: MoveOp): void {
 
 /** ⌘⌫ / Delete in the list: the selected row to the trash. */
 export function trashSelected(): void {
+  const many = multi();
+  if (many) {
+    moveKeys(many, { kind: 'trash' });
+    return;
+  }
   const s = useMail.getState();
   if (s.selected && s.rows[s.selected]) void moveRows([s.selected], { kind: 'trash' });
   else if (s.openId) void moveMessages([s.openId], { kind: 'trash' });
@@ -39,6 +72,11 @@ export function trashSelected(): void {
 
 /** Marks the open message, the next auto-read must not undo it (see `noteManualRead`). */
 export function toggleOpenRead(): void {
+  const many = multi();
+  if (many) {
+    toggleRowsRead(many);
+    return;
+  }
   const s = useMail.getState();
   const id = s.openId;
   const h = id ? s.headers[id] : undefined;
@@ -52,6 +90,11 @@ export function toggleOpenRead(): void {
 }
 
 export function toggleOpenFlag(): void {
+  const many = multi();
+  if (many) {
+    toggleRowsFlag(many);
+    return;
+  }
   const s = useMail.getState();
   const id = s.openId;
   const h = id ? s.headers[id] : undefined;
@@ -65,6 +108,7 @@ export function toggleOpenFlag(): void {
 
 /** ↑ / ↓ in the list (Apple Mail): the neighbour row opens. */
 export function stepSelection(dir: -1 | 1): void {
+  clearPicked();
   const s = useMail.getState();
   if (!s.order.length) return;
   const at = s.selected ? s.order.indexOf(s.selected) : -1;
@@ -92,5 +136,8 @@ export const MAIL_KEYS = {
   forward: combo('F', true),
   trash: MAC ? '⌘⌫' : 'Delete',
   unread: combo('U', true),
+  flag: combo('L', true),
+  /** ⌃⌘A is macOS-only (no Ctrl+Meta elsewhere): no hint there. */
+  archive: MAC ? '⌃⌘A' : '',
   send: MAC ? '⌘↩' : 'Ctrl+Enter',
 } as const;

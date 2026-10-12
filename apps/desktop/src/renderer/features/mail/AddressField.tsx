@@ -5,6 +5,7 @@ import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { chipFrom, suggest } from './compose';
 import { addressFull, addressLabel } from './format';
+import { UserAvatar, useMailUser, useUserName } from './people';
 import { parseAddressList } from './mailLink';
 
 /**
@@ -58,17 +59,7 @@ export function AddressField({
     <div className="relative flex min-h-10 flex-wrap items-center gap-1 border-b border-line py-1.5" data-testid={testId}>
       <span className="w-16 shrink-0 text-body text-muted">{label}</span>
       {value.map((a) => (
-        <span key={a.address} className="inline-flex h-6 max-w-full items-center gap-1 rounded-full bg-hover pl-2.5 pr-1 text-caption text-fg" title={addressFull(a)}>
-          <span className="truncate">{addressLabel(a)}</span>
-          <button
-            type="button"
-            aria-label={t('mbox.removeRecipient', { address: a.address })}
-            className="grid size-4 place-items-center rounded-full text-muted hover:bg-[var(--color-fill-hover)] hover:text-fg"
-            onClick={() => onChange(value.filter((x) => x.address !== a.address))}
-          >
-            <X className="size-3" aria-hidden />
-          </button>
-        </span>
+        <RecipientChip key={a.address} a={a} onRemove={() => onChange(value.filter((x) => x.address !== a.address))} />
       ))}
       <input
         ref={inputRef}
@@ -150,5 +141,25 @@ export function AddressField({
         </ul>
       ) : null}
     </div>
+  );
+}
+
+/** A recipient chip; a person of Calab shows their avatar and Calab name (the address in the tooltip). */
+function RecipientChip({ a, onRemove }: { a: MailAddress; onRemove: () => void }): ReactNode {
+  const userId = useMailUser(a.address);
+  const name = useUserName(userId);
+  return (
+    <span className={cx('inline-flex h-6 max-w-full items-center gap-1 rounded-full bg-hover pr-1 text-caption text-fg', userId ? 'pl-0.5' : 'pl-2.5')} title={addressFull(a)} data-testid="compose-chip">
+      {userId ? <UserAvatar userId={userId} size={20} link={false} /> : null}
+      <span className="truncate">{name || addressLabel(a)}</span>
+      <button
+        type="button"
+        aria-label={t('mbox.removeRecipient', { address: a.address })}
+        className="grid size-4 place-items-center rounded-full text-muted hover:bg-[var(--color-fill-hover)] hover:text-fg"
+        onClick={onRemove}
+      >
+        <X className="size-3" aria-hidden />
+      </button>
+    </span>
   );
 }

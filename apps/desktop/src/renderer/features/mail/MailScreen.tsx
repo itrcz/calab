@@ -4,10 +4,11 @@ import { Spinner } from '../../components/ui';
 import { t } from '../../i18n';
 import { shortcutLetter } from '../../services/hotkeys';
 import { useMail } from '../../stores/mail';
-import { useMailUi } from '../../stores/mailUi';
+import { clearPicked, pickAll, useMailUi } from '../../stores/mailUi';
 import { useUi } from '../../stores/ui';
-import { moveOpen, replyOpen, stepSelection, toggleOpenRead, trashSelected } from './actions';
+import { moveOpen, replyOpen, stepSelection, toggleOpenFlag, toggleOpenRead, trashSelected } from './actions';
 import { AddAccountCard } from './AddAccountCard';
+import { BatchView } from './BatchView';
 import { ComposeSheet } from './ComposeSheet';
 import { MailColumn } from './MailColumn';
 import { MailThread } from './MailThread';
@@ -22,6 +23,7 @@ export function MailScreen(): ReactNode {
   const hasAccounts = useMail((s) => s.accountIds.length > 0);
   const adding = useMailUi((s) => s.adding);
   const compose = useMailUi((s) => s.compose);
+  const many = useMailUi((s) => s.picked.size > 1);
   useMailHotkeys();
   return (
     <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="mail-screen">
@@ -42,6 +44,8 @@ export function MailScreen(): ReactNode {
               <div className="flex min-h-0 flex-1 overflow-y-auto">
                 <AddAccountCard first={false} />
               </div>
+            ) : many ? (
+              <BatchView />
             ) : (
               <MailThread />
             )}
@@ -70,8 +74,9 @@ const typing = (el: EventTarget | null): boolean =>
 
 /**
  * Apple Mail's keys (§8) while the section is on screen and nothing is typed into / no dialog is
- * open: ⌘R reply, ⇧⌘R reply all, ⇧⌘F forward, ⌘⌫ / Delete trash, ⇧⌘U read ↔ unread, ⌃⌘A archive,
- * ↑/↓ the list. ⌘N comes from the app menu (services/menu.ts) and opens the composer in this section.
+ * open: ⌘R reply, ⇧⌘R reply all, ⇧⌘F forward, ⌘⌫ / Delete trash, ⇧⌘U read ↔ unread, ⇧⌘L flag,
+ * ⌃⌘A archive, ↑/↓ the list, ⌘A select all rows, Esc clear the selection. With several rows picked
+ * the actions apply to all of them (actions.ts). ⌘N comes from the app menu (services/menu.ts) and opens the composer in this section.
  */
 function useMailHotkeys(): void {
   useEffect(() => {
@@ -84,6 +89,9 @@ function useMailHotkeys(): void {
       if (mod && !e.altKey && letter === 'r') act = () => replyOpen(e.shiftKey ? 'replyAll' : 'reply');
       else if (mod && e.shiftKey && !e.altKey && letter === 'f') act = () => replyOpen('forward');
       else if (mod && e.shiftKey && !e.altKey && letter === 'u') act = toggleOpenRead;
+      else if (mod && e.shiftKey && !e.altKey && letter === 'l') act = toggleOpenFlag;
+      else if (mod && !e.shiftKey && !e.altKey && !(e.metaKey && e.ctrlKey) && letter === 'a') act = pickAll;
+      else if (e.key === 'Escape' && !mod && useMailUi.getState().picked.size) act = clearPicked;
       else if ((mod && e.key === 'Backspace') || (!mod && !e.shiftKey && e.key === 'Delete')) act = trashSelected;
       else if (!mod && !e.altKey && !e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
         // Arrows scroll the message when focus is inside the thread; elsewhere they walk the list.

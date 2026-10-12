@@ -1,6 +1,7 @@
+import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Flag, ListFilter, Paperclip, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Archive, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
 import type { MailDraft, MailFolder, MailFolderRole, MailOutgoing } from '../../../shared/mail';
@@ -13,6 +14,7 @@ import {
   boxEquals,
   boxRole,
   boxUnread,
+  firstSyncing,
   loadDrafts,
   loadMore,
   loadOlder,
@@ -20,17 +22,25 @@ import {
   openRow,
   outgoingOf,
   reloadList,
+  scopeProblem,
+  scopeSyncing,
   selectBox,
+  setFlaggedOnly,
   setQuery,
   setUnreadOnly,
+  syncNow,
   useMail,
   type MailBox,
 } from '../../stores/mail';
-import { useMailUi } from '../../stores/mailUi';
+import { clearPicked, pickRange, togglePick, useMailUi } from '../../stores/mailUi';
+import { useUi } from '../../stores/ui';
 import { toast } from '../../stores/toasts';
 import { ColumnHeader, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { composeNew } from './actions';
+import { MAIL_KEYS, composeNew, moveKeys, replyOpen, toggleRowsFlag, toggleRowsRead } from './actions';
+import { pickedSummary } from './BatchView';
+import { useMoveTargets } from './MailMessageView';
+import { UserAvatar, UserName, useMailUser } from './people';
 import { addressLabel, allLabel, folderLabel, mailErrorText, mailListTime, ROLE_ORDER } from './format';
 
 /**
@@ -42,13 +52,78 @@ import { addressLabel, allLabel, folderLabel, mailErrorText, mailListTime, ROLE_
 export function MailColumn(): ReactNode {
   const role = useMail((s) => (s.query ? null : boxRole(s, s.box)));
   return (
-    <aside className="mat-sidebar mat-sidebar-window flex w-[clamp(300px,30vw,380px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.list')} data-testid="mail-column">
+    <aside className="mat-sidebar mat-sidebar-window relative flex w-[clamp(300px,30vw,380px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.list')} data-testid="mail-column">
       <ColumnHeader title={<BoxSwitcher />}>
+        <SyncControl />
         <CreateButton label={t('mbox.compose')} data-testid="mail-compose" onClick={composeNew} />
       </ColumnHeader>
+      <AccountNotice />
       <SearchBar />
       {role === 'drafts' ? <DraftList /> : role === 'outbox' ? <OutboxList /> : <ThreadList />}
     </aside>
+  );
+}
+
+// ---------------------------------------------------------------- sync (owner 12.10)
+
+/**
+ * «Проверить почту» next to «+» (a quiet icon button) and, while an account of the box syncs, a
+ * spinner of the same size in its place plus a 2 px progress line under the header. A leaf with one
+ * boolean selector: `account_state` re-renders this and nothing else in the column.
+ */
+const SyncControl = memo(function SyncControl(): ReactNode {
+  useLocale();
+  const syncing = useMail((s) => scopeSyncing(s, s.box.scope));
+  return (
+    <>
+      {syncing ? (
+        <span className="inline-grid size-8 shrink-0 place-items-center" data-testid="mail-sync-spinner">
+          <Spinner className="size-4" label={t('mbox.checking')} />
+        </span>
+      ) : (
+        <IconButton label={t('mbox.checkMail')} onClick={() => void syncNow()} data-testid="mail-sync">
+          <RotateCw className="size-4" strokeWidth={1.75} />
+        </IconButton>
+      )}
+      {syncing ? (
+        <div className="pointer-events-none absolute inset-x-0 top-12 z-[1] h-0.5 overflow-hidden" aria-hidden data-testid="mail-sync-line">
+          <div className="mail-sync-line h-full rounded-full bg-accent" />
+        </div>
+      ) : null}
+    </>
+  );
+});
+
+/** An account of the box that cannot sync: a thin row with the reason and «Повторить» / «Ввести пароль». */
+function AccountNotice(): ReactNode {
+  const key = useMail((s) => scopeProblem(s, s.box.scope));
+  if (!key) return null;
+  const [accountId = '', state = ''] = key.split('\n');
+  return <NoticeRow accountId={accountId} state={state} />;
+}
+
+function NoticeRow({ accountId, state }: { accountId: string; state: string }): ReactNode {
+  useLocale();
+  const email = useMail((s) => s.accounts[accountId]?.email ?? '');
+  const code = useMail((s) => s.accounts[accountId]?.error?.code ?? null);
+  const multi = useMail((s) => s.accountIds.length > 1);
+  const auth = state === 'auth_failed';
+  const reason = auth ? t('mbox.state.authFailed') : state === 'offline' ? t('mbox.state.offline') : code ? mailErrorText(code) : t('mbox.state.error');
+  return (
+    <div role="status" className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-[8px] bg-hover px-2.5 py-1.5 text-caption" data-testid="mail-account-notice">
+      <TriangleAlert className="size-3.5 shrink-0 text-warn" aria-hidden />
+      <span className="min-w-0 flex-1 truncate text-muted" title={`${email}: ${reason}`}>
+        {multi ? `${email}: ${reason}` : reason}
+      </span>
+      <button
+        type="button"
+        className="shrink-0 font-medium text-accent-text hover:underline"
+        onClick={() => (auth ? useUi.getState().openDialog({ kind: 'settings', tab: 'mail' }) : void syncNow(accountId))}
+        data-testid="mail-account-notice-action"
+      >
+        {auth ? t('mbox.enterPassword') : t('mbox.retry')}
+      </button>
+    </div>
   );
 }
 
@@ -163,6 +238,7 @@ function BoxItem({ box, label, role, depth = 0 }: { box: MailBox; label: string;
 function SearchBar(): ReactNode {
   const query = useMail((s) => s.query);
   const unreadOnly = useMail((s) => s.unreadOnly);
+  const flaggedOnly = useMail((s) => s.flaggedOnly);
   const [text, setText] = useState(query);
   const [prev, setPrev] = useState(query);
   if (prev !== query) {
@@ -212,6 +288,9 @@ function SearchBar(): ReactNode {
       <IconButton label={t('mbox.unreadOnly')} active={unreadOnly} onClick={() => setUnreadOnly(!unreadOnly)} data-testid="mail-unread-filter">
         <ListFilter className="size-4" strokeWidth={1.75} />
       </IconButton>
+      <IconButton label={t('mbox.flaggedOnly')} active={flaggedOnly} onClick={() => setFlaggedOnly(!flaggedOnly)} data-testid="mail-flagged-filter">
+        <Flag className={cx('size-4', flaggedOnly && 'fill-[var(--color-attention)] text-attention')} strokeWidth={1.75} />
+      </IconButton>
     </div>
   );
 }
@@ -222,8 +301,6 @@ function ThreadList(): ReactNode {
   const order = useMail((s) => s.order);
   const state = useMail((s) => s.listState);
   const error = useMail((s) => s.listError);
-  const unreadOnly = useMail((s) => s.unreadOnly);
-  const searching = useMail((s) => s.query !== '');
   const ref = useRef<VirtuosoHandle>(null);
   // The selection moved by the keyboard (↑/↓) or after a move: keep it in view.
   useEffect(
@@ -255,27 +332,193 @@ function ThreadList(): ReactNode {
         </div>
       );
     }
+    return <EmptyList />;
+  }
+  return (
+    <RowMenu>
+      <Virtuoso
+        ref={ref}
+        role="listbox"
+        aria-label={t('mbox.list')}
+        aria-multiselectable
+        data-testid="mail-list"
+        className="min-h-0 flex-1"
+        data={order}
+        computeItemKey={(_, k) => k}
+        increaseViewportBy={400}
+        endReached={end}
+        itemContent={(_, k) => <MailRow k={k} />}
+        components={LIST_COMPONENTS}
+      />
+    </RowMenu>
+  );
+}
+
+/**
+ * No rows: the first sync of a new mailbox shows «Загружаем письма…» (owner 12.10: an empty list
+ * right after adding the account read as «no mail»), then the real empty state. Mounted only while
+ * the list is empty, so its account-state selector costs a full list nothing.
+ */
+function EmptyList(): ReactNode {
+  const first = useMail((s) => !s.query && firstSyncing(s, s.box.scope));
+  const unreadOnly = useMail((s) => s.unreadOnly);
+  const flaggedOnly = useMail((s) => s.flaggedOnly);
+  const searching = useMail((s) => s.query !== '');
+  if (first) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-body text-muted" data-testid="mail-list-empty">
-        <p>{searching ? t('mbox.searchEmpty') : unreadOnly ? t('mbox.emptyUnread') : t('mbox.empty')}</p>
-        {searching || unreadOnly ? null : <ListFooter />}
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-body text-muted" data-testid="mail-list-first-sync">
+        <Spinner />
+        <p>{t('mbox.loadingMail')}</p>
       </div>
     );
   }
   return (
-    <Virtuoso
-      ref={ref}
-      role="listbox"
-      aria-label={t('mbox.list')}
-      data-testid="mail-list"
-      className="min-h-0 flex-1"
-      data={order}
-      computeItemKey={(_, k) => k}
-      increaseViewportBy={400}
-      endReached={end}
-      itemContent={(_, k) => <MailRow k={k} />}
-      components={LIST_COMPONENTS}
-    />
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-body text-muted" data-testid="mail-list-empty">
+      <p>{searching ? t('mbox.searchEmpty') : flaggedOnly ? t('mbox.emptyFlagged') : unreadOnly ? t('mbox.emptyUnread') : t('mbox.empty')}</p>
+      {searching || unreadOnly || flaggedOnly ? null : <ListFooter />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- selection + the row menu
+
+/** A row click (Apple Mail): ⌘ toggles it in the selection, ⇧ picks the range, a plain click opens it alone. */
+function rowClick(e: ReactMouseEvent<HTMLElement>): void {
+  const k = e.currentTarget.dataset['rowKey'];
+  if (!k) return;
+  if (e.metaKey || e.ctrlKey) togglePick(k);
+  else if (e.shiftKey) pickRange(k);
+  else {
+    clearPicked();
+    openRow(k);
+  }
+}
+
+/**
+ * The rows' context menu (owner 12.10): one Radix menu for the whole list (not one per row). A
+ * right click on a row outside the selection selects that row first; on a picked row the menu acts
+ * on all the picked rows. Empty space opens nothing.
+ */
+function RowMenu({ children }: { children: ReactNode }): ReactNode {
+  const [keys, setKeys] = useState<string[]>([]);
+  return (
+    <ContextMenu.Root modal={false}>
+      <ContextMenu.Trigger
+        asChild
+        onContextMenu={(e) => {
+          const el = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-row-key]') : null;
+          const k = el?.dataset['rowKey'];
+          if (!k) {
+            e.preventDefault();
+            return;
+          }
+          const picked = useMailUi.getState().picked;
+          if (picked.size > 1 && picked.has(k)) {
+            setKeys([...picked]);
+            return;
+          }
+          clearPicked();
+          if (useMail.getState().selected !== k) openRow(k);
+          setKeys([k]);
+        }}
+      >
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className={cx(menuBox, 'w-64')} collisionPadding={16} data-testid="mail-row-menu">
+          <RowMenuItems keys={keys} />
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+const Hint = ({ k }: { k: string }): ReactNode => (k ? <span className="ml-auto pl-4 text-caption tabular-nums opacity-60">{k}</span> : null);
+
+function RowMenuItems({ keys }: { keys: string[] }): ReactNode {
+  useLocale();
+  const n = keys.length;
+  const set = useMemo(() => new Set(keys), [keys]);
+  const anyUnread = useMail((s) => pickedSummary(s, set).anyUnread);
+  const anyUnflagged = useMail((s) => pickedSummary(s, set).anyUnflagged);
+  const account = useMail((s) => pickedSummary(s, set).account);
+  const folder = useMail((s) => pickedSummary(s, set).folder);
+  if (!n) return null;
+  const one = n === 1;
+  const letters = plural('mbox.letters', n);
+  const label = (single: string, many: Parameters<typeof t>[0]): string => (one ? single : t(many, { letters }));
+  return (
+    <>
+      {one ? (
+        <>
+          <ContextMenu.Item className={menuItem} onSelect={() => replyOpen('reply')}>
+            <Reply className="size-4" aria-hidden />
+            {t('mbox.reply')}
+            <Hint k={MAIL_KEYS.reply} />
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => replyOpen('replyAll')}>
+            <ReplyAll className="size-4" aria-hidden />
+            {t('mbox.replyAll')}
+            <Hint k={MAIL_KEYS.replyAll} />
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => replyOpen('forward')}>
+            <Forward className="size-4" aria-hidden />
+            {t('mbox.forward')}
+            <Hint k={MAIL_KEYS.forward} />
+          </ContextMenu.Item>
+          <ContextMenu.Separator className={menuSeparator} />
+        </>
+      ) : null}
+      <ContextMenu.Item className={menuItem} onSelect={() => toggleRowsRead(keys)} data-testid="mail-menu-read">
+        {anyUnread ? <MailOpen className="size-4" aria-hidden /> : <Mail className="size-4" aria-hidden />}
+        {anyUnread ? label(t('mbox.markRead'), 'mbox.multi.read') : label(t('mbox.markUnread'), 'mbox.multi.unread')}
+        <Hint k={MAIL_KEYS.unread} />
+      </ContextMenu.Item>
+      <ContextMenu.Item className={menuItem} onSelect={() => toggleRowsFlag(keys)} data-testid="mail-menu-flag">
+        <Flag className="size-4" aria-hidden />
+        {anyUnflagged ? label(t('mbox.flag'), 'mbox.multi.flag') : label(t('mbox.unflag'), 'mbox.multi.unflag')}
+        <Hint k={MAIL_KEYS.flag} />
+      </ContextMenu.Item>
+      <ContextMenu.Separator className={menuSeparator} />
+      <ContextMenu.Item className={menuItem} onSelect={() => moveKeys(keys, { kind: 'archive' })} data-testid="mail-menu-archive">
+        <Archive className="size-4" aria-hidden />
+        {label(t('mbox.archive'), 'mbox.multi.archive')}
+        <Hint k={MAIL_KEYS.archive} />
+      </ContextMenu.Item>
+      <ContextMenu.Item className={menuItem} onSelect={() => moveKeys(keys, { kind: 'trash' })} data-testid="mail-menu-trash">
+        <Trash2 className="size-4" aria-hidden />
+        {label(t('mbox.trash'), 'mbox.multi.trash')}
+        <Hint k={MAIL_KEYS.trash} />
+      </ContextMenu.Item>
+      {account ? (
+        <ContextMenu.Sub>
+          <ContextMenu.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="mail-menu-move">
+            <FolderInput className="size-4" aria-hidden />
+            {label(t('mbox.move'), 'mbox.multi.move')}
+            <ChevronDown className="ml-auto size-3.5 -rotate-90 opacity-60" aria-hidden />
+          </ContextMenu.SubTrigger>
+          <ContextMenu.Portal>
+            <ContextMenu.SubContent className={cx(menuBox, 'max-h-[min(420px,var(--radix-context-menu-content-available-height))] overflow-y-auto')} collisionPadding={16}>
+              <ContextMenu.Label className={menuLabel}>{t('mbox.moveTo')}</ContextMenu.Label>
+              <MenuTargets accountId={account} folderId={folder || null} keys={keys} />
+            </ContextMenu.SubContent>
+          </ContextMenu.Portal>
+        </ContextMenu.Sub>
+      ) : null}
+    </>
+  );
+}
+
+function MenuTargets({ accountId, folderId, keys }: { accountId: string; folderId: string | null; keys: string[] }): ReactNode {
+  const targets = useMoveTargets(accountId, folderId);
+  return (
+    <>
+      {targets.map((f) => (
+        <ContextMenu.Item key={f.id} className={menuItem} onSelect={() => moveKeys(keys, { kind: 'move', folderId: f.id })}>
+          {folderLabel(f)}
+        </ContextMenu.Item>
+      ))}
+    </>
   );
 }
 
@@ -317,6 +560,9 @@ const MailRow = memo(function MailRow({ k }: { k: string }): ReactNode {
   useTimeFormat();
   const row = useMail((s) => s.rows[k]);
   const selected = useMail((s) => s.selected === k);
+  const picked = useMailUi((s) => s.picked.has(k));
+  // The sender is a person of Calab (owner 12.10): their avatar and name, a click opens the profile.
+  const userId = useMailUser(row?.from.address ?? '');
   // «Все входящие» with several accounts: the account under the sender (where the reply goes from).
   const account = useMail((s) => (s.box.scope === 'all' && s.accountIds.length > 1 && row ? (s.accounts[row.accountId]?.email ?? '') : ''));
   if (!row) return null;
@@ -326,16 +572,25 @@ const MailRow = memo(function MailRow({ k }: { k: string }): ReactNode {
     <div className="px-2 pb-px">
       <div
         role="option"
-        aria-selected={selected}
+        aria-selected={selected || picked}
         tabIndex={-1}
-        onClick={() => openRow(k)}
+        onClick={rowClick}
+        data-row-key={k}
         data-testid="mail-row"
         data-unread={row.unread || undefined}
-        className={cx('relative flex cursor-default flex-col gap-0.5 rounded-[8px] py-2 pl-6 pr-3', selected ? ROW_SELECTED : ROW_HOVER)}
+        data-picked={picked || undefined}
+        className={cx('relative flex cursor-default select-none flex-col gap-0.5 rounded-[8px] py-2 pl-6 pr-3', selected || picked ? ROW_SELECTED : ROW_HOVER)}
       >
         {row.unread ? <span className="absolute left-2 top-[13px] size-2.5 rounded-full bg-accent" aria-label={t('mbox.unread')} /> : null}
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className={cx('min-w-0 flex-1 truncate text-[14px] leading-5 text-fg', row.unread ? 'font-bold' : 'font-semibold')}>{sender}</span>
+          {userId ? (
+            <span className={cx('flex min-w-0 flex-1 items-center gap-1.5 text-[14px] leading-5 text-fg', row.unread ? 'font-bold' : 'font-semibold')} title={row.from.address}>
+              <UserAvatar userId={userId} size={18} />
+              <UserName userId={userId} />
+            </span>
+          ) : (
+            <span className={cx('min-w-0 flex-1 truncate text-[14px] leading-5 text-fg', row.unread ? 'font-bold' : 'font-semibold')}>{sender}</span>
+          )}
           {row.hasAttachments ? <Paperclip className="size-3.5 shrink-0 text-muted" aria-label={t('mbox.hasAttachments')} /> : null}
           {row.flagged ? <Flag className="size-3.5 shrink-0 fill-[var(--color-attention)] text-attention" aria-label={t('mbox.flagged')} /> : null}
           <time className="shrink-0 text-caption tabular-nums text-muted" dateTime={new Date(row.date).toISOString()}>

@@ -178,3 +178,49 @@ describe('against the mock engine', () => {
     expect(sent.order.every((key) => sent.rows[key]?.folderId === 'acc-work/sent')).toBe(true);
   });
 });
+
+describe('sync state, filters and the selection (owner 12.10)', () => {
+  const acc = (id: string, state: 'idle' | 'syncing' | 'offline', lastSyncAt: number | null): never =>
+    ({ id, email: `${id}@x.io`, state, lastSyncAt, error: null }) as never;
+
+  it('«Проверить почту» ↔ spinner follows any syncing account of the scope', async () => {
+    const { scopeSyncing } = await import('./mail');
+    const s = { accountIds: ['a1', 'a2'], accounts: { a1: acc('a1', 'idle', 1), a2: acc('a2', 'syncing', 1) } };
+    expect(scopeSyncing(s, 'all')).toBe(true);
+    expect(scopeSyncing(s, 'a1')).toBe(false);
+    expect(scopeSyncing(s, 'a2')).toBe(true);
+  });
+
+  it('«Загружаем письма…» only on a first sync; afterwards the real empty state', async () => {
+    const { firstSyncing } = await import('./mail');
+    expect(firstSyncing({ accountIds: ['a1'], accounts: { a1: acc('a1', 'syncing', null) } }, 'a1')).toBe(true);
+    expect(firstSyncing({ accountIds: ['a1'], accounts: { a1: acc('a1', 'syncing', 5) } }, 'a1')).toBe(false);
+    expect(firstSyncing({ accountIds: ['a1'], accounts: { a1: acc('a1', 'idle', null) } }, 'a1')).toBe(false);
+  });
+
+  it('the flagged filter keeps unflagged new rows out of the list', () => {
+    const s = { ...useMail.getState(), folderById: { 'a1/inbox': { id: 'a1/inbox', role: 'inbox' } as MailFolder }, flaggedOnly: true, next: null } as MailState;
+    expect(applyRows(s, [row(1)], true)).toBeNull();
+    expect(applyRows(s, [row(2, { flagged: true })], true)?.order).toEqual([rowKey(row(2))]);
+  });
+
+  it('the mock honours flaggedOnly across accounts', async () => {
+    const api = createMockMailApi({ delayMs: 0 });
+    const page = await api.messages.list({ scope: 'all', folder: 'inbox', limit: 200, flaggedOnly: true });
+    expect(page.rows.length).toBeGreaterThan(0);
+    expect(page.rows.every((r) => r.flagged)).toBe(true);
+  });
+
+  it('⇧-click picks a range from the open row; one row left opens alone', async () => {
+    const { pickRange, togglePick, clearPicked, useMailUi } = await import('./mailUi');
+    const rows = [1, 2, 3, 4].map((n) => row(n));
+    useMail.setState({ rows: Object.fromEntries(rows.map((r) => [rowKey(r), r])), order: rows.map(rowKey), selected: rowKey(rows[0] as MailThreadRow) });
+    pickRange(rowKey(rows[2] as MailThreadRow));
+    expect([...useMailUi.getState().picked]).toEqual(rows.slice(0, 3).map(rowKey));
+    togglePick(rowKey(rows[1] as MailThreadRow));
+    togglePick(rowKey(rows[2] as MailThreadRow));
+    expect(useMailUi.getState().picked.size).toBe(0);
+    expect(useMail.getState().selected).toBe(rowKey(rows[0] as MailThreadRow));
+    clearPicked();
+  });
+});

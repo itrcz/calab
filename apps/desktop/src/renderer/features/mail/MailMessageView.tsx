@@ -2,7 +2,7 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Archive, Flag, FolderInput, Forward, ImageOff, Mail, MailOpen, Paperclip, Reply, ReplyAll, Trash2 } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import type { MailAddress, MailHeader, MailMessage } from '../../../shared/mail';
+import type { MailAddress, MailFolder, MailHeader, MailMessage } from '../../../shared/mail';
 import { Button, IconButton, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { isSafeHref } from '../../lib/markdown/parse';
@@ -14,6 +14,7 @@ import { autoReadDue, MAIL_KEYS, moveOpen, noteManualRead, replyOpen, toggleOpen
 import { AttachmentStrip } from './Attachments';
 import { addressFull, addressLabel, avatarTone, folderLabel, mailHeaderTime, mailInitials, mailListTime, ROLE_ORDER } from './format';
 import { parseMailto } from './mailLink';
+import { UserAvatar, UserName, useMailUser } from './people';
 import { MailFrame } from './MailFrame';
 import { linkify } from './sanitize';
 
@@ -29,6 +30,13 @@ export const MailMessageView = memo(function MailMessageView({ id, last }: { id:
   if (!header) return null;
   return open ? <OpenMessage header={header} /> : <CollapsedMessage header={header} last={last} />;
 });
+
+/** The sender's picture: a person of Calab's avatar (opens the profile), else initials on the address colour. */
+function SenderAvatar({ from, size, link = true }: { from: MailAddress; size: number; link?: boolean }): ReactNode {
+  const userId = useMailUser(from.address);
+  if (userId) return <UserAvatar userId={userId} size={size} link={link} />;
+  return <Initials from={from} size={size} />;
+}
 
 function Initials({ from, size }: { from: MailAddress; size: number }): ReactNode {
   return (
@@ -50,9 +58,9 @@ function CollapsedMessage({ header }: { header: MailHeader; last: boolean }): Re
       className="flex w-full min-w-0 items-center gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-4 py-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover"
       data-testid="mail-message-collapsed"
     >
-      <Initials from={header.from} size={32} />
+      <SenderAvatar from={header.from} size={32} link={false} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className={cx('truncate text-body text-fg', header.flags.seen ? 'font-medium' : 'font-bold')}>{addressLabel(header.from)}</span>
+        <SenderLabel from={header.from} link={false} className={cx('truncate text-body text-fg', header.flags.seen ? 'font-medium' : 'font-bold')} />
         <span className="truncate text-caption text-muted">{header.snippet}</span>
       </span>
       {header.flags.flagged ? <Flag className="size-3.5 shrink-0 fill-[var(--color-attention)] text-attention" aria-label={t('mbox.flagged')} /> : null}
@@ -80,12 +88,10 @@ function OpenMessage({ header }: { header: MailHeader }): ReactNode {
   return (
     <article className="flex flex-col rounded-[var(--radius-card)] bg-[var(--color-card)]" data-testid="mail-message" aria-label={addressLabel(header.from)}>
       <header className="flex items-start gap-3 px-4 pb-2 pt-3">
-        <Initials from={header.from} size={40} />
+        <SenderAvatar from={header.from} size={40} />
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="selectable min-w-0 truncate text-[15px] font-semibold text-fg" title={addressFull(header.from)}>
-              {addressLabel(header.from)}
-            </span>
+            <SenderLabel from={header.from} className="selectable min-w-0 truncate text-[15px] font-semibold text-fg" />
             <span className="ml-auto shrink-0 text-caption tabular-nums text-muted">{mailHeaderTime(header.date)}</span>
           </div>
           <div className="flex min-w-0 items-center gap-1 text-caption text-muted">
@@ -107,6 +113,30 @@ function OpenMessage({ header }: { header: MailHeader }): ReactNode {
   );
 }
 
+/** The sender's name: a person of Calab by their Calab name (a profile button), else the From name / address. */
+function SenderLabel({ from, className, link = true }: { from: MailAddress; className: string; link?: boolean }): ReactNode {
+  const userId = useMailUser(from.address);
+  if (userId) return <UserName userId={userId} className={className} link={link} />;
+  return (
+    <span className={className} title={addressFull(from)}>
+      {addressLabel(from)}
+    </span>
+  );
+}
+
+/** An address in «Подробнее»: a person of Calab with avatar and name (profile), the address after it. */
+function DetailAddress({ a }: { a: MailAddress }): ReactNode {
+  const userId = useMailUser(a.address);
+  if (!userId) return <span>{addressFull(a)}</span>;
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 align-middle">
+      <UserAvatar userId={userId} size={16} />
+      <UserName userId={userId} className="font-medium" />
+      <span className="truncate text-muted">&lt;{a.address}&gt;</span>
+    </span>
+  );
+}
+
 function Details({ header }: { header: MailHeader }): ReactNode {
   const rows: Array<[string, MailAddress[]]> = [
     [t('mbox.from'), [header.from]],
@@ -122,7 +152,14 @@ function Details({ header }: { header: MailHeader }): ReactNode {
         .map(([label, list]) => (
           <div key={label} className="contents">
             <dt className="text-muted">{label}</dt>
-            <dd className="min-w-0 break-words text-fg">{list.map(addressFull).join(', ')}</dd>
+            <dd className="flex min-w-0 flex-wrap gap-x-1 break-words text-fg">
+              {list.map((a, i) => (
+                <span key={a.address}>
+                  <DetailAddress a={a} />
+                  {i < list.length - 1 ? ',' : ''}
+                </span>
+              ))}
+            </dd>
           </div>
         ))}
       <dt className="text-muted">{t('mbox.date')}</dt>
@@ -145,7 +182,7 @@ function ActionBar({ header }: { header: MailHeader }): ReactNode {
         <Forward className="size-4" strokeWidth={1.75} />
       </IconButton>
       <span className="mx-1 h-4 w-px bg-line" aria-hidden />
-      <IconButton label={t('mbox.archive')} onClick={() => moveOpen({ kind: 'archive' })} data-testid="mail-archive">
+      <IconButton label={t('mbox.archive')} shortcut={MAIL_KEYS.archive || undefined} onClick={() => moveOpen({ kind: 'archive' })} data-testid="mail-archive">
         <Archive className="size-4" strokeWidth={1.75} />
       </IconButton>
       <IconButton label={t('mbox.trash')} shortcut={MAIL_KEYS.trash} onClick={() => moveOpen({ kind: 'trash' })} data-testid="mail-trash">
@@ -153,7 +190,7 @@ function ActionBar({ header }: { header: MailHeader }): ReactNode {
       </IconButton>
       <MoveMenu accountId={header.accountId} folderId={header.folderId} />
       <span className="mx-1 h-4 w-px bg-line" aria-hidden />
-      <IconButton label={header.flags.flagged ? t('mbox.unflag') : t('mbox.flag')} active={header.flags.flagged} onClick={toggleOpenFlag} data-testid="mail-flag">
+      <IconButton label={header.flags.flagged ? t('mbox.unflag') : t('mbox.flag')} shortcut={MAIL_KEYS.flag} active={header.flags.flagged} onClick={toggleOpenFlag} data-testid="mail-flag">
         <Flag className={cx('size-4', header.flags.flagged && 'fill-[var(--color-attention)] text-attention')} strokeWidth={1.75} />
       </IconButton>
       <IconButton label={header.flags.seen ? t('mbox.markUnread') : t('mbox.markRead')} shortcut={MAIL_KEYS.unread} onClick={toggleOpenRead} data-testid="mail-read">
@@ -182,13 +219,18 @@ function MoveMenu({ accountId, folderId }: { accountId: string; folderId: string
   );
 }
 
-function MoveTargets({ accountId, folderId }: { accountId: string; folderId: string }): ReactNode {
+/** The account's real folders a message / thread can move to (no virtual ones, not `folderId`), Apple Mail's order. */
+export function useMoveTargets(accountId: string, folderId: string | null): MailFolder[] {
   const folders = useMail(useShallow((s) => s.folders[accountId] ?? []));
-  const targets = useMemo(() => {
+  return useMemo(() => {
     const real = folders.filter((f) => f.path && f.id !== folderId && f.role !== 'starred' && f.role !== 'outbox' && f.role !== 'drafts');
-    const rank = (r: (typeof real)[number]): number => (r.role ? ROLE_ORDER.indexOf(r.role) : 100);
+    const rank = (r: MailFolder): number => (r.role ? ROLE_ORDER.indexOf(r.role) : 100);
     return real.sort((a, b) => rank(a) - rank(b) || a.path.localeCompare(b.path));
   }, [folders, folderId]);
+}
+
+function MoveTargets({ accountId, folderId }: { accountId: string; folderId: string }): ReactNode {
+  const targets = useMoveTargets(accountId, folderId);
   return (
     <>
       {targets.map((f) => (

@@ -710,6 +710,29 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   }
 }
 
+/* Mail sync line (ADR-0088, owner 12.10): a 2 px indeterminate bar under the mail column's header,
+   mounted only while an account syncs (a loader: removed with the sync, nothing runs when idle);
+   with reduced motion a still faint line. */
+@keyframes calaba-mail-sync {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.mail-sync-line {
+  width: 40%;
+  animation: calaba-mail-sync 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mail-sync-line {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}
+
 /* «Вызов…» (ADR-0034): three dots light up in turn while the call rings — finite (32 × 1.4 s ≈
    the 45 s ring timeout), then still; none with reduced motion. */
 @keyframes calaba-call-dot {

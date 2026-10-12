@@ -69,6 +69,8 @@ export interface MailState {
   settings: MailSettings;
   box: MailBox;
   unreadOnly: boolean;
+  /** «Отмеченные» filter: only threads with a flagged message (combines with `unreadOnly`). */
+  flaggedOnly: boolean;
   /** The active search ('' = the mailbox list). */
   query: string;
   rows: Record<string, MailThreadRow>;
@@ -103,6 +105,7 @@ const initial = (): MailState => ({
   settings: DEFAULT_MAIL_SETTINGS,
   box: ALL_INBOXES,
   unreadOnly: false,
+  flaggedOnly: false,
   query: '',
   rows: {},
   order: [],
@@ -225,6 +228,7 @@ export function applyRows(s: MailState, rows: MailThreadRow[], insert: boolean):
     const had = map[key];
     if (!had && (s.query || !insert || !inBox(s, s.box, row))) continue;
     if (!had && s.unreadOnly && !row.unread) continue;
+    if (!had && s.flaggedOnly && !row.flagged) continue;
     if (sameRow(had, row)) continue;
     if (map === s.rows) map = { ...s.rows };
     map[key] = row;
@@ -415,6 +419,12 @@ export function setUnreadOnly(on: boolean): void {
   void reloadList();
 }
 
+export function setFlaggedOnly(on: boolean): void {
+  if (useMail.getState().flaggedOnly === on) return;
+  useMail.setState({ flaggedOnly: on, selected: null });
+  void reloadList();
+}
+
 /** The search field (already debounced by the view); '' returns to the mailbox. */
 export function setQuery(text: string): void {
   const query = text.trim();
@@ -433,7 +443,7 @@ function fetchPage(before: MailCursor | undefined): Promise<MailPage> {
   const role = boxRole(s, s.box);
   // Local drafts and the outgoing queue are not thread rows (§6): their own lists.
   if (role === 'drafts' || role === 'outbox') return Promise.resolve({ rows: [], next: null });
-  return a.messages.list({ scope: s.box.scope, folder: s.box.folder, limit: PAGE_SIZE, ...(before ? { before } : {}), ...(s.unreadOnly ? { unreadOnly: true } : {}) });
+  return a.messages.list({ scope: s.box.scope, folder: s.box.folder, limit: PAGE_SIZE, ...(before ? { before } : {}), ...(s.unreadOnly ? { unreadOnly: true } : {}), ...(s.flaggedOnly ? { flaggedOnly: true } : {}) });
 }
 
 function pageState(rows: MailThreadRow[]): { rows: Record<string, MailThreadRow>; order: string[] } {
@@ -800,7 +810,45 @@ export async function updateSettings(patch: Partial<MailSettings>): Promise<void
   }
 }
 
+// ---------------------------------------------------------------- sync (owner 12.10)
+
+/** «Проверить почту»: the box's account, or all of them for «Все …». States arrive as `account_state`. */
+export async function syncNow(accountId?: string): Promise<void> {
+  const a = api;
+  if (!a) return;
+  const scope = accountId ?? useMail.getState().box.scope;
+  try {
+    await a.sync.now(scope === 'all' ? undefined : scope);
+  } catch (e) {
+    reportError(errCode(e), 'load');
+  }
+}
+
 // ---------------------------------------------------------------- selectors
+
+const scopeIds = (s: Pick<MailState, 'accountIds'>, scope: string): readonly string[] => (scope === 'all' ? s.accountIds : [scope]);
+
+/** Some account of the scope is syncing (the column's spinner and progress line) — a boolean. */
+export function scopeSyncing(s: Pick<MailState, 'accounts' | 'accountIds'>, scope: string): boolean {
+  return scopeIds(s, scope).some((id) => s.accounts[id]?.state === 'syncing');
+}
+
+/** An account of the scope runs its very first sync (nothing synced yet): «Загружаем письма…» instead of «Писем нет». */
+export function firstSyncing(s: Pick<MailState, 'accounts' | 'accountIds'>, scope: string): boolean {
+  return scopeIds(s, scope).some((id) => {
+    const a = s.accounts[id];
+    return a?.state === 'syncing' && a.lastSyncAt === null;
+  });
+}
+
+/** The first account of the scope that cannot sync, as `id\nstate` ('' = none) — a primitive for the notice row. */
+export function scopeProblem(s: Pick<MailState, 'accounts' | 'accountIds'>, scope: string): string {
+  for (const id of scopeIds(s, scope)) {
+    const st = s.accounts[id]?.state;
+    if (st === 'offline' || st === 'error' || st === 'auth_failed') return `${id}\n${st}`;
+  }
+  return '';
+}
 
 /** Addresses seen in the rows on screen (the composer's autocomplete), unique by address. */
 export function seenAddresses(s: Pick<MailState, 'rows' | 'order' | 'headers'>): Array<{ name: string; address: string }> {

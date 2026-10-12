@@ -25,6 +25,11 @@ export interface MockMailOptions {
   delayMs?: number;
   /** The clock for new items (default: max(fixture «now», Date.now())). */
   now?: () => number;
+  /**
+   * `syncing` → `idle` takes this long on `sync.now`, a new account and the first load (default
+   * 1500 ms, 0 with `delayMs: 0`): the column's spinner / progress line are visible in dev.
+   */
+  syncDelayMs?: number;
 }
 
 const fail = (code: MailErrorCode, message: string): never => {
@@ -87,6 +92,7 @@ function mockDiscover(email: string): MailDiscovery {
  */
 export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
   const delay = opts.delayMs ?? 400;
+  const syncDelay = opts.syncDelayMs ?? (delay === 0 ? 0 : 1500);
   const now = opts.now ?? (() => Math.max(MOCK_NOW, Date.now()));
   const accounts = new Map(mockAccounts().map((a) => [a.id, a]));
   const folders = new Map(mockFolders().map((f) => [f.id, f]));
@@ -105,9 +111,9 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
       for (const l of listeners) l(copy);
     });
   };
-  const later = (fn: () => void): void => {
-    if (delay === 0) fn();
-    else setTimeout(fn, delay);
+  const later = (fn: () => void, ms = delay): void => {
+    if (ms === 0) fn();
+    else setTimeout(fn, ms);
   };
 
   const account = (id: string): MailAccount => accounts.get(id) ?? fail('NOT_FOUND', `no account ${id}`);
@@ -276,6 +282,15 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
     emit({ type: 'account_state', accountId: a.id, account: a });
   }
 
+  /** `syncing` now, `idle` after the sync delay (a catch-up: nothing new arrives in the mock). */
+  function startSync(ids: string[]): void {
+    for (const id of ids) setAccount({ ...account(id), state: 'syncing' });
+    later(() => {
+      for (const id of ids) if (accounts.has(id)) setAccount({ ...account(id), state: 'idle', lastSyncAt: now() });
+    }, syncDelay);
+  }
+  let firstLoad = syncDelay > 0;
+
   function deliver(item: MailOutgoing): void {
     const draft = outgoingDrafts.get(item.id);
     if (!draft) return;
@@ -314,7 +329,7 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         seen: true,
         flagged: false,
         answered: false,
-        html: null,
+        html: draft.html ?? null,
         text: draft.text,
         attachments: draft.attachments.map((x) => ({ id: x.id, name: x.name, mime: x.mime, size: x.size, inline: false })),
         inReplyTo: orig && draft.ref?.kind !== 'forward' ? orig.messageIdHeader : '',
@@ -337,7 +352,15 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
 
   const api: MailApi = {
     accounts: {
-      list: () => Promise.resolve(clone([...accounts.values()])),
+      list: async () => {
+        // The first load of the section catches up like the engine after a start (spinner in dev);
+        // after the store has applied this list.
+        if (firstLoad) {
+          firstLoad = false;
+          setTimeout(() => startSync([...accounts.keys()]), 50);
+        }
+        return clone([...accounts.values()]);
+      },
       discover: (email) => Promise.resolve().then(() => mockDiscover(email)),
       add: async (input) => {
         const email = input.email.trim().toLowerCase();
@@ -364,7 +387,7 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         }
         setAccount(a);
         emitFolders(a.id);
-        later(() => setAccount({ ...a, state: 'idle', lastSyncAt: now() }));
+        later(() => setAccount({ ...a, state: 'idle', lastSyncAt: now() }), syncDelay);
         return clone(a);
       },
       update: async (id, patch) => {
@@ -398,7 +421,11 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
     messages: {
       list: async (q) => {
         const rows = resolveFolders(q.scope, q.folder).flatMap((f) => rowsOf(f, inFolder(f)));
-        return page(q.unreadOnly ? rows.filter((r) => r.unread) : rows, q.before, q.limit);
+        return page(
+          rows.filter((r) => (!q.unreadOnly || r.unread) && (!q.flaggedOnly || r.flagged)),
+          q.before,
+          q.limit,
+        );
       },
       get: async (id) => {
         const m = message(id);
@@ -538,10 +565,7 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
     sync: {
       now: async (accountId) => {
         const ids = accountId ? [account(accountId).id] : [...accounts.keys()];
-        for (const id of ids) setAccount({ ...account(id), state: 'syncing' });
-        later(() => {
-          for (const id of ids) if (accounts.has(id)) setAccount({ ...account(id), state: 'idle', lastSyncAt: now() });
-        });
+        startSync(ids);
       },
     },
     settings: {

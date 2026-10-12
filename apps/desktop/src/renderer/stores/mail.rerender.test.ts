@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { MailEvent, MailFolder, MailThreadRow } from '../../shared/mail';
-import { ALL_INBOXES, boxUnread, inboxUnread, reduceEvent, resetMail, rowKey, useMail } from './mail';
+import type { MailAccount, MailEvent, MailFolder, MailThreadRow } from '../../shared/mail';
+import { ALL_INBOXES, boxUnread, inboxUnread, reduceEvent, resetMail, rowKey, scopeProblem, scopeSyncing, useMail } from './mail';
+import { clearPicked, pickAll, togglePick, useMailUi } from './mailUi';
 
 /**
  * Re-renders of a mail event (ADR-0088 §9, CLAUDE.md «Ререндеры»), proven on the store like
@@ -26,6 +27,19 @@ const row = (i: number, over: Partial<MailThreadRow> = {}): MailThreadRow => ({
   hasAttachments: false,
   ...over,
 });
+const account = (id: string, over: Partial<MailAccount> = {}): MailAccount => ({
+  id,
+  email: `${id}@x.io`,
+  name: '',
+  provider: 'other',
+  imap: { host: 'imap.x.io', port: 993, security: 'tls' },
+  smtp: { host: 'smtp.x.io', port: 465, security: 'tls' },
+  login: `${id}@x.io`,
+  state: 'idle',
+  error: null,
+  lastSyncAt: 1,
+  ...over,
+});
 const folder = (unread: number): MailFolder => ({ id: 'a1/inbox', accountId: 'a1', path: 'INBOX', name: 'INBOX', role: 'inbox', parentId: null, unread, total: N });
 
 function apply(e: MailEvent): void {
@@ -41,9 +55,14 @@ function snapshot(): Map<string, unknown> {
   out.set('badge', inboxUnread(s)); // MailTile on the rail
   out.set('switcher count', boxUnread(s, ALL_INBOXES)); // BoxItem (only while the switcher is open)
   out.set('screen', s.accountIds.length > 0); // MailScreen
+  out.set('sync', scopeSyncing(s, s.box.scope)); // SyncControl (spinner ↔ button, progress line)
+  out.set('notice', scopeProblem(s, s.box.scope)); // AccountNotice
+  const picked = useMailUi.getState().picked;
+  out.set('batch', picked.size > 1); // MailScreen: BatchView ↔ MailThread
   for (const k of s.order) {
     out.set(`row ${k}`, s.rows[k]); // MailRow
     out.set(`selected ${k}`, s.selected === k);
+    out.set(`picked ${k}`, picked.has(k));
   }
   return out;
 }
@@ -53,11 +72,12 @@ const changed = (a: Map<string, unknown>, b: Map<string, unknown>): string[] => 
 describe('a mail event on a mailbox of 200 rows', () => {
   beforeEach(() => {
     resetMail();
+    clearPicked();
     const rows = Array.from({ length: N }, (_, i) => row(i));
     useMail.setState({
       loaded: true,
-      accountIds: ['a1'],
-      accounts: { a1: {} as never },
+      accountIds: ['a1', 'a2'],
+      accounts: { a1: account('a1'), a2: account('a2') },
       folders: { a1: [folder(67)] },
       folderById: { 'a1/inbox': folder(67) },
       box: ALL_INBOXES,
@@ -94,5 +114,42 @@ describe('a mail event on a mailbox of 200 rows', () => {
     const after = snapshot();
     expect(changed(before, after).filter((k) => before.has(k))).toEqual(['list']);
     expect(useMail.getState().order[0]).toBe(rowKey(row(-1)));
+  });
+
+  it('account_state (syncing) of one account re-renders the sync leaf only', () => {
+    const before = snapshot();
+    apply({ type: 'account_state', accountId: 'a2', account: account('a2', { state: 'syncing' }) });
+    expect(changed(before, snapshot())).toEqual(['sync']);
+    const mid = snapshot();
+    // The other account starting too, or a second state event while syncing: nothing more.
+    apply({ type: 'account_state', accountId: 'a1', account: account('a1', { state: 'syncing' }) });
+    expect(changed(mid, snapshot())).toEqual([]);
+  });
+
+  it('an account going offline re-renders the notice row only', () => {
+    const before = snapshot();
+    apply({ type: 'account_state', accountId: 'a1', account: account('a1', { state: 'offline', error: { code: 'NETWORK', message: 'x' } }) });
+    expect(changed(before, snapshot())).toEqual(['notice']);
+  });
+
+  it('⌘-click picks re-render the toggled rows only (and the centre once it becomes a batch)', () => {
+    const k = (i: number): string => rowKey(row(i));
+    const before = snapshot();
+    togglePick(k(9)); // row 5 was open: it joins the selection
+    expect(changed(before, snapshot()).sort()).toEqual(['batch', `picked ${k(5)}`, `picked ${k(9)}`].sort());
+    const mid = snapshot();
+    togglePick(k(12));
+    expect(changed(mid, snapshot())).toEqual([`picked ${k(12)}`]);
+    const mid2 = snapshot();
+    togglePick(k(12));
+    expect(changed(mid2, snapshot())).toEqual([`picked ${k(12)}`]);
+  });
+
+  it('⌘A picks every loaded row; a second ⌘A changes nothing', () => {
+    pickAll();
+    expect(useMailUi.getState().picked.size).toBe(N);
+    const mid = snapshot();
+    pickAll();
+    expect(changed(mid, snapshot())).toEqual([]);
   });
 });
