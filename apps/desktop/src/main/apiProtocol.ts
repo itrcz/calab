@@ -5,6 +5,7 @@ import { API_SCHEME } from '../shared/ipc';
 import { apiSession, resetApiTransport, stall } from './apiTransport';
 import { currentServerUrl, forceRefresh, identityAccessToken } from './auth';
 import { log } from './logging';
+import { MAIL_SCHEME_PRIVILEGES } from './mail/scheme';
 
 /**
  * `calaba-api://api/<path>` → `<serverUrl>/<path>` with `Authorization: Bearer`.
@@ -34,6 +35,7 @@ export function registerApiScheme(): void {
       scheme: API_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
     },
+    MAIL_SCHEME_PRIVILEGES, // calaba-mail:// attachments (ADR-0080 §7); one registerSchemesAsPrivileged call only
   ]);
 }
 
