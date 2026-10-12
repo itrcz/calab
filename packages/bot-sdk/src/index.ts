@@ -45,6 +45,7 @@ export type {
   Slot,
   Task,
   BotCallback,
+  TaskNoticeRelay,
   InlineKeyboard,
   InlineKeyboardRow,
   InlineButton,

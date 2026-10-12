@@ -313,6 +313,7 @@ JSON frames (`?encoding=json`):
 | `sipCallUpdate` | a room's phone call was placed or changed status (ADR-0046) |
 | `eventCreate/Update/Delete` · `eventRsvp` | meetings: its own (the bot organizes) and those of rooms it sees; outside addresses only when the bot may change the meeting |
 | `boardCreate/Update/Delete` · `taskCreate/Update/Delete` · `taskActivity` | boards and tasks — by the bot's `VIEW_BOARD` |
+| `taskNotice` | a person's task notification, when they chose this bot ([below](#a-persons-task-notifications), ADR-0090) |
 
 A bot can also send `TYPING { roomId }` ("is typing", at most once per 3 s per room), `SUBSCRIBE { roomIds }`
 (≤ 100) and `PRESENCE_UPDATE`.
@@ -367,7 +368,8 @@ Instead of (or together with) the gateway, the server can push events to the bot
 - Delivered: `messageCreate/Update/Delete` and `messageReactionAdd/Remove` of rooms the bot can see and of its DMs —
   except its own messages and reactions. Commands work as on the gateway (`message.command`). Since ADR-0051 also
   `taskCreate/Update/Delete` and `taskActivity` of boards it sees, `eventCreate/Update/Delete` and `eventRsvp` (as on
-  the gateway: outside addresses only to a bot that may change the meeting) and `workspaceMemberUpdate`.
+  the gateway: outside addresses only to a bot that may change the meeting) and `workspaceMemberUpdate`. Since
+  ADR-0090 also `taskNotice` ([below](#a-persons-task-notifications)).
 - Request: `POST <url>`, `Content-Type: application/json`, `User-Agent: CalabBot-Webhook/1.0`, the body is
   `BotWebhookUpdate { id, botUserId, createdAt, event: DispatchEvent }` (protojson), headers
   `X-Calab-Delivery: <id>` and `X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)>`.
@@ -401,6 +403,30 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
 
 In the SDK: `new Bot(token, { server, webhookSecret })` and `bot.handleWebhook(rawBody, headers)` — it verifies the
 signature, drops repeats and emits the same `message` / `command` / `reaction` events as the gateway.
+
+### A person's task notifications
+
+(ADR-0090.) A person chooses the bot: Settings → Notifications → «Tasks» → «Forward to a bot» (`PATCH /api/me
+{taskNotifyBots: {botUserIds}}`). From then on the bot gets **exactly** the task notifications Calab showed that
+person — by their triggers, subscriptions, «Unsubscribe», workspace level and mute; the mandatory approval requests,
+approvals and rejections always. There is no separate setting on the bot's side.
+
+- The `taskNotice` event (`TaskNoticeRelay`) — on the gateway (the bot's socket) and the webhook: `workspaceId`,
+  `userId` (whose notification), `task` (as the person sees it; `subscribed`/`muted`/`unread`/`viewerState` always
+  `false`), `notice` (`kind` — `TASK_NOTICE_KIND_STATUS`, `…_ASSIGNED`, `…_DUE_SOON` etc., `actorId`, `text`,
+  `dueOn`, `daysLeft`), `taskUrl` (a link to the task in the app), `boardKey`, `boardName`.
+- Only while the bot is a member of the task's workspace; the bot's own `VIEW_BOARD` is not needed: the person
+  entrusted their notifications to it, private boards included. A deleted bot, a bot removed from the workspace or
+  blocked by the person gets nothing. No other bot and no workspace channel ever gets `taskNotice`.
+- Any bot with a valid token qualifies (gateway; a webhook needs a token too), up to 10 per person.
+
+```json
+{"id": "0192d1…", "botUserId": "0192…", "createdAt": "2026-10-12T09:00:03Z",
+ "event": {"taskNotice": {"workspaceId": "0191…", "userId": "0191a…",
+   "task": {"id": "0192b…", "key": "OPS-42", "title": "Renew certificates", "statusId": "0192a…", "…": "…"},
+   "notice": {"kind": "TASK_NOTICE_KIND_STATUS", "actorId": "0191c…"},
+   "taskUrl": "https://app.calab.io/t/OPS-42", "boardKey": "OPS", "boardName": "Operations"}}}
+```
 
 ## Board webhook
 

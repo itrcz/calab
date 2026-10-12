@@ -127,6 +127,9 @@ TASK_CREATE / TASK_UPDATE     { task } — полная задача без ле
                               (DUE_SOON / OVERDUE / DUE_CHANGED, "" = срок снят), notice.days_left (DUE_SOON 1 / 0, OVERDUE −1), notice.text —
                               детали (MILESTONE — имя вехи, MOVED — имя доски, EDITED — title | description, ATTACHMENT — имя файла).
                               Неизвестный клиенту вид показывается как «Задача обновлена».
+TASK_NOTICE                   { workspace_id, user_id, task, notice, task_url, board_key, board_name } — (97, ADR-0090) уведомление
+                              человека о задаче, переданное выбранному им боту (UserSettings.task_notify_bots): только в user:<bot> и
+                              в вебхук бота, если бот — участник пространства задачи; task — без состояния смотрящего. Людям не приходит
 TASK_DELETE                   { workspace_id, board_id, task_id, purged } — архив задачи (или переезд на другую доску)
 TASK_ACTIVITY                 { workspace_id, activity } — одна запись журнала задачи
 BOARD_CATEGORY_CREATE / UPDATE { category } — категория досок (ADR-0058; 87/88), всем участникам пространства, кроме гостей; в READY — `WorkspaceSnapshot.board_categories`; перенос — UPDATE каждой сдвинутой

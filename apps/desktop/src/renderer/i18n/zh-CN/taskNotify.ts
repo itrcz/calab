@@ -7,6 +7,8 @@ export const zhTaskNotify: DictShape<typeof ruTaskNotify> = {
   'tn.footer': '看板任务的通知内容。空间菜单中的“任务”级别仍可整体开启或关闭。新的通知类型默认开启。',
   'tn.groupMe': '与我相关',
   'tn.groupTasks': '我参与的任务',
+  'tn.groupRelay': '转发给机器人',
+  'tn.relayHint': '机器人将按这些设置接收你的任务通知。',
   'tn.always': '始终',
   'tn.assigned': '分配给我',
   'tn.assignedHint': '作为执行人或负责人',

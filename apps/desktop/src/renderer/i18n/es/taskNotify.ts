@@ -7,6 +7,8 @@ export const esTaskNotify: DictShape<typeof ruTaskNotify> = {
   'tn.footer': 'Qué notificar en los tableros de tareas. El nivel «Tareas» del menú del espacio sigue activándolas o desactivándolas por completo. Los tipos nuevos se activan solos.',
   'tn.groupMe': 'Para mí',
   'tn.groupTasks': 'Tareas en las que participo',
+  'tn.groupRelay': 'Reenviar a un bot',
+  'tn.relayHint': 'El bot recibirá tus notificaciones de tareas según estos ajustes.',
   'tn.always': 'Siempre',
   'tn.assigned': 'Me asignaron',
   'tn.assignedHint': 'Como responsable o líder',

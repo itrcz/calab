@@ -1,6 +1,6 @@
 import { TaskNoticeKind } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { TASK_NOTIFY_GROUPS, editedKey, rowOn, withRow } from './taskNotify';
+import { TASK_NOTIFY_GROUPS, editedKey, relayBotIds, rowOn, withBot, withRow } from './taskNotify';
 
 const rows = TASK_NOTIFY_GROUPS.flatMap((g) => g.rows);
 const row = (id: string) => {
@@ -45,5 +45,29 @@ describe('task notification triggers (ADR-0089 §5)', () => {
   it('EDITED says what changed', () => {
     expect(editedKey('title')).toBe('boards.notice.editedTitle');
     expect(editedKey('description')).toBe('boards.notice.editedDescription');
+  });
+});
+
+describe('task notice relay to bots (ADR-0090 §5)', () => {
+  const bots = new Set(['b1', 'b2', 'b3']);
+  const isBot = (id: string) => bots.has(id);
+
+  it('lists the bots of my non-guest workspaces once, in workspace order', () => {
+    expect(
+      relayBotIds(
+        [
+          { guest: false, memberIds: ['u1', 'b2', 'b1'] },
+          { guest: true, memberIds: ['b3'] },
+          { guest: false, memberIds: ['b1', 'u2'] },
+        ],
+        isBot,
+      ),
+    ).toEqual(['b2', 'b1']);
+  });
+
+  it('switches one bot and drops ids no longer listed', () => {
+    expect(withBot(['gone', 'b1'], 'b2', true, ['b1', 'b2'])).toEqual(['b1', 'b2']);
+    expect(withBot(['b1', 'b2'], 'b1', false, ['b1', 'b2'])).toEqual(['b2']);
+    expect(withBot(['b1'], 'b1', true, ['b1'])).toEqual(['b1']);
   });
 });

@@ -312,6 +312,7 @@ JSON-кадры (`?encoding=json`):
 | `sipCallUpdate` | телефонный звонок комнаты начат или сменил статус (ADR-0046) |
 | `eventCreate/Update/Delete` · `eventRsvp` | встречи: свои (бот — организатор) и встречи видимых комнат; адреса внешних — только если бот может править встречу |
 | `boardCreate/Update/Delete` · `taskCreate/Update/Delete` · `taskActivity` | доски и задачи — по `VIEW_BOARD` бота |
+| `taskNotice` | уведомление человека о задаче, если он выбрал этого бота ([ниже](#уведомления-о-задачах-человека), ADR-0090) |
 
 Боту доступны и исходящие опкоды `TYPING { roomId }` («печатает», не чаще раза в 3 с на комнату),
 `SUBSCRIBE { roomIds }` (≤ 100) и `PRESENCE_UPDATE`.
@@ -365,7 +366,8 @@ bot.on('command', async (c) => {
 - Что доставляется: `messageCreate/Update/Delete` и `messageReactionAdd/Remove` комнат, которые бот видит, и его DM —
   кроме его собственных сообщений и реакций. Команды — так же, как в gateway (`message.command`). С ADR-0051 ещё
   `taskCreate/Update/Delete` и `taskActivity` видимых досок, `eventCreate/Update/Delete` и `eventRsvp` (как в gateway,
-  адреса внешних — только боту, который может править встречу) и `workspaceMemberUpdate`.
+  адреса внешних — только боту, который может править встречу) и `workspaceMemberUpdate`. С ADR-0090 — `taskNotice`
+  ([ниже](#уведомления-о-задачах-человека)).
 - Запрос: `POST <url>`, `Content-Type: application/json`, `User-Agent: CalabBot-Webhook/1.0`, тело —
   `BotWebhookUpdate { id, botUserId, createdAt, event: DispatchEvent }` (protojson), заголовки
   `X-Calab-Delivery: <id>` и `X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, тело)>`.
@@ -399,6 +401,30 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
 
 В SDK: `new Bot(token, { server, webhookSecret })` и `bot.handleWebhook(rawBody, headers)` — проверит подпись,
 отбросит повтор и выдаст те же события `message` / `command` / `reaction`, что и gateway.
+
+### Уведомления о задачах человека
+
+(ADR-0090.) Человек сам выбирает бота: Настройки → Уведомления → «Задачи» → «Передавать боту» (`PATCH /api/me
+{taskNotifyBots: {botUserIds}}`). После этого бот получает **ровно те** уведомления о задачах, что Calab показал этому
+человеку, — по его триггерам, подпискам, «Отписаться», уровню и mute пространства; обязательные «Просят согласовать»,
+«Согласовано», «Отклонено» — всегда. Отдельной настройки на стороне бота нет.
+
+- Событие `taskNotice` (`TaskNoticeRelay`) — в gateway (сокет бота) и в вебхук: `workspaceId`, `userId` (чьё
+  уведомление), `task` (задача, как её видит человек; `subscribed`/`muted`/`unread`/`viewerState` всегда `false`),
+  `notice` (`kind` — `TASK_NOTICE_KIND_STATUS`, `…_ASSIGNED`, `…_DUE_SOON` и т. д., `actorId`, `text`, `dueOn`,
+  `daysLeft`), `taskUrl` (ссылка на задачу в приложении), `boardKey`, `boardName`.
+- Только если бот — участник пространства задачи; права бота на доску (`VIEW_BOARD`) не нужны: человек сам доверил ему
+  свои уведомления, в т. ч. с закрытых досок. Удалённый, исключённый из пространства или заблокированный человеком бот
+  ничего не получает. Другим ботам и в канал пространства `taskNotice` не уходит.
+- Подходят боты с действующим токеном (gateway; вебхук тоже требует токен), до 10 на человека.
+
+```json
+{"id": "0192d1…", "botUserId": "0192…", "createdAt": "2026-10-12T09:00:03Z",
+ "event": {"taskNotice": {"workspaceId": "0191…", "userId": "0191a…",
+   "task": {"id": "0192b…", "key": "OPS-42", "title": "Обновить сертификаты", "statusId": "0192a…", "…": "…"},
+   "notice": {"kind": "TASK_NOTICE_KIND_STATUS", "actorId": "0191c…"},
+   "taskUrl": "https://app.calab.io/t/OPS-42", "boardKey": "OPS", "boardName": "Эксплуатация"}}}
+```
 
 ## Вебхук доски
 

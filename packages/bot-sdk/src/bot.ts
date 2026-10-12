@@ -61,6 +61,7 @@ import {
   BotWebhookResponseSchema,
   InlineKeyboardSchema,
   type BotCallback,
+  type TaskNoticeRelay,
   CreateTaskRequestSchema,
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
@@ -225,6 +226,8 @@ export interface BotEvents {
   reaction: ReactionEvent;
   /** Accepted button press. Persistently dedupe by id and revalidate domain state before effects. */
   callback: BotCallback;
+  /** A person's task notification relayed to this bot because they chose it (ADR-0090). */
+  taskNotice: TaskNoticeRelay;
   voiceState: VoiceState;
   /** Every gateway / webhook event, raw. */
   dispatch: DispatchEvent;
@@ -979,6 +982,9 @@ export class Bot extends Emitter<BotEvents> {
       }
       case 'botCallback':
         if (e.value.botUserId === this.botUserId || !this.botUserId) this.emit('callback', e.value);
+        return;
+      case 'taskNotice':
+        this.emit('taskNotice', e.value);
         return;
       case 'messageUpdate':
         if (e.value.message && !this.isOwn(e.value.message.authorId)) this.emit('messageUpdate', e.value.message);

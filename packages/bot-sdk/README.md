@@ -82,6 +82,7 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `messageUpdate`, `messageDelete` | `Message` / `{ workspaceId, roomId, messageId }` |
 | `reaction` | `{ type: 'add' \| 'remove', workspaceId, roomId, messageId, userId, emoji }` |
 | `voiceState` | `VoiceState` (`roomId` empty = left voice) |
+| `taskNotice` | `TaskNoticeRelay` — a person's task notification, when they chose this bot (ADR-0090): `userId`, `task`, `notice.kind`, `taskUrl` |
 | `dispatch` | every raw `DispatchEvent` (rooms, members, presence, …) |
 | `status` | `connecting` · `ready` · `reconnecting` · `resuming` · `stopped` |
 | `error` | a listener threw, or the gateway gave up (`GatewayFatalError`) |

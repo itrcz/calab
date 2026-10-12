@@ -7,6 +7,8 @@ export const enTaskNotify: DictShape<typeof ruTaskNotify> = {
   'tn.footer': 'What to notify about on task boards. The «Tasks» level in the workspace menu still turns them on or off as a whole. New kinds of notifications are on by default.',
   'tn.groupMe': 'To me',
   'tn.groupTasks': 'Tasks I take part in',
+  'tn.groupRelay': 'Forward to a bot',
+  'tn.relayHint': 'The bot gets your task notifications according to these settings.',
   'tn.always': 'Always',
   'tn.assigned': 'Assigned to me',
   'tn.assignedHint': 'As an assignee or the lead',
