@@ -1,7 +1,87 @@
-import { MailApiError, type MailDiscovery, type MailErrorCode } from '../../shared/mail';
+import { MailApiError, type MailCertInfo, type MailCertReason, type MailDiscovery, type MailError, type MailErrorCode } from '../../shared/mail';
 
-export function mailError(code: MailErrorCode, message: string, discovery?: MailDiscovery): MailApiError {
-  return new MailApiError(discovery ? { code, message, discovery } : { code, message });
+export function mailError(code: MailErrorCode, message: string, discovery?: MailDiscovery, cert?: MailCertInfo): MailApiError {
+  return new MailApiError({ code, message, ...(discovery ? { discovery } : {}), ...(cert ? { cert } : {}) });
+}
+
+/**
+ * A server certificate that did not verify (net.ts): thrown into imapflow / nodemailer through the
+ * socket, so it may come back with their `code` (nodemailer sets `ESOCKET`); `mailCert` survives.
+ */
+export class MailCertError extends Error {
+  readonly mailCert: MailCertInfo;
+  constructor(cert: MailCertInfo) {
+    super(`server certificate of ${cert.host}:${String(cert.port)} not trusted (${cert.reason})`);
+    this.name = 'MailCertError';
+    this.mailCert = cert;
+  }
+}
+
+/** Node / OpenSSL verification codes (`authorizationError`, error `code`) → the reason the UI words. */
+export function certReason(code: string | undefined | null): MailCertReason {
+  switch (code ?? '') {
+    case 'DEPTH_ZERO_SELF_SIGNED_CERT':
+    case 'SELF_SIGNED_CERT_IN_CHAIN':
+      return 'self_signed';
+    case 'UNABLE_TO_VERIFY_LEAF_SIGNATURE':
+    case 'UNABLE_TO_GET_ISSUER_CERT':
+    case 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY':
+    case 'CERT_UNTRUSTED':
+    case 'CERT_CHAIN_TOO_LONG':
+    case 'INVALID_CA':
+    case 'CERT_SIGNATURE_FAILURE':
+    case 'CERT_REJECTED':
+      return 'untrusted';
+    case 'CERT_HAS_EXPIRED':
+      return 'expired';
+    case 'CERT_NOT_YET_VALID':
+      return 'not_yet_valid';
+    case 'ERR_TLS_CERT_ALTNAME_INVALID':
+    case 'HOSTNAME_MISMATCH':
+      return 'name_mismatch';
+    default:
+      return 'other';
+  }
+}
+
+/** The parts of `TLSSocket.getPeerCertificate()` we read. */
+export interface PeerCert {
+  subject?: Record<string, unknown> | null;
+  issuer?: Record<string, unknown> | null;
+  valid_from?: string;
+  valid_to?: string;
+  fingerprint256?: string;
+}
+
+function dn(v: Record<string, unknown> | null | undefined): string {
+  if (!v) return '';
+  const order = ['CN', 'O', 'OU', 'L', 'ST', 'C'];
+  const keys = Object.keys(v).sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+  return keys
+    .map((k) => {
+      const x = v[k];
+      return `${k}=${Array.isArray(x) ? x.join('+') : String(x)}`;
+    })
+    .join(', ')
+    .slice(0, 300);
+}
+
+const dateOf = (s: string | undefined): number => {
+  const t = s ? Date.parse(s) : NaN;
+  return Number.isFinite(t) ? t : 0;
+};
+
+export function certInfo(cert: PeerCert | null | undefined, host: string, port: number, reason: MailCertReason): MailCertInfo {
+  return {
+    host,
+    port,
+    fingerprint256: typeof cert?.fingerprint256 === 'string' ? cert.fingerprint256.toUpperCase() : '',
+    subject: dn(cert?.subject),
+    issuer: dn(cert?.issuer),
+    notBefore: dateOf(cert?.valid_from),
+    notAfter: dateOf(cert?.valid_to),
+    reason,
+  };
 }
 
 export const notFound = (what: string): MailApiError => mailError('NOT_FOUND', `${what} not found`);
@@ -38,16 +118,28 @@ interface ErrLike {
   message?: unknown;
   reason?: unknown;
   cause?: unknown;
+  mailCert?: unknown;
+}
+
+function certOf(err: ErrLike): MailCertInfo | undefined {
+  for (let e: ErrLike | undefined = err, i = 0; e && i < 4; e = e.cause as ErrLike | undefined, i++) {
+    const c = e.mailCert;
+    if (typeof c === 'object' && c !== null && typeof (c as MailCertInfo).reason === 'string') return c as MailCertInfo;
+  }
+  return undefined;
 }
 
 /**
  * Maps an IMAP (imapflow) / SMTP (nodemailer) / socket error to a mail error code. Messages never
  * carry secrets (libraries do not echo the password; we never add it).
  */
-export function classify(e: unknown): { code: MailErrorCode; message: string } {
-  if (e instanceof MailApiError) return { code: e.code, message: e.message };
+export function classify(e: unknown): MailError {
+  if (e instanceof MailApiError) return { code: e.code, message: e.message, ...(e.cert ? { cert: e.cert } : {}) };
   const err = (typeof e === 'object' && e !== null ? e : {}) as ErrLike;
   const message = typeof err.message === 'string' ? err.message.slice(0, 300) : String(e);
+  // Our certificate check (net.ts), whatever code the library put on top of it.
+  const cert = certOf(err);
+  if (cert) return { code: 'TLS', message, cert };
   const code = typeof err.code === 'string' ? err.code : '';
   const cause = err.cause as ErrLike | undefined;
   const causeCode = typeof cause?.code === 'string' ? cause.code : '';
@@ -63,5 +155,5 @@ export function classify(e: unknown): { code: MailErrorCode; message: string } {
 
 export function toMailError(e: unknown): MailApiError {
   const c = classify(e);
-  return mailError(c.code, c.message);
+  return mailError(c.code, c.message, undefined, c.cert);
 }

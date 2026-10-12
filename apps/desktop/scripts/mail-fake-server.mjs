@@ -131,6 +131,9 @@ async function serve() {
       });
     },
   });
+  // A client that refuses the certificate (the strict check, trust prompt tests) drops the TLS
+  // handshake: log it instead of crashing the server.
+  smtp.on('error', (err) => console.warn(`smtp: ${err.message}`));
   smtp.listen(SMTP_PORT, '127.0.0.1', () => console.log(`SMTPS 127.0.0.1:${SMTP_PORT}`));
 }
 

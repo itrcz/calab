@@ -21,14 +21,55 @@
 /** Known providers (ADR-0088 §4 step 1/2); `other` = any IMAP server. */
 export type MailProvider = 'gmail' | 'yandex' | 'mailru' | 'icloud' | 'microsoft' | 'other';
 
-/** Transport security. Plain text is not supported in v1, certificates are always verified (§4, §10). */
+/**
+ * Transport security. Plain text is not supported in v1; certificates are always verified, a
+ * certificate the user accepted once is pinned per server (`pinnedCert`, §4, §10).
+ */
 export type MailSecurity = 'tls' | 'starttls';
+
+/** SHA-256 fingerprint as Node prints it (`fingerprint256`): 32 upper-case hex bytes joined by `:`. */
+export const MAIL_CERT_FINGERPRINT_RE = /^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 
 export interface MailServerSettings {
   host: string;
   port: number;
   /** `tls` = implicit TLS (993 / 465); `starttls` = upgrade after the greeting (143 / 587). */
   security: MailSecurity;
+  /**
+   * A certificate the user trusted for this server (trust on first use, §4): its SHA-256
+   * fingerprint. Admits exactly that leaf certificate in addition to normally valid ones; another
+   * untrusted certificate fails with `TLS` / `reason: 'changed'`. Absent = strict verification only.
+   */
+  pinnedCert?: string;
+}
+
+/**
+ * Why a server certificate did not verify (Node / OpenSSL codes mapped, errors.ts):
+ * `self_signed` — self-signed leaf or root; `untrusted` — an unknown issuer; `expired` /
+ * `not_yet_valid` — outside its dates (often the computer's clock); `name_mismatch` — issued for
+ * another host; `changed` — the server is pinned and now shows another untrusted certificate.
+ */
+export type MailCertReason = 'self_signed' | 'untrusted' | 'expired' | 'not_yet_valid' | 'name_mismatch' | 'changed' | 'other';
+
+/** The server certificate behind a `TLS` error (or a discovery probe), for the trust prompt. */
+export interface MailCertInfo {
+  host: string;
+  port: number;
+  /** What `pinnedCert` takes to trust it. */
+  fingerprint256: string;
+  /** `CN=…, O=…` of the leaf ('' when unknown). */
+  subject: string;
+  issuer: string;
+  /** Validity, epoch ms (0 = unknown). */
+  notBefore: number;
+  notAfter: number;
+  reason: MailCertReason;
+}
+
+/** A discovered server: settings plus the certificate problem its probe saw, if any (§4). */
+export interface MailDiscoveredServer extends MailServerSettings {
+  /** The probe reached the server but its certificate did not verify: ask before the first login. */
+  certIssue?: MailCertInfo;
 }
 
 /**
@@ -57,6 +98,11 @@ export interface MailAccount {
   error: MailError | null;
   /** The last successful sync of any folder (null = never). */
   lastSyncAt: number | null;
+  /**
+   * The last send failed on the SMTP server's certificate (IMAP problems are in `error.cert`);
+   * cleared by the next successful send or new SMTP settings.
+   */
+  smtpCertIssue?: MailCertInfo;
 }
 
 /**
@@ -67,8 +113,8 @@ export interface MailAccount {
 export type MailDiscoverySource = 'known' | 'mx' | 'autoconfig' | 'srv' | 'probe' | 'manual';
 
 export interface MailDiscovery {
-  imap: MailServerSettings;
-  smtp: MailServerSettings;
+  imap: MailDiscoveredServer;
+  smtp: MailDiscoveredServer;
   source: MailDiscoverySource;
   provider: MailProvider;
   /**
@@ -93,7 +139,10 @@ export interface MailAccountInput {
   settings?: { imap: MailServerSettings; smtp: MailServerSettings; login: string };
 }
 
-/** `accounts.update`: changed fields only. Changing servers / login re-checks the login like `add`. */
+/**
+ * `accounts.update`: changed fields only. Changing servers / login re-checks the login like `add`;
+ * a change of `pinnedCert` alone (trust a new certificate, «Сбросить») is stored without a login.
+ */
 export interface MailAccountPatch {
   name?: string;
   imap?: MailServerSettings;
@@ -416,20 +465,24 @@ export interface MailError {
    * provider's `appPasswordUrl`).
    */
   discovery?: MailDiscovery;
+  /** With `TLS` when a certificate did not verify: the certificate, for the trust prompt (§4). */
+  cert?: MailCertInfo;
 }
 
 /** What a `MailApi` promise rejects with. */
 export class MailApiError extends Error implements MailError {
   readonly code: MailErrorCode;
   readonly discovery?: MailDiscovery;
+  readonly cert?: MailCertInfo;
   constructor(err: MailError) {
     super(err.message);
     this.name = 'MailApiError';
     this.code = err.code;
     if (err.discovery) this.discovery = err.discovery;
+    if (err.cert) this.cert = err.cert;
   }
   toJSON(): MailError {
-    return this.discovery ? { code: this.code, message: this.message, discovery: this.discovery } : { code: this.code, message: this.message };
+    return { code: this.code, message: this.message, ...(this.discovery ? { discovery: this.discovery } : {}), ...(this.cert ? { cert: this.cert } : {}) };
   }
 }
 

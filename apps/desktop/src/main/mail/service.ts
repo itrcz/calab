@@ -7,7 +7,9 @@ import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   DEFAULT_MAIL_SETTINGS,
+  MAIL_CERT_FINGERPRINT_RE,
   type MailAccount,
+  type MailCertInfo,
   type MailAddress,
   type MailAttachmentData,
   type MailCursor,
@@ -24,13 +26,14 @@ import {
   type MailOutgoing,
   type MailPage,
   type MailSelection,
+  type MailServerSettings,
   type MailSettings,
   type MailThreadRow,
   type MailVerified,
   type MailVerifyInput,
   mailMethods,
 } from '../../shared/mail';
-import { appPasswordUrl, discover, domainOf, providerByDomain, resolveLogin, type DiscoverNet } from './discover';
+import { appPasswordUrl, discover, domainOf, providerByDomain, resolveLogin, STEP_TIMEOUT_MS, type DiscoverNet } from './discover';
 import { classify, invalid, mailError, notFound } from './errors';
 import { accountOf, ATTACHMENT_ID_RE, folderId, parseFolderId, parseMessageId, parseSeqId } from './ids';
 import type { MailTls } from './net';
@@ -61,6 +64,16 @@ interface Account {
   store: MailStore;
   sync: AccountSync;
   outbox: Outbox;
+  /** The last send failed on the SMTP certificate (shown on the account row until fixed). */
+  smtpCert: MailCertInfo | null;
+}
+
+/** Settings as given, with a well-formed pin kept (upper-cased) and anything else dropped. */
+function serverOf(s: MailServerSettings): MailServerSettings {
+  const out: MailServerSettings = { host: s.host.toLowerCase(), port: s.port, security: s.security };
+  const pin = typeof s.pinnedCert === 'string' ? s.pinnedCert.toUpperCase() : undefined;
+  if (pin && MAIL_CERT_FINGERPRINT_RE.test(pin)) out.pinnedCert = pin;
+  return out;
 }
 
 // ---------------------------------------------------------------- input validation
@@ -234,6 +247,7 @@ export class MailEngine {
       }
       const reconnect =
         cur.cfg.password !== cfg.password || cur.cfg.login !== cfg.login || JSON.stringify(cur.cfg.imap) !== JSON.stringify(cfg.imap) || JSON.stringify(cur.cfg.smtp) !== JSON.stringify(cfg.smtp);
+      if (JSON.stringify(cur.cfg.smtp) !== JSON.stringify(cfg.smtp)) cur.smtpCert = null;
       cur.cfg = cfg;
       if (reconnect) {
         await cur.sync.stop();
@@ -248,13 +262,28 @@ export class MailEngine {
   private openAccount(cfg: MailEngineAccount): void {
     const dir = join(this.deps.dataDir, cfg.id);
     const store = new MailStore(dir, cfg.id, this.now);
-    const acc = { cfg, dir, store } as Account;
+    const acc = { cfg, dir, store, smtpCert: null } as unknown as Account;
     acc.sync = this.newSync(acc);
     acc.outbox = new Outbox({
       store,
       accountId: cfg.id,
       dir,
-      send: (env, raw) => this.deps.smtpSend(acc.cfg, env, raw),
+      send: async (env, raw) => {
+        try {
+          await this.deps.smtpSend(acc.cfg, env, raw);
+        } catch (e) {
+          const cert = classify(e).cert ?? null;
+          if (cert && cert.fingerprint256 !== acc.smtpCert?.fingerprint256) {
+            acc.smtpCert = cert;
+            this.emitAccount(acc);
+          }
+          throw e;
+        }
+        if (acc.smtpCert) {
+          acc.smtpCert = null;
+          this.emitAccount(acc);
+        }
+      },
       sent: async (raw, answers) => {
         if (answers) acc.sync.markAnswered(answers);
         await acc.sync.appendSent(raw);
@@ -314,6 +343,7 @@ export class MailEngine {
       state: acc.sync.state,
       error: acc.sync.error,
       lastSyncAt: acc.sync.lastSyncAt,
+      ...(acc.smtpCert ? { smtpCertIssue: acc.smtpCert } : {}),
     };
   }
 
@@ -343,23 +373,35 @@ export class MailEngine {
         if (!isObj(srv) || !isStr(srv.host, 253) || !/^[a-z0-9.-]+$/i.test(srv.host) || !Number.isInteger(srv.port) || srv.port < 1 || srv.port > 65535 || !['tls', 'starttls'].includes(srv.security)) {
           throw invalid('bad server settings');
         }
+        if (srv.pinnedCert !== undefined && (!isStr(srv.pinnedCert, 100) || !MAIL_CERT_FINGERPRINT_RE.test(srv.pinnedCert.toUpperCase()))) throw invalid('bad certificate pin');
       }
       if (!isStr(s.login, 320) || !s.login) throw invalid('bad login');
       const known = providerByDomain(domainOf(email));
       if (known?.id === 'microsoft') throw mailError('UNSUPPORTED_PROVIDER', 'Microsoft accounts need OAuth2, not supported yet');
       const provider = known?.id ?? (/\.gmail\.com$/i.test(s.imap.host) ? 'gmail' : 'other');
-      v = { provider, imap: { host: s.imap.host.toLowerCase(), port: s.imap.port, security: s.imap.security }, smtp: { host: s.smtp.host.toLowerCase(), port: s.smtp.port, security: s.smtp.security }, login: s.login };
+      v = { provider, imap: serverOf(s.imap), smtp: serverOf(s.smtp), login: s.login };
       disc = { imap: v.imap, smtp: v.smtp, source: 'manual', provider, loginTemplate: s.login, appPasswordUrl: appPasswordUrl(provider) };
     } else {
       disc = await discover(email, this.deps.discoverNet, this.now);
-      v = { provider: disc.provider, imap: disc.imap, smtp: disc.smtp, login: resolveLogin(disc.loginTemplate, email) };
+      v = { provider: disc.provider, imap: serverOf(disc.imap), smtp: serverOf(disc.smtp), login: resolveLogin(disc.loginTemplate, email) };
     }
-    const fail = (e: unknown): never => {
+    const fail = async (e: unknown, kind: 'imap' | 'smtp'): Promise<never> => {
       const c = classify(e);
-      throw mailError(c.code, c.message, c.code === 'AUTH_FAILED' || c.code === 'NETWORK' || c.code === 'TLS' ? disc : undefined);
+      if (c.cert) {
+        // The trust prompt (§4): this server's certificate, and — when IMAP failed first — whether
+        // SMTP has the same problem (a probe: no login), so both are asked about at once.
+        const { certIssue: _a, ...imap } = disc.imap;
+        const { certIssue: _b, ...smtp } = disc.smtp;
+        disc = { ...disc, imap, smtp, [kind]: { ...disc[kind], certIssue: c.cert } };
+        if (kind === 'imap') {
+          const other = await this.deps.discoverNet.probe('smtp', v.smtp, STEP_TIMEOUT_MS).catch(() => null);
+          if (other?.ok && other.certIssue) disc = { ...disc, smtp: { ...disc.smtp, certIssue: other.certIssue } };
+        }
+      }
+      throw mailError(c.code, c.message, c.code === 'AUTH_FAILED' || c.code === 'NETWORK' || c.code === 'TLS' ? disc : undefined, c.cert);
     };
-    await this.deps.verifyImap({ server: v.imap, login: v.login, password: input.password }).catch(fail);
-    await this.deps.verifySmtp({ server: v.smtp, login: v.login, password: input.password }).catch(fail);
+    await this.deps.verifyImap({ server: v.imap, login: v.login, password: input.password }).catch((e: unknown) => fail(e, 'imap'));
+    await this.deps.verifySmtp({ server: v.smtp, login: v.login, password: input.password }).catch((e: unknown) => fail(e, 'smtp'));
     return v;
   }
 

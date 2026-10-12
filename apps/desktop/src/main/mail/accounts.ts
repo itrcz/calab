@@ -8,7 +8,7 @@
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { MailEngineAccount, MailProvider, MailSecurity } from '../../shared/mail';
+import { MAIL_CERT_FINGERPRINT_RE, type MailEngineAccount, type MailProvider, type MailSecurity, type MailServerSettings } from '../../shared/mail';
 
 /** `safeStorage` as main uses it (a fake in tests). */
 export interface SecretBox {
@@ -23,6 +23,18 @@ function validServer(v: unknown): v is { host: string; port: number; security: M
   if (typeof v !== 'object' || v === null) return false;
   const s = v as Record<string, unknown>;
   return typeof s['host'] === 'string' && typeof s['port'] === 'number' && (s['security'] === 'tls' || s['security'] === 'starttls');
+}
+
+/**
+ * Server settings from untrusted input (the renderer, the file): host / port / security, plus a
+ * well-formed `pinnedCert` (a certificate the user trusted, §4) — a malformed pin is dropped.
+ */
+export function serverSettings(v: unknown): MailServerSettings | null {
+  if (!validServer(v)) return null;
+  const out: MailServerSettings = { host: v.host, port: v.port, security: v.security };
+  const pin = (v as { pinnedCert?: unknown }).pinnedCert;
+  if (typeof pin === 'string' && MAIL_CERT_FINGERPRINT_RE.test(pin.toUpperCase())) out.pinnedCert = pin.toUpperCase();
+  return out;
 }
 
 function validAccount(v: unknown): v is MailEngineAccount {
@@ -59,7 +71,7 @@ export class MailAccountsFile {
     try {
       if (!existsSync(this.file) || !this.box.available()) return;
       const data = JSON.parse(this.box.decrypt(readFileSync(this.file))) as { v?: number; accounts?: unknown[] };
-      this.list = (data.accounts ?? []).filter(validAccount);
+      this.list = (data.accounts ?? []).filter(validAccount).map((a) => ({ ...a, imap: serverSettings(a.imap) ?? a.imap, smtp: serverSettings(a.smtp) ?? a.smtp }));
     } catch {
       // Never log the content: it holds passwords.
       this.warn('mail accounts file unreadable, ignoring');

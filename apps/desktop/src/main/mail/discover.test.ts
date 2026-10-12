@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { MailServerSettings } from '../../shared/mail';
+import type { MailCertInfo, MailServerSettings } from '../../shared/mail';
 import { discover, parseAutoconfig, probeCandidates, providerByDomain, providerByMx, resolveLogin, sortSrv, type DiscoverNet, type SrvRecord } from './discover';
 
 function net(over: Partial<DiscoverNet> = {}): DiscoverNet & { probed: string[]; fetched: string[] } {
@@ -16,7 +16,7 @@ function net(over: Partial<DiscoverNet> = {}): DiscoverNet & { probed: string[];
     },
     probe: (kind, s: MailServerSettings) => {
       probed.push(`${kind} ${s.host}:${s.port}`);
-      return Promise.resolve(false);
+      return Promise.resolve({ ok: false });
     },
     ...over,
   };
@@ -141,15 +141,28 @@ describe('discover chain', () => {
     const ok = new Set(['imap mail.example.org:993', 'imap mx.hoster.net:993', 'smtp mail.example.org:587']);
     const n = net({
       resolveMx: () => Promise.resolve([{ exchange: 'mx.hoster.net', priority: 10 }]),
-      probe: (kind, s) => Promise.resolve(ok.has(`${kind} ${s.host}:${s.port}`)),
+      probe: (kind, s) => Promise.resolve({ ok: ok.has(`${kind} ${s.host}:${s.port}`) }),
     });
     const d = await discover('ivan@example.org', n);
     expect(d).toMatchObject({ source: 'probe', imap: { host: 'mail.example.org', port: 993, security: 'tls' }, smtp: { host: 'mail.example.org', port: 587, security: 'starttls' } });
   });
   it('nothing found → DISCOVERY_FAILED with guesses (partial hits kept)', async () => {
-    const n = net({ probe: (kind, s) => Promise.resolve(kind === 'imap' && s.host === 'mail.example.org' && s.port === 993) });
+    const n = net({ probe: (kind, s) => Promise.resolve({ ok: kind === 'imap' && s.host === 'mail.example.org' && s.port === 993 }) });
     const err = await discover('ivan@example.org', n).catch((e: unknown) => e);
     expect(err).toMatchObject({ code: 'DISCOVERY_FAILED', discovery: { source: 'manual', imap: { host: 'mail.example.org' }, smtp: { host: 'smtp.example.org', port: 465 } } });
+  });
+  it('a server with an untrusted certificate is found, marked certIssue (trust prompt before the login)', async () => {
+    const issue: MailCertInfo = { host: 'mail.example.org', port: 993, fingerprint256: 'AB', subject: 'CN=mail.example.org', issuer: 'CN=mail.example.org', notBefore: 0, notAfter: 0, reason: 'self_signed' };
+    const n = net({
+      probe: (kind, s) => {
+        if (kind === 'imap' && s.host === 'mail.example.org' && s.port === 993) return Promise.resolve({ ok: true, certIssue: issue });
+        return Promise.resolve({ ok: kind === 'smtp' && s.host === 'mail.example.org' && s.port === 465 });
+      },
+    });
+    const d = await discover('ivan@example.org', n);
+    expect(d.source).toBe('probe');
+    expect(d.imap).toEqual({ host: 'mail.example.org', port: 993, security: 'tls', certIssue: issue });
+    expect(d.smtp).toEqual({ host: 'mail.example.org', port: 465, security: 'tls' });
   });
   it('rejects malformed addresses', async () => {
     await expect(discover('nope', net())).rejects.toMatchObject({ code: 'INVALID' });

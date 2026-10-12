@@ -198,7 +198,8 @@ export class AccountSync {
   }
 
   private setState(state: MailAccountState, error: MailError | null): void {
-    if (this.state === state && this.error?.code === error?.code) return;
+    const certKey = (e: MailError | null): string => (e?.cert ? `${e.cert.reason}:${e.cert.fingerprint256}` : '');
+    if (this.state === state && this.error?.code === error?.code && certKey(this.error) === certKey(error)) return;
     this.state = state;
     this.error = error;
     this.host.stateChanged();

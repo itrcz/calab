@@ -5,7 +5,7 @@
  * run ≤ 10 s. TLS / STARTTLS only; plain-text servers are never offered.
  * Network access goes through `DiscoverNet` so tests run offline.
  */
-import type { MailDiscovery, MailDiscoverySource, MailProvider, MailSecurity, MailServerSettings } from '../../shared/mail';
+import type { MailCertInfo, MailDiscoveredServer, MailDiscovery, MailDiscoverySource, MailProvider, MailSecurity, MailServerSettings } from '../../shared/mail';
 import { mailError } from './errors';
 
 export interface SrvRecord {
@@ -21,8 +21,15 @@ export interface DiscoverNet {
   /** GET an https URL, ≤ timeoutMs; the body text or null (non-2xx, network error, timeout). */
   fetchText(url: string, timeoutMs: number): Promise<string | null>;
   /** TCP + TLS (+ STARTTLS) + greeting, ≤ timeoutMs. */
-  probe(kind: 'imap' | 'smtp', server: MailServerSettings, timeoutMs: number): Promise<boolean>;
+  probe(kind: 'imap' | 'smtp', server: MailServerSettings, timeoutMs: number): Promise<ProbeResult>;
 }
+
+/**
+ * A probe's outcome: `ok` = a TLS mail server answered. A certificate that does not verify still
+ * counts as found (self-signed servers are discovered, not sent to the manual form) and is reported
+ * as `certIssue` for the trust prompt before the first login (§4).
+ */
+export type ProbeResult = { ok: false } | { ok: true; certIssue?: MailCertInfo };
 
 export const STEP_TIMEOUT_MS = 3000;
 export const TOTAL_TIMEOUT_MS = 10_000;
@@ -218,7 +225,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
 }
 
 interface Found {
-  server: MailServerSettings;
+  server: MailDiscoveredServer;
   source: MailDiscoverySource;
   login?: string;
 }
@@ -284,11 +291,17 @@ export async function discover(emailRaw: string, net: DiscoverNet, now: () => nu
   if (!done()) {
     const cands = probeCandidates(domain, mxExtra);
     const t = left();
-    const run = (kind: 'imap' | 'smtp', list: MailServerSettings[]): Promise<MailServerSettings | null> =>
+    const run = (kind: 'imap' | 'smtp', list: MailServerSettings[]): Promise<MailDiscoveredServer | null> =>
       t <= 0
         ? Promise.resolve(null)
         : withTimeout(
-            Promise.all(list.map((s) => net.probe(kind, s, t).catch(() => false))).then((ok) => list[ok.indexOf(true)] ?? null),
+            Promise.all(list.map((s) => net.probe(kind, s, t).catch((): ProbeResult => ({ ok: false })))).then((res) => {
+              const i = res.findIndex((r) => r.ok);
+              const r = res[i];
+              const s = list[i];
+              if (!s || !r?.ok) return null;
+              return r.certIssue ? { ...s, certIssue: r.certIssue } : s;
+            }),
             t + 100,
             null,
           );

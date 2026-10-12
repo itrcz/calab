@@ -1,11 +1,11 @@
 /**
  * ImapSession over imapflow (§5): one connection per account, TLS / STARTTLS with strict
- * certificate checks, IDLE on the selected mailbox (imapflow's auto-IDLE), CONDSTORE when offered.
+ * certificate checks (a pinned certificate admitted by fingerprint, net.ts), IDLE on the selected mailbox (imapflow's auto-IDLE), CONDSTORE when offered.
  */
 import { ImapFlow, type FetchMessageObject, type ImapFlowOptions, type MessageAddressObject } from 'imapflow';
 import type { MailAddress, MailServerSettings } from '../../shared/mail';
 import { hasAttachments, referencesFromHeaders, SNIPPET_FETCH, snippetFrom, snippetPart } from './mime';
-import type { MailTls } from './net';
+import { mailTlsOptions, type MailTls } from './net';
 import { flagsFrom, type ImapSession, type RemoteFlags, type RemoteFolder, type RemoteHeader, type SelectInfo } from './session';
 
 export interface ImapLogin {
@@ -23,7 +23,7 @@ export function imapOptions(l: ImapLogin, tls: MailTls = {}): ImapFlowOptions {
     doSTARTTLS: l.server.security === 'starttls' ? true : undefined,
     servername: l.server.host,
     auth: { user: l.login, pass: l.password },
-    tls: { rejectUnauthorized: true, minVersion: 'TLSv1.2', ...(tls.ca ? { ca: tls.ca } : {}) },
+    tls: mailTlsOptions(l.server, tls),
     logger: false,
     clientInfo: { name: 'Calab', vendor: 'Calab' },
     qresync: false,

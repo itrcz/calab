@@ -6,7 +6,7 @@ import { IPC } from '../../shared/ipc';
 import type { MailAccount, MailEngineAccount, MailEvent, MailReply, MailServerSettings, MailVerified } from '../../shared/mail';
 import { log } from '../logging';
 import { isOwnPage } from '../windows';
-import { MailAccountsFile } from './accounts';
+import { MailAccountsFile, serverSettings } from './accounts';
 import { handleMailScheme } from './attachmentProtocol';
 import { MailRouter, parseCall, type EngineChild } from './router';
 
@@ -77,12 +77,11 @@ function pushAccounts(): void {
 const fail = (code: 'INVALID' | 'NOT_FOUND', message: string): MailReply => ({ ok: false, error: { code, message } });
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function server(v: unknown): MailServerSettings | null {
-  if (!isObj(v)) return null;
-  const { host, port, security } = v;
-  if (typeof host !== 'string' || typeof port !== 'number' || (security !== 'tls' && security !== 'starttls')) return null;
-  return { host, port, security };
-}
+/** Host / port / security and an optional certificate pin (§4); anything else is dropped. */
+const server = (v: unknown): MailServerSettings | null => serverSettings(v);
+
+/** Settings without the pins: what decides whether a change needs a login check. */
+const unpinned = (s: MailServerSettings): MailServerSettings => ({ host: s.host, port: s.port, security: s.security });
 
 /** The account as the renderer sees it (state from the engine; never the password). */
 async function accountReply(id: string): Promise<MailReply> {
@@ -136,11 +135,15 @@ async function updateAccount(id: unknown, patch: unknown): Promise<MailReply> {
   const smtp = patch['smtp'] === undefined ? cur.smtp : server(patch['smtp']);
   const login = patch['login'] === undefined ? cur.login : typeof patch['login'] === 'string' ? patch['login'].trim() : null;
   if (!imap || !smtp || !login) return fail('INVALID', 'bad server settings');
-  if (JSON.stringify([imap, smtp, login]) !== JSON.stringify([cur.imap, cur.smtp, cur.login])) {
+  if (JSON.stringify([unpinned(imap), unpinned(smtp), login]) !== JSON.stringify([unpinned(cur.imap), unpinned(cur.smtp), cur.login])) {
     const r = await verify({ email: cur.email, password: cur.password, settings: { imap, smtp, login } });
     if (!r.ok) return r;
     const v = r.result as MailVerified;
     Object.assign(next, { imap: v.imap, smtp: v.smtp, login: v.login });
+  } else {
+    // Only a pin changed (trust a new certificate / «Сбросить»): the same servers and password, no
+    // login needed; the sync reconnects with the new pin and reports how it went (§4).
+    Object.assign(next, { imap, smtp });
   }
   accounts().put(next);
   pushAccounts();

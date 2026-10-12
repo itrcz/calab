@@ -4,6 +4,7 @@
  * the server's localhost certificate (infra/docker/greenmail/gen-cert.sh) is trusted as the CA.
  * Overrides: CALABA_MAIL_IT_HOST, _IMAP_PORT, _SMTP_PORT, _CA (PEM path).
  */
+import { X509Certificate } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -11,7 +12,8 @@ import { ImapFlow } from 'imapflow';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { MailDraft, MailEngineAccount, MailEvent, MailMessage, MailPage } from '../../shared/mail';
 import { ImapFlowSession, imapOptions, verifyImap } from './imap';
-import { realDiscoverNet, type MailTls } from './net';
+import { classify } from './errors';
+import { probeServer, realDiscoverNet, type MailTls } from './net';
 import { smtpSend, verifySmtp } from './send';
 import { MailEngine } from './service';
 
@@ -133,4 +135,74 @@ describe.skipIf(!IT)('mail engine against a real IMAP / SMTP server', () => {
       await probe.logout();
     }
   }, 90_000);
+});
+
+/**
+ * Trust on first use (§4): the same server WITHOUT trusting its CA — its certificate is self-signed,
+ * exactly what a small company's mail server shows. Fails strictly with the certificate in the
+ * error; the pinned fingerprint passes; another pin is `changed`.
+ */
+describe.skipIf(!IT)('untrusted certificates: the trust prompt and pinning', () => {
+  let fp: string;
+  const WRONG = Array.from({ length: 32 }, () => 'AB').join(':');
+  const pinned = <T extends { host: string; port: number; security: 'tls' }>(s: T, pin: string): T & { pinnedCert: string } => ({ ...s, pinnedCert: pin });
+  const certOf = async (p: Promise<unknown>): Promise<ReturnType<typeof classify>> => classify(await p.then(() => null, (e: unknown) => e));
+
+  beforeAll(() => {
+    fp = new X509Certificate(readFileSync(CA)).fingerprint256;
+  });
+
+  it('IMAP: self_signed with the certificate; the pin passes; another pin is changed', async () => {
+    const strict = await certOf(verifyImap({ server: imap, login: 'alice', password: 'secret' }));
+    expect(strict).toMatchObject({ code: 'TLS', cert: { host: HOST, port: IMAP_PORT, fingerprint256: fp, reason: 'self_signed', subject: 'CN=localhost', issuer: 'CN=localhost' } });
+    expect(strict.cert?.notAfter).toBeGreaterThan(Date.now());
+    await expect(verifyImap({ server: pinned(imap, fp), login: 'alice', password: 'secret' })).resolves.toBeUndefined();
+    expect(await certOf(verifyImap({ server: pinned(imap, WRONG), login: 'alice', password: 'secret' }))).toMatchObject({ code: 'TLS', cert: { fingerprint256: fp, reason: 'changed' } });
+    // A pinned session syncs like any other.
+    const s = await ImapFlowSession.open({ server: pinned(imap, fp), login: 'alice', password: 'secret' });
+    expect((await s.list()).length).toBeGreaterThan(0);
+    await s.close();
+  }, 30_000);
+
+  it('SMTP: the same for verify and send', async () => {
+    expect(await certOf(verifySmtp({ server: smtp, login: 'alice', password: 'secret' }))).toMatchObject({ code: 'TLS', cert: { port: SMTP_PORT, fingerprint256: fp, reason: 'self_signed' } });
+    await expect(verifySmtp({ server: pinned(smtp, fp), login: 'alice', password: 'secret' })).resolves.toBeUndefined();
+    expect(await certOf(verifySmtp({ server: pinned(smtp, WRONG), login: 'alice', password: 'secret' }))).toMatchObject({ code: 'TLS', cert: { reason: 'changed' } });
+    const raw = Buffer.from('From: alice@example.test\r\nTo: alice@example.test\r\nSubject: pinned\r\n\r\nhi\r\n');
+    expect(await certOf(smtpSend({ server: smtp, login: 'alice', password: 'secret' }, { from: 'alice@example.test', to: ['alice@example.test'] }, raw))).toMatchObject({ code: 'TLS', cert: { reason: 'self_signed' } });
+    await expect(smtpSend({ server: pinned(smtp, fp), login: 'alice', password: 'secret' }, { from: 'alice@example.test', to: ['alice@example.test'] }, raw)).resolves.toBeUndefined();
+  }, 30_000);
+
+  it('probe: found with certIssue; pinned → no issue', async () => {
+    expect(await probeServer('imap', imap, 3000)).toMatchObject({ ok: true, certIssue: { reason: 'self_signed', fingerprint256: fp } });
+    expect(await probeServer('smtp', smtp, 3000)).toMatchObject({ ok: true, certIssue: { reason: 'self_signed' } });
+    expect(await probeServer('imap', pinned(imap, fp), 3000)).toEqual({ ok: true });
+    expect(await probeServer('imap', pinned(imap, WRONG), 3000)).toMatchObject({ ok: true, certIssue: { reason: 'changed' } });
+  }, 30_000);
+
+  it('engine.verify: both servers in the prompt at once; with both pins the account verifies', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'calab-mail-it-pin-'));
+    const e = new MailEngine({
+      dataDir: dir,
+      emit: () => undefined,
+      connectImap: (a) => ImapFlowSession.open({ server: a.imap, login: a.login, password: a.password }),
+      verifyImap: (l) => verifyImap(l),
+      verifySmtp: (l) => verifySmtp(l),
+      smtpSend: (a, env, raw) => smtpSend({ server: a.smtp, login: a.login, password: a.password }, env, raw),
+      discoverNet: realDiscoverNet(),
+    });
+    try {
+      const err = await e.verify({ email: ALICE.email, password: 'secret', settings: { imap, smtp, login: 'alice' } }).catch((x: unknown) => x);
+      expect(err).toMatchObject({
+        code: 'TLS',
+        cert: { port: IMAP_PORT, reason: 'self_signed' },
+        discovery: { imap: { certIssue: { port: IMAP_PORT, fingerprint256: fp } }, smtp: { certIssue: { port: SMTP_PORT, fingerprint256: fp } } },
+      });
+      const v = await e.verify({ email: ALICE.email, password: 'secret', settings: { imap: pinned(imap, fp), smtp: pinned(smtp, fp.toLowerCase()), login: 'alice' } });
+      expect(v).toMatchObject({ imap: { pinnedCert: fp }, smtp: { pinnedCert: fp } });
+    } finally {
+      await e.shutdown();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

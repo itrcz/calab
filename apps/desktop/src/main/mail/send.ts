@@ -11,7 +11,7 @@ import { createTransport } from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import type { MailAddress, MailDraft, MailError, MailEvent, MailOutgoing, MailServerSettings } from '../../shared/mail';
 import { classify, invalid, mailError, notFound } from './errors';
-import type { MailTls } from './net';
+import { mailTlsOptions, type MailTls } from './net';
 import type { MailStore, OutgoingRecord } from './store';
 
 export const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
@@ -157,7 +157,7 @@ function transport(l: SmtpLogin, tls: MailTls) {
     secure: l.server.security === 'tls',
     requireTLS: l.server.security === 'starttls',
     auth: { user: l.login, pass: l.password },
-    tls: { rejectUnauthorized: true, minVersion: 'TLSv1.2', servername: l.server.host, ...(tls.ca ? { ca: tls.ca } : {}) },
+    tls: { ...mailTlsOptions(l.server, tls), servername: l.server.host },
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 60_000,
