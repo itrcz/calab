@@ -115,10 +115,10 @@ Mail.ru и iCloud нужен **пароль приложения** (ссылка
 Запросы (`id, method, params` → ответ или ошибка `{code, message}`):
 - `accounts.list / discover(email) / add({email, password, settings?}) / update / remove / setPassword`;
 - `folders.list(accountId)`;
-- `messages.list({ scope: accountId | 'all', folder: role | folderId, before?, limit, unreadOnly? })` —
+- `messages.list({ scope: accountId | 'all', folder: role | folderId, before?, limit, unreadOnly?, flaggedOnly? })` —
   заголовки цепочек страницами по курсору; `messages.get(id)` — письмо с телом (грузит при необходимости);
-  `messages.thread(threadId)`; `messages.setFlags / move / archive / trash / delete / loadOlder`;
-- `compose.send(draft)`, `drafts.save / list / remove`, `outgoing.retry / remove`;
+  `messages.raw(id)` — исходник RFC 822 ≤ 50 МБ (`.eml` для «Отправить в чат…»); `messages.thread(threadId)`; `messages.setFlags / move / archive / trash / delete / loadOlder`;
+- `compose.send(draft)` (`draft.html` — HTML редактора с цитатой, движок шлёт как есть), `drafts.save / list / remove`, `outgoing.retry / remove`;
 - `search(query, { scope })`; `sync.now(accountId?)`; `settings.get / set` (картинки из сети, подпись,
   уведомления, размер кэша).
 События движок → renderer одним каналом `mail:event`, склеенные (≤ 1 на папку в 250 мс):

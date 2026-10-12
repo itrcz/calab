@@ -208,4 +208,13 @@ export const esMailbox: DictShape<typeof ruMailbox> = {
   'mbox.multi.archive': 'Archivar {letters}',
   'mbox.multi.trash': 'Eliminar {letters}',
   'mbox.multi.move': 'Mover {letters}',
+  // «Enviar al chat…» (owner 12.10)
+  'mbox.chat.title': 'Enviar al chat…',
+  'mbox.chat.hint': 'Se envía en tu nombre, con el mensaje como archivo .eml',
+  'mbox.chat.tooBig': 'El mensaje es demasiado grande: solo se enviará el texto',
+  'mbox.chat.noAttach': '(no se adjunta el archivo del mensaje: en este chat no se permiten archivos)',
+  'mbox.chat.sent': 'Enviado a {name}',
+  'mbox.chat.sentMany': { one: 'Enviado a {n} chat', many: 'Enviado a {n} chats', other: 'Enviado a {n} chats' },
+  'mbox.chat.open': 'Abrir',
+  'mbox.chat.failed': 'No se pudo enviar el mensaje al chat',
 };

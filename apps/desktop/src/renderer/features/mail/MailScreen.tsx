@@ -7,11 +7,13 @@ import { useMail } from '../../stores/mail';
 import { clearPicked, pickAll, useMailUi } from '../../stores/mailUi';
 import { useUi } from '../../stores/ui';
 import { moveOpen, replyOpen, stepSelection, toggleOpenFlag, toggleOpenRead, trashSelected } from './actions';
+import { ForwardDialog } from '../chat/ForwardDialog';
 import { AddAccountCard } from './AddAccountCard';
 import { BatchView } from './BatchView';
 import { ComposeSheet } from './ComposeSheet';
 import { MailColumn } from './MailColumn';
 import { MailThread } from './MailThread';
+import { sendMailToChats } from './toChat';
 
 /**
  * «Почта» (ADR-0088 §8, Apple Mail): the list column and the thread in the centre of the inset
@@ -24,6 +26,7 @@ export function MailScreen(): ReactNode {
   const adding = useMailUi((s) => s.adding);
   const compose = useMailUi((s) => s.compose);
   const many = useMailUi((s) => s.picked.size > 1);
+  const toChat = useMailUi((s) => s.toChat);
   useMailHotkeys();
   return (
     <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="mail-screen">
@@ -53,6 +56,16 @@ export function MailScreen(): ReactNode {
         </>
       )}
       {compose && hasAccounts ? <ComposeSheet key={compose.seq} req={compose} /> : null}
+      {toChat ? (
+        <ForwardDialog
+          roomId=""
+          messageId={toChat}
+          title={t('mbox.chat.title')}
+          description={t('mbox.chat.hint')}
+          onClose={() => useMailUi.getState().openToChat(null)}
+          onSend={(targets) => sendMailToChats(toChat, targets)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -82,7 +95,7 @@ function useMailHotkeys(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || e.isComposing || typing(e.target)) return;
-      if (useUi.getState().dialog || useMailUi.getState().compose || useMailUi.getState().adding) return;
+      if (useUi.getState().dialog || useMailUi.getState().compose || useMailUi.getState().adding || useMailUi.getState().toChat) return;
       const mod = e.metaKey || e.ctrlKey;
       const letter = shortcutLetter(e);
       let act: (() => void) | null = null;

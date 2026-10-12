@@ -42,6 +42,9 @@ interface MailUiState {
    * so a toggle re-renders the toggled rows only.
    */
   picked: ReadonlySet<string>;
+  /** «Отправить в чат…»: the message whose chat picker is open. */
+  toChat: string | null;
+  openToChat: (messageId: string | null) => void;
   openCompose: (req: DistributiveOmit<ComposeRequest, 'seq'>) => void;
   closeCompose: () => void;
 }
@@ -59,6 +62,8 @@ export const useMailUi = create<MailUiState>()((set) => ({
   closeAdd: () => set({ adding: false, prefill: null }),
   compose: null,
   picked: new Set<string>(),
+  toChat: null,
+  openToChat: (toChat) => set({ toChat }),
   openCompose: (req) => set({ compose: { ...req, seq: ++seq } }),
   closeCompose: () => set({ compose: null }),
 }));

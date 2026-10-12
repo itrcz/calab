@@ -440,6 +440,21 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         };
         return full;
       },
+      raw: async (id) => {
+        const m = message(id);
+        const addr = (a: { name: string; address: string }): string => (a.name ? `"${a.name}" <${a.address}>` : a.address);
+        const head = [
+          `Message-ID: ${m.messageIdHeader}`,
+          `Date: ${new Date(m.date).toUTCString()}`,
+          `From: ${addr(m.from)}`,
+          `To: ${m.to.map(addr).join(', ')}`,
+          `Subject: ${m.subject}`,
+          'MIME-Version: 1.0',
+          `Content-Type: ${m.html ? 'text/html' : 'text/plain'}; charset=utf-8`,
+          'Content-Transfer-Encoding: 8bit',
+        ];
+        return new TextEncoder().encode(`${head.join('\r\n')}\r\n\r\n${m.html ?? m.text ?? ''}\r\n`);
+      },
       thread: async (threadId) => {
         const list = [...messages.values()].filter((m) => m.threadId === threadId).sort((a, b) => a.date - b.date);
         if (!list.length) fail('NOT_FOUND', `no thread ${threadId}`);

@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Archive, Flag, FolderInput, Forward, ImageOff, Mail, MailOpen, Paperclip, Reply, ReplyAll, Trash2 } from 'lucide-react';
+import { Archive, Flag, FolderInput, Forward, ImageOff, Mail, MailOpen, MessageSquareShare, Paperclip, Reply, ReplyAll, Trash2 } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { MailAddress, MailFolder, MailHeader, MailMessage } from '../../../shared/mail';
@@ -180,6 +180,9 @@ function ActionBar({ header }: { header: MailHeader }): ReactNode {
       </IconButton>
       <IconButton label={t('mbox.forward')} shortcut={MAIL_KEYS.forward} onClick={() => replyOpen('forward')}>
         <Forward className="size-4" strokeWidth={1.75} />
+      </IconButton>
+      <IconButton label={t('mbox.chat.title')} onClick={() => useMailUi.getState().openToChat(header.id)} data-testid="mail-to-chat">
+        <MessageSquareShare className="size-4" strokeWidth={1.75} />
       </IconButton>
       <span className="mx-1 h-4 w-px bg-line" aria-hidden />
       <IconButton label={t('mbox.archive')} shortcut={MAIL_KEYS.archive || undefined} onClick={() => moveOpen({ kind: 'archive' })} data-testid="mail-archive">

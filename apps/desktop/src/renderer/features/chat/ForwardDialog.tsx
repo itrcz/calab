@@ -36,8 +36,25 @@ function sharedRole(userId: string): WorkspaceRole | undefined {
  * (the source room's workspace; from a DM — every workspace). Picking toggles a target (chips
  * above the list, Telegram); «Переслать» sends to them one by one and reports in a toast. From a
  * room «только по списку» (ADR-0029) a note warns that the recipients will see the content.
+ *
+ * `onSend` replaces the chat forward with another sender over the same picker (a mail message
+ * «Отправить в чат…», ADR-0088); then `roomId` is '' (every workspace's rooms) and `title` / `description` name it.
  */
-export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; messageId: string; onClose: () => void }): ReactNode {
+export function ForwardDialog({
+  roomId,
+  messageId,
+  onClose,
+  onSend,
+  title,
+  description,
+}: {
+  roomId: string;
+  messageId: string;
+  onClose: () => void;
+  onSend?: (targets: readonly ForwardItem[]) => Promise<void>;
+  title?: string;
+  description?: string;
+}): ReactNode {
   const src = useRooms((s) => s.byId[roomId]);
   const byId = useRooms((s) => s.byId);
   const workspaces = useWorkspaces((s) => s.byId);
@@ -98,6 +115,12 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
   const send = async (): Promise<void> => {
     if (!selected.length || sending) return;
     setSending(true);
+    if (onSend) {
+      await onSend(selected);
+      setSending(false);
+      onClose();
+      return;
+    }
     const r = await forwardMessage(roomId, messageId, selected);
     setSending(false);
     reportForward(r);
@@ -108,8 +131,8 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
     <Modal
       open
       onClose={onClose}
-      title={t('chat.fwd.title')}
-      description={t('chat.fwd.hint')}
+      title={title ?? t('chat.fwd.title')}
+      description={description ?? t('chat.fwd.hint')}
       initialFocus={input}
       fill
       footer={

@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Archive, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Archive, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, MessageSquareShare, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
@@ -433,6 +433,12 @@ function RowMenu({ children }: { children: ReactNode }): ReactNode {
   );
 }
 
+/** «Отправить в чат…» from a row: the row's message (the newest of the thread in this folder). */
+function toChatRow(key: string | undefined): void {
+  const row = key ? useMail.getState().rows[key] : undefined;
+  if (row) useMailUi.getState().openToChat(row.messageId);
+}
+
 const Hint = ({ k }: { k: string }): ReactNode => (k ? <span className="ml-auto pl-4 text-caption tabular-nums opacity-60">{k}</span> : null);
 
 function RowMenuItems({ keys }: { keys: string[] }): ReactNode {
@@ -465,6 +471,10 @@ function RowMenuItems({ keys }: { keys: string[] }): ReactNode {
             <Forward className="size-4" aria-hidden />
             {t('mbox.forward')}
             <Hint k={MAIL_KEYS.forward} />
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => toChatRow(keys[0])} data-testid="mail-menu-to-chat">
+            <MessageSquareShare className="size-4" aria-hidden />
+            {t('mbox.chat.title')}
           </ContextMenu.Item>
           <ContextMenu.Separator className={menuSeparator} />
         </>

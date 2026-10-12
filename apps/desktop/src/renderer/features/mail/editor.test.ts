@@ -116,3 +116,22 @@ describe('sanitize on send', () => {
     expect(d.ref?.quote).toBe(false);
   });
 });
+
+describe('«Отправить в чат…» text', () => {
+  it('subject, sender, date, a blank line and the text cut with «…»', async () => {
+    const { chatText, emlName } = await import('./chatText');
+    await setLocale('ru');
+    const long = 'а'.repeat(2000);
+    const out = chatText(orig({ text: `Первая строка\r\n\r\n\r\n${long}` }), 1500);
+    const lines = out.split('\n');
+    expect(lines[0]).toBe('📧 Бюджет');
+    expect(lines[1]).toBe('От: Анна Петрова <anna@x.io>');
+    expect(lines[2]).toMatch(/^Дата: /);
+    expect(lines[3]).toBe('');
+    expect(lines[4]).toBe('Первая строка');
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.length).toBeLessThan(1500 + 120);
+    expect(chatText(orig({ subject: '', text: '' }))).toBe(`📧 (без темы)\nОт: Анна Петрова <anna@x.io>\nДата: ${lines[2]?.slice(6) ?? ''}`);
+    expect(emlName('Re: план / релиз?')).toBe('Re план релиз.eml');
+  });
+});

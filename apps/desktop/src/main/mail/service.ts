@@ -6,6 +6,7 @@
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  MAIL_RAW_MAX,
   DEFAULT_MAIL_SETTINGS,
   MAIL_CERT_FINGERPRINT_RE,
   type MailAccount,
@@ -521,6 +522,19 @@ export class MailEngine {
     };
   }
 
+  /** The raw source for «Отправить в чат» (≤ MAIL_RAW_MAX; the header's RFC822 size is checked first). */
+  async raw(id: unknown): Promise<Uint8Array> {
+    if (!parseMessageId(id)) throw notFound('message');
+    const mid = id as string;
+    const acc = this.account(mid);
+    const h = acc.store.header(mid);
+    if (!h) throw notFound('message');
+    if (h.size > MAIL_RAW_MAX) throw invalid('message too large');
+    const src = await acc.sync.fetchRaw(mid);
+    if (src.byteLength > MAIL_RAW_MAX) throw invalid('message too large');
+    return new Uint8Array(src.buffer, src.byteOffset, src.byteLength);
+  }
+
   private selection(sel: unknown): Map<Account, string[]> {
     const out = new Map<Account, string[]>();
     const add = (acc: Account, ids: string[]): void => {
@@ -642,6 +656,7 @@ export class MailEngine {
       'folders.list': (accountId) => this.account(accountId).sync.folders(),
       'messages.list': (q) => this.list(q),
       'messages.get': (id) => this.get(id),
+      'messages.raw': (id) => this.raw(id),
       'messages.thread': (threadId): MailHeader[] => {
         if (!parseSeqId(threadId, 't')) throw notFound('thread');
         return this.account(threadId).store.thread(threadId as string);

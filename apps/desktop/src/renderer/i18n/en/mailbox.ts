@@ -208,4 +208,13 @@ export const enMailbox: DictShape<typeof ruMailbox> = {
   'mbox.multi.archive': 'Archive {letters}',
   'mbox.multi.trash': 'Delete {letters}',
   'mbox.multi.move': 'Move {letters}',
+  // «Send to chat…» (owner 12.10)
+  'mbox.chat.title': 'Send to chat…',
+  'mbox.chat.hint': 'Sent under your name, with the message itself as an .eml file',
+  'mbox.chat.tooBig': 'The message is too large to send — only its text goes',
+  'mbox.chat.noAttach': '(the message file is not attached: files are not allowed in this chat)',
+  'mbox.chat.sent': 'Sent to {name}',
+  'mbox.chat.sentMany': { one: 'Sent to {n} chat', other: 'Sent to {n} chats' },
+  'mbox.chat.open': 'Open',
+  'mbox.chat.failed': 'Could not send the message to the chat',
 };

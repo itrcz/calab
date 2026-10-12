@@ -216,4 +216,13 @@ export const ruMailbox = {
   'mbox.multi.archive': 'Архивировать {letters}',
   'mbox.multi.trash': 'Удалить {letters}',
   'mbox.multi.move': 'Переместить {letters}',
+  // «Отправить в чат…» (owner 12.10)
+  'mbox.chat.title': 'Отправить в чат…',
+  'mbox.chat.hint': 'Сообщение уйдёт от вашего имени, само письмо — файлом .eml',
+  'mbox.chat.tooBig': 'Письмо слишком большое для пересылки — отправим только текст',
+  'mbox.chat.noAttach': '(файл письма не приложен: в этом чате нельзя прикреплять файлы)',
+  'mbox.chat.sent': 'Отправлено в {name}',
+  'mbox.chat.sentMany': { one: 'Отправлено в {n} чат', few: 'Отправлено в {n} чата', many: 'Отправлено в {n} чатов', other: 'Отправлено в {n} чата' },
+  'mbox.chat.open': 'Открыть',
+  'mbox.chat.failed': 'Не удалось отправить письмо в чат',
 };

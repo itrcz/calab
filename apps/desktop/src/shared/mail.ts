@@ -532,6 +532,11 @@ export interface MailApi {
     get(messageId: string): Promise<MailMessage>;
     /** All messages of a thread across the account's folders, oldest first, headers only. */
     thread(threadId: string): Promise<MailHeader[]>;
+    /**
+     * The message's raw RFC 822 source as on the server (fetched, not cached), at most
+     * `MAIL_RAW_MAX` bytes (larger: `INVALID`). «Отправить в чат» attaches it as `.eml`.
+     */
+    raw(messageId: string): Promise<Uint8Array>;
     /** Applied locally at once (events follow), queued to IMAP; rolled back with an event on failure. */
     setFlags(sel: MailSelection, patch: MailFlagPatch): Promise<void>;
     move(sel: MailSelection, folderId: string): Promise<void>;
@@ -614,6 +619,9 @@ export type MailResult<M extends MailMethod> = Awaited<ReturnType<MailFn<M>>>;
 /** The engine's dispatch table: one handler per method. */
 export type MailHandlers = { [M in MailMethod]: (...args: MailParams<M>) => Promise<MailResult<M>> };
 
+/** The largest raw message `messages.raw` returns (the chat's file upload limit). */
+export const MAIL_RAW_MAX = 50 * 1024 * 1024;
+
 /** Every engine method, for validation in main and the engine (checked against `MailApi` below and in tests). */
 export const mailMethods = [
   'accounts.list',
@@ -625,6 +633,7 @@ export const mailMethods = [
   'folders.list',
   'messages.list',
   'messages.get',
+  'messages.raw',
   'messages.thread',
   'messages.setFlags',
   'messages.move',

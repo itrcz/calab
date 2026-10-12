@@ -531,6 +531,20 @@ export class AccountSync {
     this.store.evict(this.host.cacheLimit());
   }
 
+  /** The message's raw source from the server (not cached: «Отправить в чат», §7). */
+  fetchRaw(id: string): Promise<Buffer> {
+    const h = this.store.header(id);
+    if (!h) return Promise.reject(notFound('message'));
+    const f = this.store.folder(h.folderRow);
+    if (!f) return Promise.reject(notFound('folder'));
+    return this.run(async (s) => {
+      await s.select(f.path);
+      const src = await s.fetchSource(h.uid);
+      if (!src) throw notFound('message');
+      return src;
+    });
+  }
+
   /** Downloads and caches a message body (the folder is selected for it). */
   fetchBody(id: string): Promise<void> {
     const h = this.store.header(id);
