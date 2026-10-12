@@ -7,7 +7,7 @@
  *
  *   node scripts/win-smoke-mail.mjs <path to Calab.exe> <userData dir> <out dir>
  *
- * Needs `playwright-core` resolvable from this directory and NODE_EXTRA_CA_CERTS pointing to the
+ * Needs the desktop devDependencies installed (@playwright/test) and NODE_EXTRA_CA_CERTS pointing to the
  * fake server's CA (inherited by the app and its engine). Test only.
  */
 import { appendFileSync } from 'node:fs';
@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { _electron } = require('playwright-core');
+const { _electron } = require('@playwright/test');
 
 const [exe, userData, out] = process.argv.slice(2);
 if (!exe || !userData || !out) {
