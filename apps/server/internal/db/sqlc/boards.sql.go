@@ -251,6 +251,82 @@ func (q *Queries) ClaimApprovalReminders(ctx context.Context, arg ClaimApprovalR
 	return items, nil
 }
 
+const claimTaskDueNotices = `-- name: ClaimTaskDueNotices :many
+
+WITH cand AS (
+    SELECT t.id, t.due_on, t.created_by, k.kind FROM tasks t
+    JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+    JOIN workspaces w ON w.id = b.workspace_id AND w.suspended_at IS NULL
+    JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
+    CROSS JOIN LATERAL (SELECT CASE t.due_on
+        WHEN $1::date + 1 THEN 'due_tomorrow'
+        WHEN $1::date THEN 'due_today'
+        ELSE 'overdue' END::text AS kind) k
+    WHERE t.archived_at IS NULL AND t.due_on BETWEEN $1::date - 1 AND $1::date + 1
+      AND EXISTS (
+        SELECT 1 FROM (
+            SELECT a.user_id FROM task_assignees a WHERE a.task_id = t.id
+            UNION SELECT t.created_by WHERE k.kind = 'overdue' AND t.created_by IS NOT NULL
+        ) r
+        WHERE NOT EXISTS (SELECT 1 FROM task_due_notices n
+            WHERE n.task_id = t.id AND n.kind = k.kind AND n.due_on = t.due_on AND n.user_id = r.user_id))
+    ORDER BY t.id
+    LIMIT $2
+    FOR SHARE OF t SKIP LOCKED
+), rcpt AS (
+    SELECT c.id AS task_id, a.user_id, c.kind, c.due_on FROM cand c JOIN task_assignees a ON a.task_id = c.id
+    UNION
+    SELECT c.id, c.created_by, c.kind, c.due_on FROM cand c WHERE c.kind = 'overdue' AND c.created_by IS NOT NULL
+)
+INSERT INTO task_due_notices (task_id, user_id, kind, due_on)
+SELECT task_id, user_id, kind, due_on FROM rcpt
+ON CONFLICT DO NOTHING
+RETURNING task_id, user_id, kind, due_on
+`
+
+type ClaimTaskDueNoticesParams struct {
+	Today pgtype.Date
+	Lim   int32
+}
+
+type ClaimTaskDueNoticesRow struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+	Kind   string
+	DueOn  pgtype.Date
+}
+
+// ---- due notices (ADR-0089) ----
+// Claims the due notices of today (the sweep's date in TASKS_DUE_TZ) for up to lim live tasks:
+// due tomorrow and today to the assignees (the lead is one), overdue since yesterday to them and
+// the creator. A live task: not archived, its status not finished, its board not archived, its
+// workspace not suspended. The insert is the claim (another instance's pass inserts nothing);
+// a task being changed right now is skipped until the next pass (SKIP LOCKED).
+func (q *Queries) ClaimTaskDueNotices(ctx context.Context, arg ClaimTaskDueNoticesParams) ([]ClaimTaskDueNoticesRow, error) {
+	rows, err := q.db.Query(ctx, claimTaskDueNotices, arg.Today, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimTaskDueNoticesRow{}
+	for rows.Next() {
+		var i ClaimTaskDueNoticesRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.UserID,
+			&i.Kind,
+			&i.DueOn,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const clearDefaultBoardStatus = `-- name: ClearDefaultBoardStatus :exec
 UPDATE board_statuses SET is_default = false WHERE board_id = $1 AND is_default
 `
@@ -690,6 +766,16 @@ DELETE FROM task_attachments WHERE task_id = $1
 
 func (q *Queries) DeleteTaskAttachments(ctx context.Context, taskID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTaskAttachments, taskID)
+	return err
+}
+
+const deleteTaskDueNotices = `-- name: DeleteTaskDueNotices :exec
+DELETE FROM task_due_notices WHERE task_id = $1
+`
+
+// The due notices of a task whose due date changed, or that was finished or archived.
+func (q *Queries) DeleteTaskDueNotices(ctx context.Context, taskID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTaskDueNotices, taskID)
 	return err
 }
 
@@ -1155,8 +1241,10 @@ func (q *Queries) GetTaskInvite(ctx context.Context, arg GetTaskInviteParams) (G
 
 const getTaskLevel = `-- name: GetTaskLevel :many
 SELECT u.id::uuid AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
-    (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted
+    (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted,
+    coalesce(usr.task_notify_off, '{}')::text[] AS task_notify_off
 FROM unnest($1::uuid[]) AS u (id)
+LEFT JOIN users usr ON usr.id = u.id
 LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_id = $2
 `
 
@@ -1166,12 +1254,14 @@ type GetTaskLevelParams struct {
 }
 
 type GetTaskLevelRow struct {
-	UserID    uuid.UUID
-	TaskLevel string
-	Muted     bool
+	UserID        uuid.UUID
+	TaskLevel     string
+	Muted         bool
+	TaskNotifyOff []string
 }
 
-// The users' task notification level and workspace mute in the workspace ('all' when unset).
+// The users' task notification level and workspace mute in the workspace ('all' when unset)
+// and the task notification kinds they switched off (ADR-0089).
 func (q *Queries) GetTaskLevel(ctx context.Context, arg GetTaskLevelParams) ([]GetTaskLevelRow, error) {
 	rows, err := q.db.Query(ctx, getTaskLevel, arg.UserIds, arg.WorkspaceID)
 	if err != nil {
@@ -1181,7 +1271,12 @@ func (q *Queries) GetTaskLevel(ctx context.Context, arg GetTaskLevelParams) ([]G
 	items := []GetTaskLevelRow{}
 	for rows.Next() {
 		var i GetTaskLevelRow
-		if err := rows.Scan(&i.UserID, &i.TaskLevel, &i.Muted); err != nil {
+		if err := rows.Scan(
+			&i.UserID,
+			&i.TaskLevel,
+			&i.Muted,
+			&i.TaskNotifyOff,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2599,6 +2694,18 @@ func (q *Queries) NextTaskNumber(ctx context.Context, id uuid.UUID) (int32, erro
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const purgeTaskDueNotices = `-- name: PurgeTaskDueNotices :execrows
+DELETE FROM task_due_notices WHERE sent_at < $1
+`
+
+func (q *Queries) PurgeTaskDueNotices(ctx context.Context, before time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeTaskDueNotices, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const resetTaskApprovals = `-- name: ResetTaskApprovals :many

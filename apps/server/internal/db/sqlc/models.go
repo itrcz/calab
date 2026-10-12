@@ -1442,6 +1442,14 @@ type TaskChecklistItem struct {
 	CreatedAt   time.Time
 }
 
+type TaskDueNotice struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+	Kind   string
+	DueOn  pgtype.Date
+	SentAt time.Time
+}
+
 type TaskGitLink struct {
 	ID        uuid.UUID
 	TaskID    uuid.UUID
@@ -1526,6 +1534,7 @@ type User struct {
 	HideMessageTextInNotifications bool
 	Username                       *string
 	Phone                          *string
+	TaskNotifyOff                  []string
 }
 
 type UserNote struct {

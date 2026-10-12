@@ -542,10 +542,13 @@ ORDER BY s.notified_at DESC
 LIMIT 999;
 
 -- name: GetTaskLevel :many
--- The users' task notification level and workspace mute in the workspace ('all' when unset).
+-- The users' task notification level and workspace mute in the workspace ('all' when unset)
+-- and the task notification kinds they switched off (ADR-0089).
 SELECT u.id::uuid AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
-    (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted
+    (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted,
+    coalesce(usr.task_notify_off, '{}')::text[] AS task_notify_off
 FROM unnest(sqlc.arg('user_ids')::uuid[]) AS u (id)
+LEFT JOIN users usr ON usr.id = u.id
 LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_id = sqlc.arg('workspace_id');
 
 -- ---- activity ----
@@ -705,3 +708,48 @@ WHERE a.task_id = sqlc.arg('task_id') AND a.user_id = ANY(sqlc.arg('user_ids')::
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
 RETURNING a.user_id;
+
+-- ---- due notices (ADR-0089) ----
+
+-- name: ClaimTaskDueNotices :many
+-- Claims the due notices of today (the sweep's date in TASKS_DUE_TZ) for up to lim live tasks:
+-- due tomorrow and today to the assignees (the lead is one), overdue since yesterday to them and
+-- the creator. A live task: not archived, its status not finished, its board not archived, its
+-- workspace not suspended. The insert is the claim (another instance's pass inserts nothing);
+-- a task being changed right now is skipped until the next pass (SKIP LOCKED).
+WITH cand AS (
+    SELECT t.id, t.due_on, t.created_by, k.kind FROM tasks t
+    JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+    JOIN workspaces w ON w.id = b.workspace_id AND w.suspended_at IS NULL
+    JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
+    CROSS JOIN LATERAL (SELECT CASE t.due_on
+        WHEN sqlc.arg('today')::date + 1 THEN 'due_tomorrow'
+        WHEN sqlc.arg('today')::date THEN 'due_today'
+        ELSE 'overdue' END::text AS kind) k
+    WHERE t.archived_at IS NULL AND t.due_on BETWEEN sqlc.arg('today')::date - 1 AND sqlc.arg('today')::date + 1
+      AND EXISTS (
+        SELECT 1 FROM (
+            SELECT a.user_id FROM task_assignees a WHERE a.task_id = t.id
+            UNION SELECT t.created_by WHERE k.kind = 'overdue' AND t.created_by IS NOT NULL
+        ) r
+        WHERE NOT EXISTS (SELECT 1 FROM task_due_notices n
+            WHERE n.task_id = t.id AND n.kind = k.kind AND n.due_on = t.due_on AND n.user_id = r.user_id))
+    ORDER BY t.id
+    LIMIT sqlc.arg('lim')
+    FOR SHARE OF t SKIP LOCKED
+), rcpt AS (
+    SELECT c.id AS task_id, a.user_id, c.kind, c.due_on FROM cand c JOIN task_assignees a ON a.task_id = c.id
+    UNION
+    SELECT c.id, c.created_by, c.kind, c.due_on FROM cand c WHERE c.kind = 'overdue' AND c.created_by IS NOT NULL
+)
+INSERT INTO task_due_notices (task_id, user_id, kind, due_on)
+SELECT task_id, user_id, kind, due_on FROM rcpt
+ON CONFLICT DO NOTHING
+RETURNING task_id, user_id, kind, due_on;
+
+-- name: DeleteTaskDueNotices :exec
+-- The due notices of a task whose due date changed, or that was finished or archived.
+DELETE FROM task_due_notices WHERE task_id = $1;
+
+-- name: PurgeTaskDueNotices :execrows
+DELETE FROM task_due_notices WHERE sent_at < sqlc.arg('before');

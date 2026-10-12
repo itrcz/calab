@@ -144,3 +144,8 @@ SELECT EXISTS (
           )
       )
 )::boolean;
+
+-- name: SetUserTaskNotifyOff :one
+-- The task notification kinds switched off (ADR-0089), replaced.
+UPDATE users SET task_notify_off = $2 WHERE id = $1
+RETURNING *;
