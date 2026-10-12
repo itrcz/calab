@@ -11,4 +11,6 @@ interface ImportMetaEnv {
   readonly VITE_PRICING_URL?: string;
   /** '1': the billing cabinet and admin talk to an in-memory mock (lib/billing/mock.ts; dev / QA builds only). */
   readonly VITE_BILLING_MOCK?: string;
+  /** '1': the mail section talks to the in-memory mock (features/mail/mock; `CALABA_MAIL_MOCK=1 pnpm dev:desktop`). */
+  readonly VITE_MAIL_MOCK?: string;
 }
