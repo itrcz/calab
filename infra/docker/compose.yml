@@ -227,6 +227,8 @@ services:
       # Bot API limits per bot (ADR-0031)
       - BOT_RATE_PER_SEC=${BOT_RATE_PER_SEC:-30}
       - BOT_MESSAGES_PER_MIN=${BOT_MESSAGES_PER_MIN:-20}
+      # due notices of tasks at 09:00 of this IANA zone (ADR-0089)
+      - TASKS_DUE_TZ=${TASKS_DUE_TZ:-Europe/Moscow}
     <<: *hardening                 # distroless nonroot (65532); writes only to /data/files, /data/recordings
     tmpfs: [/tmp]
     volumes:
