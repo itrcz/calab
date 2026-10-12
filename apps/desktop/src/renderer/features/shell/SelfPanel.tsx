@@ -15,6 +15,7 @@ import { PttLastKey, bindingLabel, usePttCapture, type PttCapture } from '../set
 import { PttReleaseDelay } from '../settings/PttReleaseDelay';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MenuSliderItem } from './MenuSliderItem';
+import { AutoMuteSubmenu } from './AutoMuteMenu';
 import { selectMicMode, swallowMenuKey } from './micMenu';
 import { STATUS_KEY, StatusMenu, useCustomStatusExpiry, useMyStatus } from './StatusMenu';
 import { AppSettingsWindow } from './lazyWindows';
@@ -233,14 +234,17 @@ function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
         </Dropdown.RadioItem>
       </Dropdown.RadioGroup>
       {micMode === 'voice' ? (
-        <MenuSliderItem
-          label={t('shell.inputVolume')}
-          valueText={t('unit.db', { n: threshold })}
-          value={threshold}
-          min={-80}
-          max={-10}
-          onChange={(v) => setPrefs({ thresholdDb: v })}
-        />
+        <>
+          <MenuSliderItem
+            label={t('shell.inputVolume')}
+            valueText={t('unit.db', { n: threshold })}
+            value={threshold}
+            min={-80}
+            max={-10}
+            onChange={(v) => setPrefs({ thresholdDb: v })}
+          />
+          <AutoMuteSubmenu />
+        </>
       ) : (
         <>
           {/* The key as a pill; the row (or Enter on it) arms the capture in place. */}

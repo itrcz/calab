@@ -17,6 +17,7 @@ import { useMemberName } from '../../stores/workspaces';
 import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
+import { AutoMuteSubmenu } from './AutoMuteMenu';
 import { MobileRecDot, useRecording } from '../voice/Recording';
 import { SoundboardAnchored } from '../voice/Soundboard';
 import { useCanFlipCamera } from '../voice/useCanFlipCamera';
@@ -236,6 +237,7 @@ function MoreMenu({ roomId, cameraItem, onSounds }: { roomId: string; cameraItem
               {t('voice.modePtt')}
             </Dropdown.RadioItem>
           </Dropdown.RadioGroup>
+          {micMode === 'voice' ? <AutoMuteSubmenu touch /> : null}
           <Dropdown.Separator className={menuSeparator} />
           <Dropdown.Item className={cx(menuItem, 'h-11')} onSelect={() => openDialog({ kind: 'settings', tab: 'voice' })}>
             <Settings className="size-4" aria-hidden /> {t('shell.voiceSettings')}

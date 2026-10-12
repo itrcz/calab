@@ -26,3 +26,21 @@ describe('prefs.cameraBgFps', () => {
     expect(usePrefs.getState().cameraBgFps).toBe(20);
   });
 });
+
+describe('prefs.autoMuteSec', () => {
+  beforeEach(() => mem.clear());
+  it('is off by default (also for stored prefs that predate it)', async () => {
+    expect(usePrefs.getState().autoMuteSec).toBe(0);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { micMode: 'voice' }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().autoMuteSec).toBe(0);
+  });
+  it('keeps an offered value, drops anything else to off', async () => {
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { autoMuteSec: 300 }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().autoMuteSec).toBe(300);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { autoMuteSec: 42 }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().autoMuteSec).toBe(0);
+  });
+});

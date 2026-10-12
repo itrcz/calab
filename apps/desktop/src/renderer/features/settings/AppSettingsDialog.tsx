@@ -46,6 +46,7 @@ import { MicMeter } from './MicMeter';
 import { BoardHotkeysList } from '../boards/HotkeysSheet';
 import { PttBinder } from './PttBinder';
 import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
+import { AutoMuteSelect } from '../shell/AutoMuteMenu';
 import { AboutUpdateRow } from './AboutUpdateRow';
 import { WebUpdateRow } from './WebUpdateRow';
 import { deviceLabel, osLabel, voicePathLabel } from './format';
@@ -426,6 +427,11 @@ function VoiceTab(): ReactNode {
             <Slider label={t('voice.thresholdLabel')} value={p.thresholdDb} min={METER_MIN_DB} max={0} onChange={(v) => p.setPrefs({ thresholdDb: v })} />
             <span className="text-caption text-faint">{t('voice.thresholdHint')}</span>
           </div>
+        ) : null}
+        {p.micMode === 'voice' ? (
+          <Row label={t('autoMute.label')} hint={t('autoMute.hint')} htmlFor="auto-mute">
+            <AutoMuteSelect id="auto-mute" />
+          </Row>
         ) : (
           <>
             <PttBinder />

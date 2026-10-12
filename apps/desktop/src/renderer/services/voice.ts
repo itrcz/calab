@@ -47,6 +47,7 @@ import { denoiseMode, wakeDbFor } from '../lib/media/denoiseSleep';
 import { playSound } from '../lib/sounds';
 import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
+import { AUTO_MUTE_TOAST, AutoMuteTimer, autoMuteArmed, type AutoMuteSec } from '../lib/autoMute';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
@@ -243,6 +244,8 @@ class VoiceEngine {
   private levelSpeakOn = false;
   private levelTick = 0;
   private selfSpeaking = false;
+  /** «Выключать микрофон, если я молчу» (lib/autoMute.ts): one timeout off my VAD edges, nothing while not in voice. */
+  private readonly autoMute = new AutoMuteTimer((sec) => this.onAutoMute(sec));
   private readonly active = new ActiveSpeaker((id) => this.onActiveSpeaker(id));
   /** My webcam (services/camera.ts). */
   readonly camera: CameraController;
@@ -306,6 +309,8 @@ class VoiceEngine {
         this.applyVolumes();
         this.applyAudioSubscriptions();
       }
+      // A moderator mute / lost SPEAK lands here without applyTransmit: the auto-mute stops too.
+      if (s.muted !== p.muted || s.deafened !== p.deafened || s.serverMuted !== p.serverMuted || s.canSpeak !== p.canSpeak) this.syncAutoMute();
     });
   }
 
@@ -364,6 +369,7 @@ class VoiceEngine {
     if (s.echoMode !== p.echoMode) this.applyDuck();
     if (s.red !== p.red && this.micTrack && this.room) void this.republishMic();
     if (s.personalBitrateKbps !== p.personalBitrateKbps) this.applyMicTier();
+    if (s.autoMuteSec !== p.autoMuteSec) this.syncAutoMute();
     if (s.musicianMode !== p.musicianMode) this.onMusicianMode(s.musicianMode);
     if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
     if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
@@ -1262,6 +1268,7 @@ class VoiceEngine {
     this.room = null;
     this.roomId = null;
     this.micTrack = null;
+    this.autoMute.cancel(); // left: no timer outside voice
     // disconnect(false): unpublish without stopping. disconnect(true) would stop the pipeline's
     // publish track, and a running mic test keeps that pipeline for the next call → a dead
     // mic there (review M1). The pipeline is stopped below when nobody needs it.
@@ -1701,6 +1708,37 @@ class VoiceEngine {
     if (on === this.selfSpeaking) return;
     this.selfSpeaking = on;
     this.syncSpeaking();
+  }
+
+  /**
+   * The auto-mute timer follows my mic (lib/autoMute.ts): armed while a published mic is open in
+   * voice activation; my local VAD (`selfSpeaking`, the ring's own signal) resets it. The native
+   * call audio has no local VAD here — never armed there.
+   */
+  private syncAutoMute(): void {
+    this.autoMute.update(this.autoMuteArmed(), this.selfSpeaking, prefs().autoMuteSec);
+  }
+
+  private autoMuteArmed(): boolean {
+    const v = useVoice.getState();
+    const live = this.room !== null && this.micTrack !== null && this.nativeAudio === null;
+    return autoMuteArmed({ live, mode: this.micMode(), muted: v.muted, deafened: v.deafened, serverMuted: v.serverMuted, canSpeak: v.canSpeak });
+  }
+
+  /** Silent for the whole period: mute like the button (sound, voice-state), say why, offer to undo. */
+  private onAutoMute(sec: Exclude<AutoMuteSec, 0>): void {
+    if (this.selfSpeaking || !this.autoMuteArmed()) return;
+    log.info(`voice: auto-mute after ${sec} s of silence`);
+    this.toggleMute();
+    const room = this.room;
+    useToasts.getState().push('info', t(AUTO_MUTE_TOAST[sec]), {
+      label: t('autoMute.unmute'),
+      run: () => {
+        // Still in that call and still muted by us (not deafened since): turn the mic back on.
+        const s = useVoice.getState();
+        if (this.room === room && s.muted && !s.deafened && !s.serverMuted) this.toggleMute();
+      },
+    });
   }
 
   private resetSpeaking(): void {
@@ -2280,7 +2318,7 @@ class VoiceEngine {
    *    The track stays published, so opening is instant.
    */
   private applyTransmit(): void {
-    if (this.nativeAudio) { this.nativeAudio.control(this.nativeControls()); return; }
+    if (this.nativeAudio) { this.autoMute.cancel(); this.nativeAudio.control(this.nativeControls()); return; }
     const t = this.micTrack;
     const d = this.decision();
     // Closing is the latency-critical edge (PTT key-up): silence the sender first, synchronously —
@@ -2291,6 +2329,7 @@ class VoiceEngine {
     this.applyDuck(); // PTT pressed / deafen: the duck follows at once, not at the next level tick
     setVoice({ transmitting: d.transmitting && t !== null });
     this.setSelfSpeaking(d.speaking && t !== null);
+    this.syncAutoMute();
     if (!t) return;
     // `isMuted` flips only after LiveKit's async mute lock: while a mute/unmute is in flight,
     // wait for it and re-evaluate, so mute→unmute in quick succession ends in the state the
