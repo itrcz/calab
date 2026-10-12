@@ -268,7 +268,10 @@ export async function probeServer(kind: 'imap' | 'smtp', server: MailServerSetti
     return await Promise.race([attempt().catch(() => fail), timeout]);
   } finally {
     clearTimeout(timer);
-    for (const s of sockets) s.destroy();
+    // TLS before the TCP socket under it: destroying the plain socket first while a STARTTLS
+    // handshake on top of it is pending crashes the process natively (SIGSEGV, Node 24 / 26) — the
+    // 3.1.0 engine died on discovery of domains whose host answered STARTTLS and then stalled.
+    for (const s of [...sockets].reverse()) s.destroy();
   }
 }
 

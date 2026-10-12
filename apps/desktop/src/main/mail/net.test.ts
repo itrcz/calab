@@ -1,4 +1,7 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
+import { join, resolve } from 'node:path';
+import { TLSSocket } from 'node:tls';
 import { afterEach, describe, expect, it } from 'vitest';
 import { caresLookup, fetchText, probeServer } from './net';
 
@@ -18,6 +21,9 @@ function silentServer(): Promise<{ server: Server; port: number; open: () => num
     });
   });
 }
+
+/** The local test certificate (infra/docker/greenmail/gen-cert.sh); the test is skipped without it. */
+const CERTS = resolve(__dirname, '../../../../../infra/docker/greenmail/certs');
 
 const servers: Server[] = [];
 afterEach(() => {
@@ -45,6 +51,31 @@ describe('discovery network deadlines (ADR-0088 §4, §7)', () => {
     }
     // The hung TLS handshake's socket is destroyed too (it used to leak until the OS timeout).
     expect(await waitFor(() => open() === 0)).toBe(true);
+  });
+
+  it.skipIf(!existsSync(join(CERTS, 'key.pem')))('STARTTLS completed: the probe closes TLS before TCP and the process survives', async () => {
+    // 3.1.0 destroyed the TCP socket first, under the live TLS socket: SIGSEGV of the whole engine
+    // (exit 11) a moment later, on discovery of any domain with a STARTTLS IMAP / SMTP host.
+    const key = readFileSync(join(CERTS, 'key.pem'));
+    const cert = readFileSync(join(CERTS, 'ca.pem'));
+    const server = createServer((s) => {
+      s.on('error', () => undefined);
+      s.write('* OK IMAP ready\r\n');
+      s.once('data', () => {
+        s.write('a1 OK Begin TLS\r\n');
+        const t = new TLSSocket(s, { isServer: true, key, cert });
+        t.on('error', () => undefined);
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const addr = server.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    for (let i = 0; i < 10; i++) {
+      const r = await probeServer('imap', { host: 'localhost', port, security: 'starttls' }, 2000);
+      expect(r.ok).toBe(true);
+    }
+    await new Promise((r) => setTimeout(r, 300));
   });
 
   it('fetchText: a server that never answers is aborted at the deadline', async () => {
