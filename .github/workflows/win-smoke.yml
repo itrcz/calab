@@ -24,6 +24,11 @@ on:
         required: false
         default: '60'
 
+  # TEMP (fix/windows-crash): workflow_dispatch needs the file on the default branch first.
+  push:
+    branches: [fix/windows-crash]
+    paths: ['.github/workflows/win-smoke.yml']
+
 permissions:
   contents: read
 
@@ -31,11 +36,15 @@ jobs:
   smoke:
     runs-on: windows-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{{"version":"{0}","from":"{1}"}}]', inputs.version, inputs.from) || '[{"version":"3.0.9","from":""},{"version":"3.1.0","from":""},{"version":"3.1.1","from":""},{"version":"3.1.2","from":""},{"version":"3.1.2","from":"3.0.9"}]') }}
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ inputs.version }}
-      FROM: ${{ inputs.from }}
-      WAIT: ${{ inputs.wait }}
+      VERSION: ${{ matrix.version }}
+      FROM: ${{ matrix.from }}
+      WAIT: ${{ inputs.wait || '60' }}
     steps:
       - name: Smoke
         shell: pwsh
@@ -102,6 +111,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
         with:
-          name: win-smoke-${{ inputs.version }}
+          name: win-smoke-${{ matrix.version }}${{ matrix.from && format('-from-{0}', matrix.from) || '' }}
           path: ${{ runner.temp }}/smoke
           if-no-files-found: warn
