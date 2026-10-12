@@ -1,12 +1,17 @@
 # Manual Windows smoke test of a released desktop build (TESTING.md «Windows smoke»).
 # Never part of required CI: we have no Windows machine, this is how a Windows crash is reproduced.
 #
-#   gh workflow run win-smoke.yml --ref <branch> -f version=3.1.2 [-f from=3.0.9]
+#   gh workflow run win-smoke.yml -f version=3.1.2 [-f from=3.0.9] [-f unicode=true] [-f update_from=3.1.1]
 #
-# Installs Calab-Setup-<version>-x64.exe from the GitHub release silently (optionally over <from>,
-# which is launched first so the upgrade path sees an existing userData), launches it, simulates a
-# second instance + a mail deep link, and uploads main.log, crash dumps, stdout/stderr, the process
-# list and the Windows «Application Error» / WER events.
+# Job `smoke`: installs Calab-Setup-<version>-x64.exe from the GitHub release silently (optionally over
+# <from>, launched first so the upgrade sees an existing userData; `unicode`: install dir and userData
+# under Cyrillic paths), launches it (+ a second instance with a mail deep link), then with the test
+# tools of this ref: logged in to the e2e-support mock API through every section and settings tab
+# (scripts/win-smoke-app.mjs, screenshots), and the mail engine against mail-fake-server.mjs
+# (scripts/win-smoke-mail.mjs). Job `update` (update_from): the auto-update from that version to the
+# feed's latest, installed on quit, then relaunched (scripts/win-smoke-update.mjs).
+# Artifacts: summary.txt, main.log, crash dumps, stdout/stderr, process lists, screenshots and the
+# Windows «Application Error» / WER events.
 name: win-smoke
 
 on:
@@ -32,11 +37,6 @@ on:
         required: false
         default: ''
 
-  # TEMP (fix/windows-crash): workflow_dispatch needs the file on the default branch first.
-  push:
-    branches: [fix/windows-crash]
-    paths: ['.github/workflows/win-smoke.yml', 'apps/desktop/scripts/win-smoke-*.mjs']
-
 permissions:
   contents: read
 
@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{{"version":"{0}","from":"{1}","unicode":{2}}}]', inputs.version, inputs.from, inputs.unicode) || '[{"version":"3.1.2","from":"","unicode":true}]') }}
+        include: ${{ fromJSON(format('[{{"version":"{0}","from":"{1}","unicode":{2}}}]', inputs.version, inputs.from, inputs.unicode)) }}
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ matrix.version }}
@@ -203,13 +203,13 @@ jobs:
   # Auto-update on Windows: <from> installed, mail engine running, the feed's latest downloaded and
   # installed on quit (scripts/win-smoke-update.mjs), then the result launched as a user would.
   update:
-    if: github.event_name == 'workflow_dispatch' && inputs.update_from != ''
+    if: inputs.update_from != ''
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        from: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.update_from) || '["3.1.1","3.0.9"]') }}
+        from: ${{ fromJSON(format('["{0}"]', inputs.update_from)) }}
     env:
       GH_TOKEN: ${{ github.token }}
       FROM: ${{ matrix.from }}

@@ -539,6 +539,12 @@ docker compose -f infra/docker/compose.dev.yml --profile mail down
 - ML.6 Самоподписанный сертификат (доверие с первого раза, ADR-0088 §4): как ML.4, но **без** `NODE_EXTRA_CA_CERTS` → после «Добавить» вместо «Не удалось установить защищённое соединение» две плашки (`localhost:3993` и `localhost:3465`): «Сертификат самоподписанный», «Выдан: CN=localhost», отпечаток, «Доверять этому серверу и подключиться». Нажать на первой → остаётся вторая; на второй → ящик добавлен, письма приходят. «Настройки → Почта»: две строки «Сертификат: закреплён ⋯xxxx · Сбросить». Пересоздать сертификат фейка (`gen-cert.sh`, перезапуск) → у ящика «Сертификат сервера изменился» · «Показать и доверять новому» → после подтверждения синхронизация снова идёт. До доверия на сервер не уходит ни одной команды (LOGIN/AUTH).
 - ML.7 (3.1.1) `CALABA_MAIL_IT=1 … engine.it` шагом 7: письмо в «Корзину» → `folders.empty` чистит её на сервере, «Входящие» — `INVALID`. В приложении (ML.4): «Корзина» → метла → «Удалить N писем навсегда?» → пусто; после `pnpm -F @calaba/desktop build:app` в выводе «mail engine OK: loads without node_modules», в `~/Library/Logs/Calab/main.log` при открытии «Почты» — `mail: engine spawned`.
 
+### 2.20 Windows smoke (без Windows-машины)
+
+`gh workflow run win-smoke.yml -f version=3.1.2 [-f from=3.0.9] [-f unicode=true] [-f update_from=3.1.1]` (ручной, не в CI) → `gh run watch`, `gh run download`.
+Ставит релиз на `windows-latest`, запускает, входит в mock-API (все разделы и вкладки настроек, скриншоты), гоняет почтовый движок против фейка, опционально — автообновление и кириллические пути.
+Ожидается в `summary.txt`: `alive processes>0`, `main alive=true`, ответы `mail: … ok:true`, без `EXITED`/`CRASHED`; `events.txt` пустой. Падение — смотреть `renderer gone` / `child process gone` в `*-logs/main.log` и `Faulting module` в `events.txt`.
+
 ## 3. Сервер
 
 Локальные прогоны — на машине с Docker и Go (dev-compose), без стенда; 3.3 — те же curl-сценарии против стенда.
