@@ -1123,6 +1123,11 @@ message TaskNotice {
   // APPROVAL_REQUESTED (ADR-0082): the task changed and the recipient's decided vote was reset
   // - «Задача изменена - нужно согласовать повторно». Older clients show the plain request.
   bool re_requested = 7;
+  // DUE_SOON / OVERDUE: the due date the notice is about; DUE_CHANGED: the new due date ("" =
+  // removed). "YYYY-MM-DD" (ADR-0089).
+  string due_on = 8;
+  // DUE_SOON: 1 = due tomorrow, 0 = due today; OVERDUE: the days past due, negative (-1).
+  int32 days_left = 9;
 }
 
 enum TaskNoticeKind {
@@ -1146,6 +1151,34 @@ enum TaskNoticeKind {
   // RULE (ADR-0060): the «notify» action of an automation rule addressed the recipient (an
   // assignee, the lead, the creator or an approver); by their task level like ASSIGNED.
   TASK_NOTICE_KIND_RULE = 8;
+  // ADR-0089. Addressed to the recipient (with task level ALL and MENTIONS, no subscription
+  // needed) unless switched off in UserSettings.task_notify_off:
+  // UNASSIGNED: removed from the assignees or from the lead by someone else (or a rule).
+  TASK_NOTICE_KIND_UNASSIGNED = 9;
+  // WATCHER_ADDED: made a watcher by someone else (an @mention gives MENTIONED instead).
+  TASK_NOTICE_KIND_WATCHER_ADDED = 10;
+  // DUE_SOON: due tomorrow (days_left 1) or today (0), at 09:00 of TASKS_DUE_TZ, to the
+  // assignees and the lead; actor_id empty.
+  TASK_NOTICE_KIND_DUE_SOON = 11;
+  // OVERDUE: the day after the due date, once, to the assignees, the lead and the creator;
+  // actor_id empty.
+  TASK_NOTICE_KIND_OVERDUE = 12;
+  // ADR-0089. To subscribers who did not mute the task, with task level ALL only:
+  // DUE_CHANGED: the due date was set, moved or removed (due_on: the new one).
+  TASK_NOTICE_KIND_DUE_CHANGED = 13;
+  // PRIORITY: the priority changed (the new one is in the task).
+  TASK_NOTICE_KIND_PRIORITY = 14;
+  // MILESTONE: the milestone changed; text: the new milestone's name ("" = removed).
+  TASK_NOTICE_KIND_MILESTONE = 15;
+  // MOVED: the task was moved to another board; text: the new board's name.
+  TASK_NOTICE_KIND_MOVED = 16;
+  // EDITED: the title or the description changed; text: "title" or "description". Once per
+  // coalesced journal entry (ADR-0081): not when the entry is replaced.
+  TASK_NOTICE_KIND_EDITED = 17;
+  // ATTACHMENT: a file was attached; text: its name.
+  TASK_NOTICE_KIND_ATTACHMENT = 18;
+  // ARCHIVED: the task was archived.
+  TASK_NOTICE_KIND_ARCHIVED = 19;
 }
 
 // The task was archived (purged false) or deleted with its board.

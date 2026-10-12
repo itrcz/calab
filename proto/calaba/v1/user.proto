@@ -77,6 +77,12 @@ message UserSettings {
   // Read-only here; changed by UpdateMeRequest.hide_message_text_in_notifications.
   // Default false. Older audio-settings replacements must not reset privacy.
   bool hide_message_text_in_notifications = 10;
+  // Task notification triggers switched off (ADR-0089), read-only here like event_reminders:
+  // changed with UpdateMeRequest.task_notify_off. Values of calaba.v1.TaskNoticeKind
+  // (boards.proto, which imports this file: hence int32); default [] = everything on, so
+  // kinds added later are on by themselves. Never holds the mandatory APPROVAL_REQUESTED,
+  // APPROVED, REJECTED.
+  repeated int32 task_notify_off = 11;
 }
 
 // Working hours of a user (ADR-0041) in their profile zone (UTC without one): minutes from
@@ -91,6 +97,13 @@ message WorkHours {
 message EventReminderSettings {
   repeated uint32 minutes = 1; // ≤ 5 distinct values of 5, 10, 15, 30, 60, 120, 1440; [] = none
   bool dnd = 2;
+}
+
+// PATCH /api/me task_notify_off (ADR-0089): replaces the list of switched-off task notification
+// triggers, TaskNoticeKind values. The server drops the mandatory kinds (APPROVAL_REQUESTED,
+// APPROVED, REJECTED); 422 for UNSPECIFIED, an unknown value or more than 64 values.
+message TaskNotifyOff {
+  repeated int32 kinds = 1;
 }
 
 // The authenticated user: public profile + private fields.
@@ -153,6 +166,8 @@ message UpdateMeRequest {
   // a reserved name; 409 USERNAME_TAKEN: someone (a person or a bot) has it. Not for guests
   // and bots (403).
   optional string username = 13;
+  // Task notification triggers switched off (ADR-0089); unset = unchanged. Not for bots (403).
+  TaskNotifyOff task_notify_off = 14;
 }
 
 // GET /api/usernames/{name}/available → whether the caller may take the nickname now (the

@@ -884,20 +884,59 @@ const (
 	// RULE (ADR-0060): the «notify» action of an automation rule addressed the recipient (an
 	// assignee, the lead, the creator or an approver); by their task level like ASSIGNED.
 	TaskNoticeKind_TASK_NOTICE_KIND_RULE TaskNoticeKind = 8
+	// ADR-0089. Addressed to the recipient (with task level ALL and MENTIONS, no subscription
+	// needed) unless switched off in UserSettings.task_notify_off:
+	// UNASSIGNED: removed from the assignees or from the lead by someone else (or a rule).
+	TaskNoticeKind_TASK_NOTICE_KIND_UNASSIGNED TaskNoticeKind = 9
+	// WATCHER_ADDED: made a watcher by someone else (an @mention gives MENTIONED instead).
+	TaskNoticeKind_TASK_NOTICE_KIND_WATCHER_ADDED TaskNoticeKind = 10
+	// DUE_SOON: due tomorrow (days_left 1) or today (0), at 09:00 of TASKS_DUE_TZ, to the
+	// assignees and the lead; actor_id empty.
+	TaskNoticeKind_TASK_NOTICE_KIND_DUE_SOON TaskNoticeKind = 11
+	// OVERDUE: the day after the due date, once, to the assignees, the lead and the creator;
+	// actor_id empty.
+	TaskNoticeKind_TASK_NOTICE_KIND_OVERDUE TaskNoticeKind = 12
+	// ADR-0089. To subscribers who did not mute the task, with task level ALL only:
+	// DUE_CHANGED: the due date was set, moved or removed (due_on: the new one).
+	TaskNoticeKind_TASK_NOTICE_KIND_DUE_CHANGED TaskNoticeKind = 13
+	// PRIORITY: the priority changed (the new one is in the task).
+	TaskNoticeKind_TASK_NOTICE_KIND_PRIORITY TaskNoticeKind = 14
+	// MILESTONE: the milestone changed; text: the new milestone's name ("" = removed).
+	TaskNoticeKind_TASK_NOTICE_KIND_MILESTONE TaskNoticeKind = 15
+	// MOVED: the task was moved to another board; text: the new board's name.
+	TaskNoticeKind_TASK_NOTICE_KIND_MOVED TaskNoticeKind = 16
+	// EDITED: the title or the description changed; text: "title" or "description". Once per
+	// coalesced journal entry (ADR-0081): not when the entry is replaced.
+	TaskNoticeKind_TASK_NOTICE_KIND_EDITED TaskNoticeKind = 17
+	// ATTACHMENT: a file was attached; text: its name.
+	TaskNoticeKind_TASK_NOTICE_KIND_ATTACHMENT TaskNoticeKind = 18
+	// ARCHIVED: the task was archived.
+	TaskNoticeKind_TASK_NOTICE_KIND_ARCHIVED TaskNoticeKind = 19
 )
 
 // Enum value maps for TaskNoticeKind.
 var (
 	TaskNoticeKind_name = map[int32]string{
-		0: "TASK_NOTICE_KIND_UNSPECIFIED",
-		1: "TASK_NOTICE_KIND_ASSIGNED",
-		2: "TASK_NOTICE_KIND_MENTIONED",
-		3: "TASK_NOTICE_KIND_COMMENT",
-		4: "TASK_NOTICE_KIND_STATUS",
-		5: "TASK_NOTICE_KIND_APPROVAL_REQUESTED",
-		6: "TASK_NOTICE_KIND_APPROVED",
-		7: "TASK_NOTICE_KIND_REJECTED",
-		8: "TASK_NOTICE_KIND_RULE",
+		0:  "TASK_NOTICE_KIND_UNSPECIFIED",
+		1:  "TASK_NOTICE_KIND_ASSIGNED",
+		2:  "TASK_NOTICE_KIND_MENTIONED",
+		3:  "TASK_NOTICE_KIND_COMMENT",
+		4:  "TASK_NOTICE_KIND_STATUS",
+		5:  "TASK_NOTICE_KIND_APPROVAL_REQUESTED",
+		6:  "TASK_NOTICE_KIND_APPROVED",
+		7:  "TASK_NOTICE_KIND_REJECTED",
+		8:  "TASK_NOTICE_KIND_RULE",
+		9:  "TASK_NOTICE_KIND_UNASSIGNED",
+		10: "TASK_NOTICE_KIND_WATCHER_ADDED",
+		11: "TASK_NOTICE_KIND_DUE_SOON",
+		12: "TASK_NOTICE_KIND_OVERDUE",
+		13: "TASK_NOTICE_KIND_DUE_CHANGED",
+		14: "TASK_NOTICE_KIND_PRIORITY",
+		15: "TASK_NOTICE_KIND_MILESTONE",
+		16: "TASK_NOTICE_KIND_MOVED",
+		17: "TASK_NOTICE_KIND_EDITED",
+		18: "TASK_NOTICE_KIND_ATTACHMENT",
+		19: "TASK_NOTICE_KIND_ARCHIVED",
 	}
 	TaskNoticeKind_value = map[string]int32{
 		"TASK_NOTICE_KIND_UNSPECIFIED":        0,
@@ -909,6 +948,17 @@ var (
 		"TASK_NOTICE_KIND_APPROVED":           6,
 		"TASK_NOTICE_KIND_REJECTED":           7,
 		"TASK_NOTICE_KIND_RULE":               8,
+		"TASK_NOTICE_KIND_UNASSIGNED":         9,
+		"TASK_NOTICE_KIND_WATCHER_ADDED":      10,
+		"TASK_NOTICE_KIND_DUE_SOON":           11,
+		"TASK_NOTICE_KIND_OVERDUE":            12,
+		"TASK_NOTICE_KIND_DUE_CHANGED":        13,
+		"TASK_NOTICE_KIND_PRIORITY":           14,
+		"TASK_NOTICE_KIND_MILESTONE":          15,
+		"TASK_NOTICE_KIND_MOVED":              16,
+		"TASK_NOTICE_KIND_EDITED":             17,
+		"TASK_NOTICE_KIND_ATTACHMENT":         18,
+		"TASK_NOTICE_KIND_ARCHIVED":           19,
 	}
 )
 
@@ -7052,7 +7102,12 @@ type TaskNotice struct {
 	RuleId     string                 `protobuf:"bytes,6,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // RULE: the rule that sent it
 	// APPROVAL_REQUESTED (ADR-0082): the task changed and the recipient's decided vote was reset
 	// - «Задача изменена - нужно согласовать повторно». Older clients show the plain request.
-	ReRequested   bool `protobuf:"varint,7,opt,name=re_requested,json=reRequested,proto3" json:"re_requested,omitempty"`
+	ReRequested bool `protobuf:"varint,7,opt,name=re_requested,json=reRequested,proto3" json:"re_requested,omitempty"`
+	// DUE_SOON / OVERDUE: the due date the notice is about; DUE_CHANGED: the new due date ("" =
+	// removed). "YYYY-MM-DD" (ADR-0089).
+	DueOn string `protobuf:"bytes,8,opt,name=due_on,json=dueOn,proto3" json:"due_on,omitempty"`
+	// DUE_SOON: 1 = due tomorrow, 0 = due today; OVERDUE: the days past due, negative (-1).
+	DaysLeft      int32 `protobuf:"varint,9,opt,name=days_left,json=daysLeft,proto3" json:"days_left,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7134,6 +7189,20 @@ func (x *TaskNotice) GetReRequested() bool {
 		return x.ReRequested
 	}
 	return false
+}
+
+func (x *TaskNotice) GetDueOn() string {
+	if x != nil {
+		return x.DueOn
+	}
+	return ""
+}
+
+func (x *TaskNotice) GetDaysLeft() int32 {
+	if x != nil {
+		return x.DaysLeft
+	}
+	return 0
 }
 
 // The task was archived (purged false) or deleted with its board.
@@ -8947,7 +9016,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\n" +
 	"TaskUpdate\x12#\n" +
 	"\x04task\x18\x01 \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12-\n" +
-	"\x06notice\x18\x02 \x01(\v2\x15.calaba.v1.TaskNoticeR\x06notice\"\xe6\x01\n" +
+	"\x06notice\x18\x02 \x01(\v2\x15.calaba.v1.TaskNoticeR\x06notice\"\x9a\x02\n" +
 	"\n" +
 	"TaskNotice\x12-\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x19.calaba.v1.TaskNoticeKindR\x04kind\x12\x19\n" +
@@ -8958,7 +9027,9 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"activityId\x12\x12\n" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x17\n" +
 	"\arule_id\x18\x06 \x01(\tR\x06ruleId\x12!\n" +
-	"\fre_requested\x18\a \x01(\bR\vreRequested\"{\n" +
+	"\fre_requested\x18\a \x01(\bR\vreRequested\x12\x15\n" +
+	"\x06due_on\x18\b \x01(\tR\x05dueOn\x12\x1b\n" +
+	"\tdays_left\x18\t \x01(\x05R\bdaysLeft\"{\n" +
 	"\n" +
 	"TaskDelete\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +
@@ -9129,7 +9200,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x1fTASK_APPROVAL_DECISION_WITHDRAW\x10\x03*j\n" +
 	"\x17BoardWebhookPauseReason\x12*\n" +
 	"&BOARD_WEBHOOK_PAUSE_REASON_UNSPECIFIED\x10\x00\x12#\n" +
-	"\x1fBOARD_WEBHOOK_PAUSE_REASON_PLAN\x10\x01*\xae\x02\n" +
+	"\x1fBOARD_WEBHOOK_PAUSE_REASON_PLAN\x10\x01*\x8a\x05\n" +
 	"\x0eTaskNoticeKind\x12 \n" +
 	"\x1cTASK_NOTICE_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19TASK_NOTICE_KIND_ASSIGNED\x10\x01\x12\x1e\n" +
@@ -9139,7 +9210,19 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"#TASK_NOTICE_KIND_APPROVAL_REQUESTED\x10\x05\x12\x1d\n" +
 	"\x19TASK_NOTICE_KIND_APPROVED\x10\x06\x12\x1d\n" +
 	"\x19TASK_NOTICE_KIND_REJECTED\x10\a\x12\x19\n" +
-	"\x15TASK_NOTICE_KIND_RULE\x10\b*u\n" +
+	"\x15TASK_NOTICE_KIND_RULE\x10\b\x12\x1f\n" +
+	"\x1bTASK_NOTICE_KIND_UNASSIGNED\x10\t\x12\"\n" +
+	"\x1eTASK_NOTICE_KIND_WATCHER_ADDED\x10\n" +
+	"\x12\x1d\n" +
+	"\x19TASK_NOTICE_KIND_DUE_SOON\x10\v\x12\x1c\n" +
+	"\x18TASK_NOTICE_KIND_OVERDUE\x10\f\x12 \n" +
+	"\x1cTASK_NOTICE_KIND_DUE_CHANGED\x10\r\x12\x1d\n" +
+	"\x19TASK_NOTICE_KIND_PRIORITY\x10\x0e\x12\x1e\n" +
+	"\x1aTASK_NOTICE_KIND_MILESTONE\x10\x0f\x12\x1a\n" +
+	"\x16TASK_NOTICE_KIND_MOVED\x10\x10\x12\x1b\n" +
+	"\x17TASK_NOTICE_KIND_EDITED\x10\x11\x12\x1f\n" +
+	"\x1bTASK_NOTICE_KIND_ATTACHMENT\x10\x12\x12\x1d\n" +
+	"\x19TASK_NOTICE_KIND_ARCHIVED\x10\x13*u\n" +
 	"\vGitProvider\x12\x1c\n" +
 	"\x18GIT_PROVIDER_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13GIT_PROVIDER_GITHUB\x10\x01\x12\x17\n" +
