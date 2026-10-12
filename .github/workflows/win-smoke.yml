@@ -113,7 +113,9 @@ jobs:
         run: |
           set -x
           out="$RUNNER_TEMP/smoke"
-          MSYS_NO_PATHCONV=1 sh infra/docker/greenmail/gen-cert.sh
+          certs=infra/docker/greenmail/certs; mkdir -p "$certs"
+          MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout "$certs/key.pem" -out "$certs/ca.pem"
           npm i --prefix apps/desktop/scripts --no-save --no-package-lock --no-audit --no-fund \
             playwright-core@1.63.0 hoodiecrow-imap@3.3.1 smtp-server@3.19.21 nodemailer@10.1.0
           node apps/desktop/scripts/mail-fake-server.mjs > "$out/mail-fake-server.txt" 2>&1 &
