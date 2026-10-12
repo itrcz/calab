@@ -30,7 +30,9 @@ export function imapOptions(l: ImapLogin, tls: MailTls = {}): ImapFlowOptions {
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 5 * 60_000,
-    // imapflow re-issues IDLE every maxIdleTime; servers drop IDLE after ~29 min.
+    // IDLE 1 s after the last command (imapflow's default 15 s delays new mail by as much);
+    // re-issued every maxIdleTime, servers drop IDLE after ~29 min.
+    autoIdleDelay: 1000,
     maxIdleTime: 25 * 60_000,
   };
 }

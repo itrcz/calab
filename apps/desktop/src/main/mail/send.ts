@@ -351,6 +351,7 @@ export class Outbox {
     try {
       await this.host.send({ from: r.meta.from, to: r.meta.recipients }, raw);
     } catch (e) {
+      if (this.isStopped()) return; // the store may be closed; `sending` is re-queued on next start
       const c = classify(e);
       const next = isTransient(e) ? nextAttemptAt(attempts, r.createdAt, this.host.now()) : null;
       this.host.log('mail: send failed', { code: c.code, attempts, retry: next !== null });
@@ -358,10 +359,17 @@ export class Outbox {
       this.changed(r.n, false);
       return;
     }
-    store.updateOutgoing(r.n, { state: 'sent', attempts, nextAt: null, error: null });
-    const item = store.outgoing(r.n);
-    store.removeOutgoing(r.n);
-    rmSync(this.rawPath(r.n), { force: true });
+    let item: OutgoingRecord | null;
+    try {
+      // Even when stopping (quit mid-send): forget it now, or the next start sends it again.
+      store.updateOutgoing(r.n, { state: 'sent', attempts, nextAt: null, error: null });
+      item = store.outgoing(r.n);
+      store.removeOutgoing(r.n);
+      rmSync(this.rawPath(r.n), { force: true });
+    } catch {
+      return; // the store is closed (account removed)
+    }
+    if (this.isStopped()) return;
     if (item) this.host.emit({ type: 'outgoing', item: toOutgoing(this.host.accountId, item), removed: true });
     this.host.foldersChanged();
     try {

@@ -520,6 +520,20 @@ Mac (лучше Retina + второй монитор), 2 клиента (2.6) в
 - AT.3 Закрыть крышку на 2 мин, открыть → в логе `api transport reset (power resume)`; комнаты, доска, задача грузятся, голос переподключился.
 - AT.4 Перекрыть API (Little Snitch / правило `pfctl` на IP стенда) на 60 с, за это время открыть 2–3 новые комнаты → «Не удалось загрузить сообщения», в логе `api transport reset (2 timeouts in 60 s)`. Снять блокировку → эти комнаты загружаются сами (после `api transport reset` или переподключения gateway), без клика «Повторить» и без перезапуска.
 
+### 2.19 Почтовый движок ML.1–ML.3 (ADR-0080, T1)
+
+Авто: `pnpm -F @calaba/desktop test -- src/main/mail` (discovery, sqlite/FTS, сверка папок, очередь отправки, guard'ы).
+Интеграционный (opt-in, нужен Docker):
+```
+infra/docker/greenmail/gen-cert.sh        # TLS для localhost: движок проверяет сертификат строго
+docker compose -f infra/docker/compose.dev.yml --profile mail up -d greenmail
+CALABA_MAIL_IT=1 pnpm -F @calaba/desktop test -- engine.it   # ожидается: 2 passed
+docker compose -f infra/docker/compose.dev.yml --profile mail down
+```
+- ML.1 Неверный пароль → `AUTH_FAILED` с настройками; верный → аккаунт проверен (IMAP + SMTP).
+- ML.2 Отправка себе → письмо во «Входящих» через IDLE за ≤ 2 с, тело и вложение читаются, флаги доходят до сервера, поиск находит, «Архив» создаётся и письмо переезжает.
+- ML.3 Письмо от bob → событие `new_mail`. Другой сервер: `CALABA_MAIL_IT_HOST`, `_IMAP_PORT`, `_SMTP_PORT`, `_CA`.
+
 ## 3. Сервер
 
 Локальные прогоны — на машине с Docker и Go (dev-compose), без стенда; 3.3 — те же curl-сценарии против стенда.

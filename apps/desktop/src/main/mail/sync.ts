@@ -554,8 +554,10 @@ export class AccountSync {
   }
 
   private opFailed(op: Op, e: unknown): void {
+    // Stopped (account removed / restarted): the store may be closed; the server stays the truth.
+    if (this.halted()) return;
     const c = classify(e);
-    if (c.code === 'NETWORK' && !this.stopped) {
+    if (c.code === 'NETWORK') {
       // Not rejected by the server: keep it for the next connection.
       this.pendingOps.push(op);
       return;
