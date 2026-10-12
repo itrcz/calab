@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ app: {}, protocol: {}, shell: {}, session: {} }));
 vi.mock('../downloads', () => ({ markFromInternet: vi.fn(), uniquePath: vi.fn() }));
 vi.mock('../logging', () => ({ log: { warn: vi.fn(), info: vi.fn() } }));
-vi.mock('../deeplink', () => ({ handleDeepLink: vi.fn() }));
 
 const { attachmentResponse, contentDisposition, fetchRemoteImage, isInlineMime, parseAttachmentUrl, parseRemoteUrl, REMOTE_MAX_BYTES } = await import('./attachmentProtocol');
 const { decideFrameNavigation, parseMailto } = await import('./frameGuard');

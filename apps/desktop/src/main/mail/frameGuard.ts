@@ -3,15 +3,15 @@
  * without scripts; a click on a link navigates that frame. Here main decides, on top of the general
  * guards in windows.ts (which already cancel every foreign sub-frame navigation):
  * - a navigation the mail frame starts itself: `http(s)` → the system browser (cancelled here),
- *   `mailto:` → the deep link `calab://mail/compose?…` (shared/mail.ts `mailComposeLink`) through
- *   the usual deep-link path, anything else → blocked;
+ *   `mailto:` → the deep link `calab://mail/compose?…` (shared/mail.ts `mailComposeLink`) sent to
+ *   the window's renderer on the deep-link channel, anything else → blocked;
  * - frames whose src the page set (not from inside a mail body) → only blocked, never opened;
  * - the app window navigating to `calaba-mail://attachment/…` → cancelled and downloaded (§7).
  * `about:srcdoc` / `about:blank` (the reader iframe and its hidden measuring copy) always pass.
  */
 import { app, session, shell, type WebContents, type WebFrameMain } from 'electron';
+import { IPC } from '../../shared/ipc';
 import { mailComposeLink } from '../../shared/mail';
-import { handleDeepLink } from '../deeplink';
 import { installMailDownloads, parseAttachmentUrl } from './attachmentProtocol';
 
 export type FrameDecision = { action: 'ignore' } | { action: 'block' } | { action: 'external'; url: string } | { action: 'compose'; link: string };
@@ -98,7 +98,9 @@ function guard(wc: WebContents): void {
       lastExternal = now;
       void shell.openExternal(d.url);
     } else if (d.action === 'compose') {
-      handleDeepLink(d.link);
+      // Straight to this window: handleDeepLink() would park the link as «pending» because the
+      // window counts as loading while the frame's navigation is being cancelled — and lose it.
+      wc.send(IPC.appDeepLink, d.link);
     }
   });
   // The window navigating to an attachment URL = «save this attachment» (shared/mail.ts attachmentUrl).
