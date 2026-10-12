@@ -1,5 +1,5 @@
 /**
- * Synchronization of one account (ADR-0080 §5): one IMAP connection, IDLE on the inbox, other
+ * Synchronization of one account (ADR-0088 §5): one IMAP connection, IDLE on the inbox, other
  * folders polled every 5 min and when opened (stale > 60 s), CONDSTORE flag deltas when offered
  * (else a full UID / flags diff), UIDVALIDITY change = folder rebuild, a 90-day window plus
  * «load older», local-first actions with a pending-ops queue and rollback, reconnect backoff up to

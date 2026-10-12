@@ -79,7 +79,7 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     // Settings → Календарь (ADR-0041): work hours, the external CalDAV calendar; not for guests.
     ...(guest ? [] : [{ id: 'calendar', label: t('settings.calendar'), icon: CalendarDays, content: <CalendarTab /> }]),
-    // Settings → Почта (ADR-0080 §8): the local mail client — desktop app only.
+    // Settings → Почта (ADR-0088 §8): the local mail client — desktop app only.
     ...(MAIL_ENABLED ? [{ id: 'mail', label: t('mbox.section'), icon: Mail, content: <MailTab />, keywords: t('mbox.settings.keywords') }] : []),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },

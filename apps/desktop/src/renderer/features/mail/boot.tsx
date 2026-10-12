@@ -9,7 +9,7 @@ import { toast } from '../../stores/toasts';
 import { getMailApi, mailAvailable } from './api';
 import { addressLabel, mailErrorText } from './format';
 
-/** Resolved once per page load: the API never appears later (ADR-0080 §1 — desktop only). */
+/** Resolved once per page load: the API never appears later (ADR-0088 §1 — desktop only). */
 export const MAIL_ENABLED = mailAvailable();
 
 /** The section's screens in their own chunk (docs/18): not on the chat's startup path. */

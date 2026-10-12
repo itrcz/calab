@@ -129,7 +129,7 @@ for (const p of pkgs.values()) {
 }
 
 // Dual-licensed packages: we take the permissive option (checked by hand). mailparser's MIME
-// splitter (ADR-0080 mail engine) is «MIT OR EUPL-1.1+» and ships both licence files.
+// splitter (ADR-0088 mail engine) is «MIT OR EUPL-1.1+» and ships both licence files.
 const ELECTED = { '@zone-eu/mailsplit': 'MIT' };
 for (const p of pkgs.values()) {
   const pick = ELECTED[p.name];

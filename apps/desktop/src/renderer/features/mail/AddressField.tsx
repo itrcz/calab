@@ -8,7 +8,7 @@ import { addressFull, addressLabel } from './format';
 import { parseAddressList } from './mailLink';
 
 /**
- * «Кому» / «Копия» / «Скрытая» (ADR-0080 §8): addresses as chips, typed text becomes a chip on
+ * «Кому» / «Копия» / «Скрытая» (ADR-0088 §8): addresses as chips, typed text becomes a chip on
  * Enter, comma, Tab or leaving the field; Backspace on an empty field removes the last chip;
  * suggestions (↑/↓, Enter) from the addresses seen in the mailbox and the members of the workspaces.
  */

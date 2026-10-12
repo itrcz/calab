@@ -1,5 +1,5 @@
 /**
- * The mail engine's core (ADR-0080 §3–§7): accounts (handed over by main with passwords), one
+ * The mail engine's core (ADR-0088 §3–§7): accounts (handed over by main with passwords), one
  * store + sync + outbox per account, the `MailHandlers` table for renderer calls, and main's own
  * `verify` / `attachment` requests. Runs inside the utilityProcess (engine.ts); no Electron APIs.
  */

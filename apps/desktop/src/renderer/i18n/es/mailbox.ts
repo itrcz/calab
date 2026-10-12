@@ -1,7 +1,7 @@
 import type { ruMailbox } from '../ru/mailbox';
 import type { DictShape } from '../types';
 
-/** Spanish UI strings — the local mail client (ADR-0080, ADR-0022). Same keys and placeholders as ru. */
+/** Spanish UI strings — the local mail client (ADR-0088, ADR-0022). Same keys and placeholders as ru. */
 export const esMailbox: DictShape<typeof ruMailbox> = {
   'mbox.section': 'Correo',
   'mbox.unreadCount': { one: 'Correo: {n} sin leer', many: 'Correo: {n} sin leer', other: 'Correo: {n} sin leer' },

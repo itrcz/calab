@@ -67,7 +67,7 @@ export function SectionRail(): ReactNode {
         {local ? <DmsTile active={section === 'dms'} /> : null}
         {ws && !guestWs ? <CalendarTile active={section === 'calendar'} /> : null}
         {ws && !guestWs ? <BoardsTile ws={ws} active={section === 'boards'} /> : null}
-        {/* «Почта» (ADR-0080 §8): personal, desktop app only — after «Доски», with or without a workspace. */}
+        {/* «Почта» (ADR-0088 §8): personal, desktop app only — after «Доски», with or without a workspace. */}
         {MAIL ? <MailTile active={section === 'mail'} /> : null}
         {/* The context workspace's web apps (ADR-0050 §3): the column draws only for the open workspace. */}
         {ws ? <WorkspaceAppsColumn wsId={ws} lead={APPS_LINE} /> : null}
@@ -268,7 +268,7 @@ const BoardsTile = memo(function BoardsTile({ ws, active }: { ws: string; active
   );
 });
 
-/** «Почта» (ADR-0080 §8): the red count is the unread mail in the inboxes of every account (one number). */
+/** «Почта» (ADR-0088 §8): the red count is the unread mail in the inboxes of every account (one number). */
 const MailTile = memo(function MailTile({ active }: { active: boolean }): ReactNode {
   useLocale();
   const unread = useMail(inboxUnread);

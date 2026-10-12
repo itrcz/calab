@@ -15,7 +15,7 @@ const notImplemented = (method: MailMethod) => (): Promise<never> =>
   Promise.reject(new MailApiError({ code: 'NOT_IMPLEMENTED', message: `${method} is not implemented yet` }));
 
 /**
- * A placeholder dispatch table (ADR-0080 §7) for an engine that has not received `init` yet: an
+ * A placeholder dispatch table (ADR-0088 §7) for an engine that has not received `init` yet: an
  * empty account list, default settings, a no-op sync, NOT_IMPLEMENTED for the rest. The real table
  * is `MailEngine.handlers()` (service.ts).
  */

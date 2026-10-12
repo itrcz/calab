@@ -39,7 +39,7 @@ const MIN_HEIGHT = 120;
 const MAX_HEIGHT = 40_000;
 
 /**
- * The message HTML in a sandboxed iframe (ADR-0080 §10): `sandbox=""` — no scripts, no same
+ * The message HTML in a sandboxed iframe (ADR-0088 §10): `sandbox=""` — no scripts, no same
  * origin, no forms, no popups, no top navigation — and `srcdoc` that starts with the CSP meta;
  * DOMPurify ran before (sanitize.ts, cached per message id, §9). Only the open message renders one.
  * A message without its own colours is drawn in the app theme (transparent page, theme text and

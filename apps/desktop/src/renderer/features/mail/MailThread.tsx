@@ -6,7 +6,7 @@ import { inboxUnread, useMail } from '../../stores/mail';
 import { MailMessageView } from './MailMessageView';
 
 /**
- * The centre (ADR-0080 §8): the open thread — the subject, then its messages oldest first, all
+ * The centre (ADR-0088 §8): the open thread — the subject, then its messages oldest first, all
  * collapsed to a header row except the open one (one iframe on screen, §9). Reads the thread's id
  * list; a message re-renders on its own header / body.
  */

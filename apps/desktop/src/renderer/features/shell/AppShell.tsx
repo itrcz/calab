@@ -100,7 +100,7 @@ function ShellLayout(): ReactNode {
   // «Результаты поиска» (ADR-0062 §4): the right panel in place of the members list.
   const searchOpen = useSearchPanel((s) => s.open);
   const searchSeq = useSearchPanel((s) => s.seq);
-  // «Почта» (ADR-0080 §8): personal and local — it covers the column and the centre whatever the
+  // «Почта» (ADR-0088 §8): personal and local — it covers the column and the centre whatever the
   // workspace, and does not wait for the Calab server (the mail engine is on this computer).
   const mailOn = useMailUi((s) => s.active) && MAIL_ENABLED;
 

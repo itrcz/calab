@@ -6,7 +6,7 @@ import { linkify, MAIL_CSP, mailSrcdoc, sanitizeCss, sanitizeMailHtml, type Sani
 const opts = (remote = false): SanitizeOptions => ({ remote, cid: (id) => (id === 'logo@x' ? 'calaba-mail://attachment/m1/a1' : null) });
 const clean = (html: string, remote = false) => sanitizeMailHtml(html, opts(remote));
 
-describe('sanitizeMailHtml (ADR-0080 §10)', () => {
+describe('sanitizeMailHtml (ADR-0088 §10)', () => {
   it('drops scripts, handlers, javascript: links and active elements', () => {
     const { html } = clean(
       '<p onclick="steal()">Hi<script>alert(1)</script></p><img src=x onerror=alert(1)><a href="javascript:alert(1)">x</a>' +

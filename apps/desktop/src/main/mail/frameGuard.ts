@@ -1,5 +1,5 @@
 /**
- * Navigation guard for mail bodies (ADR-0080 §10). A message is shown in an `<iframe sandbox srcdoc>`
+ * Navigation guard for mail bodies (ADR-0088 §10). A message is shown in an `<iframe sandbox srcdoc>`
  * without scripts; a click on a link navigates that frame. Here main decides, on top of the general
  * guards in windows.ts (which already cancel every foreign sub-frame navigation):
  * - a navigation the mail frame starts itself: `http(s)` → the system browser (cancelled here),

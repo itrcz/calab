@@ -1,7 +1,7 @@
 import type { MailAddress, MailDraftAttachment, MailHeader, MailMessage } from '../../../shared/mail';
 
 /**
- * Reply / Reply all / Forward prefill (Apple Mail rules, ADR-0080 §8), pure. The quote itself is
+ * Reply / Reply all / Forward prefill (Apple Mail rules, ADR-0088 §8), pure. The quote itself is
  * appended by the engine (`MailDraft.ref.quote`, §6) — the composer only previews it.
  */
 

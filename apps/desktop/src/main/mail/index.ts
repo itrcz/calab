@@ -189,7 +189,7 @@ export function mailRequest(call: unknown): Promise<MailReply> {
 
 /**
  * On app ready (one hook in main/index.ts): the `calaba-mail://` handler, and the engine right away
- * when an account exists (ADR-0080 §2) — new mail notifies without opening the section.
+ * when an account exists (ADR-0088 §2) — new mail notifies without opening the section.
  */
 export function startMail(): void {
   handleMailScheme((messageId, attachmentId) => getRouter().internal({ kind: 'attachment', messageId, attachmentId }));

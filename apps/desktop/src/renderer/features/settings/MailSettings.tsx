@@ -19,7 +19,7 @@ const CACHE_LIMITS = [256 * 1024 * 1024, 512 * 1024 * 1024, GB, 2 * GB, 5 * GB, 
 const errText = (e: unknown): string => mailErrorText(isMailError(e) ? e.code : 'ENGINE_DOWN');
 
 /**
- * Settings → «Почта» (ADR-0080 §8; desktop only): the accounts (add, remove, password, sender
+ * Settings → «Почта» (ADR-0088 §8; desktop only): the accounts (add, remove, password, sender
  * name, signature), new-mail notifications, remote images, the body cache size.
  */
 export function MailTab(): ReactNode {

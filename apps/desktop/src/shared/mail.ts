@@ -1,5 +1,5 @@
 /**
- * Mail client contract (ADR-0080 §7): the single source of truth for the renderer and the mail engine
+ * Mail client contract (ADR-0088 §7): the single source of truth for the renderer and the mail engine
  * (a utilityProcess, src/main/mail/engine.ts). Node-free: imported by the renderer, the preload, main
  * and the engine.
  *
@@ -18,7 +18,7 @@
 
 // ---------------------------------------------------------------- accounts
 
-/** Known providers (ADR-0080 §4 step 1/2); `other` = any IMAP server. */
+/** Known providers (ADR-0088 §4 step 1/2); `other` = any IMAP server. */
 export type MailProvider = 'gmail' | 'yandex' | 'mailru' | 'icloud' | 'microsoft' | 'other';
 
 /** Transport security. Plain text is not supported in v1, certificates are always verified (§4, §10). */

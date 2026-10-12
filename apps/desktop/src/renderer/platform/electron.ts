@@ -19,7 +19,7 @@ export function createElectronPlatform(): Platform {
     },
     // Room links (ADR-0016): the guest session is created and kept by main (keychain), like a login.
     guestJoin: (code, nickname) => c.auth.guestJoin(code, nickname),
-    // The mail engine (ADR-0080 §7): a typed MailApi over the raw preload bridge.
+    // The mail engine (ADR-0088 §7): a typed MailApi over the raw preload bridge.
     mail: c.mail ? createMailClient(c.mail) : undefined,
   };
 }

@@ -44,7 +44,7 @@ const MODE: Record<WsSection, Mode> = { chats: 'voice', calendar: 'calendar', bo
 const isGuest = (wsId: string): boolean => useWorkspaces.getState().byId[wsId]?.role === WorkspaceRole.GUEST;
 
 /**
- * A click on a section of the rail (ADR-0074 §1): «Личные» opens HOME; «Почта» (ADR-0080 §8)
+ * A click on a section of the rail (ADR-0074 §1): «Личные» opens HOME; «Почта» (ADR-0088 §8)
  * covers the column and the centre whatever workspace is open (it is personal, the workspace stays
  * as it was); the others open in the context workspace (the open one, from «Личные» the last one
  * used). The open section too: a web app is closed and the section shows its content again.

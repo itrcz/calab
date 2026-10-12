@@ -30,7 +30,7 @@ const PROVIDER_LINKS: Array<[MailProvider, () => string]> = [
 ];
 
 /**
- * «Добавьте почту» (ADR-0080 §4, §8): the address and the password, «Добавить». The engine finds
+ * «Добавьте почту» (ADR-0088 §4, §8): the address and the password, «Добавить». The engine finds
  * the servers (progress «Ищем настройки…»), then logs in; nothing found — the manual form, filled
  * with its best guesses. A deep link (§12) pre-fills the form and focuses «Добавить»: nothing is
  * submitted by itself. The password lives in this form only until the call (§10).

@@ -22,7 +22,7 @@ import {
 } from '../../shared/mail';
 
 /**
- * The mail client's data (ADR-0080 §8–§9): accounts, folders, the current page(s) of thread rows of
+ * The mail client's data (ADR-0088 §8–§9): accounts, folders, the current page(s) of thread rows of
  * the selected mailbox, the open thread, the outgoing queue and settings. The store holds what is on
  * screen, never the whole mailbox; engine events (already coalesced, §7) patch only what is held.
  *

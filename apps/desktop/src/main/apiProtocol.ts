@@ -35,7 +35,7 @@ export function registerApiScheme(): void {
       scheme: API_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
     },
-    MAIL_SCHEME_PRIVILEGES, // calaba-mail:// attachments (ADR-0080 §7); one registerSchemesAsPrivileged call only
+    MAIL_SCHEME_PRIVILEGES, // calaba-mail:// attachments (ADR-0088 §7); one registerSchemesAsPrivileged call only
   ]);
 }
 

@@ -89,7 +89,7 @@ services:
       - ../../apps/server/data/recordings:/out
     depends_on: [livekit, valkey]
 
-  # Почтовый движок десктопа (ADR-0080 §11), только по запросу: IMAP/SMTP для интеграционного
+  # Почтовый движок десктопа (ADR-0088 §11), только по запросу: IMAP/SMTP для интеграционного
   # теста (`CALABA_MAIL_IT=1`). Сначала `infra/docker/greenmail/gen-cert.sh` (TLS для localhost:
   # движок проверяет сертификат строго), затем `docker compose -f infra/docker/compose.dev.yml
   # --profile mail up -d greenmail`. Пользователи alice / bob, пароль secret.

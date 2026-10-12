@@ -15,7 +15,7 @@ const downloadHref = (os: Os | null): string =>
   os === 'win' ? DOWNLOADS.win : os === 'linux' ? DOWNLOADS.appImage : DOWNLOADS.macArm64;
 
 /**
- * "Add mail to Calab" card (ADR-0080 §12). Shown when the URL fragment is `#mail=<payload>`. The payload
+ * "Add mail to Calab" card (ADR-0088 §12). Shown when the URL fragment is `#mail=<payload>`. The payload
  * never leaves the page except inside the `calab://` link the visitor clicks; only the fragment is read
  * (a `?mail=` query is ignored on purpose). The password is never decoded into state.
  */

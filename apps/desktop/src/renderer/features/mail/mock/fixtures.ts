@@ -1,7 +1,7 @@
 import type { MailAccount, MailAddress, MailAttachment, MailFolder, MailFolderRole } from '../../../../shared/mail';
 
 /**
- * Deterministic mock mailbox (ADR-0080 §7 mock): two accounts, standard folders, ~60 threads in
+ * Deterministic mock mailbox (ADR-0088 §7 mock): two accounts, standard folders, ~60 threads in
  * Russian and English. Fixed dates (no Date.now()) so screenshots are stable.
  */
 

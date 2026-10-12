@@ -4,7 +4,7 @@ import { showsUnread } from '../stores/rooms';
 
 /**
  * The sections of the desktop rail (ADR-0074): the phone's tabs (ADR-0073) except «Профиль» —
- * «Команда», «Личные», «Календарь», «Доски» — and the desktop-only «Почта» (ADR-0080 §8, Electron
+ * «Команда», «Личные», «Календарь», «Доски» — and the desktop-only «Почта» (ADR-0088 §8, Electron
  * only, no phone tab). Pure helpers: which section is on screen, the section remembered per
  * workspace, the workspace the sections work in, and the rail / switcher badges.
  */
@@ -17,7 +17,7 @@ export type WsSection = Exclude<Section, 'dms' | 'mail'>;
 
 /**
  * The section on screen, from the state that already decides the content: «Почта» covers
- * everything while on (ADR-0080 §8), «Личные» = HOME, the boards mode wins over a day view (as the
+ * everything while on (ADR-0088 §8), «Личные» = HOME, the boards mode wins over a day view (as the
  * centre does), else the rooms. `app`: a web app of the workspace fills the screen — no section is
  * selected (its icon carries the mark).
  */

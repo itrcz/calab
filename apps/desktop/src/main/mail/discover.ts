@@ -1,5 +1,5 @@
 /**
- * Account settings discovery (ADR-0080 §4), engine side. Order, stopping at the first hit for each of
+ * Account settings discovery (ADR-0088 §4), engine side. Order, stopping at the first hit for each of
  * IMAP and SMTP: known providers → MX record → autoconfig (domain, then Thunderbird ISPDB) → DNS SRV
  * (RFC 6186) → host probes → DISCOVERY_FAILED with best guesses. Each network step ≤ 3 s, the whole
  * run ≤ 10 s. TLS / STARTTLS only; plain-text servers are never offered.

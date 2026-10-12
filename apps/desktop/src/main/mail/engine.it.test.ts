@@ -1,5 +1,5 @@
 /**
- * Opt-in integration test of the mail engine against a real IMAP / SMTP server (ADR-0080 §11):
+ * Opt-in integration test of the mail engine against a real IMAP / SMTP server (ADR-0088 §11):
  * `CALABA_MAIL_IT=1`, GreenMail from the dev compose (profile `mail`, see TESTING.md). Strict TLS:
  * the server's localhost certificate (infra/docker/greenmail/gen-cert.sh) is trusted as the CA.
  * Overrides: CALABA_MAIL_IT_HOST, _IMAP_PORT, _SMTP_PORT, _CA (PEM path).

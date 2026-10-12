@@ -23,7 +23,7 @@ function mockEnabled(): boolean {
 let api: MailApi | undefined | null = null;
 
 /**
- * The mail API for the UI (ADR-0080 §7): the mock when enabled, else `platform.mail` (Electron), else
+ * The mail API for the UI (ADR-0088 §7): the mock when enabled, else `platform.mail` (Electron), else
  * undefined (web / phone: no mail section). Resolved once per page load.
  */
 export function getMailApi(): MailApi | undefined {
@@ -32,7 +32,7 @@ export function getMailApi(): MailApi | undefined {
 }
 
 /**
- * The «Почта» section exists (ADR-0080 §1, §8): a mail API (Electron, or the dev mock) outside the
+ * The «Почта» section exists (ADR-0088 §1, §8): a mail API (Electron, or the dev mock) outside the
  * web build — the web client and the phone never show it.
  */
 export function mailAvailable(): boolean {

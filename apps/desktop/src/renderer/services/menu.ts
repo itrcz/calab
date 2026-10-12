@@ -106,7 +106,7 @@ export function runMenuAction(a: MenuAction): void {
       ui.openDialog({ kind: 'settings', tab: 'hotkeys' });
       return;
     case 'new-message':
-      // ⌘N in «Почта» is a new letter (ADR-0080 §8, Apple Mail).
+      // ⌘N in «Почта» is a new letter (ADR-0088 §8, Apple Mail).
       if (useMailUi.getState().active) {
         if (useMail.getState().accountIds.length) composeNew();
         return;

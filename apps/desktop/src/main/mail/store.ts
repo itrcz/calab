@@ -1,5 +1,5 @@
 /**
- * Local mail database of one account (ADR-0080 §3): `userData/mail/<accountId>/mail.sqlite` on the
+ * Local mail database of one account (ADR-0088 §3): `userData/mail/<accountId>/mail.sqlite` on the
  * built-in `node:sqlite` (WAL), plus content-addressed blobs (`blobs/<sha256>`: parsed bodies and
  * attachments) with LRU eviction down to the cache limit. IMAP stays the source of truth: anything
  * evicted is fetched again on demand. No passwords here (main keeps them, §3).

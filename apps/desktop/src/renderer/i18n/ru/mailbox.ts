@@ -1,5 +1,5 @@
 /**
- * Russian UI strings — the local mail client «Почта» (ADR-0080). Same rules as ru.ts: flat dotted
+ * Russian UI strings — the local mail client «Почта» (ADR-0088). Same rules as ru.ts: flat dotted
  * keys, `{param}` placeholders, short, verb-first, no exclamation marks (docs/08). Not to be
  * confused with `mail.*` (Calab's own transactional email, ADR-0023).
  */
@@ -130,7 +130,7 @@ export const ruMailbox = {
   'mbox.state.offline': 'Нет связи с сервером',
   'mbox.state.authFailed': 'Нужен новый пароль',
   'mbox.state.error': 'Ошибка синхронизации',
-  // errors (contract codes, ADR-0080 §7)
+  // errors (contract codes, ADR-0088 §7)
   'mbox.err.notImplemented': 'Пока не работает',
   'mbox.err.auth': 'Неверный пароль',
   'mbox.err.discovery': 'Не нашли настройки почты для этого домена.',

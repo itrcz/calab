@@ -18,7 +18,7 @@ import { MailFrame } from './MailFrame';
 import { linkify } from './sanitize';
 
 /**
- * One message of the thread (ADR-0080 §8): collapsed — a header row (avatar, sender, preview,
+ * One message of the thread (ADR-0088 §8): collapsed — a header row (avatar, sender, preview,
  * date), a click opens it; open — the header with «Подробнее», the action bar, the remote-images
  * bar, the body (sandboxed iframe, §10) and the attachments. Memo'd by id; reads its header.
  */

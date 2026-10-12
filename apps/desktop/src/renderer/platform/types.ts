@@ -19,7 +19,7 @@ export interface GuestJoin {
  */
 export interface Platform extends Omit<CalabaApi, 'mail'> {
   /**
-   * The local mail client (ADR-0080): Electron only (the engine is a utilityProcess); undefined on the
+   * The local mail client (ADR-0088): Electron only (the engine is a utilityProcess); undefined on the
    * web and the phone. The renderer goes through `getMailApi()` (features/mail/api.ts), which may swap in the mock.
    */
   mail?: MailApi;

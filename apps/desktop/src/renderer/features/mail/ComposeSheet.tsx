@@ -83,7 +83,7 @@ const toDraft = (f: Form): MailDraft => ({
 const sameForm = (a: Form, b: Form): boolean => JSON.stringify(toDraft({ ...a, attachments: [] })) === JSON.stringify(toDraft({ ...b, attachments: [] })) && a.attachments.length === b.attachments.length;
 
 /**
- * New message / reply / forward (ADR-0080 §8): a sheet over the centre like the meeting sheet —
+ * New message / reply / forward (ADR-0088 §8): a sheet over the centre like the meeting sheet —
  * no scrim, the thread stays readable. From, To / Cc / Bcc chips, Subject, plain text with the
  * signature, the quoted original (the engine appends it on send, §6), attachments by button or drop.
  * ⌘↩ sends; closing with changes asks «Сохранить черновик?».

@@ -1,5 +1,5 @@
 /**
- * `calaba-mail://attachment/<messageId>/<attachmentId>` (ADR-0080 §7, §10): attachment bytes from the
+ * `calaba-mail://attachment/<messageId>/<attachmentId>` (ADR-0088 §7, §10): attachment bytes from the
  * engine, served by main. Inline answers only for raster `image/*` (the message body's `<img>`,
  * `cid:` rewritten by the renderer); everything else is answered as a download, and a download
  * happens only when main itself starts it (the app window navigating to the URL → frameGuard →

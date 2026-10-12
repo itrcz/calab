@@ -1,4 +1,4 @@
-/** The `calaba-mail://` scheme (ADR-0080 §7), Electron-free so apiProtocol.ts can register it. */
+/** The `calaba-mail://` scheme (ADR-0088 §7), Electron-free so apiProtocol.ts can register it. */
 export const MAIL_SCHEME = 'calaba-mail';
 
 /** Added to the one `registerSchemesAsPrivileged` call (apiProtocol.ts): Electron keeps only the last call. */

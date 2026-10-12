@@ -2,7 +2,7 @@ import { moveMessages, moveRows, openRow, setMessageFlags, setRowFlags, useMail,
 import { useMailUi } from '../../stores/mailUi';
 
 /**
- * The thread actions shared by the action bar and the hotkeys (ADR-0080 §8). Reply / flags /
+ * The thread actions shared by the action bar and the hotkeys (ADR-0088 §8). Reply / flags /
  * read state act on the open message; archive, trash and move act on the selected list row (the
  * thread in that folder, as Apple Mail's conversation view), or on the open message when the
  * thread was opened without a row (a notification).

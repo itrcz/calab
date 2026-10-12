@@ -447,7 +447,7 @@ export function registerIpc(): void {
     mainOnly(e);
     hideTip();
   });
-  // ---- mail (ADR-0080 §7): validated and relayed to the engine utilityProcess ----
+  // ---- mail (ADR-0088 §7): validated and relayed to the engine utilityProcess ----
   handle(IPC.mailRequest, (_e, a) => mailRequest(a));
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {

@@ -81,7 +81,7 @@ function mockDiscover(email: string): MailDiscovery {
 }
 
 /**
- * In-memory `MailApi` with deterministic fixtures (ADR-0080 §7): for `CALABA_MAIL_MOCK=1` dev runs, QA
+ * In-memory `MailApi` with deterministic fixtures (ADR-0088 §7): for `CALABA_MAIL_MOCK=1` dev runs, QA
  * screenshots and unit tests. Follows the contract's semantics (ids, cursors, events) closely enough
  * to build the UI against; no persistence.
  */

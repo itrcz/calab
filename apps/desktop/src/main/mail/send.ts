@@ -1,5 +1,5 @@
 /**
- * Sending (ADR-0080 §6): the user's own SMTP via nodemailer, text/plain + text/html built from the
+ * Sending (ADR-0088 §6): the user's own SMTP via nodemailer, text/plain + text/html built from the
  * draft text (paragraphs, autolinks, the quoted original as a blockquote), attachments ≤ 25 MB, own
  * Message-ID, In-Reply-To / References, an `outgoing` queue with retries 1 min → 1 h for 24 h,
  * APPEND to Sent unless the provider files it itself (Gmail), `\Answered` on the original.

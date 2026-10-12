@@ -4,7 +4,7 @@ import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
 
 /**
- * The «Почта» section's shell state (ADR-0080 §8): whether the mail mode covers the column and the
+ * The «Почта» section's shell state (ADR-0088 §8): whether the mail mode covers the column and the
  * centre, the add-account form (with a deep-link prefill, §12) and the composer request. Not
  * persisted: the app starts on the section it left by the other stores (mail is not remembered per
  * workspace, like «Личные»). The mail data itself lives in stores/mail.ts.

@@ -1,4 +1,4 @@
-// "Add mail to Calab" link payload (ADR-0080 §12): `#mail=<base64url("email[:password]")>`.
+// "Add mail to Calab" link payload (ADR-0088 §12): `#mail=<base64url("email[:password]")>`.
 // Pure and side-effect free. The password is never returned: the card only needs the address and the
 // original payload string to forward to the app untouched. Only the fragment is read — a `?mail=` query
 // is deliberately ignored (it would reach server logs).

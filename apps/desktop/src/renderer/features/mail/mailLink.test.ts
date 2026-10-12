@@ -3,7 +3,7 @@ import { decodeBase64Url, parseAddPayload, parseAddressList, parseMailLink } fro
 
 const b64url = (s: string): string => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-describe('calab://mail/<payload> (ADR-0080 §12)', () => {
+describe('calab://mail/<payload> (ADR-0088 §12)', () => {
   it('decodes email:password; the first colon separates', () => {
     expect(parseMailLink(`calab://mail/${b64url('Anna@Example.com:pa:ss:word')}`)).toEqual({ kind: 'add', email: 'anna@example.com', password: 'pa:ss:word' });
   });

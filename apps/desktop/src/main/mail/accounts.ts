@@ -1,5 +1,5 @@
 /**
- * Mail accounts in main (ADR-0080 §3, §10): `userData/mail/accounts.bin`, the whole list with the
+ * Mail accounts in main (ADR-0088 §3, §10): `userData/mail/accounts.bin`, the whole list with the
  * IMAP / SMTP settings and passwords encrypted by `safeStorage` (Keychain / DPAPI / libsecret), the
  * same pattern as the refresh token in auth.ts. Without OS encryption the list is kept in memory
  * only (with a warning): accounts are gone after a restart, but no password is written in clear.

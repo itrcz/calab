@@ -70,7 +70,7 @@ export function BoardsIdleIcon({ className }: IconProps): ReactNode {
   );
 }
 
-// «Почта» (ADR-0080 §8): drawn to match the set — the same 3…41 frame with radius 6 and 2-unit
+// «Почта» (ADR-0088 §8): drawn to match the set — the same 3…41 frame with radius 6 and 2-unit
 // lines as «Доски»; idle = outline envelope, active = filled with the flap cut out.
 export function MailIdleIcon({ className }: IconProps): ReactNode {
   return (

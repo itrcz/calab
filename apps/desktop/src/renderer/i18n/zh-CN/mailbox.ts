@@ -1,7 +1,7 @@
 import type { ruMailbox } from '../ru/mailbox';
 import type { DictShape } from '../types';
 
-/** Simplified Chinese UI strings — the local mail client (ADR-0080, ADR-0022). Same keys and placeholders as ru. */
+/** Simplified Chinese UI strings — the local mail client (ADR-0088, ADR-0022). Same keys and placeholders as ru. */
 export const zhMailbox: DictShape<typeof ruMailbox> = {
   'mbox.section': '邮件',
   'mbox.unreadCount': { other: '邮件：{n} 封未读' },

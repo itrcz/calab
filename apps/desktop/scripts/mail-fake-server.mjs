@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A local IMAP + SMTP server for trying the mail client end to end without Docker (ADR-0080,
+ * A local IMAP + SMTP server for trying the mail client end to end without Docker (ADR-0088,
  * TESTING.md §2.19): hoodiecrow-imap (IDLE, SPECIAL-USE, MOVE, UIDPLUS, CONDSTORE) and smtp-server,
  * both over implicit TLS with the test certificate of infra/docker/greenmail/gen-cert.sh (made on the
  * first run). Same ports and users as the GreenMail of the dev compose, so engine.it.test.ts runs

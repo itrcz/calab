@@ -162,7 +162,7 @@ export const IPC = {
   webAppTipShow: 'webapp:tip-show',
   webAppTipHide: 'webapp:tip-hide',
 
-  // ---- mail (ADR-0080 §7): main relays to the mail engine utilityProcess ----
+  // ---- mail (ADR-0088 §7): main relays to the mail engine utilityProcess ----
   /** renderer → main: a MailCall → MailReply (shared/mail.ts). */
   mailRequest: 'mail:request',
   /** main → renderer: a MailEvent. */

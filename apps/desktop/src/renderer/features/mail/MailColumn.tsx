@@ -34,7 +34,7 @@ import { composeNew } from './actions';
 import { addressLabel, allLabel, folderLabel, mailErrorText, mailListTime, ROLE_ORDER } from './format';
 
 /**
- * The list column (ADR-0080 §8, Apple Mail): «Входящие ⌄» (the mailbox switcher) and «+» in the
+ * The list column (ADR-0088 §8, Apple Mail): «Входящие ⌄» (the mailbox switcher) and «+» in the
  * header; search and the «Непрочитанные» filter under it; the thread rows of the box, virtualized,
  * the next page at the end and «Загрузить более ранние» below the last one. Drafts and the outgoing
  * queue have their own short lists. Rows are memo'd by key and read their own row object (§9).

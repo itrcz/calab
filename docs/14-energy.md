@@ -506,7 +506,7 @@ nice -n 19 npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --benc
 
 **Ререндеры.** Речь не перерисовывает сетку: время последней речи — в `lib/lastSpoke.ts` вне сторов, `useGallery` меняет состояние только при смене состава страницы (тест `rerenders: a speaking start changes the grid state only when the page on screen changes` — число смен состояния равно числу реальных замен плиток). Плитка — `memo` с координатами-примитивами, «Говорят сейчас» — свой подписчик с примитивным селектором, номер страницы — примитив в сторе, состав комнаты — строковый ключ (мьют соседа не перерисовывает сетку). Проверка в живом звонке: `CALABA_REACT_PROFILING=1` + `tools/perf-call.ts --bench G --cameras 16 --speaker --seconds 30` — тоже ещё не прогнана.
 
-## Почта (ADR-0080, 12.10)
+## Почта (ADR-0088, 12.10)
 
 Вход выполнен (мок API), аккаунт на локальном фейке IMAP/SMTP (`apps/desktop/scripts/mail-fake-server.mjs`, движок в IDLE), окно видно и в фокусе, `out/`-сборка ветки `feat/mail-t2b`, `energy-bench --seconds 60`, **один прогон на сцену**, от сети, M4 (VM — ориентир, не точная доля). CPU, % ядра, среднее (p95):
 

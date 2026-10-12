@@ -26,7 +26,7 @@ export interface MailRouterDeps {
 /** main's own engine requests (not renderer calls): answered like requests, by id. */
 export type MailInternal = { kind: 'verify'; input: Extract<MailToEngine, { kind: 'verify' }>['input'] } | { kind: 'attachment'; messageId: string; attachmentId: string };
 
-/** Restart delays after a crash: 1 s, doubling, capped at 60 s (ADR-0080 §2). */
+/** Restart delays after a crash: 1 s, doubling, capped at 60 s (ADR-0088 §2). */
 export const RESTART_MIN_MS = 1000;
 export const RESTART_MAX_MS = 60_000;
 /** An engine that stayed up this long counts as healthy: the next crash starts from 1 s again. */
@@ -41,7 +41,7 @@ interface Pending {
 const down = (message: string): MailReply => ({ ok: false, error: { code: 'ENGINE_DOWN', message } });
 
 /**
- * main ↔ mail engine relay (ADR-0080 §2, §7): forks the engine on demand, correlates requests by id
+ * main ↔ mail engine relay (ADR-0088 §2, §7): forks the engine on demand, correlates requests by id
  * with a deadline, fans events out to the windows, restarts a crashed engine with exponential backoff.
  * No Electron imports: index.ts wires it to utilityProcess / BrowserWindow.
  */

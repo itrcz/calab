@@ -1,7 +1,7 @@
 import type { MailAddress } from '../../../shared/mail';
 
 /**
- * Mail links (ADR-0080 §8, §12), pure — services/links.ts calls it before anything else:
+ * Mail links (ADR-0088 §8, §12), pure — services/links.ts calls it before anything else:
  * - `calab://mail/<payload>`, `payload = base64url("email[:password]")` (the password may contain
  *   `:`, the first one separates) → the add-account form, prefilled, never submitted by itself;
  * - `calab://mail/<accountId>/<messageId>` → open the message (a notification, §8);

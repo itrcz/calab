@@ -152,7 +152,7 @@ export function openOwnLink(href: string): boolean {
 }
 
 export function handleDeepLink(url: string): void {
-  // Mail links (ADR-0080 §12): `calab://mail/<payload>` carries a password — parsed here, never
+  // Mail links (ADR-0088 §12): `calab://mail/<payload>` carries a password — parsed here, never
   // logged; the section and its form are loaded lazily (desktop only, a no-op elsewhere).
   const mail = parseMailLink(url);
   if (mail) {

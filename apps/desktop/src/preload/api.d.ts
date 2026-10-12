@@ -224,7 +224,7 @@ export interface CalabaApi {
     tipHide(): Promise<void>;
   };
   /**
-   * The mail engine bridge (ADR-0080 §7), Electron only. Raw transport: the renderer uses the typed
+   * The mail engine bridge (ADR-0088 §7), Electron only. Raw transport: the renderer uses the typed
    * `MailApi` built over it (`platform.mail`, shared/mail.ts `createMailClient`).
    */
   mail?: {

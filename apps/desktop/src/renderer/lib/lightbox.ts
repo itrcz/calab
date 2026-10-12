@@ -15,7 +15,7 @@ export interface LightboxImage {
   width: number;
   height: number;
   /**
-   * A ready URL instead of an API file (a mail attachment, ADR-0080 §8: `calaba-mail://…`): shown
+   * A ready URL instead of an API file (a mail attachment, ADR-0088 §8: `calaba-mail://…`): shown
    * as is (no thumbnail) and downloaded through a link; `fileId` is then just a unique key.
    */
   src?: string;

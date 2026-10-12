@@ -1,5 +1,5 @@
 /**
- * Event coalescing (ADR-0080 §7): at most one event of a type per folder (per account for
+ * Event coalescing (ADR-0088 §7): at most one event of a type per folder (per account for
  * `account_state` / `folders`, per item for `outgoing`) per 250 ms. The first event of a quiet key
  * goes out at once; what follows within the window is merged (rows by threadId, newest wins; id
  * lists united) and flushed when the window ends. Row upserts and removals of the same thread in

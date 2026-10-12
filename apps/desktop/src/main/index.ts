@@ -96,7 +96,7 @@ setMainWindowHooks({
 // Every webContents (main window, stream pop-outs, anything created later) gets the same
 // navigation / window.open / <webview> guards (review L12).
 installWebContentsGuards();
-installMailGuards(); // mail bodies: links → browser / compose, attachment downloads (ADR-0080 §10)
+installMailGuards(); // mail bodies: links → browser / compose, attachment downloads (ADR-0088 §10)
 // Workspace web apps (ADR-0050 §4): their views and popups get their own guard set; the end of
 // the Calab session clears every app's site data on this device.
 installWebAppGuards();

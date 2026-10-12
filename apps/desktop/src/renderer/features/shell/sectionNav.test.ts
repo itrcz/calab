@@ -80,7 +80,7 @@ describe('desktop sections (ADR-0074)', () => {
     expect(useWebApps.getState().open).toBeNull();
   });
 
-  it('«Почта» is personal and exclusive: rooms, days, boards and other sections leave it (ADR-0080 §8)', async () => {
+  it('«Почта» is personal and exclusive: rooms, days, boards and other sections leave it (ADR-0088 §8)', async () => {
     openSection('mail');
     expect(useMailUi.getState().active).toBe(true);
     expect(useUi.getState().activeWorkspaceId).toBe('a');

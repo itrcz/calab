@@ -13,7 +13,7 @@ import { MailColumn } from './MailColumn';
 import { MailThread } from './MailThread';
 
 /**
- * «Почта» (ADR-0080 §8, Apple Mail): the list column and the thread in the centre of the inset
+ * «Почта» (ADR-0088 §8, Apple Mail): the list column and the thread in the centre of the inset
  * panel; no right panel. Without accounts — the add-account card; the composer is a sheet over the
  * centre. Reads three booleans: an event about one message never re-renders this.
  */

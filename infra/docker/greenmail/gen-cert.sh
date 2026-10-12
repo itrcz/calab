@@ -1,5 +1,5 @@
 #!/bin/sh
-# Test-only TLS certificate for the dev GreenMail (mail engine integration test, ADR-0080 §11).
+# Test-only TLS certificate for the dev GreenMail (mail engine integration test, ADR-0088 §11).
 # The engine verifies certificates strictly, so GreenMail gets a localhost certificate and the
 # test trusts it as its CA. Output (git-ignored): certs/greenmail.p12 (for GreenMail), certs/ca.pem.
 set -eu

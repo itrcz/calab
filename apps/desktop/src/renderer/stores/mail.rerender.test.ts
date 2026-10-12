@@ -3,7 +3,7 @@ import type { MailEvent, MailFolder, MailThreadRow } from '../../shared/mail';
 import { ALL_INBOXES, boxUnread, inboxUnread, reduceEvent, resetMail, rowKey, useMail } from './mail';
 
 /**
- * Re-renders of a mail event (ADR-0080 §9, CLAUDE.md «Ререндеры»), proven on the store like
+ * Re-renders of a mail event (ADR-0088 §9, CLAUDE.md «Ререндеры»), proven on the store like
  * boards.rerender.test.ts: every selector the column, its rows and the rail tile subscribe with is
  * evaluated for a 200-row mailbox before and after an event; a component re-renders only when its
  * selector's result changes (Object.is), so the changed results are the re-rendered components.

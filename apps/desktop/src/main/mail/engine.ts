@@ -1,5 +1,5 @@
 /**
- * The mail engine (ADR-0080 §2): a utilityProcess forked by main (src/main/mail/index.ts), built as
+ * The mail engine (ADR-0088 §2): a utilityProcess forked by main (src/main/mail/index.ts), built as
  * out/main/mailEngine.js. Talks to main only: MailToEngine in, MailFromEngine out (shared/mail.ts).
  * No Electron main-process APIs, no Calab session. Passwords arrive from main in memory (`accounts`)
  * and are never logged or sent back.

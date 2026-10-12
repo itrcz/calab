@@ -495,7 +495,7 @@ export function createWebPlatform(): Platform {
     guestJoin,
     clearProtectedMedia: clearMediaCache,
     finishSso: finishWebSso,
-    // No mail section on the web / phone (ADR-0080 §1): the browser cannot speak IMAP.
+    // No mail section on the web / phone (ADR-0088 §1): the browser cannot speak IMAP.
     mail: undefined,
     auth: {
       clearProtectedCache: () => {

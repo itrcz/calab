@@ -2,7 +2,7 @@ import DOMPurify, { type Config, type DOMPurify as Purifier } from 'dompurify';
 import { mailRemoteImageUrl } from '../../../shared/mail';
 
 /**
- * HTML of a mail message → what the sandboxed iframe shows (ADR-0080 §10). The message HTML is
+ * HTML of a mail message → what the sandboxed iframe shows (ADR-0088 §10). The message HTML is
  * hostile input: DOMPurify with a strict HTML-only profile, then our own rules on top —
  * - no scripts, forms, frames, objects, external CSS, `<base>`, `<meta>`, media elements;
  * - `cid:` images → the attachment URL (`MailApi.attachmentUrl`), unknown cids dropped;

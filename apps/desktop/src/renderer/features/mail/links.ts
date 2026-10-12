@@ -20,7 +20,7 @@ function whenLoaded(): Promise<void> {
 }
 
 /**
- * A mail deep link (ADR-0080 §8, §12) → the section. The add-account link prefills the form and
+ * A mail deep link (ADR-0088 §8, §12) → the section. The add-account link prefills the form and
  * stops there: the person clicks «Добавить» (never an automatic account). Desktop only.
  */
 export async function openMailLink(link: MailLink): Promise<void> {
