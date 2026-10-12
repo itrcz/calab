@@ -19,21 +19,12 @@ function iconOf(a: MailAttachment): ReactNode {
   return <FileIcon className={cls} aria-hidden />;
 }
 
-/** Saves an attachment through the standard download path (main: quarantine / Mark-of-the-Web, §10). */
-export function downloadAttachment(url: string, name: string): void {
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
 /**
  * The attachments under the body (§8): images as previews (a click opens the app's lightbox), other
- * files as a tile with icon, name and size (a click downloads). Inline images shown in the body are
- * not repeated.
+ * files as a tile with icon, name and size. A tile is a plain link to the attachment URL without
+ * `download`: the window navigating there is main's cue to save it into Downloads with its name
+ * (frameGuard.ts: quarantine / Mark-of-the-Web, then revealed). In the mock (a data: URL) the
+ * renderer's guards drop the navigation. Inline images shown in the body are not repeated.
  */
 export function AttachmentStrip({ message }: { message: MailMessage }): ReactNode {
   const api = mailApi();
@@ -64,12 +55,13 @@ export function AttachmentStrip({ message }: { message: MailMessage }): ReactNod
                   </span>
                 </button>
               ) : (
-                <button
-                  type="button"
+                <a
+                  href={url}
+                  draggable={false}
                   className="flex h-12 w-56 items-center gap-2 rounded-[8px] border border-line bg-[var(--color-bg)] px-2.5 text-left hover:bg-hover"
-                  onClick={() => downloadAttachment(url, a.name)}
                   title={t('mbox.download')}
                   aria-label={`${a.name}, ${fmt.size(a.size)} — ${t('mbox.download')}`}
+                  data-testid="mail-attachment-download"
                 >
                   {iconOf(a)}
                   <span className="flex min-w-0 flex-1 flex-col">
@@ -77,7 +69,7 @@ export function AttachmentStrip({ message }: { message: MailMessage }): ReactNod
                     <span className="text-micro text-muted">{fmt.size(a.size)}</span>
                   </span>
                   <Download className="size-3.5 shrink-0 text-muted" aria-hidden />
-                </button>
+                </a>
               )}
             </li>
           );

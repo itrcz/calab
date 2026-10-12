@@ -106,6 +106,7 @@ export const esMailbox: DictShape<typeof ruMailbox> = {
   'mbox.add.checking': 'Iniciando sesión…',
   'mbox.add.appPassword': 'Gmail, Yandex, Mail.ru e iCloud necesitan una contraseña de aplicación:',
   'mbox.add.appPasswordHow': 'Cómo obtener una contraseña de aplicación',
+  'mbox.add.needAppPassword': 'Este proveedor necesita una contraseña de aplicación.',
   'mbox.add.servers': 'Servidores',
   'mbox.add.manualHint': 'Indica los servidores a mano.',
   'mbox.add.imap': 'Correo entrante (IMAP)',
@@ -168,4 +169,5 @@ export const esMailbox: DictShape<typeof ruMailbox> = {
   'mbox.settings.clearCache': 'Vaciar la caché',
   'mbox.settings.clearCacheHint': 'Los mensajes se quedan; los cuerpos se descargan de nuevo',
   'mbox.settings.clear': 'Vaciar',
+  'mbox.settings.cacheCleared': 'Caché vaciada',
 };

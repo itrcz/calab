@@ -72,13 +72,33 @@ export function MailTab(): ReactNode {
           </Select>
         </Row>
         <Row label={t('mbox.settings.clearCache')} hint={t('mbox.settings.clearCacheHint')}>
-          {/* The engine has no «clear the cache» call yet (contract change asked of T1). */}
-          <Button size="sm" variant="secondary" disabled>
-            {t('mbox.settings.clear')}
-          </Button>
+          <ClearCacheButton />
         </Row>
       </Card>
     </>
+  );
+}
+
+/** «Очистить»: drops cached bodies and attachments of every account (headers, drafts, outbox stay). */
+function ClearCacheButton(): ReactNode {
+  const [busy, setBusy] = useState(false);
+  const clear = async (): Promise<void> => {
+    const api = mailApi();
+    if (!api || busy) return;
+    setBusy(true);
+    try {
+      await api.settings.clearCache();
+      toast.success(t('mbox.settings.cacheCleared'));
+    } catch (e) {
+      toast.error(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button size="sm" variant="secondary" busy={busy} onClick={() => void clear()} data-testid="settings-mail-clear-cache">
+      {t('mbox.settings.clear')}
+    </Button>
   );
 }
 

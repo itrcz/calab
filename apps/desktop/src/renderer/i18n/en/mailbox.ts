@@ -106,6 +106,7 @@ export const enMailbox: DictShape<typeof ruMailbox> = {
   'mbox.add.checking': 'Signing in…',
   'mbox.add.appPassword': 'Gmail, Yandex, Mail.ru and iCloud need an app password:',
   'mbox.add.appPasswordHow': 'How to get an app password',
+  'mbox.add.needAppPassword': 'This provider needs an app password.',
   'mbox.add.servers': 'Servers',
   'mbox.add.manualHint': 'Enter the servers by hand.',
   'mbox.add.imap': 'Incoming mail (IMAP)',
@@ -168,4 +169,5 @@ export const enMailbox: DictShape<typeof ruMailbox> = {
   'mbox.settings.clearCache': 'Clear cache',
   'mbox.settings.clearCacheHint': 'Messages stay; bodies are downloaded again',
   'mbox.settings.clear': 'Clear',
+  'mbox.settings.cacheCleared': 'Cache cleared',
 };

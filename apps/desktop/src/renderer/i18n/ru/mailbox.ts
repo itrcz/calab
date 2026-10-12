@@ -111,6 +111,7 @@ export const ruMailbox = {
   'mbox.add.checking': 'Проверяем вход…',
   'mbox.add.appPassword': 'Для Gmail, Яндекса, Mail.ru и iCloud нужен пароль приложения:',
   'mbox.add.appPasswordHow': 'Как получить пароль приложения',
+  'mbox.add.needAppPassword': 'Нужен пароль приложения.',
   'mbox.add.servers': 'Серверы',
   'mbox.add.manualHint': 'Укажите серверы вручную.',
   'mbox.add.imap': 'Входящая почта (IMAP)',
@@ -176,4 +177,5 @@ export const ruMailbox = {
   'mbox.settings.clearCache': 'Очистить кэш',
   'mbox.settings.clearCacheHint': 'Письма останутся, тела скачаются снова',
   'mbox.settings.clear': 'Очистить',
+  'mbox.settings.cacheCleared': 'Кэш очищен',
 };

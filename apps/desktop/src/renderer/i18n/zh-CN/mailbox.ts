@@ -106,6 +106,7 @@ export const zhMailbox: DictShape<typeof ruMailbox> = {
   'mbox.add.checking': '正在登录…',
   'mbox.add.appPassword': 'Gmail、Yandex、Mail.ru 和 iCloud 需要应用专用密码：',
   'mbox.add.appPasswordHow': '如何获取应用专用密码',
+  'mbox.add.needAppPassword': '该邮箱需要应用专用密码。',
   'mbox.add.servers': '服务器',
   'mbox.add.manualHint': '请手动填写服务器。',
   'mbox.add.imap': '收件服务器（IMAP）',
@@ -168,4 +169,5 @@ export const zhMailbox: DictShape<typeof ruMailbox> = {
   'mbox.settings.clearCache': '清除缓存',
   'mbox.settings.clearCacheHint': '邮件保留，正文会重新下载',
   'mbox.settings.clear': '清除',
+  'mbox.settings.cacheCleared': '缓存已清除',
 };

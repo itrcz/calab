@@ -127,7 +127,8 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
         // Found servers that do not answer: the manual form, filled with what was found.
         setManual(settings);
       }
-      fail(code, discovered);
+      // AUTH_FAILED carries the settings that were tried: their provider names the app-password page.
+      fail(code, (isMailError(err) ? err.discovery : undefined) ?? discovered);
     }
   };
 
@@ -186,7 +187,7 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
             {error?.code === 'DISCOVERY_FAILED' ? ` ${t('mbox.add.manualHint')}` : ''}
             {error?.help ? (
               <>
-                {' '}
+                {`. ${t('mbox.add.needAppPassword')} `}
                 <button type="button" className="text-accent-text underline" onClick={() => error.help && void platform.app.openExternal(error.help)}>
                   {t('mbox.add.appPasswordHow')}
                 </button>
