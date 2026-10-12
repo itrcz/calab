@@ -21,6 +21,7 @@ import { zhMailbox } from './mailbox';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
 import { zhMilestones } from './milestones';
+import { zhTaskNotify } from './taskNotify';
 import { zhAutomations } from './automations';
 import { zhPlan } from './plan';
 import { zhBilling } from './billing';
@@ -77,6 +78,7 @@ export const zhCN: Dict = {
   ...zhBoards,
   ...zhBoards2,
   ...zhMilestones,
+  ...zhTaskNotify,
   ...zhAutomations,
   'voice.pendingMember': '连接中…',
   // common

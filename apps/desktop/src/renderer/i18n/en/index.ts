@@ -21,6 +21,7 @@ import { enMailbox } from './mailbox';
 import { enBoards } from './boards';
 import { enBoards2 } from './boards2';
 import { enMilestones } from './milestones';
+import { enTaskNotify } from './taskNotify';
 import { enAutomations } from './automations';
 import { enPlan } from './plan';
 import { enBilling } from './billing';
@@ -77,6 +78,7 @@ export const en: Dict = {
   ...enBoards,
   ...enBoards2,
   ...enMilestones,
+  ...enTaskNotify,
   ...enAutomations,
   'voice.pendingMember': 'Connecting…',
   // common

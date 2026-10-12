@@ -21,6 +21,7 @@ import { esMailbox } from './mailbox';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
 import { esMilestones } from './milestones';
+import { esTaskNotify } from './taskNotify';
 import { esAutomations } from './automations';
 import { esPlan } from './plan';
 import { esBilling } from './billing';
@@ -77,6 +78,7 @@ export const es: Dict = {
   ...esBoards,
   ...esBoards2,
   ...esMilestones,
+  ...esTaskNotify,
   ...esAutomations,
   'voice.pendingMember': 'Conectando…',
   // common

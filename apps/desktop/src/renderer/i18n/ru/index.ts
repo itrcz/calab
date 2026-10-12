@@ -20,6 +20,7 @@ import { ruMailbox } from './mailbox';
 import { ruBoards } from './boards';
 import { ruBoards2 } from './boards2';
 import { ruMilestones } from './milestones';
+import { ruTaskNotify } from './taskNotify';
 import { ruAutomations } from './automations';
 import { ruPlan } from './plan';
 import { ruBilling } from './billing';
@@ -76,6 +77,7 @@ export const ru = {
   ...ruBoards,
   ...ruBoards2,
   ...ruMilestones,
+  ...ruTaskNotify,
   ...ruAutomations,
   // common
   'common.cancel': 'Отмена',

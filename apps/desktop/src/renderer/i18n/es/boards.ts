@@ -93,7 +93,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.fromMessage': 'Crear tarea',
   'boards.card.board': '{key} · tareas abiertas: {n}',
   'boards.notifyTasks': 'Tareas',
-  'boards.notifyAll': 'Todo: asignaciones, menciones, comentarios, estado',
+  'boards.notifyAll': 'Todo',
   'boards.notifyMentions': 'Solo asignaciones y menciones',
   'boards.notifyNone': 'Nada',
   'boards.archiveSection': 'Archivo',

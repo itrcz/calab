@@ -95,7 +95,7 @@ export const ruBoards = {
   'boards.fromMessage': 'Создать задачу',
   'boards.card.board': '{key} · открытых задач: {n}',
   'boards.notifyTasks': 'Задачи',
-  'boards.notifyAll': 'Все: назначения, упоминания, комментарии, статусы',
+  'boards.notifyAll': 'Все',
   'boards.notifyMentions': 'Только назначения и упоминания',
   'boards.notifyNone': 'Ничего',
   'boards.archiveSection': 'Архив',

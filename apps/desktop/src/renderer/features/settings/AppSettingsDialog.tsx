@@ -61,6 +61,7 @@ import { RemindersCard } from '../calendar/RemindersCard';
 import { CalendarTab } from './CalendarSettings';
 import { MailTab } from './MailSettings';
 import { MAIL_ENABLED } from '../mail/boot';
+import { TaskNotifyCard } from './TaskNotifyCard';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -606,6 +607,7 @@ function NotificationsTab(): ReactNode {
         </Row>
       </Card>
       <PushPrivacyCard />
+      <TaskNotifyCard />
       <RemindersCard />
       <SoundSettings />
     </>

@@ -142,7 +142,15 @@ function TaskNotifyItems({ workspaceId }: { workspaceId: string }): ReactNode {
                 <Check className="size-4" aria-hidden />
               </Dropdown.ItemIndicator>
             </span>
-            <span className="truncate">{t(o.label)}</span>
+            {o.level === NotificationLevel.ALL ? (
+              // ADR-0089: «все» follows the trigger switches in Settings → Уведомления → Задачи.
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{t(o.label)}</span>
+                <span className="truncate text-caption text-faint">{t('tn.levelAllHint')}</span>
+              </span>
+            ) : (
+              <span className="truncate">{t(o.label)}</span>
+            )}
           </Dropdown.RadioItem>
         ))}
       </Dropdown.RadioGroup>

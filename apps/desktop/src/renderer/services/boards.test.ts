@@ -1,5 +1,5 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
-import { ApproverState, BoardCategorySchema, BoardSchema, TaskChecklistItemSchema, TaskChecklistSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, WorkspaceSnapshotSchema, type Task } from '@calaba/protocol';
+import { ApproverState, TaskNoticeKind, TaskNoticeSchema, TaskPriority, BoardCategorySchema, BoardSchema, TaskChecklistItemSchema, TaskChecklistSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, WorkspaceSnapshotSchema, type Task } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // services/boards.ts on the gateway events (ADR-0042 §4), with the stores it writes.
@@ -16,7 +16,9 @@ vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn(), suc
 const update = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a) } } }));
 
-const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards } = await import('./boards');
+const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards, noticeText } = await import('./boards');
+const { t } = await import('../i18n');
+const { memberName } = await import('../stores/workspaces');
 const { useBoards, workspaceBoards } = await import('../stores/boards');
 const { useBoardsUi, MY_TASKS } = await import('../stores/boardsUi');
 const { toast } = await import('../stores/toasts');
@@ -206,3 +208,38 @@ describe('task-scoped boards in the store', () => {
   });
 });
 
+
+describe('noticeText (ADR-0089 triggers)', () => {
+  const tk = task('n1', 's1', 1, { priority: TaskPriority.HIGH });
+  const text = (n: MessageInitShape<typeof TaskNoticeSchema>): string => noticeText(tk, create(TaskNoticeSchema, n));
+  const who = memberName('w1', 'u1');
+
+  it('addressed kinds name the actor; the due sweep and a rule have none', () => {
+    expect(text({ kind: TaskNoticeKind.UNASSIGNED, actorId: 'u1' })).toBe(t('boards.notice.unassigned', { name: who }));
+    expect(text({ kind: TaskNoticeKind.UNASSIGNED })).toBe(t('boards.notice.unassignedAuto'));
+    expect(text({ kind: TaskNoticeKind.WATCHER_ADDED, actorId: 'u1' })).toBe(t('boards.notice.watcherAdded', { name: who }));
+    expect(text({ kind: TaskNoticeKind.DUE_SOON, dueOn: '2030-03-11', daysLeft: 1 })).toBe(t('boards.notice.dueTomorrow'));
+    expect(text({ kind: TaskNoticeKind.DUE_SOON, dueOn: '2030-03-10', daysLeft: 0 })).toBe(t('boards.notice.dueToday'));
+    const overdue = text({ kind: TaskNoticeKind.OVERDUE, dueOn: '2030-03-09', daysLeft: -1 });
+    expect(overdue).toContain('2030');
+    expect(overdue).not.toContain(t('common.unknownUser'));
+  });
+
+  it('field changes carry their details', () => {
+    expect(text({ kind: TaskNoticeKind.DUE_CHANGED, dueOn: '' })).toBe(t('boards.notice.dueRemoved'));
+    expect(text({ kind: TaskNoticeKind.DUE_CHANGED, dueOn: '2031-01-15' })).toContain('2031');
+    expect(text({ kind: TaskNoticeKind.PRIORITY })).toBe(t('boards.notice.priority', { value: t('boards.prio.high') }));
+    expect(text({ kind: TaskNoticeKind.MILESTONE, text: 'Релиз' })).toBe(t('boards.notice.milestone', { value: 'Релиз' }));
+    expect(text({ kind: TaskNoticeKind.MILESTONE })).toBe(t('boards.notice.milestoneRemoved'));
+    expect(text({ kind: TaskNoticeKind.MOVED, text: 'Дизайн' })).toBe(t('boards.notice.moved', { value: 'Дизайн' }));
+    expect(text({ kind: TaskNoticeKind.EDITED, text: 'title' })).toBe(t('boards.notice.editedTitle'));
+    expect(text({ kind: TaskNoticeKind.EDITED, text: 'description' })).toBe(t('boards.notice.editedDescription'));
+    expect(text({ kind: TaskNoticeKind.ATTACHMENT, text: 'смета.pdf' })).toBe(t('boards.notice.attachment', { value: 'смета.pdf' }));
+    expect(text({ kind: TaskNoticeKind.ARCHIVED })).toBe(t('boards.notice.archived'));
+  });
+
+  it('status keeps its text; an unknown kind is «Задача обновлена»', () => {
+    expect(text({ kind: TaskNoticeKind.STATUS, actorId: 'u1' })).toBe(t('boards.notice.status', { name: who }));
+    expect(text({ kind: 99 as TaskNoticeKind })).toBe(t('boards.notice.updated'));
+  });
+});

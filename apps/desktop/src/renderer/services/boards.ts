@@ -29,6 +29,7 @@ import {
   type UpdateTaskRequestSchema,
   type TaskActivity,
   type TaskResponse,
+  type TaskNotice,
   type TaskUpdate,
   type WorkspaceSnapshot,
 } from '@calaba/protocol';
@@ -37,6 +38,8 @@ import { ApiError } from '../lib/api/client';
 import { approvedCount, blockedStatusIds, quorumOf, rejecters } from '../lib/boards/approvals';
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toggleWatcher } from '../lib/boards/watchers';
+import { editedKey } from '../lib/boards/taskNotify';
+import { PRIORITY_LABEL, formatDue } from '../features/boards/visuals';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
 import { countItems, itemPosition, toggledItem, withItem } from '../lib/boards/checklists';
@@ -228,7 +231,7 @@ function notifyTask(u: TaskUpdate): void {
   if (prefs().presence === PresenceStatus.DND) return;
   const visible = document.hasFocus() && useBoardsUi.getState().taskId === task.id;
   if (visible) return;
-  const what = noticeText(task, n.kind, n.actorId, n.text, n.reRequested);
+  const what = noticeText(task, n);
   try {
     const note = new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` });
     note.onclick = () => {
@@ -242,11 +245,17 @@ function notifyTask(u: TaskUpdate): void {
 }
 
 /**
- * The text of a task notice (system notification). Approvals (ADR-0049 §5) are mandatory: the
- * server sends them past the task level and «Отписаться»; the reminder has no actor; a
- * re-request (the task changed, ADR-0082) has its own text.
+ * The text of a task notice (system notification; the title carries the task). Approvals
+ * (ADR-0049 §5) are mandatory: the server sends them past the task level and «Отписаться»; the
+ * reminder has no actor; a re-request (the task changed, ADR-0082) has its own text. The
+ * triggers of ADR-0089 carry their details (due_on, days_left, text); the due sweep has no
+ * actor. A kind this client does not know: «Задача обновлена».
  */
-export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string, text = '', reRequested = false): string {
+export function noticeText(
+  task: Pick<Task, 'workspaceId' | 'approvers' | 'priority'>,
+  n: Pick<TaskNotice, 'kind' | 'actorId' | 'text' | 'reRequested' | 'dueOn' | 'daysLeft'>,
+): string {
+  const { kind, actorId, text } = n;
   const actor = actorId ? memberName(task.workspaceId, actorId) : '';
   switch (kind) {
     case TaskNoticeKind.ASSIGNED:
@@ -255,9 +264,11 @@ export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: 
       return t('boards.notice.mentioned', { name: actor });
     case TaskNoticeKind.COMMENT:
       return t('boards.notice.comment', { name: actor });
+    case TaskNoticeKind.STATUS:
+      return t('boards.notice.status', { name: actor });
     case TaskNoticeKind.APPROVAL_REQUESTED:
       // ADR-0082: the task changed and the recipient's decided vote was reset.
-      if (reRequested) return t('boards.notice.approvalReRequested');
+      if (n.reRequested) return t('boards.notice.approvalReRequested');
       return actor ? t('boards.notice.approvalRequested', { name: actor }) : t('boards.notice.approvalReminder');
     case TaskNoticeKind.APPROVED:
       return t('boards.notice.approved');
@@ -269,9 +280,39 @@ export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: 
       const name = memberName(task.workspaceId, who?.userId ?? actorId);
       return who?.comment ? t('boards.notice.rejectedWhy', { name, comment: who.comment }) : t('boards.notice.rejected', { name });
     }
+    // ADR-0089.
+    case TaskNoticeKind.UNASSIGNED:
+      return actor ? t('boards.notice.unassigned', { name: actor }) : t('boards.notice.unassignedAuto');
+    case TaskNoticeKind.WATCHER_ADDED:
+      return t('boards.notice.watcherAdded', { name: actor });
+    case TaskNoticeKind.DUE_SOON:
+      return n.daysLeft > 0 ? t('boards.notice.dueTomorrow') : t('boards.notice.dueToday');
+    case TaskNoticeKind.OVERDUE:
+      return t('boards.notice.overdue', { date: noticeDay(n.dueOn) });
+    case TaskNoticeKind.DUE_CHANGED:
+      return n.dueOn ? t('boards.notice.dueChanged', { date: noticeDay(n.dueOn) }) : t('boards.notice.dueRemoved');
+    case TaskNoticeKind.PRIORITY:
+      return t('boards.notice.priority', { value: t(PRIORITY_LABEL[task.priority] ?? 'boards.prio.none') });
+    case TaskNoticeKind.MILESTONE:
+      return text ? t('boards.notice.milestone', { value: text }) : t('boards.notice.milestoneRemoved');
+    case TaskNoticeKind.MOVED:
+      return text ? t('boards.notice.moved', { value: text }) : t('boards.notice.movedNoName');
+    case TaskNoticeKind.EDITED:
+      return t(editedKey(text));
+    case TaskNoticeKind.ATTACHMENT:
+      return t('boards.notice.attachment', { value: text });
+    case TaskNoticeKind.ARCHIVED:
+      return t('boards.notice.archived');
     default:
-      return t('boards.notice.status', { name: actor });
+      return t('boards.notice.updated');
   }
+}
+
+/** «14 окт.» (with the year when not this year) of a notice's "YYYY-MM-DD". */
+function noticeDay(day: string): string {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return formatDue(day, today);
 }
 
 // ------------------------------------------------------------------ loading

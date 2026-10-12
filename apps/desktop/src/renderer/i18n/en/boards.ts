@@ -93,7 +93,7 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.fromMessage': 'Create task',
   'boards.card.board': '{key} · open tasks: {n}',
   'boards.notifyTasks': 'Tasks',
-  'boards.notifyAll': 'All: assignments, mentions, comments, status',
+  'boards.notifyAll': 'All',
   'boards.notifyMentions': 'Only assignments and mentions',
   'boards.notifyNone': 'Nothing',
   'boards.archiveSection': 'Archive',

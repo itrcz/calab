@@ -93,7 +93,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.fromMessage': '创建任务',
   'boards.card.board': '{key} · 未完成任务：{n}',
   'boards.notifyTasks': '任务',
-  'boards.notifyAll': '全部：指派、提及、评论、状态',
+  'boards.notifyAll': '全部',
   'boards.notifyMentions': '仅指派和提及',
   'boards.notifyNone': '不通知',
   'boards.archiveSection': '归档',
