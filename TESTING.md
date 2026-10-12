@@ -527,7 +527,7 @@ Mac (лучше Retina + второй монитор), 2 клиента (2.6) в
 ```
 infra/docker/greenmail/gen-cert.sh        # TLS для localhost: движок проверяет сертификат строго
 docker compose -f infra/docker/compose.dev.yml --profile mail up -d greenmail
-CALABA_MAIL_IT=1 pnpm -F @calaba/desktop test -- engine.it   # ожидается: 2 passed
+CALABA_MAIL_IT=1 pnpm -F @calaba/desktop test -- engine.it   # ожидается: 6 passed (4 — доверие сертификату, ML.6)
 docker compose -f infra/docker/compose.dev.yml --profile mail down
 ```
 - ML.1 Неверный пароль → `AUTH_FAILED` с настройками; верный → аккаунт проверен (IMAP + SMTP).
@@ -536,6 +536,7 @@ docker compose -f infra/docker/compose.dev.yml --profile mail down
 Без Docker — локальный фейк (hoodiecrow + smtp-server, те же порты и пользователи; годится и для `engine.it`): `node apps/desktop/scripts/mail-fake-server.mjs`.
 - ML.4 Приложение против фейка: `pnpm -F @calaba/desktop build:app`, запуск с `NODE_EXTRA_CA_CERTS=infra/docker/greenmail/certs/ca.pem`; «Почта» → `alice@example.test` / `secret` → «Не нашли настройки» → серверы `localhost` 3993 / 3465 → «Добавить». Ожидается: 3 письма (HTML с картинкой `cid:` и «Договор.pdf», text/plain в цвете темы, рассылка на белом), PDF сохраняется в «Загрузки» с именем, ссылка → браузер, `mailto:` → новое письмо в Calab, ответ уходит в Sent и на SMTP (лог фейка), флаг/архив/корзина доходят до сервера.
 - ML.5 `node apps/desktop/scripts/mail-fake-server.mjs send` → строка за ≤ 3 с без действий, системное уведомление «Bob · New message …», бейдж на рейле; `calab://mail/<base64url("bob@example.test:secret")>` → форма заполнена, фокус на «Добавить».
+- ML.6 Самоподписанный сертификат (доверие с первого раза, ADR-0088 §4): как ML.4, но **без** `NODE_EXTRA_CA_CERTS` → после «Добавить» вместо «Не удалось установить защищённое соединение» две плашки (`localhost:3993` и `localhost:3465`): «Сертификат самоподписанный», «Выдан: CN=localhost», отпечаток, «Доверять этому серверу и подключиться». Нажать на первой → остаётся вторая; на второй → ящик добавлен, письма приходят. «Настройки → Почта»: две строки «Сертификат: закреплён ⋯xxxx · Сбросить». Пересоздать сертификат фейка (`gen-cert.sh`, перезапуск) → у ящика «Сертификат сервера изменился» · «Показать и доверять новому» → после подтверждения синхронизация снова идёт. До доверия на сервер не уходит ни одной команды (LOGIN/AUTH).
 
 ## 3. Сервер
 
