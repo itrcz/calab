@@ -1,8 +1,9 @@
 import type { MailAddress, MailDraftAttachment, MailHeader, MailMessage } from '../../../shared/mail';
 
 /**
- * Reply / Reply all / Forward prefill (Apple Mail rules, ADR-0088 §8), pure. The quote itself is
- * appended by the engine (`MailDraft.ref.quote`, §6) — the composer only previews it.
+ * Reply / Reply all / Forward prefill (Apple Mail rules, ADR-0088 §8), pure. The quote lives in the
+ * composer's editor (editor.ts) and is sent as part of `MailDraft.html`; `ref` keeps In-Reply-To /
+ * References / `\Answered`.
  */
 
 const RE = /^\s*(re|aw|sv|ответ|отв)\s*(\[\d+\])?\s*:/i;
@@ -47,24 +48,29 @@ export function forwardAttachments(msg: Pick<MailMessage, 'id' | 'attachments'>)
     .map((a) => ({ kind: 'message' as const, id: `${msg.id}:${a.id}`, name: a.name, mime: a.mime, size: a.size, messageId: msg.id, attachmentId: a.id }));
 }
 
-/** The body a new message starts with: an empty line to type in, then the signature (`-- ` line, RFC 3676). */
-export function initialText(signature: string, body = ''): string {
-  const sig = signature.trim();
-  if (!sig) return body;
-  return `${body}\n\n-- \n${sig}`;
-}
-
-/** Text quoted as `> ` lines (the preview under the editor). */
-export const quoteLines = (text: string): string =>
-  text
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((l) => (l.startsWith('>') ? `>${l}` : `> ${l}`))
-    .join('\n');
-
 /** The total size of the draft's attachments, against the 25 MB limit (§6). */
 export const MAX_ATTACH_BYTES = 25 * 1024 * 1024;
 export const attachmentsSize = (list: readonly MailDraftAttachment[]): number => list.reduce((s, a) => s + a.size, 0);
+
+/** Whether files of these sizes still fit next to the draft's attachments (§6: 25 MB in total). */
+export function fitsAttachments(current: readonly MailDraftAttachment[], adding: readonly number[]): { total: number; ok: boolean } {
+  const total = attachmentsSize(current) + adding.reduce((s, n) => s + n, 0);
+  return { total, ok: total <= MAX_ATTACH_BYTES };
+}
+
+/**
+ * A forward's inline images by the URL they are shown with in the editor: the ones still in the
+ * text on send travel as attachments (the contract has no Content-ID for draft attachments, so they
+ * cannot stay inline in the recipient's copy).
+ */
+export function inlineImages(msg: Pick<MailMessage, 'id' | 'attachments'>, url: (messageId: string, attachmentId: string) => string): Map<string, MailDraftAttachment> {
+  const out = new Map<string, MailDraftAttachment>();
+  for (const a of msg.attachments) {
+    if (!a.inline || !a.mime.startsWith('image/')) continue;
+    out.set(url(msg.id, a.id), { kind: 'message', id: `${msg.id}:${a.id}`, name: a.name, mime: a.mime, size: a.size, messageId: msg.id, attachmentId: a.id });
+  }
+  return out;
+}
 
 /** Addresses from a typed chip input: «a@b.c», «Name <a@b.c>»; the rest stays typed. */
 export function chipFrom(text: string): MailAddress | null {

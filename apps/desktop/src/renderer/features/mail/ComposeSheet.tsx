@@ -1,29 +1,28 @@
-import { Paperclip, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { isMailError, type MailAddress, type MailDraft, type MailDraftAttachment, type MailMessage } from '../../../shared/mail';
-import { Button, IconButton, Input, Modal, Select, Spinner, Tip, cx } from '../../components/ui';
+import { Paperclip } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { isMailError, type MailDraftAttachment, type MailMessage } from '../../../shared/mail';
+import { Button, Input, Modal, Select, Spinner, Tip } from '../../components/ui';
 import { t } from '../../i18n';
-import { fmt } from '../../lib/format';
 import { mailApi, seenAddresses, useMail } from '../../stores/mail';
 import { useMailUi, type ComposeRequest } from '../../stores/mailUi';
 import { toast } from '../../stores/toasts';
 import { useWorkspaces } from '../../stores/workspaces';
 import { MAIL_KEYS } from './actions';
 import { AddressField } from './AddressField';
-import { attachmentsSize, forwardAttachments, forwardSubject, initialText, MAX_ATTACH_BYTES, quoteLines, replyRecipients, replySubject } from './compose';
-import { addressFull, addressLabel, mailErrorText, mailHeaderTime } from './format';
+import { attachmentsSize, fitsAttachments, forwardAttachments, forwardSubject, inlineImages, MAX_ATTACH_BYTES, replyRecipients, replySubject } from './compose';
+import { ComposeAttachments } from './ComposeAttachments';
+import { ComposeEditor } from './ComposeEditor';
+import { draftFrom, initialEditorHtml, quoteBlock, sanitizeForEditor, type ComposeFields } from './editor';
+import { mailErrorText } from './format';
 
-/** What the composer edits: a `MailDraft` plus what only the sheet needs. */
-interface Form {
-  id?: string;
-  accountId: string;
-  to: MailAddress[];
-  cc: MailAddress[];
-  bcc: MailAddress[];
-  subject: string;
-  text: string;
-  ref?: MailDraft['ref'];
-  attachments: MailDraftAttachment[];
+type Form = ComposeFields;
+
+interface Init {
+  form: Form;
+  /** The editor's starting HTML (sanitized). */
+  html: string;
+  /** A forward's inline images by their editor URL (carried as attachments when still in the text). */
+  inline: Map<string, MailDraftAttachment>;
 }
 
 /** The message a reply / forward quotes: the body already loaded in the thread, else fetched. */
@@ -42,66 +41,79 @@ function defaultAccount(): string {
 
 const signatureOf = (accountId: string): string => useMail.getState().settings.signatures[accountId] ?? '';
 
-/** The form a request opens with (Apple Mail rules, compose.ts) and the quoted original, if any. */
-async function initForm(req: ComposeRequest): Promise<{ form: Form; orig: MailMessage | null }> {
+/** The original quoted in the editor: sanitized, remote images blocked, `cid:` via the attachment URL. */
+function quoteOf(orig: MailMessage, kind: 'reply' | 'replyAll' | 'forward'): string {
+  const api = mailApi();
+  const cid = (contentId: string): string | null => {
+    const a = orig.attachments.find((x) => x.cid === contentId && x.mime.startsWith('image/'));
+    return a && api ? api.attachmentUrl(orig.id, a.id) : null;
+  };
+  return quoteBlock(orig, kind, { remote: false, cid });
+}
+
+const inlineOf = (orig: MailMessage | null, kind: string | undefined): Map<string, MailDraftAttachment> => {
+  const api = mailApi();
+  if (!orig || !api || kind !== 'forward') return new Map<string, MailDraftAttachment>();
+  return inlineImages(orig, (m, a) => api.attachmentUrl(m, a));
+};
+
+/** The form a request opens with (Apple Mail rules, compose.ts) and the editor's content. */
+async function initForm(req: ComposeRequest): Promise<Init> {
   if (req.kind === 'draft') {
     const d = req.draft;
     const orig = d.ref ? await original(d.ref.messageId).catch(() => null) : null;
-    return { form: { ...(d.id ? { id: d.id } : {}), accountId: d.accountId, to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, text: d.text, ...(d.ref ? { ref: d.ref } : {}), attachments: d.attachments }, orig };
+    // A draft saved by this composer keeps its HTML (quote included); an older one had the quote
+    // appended by the engine (`ref.quote`) — it now goes into the editor.
+    const html =
+      d.html !== undefined
+        ? sanitizeForEditor(d.html, { remote: false, cid: () => null, local: true })
+        : initialEditorHtml({ text: d.text, ...(d.ref?.quote && orig ? { quote: quoteOf(orig, d.ref.kind) } : {}) });
+    const ref = d.ref ? { ...d.ref, quote: false } : undefined;
+    return {
+      form: { ...(d.id ? { id: d.id } : {}), accountId: d.accountId, to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, ...(ref ? { ref } : {}), attachments: d.attachments },
+      html,
+      inline: inlineOf(orig, d.ref?.kind),
+    };
   }
   if (req.kind === 'new') {
     const accountId = req.accountId ?? defaultAccount();
     return {
-      form: { accountId, to: req.to ?? [], cc: req.cc ?? [], bcc: [], subject: req.subject ?? '', text: initialText(signatureOf(accountId), req.text ?? ''), attachments: [] },
-      orig: null,
+      form: { accountId, to: req.to ?? [], cc: req.cc ?? [], bcc: [], subject: req.subject ?? '', attachments: [] },
+      html: initialEditorHtml({ ...(req.text ? { text: req.text } : {}), signature: signatureOf(accountId) }),
+      inline: new Map(),
     };
   }
   const orig = await original(req.messageId);
   const s = useMail.getState();
   const mine = s.accountIds.map((id) => s.accounts[id]?.email ?? '').filter(Boolean);
   const accountId = s.accounts[orig.accountId] ? orig.accountId : defaultAccount();
-  const ref = { messageId: orig.id, kind: req.kind, quote: true };
+  // The quote is in the editor (sent as `html`), so the engine must not append it again.
+  const ref = { messageId: orig.id, kind: req.kind, quote: false };
+  const html = initialEditorHtml({ signature: signatureOf(accountId), quote: quoteOf(orig, req.kind) });
   if (req.kind === 'forward') {
-    return { form: { accountId, to: [], cc: [], bcc: [], subject: forwardSubject(orig.subject), text: initialText(signatureOf(accountId)), ref, attachments: forwardAttachments(orig) }, orig };
+    return { form: { accountId, to: [], cc: [], bcc: [], subject: forwardSubject(orig.subject), ref, attachments: forwardAttachments(orig) }, html, inline: inlineOf(orig, 'forward') };
   }
   const { to, cc } = replyRecipients(orig, mine, req.kind === 'replyAll');
-  return { form: { accountId, to, cc, bcc: [], subject: replySubject(orig.subject), text: initialText(signatureOf(accountId)), ref, attachments: [] }, orig };
+  return { form: { accountId, to, cc, bcc: [], subject: replySubject(orig.subject), ref, attachments: [] }, html, inline: new Map() };
 }
 
-const toDraft = (f: Form): MailDraft => ({
-  ...(f.id ? { id: f.id } : {}),
-  accountId: f.accountId,
-  to: f.to,
-  cc: f.cc,
-  bcc: f.bcc,
-  subject: f.subject,
-  text: f.text,
-  ...(f.ref ? { ref: f.ref } : {}),
-  attachments: f.attachments,
-});
-
-const sameForm = (a: Form, b: Form): boolean => JSON.stringify(toDraft({ ...a, attachments: [] })) === JSON.stringify(toDraft({ ...b, attachments: [] })) && a.attachments.length === b.attachments.length;
+const sameForm = (a: Form, b: Form): boolean =>
+  JSON.stringify({ ...a, attachments: a.attachments.map((x) => x.id) }) === JSON.stringify({ ...b, attachments: b.attachments.map((x) => x.id) });
 
 /**
- * New message / reply / forward (ADR-0088 §8): a sheet over the centre like the meeting sheet —
- * no scrim, the thread stays readable. From, To / Cc / Bcc chips, Subject, plain text with the
- * signature, the quoted original (the engine appends it on send, §6), attachments by button or drop.
- * ⌘↩ sends; closing with changes asks «Сохранить черновик?».
+ * New message / reply / forward (ADR-0088 §8, owner 12.10): a sheet over the centre like the meeting
+ * sheet — no scrim, the thread stays readable. From, To / Cc / Bcc chips, Subject, the attachment
+ * strip, then one editor with the typed text, the signature and the quoted original (editable, like
+ * Apple Mail). Files by button, paste or drop anywhere on the sheet. ⌘↩ sends; closing with changes
+ * asks «Сохранить черновик?».
  */
 export function ComposeSheet({ req }: { req: ComposeRequest }): ReactNode {
-  const [form, setForm] = useState<Form | null>(null);
-  const [orig, setOrig] = useState<MailMessage | null>(null);
+  const [init, setInit] = useState<Init | null>(null);
   const [failed, setFailed] = useState(false);
-  const [initial, setInitial] = useState<Form | null>(null);
   useEffect(() => {
     let alive = true;
     initForm(req).then(
-      (r) => {
-        if (!alive) return;
-        setInitial(r.form);
-        setForm(r.form);
-        setOrig(r.orig);
-      },
+      (r) => alive && setInit(r),
       () => alive && setFailed(true),
     );
     return () => {
@@ -110,39 +122,40 @@ export function ComposeSheet({ req }: { req: ComposeRequest }): ReactNode {
   }, [req]);
   const close = (): void => useMailUi.getState().closeCompose();
   const title = req.kind === 'reply' || req.kind === 'replyAll' ? t('mbox.replyTitle') : req.kind === 'forward' ? t('mbox.forwardTitle') : t('mbox.newMessage');
-  if (failed) {
+  if (failed || !init) {
     return (
       <Modal open onClose={close} title={title} medium nonModal keepOpen={() => true}>
-        <p className="text-body text-muted" role="alert">
-          {t('mbox.err.notFound')}
-        </p>
+        {failed ? (
+          <p className="text-body text-muted" role="alert">
+            {t('mbox.err.notFound')}
+          </p>
+        ) : (
+          <div className="grid h-40 place-items-center">
+            <Spinner />
+          </div>
+        )}
       </Modal>
     );
   }
-  if (!form) {
-    return (
-      <Modal open onClose={close} title={title} medium nonModal keepOpen={() => true}>
-        <div className="grid h-40 place-items-center">
-          <Spinner />
-        </div>
-      </Modal>
-    );
-  }
-  return <ComposeForm title={title} form={form} setForm={setForm} orig={orig} initial={initial ?? form} />;
+  return <ComposeForm title={title} init={init} />;
 }
 
-function ComposeForm({ title, form, setForm, orig, initial }: { title: string; form: Form; setForm: (f: Form) => void; orig: MailMessage | null; initial: Form }): ReactNode {
+function ComposeForm({ title, init }: { title: string; init: Init }): ReactNode {
+  const [form, setForm] = useState<Form>(init.form);
   const accountIds = useMail((s) => s.accountIds);
   const accountEmail = useMail((s) => s.accounts[form.accountId]?.email ?? '');
   const [showCc, setShowCc] = useState(form.cc.length > 0);
   const [showBcc, setShowBcc] = useState(form.bcc.length > 0);
   const [busy, setBusy] = useState<'send' | 'save' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attachError, setAttachError] = useState(false);
   const [asking, setAsking] = useState(false);
-  const [over, setOver] = useState(false);
+  // The editor is uncontrolled: one flag when it is first edited (no re-render per keystroke).
+  const [edited, setEdited] = useState(false);
   const toRef = useRef<HTMLInputElement>(null);
-  const textRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   // Autocomplete pool, taken once: the addresses on screen and the members' known emails.
   const pool = useMemo(() => {
     const seen = seenAddresses(useMail.getState());
@@ -158,28 +171,75 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
   }, []);
   const patch = (p: Partial<Form>): void => {
     setError(null);
-    setForm({ ...form, ...p });
+    setForm((f) => ({ ...f, ...p }));
   };
-  const dirty = !sameForm(form, initial);
-  const size = attachmentsSize(form.attachments);
+  const dirty = edited || !sameForm(form, init.form);
 
-  // Focus on open (the sheet's initialFocus, not the «×» with its tooltip): «Кому» when empty (new /
-  // forward), else the start of the text (a reply, the signature below the caret).
+  // Focus on open: «Кому» when empty (new / forward), else the editor — its caret on the top line.
   const [focusTo] = useState(() => form.to.length === 0);
+
+  // Latest form / adder for the native drop listener and the editor's paste (registered once).
+  const formRef = useRef(form);
+  useLayoutEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   const addFiles = async (files: FileList | File[]): Promise<void> => {
     const list = Array.from(files);
     if (!list.length) return;
-    const total = size + list.reduce((s, f) => s + f.size, 0);
-    if (total > MAX_ATTACH_BYTES) {
-      setError(t('mbox.tooBig'));
+    if (!fitsAttachments(formRef.current.attachments, list.map((f) => f.size)).ok) {
+      setAttachError(true);
       return;
     }
+    setAttachError(false);
     const read = await Promise.all(
       list.map(async (f, i): Promise<MailDraftAttachment> => ({ kind: 'file', id: `f${Date.now()}-${i}`, name: f.name, mime: f.type || 'application/octet-stream', size: f.size, data: new Uint8Array(await f.arrayBuffer()) })),
     );
-    setForm({ ...form, attachments: [...form.attachments, ...read] });
+    setForm((f) => ({ ...f, attachments: [...f.attachments, ...read] }));
   };
+  const addFilesRef = useRef(addFiles);
+  useLayoutEffect(() => {
+    addFilesRef.current = addFiles;
+  });
+  const onPasteFiles = useCallback((files: File[]) => void addFilesRef.current(files), []);
+
+  // Files dropped anywhere on the sheet (the dialog, footer included): captured before the editor
+  // could insert them; the sheet's outline shows the drop target.
+  useEffect(() => {
+    const sheet = boxRef.current?.closest<HTMLElement>('[role="dialog"]');
+    if (!sheet) return;
+    const hasFiles = (e: DragEvent): boolean => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+    const mark = (on: boolean): void => {
+      sheet.style.outline = on ? '2px dashed var(--color-accent)' : '';
+      sheet.style.outlineOffset = on ? '-6px' : '';
+    };
+    const over = (e: DragEvent): void => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      mark(true);
+    };
+    const leave = (e: DragEvent): void => {
+      if (!(e.relatedTarget instanceof Node) || !sheet.contains(e.relatedTarget)) mark(false);
+    };
+    const drop = (e: DragEvent): void => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      mark(false);
+      if (e.dataTransfer?.files.length) void addFilesRef.current(e.dataTransfer.files);
+    };
+    sheet.addEventListener('dragover', over, true);
+    sheet.addEventListener('dragleave', leave, true);
+    sheet.addEventListener('drop', drop, true);
+    return () => {
+      sheet.removeEventListener('dragover', over, true);
+      sheet.removeEventListener('dragleave', leave, true);
+      sheet.removeEventListener('drop', drop, true);
+      mark(false);
+    };
+  }, []);
+
+  const editorHtml = (): string => editorRef.current?.innerHTML ?? '';
 
   const send = async (): Promise<void> => {
     const api = mailApi();
@@ -189,13 +249,14 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
       toRef.current?.focus();
       return;
     }
-    if (size > MAX_ATTACH_BYTES) {
-      setError(t('mbox.tooBig'));
+    const draft = draftFrom(form, editorHtml(), init.inline, true);
+    if (attachmentsSize(draft.attachments) > MAX_ATTACH_BYTES) {
+      setAttachError(true);
       return;
     }
     setBusy('send');
     try {
-      await api.compose.send(toDraft(form));
+      await api.compose.send(draft);
       toast.info(t('mbox.sending'));
       useMailUi.getState().closeCompose();
     } catch (e) {
@@ -209,7 +270,7 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
     if (!api) return;
     setBusy('save');
     try {
-      await api.drafts.save(toDraft(form));
+      await api.drafts.save(draftFrom(form, editorHtml(), init.inline, false));
       toast.success(t('mbox.draftSaved'));
       useMailUi.getState().closeCompose();
     } catch (e) {
@@ -225,13 +286,6 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
     else useMailUi.getState().closeCompose();
   };
 
-  const onDrop = (e: DragEvent): void => {
-    if (!e.dataTransfer.files.length) return;
-    e.preventDefault();
-    setOver(false);
-    void addFiles(e.dataTransfer.files);
-  };
-
   return (
     <>
       <Modal
@@ -241,13 +295,19 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
         medium
         nonModal
         keepOpen={() => true}
-        initialFocus={focusTo ? toRef : textRef}
+        initialFocus={focusTo ? toRef : editorRef}
         footer={
           <>
-            <input ref={fileRef} type="file" multiple hidden onChange={(e) => {
-              if (e.target.files) void addFiles(e.target.files);
-              e.target.value = '';
-            }} />
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files) void addFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
             <Button variant="ghost" className="mr-auto" onClick={() => fileRef.current?.click()} data-testid="compose-attach">
               <Paperclip className="size-4" aria-hidden />
               {t('mbox.attach')}
@@ -261,33 +321,20 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
         }
       >
         <div
-          className={cx('relative flex flex-col', over && 'rounded-[8px] outline-dashed outline-2 outline-offset-4 outline-[var(--color-accent)]')}
+          ref={boxRef}
+          className="relative flex flex-col"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void send();
             }
           }}
-          onDragOver={(e) => {
-            if (!e.dataTransfer.types.includes('Files')) return;
-            e.preventDefault();
-            setOver(true);
-          }}
-          onDragLeave={(e) => {
-            if (e.currentTarget === e.target) setOver(false);
-          }}
-          onDrop={onDrop}
           data-testid="compose-sheet"
         >
           {accountIds.length > 1 ? (
             <label className="flex min-h-10 items-center gap-1 border-b border-line py-1.5">
               <span className="w-16 shrink-0 text-body text-muted">{t('mbox.from')}</span>
-              <Select
-                value={form.accountId}
-                onChange={(e) => patch({ accountId: e.target.value })}
-                aria-label={t('mbox.from')}
-                className="w-auto max-w-full border-0 bg-transparent shadow-none"
-              >
+              <Select value={form.accountId} onChange={(e) => patch({ accountId: e.target.value })} aria-label={t('mbox.from')} className="w-auto max-w-full border-0 bg-transparent shadow-none">
                 {accountIds.map((id) => (
                   <AccountOption key={id} id={id} />
                 ))}
@@ -323,34 +370,15 @@ function ComposeForm({ title, form, setForm, orig, initial }: { title: string; f
             <Input value={form.subject} onChange={(e) => patch({ subject: e.target.value })} aria-label={t('mbox.subject')} className="h-6 border-0 bg-transparent px-0 shadow-none" data-testid="compose-subject" />
           </label>
           {accountIds.length <= 1 && accountEmail ? <span className="sr-only">{t('mbox.fromLine', { email: accountEmail })}</span> : null}
-          <textarea
-            ref={textRef}
-            value={form.text}
-            onChange={(e) => patch({ text: e.target.value })}
-            aria-label={t('mbox.editor')}
-            spellCheck
-            className="selectable mt-3 min-h-[200px] w-full resize-y bg-transparent text-[14px] leading-[1.5] text-fg outline-none"
-            data-testid="compose-text"
-            onFocus={(e) => {
-              // The first focus lands before the signature, not after it.
-              if (e.currentTarget.selectionStart === e.currentTarget.value.length && e.currentTarget.value.startsWith('\n')) e.currentTarget.setSelectionRange(0, 0);
+          <ComposeAttachments
+            list={form.attachments}
+            overLimit={attachError}
+            onRemove={(id) => {
+              setAttachError(false);
+              setForm((f) => ({ ...f, attachments: f.attachments.filter((x) => x.id !== id) }));
             }}
           />
-          {form.ref?.quote && orig ? <QuotePreview orig={orig} kind={form.ref.kind} onRemove={() => form.ref && patch({ ref: { ...form.ref, quote: false } })} /> : null}
-          {form.attachments.length ? (
-            <ul className="mt-3 flex flex-wrap gap-1.5" aria-label={t('mbox.attach')}>
-              {form.attachments.map((a) => (
-                <li key={a.id} className="inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-full bg-hover pl-2.5 pr-1 text-caption text-fg">
-                  <Paperclip className="size-3 shrink-0 text-muted" aria-hidden />
-                  <span className="truncate">{a.name}</span>
-                  <span className="shrink-0 text-muted">{fmt.size(a.size)}</span>
-                  <IconButton label={t('mbox.removeAttachment', { name: a.name })} size="sm" tip={false} className="size-5" onClick={() => patch({ attachments: form.attachments.filter((x) => x.id !== a.id) })}>
-                    <X className="size-3" />
-                  </IconButton>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <ComposeEditor initialHtml={init.html} editorRef={editorRef} onEdited={setEdited} onFiles={onPasteFiles} />
           {error ? (
             <p className="mt-3 text-caption text-danger-text" role="alert" data-testid="compose-error">
               {error}
@@ -388,31 +416,4 @@ function AccountOption({ id }: { id: string }): ReactNode {
   const a = useMail((s) => s.accounts[id]);
   if (!a) return null;
   return <option value={id}>{a.name ? `${a.name} <${a.email}>` : a.email}</option>;
-}
-
-/** The original as the engine will quote it (§6): `> ` lines under «date, name:», or the forward header. */
-function QuotePreview({ orig, kind, onRemove }: { orig: MailMessage; kind: 'reply' | 'replyAll' | 'forward'; onRemove: () => void }): ReactNode {
-  const text = orig.text ?? orig.snippet;
-  const head =
-    kind === 'forward'
-      ? [
-          t('mbox.fwdHeader'),
-          `${t('mbox.from')}: ${addressFull(orig.from)}`,
-          `${t('mbox.date')}: ${mailHeaderTime(orig.date)}`,
-          `${t('mbox.subject')}: ${orig.subject}`,
-          `${t('mbox.to')}: ${orig.to.map(addressFull).join(', ')}`,
-        ].join('\n')
-      : t('mbox.quoteWrote', { date: mailHeaderTime(orig.date), name: addressLabel(orig.from) });
-  return (
-    <div className="group relative mt-3 rounded-[8px] bg-hover px-3 py-2" data-testid="compose-quote">
-      <IconButton label={t('mbox.removeQuote')} size="sm" className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={onRemove}>
-        <X className="size-3.5" />
-      </IconButton>
-      <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-caption text-muted">
-        {head}
-        {'\n'}
-        {kind === 'forward' ? `\n${text}` : quoteLines(text)}
-      </pre>
-    </div>
-  );
 }

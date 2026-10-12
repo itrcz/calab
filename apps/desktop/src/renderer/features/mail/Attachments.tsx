@@ -1,6 +1,6 @@
 import { Download, FileArchive, FileImage, FileSpreadsheet, FileText, File as FileIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { MailAttachment, MailMessage } from '../../../shared/mail';
+import type { MailMessage } from '../../../shared/mail';
 import { plural, t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import type { LightboxImage } from '../../lib/lightbox';
@@ -10,12 +10,12 @@ import { useUi } from '../../stores/ui';
 /** Image types the strip previews and the lightbox opens (the protocol serves `image/*` inline only, §10). */
 const PREVIEW = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i;
 
-function iconOf(a: MailAttachment): ReactNode {
-  const cls = 'size-5 shrink-0 text-muted';
-  if (a.mime.startsWith('image/')) return <FileImage className={cls} aria-hidden />;
-  if (/zip|rar|7z|tar|gzip/.test(a.mime)) return <FileArchive className={cls} aria-hidden />;
-  if (/sheet|excel|csv/.test(a.mime)) return <FileSpreadsheet className={cls} aria-hidden />;
-  if (/pdf|word|text|document|rtf/.test(a.mime)) return <FileText className={cls} aria-hidden />;
+/** A file-type icon by MIME (the reader's tiles and the composer's chips). */
+export function fileIcon(mime: string, cls = 'size-5 shrink-0 text-muted'): ReactNode {
+  if (mime.startsWith('image/')) return <FileImage className={cls} aria-hidden />;
+  if (/zip|rar|7z|tar|gzip/.test(mime)) return <FileArchive className={cls} aria-hidden />;
+  if (/sheet|excel|csv/.test(mime)) return <FileSpreadsheet className={cls} aria-hidden />;
+  if (/pdf|word|text|document|rtf/.test(mime)) return <FileText className={cls} aria-hidden />;
   return <FileIcon className={cls} aria-hidden />;
 }
 
@@ -63,7 +63,7 @@ export function AttachmentStrip({ message }: { message: MailMessage }): ReactNod
                   aria-label={`${a.name}, ${fmt.size(a.size)} — ${t('mbox.download')}`}
                   data-testid="mail-attachment-download"
                 >
-                  {iconOf(a)}
+                  {fileIcon(a.mime)}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-caption font-medium text-fg">{a.name}</span>
                     <span className="text-micro text-muted">{fmt.size(a.size)}</span>

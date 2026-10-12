@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forwardSubject, initialText, quoteLines, replyRecipients, replySubject, resolveLogin, suggest } from './compose';
+import { fitsAttachments, forwardSubject, MAX_ATTACH_BYTES, replyRecipients, replySubject, resolveLogin, suggest } from './compose';
 import { mailInitials, mailListTime, providerOf } from './format';
 
 describe('mailListTime (Apple Mail)', () => {
@@ -55,10 +55,11 @@ describe('reply / forward prefill', () => {
     expect(forwardSubject('Plan')).toBe('Fwd: Plan');
     expect(forwardSubject('Fw: Plan')).toBe('Fw: Plan');
   });
-  it('signature and quote', () => {
-    expect(initialText('— Анна')).toBe('\n\n-- \n— Анна');
-    expect(initialText('')).toBe('');
-    expect(quoteLines('a\n> b')).toBe('> a\n>> b');
+  it('attachments fit 25 MB in total, not a byte more', () => {
+    const have = [{ kind: 'message' as const, id: 'a', name: 'a.pdf', mime: 'application/pdf', size: MAX_ATTACH_BYTES - 10, messageId: 'm', attachmentId: '1' }];
+    expect(fitsAttachments(have, [10])).toEqual({ total: MAX_ATTACH_BYTES, ok: true });
+    expect(fitsAttachments(have, [5, 6]).ok).toBe(false);
+    expect(fitsAttachments([], [1, 2]).total).toBe(3);
   });
   it('suggests by name or address prefix, skipping chosen ones', () => {
     const pool = [
