@@ -589,13 +589,14 @@ export class MailStore {
    * One page of thread rows in a scope: per thread the newest message inside the scope, newest
    * first, keyset-paged by (date, id). `rowFolder` overrides the row's folderId (virtual folders).
    */
-  listThreads(scope: Scope, opts: { before?: MailCursor; limit: number; unreadOnly?: boolean; rowFolder?: string; match?: string }): MailThreadRow[] {
+  listThreads(scope: Scope, opts: { before?: MailCursor; limit: number; unreadOnly?: boolean; flaggedOnly?: boolean; rowFolder?: string; match?: string }): MailThreadRow[] {
     const p = (a: string): { sql: string; args: SQLInputValue[] } => scopeSql(a, scope);
     const m = p('m');
     const n = p('n');
     const u = p('u');
     const f = p('f');
     const a = p('x');
+    const g = p('g');
     const args: SQLInputValue[] = [];
     let where = m.sql;
     args.push(...m.args);
@@ -615,6 +616,10 @@ export class MailStore {
     if (opts.unreadOnly) {
       where += ` AND EXISTS (SELECT 1 FROM messages u WHERE ${u.sql} AND u.thread_id = m.thread_id AND u.seen = 0)`;
       args.push(...u.args);
+    }
+    if (opts.flaggedOnly) {
+      where += ` AND EXISTS (SELECT 1 FROM messages g WHERE ${g.sql} AND g.thread_id = m.thread_id AND g.flagged = 1)`;
+      args.push(...g.args);
     }
     const sql = `${cte}SELECT m.*,
         (SELECT COUNT(DISTINCT CASE WHEN c.message_id_hdr = '' THEN c.id ELSE c.message_id_hdr END) FROM messages c WHERE c.thread_id = m.thread_id) AS cnt,

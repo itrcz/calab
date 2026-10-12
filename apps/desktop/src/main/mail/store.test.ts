@@ -130,6 +130,9 @@ describe('thread rows and paging', () => {
     const p2 = s.listThreads({ kind: 'folder', row: inbox }, { limit: 3, before: { date: last.date, id: last.messageId } });
     expect(p2.map((r) => r.subject)).toEqual(['Solo 2', 'Solo 3', 'Solo 4']);
     expect(s.listThreads({ kind: 'folder', row: inbox }, { limit: 50, unreadOnly: true })).toHaveLength(6);
+    const flaggedOnly = s.listThreads({ kind: 'folder', row: inbox }, { limit: 50, flaggedOnly: true });
+    expect(flaggedOnly.map((r) => r.subject)).toEqual(['Hello']);
+    expect(s.listThreads({ kind: 'folder', row: inbox }, { limit: 50, flaggedOnly: true, unreadOnly: true })).toHaveLength(1);
     const starred = s.listThreads({ kind: 'flagged', exclude: [] }, { limit: 10, rowFolder: `${ACC}.starred` });
     expect(starred).toHaveLength(1);
     expect(starred[0]?.folderId).toBe(`${ACC}.starred`);

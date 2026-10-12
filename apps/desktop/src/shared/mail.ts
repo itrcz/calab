@@ -210,6 +210,8 @@ export interface MailListQuery {
   limit: number;
   /** Only threads with at least one unread message in this folder. */
   unreadOnly?: boolean;
+  /** Only threads with at least one flagged message in this folder (combines with `unreadOnly`). */
+  flaggedOnly?: boolean;
 }
 
 export interface MailSearchQuery {
@@ -349,6 +351,12 @@ export interface MailDraft {
   subject: string;
   /** The body as typed (plain text; the engine adds the HTML part with autolinks, §6). */
   text: string;
+  /**
+   * The body as edited in the composer (HTML, the quoted original included, sanitized by the
+   * renderer). When set the engine sends it as the `text/html` part as is, `text` as `text/plain`,
+   * and does not append the quote (`ref.quote` is ignored). Absent = the HTML is derived from `text`.
+   */
+  html?: string;
   /**
    * The message this one answers / forwards. `reply` / `replyAll` set In-Reply-To / References and
    * `\Answered` on the original after sending; `quote` appends the original (blockquote in HTML,

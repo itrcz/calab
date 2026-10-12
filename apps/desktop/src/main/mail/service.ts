@@ -132,6 +132,8 @@ function draftOf(v: unknown): MailDraft {
     attachments,
   };
   if (isStr(v['id'], 60)) d.id = v['id'];
+  // The composer's HTML (quote included); the text/html part as is (the renderer sanitized it).
+  if (isStr(v['html'], 10_000_000) && v['html'].trim()) d.html = v['html'];
   const ref = v['ref'];
   if (isObj(ref)) {
     if (!isStr(ref['messageId'], 100) || !['reply', 'replyAll', 'forward'].includes(String(ref['kind']))) throw invalid('bad ref');
@@ -464,7 +466,7 @@ export class MailEngine {
       const r = this.resolveFolder(acc, ref);
       if (!r || r.virtual) continue;
       if (r.row !== undefined) acc.sync.touchFolder(r.row);
-      rows.push(...acc.store.listThreads(r.scope, { limit, ...(before ? { before } : {}), ...(q['unreadOnly'] === true ? { unreadOnly: true } : {}), ...(r.rowFolder ? { rowFolder: r.rowFolder } : {}) }));
+      rows.push(...acc.store.listThreads(r.scope, { limit, ...(before ? { before } : {}), ...(q['unreadOnly'] === true ? { unreadOnly: true } : {}), ...(q['flaggedOnly'] === true ? { flaggedOnly: true } : {}), ...(r.rowFolder ? { rowFolder: r.rowFolder } : {}) }));
     }
     return this.page(rows, limit);
   }
@@ -560,7 +562,7 @@ export class MailEngine {
           inReplyTo = orig.messageIdHeader;
           references = [...orig.references, orig.messageIdHeader].filter(Boolean).slice(-30);
         }
-        if (d.ref.quote) quote = { kind: d.ref.kind, from: orig.from, to: orig.to, date: orig.date, subject: orig.subject, text: orig.text ?? '' };
+        if (d.ref.quote && d.html === undefined) quote = { kind: d.ref.kind, from: orig.from, to: orig.to, date: orig.date, subject: orig.subject, text: orig.text ?? '' };
       }
     }
     const files: Array<{ name: string; mime: string; data: Uint8Array }> = [];
@@ -576,7 +578,7 @@ export class MailEngine {
       from: { name: acc.cfg.name, address: acc.cfg.email },
       draft: d,
       messageIdHdr,
-      bodies: buildBodies(d.text, quote),
+      bodies: d.html !== undefined ? { text: d.text, html: d.html } : buildBodies(d.text, quote),
       inReplyTo,
       references,
       attachments: files,
