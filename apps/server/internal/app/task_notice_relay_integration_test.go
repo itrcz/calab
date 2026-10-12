@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // Task notice relay to a bot the user chose (ADR-0090).
@@ -237,5 +238,87 @@ func TestTaskNoticeRelay(t *testing.T) {
 	bob.must(200, "GET", "/api/me", nil, &gm)
 	if got := gm.GetMe().GetSettings().GetTaskNotifyBots(); len(got) != 0 {
 		t.Fatalf("a deleted bot stays in task_notify_bots: %v", got)
+	}
+}
+
+// TestTaskNoticeRelayAccess (second review of ADR-0090): the relay follows the user's own
+// visibility and the bot's standing at send time. A private board the bot cannot view is
+// relayed while the user sees it; once the user loses access, nothing is. A bot blocked by the
+// user and a bot that left the task's workspace (still in another one with the user) get
+// nothing, while the id stays in the list.
+func TestTaskNoticeRelayAccess(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	opsa := createBot(t, o, wid, "Opsa")
+	setTaskNotifyBots(t, bob.client, 200, opsa.id)
+	gOpsa, gBob := dialGW(t), dialGW(t)
+	gOpsa.identify(opsa.token)
+	gBob.identify(bob.token)
+	status := v1.TaskNoticeKind_TASK_NOTICE_KIND_STATUS
+	startedOf := func(b *v1.Board) string {
+		for _, st := range b.GetStatuses() {
+			if st.GetType() == v1.BoardStatusType_BOARD_STATUS_TYPE_STARTED {
+				return st.GetId()
+			}
+		}
+		t.Fatal("no STARTED status")
+		return ""
+	}
+
+	// A private board: bob may view it, the bot may not (no VIEW_BOARD): relayed (ADR-0090 §4).
+	priv := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "HR", Key: "HRR", IsPrivate: true}, 201)
+	setBoardPerms(o, priv.GetId(), 200, userOv(bob.id, perm.ViewBoard, 0))
+	opsa.must(404, "GET", "/api/boards/"+priv.GetId(), nil, nil)
+	started := startedOf(priv)
+	// bob subscribes (not an assignee: an assignee keeps the task by task-scoped access).
+	secret := createTask(t, o, priv.GetId(), &v1.CreateTaskRequest{Title: "Оффер"}, 201)
+	bob.must(200, "PUT", "/api/tasks/"+secret.GetId()+"/subscription", &v1.SetTaskSubscriptionRequest{}, nil)
+	patchTask(t, o, secret.GetId(), &v1.UpdateTaskRequest{StatusId: &started}, 200)
+	gBob.wait("bob's STATUS on the private board", noticeOf(secret.GetId(), status))
+	gOpsa.wait("TASK_NOTICE of the private board", relayOf(bob.id, secret.GetId(), status))
+
+	// bob loses access to the board (still subscribed): no notice for him, nothing relayed.
+	setBoardPerms(o, priv.GetId(), 200)
+	todo := priv.GetStatuses()[0].GetId()
+	patchTask(t, o, secret.GetId(), &v1.UpdateTaskRequest{StatusId: &todo}, 200)
+	gBob.quiet("a notice of a board bob no longer sees", 400*time.Millisecond, noticeOf(secret.GetId(), status))
+	gOpsa.quiet("a relay after bob lost access", 400*time.Millisecond, anyRelay)
+
+	// A public board for the rest.
+	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Ops", Key: "OPR"}, 201)
+	started = startedOf(b)
+	bobsTask := func(boardID, title string) *v1.Task {
+		return createTask(t, o, boardID, &v1.CreateTaskRequest{Title: title, Assignees: []*v1.TaskAssigneeInput{{UserId: bob.id, IsLead: true}}}, 201)
+	}
+
+	// bob blocks the bot: nothing; unblocked: relayed again.
+	bob.must(204, "POST", "/api/me/blocked-bots/"+opsa.id, nil, nil)
+	blocked := bobsTask(b.GetId(), "Блок")
+	patchTask(t, o, blocked.GetId(), &v1.UpdateTaskRequest{StatusId: &started}, 200)
+	gBob.wait("bob's STATUS", noticeOf(blocked.GetId(), status))
+	gOpsa.quiet("a relay to a blocked bot", 400*time.Millisecond, anyRelay)
+	bob.must(204, "DELETE", "/api/me/blocked-bots/"+opsa.id, nil, nil)
+
+	// The bot is added to a second workspace of bob's and removed from it again: relayed while
+	// a member, then not — while it stays chosen (it still shares the first workspace).
+	ws2 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	bob.must(200, "POST", "/api/invites/"+invite(t, o, ws2.GetId())+"/join", nil, nil)
+	o.must(201, "POST", "/api/workspaces/"+ws2.GetId()+"/bots/add", &v1.AddBotRequest{BotUserId: opsa.id}, nil)
+	b2 := createBoard(t, o, ws2.GetId(), &v1.CreateBoardRequest{Name: "Second", Key: "SND"}, 201)
+	started2 := startedOf(b2)
+	in := bobsTask(b2.GetId(), "Внутри")
+	patchTask(t, o, in.GetId(), &v1.UpdateTaskRequest{StatusId: &started2}, 200)
+	gOpsa.wait("TASK_NOTICE in the second workspace", relayOf(bob.id, in.GetId(), status))
+	o.must(204, "DELETE", "/api/workspaces/"+ws2.GetId()+"/bots/"+opsa.id, nil, nil)
+	left := bobsTask(b2.GetId(), "Ушёл")
+	patchTask(t, o, left.GetId(), &v1.UpdateTaskRequest{StatusId: &started2}, 200)
+	gBob.wait("bob's STATUS in the second workspace", noticeOf(left.GetId(), status))
+	gOpsa.quiet("a relay to a bot that left the workspace", 400*time.Millisecond, func(e *v1.DispatchEvent) bool {
+		return e.GetTaskNotice().GetTask().GetId() == left.GetId()
+	})
+	var gm v1.GetMeResponse
+	bob.must(200, "GET", "/api/me", nil, &gm)
+	if got := gm.GetMe().GetSettings().GetTaskNotifyBots(); !slices.Equal(got, []string{opsa.id}) {
+		t.Fatalf("task_notify_bots after the bot left a workspace: %v", got)
 	}
 }
