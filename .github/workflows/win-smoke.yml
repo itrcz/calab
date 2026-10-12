@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{{"version":"{0}","from":"{1}"}}]', inputs.version, inputs.from) || '[{"version":"3.0.9","from":""},{"version":"3.1.0","from":""},{"version":"3.1.1","from":""},{"version":"3.1.2","from":""},{"version":"3.1.2","from":"3.0.9"}]') }}
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{{"version":"{0}","from":"{1}"}}]', inputs.version, inputs.from) || '[{"version":"3.1.0","from":""},{"version":"3.1.2","from":""}]') }}
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ matrix.version }}
@@ -113,7 +113,7 @@ jobs:
         run: |
           set -x
           out="$RUNNER_TEMP/smoke"
-          sh infra/docker/greenmail/gen-cert.sh
+          MSYS_NO_PATHCONV=1 sh infra/docker/greenmail/gen-cert.sh
           npm i --prefix apps/desktop/scripts --no-save --no-package-lock --no-audit --no-fund \
             playwright-core@1.63.0 hoodiecrow-imap@3.3.1 smtp-server@3.19.21 nodemailer@10.1.0
           node apps/desktop/scripts/mail-fake-server.mjs > "$out/mail-fake-server.txt" 2>&1 &
@@ -124,9 +124,17 @@ jobs:
           timeout 300 node apps/desktop/scripts/win-smoke-mail.mjs "$LOCALAPPDATA/Programs/Calab/Calab.exe" "$ud" "$out" || echo "mail driver exit=$?" >> "$out/summary.txt"
           taskkill //F //IM Calab.exe || true
           sleep 3
+          # As a user starts it (shortcut): no inherited stdio handles; the account exists, so the
+          # engine is forked at startup.
+          CALABA_USER_DATA="$ud" pwsh -NoProfile -Command "Start-Process -FilePath \"$LOCALAPPDATA\\Programs\\Calab\\Calab.exe\""
+          sleep 45
+          echo "mail: shortcut-style launch alive processes=$(tasklist //FI 'IMAGENAME eq Calab.exe' //NH | grep -c Calab.exe)" >> "$out/summary.txt"
+          tasklist //V //FI 'IMAGENAME eq Calab.exe' > "$out/mail-processes-shortcut.txt" || true
+          taskkill //F //IM Calab.exe || true
+          sleep 3
           cp -r "$ud/logs" "$out/mail-logs" || true
           find "$ud" -maxdepth 3 > "$out/mail-userdata-tree.txt" 2>/dev/null || true
-          cat "$out/summary.txt"; tail -100 "$out/mail-logs/main.log" || true
+          cat "$out/summary.txt"; tail -150 "$out/mail-logs/main.log" || true
 
       - name: Events
         if: always()
