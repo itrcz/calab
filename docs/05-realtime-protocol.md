@@ -122,6 +122,11 @@ ROOM_ADMISSION_DECIDED        { admission } — ADMITTED | DECLINED (no_answer �
 BOARD_CREATE / BOARD_UPDATE   { board } — доска (ADR-0042) с Board.permissions получателя; UPDATE — и статусы, лейблы, вехи, общие виды, доступ
 BOARD_DELETE                  { workspace_id, board_id, purged } — в архив (purged false) или удалена; или доска перестала быть видна
 TASK_CREATE / TASK_UPDATE     { task } — полная задача без ленты; TASK_UPDATE в user:<id> — с viewer_state (subscribed, muted, unread) и notice
+                              notice.kind (ADR-0089) += UNASSIGNED, WATCHER_ADDED, DUE_SOON, OVERDUE (адресные; actor_id пуст у DUE_SOON / OVERDUE),
+                              DUE_CHANGED, PRIORITY, MILESTONE, MOVED, EDITED, ATTACHMENT, ARCHIVED (подписчикам); notice.due_on "YYYY-MM-DD"
+                              (DUE_SOON / OVERDUE / DUE_CHANGED, "" = срок снят), notice.days_left (DUE_SOON 1 / 0, OVERDUE −1), notice.text —
+                              детали (MILESTONE — имя вехи, MOVED — имя доски, EDITED — title | description, ATTACHMENT — имя файла).
+                              Неизвестный клиенту вид показывается как «Задача обновлена».
 TASK_DELETE                   { workspace_id, board_id, task_id, purged } — архив задачи (или переезд на другую доску)
 TASK_ACTIVITY                 { workspace_id, activity } — одна запись журнала задачи
 BOARD_CATEGORY_CREATE / UPDATE { category } — категория досок (ADR-0058; 87/88), всем участникам пространства, кроме гостей; в READY — `WorkspaceSnapshot.board_categories`; перенос — UPDATE каждой сдвинутой
