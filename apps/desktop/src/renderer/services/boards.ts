@@ -51,7 +51,7 @@ import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { platform } from '../platform';
 import { useAutomations } from '../stores/automations';
-import { checklistsOf, useBoards, workspaceBoards, workspaceCategories } from '../stores/boards';
+import { checklistsOf, unreadIds, useBoards, workspaceBoards, workspaceCategories, type LastNotice } from '../stores/boards';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
 import { useRooms } from '../stores/rooms';
@@ -179,7 +179,10 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       return true;
     case 'taskUpdate':
       if (ev.value.task) onTask(ev.value.task);
-      if (ev.value.notice) notifyTask(ev.value);
+      if (ev.value.notice) {
+        rememberNotice(ev.value);
+        notifyTask(ev.value);
+      }
       return true;
     case 'taskDelete': {
       // Purged, or a scoped viewer lost the card (ADR-0059: TASK_DELETE without `purged` = the card is gone for him).
@@ -214,13 +217,61 @@ function onTask(task: Task): void {
   const s = useBoards.getState();
   // Tasks of boards not loaded are kept only when something shows them (panel, my tasks, a
   // subtask list): otherwise the store would grow with every event of every board.
-  if (s.load[task.boardId] !== 'ready' && !s.tasks[task.id]) {
+  // An unread task is kept: «Непрочитанное» shows it (the store grows by the unread set only).
+  if (s.load[task.boardId] !== 'ready' && !s.tasks[task.id] && !(task.viewerState && countsUnread(task))) {
     const ids = Object.entries(s.unread).filter(([, ws]) => ws === task.workspaceId).map(([id]) => id);
     if (task.viewerState && countsUnread(task)) s.setUnread(task.workspaceId, [...ids, task.id]);
     else if (task.completedAt && s.unread[task.id]) s.setUnread(task.workspaceId, ids.filter((id) => id !== task.id));
     return;
   }
   s.upsertTask(task);
+}
+
+/** The task's last notice (not my own action): why «Непрочитанное» lists it. */
+function rememberNotice(u: TaskUpdate): void {
+  const task = u.task;
+  const n = u.notice;
+  if (!task || !n || n.actorId === myUserId()) return;
+  useBoards.getState().setNotice(task.id, { kind: n.kind, actorId: n.actorId, text: n.text, reRequested: n.reRequested, dueOn: n.dueOn, daysLeft: n.daysLeft, at: Date.now() });
+}
+
+/**
+ * «Непрочитанное»'s reason line: the text of the task's last notice this session; '' when none
+ * arrived live (READY carries only the ids — the row falls back to «Есть новое»). A primitive.
+ */
+export function unreadReason(s: { tasks: Readonly<Record<string, Task>>; notices: Readonly<Record<string, LastNotice>> }, taskId: string): string {
+  const task = s.tasks[taskId];
+  const n = s.notices[taskId];
+  return task && n ? noticeText(task, n) : '';
+}
+
+const unreadInflight = new Set<string>();
+
+/**
+ * «Непрочитанное»: the unread tasks not in the store yet (READY gives only their ids) come one by
+ * one (GET /tasks/{id}, 4 at a time, ≤ 100) — no board is loaded for them. Gone ones (404) leave
+ * the unread set.
+ */
+export async function ensureUnreadTasks(workspaceId: string): Promise<void> {
+  const s = useBoards.getState();
+  const missing = unreadIds(s, workspaceId).filter((id) => !s.tasks[id] && !unreadInflight.has(id)).slice(0, 100);
+  for (const id of missing) unreadInflight.add(id);
+  const next = async (): Promise<void> => {
+    for (let id = missing.shift(); id; id = missing.shift()) {
+      try {
+        const r = await boardsApi.tasks.get(id);
+        if (r.task) useBoards.getState().upsertTask(r.task);
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+          const st = useBoards.getState();
+          st.setUnread(workspaceId, unreadIds(st, workspaceId).filter((x) => x !== id));
+        } else log.warn('unread task failed', e);
+      } finally {
+        unreadInflight.delete(id);
+      }
+    }
+  };
+  await Promise.all([next(), next(), next(), next()]);
 }
 
 /** A task notification (TaskUpdate.notice): a system notification unless I am looking at it. */
@@ -407,12 +458,17 @@ async function markTaskRead(task: Task): Promise<void> {
   }
 }
 
-/** «Мои задачи» (GET /me/tasks). */
-export async function loadMyTasks(workspaceId: string, scope: TaskScope): Promise<void> {
-  const key = `${workspaceId}|${scope}`;
+/** The «Мои задачи» list key: workspace, scope and whether closed tasks are fetched too. */
+export function myTasksKey(workspaceId: string, scope: TaskScope, open: boolean): string {
+  return `${workspaceId}|${scope}${open ? '' : '|all'}`;
+}
+
+/** «Мои задачи» (GET /me/tasks); `open` false also brings the completed / cancelled ones. */
+export async function loadMyTasks(workspaceId: string, scope: TaskScope, open = true): Promise<void> {
+  const key = myTasksKey(workspaceId, scope, open);
   useTaskDetails.setState((s) => ({ mine: { ...s.mine, [key]: { ids: s.mine[key]?.ids ?? [], loading: true } } }));
   try {
-    const r = await boardsApi.tasks.mine(workspaceId, scope, true);
+    const r = await boardsApi.tasks.mine(workspaceId, scope, open);
     useBoards.getState().upsertTasks(r.tasks);
     useTaskDetails.setState((s) => ({ mine: { ...s.mine, [key]: { ids: r.tasks.map((x) => x.id), loading: false } } }));
   } catch (e) {

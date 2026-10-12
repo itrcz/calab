@@ -60,10 +60,12 @@ describe('gateway events 75–81 → the store', () => {
     applyBoardEvent(ev({ event: { case: 'taskActivity', value: { workspaceId: 'w1', activity: create(TaskActivitySchema, { id: 'x1', taskId: 'a', kind: 'status' }) } } }));
     applyBoardEvent(ev({ event: { case: 'taskActivity', value: { workspaceId: 'w1', activity: create(TaskActivitySchema, { id: 'x1', taskId: 'a', kind: 'status' }) } } }));
     expect(useBoards.getState().activity['a']).toHaveLength(1);
-    // A task of a board never opened is not kept (only its unread mark).
+    // A task of a board never opened is kept only while unread («Непрочитанное» lists it).
     applyBoardEvent(ev({ event: { case: 'taskUpdate', value: { task: create(TaskSchema, { id: 'z', boardId: 'b9', workspaceId: 'w1', unread: true, viewerState: true }) } } }));
-    expect(useBoards.getState().tasks['z']).toBeUndefined();
+    expect(useBoards.getState().tasks['z']?.id).toBe('z');
     expect(useBoards.getState().unread['z']).toBe('w1');
+    applyBoardEvent(ev({ event: { case: 'taskUpdate', value: { task: create(TaskSchema, { id: 'q', boardId: 'b9', workspaceId: 'w1' }) } } }));
+    expect(useBoards.getState().tasks['q']).toBeUndefined();
     expect(applyBoardEvent(ev({ event: { case: 'typingStart', value: { roomId: 'r', userId: 'u' } } }))).toBe(false);
   });
 });

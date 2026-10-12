@@ -1,3 +1,4 @@
+import { statusShown } from '../../lib/boards/completion';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { BoardStatusType, type BoardStatus } from '@calaba/protocol';
 import { ChevronDown, ChevronRight, Ellipsis, EyeOff, Palette, Plus, Star, Trash2, Eye, Shapes } from 'lucide-react';
@@ -673,8 +674,8 @@ function HiddenColumn({ boardId, status, filter, ctx }: { boardId: string; statu
   const n = useBoards((s) => visibleColumn(s, boardId, status.id, filter, ctx).length);
   const show = (): void => {
     const p = prefsOf(useBoardsUi.getState(), boardId);
-    const done = status.type === BoardStatusType.COMPLETED || status.type === BoardStatusType.CANCELLED;
-    useBoardsUi.getState().setPrefs(boardId, { hidden: p.hidden.filter((x) => x !== status.id), ...(done ? { showCompleted: true } : {}) });
+    // A column hidden by the completion filter: showing it switches the filter to «Все».
+    useBoardsUi.getState().setPrefs(boardId, { hidden: p.hidden.filter((x) => x !== status.id), ...(statusShown(p.completion, status.type) ? {} : { completion: 'all' as const }) });
   };
   return (
     <button

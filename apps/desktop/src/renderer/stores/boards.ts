@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist, TaskMilestone } from '@calaba/protocol';
+import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist, TaskMilestone, TaskNotice } from '@calaba/protocol';
 import { milestoneChip } from '../lib/boards/milestones';
 import {
   EMPTY_DATA,
@@ -31,9 +31,15 @@ import { boardVisible, taskBits } from '../lib/boards/access';
  */
 export type LoadState = 'loading' | 'ready' | 'error';
 
+/** The last notice of a task this session (TaskUpdate.notice), for «Непрочитанное». */
+export type LastNotice = Pick<TaskNotice, 'kind' | 'actorId' | 'text' | 'reRequested' | 'dueOn' | 'daysLeft'> & { at: number };
+
 interface BoardsState extends BoardsData {
   /** Board tasks loaded (the columns exist once 'ready'). */
   load: Readonly<Record<string, LoadState>>;
+  /** Task id → its last notice received live (cards never select it). */
+  notices: Readonly<Record<string, LastNotice>>;
+  setNotice: (taskId: string, n: LastNotice) => void;
   reset: () => void;
   setLoad: (boardId: string, s: LoadState) => void;
   upsertBoard: (b: Board, event?: boolean) => void;
@@ -57,7 +63,9 @@ interface BoardsState extends BoardsData {
 export const useBoards = create<BoardsState>()((set) => ({
   ...EMPTY_DATA,
   load: {},
-  reset: () => set({ ...EMPTY_DATA, load: {} }),
+  notices: {},
+  setNotice: (taskId, n) => set((d) => ({ notices: { ...d.notices, [taskId]: n } })),
+  reset: () => set({ ...EMPTY_DATA, load: {}, notices: {} }),
   setLoad: (boardId, s) => set((d) => (d.load[boardId] === s ? {} : { load: { ...d.load, [boardId]: s } })),
   upsertBoard: (b, event) => set((d) => upsertBoard(d, b, event)),
   setWorkspaceBoards: (wsId, list) => set((d) => setWorkspaceBoards(d, wsId, list)),
@@ -140,9 +148,35 @@ export function taskPermsOf(s: Pick<BoardsData, 'boards'>, task: Pick<Task, 'boa
   return taskBits(s.boards[task.boardId], task, me);
 }
 
+/**
+ * The unread tasks of a workspace — the one set behind both the rail / «Мои задачи» badge
+ * (unreadCount) and the «Непрочитанное» tab (unreadIds), so the two never disagree. Order: the
+ * server's (newest notice first, READY), then the ones that arrived live.
+ */
+function eachUnread(s: Pick<BoardsData, 'unread'>, workspaceId: string, fn: (id: string) => void): void {
+  for (const [id, ws] of Object.entries(s.unread)) if (ws === workspaceId) fn(id);
+}
+
 /** The number of unread tasks of a workspace (the header icon badge). */
-export function unreadCount(s: BoardsData, workspaceId: string): number {
+export function unreadCount(s: Pick<BoardsData, 'unread'>, workspaceId: string): number {
   let n = 0;
-  for (const ws of Object.values(s.unread)) if (ws === workspaceId) n++;
+  eachUnread(s, workspaceId, () => n++);
   return n;
+}
+
+/** The unread task ids of a workspace (call inside useShallow). */
+export function unreadIds(s: Pick<BoardsData, 'unread'>, workspaceId: string): string[] {
+  const out: string[] = [];
+  eachUnread(s, workspaceId, (id) => out.push(id));
+  return out;
+}
+
+/**
+ * «Непрочитанное»: the unread ids, newest notice first — a notice received this session by its
+ * time, the rest in the server's order (newest notice first) after them. Call inside useShallow.
+ */
+export function unreadOrdered(s: Pick<BoardsData, 'unread'> & { notices: Readonly<Record<string, LastNotice>> }, workspaceId: string): string[] {
+  const ids = unreadIds(s, workspaceId);
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  return ids.sort((a, b) => (s.notices[b]?.at ?? 0) - (s.notices[a]?.at ?? 0) || (rank.get(a) ?? 0) - (rank.get(b) ?? 0));
 }

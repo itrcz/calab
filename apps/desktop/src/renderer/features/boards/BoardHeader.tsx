@@ -3,9 +3,11 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Archive, Check, ChevronDown, Columns3, Download, Ellipsis, FileText, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { BoardFeature } from '@calaba/protocol';
-import { useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
+import type { Completion } from '../../lib/boards/completion';
+import { CompletionSwitch } from './CompletionSwitch';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, IconButton, Input, Modal, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Field, IconButton, Input, Modal, Switch, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { groupOn, sortOn } from '../../lib/boards/features';
 import { filterKey, fromTaskFilter } from '../../lib/boards/filter';
@@ -85,6 +87,8 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
               <FilterButton boardId={boardId} workspaceId={workspaceId} />
               <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
               <QuickChips boardId={boardId} />
+              <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
+              <BoardCompletion boardId={boardId} />
               {/* A real end gap: WebKit drops the padding at the end of a flex scroller. */}
               <span className="w-4 shrink-0" aria-hidden />
             </div>
@@ -97,11 +101,19 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
           <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
           <QuickChips boardId={boardId} />
           <span className="flex-1" />
+          <BoardCompletion boardId={boardId} />
           <DisplayMenu boardId={boardId} />
         </div>
       )}
     </div>
   );
+}
+
+/** «Незавершённые · Завершённые · Все» of the board (its prefs), right in the filter row. */
+function BoardCompletion({ boardId }: { boardId: string }): ReactNode {
+  const value = useBoardsUi((s) => prefsOf(s, boardId).completion);
+  const onChange = useCallback((completion: Completion) => useBoardsUi.getState().setPrefs(boardId, { completion }), [boardId]);
+  return <CompletionSwitch value={value} onChange={onChange} />;
 }
 
 /** `Канбан | Список | Таймлайн` (1 / 2 / 3); on a phone icons only, in the filter row. */
@@ -280,9 +292,8 @@ function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: 
   const disabled = useDisabledFeatures(boardId);
   const set = (p: Partial<BoardPrefs>): void => useBoardsUi.getState().setPrefs(boardId, p);
   const sel = 'h-7 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-control text-fg';
-  const mobile = useMobile();
-  // Phone: «Показывать завершённые» lives in «…»; the popover is for the list's grouping / sort and hidden columns only.
-  if (mobile && kind !== 'list' && !prefs.hidden.length) return null;
+  // The popover holds the list's grouping / sort and hidden columns (the completion filter is in the filter row).
+  if (kind !== 'list' && !prefs.hidden.length) return null;
   return (
     <Popover.Root modal={false} open={open} onOpenChange={onOpenChange}>
       {open === undefined ? (
@@ -321,12 +332,6 @@ function DisplayMenu({ boardId, open, onOpenChange }: { boardId: string; open?: 
               </label>
             </>
           ) : null}
-          {mobile ? null : (
-            <div className="flex items-center justify-between gap-3">
-              <span>{t('boards.showCompleted')}</span>
-              <Toggle label={t('boards.showCompleted')} checked={prefs.showCompleted} onChange={(v) => set({ showCompleted: v })} />
-            </div>
-          )}
           {prefs.hidden.length ? (
             <button type="button" className="self-start text-caption text-accent-text hover:underline" onClick={() => set({ hidden: [] })}>
               {t('boards.showHidden', { n: prefs.hidden.length })}
@@ -344,7 +349,6 @@ function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: s
   const hasDisplay = useHasDisplay(boardId);
   const ctx = useMatchCtx(boardId);
   const mobile = useMobile();
-  const showCompleted = useBoardsUi((s) => prefsOf(s, boardId).showCompleted);
   const [forms, setForms] = useState(false);
   const formsOn = useFeatureOn(boardId, BoardFeature.FORMS);
   const archive = async (): Promise<void> => {
@@ -390,10 +394,6 @@ function BoardMoreMenu({ boardId, workspaceId, manage, onDisplay }: { boardId: s
                     <SlidersHorizontal className="size-4" aria-hidden /> {t('boards.display')}
                   </Dropdown.Item>
                 ) : null}
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.CheckboxItem className={menuItem} checked={showCompleted} onCheckedChange={(v) => useBoardsUi.getState().setPrefs(boardId, { showCompleted: v })} data-testid="show-completed">
-                  {showCompleted ? <Check className="size-4" aria-hidden /> : <span className="size-4" />} {t('boards.showCompleted')}
-                </Dropdown.CheckboxItem>
                 <Dropdown.Separator className={menuSeparator} />
               </>
             ) : null}
