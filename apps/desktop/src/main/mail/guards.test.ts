@@ -45,6 +45,8 @@ describe('calaba-mail:// ids', () => {
     expect(img.headers.get('content-type')).toBe('image/png');
     expect(img.headers.get('content-disposition')).toBeNull();
     expect(img.headers.get('x-content-type-options')).toBe('nosniff');
+    const saved = attachmentResponse({ name: 'a.png', mime: 'image/png', data: new Uint8Array([1]) }, true);
+    expect(saved.headers.get('content-disposition')).toMatch(/^attachment; filename="a\.png"/);
     const html = attachmentResponse({ name: 'evil".html\r\nX: y', mime: 'text/html', data: new Uint8Array([60]) });
     expect(html.headers.get('content-type')).toBe('application/octet-stream');
     expect(html.headers.get('content-disposition')).toMatch(/^attachment; filename="evil_\.html__X: y"; filename\*=UTF-8''/);

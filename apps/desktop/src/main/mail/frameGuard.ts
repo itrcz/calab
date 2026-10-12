@@ -108,7 +108,8 @@ function guard(wc: WebContents): void {
     e.preventDefault();
     if (e.initiator && e.frame && !sameFrame(e.initiator, e.frame)) return;
     installMailDownloads(wc.session);
-    wc.downloadURL(e.url);
+    // `download=1`: the handler names the file (an image would otherwise be saved as its id).
+    wc.downloadURL(`${e.url.split(/[?#]/)[0] ?? e.url}?download=1`);
   });
 }
 

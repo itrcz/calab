@@ -48,9 +48,10 @@ export function contentDisposition(name: string): string {
 
 const BASE_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'", 'Cache-Control': 'private, max-age=3600' };
 
-export function attachmentResponse(a: MailAttachmentData): Response {
+/** `download`: main's own download request (`?download=1`): always an attachment with its name. */
+export function attachmentResponse(a: MailAttachmentData, download = false): Response {
   const body = new Uint8Array(a.data);
-  if (isInlineMime(a.mime)) return new Response(body, { status: 200, headers: { ...BASE_HEADERS, 'Content-Type': a.mime.toLowerCase() } });
+  if (!download && isInlineMime(a.mime)) return new Response(body, { status: 200, headers: { ...BASE_HEADERS, 'Content-Type': a.mime.toLowerCase() } });
   return new Response(body, { status: 200, headers: { ...BASE_HEADERS, 'Content-Type': 'application/octet-stream', 'Content-Disposition': contentDisposition(a.name) } });
 }
 
@@ -64,7 +65,7 @@ export function handleMailScheme(fetchAttachment: FetchAttachment): void {
     const r = await fetchAttachment(ids.messageId, ids.attachmentId);
     if (!r.ok) return new Response(null, { status: r.error.code === 'NOT_FOUND' ? 404 : 503 });
     const a = r.result as MailAttachmentData;
-    return attachmentResponse(a);
+    return attachmentResponse(a, new URL(req.url).searchParams.get('download') === '1');
   });
 }
 
