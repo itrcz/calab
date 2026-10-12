@@ -533,6 +533,9 @@ docker compose -f infra/docker/compose.dev.yml --profile mail down
 - ML.1 Неверный пароль → `AUTH_FAILED` с настройками; верный → аккаунт проверен (IMAP + SMTP).
 - ML.2 Отправка себе → письмо во «Входящих» через IDLE за ≤ 2 с, тело и вложение читаются, флаги доходят до сервера, поиск находит, «Архив» создаётся и письмо переезжает.
 - ML.3 Письмо от bob → событие `new_mail`. Другой сервер: `CALABA_MAIL_IT_HOST`, `_IMAP_PORT`, `_SMTP_PORT`, `_CA`.
+Без Docker — локальный фейк (hoodiecrow + smtp-server, те же порты и пользователи; годится и для `engine.it`): `node apps/desktop/scripts/mail-fake-server.mjs`.
+- ML.4 Приложение против фейка: `pnpm -F @calaba/desktop build:app`, запуск с `NODE_EXTRA_CA_CERTS=infra/docker/greenmail/certs/ca.pem`; «Почта» → `alice@example.test` / `secret` → «Не нашли настройки» → серверы `localhost` 3993 / 3465 → «Добавить». Ожидается: 3 письма (HTML с картинкой `cid:` и «Договор.pdf», text/plain в цвете темы, рассылка на белом), PDF сохраняется в «Загрузки» с именем, ссылка → браузер, `mailto:` → новое письмо в Calab, ответ уходит в Sent и на SMTP (лог фейка), флаг/архив/корзина доходят до сервера.
+- ML.5 `node apps/desktop/scripts/mail-fake-server.mjs send` → строка за ≤ 3 с без действий, системное уведомление «Bob · New message …», бейдж на рейле; `calab://mail/<base64url("bob@example.test:secret")>` → форма заполнена, фокус на «Добавить».
 
 ## 3. Сервер
 
