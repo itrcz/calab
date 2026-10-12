@@ -161,6 +161,12 @@ export const IPC = {
   /** A tooltip over the shown app: drawn by a native overlay above it (WebAppTip; ADR-0053 «Поправка 1»). */
   webAppTipShow: 'webapp:tip-show',
   webAppTipHide: 'webapp:tip-hide',
+
+  // ---- mail (ADR-0080 §7): main relays to the mail engine utilityProcess ----
+  /** renderer → main: a MailCall → MailReply (shared/mail.ts). */
+  mailRequest: 'mail:request',
+  /** main → renderer: a MailEvent. */
+  mailEvent: 'mail:event',
 } as const;
 
 /** ◀ ▶ ⟳ of the navigation strip. */

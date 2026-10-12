@@ -116,6 +116,10 @@ const api: CalabaApi = {
     tipShow: (tip) => ipcRenderer.invoke(IPC.webAppTipShow, tip),
     tipHide: () => ipcRenderer.invoke(IPC.webAppTipHide),
   },
+  mail: {
+    request: (call) => ipcRenderer.invoke(IPC.mailRequest, call),
+    onEvent: (cb) => on(IPC.mailEvent, cb),
+  },
 };
 
 contextBridge.exposeInMainWorld('calaba', api);

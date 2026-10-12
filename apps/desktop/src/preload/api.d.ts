@@ -34,6 +34,7 @@ import type { ThumbRequest } from '../shared/captureThumb';
 import type { ResumeVoice, ResumeVoiceSeat } from '../shared/resumeVoice';
 import type { MenuAction, MenuState } from '../shared/menu';
 import type { AnnotOverlayEvent, AnnotOverlayTarget } from '../shared/annot';
+import type { MailCall, MailEvent, MailReply } from '../shared/mail';
 
 type Unsubscribe = () => void;
 
@@ -221,6 +222,15 @@ export interface CalabaApi {
     /** Draw a tooltip that falls on the shown app above it (a native overlay; ADR-0053 «Поправка 1»). */
     tipShow(tip: WebAppTip): Promise<void>;
     tipHide(): Promise<void>;
+  };
+  /**
+   * The mail engine bridge (ADR-0080 §7), Electron only. Raw transport: the renderer uses the typed
+   * `MailApi` built over it (`platform.mail`, shared/mail.ts `createMailClient`).
+   */
+  mail?: {
+    /** One engine call; resolves with the reply (mail errors are `{ ok: false }`, never a rejection). */
+    request(call: MailCall): Promise<MailReply>;
+    onEvent(cb: (event: MailEvent) => void): Unsubscribe;
   };
 }
 

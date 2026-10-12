@@ -1,6 +1,7 @@
 import type { HostCallsCapability } from '../../shared/hostCalls';
 import type { CalabaApi } from '../../preload/api';
 import type { AuthSession, IpcResult } from '../../shared/ipc';
+import type { MailApi } from '../../shared/mail';
 import type { SessionActivityCapability, HostNotificationsCapability } from '../../shared/hostActivity';
 
 /** Result of a guest sign-in by a room link (ADR-0016). */
@@ -16,7 +17,12 @@ export interface GuestJoin {
  * Platform layer (ADR-0015): everything the renderer needs from its host.
  * `electron` — preload bridge (IPC to main); `web` — browser APIs, same-origin API.
  */
-export interface Platform extends CalabaApi {
+export interface Platform extends Omit<CalabaApi, 'mail'> {
+  /**
+   * The local mail client (ADR-0080): Electron only (the engine is a utilityProcess); undefined on the
+   * web and the phone. The renderer goes through `getMailApi()` (features/mail/api.ts), which may swap in the mock.
+   */
+  mail?: MailApi;
   /** Optional status-only phone host capability; absent in ordinary browsers/older hosts. */
   sessionActivity?: SessionActivityCapability;
   notifications?: HostNotificationsCapability;
