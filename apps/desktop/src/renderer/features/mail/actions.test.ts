@@ -85,8 +85,8 @@ describe('«Очистить корзину» / «Удалить навсегд�
 
   it('engine: failed keeps the report for «Скопировать отчёт»; up clears it', () => {
     const s = useMail.getState();
-    expect(reduceEvent(s, { type: 'engine', state: 'failed', report: 'exit code 1' })).toEqual({ engineDown: true, engineReport: 'exit code 1' });
-    expect(reduceEvent(s, { type: 'engine', state: 'down' })).toEqual({ engineDown: true, engineReport: null });
-    expect(reduceEvent(s, { type: 'engine', state: 'up' })).toEqual({ engineDown: false, engineReport: null });
+    expect(reduceEvent(s, { type: 'engine', state: 'failed', report: 'exit code 1' })).toMatchObject({ engineDown: true, engineReport: 'exit code 1' });
+    expect(reduceEvent(s, { type: 'engine', state: 'down' })).toMatchObject({ engineDown: true, engineReport: null });
+    expect(reduceEvent(s, { type: 'engine', state: 'up' })).toMatchObject({ engineDown: false, engineReport: null });
   });
 });

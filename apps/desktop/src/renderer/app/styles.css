@@ -725,11 +725,18 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   width: 40%;
   animation: calaba-mail-sync 1.4s ease-in-out infinite;
 }
+/* A first sync's determinate bar (3.1.2): a finite width transition per progress step (≤ 2/s). */
+.mail-sync-bar {
+  transition: width 300ms ease-out;
+}
 @media (prefers-reduced-motion: reduce) {
   .mail-sync-line {
     width: 100%;
     opacity: 0.4;
     animation: none;
+  }
+  .mail-sync-bar {
+    transition: none;
   }
 }
 

@@ -18,6 +18,7 @@ import {
   type MailPage,
   type MailSelection,
   type MailSettings,
+  type MailSyncProgress,
   type MailThreadRow,
 } from '../../shared/mail';
 
@@ -95,6 +96,11 @@ export interface MailState {
   remoteAllowed: Record<string, true>;
   outgoing: Record<string, MailOutgoing>;
   drafts: MailDraft[];
+  /**
+   * `sync_progress` per account (3.1.2), only while the account is `syncing`; read by the progress
+   * leaf through primitive selectors (`syncProgressOf`), never by the list.
+   */
+  syncProgress: Record<string, MailSyncProgress>;
 }
 
 const initial = (): MailState => ({
@@ -125,6 +131,7 @@ const initial = (): MailState => ({
   remoteAllowed: {},
   outgoing: {},
   drafts: [],
+  syncProgress: {},
 });
 
 export const useMail = create<MailState>()(() => initial());
@@ -239,16 +246,38 @@ export function applyRows(s: MailState, rows: MailThreadRow[], insert: boolean):
     if (!order.includes(key)) delete map[key];
   }
   if (map === s.rows && order === s.order) return null;
+  // A complete list growing by events (a first sync storing thousands of rows, 3.1.2) is cut back
+  // to a page plus a cursor, so the store keeps what is on screen (§9); scrolling loads the rest.
+  if (s.next === null && order.length > LIVE_CAP && !(s.selected && order.indexOf(s.selected) >= PAGE_SIZE * 2)) {
+    const keep = order.slice(0, PAGE_SIZE * 2);
+    const last = map[keep[keep.length - 1] ?? ''];
+    if (last) {
+      if (map === s.rows) map = { ...s.rows };
+      for (const k of order.slice(keep.length)) delete map[k];
+      return { rows: map, order: keep, next: { date: last.date, id: last.messageId } };
+    }
+  }
   return { rows: map, order };
+}
+
+/** A complete list holds at most this many rows from events before it becomes paged again. */
+export const LIVE_CAP = PAGE_SIZE * 4;
+
+function withoutKey<T>(m: Record<string, T>, k: string): Record<string, T> {
+  const out = { ...m };
+  delete out[k];
+  return out;
 }
 
 /** A pure reducer of the list / account parts of an engine event (the thread refresh is separate). */
 export function reduceEvent(s: MailState, e: MailEvent): Partial<MailState> | null {
   switch (e.type) {
     case 'account_state': {
+      // Progress lives only while the account syncs.
+      const dropProgress = s.syncProgress[e.accountId] && e.account?.state !== 'syncing' ? { syncProgress: withoutKey(s.syncProgress, e.accountId) } : {};
       if (e.account) {
         const accountIds = s.accountIds.includes(e.accountId) ? s.accountIds : [...s.accountIds, e.accountId];
-        return { accounts: { ...s.accounts, [e.accountId]: e.account }, accountIds };
+        return { accounts: { ...s.accounts, [e.accountId]: e.account }, accountIds, ...dropProgress };
       }
       if (!s.accounts[e.accountId]) return null;
       const accounts = { ...s.accounts };
@@ -274,7 +303,14 @@ export function reduceEvent(s: MailState, e: MailEvent): Partial<MailState> | nu
         ...(boxGone ? { box: ALL_INBOXES } : {}),
         ...(s.selected && !rows[s.selected] ? { selected: null } : {}),
         ...(threadGone ? { thread: null, headers: {}, bodies: {}, bodyState: {}, openId: null } : {}),
+        ...dropProgress,
       };
+    }
+    case 'sync_progress': {
+      // A late one after the account left `syncing` (or of an unknown account) is dropped.
+      if (s.accounts[e.accountId]?.state !== 'syncing') return null;
+      const p: MailSyncProgress = { accountId: e.accountId, folder: e.folder, done: e.done, total: e.total, phase: e.phase };
+      return { syncProgress: { ...s.syncProgress, [e.accountId]: p } };
     }
     case 'folders': {
       const folders = { ...s.folders, [e.accountId]: e.folders };
@@ -301,7 +337,8 @@ export function reduceEvent(s: MailState, e: MailEvent): Partial<MailState> | nu
       return { outgoing: { ...s.outgoing, [e.item.id]: e.item } };
     }
     case 'engine':
-      return { engineDown: e.state !== 'up', engineReport: e.state === 'failed' ? e.report : null };
+      // Down: account states are stale until `up` reloads them; progress is dropped either way.
+      return { engineDown: e.state !== 'up', engineReport: e.state === 'failed' ? e.report : null, syncProgress: {} };
     case 'new_mail':
       return null;
   }
@@ -865,24 +902,43 @@ export async function syncNow(accountId?: string): Promise<void> {
 
 const scopeIds = (s: Pick<MailState, 'accountIds'>, scope: string): readonly string[] => (scope === 'all' ? s.accountIds : [scope]);
 
+type SyncSlice = Pick<MailState, 'accounts' | 'accountIds' | 'engineDown'>;
+
+/** The account is really syncing: not stalled, and the engine is up (states are stale while it is down). */
+const liveSyncing = (s: SyncSlice, id: string): boolean => {
+  const a = s.accounts[id];
+  return !s.engineDown && a?.state === 'syncing' && !a.stalled;
+};
+
 /** Some account of the scope is syncing (the column's spinner and progress line) — a boolean. */
-export function scopeSyncing(s: Pick<MailState, 'accounts' | 'accountIds'>, scope: string): boolean {
-  return scopeIds(s, scope).some((id) => s.accounts[id]?.state === 'syncing');
+export function scopeSyncing(s: SyncSlice, scope: string): boolean {
+  return scopeIds(s, scope).some((id) => liveSyncing(s, id));
 }
 
 /** An account of the scope runs its very first sync (nothing synced yet): «Загружаем письма…» instead of «Писем нет». */
-export function firstSyncing(s: Pick<MailState, 'accounts' | 'accountIds'>, scope: string): boolean {
-  return scopeIds(s, scope).some((id) => {
-    const a = s.accounts[id];
-    return a?.state === 'syncing' && a.lastSyncAt === null;
-  });
+export function firstSyncing(s: SyncSlice, scope: string): boolean {
+  return scopeIds(s, scope).some((id) => liveSyncing(s, id) && s.accounts[id]?.lastSyncAt === null);
 }
 
-/** The first account of the scope that cannot sync, as `id\nstate` ('' = none) — a primitive for the notice row. */
-export function scopeProblem(s: Pick<MailState, 'accounts' | 'accountIds'>, scope: string): string {
+/** The account of the scope whose first sync is shown with its progress ('' = none): the first one with progress. */
+export function firstSyncAccount(s: SyncSlice & Pick<MailState, 'syncProgress'>, scope: string): string {
+  let fallback = '';
   for (const id of scopeIds(s, scope)) {
-    const st = s.accounts[id]?.state;
+    if (!liveSyncing(s, id) || s.accounts[id]?.lastSyncAt !== null) continue;
+    if (s.syncProgress[id]?.folder) return id;
+    fallback ||= id;
+  }
+  return fallback;
+}
+
+/** The first account of the scope that cannot sync, as `id\nstate` ('' = none) — a primitive for the notice row; `stalled` = syncing without progress for 60 s. */
+export function scopeProblem(s: SyncSlice, scope: string): string {
+  if (s.engineDown) return '';
+  for (const id of scopeIds(s, scope)) {
+    const a = s.accounts[id];
+    const st = a?.state;
     if (st === 'offline' || st === 'error' || st === 'auth_failed') return `${id}\n${st}`;
+    if (st === 'syncing' && a?.stalled) return `${id}\nstalled`;
   }
   return '';
 }

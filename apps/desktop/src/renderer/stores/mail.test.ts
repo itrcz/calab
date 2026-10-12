@@ -185,17 +185,65 @@ describe('sync state, filters and the selection (owner 12.10)', () => {
 
   it('«Проверить почту» ↔ spinner follows any syncing account of the scope', async () => {
     const { scopeSyncing } = await import('./mail');
-    const s = { accountIds: ['a1', 'a2'], accounts: { a1: acc('a1', 'idle', 1), a2: acc('a2', 'syncing', 1) } };
+    const s = { engineDown: false, accountIds: ['a1', 'a2'], accounts: { a1: acc('a1', 'idle', 1), a2: acc('a2', 'syncing', 1) } };
     expect(scopeSyncing(s, 'all')).toBe(true);
     expect(scopeSyncing(s, 'a1')).toBe(false);
     expect(scopeSyncing(s, 'a2')).toBe(true);
   });
 
+  it('a complete list growing by events (a big first sync) is cut back to a page plus a cursor', async () => {
+    const { reduceEvent, LIVE_CAP, PAGE_SIZE } = await import('./mail');
+    const base = useMail.getState();
+    const f = { id: 'a1/inbox', accountId: 'a1', path: 'INBOX', name: 'INBOX', role: 'inbox', parentId: null, unread: 0, total: 0 } as const;
+    const s = { ...base, folderById: { [f.id]: f }, next: null, order: [], rows: {} };
+    const rows = Array.from({ length: LIVE_CAP + 50 }, (_, i) => ({ threadId: `t${String(i)}`, accountId: 'a1', folderId: f.id, messageId: `m${String(i).padStart(4, '0')}`, messageIdHeader: '', from: { name: '', address: 'x@y.z' }, subject: '', snippet: '', date: 1e9 - i, count: 1, unread: true, flagged: false, hasAttachments: false }));
+    const patch = reduceEvent(s, { type: 'messages_added', accountId: 'a1', folderId: f.id, rows, messageIds: [] });
+    expect(patch?.order).toHaveLength(PAGE_SIZE * 2);
+    expect(Object.keys(patch?.rows ?? {})).toHaveLength(PAGE_SIZE * 2);
+    expect(patch?.next).toEqual({ date: 1e9 - (PAGE_SIZE * 2 - 1), id: `m${String(PAGE_SIZE * 2 - 1).padStart(4, '0')}` });
+  });
+
+  it('engine down: no spinner, no «Загружаем письма…», no notice (the engine banner speaks; states are stale)', async () => {
+    const { scopeSyncing, firstSyncing, firstSyncAccount, scopeProblem } = await import('./mail');
+    const s = { engineDown: true, syncProgress: {}, accountIds: ['a1', 'a2'], accounts: { a1: acc('a1', 'syncing', null), a2: acc('a2', 'offline', 1) } };
+    expect(scopeSyncing(s, 'all')).toBe(false);
+    expect(firstSyncing(s, 'all')).toBe(false);
+    expect(firstSyncAccount(s, 'all')).toBe('');
+    expect(scopeProblem(s, 'all')).toBe('');
+    expect(scopeSyncing({ ...s, engineDown: false }, 'all')).toBe(true);
+    expect(firstSyncAccount({ ...s, engineDown: false }, 'all')).toBe('a1');
+  });
+
+  it('a stalled sync: no spinner, the notice row «Синхронизация не отвечает» instead', async () => {
+    const { scopeSyncing, firstSyncing, scopeProblem } = await import('./mail');
+    const stalled = { ...(acc('a1', 'syncing', null) as object), stalled: true } as never;
+    const s = { engineDown: false, accountIds: ['a1'], accounts: { a1: stalled } };
+    expect(scopeSyncing(s, 'a1')).toBe(false);
+    expect(firstSyncing(s, 'a1')).toBe(false);
+    expect(scopeProblem(s, 'a1')).toBe('a1\nstalled');
+  });
+
+  it('sync_progress is kept per account only while it syncs; leaving `syncing` or the engine going down drops it', async () => {
+    const { reduceEvent, firstSyncAccount } = await import('./mail');
+    const base = useMail.getState();
+    const progress = { type: 'sync_progress', accountId: 'a2', folder: { id: 'f', name: 'INBOX', role: 'inbox' }, done: 50, total: 8400, phase: 'headers' } as const;
+    let s: typeof base = { ...base, accountIds: ['a1', 'a2'], accounts: { a1: acc('a1', 'syncing', null), a2: acc('a2', 'idle', 1) } };
+    expect(reduceEvent(s, progress)).toBeNull(); // a2 is not syncing: a late event
+    s = { ...s, accounts: { ...s.accounts, a2: acc('a2', 'syncing', null) } };
+    s = { ...s, ...reduceEvent(s, progress) };
+    expect(s.syncProgress['a2']).toMatchObject({ done: 50, total: 8400 });
+    expect(firstSyncAccount(s, 'all')).toBe('a2'); // the one with progress
+    s = { ...s, ...reduceEvent(s, { type: 'account_state', accountId: 'a2', account: acc('a2', 'idle', 9) }) };
+    expect(s.syncProgress['a2']).toBeUndefined();
+    s = { ...s, ...reduceEvent({ ...s, accounts: { ...s.accounts, a2: acc('a2', 'syncing', null) } }, progress) };
+    expect(reduceEvent(s, { type: 'engine', state: 'down' })).toMatchObject({ engineDown: true, syncProgress: {} });
+  });
+
   it('«Загружаем письма…» only on a first sync; afterwards the real empty state', async () => {
     const { firstSyncing } = await import('./mail');
-    expect(firstSyncing({ accountIds: ['a1'], accounts: { a1: acc('a1', 'syncing', null) } }, 'a1')).toBe(true);
-    expect(firstSyncing({ accountIds: ['a1'], accounts: { a1: acc('a1', 'syncing', 5) } }, 'a1')).toBe(false);
-    expect(firstSyncing({ accountIds: ['a1'], accounts: { a1: acc('a1', 'idle', null) } }, 'a1')).toBe(false);
+    expect(firstSyncing({ engineDown: false, accountIds: ['a1'], accounts: { a1: acc('a1', 'syncing', null) } }, 'a1')).toBe(true);
+    expect(firstSyncing({ engineDown: false, accountIds: ['a1'], accounts: { a1: acc('a1', 'syncing', 5) } }, 'a1')).toBe(false);
+    expect(firstSyncing({ engineDown: false, accountIds: ['a1'], accounts: { a1: acc('a1', 'idle', null) } }, 'a1')).toBe(false);
   });
 
   it('the flagged filter keeps unflagged new rows out of the list', () => {

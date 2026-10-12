@@ -282,9 +282,27 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
     emit({ type: 'account_state', accountId: a.id, account: a });
   }
 
+  /**
+   * A first sync's `sync_progress` over the sync delay (3.1.2): the folder list, then the inbox's
+   * headers in five steps — the progress row and bar are visible in dev.
+   */
+  function fakeProgress(id: string): void {
+    if (syncDelay === 0) return;
+    const total = 1240;
+    const inbox = folders.get(folderId(id, 'inbox'));
+    const folder = inbox ? { id: inbox.id, name: inbox.name, role: inbox.role } : null;
+    emit({ type: 'sync_progress', accountId: id, folder: null, done: 0, total: 0, phase: 'folders' });
+    for (let i = 0; i < 5; i++) {
+      later(() => {
+        if (accounts.get(id)?.state === 'syncing') emit({ type: 'sync_progress', accountId: id, folder, done: Math.round((total * i) / 4), total, phase: 'headers' });
+      }, Math.round((syncDelay * (i + 1)) / 6));
+    }
+  }
+
   /** `syncing` now, `idle` after the sync delay (a catch-up: nothing new arrives in the mock). */
   function startSync(ids: string[]): void {
     for (const id of ids) setAccount({ ...account(id), state: 'syncing' });
+    for (const id of ids) if (account(id).lastSyncAt === null) fakeProgress(id);
     later(() => {
       for (const id of ids) if (accounts.has(id)) setAccount({ ...account(id), state: 'idle', lastSyncAt: now() });
     }, syncDelay);
@@ -387,6 +405,7 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         }
         setAccount(a);
         emitFolders(a.id);
+        fakeProgress(a.id);
         later(() => setAccount({ ...a, state: 'idle', lastSyncAt: now() }), syncDelay);
         return clone(a);
       },
