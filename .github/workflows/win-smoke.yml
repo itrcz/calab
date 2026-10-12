@@ -23,6 +23,10 @@ on:
         description: 'Seconds to keep the app running per phase'
         required: false
         default: '60'
+      unicode:
+        description: 'Install and keep userData under non-ASCII paths (a Cyrillic Windows user name)'
+        type: boolean
+        default: false
       update_from:
         description: 'Optional: also test the auto-update path from this installed version (to the feed latest)'
         required: false
@@ -38,17 +42,17 @@ permissions:
 
 jobs:
   smoke:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{{"version":"{0}","from":"{1}"}}]', inputs.version, inputs.from) || '[{"version":"3.0.9","from":""},{"version":"3.1.2","from":""}]') }}
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{{"version":"{0}","from":"{1}","unicode":{2}}}]', inputs.version, inputs.from, inputs.unicode) || '[{"version":"3.1.2","from":"","unicode":true}]') }}
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ matrix.version }}
       FROM: ${{ matrix.from }}
+      UNI: ${{ matrix.unicode }}
       WAIT: ${{ inputs.wait || '60' }}
     steps:
       - name: Smoke
@@ -60,11 +64,25 @@ jobs:
           $started = Get-Date
           $exe = Join-Path $env:LOCALAPPDATA 'Programs\Calab\Calab.exe'
           $ud = Join-Path $env:APPDATA 'Calaba'   # default userData (src/main/index.ts), the real-user path
+          $base = $env:RUNNER_TEMP
+          $instArgs = @('/S')
+          if ($env:UNI -eq 'true') {
+            # As under C:\Users\Иван: the install dir, userData and the test dirs all non-ASCII.
+            $dir = Join-Path $env:LOCALAPPDATA 'Программы Тест\Calab'
+            $exe = Join-Path $dir 'Calab.exe'
+            $ud = Join-Path $env:APPDATA 'Пользователь Тест\Calaba'
+            $base = Join-Path $env:RUNNER_TEMP 'Тест'
+            New-Item -ItemType Directory -Force $base | Out-Null
+            $env:CALABA_USER_DATA = $ud
+            $instArgs = @('/S', "/D=$dir")
+          }
+          "CALAB_EXE=$exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "UD_BASE=$base" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
           function Install-Calab([string]$v) {
             $setup = Join-Path $env:RUNNER_TEMP "Calab-Setup-$v-x64.exe"
             gh release download "v$v" -R $env:GITHUB_REPOSITORY -p "Calab-Setup-$v-x64.exe" -D $env:RUNNER_TEMP --clobber
-            $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+            $p = Start-Process -FilePath $setup -ArgumentList $instArgs -Wait -PassThru
             "install $v exit=$($p.ExitCode) exe=$(Test-Path $exe)" | Tee-Object -Append (Join-Path $out 'summary.txt')
           }
 
@@ -125,8 +143,8 @@ jobs:
           out="$RUNNER_TEMP/smoke"
           npx tsx e2e-support/mock-server.ts --port 3900 --scenario data --quiet > "$out/mock-server.txt" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:3900/__mock/ids > /dev/null && break; sleep 1; done
-          ud="$RUNNER_TEMP/ud-app"
-          timeout 600 node scripts/win-smoke-app.mjs "$LOCALAPPDATA/Programs/Calab/Calab.exe" "$ud" "$out" http://127.0.0.1:3900 || echo "app driver exit=$?" >> "$out/summary.txt"
+          ud="$UD_BASE/ud-app"
+          timeout 600 node scripts/win-smoke-app.mjs "$CALAB_EXE" "$ud" "$out" http://127.0.0.1:3900 || echo "app driver exit=$?" >> "$out/summary.txt"
           taskkill //F //IM Calab.exe || true
           sleep 3
           cp -r "$ud/logs" "$out/app-logs" || true
@@ -145,13 +163,13 @@ jobs:
           sleep 5
           (sleep 40; node apps/desktop/scripts/mail-fake-server.mjs send >> "$out/mail-fake-server.txt" 2>&1) &
           export NODE_EXTRA_CA_CERTS="$PWD/infra/docker/greenmail/certs/ca.pem"
-          ud="$RUNNER_TEMP/ud-mail"
-          timeout 300 node apps/desktop/scripts/win-smoke-mail.mjs "$LOCALAPPDATA/Programs/Calab/Calab.exe" "$ud" "$out" || echo "mail driver exit=$?" >> "$out/summary.txt"
+          ud="$UD_BASE/ud-mail"
+          timeout 300 node apps/desktop/scripts/win-smoke-mail.mjs "$CALAB_EXE" "$ud" "$out" || echo "mail driver exit=$?" >> "$out/summary.txt"
           taskkill //F //IM Calab.exe || true
           sleep 3
           # As a user starts it (shortcut): no inherited stdio handles; the account exists, so the
           # engine is forked at startup.
-          CALABA_USER_DATA="$ud" pwsh -NoProfile -Command "Start-Process -FilePath \"$LOCALAPPDATA\\Programs\\Calab\\Calab.exe\""
+          CALABA_USER_DATA="$ud" pwsh -NoProfile -Command 'Start-Process -FilePath $env:CALAB_EXE'
           sleep 45
           echo "mail: shortcut-style launch alive processes=$(tasklist //FI 'IMAGENAME eq Calab.exe' //NH | grep -c Calab.exe)" >> "$out/summary.txt"
           tasklist //V //FI 'IMAGENAME eq Calab.exe' > "$out/mail-processes-shortcut.txt" || true
@@ -178,14 +196,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
         with:
-          name: win-smoke-${{ matrix.version }}${{ matrix.from && format('-from-{0}', matrix.from) || '' }}
+          name: win-smoke-${{ matrix.version }}${{ matrix.from && format('-from-{0}', matrix.from) || '' }}${{ matrix.unicode && '-unicode' || '' }}
           path: ${{ runner.temp }}/smoke
           if-no-files-found: warn
 
   # Auto-update on Windows: <from> installed, mail engine running, the feed's latest downloaded and
   # installed on quit (scripts/win-smoke-update.mjs), then the result launched as a user would.
   update:
-    if: github.event_name != 'workflow_dispatch' || inputs.update_from != ''
+    if: github.event_name == 'workflow_dispatch' && inputs.update_from != ''
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
