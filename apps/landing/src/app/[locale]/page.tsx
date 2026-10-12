@@ -10,6 +10,7 @@ import { StickerFinale } from '@/components/sticker-finale';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { ConferenceStrip } from '@/components/conference-strip';
+import { MailLinkCard } from '@/components/mail-link-card';
 import { Hero } from '@/components/hero';
 import { Pricing } from '@/components/pricing';
 import { getCapabilities } from '@/i18n/capabilities';
@@ -48,6 +49,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(locale) }} />
       <StoryMotion />
+      <MailLinkCard t={t.mailLink} />
       <Header t={t.header} locale={locale} />
       <main id="main">
         <Hero t={t.hero} locale={locale} />

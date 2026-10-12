@@ -233,6 +233,15 @@ const es: Dict = {
     method: 'MacBook Air (Apple M4, 10 núcleos, 24 GB), macOS 27, Discord 0.0.413. CPU: suma de todos los procesos de la aplicación (top, una muestra cada 5 s, 3 minutos, la primera descartada), una ejecución por escenario. «Antes» y «ahora» son el mismo Calab antes y después de un cambio: en voz y vídeo, la versión 0.5.1 y su paquete con las optimizaciones (entorno app.calab.ru, micrófono falso, publicador lk); en el menú y el indicador de grabación, una compilación sobre un servidor simulado y LiveKit local; el tamaño del instalador, de docs/18. Herramienta: tools/energy-bench.py; los CSV originales están en el repositorio.',
     source: 'Todas las mediciones y condiciones: docs/14-energy.md',
   },
+  mailLink: {
+    title: 'Añadir correo a Calab',
+    passwordNote: 'La contraseña se envía a la aplicación; nunca llega al sitio web',
+    add: 'Añadir a Calab',
+    download: '¿No tienes Calab? Descargar',
+    phone: 'El correo está disponible en la aplicación de escritorio de Calab. Abre este enlace en un ordenador.',
+    broken: 'El enlace está dañado',
+    close: 'Cerrar',
+  },
   downloads: {
     eyebrow: 'Descargar',
     title: 'Aplicación para todas las plataformas',

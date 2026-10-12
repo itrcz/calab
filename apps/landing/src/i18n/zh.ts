@@ -234,6 +234,15 @@ const zh: Dict = {
     method: 'MacBook Air（Apple M4，10 核，24 GB），macOS 27，Discord 0.0.413。CPU 为应用所有进程之和（top，每 5 秒采样，共 3 分钟，丢弃首个样本），每个场景运行一次。“优化前”和“优化后”是同一个 Calab 在改动前后：语音和视频为 0.5.1 版本及其加入优化的安装包（app.calab.ru 测试环境，虚拟麦克风，lk 发布者）；菜单和录制指示灯为模拟服务器与本地 LiveKit 上的构建；安装包大小见 docs/18。工具：tools/energy-bench.py，原始 CSV 在代码仓库中。',
     source: '全部测量数据与条件：docs/14-energy.md',
   },
+  mailLink: {
+    title: '将邮箱添加到 Calab',
+    passwordNote: '密码只会传给应用，不会发送到网站',
+    add: '添加到 Calab',
+    download: '没有 Calab？下载',
+    phone: '邮箱功能在 Calab 桌面应用中提供。请在电脑上打开此链接。',
+    broken: '链接已损坏',
+    close: '关闭',
+  },
   downloads: {
     eyebrow: '下载',
     title: '全平台应用',

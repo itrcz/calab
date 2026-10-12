@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test:preferences": "node scripts/check-site-preferences.mjs",
     "test:offers": "node scripts/check-offers.mjs",
-    "test": "pnpm test:preferences && pnpm test:offers"
+    "test:mail-link": "node scripts/check-mail-link.mjs",
+    "test": "pnpm test:preferences && pnpm test:offers && pnpm test:mail-link"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",

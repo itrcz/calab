@@ -49,6 +49,10 @@ click wins and is kept in the `calab_market` cookie (only with the «preferences
 entrypoint). Unreachable/invalid answer → the snapshot stays. `pnpm test:offers` checks the mode → market/currency rules.
 Payment return pages `/onpay/success/` and `/onpay/fail/` (Tochka merchant URLs): static, noindex, language picked in the browser, no query echo.
 
+## «Add mail to Calab» link (ADR-0080 §12)
+
+`/<locale>/#mail=<base64url(email[:password])>` shows `components/mail-link-card.tsx` (parse: `lib/mail-link.ts`, `pnpm test:mail-link`): the address, a `calab://mail/add#c=<payload>` button, a download fallback; phones get a hint instead. Only the fragment is read (`?mail=` is ignored); the password is never decoded, stored or sent; closing the card removes the fragment.
+
 ## Public agreements and browser preferences
 
 RU uses Gromtekh / RUB 6 and 18 per employee/day; other locales use Unne / USD $0.10 and $0.30.
