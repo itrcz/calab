@@ -1438,8 +1438,15 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 		if err := updateRow(r.Context(), q, t); err != nil {
 			return err
 		}
+		journalFrom := len(c.journal)
 		if err := s.recordFields(r.Context(), q, old, t, from, to, me, &c); err != nil {
 			return err
+		}
+		// The due sweep's notices are about the old date or a live task (ADR-0089).
+		if dateAny(old.DueOn) != dateAny(t.DueOn) || (t.StatusID != old.StatusID && Finished(to.Type)) {
+			if err := q.DeleteTaskDueNotices(r.Context(), t.ID); err != nil {
+				return err
+			}
 		}
 		if req.GetSetLabels() {
 			labels, err := it.labelIDs(req.GetLabelIds())
@@ -1516,13 +1523,69 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		return nil
+		return s.notifyFields(r.Context(), q, old, t, me, c.journal[journalFrom:], attWas, attIDs, &c)
 	})
 	if err != nil {
 		return err
 	}
 	s.publish(r.Context(), taskID, &c, false)
 	return s.respondTask(w, r, taskID, http.StatusOK, false)
+}
+
+// notifyFields notifies the subscribers of the changed fields (ADR-0089 §4): the due date, the
+// priority, the milestone, the title / description and new attachments. The priority and the
+// text notify only with a new journal entry, not when a repeated change replaces it (ADR-0081).
+func (s *Service) notifyFields(ctx context.Context, q *sqlc.Queries, old, t taskRow, me uuid.UUID, journal []journalEntry, attWas, attIDs []uuid.UUID, c *change) error {
+	fresh := func(kind string) bool {
+		return slices.ContainsFunc(journal, func(j journalEntry) bool { return j.row != nil && j.replaced == uuid.Nil && j.row.Kind == kind })
+	}
+	if dateAny(old.DueOn) != dateAny(t.DueOn) {
+		due := DateString(t.DueOn)
+		if err := s.notifyChange(ctx, q, t, me, notifications.TaskDueChanged, func(n *notice) { n.dueOn = due }, c); err != nil {
+			return err
+		}
+	}
+	if old.Priority != t.Priority && fresh("priority") {
+		if err := s.notifyChange(ctx, q, t, me, notifications.TaskPriority, nil, c); err != nil {
+			return err
+		}
+	}
+	if !eqID(old.MilestoneID, t.MilestoneID) {
+		name := ""
+		if t.MilestoneID != nil {
+			ms, err := q.ListBoardMilestones(ctx, []uuid.UUID{t.BoardID})
+			if err != nil {
+				return err
+			}
+			for _, m := range ms {
+				if m.ID == *t.MilestoneID {
+					name = m.Name
+				}
+			}
+		}
+		if err := s.notifyChange(ctx, q, t, me, notifications.TaskMilestone, func(n *notice) { n.text = name }, c); err != nil {
+			return err
+		}
+	}
+	for _, f := range []string{"title", "description"} {
+		if fresh(f) {
+			if err := s.notifyChange(ctx, q, t, me, notifications.TaskEdited, func(n *notice) { n.text = f }, c); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	for _, id := range attIDs {
+		if slices.Contains(attWas, id) {
+			continue
+		}
+		f, err := q.GetFile(ctx, id)
+		if err != nil {
+			return err
+		}
+		return s.notifyChange(ctx, q, t, me, notifications.TaskAttachment, func(n *notice) { n.text = f.Name }, c)
+	}
+	return nil
 }
 
 func eqID(a, b *uuid.UUID) bool {
@@ -1727,6 +1790,10 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 		map[string]any{"board_id": dstID.String(), "key": TaskKey(b.Key, number), "status_id": to.ID.String()}); err != nil {
 		return err
 	}
+	// Its subscribers who see the new board (ADR-0089 MOVED).
+	if err := s.notifyChange(r.Context(), q, moved, me, notifications.TaskMoved, func(n *notice) { n.text = b.Name }, c); err != nil {
+		return err
+	}
 	// The old board's viewers lose the task; the new board's get it as TASK_CREATE.
 	c.before = append(c.before, wsEvent{src.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskDelete{TaskDelete: &v1.TaskDelete{
 		WorkspaceId: src.WorkspaceID.String(), BoardId: oldBoard.String(), TaskId: t.ID.String()}}}})
@@ -1774,7 +1841,20 @@ func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived b
 		if t.ParentID != nil {
 			c.tasks = append(c.tasks, *t.ParentID)
 		}
-		return c.record(r.Context(), q, t, me, kind, nil, nil)
+		if err := c.record(r.Context(), q, t, me, kind, nil, nil); err != nil {
+			return err
+		}
+		if !archived {
+			return nil
+		}
+		// ADR-0089: no due notices for an archived task; ARCHIVED to its subscribers who
+		// still see it.
+		if err := q.DeleteTaskDueNotices(r.Context(), t.ID); err != nil {
+			return err
+		}
+		at, now := t, s.Now()
+		at.ArchivedAt = &now
+		return s.notifyChange(r.Context(), q, at, me, notifications.TaskArchived, nil, &c)
 	})
 	if err != nil {
 		return err
@@ -1788,6 +1868,7 @@ func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived b
 		for _, id := range c.tasks {
 			s.publishTaskEvent(r.Context(), id, false)
 		}
+		s.sendNotices(r.Context(), t.ID, c.notices)
 	} else {
 		s.publish(r.Context(), t.ID, &c, true)
 	}
@@ -1828,7 +1909,10 @@ func (s *Service) setAssignees(w http.ResponseWriter, r *http.Request) error {
 		if err := c.record(r.Context(), q, t, me, "assignees", map[string]any{"assignees": assigneesJSON(old)}, map[string]any{"assignees": inputsJSON(in)}); err != nil {
 			return err
 		}
-		return s.notifyDirect(r.Context(), q, t, me, fresh, nil, uuid.Nil, &c)
+		if err := s.notifyDirect(r.Context(), q, t, me, fresh, nil, uuid.Nil, &c); err != nil {
+			return err
+		}
+		return s.notifyAddressed(r.Context(), q, t, me, notifications.TaskUnassigned, unassigned(old, in), nil, &c)
 	})
 	if err != nil {
 		return err

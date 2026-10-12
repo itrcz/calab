@@ -12,6 +12,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
@@ -167,8 +168,13 @@ func (s *Service) addWatcher(w http.ResponseWriter, r *http.Request) error {
 		if !slices.Contains(cur, u) && len(cur) >= MaxWatchers {
 			return httpx.Conflict("at most 50 watchers")
 		}
-		_, err = addWatchers(r.Context(), q, t, me, []uuid.UUID{u}, &c)
-		return err
+		added, err := addWatchers(r.Context(), q, t, me, []uuid.UUID{u}, &c)
+		if err != nil {
+			return err
+		}
+		// ADR-0089 WATCHER_ADDED: made a watcher by someone else (decide skips the actor; a
+		// mention makes watchers through mentionWatchers and notifies MENTIONED instead).
+		return s.notifyAddressed(r.Context(), q, t, me, notifications.TaskWatcherAdded, added, nil, &c)
 	})
 	if err != nil {
 		return err

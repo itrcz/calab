@@ -258,7 +258,7 @@ func TaskNotifies(f TaskFacts) bool {
 // MaxTaskNotifyOff bounds users.task_notify_off.
 const MaxTaskNotifyOff = 64
 
-// ErrTaskNotifyOff: an UNSPECIFIED or unknown kind, or too many.
+// ErrTaskNotifyOff is returned for an UNSPECIFIED or unknown kind, or too many.
 var ErrTaskNotifyOff = errors.New("task notification kinds must be known TaskNoticeKind values, at most 64")
 
 // TaskNotifyOff validates a requested list of switched-off kinds (UpdateMeRequest

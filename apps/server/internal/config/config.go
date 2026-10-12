@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // TASKS_DUE_TZ is validated here; the distroless image has no zoneinfo
 
 	"github.com/caarlos0/env/v11"
 )
@@ -179,7 +180,9 @@ type Config struct {
 	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
 	// TEMP_ROOM_RETENTION_DAYS (ADR-0044): archived temporary rooms are deleted with their
 	// history this many days after they closed.
-	TempRoomRetentionDays  int    `env:"TEMP_ROOM_RETENTION_DAYS" envDefault:"90"`
+	TempRoomRetentionDays int `env:"TEMP_ROOM_RETENTION_DAYS" envDefault:"90"`
+	// TasksDueTZ: the IANA zone whose 09:00 the due notices of tasks go out at (ADR-0089).
+	TasksDueTZ             string `env:"TASKS_DUE_TZ" envDefault:"Europe/Moscow"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
@@ -354,6 +357,11 @@ func (c *Config) Validate() error {
 	}
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
+	}
+	if c.TasksDueTZ != "" {
+		if _, err := time.LoadLocation(c.TasksDueTZ); err != nil || c.TasksDueTZ == "Local" {
+			errs = append(errs, fmt.Errorf("TASKS_DUE_TZ must be an IANA zone name, got %q", c.TasksDueTZ))
+		}
 	}
 	if c.TempRoomRetentionDays < 1 || c.TempRoomRetentionDays > 3650 {
 		errs = append(errs, errors.New("TEMP_ROOM_RETENTION_DAYS must be 1..3650"))

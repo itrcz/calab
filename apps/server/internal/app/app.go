@@ -150,6 +150,8 @@ type App struct {
 	identityDB *db.DB
 	// tempRetention: TEMP_ROOM_RETENTION_DAYS.
 	tempRetention time.Duration
+	// dueTZ: TASKS_DUE_TZ, the zone of the due notices of tasks (ADR-0089).
+	dueTZ *time.Location
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -185,6 +187,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
 	go a.Boards.RunRules(ctx, a.redis)                                 // scheduled automation rules (ADR-0060)
 	go a.Boards.RunApprovalNotices(ctx, boards.ApprovalNoticeInterval) // delayed approval notices (ADR-0082)
+	go a.Boards.RunDueNotices(ctx, boards.DueNoticeInterval, a.dueTZ)  // due soon / overdue (ADR-0089)
 	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 	go a.SIP.Run(ctx)
 	go a.billing.Run(ctx) // returns at once while BILLING_ENABLED=false
@@ -525,7 +528,7 @@ func New(d Deps) *App {
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
 		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
-		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
+		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour, dueTZ: boards.DueZone(d.Config.TasksDueTZ)}
 }
 
 // SetBilling switches billing admission and enforcement at run time (tests; the startup values

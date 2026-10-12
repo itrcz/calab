@@ -228,6 +228,7 @@ func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
 	s.EventReminders, s.EventRemindersDnd = nil, false
 	s.WorkHours = nil                        // users.work_* columns (ADR-0041)
 	s.HideMessageTextInNotifications = false // dedicated privacy column (ADR-0072)
+	s.TaskNotifyOff = nil                    // users.task_notify_off (ADR-0089)
 	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
 }
 
@@ -249,6 +250,7 @@ func Me(u sqlc.User) *v1.Me {
 		settings.EventReminders = append(settings.EventReminders, uint32(max(m, 0))) //nolint:gosec // ≤ 1440
 	}
 	settings.EventRemindersDnd = u.EventRemindersDnd
+	settings.TaskNotifyOff = notifications.TaskNotifyOffWire(u.TaskNotifyOff)
 	settings.WorkHours = &v1.WorkHours{StartMin: uint32(max(u.WorkStartMin, 0)), EndMin: uint32(max(u.WorkEndMin, 0)), //nolint:gosec // ≤ 1440
 		Days: make([]uint32, 0, len(u.WorkDays))}
 	for _, d := range u.WorkDays {

@@ -752,4 +752,5 @@ RETURNING task_id, user_id, kind, due_on;
 DELETE FROM task_due_notices WHERE task_id = $1;
 
 -- name: PurgeTaskDueNotices :execrows
-DELETE FROM task_due_notices WHERE sent_at < sqlc.arg('before');
+-- The dedup rows older than any notice they could still prevent.
+DELETE FROM task_due_notices WHERE sent_at < now() - interval '30 days';

@@ -27,6 +27,9 @@ type notice struct {
 	rule uuid.UUID
 	// reRequested: APPROVAL_REQUESTED after the recipient's decided vote was reset (ADR-0082).
 	reRequested bool
+	// dueOn / daysLeft: DUE_SOON, OVERDUE and DUE_CHANGED (ADR-0089).
+	dueOn    string
+	daysLeft int32
 }
 
 func actsOf(acts []sqlc.TaskActivity, taskID uuid.UUID) []sqlc.TaskActivity {
@@ -93,7 +96,8 @@ func decide(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, ki
 	for _, l := range levels {
 		s, subscribed := sub[l.UserID]
 		f := notifications.TaskFacts{Kind: kind, Level: notifications.LevelFromDB(l.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
-			Subscribed: subscribed, Muted: s.Muted, Workspace: l.Muted, Mandatory: mandatory[l.UserID]}
+			Subscribed: subscribed, Muted: s.Muted, Workspace: l.Muted, Mandatory: mandatory[l.UserID],
+			Off: slices.Contains(l.TaskNotifyOff, string(kind))}
 		if !notifications.TaskNotifies(f) {
 			continue
 		}
@@ -151,6 +155,62 @@ func (s *Service) notifySubscribers(ctx context.Context, q *sqlc.Queries, t task
 	return decide(ctx, q, t, actor, kind, users, msg, nil, c)
 }
 
+// notifyAddressed notifies users of a kind addressed to them (ADR-0089 §1: UNASSIGNED,
+// WATCHER_ADDED, DUE_SOON, OVERDUE) who see the task, without subscribing them; set fills the
+// details of the notices made.
+func (s *Service) notifyAddressed(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, kind notifications.TaskKind, users []uuid.UUID, set func(*notice), c *change) error {
+	if len(users) == 0 {
+		return nil
+	}
+	users, err := sees(ctx, q, t, users)
+	if err != nil || len(users) == 0 {
+		return err
+	}
+	from := len(c.notices)
+	if err := decide(ctx, q, t, actor, kind, users, uuid.Nil, nil, c); err != nil {
+		return err
+	}
+	c.fill(from, set)
+	return nil
+}
+
+// notifyChange notifies the subscribers of a change of a field (ADR-0089 §1: DUE_CHANGED,
+// PRIORITY, MILESTONE, MOVED, EDITED, ATTACHMENT, ARCHIVED); set fills the details.
+func (s *Service) notifyChange(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, kind notifications.TaskKind, set func(*notice), c *change) error {
+	from := len(c.notices)
+	if err := s.notifySubscribers(ctx, q, t, actor, kind, uuid.Nil, c); err != nil {
+		return err
+	}
+	c.fill(from, set)
+	return nil
+}
+
+// fill applies set to the notices made since index from.
+func (c *change) fill(from int, set func(*notice)) {
+	if set == nil {
+		return
+	}
+	for i := from; i < len(c.notices); i++ {
+		set(&c.notices[i])
+	}
+}
+
+// unassigned: the users removed from the assignees or from the lead (ADR-0089 UNASSIGNED).
+func unassigned(old []sqlc.TaskAssignee, in []*v1.TaskAssigneeInput) []uuid.UUID {
+	next := map[string]bool{}
+	for _, a := range in {
+		next[a.GetUserId()] = a.GetIsLead()
+	}
+	var out []uuid.UUID
+	for _, a := range old {
+		lead, stays := next[a.UserID.String()]
+		if !stays || (a.IsLead && !lead) {
+			out = append(out, a.UserID)
+		}
+	}
+	return out
+}
+
 // sendNotices sends every notified user the task as they see it, with the notice.
 func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice) {
 	if len(ns) == 0 {
@@ -173,6 +233,10 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 			tn.MessageId = n.message.String()
 		}
 		tn.ReRequested = n.reRequested
+		tn.DueOn, tn.DaysLeft = n.dueOn, n.daysLeft
+		if n.text != "" && n.rule == uuid.Nil { // the details of an ADR-0089 notice
+			tn.Text = n.text
+		}
 		if n.rule != uuid.Nil {
 			tn.Text, tn.RuleId = n.text, n.rule.String()
 		}

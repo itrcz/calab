@@ -2697,11 +2697,12 @@ func (q *Queries) NextTaskNumber(ctx context.Context, id uuid.UUID) (int32, erro
 }
 
 const purgeTaskDueNotices = `-- name: PurgeTaskDueNotices :execrows
-DELETE FROM task_due_notices WHERE sent_at < $1
+DELETE FROM task_due_notices WHERE sent_at < now() - interval '30 days'
 `
 
-func (q *Queries) PurgeTaskDueNotices(ctx context.Context, before time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, purgeTaskDueNotices, before)
+// The dedup rows older than any notice they could still prevent.
+func (q *Queries) PurgeTaskDueNotices(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeTaskDueNotices)
 	if err != nil {
 		return 0, err
 	}
