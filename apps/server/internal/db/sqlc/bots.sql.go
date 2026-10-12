@@ -239,7 +239,7 @@ const createBotUser = `-- name: CreateBotUser :one
 
 INSERT INTO users (email, password_hash, display_name, settings, is_bot, email_verified_at, username)
 VALUES (NULL, NULL, $1, $2, true, now(), $3::citext)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type CreateBotUserParams struct {
@@ -289,6 +289,7 @@ func (q *Queries) CreateBotUser(ctx context.Context, arg CreateBotUserParams) (U
 		&i.Username,
 		&i.Phone,
 		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -450,7 +451,7 @@ func (q *Queries) GetBotAuth(ctx context.Context, userID uuid.UUID) (GetBotAuthR
 }
 
 const getBotByUsername = `-- name: GetBotByUsername :one
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off FROM bots b JOIN users u ON u.id = b.user_id WHERE b.username = $1
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM bots b JOIN users u ON u.id = b.user_id WHERE b.username = $1
 `
 
 type GetBotByUsernameRow struct {
@@ -512,6 +513,7 @@ func (q *Queries) GetBotByUsername(ctx context.Context, username string) (GetBot
 		&i.User.Username,
 		&i.User.Phone,
 		&i.User.TaskNotifyOff,
+		&i.User.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -545,7 +547,7 @@ func (q *Queries) GetBotForUpdate(ctx context.Context, userID uuid.UUID) (Bot, e
 }
 
 const getBotWithUser = `-- name: GetBotWithUser :one
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off FROM bots b JOIN users u ON u.id = b.user_id WHERE b.user_id = $1
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM bots b JOIN users u ON u.id = b.user_id WHERE b.user_id = $1
 `
 
 type GetBotWithUserRow struct {
@@ -607,6 +609,7 @@ func (q *Queries) GetBotWithUser(ctx context.Context, userID uuid.UUID) (GetBotW
 		&i.User.Username,
 		&i.User.Phone,
 		&i.User.TaskNotifyOff,
+		&i.User.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -705,6 +708,31 @@ func (q *Queries) ListBotCommands(ctx context.Context, botIds []uuid.UUID) ([]Bo
 	return items, nil
 }
 
+const listTaskNoticeRelayUsers = `-- name: ListTaskNoticeRelayUsers :many
+SELECT id FROM users WHERE task_notify_bots <> '{}'
+`
+
+// The users who relay their task notices to bots (ADR-0090; the bots' cache of who to look up).
+func (q *Queries) ListTaskNoticeRelayUsers(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listTaskNoticeRelayUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWebhookBots = `-- name: ListWebhookBots :many
 SELECT b.user_id, m.workspace_id FROM bots b
 JOIN users u ON u.id = b.user_id
@@ -773,7 +801,7 @@ func (q *Queries) ListWorkspaceBotIDs(ctx context.Context, workspaceID uuid.UUID
 }
 
 const listWorkspaceBots = `-- name: ListWorkspaceBots :many
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off FROM workspace_members m
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM workspace_members m
 JOIN bots b ON b.user_id = m.user_id
 JOIN users u ON u.id = b.user_id
 WHERE m.workspace_id = $1
@@ -846,6 +874,7 @@ func (q *Queries) ListWorkspaceBots(ctx context.Context, workspaceID uuid.UUID) 
 			&i.User.Username,
 			&i.User.Phone,
 			&i.User.TaskNotifyOff,
+			&i.User.TaskNotifyBots,
 		); err != nil {
 			return nil, err
 		}
@@ -904,6 +933,17 @@ type MarkWebhookRetryParams struct {
 
 func (q *Queries) MarkWebhookRetry(ctx context.Context, arg MarkWebhookRetryParams) error {
 	_, err := q.db.Exec(ctx, markWebhookRetry, arg.ID, arg.NextAt, arg.Error)
+	return err
+}
+
+const removeTaskNotifyBot = `-- name: RemoveTaskNotifyBot :exec
+UPDATE users SET task_notify_bots = array_remove(task_notify_bots, $1::uuid)
+WHERE task_notify_bots <> '{}' AND $1::uuid = ANY(task_notify_bots)
+`
+
+// A deleted bot leaves every user's task_notify_bots (ADR-0090 §4).
+func (q *Queries) RemoveTaskNotifyBot(ctx context.Context, botUserID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, removeTaskNotifyBot, botUserID)
 	return err
 }
 
@@ -1040,6 +1080,44 @@ func (q *Queries) SetBotWebhook(ctx context.Context, arg SetBotWebhookParams) (B
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const taskNoticeRelayBots = `-- name: TaskNoticeRelayBots :many
+SELECT b.user_id FROM users u
+JOIN bots b ON b.user_id = ANY(u.task_notify_bots)
+JOIN users bu ON bu.id = b.user_id
+JOIN workspace_members m ON m.user_id = b.user_id AND m.workspace_id = $1
+WHERE u.id = $2 AND bu.disabled_at IS NULL AND b.token_hash IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM bot_blocks k WHERE k.user_id = u.id AND k.bot_user_id = b.user_id)
+ORDER BY b.user_id
+`
+
+type TaskNoticeRelayBotsParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+// The bots that get a task notice of the user in the workspace (ADR-0090 §3-4): from the user's
+// task_notify_bots, those still a bot with a valid token, members of the workspace and not
+// blocked by the user.
+func (q *Queries) TaskNoticeRelayBots(ctx context.Context, arg TaskNoticeRelayBotsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, taskNoticeRelayBots, arg.WorkspaceID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const unblockBot = `-- name: UnblockBot :exec

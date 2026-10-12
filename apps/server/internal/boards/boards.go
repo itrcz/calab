@@ -55,6 +55,8 @@ type Service struct {
 	FormReadLimit, FormIPLimit, FormUserLimit, FormSubmitLimit Limiter
 	// Now is the clock (tests move it).
 	Now func() time.Time
+	// Relay passes the users' task notices on to the bots they chose (ADR-0090); nil = off.
+	Relay NoticeRelay
 }
 
 // New creates the service; p and f may be nil (no plan limit, no uploads).

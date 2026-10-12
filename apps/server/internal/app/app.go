@@ -392,6 +392,8 @@ func New(d Deps) *App {
 	ah.Private(mux, private)
 	pushSvc.Routes(mux, private)
 	userHandlers := users.NewHandlers(d.DB, pub, hub)
+	// ADR-0090: the bots' cache of users with a task notice relay reloads on PATCH /api/me.
+	userHandlers.TaskRelaysChanged = botSvc.InvalidateTaskRelays
 	userHandlers.UsernameLimit = redisx.NewRateLimiter(d.Redis, "rl:username-check:", 30, 30) // ADR-0077: 30 at once, then one per 2 s
 	userHandlers.Routes(mux, private)
 	workspaces.NewHandlers(d.DB, pub, d.Blob, workspaces.Limits{
@@ -415,6 +417,7 @@ func New(d Deps) *App {
 	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
 	boardSvc := boards.New(d.DB, pub, planSvc, filesSvc)
 	boardSvc.PublicURL = d.Config.PublicAppURL
+	boardSvc.Relay = botSvc // task notices relayed to the bots users chose (ADR-0090)
 	boardSvc.FormReadLimit = redisx.NewRateLimiter(d.Redis, "rl:form-read:", 30, 30)
 	boardSvc.FormIPLimit = redisx.NewRateLimiter(d.Redis, "rl:form-ip:", 5, 5)
 	boardSvc.FormUserLimit = redisx.NewRateLimiter(d.Redis, "rl:form-user:", 10, 10)

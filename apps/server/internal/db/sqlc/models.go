@@ -1535,6 +1535,7 @@ type User struct {
 	Username                       *string
 	Phone                          *string
 	TaskNotifyOff                  []string
+	TaskNotifyBots                 []uuid.UUID
 }
 
 type UserNote struct {

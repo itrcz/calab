@@ -46,6 +46,9 @@ type Handlers struct {
 	UsernameLimit interface {
 		Take(ctx context.Context, key string) error
 	}
+	// TaskRelaysChanged: a user changed task_notify_bots (ADR-0090): the bots' cache of the
+	// users with a relay reloads.
+	TaskRelaysChanged func()
 }
 
 // NewHandlers creates the /api/me handlers.
@@ -90,12 +93,12 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
 		return err
 	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil ||
-		req.Phone != nil || req.Username != nil) {
+		req.Phone != nil || req.Username != nil || req.TaskNotifyBots != nil) {
 		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
 	}
 	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil ||
 		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil ||
-		req.Phone != nil || req.Username != nil || req.TaskNotifyOff != nil) { // a bot's username is its bot username (ADR-0077)
+		req.Phone != nil || req.Username != nil || req.TaskNotifyOff != nil || req.TaskNotifyBots != nil) { // a bot's username is its bot username (ADR-0077)
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -199,6 +202,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Validation("taskNotifyOff.kinds", err.Error())
 		}
 	}
+	var relayBots []uuid.UUID
+	if tb := req.GetTaskNotifyBots(); tb != nil { // ADR-0090
+		var err error
+		if relayBots, err = taskNotifyBots(r.Context(), h.db.Q, id.UserID, tb.GetBotUserIds()); err != nil {
+			return err
+		}
+	}
 	var workStart, workEnd int16
 	var workDays []int16
 	if wh := req.GetWorkHours(); wh != nil { // ADR-0041
@@ -231,6 +241,16 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return guarded.SetUserTaskNotifyOff(r.Context(), sqlc.SetUserTaskNotifyOffParams{ID: id.UserID, TaskNotifyOff: taskOff})
 		}); err != nil {
 			return err
+		}
+	}
+	if req.GetTaskNotifyBots() != nil {
+		if u, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+			return guarded.SetUserTaskNotifyBots(r.Context(), sqlc.SetUserTaskNotifyBotsParams{ID: id.UserID, TaskNotifyBots: relayBots})
+		}); err != nil {
+			return err
+		}
+		if h.TaskRelaysChanged != nil {
+			h.TaskRelaysChanged()
 		}
 	}
 	if req.GetWorkHours() != nil {

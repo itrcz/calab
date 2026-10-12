@@ -66,6 +66,7 @@ type Service struct {
 	events  events.Publisher
 	box     *sealbox.Box
 	hooks   hookCache
+	relays  relayCache
 	wh      webhookWorker
 }
 
@@ -554,6 +555,9 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if err := q.DeleteBot(r.Context(), b.UserID); err != nil {
+			return err
+		}
+		if err := q.RemoveTaskNotifyBot(r.Context(), b.UserID); err != nil { // ADR-0090 §4
 			return err
 		}
 		if err := q.ClearUsername(r.Context(), b.UserID); err != nil { // frees it (ADR-0077)

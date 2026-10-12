@@ -1112,6 +1112,22 @@ message TaskUpdate {
   TaskNotice notice = 2;
 }
 
+// TASK_NOTICE (ADR-0090): a task notice of user_id relayed to a bot the user chose
+// (UserSettings.task_notify_bots), on the bot's user channel and webhook. Sent whenever the
+// user gets a TASK_UPDATE with a notice, while the bot is a member of the task's workspace,
+// regardless of the bot's own VIEW_BOARD (the user entrusted their notices to it). task is the
+// task as the user sees it, without the viewer's state (subscribed, muted, unread and
+// viewer_state are false); task_url opens it in the app.
+message TaskNoticeRelay {
+  string workspace_id = 1;
+  string user_id = 2;
+  Task task = 3;
+  TaskNotice notice = 4;
+  string task_url = 5;
+  string board_key = 6;
+  string board_name = 7;
+}
+
 // Why a task notifies its recipient: the client shows a system notification.
 message TaskNotice {
   TaskNoticeKind kind = 1;

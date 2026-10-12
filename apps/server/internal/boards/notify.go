@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -220,6 +221,7 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 	if err != nil || !ok {
 		return
 	}
+	var boardName *string // read once, for the first relayed notice
 	for _, n := range ns {
 		pbs, err := tasksProto(ctx, s.db.Q, []taskRow{t}, n.user)
 		if err != nil {
@@ -241,7 +243,38 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 			tn.Text, tn.RuleId = n.text, n.rule.String()
 		}
 		s.ev.User(ctx, n.user, &v1.DispatchEvent{Event: &v1.DispatchEvent_TaskUpdate{TaskUpdate: &v1.TaskUpdate{Task: pbs[0], Notice: tn}}})
+		s.relayNotice(ctx, t, n.user, pbs[0], tn, &boardName)
 	}
+}
+
+// NoticeRelay passes a user's task notices on to the bots they chose (bots.Service, ADR-0090).
+type NoticeRelay interface {
+	// HasTaskRelay: the user may relay task notices (cheap, cached); a TASK_NOTICE is built
+	// only then.
+	HasTaskRelay(ctx context.Context, user uuid.UUID) bool
+	// RelayTaskNotice sends the notice to the user's bots that are members of its workspace.
+	RelayTaskNotice(ctx context.Context, n *v1.TaskNoticeRelay)
+}
+
+// relayNotice passes a notice the user just got on to the bots they chose (ADR-0090 §3): the
+// task as they see it (the relay drops the viewer's state), with a link and the board.
+func (s *Service) relayNotice(ctx context.Context, t taskRow, user uuid.UUID, task *v1.Task, tn *v1.TaskNotice, boardName **string) {
+	if s.Relay == nil || !s.Relay.HasTaskRelay(ctx, user) {
+		return
+	}
+	if *boardName == nil {
+		name := ""
+		if b, err := s.db.Q.GetBoard(ctx, t.BoardID); err == nil {
+			name = b.Name
+		}
+		*boardName = &name
+	}
+	n := &v1.TaskNoticeRelay{WorkspaceId: t.WorkspaceID.String(), UserId: user.String(), Task: task, Notice: tn,
+		BoardKey: t.BoardKey, BoardName: **boardName}
+	if s.PublicURL != "" {
+		n.TaskUrl = strings.TrimRight(s.PublicURL, "/") + "/t/" + task.GetKey()
+	}
+	s.Relay.RelayTaskNotice(ctx, n)
 }
 
 // TaskHook runs after a comment is posted (or forwarded) into a task room (messages.Handlers

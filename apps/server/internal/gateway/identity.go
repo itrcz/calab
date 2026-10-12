@@ -277,6 +277,9 @@ var eventScope = map[protoreflect.Name]bool{
 	// Balance billing (ADR-0080): workspace-attributed (workspace_id), published on the owner's
 	// user channel only; lease-gated by that workspace like every scoped event.
 	"billing_update": true,
+	// Task notice relay (ADR-0090): published on a bot's user channel only; bot sessions are
+	// not lease-gated, a person's session never gets it.
+	"task_notice": false,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

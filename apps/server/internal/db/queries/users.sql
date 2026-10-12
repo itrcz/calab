@@ -149,3 +149,23 @@ SELECT EXISTS (
 -- The task notification kinds switched off (ADR-0089), replaced.
 UPDATE users SET task_notify_off = $2 WHERE id = $1
 RETURNING *;
+
+-- name: SetUserTaskNotifyBots :one
+-- The bots that get the user's task notices (ADR-0090), replaced.
+UPDATE users SET task_notify_bots = $2 WHERE id = $1
+RETURNING *;
+
+-- name: TaskNotifyBotsAvailable :many
+-- Of bot_ids, the bots the user may relay task notices to (ADR-0090 §1): an enabled bot with a
+-- valid token (the gateway; a webhook needs one too) that shares a workspace with the user (where
+-- the user is not a guest) and is not blocked by them.
+SELECT b.user_id FROM bots b
+JOIN users bu ON bu.id = b.user_id
+WHERE b.user_id = ANY(sqlc.arg('bot_ids')::uuid[]) AND bu.is_bot AND bu.disabled_at IS NULL
+  AND b.token_hash IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM bot_blocks k WHERE k.user_id = sqlc.arg('user_id') AND k.bot_user_id = b.user_id)
+  AND EXISTS (
+    SELECT 1 FROM workspace_members mb
+    JOIN workspace_members mu ON mu.workspace_id = mb.workspace_id AND mu.user_id = sqlc.arg('user_id') AND mu.role <> 'guest'
+    WHERE mb.user_id = b.user_id
+  );

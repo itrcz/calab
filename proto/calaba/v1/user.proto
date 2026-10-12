@@ -83,6 +83,11 @@ message UserSettings {
   // kinds added later are on by themselves. Never holds the mandatory APPROVAL_REQUESTED,
   // APPROVED, REJECTED.
   repeated int32 task_notify_off = 11;
+  // Bots that get the user's task notices (ADR-0090): ids of bot users, read-only here like
+  // task_notify_off: changed with UpdateMeRequest.task_notify_bots. A bot gets a
+  // TASK_NOTICE (TaskNoticeRelay) for every task notice the user gets, while it is a member
+  // of the task's workspace. May hold bots that left since (skipped when sending).
+  repeated string task_notify_bots = 12;
 }
 
 // Working hours of a user (ADR-0041) in their profile zone (UTC without one): minutes from
@@ -104,6 +109,14 @@ message EventReminderSettings {
 // APPROVED, REJECTED); 422 for UNSPECIFIED, an unknown value or more than 64 values.
 message TaskNotifyOff {
   repeated int32 kinds = 1;
+}
+
+// PATCH /api/me task_notify_bots (ADR-0090): replaces the list of bots that get the user's task
+// notices. Each id: a bot that shares a workspace with the user and has a valid token (gateway)
+// or a webhook; at most 10. 422 VALIDATION (field taskNotifyBots.botUserIds, reason
+// TASK_NOTIFY_BOT_UNAVAILABLE) otherwise; 403 for bots and guests.
+message TaskNotifyBots {
+  repeated string bot_user_ids = 1;
 }
 
 // The authenticated user: public profile + private fields.
@@ -168,6 +181,9 @@ message UpdateMeRequest {
   optional string username = 13;
   // Task notification triggers switched off (ADR-0089); unset = unchanged. Not for bots (403).
   TaskNotifyOff task_notify_off = 14;
+  // Bots that get the user's task notices (ADR-0090); unset = unchanged. Not for bots and
+  // guests (403).
+  TaskNotifyBots task_notify_bots = 15;
 }
 
 // GET /api/usernames/{name}/available → whether the caller may take the nickname now (the
