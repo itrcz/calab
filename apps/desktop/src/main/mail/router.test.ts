@@ -27,9 +27,14 @@ class FakeChild implements EngineChild {
   exit(code = 1): void {
     this.onExit?.(code);
   }
+  lastIdOf(kind: 'request'): number {
+    const m = [...this.sent].reverse().find((x) => x.kind === kind);
+    if (m?.kind !== 'request') throw new Error('nothing sent');
+    return m.req.id;
+  }
   lastId(): number {
     const last = this.sent[this.sent.length - 1];
-    if (!last) throw new Error('nothing sent');
+    if (last?.kind !== 'request') throw new Error('nothing sent');
     return last.req.id;
   }
 }
@@ -64,7 +69,7 @@ describe('MailRouter', () => {
     expect(children).toHaveLength(1);
     const child = children[0];
     if (!child) throw new Error('no child');
-    const [ra, rb] = child.sent.map((m) => m.req);
+    const [ra, rb] = child.sent.flatMap((m) => (m.kind === 'request' ? [m.req] : []));
     expect(ra?.method).toBe('accounts.list');
     // Out of order: b first.
     child.reply({ kind: 'response', res: { id: rb?.id ?? -1, ok: true, result: 'B' } });
@@ -156,5 +161,40 @@ describe('MailRouter', () => {
     vi.advanceTimersByTime(120_000);
     expect(children).toHaveLength(1);
     await expect(router.request({ method: 'accounts.list', params: [] })).resolves.toMatchObject({ ok: false, error: { code: 'ENGINE_DOWN' } });
+  });
+
+  it('posts init + accounts on every fork before requests; internal requests share the id space', async () => {
+    const children: FakeChild[] = [];
+    let spawns = 0;
+    const router = new MailRouter({
+      fork: () => {
+        const c = new FakeChild();
+        children.push(c);
+        return c;
+      },
+      broadcast: () => undefined,
+      onSpawn: (post) => {
+        spawns++;
+        post({ kind: 'init', dataDir: '/data' });
+        post({ kind: 'accounts', accounts: [] });
+      },
+    });
+    const call = router.request({ method: 'accounts.list', params: [] });
+    const v = router.internal({ kind: 'verify', input: { email: 'a@b.c', password: 'p' } });
+    const child = children[0];
+    if (!child) throw new Error('no child');
+    expect(child.sent.map((m) => m.kind)).toEqual(['init', 'accounts', 'request', 'verify']);
+    const vm = child.sent[3];
+    if (vm?.kind !== 'verify') throw new Error('no verify');
+    child.reply({ kind: 'response', res: { id: vm.id, ok: false, error: { code: 'AUTH_FAILED', message: 'no' } } });
+    await expect(v).resolves.toMatchObject({ ok: false, error: { code: 'AUTH_FAILED' } });
+    child.reply({ kind: 'response', res: { id: child.lastIdOf('request'), ok: true, result: [] } });
+    await expect(call).resolves.toEqual({ ok: true, result: [] });
+    expect(router.post({ kind: 'accounts', accounts: [] })).toBe(true);
+    child.exit(1);
+    expect(router.post({ kind: 'accounts', accounts: [] })).toBe(false);
+    vi.advanceTimersByTime(1000);
+    expect(spawns).toBe(2);
+    expect(children[1]?.sent.map((m) => m.kind)).toEqual(['init', 'accounts']);
   });
 });

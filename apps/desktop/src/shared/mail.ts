@@ -379,7 +379,13 @@ export type MailEvent =
    * Emitted by main, not the engine: the engine process went down (crash; requests fail with
    * `ENGINE_DOWN` until it is back) or came back up (refetch what is on screen).
    */
-  | { type: 'engine'; state: 'up' | 'down' };
+  | { type: 'engine'; state: 'up' | 'down' }
+  /**
+   * Emitted by main, not the engine: a `mailto:` link was clicked inside a message body (the sandboxed
+   * iframe, §10 — main's frame guard cancels that navigation). The renderer opens a new message with
+   * these fields (empty when absent in the link); `to` / `cc` / `bcc` carry bare addresses (`name: ''`).
+   */
+  | { type: 'compose'; to: MailAddress[]; cc: MailAddress[]; bcc: MailAddress[]; subject: string; text: string };
 
 // ---------------------------------------------------------------- errors
 
@@ -408,7 +414,11 @@ export type MailErrorCode =
 export interface MailError {
   code: MailErrorCode;
   message: string;
-  /** Only with `DISCOVERY_FAILED`: best guesses (`source: 'manual'`) to pre-fill the manual form. */
+  /**
+   * With `DISCOVERY_FAILED`: best guesses (`source: 'manual'`) to pre-fill the manual form.
+   * With `AUTH_FAILED` from `accounts.add` / `setPassword`: the settings that were tried (for the
+   * provider's `appPasswordUrl`).
+   */
   discovery?: MailDiscovery;
 }
 
@@ -505,6 +515,11 @@ export interface MailApi {
   /**
    * A URL for an attachment usable in <img> / for download: `calaba-mail://attachment/<messageId>/<attachmentId>`
    * in Electron (inline only for image/*, §7/§10), a data: URL in the mock. Local, not a request.
+   * Main answers `image/*` inline (for `<img>`); anything else is never rendered. To save any
+   * attachment, navigate the app window to the URL (a plain `<a href>` click in the main frame, no
+   * `download` attribute — the renderer CSP does not allow fetching it): main cancels that
+   * navigation and downloads the file into Downloads through Chromium's download manager
+   * (quarantine / Mark-of-the-Web, like `downloads.ts`), then reveals it in the file manager.
    */
   attachmentUrl(messageId: string, attachmentId: string): string;
   /** Subscribe to engine events; returns the unsubscribe function. Local, not a request. */
@@ -602,8 +617,61 @@ export interface MailRequest extends MailCall {
 /** engine → main response to `MailRequest.id`. */
 export type MailResponse = MailReply & { id: number };
 
-/** Messages main → engine (utilityProcess `postMessage`). */
-export type MailToEngine = { kind: 'request'; req: MailRequest };
+/**
+ * An account as main hands it to the engine (main → engine only, never to the renderer): the stored
+ * settings plus the password decrypted from `userData/mail/accounts.bin` (§3).
+ */
+export interface MailEngineAccount {
+  id: string;
+  email: string;
+  name: string;
+  provider: MailProvider;
+  imap: MailServerSettings;
+  smtp: MailServerSettings;
+  login: string;
+  password: string;
+}
+
+/**
+ * `verify` input: log in to IMAP and SMTP before main stores an account (`accounts.add`, `update`
+ * with new servers, `setPassword`). Without `settings` the engine discovers them first (§4).
+ */
+export interface MailVerifyInput {
+  email: string;
+  password: string;
+  settings?: { imap: MailServerSettings; smtp: MailServerSettings; login: string };
+}
+
+/** The `verify` result: the settings that logged in (main stores them with the password). */
+export interface MailVerified {
+  provider: MailProvider;
+  imap: MailServerSettings;
+  smtp: MailServerSettings;
+  login: string;
+}
+
+/** The `attachment` result (main's `calaba-mail://` handler): the bytes and what to serve them as. */
+export interface MailAttachmentData {
+  name: string;
+  mime: string;
+  data: Uint8Array;
+}
+
+/**
+ * Messages main → engine (utilityProcess `postMessage`):
+ * - `request` — a renderer call relayed by main;
+ * - `init` — first message after every fork: where the engine keeps its data (`userData/mail`);
+ * - `accounts` — the complete account list with passwords, after `init` and on every change (the
+ *   engine starts / stops / restarts account syncs by diffing it);
+ * - `verify` / `attachment` — main's own requests, answered with a `response` of the same `id`
+ *   (result `MailVerified` / `MailAttachmentData`); ids share the `request` id space.
+ */
+export type MailToEngine =
+  | { kind: 'request'; req: MailRequest }
+  | { kind: 'init'; dataDir: string }
+  | { kind: 'accounts'; accounts: MailEngineAccount[] }
+  | { kind: 'verify'; id: number; input: MailVerifyInput }
+  | { kind: 'attachment'; id: number; messageId: string; attachmentId: string };
 
 /** Messages engine → main (`process.parentPort.postMessage`). */
 export type MailFromEngine = { kind: 'response'; res: MailResponse } | { kind: 'event'; event: MailEvent };

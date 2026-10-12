@@ -16,7 +16,15 @@ export interface MailRouterDeps {
   log?(message: string, meta?: Record<string, unknown>): void;
   /** Per-request deadline (default 30 s). */
   timeoutMs?: number;
+  /**
+   * Called right after every fork, before any request is posted: main sends `init` and the account
+   * list (T1). Messages are delivered in order, so the engine has them before the first request.
+   */
+  onSpawn?(post: (message: MailToEngine) => void): void;
 }
+
+/** main's own engine requests (not renderer calls): answered like requests, by id. */
+export type MailInternal = { kind: 'verify'; input: Extract<MailToEngine, { kind: 'verify' }>['input'] } | { kind: 'attachment'; messageId: string; attachmentId: string };
 
 /** Restart delays after a crash: 1 s, doubling, capped at 60 s (ADR-0080 §2). */
 export const RESTART_MIN_MS = 1000;
@@ -71,15 +79,43 @@ export class MailRouter {
     const child = this.child;
     if (!child) return Promise.resolve(down('the mail engine did not start'));
     const id = this.nextId++;
+    return this.await(id, c.method, undefined, () => child.postMessage({ kind: 'request', req: { id, method: c.method, params: c.params } }));
+  }
+
+  /** A main-side request (`verify`, `attachment`): forks the engine if needed, same deadline as calls. */
+  internal(msg: MailInternal, timeoutMs?: number): Promise<MailReply> {
+    if (this.stopped) return Promise.resolve(down('the app is quitting'));
+    if (this.restartTimer) return Promise.resolve(down('the mail engine is restarting'));
+    if (!this.child) this.spawn();
+    const child = this.child;
+    if (!child) return Promise.resolve(down('the mail engine did not start'));
+    const id = this.nextId++;
+    return this.await(id, msg.kind, timeoutMs, () => child.postMessage({ ...msg, id }));
+  }
+
+  /** Posts a one-way message (`accounts`) to a running engine; false when none is running. */
+  post(message: MailToEngine): boolean {
+    if (!this.child) return false;
+    try {
+      this.child.postMessage(message);
+      return true;
+    } catch (e) {
+      this.deps.log?.('mail: post to engine failed', { error: String(e) });
+      return false;
+    }
+  }
+
+  private await(id: number, what: string, timeoutMs: number | undefined, send: () => void): Promise<MailReply> {
+    const ms = timeoutMs ?? this.timeoutMs;
     return new Promise<MailReply>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        this.deps.log?.('mail: request timed out', { method: c.method });
-        resolve(down(`no answer to ${c.method} in ${Math.round(this.timeoutMs / 1000)} s`));
-      }, this.timeoutMs);
+        this.deps.log?.('mail: request timed out', { method: what });
+        resolve(down(`no answer to ${what} in ${Math.round(ms / 1000)} s`));
+      }, ms);
       this.pending.set(id, { resolve, timer });
       try {
-        child.postMessage({ kind: 'request', req: { id, method: c.method, params: c.params } });
+        send();
       } catch (e) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -114,6 +150,11 @@ export class MailRouter {
     }
     this.child = child;
     this.startedAt = Date.now();
+    try {
+      this.deps.onSpawn?.((m) => child.postMessage(m));
+    } catch (e) {
+      this.deps.log?.('mail: engine init failed', { error: String(e) });
+    }
     child.on('message', (m) => {
       if (this.child === child) this.onMessage(m);
     });

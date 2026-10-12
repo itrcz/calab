@@ -9,13 +9,15 @@ import {
   type MailRequest,
   type MailResponse,
 } from '../../shared/mail';
+import { classify } from './errors';
 
 const notImplemented = (method: MailMethod) => (): Promise<never> =>
   Promise.reject(new MailApiError({ code: 'NOT_IMPLEMENTED', message: `${method} is not implemented yet` }));
 
 /**
- * The engine's dispatch table (ADR-0080 §7). T0 skeleton: an empty account list, default settings,
- * a no-op sync; everything else answers NOT_IMPLEMENTED until the engine (T1) fills it in.
+ * A placeholder dispatch table (ADR-0080 §7) for an engine that has not received `init` yet: an
+ * empty account list, default settings, a no-op sync, NOT_IMPLEMENTED for the rest. The real table
+ * is `MailEngine.handlers()` (service.ts).
  */
 export function createHandlers(): MailHandlers {
   const table = Object.fromEntries(mailMethods.map((m) => [m, notImplemented(m)])) as unknown as MailHandlers;
@@ -38,6 +40,7 @@ export async function dispatch(handlers: MailHandlers, req: MailRequest): Promis
   } catch (e) {
     if (e instanceof MailApiError) return { id: req.id, ok: false, error: e.toJSON() };
     if (isMailError(e)) return { id: req.id, ok: false, error: { code: e.code, message: e.message } };
-    return { id: req.id, ok: false, error: { code: 'INVALID', message: e instanceof Error ? e.message : String(e) } };
+    // Library errors (imapflow, nodemailer, sockets): NETWORK / TLS / AUTH_FAILED / … by shape.
+    return { id: req.id, ok: false, error: classify(e) };
   }
 }
