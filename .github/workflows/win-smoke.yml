@@ -27,7 +27,7 @@ on:
   # TEMP (fix/windows-crash): workflow_dispatch needs the file on the default branch first.
   push:
     branches: [fix/windows-crash]
-    paths: ['.github/workflows/win-smoke.yml']
+    paths: ['.github/workflows/win-smoke.yml', 'apps/desktop/scripts/win-smoke-mail.mjs']
 
 permissions:
   contents: read
@@ -98,14 +98,48 @@ jobs:
 
           Get-ChildItem -Recurse $ud -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize |
             Out-File (Join-Path $out 'userdata-tree.txt') -Width 4096
+
+      # Mail engine on the installed build (no Calab login needed): scripts/win-smoke-mail.mjs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            apps/desktop/scripts
+            infra/docker/greenmail
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Mail engine
+        shell: bash
+        run: |
+          set -x
+          out="$RUNNER_TEMP/smoke"
+          sh infra/docker/greenmail/gen-cert.sh
+          npm i --prefix apps/desktop/scripts --no-save --no-package-lock --no-audit --no-fund \
+            playwright-core@1.63.0 hoodiecrow-imap@3.3.1 smtp-server@3.19.21 nodemailer@10.1.0
+          node apps/desktop/scripts/mail-fake-server.mjs > "$out/mail-fake-server.txt" 2>&1 &
+          sleep 5
+          (sleep 40; node apps/desktop/scripts/mail-fake-server.mjs send >> "$out/mail-fake-server.txt" 2>&1) &
+          export NODE_EXTRA_CA_CERTS="$PWD/infra/docker/greenmail/certs/ca.pem"
+          ud="$RUNNER_TEMP/ud-mail"
+          timeout 300 node apps/desktop/scripts/win-smoke-mail.mjs "$LOCALAPPDATA/Programs/Calab/Calab.exe" "$ud" "$out" || echo "mail driver exit=$?" >> "$out/summary.txt"
+          taskkill //F //IM Calab.exe || true
+          sleep 3
+          cp -r "$ud/logs" "$out/mail-logs" || true
+          find "$ud" -maxdepth 3 > "$out/mail-userdata-tree.txt" 2>/dev/null || true
+          cat "$out/summary.txt"; tail -100 "$out/mail-logs/main.log" || true
+
+      - name: Events
+        if: always()
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'smoke'
+          $since = (Get-Date).AddHours(-1)
           foreach ($provider in 'Application Error', 'Windows Error Reporting', 'Application Hang') {
-            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = $provider; StartTime = $started } -ErrorAction SilentlyContinue |
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = $provider; StartTime = $since } -ErrorAction SilentlyContinue |
               Format-List TimeCreated, Id, ProviderName, Message |
               Out-File -Append (Join-Path $out 'events.txt') -Width 4096
           }
-          Get-Content (Join-Path $out 'summary.txt')
-          if (Test-Path (Join-Path $out 'events.txt')) { Get-Content (Join-Path $out 'events.txt') | Select-String -Pattern 'Calab|Faulting|Exception|P1|P4' }
-          Get-ChildItem -Recurse -Filter main.log $out | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 80 }
+          if (Test-Path (Join-Path $out 'events.txt')) { Get-Content (Join-Path $out 'events.txt') }
 
       - name: Upload
         if: always()
