@@ -425,7 +425,7 @@ function RowMenu({ children }: { children: ReactNode }): ReactNode {
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content className={cx(menuBox, 'w-64')} collisionPadding={16} data-testid="mail-row-menu">
+        <ContextMenu.Content className={cx(menuBox, 'w-max max-w-[380px] whitespace-nowrap')} collisionPadding={16} data-testid="mail-row-menu">
           <RowMenuItems keys={keys} />
         </ContextMenu.Content>
       </ContextMenu.Portal>
