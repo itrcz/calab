@@ -23,6 +23,10 @@ on:
         description: 'Seconds to keep the app running per phase'
         required: false
         default: '60'
+      update_from:
+        description: 'Optional: also test the auto-update path from this installed version (to the feed latest)'
+        required: false
+        default: ''
 
   # TEMP (fix/windows-crash): workflow_dispatch needs the file on the default branch first.
   push:
@@ -34,6 +38,7 @@ permissions:
 
 jobs:
   smoke:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:
@@ -174,5 +179,78 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
         with:
           name: win-smoke-${{ matrix.version }}${{ matrix.from && format('-from-{0}', matrix.from) || '' }}
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: warn
+
+  # Auto-update on Windows: <from> installed, mail engine running, the feed's latest downloaded and
+  # installed on quit (scripts/win-smoke-update.mjs), then the result launched as a user would.
+  update:
+    if: github.event_name != 'workflow_dispatch' || inputs.update_from != ''
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        from: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.update_from) || '["3.1.1","3.0.9"]') }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FROM: ${{ matrix.from }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install test tools
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter '@calaba/desktop...'
+      - name: Update
+        shell: bash
+        run: |
+          set -x
+          out="$RUNNER_TEMP/smoke"; mkdir -p "$out"
+          exe="$LOCALAPPDATA/Programs/Calab/Calab.exe"
+          certs=infra/docker/greenmail/certs; mkdir -p "$certs"
+          MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout "$certs/key.pem" -out "$certs/ca.pem"
+          node apps/desktop/scripts/mail-fake-server.mjs > "$out/mail-fake-server.txt" 2>&1 &
+          export NODE_EXTRA_CA_CERTS="$PWD/$certs/ca.pem"
+          gh release download "v$FROM" -R "$GITHUB_REPOSITORY" -p "Calab-Setup-$FROM-x64.exe" -D "$RUNNER_TEMP" --clobber
+          pwsh -NoProfile -Command "Start-Process -Wait -FilePath '$RUNNER_TEMP\Calab-Setup-$FROM-x64.exe' -ArgumentList '/S'"
+          ver() { pwsh -NoProfile -Command "(Get-Item '$LOCALAPPDATA\Programs\Calab\Calab.exe').VersionInfo.ProductVersion"; }
+          echo "update: installed $(ver)" >> "$out/summary.txt"
+          timeout 300 node apps/desktop/scripts/win-smoke-update.mjs "$exe" "$out" || echo "update driver exit=$?" >> "$out/summary.txt"
+          # The installer runs after quit (silent): wait until no setup / Calab process is left.
+          for i in $(seq 1 60); do tasklist | grep -qi "Calab" || break; sleep 3; done
+          tasklist //V | grep -i "calab\|setup" > "$out/processes-after-install.txt" || true
+          echo "update: after install $(ver)" >> "$out/summary.txt"
+          pwsh -NoProfile -Command "Start-Process -FilePath \"$LOCALAPPDATA\\Programs\\Calab\\Calab.exe\""
+          sleep 60
+          echo "update: relaunch alive processes=$(tasklist //FI 'IMAGENAME eq Calab.exe' //NH | grep -c Calab.exe)" >> "$out/summary.txt"
+          tasklist //V //FI 'IMAGENAME eq Calab.exe' > "$out/processes-relaunch.txt" || true
+          taskkill //F //IM Calab.exe || true
+          sleep 3
+          cp -r "$APPDATA/Calaba/logs" "$out/logs" || true
+          ls -la "$LOCALAPPDATA/Programs/Calab" "$LOCALAPPDATA/Programs/Calab/resources" > "$out/install-tree.txt" 2>&1 || true
+          cat "$out/summary.txt"; tail -80 "$out/logs/main.log" || true
+      - name: Events
+        if: always()
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'smoke'
+          foreach ($provider in 'Application Error', 'Windows Error Reporting', 'Application Hang') {
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = $provider; StartTime = (Get-Date).AddHours(-1) } -ErrorAction SilentlyContinue |
+              Format-List TimeCreated, Id, ProviderName, Message |
+              Out-File -Append (Join-Path $out 'events.txt') -Width 4096
+          }
+          if (Test-Path (Join-Path $out 'events.txt')) { Get-Content (Join-Path $out 'events.txt') }
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
+        with:
+          name: win-update-from-${{ matrix.from }}
           path: ${{ runner.temp }}/smoke
           if-no-files-found: warn
