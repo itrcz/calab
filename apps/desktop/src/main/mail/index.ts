@@ -31,8 +31,13 @@ function fork(): EngineChild {
 
 function broadcast(event: MailEvent): void {
   for (const w of BrowserWindow.getAllWindows()) {
-    if (w.isDestroyed() || !isOwnPage(w.webContents.getURL())) continue;
-    w.webContents.send(IPC.mailEvent, event);
+    // A window closing / its renderer gone mid-loop must not throw into the engine's message handler.
+    try {
+      if (w.isDestroyed() || w.webContents.isDestroyed() || !isOwnPage(w.webContents.getURL())) continue;
+      w.webContents.send(IPC.mailEvent, event);
+    } catch (e) {
+      log.warn('mail: event not delivered', { error: String(e) });
+    }
   }
 }
 
@@ -196,11 +201,24 @@ export function mailRequest(call: unknown): Promise<MailReply> {
  * when an account exists (ADR-0088 §2) — new mail notifies without opening the section.
  */
 export function startMail(): void {
-  handleMailScheme((messageId, attachmentId) => getRouter().internal({ kind: 'attachment', messageId, attachmentId }));
-  if (accounts().all().length) getRouter().start();
+  // Mail is optional: whatever fails here is logged, and the app (window, tray, IPC) starts anyway.
+  try {
+    handleMailScheme((messageId, attachmentId) => getRouter().internal({ kind: 'attachment', messageId, attachmentId }));
+  } catch (e) {
+    log.error('mail: scheme handler not installed', e);
+  }
+  try {
+    if (accounts().all().length) getRouter().start();
+  } catch (e) {
+    log.error('mail: engine not started', e);
+  }
 }
 
 /** On quit: kill the engine without restarting it. */
 export function shutdownMail(): void {
-  router?.shutdown();
+  try {
+    router?.shutdown();
+  } catch (e) {
+    log.warn('mail: shutdown failed', { error: String(e) });
+  }
 }

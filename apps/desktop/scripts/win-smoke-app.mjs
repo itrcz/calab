@@ -86,7 +86,7 @@ for (let i = 0; i < tiles; i++) {
   await sleep(3000);
 }
 
-await step('settings open', () => page.getByRole('button', { name: 'Настройки', exact: true }).first().click({ timeout: 10_000 }));
+await step('settings open', () => page.getByRole('button', { name: /^Настройки/ }).first().click({ timeout: 10_000 }));
 const dialog = page.getByRole('dialog', { name: 'Настройки' });
 const tabs = gone ? 0 : await dialog.getByRole('tab').count().catch(() => 0);
 report(`app: settings tabs=${tabs}`);

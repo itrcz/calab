@@ -5,6 +5,8 @@ import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type Ti
 import { API_SCHEME, IPC } from '../shared/ipc';
 import { vibrancyWanted } from '../shared/windowMaterial';
 import { isAppSession, isCheckoutSession } from './appSessions';
+import { RendererCrashBudget } from './crashRecovery';
+import { log } from './logging';
 import { windowIconPath } from './icons';
 import { mainStrings } from './strings';
 
@@ -164,6 +166,18 @@ export function createMainWindow(): BrowserWindow {
   nativeTheme.on('updated', recolor);
   win.on('closed', () => nativeTheme.off('updated', recolor));
   win.once('ready-to-show', () => win.show());
+  // A dead renderer leaves a blank window (or none: before ready-to-show it never shows) — reload
+  // it, a bounded number of times (crashRecovery.ts). logging.ts logs the reason for every process.
+  const crashes = new RendererCrashBudget();
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (!crashes.shouldReload(details.reason, Date.now())) return;
+    setTimeout(() => {
+      if (win.isDestroyed()) return;
+      log.warn('reloading the app window after a renderer exit', { reason: details.reason });
+      // Died before the first paint: the ready-to-show above is still pending and shows it.
+      win.webContents.reload();
+    }, 1000);
+  });
   // The page can't see it (backgroundThrottling: false pins document.visibilityState): tell it,
   // so it can stop decoding video nobody sees (lib/windowVisibility.ts, docs/14-energy.md).
   let lastShown: boolean | null = null;

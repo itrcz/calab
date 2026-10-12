@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global window -- page.evaluate callbacks run in the app renderer */
 /**
  * win-smoke.yml helper (TESTING.md «Windows smoke»): drives an INSTALLED Calab build through the mail
  * engine without a Calab login — the IPC `mail:request` works on the login screen. Adds the

@@ -12,6 +12,7 @@
 import { app, session, shell, type WebContents, type WebFrameMain } from 'electron';
 import { IPC } from '../../shared/ipc';
 import { mailComposeLink } from '../../shared/mail';
+import { log } from '../logging';
 import { installMailDownloads, parseAttachmentUrl } from './attachmentProtocol';
 
 export type FrameDecision = { action: 'ignore' } | { action: 'block' } | { action: 'external'; url: string } | { action: 'compose'; link: string };
@@ -80,9 +81,25 @@ const sameFrame = (a: WebFrameMain | null | undefined, b: WebFrameMain | null | 
 /** One external open per window per 2 s: a body cannot spray browser tabs (e.g. a refresh loop). */
 const EXTERNAL_GAP_MS = 2000;
 
+/** A throw in a navigation handler would surface as main's uncaught exception: block and log instead. */
+function safely<E extends { preventDefault(): void }>(fn: (e: E) => void): (e: E) => void {
+  return (e) => {
+    try {
+      fn(e);
+    } catch (err) {
+      try {
+        e.preventDefault();
+      } catch {
+        // the navigation is gone already
+      }
+      log.warn('[mail] frame guard failed, navigation blocked', { error: String(err) });
+    }
+  };
+}
+
 function guard(wc: WebContents): void {
   let lastExternal = 0;
-  wc.on('will-frame-navigate', (e) => {
+  wc.on('will-frame-navigate', safely((e) => {
     let frameUrl: string;
     try {
       frameUrl = e.frame?.url ?? '';
@@ -102,16 +119,16 @@ function guard(wc: WebContents): void {
       // window counts as loading while the frame's navigation is being cancelled — and lose it.
       wc.send(IPC.appDeepLink, d.link);
     }
-  });
+  }));
   // The window navigating to an attachment URL = «save this attachment» (shared/mail.ts attachmentUrl).
-  wc.on('will-navigate', (e) => {
+  wc.on('will-navigate', safely((e) => {
     if (!parseAttachmentUrl(e.url)) return;
     e.preventDefault();
     if (e.initiator && e.frame && !sameFrame(e.initiator, e.frame)) return;
     installMailDownloads(wc.session);
     // `download=1`: the handler names the file (an image would otherwise be saved as its id).
     wc.downloadURL(`${e.url.split(/[?#]/)[0] ?? e.url}?download=1`);
-  });
+  }));
 }
 
 /**
@@ -120,7 +137,11 @@ function guard(wc: WebContents): void {
  */
 export function installMailGuards(): void {
   app.on('web-contents-created', (_e, wc) => {
-    if (wc.getType() !== 'window' || wc.session !== session.defaultSession) return;
-    guard(wc);
+    try {
+      if (wc.getType() !== 'window' || wc.session !== session.defaultSession) return;
+      guard(wc);
+    } catch (err) {
+      log.error('[mail] frame guard not installed', err);
+    }
   });
 }

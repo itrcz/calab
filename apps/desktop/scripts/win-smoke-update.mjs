@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global window -- page.evaluate callbacks run in the app renderer */
 /**
  * win-smoke.yml helper (TESTING.md «Windows smoke»): the auto-update path on an INSTALLED build.
  * Launches it (default userData, as a user), adds the fake-server mail account when the build has
