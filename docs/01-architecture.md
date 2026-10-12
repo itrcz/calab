@@ -51,6 +51,8 @@
   - `session.setDisplayMediaRequestHandler` — собственный пикер источников экрана, loopback системного звука.
   - Tray, автозапуск, автообновление (`electron-updater`, позже), single-instance lock, deep links `calaba://`.
 - `renderer` — весь UI и вся медиа-логика (livekit-client работает в renderer, это обычный Chromium).
+- **Движок почты** ([ADR-0080](adr/0080-mail-client.md)) — четвёртый процесс: `utilityProcess` (`src/main/mail/engine.ts` → `out/main/mailEngine.js`), IMAP/SMTP, локальная база и кэш тел писем. Main форкает его лениво (первый `mail:*`-запрос или существующий аккаунт), перезапускает при падении с паузой 1 → 60 с и убивает при выходе; сам ничего тяжёлого не делает.
+- Renderer говорит с движком только через `mail:request` / `mail:event` (preload `calaba.mail`, `Platform.mail?: MailApi`); main сверяет имя метода по `mailMethods`, назначает свои id, ждёт ответ ≤ 30 с (иначе `ENGINE_DOWN`) и раздаёт события окнам. Контракт — `src/shared/mail.ts`; в вебе и на телефоне `mail` нет. Для разработки — mock в renderer (`CALABA_MAIL_MOCK=1 pnpm dev:desktop`).
 
 ### Server (`apps/server`)
 
