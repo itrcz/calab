@@ -181,5 +181,9 @@ describe('blobs', () => {
     expect(s.header(a.id)?.bodyHash).toBeNull();
     expect(s.attachments(a.id)[0]?.hash).toBeNull();
     expect(s.header(b.id)?.bodyHash).not.toBeNull();
+    s.clearBlobs();
+    expect(s.blobBytes()).toBe(0);
+    expect(s.header(b.id)?.bodyHash).toBeNull();
+    expect(s.header(b.id)?.subject).toBe('Hello');
   });
 });

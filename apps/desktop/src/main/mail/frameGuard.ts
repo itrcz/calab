@@ -3,29 +3,30 @@
  * without scripts; a click on a link navigates that frame. Here main decides, on top of the general
  * guards in windows.ts (which already cancel every foreign sub-frame navigation):
  * - a navigation the mail frame starts itself: `http(s)` → the system browser (cancelled here),
- *   `mailto:` → a `compose` mail event to that window, anything else → blocked;
+ *   `mailto:` → the deep link `calab://mail/compose?…` (shared/mail.ts `mailComposeLink`) through
+ *   the usual deep-link path, anything else → blocked;
  * - frames whose src the page set (not from inside a mail body) → only blocked, never opened;
  * - the app window navigating to `calaba-mail://attachment/…` → cancelled and downloaded (§7).
- * The `compose` event (shared/mail.ts) was chosen over a `calab://mail/compose` deep link: it stays
- * inside the window that showed the message and needs no URL parsing in deeplink.ts.
+ * `about:srcdoc` / `about:blank` (the reader iframe and its hidden measuring copy) always pass.
  */
 import { app, session, shell, type WebContents, type WebFrameMain } from 'electron';
-import { IPC } from '../../shared/ipc';
-import type { MailAddress, MailEvent } from '../../shared/mail';
+import { mailComposeLink } from '../../shared/mail';
+import { handleDeepLink } from '../deeplink';
 import { installMailDownloads, parseAttachmentUrl } from './attachmentProtocol';
 
-export type FrameDecision = { action: 'ignore' } | { action: 'block' } | { action: 'external'; url: string } | { action: 'compose'; event: Extract<MailEvent, { type: 'compose' }> };
+export type FrameDecision = { action: 'ignore' } | { action: 'block' } | { action: 'external'; url: string } | { action: 'compose'; link: string };
 
 const ADDRESS_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+$/;
 
-/** `mailto:` (RFC 6068) → the compose event; null when malformed. Only plain addresses are kept. */
-export function parseMailto(url: string): Extract<MailEvent, { type: 'compose' }> | null {
+/** `mailto:` (RFC 6068) → the compose deep link; null when malformed. Only plain addresses are kept. */
+export function parseMailto(url: string): string | null {
   if (!/^mailto:/i.test(url) || url.length > 8192) return null;
   const body = url.slice(7);
   const q = body.indexOf('?');
   const path = q < 0 ? body : body.slice(0, q);
-  const params = new URLSearchParams(q < 0 ? '' : body.slice(q + 1));
-  const list = (v: string): MailAddress[] => {
+  // RFC 6068: '+' is literal (a+tag@x.org), not a space as in forms.
+  const params = new URLSearchParams(q < 0 ? '' : body.slice(q + 1).replace(/\+/g, '%2B'));
+  const list = (v: string): string[] => {
     let s: string;
     try {
       s = decodeURIComponent(v);
@@ -36,21 +37,19 @@ export function parseMailto(url: string): Extract<MailEvent, { type: 'compose' }
       .split(',')
       .map((x) => x.trim())
       .filter((x) => ADDRESS_RE.test(x))
-      .slice(0, 50)
-      .map((address) => ({ name: '', address }));
+      .slice(0, 50);
   };
   const get = (k: string): string => {
     for (const [key, v] of params) if (key.toLowerCase() === k) return v;
     return '';
   };
-  return {
-    type: 'compose',
+  // Bcc from a link is dropped: a hidden recipient planted by the sender of the message.
+  return mailComposeLink({
     to: [...list(path), ...list(get('to'))],
     cc: list(get('cc')),
-    bcc: list(get('bcc')),
     subject: get('subject').replace(/[\r\n]+/g, ' ').slice(0, 1000),
-    text: get('body').slice(0, 100_000),
-  };
+    body: get('body').slice(0, 10_000),
+  });
 }
 
 export interface FrameNav {
@@ -69,8 +68,8 @@ export function decideFrameNavigation(n: FrameNav): FrameDecision {
   if (!n.selfInitiated || n.frameUrl !== 'about:srcdoc') return { action: 'block' };
   if (/^https?:\/\//i.test(n.url)) return { action: 'external', url: n.url };
   if (/^mailto:/i.test(n.url)) {
-    const event = parseMailto(n.url);
-    return event ? { action: 'compose', event } : { action: 'block' };
+    const link = parseMailto(n.url);
+    return link ? { action: 'compose', link } : { action: 'block' };
   }
   return { action: 'block' };
 }
@@ -99,7 +98,7 @@ function guard(wc: WebContents): void {
       lastExternal = now;
       void shell.openExternal(d.url);
     } else if (d.action === 'compose') {
-      wc.send(IPC.mailEvent, d.event);
+      handleDeepLink(d.link);
     }
   });
   // The window navigating to an attachment URL = «save this attachment» (shared/mail.ts attachmentUrl).

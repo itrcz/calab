@@ -7,6 +7,7 @@ const row = (threadId: string, subject = 's'): MailThreadRow => ({
   accountId: 'a',
   folderId: 'f',
   messageId: `${threadId}m`,
+  messageIdHeader: '',
   from: { name: '', address: 'x@y.z' },
   subject,
   snippet: '',

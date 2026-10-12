@@ -163,6 +163,7 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         accountId: top.accountId,
         folderId: f.id,
         messageId: top.id,
+        messageIdHeader: top.messageIdHeader,
         from: top.from,
         subject: top.subject,
         snippet: snippetOf(top),
@@ -549,6 +550,8 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         settings = { ...settings, ...clone(patch) };
         return clone(settings);
       },
+      // Bodies are in memory in the mock: nothing to drop.
+      clearCache: async () => undefined,
     },
     attachmentUrl: (messageId, attachmentId) => {
       const a = messages.get(messageId)?.attachments.find((x) => x.id === attachmentId);

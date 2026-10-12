@@ -6,11 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ app: {}, protocol: {}, shell: {}, session: {} }));
 vi.mock('../downloads', () => ({ markFromInternet: vi.fn(), uniquePath: vi.fn() }));
 vi.mock('../logging', () => ({ log: { warn: vi.fn(), info: vi.fn() } }));
+vi.mock('../deeplink', () => ({ handleDeepLink: vi.fn() }));
 
-const { attachmentResponse, contentDisposition, isInlineMime, parseAttachmentUrl } = await import('./attachmentProtocol');
+const { attachmentResponse, contentDisposition, fetchRemoteImage, isInlineMime, parseAttachmentUrl, parseRemoteUrl, REMOTE_MAX_BYTES } = await import('./attachmentProtocol');
 const { decideFrameNavigation, parseMailto } = await import('./frameGuard');
 const { MailAccountsFile } = await import('./accounts');
-const { mailAttachmentUrl } = await import('../../shared/mail');
+const { mailAttachmentUrl, mailRemoteImageUrl } = await import('../../shared/mail');
 
 const MID = 'a0123456789abcdef.12.3456.789';
 
@@ -55,13 +56,41 @@ describe('calaba-mail:// ids', () => {
   });
 });
 
+describe('calaba-mail://remote images', () => {
+  it('round-trips http(s) URLs only', () => {
+    const u = 'https://cdn.example.org/a.png?x=1&y=привет';
+    expect(parseRemoteUrl(mailRemoteImageUrl(u))).toBe(new URL(u).href);
+    expect(parseRemoteUrl(mailRemoteImageUrl('http://x.org/p.gif'))).toBe('http://x.org/p.gif');
+    for (const bad of ['file:///etc/passwd', 'javascript:alert(1)', 'calaba-api://api/me', 'data:image/png;base64,AA']) {
+      expect(parseRemoteUrl(mailRemoteImageUrl(bad)), bad).toBeNull();
+    }
+    expect(parseRemoteUrl('calaba-mail://remote/!!!')).toBeNull();
+  });
+  it('fetches without credentials / referrer, raster images only, size-capped', async () => {
+    let init: RequestInit | undefined;
+    const ok = await fetchRemoteImage('https://x.org/a.png', (_u, i) => {
+      init = i;
+      return Promise.resolve(new Response(new Uint8Array([1, 2]), { headers: { 'content-type': 'image/png; charset=binary' } }));
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('content-type')).toBe('image/png');
+    expect(init).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' });
+    const svg = await fetchRemoteImage('https://x.org/a.svg', () => Promise.resolve(new Response('<svg/>', { headers: { 'content-type': 'image/svg+xml' } })));
+    expect(svg.status).toBe(415);
+    const big = await fetchRemoteImage('https://x.org/b.png', () => Promise.resolve(new Response(new Uint8Array(REMOTE_MAX_BYTES + 1), { headers: { 'content-type': 'image/png' } })));
+    expect(big.status).toBe(413);
+    const down = await fetchRemoteImage('https://x.org/c.png', () => Promise.reject(new Error('offline')));
+    expect(down.status).toBe(504);
+  });
+});
+
 describe('frame guard decisions', () => {
   const inMail = { isMainFrame: false, frameUrl: 'about:srcdoc', selfInitiated: true };
   it('a link clicked inside a mail body: http(s) → browser, mailto → compose, other schemes blocked', () => {
     expect(decideFrameNavigation({ ...inMail, url: 'https://example.org/x' })).toEqual({ action: 'external', url: 'https://example.org/x' });
-    expect(decideFrameNavigation({ ...inMail, url: 'mailto:a@b.org?subject=Hi%20there&cc=c@d.org' })).toMatchObject({
+    expect(decideFrameNavigation({ ...inMail, url: 'mailto:a@b.org?subject=Hi%20there&cc=c@d.org' })).toEqual({
       action: 'compose',
-      event: { type: 'compose', to: [{ name: '', address: 'a@b.org' }], cc: [{ address: 'c@d.org' }], subject: 'Hi there' },
+      link: 'calab://mail/compose?to=a%40b.org&cc=c%40d.org&subject=Hi%20there',
     });
     for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'calab://join/x', 'calaba-api://api/me', 'data:text/html,x', 'zoommtg://x']) {
       expect(decideFrameNavigation({ ...inMail, url })).toEqual({ action: 'block' });
@@ -75,15 +104,11 @@ describe('frame guard decisions', () => {
     expect(decideFrameNavigation({ ...inMail, url: 'https://example.org', isMainFrame: true })).toEqual({ action: 'ignore' });
     expect(decideFrameNavigation({ ...inMail, url: 'about:srcdoc', selfInitiated: false })).toEqual({ action: 'ignore' });
   });
-  it('mailto parsing keeps plain addresses only', () => {
-    expect(parseMailto('mailto:a@b.org,bad,%3Cx%3E@y?body=line1%0Aline2&BCC=z@q.org')).toEqual({
-      type: 'compose',
-      to: [{ name: '', address: 'a@b.org' }],
-      cc: [],
-      bcc: [{ name: '', address: 'z@q.org' }],
-      subject: '',
-      text: 'line1\nline2',
-    });
+  it('mailto → compose deep link: plain addresses only, no bcc, ≤ 512 chars', () => {
+    expect(parseMailto('mailto:a+tag@b.org,bad,%3Cx%3E@y?body=line1%0Aline2&BCC=z@q.org')).toBe('calab://mail/compose?to=a%2Btag%40b.org&body=line1%0Aline2');
+    const long = parseMailto(`mailto:a@b.org?subject=S&body=${'%F0%9F%98%80'.repeat(400)}`) ?? '';
+    expect(long.length).toBeLessThanOrEqual(512);
+    expect(long).toMatch(/^calab:\/\/mail\/compose\?to=a%40b\.org&subject=S&body=(%F0%9F%98%80)+$/);
     expect(parseMailto('https://x')).toBeNull();
   });
 });

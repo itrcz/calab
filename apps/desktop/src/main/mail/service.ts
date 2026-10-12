@@ -657,6 +657,10 @@ export class MailEngine {
       },
       'settings.get': () => structuredClone(this.settingsCache),
       'settings.set': (patch) => this.saveSettings(settingsPatch(patch)),
+      'settings.clearCache': (accountId) => {
+        const accs = accountId === undefined || accountId === null ? [...this.accounts.values()] : [this.account(accountId)];
+        for (const a of accs) a.store.clearBlobs();
+      },
     };
     // Sync handlers throw (validation): every entry becomes a promise either way.
     const wrap =

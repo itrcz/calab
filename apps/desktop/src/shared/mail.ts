@@ -185,6 +185,8 @@ export interface MailThreadRow {
   folderId: string;
   /** The newest message of the thread in this folder (opened on click). */
   messageId: string;
+  /** That message's RFC 5322 Message-ID header ('' when it has none): In-Reply-To / References. */
+  messageIdHeader: string;
   from: MailAddress;
   subject: string;
   /** Plain text preview, ≤ 200 chars, whitespace collapsed. */
@@ -379,13 +381,7 @@ export type MailEvent =
    * Emitted by main, not the engine: the engine process went down (crash; requests fail with
    * `ENGINE_DOWN` until it is back) or came back up (refetch what is on screen).
    */
-  | { type: 'engine'; state: 'up' | 'down' }
-  /**
-   * Emitted by main, not the engine: a `mailto:` link was clicked inside a message body (the sandboxed
-   * iframe, §10 — main's frame guard cancels that navigation). The renderer opens a new message with
-   * these fields (empty when absent in the link); `to` / `cc` / `bcc` carry bare addresses (`name: ''`).
-   */
-  | { type: 'compose'; to: MailAddress[]; cc: MailAddress[]; bcc: MailAddress[]; subject: string; text: string };
+  | { type: 'engine'; state: 'up' | 'down' };
 
 // ---------------------------------------------------------------- errors
 
@@ -511,6 +507,11 @@ export interface MailApi {
   settings: {
     get(): Promise<MailSettings>;
     set(patch: Partial<MailSettings>): Promise<MailSettings>;
+    /**
+     * «Очистить»: drops the cached bodies and attachments (one account, or all when absent); headers,
+     * drafts and the outbox stay. Bodies download again when opened.
+     */
+    clearCache(accountId?: string): Promise<void>;
   };
   /**
    * A URL for an attachment usable in <img> / for download: `calaba-mail://attachment/<messageId>/<attachmentId>`
@@ -581,6 +582,7 @@ export const mailMethods = [
   'sync.now',
   'settings.get',
   'settings.set',
+  'settings.clearCache',
 ] as const satisfies readonly MailMethod[];
 
 /** Compile-time: `mailMethods` lists every `MailMethod` (a missing one makes this `false`). */
@@ -678,6 +680,55 @@ export type MailFromEngine = { kind: 'response'; res: MailResponse } | { kind: '
 
 /** Prefix of attachment URLs served by main (§7). */
 export const MAIL_ATTACHMENT_URL = 'calaba-mail://attachment/';
+
+/**
+ * Remote images through main (§10): `calaba-mail://remote/<base64url(http(s) URL)>`. Main fetches
+ * it in a cookie-less in-memory session (no referrer), raster `image/*` only, ≤ 10 MB, 10 s.
+ */
+export const MAIL_REMOTE_URL = 'calaba-mail://remote/';
+
+export function mailRemoteImageUrl(url: string): string {
+  const bytes = new TextEncoder().encode(url);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return MAIL_REMOTE_URL + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * A `mailto:` click inside a message body (§10): main's frame guard cancels the iframe navigation
+ * and delivers this deep link through the usual path (IPC `app:deepLink`, ≤ 512 chars):
+ * `calab://mail/compose?to=a@b,c@d&cc=…&subject=…&body=…`, every value URL-encoded
+ * (`encodeURIComponent`), empty fields left out, the body (then the subject) cut to fit.
+ */
+export const MAIL_COMPOSE_LINK = 'calab://mail/compose';
+
+export function mailComposeLink(f: { to: string[]; cc: string[]; subject: string; body: string }): string {
+  const build = (subject: string, body: string): string => {
+    const q: string[] = [];
+    if (f.to.length) q.push(`to=${encodeURIComponent(f.to.join(','))}`);
+    if (f.cc.length) q.push(`cc=${encodeURIComponent(f.cc.join(','))}`);
+    if (subject) q.push(`subject=${encodeURIComponent(subject)}`);
+    if (body) q.push(`body=${encodeURIComponent(body)}`);
+    return q.length ? `${MAIL_COMPOSE_LINK}?${q.join('&')}` : MAIL_COMPOSE_LINK;
+  };
+  // Halve by code points: a lone surrogate would make encodeURIComponent throw.
+  const half = (v: string): string => {
+    const cps = Array.from(v);
+    return cps.slice(0, Math.floor(cps.length / 2)).join('');
+  };
+  let body = f.body;
+  let subject = f.subject;
+  let link = build(subject, body);
+  while (link.length > 512 && body) {
+    body = half(body);
+    link = build(subject, body);
+  }
+  while (link.length > 512 && subject) {
+    subject = half(subject);
+    link = build(subject, body);
+  }
+  return link.length > 512 ? MAIL_COMPOSE_LINK : link;
+}
 
 export function mailAttachmentUrl(messageId: string, attachmentId: string): string {
   return `${MAIL_ATTACHMENT_URL}${encodeURIComponent(messageId)}/${encodeURIComponent(attachmentId)}`;

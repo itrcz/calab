@@ -635,6 +635,7 @@ export class MailStore {
         accountId: this.accountId,
         folderId: opts.rowFolder ?? folderId(this.accountId, num(r['folder_row'])),
         messageId: str(r['id']),
+        messageIdHeader: str(r['message_id_hdr']),
         from: { name: str(r['from_name']), address: str(r['from_addr']) },
         subject: str(r['subject']),
         snippet: str(r['snippet']),
@@ -695,6 +696,11 @@ export class MailStore {
 
   blobBytes(): number {
     return num(this.db.prepare('SELECT COALESCE(SUM(size), 0) AS s FROM blobs').get()?.['s']);
+  }
+
+  /** Drops every cached body and attachment (settings «Очистить»); headers stay. */
+  clearBlobs(): void {
+    for (const r of this.db.prepare('SELECT hash FROM blobs').all()) this.dropBlob(str(r['hash']));
   }
 
   /** LRU eviction down to `limit` bytes; returns the number of blobs dropped. */

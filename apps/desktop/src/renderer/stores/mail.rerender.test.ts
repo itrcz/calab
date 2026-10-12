@@ -15,6 +15,7 @@ const row = (i: number, over: Partial<MailThreadRow> = {}): MailThreadRow => ({
   accountId: 'a1',
   folderId: 'a1/inbox',
   messageId: `m${String(i).padStart(4, '0')}`,
+  messageIdHeader: '',
   from: { name: `S${i}`, address: `s${i}@x.io` },
   subject: `Subject ${i}`,
   snippet: 'preview',

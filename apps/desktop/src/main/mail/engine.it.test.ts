@@ -87,6 +87,7 @@ describe.skipIf(!IT)('mail engine against a real IMAP / SMTP server', () => {
     const list = (): Promise<MailPage> => h['messages.list']({ scope: ALICE.id, folder: 'inbox', limit: 50 });
     const row = await waitFor(async () => (await list()).rows.find((r) => r.subject === subject));
     expect(row).toMatchObject({ unread: true, hasAttachments: true, from: { address: ALICE.email } });
+    expect(row.messageIdHeader).toMatch(/^<.+@example\.test>$/);
 
     // 2. Body + attachment through the engine.
     const msg: MailMessage = await h['messages.get'](row.messageId);
@@ -125,6 +126,7 @@ describe.skipIf(!IT)('mail engine against a real IMAP / SMTP server', () => {
         const st = await probe.status('Archive', { messages: true });
         return st && (st.messages ?? 0) >= 1;
       });
+      await h['settings.clearCache'](ALICE.id);
       const folders = await h['folders.list'](ALICE.id);
       expect(folders.map((f) => f.role)).toEqual(expect.arrayContaining(['inbox', 'archive', 'starred', 'drafts', 'outbox']));
     } finally {
