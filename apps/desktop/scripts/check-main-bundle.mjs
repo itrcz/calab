@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 const dir = fileURLToPath(new URL('../out/main/', import.meta.url)); // not .pathname: /D:/… on Windows
 const MAX_BYTES = 700 * 1024; // 2.1.0: ~416 KB; the broken 2.2.0: ~1.1 MB
+// The mail engine bundles its libraries on purpose (imapflow, nodemailer, mailparser; 3.1.1: ~2.6 MB).
+const CAPS = { 'mailEngine.js': 4 * 1024 * 1024 };
 const forbidden = ['Electron failed to install correctly', 'ELECTRON_OVERRIDE_DIST_PATH'];
 let bad = 0;
 for (const f of readdirSync(dir).filter((n) => n.endsWith('.js'))) {
@@ -19,10 +21,11 @@ for (const f of readdirSync(dir).filter((n) => n.endsWith('.js'))) {
     }
   }
   const size = statSync(p).size;
-  if (size > MAX_BYTES) {
-    console.error(`out/main/${f}: ${Math.round(size / 1024)} KB > ${MAX_BYTES / 1024} KB — dependencies are no longer external`);
+  const cap = CAPS[f] ?? MAX_BYTES;
+  if (size > cap) {
+    console.error(`out/main/${f}: ${Math.round(size / 1024)} KB > ${cap / 1024} KB — dependencies are no longer external`);
     bad++;
   }
 }
 if (bad) process.exit(1);
-console.log('main bundle OK: dependencies external');
+console.log('main bundle OK: dependencies external (mail engine: bundled)');
