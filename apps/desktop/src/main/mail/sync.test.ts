@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MailEvent, MailFlags } from '../../shared/mail';
 import type { ImapSession, RemoteFlags, RemoteFolder, RemoteHeader, SelectInfo } from './session';
+import { folderId } from './ids';
 import { MailStore } from './store';
-import { AccountSync, assignRoles, diffFlags, vanished, WINDOW_MS } from './sync';
+import { AccountSync, assignRoles, diffFlags, FIRST_BATCH, HEADER_BATCH, uidBatches, vanished, WATCHDOG_MS, WINDOW_MS } from './sync';
 
 const ACC = 'a00000000000000aa';
 const NOW = 1_750_000_000_000;
@@ -112,9 +113,19 @@ class FakeImap implements ImapSession {
   searchUids(range: string): Promise<number[]> {
     return Promise.resolve(this.range(range));
   }
+  /** The n-th header fetch from now drops the connection (ECONNRESET, close callbacks run). */
+  dropOnFetch = 0;
+  /** Header fetches hang until the connection is closed (a dead socket). */
+  hangFetch = false;
+  private hung: Array<(e: Error) => void> = [];
   fetchHeaders(uids: number[] | string): Promise<RemoteHeader[]> {
     const list = typeof uids === 'string' ? this.range(uids) : uids;
     this.calls.push(`headers ${String(list.length)}`);
+    if (this.hangFetch) return new Promise((_, reject) => this.hung.push(reject));
+    if (this.dropOnFetch > 0 && --this.dropOnFetch === 0) {
+      void this.close();
+      return Promise.reject(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }));
+    }
     return Promise.resolve(list.map((u) => this.cur().msgs.get(u)?.h).filter((h): h is RemoteHeader => !!h));
   }
   fetchFlags(range: string, changedSince?: string): Promise<RemoteFlags[]> {
@@ -187,7 +198,8 @@ class FakeImap implements ImapSession {
     this.closeCbs.push(cb);
   }
   close(): Promise<void> {
-    for (const cb of this.closeCbs) cb();
+    for (const r of this.hung.splice(0)) r(Object.assign(new Error('Connection not available'), { code: 'NoConnection' }));
+    for (const cb of this.closeCbs.splice(0)) cb();
     return Promise.resolve();
   }
 }
@@ -473,5 +485,173 @@ describe('AccountSync against a fake server', () => {
     await settle();
     expect(bad.state).toBe('auth_failed');
     expect(bad.error?.code).toBe('AUTH_FAILED');
+  });
+});
+
+/** A sync with a hand-driven clock and timers, and the log kept (progress, watchdog, failures). */
+function clocked(imap = new FakeImap()): {
+  imap: FakeImap;
+  store: MailStore;
+  sync: AccountSync;
+  events: MailEvent[];
+  logs: Array<{ message: string; meta: Record<string, unknown> }>;
+  advance: (ms: number) => void;
+} {
+  const dir = mkdtempSync(join(tmpdir(), 'calab-mail-sync-'));
+  dirs.push(dir);
+  let now = NOW;
+  const store = new MailStore(dir, ACC, () => now);
+  const events: MailEvent[] = [];
+  const logs: Array<{ message: string; meta: Record<string, unknown> }> = [];
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  let seq = 0;
+  const sync = new AccountSync({
+    store,
+    accountId: ACC,
+    email: 'me@example.org',
+    provider: 'other',
+    connect: () => Promise.resolve(imap),
+    emit: (e) => events.push(e),
+    stateChanged: () => undefined,
+    cacheLimit: () => 1 << 30,
+    now: () => now,
+    log: (message, meta) => logs.push({ message, meta: meta ?? {} }),
+    setTimer: (fn, ms) => {
+      timers.set(++seq, { at: now + ms, fn });
+      return seq;
+    },
+    clearTimer: (t) => {
+      timers.delete(t as number);
+    },
+  });
+  const advance = (ms: number): void => {
+    now += ms;
+    for (const [id, t] of [...timers]) {
+      if (t.at > now) continue;
+      timers.delete(id);
+      t.fn();
+    }
+  };
+  return { imap, store, sync, events, logs, advance };
+}
+
+/** Waits (real time, ≤ 3 s) until the sync reaches the state: body prefetch parses MIME asynchronously. */
+async function until(fn: () => boolean): Promise<void> {
+  for (let i = 0; i < 300 && !fn(); i++) await new Promise((r) => setTimeout(r, 10));
+}
+
+const inboxTotal = (store: MailStore): number => {
+  const f = store.folderByRole('inbox');
+  return f ? store.folderCounts(f.row).total : -1;
+};
+
+describe('first sync progress (3.1.2)', () => {
+  it('uidBatches: a small first batch, then HEADER_BATCH each', () => {
+    const b = uidBatches(Array.from({ length: 460 }, (_, i) => i));
+    expect(b.map((x) => x.length)).toEqual([FIRST_BATCH, HEADER_BATCH, HEADER_BATCH, 10]);
+  });
+
+  it('stores and announces rows per batch, newest first, inbox before other folders, with progress', async () => {
+    const { imap, store, sync, events } = clocked();
+    imap.addFolder('INBOX');
+    imap.addFolder('Sent', '\\Sent');
+    for (let i = 0; i < 260; i++) imap.deliver('INBOX', { date: NOW - 1000 * (300 - i) }); // a higher UID is newer, as on real servers
+    imap.deliver('Sent');
+    sync.start();
+    await until(() => sync.state === 'idle');
+    expect(sync.state).toBe('idle');
+    expect(inboxTotal(store)).toBe(260);
+    const inboxId = folderId(ACC, store.folderByRole('inbox')?.row ?? -1);
+    const added = events.filter((e): e is Extract<MailEvent, { type: 'messages_added' }> => e.type === 'messages_added');
+    const inboxAdds = added.filter((e) => e.folderId === inboxId);
+    const [firstAdd, secondAdd] = inboxAdds;
+    const lastAdd = inboxAdds.at(-1);
+    if (!firstAdd || !secondAdd || !lastAdd) throw new Error('no inbox batches');
+    expect(inboxAdds.map((e) => e.messageIds.length)).toEqual([FIRST_BATCH, HEADER_BATCH, 10]);
+    // The first batch is the newest mail.
+    expect(Math.min(...firstAdd.rows.map((r) => r.date))).toBeGreaterThan(Math.max(...secondAdd.rows.map((r) => r.date)));
+    // Inbox rows come before the first Sent row.
+    expect(added.findIndex((e) => e.folderId !== inboxId)).toBeGreaterThan(added.indexOf(lastAdd));
+    const progress = events.filter((e): e is Extract<MailEvent, { type: 'sync_progress' }> => e.type === 'sync_progress');
+    expect(progress[0]).toMatchObject({ phase: 'folders', folder: null });
+    const inbox = progress.filter((p) => p.phase === 'headers' && p.folder?.role === 'inbox').map((p) => `${String(p.done)}/${String(p.total)}`);
+    expect(inbox).toEqual(['0/260', '50/260', '250/260', '260/260']);
+    expect(progress.some((p) => p.phase === 'bodies' && p.folder?.role === 'inbox')).toBe(true);
+    // Rows of a batch are announced before the progress that counts them.
+    const firstRows = events.indexOf(firstAdd);
+    expect(events.findIndex((e) => e.type === 'sync_progress' && e.done === FIRST_BATCH)).toBeGreaterThan(firstRows);
+  });
+
+  it('no progress outside `syncing` (a poll of an idle account)', async () => {
+    const { imap, sync, events } = clocked();
+    imap.addFolder('INBOX');
+    sync.start();
+    await settle();
+    events.length = 0;
+    imap.deliver('INBOX');
+    sync.syncNow();
+    await settle();
+    expect(events.some((e) => e.type === 'messages_added')).toBe(true);
+    expect(events.some((e) => e.type === 'sync_progress')).toBe(false);
+  });
+
+  it('a socket dropped mid-FETCH: offline with the error detail logged, then resumes from what was stored', async () => {
+    const { imap, store, sync, logs } = clocked();
+    imap.addFolder('INBOX');
+    for (let i = 0; i < 460; i++) imap.deliver('INBOX');
+    imap.dropOnFetch = 3; // batches 1–2 (250 messages) stored, the 3rd drops
+    sync.start();
+    await settle();
+    expect(sync.state).toBe('offline');
+    expect(inboxTotal(store)).toBe(FIRST_BATCH + HEADER_BATCH);
+    const err = logs.find((l) => l.message === 'mail: sync error');
+    expect(err?.meta).toMatchObject({ code: 'NETWORK', errCode: 'ECONNRESET', op: 'fetch', path: 'INBOX' });
+    expect(JSON.stringify(logs)).not.toContain('Message 1'); // no message content in the log
+    imap.calls.length = 0;
+    sync.syncNow(); // wakes the backoff pause
+    await until(() => sync.state === 'idle');
+    expect(sync.state).toBe('idle');
+    expect(inboxTotal(store)).toBe(460);
+    // Only the 210 missing headers were fetched again.
+    const fetched = imap.calls.filter((c) => c.startsWith('headers ')).reduce((n, c) => n + Number(c.slice(8)), 0);
+    expect(fetched).toBe(210);
+  });
+
+  it('watchdog: 60 s without progress → stalled (logged); «Повторить» reconnects and the sync completes', async () => {
+    const { imap, store, sync, logs, advance } = clocked();
+    imap.addFolder('INBOX');
+    for (let i = 0; i < 10; i++) imap.deliver('INBOX');
+    imap.hangFetch = true;
+    sync.start();
+    await settle();
+    expect(sync.state).toBe('syncing');
+    advance(WATCHDOG_MS - 1000);
+    expect(sync.stalled).toBe(false);
+    advance(1000);
+    expect(sync.stalled).toBe(true);
+    expect(logs.find((l) => l.message === 'mail: sync stalled')?.meta).toMatchObject({ op: 'fetch', path: 'INBOX' });
+    imap.hangFetch = false;
+    sync.syncNow();
+    await until(() => sync.state === 'idle');
+    expect(sync.state).toBe('idle');
+    expect(sync.stalled).toBe(false);
+    expect(inboxTotal(store)).toBe(10);
+    expect(logs.some((l) => l.message === 'mail: stalled sync, reconnecting')).toBe(true);
+  });
+
+  it('watchdog: progress keeps it quiet; it is disarmed once the account is idle', async () => {
+    const { imap, sync, advance } = clocked();
+    imap.addFolder('INBOX');
+    imap.deliver('INBOX');
+    imap.hangFetch = true;
+    sync.start();
+    await settle();
+    advance(WATCHDOG_MS / 2);
+    imap.hangFetch = false;
+    await imap.close(); // the hung fetch fails: offline, the watchdog stops
+    await settle();
+    expect(sync.state).toBe('offline');
+    advance(WATCHDOG_MS * 2);
+    expect(sync.stalled).toBe(false);
   });
 });

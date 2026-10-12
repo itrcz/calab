@@ -15,6 +15,9 @@ export interface ImapLogin {
   password: string;
 }
 
+/** Socket inactivity limit of the sync connection (imapflow's default; ≥ 5 min, see imapOptions). */
+export const SYNC_SOCKET_TIMEOUT_MS = 5 * 60_000;
+
 export function imapOptions(l: ImapLogin, tls: MailTls = {}): ImapFlowOptions {
   return {
     host: l.server.host,
@@ -30,7 +33,10 @@ export function imapOptions(l: ImapLogin, tls: MailTls = {}): ImapFlowOptions {
     qresync: false,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
-    socketTimeout: 5 * 60_000,
+    // The sync connection (3.1.2 audit): the verify deadlines (10 s / 22 s) must not reach it. 5 min
+    // of silence fails a stuck command (ETIMEOUT → offline + backoff); while IDLE imapflow probes with
+    // NOOP instead, so a long FETCH or a quiet IDLE is never cut. No overall deadline on FETCH.
+    socketTimeout: SYNC_SOCKET_TIMEOUT_MS,
     // IDLE 1 s after the last command (imapflow's default 15 s delays new mail by as much);
     // re-issued every maxIdleTime, servers drop IDLE after ~29 min.
     autoIdleDelay: 1000,
@@ -77,6 +83,7 @@ function chunks<T>(list: T[], n: number): T[][] {
 export class ImapFlowSession implements ImapSession {
   private closeCbs: Array<() => void> = [];
   private changeCbs: Array<(path: string) => void> = [];
+  lastError: unknown = undefined;
 
   private constructor(private readonly c: ImapFlow) {
     const changed = (ev: { path?: string }): void => {
@@ -89,8 +96,11 @@ export class ImapFlowSession implements ImapSession {
       for (const cb of this.closeCbs) cb();
       this.closeCbs = [];
     });
-    // Errors also end in 'close'; without a listener an 'error' would crash the engine.
-    c.on('error', () => undefined);
+    // Errors also end in 'close'; without a listener an 'error' would crash the engine. The last
+    // one is kept for the sync's log (ECONNRESET / ETIMEOUT / the server's BYE).
+    c.on('error', (e: unknown) => {
+      this.lastError = e;
+    });
   }
 
   static async open(l: ImapLogin, tls: MailTls = {}): Promise<ImapFlowSession> {

@@ -346,6 +346,7 @@ export class MailEngine {
       state: acc.sync.state,
       error: acc.sync.error,
       lastSyncAt: acc.sync.lastSyncAt,
+      ...(acc.sync.stalled ? { stalled: true as const } : {}),
       ...(acc.smtpCert ? { smtpCertIssue: acc.smtpCert } : {}),
     };
   }

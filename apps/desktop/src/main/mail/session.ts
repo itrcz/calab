@@ -75,6 +75,8 @@ export interface ImapSession {
   /** The selected mailbox changed on the server (new mail, flags, expunge). */
   onChange(cb: (path: string) => void): void;
   onClose(cb: () => void): void;
+  /** The last error the connection reported (for the log when it closes while idle), if any. */
+  readonly lastError?: unknown;
   close(): Promise<void>;
 }
 

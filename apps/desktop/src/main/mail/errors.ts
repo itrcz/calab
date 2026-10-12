@@ -154,6 +154,33 @@ export function classify(e: unknown): MailError {
 }
 
 /**
+ * Diagnostics of a failed IMAP step for the engine log (3.1.2): our code plus what the library and
+ * the server said — Node's `code` (ECONNRESET / ETIMEDOUT / EPIPE …, also of the `cause`), imapflow's
+ * `responseText` / `serverResponseCode` / `responseStatus`. Never the executed command (LOGIN carries the
+ * password), never message content; strings are cut short.
+ */
+export function errorDetail(e: unknown): Record<string, string> {
+  const out: Record<string, string> = { code: classify(e).code };
+  if (typeof e !== 'object' || e === null) return out;
+  const err = e as Record<string, unknown>;
+  const cut = (v: unknown, n = 160): string | null => (typeof v === 'string' && v ? v.replace(/\s+/g, ' ').slice(0, n) : null);
+  const errCode = cut(err['code'], 40);
+  if (errCode) out['errCode'] = errCode;
+  const cause = err['cause'];
+  const causeCode = typeof cause === 'object' && cause !== null ? cut((cause as Record<string, unknown>)['code'], 40) : null;
+  if (causeCode) out['causeCode'] = causeCode;
+  for (const k of ['responseStatus', 'serverResponseCode', 'responseText'] as const) {
+    const v = cut(err[k]);
+    if (v) out[k] = v;
+  }
+  if (!out['responseText']) {
+    const m = cut(err['message']);
+    if (m) out['message'] = m;
+  }
+  return out;
+}
+
+/**
  * A hard deadline over a network step whose library timeouts may not cover everything (DNS inside
  * imapflow / nodemailer, a server that stalls mid-login): rejects with a NETWORK-classified
  * `ETIMEDOUT` after `ms` and calls `onTimeout` (close the client) — ADR-0088 §7.

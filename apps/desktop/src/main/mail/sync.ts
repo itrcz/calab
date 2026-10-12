@@ -5,8 +5,8 @@
  * «load older», local-first actions with a pending-ops queue and rollback, reconnect backoff up to
  * 15 min, `auth_failed` on a rejected login. All IMAP work is serialized on the one connection.
  */
-import type { MailAccountState, MailError, MailEvent, MailFlagPatch, MailFlags, MailFolder, MailFolderRole, MailThreadRow } from '../../shared/mail';
-import { classify, invalid, mailError, notFound } from './errors';
+import type { MailAccountState, MailError, MailEvent, MailFlagPatch, MailFlags, MailFolder, MailFolderRole, MailSyncPhase, MailThreadRow } from '../../shared/mail';
+import { classify, errorDetail, invalid, mailError, notFound } from './errors';
 import { folderId } from './ids';
 import { parseBody } from './mime';
 import { flagsFrom, type ImapSession, type RemoteFlags, type RemoteFolder, type RemoteHeader } from './session';
@@ -20,6 +20,27 @@ export const BACKOFF_MAX_MS = 15 * 60_000;
 export const PREFETCH_COUNT = 50;
 export const PREFETCH_MAX_SIZE = 512 * 1024;
 const INBOX_DEBOUNCE_MS = 500;
+/**
+ * Headers are fetched, stored and announced in batches, newest first (3.1.2): the first page of the
+ * inbox shows up after one small batch, and a sync cut off mid-folder resumes from what was stored.
+ */
+export const FIRST_BATCH = 50;
+export const HEADER_BATCH = 200;
+/** `syncing` with no progress / row event for this long = stalled (logged, «Синхронизация не отвечает»). */
+export const WATCHDOG_MS = 60_000;
+
+/** UID batches: a small first one (the first page of the list), then HEADER_BATCH each. */
+export function uidBatches(uids: number[]): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < uids.length; ) {
+    const n = i === 0 ? FIRST_BATCH : HEADER_BATCH;
+    out.push(uids.slice(i, i + n));
+    i += n;
+  }
+  return out;
+}
+
+type Added = { id: string; threadId: string; header: RemoteHeader };
 
 // ---------------------------------------------------------------- folder roles
 
@@ -146,6 +167,14 @@ export class AccountSync {
   private pendingOps: Op[] = [];
   private readonly queuedFolders = new Set<number>();
   private initialDone = false;
+  /** Syncing with no progress for WATCHDOG_MS (MailAccount.stalled). */
+  stalled = false;
+  private lastActivity = 0;
+  private watchdog: unknown = null;
+  /** `sync.now` on a stalled sync dropped the connection: reconnect without the backoff pause. */
+  private reconnectNow = false;
+  /** The IMAP step in flight, for the log when it fails (operation + folder path, never content). */
+  private step: { op: string; path: string } = { op: 'connect', path: '' };
 
   constructor(private readonly host: SyncHost) {
     const v = host.store.getMeta('lastSyncAt');
@@ -180,6 +209,8 @@ export class AccountSync {
     this.clear(this.pollTimer);
     this.clear(this.inboxTimer);
     this.clear(this.sleepTimer);
+    this.clear(this.watchdog);
+    this.watchdog = null;
     this.wake?.();
     const s = this.session;
     this.session = null;
@@ -194,15 +225,79 @@ export class AccountSync {
       this.wake?.();
       return;
     }
-    void this.run((s) => this.fullSync(s)).catch((e: unknown) => this.host.log('mail: sync failed', { error: classify(e).code }));
+    if (this.stalled) {
+      // The connection hangs (a dead socket imapflow has not noticed yet): drop it and reconnect now.
+      this.host.log('mail: stalled sync, reconnecting', { op: this.step.op, path: this.step.path });
+      this.reconnectNow = true;
+      this.backoff = BACKOFF_MIN_MS;
+      void this.session.close();
+      return;
+    }
+    void this.run((s) => this.fullSync(s)).catch((e: unknown) => this.logFailure('mail: sync failed', e));
   }
 
   private setState(state: MailAccountState, error: MailError | null): void {
     const certKey = (e: MailError | null): string => (e?.cert ? `${e.cert.reason}:${e.cert.fingerprint256}` : '');
     if (this.state === state && this.error?.code === error?.code && certKey(this.error) === certKey(error)) return;
+    const entering = state === 'syncing' && this.state !== 'syncing';
     this.state = state;
     this.error = error;
+    if (entering) {
+      this.lastActivity = this.host.now();
+      this.armWatchdog(WATCHDOG_MS);
+    } else if (state !== 'syncing') {
+      this.clear(this.watchdog);
+      this.watchdog = null;
+      this.stalled = false;
+    }
     this.host.stateChanged();
+  }
+
+  // ------------------------------------------------------------ progress & the watchdog (3.1.2)
+
+  private armWatchdog(ms: number): void {
+    this.clear(this.watchdog);
+    this.watchdog = this.timer(() => this.checkStall(), ms);
+  }
+
+  private checkStall(): void {
+    this.watchdog = null;
+    if (this.state !== 'syncing' || this.stopped) return;
+    const quiet = this.host.now() - this.lastActivity;
+    if (quiet < WATCHDOG_MS) {
+      this.armWatchdog(WATCHDOG_MS - quiet);
+      return;
+    }
+    if (this.stalled) return;
+    this.stalled = true;
+    this.host.log('mail: sync stalled', { quietMs: quiet, op: this.step.op, path: this.step.path });
+    this.host.stateChanged();
+  }
+
+  /** Something moved (progress, rows): feeds the watchdog; a stalled sync is alive again. */
+  private activity(): void {
+    this.lastActivity = this.host.now();
+    if (!this.stalled) return;
+    this.stalled = false;
+    if (this.state === 'syncing') this.armWatchdog(WATCHDOG_MS);
+    this.host.stateChanged();
+  }
+
+  /** `sync_progress` (coalesced by the engine to ≤ 2/s); only while the account is `syncing`. */
+  private progress(phase: MailSyncPhase, f: FolderRecord | null, done: number, total: number): void {
+    if (this.stopped || this.state !== 'syncing') return;
+    this.activity();
+    const folder = f ? { id: folderId(this.host.accountId, f.row), name: f.name, role: f.role } : null;
+    this.host.emit({ type: 'sync_progress', accountId: this.host.accountId, folder, done, total, phase });
+  }
+
+  private at(op: string, path = ''): void {
+    this.step = { op, path };
+  }
+
+  /** The failure with its detail (codes, server response, step), for the engine log. */
+  private logFailure(message: string, e: unknown, extra?: Record<string, unknown>): void {
+    this.host.log(message, { ...errorDetail(e), op: this.step.op, path: this.step.path, ...extra });
   }
 
   private sleep(ms: number): Promise<void> {
@@ -230,12 +325,18 @@ export class AccountSync {
   private async loop(): Promise<void> {
     while (!this.halted()) {
       this.setState('syncing', null);
+      // A reconnect of a stalled sync stays `syncing` (as does the very first pass, the initial
+      // state): start the watchdog over.
+      this.activity();
+      if (this.watchdog === null) this.armWatchdog(WATCHDOG_MS);
       let s: ImapSession;
+      this.at('connect');
       try {
         s = await this.host.connect();
       } catch (e) {
         const c = classify(e);
         if (this.halted()) return;
+        this.logFailure('mail: connect failed', e);
         if (c.code === 'AUTH_FAILED') {
           // Stays here until main hands over a new password (a new AccountSync).
           this.setState('auth_failed', c);
@@ -260,8 +361,11 @@ export class AccountSync {
         this.setState('idle', null);
       } catch (e) {
         const c = classify(e);
-        this.host.log('mail: sync error', { code: c.code });
-        if (this.connected()) this.setState(c.code === 'NETWORK' ? 'offline' : 'error', c);
+        if (!this.halted()) this.logFailure('mail: sync error', e);
+        if (this.connected() && !this.reconnectNow) this.setState(c.code === 'NETWORK' ? 'offline' : 'error', c);
+        // A network failure leaves the connection unusable: close it and reconnect with the backoff
+        // (what was stored stays; the next sync resumes from there).
+        if (c.code === 'NETWORK') void s.close();
       }
       this.schedulePoll();
       await closed;
@@ -269,6 +373,11 @@ export class AccountSync {
       this.clear(this.pollTimer);
       this.pollTimer = null;
       if (this.halted()) return;
+      if (this.reconnectNow) {
+        this.reconnectNow = false;
+        continue;
+      }
+      if (this.state === 'idle') this.logFailure('mail: connection closed', s.lastError ?? null, { op: 'idle' });
       this.setState('offline', { code: 'NETWORK', message: 'connection closed' });
       await this.sleep(this.backoff);
       this.backoff = Math.min(this.backoff * 2, BACKOFF_MAX_MS);
@@ -284,7 +393,7 @@ export class AccountSync {
         .then(() => {
           if (this.state !== 'idle') this.setState('idle', null);
         })
-        .catch((e: unknown) => this.host.log('mail: poll failed', { code: classify(e).code }))
+        .catch((e: unknown) => this.logFailure('mail: poll failed', e))
         .finally(() => this.schedulePoll());
     }, POLL_MS);
   }
@@ -329,7 +438,7 @@ export class AccountSync {
       if (f) await this.syncFolder(s, f);
     }).catch((e: unknown) => {
       this.queuedFolders.delete(row);
-      this.host.log('mail: folder sync failed', { code: classify(e).code });
+      this.logFailure('mail: folder sync failed', e);
     });
   }
 
@@ -343,6 +452,8 @@ export class AccountSync {
   // ------------------------------------------------------------ full sync
 
   async fullSync(s: ImapSession): Promise<void> {
+    this.progress('folders', null, 0, 0);
+    this.at('list');
     const remote = await s.list();
     const roles = assignRoles(remote);
     const seen = new Set<string>();
@@ -368,7 +479,7 @@ export class AccountSync {
       } catch (e) {
         const c = classify(e);
         if (c.code === 'NETWORK') throw e;
-        this.host.log('mail: folder sync failed', { code: c.code, role: f.role });
+        this.logFailure('mail: folder sync failed', e, { role: f.role });
       }
       if (f.role === 'inbox' && !this.initialDone) await this.prefetch(s, f);
     }
@@ -384,19 +495,25 @@ export class AccountSync {
       .prepare('SELECT id, uid FROM messages WHERE folder_row = ? AND body_hash IS NULL AND size <= ? ORDER BY date DESC LIMIT ?')
       .all(inbox.row, PREFETCH_MAX_SIZE, PREFETCH_COUNT);
     if (!rows.length) return;
+    this.at('select', inbox.path);
     await s.select(inbox.path);
+    let done = 0;
+    this.progress('bodies', inbox, 0, rows.length);
     for (const r of rows) {
       if (this.stopped) return;
+      this.at('body', inbox.path);
       try {
         await this.loadBody(s, String(r['id']), Number(r['uid']));
       } catch (e) {
         if (classify(e).code === 'NETWORK') throw e;
       }
+      this.progress('bodies', inbox, ++done, rows.length);
     }
   }
 
   async syncFolder(s: ImapSession, f0: FolderRecord): Promise<void> {
     const now = this.host.now();
+    this.at('select', f0.path);
     const info = await s.select(f0.path);
     let f = f0;
     if (f.uidValidity !== null && f.uidValidity !== info.uidValidity) {
@@ -409,20 +526,43 @@ export class AccountSync {
       this.emitRemoved(f.row, [...threads], ids);
       f = this.store.folder(f.row) ?? f;
     }
-    const first = f.uidValidity === null;
+    // The first sync of a folder is done only when UIDNEXT is stored (at the end): one cut off midway
+    // resumes — UIDVALIDITY and the window are stored at once, so a changed one still rebuilds.
+    const first = f.uidValidity === null || f.uidNext === null;
     const since = f.syncedSince ?? now - WINDOW_MS;
+    if (first && (f.uidValidity === null || f.syncedSince === null)) this.store.updateFolderSync(f.row, { uidValidity: info.uidValidity, syncedSince: since });
     const range = this.store.uidRange(f.row);
     let newUids: number[];
+    this.at('search', f.path);
     if (first || !range) {
-      newUids = await s.searchDate(new Date(since));
+      const held = range ? this.store.localFlags(f.row) : null;
+      newUids = (await s.searchDate(new Date(since))).filter((u) => !held?.has(u));
     } else {
       // New = above both what we hold and the UIDNEXT seen last time (older UIDs outside the
       // window were skipped on purpose; «load older» fetches them).
       const top = Math.max(range.max, (f.uidNext ?? 1) - 1);
       newUids = info.uidNext > top + 1 ? (await s.searchUids(`${String(top + 1)}:*`)).filter((u) => u > top) : [];
     }
-    const headers = newUids.length ? await s.fetchHeaders(newUids) : [];
-    const added = this.insertHeaders(f, info.uidValidity, headers);
+    // Newest first, stored and announced batch by batch (the list fills while the folder loads).
+    newUids.sort((a, b) => b - a);
+    const added: Added[] = [];
+    let done = 0;
+    this.progress('headers', f, 0, newUids.length);
+    for (const batch of uidBatches(newUids)) {
+      if (this.halted()) return;
+      this.at('fetch', f.path);
+      const got = this.insertHeaders(f, info.uidValidity, await s.fetchHeaders(batch));
+      if (this.halted()) return;
+      done += batch.length;
+      if (got.length) {
+        added.push(...got);
+        this.emitRows('messages_added', f.row, new Set(got.map((a) => a.threadId)), got.map((a) => a.id));
+        this.updateStarred(new Set(got.filter((a) => a.header.flags.flagged).map((a) => a.threadId)));
+        this.emitFolders();
+      }
+      this.progress('headers', f, done, newUids.length);
+    }
+    this.at('flags', f.path);
 
     const changedThreads = new Set<string>();
     const changedIds: string[] = [];
@@ -431,7 +571,8 @@ export class AccountSync {
     if (range) {
       const local = this.store.localFlags(f.row);
       const remoteUids = new Set(await s.searchUids(`${String(range.min)}:${String(range.max)}`));
-      const gone = vanished(local.keys(), remoteUids, range.max);
+      // Only the range held before this pass: a resumed first sync just stored older UIDs below it.
+      const gone = vanished([...local.keys()].filter((u) => u >= range.min), remoteUids, range.max);
       for (const u of gone) {
         const l = local.get(u);
         if (l) {
@@ -457,10 +598,6 @@ export class AccountSync {
     }
     this.store.updateFolderSync(f.row, { uidValidity: info.uidValidity, highestModseq: info.highestModseq, uidNext: info.uidNext, syncedSince: since, lastSync: now });
 
-    if (added.length) {
-      this.emitRows('messages_added', f.row, new Set(added.map((a) => a.threadId)), added.map((a) => a.id));
-      this.updateStarred(new Set(added.filter((a) => a.header.flags.flagged).map((a) => a.threadId)));
-    }
     if (changedIds.length) {
       this.emitRows('messages_changed', f.row, changedThreads, changedIds);
       this.updateStarred(changedThreads);
@@ -469,7 +606,7 @@ export class AccountSync {
       this.emitRemoved(f.row, [...removedThreads], removedIds);
       this.updateStarred(removedThreads);
     }
-    if (added.length || changedIds.length || removedIds.length) this.emitFolders();
+    if (changedIds.length || removedIds.length) this.emitFolders();
 
     if (f.role === 'inbox' && !first) {
       for (const a of added) {
@@ -480,7 +617,7 @@ export class AccountSync {
     this.lastSyncAt = now;
   }
 
-  private insertHeaders(f: FolderRecord, uidValidity: string, headers: RemoteHeader[]): Array<{ id: string; threadId: string; header: RemoteHeader }> {
+  private insertHeaders(f: FolderRecord, uidValidity: string, headers: RemoteHeader[]): Added[] {
     if (!headers.length) return [];
     // Oldest first: a parent is stored before its replies, so threading by References works.
     const sorted = [...headers].sort((a, b) => a.date - b.date || a.uid - b.uid);
@@ -772,6 +909,7 @@ export class AccountSync {
   }
 
   emitRows(type: 'messages_added' | 'messages_changed', row: number, threads: Set<string>, messageIds: string[]): void {
+    this.activity();
     const { rows, gone } = this.rowsFor(row, threads);
     const fid = folderId(this.host.accountId, row);
     if (rows.length || messageIds.length) this.host.emit({ type, accountId: this.host.accountId, folderId: fid, rows, messageIds });
@@ -779,6 +917,7 @@ export class AccountSync {
   }
 
   emitRemoved(row: number, threads: string[], messageIds: string[]): void {
+    this.activity();
     const { rows, gone } = this.rowsFor(row, threads);
     const fid = folderId(this.host.accountId, row);
     if (gone.length || messageIds.length) this.host.emit({ type: 'messages_removed', accountId: this.host.accountId, folderId: fid, threadIds: gone, messageIds });

@@ -104,6 +104,26 @@ export interface MailAccount {
    * cleared by the next successful send or new SMTP settings.
    */
   smtpCertIssue?: MailCertInfo;
+  /**
+   * 3.1.2: the account is `syncing` but nothing moved for 60 s (no `sync_progress` / `messages_*`):
+   * the engine logs it, the UI shows «Синхронизация не отвечает · Повторить» (`sync.now` reconnects).
+   */
+  stalled?: true;
+}
+
+/** Where a running sync is (3.1.2, `sync_progress`). */
+export type MailSyncPhase = 'folders' | 'headers' | 'bodies';
+
+/**
+ * Progress of an account's sync (`sync_progress`): the folder being fetched and its count of
+ * headers (or prefetched bodies) done of `total`. `folder` is null in the `folders` phase (LIST).
+ */
+export interface MailSyncProgress {
+  accountId: string;
+  folder: { id: string; name: string; role: MailFolderRole | null } | null;
+  done: number;
+  total: number;
+  phase: MailSyncPhase;
 }
 
 /**
@@ -435,6 +455,11 @@ export type MailEvent =
    * a message we sent ourselves. Main / renderer apply DND and focus rules (§8).
    */
   | { type: 'new_mail'; accountId: string; messageId: string; threadId: string; from: MailAddress; subject: string }
+  /**
+   * 3.1.2, additive: a `syncing` account's progress, coalesced to ≤ 2 per second per account (newest
+   * wins). Only while the account is `syncing`; the renderer drops it when the account leaves that state.
+   */
+  | ({ type: 'sync_progress' } & MailSyncProgress)
   /**
    * Emitted by main, not the engine: the engine process went down (crash; requests fail with
    * `ENGINE_DOWN` until it is back), came back up (refetch what is on screen), or `failed` — it

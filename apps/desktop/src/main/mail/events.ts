@@ -8,6 +8,8 @@
 import type { MailEvent, MailThreadRow } from '../../shared/mail';
 
 export const COALESCE_MS = 250;
+/** `sync_progress`: at most 2 per second per account (3.1.2), the newest wins. */
+export const PROGRESS_MS = 500;
 
 type RowEvent = Extract<MailEvent, { type: 'messages_added' | 'messages_changed' }>;
 
@@ -25,6 +27,8 @@ function keyOf(e: MailEvent): string | null {
       return `mr:${e.folderId}`;
     case 'outgoing':
       return `o:${e.item.id}`;
+    case 'sync_progress':
+      return `sp:${e.accountId}`;
     default:
       return null; // new_mail, engine, compose: never merged
   }
@@ -90,6 +94,7 @@ export class EventCoalescer {
 
   private openWindow(key: string): void {
     this.open.set(key, null);
+    const ms = key.startsWith('sp:') ? Math.max(this.windowMs, PROGRESS_MS) : this.windowMs;
     this.timers.set(() => {
       const pending = this.open.get(key) ?? null;
       this.open.delete(key);
@@ -97,12 +102,18 @@ export class EventCoalescer {
         this.send(pending);
         this.openWindow(key);
       }
-    }, this.windowMs);
+    }, ms);
   }
 
-  /** Upserts drop the same threads from a pending removal of the folder, and vice versa. */
+  /**
+   * Upserts drop the same threads from a pending removal of the folder, and vice versa. A new
+   * account state drops the account's pending progress (it would land after the sync ended).
+   */
   private cancelOpposite(e: MailEvent): void {
-    if (e.type === 'messages_added' || e.type === 'messages_changed') {
+    if (e.type === 'account_state') {
+      const k = `sp:${e.accountId}`;
+      if (this.open.get(k)) this.open.set(k, null);
+    } else if (e.type === 'messages_added' || e.type === 'messages_changed') {
       const k = `mr:${e.folderId}`;
       const p = this.open.get(k);
       if (p?.type === 'messages_removed') {

@@ -77,4 +77,33 @@ describe('event coalescing', () => {
     const changed = sent.flatMap((e) => (e.type === 'messages_changed' ? [e.rows.map((r) => r.threadId)] : []));
     expect(changed).toEqual([['t9']]);
   });
+  it('sync_progress: ≤ 2 per second per account (500 ms window, newest wins); an account state drops the pending one', () => {
+    const sent: MailEvent[] = [];
+    const windows: number[] = [];
+    let pending: Array<() => void> = [];
+    const c = new EventCoalescer((e) => sent.push(e), 250, {
+      set: (fn, ms) => {
+        windows.push(ms);
+        pending.push(fn);
+        return pending.length;
+      },
+      clear: () => undefined,
+    });
+    const tick = (): void => {
+      const p = pending;
+      pending = [];
+      for (const fn of p) fn();
+    };
+    const progress = (accountId: string, done: number): MailEvent => ({ type: 'sync_progress', accountId, folder: { id: 'f', name: 'INBOX', role: 'inbox' }, done, total: 100, phase: 'headers' });
+    for (let i = 1; i <= 10; i++) c.emit(progress('a', i * 10));
+    c.emit(progress('b', 5));
+    expect(sent.map((e) => (e.type === 'sync_progress' ? `${e.accountId}:${String(e.done)}` : e.type))).toEqual(['a:10', 'b:5']);
+    expect(windows).toEqual([500, 500]);
+    tick();
+    expect(sent.at(-1)).toMatchObject({ accountId: 'a', done: 100 });
+    c.emit(progress('a', 100));
+    c.emit({ type: 'account_state', accountId: 'a', account: null });
+    tick();
+    expect(sent.filter((e) => e.type === 'sync_progress')).toHaveLength(3);
+  });
 });
