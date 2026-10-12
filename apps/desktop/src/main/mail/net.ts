@@ -70,8 +70,8 @@ function installGuard(): void {
     const sock = (orig as (...a: unknown[]) => TLSSocket).apply(this, call);
     // Node announces the finished handshake with this.emit('secureConnect'): we judge first, and an
     // untrusted certificate never reaches any listener (the library's callback included).
-    const emit = sock.emit as (this: TLSSocket, event: string | symbol, ...a: unknown[]) => boolean;
-    sock.emit = function (this: TLSSocket, event: string | symbol, ...a: unknown[]): boolean {
+    const emit: (event: string | symbol, ...a: unknown[]) => boolean = sock.emit.bind(sock);
+    sock.emit = function (event: string | symbol, ...a: unknown[]): boolean {
       if (event === 'secureConnect') {
         const bad = judgeCert(sock, check);
         if (bad) {
@@ -79,10 +79,10 @@ function installGuard(): void {
           return false;
         }
       }
-      return emit.call(this, event, ...a);
+      return emit(event, ...a);
     } as typeof sock.emit;
     return sock;
-  } as Connect;
+  };
   tls.connect = guarded;
   // ESM importers of `node:tls` read the named export: keep it in step with the module object.
   syncBuiltinESMExports();

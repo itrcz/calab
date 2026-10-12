@@ -1,6 +1,6 @@
 import { TriangleAlert } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { isMailError, type MailAccount } from '../../../shared/mail';
+import { isMailError, type MailAccount, type MailCertInfo } from '../../../shared/mail';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Modal, PasswordInput, Row, Segmented, Select, Toggle } from '../../components/ui';
 import { t } from '../../i18n';
@@ -9,6 +9,7 @@ import { mailApi, updateSettings, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
+import { accountCertIssues, CertNotice, certTitle, pinTail, unpin } from '../mail/CertNotice';
 import { mailErrorText } from '../mail/format';
 import { openSection } from '../shell/sectionNav';
 import { CommitInput } from './CommitInput';
@@ -127,6 +128,7 @@ function AccountRows({ id }: { id: string }): ReactNode {
   const account = useMail((s) => s.accounts[id]);
   const signature = useMail((s) => s.settings.signatures[id] ?? '');
   const [password, setPassword] = useState(false);
+  const [certOpen, setCertOpen] = useState<{ kind: 'imap' | 'smtp'; cert: MailCertInfo } | null>(null);
   if (!account) return null;
   const api = mailApi();
   const state = stateText(account);
@@ -152,6 +154,7 @@ function AccountRows({ id }: { id: string }): ReactNode {
           {t('mbox.settings.remove')}
         </Button>
       </Row>
+      <CertRows account={account} onShow={setCertOpen} />
       <Row label={t('mbox.settings.name')} hint={t('mbox.settings.nameHint')}>
         <CommitInput
           value={account.name}
@@ -167,7 +170,74 @@ function AccountRows({ id }: { id: string }): ReactNode {
         <SignatureField id={id} value={signature} />
       </Row>
       {password ? <PasswordDialog account={account} onClose={() => setPassword(false)} /> : null}
+      {certOpen ? <CertDialog account={account} kind={certOpen.kind} cert={certOpen.cert} onClose={() => setCertOpen(null)} /> : null}
     </div>
+  );
+}
+
+/**
+ * Certificates of an account (ADR-0088 §4): «Сертификат: закреплён ⋯ab12 · Сбросить» per pinned
+ * server, and a certificate that stopped the sync / the last send («Сертификат сервера изменился»
+ * · «Показать и доверять новому»): the account stays in `error` until it is accepted.
+ */
+function CertRows({ account, onShow }: { account: MailAccount; onShow: (v: { kind: 'imap' | 'smtp'; cert: MailCertInfo }) => void }): ReactNode {
+  const issues = accountCertIssues(account);
+  const reset = async (kind: 'imap' | 'smtp'): Promise<void> => {
+    const api = mailApi();
+    if (!api) return;
+    try {
+      await api.accounts.update(account.id, { [kind]: unpin(account[kind]) });
+      toast.success(t('mbox.cert.resetDone'));
+    } catch (e) {
+      toast.error(errText(e));
+    }
+  };
+  const [now] = useState(() => Date.now());
+  return (
+    <>
+      {issues.map((i) => (
+        <Row key={`issue-${i.kind}`} label={i.cert.reason === 'changed' ? t('mbox.cert.changed') : certTitle(i.cert, now)} hint={`${i.cert.host}:${String(i.cert.port)}`}>
+          <TriangleAlert className="size-4 text-warn" aria-hidden />
+          <Button size="sm" variant="primary" onClick={() => onShow(i)} data-testid="settings-mail-cert-show">
+            {i.cert.reason === 'changed' ? t('mbox.cert.showTrust') : t('mbox.cert.show')}
+          </Button>
+        </Row>
+      ))}
+      {(['imap', 'smtp'] as const).map((kind) => {
+        const pin = account[kind].pinnedCert;
+        if (!pin) return null;
+        return (
+          <Row key={`pin-${kind}`} label={t('mbox.cert.pinned', { fp: pinTail(pin) })} hint={`${account[kind].host}:${String(account[kind].port)}`}>
+            <Button size="sm" variant="ghost" onClick={() => void reset(kind)} data-testid="settings-mail-cert-reset">
+              {t('mbox.cert.reset')}
+            </Button>
+          </Row>
+        );
+      })}
+    </>
+  );
+}
+
+/** The trust prompt for an existing account: pins the shown certificate (no new login, §4). */
+function CertDialog({ account, kind, cert, onClose }: { account: MailAccount; kind: 'imap' | 'smtp'; cert: MailCertInfo; onClose: () => void }): ReactNode {
+  const [busy, setBusy] = useState(false);
+  const trust = async (): Promise<void> => {
+    const api = mailApi();
+    if (!api || busy) return;
+    setBusy(true);
+    try {
+      await api.accounts.update(account.id, { [kind]: { ...unpin(account[kind]), pinnedCert: cert.fingerprint256 } });
+      toast.success(t('mbox.cert.trusted'));
+      onClose();
+    } catch (e) {
+      setBusy(false);
+      toast.error(errText(e));
+    }
+  };
+  return (
+    <Modal open onClose={onClose} title={t('mbox.cert.dialog', { server: `${cert.host}:${String(cert.port)}` })}>
+      <CertNotice cert={cert} busy={busy} onTrust={() => void trust()} />
+    </Modal>
   );
 }
 

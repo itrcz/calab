@@ -1,12 +1,13 @@
 import { ChevronDown, Mail } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
-import { isMailError, type MailDiscovery, type MailErrorCode, type MailProvider, type MailSecurity, type MailServerSettings } from '../../../shared/mail';
+import { isMailError, type MailCertInfo, type MailDiscovery, type MailErrorCode, type MailProvider, type MailSecurity, type MailServerSettings } from '../../../shared/mail';
 import { Button, Field, Input, PasswordInput, Select, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { platform } from '../../platform';
 import { ALL_INBOXES, mailApi, selectBox, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
 import { toast } from '../../stores/toasts';
+import { CertNotice, certIssues, discoveryIssues, unpin, withPin } from './CertNotice';
 import { APP_PASSWORD_URL, mailErrorText, providerOf } from './format';
 import { isEmail } from './mailLink';
 import { resolveLogin } from './compose';
@@ -19,8 +20,14 @@ interface Manual {
   login: string;
 }
 
+const manualFrom = (d: MailDiscovery, email: string): Manual => ({ imap: unpinIssue(d.imap), smtp: unpinIssue(d.smtp), login: resolveLogin(d.loginTemplate, email) });
 
-const manualFrom = (d: MailDiscovery, email: string): Manual => ({ imap: { ...d.imap }, smtp: { ...d.smtp }, login: resolveLogin(d.loginTemplate, email) });
+/** A discovered / tried server as settings: the probe's `certIssue` dropped, a pin kept. */
+function unpinIssue(s: MailServerSettings & { certIssue?: MailCertInfo }): MailServerSettings {
+  return s.pinnedCert ? { ...unpin(s), pinnedCert: s.pinnedCert } : unpin(s);
+}
+
+const pinned = (m: Manual | null): boolean => !!(m?.imap.pinnedCert || m?.smtp.pinnedCert);
 
 const PROVIDER_LINKS: Array<[MailProvider, () => string]> = [
   ['gmail', () => 'Gmail'],
@@ -43,6 +50,8 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
   const [error, setError] = useState<{ code: MailErrorCode | 'EMAIL' | 'ALREADY'; help: string | null } | null>(null);
   const [manual, setManual] = useState<Manual | null>(null);
   const [showManual, setShowManual] = useState(false);
+  /** Untrusted server certificates to ask about (§4); trusting one retries with it pinned. */
+  const [certs, setCerts] = useState<MailCertInfo[]>([]);
   const submitRef = useRef<HTMLButtonElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -60,6 +69,7 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
     setManual(null);
     setShowManual(false);
     setError(null);
+    setCerts([]);
   }
   useEffect(() => {
     if (prefill?.password) submitRef.current?.focus();
@@ -77,7 +87,7 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
     setPhase('idle');
   };
 
-  const submit = async (e?: SyntheticEvent): Promise<void> => {
+  const submit = async (e?: SyntheticEvent, trusted?: Manual): Promise<void> => {
     e?.preventDefault();
     const api = mailApi();
     const address = email.trim().toLowerCase();
@@ -92,13 +102,22 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
       return;
     }
     setError(null);
-    let settings = showManual ? manual : null;
+    setCerts([]);
+    let settings = trusted ?? (showManual || pinned(manual) ? manual : null);
     let discovered: MailDiscovery | null = null;
     if (!settings) {
       setPhase('discover');
       try {
         discovered = await api.accounts.discover(address);
         settings = manualFrom(discovered, address);
+        const issues = certIssues(...discoveryIssues(discovered));
+        if (issues.length) {
+          // The probe saw an untrusted certificate: ask before sending the password there.
+          setManual(settings);
+          setCerts(issues);
+          setPhase('idle');
+          return;
+        }
       } catch (err) {
         const code = isMailError(err) ? err.code : 'ENGINE_DOWN';
         if (code === 'DISCOVERY_FAILED' && isMailError(err) && err.discovery) {
@@ -113,7 +132,8 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
     try {
       // Discovered settings are found again by the engine (it keeps the provider and the app-password
       // page with them); only the manual form's values are passed as they are.
-      const account = await api.accounts.add(showManual ? { email: address, password, settings } : { email: address, password });
+      // A pinned certificate travels with the settings (the engine has no other way to learn it).
+      const account = await api.accounts.add(showManual || pinned(settings) ? { email: address, password, settings } : { email: address, password });
       setPassword('');
       toast.success(t('mbox.add.added', { email: account.email }));
       useMailUi.getState().closeAdd();
@@ -127,9 +147,24 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
         // Found servers that do not answer: the manual form, filled with what was found.
         setManual(settings);
       }
+      if (code === 'TLS' && isMailError(err)) {
+        const issues = certIssues(err.cert, ...discoveryIssues(err.discovery));
+        if (issues.length) {
+          setCerts(issues);
+          setPhase('idle');
+          return;
+        }
+      }
       // AUTH_FAILED carries the settings that were tried: their provider names the app-password page.
       fail(code, (isMailError(err) ? err.discovery : undefined) ?? discovered);
     }
+  };
+
+  const trust = (cert: MailCertInfo): void => {
+    if (!manual) return;
+    const next = withPin(manual, cert);
+    setManual(next);
+    void submit(undefined, next);
   };
 
   const errorText =
@@ -156,6 +191,9 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
             onChange={(e) => {
               setEmail(e.target.value);
               setError(null);
+              // Another address: the trust prompt and pins were for the old one's servers.
+              setCerts([]);
+              if (pinned(manual)) setManual(showManual && manual ? { ...manual, imap: unpin(manual.imap), smtp: unpin(manual.smtp) } : null);
             }}
             placeholder="name@example.com"
             data-testid="mail-add-email"
@@ -195,6 +233,9 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
             ) : null}
           </p>
         ) : null}
+        {certs.map((c) => (
+          <CertNotice key={`${c.host}:${String(c.port)}`} cert={c} busy={busy} onTrust={() => trust(c)} />
+        ))}
         {phase !== 'idle' ? (
           <p className="text-caption text-muted" role="status" data-testid="mail-add-progress">
             {phase === 'discover' ? t('mbox.add.discovering', { domain }) : t('mbox.add.checking')}
@@ -254,9 +295,11 @@ function ServerFields({
   defaults: [number, number];
 }): ReactNode {
   const id = useId();
+  // Another host / port / security is another server: a pinned certificate does not carry over.
+  const base = unpin(value);
   const setSecurity = (security: MailSecurity): void => {
     const port = value.port === defaults[0] || value.port === defaults[1] ? (security === 'tls' ? defaults[0] : defaults[1]) : value.port;
-    onChange({ ...value, security, port });
+    onChange({ ...base, security, port });
   };
   return (
     <fieldset className="flex flex-col gap-1.5" disabled={disabled}>
@@ -264,7 +307,7 @@ function ServerFields({
       <div className="flex gap-2">
         <label className="min-w-0 flex-1" htmlFor={`${id}-host`}>
           <span className="sr-only">{t('mbox.add.host')}</span>
-          <Input id={`${id}-host`} value={value.host} spellCheck={false} placeholder={t('mbox.add.host')} onChange={(e) => onChange({ ...value, host: e.target.value.trim() })} />
+          <Input id={`${id}-host`} value={value.host} spellCheck={false} placeholder={t('mbox.add.host')} onChange={(e) => onChange({ ...base, host: e.target.value.trim() })} />
         </label>
         <label className="w-20 shrink-0" htmlFor={`${id}-port`}>
           <span className="sr-only">{t('mbox.add.port')}</span>
@@ -273,7 +316,7 @@ function ServerFields({
             inputMode="numeric"
             value={String(value.port || '')}
             placeholder={t('mbox.add.port')}
-            onChange={(e) => onChange({ ...value, port: Math.min(65535, Number(e.target.value.replace(/\D/g, '')) || 0) })}
+            onChange={(e) => onChange({ ...base, port: Math.min(65535, Number(e.target.value.replace(/\D/g, '')) || 0) })}
           />
         </label>
         <label className="w-32 shrink-0" htmlFor={`${id}-sec`}>
