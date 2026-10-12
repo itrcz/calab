@@ -1,4 +1,7 @@
-import { moveMessages, moveRows, openRow, setMessageFlags, setRowFlags, useMail, type MoveOp } from '../../stores/mail';
+import { confirmAction } from '../../components/Confirm';
+import { plural, t } from '../../i18n';
+import { toast } from '../../stores/toasts';
+import { emptyFolder, inTrash, moveMessages, moveRows, openRow, setMessageFlags, setRowFlags, useMail, type MoveOp } from '../../stores/mail';
 import { actionKeys, clearPicked, useMailUi } from '../../stores/mailUi';
 
 /**
@@ -58,8 +61,12 @@ export function moveOpen(op: MoveOp): void {
   if (s.openId) void moveMessages([s.openId], op);
 }
 
-/** ⌘⌫ / Delete in the list: the selected row to the trash. */
+/** ⌘⌫ / Delete in the list: the selected row to the trash (in the trash: deleted forever). */
 export function trashSelected(): void {
+  if (inTrash(useMail.getState())) {
+    void deleteOpenForever();
+    return;
+  }
   const many = multi();
   if (many) {
     moveKeys(many, { kind: 'trash' });
@@ -68,6 +75,38 @@ export function trashSelected(): void {
   const s = useMail.getState();
   if (s.selected && s.rows[s.selected]) void moveRows([s.selected], { kind: 'trash' });
   else if (s.openId) void moveMessages([s.openId], { kind: 'trash' });
+}
+
+/** The «Удалить N писем навсегда?» confirmation: asked for more than one message only. */
+async function confirmForever(n: number): Promise<boolean> {
+  if (n <= 1) return true;
+  return confirmAction(t('mbox.trash.deleteForever'), plural('mbox.trash.emptyConfirm', n), t('mbox.trash.deleteForever'));
+}
+
+/** «Удалить навсегда» for rows of the trash (the row menu): confirmed when more than one. */
+export async function deleteKeysForever(keys: string[]): Promise<void> {
+  if (!keys.length || !(await confirmForever(keys.length))) return;
+  await moveRows(keys, { kind: 'delete' });
+}
+
+/** «Удалить навсегда» in the action bar / ⌘⌫ in the trash: the picked rows, the row, else the open message. */
+export async function deleteOpenForever(): Promise<void> {
+  const many = multi();
+  if (many) {
+    await deleteKeysForever(many);
+    return;
+  }
+  const s = useMail.getState();
+  const key = s.thread?.rowKey ?? s.selected;
+  if (key && s.rows[key]) await moveRows([key], { kind: 'delete' });
+  else if (s.openId) await moveMessages([s.openId], { kind: 'delete' });
+}
+
+/** «Очистить корзину»: «Удалить N писем навсегда? Это нельзя отменить.», then `folders.empty`. */
+export async function emptyTrash(folderId: string, total: number): Promise<void> {
+  if (total <= 0) return;
+  const ok = await confirmAction(t('mbox.trash.empty'), plural('mbox.trash.emptyConfirm', total), t('mbox.trash.deleteForever'));
+  if (ok && (await emptyFolder(folderId))) toast.success(t('mbox.trash.emptied'));
 }
 
 /** Marks the open message, the next auto-read must not undo it (see `noteManualRead`). */

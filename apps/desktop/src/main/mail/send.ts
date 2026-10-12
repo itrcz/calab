@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { createTransport } from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import type { MailAddress, MailDraft, MailError, MailEvent, MailOutgoing, MailServerSettings } from '../../shared/mail';
-import { classify, invalid, mailError, notFound } from './errors';
+import { classify, invalid, mailError, notFound, withDeadline } from './errors';
 import { mailTlsOptions, type MailTls } from './net';
 import type { MailStore, OutgoingRecord } from './store';
 
@@ -150,7 +150,13 @@ export interface SmtpLogin {
   password: string;
 }
 
-function transport(l: SmtpLogin, tls: MailTls) {
+/** Login check (§4): connect / greeting 10 s, the whole check 22 s (see imap.ts VERIFY_*). */
+const VERIFY_STEP_MS = 10_000;
+const VERIFY_TOTAL_MS = 22_000;
+/** One send attempt of the outbox (in the background, not a call): bounds a server that stalls. */
+const SEND_TOTAL_MS = 5 * 60_000;
+
+function transport(l: SmtpLogin, tls: MailTls, verify = false) {
   return createTransport({
     host: l.server.host,
     port: l.server.port,
@@ -158,9 +164,10 @@ function transport(l: SmtpLogin, tls: MailTls) {
     requireTLS: l.server.security === 'starttls',
     auth: { user: l.login, pass: l.password },
     tls: { ...mailTlsOptions(l.server, tls), servername: l.server.host },
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 60_000,
+    connectionTimeout: verify ? VERIFY_STEP_MS : 15_000,
+    greetingTimeout: verify ? VERIFY_STEP_MS : 15_000,
+    socketTimeout: verify ? VERIFY_TOTAL_MS : 60_000,
+    dnsTimeout: verify ? VERIFY_STEP_MS : 15_000,
     disableFileAccess: true,
     disableUrlAccess: true,
   });
@@ -168,9 +175,9 @@ function transport(l: SmtpLogin, tls: MailTls) {
 
 /** Login check for `accounts.add` (§4). */
 export async function verifySmtp(l: SmtpLogin, tls: MailTls = {}): Promise<void> {
-  const t = transport(l, tls);
+  const t = transport(l, tls, true);
   try {
-    await t.verify();
+    await withDeadline(t.verify(), VERIFY_TOTAL_MS, 'SMTP login check', () => t.close());
   } finally {
     t.close();
   }
@@ -179,7 +186,7 @@ export async function verifySmtp(l: SmtpLogin, tls: MailTls = {}): Promise<void>
 export async function smtpSend(l: SmtpLogin, envelope: { from: string; to: string[] }, raw: Buffer, tls: MailTls = {}): Promise<void> {
   const t = transport(l, tls);
   try {
-    await t.sendMail({ envelope, raw });
+    await withDeadline(t.sendMail({ envelope, raw }), SEND_TOTAL_MS, 'SMTP send', () => t.close());
   } finally {
     t.close();
   }

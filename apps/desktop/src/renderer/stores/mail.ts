@@ -60,6 +60,8 @@ export interface MailState {
   /** accounts / folders / settings are loaded once (the section can render). */
   loaded: boolean;
   engineDown: boolean;
+  /** The engine does not start (crash loop, main's `engine: failed`): the report to copy. */
+  engineReport: string | null;
   accounts: Record<string, MailAccount>;
   accountIds: string[];
   /** Complete folder lists per account (the `folders` event replaces one). */
@@ -98,6 +100,7 @@ export interface MailState {
 const initial = (): MailState => ({
   loaded: false,
   engineDown: false,
+  engineReport: null,
   accounts: {},
   accountIds: [],
   folders: {},
@@ -298,7 +301,7 @@ export function reduceEvent(s: MailState, e: MailEvent): Partial<MailState> | nu
       return { outgoing: { ...s.outgoing, [e.item.id]: e.item } };
     }
     case 'engine':
-      return { engineDown: e.state === 'down' };
+      return { engineDown: e.state !== 'up', engineReport: e.state === 'failed' ? e.report : null };
     case 'new_mail':
       return null;
   }
@@ -327,7 +330,7 @@ export function mailApi(): MailApi | null {
 const errCode = (e: unknown): MailErrorCode => (isMailError(e) ? e.code : 'ENGINE_DOWN');
 
 /** Mail errors for the toasts; `code` from the contract, the text the UI's own (i18n). */
-let reportError: (code: MailErrorCode, what: 'flags' | 'move' | 'load' | 'send' | 'generic') => void = () => undefined;
+let reportError: (code: MailErrorCode, what: 'flags' | 'move' | 'load' | 'send' | 'empty' | 'generic') => void = () => undefined;
 export function setMailErrorReporter(fn: typeof reportError): void {
   reportError = fn;
 }
@@ -366,6 +369,7 @@ async function reloadAll(): Promise<void> {
     useMail.setState({
       loaded: true,
       engineDown: false,
+      engineReport: null,
       accounts: Object.fromEntries(accounts.map((x) => [x.id, x])),
       accountIds: accounts.map((x) => x.id),
       folders,
@@ -375,7 +379,8 @@ async function reloadAll(): Promise<void> {
       box,
     });
   } catch (e) {
-    useMail.setState({ loaded: true, engineDown: errCode(e) === 'ENGINE_DOWN' });
+    const code = errCode(e);
+    useMail.setState({ loaded: true, engineDown: code === 'ENGINE_DOWN' || code === 'ENGINE_FAILED', engineReport: code === 'ENGINE_FAILED' && isMailError(e) ? (e.report ?? '') : null });
     return;
   }
   await reloadList();
@@ -735,7 +740,8 @@ export async function setMessageFlags(ids: string[], patch: MailFlagPatch): Prom
   }
 }
 
-export type MoveOp = { kind: 'archive' } | { kind: 'trash' } | { kind: 'move'; folderId: string };
+/** `delete` = permanently («Удалить навсегда» in the trash). */
+export type MoveOp = { kind: 'archive' } | { kind: 'trash' } | { kind: 'delete' } | { kind: 'move'; folderId: string };
 
 /** The row after `key` in the list (else before): the selection after a move (Apple Mail). */
 function neighbour(order: string[], gone: Set<string>, key: string | null): string | null {
@@ -767,6 +773,7 @@ export async function moveRows(keys: string[], op: MoveOp): Promise<void> {
   try {
     if (op.kind === 'archive') await a.messages.archive(sel);
     else if (op.kind === 'trash') await a.messages.trash(sel);
+    else if (op.kind === 'delete') await a.messages.delete(sel);
     else await a.messages.move(sel, op.folderId);
   } catch (e) {
     const cur = useMail.getState();
@@ -789,10 +796,40 @@ export async function moveMessages(ids: string[], op: MoveOp): Promise<void> {
   try {
     if (op.kind === 'archive') await a.messages.archive(sel);
     else if (op.kind === 'trash') await a.messages.trash(sel);
+    else if (op.kind === 'delete') await a.messages.delete(sel);
     else await a.messages.move(sel, op.folderId);
   } catch (e) {
     reportError(errCode(e), 'move');
   }
+}
+
+/**
+ * «Очистить корзину» (§7 `folders.empty`): the trash / junk folder of one account, on the server and
+ * locally; the rows leave through `messages_removed`. Resolves whether it worked (errors reported).
+ */
+export async function emptyFolder(folderId: string): Promise<boolean> {
+  const a = api;
+  if (!a) return false;
+  try {
+    await a.folders.empty(folderId);
+    return true;
+  } catch (e) {
+    reportError(errCode(e), 'empty');
+    return false;
+  }
+}
+
+/** The folder shown when it is one account's trash (not search, not «Все …»): its id and size. */
+export function trashBox(s: MailState): { id: string; total: number } | null {
+  if (s.query || s.box.scope === 'all') return null;
+  const box = s.box;
+  const f = typeof box.folder === 'string' ? s.folders[box.scope]?.find((x) => x.role === box.folder) : s.folderById[box.folder.id];
+  return f && f.role === 'trash' ? { id: f.id, total: f.total } : null;
+}
+
+/** The list shows a trash folder (one account's or «Все корзины»): deleting there is permanent. */
+export function inTrash(s: MailState): boolean {
+  return !s.query && boxRole(s, s.box) === 'trash';
 }
 
 // ---------------------------------------------------------------- settings

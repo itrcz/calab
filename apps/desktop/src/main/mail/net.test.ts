@@ -1,0 +1,77 @@
+import { createServer, type Server, type Socket } from 'node:net';
+import { afterEach, describe, expect, it } from 'vitest';
+import { caresLookup, fetchText, probeServer } from './net';
+
+/** A TCP server that accepts and never says anything (a filtering middlebox / a dead service). */
+function silentServer(): Promise<{ server: Server; port: number; open: () => number }> {
+  const sockets = new Set<Socket>();
+  const server = createServer((s) => {
+    sockets.add(s);
+    s.on('close', () => sockets.delete(s));
+    s.on('error', () => undefined);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      resolve({ server, port, open: () => sockets.size });
+    });
+  });
+}
+
+const servers: Server[] = [];
+afterEach(() => {
+  for (const s of servers.splice(0)) s.close();
+});
+
+const waitFor = async (fn: () => boolean, ms = 2000): Promise<boolean> => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (fn()) return true;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return fn();
+};
+
+describe('discovery network deadlines (ADR-0088 §4, §7)', () => {
+  it('a probe to a server that never greets (implicit TLS, STARTTLS): fails in time, sockets closed', async () => {
+    const { server, port, open } = await silentServer();
+    servers.push(server);
+    for (const security of ['tls', 'starttls'] as const) {
+      const t0 = Date.now();
+      const r = await probeServer('imap', { host: '127.0.0.1', port, security }, 300);
+      expect(r).toEqual({ ok: false });
+      expect(Date.now() - t0).toBeLessThan(1500);
+    }
+    // The hung TLS handshake's socket is destroyed too (it used to leak until the OS timeout).
+    expect(await waitFor(() => open() === 0)).toBe(true);
+  });
+
+  it('fetchText: a server that never answers is aborted at the deadline', async () => {
+    const hang: typeof fetch = (_u, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    const t0 = Date.now();
+    await expect(fetchText('https://autoconfig.example.org/x', 200, hang)).resolves.toBeNull();
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  it('fetchText: a body larger than the cap is dropped; a normal one is read', async () => {
+    const big: typeof fetch = () => Promise.resolve(new Response('x'.repeat(300 * 1024), { status: 200 }));
+    const okBody: typeof fetch = () => Promise.resolve(Object.defineProperty(new Response('<clientConfig/>', { status: 200 }), 'url', { value: 'https://a.example/x' }));
+    const bigWithUrl: typeof fetch = async (u, i) => Object.defineProperty(await big(u, i), 'url', { value: 'https://a.example/x' });
+    await expect(fetchText('https://a.example/x', 1000, bigWithUrl)).resolves.toBeNull();
+    await expect(fetchText('https://a.example/x', 1000, okBody)).resolves.toBe('<clientConfig/>');
+    await expect(fetchText('http://a.example/x', 1000, okBody)).resolves.toBeNull();
+  });
+
+  it('caresLookup: localhost without DNS; an unknown name fails (not hangs)', async () => {
+    const one = await new Promise<[Error | null, unknown]>((r) => caresLookup('localhost', {}, (e, a) => r([e, a])));
+    expect(one).toEqual([null, '127.0.0.1']);
+    const t0 = Date.now();
+    const bad = await new Promise<Error | null>((r) => caresLookup('no-such-host.invalid', {}, (e) => r(e)));
+    expect(bad).toMatchObject({ code: 'ENOTFOUND' });
+    expect(Date.now() - t0).toBeLessThan(10_000);
+  });
+});

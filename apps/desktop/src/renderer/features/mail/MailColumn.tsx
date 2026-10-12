@@ -1,7 +1,7 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Archive, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, MessageSquareShare, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Archive, BrushCleaning, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, MessageSquareShare, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
 import type { MailDraft, MailFolder, MailFolderRole, MailOutgoing } from '../../../shared/mail';
@@ -24,11 +24,13 @@ import {
   reloadList,
   scopeProblem,
   scopeSyncing,
+  inTrash,
   selectBox,
   setFlaggedOnly,
   setQuery,
   setUnreadOnly,
   syncNow,
+  trashBox,
   useMail,
   type MailBox,
 } from '../../stores/mail';
@@ -37,7 +39,7 @@ import { useUi } from '../../stores/ui';
 import { toast } from '../../stores/toasts';
 import { ColumnHeader, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { MAIL_KEYS, composeNew, moveKeys, replyOpen, toggleRowsFlag, toggleRowsRead } from './actions';
+import { MAIL_KEYS, composeNew, deleteKeysForever, emptyTrash, moveKeys, replyOpen, toggleRowsFlag, toggleRowsRead } from './actions';
 import { pickedSummary } from './BatchView';
 import { useMoveTargets } from './MailMessageView';
 import { UserAvatar, UserName, useMailUser } from './people';
@@ -54,6 +56,7 @@ export function MailColumn(): ReactNode {
   return (
     <aside className="mat-sidebar mat-sidebar-window relative flex w-[clamp(300px,30vw,380px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.list')} data-testid="mail-column">
       <ColumnHeader title={<BoxSwitcher />}>
+        <EmptyTrashButton />
         <SyncControl />
         <CreateButton label={t('mbox.compose')} data-testid="mail-compose" onClick={composeNew} />
       </ColumnHeader>
@@ -91,6 +94,23 @@ const SyncControl = memo(function SyncControl(): ReactNode {
         </div>
       ) : null}
     </>
+  );
+});
+
+/**
+ * «Очистить корзину» in the header while one account's trash is shown (owner 12.10): confirmed
+ * («Удалить N писем навсегда?»), disabled when the trash is empty. A leaf: only the box / count
+ * re-render it.
+ */
+const EmptyTrashButton = memo(function EmptyTrashButton(): ReactNode {
+  useLocale();
+  const id = useMail((s) => trashBox(s)?.id ?? null);
+  const total = useMail((s) => trashBox(s)?.total ?? 0);
+  if (!id) return null;
+  return (
+    <IconButton label={t('mbox.trash.empty')} disabled={total === 0} onClick={() => void emptyTrash(id, total)} data-testid="mail-empty-trash">
+      <BrushCleaning className="size-4" strokeWidth={1.75} />
+    </IconButton>
   );
 });
 
@@ -214,7 +234,37 @@ function sortFolders(list: readonly MailFolder[]): Array<{ f: MailFolder; depth:
   return [...roles.map((f) => ({ f, depth: 0 })), ...rest.map((f) => ({ f, depth: depth(f) }))];
 }
 
-function BoxItem({ box, label, role, depth = 0 }: { box: MailBox; label: string; role: MailFolderRole | null; depth?: number }): ReactNode {
+/**
+ * A switcher row; one account's trash row also has a context menu with «Очистить корзину».
+ */
+function BoxItem(props: { box: MailBox; label: string; role: MailFolderRole | null; depth?: number }): ReactNode {
+  const { box, role } = props;
+  const trashId = role === 'trash' && box.scope !== 'all' && typeof box.folder === 'string' ? box.scope : null;
+  if (!trashId) return <BoxRow {...props} />;
+  return <TrashBoxItem accountId={trashId} {...props} />;
+}
+
+function TrashBoxItem({ accountId, ...props }: { accountId: string; box: MailBox; label: string; role: MailFolderRole | null; depth?: number }): ReactNode {
+  const id = useMail((s) => s.folders[accountId]?.find((f) => f.role === 'trash')?.id ?? null);
+  const total = useMail((s) => s.folders[accountId]?.find((f) => f.role === 'trash')?.total ?? 0);
+  return (
+    <ContextMenu.Root modal={false}>
+      <ContextMenu.Trigger asChild>
+        <BoxRow {...props} />
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className={cx(menuBox, 'w-max')} collisionPadding={16} data-testid="mail-box-trash-menu">
+          <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} disabled={!id || total === 0} onSelect={() => id && void emptyTrash(id, total)} data-testid="mail-box-empty-trash">
+            <BrushCleaning className="size-4" aria-hidden />
+            {t('mbox.trash.empty')}
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+const BoxRow = forwardRef<HTMLDivElement, { box: MailBox; label: string; role: MailFolderRole | null; depth?: number }>(function BoxRow({ box, label, role, depth = 0, ...rest }, ref): ReactNode {
   const current = useMail((s) => !s.query && boxEquals(s.box, box));
   // Drafts and the outgoing queue count their items; every other folder its unread.
   const count = useMail((s) => {
@@ -225,13 +275,14 @@ function BoxItem({ box, label, role, depth = 0 }: { box: MailBox; label: string;
     return boxUnread(s, box);
   });
   return (
-    <Dropdown.Item className={cx(menuItem, 'pr-2')} onSelect={() => selectBox(box)} data-testid="mail-box-item" style={depth ? { paddingLeft: 10 + depth * 14 } : undefined}>
+    // `rest`: the context menu trigger's handlers (the trash row).
+    <Dropdown.Item {...rest} ref={ref} className={cx(menuItem, 'pr-2')} onSelect={() => selectBox(box)} data-testid="mail-box-item" style={depth ? { paddingLeft: 10 + depth * 14 } : undefined}>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count > 0 ? <span className="shrink-0 text-caption tabular-nums opacity-70">{count}</span> : null}
       <Check className={cx('size-4 shrink-0', !current && 'invisible')} aria-hidden />
     </Dropdown.Item>
   );
-}
+});
 
 // ---------------------------------------------------------------- search + filter
 
@@ -449,6 +500,7 @@ function RowMenuItems({ keys }: { keys: string[] }): ReactNode {
   const anyUnflagged = useMail((s) => pickedSummary(s, set).anyUnflagged);
   const account = useMail((s) => pickedSummary(s, set).account);
   const folder = useMail((s) => pickedSummary(s, set).folder);
+  const trash = useMail(inTrash);
   if (!n) return null;
   const one = n === 1;
   const letters = plural('mbox.letters', n);
@@ -495,11 +547,19 @@ function RowMenuItems({ keys }: { keys: string[] }): ReactNode {
         {label(t('mbox.archive'), 'mbox.multi.archive')}
         <Hint k={MAIL_KEYS.archive} />
       </ContextMenu.Item>
-      <ContextMenu.Item className={menuItem} onSelect={() => moveKeys(keys, { kind: 'trash' })} data-testid="mail-menu-trash">
-        <Trash2 className="size-4" aria-hidden />
-        {label(t('mbox.trash'), 'mbox.multi.trash')}
-        <Hint k={MAIL_KEYS.trash} />
-      </ContextMenu.Item>
+      {trash ? (
+        <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void deleteKeysForever(keys)} data-testid="mail-menu-delete-forever">
+          <Trash2 className="size-4" aria-hidden />
+          {t('mbox.trash.deleteForever')}
+          <Hint k={MAIL_KEYS.trash} />
+        </ContextMenu.Item>
+      ) : (
+        <ContextMenu.Item className={menuItem} onSelect={() => moveKeys(keys, { kind: 'trash' })} data-testid="mail-menu-trash">
+          <Trash2 className="size-4" aria-hidden />
+          {label(t('mbox.trash'), 'mbox.multi.trash')}
+          <Hint k={MAIL_KEYS.trash} />
+        </ContextMenu.Item>
+      )}
       {account ? (
         <ContextMenu.Sub>
           <ContextMenu.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="mail-menu-move">

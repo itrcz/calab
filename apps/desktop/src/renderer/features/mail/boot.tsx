@@ -26,7 +26,7 @@ export function startMail(): () => void {
   const api = MAIL_ENABLED ? getMailApi() : undefined;
   if (!api) return () => undefined;
   setMailErrorReporter((code, what) => {
-    const ctx = what === 'flags' ? t('mbox.err.flags') : what === 'move' ? t('mbox.err.move') : what === 'send' ? t('mbox.err.send') : what === 'load' ? t('mbox.err.load') : '';
+    const ctx = what === 'flags' ? t('mbox.err.flags') : what === 'move' ? t('mbox.err.move') : what === 'send' ? t('mbox.err.send') : what === 'load' ? t('mbox.err.load') : what === 'empty' ? t('mbox.err.empty') : '';
     toast.error(ctx ? `${ctx}: ${mailErrorText(code).toLowerCase()}` : mailErrorText(code));
   });
   void initMail(api);

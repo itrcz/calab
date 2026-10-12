@@ -4,7 +4,7 @@
  * Certificates are always verified; a certificate the user trusted once (`pinnedCert`) is admitted
  * by its exact fingerprint. `tls` lets the opt-in integration test trust its own CA.
  */
-import { resolveMx, resolveSrv } from 'node:dns/promises';
+import { Resolver } from 'node:dns/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { connect as netConnect, type Socket } from 'node:net';
 import tls, { type ConnectionOptions, type TLSSocket } from 'node:tls';
@@ -105,16 +105,69 @@ export function mailTlsOptions(server: MailServerSettings, extra: MailTls = {}):
 
 const MAX_XML = 256 * 1024;
 
-async function fetchText(url: string, timeoutMs: number): Promise<string | null> {
+/**
+ * DNS for discovery: one try, 2 s per server (c-ares defaults are 5 s × 4 tries per server, and a
+ * filtering network can drop queries instead of refusing them). Discovery bounds each step too.
+ */
+export const DNS_TIMEOUT_MS = 2000;
+function resolver(): Resolver {
+  return new Resolver({ timeout: DNS_TIMEOUT_MS, tries: 1 });
+}
+
+/**
+ * `lookup` for the probe sockets: c-ares (A, then AAAA) with the 2 s timeout instead of the OS
+ * resolver, whose getaddrinfo calls block libuv's 4 pool threads for as long as a filtering
+ * network keeps them — a dozen parallel probes would stall every later lookup in the engine.
+ */
+export function caresLookup(hostname: string, options: unknown, cb: (err: Error | null, address: string | Array<{ address: string; family: number }>, family?: number) => void): void {
+  const all = typeof options === 'object' && options !== null && (options as { all?: boolean }).all === true;
+  const r = resolver();
+  void (async () => {
+    // Not in DNS (c-ares skips /etc/hosts): the local test servers.
+    const local = hostname === 'localhost' || hostname.endsWith('.localhost');
+    const v4 = local ? ['127.0.0.1'] : await r.resolve4(hostname).catch(() => [] as string[]);
+    const v6 = v4.length ? [] : await r.resolve6(hostname).catch(() => [] as string[]);
+    const list = [...v4.map((a) => ({ address: a, family: 4 })), ...v6.map((a) => ({ address: a, family: 6 }))];
+    const first = list[0];
+    if (!first) {
+      cb(Object.assign(new Error(`cannot resolve ${hostname}`), { code: 'ENOTFOUND' }), all ? [] : '', 0);
+      return;
+    }
+    if (all) cb(null, list);
+    else cb(null, first.address, first.family);
+  })();
+}
+
+/**
+ * GET an https URL within `timeoutMs` (the abort covers headers and body), at most MAX_XML bytes
+ * read (a larger body is dropped without reading it all); null on anything else.
+ */
+export async function fetchText(url: string, timeoutMs: number, fetchImpl: typeof fetch = fetch): Promise<string | null> {
   if (!url.startsWith('https://')) return null;
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { Accept: 'application/xml, text/xml' } });
+    const res = await fetchImpl(url, { signal: ctl.signal, redirect: 'follow', headers: { Accept: 'application/xml, text/xml' } });
     // A redirect off https is not followed into plain http (fetch keeps the scheme check to us).
     if (!res.ok || !res.url.startsWith('https://')) return null;
-    const text = await res.text();
-    return text.length > MAX_XML ? null : text;
+    if (Number(res.headers.get('content-length') ?? 0) > MAX_XML || !res.body) {
+      ctl.abort();
+      return null;
+    }
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_XML) {
+        ctl.abort();
+        return null;
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString('utf8');
   } catch {
     return null;
   } finally {
@@ -158,9 +211,11 @@ const greetingOk = (kind: 'imap' | 'smtp'): Step => (l) => (kind === 'imap' ? (/
  * A TLS handshake for a probe: never refused for the certificate (nothing secret is sent on a
  * probe), the verdict comes back with the socket.
  */
-function tlsUp(opts: ConnectionOptions, check: CertCheck, extra: MailTls): Promise<{ s: TLSSocket; issue: MailCertInfo | null } | null> {
+function tlsUp(opts: ConnectionOptions, check: CertCheck, extra: MailTls, track: (s: TLSSocket) => void): Promise<{ s: TLSSocket; issue: MailCertInfo | null } | null> {
   return new Promise((resolve) => {
-    const s = tls.connect({ ...opts, ...(extra.ca ? { ca: extra.ca } : {}), rejectUnauthorized: false, minVersion: 'TLSv1.2' });
+    const s = tls.connect({ ...opts, ...(opts.socket ? {} : { lookup: caresLookup }), ...(extra.ca ? { ca: extra.ca } : {}), rejectUnauthorized: false, minVersion: 'TLSv1.2' });
+    // Tracked at once: a handshake that never finishes is destroyed by the probe's deadline.
+    track(s);
     s.once('secureConnect', () => resolve({ s, issue: judgeCert(s, check) }));
     s.once('error', () => {
       s.destroy();
@@ -180,14 +235,16 @@ export async function probeServer(kind: 'imap' | 'smtp', server: MailServerSetti
   const fail: ProbeResult = { ok: false };
   const timeout = new Promise<ProbeResult>((r) => (timer = setTimeout(() => r(fail), timeoutMs)));
   const result = (issue: MailCertInfo | null): ProbeResult => (issue ? { ok: true, certIssue: issue } : { ok: true });
+  const track = (s: Socket | TLSSocket): void => {
+    sockets.push(s);
+  };
   const attempt = async (): Promise<ProbeResult> => {
     if (server.security === 'tls') {
-      const up = await tlsUp({ host: server.host, port: server.port, servername: server.host }, check, extra);
+      const up = await tlsUp({ host: server.host, port: server.port, servername: server.host }, check, extra, track);
       if (!up) return fail;
-      sockets.push(up.s);
       return (await converse(up.s, greetingOk(kind))) ? result(up.issue) : fail;
     }
-    const plain = netConnect({ host: server.host, port: server.port });
+    const plain = netConnect({ host: server.host, port: server.port, lookup: caresLookup });
     sockets.push(plain);
     const connected = await new Promise<boolean>((r) => {
       plain.once('connect', () => r(true));
@@ -203,9 +260,8 @@ export async function probeServer(kind: 'imap' | 'smtp', server: MailServerSetti
       plain.write('STARTTLS\r\n');
       if (!(await converse(plain, (l) => (/^220[ ]/.test(l) ? 'ok' : 'fail')))) return fail;
     }
-    const up = await tlsUp({ socket: plain, servername: server.host }, check, extra);
+    const up = await tlsUp({ socket: plain, servername: server.host }, check, extra, track);
     if (!up) return fail;
-    sockets.push(up.s);
     return result(up.issue);
   };
   try {
@@ -218,8 +274,8 @@ export async function probeServer(kind: 'imap' | 'smtp', server: MailServerSetti
 
 export function realDiscoverNet(extra: MailTls = {}): DiscoverNet {
   return {
-    resolveMx: (d) => resolveMx(d),
-    resolveSrv: (n) => resolveSrv(n),
+    resolveMx: (d) => resolver().resolveMx(d),
+    resolveSrv: (n) => resolver().resolveSrv(n),
     fetchText,
     probe: (kind, server, ms) => probeServer(kind, server, ms, extra),
   };

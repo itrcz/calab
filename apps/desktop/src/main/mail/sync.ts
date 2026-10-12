@@ -6,7 +6,7 @@
  * 15 min, `auth_failed` on a rejected login. All IMAP work is serialized on the one connection.
  */
 import type { MailAccountState, MailError, MailEvent, MailFlagPatch, MailFlags, MailFolder, MailFolderRole, MailThreadRow } from '../../shared/mail';
-import { classify, mailError, notFound } from './errors';
+import { classify, invalid, mailError, notFound } from './errors';
 import { folderId } from './ids';
 import { parseBody } from './mime';
 import { flagsFrom, type ImapSession, type RemoteFlags, type RemoteFolder, type RemoteHeader } from './session';
@@ -706,6 +706,26 @@ export class AccountSync {
 
   delete(ids: string[]): void {
     this.removeLocal(ids, () => ({ kind: 'expunge' }));
+  }
+
+  /**
+   * «Очистить корзину» (§7 `folders.empty`): only `trash` / `junk`. On the server first (it holds
+   * mail outside the local window too), then locally; offline → NETWORK, nothing removed.
+   */
+  async emptyFolder(row: number): Promise<void> {
+    const f = this.store.folder(row);
+    if (!f) throw notFound('folder');
+    if (f.role !== 'trash' && f.role !== 'junk') throw invalid('only the trash and junk folders can be emptied');
+    await this.run(async (s) => {
+      await s.select(f.path);
+      await s.expungeAll();
+    });
+    if (this.halted()) return;
+    const removed = this.store.emptyFolder(row);
+    const threads = new Set(removed.map((r) => r.threadId));
+    this.emitRemoved(row, [...threads], removed.map((r) => r.id));
+    this.updateStarred(threads);
+    this.emitFolders();
   }
 
   /** `\Answered` on the original after a reply was sent (§6). */

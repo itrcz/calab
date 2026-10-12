@@ -189,4 +189,24 @@ describe('blobs', () => {
     expect(s.header(b.id)?.bodyHash).toBeNull();
     expect(s.header(b.id)?.subject).toBe('Hello');
   });
+  it('emptyFolder removes the folder\'s messages and the blobs only they used', () => {
+    const s = store();
+    const inbox = s.upsertFolder({ path: 'INBOX', name: 'INBOX', delimiter: '/', parentPath: '', role: 'inbox', specialUse: null });
+    const trash = s.upsertFolder({ path: 'Trash', name: 'Trash', delimiter: '/', parentPath: '', role: 'trash', specialUse: null });
+    const keep = s.insertMessage(msg(inbox));
+    const gone = s.insertMessage(msg(trash));
+    const body = (text: string) => ({ html: null, text, inReplyTo: '', references: [], remoteImages: false });
+    s.setBody(keep.id, body('shared'), []);
+    s.setBody(gone.id, body('only in trash'), [{ id: '0', name: 'x.bin', mime: 'application/octet-stream', size: 10, inline: false, data: new Uint8Array(10).fill(7) }]);
+    const shared = s.insertMessage(msg(trash));
+    s.setBody(shared.id, body('shared'), []);
+    const before = s.blobBytes();
+    const removed = s.emptyFolder(trash);
+    expect(removed.map((r) => r.id).sort()).toEqual([gone.id, shared.id].sort());
+    expect(s.header(gone.id)).toBeNull();
+    expect(s.header(keep.id)?.bodyHash).not.toBeNull();
+    expect(s.getBlob(s.header(keep.id)?.bodyHash ?? '')?.toString()).toContain('shared');
+    expect(s.blobBytes()).toBeLessThan(before);
+    expect(s.emptyFolder(trash)).toEqual([]);
+  });
 });

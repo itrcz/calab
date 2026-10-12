@@ -69,6 +69,8 @@ const ERROR_KEY: Record<MailErrorCode, MessageKey> = {
   NOT_FOUND: 'mbox.err.notFound',
   RATE_LIMITED: 'mbox.err.rateLimited',
   ENGINE_DOWN: 'mbox.err.engineDown',
+  ENGINE_FAILED: 'mbox.err.engineFailed',
+  TIMEOUT: 'mbox.err.timeout',
   INVALID: 'mbox.err.invalid',
 };
 

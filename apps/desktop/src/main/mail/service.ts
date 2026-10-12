@@ -654,6 +654,12 @@ export class MailEngine {
       'accounts.remove': byMain,
       'accounts.setPassword': byMain,
       'folders.list': (accountId) => this.account(accountId).sync.folders(),
+      'folders.empty': (fid) => {
+        const p = typeof fid === 'string' ? parseFolderId(fid) : null;
+        if (!p) throw notFound('folder');
+        if (p.virtual) throw invalid('only the trash and junk folders can be emptied');
+        return this.account(p.accountId).sync.emptyFolder(p.row);
+      },
       'messages.list': (q) => this.list(q),
       'messages.get': (id) => this.get(id),
       'messages.raw': (id) => this.raw(id),

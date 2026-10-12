@@ -1,12 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MailEvent, MailFromEngine, MailToEngine } from '../../shared/mail';
-import { MailRouter, REQUEST_TIMEOUT_MS, type EngineChild } from './router';
+import { LineTail, MailRouter, REQUEST_TIMEOUT_MS, STDERR_LINES, type EngineChild } from './router';
 
 class FakeChild implements EngineChild {
   sent: MailToEngine[] = [];
   killed = false;
   private onMsg: ((m: unknown) => void) | null = null;
   private onExit: ((code: number) => void) | null = null;
+  private onErr: ((chunk: Buffer | string) => void) | null = null;
+  readonly stderr = {
+    on: (_event: 'data', listener: (chunk: Buffer | string) => void): void => {
+      this.onErr = listener;
+    },
+  };
+  writeErr(text: string): void {
+    this.onErr?.(text);
+  }
+  ready(): void {
+    this.onMsg?.({ kind: 'ready' });
+  }
   postMessage(m: MailToEngine): void {
     this.sent.push(m);
   }
@@ -39,9 +51,10 @@ class FakeChild implements EngineChild {
   }
 }
 
-function setup(): { router: MailRouter; children: FakeChild[]; events: MailEvent[] } {
+function setup(): { router: MailRouter; children: FakeChild[]; events: MailEvent[]; logs: Array<[string, Record<string, unknown> | undefined]> } {
   const children: FakeChild[] = [];
   const events: MailEvent[] = [];
+  const logs: Array<[string, Record<string, unknown> | undefined]> = [];
   const router = new MailRouter({
     fork: () => {
       const c = new FakeChild();
@@ -49,8 +62,9 @@ function setup(): { router: MailRouter; children: FakeChild[]; events: MailEvent
       return c;
     },
     broadcast: (e) => events.push(e),
+    log: (m, meta) => logs.push([m, meta]),
   });
-  return { router, children, events };
+  return { router, children, events, logs };
 }
 
 describe('MailRouter', () => {
@@ -88,7 +102,7 @@ describe('MailRouter', () => {
     expect(children).toHaveLength(0);
   });
 
-  it('times out with ENGINE_DOWN after 30 s and ignores the late reply', async () => {
+  it('times out with TIMEOUT after 30 s (the engine keeps running) and ignores the late reply', async () => {
     const { router, children } = setup();
     const p = router.request({ method: 'sync.now', params: [] });
     vi.advanceTimersByTime(REQUEST_TIMEOUT_MS - 1);
@@ -97,9 +111,102 @@ describe('MailRouter', () => {
     await Promise.resolve();
     expect(settled).toBe(false);
     vi.advanceTimersByTime(1);
-    await expect(p).resolves.toMatchObject({ ok: false, error: { code: 'ENGINE_DOWN' } });
+    await expect(p).resolves.toMatchObject({ ok: false, error: { code: 'TIMEOUT' } });
     const child = children[0];
     child?.reply({ kind: 'response', res: { id: child.lastId(), ok: true, result: null } });
+    expect(child?.killed).toBe(false);
+    // The next call goes to the same engine.
+    void router.request({ method: 'sync.now', params: [] });
+    expect(children).toHaveLength(1);
+  });
+
+  it('per-method deadlines: discover 25 s, add / update / send 60 s, others 30 s', async () => {
+    const { router } = setup();
+    const settledAfter = async (method: string, params: unknown[]): Promise<number> => {
+      const state = { done: false };
+      const p = router.request({ method, params }).then((r) => {
+        state.done = true;
+        return r;
+      });
+      let ms = 0;
+      while (!state.done && ms < 120_000) {
+        vi.advanceTimersByTime(1000);
+        ms += 1000;
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+      await expect(p).resolves.toMatchObject({ ok: false, error: { code: 'TIMEOUT' } });
+      return ms;
+    };
+    expect(await settledAfter('accounts.discover', ['a@b.cd'])).toBe(25_000);
+    expect(await settledAfter('compose.send', [{}])).toBe(60_000);
+    expect(await settledAfter('folders.empty', ['f'])).toBe(60_000);
+    expect(await settledAfter('messages.list', [{}])).toBe(30_000);
+    let done = false;
+    const v = router.internal({ kind: 'verify', input: { email: 'a@b.c', password: 'p' } }).then((r) => ((done = true), r));
+    vi.advanceTimersByTime(59_999);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    vi.advanceTimersByTime(1);
+    await expect(v).resolves.toMatchObject({ ok: false, error: { code: 'TIMEOUT' } });
+  });
+
+  it('logs spawn and exit with the last stderr lines', () => {
+    const { router, children, logs } = setup();
+    router.start();
+    expect(logs.map((l) => l[0])).toContain('mail: engine spawned');
+    const c = children[0];
+    for (let i = 0; i < 30; i++) c?.writeErr(`line ${String(i)}\n`);
+    c?.writeErr("Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './decode' is not defined");
+    c?.exit(1);
+    const exit = logs.find((l) => l[0] === 'mail: engine exited');
+    expect(exit?.[1]?.['code']).toBe(1);
+    const tail = exit?.[1]?.['lastStderr'] as string[];
+    expect(tail).toHaveLength(STDERR_LINES);
+    expect(tail[tail.length - 1]).toContain('ERR_PACKAGE_PATH_NOT_EXPORTED');
+    expect(tail[0]).toBe('line 11');
+  });
+
+  it('a crash loop (3 exits in a minute) becomes engine: failed with a report; ready ends it', async () => {
+    const { router, children, events } = setup();
+    router.start();
+    children[0]?.writeErr('boom at load\n');
+    children[0]?.exit(1);
+    vi.advanceTimersByTime(1000);
+    children[1]?.exit(1);
+    expect(events).toEqual([
+      { type: 'engine', state: 'down' },
+      { type: 'engine', state: 'down' },
+    ]);
+    vi.advanceTimersByTime(2000);
+    children[2]?.writeErr('boom again');
+    children[2]?.exit(1);
+    const failed = events[events.length - 1];
+    expect(failed).toMatchObject({ type: 'engine', state: 'failed' });
+    const report = failed?.type === 'engine' && failed.state === 'failed' ? failed.report : '';
+    expect(report).toContain('exit code 1');
+    expect(report).toContain('boom at load');
+    expect(report).toContain('boom again');
+    // Requests fail fast with ENGINE_FAILED + the report while the restart is pending.
+    await expect(router.request({ method: 'accounts.list', params: [] })).resolves.toMatchObject({ ok: false, error: { code: 'ENGINE_FAILED', report } });
+    expect(router.failure).toBe(report);
+    // Restarts go on; the next engine that loads ends the state.
+    vi.advanceTimersByTime(4000);
+    expect(children).toHaveLength(4);
+    children[3]?.ready();
+    expect(events[events.length - 1]).toEqual({ type: 'engine', state: 'up' });
+    expect(router.failure).toBeNull();
+  });
+
+  it('LineTail keeps the last lines, joins chunks split mid-line, caps line length', () => {
+    const t = new LineTail(3);
+    t.push('a\nb');
+    t.push('c\r\nd\n\n');
+    t.push(Buffer.from('e'));
+    expect(t.all()).toEqual(['bc', 'd', 'e']);
+    const long = new LineTail(2);
+    long.push(`${'x'.repeat(2000)}\n`);
+    expect(long.all()[0]?.length).toBe(500);
   });
 
   it('fails pending requests on exit and restarts with exponential backoff', async () => {
@@ -108,6 +215,7 @@ describe('MailRouter', () => {
     children[0]?.exit(1);
     await expect(p).resolves.toMatchObject({ ok: false, error: { code: 'ENGINE_DOWN' } });
     expect(events).toEqual([{ type: 'engine', state: 'down' }]);
+    // `up` comes from the engine (`ready`), not from the fork.
     // While the restart is pending, requests fail fast and do not fork.
     await expect(router.request({ method: 'accounts.list', params: [] })).resolves.toMatchObject({ ok: false, error: { code: 'ENGINE_DOWN' } });
     expect(children).toHaveLength(1);
@@ -121,6 +229,7 @@ describe('MailRouter', () => {
         waited += 250;
       }
       delays.push(waited);
+      children[children.length - 1]?.ready();
       children[children.length - 1]?.exit(1);
     }
     expect(delays).toEqual([1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000]);

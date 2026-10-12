@@ -29,10 +29,20 @@ mail., если не получается — тогда только спраш
 (`apps/desktop/src/main/mail/engine.ts`, отдельный вход сборки main в `electron.vite.config.ts`),
 Node 24 (Electron 44). Библиотеки — чистый JS, нативных модулей нет: `imapflow` (IMAP, IDLE,
 CONDSTORE/QRESYNC), `nodemailer` (SMTP), `mailparser` (разбор MIME); база — встроенный **`node:sqlite`**
-(проверено: Electron 44.5.1 → Node 24.21.0, `require('node:sqlite')` доступен). Зависимости идут в
-`dependencies` (внешние для бандла main, как `electron-log`; `scripts/check-main-bundle.mjs` проверяет
-и вход движка). Main запускает движок при старте, если есть хоть один аккаунт (иначе — при первом
-добавлении), перезапускает при падении с экспоненциальной паузой, убивает при выходе. Renderer как и
+(проверено: Electron 44.5.1 → Node 24.21.0, `require('node:sqlite')` доступен). Библиотеки движка
+**вшиты в `out/main/mailEngine.js`** (3.1.1; `devDependencies`, `externalizeDeps.exclude` в
+`electron.vite.config.ts`): в 3.1.0 они шли внешними из `node_modules`, сборщик electron-builder
+положил под `htmlparser2` не ту мажорную версию `entities`, и движок в установленном приложении падал
+при загрузке (`ERR_PACKAGE_PATH_NOT_EXPORTED`) — «Почта перезапускается» бесконечно. `build:app`
+проверяет это: `scripts/check-mail-engine.mjs` грузит собранный движок из копии `out/main` без
+`node_modules` (`ELECTRON_RUN_AS_NODE`). Main запускает движок при старте, если есть хоть один аккаунт
+(иначе — при первом добавлении), перезапускает при падении с экспоненциальной паузой, убивает при
+выходе. Диагностика (3.1.1): stderr движка в `pipe`, main держит последние 20 строк и пишет в
+`main.log` `mail: engine spawned` / `mail: engine exited {code, lastStderr}` (движок секретов в stderr не
+пишет); `engine: up` — по сообщению движка `ready` (код загрузился), не по fork; ≥ 3 выходов за 60 с —
+`engine: failed` с отчётом (коды выхода + stderr): «Почта не запускается» и «Скопировать отчёт» вместо
+вечного «Почта перезапускается», перезапуски с паузой продолжаются. Ошибка `init` (папка данных,
+база настроек) не роняет процесс: запросы отвечают `ENGINE_FAILED` с причиной. Renderer как и
 прежде без Node: с движком говорит через узкий IPC preload'а (§7); main — тонкий посредник
 (`MessagePort`), плюс то, что умеет только main: `safeStorage`, уведомления, протокол вложений, guard
 навигации (§10).
@@ -114,7 +124,10 @@ Mail.ru и iCloud нужен **пароль приложения** (ссылка
 открывает пространство `mail` (есть только в Electron: `Platform.mail?: MailApi`, веб — `undefined`).
 Запросы (`id, method, params` → ответ или ошибка `{code, message}`):
 - `accounts.list / discover(email) / add({email, password, settings?}) / update / remove / setPassword`;
-- `folders.list(accountId)`;
+- `folders.list(accountId)`; `folders.empty(folderId)` (3.1.1, «Очистить корзину») — только `trash` /
+  `junk` (иначе `INVALID`): на сервере `UID STORE 1:* +FLAGS (\Deleted)` + EXPUNGE (вся папка, и за
+  окном синхронизации), затем локально строки и блобы, на которые больше никто не ссылается; события
+  `messages_removed` + `folders`; офлайн — `NETWORK`, локально ничего не удаляется;
 - `messages.list({ scope: accountId | 'all', folder: role | folderId, before?, limit, unreadOnly?, flaggedOnly? })` —
   заголовки цепочек страницами по курсору; `messages.get(id)` — письмо с телом (грузит при необходимости);
   `messages.raw(id)` — исходник RFC 822 ≤ 50 МБ (`.eml` для «Отправить в чат…»); `messages.thread(threadId)`; `messages.setFlags / move / archive / trash / delete / loadOlder`;
@@ -127,6 +140,20 @@ Mail.ru и iCloud нужен **пароль приложения** (ссылка
 `calaba-mail://attachment/<messageId>/<attachmentId>` (main, как `calaba-api://`), только
 `image/*` для inline, остальное — скачивание штатным `downloads.ts` (карантин / Mark-of-the-Web).
 Для разработки и e2e — mock-реализация `MailApi` в renderer (`CALABA_MAIL_MOCK=1`) с фикстурами.
+
+**Сроки ответа (3.1.1).** Router main ждёт ответа по таблице `MAIL_METHOD_TIMEOUT_MS`
+(`shared/mail.ts`): `accounts.discover` 25 с; `accounts.add / update / setPassword` (внутренний
+`verify`), `compose.send`, `folders.empty` 60 с; остальное 30 с. Нет ответа — код **`TIMEOUT`**
+(движок жив, следующий запрос идёт в тот же процесс); `ENGINE_DOWN` — только выход / незапуск
+процесса, `ENGINE_FAILED` — цикл падений (§2, поле `report`). UI на `TIMEOUT`: «Сервер почты не
+отвечает. Проверьте адрес и интернет и попробуйте ещё раз»; в форме добавления — ручные настройки с
+догадками (`imap.<домен>:993`, `smtp.<домен>:465`). Каждый сетевой шаг движка ограничен сам, с запасом
+под сроки router'а: DNS discovery — c-ares `Resolver({timeout: 2 с, tries: 1})`, в т. ч. для сокетов
+проб (системный getaddrinfo в фильтрующей сети занимал бы 4 потока пула libuv); autoconfig — abort
+3 с на заголовки и тело, ≤ 256 КБ потоком; пробы TCP/TLS — 3 с, сокет уничтожается и при
+недоделанном TLS-рукопожатии; discovery целиком ≤ 10 с, с частичным результатом и догадками;
+проверка входа IMAP / SMTP — соединение и приветствие по 10 с, жёсткий срок 22 с на каждую
+(10 + 22 + 22 < 60); подключение синхронизации — 15 + 15 с и жёсткий срок 45 с; одна отправка — 5 мин.
 
 ### 8. Клиент (docs/08, ориентир — Apple Mail)
 Раздел **«Почта»** на рейле (ADR-0074) после «Доски», личный (без пространства), только Electron;
@@ -182,8 +209,8 @@ Mail.ru и iCloud нужен **пароль приложения** (ссылка
 - Движок — отдельный процесс без доступа к сессии Calab и его API.
 
 ### 11. Сборка и тесты
-- `dependencies` += `imapflow`, `nodemailer`, `mailparser`; `third-party-notices` их подхватывает.
-  `electron-builder.yml` без изменений (нет нативных модулей).
+- `imapflow`, `nodemailer`, `mailparser` — `devDependencies`, вшиты в бандл движка (§2, 3.1.1);
+  `third-party-notices` их подхватывает (`bundledPackages`). `electron-builder.yml` без изменений.
 - Unit: таблица провайдеров и разбор MX/SRV/autoconfig; сверка папки по UID/флагам и `UIDVALIDITY`;
   цепочки; очередь отправки — на фейковом транспорте. Интеграционный (opt-in `CALABA_MAIL_IT=1`):
   GreenMail (`greenmail/standalone`, IMAP+SMTP) профилем `mail` в dev-compose. UI — typecheck/lint/unit

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { MailCertInfo, MailServerSettings } from '../../shared/mail';
-import { discover, parseAutoconfig, probeCandidates, providerByDomain, providerByMx, resolveLogin, sortSrv, type DiscoverNet, type SrvRecord } from './discover';
+import { discover, TOTAL_TIMEOUT_MS, parseAutoconfig, probeCandidates, providerByDomain, providerByMx, resolveLogin, sortSrv, type DiscoverNet, type SrvRecord } from './discover';
 
 function net(over: Partial<DiscoverNet> = {}): DiscoverNet & { probed: string[]; fetched: string[] } {
   const probed: string[] = [];
@@ -163,6 +163,20 @@ describe('discover chain', () => {
     expect(d.source).toBe('probe');
     expect(d.imap).toEqual({ host: 'mail.example.org', port: 993, security: 'tls', certIssue: issue });
     expect(d.smtp).toEqual({ host: 'mail.example.org', port: 465, security: 'tls' });
+  });
+  it('a network where DNS, HTTPS and TCP all hang: done within the total deadline, with guesses', async () => {
+    vi.useFakeTimers();
+    try {
+      const never = <T,>(): Promise<T> => new Promise<T>(() => undefined);
+      const n = net({ resolveMx: never, resolveSrv: never, fetchText: never, probe: never });
+      let settled: unknown = null;
+      const p = discover('ivan@example.org', n).catch((e: unknown) => e);
+      void p.then((v) => (settled = v));
+      await vi.advanceTimersByTimeAsync(TOTAL_TIMEOUT_MS + 200);
+      expect(settled).toMatchObject({ code: 'DISCOVERY_FAILED', discovery: { source: 'manual', imap: { host: 'imap.example.org', port: 993 }, smtp: { host: 'smtp.example.org', port: 465 } } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('rejects malformed addresses', async () => {
     await expect(discover('nope', net())).rejects.toMatchObject({ code: 'INVALID' });

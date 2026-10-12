@@ -7,6 +7,7 @@ import { platform } from '../../platform';
 import { ALL_INBOXES, mailApi, selectBox, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
 import { toast } from '../../stores/toasts';
+import { CopyReport } from './CopyReport';
 import { CertNotice, certIssues, discoveryIssues, unpin, withPin } from './CertNotice';
 import { APP_PASSWORD_URL, mailErrorText, providerOf } from './format';
 import { isEmail } from './mailLink';
@@ -26,6 +27,12 @@ const manualFrom = (d: MailDiscovery, email: string): Manual => ({ imap: unpinIs
 function unpinIssue(s: MailServerSettings & { certIssue?: MailCertInfo }): MailServerSettings {
   return s.pinnedCert ? { ...unpin(s), pinnedCert: s.pinnedCert } : unpin(s);
 }
+
+/** The manual form's guesses when discovery gave nothing back (`TIMEOUT`): imap. / smtp.<domain>, TLS. */
+const guessManual = (email: string): Manual => {
+  const d = email.slice(email.lastIndexOf('@') + 1);
+  return { imap: { host: `imap.${d}`, port: 993, security: 'tls' }, smtp: { host: `smtp.${d}`, port: 465, security: 'tls' }, login: email };
+};
 
 const pinned = (m: Manual | null): boolean => !!(m?.imap.pinnedCert || m?.smtp.pinnedCert);
 
@@ -47,7 +54,7 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
   const [email, setEmail] = useState(prefill?.email ?? '');
   const [password, setPassword] = useState(prefill?.password ?? '');
   const [phase, setPhase] = useState<Phase>('idle');
-  const [error, setError] = useState<{ code: MailErrorCode | 'EMAIL' | 'ALREADY'; help: string | null } | null>(null);
+  const [error, setError] = useState<{ code: MailErrorCode | 'EMAIL' | 'ALREADY'; help: string | null; report?: string } | null>(null);
   const [manual, setManual] = useState<Manual | null>(null);
   const [showManual, setShowManual] = useState(false);
   /** Untrusted server certificates to ask about (§4); trusting one retries with it pinned. */
@@ -80,10 +87,11 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
   const busy = phase !== 'idle';
   const domain = email.slice(email.lastIndexOf('@') + 1);
 
-  const fail = (code: MailErrorCode, d?: MailDiscovery | null): void => {
+  const fail = (code: MailErrorCode, d?: MailDiscovery | null, err?: unknown): void => {
     const provider = d?.provider ?? providerOf(email);
     const help = code === 'AUTH_FAILED' ? (d?.appPasswordUrl ?? APP_PASSWORD_URL[provider] ?? null) : null;
-    setError({ code, help });
+    const report = code === 'ENGINE_FAILED' && isMailError(err) ? (err.report ?? '') : undefined;
+    setError({ code, help, ...(report !== undefined ? { report } : {}) });
     setPhase('idle');
   };
 
@@ -123,8 +131,12 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
         if (code === 'DISCOVERY_FAILED' && isMailError(err) && err.discovery) {
           setManual(manualFrom(err.discovery, address));
           setShowManual(true);
+        } else if (code === 'TIMEOUT') {
+          // Discovery hung (filtered DNS / HTTPS): the manual form with the usual guesses.
+          setManual(guessManual(address));
+          setShowManual(true);
         }
-        fail(code, isMailError(err) ? err.discovery : null);
+        fail(code, isMailError(err) ? err.discovery : null, err);
         return;
       }
     }
@@ -146,6 +158,10 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
       } else if ((code === 'NETWORK' || code === 'TLS') && !showManual) {
         // Found servers that do not answer: the manual form, filled with what was found.
         setManual(settings);
+      } else if (code === 'TIMEOUT') {
+        // No answer in time (discovery or the logins): the manual form, filled with what we have.
+        setManual(settings);
+        setShowManual(true);
       }
       if (code === 'TLS' && isMailError(err)) {
         const issues = certIssues(err.cert, ...discoveryIssues(err.discovery));
@@ -156,7 +172,7 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
         }
       }
       // AUTH_FAILED carries the settings that were tried: their provider names the app-password page.
-      fail(code, (isMailError(err) ? err.discovery : undefined) ?? discovered);
+      fail(code, (isMailError(err) ? err.discovery : undefined) ?? discovered, err);
     }
   };
 
@@ -223,6 +239,12 @@ export function AddAccountCard({ first }: { first: boolean }): ReactNode {
           <p className="text-caption text-danger-text" role="alert" data-testid="mail-add-error">
             {errorText}
             {error?.code === 'DISCOVERY_FAILED' ? ` ${t('mbox.add.manualHint')}` : ''}
+            {error?.report !== undefined ? (
+              <>
+                {' '}
+                <CopyReport report={error.report} />
+              </>
+            ) : null}
             {error?.help ? (
               <>
                 {`. ${t('mbox.add.needAppPassword')} `}

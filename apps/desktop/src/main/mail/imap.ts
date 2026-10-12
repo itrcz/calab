@@ -5,6 +5,7 @@
 import { ImapFlow, type FetchMessageObject, type ImapFlowOptions, type MessageAddressObject } from 'imapflow';
 import type { MailAddress, MailServerSettings } from '../../shared/mail';
 import { hasAttachments, referencesFromHeaders, SNIPPET_FETCH, snippetFrom, snippetPart } from './mime';
+import { withDeadline } from './errors';
 import { mailTlsOptions, type MailTls } from './net';
 import { flagsFrom, type ImapSession, type RemoteFlags, type RemoteFolder, type RemoteHeader, type SelectInfo } from './session';
 
@@ -37,12 +38,21 @@ export function imapOptions(l: ImapLogin, tls: MailTls = {}): ImapFlowOptions {
   };
 }
 
+/**
+ * Deadlines of the login check (§4, §7): connect / greeting 10 s each, the whole check 22 s — so
+ * discovery (≤ 10 s) + IMAP + SMTP stay inside main's 60 s `verify` deadline.
+ */
+export const VERIFY_STEP_MS = 10_000;
+export const VERIFY_TOTAL_MS = 22_000;
+/** Opening a sync connection (connect + TLS + greeting + login + capabilities). */
+export const OPEN_TOTAL_MS = 45_000;
+
 /** Login check for `accounts.add` (§4): connect, authenticate, log out. */
 export async function verifyImap(l: ImapLogin, tls: MailTls = {}): Promise<void> {
-  const c = new ImapFlow({ ...imapOptions(l, tls), verifyOnly: true });
+  const c = new ImapFlow({ ...imapOptions(l, tls), verifyOnly: true, connectionTimeout: VERIFY_STEP_MS, greetingTimeout: VERIFY_STEP_MS, socketTimeout: VERIFY_TOTAL_MS });
   c.on('error', () => undefined);
   try {
-    await c.connect();
+    await withDeadline(c.connect(), VERIFY_TOTAL_MS, 'IMAP login check', () => c.close());
   } finally {
     c.close();
   }
@@ -86,7 +96,12 @@ export class ImapFlowSession implements ImapSession {
   static async open(l: ImapLogin, tls: MailTls = {}): Promise<ImapFlowSession> {
     const c = new ImapFlow(imapOptions(l, tls));
     c.on('error', () => undefined);
-    await c.connect();
+    try {
+      await withDeadline(c.connect(), OPEN_TOTAL_MS, 'IMAP connect', () => c.close());
+    } catch (e) {
+      c.close();
+      throw e;
+    }
     return new ImapFlowSession(c);
   }
 
@@ -193,6 +208,12 @@ export class ImapFlowSession implements ImapSession {
 
   async expunge(uids: number[]): Promise<void> {
     const ok = await this.c.messageDelete(uids.join(','), { uid: true });
+    if (!ok) throw new Error('EXPUNGE failed');
+  }
+
+  async expungeAll(): Promise<void> {
+    if (!this.c.mailbox || this.c.mailbox.exists === 0) return;
+    const ok = await this.c.messageDelete('1:*', { uid: true });
     if (!ok) throw new Error('EXPUNGE failed');
   }
 

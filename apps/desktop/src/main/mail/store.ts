@@ -366,6 +366,25 @@ export class MailStore {
     return this.tx(() => this.clearFolderInTx(row));
   }
 
+  /**
+   * «Очистить корзину» (§7 `folders.empty`): removes every message of a folder and the cached bodies /
+   * attachments no other message refers to; returns the removed ids and threads.
+   */
+  emptyFolder(row: number): Array<{ id: string; threadId: string }> {
+    return this.tx(() => {
+      const rows = this.db.prepare('SELECT rid, id, thread_id, body_hash FROM messages WHERE folder_row = ?').all(row);
+      const hashes = new Set<string>();
+      for (const r of rows) if (typeof r['body_hash'] === 'string') hashes.add(r['body_hash']);
+      const attOf = this.db.prepare('SELECT hash FROM attachments WHERE message_id = ? AND hash IS NOT NULL');
+      for (const r of rows) for (const a of attOf.all(r['id'] ?? null)) hashes.add(str(a['hash']));
+      this.deleteRows(rows);
+      const usedBody = this.db.prepare('SELECT 1 FROM messages WHERE body_hash = ? LIMIT 1');
+      const usedAtt = this.db.prepare('SELECT 1 FROM attachments WHERE hash = ? LIMIT 1');
+      for (const h of hashes) if (!usedBody.get(h) && !usedAtt.get(h)) this.dropBlob(h);
+      return rows.map((r) => ({ id: str(r['id']), threadId: str(r['thread_id']) }));
+    });
+  }
+
   private clearFolderInTx(row: number): string[] {
     const rows = this.db.prepare('SELECT rid, id FROM messages WHERE folder_row = ?').all(row);
     this.deleteRows(rows);

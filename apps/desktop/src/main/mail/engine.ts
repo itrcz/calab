@@ -4,7 +4,7 @@
  * No Electron main-process APIs, no Calab session. Passwords arrive from main in memory (`accounts`)
  * and are never logged or sent back.
  */
-import type { MailEngineAccount, MailEvent, MailFromEngine, MailRequest, MailResponse, MailToEngine } from '../../shared/mail';
+import { MailApiError, type MailEngineAccount, type MailEvent, type MailFromEngine, type MailRequest, type MailResponse, type MailToEngine } from '../../shared/mail';
 import { classify } from './errors';
 import { EventCoalescer } from './events';
 import { createHandlers, dispatch } from './handlers';
@@ -34,9 +34,30 @@ function log(message: string, meta?: Record<string, unknown>): void {
 let engine: MailEngine | null = null;
 let handlers = createHandlers();
 let accountsChain: Promise<void> = Promise.resolve();
+/** `init` failed (e.g. the data directory or the settings database cannot be opened). */
+let initError: string | null = null;
 
 function start(dataDir: string): void {
   if (engine) return;
+  try {
+    startEngine(dataDir);
+    initError = null;
+  } catch (e) {
+    // Not a crash (the router would restart us forever): every request answers with the reason.
+    initError = e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 500) : String(e).slice(0, 500);
+    log('mail: engine init failed', { error: initError });
+    handlers = failingHandlers(initError);
+  }
+}
+
+function failingHandlers(reason: string): ReturnType<typeof createHandlers> {
+  const table = createHandlers();
+  const fail = (): Promise<never> => Promise.reject(new MailApiError({ code: 'ENGINE_FAILED', message: `the mail engine could not start: ${reason}`, report: reason }));
+  for (const m of Object.keys(table) as Array<keyof typeof table>) (table as Record<string, unknown>)[m] = fail;
+  return table;
+}
+
+function startEngine(dataDir: string): void {
   engine = new MailEngine({
     dataDir,
     emit,
@@ -49,6 +70,9 @@ function start(dataDir: string): void {
   });
   handlers = engine.handlers();
 }
+
+const notStarted = (): Error =>
+  initError ? new MailApiError({ code: 'ENGINE_FAILED', message: `the mail engine could not start: ${initError}`, report: initError }) : new Error('engine not initialized');
 
 async function answer(id: number, fn: () => Promise<unknown>): Promise<void> {
   let res: MailResponse;
@@ -80,12 +104,12 @@ port.on('message', (e) => {
     }
     case 'verify': {
       const input = msg.input;
-      void answer(msg.id, () => (engine ? engine.verify(input) : Promise.reject(new Error('engine not initialized'))));
+      void answer(msg.id, () => (engine ? engine.verify(input) : Promise.reject(notStarted())));
       return;
     }
     case 'attachment': {
       const { messageId, attachmentId } = msg;
-      void answer(msg.id, () => accountsChain.then(() => (engine ? engine.attachment(messageId, attachmentId) : Promise.reject(new Error('engine not initialized')))));
+      void answer(msg.id, () => accountsChain.then(() => (engine ? engine.attachment(messageId, attachmentId) : Promise.reject(notStarted()))));
       return;
     }
     case 'request': {
@@ -98,3 +122,6 @@ port.on('message', (e) => {
       return;
   }
 });
+
+// Loaded and listening: main announces `engine: up` on this (a crash at load never gets here).
+send({ kind: 'ready' });

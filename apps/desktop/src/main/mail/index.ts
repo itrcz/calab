@@ -16,17 +16,17 @@ export { installMailGuards } from './frameGuard';
 // index.js both in dev (electron-vite builds main into out/ too) and inside app.asar.
 const ENGINE = join(fileURLToPath(new URL('.', import.meta.url)), 'mailEngine.js');
 
-/** `verify` = discovery (≤ 10 s) + IMAP and SMTP logins: longer than the 30 s call deadline allows. */
-const VERIFY_TIMEOUT_MS = 60_000;
-
 function dataDir(): string {
   return join(app.getPath('userData'), 'mail');
 }
 
 function fork(): EngineChild {
   if (!app.isReady()) throw new Error('utilityProcess before app ready');
-  log.info('mail: starting engine');
-  return utilityProcess.fork(ENGINE, [], { serviceName: 'Calab Mail' });
+  // stderr piped: the router keeps its last lines and logs them when the engine exits (§2).
+  const child = utilityProcess.fork(ENGINE, [], { serviceName: 'Calab Mail', stdio: ['ignore', 'inherit', 'pipe'] });
+  // Dev: the engine's warnings still reach the terminal.
+  if (!app.isPackaged) child.stderr?.on('data', (d: Buffer) => process.stderr.write(d));
+  return child;
 }
 
 function broadcast(event: MailEvent): void {
@@ -57,7 +57,7 @@ function getRouter(): MailRouter {
   router ??= new MailRouter({
     fork,
     broadcast,
-    log: (m, meta) => log.warn(m, meta ?? {}),
+    log: (m, meta, level) => (level === 'info' ? log.info(m, meta ?? {}) : log.warn(m, meta ?? {})),
     // Every fresh engine first learns where its data is and which accounts exist (with passwords).
     onSpawn: (post) => {
       post({ kind: 'init', dataDir: dataDir() });
@@ -92,7 +92,8 @@ async function accountReply(id: string): Promise<MailReply> {
 }
 
 async function verify(input: { email: string; password: string; settings?: { imap: MailServerSettings; smtp: MailServerSettings; login: string } }): Promise<MailReply> {
-  return await getRouter().internal({ kind: 'verify', input }, VERIFY_TIMEOUT_MS);
+  // Deadline `verify` (60 s, MAIL_METHOD_TIMEOUT_MS): discovery ≤ 10 s + IMAP and SMTP logins.
+  return await getRouter().internal({ kind: 'verify', input });
 }
 
 const adding = new Set<string>();

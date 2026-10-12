@@ -10,7 +10,7 @@ import { platform } from '../../platform';
 import { allowRemote, expandMessage, loadBody, setMessageFlags, updateSettings, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
 import { menuBox, menuItem, menuLabel } from '../shell/menu';
-import { autoReadDue, MAIL_KEYS, moveOpen, noteManualRead, replyOpen, toggleOpenFlag, toggleOpenRead } from './actions';
+import { autoReadDue, deleteOpenForever, MAIL_KEYS, moveOpen, noteManualRead, replyOpen, toggleOpenFlag, toggleOpenRead } from './actions';
 import { AttachmentStrip } from './Attachments';
 import { addressFull, addressLabel, avatarTone, folderLabel, mailHeaderTime, mailInitials, mailListTime, ROLE_ORDER } from './format';
 import { parseMailto } from './mailLink';
@@ -188,9 +188,7 @@ function ActionBar({ header }: { header: MailHeader }): ReactNode {
       <IconButton label={t('mbox.archive')} shortcut={MAIL_KEYS.archive || undefined} onClick={() => moveOpen({ kind: 'archive' })} data-testid="mail-archive">
         <Archive className="size-4" strokeWidth={1.75} />
       </IconButton>
-      <IconButton label={t('mbox.trash')} shortcut={MAIL_KEYS.trash} onClick={() => moveOpen({ kind: 'trash' })} data-testid="mail-trash">
-        <Trash2 className="size-4" strokeWidth={1.75} />
-      </IconButton>
+      <TrashButton folderId={header.folderId} />
       <MoveMenu accountId={header.accountId} folderId={header.folderId} />
       <span className="mx-1 h-4 w-px bg-line" aria-hidden />
       <IconButton label={header.flags.flagged ? t('mbox.unflag') : t('mbox.flag')} shortcut={MAIL_KEYS.flag} active={header.flags.flagged} onClick={toggleOpenFlag} data-testid="mail-flag">
@@ -346,5 +344,19 @@ function BodyError({ id }: { id: string }): ReactNode {
         {t('mbox.retry')}
       </Button>
     </div>
+  );
+}
+
+/** «В корзину»; for a message in the trash «Удалить навсегда» (confirmed for several picked rows). */
+function TrashButton({ folderId }: { folderId: string }): ReactNode {
+  const trash = useMail((s) => s.folderById[folderId]?.role === 'trash');
+  return trash ? (
+    <IconButton label={t('mbox.trash.deleteForever')} shortcut={MAIL_KEYS.trash} onClick={() => void deleteOpenForever()} data-testid="mail-delete-forever">
+      <Trash2 className="size-4 text-danger-text" strokeWidth={1.75} />
+    </IconButton>
+  ) : (
+    <IconButton label={t('mbox.trash')} shortcut={MAIL_KEYS.trash} onClick={() => moveOpen({ kind: 'trash' })} data-testid="mail-trash">
+      <Trash2 className="size-4" strokeWidth={1.75} />
+    </IconButton>
   );
 }

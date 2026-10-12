@@ -3,10 +3,10 @@ import { Archive, Flag, FolderInput, Mail, MailOpen, Trash2 } from 'lucide-react
 import type { ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
-import { useMail, type MailState } from '../../stores/mail';
+import { inTrash, useMail, type MailState } from '../../stores/mail';
 import { actionKeys, useMailUi } from '../../stores/mailUi';
 import { menuBox, menuItem, menuLabel } from '../shell/menu';
-import { MAIL_KEYS, moveKeys, toggleRowsFlag, toggleRowsRead } from './actions';
+import { MAIL_KEYS, deleteKeysForever, moveKeys, toggleRowsFlag, toggleRowsRead } from './actions';
 import { folderLabel } from './format';
 import { useMoveTargets } from './MailMessageView';
 
@@ -39,6 +39,7 @@ export function BatchView(): ReactNode {
   const anyUnflagged = useMail((s) => pickedSummary(s, picked).anyUnflagged);
   const account = useMail((s) => pickedSummary(s, picked).account);
   const folder = useMail((s) => pickedSummary(s, picked).folder);
+  const trash = useMail(inTrash);
   const n = picked.size;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6" data-testid="mail-batch">
@@ -55,9 +56,15 @@ export function BatchView(): ReactNode {
         <IconButton label={t('mbox.archive')} shortcut={MAIL_KEYS.archive || undefined} onClick={() => moveKeys(actionKeys(), { kind: 'archive' })} data-testid="mail-batch-archive">
           <Archive className="size-4" strokeWidth={1.75} />
         </IconButton>
-        <IconButton label={t('mbox.trash')} shortcut={MAIL_KEYS.trash} onClick={() => moveKeys(actionKeys(), { kind: 'trash' })} data-testid="mail-batch-trash">
-          <Trash2 className="size-4" strokeWidth={1.75} />
-        </IconButton>
+        {trash ? (
+          <IconButton label={t('mbox.trash.deleteForever')} shortcut={MAIL_KEYS.trash} onClick={() => void deleteKeysForever(actionKeys())} data-testid="mail-batch-delete-forever">
+            <Trash2 className="size-4 text-danger-text" strokeWidth={1.75} />
+          </IconButton>
+        ) : (
+          <IconButton label={t('mbox.trash')} shortcut={MAIL_KEYS.trash} onClick={() => moveKeys(actionKeys(), { kind: 'trash' })} data-testid="mail-batch-trash">
+            <Trash2 className="size-4" strokeWidth={1.75} />
+          </IconButton>
+        )}
         {account ? <BatchMove accountId={account} folderId={folder || null} /> : null}
       </div>
     </div>

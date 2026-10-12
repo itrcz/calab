@@ -66,6 +66,8 @@ export interface ImapSession {
   move(uids: number[], destination: string): Promise<Map<number, number> | null>;
   /** \Deleted + (UID) EXPUNGE. */
   expunge(uids: number[]): Promise<void>;
+  /** Every message of the selected mailbox: `UID STORE 1:* +FLAGS (\Deleted)` + EXPUNGE. */
+  expungeAll(): Promise<void>;
   append(path: string, raw: Buffer, flags: string[]): Promise<void>;
   createFolder(path: string): Promise<void>;
   /** Back to the inbox: imapflow IDLEs on the selected mailbox when idle. */

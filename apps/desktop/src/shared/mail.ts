@@ -11,7 +11,8 @@
  * - Times are epoch milliseconds.
  * - A failed call rejects with a `MailApiError` (`code` + human-readable English `message`; the UI maps
  *   `code` to its own localized text and shows `message` only in details / logs).
- * - Every call is answered within 30 s (main's router gives up with `ENGINE_DOWN` after that). Long work
+ * - Every call is answered within its deadline (`MAIL_METHOD_TIMEOUT_MS`: 30 s, longer for discovery,
+ *   adding an account and sending); main's router gives up with `TIMEOUT` after that. Long work
  *   (sync, sending, loading older mail) answers as soon as it is accepted and reports through events.
  * - Passwords never come back from the engine: no type below that flows engine → renderer has one.
  */
@@ -436,9 +437,12 @@ export type MailEvent =
   | { type: 'new_mail'; accountId: string; messageId: string; threadId: string; from: MailAddress; subject: string }
   /**
    * Emitted by main, not the engine: the engine process went down (crash; requests fail with
-   * `ENGINE_DOWN` until it is back) or came back up (refetch what is on screen).
+   * `ENGINE_DOWN` until it is back), came back up (refetch what is on screen), or `failed` — it
+   * exited 3 times within a minute (requests fail with `ENGINE_FAILED`; `report` = the exit codes and
+   * the engine's last stderr lines, for «Скопировать отчёт»). Restarts go on with backoff; `up` ends it.
    */
-  | { type: 'engine'; state: 'up' | 'down' };
+  | { type: 'engine'; state: 'up' | 'down' }
+  | { type: 'engine'; state: 'failed'; report: string };
 
 // ---------------------------------------------------------------- errors
 
@@ -459,8 +463,12 @@ export type MailErrorCode =
   | 'NOT_FOUND'
   /** The server throttles us (Gmail «too many simultaneous connections», SMTP 4xx rate limits). */
   | 'RATE_LIMITED'
-  /** The engine process is down or did not answer in 30 s (set by main's router). */
+  /** The engine process exited / did not start; it is being restarted (set by main's router). */
   | 'ENGINE_DOWN'
+  /** The engine keeps exiting (3 times within a minute): `report` carries the diagnostics. */
+  | 'ENGINE_FAILED'
+  /** No answer within the method's deadline (`MAIL_METHOD_TIMEOUT_MS`); the engine keeps running. */
+  | 'TIMEOUT'
   /** Malformed arguments (unknown method, bad address, too large attachments, …). */
   | 'INVALID';
 
@@ -475,6 +483,8 @@ export interface MailError {
   discovery?: MailDiscovery;
   /** With `TLS` when a certificate did not verify: the certificate, for the trust prompt (§4). */
   cert?: MailCertInfo;
+  /** With `ENGINE_FAILED`: exit codes and the engine's last stderr lines (no secrets). */
+  report?: string;
 }
 
 /** What a `MailApi` promise rejects with. */
@@ -482,15 +492,23 @@ export class MailApiError extends Error implements MailError {
   readonly code: MailErrorCode;
   readonly discovery?: MailDiscovery;
   readonly cert?: MailCertInfo;
+  readonly report?: string;
   constructor(err: MailError) {
     super(err.message);
     this.name = 'MailApiError';
     this.code = err.code;
     if (err.discovery) this.discovery = err.discovery;
     if (err.cert) this.cert = err.cert;
+    if (err.report) this.report = err.report;
   }
   toJSON(): MailError {
-    return { code: this.code, message: this.message, ...(this.discovery ? { discovery: this.discovery } : {}), ...(this.cert ? { cert: this.cert } : {}) };
+    return {
+      code: this.code,
+      message: this.message,
+      ...(this.discovery ? { discovery: this.discovery } : {}),
+      ...(this.cert ? { cert: this.cert } : {}),
+      ...(this.report ? { report: this.report } : {}),
+    };
   }
 }
 
@@ -524,6 +542,11 @@ export interface MailApi {
   };
   folders: {
     list(accountId: string): Promise<MailFolder[]>;
+    /**
+     * «Очистить корзину»: deletes every message of a `trash` or `junk` folder permanently (IMAP
+     * `UID STORE 1:* +FLAGS (\Deleted)` + EXPUNGE), then locally. Any other folder: `INVALID`.
+     */
+    empty(folderId: string): Promise<void>;
   };
   messages: {
     /** A page of thread rows, newest first, from the local database (never waits for the network). */
@@ -631,6 +654,7 @@ export const mailMethods = [
   'accounts.remove',
   'accounts.setPassword',
   'folders.list',
+  'folders.empty',
   'messages.list',
   'messages.get',
   'messages.raw',
@@ -745,8 +769,23 @@ export type MailToEngine =
   | { kind: 'verify'; id: number; input: MailVerifyInput }
   | { kind: 'attachment'; id: number; messageId: string; attachmentId: string };
 
-/** Messages engine → main (`process.parentPort.postMessage`). */
-export type MailFromEngine = { kind: 'response'; res: MailResponse } | { kind: 'event'; event: MailEvent };
+/**
+ * Messages engine → main (`process.parentPort.postMessage`). `ready` — once, after the engine's code
+ * loaded and listens: main announces `engine: up` on it (not on fork, ADR-0088 §2).
+ */
+export type MailFromEngine = { kind: 'response'; res: MailResponse } | { kind: 'event'; event: MailEvent } | { kind: 'ready' };
+
+/** Per-method deadlines of main's router (ms; `TIMEOUT` after that). Others: `MAIL_DEFAULT_TIMEOUT_MS`. */
+export const MAIL_DEFAULT_TIMEOUT_MS = 30_000;
+export const MAIL_METHOD_TIMEOUT_MS: Readonly<Partial<Record<MailMethod | 'verify' | 'attachment', number>>> = {
+  'accounts.discover': 25_000,
+  'accounts.add': 60_000,
+  'accounts.update': 60_000,
+  'accounts.setPassword': 60_000,
+  'compose.send': 60_000,
+  'folders.empty': 60_000,
+  verify: 60_000,
+};
 
 /** Prefix of attachment URLs served by main (§7). */
 export const MAIL_ATTACHMENT_URL = 'calaba-mail://attachment/';

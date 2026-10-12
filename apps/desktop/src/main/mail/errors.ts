@@ -134,7 +134,7 @@ function certOf(err: ErrLike): MailCertInfo | undefined {
  * carry secrets (libraries do not echo the password; we never add it).
  */
 export function classify(e: unknown): MailError {
-  if (e instanceof MailApiError) return { code: e.code, message: e.message, ...(e.cert ? { cert: e.cert } : {}) };
+  if (e instanceof MailApiError) return { code: e.code, message: e.message, ...(e.cert ? { cert: e.cert } : {}), ...(e.report ? { report: e.report } : {}) };
   const err = (typeof e === 'object' && e !== null ? e : {}) as ErrLike;
   const message = typeof err.message === 'string' ? err.message.slice(0, 300) : String(e);
   // Our certificate check (net.ts), whatever code the library put on top of it.
@@ -151,6 +151,34 @@ export function classify(e: unknown): MailError {
   if (code === 'ETHROTTLE' || /THROTTL|too many (simultaneous )?connections/i.test(message)) return { code: 'RATE_LIMITED', message };
   if (NET_CODES.has(code) || NET_CODES.has(causeCode)) return { code: 'NETWORK', message };
   return { code: 'INVALID', message };
+}
+
+/**
+ * A hard deadline over a network step whose library timeouts may not cover everything (DNS inside
+ * imapflow / nodemailer, a server that stalls mid-login): rejects with a NETWORK-classified
+ * `ETIMEDOUT` after `ms` and calls `onTimeout` (close the client) — ADR-0088 §7.
+ */
+export function withDeadline<T>(p: Promise<T>, ms: number, what: string, onTimeout?: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      try {
+        onTimeout?.();
+      } catch {
+        // closing anyway
+      }
+      reject(Object.assign(new Error(`${what}: no answer in ${Math.round(ms / 1000)} s`), { code: 'ETIMEDOUT' }));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(t);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
 }
 
 export function toMailError(e: unknown): MailApiError {

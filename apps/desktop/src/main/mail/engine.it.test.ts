@@ -131,6 +131,27 @@ describe.skipIf(!IT)('mail engine against a real IMAP / SMTP server', () => {
       await h['settings.clearCache'](ALICE.id);
       const folders = await h['folders.list'](ALICE.id);
       expect(folders.map((f) => f.role)).toEqual(expect.arrayContaining(['inbox', 'archive', 'starred', 'drafts', 'outbox']));
+
+      // 7. «Очистить корзину» (folders.empty): Bob's ping to the trash, then the trash emptied on
+      // the server (UID STORE 1:* +FLAGS \Deleted + EXPUNGE); other folders are refused.
+      const ping = await waitFor(async () => (await list()).rows.find((r) => r.subject === `Ping ${subject}`));
+      await h['messages.trash']({ messageIds: [ping.messageId] });
+      const trashPath = await waitFor(async () => {
+        const f = (await h['folders.list'](ALICE.id)).find((x) => x.role === 'trash');
+        if (!f) return null;
+        const st = await probe.status(f.path, { messages: true });
+        return st && (st.messages ?? 0) >= 1 ? f.path : null;
+      });
+      const after = await h['folders.list'](ALICE.id);
+      const trash = after.find((f) => f.role === 'trash');
+      const inbox = after.find((f) => f.role === 'inbox');
+      if (!trash || !inbox) throw new Error('no trash / inbox');
+      await expect(h['folders.empty'](inbox.id)).rejects.toMatchObject({ code: 'INVALID' });
+      await h['folders.empty'](trash.id);
+      expect(await probe.status(trashPath, { messages: true })).toMatchObject({ messages: 0 });
+      expect((await h['messages.list']({ scope: ALICE.id, folder: 'trash', limit: 50 })).rows).toHaveLength(0);
+      const inboxStatus = await probe.status('INBOX', { messages: true });
+      expect(inboxStatus && (inboxStatus.messages ?? 0)).toBeGreaterThan(0);
     } finally {
       await probe.logout();
     }

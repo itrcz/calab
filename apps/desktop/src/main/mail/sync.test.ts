@@ -164,6 +164,11 @@ class FakeImap implements ImapSession {
     for (const u of uids) this.cur().msgs.delete(u);
     return Promise.resolve();
   }
+  expungeAll(): Promise<void> {
+    this.calls.push('expunge all');
+    this.cur().msgs.clear();
+    return Promise.resolve();
+  }
   append(): Promise<void> {
     return Promise.resolve();
   }
@@ -404,6 +409,47 @@ describe('AccountSync against a fake server', () => {
     sync.trash([tid]);
     await settle();
     expect(imap.folders.get('Trash')?.msgs.size).toBe(0);
+  });
+
+  it('folders.empty: trash / junk only; expunges everything on the server (beyond the window too), then locally', async () => {
+    const { imap, store, sync, events } = setup();
+    imap.addFolder('INBOX');
+    imap.addFolder('Trash', '\\Trash');
+    imap.deliver('INBOX');
+    imap.deliver('Trash');
+    imap.deliver('Trash');
+    // Older than the 90-day window: never synced locally, still deleted on the server.
+    imap.deliver('Trash', { date: NOW - 200 * 86_400_000 });
+    sync.start();
+    await settle();
+    const inbox = store.folderByRole('inbox');
+    const trash = store.folderByRole('trash');
+    if (!inbox || !trash) throw new Error('folders');
+    expect(store.localFlags(trash.row).size).toBe(2);
+    await expect(sync.emptyFolder(inbox.row)).rejects.toMatchObject({ code: 'INVALID' });
+    expect(imap.folders.get('INBOX')?.msgs.size).toBe(1);
+    events.length = 0;
+    await sync.emptyFolder(trash.row);
+    expect(imap.calls).toContain('expunge all');
+    expect(imap.folders.get('Trash')?.msgs.size).toBe(0);
+    expect(store.localFlags(trash.row).size).toBe(0);
+    expect(store.localFlags(inbox.row).size).toBe(1);
+    expect(events.some((e) => e.type === 'messages_removed' && e.messageIds.length === 2)).toBe(true);
+    expect(events.some((e) => e.type === 'folders')).toBe(true);
+  });
+
+  it('folders.empty offline: NETWORK, nothing removed locally', async () => {
+    const { imap, store, sync } = setup();
+    imap.addFolder('INBOX');
+    imap.addFolder('Junk', '\\Junk');
+    imap.deliver('Junk');
+    sync.start();
+    await settle();
+    const junk = store.folderByRole('junk');
+    if (!junk) throw new Error('no junk');
+    await sync.stop();
+    await expect(sync.emptyFolder(junk.row)).rejects.toMatchObject({ code: 'NETWORK' });
+    expect(store.localFlags(junk.row).size).toBe(1);
   });
 
   it('an auth failure stops in auth_failed (no reconnect loop)', async () => {

@@ -417,6 +417,18 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
         account(accountId);
         return clone(recount(accountId));
       },
+      empty: async (fid) => {
+        const f = folder(fid);
+        if (f.role !== 'trash' && f.role !== 'junk') fail('INVALID', 'only the trash and junk folders can be emptied');
+        const list = inFolder(f);
+        const touched = new Map<string, Set<string>>();
+        for (const m of list) {
+          touch(touched, m);
+          messages.delete(m.id);
+        }
+        emitRows('messages_changed', touched, list.map((m) => m.id));
+        emitFolders(f.accountId);
+      },
     },
     messages: {
       list: async (q) => {
