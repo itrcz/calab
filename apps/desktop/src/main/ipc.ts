@@ -60,6 +60,7 @@ import { parseTipPayload } from './tipOverlayPolicy';
 import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
 import { getMainWindow, isOwnPage, isShown } from './windows';
+import { mailRequest } from './mail';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
@@ -446,6 +447,8 @@ export function registerIpc(): void {
     mainOnly(e);
     hideTip();
   });
+  // ---- mail (ADR-0080 §7): validated and relayed to the engine utilityProcess ----
+  handle(IPC.mailRequest, (_e, a) => mailRequest(a));
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {
       const win: Partial<Record<PrivacyPane, string>> = { microphone: 'ms-settings:privacy-microphone', camera: 'ms-settings:privacy-webcam' };

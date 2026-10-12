@@ -9,6 +9,7 @@ import { echoFeatures } from './echoFeatures';
 import { cleanupDragOut } from './dragOut';
 import { findDeepLink, handleDeepLink, registerProtocolClient } from './deeplink';
 import { registerIpc } from './ipc';
+import { shutdownMail } from './mail';
 import { initLogging, log } from './logging';
 import { recoverCapsRemap } from './capsRemap';
 import { installRendererCsp } from './csp';
@@ -169,4 +170,5 @@ void app.whenReady().then(() => {
 app.on('will-quit', () => {
   shutdownPtt();
   cleanupDragOut();
+  shutdownMail();
 });

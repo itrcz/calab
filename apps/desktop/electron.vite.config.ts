@@ -37,7 +37,10 @@ export default defineConfig({
   main: {
     plugins: [bundledPackages(BUNDLED)],
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } },
+      rollupOptions: {
+        // mailEngine: the mail engine utilityProcess (ADR-0080 §2), forked by src/main/mail/index.ts.
+        input: { index: resolve(__dirname, 'src/main/index.ts'), mailEngine: resolve(__dirname, 'src/main/mail/engine.ts') },
+      },
     },
   },
   preload: {
@@ -78,6 +81,8 @@ export default defineConfig({
     optimizeDeps: {
       include: ['@rnnoise-dist/polyfills.js', '@rnnoise-dist/generated/rnnoise-sync.js', 'livekit-client'],
     },
+    // CALABA_MAIL_MOCK=1 pnpm dev:desktop: the mail section on the in-memory mock (ADR-0080 §7).
+    ...(process.env['CALABA_MAIL_MOCK'] === '1' ? { define: { 'import.meta.env.VITE_MAIL_MOCK': JSON.stringify('1') } } : {}),
     worker: { format: 'es', plugins: () => [bundledPackages(BUNDLED)] },
     plugins: [react(), tailwindcss(), fullReloadOnly(), bundledPackages(BUNDLED)],
   },
