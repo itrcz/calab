@@ -17,6 +17,7 @@ import { esModeration } from './moderation';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
 import { esCalendar } from './calendar';
+import { esMailbox } from './mailbox';
 import { esBoards } from './boards';
 import { esBoards2 } from './boards2';
 import { esMilestones } from './milestones';
@@ -72,6 +73,7 @@ export const es: Dict = {
   ...esPicker,
   ...esRoles,
   ...esCalendar,
+  ...esMailbox,
   ...esBoards,
   ...esBoards2,
   ...esMilestones,
