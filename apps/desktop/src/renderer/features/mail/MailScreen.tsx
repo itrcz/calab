@@ -1,4 +1,3 @@
-import { TriangleAlert } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { Spinner } from '../../components/ui';
 import { t } from '../../i18n';
@@ -10,7 +9,6 @@ import { moveOpen, replyOpen, stepSelection, toggleOpenFlag, toggleOpenRead, tra
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { AddAccountCard } from './AddAccountCard';
 import { BatchView } from './BatchView';
-import { CopyReport } from './CopyReport';
 import { ComposeSheet } from './ComposeSheet';
 import { MailColumn } from './MailColumn';
 import { MailThread } from './MailThread';
@@ -43,7 +41,6 @@ export function MailScreen(): ReactNode {
         <>
           <MailColumn />
           <div className="mat-content relative flex min-w-0 flex-1 flex-col">
-            <EngineBanner />
             {adding ? (
               <div className="flex min-h-0 flex-1 overflow-y-auto">
                 <AddAccountCard first={false} />
@@ -67,23 +64,6 @@ export function MailScreen(): ReactNode {
           onSend={(targets) => sendMailToChats(toChat, targets)}
         />
       ) : null}
-    </div>
-  );
-}
-
-/**
- * The engine process is restarting (main's `engine: down`): requests fail until it is back. When it
- * keeps exiting (`engine: failed`): «Почта не запускается» and «Скопировать отчёт».
- */
-function EngineBanner(): ReactNode {
-  const down = useMail((s) => s.engineDown);
-  const report = useMail((s) => s.engineReport);
-  if (!down) return null;
-  return (
-    <div role="status" className="flex h-8 shrink-0 items-center justify-center gap-2 border-b border-line text-caption text-muted" data-testid="mail-engine-banner">
-      <TriangleAlert className="size-3.5 text-warn" aria-hidden />
-      {report !== null ? t('mbox.err.engineFailed') : t('mbox.err.engineDown')}
-      {report !== null ? <CopyReport report={report} /> : null}
     </div>
   );
 }

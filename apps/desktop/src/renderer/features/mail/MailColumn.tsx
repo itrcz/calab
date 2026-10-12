@@ -22,7 +22,6 @@ import {
   openRow,
   outgoingOf,
   reloadList,
-  scopeProblem,
   scopeSyncing,
   inTrash,
   selectBox,
@@ -35,13 +34,13 @@ import {
   type MailBox,
 } from '../../stores/mail';
 import { clearPicked, pickRange, togglePick, useMailUi } from '../../stores/mailUi';
-import { useUi } from '../../stores/ui';
 import { toast } from '../../stores/toasts';
 import { ColumnHeader, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { MAIL_KEYS, composeNew, deleteKeysForever, emptyTrash, moveKeys, replyOpen, toggleRowsFlag, toggleRowsRead } from './actions';
 import { pickedSummary } from './BatchView';
 import { useMoveTargets } from './MailMessageView';
+import { MailStatusFooter } from './MailStatusFooter';
 import { UserAvatar, UserName, useMailUser } from './people';
 import { addressLabel, allLabel, folderLabel, mailErrorText, mailListTime, ROLE_ORDER } from './format';
 
@@ -60,10 +59,9 @@ export function MailColumn(): ReactNode {
         <SyncControl />
         <CreateButton label={t('mbox.compose')} data-testid="mail-compose" onClick={composeNew} />
       </ColumnHeader>
-      <FirstSyncRow />
-      <AccountNotice />
       <SearchBar />
       {role === 'drafts' ? <DraftList /> : role === 'outbox' ? <OutboxList /> : <ThreadList />}
+      <MailStatusFooter />
     </aside>
   );
 }
@@ -72,15 +70,13 @@ export function MailColumn(): ReactNode {
 
 /**
  * «Проверить почту» next to «+» (a quiet icon button) and, while an account of the box syncs, a
- * spinner of the same size in its place plus a thin indeterminate 2 px line under the header (a
- * background sync; a first sync shows FirstSyncRow instead). A leaf with boolean selectors:
- * `account_state` re-renders this and nothing else in the column. Not while the engine is down or
- * the sync is stalled (the selectors say no): the banner / the notice row speak then.
+ * spinner of the same size in its place (the bar and the words are the status footer's). A leaf
+ * with a boolean selector: `account_state` re-renders this and nothing else in the column. Not
+ * while the engine is down or the sync is stalled (the selector says no): the footer speaks then.
  */
 const SyncControl = memo(function SyncControl(): ReactNode {
   useLocale();
   const syncing = useMail((s) => scopeSyncing(s, s.box.scope));
-  const first = useMail((s) => firstSyncAccount(s, s.box.scope) !== '');
   return (
     <>
       {syncing ? (
@@ -92,68 +88,9 @@ const SyncControl = memo(function SyncControl(): ReactNode {
           <RotateCw className="size-4" strokeWidth={1.75} />
         </IconButton>
       )}
-      {syncing && !first ? (
-        <div className="pointer-events-none absolute inset-x-0 top-12 z-[1] h-0.5 overflow-hidden" aria-hidden data-testid="mail-sync-line">
-          <div className="mail-sync-line h-full rounded-full bg-accent" />
-        </div>
-      ) : null}
     </>
   );
 });
-
-/**
- * The text of a first sync's progress (3.1.2): «Загружаем «Входящие»: 1 200 из 8 400», with the
- * address in «Все входящие» of several accounts; «Загружаем письма…» until the first progress.
- * Primitive selectors of one account's progress: only `sync_progress` of it re-renders the caller.
- */
-function useSyncProgress(accountId: string): { text: string; ratio: number | null } {
-  useLocale();
-  const p = useMail(
-    useShallow((s) => {
-      const x = s.syncProgress[accountId];
-      return { phase: x?.phase ?? null, name: x?.folder?.name ?? '', role: x?.folder?.role ?? null, done: x?.done ?? 0, total: x?.total ?? 0 };
-    }),
-  );
-  const email = useMail((s) => (s.box.scope === 'all' && s.accountIds.length > 1 ? (s.accounts[accountId]?.email ?? '') : ''));
-  if (p.phase === null) return { text: t('mbox.loadingMail'), ratio: null };
-  if (p.phase === 'folders') return { text: t('mbox.sync.folders'), ratio: null };
-  const folder = folderLabel({ role: p.role, name: p.name });
-  const args = { folder, done: fmt.number(Math.min(p.done, p.total)), total: fmt.number(p.total) };
-  return { text: email ? t('mbox.sync.progressOf', { ...args, email }) : t('mbox.sync.progress', args), ratio: p.total > 0 ? Math.min(1, p.done / p.total) : null };
-}
-
-/**
- * A first sync of an account of the box (owner 12.10: «бесконечно крутятся спиннеры, не ясно что
- * грузит»): one muted line under the header with what is loading and how far, and a determinate
- * 2 px bar where the background sync's indeterminate line goes. A leaf: progress events (≤ 2/s)
- * re-render this, never the list.
- */
-const FirstSyncRow = memo(function FirstSyncRow(): ReactNode {
-  const id = useMail((s) => firstSyncAccount(s, s.box.scope));
-  return id ? <FirstSyncProgress accountId={id} /> : null;
-});
-
-function FirstSyncProgress({ accountId }: { accountId: string }): ReactNode {
-  const { text, ratio } = useSyncProgress(accountId);
-  return (
-    <>
-      <p role="status" className="mx-3 mb-2 shrink-0 truncate text-caption text-muted" title={text} data-testid="mail-sync-progress">
-        {text}
-      </p>
-      <div className="pointer-events-none absolute inset-x-0 top-12 z-[1] h-0.5 overflow-hidden" aria-hidden data-testid="mail-sync-line">
-        {ratio === null ? (
-          <div className="mail-sync-line h-full rounded-full bg-accent" />
-        ) : (
-          <div className="mail-sync-bar h-full bg-accent" style={{ width: `${String(Math.round(ratio * 1000) / 10)}%` }} />
-        )}
-      </div>
-    </>
-  );
-}
-
-function FirstSyncText({ accountId }: { accountId: string }): ReactNode {
-  return <p>{useSyncProgress(accountId).text}</p>;
-}
 
 /**
  * «Очистить корзину» in the header while one account's trash is shown (owner 12.10): confirmed
@@ -171,47 +108,6 @@ const EmptyTrashButton = memo(function EmptyTrashButton(): ReactNode {
     </IconButton>
   );
 });
-
-/** An account of the box that cannot sync: a thin row with the reason and «Повторить» / «Ввести пароль». */
-function AccountNotice(): ReactNode {
-  const key = useMail((s) => scopeProblem(s, s.box.scope));
-  if (!key) return null;
-  const [accountId = '', state = ''] = key.split('\n');
-  return <NoticeRow accountId={accountId} state={state} />;
-}
-
-function NoticeRow({ accountId, state }: { accountId: string; state: string }): ReactNode {
-  useLocale();
-  const email = useMail((s) => s.accounts[accountId]?.email ?? '');
-  const code = useMail((s) => s.accounts[accountId]?.error?.code ?? null);
-  const multi = useMail((s) => s.accountIds.length > 1);
-  const auth = state === 'auth_failed';
-  const reason = auth
-    ? t('mbox.state.authFailed')
-    : state === 'stalled'
-      ? t('mbox.state.stalled')
-      : state === 'offline'
-        ? t('mbox.state.offline')
-        : code
-          ? mailErrorText(code)
-          : t('mbox.state.error');
-  return (
-    <div role="status" className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-[8px] bg-hover px-2.5 py-1.5 text-caption" data-testid="mail-account-notice">
-      <TriangleAlert className="size-3.5 shrink-0 text-warn" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-muted" title={`${email}: ${reason}`}>
-        {multi ? `${email}: ${reason}` : reason}
-      </span>
-      <button
-        type="button"
-        className="shrink-0 font-medium text-accent-text hover:underline"
-        onClick={() => (auth ? useUi.getState().openDialog({ kind: 'settings', tab: 'mail' }) : void syncNow(accountId))}
-        data-testid="mail-account-notice-action"
-      >
-        {auth ? t('mbox.enterPassword') : t('mbox.retry')}
-      </button>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------- the switcher
 
@@ -485,7 +381,7 @@ function EmptyList(): ReactNode {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-body text-muted" data-testid="mail-list-first-sync">
         <Spinner />
-        <FirstSyncText accountId={first} />
+        <p>{t('mbox.loadingMail')}</p>
       </div>
     );
   }

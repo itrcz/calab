@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { MailAccount, MailEvent, MailFolder, MailThreadRow } from '../../shared/mail';
-import { ALL_INBOXES, boxUnread, firstSyncAccount, inboxUnread, reduceEvent, resetMail, rowKey, scopeProblem, scopeSyncing, useMail } from './mail';
+import { ALL_INBOXES, boxUnread, firstSyncAccount, inboxUnread, reduceEvent, resetMail, rowKey, scopeFooter, scopeSyncing, useMail } from './mail';
 import { clearPicked, pickAll, togglePick, useMailUi } from './mailUi';
 
 /**
@@ -55,12 +55,12 @@ function snapshot(): Map<string, unknown> {
   out.set('badge', inboxUnread(s)); // MailTile on the rail
   out.set('switcher count', boxUnread(s, ALL_INBOXES)); // BoxItem (only while the switcher is open)
   out.set('screen', s.accountIds.length > 0); // MailScreen
-  out.set('sync', scopeSyncing(s, s.box.scope)); // SyncControl (spinner ↔ button, progress line)
-  out.set('notice', scopeProblem(s, s.box.scope)); // AccountNotice
+  out.set('sync', scopeSyncing(s, s.box.scope)); // SyncControl (spinner ↔ button)
+  out.set('footer', scopeFooter(s, s.box.scope)); // MailStatusFooter shell (one primitive)
   const first = firstSyncAccount(s, s.box.scope);
-  out.set('first sync', first); // SyncControl / FirstSyncRow / EmptyList
+  out.set('first sync', first); // SyncControl / EmptyList
   const p = s.syncProgress[first];
-  // FirstSyncProgress: a useShallow slice of primitives (equal fields = no re-render).
+  // MailStatusFooter body: a useShallow slice of primitives (equal fields = no re-render).
   out.set('progress', first ? JSON.stringify([p?.phase, p?.folder?.name, p?.folder?.role, p?.done, p?.total]) : '');
   const picked = useMailUi.getState().picked;
   out.set('batch', picked.size > 1); // MailScreen: BatchView ↔ MailThread
@@ -124,14 +124,14 @@ describe('a mail event on a mailbox of 200 rows', () => {
   it('account_state (syncing) of one account re-renders the sync leaf only', () => {
     const before = snapshot();
     apply({ type: 'account_state', accountId: 'a2', account: account('a2', { state: 'syncing' }) });
-    expect(changed(before, snapshot())).toEqual(['sync']);
+    expect(changed(before, snapshot()).sort()).toEqual(['footer', 'sync']);
     const mid = snapshot();
     // The other account starting too, or a second state event while syncing: nothing more.
     apply({ type: 'account_state', accountId: 'a1', account: account('a1', { state: 'syncing' }) });
-    expect(changed(mid, snapshot())).toEqual([]);
+    expect(changed(mid, snapshot())).toEqual(['footer']); // «+1 ещё»
   });
 
-  it('sync_progress of a first sync re-renders the progress leaf only — never the list or a row', () => {
+  it('sync_progress of a first sync re-renders the footer body only — never the list or a row', () => {
     apply({ type: 'account_state', accountId: 'a2', account: account('a2', { state: 'syncing', lastSyncAt: null }) });
     const before = snapshot();
     const progress = (done: number): MailEvent => ({ type: 'sync_progress', accountId: 'a2', folder: { id: 'a2/inbox', name: 'INBOX', role: 'inbox' }, done, total: 8400, phase: 'headers' });
@@ -146,13 +146,13 @@ describe('a mail event on a mailbox of 200 rows', () => {
     // The sync ends: the leaves go (sync, first sync, progress); still no row.
     const end = snapshot();
     apply({ type: 'account_state', accountId: 'a2', account: account('a2', { state: 'idle', lastSyncAt: 5 }) });
-    expect(changed(end, snapshot()).sort()).toEqual(['first sync', 'progress', 'sync']);
+    expect(changed(end, snapshot()).sort()).toEqual(['first sync', 'footer', 'progress', 'sync']);
   });
 
-  it('an account going offline re-renders the notice row only', () => {
+  it('an account going offline re-renders the footer only', () => {
     const before = snapshot();
     apply({ type: 'account_state', accountId: 'a1', account: account('a1', { state: 'offline', error: { code: 'NETWORK', message: 'x' } }) });
-    expect(changed(before, snapshot())).toEqual(['notice']);
+    expect(changed(before, snapshot())).toEqual(['footer']);
   });
 
   it('⌘-click picks re-render the toggled rows only (and the centre once it becomes a batch)', () => {

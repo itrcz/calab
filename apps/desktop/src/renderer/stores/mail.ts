@@ -886,14 +886,38 @@ export async function updateSettings(patch: Partial<MailSettings>): Promise<void
 
 // ---------------------------------------------------------------- sync (owner 12.10)
 
+/**
+ * The optimistic part of a retry: the accounts that cannot sync (stalled / offline / error) go to a
+ * plain `syncing` at once, so the status footer reads «Проверка почты» instead of the old problem.
+ * The engine's next `account_state` / `sync_progress` has the last word and brings the problem back
+ * if it is still there. `auth_failed` is left alone (a retry cannot fix a password).
+ */
+export function retryingAccounts(s: Pick<MailState, 'accounts'>, ids: readonly string[]): Record<string, MailAccount> | null {
+  let out: Record<string, MailAccount> | null = null;
+  for (const id of ids) {
+    const a = s.accounts[id];
+    if (!a || a.state === 'idle' || a.state === 'auth_failed' || (a.state === 'syncing' && !a.stalled)) continue;
+    const { stalled: _stalled, error: _error, ...rest } = a;
+    out ??= { ...s.accounts };
+    out[id] = { ...rest, state: 'syncing' } as MailAccount;
+  }
+  return out;
+}
+
 /** «Проверить почту»: the box's account, or all of them for «Все …». States arrive as `account_state`. */
 export async function syncNow(accountId?: string): Promise<void> {
   const a = api;
   if (!a) return;
-  const scope = accountId ?? useMail.getState().box.scope;
+  const st = useMail.getState();
+  const scope = accountId ?? st.box.scope;
+  const before = st.accounts;
+  const optimistic = retryingAccounts(st, scope === 'all' ? st.accountIds : [scope]);
+  if (optimistic) useMail.setState({ accounts: optimistic });
   try {
     await a.sync.now(scope === 'all' ? undefined : scope);
   } catch (e) {
+    // The request itself failed: the old states were the truth (events that came meanwhile win).
+    if (optimistic && useMail.getState().accounts === optimistic) useMail.setState({ accounts: before });
     reportError(errCode(e), 'load');
   }
 }
@@ -969,4 +993,41 @@ export function outgoingOf(s: Pick<MailState, 'outgoing' | 'box'>): MailOutgoing
   return Object.values(s.outgoing)
     .filter((o) => o.state !== 'sent' && (s.box.scope === 'all' || o.accountId === s.box.scope))
     .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+// ---------------------------------------------------------------- the status footer (owner 12.10)
+
+export type FooterKind = 'engine' | 'first' | 'auth_failed' | 'stalled' | 'offline' | 'error' | 'syncing';
+
+const FOOTER_RANK: Record<FooterKind, number> = { engine: 0, first: 1, auth_failed: 2, stalled: 3, offline: 4, error: 5, syncing: 6 };
+
+/**
+ * What the column's status footer says, as a primitive `kind\naccountId\nmore` ('' = nothing; the
+ * footer collapses). One line wins, by priority: the engine being down, then a first sync (with
+ * progress first), then an account that cannot sync (password, stalled, offline, error), then a
+ * background sync. `more` = how many other accounts of the scope are busy or in trouble («+1 ещё»).
+ */
+export function scopeFooter(s: SyncSlice & Pick<MailState, 'syncProgress'>, scope: string): string {
+  if (s.engineDown) return 'engine\n\n0';
+  const first = firstSyncAccount(s, scope);
+  let kind: FooterKind | '' = '';
+  let pick = '';
+  let busy = 0;
+  for (const id of scopeIds(s, scope)) {
+    const a = s.accounts[id];
+    if (!a) continue;
+    let k: FooterKind | '' = '';
+    if (id === first) k = 'first';
+    else if (a.state === 'auth_failed') k = 'auth_failed';
+    else if (a.state === 'syncing') k = a.stalled ? 'stalled' : 'syncing';
+    else if (a.state === 'offline') k = 'offline';
+    else if (a.state === 'error') k = 'error';
+    if (!k) continue;
+    busy++;
+    if (!kind || FOOTER_RANK[k] < FOOTER_RANK[kind]) {
+      kind = k;
+      pick = id;
+    }
+  }
+  return kind ? `${kind}\n${pick}\n${String(busy - 1)}` : '';
 }

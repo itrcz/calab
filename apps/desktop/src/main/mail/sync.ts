@@ -230,6 +230,11 @@ export class AccountSync {
       this.host.log('mail: stalled sync, reconnecting', { op: this.step.op, path: this.step.path });
       this.reconnectNow = true;
       this.backoff = BACKOFF_MIN_MS;
+      // «Повторить» must clear the UI's «не отвечает» at once, not at the new connection's first
+      // progress (which may take as long as the dead one did): the watchdog starts over.
+      this.stalled = false;
+      this.lastActivity = this.host.now();
+      this.armWatchdog(WATCHDOG_MS);
       void this.session.close();
       return;
     }

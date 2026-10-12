@@ -632,6 +632,7 @@ describe('first sync progress (3.1.2)', () => {
     expect(logs.find((l) => l.message === 'mail: sync stalled')?.meta).toMatchObject({ op: 'fetch', path: 'INBOX' });
     imap.hangFetch = false;
     sync.syncNow();
+    expect(sync.stalled).toBe(false); // «Повторить» clears it at once, before the new connection moves
     await until(() => sync.state === 'idle');
     expect(sync.state).toBe('idle');
     expect(sync.stalled).toBe(false);

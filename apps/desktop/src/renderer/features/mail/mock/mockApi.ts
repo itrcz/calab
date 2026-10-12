@@ -301,7 +301,10 @@ export function createMockMailApi(opts: MockMailOptions = {}): MailApi {
 
   /** `syncing` now, `idle` after the sync delay (a catch-up: nothing new arrives in the mock). */
   function startSync(ids: string[]): void {
-    for (const id of ids) setAccount({ ...account(id), state: 'syncing' });
+    for (const id of ids) {
+      const { stalled: _stalled, ...rest } = account(id);
+      setAccount({ ...rest, state: 'syncing' });
+    }
     for (const id of ids) if (account(id).lastSyncAt === null) fakeProgress(id);
     later(() => {
       for (const id of ids) if (accounts.has(id)) setAccount({ ...account(id), state: 'idle', lastSyncAt: now() });

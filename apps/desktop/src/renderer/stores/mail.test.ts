@@ -223,6 +223,44 @@ describe('sync state, filters and the selection (owner 12.10)', () => {
     expect(scopeProblem(s, 'a1')).toBe('a1\nstalled');
   });
 
+  it('footer: engine > first sync > password > stalled > offline > error > background, with «+N» for the rest', async () => {
+    const { scopeFooter } = await import('./mail');
+    const stalled = { ...(acc('a3', 'syncing', 1) as object), stalled: true } as never;
+    const s = {
+      engineDown: false,
+      syncProgress: {},
+      accountIds: ['a1', 'a2', 'a3', 'a4'],
+      accounts: { a1: acc('a1', 'syncing', 1), a2: acc('a2', 'offline', 1), a3: stalled, a4: acc('a4', 'idle', 1) },
+    };
+    expect(scopeFooter(s, 'all')).toBe('stalled\na3\n2');
+    expect(scopeFooter(s, 'a4')).toBe('');
+    expect(scopeFooter({ ...s, accounts: { ...s.accounts, a4: acc('a4', 'syncing', null) } }, 'all')).toBe('first\na4\n3');
+    expect(scopeFooter({ ...s, accounts: { ...s.accounts, a2: acc('a2', 'idle', 1), a3: acc('a3', 'idle', 1) } }, 'all')).toBe('syncing\na1\n0');
+    expect(scopeFooter({ ...s, engineDown: true }, 'all')).toBe('engine\n\n0');
+  });
+
+  it('«Повторить» clears the stalled / offline state at once and a late engine event brings it back', async () => {
+    const { initMail, syncNow, reduceEvent, scopeFooter } = await import('./mail');
+    const stalled = { ...(acc('a1', 'syncing', 1) as object), stalled: true } as never;
+    const sync = vi.fn(() => Promise.resolve());
+    const api = { ...createMockMailApi({ delayMs: 0 }), sync: { now: sync } } as unknown as MailApi;
+    await initMail(api);
+    useMail.setState({ box: { scope: 'a1', folder: 'inbox' }, accountIds: ['a1'], accounts: { a1: stalled }, engineDown: false });
+    expect(scopeFooter(useMail.getState(), 'a1')).toBe('stalled\na1\n0');
+    await syncNow('a1');
+    expect(sync).toHaveBeenCalledWith('a1');
+    expect(scopeFooter(useMail.getState(), 'a1')).toBe('syncing\na1\n0');
+    expect(useMail.getState().accounts['a1']?.stalled).toBeUndefined();
+    // The engine still cannot reach the server: the problem returns from its event.
+    useMail.setState(reduceEvent(useMail.getState(), { type: 'account_state', accountId: 'a1', account: acc('a1', 'offline', 1) }) ?? {});
+    expect(scopeFooter(useMail.getState(), 'a1')).toBe('offline\na1\n0');
+    // A refused request restores what was there.
+    useMail.setState({ accounts: { a1: acc('a1', 'offline', 1) } });
+    sync.mockRejectedValueOnce(new MailApiError({ code: 'NETWORK', message: 'x' }));
+    await syncNow('a1');
+    expect(scopeFooter(useMail.getState(), 'a1')).toBe('offline\na1\n0');
+  });
+
   it('sync_progress is kept per account only while it syncs; leaving `syncing` or the engine going down drops it', async () => {
     const { reduceEvent, firstSyncAccount } = await import('./mail');
     const base = useMail.getState();
