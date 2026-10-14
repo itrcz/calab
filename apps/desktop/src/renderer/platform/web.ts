@@ -27,12 +27,14 @@ import type {
   PttStatus,
   RegisterArgs,
 } from '../../shared/ipc';
-import { noSession } from '../../shared/ipc';
+import { noSession, verificationOf } from '../../shared/ipc';
 import { PttGate } from '../../shared/pttGate';
 import { mouseName } from '../../shared/pttKeys';
 import { logoutReasonFromRefresh } from '../../shared/logoutReason';
 import { AUTH_TIMEOUT_MS, refreshGate } from '../../shared/refreshGate';
 import type { GuestJoin, Platform } from './types';
+import { createHostCapabilities } from './hostActivity';
+import { saveWebResume, takeWebResume, tabStorage } from '../lib/webResume';
 
 /**
  * Web platform (ADR-0015). Same origin as the API (`https://app.<domain>`):
@@ -72,8 +74,12 @@ function applyTokens(t: TokensJson): void {
 
 /** Bumped on every sign-out: a refresh answer that arrives later must not resurrect it. */
 let epoch = 0;
+let clearHostSession = (): void => undefined;
 
 function clear(reason: LogoutReason | null, preserveFlow = false): void {
+  // Revoke native bindings while the current document still has authority, before session
+  // listeners start asynchronous voice teardown or rotate the shared host document.
+  clearHostSession();
   epoch++;
   recovery = null;
   scopedWorkspace = '';
@@ -179,12 +185,18 @@ async function authenticate(path: string, body: Record<string, unknown>): Promis
   try {
     const res = await postAuth(path, { ...body, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
+    const data = (await res.json()) as {
+      tokens?: TokensJson;
+      me: unknown;
+      similarAccount?: boolean;
+      emailVerificationOptional?: boolean;
+      emailInvitePending?: boolean;
+    };
     if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
     if (started !== epoch) throw new Error('Account changed');
     clear(null);
     applyTokens(data.tokens);
-    return { ok: true, data: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me } };
+    return { ok: true, data: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me, ...verificationOf(data) } };
   } catch (e) {
     return { ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE', message: e instanceof Error ? e.message : String(e), status: 0 } };
   }
@@ -320,6 +332,12 @@ function mediaUrl(path: string): Promise<string> {
   return e.url;
 }
 
+/** The blob: URL of `path` when it is already loaded (synchronous: a `dragstart` cannot wait). */
+function loadedMediaUrl(path: string): string | null {
+  const e = mediaCache.get(path);
+  return e && !e.evicted ? e.objectUrl : null;
+}
+
 // ---------------------------------------------------------------- PTT (focused tab only)
 
 let binding: PttBinding | null = null;
@@ -441,7 +459,7 @@ function info(): AppInfo {
   };
 }
 
-const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, trayHintShown: false });
+const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', updateChannel: 'github', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, trayHintShown: false });
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
@@ -459,8 +477,12 @@ function takeDeepLink(): Promise<string | null> {
 const noop = (): (() => void) => () => undefined;
 
 export function createWebPlatform(): Platform {
+  const hostCapabilities = createHostCapabilities();
+  clearHostSession = () => hostCapabilities.sessionActivity?.clear('logout');
   return {
+    ...hostCapabilities,
     kind: 'web',
+    canShareScreen: () => typeof navigator !== 'undefined' && typeof (navigator.mediaDevices as MediaDevices | undefined)?.getDisplayMedia === 'function',
     apiBase: '',
     apiFetch,
     authHeaders: async (): Promise<Record<string, string>> => {
@@ -468,10 +490,13 @@ export function createWebPlatform(): Platform {
       return t ? { Authorization: `Bearer ${t}` } : {};
     },
     mediaUrl,
+    loadedMediaUrl,
     directMedia: false,
     guestJoin,
     clearProtectedMedia: clearMediaCache,
     finishSso: finishWebSso,
+    // No mail section on the web / phone (ADR-0088 §1): the browser cannot speak IMAP.
+    mail: undefined,
     auth: {
       clearProtectedCache: () => {
         clearMediaCache();
@@ -609,19 +634,33 @@ export function createWebPlatform(): Platform {
       updateStatus: () => Promise.resolve({ state: 'disabled' }),
       installUpdate: () => Promise.resolve(false),
       downloadUpdate: () => Promise.resolve(false),
-      // No restart for an update on the web (docs/09 #126 is desktop only).
+      // No main process asks before a restart: «Обновить страницу» stores the seat itself
+      // (services/resumeVoice.reloadForUpdate) in this tab's sessionStorage (lib/webResume.ts).
       onPrepareRestart: noop,
-      setResumeVoice: () => Promise.resolve(),
-      takeResumeVoice: () => Promise.resolve(null),
+      setResumeVoice: (seat) => {
+        saveWebResume(tabStorage(), seat, location.origin, Date.now());
+        return Promise.resolve();
+      },
+      takeResumeVoice: () => Promise.resolve(takeWebResume(tabStorage(), Date.now())),
       networkOnline: () => undefined,
       log: (level, message) => {
         (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(message);
       },
-      openExternal: (url) => {
-        if (/^https?:\/\//.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+      openExternal: (raw) => {
+        // Synchronously, within the click (popup blockers); the scheme in any case, like main's
+        // IPC check (ADR-0045 amendment 1: «HTTPS://…» links of calendars did nothing here).
+        const url = raw.trim();
+        if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
         // mailto: (the plan contact, ADR-0024) hands over to the mail client, the page stays.
         else if (/^mailto:[^\s/]+@/i.test(url)) location.href = url;
         return Promise.resolve();
+      },
+      // ADR-0084: the web keeps the hosted checkout in a new tab (the phone host hands that to the
+      // system browser); the dialog's poll notices the payment.
+      openCheckout: (raw) => {
+        const url = raw.trim();
+        if (/^https:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+        return Promise.resolve('external');
       },
       attention: () => undefined,
       // Installed PWA: the app icon badge (Badging API, where supported).
@@ -640,7 +679,15 @@ export function createWebPlatform(): Platform {
       onAction: noop,
     },
     menu: { setState: () => undefined, onAction: noop },
-    files: { download, onProgress: noop, pathOf: (f) => f.name, decodeImage: () => Promise.resolve(null) },
+    files: {
+      download,
+      onProgress: noop,
+      // Drag-out on the web: Chromium's DownloadURL with the loaded blob (lib/imageDrag.ts).
+      prepareDrag: () => Promise.resolve(false),
+      startDrag: () => Promise.resolve(false),
+      pathOf: (f) => f.name,
+      decodeImage: () => Promise.resolve(null),
+    },
     capture: {
       // The browser shows its own picker on getDisplayMedia().
       listSources: () => Promise.resolve([]),
@@ -683,12 +730,13 @@ export function createWebPlatform(): Platform {
             return 'n/a';
           }
         };
+        const notification = hostCapabilities.notifications ? (await hostCapabilities.notifications.state()).permission : null;
         return {
           microphone: await q('microphone'),
           camera: await q('camera'),
           screen: 'n/a',
           accessibility: true,
-          notifications: typeof Notification === 'undefined' ? 'n/a' : Notification.permission,
+          notifications: notification === 'unsupported' ? 'n/a' : notification ?? (typeof Notification === 'undefined' ? 'n/a' : Notification.permission),
         };
       },
       requestMic: async () => {
@@ -768,6 +816,9 @@ function webIdleSeconds(): number {
 async function beginWebSso(args: SsoStart): Promise<IpcResult<{ attemptId: string; expiresAt: number }>> {
   const generation = ++ssoGeneration;
   try {
+    // The strict-origin phone host has no external SSO callback adapter yet.
+    // Reject before creating a flow that cannot finish in this cookie context.
+    if (window.CalabHostActivity?.version === 1) throw new Error('Phone SSO unavailable');
     if (args.purpose === 'login' && access) throw new Error('Local session active');
     const token = await accessToken();
     const purpose = {

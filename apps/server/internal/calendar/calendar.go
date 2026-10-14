@@ -73,6 +73,10 @@ type Service struct {
 	// FreeBusyLimit / SuggestLimit: per-user budgets of freebusy and suggest (ADR-0041 §5);
 	// nil = unlimited.
 	FreeBusyLimit, SuggestLimit *redisx.RateLimiter
+	// ExternalReminders returns the reminders of imported CalDAV events due at now (ADR-0045
+	// amendment 3; caldav.Service.DueReminders); the sweep sends them with the meetings' ones.
+	// nil = none.
+	ExternalReminders func(ctx context.Context, now time.Time) ([]ExternalReminder, error)
 	// Changed is told after a meeting changed for the users involved before or after the change
 	// (their CalDAV push, ADR-0041 §4); nil = nobody listens.
 	Changed func(ctx context.Context, eventID uuid.UUID, users []uuid.UUID)
@@ -83,6 +87,9 @@ type Service struct {
 	// without a request (ADR-0054): the CalDAV push and the meeting mails. nil fails closed —
 	// nothing is pushed and mails carry no meeting details; the app always sets it.
 	Identity IdentityGate
+	// EmailGate: whether adding outside attendees needs a confirmed address (ADR-0023,
+	// EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
+	EmailGate auth.EmailGate
 }
 
 // IdentityGate is the background side of the identity policy (identitypolicy.Delivery).

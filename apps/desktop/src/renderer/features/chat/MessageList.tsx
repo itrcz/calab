@@ -1,6 +1,6 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
 import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MessageKind, RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
@@ -8,24 +8,28 @@ import { plural, t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead, reloadRoom, STALE_LOAD_MS } from '../../services/chat';
 import { log } from '../../lib/log';
-import { EMPTY_ROOM_MESSAGES, useMessages, type ChatMessage } from '../../stores/messages';
+import { EMPTY_ROOM_MESSAGES, WINDOW_CAP, findByKey, firstUnreadIndex, keyIndex, lastSentId as lastSentOf, useMessages, type ChatMessage } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { streamCoversChat, useVoice } from '../../stores/voice';
 import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
-import { buildMetas, type RowMeta } from './grouping';
-import { createLastRowPin } from './lastRowPin';
+import { createMetaBuilder, type RowMeta } from './grouping';
+import { createBottomPin, initialFeedLocation } from './lastRowPin';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
 import { Avatar } from '../../components/Avatar';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { useDms } from '../../stores/dms';
 import { useNotes } from '../../stores/notes';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 
-const START_INDEX = 1_000_000;
+/** Virtual index of a window's base (the store's `base` moves it both ways; Virtuoso needs ≥ 0). */
+const START_INDEX = 1_000_000_000;
+/** Live messages may grow the open window this far past WINDOW_CAP before its top is cut. */
+const CAP_SLACK = 100;
 const HIGHLIGHT_MS = 1800;
 /** The floating date fades out this long after scrolling stops (Telegram). */
 const STICKY_IDLE_MS = 1000;
@@ -43,9 +47,15 @@ export function MessageList({
 }): ReactNode {
   // The expanded stream stage of my voice room covers the feed: the welcome shrinks to a row under it.
   const underStage = useVoice((s) => s.roomId === room.id && s.stage === 'expanded' && s.streams.some((x) => x.trackSid === s.watching));
-  const state = useMessages((s) => s.rooms[room.id] ?? EMPTY_ROOM_MESSAGES);
-  if (!state.loaded) return <FirstLoad roomId={room.id} error={state.error} />;
-  if (state.items.length === 0 && !state.hasMoreBefore && !state.hasMoreAfter) {
+  // Primitives only: this shell must not re-render on every message (Feed has its own subscription).
+  const loaded = useMessages((s) => s.rooms[room.id]?.loaded ?? false);
+  const error = useMessages((s) => s.rooms[room.id]?.error ?? null);
+  const empty = useMessages((s) => {
+    const r = s.rooms[room.id];
+    return !!r && r.items.length === 0 && !r.hasMoreBefore && !r.hasMoreAfter;
+  });
+  if (!loaded) return <FirstLoad roomId={room.id} error={error} />;
+  if (empty) {
     return <EmptyRoom workspaceId={workspaceId} room={room} perms={perms} underStage={underStage} />;
   }
   return <Feed workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />;
@@ -101,13 +111,63 @@ class RowBoundary extends Component<{ id: string; children: ReactNode }, { faile
   }
 }
 
+/** What rows, header and footer read from the feed: passed as Virtuoso `context`, so their renderers stay stable. */
+interface FeedContext {
+  workspaceId: string;
+  roomId: string;
+  room: Room;
+  perms: PermissionBits;
+  me: string;
+  metas: readonly RowMeta[];
+  firstIndex: number;
+  highlight: string | null;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+  loading: boolean;
+}
+
+function FeedHeader({ context }: { context: FeedContext }): ReactNode {
+  return context.hasMoreBefore ? (
+    <div className="grid h-12 place-items-center">{context.loading ? <Spinner /> : null}</div>
+  ) : (
+    <HistoryStart room={context.room} />
+  );
+}
+
+function FeedFooter({ context }: { context: FeedContext }): ReactNode {
+  return context.hasMoreAfter ? <div className="grid h-12 place-items-center"><Spinner /></div> : <div className="h-3" />;
+}
+
+const FEED_COMPONENTS = { Header: FeedHeader, Footer: FeedFooter };
+const INCREASE_VIEWPORT = { top: 800, bottom: 400 };
+const itemKey = (_i: number, c: ChatMessage): string => c.key;
+
+function feedRow(index: number, c: ChatMessage, x: FeedContext): ReactNode {
+  const meta = x.metas[index - x.firstIndex] ?? FALLBACK_META;
+  return (
+    <RowBoundary id={c.key}>
+      {c.msg.kind === MessageKind.SYSTEM ? (
+        <SystemRow c={c} meta={meta} workspaceId={x.workspaceId} perms={x.perms} highlighted={x.highlight === c.key} />
+      ) : (
+        <MessageRow
+          c={c}
+          meta={meta}
+          own={c.msg.authorId === x.me}
+          workspaceId={x.workspaceId}
+          roomId={x.roomId}
+          perms={x.perms}
+          highlighted={x.highlight === c.key}
+        />
+      )}
+    </RowBoundary>
+  );
+}
+
 /** The virtualised feed; mounted once the first window is loaded (so the initial position is known). */
 function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; room: Room; perms: PermissionBits; newMarker: string }): ReactNode {
   const roomId = room.id;
   const state = useMessages((s) => s.rooms[roomId] ?? EMPTY_ROOM_MESSAGES);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const readMarker = useRooms((s) => s.readState[roomId] ?? '');
-  const newestKnown = useRooms((s) => s.lastMessage[roomId] ?? '');
   const highlight = useChatView((s) => s.highlight);
   const jump = useChatView((s) => s.jump);
   // The mini-player covers the feed's top strip: the unread banner and the date pill go below it.
@@ -116,58 +176,31 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const virtuoso = useRef<VirtuosoHandle>(null);
   // False until Virtuoso reports it: opening at the first unread must not mark the room read.
   const [atBottom, setAtBottom] = useState(false);
-  // docs/09 #149: a reaction added to the last row (mine or incoming) grows it in place — no new
-  // item, so followOutput below never sees it. Pinned to one instance so re-renders don't lose it.
-  const [lastRowPin] = useState(() => createLastRowPin());
 
-  // Grouping, memoised per message (unchanged rows keep their meta object → no re-render).
-  const [cache] = useState(() => new Map<string, RowMeta>());
-  const metas = useMemo(() => buildMetas(items, newMarker, me, cache), [items, newMarker, me, cache]);
+  // Grouping, incremental: only changed rows and their neighbours are recomputed; unchanged rows
+  // keep their meta object → no re-render (docs/14 «Лента на 20 тыс. сообщений»).
+  const [metaBuilder] = useState(createMetaBuilder);
+  const metas = useMemo(() => metaBuilder(items, newMarker, me), [metaBuilder, items, newMarker, me]);
 
-  // Prepending keeps the scroll position via Virtuoso's firstItemIndex (derived during render).
-  const [track, setTrack] = useState(() => ({ first: items[0]?.key, index: START_INDEX }));
-  let firstIndex = track.index;
-  if (items[0]?.key !== track.first) {
-    const k = track.first ? items.findIndex((c) => c.key === track.first) : -1;
-    firstIndex = k > 0 ? track.index - k : track.index;
-    setTrack({ first: items[0]?.key, index: firstIndex });
-  }
+  // Older rows prepended / the oldest rows dropped keep the scroll position via Virtuoso's
+  // firstItemIndex; the store keeps the window's base exact for every change.
+  const firstIndex = START_INDEX + state.base;
 
-  // Opens at the first unread message (docs/09 #39), otherwise at the bottom.
-  const [initialIndex] = useState(() => {
-    const i = metas.findIndex((m) => m.isNew);
-    return i >= 0 ? { index: i, align: 'start' as const, offset: -40 } : Math.max(0, items.length - 1);
-  });
+  // Opens at the first unread message (docs/09 #39), otherwise at the last row's bottom.
+  // docs/09 #149: the last row growing in place (reaction, upload → preview, image/link preview,
+  // edit) or the composer growing is no new item, so followOutput never sees it (lastRowPin.ts).
+  const [{ location: initialIndex, stuck: openStuck }] = useState(() => initialFeedLocation(metas.findIndex((m) => m.isNew), state.hasMoreAfter));
+  const [bottomPin] = useState(() => createBottomPin(openStuck));
 
-  const lastSentId = useMemo(() => {
-    for (let i = items.length - 1; i >= 0; i--) {
-      const c = items[i];
-      if (c?.status === 'sent') return c.msg.id;
-    }
-    return '';
-  }, [items]);
-
-  const firstUnread = useMemo(
-    () => items.findIndex((c) => c.status === 'sent' && !!readMarker && c.msg.id > readMarker && c.msg.authorId !== me),
-    [items, readMarker, me],
-  );
-  const unread = useMemo(() => {
-    if (firstUnread < 0) return 0;
-    let n = 0;
-    for (let i = firstUnread; i < items.length; i++) {
-      const c = items[i];
-      if (c && c.status === 'sent' && c.msg.authorId !== me) n++;
-    }
-    return n;
-  }, [items, firstUnread, me]);
-  const moreUnread = state.hasMoreAfter && newestKnown > lastSentId;
+  const lastSentId = useMemo(() => lastSentOf(items), [items]);
 
   // The stream stage / stream full screen covers this feed: messages behind it are unseen,
   // so they keep their unread state and the marker must not move (issue #35).
   const streamFs = useStreamFullscreen((s) => s.on);
   const covered = useVoice((s) => streamCoversChat(s, roomId, streamFs));
 
-  // Read state: the newest message is on screen and the window is focused.
+  // Read state: the newest message is on screen and the window is focused. The marker itself is
+  // read only by FeedOverlays, so moving it does not re-render the feed.
   useEffect(() => {
     if (!atBottom || !lastSentId || covered) return;
     const mark = (): void => {
@@ -177,6 +210,13 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     window.addEventListener('focus', mark);
     return () => window.removeEventListener('focus', mark);
   }, [atBottom, lastSentId, roomId, covered]);
+
+  // At the present with the bottom on screen, live messages grow the window: cut its top (far
+  // above the viewport) back to WINDOW_CAP; the base keeps the position.
+  const overCap = atBottom && !state.hasMoreAfter && items.length > WINDOW_CAP + CAP_SLACK;
+  useEffect(() => {
+    if (overCap) useMessages.getState().capOpen(roomId);
+  }, [overCap, roomId]);
 
   // Jump requests (search, reply quotes, pins): load the window if needed, scroll, highlight.
   const alive = useRef(true);
@@ -200,7 +240,8 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       // Two frames: the list has rendered the (possibly new) window before we scroll.
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          const i = useMessages.getState().rooms[roomId]?.items.findIndex((c) => c.key === target) ?? -1;
+          const r = useMessages.getState().rooms[roomId];
+          const i = r ? (keyIndex(r.items).get(target) ?? -1) : -1;
           if (!alive.current || i < 0) return;
           virtuoso.current?.scrollToIndex({ index: i, align: 'center', behavior: 'auto' });
           useChatView.getState().setHighlight(target);
@@ -228,35 +269,39 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     },
     [items, me, state.hasMoreAfter],
   );
-  const onAtBottomStateChange = useCallback(
-    (v: boolean) => {
-      lastRowPin.setAtBottom(v);
-      setAtBottom(v);
-    },
-    [lastRowPin],
-  );
+  // Layout effects: a window loaded away from the present must stop the pin before the next
+  // ResizeObserver delivery (which precedes passive effects), or it would chase endReached.
+  useLayoutEffect(() => bottomPin.setLive(!state.hasMoreAfter), [bottomPin, state.hasMoreAfter]);
+  const lastKey = items[items.length - 1]?.key ?? '';
+  const lastKeyRef = useRef(lastKey);
+  useLayoutEffect(() => {
+    lastKeyRef.current = lastKey;
+  }, [lastKey]);
 
   // Floating date: the day of the topmost visible row, hidden while that day's own pill is in view.
   const scroller = useRef<HTMLElement | null>(null);
+  const scrollerRef = useCallback((r: HTMLElement | Window | null) => {
+    scroller.current = r instanceof HTMLElement ? r : null;
+  }, []);
 
-  // docs/09 #149: observe only the last row's own element — not the whole feed — so a reaction
-  // pill growing it can re-pin the bottom without any per-render cost on the other rows.
-  const lastKey = items[items.length - 1]?.key;
+  // docs/09 #149: keep the bottom while stuck to it. One observer, no per-render or per-frame
+  // work, on two elements: the scroller (its height — the composer growing, the window resizing)
+  // and Virtuoso's item list (the rendered rows' height — any row changing size, the last one
+  // included). A new last message is left to followOutput, so incoming ones still scroll smoothly.
   useEffect(() => {
     const root = scroller.current;
-    if (!root || !lastKey || typeof ResizeObserver === 'undefined') return;
-    const el = root.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(lastKey)}"]`);
-    if (!el) return;
-    lastRowPin.reset(el.getBoundingClientRect().height);
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h !== undefined && lastRowPin.measure(h)) {
-        virtuoso.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' });
-      }
+    if (!root || typeof ResizeObserver === 'undefined') return;
+    let seenKey = lastKeyRef.current;
+    const ro = new ResizeObserver(() => {
+      const fresh = seenKey !== lastKeyRef.current;
+      seenKey = lastKeyRef.current;
+      if (bottomPin.resized(root) && !fresh) root.scrollTop = root.scrollHeight;
     });
-    ro.observe(el);
+    ro.observe(root);
+    const list = root.querySelector('[data-testid="virtuoso-item-list"]');
+    if (list) ro.observe(list);
     return () => ro.disconnect();
-  }, [lastKey, lastRowPin]);
+  }, [bottomPin]);
 
   const [sticky, setSticky] = useState<string | null>(null);
   const frame = useRef(0);
@@ -265,6 +310,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const [scrolling, setScrolling] = useState(false);
   const idle = useRef(0);
   const onScroll = useCallback(() => {
+    if (scroller.current) bottomPin.scrolled(scroller.current);
     setScrolling(true);
     scroller.current?.setAttribute('data-scrolling', '');
     window.clearTimeout(idle.current);
@@ -292,7 +338,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       }
       setSticky(null);
     });
-  }, []);
+  }, [bottomPin]);
   useEffect(
     () => () => {
       cancelAnimationFrame(frame.current);
@@ -301,8 +347,116 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     [],
   );
 
+  const context = useMemo<FeedContext>(
+    () => ({
+      workspaceId,
+      roomId,
+      room,
+      perms,
+      me,
+      metas,
+      firstIndex,
+      highlight,
+      hasMoreBefore: state.hasMoreBefore,
+      hasMoreAfter: state.hasMoreAfter,
+      loading: state.loading,
+    }),
+    [workspaceId, roomId, room, perms, me, metas, firstIndex, highlight, state.hasMoreBefore, state.hasMoreAfter, state.loading],
+  );
+
+  return (
+    <div className="relative min-h-0 flex-1 bg-feed">
+      <Virtuoso
+        ref={virtuoso}
+        // Never a horizontal scroll in the feed (docs/09 #74): rows clip, the action bar is clamped.
+        className="h-full overflow-x-hidden"
+        data={items}
+        context={context}
+        firstItemIndex={firstIndex}
+        initialTopMostItemIndex={initialIndex}
+        startReached={startReached}
+        endReached={endReached}
+        followOutput={followOutput}
+        atBottomStateChange={setAtBottom}
+        atBottomThreshold={48}
+        // Measure rows in the ResizeObserver callback, before paint, not a frame later: a row
+        // mounted while scrolling whose real height differs from the estimate otherwise paints one
+        // frame with the whole feed shifted by the difference (the «flicker» while scrolling).
+        skipAnimationFrameInResizeObserver
+        scrollerRef={scrollerRef}
+        onScroll={onScroll}
+        increaseViewportBy={INCREASE_VIEWPORT}
+        computeItemKey={itemKey}
+        components={FEED_COMPONENTS}
+        itemContent={feedRow}
+      />
+      <FeedOverlays
+        roomId={roomId}
+        items={items}
+        metas={metas}
+        me={me}
+        newMarker={newMarker}
+        lastSentId={lastSentId}
+        hasMoreAfter={state.hasMoreAfter}
+        atBottom={atBottom}
+        mini={mini}
+        stickyKey={sticky}
+        scrolling={scrolling}
+        virtuoso={virtuoso}
+      />
+    </div>
+  );
+}
+
+/**
+ * The unread banner, the floating date and the «to bottom» button: the only parts of the feed
+ * that read the read marker and the room's newest id, so a message read at the bottom (upsert,
+ * then markRead → setRead) renders the feed once and only this leaf a second time.
+ */
+const FeedOverlays = memo(function FeedOverlays({
+  roomId,
+  items,
+  metas,
+  me,
+  newMarker,
+  lastSentId,
+  hasMoreAfter,
+  atBottom,
+  mini,
+  stickyKey,
+  scrolling,
+  virtuoso,
+}: {
+  roomId: string;
+  items: readonly ChatMessage[];
+  metas: readonly RowMeta[];
+  me: string;
+  newMarker: string;
+  lastSentId: string;
+  hasMoreAfter: boolean;
+  atBottom: boolean;
+  mini: boolean;
+  stickyKey: string | null;
+  scrolling: boolean;
+  virtuoso: RefObject<VirtuosoHandle | null>;
+}): ReactNode {
+  const readMarker = useRooms((s) => s.readState[roomId] ?? '');
+  const newestKnown = useRooms((s) => s.lastMessage[roomId] ?? '');
+
+  const firstUnread = useMemo(() => firstUnreadIndex(items, readMarker, me), [items, readMarker, me]);
+  const unread = useMemo(() => {
+    if (firstUnread < 0) return 0;
+    let n = 0;
+    for (let i = firstUnread; i < items.length; i++) {
+      const c = items[i];
+      if (c && c.status === 'sent' && c.msg.authorId !== me) n++;
+    }
+    return n;
+  }, [items, firstUnread, me]);
+  const moreUnread = hasMoreAfter && newestKnown > lastSentId;
+
   const toBottom = (): void => {
-    if (state.hasMoreAfter) {
+    if (hasMoreAfter) {
       void loadPresent(roomId).then(() => virtuoso.current?.scrollToIndex({ index: 'LAST', behavior: 'auto' }));
       return;
     }
@@ -314,62 +468,13 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     if (at >= 0) virtuoso.current?.scrollToIndex({ index: at, align: 'start', offset: -40, behavior: 'smooth' });
   };
 
-  const stickyMsg = sticky ? items.find((c) => c.key === sticky) : undefined;
+  const stickyMsg = stickyKey ? findByKey(items, stickyKey) : undefined;
   const stickyDate = stickyMsg ? toDate(stickyMsg.msg.createdAt) : null;
   const showBanner = !!newMarker && unread > 0;
   const firstUnreadMsg = firstUnread >= 0 ? items[firstUnread] : undefined;
 
   return (
-    <div className="relative min-h-0 flex-1 bg-feed">
-      <Virtuoso
-        ref={virtuoso}
-        // Never a horizontal scroll in the feed (docs/09 #74): rows clip, the action bar is clamped.
-        className="h-full overflow-x-hidden"
-        data={items}
-        firstItemIndex={firstIndex}
-        initialTopMostItemIndex={initialIndex}
-        startReached={startReached}
-        endReached={endReached}
-        followOutput={followOutput}
-        atBottomStateChange={onAtBottomStateChange}
-        atBottomThreshold={48}
-        scrollerRef={(r) => {
-          scroller.current = r instanceof HTMLElement ? r : null;
-        }}
-        onScroll={onScroll}
-        increaseViewportBy={{ top: 800, bottom: 400 }}
-        computeItemKey={(_i, c: ChatMessage) => c.key}
-        components={{
-          Header: () =>
-            state.hasMoreBefore ? (
-              <div className="grid h-12 place-items-center">{state.loading ? <Spinner /> : null}</div>
-            ) : (
-              <HistoryStart room={room} />
-            ),
-          Footer: () => (state.hasMoreAfter ? <div className="grid h-12 place-items-center"><Spinner /></div> : <div className="h-3" />),
-        }}
-        itemContent={(index, c: ChatMessage) => {
-          const meta = metas[index - firstIndex] ?? FALLBACK_META;
-          return (
-            <RowBoundary id={c.key}>
-              {c.msg.kind === MessageKind.SYSTEM ? (
-                <SystemRow c={c} meta={meta} workspaceId={workspaceId} perms={perms} highlighted={highlight === c.key} />
-              ) : (
-                <MessageRow
-                  c={c}
-                  meta={meta}
-                  own={c.msg.authorId === me}
-                  workspaceId={workspaceId}
-                  roomId={roomId}
-                  perms={perms}
-                  highlighted={highlight === c.key}
-                />
-              )}
-            </RowBoundary>
-          );
-        }}
-      />
-
+    <>
       {showBanner && firstUnreadMsg ? (
         <div
           className={cx(
@@ -400,6 +505,8 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
             'pointer-events-none absolute inset-x-0 z-[var(--z-sticky)] flex justify-center transition-opacity duration-[var(--motion)] ease-out',
             mini ? (showBanner ? 'top-[5.25rem] mobile:top-[5.5rem]' : 'top-[3.25rem] mobile:top-14') : showBanner ? 'top-10' : 'top-2',
             scrolling ? 'opacity-100' : 'opacity-0',
+            // Phone: shown only while scrolling — never a static pill over messages / link previews.
+            'mobile:data-[idle]:hidden',
           )}
           data-idle={scrolling ? undefined : ''}
         >
@@ -407,13 +514,13 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         </div>
       ) : null}
 
-      {!atBottom || state.hasMoreAfter ? (
+      {!atBottom || hasMoreAfter ? (
         <Tip label={t('chat.toBottom')} side="left">
         <button
           type="button"
           onClick={toBottom}
           aria-label={unread ? t('chat.toBottomUnread', { n: unread }) : t('chat.toBottom')}
-          className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-10 place-items-center rounded-full text-muted hover:text-fg"
+          className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-11 place-items-center rounded-full text-muted hover:text-fg"
         >
           <ArrowDown className="size-5" />
           {unread ? (
@@ -424,9 +531,9 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         </button>
         </Tip>
       ) : null}
-    </div>
+    </>
   );
-}
+});
 
 const FALLBACK_META: RowMeta = { day: false, isNew: false, first: true, last: true };
 
@@ -468,7 +575,9 @@ function DmHistoryStart({ roomId }: { roomId: string }): ReactNode {
   const avatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
   return (
     <div className="flex flex-col items-center px-4 pb-2 pt-8 text-center">
-      <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={56} />
+      <ProfileTarget userId={peerId} name={name} tabbable className="rounded-full">
+        <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={56} />
+      </ProfileTarget>
       <div className="mt-2 text-headline font-semibold">{name}</div>
       <div className="text-body text-muted">{t('dm.welcomeText', { name })}</div>
     </div>

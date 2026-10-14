@@ -3,6 +3,9 @@
 ## Имя
 Продукт называется **Calab**. Рабочее имя «Calaba» остаётся только во внутренних идентификаторах (npm-пакеты `@calaba/*`, Go-модуль, имена compose-контейнеров и volume, каталоги) — переименование их в пользовательском интерфейсе не видно и запланировано на после релиза (ADR при необходимости). Всё видимое пользователю — «Calab»: название приложения, окно, «О программе», лендинг, инсталляторы (`Calab-0.1.0-arm64.dmg`, `Calab Setup 0.1.0.exe`, `calab` для Linux), deep-link схема `calab://` (старая `calaba://` принимается как алиас), документы лицензии.
 
+## Иконка приложения (2026-10-13)
+Источники — `apps/desktop/build/icons/src/*.svg` (от владельца): градиент #3660FC → #404498 (по диагонали), белый знак; прежний серо-синий (#6E84A0 → #3E3848) заменён. Производные генерирует `apps/desktop/scripts/gen-icons.sh` (mac/win/linux/tray/web); лендинг (`calab-mark`, `calab-wordmark`, `favicon*`, `icon-*`) и мобильная `apps/mobile/assets/icon-1024.png` синхронизированы с ними.
+
 ## Домены
 Основной домен с 2.0.0 — `calab.io` (решение владельца 2026-10-02); каждый хост `calab.ru` остаётся алиасом без срока (правила совместимости — docs/06, «Домены: calab.io…»).
 
@@ -19,10 +22,19 @@
 | `rtc.calab.ru`, `turn.calab.ru` | LiveKit/TURN для CSP сборок до 2.0.0; `rtc.calab.ru` пока отдаётся клиентам (`LIVEKIT_URL`) | как `rtc.`/`turn.` (`DOMAIN_ALIASES`, `RTC_PUBLIC_HOST`) |
 | `meet.gptunnel.ru` | алиас приложения (бренд GPTunneL) | как `app.` |
 
-Конфиг Caddy: `DOMAIN=calab.io`, `APP_HOST=app.calab.io` (по умолчанию = DOMAIN), `LANDING_HOST=calab.io` (пусто = без лендинга), `DOMAIN_ALT`/`DOMAIN_LEGACY` — дополнительные app-хосты, `DOMAIN_ALIASES` — дополнительные зоны для `rtc.`/`turn.`, `LANDING_HOST_ALIASES` / `RELEASES_HOST_ALIASES` — алиасы лендинга (301) и фида (тот же контент). Сервер: `PUBLIC_APP_URLS` — список разрешённых origin через запятую (`PUBLIC_APP_URL`/`_ALT` остаются для совместимости). LiveKit `turn.domain = turn.${DOMAIN}`; клиентам — `LIVEKIT_URL=wss://${RTC_PUBLIC_HOST:-rtc.${DOMAIN}}`. Почта — `noreply@calab.io`. DNS — Cloudflare, только DNS-only.
+Конфиг Caddy: `DOMAIN=calab.io`, `APP_HOST=app.calab.io` (по умолчанию = DOMAIN), `LANDING_HOST=calab.io` (пусто = без лендинга), `DOMAIN_ALT`/`DOMAIN_LEGACY` — дополнительные app-хосты, `DOMAIN_ALIASES` — дополнительные зоны для `rtc.`/`turn.`, `LANDING_HOST_ALIASES` / `RELEASES_HOST_ALIASES` — алиасы лендинга (301) и фида (тот же контент), `LANDING_HOST_MIRRORS` — зеркала лендинга (тот же сайт без редиректа). За прокси (`Caddyfile.behind-proxy`, образ веба): `BEHIND_PROXY_PORT` — порт HTTP, `API_UPSTREAM` — адрес API. Сервер: `PUBLIC_APP_URLS` — список разрешённых origin через запятую (`PUBLIC_APP_URL`/`_ALT` остаются для совместимости). LiveKit `turn.domain = turn.${DOMAIN}`; клиентам — `LIVEKIT_URL=wss://${RTC_PUBLIC_HOST:-rtc.${DOMAIN}}`. Почта — `noreply@calab.io`. DNS — Cloudflare, только DNS-only.
 
 ## Атрибуция
 «Powered by GPTunneL» остаётся обязательной по лицензии (BSL 1.1, NOTICE) — на лендинге в футере, в «О программе», на экране входа.
+
+## Лендинг 3.3 (2026-10-13)
+
+Запрос владельца: показать фичи скринами, обновить устаревшее, отдельно — уведомления, анонс приложений для телефона.
+
+- Главная: вместо шести текстовых карточек и четырёх рядов скриншотов — каталог «Что есть в Calab» (12 карточек: скриншот + 1–2 фразы; голос и экран, галерея видеовстречи, чат, доски с «Историей», календарь, поиск ⌘K, почта, заметки, уведомления, телефон, веб-приложения и боты, SIP), новый раздел «Уведомления» (компьютер / телефон / Telegram через своего бота, уровни и «Не беспокоить», триггеры задач) и блок «Скоро: приложение для iPhone и Android» без дат и формы. Тексты — `src/i18n/catalog.ts` (ru/en/es/zh).
+- `/features/`: разделы «Почта» и «Поиск», «История задачи» в досках; обновлены пункты голоса (галерея), чата и досок (автоматизации, Git, формы, наблюдатели, CSV, вебхук). Таблица тарифов: строки «Автоматизации», «Формы», «Почта». FAQ: почта, приложение для телефона. `llms.txt` / `llms-full.txt` — почта, поиск, уведомления, история задач, iPhone/Android в «Planned».
+- Скриншоты (тёмная тема — лендинг тем не различает), 4 языка, `public/screens/<lang>/`: заново все показываемые (`voice`, `chat`, `call`, `calendar`, `findtime`, `kanban`, `timeline`, `task`, `notes`, `guest`, `sipdial`, `siproom`, `sipsettings`, `siplog`, `webapps`) и новые: `mail`, `taskhistory`, `notify`, `notifyrelay`, `gallery`, `search`, `phone-rooms`, `phone-chat`, `phone-voice`, `phone-board`; OG-картинки перерисованы. `boards2` удалён (не показывался, сценарий v2 не работает с UI 3.0).
+- Перегенерация: `pnpm -F @calaba/desktop build:web` (+ `build:app` для почты), затем в `apps/desktop`: `pnpm exec playwright test --config playwright.marketing.config.ts landing.spec landing-v4 landing-v5 landing-mail` (dev LiveKit для голоса/галереи; один Electron за раз), затем `node apps/landing/scripts/assets.mjs --only=<сцены>`. Данные новых сцен — `e2e-marketing/copy3.ts`; почта — мок рендерера, собранный esbuild с `mail-fixtures.ts` и отвечающий на `mail:request` в main.
 
 ## Лендинг: чёрный фон и контрастная типографика (2026-10-02)
 

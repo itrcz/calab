@@ -10,7 +10,7 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        projectService: { allowDefaultProject: ['eslint.config.mjs', 'postcss.config.mjs', 'scripts/*.mjs'] },
+        projectService: { allowDefaultProject: ['eslint.config.mjs', 'postcss.config.mjs', 'scripts/*.mjs', 'public/*.js'] },
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -27,5 +27,17 @@ export default tseslint.config(
     files: ['scripts/*.mjs', '*.mjs'],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: { globals: { process: 'readonly', console: 'readonly', Buffer: 'readonly' } },
+  },
+  // Plain browser scripts served from public/ (docs.js, ADR-0099): no build step, no types.
+  {
+    files: ['public/*.js'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        window: 'readonly', document: 'readonly', localStorage: 'readonly', navigator: 'readonly', location: 'readonly',
+        fetch: 'readonly', setTimeout: 'readonly', IntersectionObserver: 'readonly',
+      },
+    },
   },
 );

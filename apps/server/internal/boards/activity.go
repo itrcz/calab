@@ -24,12 +24,18 @@ const (
 	exportMaxRows = 1_000_000
 )
 
-// taskActivity: GET /api/tasks/{id}/activity?before=&limit= — comments and journal entries
-// newest first (both ids are uuidv7: their order is the time order).
+// taskActivity: GET /api/tasks/{id}/activity?before=&limit=&only= — comments and journal
+// entries newest first (both ids are uuidv7: their order is the time order). only=journal: the
+// journal alone (with its comment entries, ADR-0091); only=comments: the comments alone; none:
+// both, the journal without its "comment" entries (the comment is in the feed as its message).
 func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 	t, _, err := s.loadTask(r, s.db.Pool, false)
 	if err != nil {
 		return err
+	}
+	only := r.URL.Query().Get("only")
+	if only != "" && only != "journal" && only != "comments" {
+		return httpx.BadRequest("only must be journal or comments")
 	}
 	limit := feedDefault
 	if l := r.URL.Query().Get("limit"); l != "" {
@@ -48,12 +54,28 @@ func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 		before = &id
 	}
 	lim := int32(limit + 1) //nolint:gosec // ≤ 101
-	ms, err := s.db.Q.ListTaskRoomMessages(r.Context(), sqlc.ListTaskRoomMessagesParams{RoomID: t.RoomID, Before: before, Lim: lim})
-	if err != nil {
-		return err
+	var ms []sqlc.Message
+	if only != "journal" {
+		if ms, err = s.db.Q.ListTaskRoomMessages(r.Context(), sqlc.ListTaskRoomMessagesParams{RoomID: t.RoomID, Before: before, Lim: lim}); err != nil {
+			return err
+		}
 	}
-	as, err := s.db.Q.ListTaskActivity(r.Context(), sqlc.ListTaskActivityParams{TaskID: t.ID, Before: before, Lim: lim})
-	if err != nil {
+	var as []sqlc.TaskActivity
+	if only != "comments" {
+		p := sqlc.ListTaskActivityParams{TaskID: t.ID, Before: before, Lim: lim}
+		if only == "" {
+			skip := kindComment
+			p.SkipKind = &skip
+		}
+		if as, err = s.db.Q.ListTaskActivity(r.Context(), p); err != nil {
+			return err
+		}
+	}
+	sides := make([]refSide, 0, 2*len(as))
+	for i := range as {
+		sides = append(sides, refSide{as[i].Kind, &as[i].Before}, refSide{as[i].Kind, &as[i].After})
+	}
+	if err := s.hideUnseenRefs(r.Context(), uid(r), sides); err != nil {
 		return err
 	}
 	msgs, err := messages.Details(r.Context(), s.db.Q, ms, uid(r))
@@ -80,7 +102,7 @@ func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 // the journal of a board, oldest first (MANAGE_BOARD or EDIT_TASKS on the board, or
 // VIEW_JOURNALS of the workspace, ADR-0048 — always on a board the caller sees).
 func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := pathBoard(r, false)
+	id, acc, err := fullBoard(r, false) // not for task-scoped members, even with VIEW_JOURNALS (ADR-0059)
 	if err != nil {
 		return err
 	}
@@ -118,14 +140,14 @@ func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
 	if qs.Get("format") == "csv" {
 		return s.exportCSV(w, r, p)
 	}
-	rows, err := s.db.Q.ListBoardActivity(r.Context(), p)
+	rows, err := s.boardActivityPage(r, p)
 	if err != nil {
 		return err
 	}
 	out := &v1.BoardActivityResponse{Activities: make([]*v1.TaskActivity, len(rows))}
 	for i, a := range rows {
 		out.Activities[i] = activity(sqlc.TaskActivity{ID: a.ID, TaskID: a.TaskID, BoardID: a.BoardID, ActorID: a.ActorID,
-			Kind: a.Kind, Before: a.Before, After: a.After, CreatedAt: a.CreatedAt})
+			Kind: a.Kind, Before: a.Before, After: a.After, CreatedAt: a.CreatedAt, RuleID: a.RuleID})
 	}
 	if len(rows) == exportPage {
 		out.NextCursor = rows[len(rows)-1].ID.String()
@@ -134,20 +156,34 @@ func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// boardActivityPage: a page of the board journal, the tasks the caller does not see unnamed in
+// it (a relation to another board, ADR-0091 §3 snapshots).
+func (s *Service) boardActivityPage(r *http.Request, p sqlc.ListBoardActivityParams) ([]sqlc.ListBoardActivityRow, error) {
+	rows, err := s.db.Q.ListBoardActivity(r.Context(), p)
+	if err != nil {
+		return nil, err
+	}
+	sides := make([]refSide, 0, 2*len(rows))
+	for i := range rows {
+		sides = append(sides, refSide{rows[i].Kind, &rows[i].Before}, refSide{rows[i].Kind, &rows[i].After})
+	}
+	return rows, s.hideUnseenRefs(r.Context(), uid(r), sides)
+}
+
 func (s *Service) exportCSV(w http.ResponseWriter, r *http.Request, p sqlc.ListBoardActivityParams) error {
-	first, err := s.db.Q.ListBoardActivity(r.Context(), p)
+	first, err := s.boardActivityPage(r, p)
 	if err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="board-activity.csv"`)
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"id", "created_at", "task_key", "actor_id", "kind", "before", "after"})
+	_ = cw.Write([]string{"id", "created_at", "task_key", "actor_id", "kind", "before", "after", "rule_id"})
 	rows, n := first, 0
 	for len(rows) > 0 && n < exportMaxRows {
 		for _, a := range rows {
 			_ = cw.Write([]string{a.ID.String(), a.CreatedAt.UTC().Format(time.RFC3339), TaskKey(a.BoardKey, a.TaskNumber),
-				idp(a.ActorID), a.Kind, string(a.Before), string(a.After)})
+				idp(a.ActorID), a.Kind, string(a.Before), string(a.After), idp(a.RuleID)})
 		}
 		n += len(rows)
 		if len(rows) < exportPage {
@@ -155,7 +191,7 @@ func (s *Service) exportCSV(w http.ResponseWriter, r *http.Request, p sqlc.ListB
 		}
 		last := rows[len(rows)-1].ID
 		p.AfterID = &last
-		if rows, err = s.db.Q.ListBoardActivity(r.Context(), p); err != nil {
+		if rows, err = s.boardActivityPage(r, p); err != nil {
 			break // headers are out: the file ends early
 		}
 	}

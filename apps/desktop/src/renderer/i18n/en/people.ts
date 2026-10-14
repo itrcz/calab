@@ -14,7 +14,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.owner': 'Owner',
   'people.you': 'you',
   'people.empty': 'No one here yet',
-  'people.openProfile': '{name}’s profile',
+  'people.openProfile': 'Open {name}’s profile',
 
   // profile popover
   'people.profile.role': 'Role',

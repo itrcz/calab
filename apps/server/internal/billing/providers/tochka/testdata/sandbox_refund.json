@@ -1,0 +1,1 @@
+{"Data":{"isRefund":true,"operationId":"0aa1c228-4301-4e1b-a507-f292e4d72e73","amount":1.0,"date":"2025-04-08","orderId":"20"},"Links":{"self":"https://enter.tochka.com/uapi/acquiring/v1.0/payments/beeac8a4-6047-3f38-8922-a664e6b5c43b/refund"},"Meta":{"totalPages":1}}

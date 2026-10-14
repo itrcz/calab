@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { NotificationLevel, WorkspaceRole } from '@calaba/protocol';
-import { Bell, BellOff, Check, ChevronDown, ChevronRight, LogOut, Settings, UserPlus, Users } from 'lucide-react';
+import { NotificationLevel } from '@calaba/protocol';
+import { Bell, BellOff, Check, ChevronRight, LogOut, Settings, UserPlus, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
@@ -9,54 +9,26 @@ import { api } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
 import { mayInviteMembers, mayOpenWorkspaceSettings } from '../../lib/permissions';
 import { setWorkspaceNotifications, setWorkspaceTaskLevel } from '../../services/mentions';
+import { boardVisible } from '../../lib/boards/access';
 import { useBoards } from '../../stores/boards';
 import { useRooms, workspaceNotify, workspaceTaskLevel } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { useMemberRoles } from '../../stores/workspaces';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 
 /**
- * The workspace menu (docs/09 #140): the workspace name with «⌄» — on the left of the window title
- * bar (desktop, where «‹ ›» were), at the top of the phone's drawer and in the phone's top bar. «Пригласить» and
+ * The workspace menu items (docs/09 #140), the tail of the workspace switcher (ADR-0074 §2; the
+ * phone's header is the same switcher). «Пригласить» and
  * «Настройки пространства» (any settings right, ADR-0048), «Участники», «Уведомления» ▸, «Скрывать без
  * уведомлений», «Покинуть» (disabled for the owner, with the reason). Creating rooms and
  * categories lives in the room column's «+». Selectors: the name and the role only (the entry
  * changes on every voice state).
  */
-export function WorkspaceMenu({ workspaceId, variant, testId }: { workspaceId: string; variant: 'titlebar' | 'drawer' | 'topbar'; testId?: string }): ReactNode {
-  const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name);
-  const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
-  if (name === undefined) return null;
-  return (
-    <Dropdown.Root modal={false}>
-      <Dropdown.Trigger asChild>
-        <button
-          type="button"
-          title={name}
-          data-testid={testId}
-          className={cx(
-            'group flex min-w-0 items-center gap-1 rounded-[var(--radius-row)] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active',
-            variant === 'titlebar' ? 'no-drag h-7 max-w-[220px] px-2 text-body' : variant === 'topbar' ? 'h-10 px-2 text-list' : 'h-8 w-full px-2 text-left text-list',
-          )}
-        >
-          <span className={cx('min-w-0 truncate', variant === 'drawer' && 'flex-1')}>{name}</span>
-          <ChevronDown className="size-4 shrink-0 text-muted transition-transform duration-[var(--motion-fast)] group-data-[state=open]:rotate-180" aria-hidden />
-        </button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="start" collisionPadding={16}>
-          <WorkspaceMenuItems workspaceId={workspaceId} name={name} owner={role === WorkspaceRole.OWNER} />
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
-  );
-}
-
 /** The items: mounted only while the menu is open (Radix), so the role subscriptions cost nothing at rest. */
-function WorkspaceMenuItems({ workspaceId, name, owner }: { workspaceId: string; name: string; owner: boolean }): ReactNode {
+export function WorkspaceMenuItems({ workspaceId, name, owner }: { workspaceId: string; name: string; owner: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const hideMuted = useUi((s) => s.hideMuted);
   const setHideMuted = useUi((s) => s.setHideMuted);
@@ -156,7 +128,7 @@ const TASK_LEVELS: ReadonlyArray<{ level: NotificationLevel; label: 'boards.noti
  */
 function TaskNotifyItems({ workspaceId }: { workspaceId: string }): ReactNode {
   const level = useRooms((s) => workspaceTaskLevel(s.wsNotify[workspaceId]));
-  const any = useBoards((s) => Object.values(s.boards).some((b) => b.workspaceId === workspaceId && !b.archivedAt));
+  const any = useBoards((s) => Object.values(s.boards).some((b) => b.workspaceId === workspaceId && boardVisible(b)));
   if (!any) return null;
   return (
     <>
@@ -170,7 +142,15 @@ function TaskNotifyItems({ workspaceId }: { workspaceId: string }): ReactNode {
                 <Check className="size-4" aria-hidden />
               </Dropdown.ItemIndicator>
             </span>
-            <span className="truncate">{t(o.label)}</span>
+            {o.level === NotificationLevel.ALL ? (
+              // ADR-0089: «все» follows the trigger switches in Settings → Уведомления → Задачи.
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{t(o.label)}</span>
+                <span className="truncate text-caption text-faint">{t('tn.levelAllHint')}</span>
+              </span>
+            ) : (
+              <span className="truncate">{t(o.label)}</span>
+            )}
           </Dropdown.RadioItem>
         ))}
       </Dropdown.RadioGroup>

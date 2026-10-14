@@ -4,6 +4,7 @@ import { BoardFeature, EstimateScale, type BoardStatus } from '@calaba/protocol'
 import { featureOn } from '../../lib/boards/features';
 import type { MatchCtx } from '../../lib/boards/filter';
 import { useBoards } from '../../stores/boards';
+import { useWorkspaces } from '../../stores/workspaces';
 import { useSession } from '../../stores/session';
 import { useToday } from '../calendar/MiniCalendar';
 import { useMobile } from '../../lib/mobile';
@@ -19,11 +20,16 @@ export function useMatchCtx(boardId: string): MatchCtx {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const statuses = useBoards(useShallow((s) => s.boards[boardId]?.statuses ?? NONE));
   const today = useToday();
+  // Who is a member: the members map changes on joins / leaves / profile edits only, not on presence.
+  const members = useWorkspaces((s) => {
+    const ws = useBoards.getState().boards[boardId]?.workspaceId;
+    return ws ? s.byId[ws]?.members : undefined;
+  });
   return useMemo(() => {
     const map: Record<string, Pick<BoardStatus, 'type'>> = {};
     for (const s of statuses) map[s.id] = { type: s.type };
-    return { me, statuses: map, today };
-  }, [me, statuses, today]);
+    return { me, statuses: map, today, ...(members ? { gone: (id: string) => !members[id] } : {}) };
+  }, [me, statuses, today, members]);
 }
 
 /**

@@ -1,12 +1,13 @@
 import { BoardFeature, TaskPriority } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { BadgeCheck, CalendarClock, Check, Diamond, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
+import { BadgeCheck, CalendarClock, CalendarPlus, Check, Diamond, Paperclip, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Modal, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { clampRequired, quorumChoices, toggleApprover } from '../../lib/boards/approvals';
 import { featureOn, scaleValues } from '../../lib/boards/features';
+import { isUploading, readyIds, roomLeft } from '../../lib/boards/pendingFiles';
 import { addAssignee, draftsOf, removeAssignee, type AssigneeDraft } from '../../lib/boards/assignees';
 import { MOD } from '../../components/ui';
 import { createTask, openTaskAnywhere } from '../../services/boards';
@@ -14,6 +15,7 @@ import { useBoards, workspaceBoards } from '../../stores/boards';
 import { menuBox, menuItem } from '../shell/menu';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useToasts } from '../../stores/toasts';
+import { PendingFileList, usePendingFiles } from './CreateTaskAttachments';
 import { ApproverMenu, AssigneeMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday } from './menus';
 import { hasBit, sortedStatuses, CREATE_TASKS } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue } from './visuals';
@@ -90,6 +92,7 @@ function Dialog({
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.NONE);
   const [assignees, setAssignees] = useState<AssigneeDraft[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
+  const [start, setStart] = useState('');
   const [due, setDue] = useState('');
   const [estimate, setEstimate] = useState(0);
   const [milestone, setMilestone] = useState('');
@@ -99,6 +102,8 @@ function Dialog({
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const files = usePendingFiles(boardId);
   const today = useToday();
   const st = board?.statuses.find((s) => s.id === status);
   const ms = board?.milestones.find((m) => m.id === milestone);
@@ -123,12 +128,18 @@ function Dialog({
     setStatus(sortedStatuses(next).find((s) => s.isDefault)?.id ?? sortedStatuses(next)[0]?.id ?? '');
     setLabels([]);
     setMilestone('');
+    files.clear();
     // Another estimate scale: a value outside it would be refused (422).
     if (!scaleValues(next?.estimateScale).includes(estimate)) setEstimate(0);
   };
 
+  const uploading = isUploading(files.items);
+  const attachOn = on(BoardFeature.ATTACHMENTS);
+  const addFiles = (list: File[]): void => {
+    if (attachOn) files.add(list);
+  };
   const submit = async (): Promise<void> => {
-    if (!title.trim() || busy) return;
+    if (!title.trim() || busy || uploading) return;
     setBusy(true);
     const made = await createTask(boardId, {
       title: title.trim(),
@@ -137,11 +148,13 @@ function Dialog({
       priority: on(BoardFeature.PRIORITY) ? priority : TaskPriority.NONE,
       assignees: draftsOf(assignees),
       labelIds: on(BoardFeature.LABELS) ? labels : [],
+      startOn: on(BoardFeature.START_DATE) ? start : '',
       dueOn: on(BoardFeature.DUE_DATE) ? due : '',
       estimate: on(BoardFeature.ESTIMATE) ? estimate : 0,
       milestoneId: on(BoardFeature.MILESTONES) ? milestone : '',
       approverIds: on(BoardFeature.APPROVALS) ? approvers : [],
       approvalRequired: on(BoardFeature.APPROVALS) ? clampRequired(required, approvers.length) : 0,
+      attachmentIds: on(BoardFeature.ATTACHMENTS) ? readyIds(files.items) : [],
       parentId: parentId ?? '',
       ...(fromMessage ? { fromMessageId: fromMessage.id } : {}),
     });
@@ -155,6 +168,7 @@ function Dialog({
     if (more) {
       setTitle('');
       setDescription('');
+      files.clear();
       titleRef.current?.focus();
     } else close();
   };
@@ -168,14 +182,15 @@ function Dialog({
       initialFocus={titleRef}
       footer={
         <>
-          <label className="mr-auto flex items-center gap-2 text-control text-muted">
+          <label className="mr-auto flex min-w-0 items-center gap-2 text-control text-muted">
             <Toggle label={t('boards.createMore')} checked={more} onChange={setMore} />
             {t('boards.createMore')}
           </label>
-          <Button variant="secondary" onClick={close}>
+          {/* Phone: the footer is one row; «×» closes, so «Отмена» gives its room to the toggle label. */}
+          <Button variant="secondary" onClick={close} className="mobile:hidden">
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => void submit()} busy={busy} disabled={!title.trim()} title={`${MOD}↩`} data-testid="create-task-submit">
+          <Button onClick={() => void submit()} busy={busy} disabled={!title.trim() || uploading} title={`${MOD}↩`} data-testid="create-task-submit">
             {t('boards.createTask')}
           </Button>
         </>
@@ -192,6 +207,14 @@ function Dialog({
             e.preventDefault();
             void submit();
           }
+        }}
+        onDragOver={(e) => {
+          if (attachOn && e.dataTransfer.types.includes('Files')) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (!attachOn || !e.dataTransfer.files.length) return;
+          e.preventDefault();
+          addFiles([...e.dataTransfer.files]);
         }}
         data-testid="create-task"
       >
@@ -210,10 +233,17 @@ function Dialog({
           maxLength={20000}
           rows={4}
           onChange={(e) => setDescription(e.target.value)}
+          onPaste={(e) => {
+            const pasted = [...e.clipboardData.files];
+            if (!attachOn || !pasted.length) return;
+            e.preventDefault();
+            addFiles(pasted);
+          }}
           placeholder={t('boards.descriptionPlaceholder')}
           aria-label={t('boards.description')}
           className="selectable min-h-24 w-full resize-y bg-transparent text-body text-fg outline-none placeholder:text-faint"
         />
+        <PendingFileList items={files.items} onRemove={files.remove} />
         <div className="flex flex-wrap gap-1.5 border-t border-line pt-3" data-testid="create-task-props">
           {boards.length > 1 ? (
             <Dropdown.Root modal={false}>
@@ -239,7 +269,7 @@ function Dialog({
           ) : null}
           <StatusMenu boardId={boardId} value={status} onPick={setStatus}>
             <button type="button" className={chip}>
-              <StatusIcon type={st?.type ?? 0} color={st?.color ?? 0} /> {st?.name ?? ''}
+              <StatusIcon type={st?.type ?? 0} color={st?.color ?? 0} icon={st?.icon} /> {st?.name ?? ''}
             </button>
           </StatusMenu>
           {on(BoardFeature.PRIORITY) ? (
@@ -292,9 +322,31 @@ function Dialog({
               </button>
             </LabelMenu>
           ) : null}
+          {on(BoardFeature.START_DATE) ? (
+            <DateMenu
+              value={start}
+              onPick={(d) => {
+                setStart(d);
+                // The server refuses a due date before the start (422): the later pick wins.
+                if (d && due && due < d) setDue('');
+              }}
+              title={t('boards.f.startOn')}
+            >
+              <button type="button" className={cx(chip, !start && 'text-muted')} data-testid="create-start">
+                <CalendarPlus className="size-3.5" aria-hidden /> {start ? formatDue(start, today) : t('boards.f.startOn')}
+              </button>
+            </DateMenu>
+          ) : null}
           {on(BoardFeature.DUE_DATE) ? (
-            <DateMenu value={due} onPick={setDue} title={t('boards.f.dueOn')}>
-              <button type="button" className={cx(chip, !due && 'text-muted')}>
+            <DateMenu
+              value={due}
+              onPick={(d) => {
+                setDue(d);
+                if (d && start && d < start) setStart('');
+              }}
+              title={t('boards.f.dueOn')}
+            >
+              <button type="button" className={cx(chip, !due && 'text-muted')} data-testid="create-due">
                 <CalendarClock className="size-3.5" aria-hidden /> {due ? formatDue(due, today) : t('boards.f.dueOn')}
               </button>
             </DateMenu>
@@ -309,6 +361,7 @@ function Dialog({
           {on(BoardFeature.APPROVALS) ? (
             <ApproverMenu
               workspaceId={board.workspaceId}
+              boardId={boardId}
               value={approvers}
               onToggle={(u) => {
                 const next = toggleApprover(approvers, u);
@@ -354,6 +407,23 @@ function Dialog({
                 </Dropdown.Content>
               </Dropdown.Portal>
             </Dropdown.Root>
+          ) : null}
+          {attachOn && roomLeft(files.items) > 0 ? (
+            <>
+              <button type="button" className={cx(chip, 'text-muted')} onClick={() => fileInput.current?.click()} data-testid="create-task-attach">
+                <Paperclip className="size-3.5" aria-hidden /> {t('boards.attach')}
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  addFiles([...(e.target.files ?? [])]);
+                  e.target.value = '';
+                }}
+              />
+            </>
           ) : null}
           {board.milestones.length && on(BoardFeature.MILESTONES) ? (
             <MilestoneMenu boardId={boardId} value={milestone} onPick={setMilestone}>

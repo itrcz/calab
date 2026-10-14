@@ -12,7 +12,7 @@ export const ruPeople = {
   'people.owner': 'Владелец',
   'people.you': 'вы',
   'people.empty': 'Здесь пока никого',
-  'people.openProfile': 'Профиль {name}',
+  'people.openProfile': 'Открыть профиль {name}',
 
   // profile popover
   'people.profile.role': 'Роль',

@@ -19,6 +19,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -56,7 +57,11 @@ type Service struct {
 	// IdentityAccess verifies the exact device principal and target at the DB source.
 	identityWake   chan struct{}
 	IdentityAccess func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error
-	identitySweep  identitySweepState
+	// IdentityAccessRoom is IdentityAccess for several devices of one room at once, one
+	// verdict per device in order (the sweep checks a room in a few statements instead of a
+	// few per device). nil: the sweep calls IdentityAccess per device.
+	IdentityAccessRoom func(ctx context.Context, ws, room uuid.UUID, people []IdentityKey) []error
+	identitySweep      identitySweepState
 	// noSFUMove is set once LiveKit answered MoveParticipant with "not implemented"
 	// (open-source LiveKit): moves then go the app-level way right away (ADR-0019).
 	noSFUMove atomic.Bool
@@ -113,6 +118,9 @@ type wsRoom struct {
 	WorkspaceID uuid.UUID // shadows the nullable Room.WorkspaceID
 	// Plan: effective limits of the workspace plan (ADR-0024); set by roomInfo only.
 	Plan plans.Limits
+	// Lapsed: the workspace is in the restricted mode (ADR-0086 amendment): Plan.RoomMembers is
+	// capped at 2 and the room is audio only (no streams, no cameras); set by roomInfo only.
+	Lapsed bool
 }
 
 func (s *Service) getRoom(ctx context.Context, roomID uuid.UUID) (wsRoom, error) {
@@ -138,23 +146,54 @@ func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (wsRoom, *v1.R
 		return room, nil, err
 	}
 	if s.Plans != nil {
-		if room.Plan, err = s.Plans.Effective(ctx, room.WorkspaceID); err != nil {
+		info, err := s.Plans.Info(ctx, room.WorkspaceID)
+		if err != nil {
 			return room, nil, err
 		}
+		room.Plan, room.Lapsed = info.Limits, info.Lapsed
 	}
 	return room, room.Plan.CapMedia(pbconv.EffectiveMedia(room.Room, pbconv.WorkspaceDefaults(ws))), nil
 }
 
+// lapsed reports the restricted mode of a workspace for the LiveKit grants: the bits lose STREAM
+// and VIDEO (perm.PlanInactive), so no screen share and no camera sources (ADR-0086 amendment).
+// A read error fails closed: the grant is the restricted one (microphone only) until the next
+// sync reads the plan — a short-lived loss of camera / screen beats keeping them in a workspace
+// that may be restricted. A user who is not restricted gets the full grant back on the next
+// permission sync (any role / membership change, rejoin).
+func (s *Service) lapsed(ctx context.Context, wid uuid.UUID) bool {
+	if s.Plans == nil {
+		return false
+	}
+	l, err := s.Plans.Lapsed(ctx, wid)
+	if err != nil {
+		slog.WarnContext(ctx, "read plan state for the voice grant, granting the microphone only", "workspace", wid, "err", err)
+		return true
+	}
+	return l
+}
+
 // admission is the occupancy check of a voice room: the room's user_limit (0 = none or the
-// caller is exempt) and the plan's room_members (0 = none), which applies to everyone.
-type admission struct{ room, plan int }
+// caller is exempt) and the plan's room_members (0 = none), which applies to everyone. lapsed:
+// the plan cap is the restricted mode's (refused with reason WORKSPACE_PLAN_INACTIVE).
+type admission struct {
+	room, plan int
+	lapsed     bool
+}
 
 func (a admission) active() bool { return a.room > 0 || a.plan > 0 }
 
-// admissionFor builds the check for a user joining room; exempt skips the room's user_limit
-// (MOVE_MEMBERS on join, ADMINISTRATOR on moves), never the plan limit.
+// admissionFor builds the check for a user joining room; exempt skips the room's user_limit.
+// Only the workspace owner is exempt (owner, 07.10: admins and MOVE_MEMBERS holders are
+// not), and never from the plan limit.
+// limitExempt: whether acc skips the room's user_limit — the workspace owner, except in a
+// private temporary room, where the owner counts as anyone (ADR-0078).
+func limitExempt(acc perm.RoomAccess) bool {
+	return acc.Role == perm.RoleOwner && !acc.PrivateTemp
+}
+
 func admissionFor(room wsRoom, exempt bool) admission {
-	a := admission{plan: int(room.Plan.RoomMembers)}
+	a := admission{plan: int(room.Plan.RoomMembers), lapsed: room.Lapsed}
 	if room.UserLimit > 0 && !exempt {
 		a.room = int(room.UserLimit)
 	}
@@ -217,10 +256,13 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if room.Type != "voice" {
 		return httpx.Validation("id", "not a voice room")
 	}
+	if room.Lapsed { // the restricted mode: audio only (ADR-0086 amendment)
+		acc.Bits = perm.PlanInactive(acc.Bits)
+	}
 	id := auth.MustFromContext(r.Context())
 	identity := voice.Identity(id.UserID, id.SessionID)
 	name := voice.RoomName(room.WorkspaceID, room.ID)
-	adm := admissionFor(room, acc.Bits.Has(perm.MoveMembers))
+	adm := admissionFor(room, limitExempt(acc))
 	if adm.active() { // early answer without LiveKit; repeated atomically with the write below
 		if err := s.admit(r.Context(), room.WorkspaceID, room.ID, id.UserID, adm); err != nil {
 			return err
@@ -394,6 +436,9 @@ func (s *Service) pushGrant(ctx context.Context, lkRoom, identity string, wid, u
 	if voice.IsDMRoomName(lkRoom) { // a call keeps its camera source (dm.go)
 		return s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(bits, slot, true))
 	}
+	if s.lapsed(ctx, wid) { // the restricted mode: microphone only (ADR-0086 amendment)
+		bits = perm.PlanInactive(bits)
+	}
 	for range 3 {
 		b := bits
 		if sm {
@@ -429,7 +474,35 @@ func (s *Service) publishVoice(ctx context.Context, wsID uuid.UUID, c voice.Chan
 		s.publishDMVoice(ctx, wsID, c) // a DM session: its scope id is the room id (dm.go)
 		return
 	}
-	if c.Changed() {
+	if !c.Changed() {
+		return
+	}
+	// The user's CURRENT state is read and published under the workspace voice lock. Each
+	// change used to publish its own snapshot after unlocking, so of two concurrent changes
+	// of one user (a webhook and a REST call, two API instances) the older snapshot could be
+	// published last and stick on every connected client: a person in the call missing from
+	// the room, or shown in the room they left, until their next change. Under the lock the
+	// last VOICE_STATE_UPDATE of a user always carries the latest state (a duplicate of an
+	// unchanged state is harmless: clients replace the user's entry). The caller must not
+	// hold the lock (it is not reentrant).
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second) // a client that went away must not make the others miss it
+	defer cancel()
+	err := s.voice.WithLock(lctx, wsID, func() error {
+		uid, err := uuid.Parse(c.After.GetUserId())
+		if err != nil {
+			return err
+		}
+		cur, err := s.voice.State(lctx, wsID, uid)
+		if err != nil {
+			return err
+		}
+		s.events.Workspace(lctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{
+			VoiceStateUpdate: &v1.VoiceStateUpdate{State: cur},
+		}})
+		return nil
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "publish voice state under the lock", "workspace", wsID, "user", c.After.GetUserId(), "err", err)
 		s.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{
 			VoiceStateUpdate: &v1.VoiceStateUpdate{State: c.After},
 		}})
@@ -788,6 +861,9 @@ func (s *Service) removeIdentities(ctx context.Context, room string, ids []strin
 var (
 	errRoomFull     = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full")
 	errRoomFullPlan = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full: the workspace plan limits users in a room")
+	// errRoomFullInactive: the restricted mode admits two in a room (ADR-0086 amendment).
+	errRoomFullInactive = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL,
+		"the room is full: the workspace plan is not active, voice rooms take two people until the owner pays or moves to Free")
 )
 
 // admit fails with ROOM_FULL when the room already has as many distinct users other than
@@ -810,6 +886,8 @@ func (s *Service) admit(ctx context.Context, wid, rid, self uuid.UUID, adm admis
 	}
 	n := len(users)
 	switch {
+	case adm.plan > 0 && n >= adm.plan && adm.lapsed:
+		return errRoomFullInactive.WithDetails(billing.ReasonWorkspacePlanInactive, uint64(n), uint64(adm.plan))
 	case adm.plan > 0 && n >= adm.plan:
 		return errRoomFullPlan.WithDetails(httpx.ReasonPlanLimit, uint64(n), uint64(adm.plan))
 	case adm.room > 0 && n >= adm.room:

@@ -24,6 +24,8 @@ import { isQuietRoom, useRooms } from '../../../stores/rooms';
 import { myUserId, useSession } from '../../../stores/session';
 import { toast } from '../../../stores/toasts';
 import { useUi } from '../../../stores/ui';
+import { useVoice } from '../../../stores/voice';
+import { memberName, useWorkspaces } from '../../../stores/workspaces';
 import { knockKey, type MyKnock } from '../admissionsModel';
 import { admissions, useAdmissions } from '../stores/admissions';
 
@@ -108,7 +110,14 @@ export function onAdmissionEvent(e: DispatchEvent['event']): void {
     if (!a) return;
     const before = useAdmissions.getState().toasts;
     admissions({ type: 'request', admission: a });
-    if (useAdmissions.getState().toasts !== before) announceKnock(a);
+    const key = knockKey(a.roomId, a.user?.id ?? '');
+    const added = useAdmissions.getState().toasts !== before;
+    if (forMe(a)) {
+      if (added) announceKnock(a);
+    } else if (useAdmissions.getState().toasts.includes(key)) {
+      // Not mine to decide: the row only (no toast, sound or notification), never escalated.
+      admissions({ type: 'dismissToast', key });
+    }
     return;
   }
   if (e.case !== 'roomAdmissionDecided' || !e.value.admission) return;
@@ -202,6 +211,28 @@ useSession.subscribe((s, prev) => {
   }
 });
 
+/**
+ * Whose knock this is to decide (ADR-0040 §3, amendment 2026-10-06; the server's knockAudience,
+ * gateway/knock.go, sends it to nobody else): the author of the link the guest came by, or me in
+ * the voice of that room. A room merely open, or INVITE_GUESTS alone, is not enough — and
+ * nothing escalates to other deciders later: a knock the server did not address to me is kept
+ * as a row (the room counter, the waiting group) without a toast, sound or notification.
+ */
+export function forMe(a: Pick<RoomAdmission, 'roomId' | 'inviteCreatedBy'>): boolean {
+  if (a.inviteCreatedBy && a.inviteCreatedBy === myUserId()) return true;
+  return useVoice.getState().roomId === a.roomId;
+}
+
+/** The knock title: «Гость «{name}» просит войти в «{room}»». */
+export const knockTitle = (name: string, room: string): string => t('adm.knockTitle', { name, room });
+
+/** «По ссылке от {author}»: the author when he is a member of the workspace, else ''. */
+export function knockAuthor(a: RoomAdmission): string {
+  const id = a.inviteCreatedBy;
+  if (!id || !a.workspaceId || !useWorkspaces.getState().byId[a.workspaceId]?.members[id]) return '';
+  return t('adm.knockByLink', { author: memberName(a.workspaceId, id) });
+}
+
 /** A live knock: the notification sound (not in «Не беспокоить» or a muted room) and, in the background, a system notification. */
 function announceKnock(a: RoomAdmission): void {
   const p = prefs();
@@ -211,7 +242,7 @@ function announceKnock(a: RoomAdmission): void {
   if (quiet || document.hasFocus() || !(p.notifyMentions || p.notifyAll)) return;
   const room = useRooms.getState().byId[a.roomId];
   try {
-    const n = new Notification(t('adm.knockTitle', { name: a.user?.displayName ?? '', room: room?.name ?? '' }), { body: t('adm.knockBody'), silent: true, tag: `knock:${a.roomId}` });
+    const n = new Notification(knockTitle(a.user?.displayName ?? '', room?.name ?? ''), { body: t('adm.knockBody'), silent: true, tag: `knock:${a.roomId}` });
     n.onclick = () => {
       window.focus();
       if (room) useUi.getState().openRoom(room.workspaceId, room.id);

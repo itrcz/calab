@@ -1,0 +1,17 @@
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {"id": 1, "name": "Administrator", "username": "root"},
+  "project": {"id": 1, "name": "Gitlab Test", "path_with_namespace": "gitlabhq/gitlab-test", "web_url": "https://gitlab.example.com/gitlabhq/gitlab-test"},
+  "object_attributes": {
+    "id": 99,
+    "iid": 7,
+    "title": "Search page",
+    "description": "Implements FNG-5 and FNG-6",
+    "url": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/7",
+    "state": "merged",
+    "action": "merge",
+    "source_branch": "FNG-5-search",
+    "target_branch": "main"
+  }
+}

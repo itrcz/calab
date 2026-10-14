@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UpdateStatus } from '../shared/ipc';
+import { feedKey, type FeedSource } from '../shared/updateFeed';
 import {
   FIRST_CHECK_MS,
   INSTALL_FRESH_MS,
@@ -33,8 +34,8 @@ class FakeUpdater extends EventEmitter implements UpdaterLike {
   installs: Array<[boolean | undefined, boolean | undefined]> = [];
   next: 'none' | { version: string } | Error | 'inactive' = 'none';
 
-  setFeedURL(o: { provider: 'generic'; url: string }): void {
-    this.feed = o.url;
+  setFeedURL(o: FeedSource): void {
+    this.feed = feedKey(o);
   }
   checkForUpdates(): Promise<unknown> {
     this.checks++;
@@ -86,7 +87,7 @@ function setup(opts: Omit<Partial<UpdateFlowEnv>, 'autoCheck'> & { auto?: boolea
     autoCheck: () => autoCheck,
     // 0.5 → no jitter: the periodic check runs exactly every RECHECK_MS.
     random: () => 0.5,
-    buildFeed: FEED,
+    pinnedFeed: () => ({ provider: 'generic', url: FEED }),
     notifyFeed: () => null,
     downloadPage: () => PAGE,
     publish: (s) => statuses.push(s),
@@ -143,7 +144,7 @@ describe('update flow', () => {
   });
 
   it('no feed (dev build / no server) → disabled, updater untouched', async () => {
-    const t = setup({ buildFeed: null, notifyFeed: () => null });
+    const t = setup({ pinnedFeed: () => null, notifyFeed: () => null });
     expect(await t.flow.check()).toEqual({ state: 'disabled' });
     expect(t.updater.checks).toBe(0);
   });
@@ -189,7 +190,7 @@ describe('update flow', () => {
     ] as const;
     for (const [name, env] of platforms) {
       it(`${name}: a server-derived feed never auto-downloads, only notifies with the download page`, async () => {
-        const t = setup({ ...env, buildFeed: null, notifyFeed: () => SERVER_FEED });
+        const t = setup({ ...env, pinnedFeed: () => null, notifyFeed: () => SERVER_FEED });
         t.updater.next = { version: '6.6.6' };
         await t.flow.check();
         expect(t.updater.feed).toBe(SERVER_FEED);
@@ -674,10 +675,10 @@ describe('update flow', () => {
         expect(t.sq.staged).toEqual(isMac ? ['0.1.1'] : []);
       });
 
-      it(`${name}: B's download fails → nothing pending (A was deleted with it); the next check fetches B`, async () => {
+      it(`${name}: B's download fails → nothing pending (A was deleted with it), B offered; the next check fetches B`, async () => {
         const t = await replaced(env);
         t.updater.emit('error', new Error('ECONNRESET'));
-        expect(t.flow.status().state).toBe('error');
+        expect(t.flow.status()).toMatchObject({ state: 'available', version: '0.1.2', installable: true });
         expect(t.flow.install()).toBe(false);
         await t.flow.check();
         expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.2', percent: 0 });
@@ -852,13 +853,82 @@ describe('update flow', () => {
     expect(await t.flow.check()).toEqual({ state: 'none' });
   });
 
-  it('download error → status error', async () => {
+  it('download error → the version is offered (bar + one notification), not a silent error; «Скачать и установить» retries', async () => {
     const t = setup();
     t.updater.next = { version: '0.1.1' };
     await t.flow.check();
     t.updater.emit('download-progress', { percent: 40 });
     t.updater.emit('error', new Error('sha512 mismatch'));
-    expect(t.flow.status().state).toBe('error');
+    expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.1', downloadPage: PAGE, installable: true });
+    expect(t.notified).toEqual([['0.1.1', PAGE]]);
+    expect(t.flow.install()).toBe(false);
+    expect(t.flow.download()).toBe(true);
+    expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.1', percent: 0 });
+    t.updater.emit('error', new Error('again'));
+    // Still offered, notified once per version.
+    expect(t.flow.status().state).toBe('available');
+    expect(t.notified).toEqual([['0.1.1', PAGE]]);
+  });
+
+  it('download error without a download page → offered with the page of the checked feed', async () => {
+    const t = setup({ downloadPage: () => null });
+    t.updater.next = { version: '0.1.1' };
+    await t.flow.check();
+    t.updater.emit('error', new Error('403'));
+    expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.1', downloadPage: FEED, installable: true });
+  });
+
+  it('check error (nothing known about a version) stays an error', async () => {
+    const t = setup();
+    t.updater.next = new Error('403 Forbidden');
+    expect((await t.flow.check()).state).toBe('error');
+    expect(t.notified).toEqual([]);
+  });
+
+  describe('update channel (owner 12.10: GitHub by default, or the S3 feed)', () => {
+    const GH: FeedSource = { provider: 'github', owner: 'itrcz', repo: 'calab' };
+    const S3: FeedSource = { provider: 'generic', url: FEED };
+
+    it('github source: handed to the updater as is, auto-installs like the S3 feed', async () => {
+      const t = setup({ platform: 'darwin', signed: true, pinnedFeed: () => GH });
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.updater.feed).toBe('github:itrcz/calab');
+      expect(t.updater.autoDownload).toBe(true);
+      expect(t.updater.downloads).toBe(1);
+    });
+
+    it('github source + unsigned macOS → notify with the download page', async () => {
+      const t = setup({ platform: 'darwin', pinnedFeed: () => GH });
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.updater.downloads).toBe(0);
+      expect(t.notified).toEqual([['0.1.1', PAGE]]);
+    });
+
+    it('the channel is read per check; a switch mid-download keeps the download trusted', async () => {
+      let src: FeedSource = GH;
+      const t = setup({ pinnedFeed: () => src });
+      await t.flow.check();
+      expect(t.updater.feed).toBe('github:itrcz/calab');
+      src = S3;
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.updater.feed).toBe(FEED);
+      expect(t.flow.status().state).toBe('downloading');
+      src = GH;
+      // A check while downloading is skipped (busy): the running download and its install-on-quit stay.
+      await t.flow.check();
+      expect(t.updater.feed).toBe(FEED);
+      t.flow.applySettings();
+      expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      t.updater.finishDownload('0.1.1');
+      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
+      // The re-check of the pending download goes to the newly chosen channel.
+      await t.flow.check();
+      expect(t.updater.feed).toBe('github:itrcz/calab');
+      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
+    });
   });
 
   describe('«Скачать и установить» (docs/09 #93)', () => {
@@ -888,7 +958,7 @@ describe('update flow', () => {
     const notInstallable = [
       ['unsigned macOS', { platform: 'darwin' }],
       ['linux deb', { platform: 'linux' }],
-      ['server-derived feed', { buildFeed: null, notifyFeed: () => SERVER_FEED }],
+      ['server-derived feed', { pinnedFeed: () => null, notifyFeed: () => SERVER_FEED }],
     ] as const;
     for (const [name, env] of notInstallable) {
       it(`${name}: not installable, download() refuses (only the download page)`, async () => {
@@ -904,18 +974,21 @@ describe('update flow', () => {
       });
     }
 
-    it('nothing available / error → download() refuses; a download error ends in error, retry = check', async () => {
+    it('nothing available / error → download() refuses; a download error offers it again, download() retries', async () => {
       const t = setup({ auto: false });
       await t.flow.check();
+      expect(t.flow.download()).toBe(false);
+      t.updater.next = new Error('offline');
+      await t.flow.check();
+      expect(t.flow.status().state).toBe('error');
       expect(t.flow.download()).toBe(false);
       t.updater.next = { version: '0.1.1' };
       await t.flow.check();
       expect(t.flow.download()).toBe(true);
       t.updater.emit('error', new Error('sha512 mismatch'));
-      expect(t.flow.status().state).toBe('error');
-      expect(t.flow.download()).toBe(false);
-      await t.flow.check();
-      expect(t.flow.status()).toMatchObject({ state: 'available', installable: true });
+      expect(t.flow.status()).toMatchObject({ state: 'available', version: '0.1.1', installable: true });
+      expect(t.flow.download()).toBe(true);
+      expect(t.updater.downloads).toBe(2);
     });
   });
 

@@ -24,6 +24,12 @@ export function windowIconPath(): string | undefined {
   return app.isPackaged ? join(iconsDir(), 'window.png') : join(iconsDir(), 'linux', '512x512.png');
 }
 
+/** The colour app icon at `size` px (a drag image fallback, main/dragOut.ts); every platform ships it. */
+export function appIconImage(size: number): NativeImage {
+  const path = app.isPackaged ? join(iconsDir(), 'window.png') : join(iconsDir(), 'linux', '512x512.png');
+  return nativeImage.createFromPath(path).resize({ width: size, height: size });
+}
+
 /** Dev only (unpackaged Electron shows its own Dock icon): use the app artwork. */
 export function applyDevDockIcon(): void {
   if (app.isPackaged || process.platform !== 'darwin') return;

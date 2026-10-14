@@ -9,6 +9,9 @@ RETURNING *;
 -- name: GetUser :one
 SELECT * FROM users WHERE id = $1;
 
+-- name: ListUsersByIDs :many
+SELECT * FROM users WHERE id = ANY(sqlc.arg('ids')::uuid[]);
+
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
 
@@ -23,9 +26,27 @@ UPDATE users SET
     birthday_day    = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_day')::smallint ELSE birthday_day END,
     birthday_month  = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_month')::smallint ELSE birthday_month END,
     birthday_year   = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_year')::smallint ELSE birthday_year END,
-    birthday_hidden = coalesce(sqlc.narg('birthday_hidden')::boolean, birthday_hidden)
+    birthday_hidden = coalesce(sqlc.narg('birthday_hidden')::boolean, birthday_hidden),
+    hide_message_text_in_notifications = coalesce(sqlc.narg('hide_message_text_in_notifications')::boolean, hide_message_text_in_notifications),
+    phone          = CASE WHEN sqlc.arg('set_phone')::boolean THEN sqlc.narg('phone')::text ELSE phone END,
+    username       = CASE WHEN sqlc.arg('set_username')::boolean THEN sqlc.narg('username')::citext ELSE username END
 WHERE id = sqlc.arg('id')
 RETURNING *;
+
+-- name: UsernameOwner :one
+-- ADR-0077: who holds a nickname (people and bots share the namespace); no rows = free.
+SELECT id FROM users WHERE username = $1;
+
+-- name: ResolveUsernames :many
+-- ADR-0077: literal @nick mentions → live accounts (the caller checks visibility).
+SELECT id, username::text AS username FROM users
+WHERE username = ANY(sqlc.arg('names')::citext[]) AND disabled_at IS NULL;
+
+-- name: ResolveMemberUsernames :many
+-- ADR-0077: literal @nick mentions → live members of a workspace.
+SELECT u.id, u.username::text AS username FROM users u
+JOIN workspace_members m ON m.user_id = u.id AND m.workspace_id = sqlc.arg('workspace_id')
+WHERE u.username = ANY(sqlc.arg('names')::citext[]) AND u.disabled_at IS NULL;
 
 -- name: LockRegistration :exec
 -- Serializes the first-user bootstrap check (see auth.Register).
@@ -123,3 +144,28 @@ SELECT EXISTS (
           )
       )
 )::boolean;
+
+-- name: SetUserTaskNotifyOff :one
+-- The task notification kinds switched off (ADR-0089), replaced.
+UPDATE users SET task_notify_off = $2 WHERE id = $1
+RETURNING *;
+
+-- name: SetUserTaskNotifyBots :one
+-- The bots that get the user's task notices (ADR-0090), replaced.
+UPDATE users SET task_notify_bots = $2 WHERE id = $1
+RETURNING *;
+
+-- name: TaskNotifyBotsAvailable :many
+-- Of bot_ids, the bots the user may relay task notices to (ADR-0090 §1): an enabled bot with a
+-- valid token (the gateway; a webhook needs one too) that shares a workspace with the user (where
+-- the user is not a guest) and is not blocked by them.
+SELECT b.user_id FROM bots b
+JOIN users bu ON bu.id = b.user_id
+WHERE b.user_id = ANY(sqlc.arg('bot_ids')::uuid[]) AND bu.is_bot AND bu.disabled_at IS NULL
+  AND b.token_hash IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM bot_blocks k WHERE k.user_id = sqlc.arg('user_id') AND k.bot_user_id = b.user_id)
+  AND EXISTS (
+    SELECT 1 FROM workspace_members mb
+    JOIN workspace_members mu ON mu.workspace_id = mb.workspace_id AND mu.user_id = sqlc.arg('user_id') AND mu.role <> 'guest'
+    WHERE mb.user_id = b.user_id
+  );

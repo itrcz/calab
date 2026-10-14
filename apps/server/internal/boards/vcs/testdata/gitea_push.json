@@ -1,0 +1,12 @@
+{
+  "ref": "refs/heads/main",
+  "before": "28e1879d029cb852e4844d9c718537df08844e03",
+  "after": "bffeb74224043ba2feb48d137756c8a9331c449a",
+  "compare_url": "https://gitea.example.com/team/site/compare/28e1879d029cb852e4844d9c718537df08844e03...bffeb74224043ba2feb48d137756c8a9331c449a",
+  "commits": [
+    {"id": "bffeb74224043ba2feb48d137756c8a9331c449a", "message": "FNG-21 done\n", "url": "https://gitea.example.com/team/site/commit/bffeb74224043ba2feb48d137756c8a9331c449a", "author": {"name": "Alice", "email": "alice@example.com", "username": "alice"}}
+  ],
+  "repository": {"id": 2, "full_name": "team/site", "html_url": "https://gitea.example.com/team/site"},
+  "pusher": {"id": 1, "login": "alice", "username": "alice"},
+  "sender": {"login": "alice"}
+}

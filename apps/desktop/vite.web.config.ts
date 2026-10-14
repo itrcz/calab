@@ -102,7 +102,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '');
   const target = env['CALABA_WEB_PROXY'] ?? process.env['CALABA_WEB_PROXY'] ?? 'http://127.0.0.1:3000';
   const proxy = {
-    '/api': { target, changeOrigin: false },
+    // ws: the wiki sync socket lives under /api (GET /api/wiki/pages/{id}/sync).
+    '/api': { target, ws: true, changeOrigin: false },
     '/gateway': { target, ws: true, changeOrigin: false },
   };
   return {

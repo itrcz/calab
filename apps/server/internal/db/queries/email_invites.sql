@@ -38,5 +38,12 @@ WHERE email = $1 AND accepted_at IS NULL AND expires_at > now()
 ORDER BY created_at
 FOR UPDATE;
 
+-- name: HasPendingEmailInvite :one
+-- Whether a live invitation waits for an address (ADR-0065: its join needs the confirmation).
+SELECT EXISTS (
+  SELECT 1 FROM email_invites
+  WHERE email = $1 AND accepted_at IS NULL AND expires_at > now()
+)::bool;
+
 -- name: UseInvite :exec
 UPDATE workspace_invites SET uses = uses + 1 WHERE id = $1;

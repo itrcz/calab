@@ -7,11 +7,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
-	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/rooms"
+	"github.com/calaba/calaba/server/internal/searchq"
 )
 
 // Search limits.
@@ -46,27 +47,53 @@ func searchParams(r *http.Request) (q string, before *uuid.UUID, limit int32, er
 	return q, before, limit, nil
 }
 
-// search finds messages in roomIDs; since (a cleared DM) = only messages after it.
+// search finds messages in roomIDs, newest first; since (a cleared DM) = only messages after
+// it. The plan is searchq.MessageIDs (GIN first, the primary key for frequent words) in a
+// read-only transaction; a query without a word (only punctuation) finds nothing.
 func (h *Handlers) search(w http.ResponseWriter, r *http.Request, roomIDs []uuid.UUID, author, since *uuid.UUID) error {
 	q, before, limit, err := searchParams(r)
 	if err != nil {
 		return err
 	}
 	out := &v1.ListMessagesResponse{Messages: []*v1.Message{}}
-	if len(roomIDs) > 0 {
-		ms, err := h.db.Q.SearchMessages(r.Context(), sqlc.SearchMessagesParams{
-			RoomIds: roomIDs, Q: q, Before: before, AuthorID: author, Since: since, Lim: limit + 1,
-		})
-		if err != nil {
-			return err
+	pq, perr := searchq.Parse(q)
+	if len(roomIDs) == 0 || perr != nil {
+		httpx.Write(w, http.StatusOK, out)
+		return nil
+	}
+	args := []any{roomIDs, pq.TS}
+	where := "m.room_id = ANY($1::uuid[]) AND m.deleted_at IS NULL AND " + searchq.MessageMatch("$2")
+	for _, c := range []struct {
+		v   *uuid.UUID
+		sql string
+	}{{before, "m.id < "}, {author, "m.author_id = "}, {since, "m.id > "}} {
+		if c.v != nil {
+			args = append(args, *c.v)
+			where += " AND " + c.sql + "$" + strconv.Itoa(len(args)) + "::uuid"
 		}
-		out.HasMore = len(ms) > int(limit)
-		if out.HasMore {
-			ms = ms[:limit]
-		}
-		if out.Messages, err = h.withDetails(r, ms); err != nil {
-			return err
-		}
+	}
+	var ids []uuid.UUID
+	err = h.db.ReadTx(r.Context(), func(tx pgx.Tx) error {
+		var err error
+		ids, _, err = searchq.MessageIDs(r.Context(), tx, where, args, int(limit)+1)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if out.HasMore = len(ids) > int(limit); out.HasMore {
+		ids = ids[:limit]
+	}
+	if len(ids) == 0 {
+		httpx.Write(w, http.StatusOK, out)
+		return nil
+	}
+	ms, err := h.db.Q.ListMessagesByIDs(r.Context(), ids)
+	if err != nil {
+		return err
+	}
+	if out.Messages, err = h.withDetails(r, ms); err != nil {
+		return err
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil

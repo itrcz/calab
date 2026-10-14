@@ -17,6 +17,9 @@ const rnnoiseDist = dirname(require.resolve('@timephy/rnnoise-wasm'));
 // Third-party notices: packages that end up in any bundle (scripts/third-party-notices.mjs).
 const BUNDLED = resolve(__dirname, 'build/.gen/bundled-desktop.json');
 
+/** Imported by the mail engine only; bundled with their whole dependency tree (devDependencies). */
+const MAIL_ENGINE_DEPS = ['imapflow', 'nodemailer', 'mailparser'] as const;
+
 /**
  * The renderer owns live media objects (Room, AudioContext, tracks) in module
  * singletons. Partial HMR would duplicate them (UI bound to one instance, media
@@ -37,7 +40,16 @@ export default defineConfig({
   main: {
     plugins: [bundledPackages(BUNDLED)],
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } },
+      // The mail engine's libraries are bundled into out/main/mailEngine.js (only the engine
+      // imports them), never resolved from the packaged node_modules: 3.1.0 shipped with
+      // electron-builder's node_modules collection placing a wrong `entities` major under
+      // htmlparser2 (mailparser → html-to-text → htmlparser2), and the engine died on load.
+      // scripts/check-mail-engine.mjs loads the built engine without node_modules (ADR-0088 §2).
+      externalizeDeps: { exclude: [...MAIL_ENGINE_DEPS] },
+      rollupOptions: {
+        // mailEngine: the mail engine utilityProcess (ADR-0088 §2), forked by src/main/mail/index.ts.
+        input: { index: resolve(__dirname, 'src/main/index.ts'), mailEngine: resolve(__dirname, 'src/main/mail/engine.ts') },
+      },
     },
   },
   preload: {
@@ -78,6 +90,8 @@ export default defineConfig({
     optimizeDeps: {
       include: ['@rnnoise-dist/polyfills.js', '@rnnoise-dist/generated/rnnoise-sync.js', 'livekit-client'],
     },
+    // CALABA_MAIL_MOCK=1 pnpm dev:desktop: the mail section on the in-memory mock (ADR-0088 §7).
+    ...(process.env['CALABA_MAIL_MOCK'] === '1' ? { define: { 'import.meta.env.VITE_MAIL_MOCK': JSON.stringify('1') } } : {}),
     worker: { format: 'es', plugins: () => [bundledPackages(BUNDLED)] },
     plugins: [react(), tailwindcss(), fullReloadOnly(), bundledPackages(BUNDLED)],
   },

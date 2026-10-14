@@ -3,6 +3,7 @@ package plans
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -257,6 +259,9 @@ func (a *Admin) validatePlan(req *v1.AdminSetPlanRequest, now time.Time) (plan s
 		if req.Limits != nil {
 			return "", nil, nil, httpx.Validation("limits", "limits are only set for PLAN_CUSTOM")
 		}
+		if CleanText(req.GetDisplayName()) != "" || CleanText(req.GetDescription()) != "" {
+			return "", nil, nil, httpx.Validation("displayName", "a name and description are only set for PLAN_CUSTOM")
+		}
 		l = a.plans.PlanLimits(req.GetPlan())
 	}
 	if req.ValidUntil != nil {
@@ -295,9 +300,22 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 		until = &t
 	}
 	note := strings.TrimSpace(req.GetNote())
+	name, description, err := CustomText(req.GetDisplayName(), req.GetDescription())
+	if err != nil {
+		return err
+	}
 	actor := auth.MustFromContext(r.Context()).UserID
+	target := a.plans.PlanLimits(req.GetPlan())
+	if req.GetPlan() == v1.Plan_PLAN_CUSTOM {
+		target = FromProto(req.GetLimits())
+	}
 	var ws sqlc.Workspace
+	var overridden []*v1.PlanLimitViolation
 	err = a.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		// ADR-0086: the usage locks first (admission takes them before the workspace row).
+		if err := LockUsage(r.Context(), q, id); err != nil {
+			return err
+		}
 		var err error
 		if ws, err = q.LockOAuthWorkspace(r.Context(), id); err != nil {
 			if db.IsNotFound(err) {
@@ -305,34 +323,49 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 			}
 			return err
 		}
-		if _, err := q.UpsertWorkspacePlan(r.Context(), sqlc.UpsertWorkspacePlanParams{
-			WorkspaceID: id, Plan: plan, Limits: stored, ValidUntil: until, Note: note, UpdatedBy: &actor,
-		}); err != nil {
+		// A plan the workspace already exceeds is refused unless the superadmin overrides it;
+		// the override is never silent: the plan log and the server log name what is exceeded.
+		u, err := ReadUsage(r.Context(), q, id)
+		if err != nil {
 			return err
 		}
-		for _, feature := range []identitypolicy.Feature{identitypolicy.SSO, identitypolicy.DirectorySync, identitypolicy.OAuthProvider} {
-			current, err := q.GetIdentityGrant(r.Context(), sqlc.GetIdentityGrantParams{WorkspaceID: id, Feature: string(feature)})
-			if err != nil && !db.IsNotFound(err) {
-				return err
-			}
-			if err == nil && current.Source == "onprem_enterprise" {
-				continue
-			} // plan edits cannot replace an operator grant
-			if _, err := q.UpsertIdentityGrant(r.Context(), sqlc.UpsertIdentityGrantParams{WorkspaceID: id, Feature: string(feature), Enabled: plan == "enterprise", Source: "cloud_business", ValidUntil: until, UpdatedBy: &actor}); err != nil {
-				return err
-			}
+		overridden = u.Violations(target, plan == "enterprise")
+		logNote := note
+		if len(overridden) > 0 {
+			logNote = strings.TrimSpace(note + " [over limits: " + violationsText(overridden) + "]")
+		}
+		if _, err := q.UpsertWorkspacePlan(r.Context(), sqlc.UpsertWorkspacePlanParams{
+			WorkspaceID: id, Plan: plan, Limits: stored, ValidUntil: until, Note: note, UpdatedBy: &actor,
+			DisplayName: name, Description: description,
+		}); db.IsNotFound(err) {
+			// The plan of a billing workspace follows its paid days (ADR-0080 §3): the owner
+			// changes it through billing, never a direct edit.
+			return billing.ErrPlanManagedByBilling
+		} else if err != nil {
+			return err
+		}
+		if len(overridden) > 0 && !req.GetOverrideLimits() {
+			return ViolationsError(plan, overridden) // after the upsert: BILLING_PLAN_MANAGED wins
+		}
+		if _, err := setBusinessGrants(r.Context(), q, id, plan == "enterprise", until, &actor, true); err != nil {
+			return err
 		}
 		if err := auth.InvalidateIdentity(r.Context(), q, id, nil, &actor, "plan_changed"); err != nil {
 			return err
 		}
 		return q.InsertPlanLog(r.Context(), sqlc.InsertPlanLogParams{
-			WorkspaceID: id, ActorID: &actor, Plan: plan, Limits: logged, ValidUntil: until, Note: note,
+			WorkspaceID: id, ActorID: &actor, Plan: plan, Limits: logged, ValidUntil: until, Note: logNote,
+			DisplayName: name, Description: description,
 		})
 	})
 	if err != nil {
 		return err
 	}
 	a.plans.Invalidate(r.Context(), id)
+	if len(overridden) > 0 {
+		slog.WarnContext(r.Context(), "workspace plan set over its limits", "workspace", id, "by", actor, "plan", plan,
+			"violations", violationsText(overridden))
+	}
 	slog.InfoContext(r.Context(), "workspace plan changed", "workspace", id, "by", actor, "plan", plan,
 		"limits", string(logged), "valid_until", until, "note", note)
 	pw := pbconv.Workspace(ws)
@@ -372,6 +405,7 @@ func (a *Admin) log(w http.ResponseWriter, r *http.Request) error {
 		e := &v1.PlanLogEntry{
 			Id: row.ID.String(), WorkspaceId: row.WorkspaceID.String(), Plan: PlanFromDB(row.Plan),
 			Limits: l.Proto(), Note: row.Note, CreatedAt: timestamppb.New(row.CreatedAt),
+			DisplayName: row.DisplayName, Description: row.Description,
 		}
 		if row.ActorID != nil {
 			e.ActorId = row.ActorID.String()
@@ -456,4 +490,17 @@ func (a *Admin) setSuspension(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.Write(w, http.StatusOK, &v1.AdminSetSuspensionResponse{Workspace: aw})
 	return nil
+}
+
+// ViolationsText is the plan-log form of violations: «members 60>50, sso 1>0».
+func ViolationsText(v []*v1.PlanLimitViolation) string { return violationsText(v) }
+
+// violationsText is ViolationsText.
+func violationsText(v []*v1.PlanLimitViolation) string {
+	parts := make([]string, 0, len(v))
+	for _, x := range v {
+		name := strings.ToLower(strings.TrimPrefix(x.GetKind().String(), "PLAN_LIMIT_KIND_"))
+		parts = append(parts, fmt.Sprintf("%s %d>%d", name, x.GetCurrent(), x.GetLimit()))
+	}
+	return strings.Join(parts, ", ")
 }

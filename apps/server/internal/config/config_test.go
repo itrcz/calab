@@ -78,3 +78,28 @@ func TestTokenTTLs(t *testing.T) {
 		}
 	}
 }
+
+// EMAIL_VERIFICATION (ADR-0065): required by default, optional on request, anything else
+// is a startup error.
+func TestEmailVerificationMode(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x@localhost/x")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.EmailVerification != EmailVerificationRequired {
+		t.Fatalf("default: %q", c.EmailVerification)
+	}
+	t.Setenv("EMAIL_VERIFICATION", "optional")
+	if c, err = Load(); err != nil || c.EmailVerification != EmailVerificationOptional {
+		t.Fatalf("optional: %q %v", c.EmailVerification, err)
+	}
+	for _, bad := range []string{"off", "Optional", "none"} {
+		t.Setenv("EMAIL_VERIFICATION", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "EMAIL_VERIFICATION") {
+			t.Fatalf("%q accepted: %v", bad, err)
+		}
+	}
+}

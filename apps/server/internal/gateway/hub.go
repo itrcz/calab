@@ -6,6 +6,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -41,6 +43,7 @@ type Config struct {
 	AllowedOrigins     []string       // web client origins (PUBLIC_APP_URL[_ALT]), see OriginAllowed
 	Plans              *plans.Service // Workspace.plan in snapshots (ADR-0024); nil = unset
 	PlanContact        string         // Ready.plan_contact
+	BillingSelfServe   bool           // Ready.billing_self_serve (BILLING_ENABLED && BILLING_SELF_SERVE)
 }
 
 // Hub owns this instance's gateway sessions.
@@ -237,11 +240,13 @@ func (h *Hub) ofUser(uid uuid.UUID) []*Session {
 
 // ---- workspace state ----
 
-// ensureState loads the workspace state synchronously (IDENTIFY / RESUME paths).
-func (h *Hub) ensureState(ctx context.Context, wid uuid.UUID) {
+// ensureState loads the workspace state synchronously (IDENTIFY / RESUME paths). false: the
+// load failed and the workspace's sessions here must resync (stateFailed).
+func (h *Hub) ensureState(ctx context.Context, wid uuid.UUID) bool {
 	if st, created := h.placeholder(wid); created {
-		h.loadInto(ctx, st, wid)
+		return h.loadInto(ctx, st, wid)
 	}
+	return true
 }
 
 func (h *Hub) placeholder(wid uuid.UUID) (*wsState, bool) {
@@ -255,7 +260,7 @@ func (h *Hub) placeholder(wid uuid.UUID) (*wsState, bool) {
 	return st, true
 }
 
-func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
+func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) bool {
 	// Who is in which call, before Postgres: VOICE_STATE_UPDATEs from now on are in the backlog.
 	var inVoice map[uuid.UUID]uuid.UUID
 	if h.voice.C != nil {
@@ -266,12 +271,13 @@ func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 		}
 	}
 	loaded, err := loadState(ctx, h.db.Q, wid)
-	st.mu.Lock()
-	defer st.mu.Unlock()
 	if err != nil {
 		slog.Error("gateway: load workspace state", "workspace", wid, "err", err)
-		loaded = &wsState{rooms: map[uuid.UUID]*v1.Room{}}
+		h.stateFailed(st, wid)
+		return false
 	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
 	st.ws, st.rooms, st.targets = loaded.ws, loaded.rooms, loaded.targets
 	st.roleDefs, st.roleIDs, st.members = loaded.roleDefs, loaded.roleIDs, loaded.members
 	st.boardState = loaded.boardState
@@ -282,6 +288,27 @@ func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 		h.routeLocked(st, wid, p.id, p.enc.ev)
 	}
 	st.loading = false
+	return true
+}
+
+// stateFailed handles a workspace state that could not be loaded (Postgres stall). It used
+// to be kept EMPTY — no rooms, no members — so every VOICE_STATE_UPDATE of the workspace was
+// filtered to "not in voice" and messages went nowhere for the sessions on this instance,
+// for as long as any of them stayed connected: their room lists lost people who were in the
+// call. Now the state is dropped (the next IDENTIFY loads it again) and the workspace's
+// sessions here resync.
+func (h *Hub) stateFailed(st *wsState, wid uuid.UUID) {
+	h.mu.Lock()
+	if h.states[wid] == st {
+		delete(h.states, wid)
+	}
+	h.mu.Unlock()
+	st.mu.Lock()
+	st.backlog, st.loading = nil, false
+	st.mu.Unlock()
+	for _, s := range h.inWorkspace(wid) {
+		s.requireResync("resync required")
+	}
 }
 
 func (h *Hub) state(wid uuid.UUID) *wsState {
@@ -301,8 +328,11 @@ func (h *Hub) routeWorkspace(wid, id uuid.UUID, ev *v1.DispatchEvent) {
 	defer st.mu.Unlock()
 	if st.loading {
 		if len(st.backlog) >= bufferQueue {
+			// The event is lost for the workspace's sessions here: they must resync, not
+			// carry on live without it (a missed VOICE_STATE_UPDATE stays wrong until the
+			// user's next change).
 			for _, s := range h.inWorkspace(wid) {
-				s.broken.Store(true)
+				s.requireResync("resync required")
 			}
 			return
 		}
@@ -324,11 +354,28 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	sessions := h.inWorkspace(wid)
 	shared := newScopedEnc(wid, ev)
 	view := func(rid, uid uuid.UUID) bool { return st.bits(rid, uid).Has(perm.ViewRoom) }
+	// Contacts (ADR-0077): USER_UPDATE / WORKSPACE_MEMBER_* may carry the subject's email and
+	// phone; a recipient that may not see them here gets the event without them, under its
+	// own id (dedup must not let a stripped copy from this workspace suppress the full one
+	// from a workspace the two share as colleagues).
+	var bare *encEvent
+	bareID := uuid.Nil
+	withContacts := pbconv.StripEvent(ev) != ev
+	deliver := func(s *Session, subject uuid.UUID) {
+		if withContacts && contactsHidden(st, s, subject) {
+			if bare == nil {
+				bare, bareID = newScopedEnc(wid, pbconv.StripEvent(ev)), strippedID(id)
+			}
+			s.dispatchEnc(bareID, bare)
+			return
+		}
+		s.dispatchEnc(id, shared)
+	}
 	// about(subject): deliver to everyone except guests who share no room with subject.
 	about := func(subject uuid.UUID) {
 		for _, s := range sessions {
 			if !st.hiddenFrom(s.user, subject) {
-				s.dispatchEnc(id, shared)
+				deliver(s, subject)
 			}
 		}
 	}
@@ -382,7 +429,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			defer h.syncGuestMembers(st, wid, guestBefore, subject)
 		}
 	}
-	if h.routeBoards(st, wid, id, sessions, ev) {
+	if h.routeBoards(st, wid, id, sessions, ev) || h.routeDisk(st, wid, id, sessions, ev) || h.routeWiki(st, wid, id, sessions, ev) {
 		return
 	}
 	switch e := ev.GetEvent().(type) {
@@ -499,6 +546,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
 			st.setMember(uid, r, m.GetRoleIds())
 		}
+		st.setBot(uid, m.GetUser().GetIsBot())
 		about(uid)
 	case *v1.DispatchEvent_WorkspaceMemberUpdate:
 		m := e.WorkspaceMemberUpdate.GetMember()
@@ -591,13 +639,24 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete,
 		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
 		h.routeCalendar(st, sessions, view, id, ev)
-	case *v1.DispatchEvent_RoomAdmissionRequest, *v1.DispatchEvent_RoomAdmissionDecided:
-		// Guest admission (ADR-0040): to the room's deciders — INVITE_GUESTS there (not guests), or the
-		// author of the link the guest came by. The guest gets DECIDED on their user channel.
+	case *v1.DispatchEvent_RoomAdmissionRequest:
+		// A knock (ADR-0040 §3, amendment 2026-10-06): only to the author of the link the guest
+		// came by and to deciders (INVITE_GUESTS there, not guests) who are in the room's voice
+		// right now — never to every INVITE_GUESTS member of the workspace (a temporary meeting
+		// room's knock used to wake every administrator). knockAudience is the one rule; READY
+		// (loadInto) narrows the snapshot's admissions by it too.
 		a := ev.GetRoomAdmissionRequest().GetAdmission()
-		if a == nil {
-			a = ev.GetRoomAdmissionDecided().GetAdmission()
+		rid, author := parseID(a.GetRoomId()), parseID(a.GetInviteCreatedBy())
+		for _, s := range sessions {
+			if knockAudience(st, rid, author, s.user) {
+				s.dispatchEnc(id, shared)
+			}
 		}
+	case *v1.DispatchEvent_RoomAdmissionDecided:
+		// The outcome goes to every decider — INVITE_GUESTS in the room (not guests) or the link's
+		// author — so a row they hold (READY, an earlier knock) clears; it carries no call to
+		// act. The guest gets DECIDED on their user channel.
+		a := ev.GetRoomAdmissionDecided().GetAdmission()
 		rid, author := parseID(a.GetRoomId()), parseID(a.GetInviteCreatedBy())
 		for _, s := range sessions {
 			if st.role(s.user) != perm.RoleGuest && (st.bits(rid, s.user).Has(perm.InviteGuests) || (author != uuid.Nil && s.user == author)) {
@@ -781,7 +840,10 @@ func (h *Hub) dispatchGained(s *Session, wid, id uuid.UUID, out *v1.DispatchEven
 		evs := []pendingEvent{{id: id, enc: newScopedEnc(wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomCreate{RoomCreate: &v1.RoomCreate{Room: r}}})}}
 		states, err := h.voice.States(ctx, wid)
 		if err != nil {
+			// The room would arrive without the people in its call: resync instead.
 			slog.WarnContext(ctx, "gateway: voice states of a gained room", "room", rid, "err", err)
+			s.preparationFailed(marker)
+			return
 		}
 		for _, vs := range states {
 			if vs.GetRoomId() == room.GetId() {
@@ -893,7 +955,16 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		if created := ev.GetWorkspaceCreate(); created != nil {
 			snap := created.GetSnapshot()
 			wid := parseID(snap.GetWorkspace().GetId())
-			h.fillLive(ctx, wid, uid, snap)
+			if err := h.fillLive(ctx, wid, uid, snap); err != nil {
+				slog.Warn("gateway: workspace snapshot", "workspace", wid, "err", err)
+				if loadPreparingState {
+					h.stateFailed(preparingState, wid)
+				}
+				for i, s := range sessions {
+					s.preparationFailed(markers[i])
+				}
+				return
+			}
 			enc = newScopedEnc(wid, ev)
 			for _, s := range sessions {
 				if !s.bot {
@@ -940,7 +1011,11 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 // fillLive adds Redis-backed parts (voice states, presences, call start times) to user's
 // snapshot. Only members listed in the snapshot are included (guests see a filtered list),
 // plus, for a guest, the people in the calls of its rooms (perm.GuestVisible).
-func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.WorkspaceSnapshot) {
+//
+// The voice states are required: a snapshot without them shows every call empty until each
+// person in it changes something, so a Redis error fails the snapshot (the caller retries or
+// makes the client resync). Presences and call start times stay best-effort.
+func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.WorkspaceSnapshot) error {
 	visible := map[uuid.UUID]bool{}
 	var voiceRooms []uuid.UUID
 	for _, r := range snap.GetRooms() {
@@ -967,24 +1042,26 @@ func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.Worksp
 	if guest {
 		h.ensureGuestAuthors(ctx, wid, user)
 	}
-	if states, err := h.voice.States(ctx, wid); err == nil {
-		snap.VoiceStates = nil
-		for _, vs := range states {
-			if !guest || members[vs.GetUserId()] || !visible[parseID(vs.GetRoomId())] {
-				continue // only a guest's snapshot lacks people (those in its calls)
-			}
-			row, err := h.db.Q.GetMemberWithUser(ctx, sqlc.GetMemberWithUserParams{WorkspaceID: wid, UserID: parseID(vs.GetUserId())})
-			if err != nil {
-				continue // not a member (any more): stays hidden
-			}
-			snap.Members = append(snap.Members, pbconv.Member(row.WorkspaceMember, row.User, row.RoleIds))
-			members[vs.GetUserId()] = true
-			users = append(users, row.User.ID)
+	states, err := h.voice.States(ctx, wid)
+	if err != nil {
+		return fmt.Errorf("voice states of workspace %s: %w", wid, err)
+	}
+	snap.VoiceStates = nil
+	for _, vs := range states {
+		if !guest || members[vs.GetUserId()] || !visible[parseID(vs.GetRoomId())] {
+			continue // only a guest's snapshot lacks people (those in its calls)
 		}
-		for _, vs := range states {
-			if members[vs.GetUserId()] {
-				snap.VoiceStates = append(snap.VoiceStates, sanitizeVoice(vs, func(rid uuid.UUID) bool { return visible[rid] }))
-			}
+		row, err := h.db.Q.GetMemberWithUser(ctx, sqlc.GetMemberWithUserParams{WorkspaceID: wid, UserID: parseID(vs.GetUserId())})
+		if err != nil {
+			continue // not a member (any more): stays hidden
+		}
+		snap.Members = append(snap.Members, pbconv.Member(row.WorkspaceMember, row.User, row.RoleIds))
+		members[vs.GetUserId()] = true
+		users = append(users, row.User.ID)
+	}
+	for _, vs := range states {
+		if members[vs.GetUserId()] {
+			snap.VoiceStates = append(snap.VoiceStates, sanitizeVoice(vs, func(rid uuid.UUID) bool { return visible[rid] }))
 		}
 	}
 	if pres, err := h.pres.get(ctx, users); err == nil {
@@ -993,6 +1070,7 @@ func (h *Hub) fillLive(ctx context.Context, wid, user uuid.UUID, snap *v1.Worksp
 			snap.Presences = append(snap.Presences, pres[u])
 		}
 	}
+	return nil
 }
 
 // ensureGuestAuthors loads the message authors of the guest's rooms into the workspace state
@@ -1196,6 +1274,28 @@ func (h *Hub) Statuses(ctx context.Context, users []uuid.UUID) (map[uuid.UUID]v1
 		out[u] = p.GetStatus()
 	}
 	return out, nil
+}
+
+// Present says whether the user has a live gateway session (any status, invisible
+// included) or is in a call right now: the guest inactivity sweep (ADR-0098) skips such users.
+func (h *Hub) Present(ctx context.Context, user uuid.UUID) (bool, error) {
+	return present(ctx, h.redis, user)
+}
+
+func present(ctx context.Context, c rueidis.Client, user uuid.UUID) (bool, error) {
+	// HVALS like presenceStore.get: fields past their HEXPIRE are never returned.
+	res := c.DoMulti(ctx,
+		c.B().Hvals().Key(presKey(user)).Build(),
+		c.B().Exists().Key(calls.OnCallKey(user)).Build())
+	vals, err := res[0].AsStrSlice()
+	if err != nil && !rueidis.IsRedisNil(err) {
+		return false, err
+	}
+	n, err := res[1].AsInt64()
+	if err != nil {
+		return false, err
+	}
+	return len(vals) > 0 || n > 0, nil
 }
 
 // StatusChanged announces a custom status change (PATCH /api/me/status) even if the
@@ -1420,3 +1520,15 @@ func withoutCommand(ev *v1.DispatchEvent) *v1.DispatchEvent {
 	m.Command = nil
 	return &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{MessageCreate: &v1.MessageCreate{WorkspaceId: mc.GetWorkspaceId(), Message: m}}}
 }
+
+// contactsHidden reports whether recipient s may not see subject's contacts in this
+// workspace (pbconv.ContactsVisible, ADR-0077): a bot session, or a guest / non-member on
+// either side. st.mu is held.
+func contactsHidden(st *wsState, s *Session, subject uuid.UUID) bool {
+	member := func(r perm.Role) bool { return r != "" && r != perm.RoleGuest }
+	return s.bot || !member(st.role(s.user)) || !member(st.role(subject))
+}
+
+// strippedID is the event id of the contact-less copy of event id (stable, so its copies
+// from several workspaces still count once).
+func strippedID(id uuid.UUID) uuid.UUID { return uuid.NewSHA1(id, []byte("calaba:contacts-stripped")) }

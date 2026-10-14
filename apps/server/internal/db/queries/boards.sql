@@ -4,8 +4,8 @@
 -- name: GetBoardAccess :one
 -- Everything needed to compute a user's board bits, in one round trip: the membership (role
 -- NULL = not a member), the member's roles lowest position first with each role's board
--- override (0/0 = none), the user's own override and the disabled board features (ADR-0058 §3:
--- COMMENTS off makes the task rooms read-only).
+-- override (0/0 = none), the user's own override, the disabled board features (ADR-0058 §3:
+-- COMMENTS off makes the task rooms read-only) and whether the user is invited on a task.
 SELECT b.workspace_id,
        b.is_private,
        b.restricted,
@@ -18,9 +18,20 @@ SELECT b.workspace_id,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (w.suspended_at IS NOT NULL)::boolean AS suspended,
-       b.disabled_features
+       b.disabled_features,
+       -- ADR-0059 / ADR-0076: the user (a human) is an assignee, an approver or a watcher of a
+       -- live task of the board.
+       (NOT coalesce(u.is_bot, true) AND (
+           EXISTS (SELECT 1 FROM task_assignees x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = sqlc.arg('user_id')::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+        OR EXISTS (SELECT 1 FROM task_approvers x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = sqlc.arg('user_id')::uuid AND t.board_id = b.id AND t.archived_at IS NULL)
+        OR EXISTS (SELECT 1 FROM task_subscribers x JOIN tasks t ON t.id = x.task_id
+                   WHERE x.user_id = sqlc.arg('user_id')::uuid AND x.watcher AND t.board_id = b.id AND t.archived_at IS NULL)
+       ))::boolean AS invited
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
+LEFT JOIN users u ON u.id = sqlc.arg('user_id')::uuid
 LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = sqlc.arg('user_id')
 LEFT JOIN LATERAL (
     SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
@@ -37,9 +48,55 @@ LEFT JOIN board_permissions uo ON uo.board_id = b.id AND uo.target_type = 'user'
 WHERE b.id = sqlc.arg('board_id');
 
 -- name: GetTaskRoomRef :one
--- The task and board of a task room (perm.Resolver: RoomAccess.Task).
-SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived
-FROM tasks t WHERE t.room_id = $1;
+-- The task and board of a task room and whether the user is its assignee / approver / watcher
+-- (perm.Resolver: RoomAccess.Task, ADR-0059, ADR-0076).
+SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived,
+       EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id'))::boolean AS approver,
+       EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = t.id AND x.user_id = sqlc.arg('user_id') AND x.watcher)::boolean AS watcher
+FROM tasks t WHERE t.room_id = sqlc.arg('room_id');
+
+-- name: GetTaskInvite :one
+-- Whether the user is an assignee / approver / watcher of a task (ADR-0059, ADR-0076:
+-- perm.TaskBits).
+SELECT EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id'))::boolean AS assignee,
+       EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id'))::boolean AS approver,
+       EXISTS (SELECT 1 FROM task_subscribers x WHERE x.task_id = sqlc.arg('task_id') AND x.user_id = sqlc.arg('user_id') AND x.watcher)::boolean AS watcher;
+
+-- name: ListTaskInvites :many
+-- The tasks among ids where the user is an assignee, an approver or a watcher (ADR-0059,
+-- ADR-0076).
+SELECT x.task_id FROM task_assignees x WHERE x.task_id = ANY(sqlc.arg('ids')::uuid[]) AND x.user_id = sqlc.arg('user_id')
+UNION
+SELECT a.task_id FROM task_approvers a WHERE a.task_id = ANY(sqlc.arg('ids')::uuid[]) AND a.user_id = sqlc.arg('user_id')
+UNION
+SELECT w.task_id FROM task_subscribers w WHERE w.task_id = ANY(sqlc.arg('ids')::uuid[]) AND w.user_id = sqlc.arg('user_id') AND w.watcher;
+
+-- name: ListInvitedTasks :many
+-- The live tasks on live boards of a workspace where the user (a human) is an assignee, an
+-- approver or a watcher: the task-scoped boards of ADR-0059 (restricted ones too, ADR-0076).
+SELECT t.id, t.board_id
+FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = sqlc.arg('workspace_id') AND b.archived_at IS NULL AND t.archived_at IS NULL
+  AND t.id IN (SELECT x.task_id FROM task_assignees x WHERE x.user_id = sqlc.arg('user_id')
+               UNION SELECT a.task_id FROM task_approvers a WHERE a.user_id = sqlc.arg('user_id')
+               UNION SELECT w.task_id FROM task_subscribers w WHERE w.user_id = sqlc.arg('user_id') AND w.watcher)
+  AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = sqlc.arg('user_id') AND u.is_bot);
+
+-- name: ListWorkspaceTaskInvitees :many
+-- The assignees, approvers and watchers (humans) of the live tasks on live boards of a
+-- workspace: the gateway's invited map (ADR-0059, ADR-0076). how: 1 assignee, 2 approver,
+-- 3 watcher.
+SELECT t.id AS task_id, t.board_id, x.user_id,
+       bool_or(x.how = 1)::boolean AS assignee, bool_or(x.how = 2)::boolean AS approver, bool_or(x.how = 3)::boolean AS watcher
+FROM tasks t
+JOIN boards b ON b.id = t.board_id
+JOIN (SELECT a.task_id, a.user_id, 1 AS how FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id, 2 AS how FROM task_approvers p
+      UNION ALL SELECT w.task_id, w.user_id, 3 AS how FROM task_subscribers w WHERE w.watcher) x ON x.task_id = t.id
+JOIN users u ON u.id = x.user_id AND NOT u.is_bot
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL AND t.archived_at IS NULL
+GROUP BY t.id, t.board_id, x.user_id;
 
 -- name: ListWorkspaceTaskRooms :many
 -- The comment rooms of the tasks on live boards of a workspace (the gateway's task room map).
@@ -89,7 +146,8 @@ UPDATE boards SET
     is_private        = coalesce(sqlc.narg('is_private'), is_private),
     auto_archive_days = coalesce(sqlc.narg('auto_archive_days'), auto_archive_days),
     default_view_id   = CASE WHEN sqlc.arg('set_default_view')::boolean THEN sqlc.narg('default_view_id')::uuid ELSE default_view_id END,
-    restricted        = coalesce(sqlc.narg('restricted'), restricted)
+    restricted        = coalesce(sqlc.narg('restricted'), restricted),
+    approval_notify_delay_seconds = coalesce(sqlc.narg('approval_notify_delay_seconds'), approval_notify_delay_seconds)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 
@@ -165,15 +223,16 @@ GROUP BY t.board_id;
 SELECT * FROM board_statuses WHERE board_id = ANY(sqlc.arg('board_ids')::uuid[]) ORDER BY board_id, position, id;
 
 -- name: CreateBoardStatus :one
-INSERT INTO board_statuses (board_id, name, type, color, position, is_default)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO board_statuses (board_id, name, type, color, position, is_default, icon)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: UpdateBoardStatus :one
 UPDATE board_statuses SET
     name  = coalesce(sqlc.narg('name'), name),
     type  = coalesce(sqlc.narg('type'), type),
-    color = coalesce(sqlc.narg('color'), color)
+    color = coalesce(sqlc.narg('color'), color),
+    icon  = coalesce(sqlc.narg('icon'), icon)
 WHERE id = sqlc.arg('id') AND board_id = sqlc.arg('board_id')
 RETURNING *;
 
@@ -311,17 +370,18 @@ UPDATE tasks SET
     title = sqlc.arg('title'), description = sqlc.arg('description'), status_id = sqlc.arg('status_id'),
     priority = sqlc.arg('priority'), estimate = sqlc.narg('estimate'), start_on = sqlc.narg('start_on'),
     due_on = sqlc.narg('due_on'), parent_id = sqlc.narg('parent_id'), milestone_id = sqlc.narg('milestone_id'),
-    position = sqlc.arg('position'), started_at = sqlc.narg('started_at'), completed_at = sqlc.narg('completed_at'),
-    completed_by = sqlc.narg('completed_by'), updated_at = now()
+    task_milestone_id = sqlc.narg('task_milestone_id'), position = sqlc.arg('position'),
+    started_at = sqlc.narg('started_at'), completed_at = sqlc.narg('completed_at'), completed_by = sqlc.narg('completed_by'), updated_at = now()
 WHERE id = sqlc.arg('id');
 
 -- name: MoveTaskToBoard :exec
 UPDATE tasks SET board_id = sqlc.arg('board_id'), number = sqlc.arg('number'), status_id = sqlc.arg('status_id'),
-    milestone_id = NULL, parent_id = NULL, position = sqlc.arg('position'), updated_at = now()
+    milestone_id = NULL, parent_id = NULL, task_milestone_id = NULL, position = sqlc.arg('position'), updated_at = now()
 WHERE id = sqlc.arg('id');
 
 -- name: DetachSubtasks :exec
-UPDATE tasks SET parent_id = NULL, updated_at = now() WHERE parent_id = $1;
+-- The subtasks lose their parent and its milestone (ADR-0063).
+UPDATE tasks SET parent_id = NULL, task_milestone_id = NULL, updated_at = now() WHERE parent_id = $1;
 
 -- name: TouchTask :exec
 UPDATE tasks SET updated_at = now() WHERE id = $1;
@@ -376,7 +436,7 @@ WHERE kind = sqlc.arg('kind') AND ((task_id = sqlc.arg('a') AND related_id = sql
 
 -- name: TaskCounts :many
 -- Per task: live subtasks and finished ones, live comments, attachments, checklist items and
--- done ones (ADR-0058 §2).
+-- done ones (ADR-0058 §2), Git links (ADR-0060).
 SELECT t.id,
     (SELECT count(*) FROM tasks s WHERE s.parent_id = t.id AND s.archived_at IS NULL)::integer AS subtasks,
     (SELECT count(*) FROM tasks s JOIN board_statuses st ON st.id = s.status_id
@@ -384,7 +444,8 @@ SELECT t.id,
     (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
     (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments,
     (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id)::integer AS checklist_total,
-    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done,
+    (SELECT count(*) FROM task_git_links g WHERE g.task_id = t.id)::integer AS git_links
 FROM tasks t WHERE t.id = ANY(sqlc.arg('task_ids')::uuid[]);
 
 -- name: ListTaskAttachments :many
@@ -401,11 +462,12 @@ INSERT INTO task_attachments (task_id, file_id, position) VALUES ($1, $2, $3);
 
 -- name: FilesAttachable :many
 -- Uploads of the user in the workspace that are neither attached to a message nor to another
--- task (task_id's own ones count as free).
+-- task (task_id's own ones count as free), nor files of the Disk (ADR-0094).
 SELECT f.id FROM files f
 WHERE f.id = ANY(sqlc.arg('ids')::uuid[]) AND f.uploader_id = sqlc.arg('user_id') AND f.workspace_id = sqlc.arg('workspace_id')::uuid
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
-  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id AND ta.task_id <> sqlc.arg('task_id')::uuid);
+  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id AND ta.task_id <> sqlc.arg('task_id')::uuid)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id);
 
 -- ---- subscriptions, notifications ----
 
@@ -414,6 +476,37 @@ SELECT * FROM task_subscribers WHERE task_id = $1;
 
 -- name: ListViewerSubscriptions :many
 SELECT * FROM task_subscribers WHERE user_id = $1 AND task_id = ANY(sqlc.arg('task_ids')::uuid[]);
+
+-- name: ListTaskWatchers :many
+-- The watchers of tasks (ADR-0076), in a stable order.
+SELECT task_id, user_id FROM task_subscribers WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[]) AND watcher
+ORDER BY task_id, user_id;
+
+-- name: AddTaskWatchers :exec
+-- Makes users watchers (and subscribers) of a task; an existing row keeps its muted flag.
+INSERT INTO task_subscribers (task_id, user_id, watcher) SELECT sqlc.arg('task_id'), unnest(sqlc.arg('user_ids')::uuid[]), true
+ON CONFLICT (task_id, user_id) DO UPDATE SET watcher = true;
+
+-- name: UnsetTaskWatcher :one
+-- Removes the watcher role (the subscription stays); false when the user was not a watcher.
+WITH upd AS (
+    UPDATE task_subscribers SET watcher = false WHERE task_id = sqlc.arg('task_id') AND user_id = sqlc.arg('user_id') AND watcher
+    RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM upd)::boolean;
+
+-- name: DeleteTaskSubscription :exec
+DELETE FROM task_subscribers WHERE task_id = $1 AND user_id = $2;
+
+-- name: ListBoardInvitees :many
+-- The humans who are assignees, approvers or watchers of the live tasks of a board (ADR-0076:
+-- «Позванные по карточкам» counts those of them without VIEW_BOARD).
+SELECT DISTINCT x.user_id FROM tasks t
+JOIN (SELECT a.task_id, a.user_id FROM task_assignees a
+      UNION ALL SELECT p.task_id, p.user_id FROM task_approvers p
+      UNION ALL SELECT w.task_id, w.user_id FROM task_subscribers w WHERE w.watcher) x ON x.task_id = t.id
+JOIN users u ON u.id = x.user_id AND NOT u.is_bot
+WHERE t.board_id = $1 AND t.archived_at IS NULL;
 
 -- name: Subscribe :exec
 -- Auto-subscription: keeps an existing row (a muted one stays muted).
@@ -451,23 +544,51 @@ ORDER BY s.notified_at DESC
 LIMIT 999;
 
 -- name: GetTaskLevel :many
--- The users' task notification level and workspace mute in the workspace ('all' when unset).
+-- The users' task notification level and workspace mute in the workspace ('all' when unset)
+-- and the task notification kinds they switched off (ADR-0089).
 SELECT u.id::uuid AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
-    (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted
+    (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted,
+    coalesce(usr.task_notify_off, '{}')::text[] AS task_notify_off
 FROM unnest(sqlc.arg('user_ids')::uuid[]) AS u (id)
+LEFT JOIN users usr ON usr.id = u.id
 LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_id = sqlc.arg('workspace_id');
 
 -- ---- activity ----
 
 -- name: InsertTaskActivity :one
-INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('rule_id'))
 RETURNING *;
 
+-- name: LastTaskActivityOfKind :one
+-- The newest journal entry of a kind of the task and whether it is younger than the window: the
+-- candidate a repeated change of the same field by the same user is merged into (ADR-0081).
+-- message_id: a kind with a merge key (comment_edit, ADR-0091) — only entries of that comment.
+SELECT id, board_id, actor_id, rule_id, before,
+    (created_at > now() - make_interval(secs => sqlc.arg('window_secs')::float8))::boolean AS recent
+FROM task_activity WHERE task_id = sqlc.arg('task_id') AND kind = sqlc.arg('kind')
+  AND (sqlc.narg('message_id')::text IS NULL OR after->>'message_id' = sqlc.narg('message_id')::text)
+ORDER BY id DESC LIMIT 1;
+
+-- name: DeleteTaskActivity :one
+-- Removes a journal entry being merged (ADR-0081); no row when another transaction removed it.
+DELETE FROM task_activity WHERE id = sqlc.arg('id') RETURNING id;
+
 -- name: ListTaskActivity :many
+-- skip_kind: leave out one kind (the mixed feed has the comments as messages, ADR-0091).
 SELECT * FROM task_activity WHERE task_id = sqlc.arg('task_id')
   AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
+  AND (sqlc.narg('skip_kind')::text IS NULL OR kind <> sqlc.narg('skip_kind')::text)
 ORDER BY id DESC LIMIT sqlc.arg('lim');
+
+-- name: TaskRefs :many
+-- Key parts and titles of tasks, for the snapshots of journal entries (ADR-0091).
+SELECT t.id, t.number, t.title, b.key AS board_key FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE t.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: FilesByID :many
+-- Names of files, for the snapshots of journal entries (ADR-0091).
+SELECT id, name, size, mime FROM files WHERE id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: ListTaskRoomMessages :many
 SELECT * FROM messages WHERE room_id = sqlc.arg('room_id') AND deleted_at IS NULL
@@ -522,19 +643,59 @@ DELETE FROM task_approvers WHERE task_id = $1 AND user_id = ANY(sqlc.arg('user_i
 UPDATE tasks SET approval_required = $2, updated_at = now() WHERE id = $1;
 
 -- name: SetApproverVote :exec
--- A vote; pending (withdraw) asks for it again: the reminders start over.
+-- A vote; pending (withdraw) asks for it again: the reminders start over. A cast vote drops its
+-- notice not sent yet (ADR-0082): a later reset or delay-0 request is then never sent twice.
 UPDATE task_approvers SET state = sqlc.arg('state')::text, comment = sqlc.arg('comment')::text,
+    notify_due_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN notify_due_at ELSE NULL END,
     decided_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN NULL ELSE now() END,
     requested_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN now() ELSE requested_at END,
     reminders = CASE WHEN sqlc.arg('state')::text = 'pending' THEN 0 ELSE reminders END,
     reminded_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN NULL ELSE reminded_at END
 WHERE task_id = sqlc.arg('task_id') AND user_id = sqlc.arg('user_id');
 
--- name: ResetTaskApprovals :exec
--- The task changed (title / description / its attachments): every vote is asked for again.
+-- name: ResetTaskApprovals :many
+-- The task changed (title / description / its attachments): every decided vote is asked for
+-- again; pending ones keep their notice and reminder schedule (ADR-0082). Returns the
+-- approvers whose vote was reset.
 UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
-    reminders = 0, reminded_at = NULL
-WHERE task_id = $1;
+    reminders = 0, reminded_at = NULL, notify_due_at = NULL
+WHERE task_id = $1 AND state <> 'pending'
+RETURNING user_id;
+
+-- name: BoardApprovalNotifyDelay :one
+SELECT approval_notify_delay_seconds FROM boards WHERE id = $1;
+
+-- name: ScheduleApprovalNotices :exec
+-- The approval notice of these approvers goes out in delay seconds (ADR-0082, DB time).
+UPDATE task_approvers SET notify_due_at = now() + make_interval(secs => sqlc.arg('delay')::integer),
+    notify_reason = sqlc.arg('reason')::text
+WHERE task_id = sqlc.arg('task_id') AND user_id = ANY(sqlc.arg('user_ids')::uuid[]);
+
+-- name: DueApprovalNoticeTasks :many
+-- The tasks with an approval notice due (the partial index; cheap while none is due).
+SELECT DISTINCT task_id FROM (
+    SELECT task_id FROM task_approvers
+    WHERE notify_due_at IS NOT NULL AND notify_due_at <= now()
+    ORDER BY notify_due_at
+    LIMIT sqlc.arg('lim')
+) d;
+
+-- name: ClaimApprovalNotices :many
+-- Claims the due approval notices of one task: clears notify_due_at under the row locks
+-- (SKIP LOCKED: another server instance's pass takes them, never both). A vote still pending
+-- is asked for from now on: the daily reminders count from the notice (ADR-0082). The caller
+-- sends only to pending votes.
+WITH due AS (
+    SELECT a.task_id, a.user_id FROM task_approvers a
+    WHERE a.task_id = sqlc.arg('task_id') AND a.notify_due_at IS NOT NULL AND a.notify_due_at <= now()
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE task_approvers a SET notify_due_at = NULL,
+    requested_at = CASE WHEN a.state = 'pending' THEN now() ELSE a.requested_at END,
+    reminders = CASE WHEN a.state = 'pending' THEN 0 ELSE a.reminders END,
+    reminded_at = CASE WHEN a.state = 'pending' THEN NULL ELSE a.reminded_at END
+FROM due WHERE a.task_id = due.task_id AND a.user_id = due.user_id
+RETURNING a.user_id, a.state, a.notify_reason, a.added_by;
 
 -- name: DueApprovalReminders :many
 -- Votes pending for 24 h since they were asked for or last reminded (≤ 3 reminders), on live
@@ -544,7 +705,7 @@ JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
     AND b.disabled_features & 512 = 0 -- BOARD_FEATURE_APPROVALS (9) off: no reminders (ADR-0058 §3)
 JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
-WHERE a.state = 'pending' AND a.reminders < 3
+WHERE a.state = 'pending' AND a.reminders < 3 AND a.notify_due_at IS NULL
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
 ORDER BY a.task_id, a.user_id
@@ -558,7 +719,53 @@ FROM tasks t JOIN board_statuses st ON st.id = t.status_id JOIN boards b ON b.id
 WHERE a.task_id = sqlc.arg('task_id') AND a.user_id = ANY(sqlc.arg('user_ids')::uuid[])
   AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
   AND b.disabled_features & 512 = 0
-  AND a.state = 'pending' AND a.reminders < 3
+  AND a.state = 'pending' AND a.reminders < 3 AND a.notify_due_at IS NULL
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
 RETURNING a.user_id;
+
+-- ---- due notices (ADR-0089) ----
+
+-- name: ClaimTaskDueNotices :many
+-- Claims the due notices of today (the sweep's date in TASKS_DUE_TZ) for up to lim live tasks:
+-- due tomorrow and today to the assignees (the lead is one), overdue since yesterday to them and
+-- the creator. A live task: not archived, its status not finished, its board not archived, its
+-- workspace not suspended. The insert is the claim (another instance's pass inserts nothing);
+-- a task being changed right now is skipped until the next pass (SKIP LOCKED).
+WITH cand AS (
+    SELECT t.id, t.due_on, t.created_by, k.kind FROM tasks t
+    JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+    JOIN workspaces w ON w.id = b.workspace_id AND w.suspended_at IS NULL
+    JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
+    CROSS JOIN LATERAL (SELECT CASE t.due_on
+        WHEN sqlc.arg('today')::date + 1 THEN 'due_tomorrow'
+        WHEN sqlc.arg('today')::date THEN 'due_today'
+        ELSE 'overdue' END::text AS kind) k
+    WHERE t.archived_at IS NULL AND t.due_on BETWEEN sqlc.arg('today')::date - 1 AND sqlc.arg('today')::date + 1
+      AND EXISTS (
+        SELECT 1 FROM (
+            SELECT a.user_id FROM task_assignees a WHERE a.task_id = t.id
+            UNION SELECT t.created_by WHERE k.kind = 'overdue' AND t.created_by IS NOT NULL
+        ) r
+        WHERE NOT EXISTS (SELECT 1 FROM task_due_notices n
+            WHERE n.task_id = t.id AND n.kind = k.kind AND n.due_on = t.due_on AND n.user_id = r.user_id))
+    ORDER BY t.id
+    LIMIT sqlc.arg('lim')
+    FOR SHARE OF t SKIP LOCKED
+), rcpt AS (
+    SELECT c.id AS task_id, a.user_id, c.kind, c.due_on FROM cand c JOIN task_assignees a ON a.task_id = c.id
+    UNION
+    SELECT c.id, c.created_by, c.kind, c.due_on FROM cand c WHERE c.kind = 'overdue' AND c.created_by IS NOT NULL
+)
+INSERT INTO task_due_notices (task_id, user_id, kind, due_on)
+SELECT task_id, user_id, kind, due_on FROM rcpt
+ON CONFLICT DO NOTHING
+RETURNING task_id, user_id, kind, due_on;
+
+-- name: DeleteTaskDueNotices :exec
+-- The due notices of a task whose due date changed, or that was finished or archived.
+DELETE FROM task_due_notices WHERE task_id = $1;
+
+-- name: PurgeTaskDueNotices :execrows
+-- The dedup rows older than any notice they could still prevent.
+DELETE FROM task_due_notices WHERE sent_at < now() - interval '30 days';

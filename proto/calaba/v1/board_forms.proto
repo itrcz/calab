@@ -1,0 +1,81 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/boards.proto";
+
+// Board intake forms (ADR-0064). Management definitions are never public responses.
+enum BoardFormFieldType {
+  BOARD_FORM_FIELD_TYPE_UNSPECIFIED = 0;
+  BOARD_FORM_FIELD_TYPE_TEXT = 1;
+  BOARD_FORM_FIELD_TYPE_PARAGRAPH = 2;
+  BOARD_FORM_FIELD_TYPE_EMAIL = 3;
+  BOARD_FORM_FIELD_TYPE_NUMBER = 4;
+  BOARD_FORM_FIELD_TYPE_DATE = 5;
+  BOARD_FORM_FIELD_TYPE_SELECT = 6;
+  BOARD_FORM_FIELD_TYPE_CHECKBOX = 7;
+  BOARD_FORM_FIELD_TYPE_PHONE = 8; // formatted phone text, 7..15 digits; ADR-0064
+  BOARD_FORM_FIELD_TYPE_URL = 9; // absolute HTTP/HTTPS URL
+  BOARD_FORM_FIELD_TYPE_MULTISELECT = 10;
+}
+message BoardFormField {
+  string id = 1;
+  BoardFormFieldType type = 2;
+  string label = 3;
+  string hint = 4;
+  string placeholder = 5;
+  bool required = 6;
+  repeated string options = 7;
+}
+message BoardFormDefinition {
+  string title = 1;
+  string description = 2;
+  repeated BoardFormField fields = 3;
+  string title_field_id = 4; // optional single-value source; empty or unanswered uses the form title
+  bool is_private = 5;
+  repeated string allowed_user_ids = 6;
+  string status_id = 7;
+  TaskPriority priority = 8;
+}
+message BoardForm {
+  string id = 1;
+  string board_id = 2;
+  string url = 3;
+  BoardFormDefinition definition = 4;
+  uint32 revision = 5;
+  string created_by = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+message ListBoardFormsResponse { repeated BoardForm forms = 1; }
+message BoardFormResponse { BoardForm form = 1; }
+message CreateBoardFormRequest { BoardFormDefinition definition = 1; }
+message UpdateBoardFormRequest {
+  BoardFormDefinition definition = 1;
+  uint32 revision = 2;
+}
+message BoardFormAnswer {
+  string field_id = 1;
+  string value = 2;
+  repeated string values = 3; // MULTISELECT only; value must be empty
+}
+message PreviewBoardFormRequest {
+  BoardFormDefinition definition = 1;
+  repeated BoardFormAnswer answers = 2;
+}
+// Intentionally excludes board identity, routing settings and allowed users.
+message PublicBoardFormResponse {
+  string title = 1;
+  string description = 2;
+  repeated BoardFormField fields = 3;
+  uint32 revision = 4;
+}
+message SubmitBoardFormRequest {
+  uint32 revision = 1;
+  string nonce = 2;
+  repeated BoardFormAnswer answers = 3;
+}
+message FormSubmissionResponse {
+  string receipt_id = 1;
+  bool preview = 2;
+}

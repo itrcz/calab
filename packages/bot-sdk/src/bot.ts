@@ -1,3 +1,4 @@
+import { BoardFormResponseSchema, CreateBoardFormRequestSchema, UpdateBoardFormRequestSchema, ListBoardFormsResponseSchema, PublicBoardFormResponseSchema, SubmitBoardFormRequestSchema, PreviewBoardFormRequestSchema, FormSubmissionResponseSchema } from '@calaba/protocol';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { create, toJson, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
@@ -49,6 +50,10 @@ import {
   SetBoardOrderRequestSchema,
   SetBoardOrderResponseSchema,
   TaskChecklistResponseSchema,
+  TaskMilestoneResponseSchema,
+  CreateTaskMilestoneRequestSchema,
+  UpdateTaskMilestoneRequestSchema,
+  type TaskMilestoneResponse,
   UpdateBoardCategoryRequestSchema,
   UpdateBoardRequestSchema,
   UpdateTaskChecklistItemRequestSchema,
@@ -56,6 +61,7 @@ import {
   BotWebhookResponseSchema,
   InlineKeyboardSchema,
   type BotCallback,
+  type TaskNoticeRelay,
   CreateTaskRequestSchema,
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
@@ -116,11 +122,14 @@ import {
   type WorkspaceMember,
   type WorkspaceSnapshot,
 } from '@calaba/protocol';
+import { createDiskApi, type DiskApi } from './disk.js';
 import { Emitter } from './emitter.js';
 import { GatewayFatalError } from './errors.js';
 import { Gateway, gatewayUrl, type GatewayStatus, type SocketLike } from './gateway.js';
 import { Rest, type RestOptions } from './rest.js';
 import { DELIVERY_HEADER, SIGNATURE_HEADER, parseWebhookUpdate, verifyWebhookSignature } from './webhook.js';
+import { createWikiApi, type WikiApi } from './wiki.js';
+import type { SyncSocket, WikiSyncOptions } from './wikiSync.js';
 
 // ---- public types ----
 
@@ -149,6 +158,8 @@ export interface BotOptions {
   };
   /** Sleep between 429 retries (tests). */
   sleep?: RestOptions['sleep'];
+  /** The wiki sync socket (page content): socket factory (default `ws`), catch-up settle time, timeouts. */
+  wikiSync?: WikiSyncOptions;
 }
 
 /** A file to attach: bytes and a name (the server sniffs the type; `type` is a hint). */
@@ -220,6 +231,8 @@ export interface BotEvents {
   reaction: ReactionEvent;
   /** Accepted button press. Persistently dedupe by id and revalidate domain state before effects. */
   callback: BotCallback;
+  /** A person's task notification relayed to this bot because they chose it (ADR-0090). */
+  taskNotice: TaskNoticeRelay;
   voiceState: VoiceState;
   /** Every gateway / webhook event, raw. */
   dispatch: DispatchEvent;
@@ -268,9 +281,17 @@ export class Bot extends Emitter<BotEvents> {
       ...(options.sleep ? { sleep: options.sleep } : {}),
     });
     this.token = token;
+    this.disk = createDiskApi(this.rest);
+    this.wiki = createWikiApi(this.rest, token, (url) => new WebSocket(url) as unknown as SyncSocket, options.wikiSync);
   }
 
   private readonly token: string;
+
+  /** The Disk (ADR-0094): folders, uploads, downloads, sharing, links, the trash — by the bot's disk bits. */
+  readonly disk: DiskApi;
+
+  /** The Wiki (ADR-0096): pages over REST, their content as Markdown over the sync socket — by the bot's wiki bits. */
+  readonly wiki: WikiApi;
 
   /** The bot's account (after `start()` or `fetchMe()`). */
   get me(): User | undefined {
@@ -607,6 +628,17 @@ export class Bot extends Emitter<BotEvents> {
 
   // ---- task boards (ADR-0042): a bot works within the board bits of its roles ----
 
+  /** Board intake forms (ADR-0064). Management requires MANAGE_BOARD; submission uses the form ACL. */
+  readonly forms = {
+    list: (boardId: string) => this.rest.call(ListBoardFormsResponseSchema, 'GET', `/api/boards/${enc(boardId)}/forms`),
+    create: (boardId: string, input: MessageInitShape<typeof CreateBoardFormRequestSchema>) => this.rest.call(BoardFormResponseSchema, 'POST', `/api/boards/${enc(boardId)}/forms`, { json: Rest.body(CreateBoardFormRequestSchema, input) }),
+    update: (boardId: string, formId: string, input: MessageInitShape<typeof UpdateBoardFormRequestSchema>) => this.rest.call(BoardFormResponseSchema, 'PUT', `/api/boards/${enc(boardId)}/forms/${enc(formId)}`, { json: Rest.body(UpdateBoardFormRequestSchema, input) }),
+    delete: (boardId: string, formId: string) => this.rest.request('DELETE', `/api/boards/${enc(boardId)}/forms/${enc(formId)}`),
+    get: (code: string) => this.rest.call(PublicBoardFormResponseSchema, 'GET', `/api/forms/${enc(code)}`),
+    submit: (code: string, input: MessageInitShape<typeof SubmitBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/forms/${enc(code)}/submissions`, { json: Rest.body(SubmitBoardFormRequestSchema, input) }),
+    preview: (boardId: string, input: MessageInitShape<typeof PreviewBoardFormRequestSchema>) => this.rest.call(FormSubmissionResponseSchema, 'POST', `/api/boards/${enc(boardId)}/forms/preview`, { json: Rest.body(PreviewBoardFormRequestSchema, input) }),
+  };
+
   readonly boards = {
     /** Boards of a workspace the bot sees. */
     list: async (workspaceId: string): Promise<Board[]> =>
@@ -714,6 +746,22 @@ export class Bot extends Emitter<BotEvents> {
         const r = await this.rest.call(ConvertChecklistItemResponseSchema, 'POST', `/api/checklist-items/${enc(itemId)}/convert`);
         return { task: r.task ?? fail('task'), checklist: r.checklist, checklistTotal: r.checklistTotal, checklistDone: r.checklistDone };
       },
+    },
+    /**
+     * Milestones inside a task (ADR-0063; ≤ 20 per task, not on subtasks). Rights as for task fields; every call returns
+     * the milestone and the task with all its milestones. A subtask links one of its parent's milestones with
+     * `tasks.update(id, { taskMilestoneId })`; while subtasks are linked the server completes the milestone itself.
+     */
+    milestones: {
+      create: (taskId: string, name: string, dueOn = ''): Promise<TaskMilestoneResponse> =>
+        this.rest.call(TaskMilestoneResponseSchema, 'POST', `/api/tasks/${enc(taskId)}/milestones`, {
+          json: Rest.body(CreateTaskMilestoneRequestSchema, { name, dueOn }),
+        }),
+      /** `dueOn: ''` clears the date; `completed` is refused (409 TASK_MILESTONE_AUTO) while subtasks are linked. */
+      update: (milestoneId: string, p: { name?: string; dueOn?: string; position?: number; completed?: boolean }): Promise<TaskMilestoneResponse> =>
+        this.rest.call(TaskMilestoneResponseSchema, 'PATCH', `/api/task-milestones/${enc(milestoneId)}`, { json: Rest.body(UpdateTaskMilestoneRequestSchema, p) }),
+      /** The result has the task only; linked subtasks lose their link. */
+      delete: (milestoneId: string): Promise<TaskMilestoneResponse> => this.rest.call(TaskMilestoneResponseSchema, 'DELETE', `/api/task-milestones/${enc(milestoneId)}`),
     },
     /** A comment: a message of the task's hidden room (reactions, files, replies as in a chat). */
     comment: async (task: Task | string, content: SendContent): Promise<Message> => {
@@ -947,6 +995,9 @@ export class Bot extends Emitter<BotEvents> {
       }
       case 'botCallback':
         if (e.value.botUserId === this.botUserId || !this.botUserId) this.emit('callback', e.value);
+        return;
+      case 'taskNotice':
+        this.emit('taskNotice', e.value);
         return;
       case 'messageUpdate':
         if (e.value.message && !this.isOwn(e.value.message.authorId)) this.emit('messageUpdate', e.value.message);

@@ -1,0 +1,245 @@
+{
+  "allowed_payment_method_types": null,
+  "amount": 1000,
+  "amount_capturable": 0,
+  "amount_details": {
+    "tip": {}
+  },
+  "amount_received": 0,
+  "application": null,
+  "application_fee_amount": null,
+  "automatic_payment_methods": null,
+  "canceled_at": null,
+  "cancellation_reason": null,
+  "capture_method": "automatic_async",
+  "client_secret": "REDACTED_secret",
+  "confirmation_method": "automatic",
+  "created": 1791569787,
+  "currency": "usd",
+  "customer": "cus_FIXTURE0003",
+  "customer_account": null,
+  "description": null,
+  "excluded_payment_method_types": null,
+  "id": "pi_FIXTURE0002",
+  "last_payment_error": {
+    "advice_code": "try_again_later",
+    "charge": "ch_FIXTURE0001",
+    "code": "card_declined",
+    "decline_code": "insufficient_funds",
+    "doc_url": "https://stripe.com/docs/error-codes/card-declined",
+    "message": "Your card has insufficient funds. Use a different payment method to complete this purchase.",
+    "network_advice_code": "02",
+    "network_decline_code": "51",
+    "payment_method": {
+      "allow_redisplay": "unspecified",
+      "billing_details": {
+        "address": {
+          "city": null,
+          "country": null,
+          "line1": null,
+          "line2": null,
+          "postal_code": null,
+          "state": null
+        },
+        "email": null,
+        "name": null,
+        "phone": null,
+        "tax_id": null
+      },
+      "card": {
+        "brand": "visa",
+        "checks": {
+          "address_line1_check": null,
+          "address_postal_code_check": null,
+          "cvc_check": "pass"
+        },
+        "country": "US",
+        "display_brand": "visa",
+        "exp_month": 10,
+        "exp_year": 2027,
+        "fingerprint": "FIXTUREFP",
+        "funding": "credit",
+        "generated_from": null,
+        "last4": "9995",
+        "networks": {
+          "available": [
+            "visa"
+          ],
+          "preferred": null
+        },
+        "regulated_status": "unregulated",
+        "three_d_secure_usage": {
+          "supported": true
+        },
+        "wallet": null
+      },
+      "created": 1791569787,
+      "customer": null,
+      "customer_account": null,
+      "id": "pm_FIXTURE0001",
+      "livemode": false,
+      "metadata": {},
+      "object": "payment_method",
+      "shared_payment_granted_token": null,
+      "type": "card"
+    },
+    "payment_method_type": "card",
+    "type": "card_error"
+  },
+  "latest_charge": {
+    "amount": 1000,
+    "amount_captured": 0,
+    "amount_refunded": 0,
+    "application": null,
+    "application_fee": null,
+    "application_fee_amount": null,
+    "balance_transaction": null,
+    "billing_details": {
+      "address": {
+        "city": null,
+        "country": null,
+        "line1": null,
+        "line2": null,
+        "postal_code": null,
+        "state": null
+      },
+      "email": null,
+      "name": null,
+      "phone": null,
+      "tax_id": null
+    },
+    "calculated_statement_descriptor": "Stripe",
+    "captured": false,
+    "created": 1791569787,
+    "currency": "usd",
+    "customer": "cus_FIXTURE0003",
+    "description": null,
+    "destination": null,
+    "dispute": null,
+    "disputed": false,
+    "failure_balance_transaction": null,
+    "failure_code": "card_declined",
+    "failure_message": "Your card has insufficient funds. Use a different payment method to complete this purchase.",
+    "fraud_details": {},
+    "id": "ch_FIXTURE0001",
+    "livemode": false,
+    "metadata": {
+      "calab_account_id": "ab8d4d93-275b-45af-bd1d-be09c344323b",
+      "calab_attempt_id": "c4093a54-6989-4702-b424-269bb1918256",
+      "kind": "auto_topup"
+    },
+    "object": "charge",
+    "on_behalf_of": null,
+    "order": null,
+    "outcome": {
+      "advice_code": "try_again_later",
+      "network_advice_code": "02",
+      "network_decline_code": "51",
+      "network_status": "declined_by_network",
+      "reason": "insufficient_funds",
+      "risk_level": "normal",
+      "risk_score": 53,
+      "seller_message": "The bank returned the decline code `insufficient_funds`.",
+      "type": "issuer_declined"
+    },
+    "paid": false,
+    "payment_intent": "pi_FIXTURE0002",
+    "payment_method": "pm_FIXTURE0001",
+    "payment_method_details": {
+      "card": {
+        "amount_authorized": null,
+        "authorization_code": "000000",
+        "brand": "visa",
+        "checks": {
+          "address_line1_check": null,
+          "address_postal_code_check": null,
+          "cvc_check": "pass"
+        },
+        "country": "US",
+        "electronic_commerce_indicator": "02",
+        "exp_month": 10,
+        "exp_year": 2027,
+        "extended_authorization": {
+          "status": "disabled"
+        },
+        "fingerprint": "FIXTUREFP",
+        "funding": "credit",
+        "incremental_authorization": {
+          "status": "unavailable"
+        },
+        "installments": null,
+        "last4": "9995",
+        "mandate": null,
+        "multicapture": {
+          "status": "unavailable"
+        },
+        "network": "visa",
+        "network_token": {
+          "used": false
+        },
+        "network_transaction_id": "FIXTURE",
+        "overcapture": {
+          "maximum_amount_capturable": 1000,
+          "status": "unavailable"
+        },
+        "regulated_status": "unregulated",
+        "three_d_secure": null,
+        "transaction_link_id": null,
+        "wallet": null
+      },
+      "type": "card"
+    },
+    "radar_options": {},
+    "receipt_email": null,
+    "receipt_number": null,
+    "receipt_url": null,
+    "refunded": false,
+    "review": null,
+    "shipping": null,
+    "source": null,
+    "source_transfer": null,
+    "statement_descriptor": null,
+    "statement_descriptor_suffix": null,
+    "status": "failed",
+    "transfer_data": null,
+    "transfer_group": null
+  },
+  "livemode": false,
+  "managed_payments": {
+    "enabled": false
+  },
+  "metadata": {
+    "calab_account_id": "ab8d4d93-275b-45af-bd1d-be09c344323b",
+    "calab_attempt_id": "c4093a54-6989-4702-b424-269bb1918256",
+    "kind": "auto_topup"
+  },
+  "next_action": null,
+  "object": "payment_intent",
+  "on_behalf_of": null,
+  "payment_method": null,
+  "payment_method_configuration_details": null,
+  "payment_method_options": {
+    "card": {
+      "installments": null,
+      "mandate_options": null,
+      "network": null,
+      "request_three_d_secure": "automatic"
+    }
+  },
+  "payment_method_types": [
+    "card"
+  ],
+  "payment_record": null,
+  "processing": null,
+  "receipt_email": null,
+  "review": null,
+  "setup_future_usage": null,
+  "shared_payment_granted_token": null,
+  "shipping": null,
+  "source": null,
+  "statement_descriptor": null,
+  "statement_descriptor_suffix": null,
+  "status": "requires_payment_method",
+  "transfer_data": null,
+  "transfer_group": null
+}

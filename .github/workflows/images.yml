@@ -5,7 +5,8 @@ name: images
 #
 #   1. api: build apps/server/Dockerfile at the exact commit `ci` tested.
 #   2. web: build the web client and the landing (as release.sh does) into infra/docker/web-image:
-#      Caddy plus static files only; the server configuration is supplied by the deployment.
+#      Caddy, its behind-proxy config (infra/docker/caddy) and the static files; the config is validated
+#      in the built image before the push.
 #   3. Push both to the production registry. No stored keys: each job's GitHub OIDC token is exchanged
 #      for a short-lived Yandex Cloud IAM token of a service account that may only push to the calab
 #      repositories of that registry.
@@ -17,7 +18,8 @@ name: images
 # cluster. Rollback: re-run an older successful run of this workflow.
 #
 # Repository secrets (masked in the public logs): YC_REGISTRY (registry path ending in /calab),
-# YC_CI_SA_ID (service account id).
+# YC_CI_SA_ID (service account id); optional HARBOR_USER / HARBOR_PASSWORD — Harbor robot with push to the
+# calab project of cr.shds.io (VK Cloud): each pushed image is also copied there with the same digest.
 
 on:
   workflow_run:
@@ -54,6 +56,8 @@ jobs:
     env:
       REGISTRY: ${{ secrets.YC_REGISTRY }}
       SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      HARBOR_USER: ${{ secrets.HARBOR_USER }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,6 +94,19 @@ jobs:
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          # Copy of the same image to the VK Cloud registry (Harbor cr.shds.io/calab) — the production cluster
+          # moves off Yandex. Byte-for-byte by digest (skopeo, while still logged in to cr.yandex), then the
+          # digest is checked: the cluster rolls out digests from the deployment payload. cr.shds.io resolves
+          # to a private address publicly; the VK ingress publishes only the calab and gpu projects.
+          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
+            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
+              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
+            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
+            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
+          else
+            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
+          fi
           docker logout cr.yandex
         env:
           IMAGE: api
@@ -110,13 +127,15 @@ jobs:
     env:
       REGISTRY: ${{ secrets.YC_REGISTRY }}
       SA_ID: ${{ secrets.YC_CI_SA_ID }}
+      HARBOR_USER: ${{ secrets.HARBOR_USER }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SHA }}
           persist-credentials: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -139,8 +158,17 @@ jobs:
           mkdir -p "$ctx"
           cp -R apps/desktop/dist-web "$ctx/web"
           cp -R apps/landing/out "$ctx/landing"
+          mkdir "$ctx/caddy"
+          cp infra/docker/caddy/Caddyfile.behind-proxy infra/docker/caddy/sites.caddy infra/docker/caddy/log.caddy \
+            infra/docker/caddy/entrypoint.sh "$ctx/caddy/"
           find "$ctx" -name '*.map' -delete   # source maps are not published (as sync.sh)
           docker build -f infra/docker/web-image/Dockerfile -t "$REGISTRY/web:$SHA" "$ctx"
+          # The shipped config must parse with every optional site present (test hosts only, no listeners).
+          docker run --rm -e DOMAIN=calab.test -e APP_HOST=app.calab.test -e LANDING_HOST=calab.test \
+            -e LANDING_HOST_ALIASES=www.calab.test -e LANDING_HOST_MIRRORS=calab2.test \
+            -e RELEASES_HOST=releases.calab.test -e RELEASES_HOST_ALIASES=releases.calab2.test \
+            -e S3_PUBLIC_URL=https://storage.example.test/bucket -e API_UPSTREAM=api:3000 \
+            "$REGISTRY/web:$SHA" caddy validate --config /etc/caddy/Caddyfile
 
       - name: registry login (OIDC → Yandex Cloud IAM)
         run: |
@@ -164,6 +192,19 @@ jobs:
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE:$SHA" | sed 's/.*@//')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          # Copy of the same image to the VK Cloud registry (Harbor cr.shds.io/calab) — the production cluster
+          # moves off Yandex. Byte-for-byte by digest (skopeo, while still logged in to cr.yandex), then the
+          # digest is checked: the cluster rolls out digests from the deployment payload. cr.shds.io resolves
+          # to a private address publicly; the VK ingress publishes only the calab and gpu projects.
+          if [[ -n "$HARBOR_USER" && -n "$HARBOR_PASSWORD" ]]; then
+            echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+            skopeo copy --retry-times 3 --dest-creds "$HARBOR_USER:$HARBOR_PASSWORD" \
+              "docker://$REGISTRY/$IMAGE@$digest" "docker://cr.shds.io/calab/$IMAGE:$SHA"
+            got="$(skopeo inspect --creds "$HARBOR_USER:$HARBOR_PASSWORD" --format '{{.Digest}}' "docker://cr.shds.io/calab/$IMAGE:$SHA")"
+            [[ "$got" == "$digest" ]] || { echo "::error::cr.shds.io digest $got != $digest"; exit 1; }
+          else
+            echo "::notice::HARBOR_USER / HARBOR_PASSWORD are not set — no copy to cr.shds.io"
+          fi
           docker logout cr.yandex
         env:
           IMAGE: web

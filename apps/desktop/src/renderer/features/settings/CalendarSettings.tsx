@@ -11,7 +11,7 @@ import { freebusyApi, workHoursOf, type CalDavAccount, type ShareLevel } from '.
 import { formatMinutes, viewerZone, weekStart } from '../../lib/calendar/time';
 import { WORK_ENDS, WORK_STARTS, toggleWeekday, validateWorkHours, weekdayOrder, withStart } from '../../lib/calendar/workHours';
 import { dateTimeFormat } from '../../lib/format';
-import { loadCalDav, saveMyWorkHours, setCalDav, setShareLevel } from '../../services/freebusy';
+import { loadCalDav, saveMyWorkHours, setCalDav, setExternalReminders, setShareLevel } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -20,7 +20,7 @@ import { toast } from '../../stores/toasts';
  * Settings → Календарь (ADR-0041 §1, §4): my work hours (what «Подобрать время» shows to others),
  * a link to the meeting reminders (they stay in «Уведомления»), and one external CalDAV calendar —
  * connect, pick the calendar, import busy time / send my meetings, what colleagues see of it
- * (ADR-0045 §2), sync now, disconnect.
+ * (ADR-0045 §2), reminders of its events (amendment 3), sync now, disconnect.
  */
 export function CalendarTab(): ReactNode {
   return (
@@ -319,6 +319,9 @@ function CalDavConnected({ account }: { account: CalDavAccount }): ReactNode {
         <Toggle label={t('fb.dav.import')} checked={account.import} disabled={!picked || saving} onChange={(v) => void update({ import: v })} />
       </Row>
       <ShareRow level={account.shareLevel} disabled={!picked || !account.import} />
+      <Row label={t('fb.dav.remind')} hint={t('fb.dav.remindHint')}>
+        <Toggle label={t('fb.dav.remind')} checked={account.remind} disabled={!picked || !account.import} onChange={(v) => void setExternalReminders(v)} />
+      </Row>
       <Row label={t('fb.dav.push')} hint={t('fb.dav.pushHint')}>
         <Toggle label={t('fb.dav.push')} checked={account.push} disabled={!picked || saving} onChange={(v) => void update({ push: v })} />
       </Row>

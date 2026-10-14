@@ -74,7 +74,7 @@ function standaloneFullHeight(): number | null {
  *  - while the keyboard is up (a text field focused *and* the visual viewport shorter than the
  *    layout one) <html> gets `kb-open` and `--app-height` = visualViewport.height, so the
  *    composer sits right above the keyboard, and `--kb-inset` = the part of the layout viewport
- *    the keyboard covers, which lifts the bottom sheets (position: fixed) above it; the voice
+ *    the keyboard covers, which keeps the centred cards (position: fixed) above it; the voice
  *    strip hides and the bottom safe-area inset drops to 0 (the keyboard covers the home bar);
  *  - iOS scrolls the whole document to reveal a focused field even when nothing overflows, and
  *    leaves it scrolled after the keyboard closes (content shifted up, a gap under it): the
@@ -158,7 +158,7 @@ export function installVisualViewport(): () => void {
 const SHEET = '[data-radix-popper-content-wrapper]';
 
 /**
- * Menus open as bottom sheets on phones (app/styles.css), so a sheet often appears right under the
+ * Menus open as centred cards on phones (app/styles.css), so a card often appears right under the
  * finger that opened it (📎 at the bottom edge, a long-press). Radix menu items select on a
  * pointer-up that started elsewhere (press–drag–release on desktop) and on click — and a tap's
  * click is hit-tested where the finger was, i.e. on the item that just slid in under it. So on
@@ -193,13 +193,16 @@ export function installSheetGuard(): () => void {
 /** A tap's pointer-up and click follow its press within this (a long-press opens a menu at 700 ms). */
 const GESTURE_MS = 1500;
 
-/** Short haptic tick where the browser has one (Android Chrome; iOS Safari has no Vibration API). */
-export function haptic(ms = 10): void {
-  try {
-    if (typeof navigator.vibrate === 'function') navigator.vibrate(ms);
-  } catch {
-    // Some browsers throw without a user activation: haptics are best effort.
-  }
+/**
+ * iOS WebKit applies `:active` on a tap only when some `touchstart` listener exists (otherwise the
+ * press shows no state until — or at all — the click): one empty passive listener on the document
+ * turns the press styles of app/styles.css («Отклик на касание», docs/08) on everywhere. Passive:
+ * it never delays scrolling. Returns the uninstall function.
+ */
+export function installTouchActive(): () => void {
+  const noop = (): void => undefined;
+  document.addEventListener('touchstart', noop, { passive: true });
+  return () => document.removeEventListener('touchstart', noop);
 }
 
 /**

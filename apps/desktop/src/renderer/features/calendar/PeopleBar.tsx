@@ -2,6 +2,7 @@ import { WorkspaceRole } from '@calaba/protocol';
 import { Plus, X } from 'lucide-react';
 import { memo, useMemo, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
+import { ProfileTarget } from '../../components/ProfileTarget';
 import { IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { MAX_PEOPLE, personColor } from '../../lib/calendar/people';
@@ -113,12 +114,14 @@ const PersonChip = memo(function PersonChip({ workspaceId, userId, color, onRemo
   return (
     <li className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--color-fill)] pl-1 pr-0.5 text-caption" data-testid="person-chip" data-user={userId}>
       {/* Avatar 20 with its column colour as a 2 px ring. */}
-      <span className="grid size-5 place-items-center rounded-full" style={{ boxShadow: `0 0 0 2px ${color}` }}>
-        <Avatar userId={userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
-      </span>
-      <span className="max-w-32 truncate pl-1 text-fg" title={name}>
-        {label}
-      </span>
+      <ProfileTarget userId={userId} name={name} workspaceId={workspaceId} tabbable className="flex items-center rounded-full text-left">
+        <span className="grid size-5 place-items-center rounded-full" style={{ boxShadow: `0 0 0 2px ${color}` }}>
+          <Avatar userId={userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
+        </span>
+        <span className="max-w-32 truncate pl-1 text-fg" title={name}>
+          {label}
+        </span>
+      </ProfileTarget>
       <button type="button" onClick={() => onRemove(userId)} aria-label={t('fb.remove', { name })} className="grid size-6 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">
         <X className="size-3.5" aria-hidden />
       </button>

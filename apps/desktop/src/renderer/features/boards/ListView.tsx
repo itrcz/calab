@@ -1,3 +1,4 @@
+import { statusShown } from '../../lib/boards/completion';
 import { BoardFeature, TaskPriority, type Board, type Task } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { Archive, CalendarClock, Check, ChevronDown, CircleSlash, Tag, UserRound, X } from 'lucide-react';
@@ -15,10 +16,11 @@ import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS } from './model';
-import { ApprovalBadge } from './Approvals';
+import { ApprovalTag } from './Approvals';
 import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
-import { ChecklistBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
+import { ChecklistBadge, MilestoneBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useDisabledFeatures, useMatchCtx } from './useBoardView';
+import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 type Item = { kind: 'group'; key: string; label: ReactNode; count: number } | { kind: 'row'; id: string };
@@ -59,7 +61,7 @@ export function listItems(tasks: Task[], b: Board, prefs: BoardPrefs, workspaceI
         push(
           s.id,
           <>
-            <StatusIcon type={s.type} color={s.color} /> {s.name}
+            <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
           </>,
           tasks.filter((x) => x.statusId === s.id),
         );
@@ -167,7 +169,7 @@ export function useListIds(boardId: string, workspaceId: string): { items: Item[
 function visibleOf(s: ReturnType<typeof useBoards.getState>, b: Board, prefs: BoardPrefs, ctx: MatchCtx): Task[] {
   const out: Task[] = [];
   for (const st of b.statuses) {
-    if (!prefs.showCompleted && doneType(st.type)) continue;
+    if (!statusShown(prefs.completion, st.type)) continue;
     for (const id of s.columns[b.id]?.[st.id] ?? []) {
       const x = s.tasks[id];
       if (x && matchTask(x, prefs.filter, ctx)) out.push(x);
@@ -184,6 +186,8 @@ function visibleOf(s: ReturnType<typeof useBoards.getState>, b: Board, prefs: Bo
 export function ListView({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
   const { items, ids } = useListIds(boardId, workspaceId);
   const selectedCount = useBoardsUi((s) => Object.keys(s.selected).length);
+  // ADR-0059: no bulk actions on a board seen only through its cards.
+  const scoped = useBoardScoped(boardId);
   const onRowClick = useCallback(
     (id: string, e: MouseEvent) => {
       const ui = useBoardsUi.getState();
@@ -228,7 +232,7 @@ export function ListView({ boardId, workspaceId }: { boardId: string; workspaceI
           )
         }
       />
-      {selectedCount > 0 ? <BulkBar boardId={boardId} workspaceId={workspaceId} /> : null}
+      {selectedCount > 0 && !scoped ? <BulkBar boardId={boardId} workspaceId={workspaceId} /> : null}
     </div>
   );
 }
@@ -239,7 +243,8 @@ export function EmptyBoard(): ReactNode {
 
 export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick, selecting }: { id: string; boardId: string; workspaceId: string; onClick: (id: string, e: MouseEvent) => void; selecting: boolean }): ReactNode {
   const task = useBoards((s) => s.tasks[id]);
-  const perms = useBoards((s) => s.boards[boardId]?.permissions);
+  const perms = useTaskPerms(task);
+  const scoped = useBoardScoped(boardId);
   const status = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId) : undefined));
   const labels = useBoards((s) => s.boards[boardId]?.labels);
   const blocked = useBlockedStatuses(task, boardId);
@@ -266,7 +271,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         data-key={task.key}
         onClick={(e) => onClick(id, e)}
         className={cx(
-          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control',
+          'group/row flex h-9 cursor-default items-center gap-2 border-b border-line pl-2 pr-3 text-control mobile:h-auto mobile:select-none mobile:min-h-14 mobile:flex-wrap mobile:content-center mobile:gap-y-0 mobile:py-2',
           selected ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)]' : focused ? 'bg-active' : 'hover:bg-[color-mix(in_srgb,var(--color-fill)_50%,transparent)]',
         )}
       >
@@ -279,7 +284,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             stop(e);
             useBoardsUi.getState().toggleSelected(id);
           }}
-          className={cx('grid size-4 shrink-0 place-items-center rounded-[4px] border', selected ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-[var(--color-fill-hover)]', !selected && !selecting && 'opacity-0 group-hover/row:opacity-100')}
+          className={cx('tap-hit grid size-4 shrink-0 place-items-center rounded-[4px] border', selected ? 'border-transparent bg-accent-strong text-accent-fg' : 'border-[var(--color-fill-hover)]', !selected && !selecting && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
           data-testid="row-select"
         >
           {selected ? <Check className="size-3" aria-hidden /> : null}
@@ -294,17 +299,36 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
-            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
+            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
           </button>
         </StatusMenu>
-        <span className={cx('min-w-0 flex-1 truncate', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
-        {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} compact /> : null}
+        <span className={cx('min-w-0 flex-1 truncate mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:[overflow-wrap:anywhere]', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
+        {/* Placed here for the phone (end of the title line); `order-last` keeps it rightmost on desktop. */}
+        <AssigneeMenu
+          workspaceId={workspaceId}
+          boardId={boardId}
+          value={task.assignees.map((a) => a.userId)}
+          onToggle={(u) => void setAssignees(id, toggleAssignee(draftsOf(task.assignees), u))}
+          onNone={() => void setAssignees(id, [])}
+          align="end"
+          {...req('assignee')}
+        >
+          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:hover:bg-transparent order-last mobile:order-none" aria-label={t('boards.f.assignee')}>
+            {task.assignees[0] ? <MemberAvatar workspaceId={workspaceId} userId={task.assignees[0].userId} size={20} /> : <UserRound className="size-4 text-faint" aria-hidden />}
+            {task.assignees.length > 1 ? <span className="pl-0.5 text-micro text-muted">+{task.assignees.length - 1}</span> : null}
+          </button>
+        </AssigneeMenu>
+        {/* phone: the meta (badges, date) wraps under the title, aligned with it */}
+        <span className="hidden h-0 basis-full mobile:block" aria-hidden />
+        <span className="hidden w-[56px] shrink-0 mobile:block" aria-hidden />
+        {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} compact /> : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
         {on(BoardFeature.LABELS) && (mine.length || menu === 'label') ? (
           <LabelMenu
             boardId={boardId}
             value={task.labelIds}
-            canCreate={hasBit(perms, CREATE_TASKS)}
+            canCreate={hasBit(perms, CREATE_TASKS) && !scoped}
             onToggle={(l) => void updateTask(id, { labelIds: task.labelIds.includes(l) ? task.labelIds.filter((x) => x !== l) : [...task.labelIds, l] })}
             align="end"
             {...req('label')}
@@ -326,7 +350,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
               type="button"
               onClick={stop}
               disabled={!canEdit}
-              className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100')}
+              className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover mobile:w-auto mobile:justify-start', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100 mobile:hidden')}
               aria-label={t('boards.f.dueOn')}
             >
               <CalendarClock className="size-3 shrink-0" aria-hidden />
@@ -334,20 +358,6 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             </button>
           </DateMenu>
         ) : null}
-        <AssigneeMenu
-          workspaceId={workspaceId}
-          boardId={boardId}
-          value={task.assignees.map((a) => a.userId)}
-          onToggle={(u) => void setAssignees(id, toggleAssignee(draftsOf(task.assignees), u))}
-          onNone={() => void setAssignees(id, [])}
-          align="end"
-          {...req('assignee')}
-        >
-          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:hover:bg-transparent" aria-label={t('boards.f.assignee')}>
-            {task.assignees[0] ? <MemberAvatar workspaceId={workspaceId} userId={task.assignees[0].userId} size={20} /> : <UserRound className="size-4 text-faint" aria-hidden />}
-            {task.assignees.length > 1 ? <span className="pl-0.5 text-micro text-muted">+{task.assignees.length - 1}</span> : null}
-          </button>
-        </AssigneeMenu>
       </div>
     </TaskContextMenu>
   );

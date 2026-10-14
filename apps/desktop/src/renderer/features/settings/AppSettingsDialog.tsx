@@ -1,11 +1,13 @@
+import { requestNotify } from '../../lib/notifyPermission';
 import { AuthorizedApps, useOAuthAppsAvailable } from '../identity/OAuth';
 import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
+import type { UpdateChannel } from '../../../shared/updateFeed';
 import { Avatar } from '../../components/Avatar';
 import { AvatarButtons } from '../../components/AvatarPicker';
 import { confirmAction } from '../../components/Confirm';
@@ -19,6 +21,7 @@ import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { CHECK_IDS, runConnectionCheck, voiceProbeLine, type CheckId, type CheckRow } from '../../lib/connCheck';
 import { log } from '../../lib/log';
+import { useMobile } from '../../lib/mobile';
 import { METER_MIN_DB } from '../../lib/media/vad';
 import { outputLabel } from '../../lib/media/outputKind';
 import { musicianWarning, useMusicianAllowed } from '../../services/musician';
@@ -33,17 +36,21 @@ import { selectUpdatePending, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
+import { useWorkspaces } from '../../stores/workspaces';
 import { ChangeEmailDialog, ChangePasswordDialog } from './CredentialDialogs';
 import { LicenseCard } from '../legal/Legal';
 import { HotkeyRow } from './HotkeyRow';
 import { SettingsFooter } from './SettingsFooter';
 import { EchoCard } from './EchoCard';
 import { CommitInput } from './CommitInput';
+import { PhoneRow, UsernameRow } from './ContactSettings';
 import { MicMeter } from './MicMeter';
 import { BoardHotkeysList } from '../boards/HotkeysSheet';
 import { PttBinder } from './PttBinder';
 import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
+import { AutoMuteSelect } from '../shell/AutoMuteMenu';
 import { AboutUpdateRow } from './AboutUpdateRow';
+import { WebUpdateRow } from './WebUpdateRow';
 import { deviceLabel, osLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
@@ -55,6 +62,9 @@ import { MyStickersCard } from './MyStickersCard';
 import { BirthdaySettings } from './BirthdaySettings';
 import { RemindersCard } from '../calendar/RemindersCard';
 import { CalendarTab } from './CalendarSettings';
+import { MailTab } from './MailSettings';
+import { MAIL_ENABLED } from '../mail/boot';
+import { TaskNotifyCard } from './TaskNotifyCard';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -73,6 +83,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     // Settings → Календарь (ADR-0041): work hours, the external CalDAV calendar; not for guests.
     ...(guest ? [] : [{ id: 'calendar', label: t('settings.calendar'), icon: CalendarDays, content: <CalendarTab /> }]),
+    // Settings → Почта (ADR-0088 §8): the local mail client — desktop app only.
+    ...(MAIL_ENABLED ? [{ id: 'mail', label: t('mbox.section'), icon: Mail, content: <MailTab />, keywords: t('mbox.settings.keywords') }] : []),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
     // «OAuth-приложения» (ADR-0054): near the end — rarely needed; Business only (PlanLock).
@@ -90,7 +102,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
   return (
     <SettingsWindow
       title={t('settings.title')}
-      initial={tab ?? 'general'}
+      initial={tab}
+      fallback="general"
       onClose={onClose}
       sections={sections.filter((section) => local || !['profile', 'sessions', 'calendar'].includes(section.id))}
       footer={
@@ -109,10 +122,12 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
 
 function ProfileTab(): ReactNode {
   const me = useSession((s) => s.me);
-  const [credDialog, setCredDialog] = useState<'password' | 'email' | 'email-code' | 'email-cancel' | null>(null);
+  const [credDialog, setCredDialog] = useState<'password' | 'email' | 'email-code' | 'email-cancel' | 'email-verify' | null>(null);
   const update = async (init: Parameters<typeof api.me.update>[0]): Promise<void> => {
     const r = await api.me.update(init);
     if (r.me) useSession.getState().set({ me: r.me });
+    // My own card and rows read `users` (ADR-0077: nickname, phone) before USER_UPDATE comes back.
+    if (r.me?.user) useWorkspaces.getState().upsertUser(r.me.user);
   };
   const setAvatar = async (f: File): Promise<void> => {
     await uploadAvatar(f, f.name);
@@ -137,6 +152,9 @@ function ProfileTab(): ReactNode {
         <Row label={t('profile.status')}>
           <CommitInput label={t('profile.status')} value={u.statusText} maxLength={128} placeholder={t('profile.statusPh')} onCommit={(v) => update({ statusText: v })} />
         </Row>
+        {/* ADR-0077: guest accounts have neither (server: 403). */}
+        {u.isGuest ? null : <UsernameRow value={u.username} onSave={(username) => update({ username })} />}
+        {u.isGuest ? null : <PhoneRow value={u.phone} onSave={(phone) => update({ phone })} />}
         {/* Guests have no password of their own (server: 403 FORBIDDEN): no rows to change it. */}
         <Row
           label={t('profile.email')}
@@ -150,6 +168,15 @@ function ProfileTab(): ReactNode {
                 </button>
                 <button type="button" className="rounded-[var(--radius-control)] text-accent-text hover:underline" onClick={() => setCredDialog('email-cancel')}>
                   {t('mail.change.cancel')}
+                </button>
+              </span>
+            ) : !me.emailVerified && !u.isGuest ? (
+              // ADR-0065: with EMAIL_VERIFICATION=optional nothing asks for the code, so this is where
+              // the address gets confirmed (also with required, next to the bar).
+              <span className="flex flex-wrap items-center gap-x-2" data-testid="unverified-email">
+                <span>{t('mail.unverified')}</span>
+                <button type="button" className="rounded-[var(--radius-control)] text-accent-text hover:underline" onClick={() => setCredDialog('email-verify')}>
+                  {t('mail.confirm')}
                 </button>
               </span>
             ) : undefined
@@ -180,6 +207,7 @@ function ProfileTab(): ReactNode {
       {credDialog === 'email' ? <ChangeEmailDialog onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email-code' ? <ChangeEmailDialog mode="confirm" onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email-cancel' ? <ChangeEmailDialog mode="cancel" onClose={() => setCredDialog(null)} /> : null}
+      {credDialog === 'email-verify' ? <ChangeEmailDialog mode="verify" onClose={() => setCredDialog(null)} /> : null}
       <AfkCard />
       {/* Guest accounts do not install sticker packs (ADR-0030 §4). */}
       {u.isGuest ? null : <MyStickersCard />}
@@ -261,7 +289,7 @@ export function PermissionsCard(): ReactNode {
       <Row label={t('perm.notifications')}>
         <span className="text-body text-muted">{statusText(notif)}</span>
         {notif === 'default' ? (
-          <Button size="sm" variant="secondary" onClick={() => void Notification.requestPermission().then(() => platform.system.permissions().then(setP))}>
+          <Button size="sm" variant="secondary" onClick={() => void requestNotify(undefined, platform.notifications).then(() => platform.system.permissions().then(setP))}>
             {t('perm.ask')}
           </Button>
         ) : null}
@@ -401,6 +429,11 @@ function VoiceTab(): ReactNode {
             <Slider label={t('voice.thresholdLabel')} value={p.thresholdDb} min={METER_MIN_DB} max={0} onChange={(v) => p.setPrefs({ thresholdDb: v })} />
             <span className="text-caption text-faint">{t('voice.thresholdHint')}</span>
           </div>
+        ) : null}
+        {p.micMode === 'voice' ? (
+          <Row label={t('autoMute.label')} hint={t('autoMute.hint')} htmlFor="auto-mute">
+            <AutoMuteSelect id="auto-mute" />
+          </Row>
         ) : (
           <>
             <PttBinder />
@@ -573,7 +606,7 @@ function NotificationsTab(): ReactNode {
           <Button
             variant="secondary"
             onClick={() => {
-              if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission().then(show);
+              if (platform.notifications || (typeof Notification !== 'undefined' && Notification.permission === 'default')) void requestNotify(undefined, platform.notifications).then(show);
               else show();
             }}
           >
@@ -581,9 +614,38 @@ function NotificationsTab(): ReactNode {
           </Button>
         </Row>
       </Card>
+      <PushPrivacyCard />
+      <TaskNotifyCard />
       <RemindersCard />
       <SoundSettings />
     </>
+  );
+}
+
+function PushPrivacyCard(): ReactNode {
+  const hidden = useSession((s) => s.me?.settings?.hideMessageTextInNotifications);
+  const eligible = useSession((s) => !!s.me?.settings && !s.me.user?.isGuest && !s.me.user?.isBot);
+  const local = useSession((s) => localAuthority(s.authority));
+  const [pending, setPending] = useState(false);
+  if (!local || !eligible) return null;
+  const save = async (hidden: boolean): Promise<void> => {
+    setPending(true);
+    try {
+      const response = await api.me.update({ hideMessageTextInNotifications: hidden });
+      if (response.me) useSession.getState().set({ me: response.me });
+    } catch (e) {
+      toast.fail(e, t('err.ctx.save'));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Card title={t('notify.mobilePush')}>
+      <Row label={t('notify.messagePreview')} hint={t('notify.messagePreviewHint')}>
+        <Toggle label={t('notify.messagePreview')} checked={hidden !== true}
+          disabled={pending} onChange={(v) => void save(!v)} />
+      </Row>
+    </Card>
   );
 }
 
@@ -853,7 +915,21 @@ function ThemeCard(): ReactNode {
           ]}
         />
       </Row>
+      <HapticsRow />
     </Card>
+  );
+}
+
+/** «Виброотклик» (lib/haptics.ts): phone only — the desktop has nothing to vibrate. */
+function HapticsRow(): ReactNode {
+  const mobile = useMobile();
+  const on = usePrefs((s) => s.haptics);
+  const set = usePrefs((s) => s.setPrefs);
+  if (!mobile) return null;
+  return (
+    <Row label={t('settings.haptics')} hint={t('settings.hapticsHint')}>
+      <Toggle label={t('settings.haptics')} checked={on} onChange={(v) => set({ haptics: v })} />
+    </Row>
   );
 }
 
@@ -926,6 +1002,18 @@ function DesktopAppCards({
             onChange={(v) => void save({ autoUpdate: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
           />
         </Row>
+        {/* Both sources are pinned at build time (shared/updateFeed.ts); a change re-checks in main. */}
+        <Row label={t('app.updateChannel')} hint={t('app.updateChannelHint')}>
+          <Segmented<UpdateChannel>
+            label={t('app.updateChannel')}
+            value={settings?.updateChannel ?? 'github'}
+            options={[
+              { value: 'github', label: t('app.updateChannelGithub') },
+              { value: 's3', label: t('app.updateChannelS3') },
+            ]}
+            onChange={(v) => void save({ updateChannel: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+          />
+        </Row>
       </Card>
     </>
   );
@@ -938,6 +1026,7 @@ function AboutTab(): ReactNode {
   const setPrefs = usePrefs((s) => s.setPrefs);
   const desktop = platform.kind === 'electron';
   const version = info?.version ?? '—';
+  const webUpdate = useSession((s) => s.webVersion !== '');
   return (
     <>
       <div className="flex flex-col items-center gap-2 py-2 text-center">
@@ -950,6 +1039,10 @@ function AboutTab(): ReactNode {
       {desktop ? (
         <Card title={t('about.updates')}>
           <AboutUpdateRow version={version} />
+        </Card>
+      ) : webUpdate ? (
+        <Card title={t('about.updates')}>
+          <WebUpdateRow version={version} />
         </Card>
       ) : null}
       <LicenseCard />

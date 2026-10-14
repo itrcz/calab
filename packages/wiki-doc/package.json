@@ -1,0 +1,40 @@
+{
+  "name": "@calaba/wiki-doc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The wiki page document (ADR-0096): schema, Markdown bridge, Yjs conversion and sync frames, shared by the desktop and the bot SDK",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./inline": "./src/inline.ts",
+    "./markdown": "./src/markdown.ts",
+    "./frames": "./src/frames.ts",
+    "./plainText": "./src/plainText.ts",
+    "./schema": "./src/schema.ts",
+    "./ydoc": "./src/ydoc.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.31.4",
+    "@tiptap/extension-code-block": "3.31.4",
+    "@tiptap/extension-highlight": "3.31.4",
+    "@tiptap/extension-list": "3.31.4",
+    "@tiptap/extension-mention": "3.31.4",
+    "@tiptap/extension-table": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "@tiptap/y-tiptap": "3.0.9",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "license": "BUSL-1.1"
+}

@@ -9,9 +9,16 @@
 export interface LightboxImage {
   fileId: string;
   name: string;
+  /** MIME type from FileMeta, when known (the web drag-out names the file's type with it). */
+  mime?: string;
   /** Pixel size from FileMeta (0 when the server does not know it). */
   width: number;
   height: number;
+  /**
+   * A ready URL instead of an API file (a mail attachment, ADR-0088 §8: `calaba-mail://…`): shown
+   * as is (no thumbnail) and downloaded through a link; `fileId` is then just a unique key.
+   */
+  src?: string;
 }
 
 export type LoadState = 'loading' | 'loaded' | 'error';

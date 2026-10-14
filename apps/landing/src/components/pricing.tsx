@@ -1,11 +1,14 @@
 import { ChevronDown, Lock } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
-import type { Dict } from '@/i18n';
-import { APP_URL, CONTACT_EMAIL, repoFile } from '@/lib/site';
+import { localePath, type Dict, type Locale } from '@/i18n';
+import { APP_URL, repoFile } from '@/lib/site';
+import { PlanCta, PlanMonth, PlanPrice, PricesBar } from './plan-prices';
 import { Button, Section, SectionHeading } from './ui';
 
 const PLAN_IDS = ['free', 'team', 'business', 'enterprise'] as const;
 type PlanId = (typeof PLAN_IDS)[number];
+const paid = (id: PlanId): id is 'team' | 'business' => id === 'team' || id === 'business';
 type RowId = keyof Dict['pricing']['table']['rows'];
 const ROW_IDS = Object.keys({
   room: 0,
@@ -22,6 +25,9 @@ const ROW_IDS = Object.keys({
   caldav: 0,
   musician: 0,
   checklists: 0,
+  automations: 0,
+  forms: 0,
+  mail: 0,
   approvals: 0,
   webapps: 0,
   sip: 0,
@@ -33,9 +39,8 @@ const ROW_IDS = Object.keys({
   price: 0,
 } satisfies Record<RowId, 0>) as RowId[];
 
-const mailto = (plan: string): string => `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Calab ${plan}`)}`;
 
-const CTA: Record<PlanId, (t: Dict['pricing']) => ReactNode> = {
+const CTA: Record<PlanId, (t: Dict['pricing'], locale: Locale) => ReactNode> = {
   free: (t) => (
     <div className="flex gap-2">
       <Button href="#download" size="card" className="min-w-0 flex-1">
@@ -46,16 +51,8 @@ const CTA: Record<PlanId, (t: Dict['pricing']) => ReactNode> = {
       </Button>
     </div>
   ),
-  team: (t) => (
-    <Button href={mailto('Team')} variant="secondary" className="w-full">
-      {t.cta.contact}
-    </Button>
-  ),
-  business: (t) => (
-    <Button href={mailto('Business')} variant="secondary" className="w-full">
-      {t.cta.contact}
-    </Button>
-  ),
+  team: (t, locale) => <PlanCta locale={locale} t={t.live} label={t.cta.contact} />,
+  business: (t, locale) => <PlanCta locale={locale} t={t.live} label={t.cta.contact} />,
   enterprise: (t) => (
     <Button href={repoFile('COMMERCIAL-LICENSE.md')} variant="secondary" className="w-full">
       {t.cta.license}
@@ -90,7 +87,7 @@ function Cell({ value, t }: { value: string; t: Dict['pricing']['table'] }) {
  * table from md up, expanded by default; on phones the table would need a sideways scroll, so each card carries its own
  * values in a native <details> instead (no JS).
  */
-export function Pricing({ t }: { t: Dict['pricing'] }) {
+export function Pricing({ t, locale }: { t: Dict['pricing']; locale: Locale }) {
   const tb = t.table;
   return (
     <Section id="pricing" labelledBy="pricing-title">
@@ -98,7 +95,8 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
       <SectionHeading id="pricing-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
         <img className="section-sticker" src="/editorial/sticker-pricing.webp" width={180} height={180} alt="" loading="lazy" />
       </div>
-      <ul className="mt-12 grid gap-4 sm:mt-16 md:grid-cols-2 lg:grid-cols-4">
+      <PricesBar locale={locale} t={t.live} />
+      <ul className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {PLAN_IDS.map((id, col) => {
           const plan = t.plans[id];
           const start = id === 'free';
@@ -117,7 +115,15 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
               <h3 id={`plan-${id}`} className="text-[17px] leading-6 font-semibold">
                 {plan.name}
               </h3>
-              <p className="mt-1 text-[24px] leading-8 font-semibold tracking-tight">{plan.price}</p>
+              <p className="mt-1 text-[24px] leading-8 font-semibold tracking-tight">
+                {paid(id) ? <PlanPrice plan={id} locale={locale} /> : plan.price}
+              </p>
+              {paid(id) && (
+                <>
+                  <p className="mt-1 text-[14px] leading-5 text-fg-2">{t.perSeatDay}</p>
+                  <PlanMonth plan={id} locale={locale} t={t.live} className="mt-1 text-[14px] leading-5 text-fg-2" />
+                </>
+              )}
               <p className="mt-1 text-[14px] leading-5 text-pretty text-fg-2">{plan.note}</p>
               <details className="group mt-4 md:hidden">
                 <summary className="flex min-h-11 cursor-pointer items-center justify-between rounded-md text-[15px] font-medium text-accent-text">
@@ -129,17 +135,24 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
                     <div key={row} className="flex justify-between gap-4 py-2">
                       <dt className="text-fg-2">{tb.rows[row]}</dt>
                       <dd className="text-right font-medium">
-                        <Cell value={tb.cells[row][col] ?? ''} t={tb} />
+                        {row === 'price' && paid(id) ? <PlanPrice plan={id} locale={locale} /> : <Cell value={tb.cells[row][col] ?? ''} t={tb} />}
+                        {row === 'price' && paid(id) && (
+                          <span className="block text-[12px] font-normal text-fg-2">{t.perSeatDay}</span>
+                        )}
                       </dd>
                     </div>
                   ))}
                 </dl>
               </details>
-              <div className="mt-auto pt-6">{CTA[id](t)}</div>
+              <div className="mt-auto pt-6">{CTA[id](t, locale)}</div>
             </li>
           );
         })}
       </ul>
+      <p className="mt-6 max-w-[860px] text-[14px] leading-6 text-fg-2">
+        {t.billingNote}{' '}
+        <Link href={localePath(locale, 'legal/offer/')} className="link">{t.offerLink}</Link>
+      </p>
       <div className="mt-10 hidden overflow-hidden rounded-[24px] md:block">
         <table className="w-full table-fixed border-collapse text-[15px] leading-6">
           <caption className="sr-only">{tb.caption}</caption>
@@ -167,7 +180,14 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
                 </th>
                 {tb.cells[row].map((v, col) => (
                   <td key={PLAN_IDS[col]} className="px-4 py-3 align-top text-pretty">
-                    <Cell value={v} t={tb} />
+                    {row === 'price' && (col === 1 || col === 2) ? (
+                      <PlanPrice plan={col === 1 ? 'team' : 'business'} locale={locale} />
+                    ) : (
+                      <Cell value={v} t={tb} />
+                    )}
+                    {row === 'price' && (col === 1 || col === 2) && (
+                      <span className="block text-[12px] text-fg-2">{t.perSeatDay}</span>
+                    )}
                   </td>
                 ))}
               </tr>

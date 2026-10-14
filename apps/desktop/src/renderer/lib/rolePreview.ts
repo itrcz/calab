@@ -3,6 +3,7 @@ import {
   WorkspaceRole,
   computeMemberBoardPermissions,
   computeMemberRoomPermissions,
+  tempRoomScope,
   type Board,
   type PermissionBits,
   type Role,
@@ -47,7 +48,7 @@ export function visibleRooms(rooms: Readonly<Record<string, Room>>, wsId: string
   for (const r of Object.values(rooms)) {
     if (!listedRoom(r, wsId)) continue;
     total++;
-    if (can(computeMemberRoomPermissions(roles, '', r.permissionOverrides, r.restricted, false), 'VIEW_ROOM')) n++;
+    if (can(computeMemberRoomPermissions(roles, '', r.permissionOverrides, r.restricted, false, tempRoomScope(r)), 'VIEW_ROOM')) n++;
   }
   return `${n}/${total}`;
 }

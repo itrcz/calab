@@ -20,25 +20,39 @@ WHERE id = sqlc.arg('id');
 SELECT * FROM files WHERE id = $1;
 
 -- name: GetFilesWithUsage :many
+-- attached: already in a message or a task, or a file of the Disk (ADR-0094: deleting the Disk
+-- item forever deletes the file, which would silently drop it from a message).
 SELECT f.*, (EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
-    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id))::boolean AS attached
+    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
+    OR EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id))::boolean AS attached
 FROM files f WHERE f.id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: FileRooms :many
--- Rooms where the file is attached to a live message, and the room of a task whose description
--- shows it (ADR-0042).
+-- Rooms where the file is attached to a live message, the room of a task whose description
+-- shows it (ADR-0042), and a room whose picture it is or whose live system message room_icon
+-- shows it (ADR-0092; messages_room_icon_file_idx).
 SELECT DISTINCT m.room_id FROM message_attachments ma
 JOIN messages m ON m.id = ma.message_id AND m.deleted_at IS NULL
 WHERE ma.file_id = $1
 UNION
-SELECT t.room_id FROM task_attachments ta JOIN tasks t ON t.id = ta.task_id WHERE ta.file_id = $1;
+SELECT t.room_id FROM task_attachments ta JOIN tasks t ON t.id = ta.task_id WHERE ta.file_id = $1
+UNION
+SELECT r.id FROM rooms r WHERE r.icon_file_id = $1
+UNION
+SELECT ri.room_id FROM messages ri
+WHERE ri.kind = 'system' AND ri.payload ? 'roomIcon' AND ri.payload -> 'roomIcon' ->> 'fileId' = $1::text
+  AND ri.deleted_at IS NULL;
 
 -- name: IsWorkspaceIcon :one
 SELECT (EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = $1) OR EXISTS (SELECT 1 FROM boards b WHERE b.icon_file_id = $1))::boolean;
 
 -- name: ListOrphanFiles :many
 -- Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82), camera background
--- (ADR-0035), soundboard clip (ADR-0036) or web app icon (ADR-0050), older than the cutoff.
+-- (ADR-0035), soundboard clip (ADR-0036), web app icon (ADR-0050) or achievement picture
+-- (ADR-0061), room picture or its live system message (ADR-0092; deleted messages are never
+-- purged, so a deleted one must not keep the file), not a file of the Disk (ADR-0094; trashed
+-- ones included: the trash counts in the quota until deleted forever), not a picture or cover of
+-- a wiki page (ADR-0096; trashed pages included), older than the cutoff.
 SELECT * FROM files f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
@@ -51,6 +65,13 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM boards bi WHERE bi.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_apps wa WHERE wa.icon_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM rooms ri WHERE ri.icon_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM messages mi WHERE mi.kind = 'system' AND mi.payload ? 'roomIcon'
+                    AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text AND mi.deleted_at IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500;
 
@@ -73,8 +94,9 @@ SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
       + (SELECT coalesce(sum(size), 0) FROM files WHERE workspace_id IS NULL))::bigint;
 
 -- name: UnattachedBytesByUploader :one
--- Bytes a user uploaded to a workspace that are not attached to any message yet (stickers
--- are not uploads waiting for a message).
+-- Bytes a user uploaded to a workspace that are not attached to any message yet (stickers,
+-- files of the Disk, ADR-0094, and of wiki pages, ADR-0096, are not uploads waiting for a
+-- message).
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
@@ -82,4 +104,8 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
-  AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id);
+  AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id);

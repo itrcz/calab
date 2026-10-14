@@ -15,6 +15,7 @@ import { PttLastKey, bindingLabel, usePttCapture, type PttCapture } from '../set
 import { PttReleaseDelay } from '../settings/PttReleaseDelay';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MenuSliderItem } from './MenuSliderItem';
+import { AutoMuteSubmenu } from './AutoMuteMenu';
 import { selectMicMode, swallowMenuKey } from './micMenu';
 import { STATUS_KEY, StatusMenu, useCustomStatusExpiry, useMyStatus } from './StatusMenu';
 import { AppSettingsWindow } from './lazyWindows';
@@ -46,11 +47,12 @@ export function SelfPanel(): ReactNode {
   const second = inVoice ? t('shell.inVoiceStatus') : custom || statusName;
 
   return (
-    // Bottom island across the rail + room column (Discord 2x reference): 52 px, 32 px avatar with a
+    // Bottom island across the rail + room column (Discord 2x reference): 56 px, 32 px avatar centred
+    // on the rail's axis (8 + 8 + 4 + 16 = 36 px) with equal 12 px left / bottom padding in the plate's corner, 32 px avatar with a
     // 12 px status dot overlapping it, 14 px semibold name / 13 px status
     // that fades out when long; controls flush right (mic ▾ 44, headphones ▾ 44, 6 px apart, 10 px
     // from the edge; + the gear 32 on the phone), so the name keeps the rest.
-    <div className="flex h-[52px] shrink-0 items-center gap-1 pl-2 pr-2.5">
+    <div className="flex h-14 shrink-0 items-center gap-1 pl-2 pr-2.5">
       <StatusMenu>
         <button
           type="button"
@@ -116,7 +118,7 @@ export function SelfPanel(): ReactNode {
 }
 
 /** Icon button + ▾ device picker, one hover group (Discord-like). */
-function SplitButton({
+export function SplitButton({
   label,
   shortcut,
   danger,
@@ -138,8 +140,8 @@ function SplitButton({
     // inside it on both ends (docs/09 #102); the ▾ is always visible — the device menu is one click away.
     // Keyboard focus: one ring around the whole pill (a half-pill outline reads as broken, docs/09
     // #138); the focused half takes the stronger fill so it's clear which one Enter presses.
-    <div className="group/split flex h-8 shrink-0 items-center rounded-[var(--radius-icon)] outline-offset-2 outline-focus transition-colors duration-[var(--motion-fast)] hover:bg-hover has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-solid" data-focus-box>
-      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-8 w-[26px] rounded-r-none pl-1.5 hover:bg-transparent focus-visible:bg-[var(--color-fill-hover)] focus-visible:outline-none">
+    <div className="group/split flex size-10 shrink-0 items-center rounded-[var(--radius-icon)] outline-offset-2 outline-focus transition-colors duration-[var(--motion-fast)] hover:bg-hover has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-solid" data-focus-box>
+      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-10 w-7 rounded-r-none pl-1 hover:bg-transparent focus-visible:bg-[var(--color-fill-hover)] focus-visible:outline-none">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -148,7 +150,7 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="grid h-8 w-[18px] place-items-center rounded-r-[var(--radius-icon)] pl-0.5 pr-1.5 text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg focus-visible:bg-[var(--color-fill-hover)] focus-visible:text-fg focus-visible:outline-none data-[state=open]:text-fg"
+            className="grid h-10 w-3 place-items-center rounded-r-[var(--radius-icon)] pr-0.5 text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg focus-visible:bg-[var(--color-fill-hover)] focus-visible:text-fg focus-visible:outline-none data-[state=open]:text-fg"
           >
             <ChevronDown className="size-2.5 shrink-0" strokeWidth={2.75} aria-hidden />
           </button>
@@ -168,7 +170,7 @@ const DEFAULT_ID = '__default__';
  * голоса». While a key capture is armed the menu stays open (Esc cancels the capture, a click
  * outside is ignored) and keys go to the capture, not to the menu's typeahead / items.
  */
-function MicMenu(): ReactNode {
+export function MicMenu(): ReactNode {
   const cap = usePttCapture();
   const endedAt = useRef(0);
   const wasCapturing = useRef(false);
@@ -232,14 +234,17 @@ function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
         </Dropdown.RadioItem>
       </Dropdown.RadioGroup>
       {micMode === 'voice' ? (
-        <MenuSliderItem
-          label={t('shell.inputVolume')}
-          valueText={t('unit.db', { n: threshold })}
-          value={threshold}
-          min={-80}
-          max={-10}
-          onChange={(v) => setPrefs({ thresholdDb: v })}
-        />
+        <>
+          <MenuSliderItem
+            label={t('shell.inputVolume')}
+            valueText={t('unit.db', { n: threshold })}
+            value={threshold}
+            min={-80}
+            max={-10}
+            onChange={(v) => setPrefs({ thresholdDb: v })}
+          />
+          <AutoMuteSubmenu />
+        </>
       ) : (
         <>
           {/* The key as a pill; the row (or Enter on it) arms the capture in place. */}
@@ -281,7 +286,7 @@ function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
 type ContentProps = ComponentPropsWithoutRef<typeof Dropdown.Content>;
 
 /** Device quick-picker: list of inputs/outputs (the mic menu puts «Режим» on top). */
-function DeviceMenu({
+export function DeviceMenu({
   kind,
   top,
   testId,

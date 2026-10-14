@@ -14,6 +14,7 @@ import {
   cameraStopText,
   cpuLimitStep,
   grantedCameraQuality,
+  otherFacing,
   type CameraEvent,
   type CameraQuality,
 } from '../lib/media/cameraLogic';
@@ -22,7 +23,7 @@ import { allowedCameraPreset } from '../lib/plan';
 import { workspacePlan } from './plan';
 import type { OutboundVideoLayer } from '../lib/media/stats';
 import { isDeviceGone } from '../lib/voiceLogic';
-import { prefs } from '../stores/prefs';
+import { prefs, usePrefs } from '../stores/prefs';
 import { toast } from '../stores/toasts';
 import { setVoice, useVoice } from '../stores/voice';
 import { reportMediaError } from './mediaErrors';
@@ -76,12 +77,12 @@ export class CameraController {
     const want = prefs().cameraDeviceId;
     const q = this.wanted().quality;
     try {
-      return await captureCamera(want, q);
+      return await captureCamera(want, q, useVoice.getState().cameraFacing);
     } catch (err) {
       if (!want || !isDeviceGone(err)) throw err;
       log.warn('chosen camera unavailable, using the default one', err);
       toast.info(t('video.fallback'));
-      return captureCamera(null, q);
+      return captureCamera(null, q, useVoice.getState().cameraFacing);
     }
   }
 
@@ -222,7 +223,7 @@ export class CameraController {
     this.track?.stop();
     this.track = null;
     this.cpuSamples = 0;
-    setVoice({ camera: cameraNext(useVoice.getState().camera, 'left'), cameraCpuLimited: false });
+    setVoice({ camera: cameraNext(useVoice.getState().camera, 'left'), cameraCpuLimited: false, cameraFacing: null });
   }
 
   /**
@@ -261,7 +262,7 @@ export class CameraController {
     const track = this.track;
     if (!track) return;
     try {
-      await switchCameraDevice(track, deviceId, this.quality);
+      await switchCameraDevice(track, deviceId, this.quality, useVoice.getState().cameraFacing);
       // The restart captures at the full quality again: keep the CPU limit of this session (review L3).
       if (useVoice.getState().cameraCpuLimited) await limitCameraForCpu(track, this.quality);
       // A new capture: the processor follows by itself (restart), the camera's own blur does not.
@@ -270,6 +271,17 @@ export class CameraController {
     } catch (err) {
       reportMediaError(err, 'camera');
     }
+  }
+
+  /**
+   * «Переключить камеру» (phones): front ↔ back. The side wins over a chosen device, so that is
+   * cleared; the live track switches in place (the prefs subscription does it when a device was
+   * chosen, here otherwise). Without a published track (the preview) the new side is just picked.
+   */
+  flip(): void {
+    setVoice({ cameraFacing: otherFacing(useVoice.getState().cameraFacing) });
+    if (prefs().cameraDeviceId) usePrefs.getState().setPrefs({ cameraDeviceId: null });
+    else void this.setDevice(null);
   }
 
   /** «Фон» or «Внешний вид» changed (picker, island menu): applied to the live camera in place. */

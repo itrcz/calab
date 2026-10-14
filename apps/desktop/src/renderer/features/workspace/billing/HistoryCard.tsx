@@ -1,0 +1,285 @@
+import {
+  LedgerEntryKind,
+  PaymentOrigin,
+  PaymentStatus,
+  Plan,
+  type BillingPayment,
+  type LedgerEntry,
+} from '@calaba/protocol';
+import { timestampDate } from '@bufbuild/protobuf/wkt';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { ChevronDown, ExternalLink } from 'lucide-react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
+import { Button, Segmented, Spinner, cx } from '../../../components/ui';
+import { plural, t, type MessageKey } from '../../../i18n';
+import { billingErrorText } from '../../../lib/billing/errors';
+import { groupLedger, type LedgerItem } from '../../../lib/billing/history';
+import { PLAN_LABEL } from '../../../lib/plan';
+import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
+import { fmt } from '../../../lib/format';
+import { billingKeys, openReceipt, ownerBilling } from '../../../services/billing';
+import { PLAN_NAME } from './parts';
+
+/**
+ * «История» (ADR-0080 §13): the ledger (every daily charge, top-up, refund, compensation — cursor
+ * pages) and payments with the provider receipt (`receipt_url`). Refunds are made by the
+ * superadmin only (owner 2026-10-10: no refund requests); they show in the ledger.
+ * Rows are memo components with primitive / stable props (CLAUDE.md «Ререндеры»).
+ */
+
+export const LEDGER_KIND: Record<LedgerEntryKind, MessageKey> = {
+  [LedgerEntryKind.UNSPECIFIED]: 'billing.kind.other',
+  [LedgerEntryKind.TOPUP]: 'billing.kind.topup',
+  [LedgerEntryKind.SEAT_CHARGE]: 'billing.kind.seats',
+  [LedgerEntryKind.COMPENSATION]: 'billing.kind.compensation',
+  [LedgerEntryKind.REFUND]: 'billing.kind.refund',
+  [LedgerEntryKind.REFUND_REVERSAL]: 'billing.kind.refundReversal',
+  [LedgerEntryKind.DISPUTE]: 'billing.kind.dispute',
+  [LedgerEntryKind.DISPUTE_REVERSAL]: 'billing.kind.disputeReversal',
+  [LedgerEntryKind.ADMIN_CREDIT]: 'billing.kind.adminCredit',
+  [LedgerEntryKind.ADMIN_DEBIT]: 'billing.kind.adminDebit',
+};
+
+const skuPlan = (sku: string): string =>
+  sku.includes('enterprise') ? t(PLAN_NAME[Plan.ENTERPRISE]) : sku.includes('custom') ? t(PLAN_LABEL[Plan.CUSTOM]) : t(PLAN_NAME[Plan.TEAM]);
+
+/** The second line of a ledger row: what was bought / why. */
+export function ledgerDetail(e: LedgerEntry): string {
+  if (e.kind === LedgerEntryKind.SEAT_CHARGE && e.quantity > 0) {
+    // The row already shows when it started (created_at ≈ starts_at): the end is what matters.
+    const period = e.endsAt ? t('billing.until', { when: fmt.dateTime(timestampDate(e.endsAt), 'short') }) : '';
+    return [plural('billing.nSeats', e.quantity), e.sku ? skuPlan(e.sku) : '', period].filter(Boolean).join(' · ');
+  }
+  // The unused rest of a lot (a plan change / stop): which seats of which plan came back.
+  if (e.kind === LedgerEntryKind.COMPENSATION && e.sku) return [e.quantity > 0 ? plural('billing.nSeats', e.quantity) : '', skuPlan(e.sku)].filter(Boolean).join(' · ');
+  return e.reason;
+}
+
+const cols = 'grid grid-cols-[152px_minmax(0,1fr)_96px_96px] items-center gap-3 mobile:grid-cols-[minmax(0,1fr)_auto]';
+
+/** `action`: a stable render prop for a per-row control (the superadmin's «Отменить» of a credit). */
+export const LedgerRow = memo(function LedgerRow({ e, action }: { e: LedgerEntry; action?: ((e: LedgerEntry) => ReactNode) | undefined }): ReactNode {
+  const neg = minorOf(e.amount) < 0n;
+  const detail = ledgerDetail(e);
+  return (
+    <div role="row" className={cx(cols, 'min-h-10 border-b border-[var(--color-card-line)] px-3 py-1.5 last:border-b-0')} data-testid="billing-ledger-row">
+      <span role="cell" className="whitespace-nowrap tabular-nums text-caption text-muted mobile:hidden">
+        {e.createdAt ? fmt.dateTime(timestampDate(e.createdAt), 'short') : '—'}
+      </span>
+      <span role="cell" className="flex min-w-0 flex-col">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-body">{t(LEDGER_KIND[e.kind])}</span>
+          {action?.(e)}
+        </span>
+        <span className="truncate text-caption text-faint" title={detail}>
+          <span className="hidden mobile:inline">{e.createdAt ? `${fmt.dateTime(timestampDate(e.createdAt), 'short')}${detail ? ' · ' : ''}` : ''}</span>
+          {detail}
+        </span>
+      </span>
+      <span role="cell" className={cx('text-right tabular-nums text-body', neg ? 'text-fg' : 'text-ok')}>
+        {formatMoney(e.amount, { signed: true })}
+      </span>
+      <span role="cell" className={cx('text-right tabular-nums text-caption mobile:hidden', minorOf(e.balanceAfter) < 0n ? 'text-danger-text' : 'text-muted')}>
+        {formatMoney(e.balanceAfter)}
+      </span>
+    </div>
+  );
+});
+
+type OpItem = Extract<LedgerItem, { kind: 'op' }>;
+
+const opTitle = (g: OpItem): string =>
+  g.op === 'change'
+    ? t('billing.history.op.change', { from: t(PLAN_LABEL[g.from]), to: t(PLAN_LABEL[g.to]) })
+    : t(g.op === 'resume' ? 'billing.history.op.resume' : 'billing.history.op.activate', { plan: t(PLAN_LABEL[g.to]) });
+
+/**
+ * One operation (owner, 10.10): «Смена тарифа Business → Team: −0,03 $», expandable to its seat
+ * charge and the compensation of the previous plan. Own expanded state: a toggle re-renders this row only.
+ */
+const OpRow = memo(function OpRow({ g, action }: { g: OpItem; action?: ((e: LedgerEntry) => ReactNode) | undefined }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const head = g.entries[0];
+  const at = head?.createdAt ? fmt.dateTime(timestampDate(head.createdAt), 'short') : '—';
+  return (
+    <div className="border-b border-[var(--color-card-line)] last:border-b-0" data-testid="billing-ledger-op">
+      <div role="row" className={cx(cols, 'min-h-10 px-3 py-1.5')}>
+        <span role="cell" className="whitespace-nowrap tabular-nums text-caption text-muted mobile:hidden">
+          {at}
+        </span>
+        <span role="cell" className="flex min-w-0 flex-col">
+          <span className="truncate text-body">{opTitle(g)}</span>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex items-center gap-1 self-start rounded-[var(--radius-control)] text-caption text-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
+          >
+            <span className="hidden mobile:inline">{at} · </span>
+            {open ? t('billing.history.op.hide') : t('billing.history.op.details')}
+            <ChevronDown className={cx('size-3 transition-transform', open && 'rotate-180')} aria-hidden />
+          </button>
+        </span>
+        <span role="cell" className="text-right tabular-nums text-body">
+          {formatMinor(g.total, g.currency, { signed: true })}
+        </span>
+        <span role="cell" className={cx('text-right tabular-nums text-caption mobile:hidden', minorOf(head?.balanceAfter) < 0n ? 'text-danger-text' : 'text-muted')}>
+          {formatMoney(head?.balanceAfter)}
+        </span>
+      </div>
+      {open ? (
+        <div className="ml-3 border-l-2 border-[var(--color-card-line)]">
+          {g.entries.map((e) => (
+            <LedgerRow key={e.id} e={e} action={action} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+/** A ledger table with «Показать ещё» (cursor pages). Shared with the superadmin account page. */
+export function LedgerTable({
+  queryKey,
+  fetchPage,
+  action,
+}: {
+  queryKey: readonly unknown[];
+  fetchPage: (cursor: string, signal: AbortSignal) => ReturnType<typeof ownerBilling.ledger>;
+  action?: (e: LedgerEntry) => ReactNode;
+}): ReactNode {
+  const q = useInfiniteQuery({
+    queryKey,
+    queryFn: ({ pageParam, signal }) => fetchPage(pageParam, signal),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.nextCursor || undefined,
+    retry: false,
+  });
+  const entries = useMemo(() => q.data?.pages.flatMap((p) => p.entries) ?? [], [q.data]);
+  const items = useMemo(() => groupLedger(entries), [entries]);
+  if (q.isLoading) return <Spinner className="mx-auto my-4" />;
+  if (q.isError) return <p className="px-3 py-3 text-body text-danger-text">{billingErrorText(q.error)}</p>;
+  if (entries.length === 0) return <p className="px-3 py-3 text-body text-muted">{t('billing.history.empty')}</p>;
+  return (
+    <>
+      <div role="table" aria-label={t('billing.history.ledger')} data-testid="billing-ledger">
+        <div role="row" className={cx(cols, 'border-b border-[var(--color-card-line)] px-3 py-1.5 text-caption font-medium text-muted mobile:hidden')}>
+          <span role="columnheader">{t('billing.col.when')}</span>
+          <span role="columnheader">{t('billing.col.what')}</span>
+          <span role="columnheader" className="text-right">
+            {t('billing.col.amount')}
+          </span>
+          <span role="columnheader" className="text-right">
+            {t('billing.col.balance')}
+          </span>
+        </div>
+        {items.map((it) => (it.kind === 'op' ? <OpRow key={it.id} g={it} action={action} /> : <LedgerRow key={it.entry.id} e={it.entry} action={action} />))}
+      </div>
+      {q.hasNextPage ? (
+        <div className="flex justify-center py-2">
+          <Button size="sm" variant="ghost" busy={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
+            {t('billing.history.more')}
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+const PAYMENT_STATUS: Record<PaymentStatus, MessageKey> = {
+  [PaymentStatus.UNSPECIFIED]: 'billing.pay.status.processing',
+  [PaymentStatus.PROCESSING]: 'billing.pay.status.processing',
+  [PaymentStatus.SUCCEEDED]: 'billing.pay.status.succeeded',
+  [PaymentStatus.FAILED]: 'billing.pay.status.failed',
+  [PaymentStatus.CANCELED]: 'billing.pay.status.canceled',
+};
+
+const ORIGIN: Record<PaymentOrigin, MessageKey> = {
+  [PaymentOrigin.UNSPECIFIED]: 'billing.pay.origin.checkout',
+  [PaymentOrigin.CHECKOUT]: 'billing.pay.origin.checkout',
+  [PaymentOrigin.AUTO_TOPUP]: 'billing.pay.origin.auto',
+  [PaymentOrigin.IMPORT]: 'billing.pay.origin.import',
+  [PaymentOrigin.SAVED_METHOD]: 'billing.pay.origin.saved',
+};
+
+export const PaymentRow = memo(function PaymentRow({ p, extra }: { p: BillingPayment; extra?: ReactNode }): ReactNode {
+  const at = p.succeededAt ?? p.createdAt;
+  const refunded = minorOf(p.refunded);
+  return (
+    <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0" data-testid="billing-payment-row">
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex items-baseline gap-2 text-body">
+          <span className="tabular-nums font-medium">{formatMoney(p.amount)}</span>
+          <span className={cx('text-caption', p.status === PaymentStatus.FAILED ? 'text-danger-text' : 'text-muted')}>{t(PAYMENT_STATUS[p.status])}</span>
+        </span>
+        <span className="truncate text-caption text-faint">
+          {[at ? fmt.dateTime(timestampDate(at), 'short') : '', t(ORIGIN[p.origin]), refunded > 0n ? t('billing.pay.refunded', { amount: formatMoney(p.refunded) }) : ''].filter(Boolean).join(' · ')}
+        </span>
+      </span>
+      {extra}
+      {p.receiptUrl ? (
+        <Button size="sm" variant="ghost" onClick={() => openReceipt(p.receiptUrl)}>
+          {t('billing.pay.receipt')}
+          <ExternalLink className="size-3" aria-hidden />
+        </Button>
+      ) : null}
+    </div>
+  );
+});
+
+function Payments({ workspaceId }: { workspaceId: string }): ReactNode {
+  const q = useInfiniteQuery({
+    queryKey: billingKeys.payments(workspaceId),
+    queryFn: ({ pageParam, signal }) => ownerBilling.payments(workspaceId, pageParam, signal),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.nextCursor || undefined,
+    retry: false,
+  });
+  const list = q.data?.pages.flatMap((p) => p.payments) ?? [];
+  if (q.isLoading) return <Spinner className="mx-auto my-4" />;
+  if (q.isError) return <p className="px-3 py-3 text-body text-danger-text">{billingErrorText(q.error)}</p>;
+  if (list.length === 0) return <p className="px-3 py-3 text-body text-muted">{t('billing.history.noPayments')}</p>;
+  return (
+    <div data-testid="billing-payments">
+      {list.map((p) => (
+        <PaymentRow key={p.id} p={p} />
+      ))}
+      {q.hasNextPage ? (
+        <div className="flex justify-center py-2">
+          <Button size="sm" variant="ghost" busy={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
+            {t('billing.history.more')}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type Tab = 'ledger' | 'payments';
+
+export function HistoryCard({ workspaceId }: { workspaceId: string; currency: string; payments: boolean }): ReactNode {
+  const [tab, setTab] = useState<Tab>('ledger');
+  return (
+    <section className="flex flex-col gap-1.5" data-testid="billing-history">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <h3 className="text-caption font-semibold text-muted">{t('billing.history.title')}</h3>
+        <Segmented<Tab>
+          label={t('billing.history.title')}
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'ledger', label: t('billing.history.ledger') },
+            { value: 'payments', label: t('billing.history.payments') },
+          ]}
+        />
+      </div>
+      <div className="overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)] text-body">
+        {tab === 'ledger' ? (
+          <LedgerTable queryKey={billingKeys.ledger(workspaceId)} fetchPage={(cursor, signal) => ownerBilling.ledger(workspaceId, cursor, signal)} />
+        ) : (
+          <Payments workspaceId={workspaceId} />
+        )}
+      </div>
+    </section>
+  );
+}

@@ -1,6 +1,6 @@
 import { applyIdentityAccess, identityRoomLocked } from './identity';
 import { useIdentity } from '../stores/identity';
-import { accessLocked } from '../features/identity/model';
+import { accessLocked, billingLocked } from '../features/identity/model';
 import {
   VoiceStreamStopReason,
   WorkspaceRole,
@@ -19,6 +19,7 @@ import { useArchiveView } from '../stores/archiveView';
 import { toast } from '../stores/toasts';
 import { mayMentionAll } from '../lib/permissions';
 import { useReadReceipts } from '../stores/readReceipts';
+import { useRoomPreviews } from '../stores/roomPreviews';
 import { useRooms } from '../stores/rooms';
 import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
@@ -28,13 +29,17 @@ import { useStreamFullscreen } from '../features/voice/fullscreen';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
 import { queryClient } from '../lib/queryClient';
+import './users';
 import { bansKey } from '../lib/moderation';
-import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
+import { applyDm, applyDmState, refreshDmPreview, refreshDms, refreshRoomPreview } from './dms';
 import { applyShelf, applyShelves, dropShelf } from './notes';
 import { useNotes } from '../stores/notes';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
+import { achievementForMe } from '../lib/achievements';
+import { invalidateCatalog, invalidateMemberAchievements } from '../lib/achievementCatalog';
 import { applyUserSettings } from './profile';
+import { onBillingUpdate, onWorkspaceBilling, resyncBilling } from './billing';
 import { applyStickerEvent } from './stickers';
 import { applyBotEvent } from './bots';
 import { useBots } from '../stores/bots';
@@ -64,6 +69,11 @@ import {
 } from './calendar';
 import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
+import { onDiskItemRemove, onDiskItemUpsert, onWorkspaceStorage } from './disk';
+import { useDisk } from '../stores/disk';
+import { onWikiPageRemove, onWikiPageUpsert } from './wiki';
+import { useWiki } from '../stores/wiki';
+import { applyAutomationEvent } from './automations';
 import { isTaskRoom } from '../stores/rooms';
 import { onRoomArchived } from '../lib/api/client';
 import { isTempRoom } from '../lib/tempRooms';
@@ -105,6 +115,7 @@ export function removeRoom(workspaceId: string, roomId: string): void {
   useRooms.getState().remove(roomId);
   useWorkspaces.getState().clearRoomVoice(workspaceId, roomId);
   useMessages.getState().unload(roomId);
+  useRoomPreviews.getState().drop([roomId]);
   dropRecordings((r) => r === roomId);
   dropSipCalls((r) => r === roomId);
   useInbox.getState().removeRooms((id) => id !== roomId);
@@ -123,8 +134,12 @@ export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
   if (e.value && e.case !== 'ready' && e.case !== 'workspaceIdentityAccessUpdate') {
     const value = e.value;
-    if ('workspaceId' in value && typeof value.workspaceId === 'string' && accessLocked(useIdentity.getState().access[value.workspaceId]))
-      return;
+    if ('workspaceId' in value && typeof value.workspaceId === 'string') {
+      const access = useIdentity.getState().access[value.workspaceId];
+      // BILLING_UPDATE (content-free) still reaches the owner of a workspace closed for unpaid
+      // billing: the paywall refreshes after a payment (ADR-0080 §12).
+      if (accessLocked(access) && !(e.case === 'billingUpdate' && billingLocked(access))) return;
+    }
     if ('roomId' in value && typeof value.roomId === 'string' && identityRoomLocked(value.roomId)) return;
   }
   switch (e.case) {
@@ -162,6 +177,8 @@ export function applyDispatch(ev: DispatchEvent): void {
         applySnapshotApps(snap);
         applySnapshotBoards(snap);
       }
+      // Room list previews (ADR-0073 §5): one set for all the workspaces.
+      useRoomPreviews.getState().setAll(r.workspaces);
       // Task rooms (ADR-0042) are not in READY: the open ones come back before stale windows go.
       restoreTaskRooms();
       // DMs (ADR-0020): rooms without a workspace; their read states are in read_states below.
@@ -196,7 +213,14 @@ export function applyDispatch(ev: DispatchEvent): void {
       resetRecordings(r.workspaces);
       // Telephony (ADR-0046): the rooms' live phone lines.
       resetSipCalls(r.workspaces);
-      useSession.getState().set({ me: r.me ?? null, planContact: r.planContact, ready: true });
+      useSession.getState().set({
+        me: r.me ?? null,
+        planContact: r.planContact,
+        emailVerificationOptional: r.emailVerificationOptional,
+        emailInvitePending: r.emailInvitePending,
+        billingSelfServe: r.billingSelfServe,
+        ready: true,
+      });
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
@@ -216,6 +240,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       resumeVoiceAfterReady(r.call);
       // Web: a server newer than this bundle → «Обновить страницу» (docs/09 #125).
       void checkWebVersion();
+      // Balance billing (ADR-0080): a BILLING_UPDATE may have been missed while away.
+      resyncBilling(new Set(r.workspaces.map((w) => w.workspace?.id ?? '')));
       return;
     }
     case 'resumed':
@@ -229,6 +255,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWorkspaces.getState().applySnapshot(snap);
       useRooms.getState().upsertMany(snap.rooms);
       for (const room of snap.rooms) if (room.lastMessageId) useRooms.getState().setLastMessage(room.id, room.lastMessageId);
+      useRoomPreviews.getState().applySnapshot(snap);
       applySnapshotExtras(snap);
       applySnapshotSounds(snap);
       applySnapshotApps(snap);
@@ -254,6 +281,12 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'taskChecklistDelete':
       applyBoardEvent(e);
       return;
+    // Board automations and Git links (ADR-0060, events 92–94).
+    case 'boardRuleUpdate':
+    case 'boardRuleDelete':
+    case 'taskGitLinksUpdate':
+      applyAutomationEvent(e);
+      return;
     case 'dmCreate':
       if (e.value.dm) applyDm(e.value.dm, true);
       return;
@@ -268,10 +301,36 @@ export function applyDispatch(ev: DispatchEvent): void {
       applyDmState(e.value.roomId, e.value.archivedAt ? timestampMs(e.value.archivedAt) : 0, e.value.clearedBeforeMessageId);
       return;
     case 'workspaceUpdate':
-      if (e.value.workspace) useWorkspaces.getState().updateWorkspace(e.value.workspace);
+      if (e.value.workspace) {
+        const usedBefore = useWorkspaces.getState().byId[e.value.workspace.id]?.ws.storageUsedBytes;
+        useWorkspaces.getState().updateWorkspace(e.value.workspace);
+        // The Disk's storage meter (ADR-0094 §6) follows the workspace's usage.
+        if (usedBefore !== e.value.workspace.storageUsedBytes) onWorkspaceStorage(e.value.workspace.id);
+        onWorkspaceBilling(e.value.workspace);
+        // «Тариф не активен» starts / ends live: the stream / camera buttons of my call follow.
+        if (e.value.workspace.id === useVoice.getState().workspaceId) voice.refreshRights();
+      }
+      return;
+    // Disk (ADR-0094 §7): the open listing follows; a hidden section drops its stale lists.
+    case 'diskItemUpsert':
+      onDiskItemUpsert(e.value);
+      return;
+    case 'diskItemRemove':
+      onDiskItemRemove(e.value);
+      return;
+    // Wiki (ADR-0096 §8): the tree's structure follows; the content only through /sync.
+    case 'wikiPageUpsert':
+      onWikiPageUpsert(e.value);
+      return;
+    case 'wikiPageRemove':
+      onWikiPageRemove(e.value);
+      return;
+    case 'billingUpdate':
+      onBillingUpdate(e.value.workspaceId, e.value.revision);
       return;
     case 'workspaceDelete': {
       const id = e.value.workspaceId;
+      useRoomPreviews.getState().drop(Object.values(useRooms.getState().byId).flatMap((r) => (r.workspaceId === id ? [r.id] : [])));
       useWorkspaces.getState().remove(id);
       useRooms.getState().removeWorkspace(id);
       useSounds.getState().dropWorkspace(id);
@@ -280,6 +339,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       dropSipCalls((_room, c) => c.workspaceId === id);
       dropWorkspaceEvents(id);
       dropWorkspaceBoards(id);
+      useDisk.getState().dropWorkspace(id);
+      useWiki.getState().dropWorkspace(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
@@ -290,7 +351,10 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'workspaceMemberUpdate':
       if (e.value.member) {
         const m = e.value.member;
+        // ADR-0061: the live achievements of a member changed → an open profile reloads them.
+        const before = useWorkspaces.getState().byId[m.workspaceId]?.members[m.user?.id ?? '']?.achievementCount;
         useWorkspaces.getState().upsertMember(m);
+        if (before !== undefined && before !== m.achievementCount && m.user) invalidateMemberAchievements(m.workspaceId, m.user.id);
         // A bot joined (ADR-0031): the rooms' command hints may have grown.
         if (m.user?.isBot) useBots.getState().dropCommands();
         // My roles changed (ADR-0026): the entry's built-in role (admin UI) and my call's
@@ -325,6 +389,11 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'badgeDelete':
       useWorkspaces.getState().removeBadge(e.value.workspaceId, e.value.badgeId);
       return;
+    // The workspace's achievement catalog changed (ADR-0061 amendment 1): mounted users refetch
+    // it (ETag → usually 304), the rest of the cache turns stale.
+    case 'workspaceAchievementsUpdate':
+      invalidateCatalog(e.value.workspaceId);
+      return;
     // Camera backgrounds of the workspace (ADR-0035 addendum): a deleted chosen one resets to «Нет».
     case 'backgroundCreate':
     case 'backgroundUpdate':
@@ -354,7 +423,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'workspaceMemberRemove':
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();
-      useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);
+      useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId, e.value.former);
+      void queryClient.invalidateQueries({ queryKey: ['former-members', e.value.workspaceId] });
       return;
     case 'workspaceBanAdd':
     case 'workspaceBanRemove': {
@@ -385,6 +455,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         useMessages.getState().upsert(e.value.message);
         useDms.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
         useNotes.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
+        useRoomPreviews.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
         onMessageEdited(e.value.message, e.value.workspaceId);
       }
       return;
@@ -400,6 +471,11 @@ export function applyDispatch(ev: DispatchEvent): void {
       useDms.getState().onChanged(roomId, messageId, null);
       useNotes.getState().onChanged(roomId, messageId, null);
       if ((useDms.getState().byRoom[roomId] || useNotes.getState().byRoom[roomId]) && previewUnknown(roomId)) void refreshDmPreview(roomId);
+      // A workspace room's previewed message (ADR-0073 §5): the next newest one is fetched lazily.
+      if (useRoomPreviews.getState().preview[roomId]?.messageId === messageId) {
+        useRoomPreviews.getState().onChanged(roomId, messageId, null);
+        void refreshRoomPreview(roomId);
+      }
       return;
     }
     case 'messageReactionAdd':
@@ -573,6 +649,9 @@ function onMessage(m: Message, workspaceId: string): void {
   if (!workspaceId && !useRooms.getState().byId[m.roomId]) void refreshDms();
   useDms.getState().onMessage(m);
   useNotes.getState().onMessage(m);
+  // Room list preview (ADR-0073 §5): known workspace rooms only, not task comments.
+  const room = workspaceId ? useRooms.getState().byId[m.roomId] : undefined;
+  if (room && !isTaskRoom(room)) useRoomPreviews.getState().onMessage(m);
   if (!firstSeen(m.id)) return; // duplicate: no second badge / sound / notification
   const rooms = useRooms.getState();
   // A comment of a task (ADR-0042): task rooms are hidden — no room badges or chat sounds; the
@@ -586,7 +665,9 @@ function onMessage(m: Message, workspaceId: string): void {
     return;
   }
   rooms.setLastMessage(m.roomId, m.id);
-  if (m.authorId === myUserId()) {
+  // My own message is read — except my achievement card (ADR-0061 §4): posted by the server in
+  // my name, it is news to me, a mention.
+  if (m.authorId === myUserId() && !achievementForMe(m, myUserId())) {
     rooms.setRead(m.roomId, m.id);
     return;
   }

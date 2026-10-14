@@ -138,7 +138,10 @@ func (p SyncPublisher) sync(wid uuid.UUID, ev *v1.DispatchEvent) {
 		p.async(func(ctx context.Context) { p.S.disconnect(ctx, wid, func(voice.SessionState) bool { return true }) })
 	case *v1.DispatchEvent_WorkspaceUpdate:
 		// A suspended workspace has no calls (item 32): everyone is disconnected; joining again
-		// is refused (403 WORKSPACE_SUSPENDED).
+		// is refused (403 WORKSPACE_SUSPENDED). A billing suspension (Workspace.billing
+		// SUSPENDED, ADR-0080 §12) goes through the resync: its identity check (RTC) denies
+		// every device while enforcement is on, so they are removed; tokens are refused the
+		// same way, and the identity sweep (identity.go) catches a missed event.
 		p.async(func(ctx context.Context) { p.S.resync(ctx, wid, func(voice.SessionState) bool { return true }) })
 		if e.WorkspaceUpdate.GetWorkspace().GetSuspension() != nil {
 			p.async(func(ctx context.Context) { p.S.disconnect(ctx, wid, func(voice.SessionState) bool { return true }) })

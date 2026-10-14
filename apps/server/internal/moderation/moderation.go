@@ -52,6 +52,9 @@ var blocked = map[string]scope{
 	"POST /api/workspaces/{id}/sticker-packs": scopeWorkspace,
 	// soundboard (ADR-0036); PATCH / DELETE check the suspension themselves
 	"POST /api/workspaces/{id}/sounds": scopeWorkspace,
+	// achievement catalog (ADR-0061 amendment 1): a new picture is a new file; PATCH / DELETE
+	// check the suspension themselves
+	"POST /api/workspaces/{id}/achievements": scopeWorkspace,
 	// voice, streams, cameras, recording
 	"POST /api/rooms/{id}/join":                        scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/move":         scopeRoom,

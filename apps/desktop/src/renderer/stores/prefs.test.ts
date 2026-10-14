@@ -26,3 +26,34 @@ describe('prefs.cameraBgFps', () => {
     expect(usePrefs.getState().cameraBgFps).toBe(20);
   });
 });
+
+describe('prefs.autoMuteSec', () => {
+  beforeEach(() => mem.clear());
+  it('is off by default (also for stored prefs that predate it)', async () => {
+    expect(usePrefs.getState().autoMuteSec).toBe(0);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { micMode: 'voice' }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().autoMuteSec).toBe(0);
+  });
+  it('keeps an offered value, drops anything else to off', async () => {
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { autoMuteSec: 300 }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().autoMuteSec).toBe(300);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { autoMuteSec: 42 }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().autoMuteSec).toBe(0);
+  });
+});
+
+describe('prefs.haptics', () => {
+  beforeEach(() => mem.clear());
+  it('is on by default and kept when stored data predates it', async () => {
+    expect(usePrefs.getState().haptics).toBe(true);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'light' }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().haptics).toBe(true);
+    mem.setItem('calaba-prefs', JSON.stringify({ state: { haptics: false }, version: 4 }));
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState().haptics).toBe(false);
+  });
+});

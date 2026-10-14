@@ -137,6 +137,21 @@ func (q *Queries) GetPendingEmailInvite(ctx context.Context, arg GetPendingEmail
 	return i, err
 }
 
+const hasPendingEmailInvite = `-- name: HasPendingEmailInvite :one
+SELECT EXISTS (
+  SELECT 1 FROM email_invites
+  WHERE email = $1 AND accepted_at IS NULL AND expires_at > now()
+)::bool
+`
+
+// Whether a live invitation waits for an address (ADR-0065: its join needs the confirmation).
+func (q *Queries) HasPendingEmailInvite(ctx context.Context, email string) (bool, error) {
+	row := q.db.QueryRow(ctx, hasPendingEmailInvite, email)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listEmailInvites = `-- name: ListEmailInvites :many
 SELECT id, workspace_id, email, role, invited_by, invite_id, expires_at, last_sent_at, accepted_at, created_at FROM email_invites WHERE workspace_id = $1 AND accepted_at IS NULL ORDER BY created_at DESC
 `
@@ -174,7 +189,7 @@ func (q *Queries) ListEmailInvites(ctx context.Context, workspaceID uuid.UUID) (
 
 const lookupInvitee = `-- name: LookupInvitee :one
 
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots FROM users
 WHERE email = $1 AND email_verified_at IS NOT NULL AND disabled_at IS NULL AND NOT is_guest
 `
 
@@ -214,6 +229,11 @@ func (q *Queries) LookupInvitee(ctx context.Context, email *string) (User, error
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }

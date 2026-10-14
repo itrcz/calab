@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appDropAt, appInitial, coversContent, moveApp, showBottomIsland, titleSlot, visibleViewRect, type OverlayNode } from './webApps';
+import { appDropAt, appInitial, coversContent, moveApp, showBottomIsland, TIP_TEXT_MAX, tipOverApp, tipText, titleSlot, visibleViewRect, type OverlayNode } from './webApps';
 
 describe('showBottomIsland', () => {
   it('is hidden whenever an app is open, regardless of voice state', () => {
@@ -106,5 +106,26 @@ describe('visibleViewRect (toasts, knock cards, the calling strip stay visible)'
   it('too little left: hidden (null)', () => {
     expect(visibleViewRect(view, [{ x: 0, y: 0, width: 2000, height: 2000 }])).toBeNull();
     expect(visibleViewRect({ x: 0, y: 0, width: 400, height: 200 }, [{ x: 50, y: 60, width: 300, height: 100 }])).toBeNull();
+  });
+});
+
+describe('tipOverApp (tooltips over the app go to the native overlay)', () => {
+  const app = { x: 72, y: 40, width: 800, height: 560 };
+  it('a rail tooltip reaching into the app', () => expect(tipOverApp({ x: 60, y: 100, width: 80, height: 24 }, app)).toBe(true));
+  it('a tooltip fully inside the app', () => expect(tipOverApp({ x: 300, y: 300, width: 80, height: 24 }, app)).toBe(true));
+  it('a tooltip left of the app', () => expect(tipOverApp({ x: 0, y: 100, width: 60, height: 24 }, app)).toBe(false));
+  it('touching the edge does not count', () => expect(tipOverApp({ x: 12, y: 100, width: 60, height: 24 }, app)).toBe(false));
+  it('above the app (title bar)', () => expect(tipOverApp({ x: 300, y: 10, width: 80, height: 30 }, app)).toBe(false));
+  it('no app on screen', () => expect(tipOverApp({ x: 300, y: 300, width: 80, height: 24 }, null)).toBe(false));
+  it('a tooltip not laid out yet (0×0)', () => expect(tipOverApp({ x: 300, y: 300, width: 0, height: 0 }, app)).toBe(false));
+  it('a hidden app (0×0)', () => expect(tipOverApp({ x: 0, y: 0, width: 80, height: 24 }, { x: 0, y: 0, width: 0, height: 0 })).toBe(false));
+});
+
+describe('tipText', () => {
+  it('collapses whitespace', () => expect(tipText('  Grafana \n dashboards ')).toBe('Grafana dashboards'));
+  it('cuts long text to the overlay limit', () => {
+    const s = tipText('x'.repeat(500));
+    expect(s.length).toBe(TIP_TEXT_MAX);
+    expect(s.endsWith('…')).toBe(true);
   });
 });

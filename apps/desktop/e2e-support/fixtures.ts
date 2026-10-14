@@ -41,6 +41,7 @@ import {
   UserSettingsSchema,
   VoiceStateSchema,
   WorkspaceRole,
+  FormerMemberReason,
   WorkspaceSchema,
   WorkspaceVisibility,
   type FileMeta,
@@ -365,6 +366,16 @@ export interface FileRec {
   thumbnail?: { bytes: Buffer; mime: string };
 }
 
+/** A person who left a workspace (ADR-0097); the profile is the mock user's. */
+export interface MockFormer {
+  userId: string;
+  role: WorkspaceRole;
+  reason: FormerMemberReason;
+  leftAt: Timestamp;
+  removedBy?: string;
+  openTasks?: number;
+}
+
 export interface MockState {
   scenario: Scenario;
   /** GET /api/version `version` ('dev' = never newer than a bundle; a test sets e.g. '99.0.0'). */
@@ -417,6 +428,8 @@ export interface MockState {
   suspendedBy: Map<string, string>;
   /** workspaceId → bans, newest first (docs/09 #32). */
   bans: Map<string, WorkspaceBan[]>;
+  /** workspaceId → former members, newest first (ADR-0097); served by …/former-members and …/users?ids=. */
+  formerMembers: Map<string, MockFormer[]>;
   /**
    * workspaceId → roles (ADR-0026). The four built-ins carry their legacy names as ids
    * («member»…: the fixture's room overrides stay valid); created lazily for new workspaces.
@@ -592,11 +605,14 @@ interface UserSpec {
   avatar?: string;
   /** IANA zone (User.timezone); the visual tests run in Europe/Moscow. */
   timezone?: string;
+  /** ADR-0077: nickname and phone (only for people with a status: member rows keep their second line). */
+  username?: string;
+  phone?: string;
 }
 
 const USERS: UserSpec[] = [
-  { key: 'anna', n: 1, name: 'Анна Смирнова', email: 'owner@calaba.test', status: 'В фокусе до 18:00' },
-  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне', timezone: 'Asia/Yekaterinburg' },
+  { key: 'anna', n: 1, name: 'Анна Смирнова', email: 'owner@calaba.test', status: 'В фокусе до 18:00', username: 'anna', phone: '+7 916 555-01-01' },
+  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне', timezone: 'Asia/Yekaterinburg', username: 'boris_p', phone: '+7 912 555-02-02' },
   { key: 'vera', n: 3, name: 'Вера Ким', email: 'vera@calaba.test', status: '', avatar: IDS.files.veraAvatar },
   {
     key: 'grigory',
@@ -769,6 +785,7 @@ export function buildState(scenario: Scenario): MockState {
     planLog: new Map(),
     suspendedBy: new Map(),
     bans: new Map(),
+    formerMembers: new Map(),
     roles: new Map(),
     badges: new Map(),
     backgrounds: new Map(),
@@ -803,6 +820,9 @@ export function buildState(scenario: Scenario): MockState {
         timezone: u.timezone ?? '',
         createdAt: created,
         isGuest: u.key === 'dina', // guest account from a room link (ADR-0016)
+        // ADR-0077: contacts as the server shows them to colleagues (the mock does not strip them;
+        // the client shows them by its own rule), the nickname to everyone.
+        ...(scenario === 'data' && u.key !== 'dina' ? { email: u.email, emailVerified: true, phone: u.phone ?? '', username: u.username ?? '' } : {}),
       }),
       email: u.email,
       password: PASSWORD,

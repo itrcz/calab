@@ -59,6 +59,8 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_WORKSPACE_SUSPENDED: { key: 'err.suspended' },
   ERROR_CODE_BANNED: { key: 'err.banned' },
   ERROR_CODE_ROOM_ARCHIVED: { key: 'temp.archived' },
+  ERROR_CODE_USERNAME_TAKEN: { key: 'profile.username.taken' },
+  ERROR_CODE_USERNAME_INVALID: { key: 'profile.username.invalid' },
 };
 
 const IMAGE_ERR: Record<ImageError['reason'], MessageKey> = {
@@ -78,6 +80,7 @@ const FIELD: Record<string, MessageKey> = {
   content: 'err.field.content',
   topic: 'err.field.topic',
   statusText: 'err.field.status',
+  phone: 'profile.phone.invalid',
   text: 'err.field.status',
   userLimit: 'err.field.userLimit',
   maxUses: 'err.field.maxUses',
@@ -161,6 +164,9 @@ export function recentAuthRequired(e: unknown): boolean {
 export function describeError(e: unknown): HumanError {
   if (e instanceof ApiError) {
     if (identityNotConfigured(e)) return { text: t('identity.notConfigured'), retry: false, generic: false };
+    // The restricted mode «тариф не активен» (ADR-0086 amendment): one plain reason everywhere.
+    if (e.reason === 'WORKSPACE_PLAN_INACTIVE')
+      return { text: t(e.code === 'ERROR_CODE_ROOM_FULL' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error'), retry: false, generic: false };
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
       const sticker = e.field ? stickerField(e.field, e.message) : null;

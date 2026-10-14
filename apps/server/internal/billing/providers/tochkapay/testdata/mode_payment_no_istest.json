@@ -1,0 +1,1 @@
+{"Data":{"paymentUid":"977639EE70494C67","createdDateTime":"2025-01-01T01:23:45+03:00","amount":{"currency":"RUB","amount":"1.00"},"paymentMethod":{"type":"SBP_TOKEN"},"status":{"value":"COMPLETED","changedDateTime":"2025-01-01T01:23:46+03:00"},"customer":{"account":"E268443E43D93DAB7EBEF303BBE9642F"}}}

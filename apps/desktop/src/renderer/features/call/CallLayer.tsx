@@ -42,7 +42,7 @@ function RoundAction({ label, tone, onClick, disabled, autoFocus, testId, childr
       >
         {children}
       </button>
-      <span className="text-caption text-muted" aria-hidden>
+      <span className="text-caption text-muted mobile:text-[15px] mobile:text-fg" aria-hidden>
         {label}
       </span>
     </div>
@@ -80,7 +80,7 @@ function CallSheet({
           onPointerDownOutside={outside}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-toast)] flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-[var(--radius-panel)] px-6 pb-6 pt-8 text-center focus:outline-none',
-            'mobile:inset-0 mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:justify-center mobile:rounded-none mobile:pb-[calc(var(--safe-bottom,0px)+48px)] mobile:pt-[var(--safe-top,0px)]',
+            'mobile:inset-0 mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:justify-start mobile:rounded-none mobile:border-0! mobile:shadow-none! mobile:pb-[calc(var(--safe-bottom,0px)+48px)] mobile:pt-[calc(var(--safe-top,0px)+72px)]',
           )}
         >
           <Avatar userId={peerId} name={name} fileId={fileId} size={96} />

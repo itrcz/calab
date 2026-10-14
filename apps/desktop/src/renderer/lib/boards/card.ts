@@ -16,6 +16,8 @@ export type LinkCard =
       statusName: string;
       statusType: BoardStatusType | 0;
       statusColor: number;
+      /** BoardStatus.icon ('' = by type, ADR-0093). */
+      statusIcon: string;
       done: boolean;
       dueOn: string;
       /** Lead first, at most three; `more` = the rest. */
@@ -43,6 +45,7 @@ export function linkCard(res: Pick<UnfurlResponse, 'task' | 'board'>, live?: { t
       statusName: st?.name ?? '',
       statusType: st?.type ?? 0,
       statusColor: st?.color ?? 0x8e8e93,
+      statusIcon: st?.icon ?? '',
       done: !!st && DONE.has(st.type),
       dueOn: task.dueOn,
       assignees: ids.slice(0, 3),

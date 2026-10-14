@@ -104,8 +104,8 @@ export function reconnectGateway(): void {
 }
 
 /** Reconnect now only if the socket is gone or dead (screen unlock, window shown, back online). */
-export function wakeGateway(): void {
-  client?.wake();
+export function wakeGateway(reason: 'visibility' | 'incoming-call' = 'visibility'): void {
+  client?.wake(reason);
 }
 
 /** Fine-grained subscription (docs/05, SUBSCRIBE): the server sends TYPING_START only for these rooms. */

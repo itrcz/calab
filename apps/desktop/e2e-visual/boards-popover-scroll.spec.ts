@@ -10,7 +10,7 @@ import { expect, signIn, test } from './calendarWeb';
 test('popover scroll: create-task assignee picker scrolls with the wheel', async ({ page, mock }) => {
   await page.setViewportSize({ width: 1280, height: 420 });
   await signIn(page, mock);
-  await page.getByTestId('boards-button').click();
+  await page.getByTestId('section-boards').click();
   await expect(page.getByTestId('kanban')).toBeVisible();
   await page.keyboard.press('c');
   await expect(page.getByTestId('create-task')).toBeVisible();

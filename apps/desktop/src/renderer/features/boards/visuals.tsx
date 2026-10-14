@@ -1,8 +1,8 @@
-import { BoardStatusType, TaskPriority } from '@calaba/protocol';
-import { AlertTriangle, Minus } from 'lucide-react';
+import { BoardStatusType, TaskPriority, resolveStatusIcon, type StatusIconToken } from '@calaba/protocol';
+import { AlertTriangle, Archive, Bug, Eye, Flag, Hourglass, Inbox, Lock, Minus, Pause, Rocket, ShieldCheck, Star, Zap, type LucideIcon } from 'lucide-react';
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
-import type { MessageKey } from '../../i18n';
+import { t, type MessageKey } from '../../i18n';
 import { dateTimeFormat } from '../../lib/format';
 
 /**
@@ -15,6 +15,27 @@ export function colorCss(color: number): string {
 
 /** The palette offered for statuses and labels (system colours, readable in both themes). */
 export const PALETTE: readonly number[] = [0x8e8e93, 0xaeaeb2, 0xff453a, 0xff9f0a, 0xffcc00, 0x30d158, 0x64d2ff, 0x0a84ff, 0x5e5ce6, 0xbf5af2, 0xff375f, 0xac8e68];
+
+const PALETTE_NAME: Readonly<Record<number, MessageKey>> = {
+  0x8e8e93: 'boards.colorName.gray',
+  0xaeaeb2: 'boards.colorName.silver',
+  0xff453a: 'boards.colorName.red',
+  0xff9f0a: 'boards.colorName.orange',
+  0xffcc00: 'boards.colorName.yellow',
+  0x30d158: 'boards.colorName.green',
+  0x64d2ff: 'boards.colorName.teal',
+  0x0a84ff: 'boards.colorName.blue',
+  0x5e5ce6: 'boards.colorName.indigo',
+  0xbf5af2: 'boards.colorName.purple',
+  0xff375f: 'boards.colorName.pink',
+  0xac8e68: 'boards.colorName.brown',
+};
+
+/** The spoken name of a palette colour (aria-label); a colour off the palette — its hex. */
+export function colorName(color: number): string {
+  const k = PALETTE_NAME[color & 0xffffff];
+  return k ? t(k) : colorCss(color);
+}
 
 export const STATUS_TYPES: readonly BoardStatusType[] = [
   BoardStatusType.BACKLOG,
@@ -41,48 +62,94 @@ export const STATUS_TYPE_TOKEN: Record<number, string> = {
   [BoardStatusType.CANCELLED]: 'cancelled',
 };
 
+/** The share of the disc filled by a progress pie token (ADR-0093); others are not pies. */
+export const PIE_SHARE: Readonly<Partial<Record<StatusIconToken, number>>> = { quarter: 0.25, half: 0.5, 'three-quarters': 0.75 };
+
 /**
- * The status glyph (14 px): backlog — a dashed ring, todo — a ring, in progress — a ring with a
- * half pie, done — a filled disc with a check, cancelled — a filled disc with a cross.
+ * A pie of `share` (0..1) of a disc of radius `r` centred in the 14 px box, from 12 o'clock
+ * clockwise: '' for none, two half arcs for the whole disc (one arc cannot close a circle).
  */
-export const StatusIcon = memo(function StatusIcon({ type, color, size = 14, className }: { type: BoardStatusType; color: number; size?: number; className?: string }): ReactNode {
+export function piePath(share: number, r = 3.5): string {
+  const f = Math.min(1, Math.max(0, share));
+  if (f === 0) return '';
+  if (f === 1) return `M7 ${7 - r} A${r} ${r} 0 1 1 7 ${7 + r} A${r} ${r} 0 1 1 7 ${7 - r} Z`;
+  const a = f * 2 * Math.PI;
+  const x = +(7 + r * Math.sin(a)).toFixed(3);
+  const y = +(7 - r * Math.cos(a)).toFixed(3);
+  return `M7 7 L7 ${7 - r} A${r} ${r} 0 ${f > 0.5 ? 1 : 0} 1 ${x} ${y} Z`;
+}
+
+/** The lucide glyphs of the non-progress tokens. */
+const LUCIDE: Readonly<Partial<Record<StatusIconToken, LucideIcon>>> = {
+  eye: Eye,
+  'shield-check': ShieldCheck,
+  hourglass: Hourglass,
+  pause: Pause,
+  flag: Flag,
+  star: Star,
+  bolt: Zap,
+  rocket: Rocket,
+  bug: Bug,
+  inbox: Inbox,
+  archive: Archive,
+  lock: Lock,
+};
+
+/**
+ * The status glyph (14 px) by its icon token (ADR-0093; an empty / unknown token — by type):
+ * the progress family is drawn here — dashed ring, ring, ring with a quarter / half / three
+ * quarters pie, filled disc with a check / cross; the rest are lucide glyphs in the status colour.
+ */
+export const StatusIcon = memo(function StatusIcon({
+  type,
+  color,
+  icon,
+  size = 14,
+  className,
+}: {
+  type: BoardStatusType;
+  color: number;
+  /** BoardStatus.icon; omitted or '' = the icon of the type. */
+  icon?: string | undefined;
+  size?: number;
+  className?: string | undefined;
+}): ReactNode {
   const c = colorCss(color);
+  const token = resolveStatusIcon(icon, type);
+  const Glyph = LUCIDE[token];
+  if (Glyph) return <Glyph aria-hidden className={cx('shrink-0', className)} style={{ width: size, height: size, color: c }} strokeWidth={2} data-status-icon={token} />;
   const style: CSSProperties = { width: size, height: size };
-  const common = { viewBox: '0 0 14 14', 'aria-hidden': true, className: cx('shrink-0', className), style } as const;
-  switch (type) {
-    case BoardStatusType.BACKLOG:
+  const common = { viewBox: '0 0 14 14', 'aria-hidden': true, className: cx('shrink-0', className), style, 'data-status-icon': token } as const;
+  switch (token) {
+    case 'dashed':
       return (
         <svg {...common}>
           <circle cx="7" cy="7" r="5.5" fill="none" stroke={c} strokeWidth="1.5" strokeDasharray="2.2 1.6" />
         </svg>
       );
-    case BoardStatusType.STARTED:
-      return (
-        <svg {...common}>
-          <circle cx="7" cy="7" r="5.5" fill="none" stroke={c} strokeWidth="1.5" />
-          <path d="M7 3.5 A3.5 3.5 0 0 1 7 10.5 Z" fill={c} />
-        </svg>
-      );
-    case BoardStatusType.COMPLETED:
+    case 'check':
       return (
         <svg {...common}>
           <circle cx="7" cy="7" r="6.25" fill={c} />
           <path d="M4.3 7.2 6.2 9 9.8 5.2" fill="none" stroke="var(--color-bg)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       );
-    case BoardStatusType.CANCELLED:
+    case 'x':
       return (
         <svg {...common}>
           <circle cx="7" cy="7" r="6.25" fill={c} />
           <path d="M5 5 9 9M9 5 5 9" fill="none" stroke="var(--color-bg)" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       );
-    default:
+    default: {
+      const pie = piePath(PIE_SHARE[token] ?? 0);
       return (
         <svg {...common}>
           <circle cx="7" cy="7" r="5.5" fill="none" stroke={c} strokeWidth="1.5" />
+          {pie ? <path d={pie} fill={c} /> : null}
         </svg>
       );
+    }
   }
 });
 

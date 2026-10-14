@@ -2,11 +2,15 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
-	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/reflect/protoreflect"
+
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 )
 
 // A lease is owned by one exact Session, never shared by user ID. until retains
@@ -25,6 +29,14 @@ type identityLeases struct {
 	session    identityLease
 	workspaces map[uuid.UUID]identityLease
 	receipts   map[uuid.UUID]receiptPolicyState // actual own receipts only; never workspace access
+	// billing: until when the session's owner may get BILLING_UPDATE of a workspace whose
+	// workspace lease a billing suspension denies (ADR-0080 §12: the owner's recovery scope).
+	// It opens nothing else.
+	billing map[uuid.UUID]time.Time
+	// stubs: workspaces whose last definitive decision was a billing suspension. The session
+	// may hold them as content-free stubs (READY / GET /api/workspaces: workspaces.BillingStub)
+	// and is told when that ends (re-added in full, or removed). Opens no events.
+	stubs map[uuid.UUID]bool
 }
 
 func (s *Session) lease(d identitypolicy.Decision, ws uuid.UUID, started, evaluated time.Time, revision uint64) identityLease {
@@ -111,16 +123,39 @@ func (s *Session) refreshWorkspaceLeaseOnce(ctx context.Context, ws uuid.UUID) (
 		}
 	}
 	l := identityLease{}
-	if ctx.Err() != nil {
+	// A late result is stale, but a definitive denial still holds: the deadline must not turn
+	// it into a transient failure that keeps the positive lease.
+	if ctx.Err() != nil && ((err == nil && d.Allowed) || identityTransient(d, err)) {
 		err = ctx.Err()
+	}
+	if identityTransient(d, err) {
+		// Keep the stored lease (it expires on its own): a slow DB is not a revocation.
+		return d, false, err
 	}
 	if err == nil {
 		l = s.lease(d, ws, started, evaluated, revision)
 	}
+	billingUntil := s.billingRecoveryLease(ctx, d, ws, started, revision)
 	s.leases.mu.Lock()
 	defer s.leases.mu.Unlock()
 	if s.leases.revision != revision {
 		return d, true, err
+	}
+	if billingDenied(d, err) {
+		if s.leases.stubs == nil {
+			s.leases.stubs = map[uuid.UUID]bool{}
+		}
+		s.leases.stubs[ws] = true
+	} else {
+		delete(s.leases.stubs, ws)
+	}
+	if billingUntil.IsZero() {
+		delete(s.leases.billing, ws)
+	} else {
+		if s.leases.billing == nil {
+			s.leases.billing = map[uuid.UUID]time.Time{}
+		}
+		s.leases.billing[ws] = billingUntil
 	}
 	if s.leases.workspaces == nil {
 		s.leases.workspaces = map[uuid.UUID]identityLease{}
@@ -168,6 +203,9 @@ func (s *Session) refreshSessionLease(ctx context.Context) {
 			}
 		}
 	}
+	if identityTransient(identitypolicy.Decision{}, err) {
+		return // keep the session lease; it expires on its own (ReadLeaseTTL)
+	}
 	l := identityLease{}
 	if err == nil && p.Authority == s.principal.Authority && p.WorkspaceID == s.principal.WorkspaceID && p.ConnectionID == s.principal.ConnectionID && p.SessionID == s.asess && p.UserID == s.user {
 		l = s.lease(identitypolicy.CheckSession(evaluated, p), uuid.Nil, started, evaluated, revision)
@@ -212,11 +250,94 @@ func (s *Session) preparationFailed(marker *pauseMark) {
 }
 
 // Called outside gateway locks when an event cannot fit the bounded preparation budget.
-func (s *Session) requireIdentityResync() {
+func (s *Session) requireIdentityResync() { s.requireResync("identity resync required") }
+
+// requireResync makes the session catch up with a full READY: events were lost for it. It is
+// no longer resumable and its socket (if any) closes with 4000. Called without s.mu held.
+func (s *Session) requireResync(why string) {
 	s.broken.Store(true)
 	s.mu.Lock()
 	if s.conn != nil {
-		s.conn.closeNow(4000, "identity resync required")
+		s.conn.closeNow(4000, why)
 	}
 	s.mu.Unlock()
+}
+
+// billingRecoveryLease: when a billing suspension denied the workspace lease, the owner's
+// billing scope (identitypolicy.BillingRead, every other identity check included) is evaluated
+// separately; its lease lets only BILLING_UPDATE through (billingLeaseAllows). Zero: none.
+func (s *Session) billingRecoveryLease(ctx context.Context, d identitypolicy.Decision, ws uuid.UUID, started time.Time, revision uint64) time.Time {
+	if d.Allowed || d.Reason != identitypolicy.BillingSuspended || s.hub.auth == nil || ctx.Err() != nil {
+		return time.Time{}
+	}
+	bd, err := s.hub.auth.CheckWorkspaceDecision(ctx, s.identity(), ws, identitypolicy.BillingRead)
+	if err != nil || !bd.Allowed {
+		return time.Time{}
+	}
+	evaluated, err := s.hub.db.Q.IdentityDatabaseNow(ctx)
+	if err != nil {
+		return time.Time{}
+	}
+	return s.lease(bd, ws, started, evaluated, revision).until
+}
+
+// billingDenied: a definitive denial for a billing suspension (ADR-0080 §8).
+func billingDenied(d identitypolicy.Decision, err error) bool {
+	return !d.Allowed && d.Reason == identitypolicy.BillingSuspended && (err == nil || errors.Is(err, identitypolicy.ErrDenied))
+}
+
+// billingStubAllows: the last definitive decision on ws was a billing suspension, so the
+// session may hold ws as a content-free stub (isBillingStub).
+func (s *Session) billingStubAllows(ws uuid.UUID) bool {
+	if ws == uuid.Nil || (s.principal.Authority != identitypolicy.LocalAccount && s.principal.WorkspaceID != ws) {
+		return false
+	}
+	s.leases.mu.Lock()
+	defer s.leases.mu.Unlock()
+	return s.leases.stubs[ws]
+}
+
+// billingStubs lists the workspaces the session holds as billing stubs.
+func (s *Session) billingStubs() []uuid.UUID {
+	s.leases.mu.Lock()
+	defer s.leases.mu.Unlock()
+	out := make([]uuid.UUID, 0, len(s.leases.stubs))
+	for ws := range s.leases.stubs {
+		out = append(out, ws)
+	}
+	return out
+}
+
+// dropBillingStub forgets that the session holds ws as a stub.
+func (s *Session) dropBillingStub(ws uuid.UUID) {
+	s.leases.mu.Lock()
+	delete(s.leases.stubs, ws)
+	s.leases.mu.Unlock()
+}
+
+// isBillingStub: a READY snapshot that carries only the workspace (with billing state
+// SUSPENDED) and the recipient's role — workspaces.BillingStub, nothing of the content.
+func isBillingStub(snap *v1.WorkspaceSnapshot) bool {
+	if snap.GetWorkspace().GetBilling().GetState() != v1.BillingState_BILLING_STATE_SUSPENDED {
+		return false
+	}
+	only := true
+	snap.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, _ protoreflect.Value) bool {
+		if n := fd.Name(); n != "workspace" && n != "role" {
+			only = false
+		}
+		return only
+	})
+	return only
+}
+
+// billingLeaseAllows: the owner's billing recovery lease of ws is valid (see billingRecoveryLease).
+func (s *Session) billingLeaseAllows(ws uuid.UUID) bool {
+	if ws == uuid.Nil || (s.principal.Authority != identitypolicy.LocalAccount && s.principal.WorkspaceID != ws) {
+		return false
+	}
+	s.leases.mu.Lock()
+	until := s.leases.billing[ws]
+	s.leases.mu.Unlock()
+	return time.Now().Before(until)
 }

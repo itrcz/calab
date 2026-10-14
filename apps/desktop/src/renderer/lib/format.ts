@@ -102,6 +102,8 @@ export const fmt = {
   full: (d: Date): string => dtf({ dateStyle: 'full', timeStyle: 'short' }).format(d),
   /** «14 января 2025 г.» / “January 14, 2025”. */
   date: (d: Date): string => dtf({ day: 'numeric', month: 'long', year: 'numeric' }).format(d),
+  /** «3 окт.» / “Oct 3” — day and short month (the achievement card, ADR-0061). */
+  dayMonth: (d: Date): string => dtf({ day: 'numeric', month: 'short' }).format(d),
   /** «1 дек 2025» / “Dec 1, 2025” — compact date for lists (member since, …). */
   shortDate(d: Date): string {
     if (getLocale() !== 'ru') return dtf({ day: 'numeric', month: 'short', year: 'numeric' }).format(d);
@@ -128,6 +130,10 @@ export const fmt = {
   /** «1 октября, 12:00» (month long) or «1 окт., 12:00» (short); the year when it is not this one. */
   dateTime(d: Date, month: 'long' | 'short' = 'long', now = new Date()): string {
     return dtf({ day: 'numeric', month, ...thisYear(d, now), hour: '2-digit', minute: '2-digit' }).format(d);
+  },
+  /** «пт, 3 окт., 10:00» — an event occurrence in a list (search hits, ADR-0062); the year when not this one. */
+  occurrence(d: Date, now = new Date()): string {
+    return dtf({ weekday: 'short', day: 'numeric', month: 'short', ...thisYear(d, now), hour: '2-digit', minute: '2-digit' }).format(d);
   },
   /** List rows (DMs): «14:05» today, «вчера», «14 янв.» earlier. */
   listTime(d: Date, now = new Date()): string {

@@ -1,0 +1,40 @@
+syntax = "proto3";
+package calaba.v1;
+import "calaba/v1/call.proto";
+
+// Optional native transports. Empty capabilities preserve unconfigured self-hosted servers.
+enum PushProvider {
+  PUSH_PROVIDER_UNSPECIFIED = 0;
+  PUSH_PROVIDER_APNS = 1;
+  PUSH_PROVIDER_VOIP = 2;
+  PUSH_PROVIDER_FCM = 3;
+}
+message PushCapability {
+  PushProvider provider = 1;
+  string environment = 2; // development or production, fixed by server configuration
+  string app_id = 3; // configured native bundle/application ID
+}
+// GET /api/me/push-capabilities. Older servers return 404; native login/media remain usable.
+message PushCapabilitiesResponse { repeated PushCapability providers = 1; }
+// POST /api/me/push-devices. User/session ownership comes only from the authenticated identity.
+message RegisterPushDeviceRequest {
+  PushProvider provider = 1;
+  string environment = 2;
+  string app_id = 3;
+  string installation_id = 4;
+  string token = 5;
+  bool notifications_enabled = 6;
+  bool calls_enabled = 7; // true only for the explicit VoIP capability
+  optional bool mentions_enabled = 8; // absent preserves the existing default true
+  bool all_enabled = 9;
+}
+message RegisterPushDeviceResponse {
+  string id = 1; // opaque payload binding; resolve only through the current local session registry
+  uint64 version = 2;
+}
+// DELETE /api/me/push-devices/{id}. Compare version to reject stale rotation cleanup.
+message UnregisterPushDeviceRequest { uint64 version = 1; }
+
+// POST /api/me/push-resolve. Native only supplies opaque references; current web auth resolves them.
+message ResolvePushRequest { string binding = 1; string event_id = 2; }
+message ResolvePushResponse { string room_id = 1; string workspace_id = 2; string message_id = 3; Call call = 4; }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { dragOutActive } from '../../lib/dragOut';
 import { MESSAGE_MIME, decodeDragged, draggedMessage, resolveDrop, type DropAction, type DropTarget } from '../../lib/messageDrag';
 
 export interface ChatDropHandlers {
@@ -41,7 +42,8 @@ export function useChatDrop(target: DropTarget | null, onAction: (a: DropAction,
     const accept = (e: DragEvent): boolean => {
       const t = targetRef.current;
       const a = t ? resolveDrop(e.dataTransfer.types, draggedMessage(), t) : null;
-      if (!a) return false;
+      // Our own image dragged out (its file) is not a file from the OS to send again.
+      if (!a || (a.kind === 'files' && dragOutActive())) return false;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       setOver(true);
@@ -59,7 +61,7 @@ export function useChatDrop(target: DropTarget | null, onAction: (a: DropAction,
         if (!t) return;
         const dragged = decodeDragged(e.dataTransfer.getData(MESSAGE_MIME)) ?? draggedMessage();
         const a = resolveDrop(e.dataTransfer.types, dragged, t);
-        if (!a) return;
+        if (!a || (a.kind === 'files' && dragOutActive())) return;
         e.preventDefault();
         e.stopPropagation();
         actionRef.current(a, a.kind === 'files' ? Array.from(e.dataTransfer.files) : []);

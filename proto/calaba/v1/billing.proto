@@ -1,0 +1,1030 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/common.proto";
+import "calaba/v1/plan.proto";
+
+// Balance billing v1 (ADR-0080 v5 «v1 cut», migration 00074). A workspace billing account has
+// a money balance in one currency; seats are charged per 24 hours from it. Money is always
+// int64 minor units (cents, kopecks) with the account currency; the client never sets the
+// price of a service, only the amount of a top-up. JSON (protojson) sends int64 as strings.
+//
+// Visibility: Workspace.billing (WorkspaceBillingStatus) goes to every member and carries no
+// amounts. Everything else here is for the workspace owner (/api/workspaces/{id}/billing) or
+// superadmins (/api/admin/billing). Errors: ApiError.reason BILLING_* (internal/billing).
+
+// Money in minor units of an ISO 4217 currency ("USD", "RUB").
+message Money {
+  int64 minor = 1;
+  string currency = 2;
+}
+
+// Who sets the plan of a workspace (workspace_plans.source).
+enum PlanSource {
+  PLAN_SOURCE_UNSPECIFIED = 0;
+  PLAN_SOURCE_MANUAL = 1;  // a superadmin through /api/admin/workspaces/{id}/plan
+  PLAN_SOURCE_BILLING = 2; // the billing account (manual plan changes get 409)
+}
+
+// Billing state as every member sees it.
+enum BillingState {
+  BILLING_STATE_UNSPECIFIED = 0; // no billing account (manual or free plan)
+  BILLING_STATE_INACTIVE = 1;    // enabled by a superadmin, waiting for the owner's first top-up
+  BILLING_STATE_ACTIVE = 2;      // paid plan running, balance >= 0
+  BILLING_STATE_IN_ARREARS = 3;  // paid plan running in debt until suspend_at
+  BILLING_STATE_STOPPED = 4;     // the owner stopped the paid plan
+  BILLING_STATE_SUSPENDED = 5;   // debt deadline passed: the workspace is closed except owner billing
+  // ADR-0086 amendment: the paid days after a stop ran out while the workspace uses more than Free
+  // allows («тариф не активен»). Restricted mode: no writing in workspace chats, no uploads, no
+  // invitations, at most 2 in a voice room, audio only. Left by paying (activate) or by moving to
+  // Free (resume FREE) once the usage fits. Only while billing enforcement is on.
+  BILLING_STATE_LAPSED = 6;
+}
+
+// Workspace.billing: no amounts (members other than the owner never see money).
+message WorkspaceBillingStatus {
+  BillingState state = 1;
+  google.protobuf.Timestamp suspend_at = 2; // set in IN_ARREARS / SUSPENDED
+  PlanSource source = 3;
+}
+
+// BILLING_UPDATE: the owner's billing data changed; refetch GET …/billing. To the owner only.
+message BillingUpdate {
+  string workspace_id = 1;
+  uint64 revision = 2; // billing account revision; ignore if <= the one shown
+}
+
+enum BillingAccountStatus {
+  BILLING_ACCOUNT_STATUS_UNSPECIFIED = 0;
+  BILLING_ACCOUNT_STATUS_INACTIVE = 1;
+  BILLING_ACCOUNT_STATUS_ACTIVE = 2;
+  BILLING_ACCOUNT_STATUS_STOPPED = 3;
+  BILLING_ACCOUNT_STATUS_SUSPENDED = 4;
+  BILLING_ACCOUNT_STATUS_CLOSED = 5;
+}
+
+// Sign of LedgerEntry.amount: + topup, compensation, refund_reversal, dispute_reversal,
+// admin_credit; − seat_charge, refund, dispute, admin_debit.
+enum LedgerEntryKind {
+  LEDGER_ENTRY_KIND_UNSPECIFIED = 0;
+  LEDGER_ENTRY_KIND_TOPUP = 1;
+  LEDGER_ENTRY_KIND_SEAT_CHARGE = 2;
+  LEDGER_ENTRY_KIND_COMPENSATION = 3;
+  LEDGER_ENTRY_KIND_REFUND = 4;
+  LEDGER_ENTRY_KIND_REFUND_REVERSAL = 5;
+  LEDGER_ENTRY_KIND_DISPUTE = 6;
+  LEDGER_ENTRY_KIND_DISPUTE_REVERSAL = 7;
+  LEDGER_ENTRY_KIND_ADMIN_CREDIT = 8;
+  LEDGER_ENTRY_KIND_ADMIN_DEBIT = 9;
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PROCESSING = 1;
+  PAYMENT_STATUS_SUCCEEDED = 2;
+  PAYMENT_STATUS_FAILED = 3;
+  PAYMENT_STATUS_CANCELED = 4;
+}
+
+enum PaymentOrigin {
+  PAYMENT_ORIGIN_UNSPECIFIED = 0;
+  PAYMENT_ORIGIN_CHECKOUT = 1;   // manual top-up through hosted checkout
+  PAYMENT_ORIGIN_AUTO_TOPUP = 2; // off-session auto-topup attempt
+  PAYMENT_ORIGIN_IMPORT = 3;     // found by reconciliation (e.g. after a restore)
+  PAYMENT_ORIGIN_SAVED_METHOD = 4; // manual top-up charged to a saved card in one click
+}
+
+enum RefundStatus {
+  REFUND_STATUS_UNSPECIFIED = 0;
+  REFUND_STATUS_PENDING = 1;
+  REFUND_STATUS_REQUIRES_ACTION = 2;
+  REFUND_STATUS_SUCCEEDED = 3;
+  REFUND_STATUS_FAILED = 4;
+  REFUND_STATUS_CANCELED = 5;
+}
+
+enum RefundOrigin {
+  REFUND_ORIGIN_UNSPECIFIED = 0;
+  REFUND_ORIGIN_CALAB = 1;     // made through our API
+  REFUND_ORIGIN_DASHBOARD = 2; // made in the provider dashboard, imported from its event
+}
+
+enum RefundRequestStatus {
+  REFUND_REQUEST_STATUS_UNSPECIFIED = 0;
+  REFUND_REQUEST_STATUS_REQUESTED = 1;
+  REFUND_REQUEST_STATUS_APPROVED = 2;
+  REFUND_REQUEST_STATUS_REJECTED = 3;
+  REFUND_REQUEST_STATUS_WITHDRAWN = 4;
+}
+
+enum DisputeStatus {
+  DISPUTE_STATUS_UNSPECIFIED = 0;
+  DISPUTE_STATUS_OPEN = 1;
+  DISPUTE_STATUS_WON = 2;
+  DISPUTE_STATUS_LOST = 3;
+  DISPUTE_STATUS_WITHDRAWN = 4;
+}
+
+enum AutoTopupAttemptStatus {
+  AUTO_TOPUP_ATTEMPT_STATUS_UNSPECIFIED = 0;
+  AUTO_TOPUP_ATTEMPT_STATUS_PREPARED = 1;
+  AUTO_TOPUP_ATTEMPT_STATUS_DISPATCHED = 2;
+  AUTO_TOPUP_ATTEMPT_STATUS_SUCCEEDED = 3;
+  AUTO_TOPUP_ATTEMPT_STATUS_FAILED = 4;
+  AUTO_TOPUP_ATTEMPT_STATUS_UNKNOWN = 5; // outcome not known yet: reconciled before anything else
+  // A one-click top-up waits for the payer's 3-D Secure confirmation (SavedMethodTopup.action_url).
+  AUTO_TOPUP_ATTEMPT_STATUS_REQUIRES_ACTION = 6;
+}
+
+enum PayerType {
+  PAYER_TYPE_UNSPECIFIED = 0;
+  PAYER_TYPE_PERSON = 1;
+  PAYER_TYPE_COMPANY = 2;
+  // A registered sole proprietor (RU ИП, KZ ИП, BY ИП): offered only where the country schema
+  // lists it (ADR-0080 §0.1).
+  PAYER_TYPE_SOLE_PROPRIETOR = 3;
+}
+
+// How money is paid. v1 offers CARD only (USD, Stripe); SBP / BANK_TRANSFER are for later markets.
+enum PaymentMethodKind {
+  PAYMENT_METHOD_KIND_UNSPECIFIED = 0;
+  PAYMENT_METHOD_KIND_CARD = 1;
+  PAYMENT_METHOD_KIND_SBP = 2;
+  PAYMENT_METHOD_KIND_BANK_TRANSFER = 3;
+}
+
+enum CheckoutState {
+  CHECKOUT_STATE_UNSPECIFIED = 0;
+  CHECKOUT_STATE_OPEN = 1;      // waiting for the payer (or the provider's answer)
+  CHECKOUT_STATE_COMPLETED = 2; // paid; credited once the payment succeeded (CheckoutStatus.credited)
+  CHECKOUT_STATE_EXPIRED = 3;
+  CHECKOUT_STATE_CANCELED = 4;
+  CHECKOUT_STATE_FAILED = 5;
+}
+
+enum BillingQuotePurpose {
+  BILLING_QUOTE_PURPOSE_UNSPECIFIED = 0;
+  BILLING_QUOTE_PURPOSE_ACTIVATE = 1;    // first paid day of the current members
+  BILLING_QUOTE_PURPOSE_CHANGE_PLAN = 2; // compensation of the remaining lots + a full day on the new plan
+  BILLING_QUOTE_PURPOSE_RESUME_PAID = 3; // debt + a new paid day
+  BILLING_QUOTE_PURPOSE_RESUME_FREE = 4; // debt only, then the free plan
+  BILLING_QUOTE_PURPOSE_STOP = 5;        // what stopping returns / keeps
+}
+
+// Which markets new accounts may be opened in (ADR-0083): a market is open when its provider is
+// configured and a superadmin has not closed it for new clients.
+enum BillingSalesMode {
+  BILLING_SALES_MODE_UNSPECIFIED = 0; // the account's market is fixed by a payment: not offered
+  BILLING_SALES_MODE_BOTH = 1;        // Global ($, Stripe) and RU (₽, Tochka): the owner chooses
+  BILLING_SALES_MODE_RU_ONLY = 2;
+  BILLING_SALES_MODE_GLOBAL_ONLY = 3;
+  BILLING_SALES_MODE_CONTACT = 4;     // no acquirer takes new clients: Global prices, paid plans by contact
+}
+
+enum BillingResumeMode {
+  BILLING_RESUME_MODE_UNSPECIFIED = 0;
+  BILLING_RESUME_MODE_FREE = 1;
+  BILLING_RESUME_MODE_PAID = 2;
+}
+
+// A way to pay offered for the account's market / currency / payer type / country
+// (capability matrix, internal/billing/provider). id is re-validated by POST …/topups (422).
+message PaymentMethodOption {
+  string id = 1;        // "stripe:card"
+  string provider = 2;  // "stripe"
+  PaymentMethodKind kind = 3;
+  Money min = 4;
+  Money max = 5;
+  bool auto_topup_capable = 6;
+}
+
+message PayerProfile {
+  PayerType type = 1;
+  string name = 2;
+  string country = 3; // ISO 3166-1 alpha-2
+  string email = 4;
+  // The main tax number of the payer: the server fills it from the country schema field marked
+  // `primary` (ИНН, TRN, VAT ID…). A request from a client without requisites sends only this;
+  // it is then taken as the primary field.
+  string tax_id = 5;
+  // Country requisites (ADR-0080 §0.1): PayerFieldSpec.key → the value normalized by the server
+  // (digits only, upper case…). Only the fields of the schema of country + type are kept.
+  map<string, string> requisites = 6;
+  // Output: the payer version (billing_payer_versions, append-only); 0 = never saved.
+  uint32 version = 7;
+  // Output of PUT only: the payer is saved, but the payment provider did not take a requisite
+  // (TAX_ID_REJECTED: Stripe refused a tax id; PROVIDER_UNAVAILABLE: no answer). Not an error.
+  string sync_warning = 8;
+}
+
+// GET/PUT …/billing/payer
+message PutPayerRequest {
+  PayerProfile payer = 1;
+}
+
+// How a requisite is typed and normalized before the checks: TEXT trims and collapses spaces;
+// DIGITS drops spaces, dashes, dots and slashes; CODE does the same and upper-cases, then adds
+// PayerFieldSpec.prefix when the value does not start with it (a value starting with the payer's
+// country code instead, Greek "GR…", has that code replaced by the prefix "EL").
+enum PayerFieldInput {
+  PAYER_FIELD_INPUT_UNSPECIFIED = 0; // TEXT
+  PAYER_FIELD_INPUT_TEXT = 1;
+  PAYER_FIELD_INPUT_DIGITS = 2;
+  PAYER_FIELD_INPUT_CODE = 3;
+}
+
+// Check digit algorithm of a requisite (after the pattern matched).
+enum PayerFieldCheck {
+  PAYER_FIELD_CHECK_UNSPECIFIED = 0; // none
+  PAYER_FIELD_CHECK_RU_INN = 1;      // 10 or 12 digits
+  PAYER_FIELD_CHECK_RU_OGRN = 2;     // 13 digits, mod 11
+  PAYER_FIELD_CHECK_RU_OGRNIP = 3;   // 15 digits, mod 13
+  PAYER_FIELD_CHECK_KZ_IIN_BIN = 4;  // 12 digits, two weight rounds mod 11
+  PAYER_FIELD_CHECK_IN_GSTIN = 5;    // 15 characters, mod 36
+  PAYER_FIELD_CHECK_CN_USCC = 6;     // 18 characters, GB 32100-2015 mod 31
+}
+
+// One requisite of a country + payer type. The client labels it by key (i18n
+// billing.payer.field.<key>) and runs the same checks (packages/protocol payer.ts); the server is
+// the judge. A failed check of PUT …/payer answers 422 VALIDATION with field "payer.<name>" or
+// "payer.requisites.<key>" and reason PAYER_REQUIRED / PAYER_FORMAT / PAYER_CHECKSUM /
+// PAYER_TOO_LONG / PAYER_EMAIL / PAYER_COUNTRY / PAYER_TYPE_UNAVAILABLE.
+message PayerFieldSpec {
+  string key = 1;            // "inn", "kpp", "ogrn", "vat", "trn", "legal_address"…
+  bool required = 2;
+  PayerFieldInput input = 3;
+  string pattern = 4;        // full-match regexp of the normalized value (RE2 = ECMAScript subset); "" = any
+  uint32 max_length = 5;     // characters of the normalized value
+  PayerFieldCheck check = 6;
+  string example = 7;        // placeholder, e.g. "7707083893"
+  string prefix = 8;         // CODE: the country prefix of a VAT ID ("DE", "EL" for Greece)
+  bool primary = 9;          // copied to PayerProfile.tax_id
+}
+
+message PayerTypeSchema {
+  PayerType type = 1;
+  repeated PayerFieldSpec fields = 2;
+}
+
+message PayerCountrySchema {
+  string country = 1; // ISO 3166-1 alpha-2; "" for the fallback
+  repeated PayerTypeSchema types = 2;
+}
+
+// GET …/billing/payer-schema: the one table of payer requisites (internal/billing/payer). The
+// payer's country never decides the market (ADR-0080 §2.1).
+message PayerSchema {
+  uint32 version = 1;
+  repeated PayerCountrySchema countries = 2; // countries with their own requisites
+  PayerCountrySchema fallback = 3;           // every other country of `all_countries`
+  repeated string all_countries = 4;         // ISO 3166-1 alpha-2 codes a payer may choose
+}
+
+message SavedPaymentMethod {
+  string id = 1;
+  PaymentMethodKind kind = 2;
+  string brand = 3;
+  string last4 = 4;
+  uint32 exp_month = 5;
+  uint32 exp_year = 6;
+  google.protobuf.Timestamp created_at = 7;
+  string provider = 8;            // "stripe" | "tochka"
+  // The card can pay a manual top-up in one click now (BILLING_SAVED_METHOD_TOPUP_ENABLED and
+  // its provider charges saved cards); else the owner pays on the hosted page.
+  bool one_click = 9;
+  bool auto_topup_capable = 10;   // the card may back the auto-topup consent
+}
+
+// GET …/billing/payment-methods
+message SavedPaymentMethods {
+  repeated SavedPaymentMethod methods = 1;
+}
+
+message AutoTopupAttempt {
+  string id = 1;
+  Money amount = 2;
+  AutoTopupAttemptStatus status = 3;
+  string failure_code = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp finished_at = 6;
+}
+
+// GET/PUT/DELETE …/billing/auto-topup. Amount of an attempt = debt + 30 days of the current
+// members, capped by max_amount; at most one new attempt per 24 h.
+message AutoTopupSettings {
+  bool enabled = 1;               // consent given and not revoked
+  string payment_method_id = 2;
+  Money max_amount = 3;           // owner's cap per attempt
+  Money default_max_amount = 4;   // USD: $500
+  Money limit_max_amount = 5;     // USD: $5000
+  uint32 consent_version = 6;
+  google.protobuf.Timestamp consent_at = 7;
+  google.protobuf.Timestamp not_before = 8; // next new attempt not earlier
+  Money next_amount = 9;          // what an attempt now would charge
+  AutoTopupAttempt last_attempt = 10;
+}
+
+message PutAutoTopupRequest {
+  string payment_method_id = 1;
+  Money max_amount = 2;
+  uint32 consent_version = 3; // the consent text version the owner accepted
+  string request_id = 4;
+}
+
+// GET …/billing for the owner.
+message BillingSummary {
+  string account_id = 1;
+  BillingAccountStatus status = 2;
+  Plan plan = 3;                  // PLAN_TEAM | PLAN_ENTERPRISE | PLAN_CUSTOM (assigned by a superadmin)
+  string market = 4;              // "global" | "ru"
+  Money balance = 5;              // signed
+  Money debt = 6;                 // max(0, -balance)
+  Money unit_price = 7;           // per seat per 24 h after discount (PLAN_CUSTOM: the account's own price, no discount)
+  uint32 discount_bps = 8;        // 0 on PLAN_CUSTOM: its price is final
+  Money daily_cost = 9;           // billable_members × unit_price
+  uint32 billable_members = 10;   // members without guests and bots, owner included
+  uint32 covered_seats = 11;      // seats paid for now
+  google.protobuf.Timestamp next_due_at = 12;
+  google.protobuf.Timestamp negative_since = 13;
+  google.protobuf.Timestamp suspend_at = 14;
+  int32 forecast_days = 15;       // the balance lasts about this many days at the current cost; -1 = n/a
+  bool hold = 16;                 // incident hold by a superadmin
+  uint64 revision = 17;
+  repeated PaymentMethodOption methods = 18;
+  AutoTopupSettings auto_topup = 19;
+  PayerProfile payer = 20;
+  string open_checkout_id = 21;   // a checkout waiting for payment, if any
+  // Saved cards of the account (not detached), for the one-click top-up and auto-topup.
+  repeated SavedPaymentMethod saved_methods = 22;
+  // A one-click top-up still in flight (waiting for 3-D Secure or the provider's answer), if any.
+  SavedMethodTopup pending_saved_topup = 23;
+  // The next price version of the plan after now, if one is scheduled (ADR-0086 «Индивидуальный
+  // тариф»: a superadmin's new custom price applies to seat-days starting at next_price_at).
+  Money next_unit_price = 24;
+  google.protobuf.Timestamp next_price_at = 25;
+}
+
+// GET /api/workspaces/{id}/billing: summary only for the owner.
+message GetBillingResponse {
+  WorkspaceBillingStatus status = 1;
+  BillingSummary summary = 2;
+  // Owner only: no live account yet and the owner may start billing (BILLING_SELF_SERVE); a
+  // quote with purpose ACTIVATE then creates the inactive account.
+  bool self_serve = 3;
+  // Owner only, with an account or self_serve: the plans to choose from (Free, Team, Business),
+  // for every market in `markets` (BillingPlanOffer.market).
+  repeated BillingPlanOffer offers = 4;
+  // Owner only (ADR-0083): the markets the owner may pay in now ("global", "ru"), served by a
+  // configured provider. Several only before the first credit (no account yet, or an account
+  // without ledger entries and open checkouts); afterwards just the account's market. The UI
+  // preselects one from the language or the owner's last choice; the server decides by the
+  // explicit BillingQuoteRequest.market only.
+  repeated string markets = 5;
+  // Owner only, before the first payment (no account, or an account without money): which
+  // markets are open (sales_mode) and the server's default among them. The client preselects
+  // by language only in BOTH; CONTACT hides the payment step (paid plans: contact us, offers in
+  // the Global catalog). UNSPECIFIED once the market is fixed.
+  BillingSalesMode sales_mode = 6;
+  string default_market = 7;
+  // Owner only (ADR-0086): a superadmin assigned the plan (a manual plan other than Free, not
+  // expired). Self-serve does not override it: no self_serve, actions answer 409
+  // BILLING_PLAN_ADMIN_ASSIGNED; the owner contacts support.
+  bool admin_assigned = 30;
+}
+
+// GET /api/billing/public/offers (no session, cacheable, rate-limited): the prices the landing
+// shows. No account data.
+message PublicBillingOffers {
+  BillingSalesMode mode = 1;
+  repeated BillingPlanOffer offers = 2; // per market of `markets` (Global catalog in CONTACT)
+  repeated string markets = 3;
+  string contact = 4;                   // PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL
+}
+
+// A plan the owner may choose (the plan screen). An account on its custom plan also gets a
+// PLAN_CUSTOM offer (its own price and limits; name in Workspace.plan) — shown, never chosen.
+message BillingPlanOffer {
+  Plan plan = 1;         // PLAN_FREE | PLAN_TEAM | PLAN_ENTERPRISE | PLAN_CUSTOM
+  Money unit_price = 2;  // per seat per 24 h after the account discount; unset for Free
+  PlanLimits limits = 3; // the plan's limits on this server
+  string market = 4;     // "global" | "ru": the market of unit_price
+  // ADR-0086: what the workspace uses beyond this plan's limits now (empty = it fits). Moving to
+  // a plan with violations is refused (409 PLAN_LIMITS_EXCEEDED) until they are fixed.
+  repeated PlanLimitViolation violations = 30;
+}
+
+// POST …/billing/quote
+message BillingQuoteRequest {
+  BillingQuotePurpose purpose = 1;
+  Plan plan = 2; // CHANGE_PLAN: the new plan; ACTIVATE: the paid plan to start (unset = the account's)
+  // ACTIVATE (ADR-0083): the market the owner chose ("global" | "ru"; unset = the account's, or
+  // global for a new self-serve account). Before the first credit it creates the account in that
+  // market or moves the untouched account to it; afterwards another market is 409
+  // BILLING_MARKET_FIXED. Must be one of GetBillingResponse.markets (422 otherwise).
+  string market = 3;
+}
+
+message BillingQuote {
+  string quote_id = 1;
+  BillingQuotePurpose purpose = 2;
+  Plan plan = 3;
+  Money debt = 4;           // paid first
+  Money charge = 5;         // the service amount debited now (first day, new plan day, …)
+  Money compensation = 6;   // returned to the balance (plan change, stop)
+  Money to_pay = 7;         // what must be topped up for the operation (0 = balance suffices)
+  uint32 seats = 8;
+  Money unit_price = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  uint64 revision = 11;     // account revision the quote was made at
+}
+
+// POST …/billing/activate, …/stop
+message BillingActionRequest {
+  string quote_id = 1;
+  string request_id = 2;
+  uint64 expected_revision = 3;
+  Plan plan = 4; // activate: the paid plan to start (unset = the account's)
+}
+
+// POST …/billing/change-plan
+message ChangeBillingPlanRequest {
+  Plan plan = 1;
+  string quote_id = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+}
+
+// POST …/billing/resume
+message ResumeBillingRequest {
+  BillingResumeMode mode = 1;
+  string quote_id = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+}
+
+// POST …/billing/topups: opens hosted checkout in the system browser.
+message CreateTopupRequest {
+  string method_id = 1;  // PaymentMethodOption.id
+  Money amount = 2;      // within the option's min..max, currency of the account
+  string request_id = 3; // same request_id + same body = same checkout
+  bool save_method = 4;  // save the card for auto-topup (does not enable it)
+}
+
+message CreateTopupResponse {
+  string checkout_id = 1;
+  string url = 2;
+}
+
+// POST …/billing/saved-method-topups: a manual top-up charged to a saved card without the
+// hosted page (BILLING_SAVED_METHOD_TOPUP_ENABLED). Same request_id + same body = the same
+// charge (never a second one); another body under the same request_id is 409.
+message CreateSavedMethodTopupRequest {
+  string payment_method_id = 1; // SavedPaymentMethod.id
+  Money amount = 2;             // within the method's min..max, currency of the account
+  string request_id = 3;
+}
+
+enum SavedMethodTopupState {
+  SAVED_METHOD_TOPUP_STATE_UNSPECIFIED = 0;
+  SAVED_METHOD_TOPUP_STATE_PROCESSING = 1;      // sent; the provider has not answered for sure yet
+  SAVED_METHOD_TOPUP_STATE_REQUIRES_ACTION = 2; // the bank asks for 3-D Secure: open action_url
+  SAVED_METHOD_TOPUP_STATE_SUCCEEDED = 3;       // paid (credited = on the balance)
+  SAVED_METHOD_TOPUP_STATE_FAILED = 4;          // declined or not confirmed: nothing was charged
+}
+
+// The answer of POST …/saved-method-topups and GET …/saved-method-topups/{tid} (the GET also
+// re-reads the provider, e.g. after the 3-D Secure page).
+message SavedMethodTopup {
+  string id = 1;
+  SavedMethodTopupState state = 2;
+  Money amount = 3;
+  bool credited = 4;
+  string action_url = 5;         // REQUIRES_ACTION: the provider's confirmation page
+  string failure_code = 6;       // FAILED: decline / authentication code
+  string payment_method_id = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// GET …/billing/checkouts/{cid}: also pulls the provider state (success redirect).
+message CheckoutStatus {
+  string checkout_id = 1;
+  CheckoutState state = 2;
+  Money amount = 3;
+  bool credited = 4;           // the payment is on the balance
+  string payment_id = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+message LedgerEntry {
+  string id = 1;
+  uint64 seq = 2;
+  LedgerEntryKind kind = 3;
+  Money amount = 4;            // signed effect on the balance
+  Money balance_after = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string reason = 7;
+  string actor_id = 8;
+  // Seat charges: what was bought.
+  string sku = 9;
+  uint32 quantity = 10;
+  google.protobuf.Timestamp starts_at = 11;
+  google.protobuf.Timestamp ends_at = 12;
+  string payment_id = 13;
+  string refund_id = 14;
+  // The owner operation the entry belongs to (activation, plan change, paid resume): its seat
+  // charge and the compensation of the previous plan share it, so the history shows them as one
+  // row. Empty for entries of their own (top-ups, renewals, refunds, …).
+  string operation_id = 30;
+}
+
+// GET …/billing/ledger?cursor=
+message LedgerPage {
+  repeated LedgerEntry entries = 1;
+  string next_cursor = 2; // empty = no more
+}
+
+message BillingPayment {
+  string id = 1;
+  Money amount = 2;
+  PaymentStatus status = 3;
+  PaymentOrigin origin = 4;
+  google.protobuf.Timestamp succeeded_at = 5;
+  string receipt_url = 6;      // provider receipt
+  Money refunded = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// GET …/billing/payments?cursor=
+message BillingPaymentPage {
+  repeated BillingPayment payments = 1;
+  string next_cursor = 2;
+}
+
+message BillingRefund {
+  string id = 1;
+  string payment_id = 2;
+  Money amount = 3;
+  RefundStatus status = 4;
+  RefundOrigin origin = 5;
+  string reason = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp succeeded_at = 8;
+}
+
+// POST …/billing/refund-requests
+message CreateRefundRequest {
+  Money amount = 1;
+  string reason = 2;
+  string request_id = 3;
+}
+
+message BillingRefundRequest {
+  string id = 1;
+  Money amount = 2;
+  RefundRequestStatus status = 3;
+  string reason = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp decided_at = 6;
+}
+
+// GET …/billing/refund-requests
+message BillingRefundRequests {
+  repeated BillingRefundRequest requests = 1;
+}
+
+message BillingDispute {
+  string id = 1;
+  string payment_id = 2;
+  Money amount = 3;
+  DisputeStatus status = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp closed_at = 6;
+}
+
+// --- Superadmin: /api/admin/billing. Every mutation takes reason + request_id (audit,
+// idempotent) and preview = true answers the effect without applying it; recent auth required.
+
+message AdminBillingAccount {
+  string account_id = 1;
+  string workspace_id = 2;     // empty after the workspace was deleted
+  string workspace_name = 3;
+  string owner_email = 4;
+  string market = 5;
+  BillingAccountStatus status = 6;
+  Plan plan = 7;
+  Money balance = 8;
+  Money debt = 9;
+  uint32 discount_bps = 10;
+  google.protobuf.Timestamp hold_until = 11;
+  bool dispute_hold = 12;
+  google.protobuf.Timestamp negative_since = 13;
+  google.protobuf.Timestamp suspend_at = 14;
+  google.protobuf.Timestamp next_due_at = 15;
+  google.protobuf.Timestamp created_at = 16;
+  uint64 revision = 17;
+  uint32 billable_members = 18;
+  string provider = 19;        // provider id of the market ("stripe")
+  string plan_display_name = 20; // PLAN_CUSTOM: the name members see (empty = «Индивидуальный»)
+  bool lapsed = 21;              // stopped, the paid days over, usage over Free: «тариф не активен» (ADR-0086 amendment 1)
+  google.protobuf.Timestamp lapsed_at = 22; // since when; set with lapsed
+}
+
+// GET /api/admin/billing/accounts/{id}
+message AdminBillingAccountDetails {
+  AdminBillingAccount account = 1;
+  PayerProfile payer = 2;                         // unset until the owner saved it
+  AutoTopupSettings auto_topup = 3;               // consent state only (no next_amount)
+  repeated AdminBillingDispute open_disputes = 4;
+  Money free_advance = 5;                         // unused money on the funding lots
+  Money pending_refunds = 6;                      // reserved by refunds not final yet
+  repeated SavedPaymentMethod saved_methods = 7;  // saved cards, detached ones left out
+  AdminCustomPlan custom_plan = 8;                // the account's custom plan and its price history
+  AdminChargeAttempt last_charge = 9;             // the newest charge of a saved card (auto-topup or one-click), unset if none
+}
+
+// A charge of a saved card (auto-topup or one-click) as the superadmin sees it (ADR-0083
+// amendment «Неизвестный исход списания»). POST …/accounts/{id}/charges/{attempt_id}/check reads
+// it at the provider now («Проверить списание сейчас»).
+message AdminChargeAttempt {
+  AutoTopupAttempt attempt = 1;
+  string kind = 2;                             // "auto" | "manual" (one-click)
+  string provider = 3;                         // provider of the card ("stripe" | "tochka")
+  google.protobuf.Timestamp dispatched_at = 4; // sent to the provider; unset = never sent
+  // The provider has no idempotency keys (Tochka): the charge is found by reading the bank and
+  // never sent again. An open one blocks the account's other charges until it is found or closed
+  // as not found at resolve_by (24 h after it was sent).
+  bool reconcilable = 5;
+  google.protobuf.Timestamp resolve_by = 6;
+  bool checkable = 7;                          // the check reads something now (open, or failed and still re-read)
+}
+
+// The custom plan of an account (ADR-0086 «Индивидуальный тариф»).
+message AdminCustomPlan {
+  bool active = 1;                       // the account is on its custom plan now
+  // The definition in force (active) — limits, name and description of the workspace plan.
+  PlanLimits limits = 2;
+  string display_name = 3;
+  string description = 4;
+  repeated AdminPriceVersion prices = 5; // the account's price versions, newest first
+}
+
+// PUT /api/admin/billing/accounts/{id}/custom-plan: puts the account on its custom plan or edits
+// it. Not on custom yet: unit is required and starts now; an active account switches at once (the
+// rest of the current lots is compensated, a full day of every billable member is bought at
+// unit, like a plan change — a dearer day needs no debt and enough free advance), an inactive or
+// stopped one starts (first day from the free advance, never into debt). Already on custom: limits,
+// name and description apply now; a new unit is a new price version from effective_from (unset =
+// now, never in the past, <= 365 days ahead; it replaces a version scheduled after its start),
+// seat-days already bought keep their price; unit unset or equal to the price in force = no new
+// version. The custom price is final: discount_bps does not apply. Limits the workspace exceeds: 409
+// PLAN_LIMITS_EXCEEDED unless override_limits (written to the plan log). Self-serve changes are
+// blocked while the plan is custom (BILLING_PLAN_ADMIN_ASSIGNED); top-ups and auto-topup work.
+message AdminSetCustomPlanRequest {
+  PlanLimits limits = 1;                     // stored as written, 0 = no limit
+  Money unit = 2;                            // per seat per 24 h, account currency; > 0, <= the currency's cap
+  string display_name = 3;                   // trimmed, control characters removed, <= 40; empty = «Индивидуальный»
+  string description = 4;                    // <= 140
+  google.protobuf.Timestamp effective_from = 5;
+  string reason = 6;
+  string request_id = 7;
+  uint64 expected_revision = 8;
+  bool preview = 9;
+  bool override_limits = 10;
+}
+
+// POST /api/admin/billing/accounts/{id}/plan: a superadmin moves the account to a standard paid plan
+// (back from custom, ADR-0086): active — switched at once like a plan change; inactive / stopped —
+// only the plan the owner activates next. Limits the workspace exceeds: 409 PLAN_LIMITS_EXCEEDED
+// unless override_limits (plan log + WARN).
+message AdminSetAccountPlanRequest {
+  Plan plan = 1; // PLAN_TEAM | PLAN_ENTERPRISE
+  string reason = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+  bool preview = 5;
+  bool override_limits = 6;
+}
+
+message AdminBillingAccounts {
+  repeated AdminBillingAccount accounts = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingPayment {
+  BillingPayment payment = 1;
+  string account_id = 2;
+  string workspace_id = 3;
+  string provider = 4;
+  string provider_payment_id = 5;
+  bool livemode = 6;
+  // The provider refunds this payment only in its own interface (ADR-0083 amendment 2026-10-10:
+  // Tochka subscription payments): the admin refund shows what to refund in the bank instead.
+  bool refund_by_hand = 7;
+}
+
+message AdminBillingPayments {
+  repeated AdminBillingPayment payments = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingRefund {
+  BillingRefund refund = 1;
+  string account_id = 2;
+  string provider_refund_id = 3;
+  // Set when the provider had no trace of this pending Calab refund 24 h after it was written:
+  // it is never sent again, its money stays reserved until a superadmin resolves it (reconcile
+  // with release_refund_ids, or a refund made by hand in the provider dashboard is matched).
+  google.protobuf.Timestamp needs_review_since = 4;
+}
+
+// A refund made in the provider's interface (ADR-0083, 2026-10-10): «Требует внимания» in the
+// admin. Booked at once by the refund polling (bank_refund, status imported: information); one it
+// could not book stays open, resolved by POST /api/admin/billing/issues/{id}/import
+// («Записать как долг») or …/dismiss.
+message AdminBillingIssue {
+  string id = 1;
+  string account_id = 2;
+  string workspace_id = 3;
+  string workspace_name = 4;
+  string payment_id = 5;         // our payment it is about ("" when unknown)
+  string provider = 6;
+  // The provider's refund id (Tochka: {operation}:{order}); a saved card's subscription id is
+  // masked like every admin provider id (…9f8f:7824819).
+  string provider_ref = 7;
+  Money amount = 8;
+  // bank_refund | currency_mismatch | exceeds_payments
+  string reason = 9;
+  // open | imported | dismissed
+  string status = 10;
+  google.protobuf.Timestamp occurred_at = 11; // at the provider, when known
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp resolved_at = 13;
+}
+
+// GET /api/admin/billing/issues?account_id=&status=&cursor=&limit=
+message AdminBillingIssues {
+  repeated AdminBillingIssue issues = 1;
+  string next_cursor = 2;
+  int64 open_total = 3; // open issues of every account (the «Требует внимания» badge)
+}
+
+// POST /api/admin/billing/issues/{id}/import | /dismiss
+message AdminResolveIssueRequest {
+  string reason = 1;
+  string request_id = 2;
+}
+
+message AdminBillingRefunds {
+  repeated AdminBillingRefund refunds = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingRefundRequest {
+  BillingRefundRequest request = 1;
+  string account_id = 2;
+  string workspace_id = 3;
+}
+
+message AdminBillingRefundRequests {
+  repeated AdminBillingRefundRequest requests = 1;
+  string next_cursor = 2;
+}
+
+message AdminBillingDispute {
+  BillingDispute dispute = 1;
+  string account_id = 2;
+  string provider_dispute_id = 3;
+}
+
+message AdminBillingDisputes {
+  repeated AdminBillingDispute disputes = 1;
+  string next_cursor = 2;
+}
+
+message AdminProviderEvent {
+  string id = 1;
+  string provider = 2;
+  string event_id = 3;
+  string kind = 4;
+  string object_id = 5;
+  bool livemode = 6;
+  google.protobuf.Timestamp received_at = 7;
+  google.protobuf.Timestamp processed_at = 8;
+  uint32 attempts = 9;
+  string error = 10;
+}
+
+message AdminProviderEvents {
+  repeated AdminProviderEvent events = 1;
+  string next_cursor = 2;
+}
+
+// POST /api/admin/billing/workspaces/{id}/enable: creates the inactive account.
+message AdminEnableBillingRequest {
+  string market = 1; // "global" (v1)
+  Plan plan = 2;     // PLAN_TEAM | PLAN_ENTERPRISE
+  string reason = 3;
+  string request_id = 4;
+  bool preview = 5;
+}
+
+// POST /api/admin/billing/accounts/{id}/manual-credits and …/admin-debit (a correction that
+// takes money off the free advance, never into debt)
+message AdminManualCreditRequest {
+  Money amount = 1; // > 0, account currency
+  string reason = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+  bool preview = 5;
+}
+
+// POST /api/admin/billing/accounts/{id}/manual-credits/{creditId}/reverse
+message AdminReverseCreditRequest {
+  string reason = 1;
+  string request_id = 2;
+  uint64 expected_revision = 3;
+  bool preview = 4;
+}
+
+// POST /api/admin/billing/payments/{id}/refunds
+message AdminRefundRequest {
+  Money amount = 1; // <= refundable of the payment
+  string reason = 2;
+  string request_id = 3;
+  bool preview = 4;
+  string refund_request_id = 5; // the owner request this executes, if any
+}
+
+// POST /api/admin/billing/accounts/{id}/hold
+message AdminHoldRequest {
+  google.protobuf.Timestamp hold_until = 1; // unset = release the hold
+  string reason = 2;
+  string request_id = 3;
+  bool preview = 4;
+}
+
+// POST /api/admin/billing/accounts/{id}/reconcile
+message AdminReconcileRequest {
+  string reason = 1;
+  string request_id = 2;
+  // Refunds of this account marked needs_review that the superadmin confirmed absent at the
+  // provider: after one more provider lookup finds nothing they fail and their reservation
+  // returns to the balance (409 BILLING_REFUND_NOT_RELEASABLE otherwise).
+  repeated string release_refund_ids = 3;
+}
+
+// PUT /api/admin/billing/accounts/{id}/discount
+message AdminDiscountRequest {
+  uint32 discount_bps = 1; // 0..10000
+  string reason = 2;
+  string request_id = 3;
+  uint64 expected_revision = 4;
+  bool preview = 5;
+}
+
+message AdminPriceVersion {
+  string id = 1;
+  string market = 2;
+  string sku = 3;
+  Plan plan = 4;
+  Money unit = 5; // per seat per 24 h
+  google.protobuf.Timestamp effective_from = 6;
+  google.protobuf.Timestamp created_at = 7;
+  string account_id = 8; // a custom price of this account; empty = the market catalog
+}
+
+// GET /api/admin/billing/prices
+message AdminPriceVersions {
+  repeated AdminPriceVersion prices = 1;
+}
+
+// POST /api/admin/billing/prices: effective_from >= now + 10 days.
+message AdminCreatePriceRequest {
+  string market = 1;
+  Plan plan = 2;
+  Money unit = 3;
+  google.protobuf.Timestamp effective_from = 4;
+  string reason = 5;
+  string request_id = 6;
+  bool preview = 7;
+}
+
+// POST /api/admin/billing/refund-requests/{id}/decide: approve = refunds of the requested
+// amount from the account's payments (oldest first, unused money only); reject = no money moves.
+message AdminDecideRefundRequest {
+  bool approve = 1;
+  string reason = 2;
+  string request_id = 3;
+  bool preview = 4;
+}
+
+// Answer of an admin money mutation (or its preview).
+// POST /api/admin/billing/accounts/{id}/market (ADR-0083): move an account without payments to
+// another market (same rule as the owner's pre-payment choice; 409 BILLING_MARKET_FIXED).
+message AdminChangeMarketRequest {
+  string request_id = 1;
+  string reason = 2;
+  string market = 3;             // "global" | "ru": must be open for new clients
+  uint64 expected_revision = 4;
+  bool preview = 5;
+}
+
+// A configured acquirer and its «принимать новых клиентов» switch.
+message AdminBillingProvider {
+  string id = 1;                  // "stripe" | "tochka"
+  repeated string markets = 2;    // markets it serves (BILLING_PROVIDERS)
+  bool accept_new = 3;            // new accounts may be opened on it
+  google.protobuf.Timestamp updated_at = 4; // of the switch; unset = never changed
+}
+
+// GET /api/admin/billing/providers
+message AdminBillingProviders {
+  repeated AdminBillingProvider providers = 1;
+  BillingSalesMode mode = 2; // for new accounts now
+}
+
+// PUT /api/admin/billing/providers/{provider}
+message AdminSetProviderRequest {
+  string request_id = 1;
+  string reason = 2;
+  bool accept_new = 3;
+  bool preview = 4;
+}
+
+message AdminBillingMutationResult {
+  bool preview = 1;
+  Money balance_before = 2;
+  Money balance_after = 3;
+  AdminBillingAccount account = 4;
+  string audit_id = 5; // empty for a preview
+  string action = 6;   // audit action, e.g. "manual_credit"
+  bool replayed = 7;   // the request_id was seen before with the same body
+  Money amount = 8;    // money moved by the action (credited, debited, reversed, refunded)
+  string credit_id = 9; // manual credit: the funding lot (…/manual-credits/{creditId}/reverse)
+  repeated AdminBillingRefund refunds = 10;      // refunds created (pending until the provider answers)
+  AdminBillingRefundRequest refund_request = 11; // decided owner request
+  AdminPriceVersion price = 12;                  // created price version
+  Money refundable = 13;                         // refund preview: unused money of the payment
+  AdminBillingProviders providers = 14;          // provider switch: the switches after it
+  Money compensation = 15;                       // plan switch: the rest of the old lots back on the balance
+  AdminBillingIssue issue = 16;                  // resolved «Требует внимания» item
+  AdminManualRefund manual_refund = 17;          // refund: the provider does not make it through its API
+  AdminChargeAttempt charge = 18;                // charge check: the charge after it
+  AdminBillingDispute dispute = 19;              // chargeback recorded or closed
+}
+
+// POST /api/admin/billing/accounts/{id}/charges/{attemptId}/check: «Проверить списание сейчас» —
+// the charge is read at the provider at once (never sent again); found → credited, an open one
+// past its window → closed as not found.
+message AdminCheckChargeRequest {
+  string reason = 1;
+  string request_id = 2;
+}
+
+// POST /api/admin/billing/payments/{id}/chargebacks: «Зафиксировать чарджбэк» — a chargeback the
+// bank reported outside its API (Tochka has no dispute API: letter, statement, chargeback
+// registry). The amount leaves the balance at once (debt if spent), the account gets the dispute
+// hold: no auto-topup, no refunds until it is closed.
+message AdminRecordChargebackRequest {
+  Money amount = 1;          // > 0, account currency, at most the payment's amount not disputed yet
+  string bank_reference = 2; // the bank's reference of the chargeback (3..100 characters)
+  string reason = 3;
+  string request_id = 4;
+  uint64 expected_revision = 5;
+  bool preview = 6;
+}
+
+// POST /api/admin/billing/disputes/{id}/close: the outcome of a chargeback recorded by hand
+// (a provider's dispute is closed by its webhook). WON / WITHDRAWN return the money, LOST keeps
+// it taken; the dispute hold ends with the account's last open dispute.
+message AdminCloseDisputeRequest {
+  DisputeStatus outcome = 1; // WON | LOST | WITHDRAWN
+  string reason = 2;
+  string request_id = 3;
+  bool preview = 4;
+}
+
+// A refund the provider makes only in its own interface (ADR-0083 amendment 2026-10-10: Tochka
+// subscription payments, digital ruble): nothing was sent or booked; the operator refunds in the
+// bank and the refund polling books it. The ids are what the operator looks up in the bank, given
+// in full here (a saved card's subscription id stays masked in lists, logs and errors).
+message AdminManualRefund {
+  string provider = 1;
+  string payment_id = 2;  // ours
+  string operation = 3;   // the provider's operation id, in full (the bank's reference)
+  string charge = 4;      // the charge's order id in the operation ("" for the first payment)
+  Money amount = 5;
+}
+
+// POST /api/admin/billing/test-clock (BILLING_TEST_CLOCK=1 only, never in production): moves
+// the billing clock used by the scheduler.
+message AdminBillingTestClockRequest {
+  google.protobuf.Timestamp now = 1; // unset = back to the database clock (unless advance_seconds)
+  uint64 advance_seconds = 2;        // > 0: fix the clock at (now or the billing time) + this
+}
+
+message AdminBillingTestClockResponse {
+  google.protobuf.Timestamp now = 1; // the billing time now
+  bool fixed = 2;                    // false = database clock
+}

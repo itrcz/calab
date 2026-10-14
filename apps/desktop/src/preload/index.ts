@@ -48,6 +48,7 @@ const api: CalabaApi = {
     networkOnline: () => void ipcRenderer.invoke(IPC.appNetworkOnline),
     log: (level, message) => void ipcRenderer.invoke(IPC.appLog, { level, message }),
     openExternal: (url) => ipcRenderer.invoke(IPC.appOpenExternal, url),
+    openCheckout: (url) => ipcRenderer.invoke(IPC.appOpenCheckout, url),
     legal: () => ipcRenderer.invoke(IPC.appLegal),
     attention: () => void ipcRenderer.invoke(IPC.appAttention),
     setBadge: (n) => void ipcRenderer.invoke(IPC.appSetBadge, n),
@@ -65,6 +66,8 @@ const api: CalabaApi = {
   files: {
     download: (a) => ipcRenderer.invoke(IPC.filesDownload, a),
     onProgress: (cb) => on(IPC.filesProgress, cb),
+    prepareDrag: (a) => ipcRenderer.invoke(IPC.filesDragPrepare, a),
+    startDrag: (fileId) => ipcRenderer.invoke(IPC.filesDragStart, fileId),
     pathOf: (f) => webUtils.getPathForFile(f),
     decodeImage: (bytes, maxSide) => ipcRenderer.invoke(IPC.filesDecodeImage, { bytes, maxSide }),
   },
@@ -110,6 +113,12 @@ const api: CalabaApi = {
     openExternal: () => ipcRenderer.invoke(IPC.webAppOpenExternal),
     forget: (appId) => ipcRenderer.invoke(IPC.webAppForget, appId),
     onState: (cb) => on(IPC.webAppState, cb),
+    tipShow: (tip) => ipcRenderer.invoke(IPC.webAppTipShow, tip),
+    tipHide: () => ipcRenderer.invoke(IPC.webAppTipHide),
+  },
+  mail: {
+    request: (call) => ipcRenderer.invoke(IPC.mailRequest, call),
+    onEvent: (cb) => on(IPC.mailEvent, cb),
   },
 };
 

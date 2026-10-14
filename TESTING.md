@@ -59,6 +59,7 @@
 | [3.17 Статус звонка и скрытые превью (P0.6)](#317-статус-звонка-и-скрытые-превью-p06) | Статус звонка и скрытые превью (P0.6) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
 | [3.18 Тарифы и лимиты, суперадмин (ADR-0024)](#318-тарифы-и-лимиты-суперадмин-adr-0024) | Тарифы и лимиты, суперадмин | Go, Docker; часть тестов — dev-LiveKit, `lk` | 3 мин |
 | [3.19 Запись встреч и GPTunneL (ADR-0025)](#319-запись-встреч-и-gptunnel-adr-0025) | Запись, pairing, загрузка, карточка | Go, Docker, dev-LiveKit | 2 мин |
+| [3.20 Ачивки (ADR-0061)](#320-ачивки-adr-0061) | Каталог пространства, миграция с хоста, вручение, открытка | Go, Docker | 1 мин |
 | [4. Инфра и стенд](#4-инфра-и-стенд) | контейнеры, сертификаты, `/download/`→releases, LiveKit, relay, нагрузка, защита, бэкапы | ssh к стенду (только чтение), `lk`, openssl | 45 мин |
 | [Хотфикс 0.1.1: сервер (move без SFU, 499)](#server-перемещение-без-sfu-move-хотфикс-011-adr-0019) | app-level move против реального LiveKit, 499 для оборванных запросов | Go, Docker, dev-LiveKit, `lk` | 10 мин |
 | [Приёмка 0.1.1: клиент H.1–H.6](#приёмка-011-хотфикс-десктопа-и-веба) | плашка соединения, диалог «Присоединиться», обводка сообщения, уведомления, 4008, перемещение | Chrome, десктоп, локальный API или стенд | 40 мин |
@@ -518,6 +519,31 @@ Mac (лучше Retina + второй монитор), 2 клиента (2.6) в
 - AT.2 Во время звонка переключить Wi‑Fi на другую сеть (или раздать с телефона) и обратно; открыть комнаты → грузятся не дольше чем через одну задержку ~20–30 с, без перезапуска; в логе `api transport reset (network online)` или `(… timeouts in 60 s)`.
 - AT.3 Закрыть крышку на 2 мин, открыть → в логе `api transport reset (power resume)`; комнаты, доска, задача грузятся, голос переподключился.
 - AT.4 Перекрыть API (Little Snitch / правило `pfctl` на IP стенда) на 60 с, за это время открыть 2–3 новые комнаты → «Не удалось загрузить сообщения», в логе `api transport reset (2 timeouts in 60 s)`. Снять блокировку → эти комнаты загружаются сами (после `api transport reset` или переподключения gateway), без клика «Повторить» и без перезапуска.
+
+### 2.19 Почтовый движок ML.1–ML.3 (ADR-0088, T1)
+
+Авто: `pnpm -F @calaba/desktop test -- src/main/mail` (discovery, sqlite/FTS, сверка папок, очередь отправки, guard'ы).
+Интеграционный (opt-in, нужен Docker):
+```
+infra/docker/greenmail/gen-cert.sh        # TLS для localhost: движок проверяет сертификат строго
+docker compose -f infra/docker/compose.dev.yml --profile mail up -d greenmail
+CALABA_MAIL_IT=1 pnpm -F @calaba/desktop test -- engine.it   # ожидается: 6 passed (4 — доверие сертификату, ML.6)
+docker compose -f infra/docker/compose.dev.yml --profile mail down
+```
+- ML.1 Неверный пароль → `AUTH_FAILED` с настройками; верный → аккаунт проверен (IMAP + SMTP).
+- ML.2 Отправка себе → письмо во «Входящих» через IDLE за ≤ 2 с, тело и вложение читаются, флаги доходят до сервера, поиск находит, «Архив» создаётся и письмо переезжает.
+- ML.3 Письмо от bob → событие `new_mail`. Другой сервер: `CALABA_MAIL_IT_HOST`, `_IMAP_PORT`, `_SMTP_PORT`, `_CA`.
+Без Docker — локальный фейк (hoodiecrow + smtp-server, те же порты и пользователи; годится и для `engine.it`): `node apps/desktop/scripts/mail-fake-server.mjs`.
+- ML.4 Приложение против фейка: `pnpm -F @calaba/desktop build:app`, запуск с `NODE_EXTRA_CA_CERTS=infra/docker/greenmail/certs/ca.pem`; «Почта» → `alice@example.test` / `secret` → «Не нашли настройки» → серверы `localhost` 3993 / 3465 → «Добавить». Ожидается: 3 письма (HTML с картинкой `cid:` и «Договор.pdf», text/plain в цвете темы, рассылка на белом), PDF сохраняется в «Загрузки» с именем, ссылка → браузер, `mailto:` → новое письмо в Calab, ответ уходит в Sent и на SMTP (лог фейка), флаг/архив/корзина доходят до сервера.
+- ML.5 `node apps/desktop/scripts/mail-fake-server.mjs send` → строка за ≤ 3 с без действий, системное уведомление «Bob · New message …», бейдж на рейле; `calab://mail/<base64url("bob@example.test:secret")>` → форма заполнена, фокус на «Добавить».
+- ML.6 Самоподписанный сертификат (доверие с первого раза, ADR-0088 §4): как ML.4, но **без** `NODE_EXTRA_CA_CERTS` → после «Добавить» вместо «Не удалось установить защищённое соединение» две плашки (`localhost:3993` и `localhost:3465`): «Сертификат самоподписанный», «Выдан: CN=localhost», отпечаток, «Доверять этому серверу и подключиться». Нажать на первой → остаётся вторая; на второй → ящик добавлен, письма приходят. «Настройки → Почта»: две строки «Сертификат: закреплён ⋯xxxx · Сбросить». Пересоздать сертификат фейка (`gen-cert.sh`, перезапуск) → у ящика «Сертификат сервера изменился» · «Показать и доверять новому» → после подтверждения синхронизация снова идёт. До доверия на сервер не уходит ни одной команды (LOGIN/AUTH).
+- ML.7 (3.1.1) `CALABA_MAIL_IT=1 … engine.it` шагом 7: письмо в «Корзину» → `folders.empty` чистит её на сервере, «Входящие» — `INVALID`. В приложении (ML.4): «Корзина» → метла → «Удалить N писем навсегда?» → пусто; после `pnpm -F @calaba/desktop build:app` в выводе «mail engine OK: loads without node_modules», в `~/Library/Logs/Calab/main.log` при открытии «Почты» — `mail: engine spawned`.
+
+### 2.20 Windows smoke (без Windows-машины)
+
+`gh workflow run win-smoke.yml -f version=3.1.2 [-f from=3.0.9] [-f unicode=true] [-f update_from=3.1.1]` (ручной, не в CI) → `gh run watch`, `gh run download`.
+Ставит релиз на `windows-latest`, запускает, входит в mock-API (все разделы и вкладки настроек, скриншоты), гоняет почтовый движок против фейка, опционально — автообновление и кириллические пути.
+Ожидается в `summary.txt`: `alive processes>0`, `main alive=true`, ответы `mail: … ok:true`, без `EXITED`/`CRASHED`; `events.txt` пустой. Падение — смотреть `renderer gone` / `child process gone` в `*-logs/main.log` и `Faulting module` в `events.txt`.
 
 ## 3. Сервер
 
@@ -1207,6 +1233,17 @@ CALABA_VISUAL_MOCK_PORT=41370 pnpm e2e:visual -g "admin-suspend|settings-bans|wo
 ```
 Ожидается: 2 `--- PASS`, всё зелёное, 3 снимка совпадают. Вручную: суперадмин приостанавливает пространство → у всех плашка (у владельца — причина и «Связаться»), звонок завершается, отправка/голос/инвайты — отказ; «Забанить…» в меню участника → он пропадает, вход по инвайту — «Вход в это пространство для вас закрыт»; «Разбанить» во вкладке «Забаненные».
 
+Индивидуальный тариф с ценой и названием (ADR-0086 «Дополнение 2026-10-10», ветка `feat/custom-plan-pricing`):
+```sh
+cd apps/server && export TEST_DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba
+go test -race -tags integration -count=1 -run 'TestCustom|TestAdminCustomPlan|TestTransitionCustomPlan' ./internal/billing/core/ ./internal/billing/admin/ ./internal/billing/http/
+go test -race -count=1 -run 'TestCleanText|TestCustomText|TestCustomPlanName' ./internal/plans/
+cd ../desktop && pnpm exec vitest run src/renderer/lib/billing/customPlan.test.ts src/renderer/lib/plan.test.ts
+pnpm e2e:visual:billing -g "billing-custom"
+```
+Ожидается: всё `ok`/зелёное, снимки `billing-custom-*` (dark-960 и iPhone 14) совпадают. Проверяется: списания, продление и рост состава — по индивидуальной цене без скидки; новая цена — только для суток, начатых с `effective_from`; возврат на Team компенсирует остаток по индивидуальной цене; владелец не меняет и не останавливает тариф (`409 BILLING_PLAN_ADMIN_ASSIGNED`), пополнение работает; название — в шильдике, вкладке «Тариф», «Условиях тарифа»; пусто → «Индивидуальный».
+Вручную (стенд, суперадмин): «Администрирование» → «Оплата» → аккаунт → «Назначить индивидуальный» (название, цена, лимиты, причина → «Предпросмотр» → «Сохранить тариф») → у участников шильдик с названием; «Изменить» с датой → строка «Следующая цена» и «запланирована» в истории; «Вернуть на стандартный» сверх лимитов Team → список и «Назначить всё равно».
+
 ### 3.19 Запись встреч и GPTunneL (ADR-0025)
 
 ```sh
@@ -1223,6 +1260,17 @@ TEST_REDIS_URL=redis://localhost:56379/6 TEST_RTC_REDIS_DB=5 go test -race -tags
 **Результат и удаление (docs/09 #47, #50, docs/17):** в том же прогоне `TestRecordingResult`: после DONE карточка получает `summary`, `has_transcript`, `audio_until` и вложение `audio/mp4` (`.m4a`), локальный файл удалён; 503 от `/result` повторяется; `GET …/transcript` — участник 200 (реплики, `speaker -1` без разметки), без `VIEW_ROOM` и чужой — 404; старый GPTunneL без методов → `result_state = unavailable`, 404 на транскрипт; через 31 день janitor убирает аудио (карточка без вложения); `DELETE …/recordings/{rid}`: участник без прав — 403, без `VIEW_ROOM` — 404, запустивший — 204 → карточка `deleted_at`/`deleted_by`, файл/транскрипт — 404, `DELETE` в GPTunneL; идущая запись — 409, владелец удаляет чужую.
 Клиент: `pnpm -F @calaba/desktop e2e:visual -g "chat-recording|recording-transcript"` (карточка во всю ширину, саммари «Показать всё», «Послушать запись» играет AAC/MP4 6 с, перемотка; транскрипт: поиск «эталоны» → 2, клик по реплике → плеер; удаление с подтверждением) и `e2e:visual:mobile -g "m-chat-recording"`.
 Руками (стенд, после выкатки API GPTunneL): записать 1–2 мин → «Готово» → в карточке саммари, «Послушать запись» играет с перемоткой и скоростью, «Полный транскрипт» — спикеры и время, клик по реплике перематывает; «Открыть в GPTunneL» ведёт на `gptunnel.ru`; «…» → «Удалить запись» → «Запись встречи удалена» у всех.
+
+### 3.20 Ачивки (ADR-0061)
+
+```sh
+cd apps/server
+go test -race -count=1 ./internal/achievements/
+go test -race -tags integration -count=1 -v -run 'TestAchievements' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `TestPrepareAchievement`, `TestFitRect`, `TestAchievements*` (в т. ч. `TestAchievementsMigration`, `TestAchievementsLimit`) — PASS. Проверяется: каталог пространства — владелец и админ создают/меняют/архивируют/удаляют, участник без `MANAGE_WORKSPACE` → 403, бот → 403 `BOT_NOT_ALLOWED`, чужое пространство → 404; картинка — своя загрузка, без прозрачности → 422 `IMAGE_NEEDS_ALPHA`, сервер делает новый файл 512×512 WebP, его читают участники и гости, посторонние — 404, чистка сирот её не трогает; 101-я → 409 `ACHIEVEMENT_LIMIT`; `WORKSPACE_ACHIEVEMENTS_UPDATE` участнику; `ETag` → 304; удаление вручённой → 409 `ACHIEVEMENT_IN_USE`; вручение — как раньше (403 без `MANAGE_MEMBERS`, 422 себе / гостю / боту / архивной / чужой ачивке / пустое «за что»), открытка, упоминание, `achievementCount`, отзыв. Миграция: ачивки хоста по-старому → копии по пространствам с вручениями (вручения и открытки перепривязаны), невручённая удалена, картинки — файлы пространств, «падение» задачи посередине продолжается со следующего запуска, старые блобы удалены.
+Руками (стенд, после выкатки): владелец → настройки пространства → «Библиотека» → «Ачивки» → добавить PNG с прозрачным фоном → меню участника «Вручить ачивку…» → открытка в общем чате, у получателя — упоминание. Ачивки, вручённые до обновления, остались в профилях и открытках со своими картинками.
+Клиент: `pnpm --filter @calaba/desktop exec vitest run src/renderer/lib/achievements.test.ts src/renderer/lib/tilt.test.ts src/renderer/lib/achievementPrepare.test.ts src/renderer/lib/mentions.test.ts src/renderer/features/people/GrantAchievementDialog.test.ts` — PASS. Руками (настройки пространства → «Библиотека» → «Ачивки»): добавить PNG с прозрачным фоном (непрозрачный — предупреждение, сервер 422), перетащить в списке — порядок сохраняется; у вручённой «Удалить» неактивна. Меню участника → «Вручить ачивку…»: «Вручить» неактивна без «За что», ⌘↩ вручает → тост «Открыть в чате», в общем чате открытка; у получателя — упоминание и звук. Клик по картинке открытки — просмотр: блик один раз, наклон ≤ 6° за курсором, при уходе — плавно в 0; с «Уменьшить движение» — без эффектов. Профиль: ряд в карточке, секция «Достижения», «×2» при повторе, «⋯ → Отозвать».
 
 ---
 
@@ -1993,6 +2041,8 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 | C.23 | `POST …/freebusy/suggest` на двоих (60 мин, «в рабочие часы»), затем с `room_id` занятой комнаты, затем коллеге рабочие дни только сб–вс | До 10 окон с шагом 15 мин в пересечении часов, без чужих встреч; комната исключает свои встречи; без общих часов — 409 `NO_COMMON_HOURS` |
 | C.24 | Подключить CalDAV (Яндекс/iCloud, пароль приложения): `POST /api/me/caldav`, выбрать календарь `PUT {calendarHref, import:true}`, «Синхронизировать» | Список календарей без пароля в ответе; неверный пароль — 422 `password`; через ≤ 15 мин (или sync) у коллеги в freebusy `EXTERNAL` без названий; «Отключить» — занятость пропала |
 | C.25 | Включить `push`, создать встречу, изменить, отклонить чужую, отменить свою | Встреча появилась во внешнем календаре (без повторных писем участникам), правка обновила её, отказ и отмена убрали; сервер недоступен — после 5 попыток ошибка в настройках |
+| C.26 | ADR-0045 поправка 1. Яндекс: событие с видеовстречей Телемоста, «Синхронизировать», в дне клик по карточке → «Подключиться», «Открыть в календаре»; то же для iCloud / Nextcloud | «Подключиться» — telemost.yandex.ru/j/…, «Открыть в календаре» — calendar.yandex.ru/event?event_id=… (Nextcloud — приложение «Календарь» на событии); у iCloud и без ссылки второй кнопки нет; десктоп и веб |
+| C.27 | «Удалить из календаря»: своё событие с участниками, чужое приглашение, вхождение серии («Только это событие»), серия; затем изменить событие у провайдера и удалить в Calab без синхронизации; календарь только для чтения | Текст подтверждения по роли; событие исчезает сразу и у провайдера (участникам — отмена); вхождение — остальные остаются; изменённое — тост «изменилось», событие на месте; read-only — тост; боту / гостю `DELETE /api/me/external-events` — 403 |
 
 Автотесты: `docs/20-calendar-testing.md` (Go-интеграционные `internal/app/events_*_integration_test.go`, unit десктопа, Playwright e2e против мока, прод-smoke).
 
@@ -2040,6 +2090,17 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 | K.21 | Клиент: доска → `3` (таймлайн), «Неделя»; потянуть полосу на 2 дня, край — на день, чип из «Без дат» — на шкалу; вехой — влево; клик по полосе | Полосы двигаются по дням, `PATCH` только изменившихся дат (у одной даты — одна дата), красная точка у задачи с поздним блокирующим, веха — `PATCH milestones`; панель задачи. Телефон: только прокрутка |
 | K.22 | Клиент: правый клик по сообщению в комнате → «Создать задачу», сменить доску, создать; открыть ссылку `/m/…` из описания | Заголовок — первая строка без разметки, `POST … fromMessageId`, в описании цитата и ссылка; ссылка открывает комнату и прокручивает к сообщению; в следующий раз выбрана та же доска |
 | K.23 | Клиент: в чате `https://<APP_HOST>/t/CAL-3` и `/b/<id>`; сменить статус CAL-3 на доске; клик по карточке. Меню пространства → Уведомления → «Задачи: ничего»; архивировать доску → «Архив» → «Восстановить» | Карточка: ключ, заголовок, статус, исполнители, срок; статус обновляется без перезагрузки; клик — режим досок и панель; `PUT …/notifications {taskLevel}`; доска возвращается в список |
+| K.24 | Доска по карточкам (ADR-0059): приватная доска без bob; owner ставит bob исполнителем SCP-1, carol — согласующей SCP-2 | bob: `BOARD_CREATE` (`taskScoped`, `permissions 0`), затем `TASK_CREATE`, уведомление «назначен»; в списке досок, ⌘K, «Мои задачи», unfurl — только SCP-1; SCP-2 — `404`; «+ Задача», виды, журнал, доступ — `403`; правка и комментарий SCP-1 — `200`; carol голосует и комментирует, правка — `403` |
+| K.25 | Owner снимает bob с SCP-1; закрывает доску (`restricted`); зовёт гостя или бота без доступа | bob: `TASK_DELETE`, затем `BOARD_DELETE`; carol доску сохраняет (ADR-0076: закрытая доска открывается по карточке), назначение на закрытой доске — `200`; гостя, бота — `422` |
+| K.25н | Наблюдатели (ADR-0076): owner в SCP-1 «Наблюдатели» → «+ Добавить» → dave (не видит доску); dave комментирует; dave в комментарии упоминает eve; owner упоминает eve; dave → «Перестать наблюдать»; настройки закрытой доски → «Доступ» | dave: доска «Только мои карточки», SCP-1 открыт, правка — `403`, «+ Добавить» нет; упоминание от dave eve доступа не даёт (`404`), от owner — eve в наблюдателях и уведомление «вас упомянули»; после ухода у dave `TASK_DELETE`, `BOARD_DELETE`; в «Доступе» строка «Позванные по карточкам: N» |
+| K.26 | Клиент (K.24): bob — список досок и канбан, открыть SCP-1; carol — открыть SCP-2; у owner открыть пикер исполнителей; owner снимает bob | У bob чип «Только мои карточки», нет «+ Задача» / `C` / ⋯ → настройки / «Сохранить как вид» / панели массовых действий; в SCP-1 правка и комментарии, у carol поля read-only, видны голосование и комментарии; в пикере у не видящих доску подпись «увидит только эту задачу» (и на закрытой доске, ADR-0076); после снятия панель закрывается, доска исчезает из списка |
+| K.27 | Автоматизации (ADR-0060, сервер): на доске FNG owner `POST /api/boards/{id}/rules` «В работу → срочно» (`trigger.statusChanged.toStatusId` = «В работе», действия `setPriority HIGH`, `comment "{key} в работе"`, `notifyDm ASSIGNEES`); перевести FNG-1 (исполнитель bob) в «В работе»; бот — `POST …/rules`; пространство на Free — `POST …/rules` | Приоритет HIGH, в журнале запись с `ruleId` и пустым `actorId`, в комментариях карточка «FNG-1 в работе», у bob уведомление `RULE`; `GET /api/rules/{id}/runs` — `ok`, `actionsApplied 3`; бот — `403 BOT_NOT_ALLOWED`; Free — `409 PLAN_LIMIT`. Правило «Приоритет → Готово» на задаче с несогласованным согласующим — задача не двигается, в журнале правила `TASK_APPROVAL_REQUIRED` |
+| K.28 | Git (ADR-0060 §4): `PUT /api/boards/{id}/git {provider: GITHUB}` → секрет и `url`; в репозитории GitHub — Webhook на этот `url` (`application/json`, секрет, события Push + Pull requests); открыть PR «FNG-1 …», смержить | Без подписи — `401`; PR → в задаче секция Git (`GET /api/tasks/{id}` → `gitLinks`, состояние `OPEN` → `MERGED`), запись журнала `git`, событие `TASK_GIT_LINKS_UPDATE`; правило «PR смержен → Готово» двигает задачу; ключ чужой доски — без эффекта |
+| K.27к | Клиент: настройки доски → «Автоматизации» → «Из шаблона ▾» → «PR смержен → Готово» → «Сохранить»; «+ Правило» без названия → «Сохранить»; добавить 5 действий; открыть правило → «Проверить на задаче…» → FNG-1; ⋯ → «Журнал»; перетащить правило вверх; тумблер; пространство на Free | Строка «Когда PR смержен → тогда статус → «Готово»» (статус подставлен из доски); ошибки под «Название» и действием, «+ Действие» неактивно на 5; «Условие выполняется на FNG-1» и действия (проблемы красным); журнал с ключом задачи; `PATCH position` / `enabled`; у второго клиента строка обновляется без перезагрузки; Free — плашка «Team», всё только для чтения |
+| K.29 | Вехи (ADR-0063, сервер): owner `POST /api/tasks/{FNG-1}/milestones {name: "Бета", dueOn}` ×2; подзадаче FNG-2 — `PATCH {taskMilestoneId}` (веха FNG-1), затем веха чужой задачи; FNG-2 → «Готово»; `PATCH completed` у этой вехи; bob (не исполнитель) — `POST …/milestones`; фича «Вехи» выключена — `POST`; бот с `CREATE_TASKS` на своей задаче | `201`, в каждой задаче `milestones`/`milestoneProgress`; чужая веха — `422`; веха сама выполнена (`completedAt`, журнал `auto_completed`, `TASK_UPDATE` FNG-1); ручная отметка — `409 TASK_MILESTONE_AUTO`; bob — `403`; фича — `409 FEATURE_DISABLED`; бот — `201` |
+| K.29к | Клиент: FNG-1 → «Вехи» «+» → «Бета», календарь → дата, ↩; ещё две; Esc; ⋯ → «Отметить выполненной»; перетащить вторую вверх; FNG-2 → «Веха родителя»; доска → `3` (таймлайн), «Неделя» / «Месяц», навести курсор; задача с датами вне окна | Строка ввода остаётся для следующей; ромбы: заливка — выполнена, красный — просрочена; на карточке `◇ 1/3`; шкала — числа только у понедельников, «ЯНВ» строкой выше, синяя таблетка «сегодня» + линия, серая таблетка дня под курсором; ромбы на полосе FNG-1 с названиями снизу, название задачи над полосой; «← нояб 2025» / «… →» — клик прокручивает к задаче. Эталон — `docs/qa/2.3.0/task-milestones/` |
+| K.28к | Клиент: настройки доски → «Git» (без «Управлять интеграциями» вкладки нет): GitHub, пустой секрет → «Подключить», «Скопировать» секрет и адрес; PR «FNG-1 …»; открыть FNG-1, клик по строке PR | Секрет показан один раз; инструкция меняется с провайдером; «Принято событий: N»; на карточке чип ⎇ N, в панели секция «Git» под вложениями (PR зелёный → фиолетовый после merge) без перезагрузки; ссылка — в браузере; в ленте «⚙ Автоматизация: PR смержен → Готово» |
+| K.30 | Триггеры уведомлений (ADR-0089): bob (исполнитель FNG-1) → Настройки → Уведомления → «Задачи»: две группы, «Просят согласовать» и «Согласовано или отклонено» — тумблер заблокирован, «Всегда»; выключить «Приоритет». owner меняет FNG-1: приоритет, срок, веху, заголовок, файл; снимает bob с ведущих; переносит на другую доску; архивирует. | bob получает «Срок изменён: …», «Веха: …», «Изменён заголовок», «Файл: …», «{owner} снимает вас с задачи», «Перенесена на доску …», «Задача в архиве»; приоритета — нет. Повтор правки заголовка в течение 5 мин — без второго уведомления. Метёлка сроков: задача со сроком завтра, `TASKS_DUE_TZ` текущей зоны, после 09:00 (≤ 5 мин) — «Срок завтра» без автора. Меню пространства «Уведомления ▸ Задачи ▸ Все» — подпись «По настройкам триггеров». |
 
 Автотесты: `go test -tags integration ./internal/app -run 'Board|Task'`, unit `internal/boards`, векторы `pnpm -F @calaba/protocol test`.
 
@@ -2066,6 +2127,11 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
 
+## iOS shared-web incoming calls (ADR-0071)
+
+1. Сценарий реального устройства: [incoming-calls-testing](docs/mobile/incoming-calls-testing.md); APNs/cold locked answer пока не проверены.
+2. Source gates: mobile protocol/queue/expiry; web READY/revocation/late accept/receipt retry; Go push/config и incoming integration с race.
+3. Native R06 build/установка и deployment разрешаются отдельно; [push overlay](docs/mobile/push-deployment.md) сам ничего не запускает.
 
 ### Identity 2.0: совместимость локальных событий и чтения
 
@@ -2086,3 +2152,99 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Manual: fresh account → stickers → Calab Stikers; emoji search, send to room and DM, reload history, view pack, check fixed built-in label in My stickers.
 - Guest with SEND_MESSAGES: send and forward succeed; without SEND_MESSAGES: send rejected. Free workspace: custom pack allowance unchanged.
 - Unknown asset ID: 404; public built-in route never serves uploads.
+
+## Формы досок (ADR-0064)
+1. PG17: `go test -race -tags integration ./internal/app -run '^TestBoardForms'`; отдельные DB/Redis.
+2. Team: 5 форм; шестая — PLAN_LIMIT. Business — 20; Custom 0 — unlimited; Free — отказ записи.
+3. Меню ⋯ → Формы: создать поля/подсказки/required, выбрать статус/приоритет, сохранить и скопировать ссылку.
+4. Preview: заполнить, отправить; число задач/комнат/журнала/outbox и next_number не меняются.
+5. Публичная ссылка в отдельном браузере: заполнить; задача появляется в выбранной колонке с приоритетом.
+6. Private: anonymous требует вход, чужой аккаунт — отказ, выбранный участник — успех без доступа к доске.
+7. Отозвать ACL/членство или удалить форму: уже открытая страница не отправляет; старые задачи остаются.
+8. Бот: CRUD при MANAGE_BOARD, без права — отказ; private ACL и submit; задача с автором-ботом.
+9. Concurrent POST: квота атомарна, одинаковый nonce — одна задача; другой payload — NONCE_CONFLICT.
+10. Устаревшая revision, удалённый статус, архив, suspension, SSO enforced: запись закрыта без побочных эффектов.
+11. Ручной Playwright QA: редактор/preview/публичная/успех/удалённая desktop 960×600 и mobile 390; visual suites не запускать.
+12. PHONE/URL/MULTISELECT: valid/invalid, required/optional, preview и bot/public submit; nonce с переставленными values; смена типа первого поля, источник заголовка/fallback/обрезка без потери ответа.
+
+### Единый поиск, сервер (ADR-0062, этапы 1–2)
+
+1. Unit: `cd apps/server && go test ./internal/searchq/ ./internal/search/` — разбор запроса (префикс, фразы, `-`, `or`, Unicode, пунктуация → 422), курсоры.
+2. Интеграция (PG17 + Valkey, свой `TEST_PG_URL`/`TEST_REDIS_URL`): `go test -tags integration -count=1 -run 'TestSearch|TestTaskScopedAccess|TestBotRouteTable|TestIdentityMutation' ./internal/app/` — ok.
+3. Руками (`make dev-server`, владелец O и участник B, комната «общий», закрытая «секрет», доска с задачей «Подготовить презентацию»):
+   - `curl "$CALAB/api/search?q=рел&scope=$WS" -H "Authorization: Bearer $B"` → в `sections[messages]` сообщение «релиз» из «общий», не из «секрет»; `snippet` с `\u0002релиз\u0003`.
+   - `q=презинтацию` → задача в `tasks` (опечатка); `q=<KEY>-1` → задача первой с `keyMatch: true`.
+   - Встреча C с D без комнаты: B по её названию/описанию — `events` пустой; O-встреча в комнате, которую B видит, — находится.
+   - `scope=all` → появляются DM и `notes` (свои полки); у бота-токена `notes` пустой.
+   - `type=messages&limit=2` → `nextCursor`; следующая страница с `cursor=…` без повторов; курсор с другим `q` → 400.
+4. Нагрузка (опционально, минуты): `createdb calaba_search_perf; CALABA_SEARCH_PERF_URL=postgres://…/calaba_search_perf go test -tags integration -run TestSearchPerf -v -timeout 60m ./internal/search/` — EXPLAIN разделов и p50/p95 сводки (docs/14).
+5. Клиент (этап 3): `pnpm --filter @calaba/desktop test -- lib/search` — подсветка, подписи, кэш, debounce/отмена, клавиши ⌘K, фильтры панели. Руками (тот же стенд, десктоп или веб):
+   - ⌘K «рел» → свои комнаты/люди мгновенно, затем разделы с подсветкой и «Все: N →»; `<KEY>-1` → задача первой строкой, Enter открывает панель задачи. «Везде» → DM и «Заметки», выбор помнится после перезапуска.
+   - Tab — к следующему разделу, ⌘Enter — панель «Результаты поиска»; фильтры «Автор», «7 дней», «Только с файлами», «Сначала новые» меняют ленту, прокрутка догружает страницы.
+   - Переходы: сообщение (прыжок с подсветкой), комментарий (панель задачи у комментария), событие (карточка вхождения), картинка («Показать в чате»), расшифровка (транскрипт на реплике). Скриншоты — docs/qa/2.3.0/search/.
+
+### Phone host/main integration (R07, PostgreSQL 17)
+
+- Pinned main: `969bd18fb873218e53518b09c6059c1e6c1c4630`; push migration `00068`, phone ADR `0067`–`0071`.
+- `TestPushIdentityExactSessionAndRevocation` checks exact-session assurance isolation,
+  scoped/recovery route rejection, revoked proof at dispatch/tap and disabled managed directory.
+  `TestIdentityMutationQueryAndPoolInventory` covers guarded push mutations/locking queries.
+- Shared web SSO test rejects phone external navigation before flow creation; web/desktop
+  adapters keep their own generated SSO path. Phone external SSO/step-up parity remains open.
+- Workspace typecheck/tests and web bundle check pass: desktop 2529, mobile 109,
+  protocol 439, bot SDK 30 tests; two mobile native-project plugin tests. No Electron in web bundle.
+- Device APNs/PushKit, cold locked answer, CallKit audio activation and bidirectional audio
+  are **UNVERIFIED**; source tests do not prove them. R01–R06 device/build notes remain historical.
+- R07 physical-iOS arm64 Release compiled/signed locally with zero native input drift;
+  development APS/WidgetKit/UIScene/audio+voip verified. No installation or runtime proof.
+- Go unit `-race` passes. PG17 integration coverage completed after a sequential
+  `internal/app` default 10-minute timeout: 241 tests returned without assertion failures;
+  `TestUserNotes` had just started (0s). Same `go -list` order, no shuffle/parallel tests:
+  only the remaining 109 names ran once with an 8-minute bound, PASS in 238.359s.
+  All other server packages pass. Original full command remains exit 1 (timeout);
+  this recovery does not claim an uninterrupted green run. GitHub CI uses app shards.
+- Two independent security/protocol reviews found no blocker/major.
+
+## Phone notification and answer regressions (ADR-0072)
+
+- `go test ./internal/push` in `apps/server`: bounded APNs sender/content/caller payloads and attachment labels.
+- PG17: `go test -tags integration ./internal/app -run '^(TestPush|TestCallFullCycle|TestPhoneCallAnswerTakesOverDesktopRoom|TestCallOtherDeviceKeepsCall|TestVoiceOtherDeviceTakesOver)'`.
+- `corepack pnpm -F @calaba/desktop exec vitest run src/renderer/services/hostIncomingCalls.test.ts src/renderer/services/call.test.ts src/renderer/lib/callModel.test.ts`.
+- macOS: `swiftc apps/mobile/modules/calab-session-activity/ios/CalabCallReadiness.swift apps/mobile/tests/CallReadinessTests.swift -o /tmp/calab-call-readiness-tests && /tmp/calab-call-readiness-tests`.
+- Baseline repairs: include `voice.test.ts`, `platform/hostActivity.test.ts` and mobile bridge tests; verify idempotent mute, immediate capture gate, ownership/moderator limits, optional mute-capability negotiation and no native-action echo.
+- `go test -race -p 1 -tags integration ./internal/app -run '^TestPush'`: retained late taps, deleted/revoked/expired references, bounded receipt admission and expired pending jobs. Provider units keep APNs/FCM transport deadlines short.
+- macOS: compile/run `CalabPushRetry.swift` with `apps/mobile/tests/PushRetryTests.swift`; verify cooldown and lifecycle-triggered recovery. Device logout vs reload notification cleanup and system microphone/audio are separate manual gates.
+- Device after web/API + host update: sender/text after Face ID; caller name; one system answer;
+  desktop in workspace room yields; bidirectional audio stays alive >30 s with phone locked.
+- Repeat warm/background and terminated launches separately; no generic claim of cold-call success.
+
+
+R11 communication presentation: `go test -race ./internal/push` covers bounded avatars,
+cache/fallback and APNs payload limits; `TestPushMessageFreshPermissionsPreviewAndDedupe`
+adds an uploaded private avatar to authorized delivery. Mobile plugin tests validate the
+new notification extension across prebuild/CocoaPods serialization. Compile/run
+`CalabCommunicationPayload.swift` with `tests/CommunicationPayloadTests.swift` for malformed,
+oversized and old payloads; compile the extension against the iOS SDK. Actual system avatar
+rendering, grouping and lock-screen preview policy require the device checklists.
+
+Message preview: `TestPushPreviewPrivacySettingsAndLegacyClients`,
+`TestPushPreviewPrivacyAtDispatchAndRetry`, `TestPushHiddenAttachmentCaptionAndFilename`,
+`TestPushDMPreviewIsPersonal` cover optional false, old clients, recipient isolation,
+dispatch/retry freshness and hidden caption/file names while retaining room/group identity.
+`TestAPNSHiddenMessageBodyRetainsSenderAndAvatar` inspects actual APNs HTTP JSON.
+`TestPushMutedDeliveredMessageStillResolves` separates delivery preferences from tap access.
+`TestPushIncomingVoIPCurrentRingSessionAndExpiry` retains caller name/avatar with message
+previews disabled. `TestAvatarWarmCacheSurvivesConcurrentColdLoad` exercises cache contention.
+Historical R12 layout captures in `docs/mobile/qa/` predate the personal-only setting; they
+are not current phone evidence. Visual suites remain disabled.
+
+
+### R15 iOS system answer / call history notifications
+
+1. Mobile `src/callWire.test.ts`: compile the production Swift clock and pass serialized actions through the real strict TS parser (requires Swift; otherwise explicitly skipped).
+2. Desktop `hostIncomingCalls`, `platform/hostActivity`, `lib/gateway/client`: web/system answer race, late ring resolve, old host, local ownership, revocation, hidden parking.
+3. Go `internal/push` race tests plus PG17 `TestPushCallHistory*` and all existing `TestPush*`: only MISSED alerts, persisted outcome recheck, private history resolve, cold avatars and APNs bounds.
+4. iOS Release compile: both app and notification extension; preserve app Communication Notifications grant and ordinary extension profile.
+5. After matching web/API + host rollout: one system answer while foreground, locked/warm and cold; >60s two-way audio, mute, hangup, computer logged in/in voice.
+6. Check message avatar/Face ID preview; real missed call has caller and proper label, decline/cancel/end do not create generic New message. Tap opens the existing DM history.
+7. Inspect only lifecycle logs if a step fails; no tokens, names, text or full push payloads. Passing source checks is not device acceptance.

@@ -56,11 +56,11 @@ type OverrideTarget struct {
 }
 
 // ComputeIn computes a member's permissions in a room from the room's full override list;
-// restricted is the room's rooms.restricted flag (ADR-0029).
-func ComputeIn(m Member, restricted bool, overrides []OverrideTarget) Bits {
-	sc := ScopeOf(m, restricted)
+// f are the room's flags (restricted, ADR-0029; private temporary, ADR-0078).
+func ComputeIn(m Member, f RoomFlags, overrides []OverrideTarget) Bits {
+	sc := ScopeOf(m, f)
 	raw := m.Raw()
-	if !restricted && raw&Administrator != 0 {
+	if !f.Restricted && !f.PrivateTemp && raw&Administrator != 0 {
 		return All
 	}
 	var userOv *Override

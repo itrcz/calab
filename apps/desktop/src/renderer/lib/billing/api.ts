@@ -1,0 +1,231 @@
+import {
+  AdminBillingAccountDetailsSchema,
+  AdminBillingAccountsSchema,
+  AdminBillingProvidersSchema,
+  AdminChangeMarketRequestSchema,
+  AdminCheckChargeRequestSchema,
+  AdminCloseDisputeRequestSchema,
+  AdminRecordChargebackRequestSchema,
+  AdminSetProviderRequestSchema,
+  AdminSetCustomPlanRequestSchema,
+  AdminSetAccountPlanRequestSchema,
+  AdminBillingDisputesSchema,
+  AdminBillingMutationResultSchema,
+  AdminBillingPaymentsSchema,
+  AdminBillingRefundsSchema,
+  AdminCreatePriceRequestSchema,
+  AdminDiscountRequestSchema,
+  AdminEnableBillingRequestSchema,
+  AdminHoldRequestSchema,
+  AdminManualCreditRequestSchema,
+  AdminPriceVersionSchema,
+  AdminPriceVersionsSchema,
+  AdminProviderEventsSchema,
+  AdminReconcileRequestSchema,
+  AdminRefundRequestSchema,
+  AdminResolveIssueRequestSchema,
+  AdminBillingIssuesSchema,
+  AdminReverseCreditRequestSchema,
+  AutoTopupSettingsSchema,
+  BillingActionRequestSchema,
+  BillingPaymentPageSchema,
+  BillingQuoteRequestSchema,
+  BillingQuoteSchema,
+  ChangeBillingPlanRequestSchema,
+  CheckoutStatusSchema,
+  CreateSavedMethodTopupRequestSchema,
+  CreateTopupRequestSchema,
+  CreateTopupResponseSchema,
+  GetBillingResponseSchema,
+  LedgerPageSchema,
+  PayerProfileSchema,
+  PayerSchemaSchema,
+  PutAutoTopupRequestSchema,
+  PutPayerRequestSchema,
+  ResumeBillingRequestSchema,
+  SavedPaymentMethodsSchema,
+  type AdminBillingAccountDetails,
+  type AdminBillingAccounts,
+  type AdminBillingDisputes,
+  type AdminBillingMutationResult,
+  type AdminBillingIssues,
+  type AdminBillingPayments,
+  type AdminBillingProviders,
+  type AdminBillingRefunds,
+  type AdminPriceVersion,
+  type AdminPriceVersions,
+  type AdminProviderEvents,
+  type AutoTopupSettings,
+  type BillingPaymentPage,
+  type BillingQuote,
+  type CheckoutStatus,
+  type CreateTopupResponse,
+  SavedMethodTopupSchema,
+  type SavedMethodTopup,
+  type GetBillingResponse,
+  type LedgerPage,
+  type PayerProfile,
+  type PayerSchema,
+  type SavedPaymentMethods,
+} from '@calaba/protocol';
+import type { DescMessage, MessageInitShape } from '@bufbuild/protobuf';
+import { body, call, callEmpty, qs } from '../api/client';
+
+/**
+ * The billing REST contract (ADR-0080 v5 §13, apps/server/internal/billing/http/routes.go) as a
+ * typed adapter: the REST one below, an in-memory mock (lib/billing/mock.ts) for dev / QA builds.
+ * Bodies are protojson of the generated messages only. Mutations of the owner answer whatever
+ * they answer — the cabinet re-reads GET …/billing afterwards, so their bodies are not relied on.
+ */
+
+type Init<T extends DescMessage> = MessageInitShape<T>;
+
+export interface OwnerBillingApi {
+  get(ws: string, signal?: AbortSignal): Promise<GetBillingResponse>;
+  quote(ws: string, init: Init<typeof BillingQuoteRequestSchema>): Promise<BillingQuote>;
+  activate(ws: string, init: Init<typeof BillingActionRequestSchema>): Promise<void>;
+  stop(ws: string, init: Init<typeof BillingActionRequestSchema>): Promise<void>;
+  changePlan(ws: string, init: Init<typeof ChangeBillingPlanRequestSchema>): Promise<void>;
+  resume(ws: string, init: Init<typeof ResumeBillingRequestSchema>): Promise<void>;
+  payer(ws: string, signal?: AbortSignal): Promise<PayerProfile>;
+  /** The saved payer (its version; sync_warning when the provider did not take a requisite). */
+  putPayer(ws: string, payer: Init<typeof PayerProfileSchema>): Promise<PayerProfile>;
+  /** ADR-0080 §0.1: the country requisites the payer form renders and checks (the same for every account). */
+  payerSchema(ws: string, signal?: AbortSignal): Promise<PayerSchema>;
+  topup(ws: string, init: Init<typeof CreateTopupRequestSchema>): Promise<CreateTopupResponse>;
+  checkout(ws: string, checkoutId: string, signal?: AbortSignal): Promise<CheckoutStatus>;
+  /** One-click top-up with a saved card (ADR-0083 phase 2): charged at once, or the 3-D Secure page to open. */
+  savedTopup(ws: string, init: Init<typeof CreateSavedMethodTopupRequestSchema>): Promise<SavedMethodTopup>;
+  /** Its state; the server re-reads the provider (after the 3-D Secure page). */
+  savedTopupStatus(ws: string, id: string, signal?: AbortSignal): Promise<SavedMethodTopup>;
+  autoTopup(ws: string, signal?: AbortSignal): Promise<AutoTopupSettings>;
+  putAutoTopup(ws: string, init: Init<typeof PutAutoTopupRequestSchema>): Promise<void>;
+  revokeAutoTopup(ws: string): Promise<void>;
+  paymentMethods(ws: string, signal?: AbortSignal): Promise<SavedPaymentMethods>;
+  detachMethod(ws: string, methodId: string): Promise<void>;
+  ledger(ws: string, cursor: string, signal?: AbortSignal): Promise<LedgerPage>;
+  payments(ws: string, cursor: string, signal?: AbortSignal): Promise<BillingPaymentPage>;
+}
+
+export interface AdminListQuery {
+  q?: string;
+  accountId?: string;
+  cursor?: string;
+  /** events: only failed ones; issues: only open ones. */
+  open?: boolean;
+  /** accounts: only «тариф не активен» ones (a stopped account in the restricted mode). */
+  lapsed?: boolean;
+}
+
+export interface AdminBillingApi {
+  accounts(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingAccounts>;
+  /** The account with its payer, auto-topup consent, open disputes, free advance and pending refunds. */
+  account(id: string, signal?: AbortSignal): Promise<AdminBillingAccountDetails>;
+  ledger(id: string, cursor: string, signal?: AbortSignal): Promise<LedgerPage>;
+  payments(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingPayments>;
+  refunds(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingRefunds>;
+  disputes(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingDisputes>;
+  events(q: AdminListQuery, signal?: AbortSignal): Promise<AdminProviderEvents>;
+  enable(workspaceId: string, init: Init<typeof AdminEnableBillingRequestSchema>): Promise<AdminBillingMutationResult>;
+  manualCredit(id: string, init: Init<typeof AdminManualCreditRequestSchema>): Promise<AdminBillingMutationResult>;
+  reverseCredit(id: string, creditId: string, init: Init<typeof AdminReverseCreditRequestSchema>): Promise<AdminBillingMutationResult>;
+  /**
+   * Synchronous (ADR-0083 amendment 2026-10-10): the answer carries the refund as the bank left it
+   * (succeeded / failed / pending = unknown outcome), or manual_refund when the bank makes it only
+   * in its own interface (nothing sent, nothing booked).
+   */
+  refund(paymentId: string, init: Init<typeof AdminRefundRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Требует внимания»: refunds the bank executed without Calab (informational) and the open ones. */
+  issues(q: AdminListQuery, signal?: AbortSignal): Promise<AdminBillingIssues>;
+  /** «Записать как долг»: books an open issue's bank refund. */
+  importIssue(id: string, init: Init<typeof AdminResolveIssueRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Отметить разобранным»: closes an open issue, no money moves. */
+  dismissIssue(id: string, init: Init<typeof AdminResolveIssueRequestSchema>): Promise<AdminBillingMutationResult>;
+  hold(id: string, init: Init<typeof AdminHoldRequestSchema>): Promise<AdminBillingMutationResult>;
+  reconcile(id: string, init: Init<typeof AdminReconcileRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Проверить списание сейчас»: read a saved-card charge at the provider now (never sent again). */
+  checkCharge(id: string, attemptId: string, init: Init<typeof AdminCheckChargeRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** «Зафиксировать чарджбэк» of a payment (the provider has no dispute API): money off, dispute hold. */
+  recordChargeback(paymentId: string, init: Init<typeof AdminRecordChargebackRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** The outcome of a chargeback recorded by hand (won / lost / withdrawn). */
+  closeDispute(disputeId: string, init: Init<typeof AdminCloseDisputeRequestSchema>): Promise<AdminBillingMutationResult>;
+  discount(id: string, init: Init<typeof AdminDiscountRequestSchema>): Promise<AdminBillingMutationResult>;
+  prices(signal?: AbortSignal): Promise<AdminPriceVersions>;
+  createPrice(init: Init<typeof AdminCreatePriceRequestSchema>): Promise<AdminPriceVersion>;
+  /** ADR-0083: move an account without payments to another market (409 BILLING_MARKET_FIXED otherwise). */
+  changeMarket(id: string, init: Init<typeof AdminChangeMarketRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** ADR-0083: the acquirers and their «принимать новых клиентов» switches. */
+  providers(signal?: AbortSignal): Promise<AdminBillingProviders>;
+  setProvider(id: string, init: Init<typeof AdminSetProviderRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** ADR-0086 «Индивидуальный тариф»: put the account on its custom plan or edit it (limits, name, price version). */
+  customPlan(id: string, init: Init<typeof AdminSetCustomPlanRequestSchema>): Promise<AdminBillingMutationResult>;
+  /** ADR-0086: back to a standard paid plan (Team / Business). */
+  setPlan(id: string, init: Init<typeof AdminSetAccountPlanRequestSchema>): Promise<AdminBillingMutationResult>;
+}
+
+const W = (ws: string): string => `/api/workspaces/${encodeURIComponent(ws)}/billing`;
+const A = '/api/admin/billing';
+const enc = encodeURIComponent;
+
+export const restOwnerApi: OwnerBillingApi = {
+  get: (ws, signal) => call('GET', W(ws), GetBillingResponseSchema, undefined, signal),
+  quote: (ws, init) => call('POST', `${W(ws)}/quote`, BillingQuoteSchema, body(BillingQuoteRequestSchema, init)),
+  activate: (ws, init) => callEmpty('POST', `${W(ws)}/activate`, body(BillingActionRequestSchema, init)),
+  stop: (ws, init) => callEmpty('POST', `${W(ws)}/stop`, body(BillingActionRequestSchema, init)),
+  changePlan: (ws, init) => callEmpty('POST', `${W(ws)}/change-plan`, body(ChangeBillingPlanRequestSchema, init)),
+  resume: (ws, init) => callEmpty('POST', `${W(ws)}/resume`, body(ResumeBillingRequestSchema, init)),
+  payer: (ws, signal) => call('GET', `${W(ws)}/payer`, PayerProfileSchema, undefined, signal),
+  putPayer: (ws, payer) => call('PUT', `${W(ws)}/payer`, PayerProfileSchema, body(PutPayerRequestSchema, { payer })),
+  payerSchema: (ws, signal) => call('GET', `${W(ws)}/payer-schema`, PayerSchemaSchema, undefined, signal),
+  topup: (ws, init) => call('POST', `${W(ws)}/topups`, CreateTopupResponseSchema, body(CreateTopupRequestSchema, init)),
+  checkout: (ws, cid, signal) => call('GET', `${W(ws)}/checkouts/${enc(cid)}`, CheckoutStatusSchema, undefined, signal),
+  savedTopup: (ws, init) => call('POST', `${W(ws)}/saved-method-topups`, SavedMethodTopupSchema, body(CreateSavedMethodTopupRequestSchema, init)),
+  savedTopupStatus: (ws, id, signal) => call('GET', `${W(ws)}/saved-method-topups/${enc(id)}`, SavedMethodTopupSchema, undefined, signal),
+  autoTopup: (ws, signal) => call('GET', `${W(ws)}/auto-topup`, AutoTopupSettingsSchema, undefined, signal),
+  putAutoTopup: (ws, init) => callEmpty('PUT', `${W(ws)}/auto-topup`, body(PutAutoTopupRequestSchema, init)),
+  revokeAutoTopup: (ws) => callEmpty('DELETE', `${W(ws)}/auto-topup`),
+  paymentMethods: (ws, signal) => call('GET', `${W(ws)}/payment-methods`, SavedPaymentMethodsSchema, undefined, signal),
+  detachMethod: (ws, pm) => callEmpty('DELETE', `${W(ws)}/payment-methods/${enc(pm)}`),
+  ledger: (ws, cursor, signal) => call('GET', `${W(ws)}/ledger${qs({ cursor })}`, LedgerPageSchema, undefined, signal),
+  payments: (ws, cursor, signal) => call('GET', `${W(ws)}/payments${qs({ cursor })}`, BillingPaymentPageSchema, undefined, signal),
+};
+
+const listQs = (q: AdminListQuery): string =>
+  qs({ q: q.q, account_id: q.accountId, cursor: q.cursor, ...(q.open ? { open: 'true' } : {}), ...(q.lapsed ? { status: 'lapsed' } : {}) });
+
+export const restAdminApi: AdminBillingApi = {
+  accounts: (q, signal) => call('GET', `${A}/accounts${listQs(q)}`, AdminBillingAccountsSchema, undefined, signal),
+  account: (id, signal) => call('GET', `${A}/accounts/${enc(id)}`, AdminBillingAccountDetailsSchema, undefined, signal),
+  ledger: (id, cursor, signal) => call('GET', `${A}/accounts/${enc(id)}/ledger${qs({ cursor })}`, LedgerPageSchema, undefined, signal),
+  payments: (q, signal) => call('GET', `${A}/payments${listQs(q)}`, AdminBillingPaymentsSchema, undefined, signal),
+  refunds: (q, signal) => call('GET', `${A}/refunds${listQs(q)}`, AdminBillingRefundsSchema, undefined, signal),
+  disputes: (q, signal) => call('GET', `${A}/disputes${listQs(q)}`, AdminBillingDisputesSchema, undefined, signal),
+  events: (q, signal) => call('GET', `${A}/events${listQs(q)}`, AdminProviderEventsSchema, undefined, signal),
+  enable: (ws, init) => call('POST', `${A}/workspaces/${enc(ws)}/enable`, AdminBillingMutationResultSchema, body(AdminEnableBillingRequestSchema, init)),
+  manualCredit: (id, init) => call('POST', `${A}/accounts/${enc(id)}/manual-credits`, AdminBillingMutationResultSchema, body(AdminManualCreditRequestSchema, init)),
+  reverseCredit: (id, cid, init) =>
+    call('POST', `${A}/accounts/${enc(id)}/manual-credits/${enc(cid)}/reverse`, AdminBillingMutationResultSchema, body(AdminReverseCreditRequestSchema, init)),
+  refund: (pid, init) => call('POST', `${A}/payments/${enc(pid)}/refunds`, AdminBillingMutationResultSchema, body(AdminRefundRequestSchema, init)),
+  issues: (q, signal) => call('GET', `${A}/issues${qs({ account_id: q.accountId, cursor: q.cursor, ...(q.open ? { status: 'open' } : {}) })}`, AdminBillingIssuesSchema, undefined, signal),
+  importIssue: (id, init) => call('POST', `${A}/issues/${enc(id)}/import`, AdminBillingMutationResultSchema, body(AdminResolveIssueRequestSchema, init)),
+  dismissIssue: (id, init) => call('POST', `${A}/issues/${enc(id)}/dismiss`, AdminBillingMutationResultSchema, body(AdminResolveIssueRequestSchema, init)),
+  hold: (id, init) => call('POST', `${A}/accounts/${enc(id)}/hold`, AdminBillingMutationResultSchema, body(AdminHoldRequestSchema, init)),
+  reconcile: (id, init) => call('POST', `${A}/accounts/${enc(id)}/reconcile`, AdminBillingMutationResultSchema, body(AdminReconcileRequestSchema, init)),
+  checkCharge: (id, att, init) =>
+    call('POST', `${A}/accounts/${enc(id)}/charges/${enc(att)}/check`, AdminBillingMutationResultSchema, body(AdminCheckChargeRequestSchema, init)),
+  recordChargeback: (pid, init) => call('POST', `${A}/payments/${enc(pid)}/chargebacks`, AdminBillingMutationResultSchema, body(AdminRecordChargebackRequestSchema, init)),
+  closeDispute: (did, init) => call('POST', `${A}/disputes/${enc(did)}/close`, AdminBillingMutationResultSchema, body(AdminCloseDisputeRequestSchema, init)),
+  discount: (id, init) => call('PUT', `${A}/accounts/${enc(id)}/discount`, AdminBillingMutationResultSchema, body(AdminDiscountRequestSchema, init)),
+  prices: (signal) => call('GET', `${A}/prices`, AdminPriceVersionsSchema, undefined, signal),
+  createPrice: (init) => call('POST', `${A}/prices`, AdminPriceVersionSchema, body(AdminCreatePriceRequestSchema, init)),
+  changeMarket: (id, init) => call('POST', `${A}/accounts/${enc(id)}/market`, AdminBillingMutationResultSchema, body(AdminChangeMarketRequestSchema, init)),
+  providers: (signal) => call('GET', `${A}/providers`, AdminBillingProvidersSchema, undefined, signal),
+  setProvider: (id, init) => call('PUT', `${A}/providers/${enc(id)}`, AdminBillingMutationResultSchema, body(AdminSetProviderRequestSchema, init)),
+  customPlan: (id, init) => call('PUT', `${A}/accounts/${enc(id)}/custom-plan`, AdminBillingMutationResultSchema, body(AdminSetCustomPlanRequestSchema, init)),
+  setPlan: (id, init) => call('POST', `${A}/accounts/${enc(id)}/plan`, AdminBillingMutationResultSchema, body(AdminSetAccountPlanRequestSchema, init)),
+};
+
+export interface BillingAdapters {
+  owner: OwnerBillingApi;
+  admin: AdminBillingApi;
+}

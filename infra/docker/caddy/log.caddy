@@ -1,0 +1,14 @@
+# Global logging, imported by Caddyfile and Caddyfile.behind-proxy (inside their global options).
+log {
+	output stdout
+	# Proxy error logs also carry requests. Drop the whole URI (consent handles can be
+	# in the path), all request headers (Referer/cookies), and redirect response headers.
+	format filter {
+		wrap json
+		fields {
+			request>uri delete
+			request>headers delete
+			resp_headers delete
+		}
+	}
+}

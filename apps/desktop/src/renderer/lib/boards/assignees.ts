@@ -65,3 +65,9 @@ export function only(userId: string): AssigneeDraft[] {
 export function draftsOf(list: ReadonlyArray<{ userId: string; isLead: boolean; note: string }>): AssigneeDraft[] {
   return normalize(list.map((a) => ({ userId: a.userId, isLead: a.isLead, note: a.note })));
 }
+
+/** Hands `from`'s place (lead flag and note included) to `to`; `to` already there = `from` just goes. */
+export function replaceAssignee(list: readonly AssigneeDraft[], from: string, to: string): AssigneeDraft[] {
+  if (list.some((a) => a.userId === to)) return removeAssignee(list, from);
+  return normalize(list.map((a) => (a.userId === from ? { ...a, userId: to } : a)));
+}

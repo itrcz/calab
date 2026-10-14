@@ -1,6 +1,7 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "calaba/v1/billing.proto";
 import "calaba/v1/identity.proto";
 
 import "google/protobuf/timestamp.proto";
@@ -50,6 +51,9 @@ message Workspace {
   // PLACE_CALLS in a voice room they are in may call phone numbers from it.
   WorkspaceIdentityAccess identity_access = 16;
   bool sip_enabled = 15;
+  // Balance billing (ADR-0080): state without amounts, for every member; unset = no billing
+  // account. The owner reads the money through GET /api/workspaces/{id}/billing.
+  WorkspaceBillingStatus billing = 17;
 }
 
 message WorkspaceSuspension {
@@ -81,6 +85,9 @@ message WorkspaceMember {
   // The member's badge (docs/09 #82): an id from the workspace's badges (WorkspaceSnapshot.badges,
   // GET …/badges). Empty = none. Set by MANAGE_NICKNAMES; bots have none.
   string badge_id = 7;
+  // Live achievements of the member (ADR-0061; GET …/members/{userId}/achievements lists them).
+  // A grant or a revoke sends WORKSPACE_MEMBER_UPDATE with the new count.
+  uint32 achievement_count = 8;
 }
 
 // A badge of the workspace's library (docs/09 #82): a small square picture an admin puts next to
@@ -310,6 +317,62 @@ message CreateBanResponse {
 // 204 (WORKSPACE_BAN_REMOVE to the owner / admins); the user may be invited again.
 message ListBansResponse {
   repeated WorkspaceBan bans = 1;
+}
+
+// ---- Former members (ADR-0097). ----
+
+// Why a user is no longer a member of the workspace.
+enum FormerMemberReason {
+  FORMER_MEMBER_REASON_UNSPECIFIED = 0;
+  FORMER_MEMBER_REASON_LEFT = 1;               // left by themself
+  FORMER_MEMBER_REASON_REMOVED = 2;            // removed by a manager (or backfilled, ADR-0097 §6)
+  FORMER_MEMBER_REASON_BANNED = 3;
+  FORMER_MEMBER_REASON_GUEST_EXPIRED = 4;      // a guest inactive for GUEST_INACTIVITY (ADR-0098)
+  FORMER_MEMBER_REASON_DIRECTORY_DISABLED = 5; // disabled in the workspace directory
+}
+
+// When and why a member left (WORKSPACE_MEMBER_REMOVE.former, UserRef).
+message FormerMemberInfo {
+  google.protobuf.Timestamp left_at = 1;
+  FormerMemberReason reason = 2;
+}
+
+// A user as seen in one workspace: a member or a former member (ADR-0097 §2). The profile is
+// the live one while the account exists; an anonymised guest account shows the name it had
+// when it left. Public fields only (no contacts).
+message UserRef {
+  string user_id = 1;
+  string display_name = 2;
+  string avatar_file_id = 3; // empty = no avatar
+  string username = 4;
+  bool former = 5; // not a member any more: show the "former" chip
+  google.protobuf.Timestamp left_at = 6; // set when former
+  FormerMemberReason reason = 7;         // set when former
+  bool is_guest = 8; // a guest account (ADR-0016)
+  bool is_bot = 9;
+}
+
+// GET /api/workspaces/{id}/users?ids=a,b,… (any member; at most 100 ids) → the users among the
+// ids who are or were members of this workspace; any other id is left out silently.
+message ListWorkspaceUsersResponse {
+  repeated UserRef users = 1;
+}
+
+// A row of the former members list.
+message FormerMember {
+  UserRef user = 1;
+  WorkspaceRole role = 2; // the highest built-in role when they left
+  string nickname = 3;    // the workspace nickname when they left
+  google.protobuf.Timestamp joined_at = 4;
+  string removed_by = 5; // user id; empty = themself, the server or a deleted account
+  int32 open_tasks = 6;  // open tasks of this workspace where they are the assignee
+}
+
+// GET /api/workspaces/{id}/former-members?guests=0|1&q=&cursor= (MANAGE_MEMBERS) → newest first,
+// 50 per page. guests=0 (default) hides former guests; q filters by name or username.
+message ListFormerMembersResponse {
+  repeated FormerMember members = 1;
+  string next_cursor = 2; // empty = no more
 }
 
 // ---- Roles (ADR-0026). Mutations need MANAGE_ROLES (admins have it) and act only on roles

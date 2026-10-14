@@ -37,7 +37,7 @@ describe('presetOptions', () => {
     // The plan's cap (ADR-0024): a lock with «Доступно на тарифе Team»; the room's reason wins above both.
     const free = presetOptions(ScreenSharePreset.H1080, ScreenSharePreset.H720);
     expect(free.map((x) => x.lock)).toEqual([null, null, 'plan', 'room']);
-    expect(free[2]?.disabledReason).toBe('Доступно на тарифе Team — связаться');
+    expect(free[2]?.disabledReason).toBe('Доступно на тарифе Team');
   });
 });
 

@@ -1,5 +1,6 @@
 import { localAuthority } from '../identity/model';
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
+import { openMessage } from '../../services/searchNav';
 import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
 import { useUi } from '../../stores/ui';
@@ -9,22 +10,29 @@ import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
-import { ProfileDialog } from '../people/ProfileDialog';
+import { ProfileRoute } from '../people/FormerProfile';
+import { AchievementLayers } from '../people/AchievementLayers';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
 import { useSession } from '../../stores/session';
 import { EventDialog } from '../calendar/EventDialog';
+import { SETTINGS_DIALOG_KINDS } from './SettingsScreen';
 import { AppDialog } from '../webapps/AppDialog';
+import { PlansDialog } from '../workspace/billing/PlansDialog';
+
+const RecordingResult = lazy(() => import('../chat/RecordingResult'));
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
+  const phone = useUi((s) => s.phone.on);
   const local = useSession((s) => localAuthority(s.authority));
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   const close = (): void => useUi.getState().openDialog(null);
   let node: ReactNode = null;
-  if (d) {
+  // Settings windows are screens of the phone stack (SettingsScreen), not dialogs.
+  if (d && !(phone && SETTINGS_DIALOG_KINDS.includes(d.kind))) {
     if (!local && ['create-workspace', 'join-workspace', 'profile', 'admin', 'new-dm'].includes(d.kind)) return null;
     switch (d.kind) {
       case 'create-workspace':
@@ -34,7 +42,8 @@ export function Dialogs(): ReactNode {
         node = <JoinWorkspaceDialog onClose={close} initialCode={d.code ?? ''} />;
         break;
       case 'workspace-settings':
-        node = <WorkspaceSettingsWindow.Component onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
+        // Keyed by the tab: a deep link to another tab while it is open (a plan violation «К ботам») opens it.
+        node = <WorkspaceSettingsWindow.Component key={`${d.workspaceId}:${d.tab ?? ''}`} onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
         break;
       case 'room-create':
         node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} categoryId={d.categoryId} />;
@@ -70,7 +79,7 @@ export function Dialogs(): ReactNode {
         node = <InviteToRoomDialog roomId={d.roomId} onClose={close} />;
         break;
       case 'profile':
-        node = <ProfileDialog key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
+        node = <ProfileRoute key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
         break;
       case 'admin':
         // Only for superadmins (the server answers 404 to anyone else anyway).
@@ -90,14 +99,49 @@ export function Dialogs(): ReactNode {
       case 'web-app':
         node = <AppDialog key={d.appId ?? 'new'} workspaceId={d.workspaceId} appId={d.appId} onClose={close} />;
         break;
-      case 'image':
-        node = <Lightbox images={d.images} index={d.index} onClose={close} />;
+      case 'billing-plans':
+        node = <PlansDialog key={d.workspaceId} workspaceId={d.workspaceId} welcome={d.welcome ?? false} onClose={close} />;
+        break;
+      case 'image': {
+        const inChat = d.inChat;
+        node = (
+          <Lightbox
+            images={d.images}
+            index={d.index}
+            onClose={close}
+            {...(inChat
+              ? {
+                  onShowInChat: () => {
+                    close();
+                    openMessage(inChat.roomId, inChat.messageId);
+                  },
+                }
+              : {})}
+          />
+        );
+        break;
+      }
+      case 'transcript':
+        node = (
+          <Suspense fallback={null}>
+            <RecordingResult
+              key={`${d.recordingId}@${d.offsetMs}`}
+              roomId={d.roomId}
+              recordingId={d.recordingId}
+              messageId={d.messageId}
+              offsetMs={d.offsetMs}
+              startedAt={d.startedAt}
+              onClose={close}
+            />
+          </Suspense>
+        );
         break;
     }
   }
   return (
     <>
       {node}
+      <AchievementLayers />
       <ConfirmHost />
     </>
   );

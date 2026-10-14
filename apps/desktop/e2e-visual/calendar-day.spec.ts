@@ -33,7 +33,7 @@ test('create: the dialog → the meeting in the day view, selected, the count in
   await expect(block).toBeVisible();
   await expect(block).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('event-panel').getByTestId('event-title')).toHaveText('Ревью дизайна');
-  await expect(page.getByTestId('calendar-count')).toHaveText('1');
+  await expect(page.getByTestId('section-calendar-count')).toHaveText('1');
 });
 
 test('drag: a block moved 2 hours later and resized sends PATCH with the new times', async ({ page, mock }) => {

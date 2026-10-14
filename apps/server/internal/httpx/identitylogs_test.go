@@ -36,3 +36,22 @@ func TestConsentCapabilitiesNeverAppearInHTTPLogs(t *testing.T) {
 		t.Fatal("redaction lost useful route evidence")
 	}
 }
+
+func TestFormCapabilitiesNeverAppearInHTTPLogs(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+	marker := "form-capability-sentinel"
+	mux := http.NewServeMux()
+	mux.Handle("POST /api/public/forms/{code}/submissions", HandlerFunc(func(http.ResponseWriter, *http.Request) error { return fmt.Errorf("database %s", marker) }))
+	handler := Observe(mux)
+	for _, raw := range []string{"/api/public/forms/" + marker + "/submissions", "/api/forms/" + marker, "/api/public//forms/" + marker, "/api/public/forms%2F" + marker, "/f/" + marker} {
+		req := httptest.NewRequestWithContext(context.Background(), "POST", raw, nil)
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+		WriteError(httptest.NewRecorder(), req, fmt.Errorf("source %s", marker))
+	}
+	if strings.Contains(logs.String(), marker) {
+		t.Fatal("form capability leaked")
+	}
+}

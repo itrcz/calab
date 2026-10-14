@@ -90,6 +90,10 @@ message Room {
   // Set only in the archive listing (GET /api/workspaces/{id}/rooms?archived=1).
   google.protobuf.Timestamp archived_at = 23;
   uint32 message_count = 24; // the archive listing only: live messages of the room
+  // The room's picture (ADR-0092): an image file of the workspace, shown instead of the glyph of
+  // the room type; empty = the glyph. Clients load it as /api/files/{id} (readable by everyone who
+  // sees the room). Changed with PATCH /api/rooms/{id} icon_file_id; a deleted file clears it.
+  string icon_file_id = 25;
 }
 
 // Per-user notification level of a room or a workspace (docs/05 «Уведомления»). UNSPECIFIED
@@ -268,6 +272,11 @@ message UpdateRoomRequest {
   // overrides stay. MANAGE_ROOM or the creator. Permanent rooms: 422 (their access dialog
   // edits the overrides with PUT /api/rooms/{id}/permissions).
   optional bool is_private = 12;
+  // The room's picture (ADR-0092), text and voice rooms only (422 otherwise). "" removes it. Same
+  // right as the name (MANAGE_ROOM or the creator of a temporary room). An image the caller
+  // uploaded to this workspace (422 iconFileId otherwise). A change posts a system message
+  // room_icon (SystemMessage.room_icon) into the room from the caller.
+  optional string icon_file_id = 13;
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or

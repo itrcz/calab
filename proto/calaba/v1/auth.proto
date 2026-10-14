@@ -47,7 +47,8 @@ message RegisterRequest {
   string invite_code = 4;
   string device_name = 5;
   // Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
-  // Registration sends a verification code to `email` (ADR-0023, ADR-0027).
+  // Registration sends a verification code to `email` (ADR-0023, ADR-0027) unless
+  // EMAIL_VERIFICATION=optional and no email invitation waits for it (ADR-0065).
   string locale = 6;
   // Opt-in similar-address check (docs/09 #119). When set and another account has the same
   // local part at a sibling domain of the same organisation (same name, different last label:
@@ -63,6 +64,15 @@ message RegisterResponse {
   // Set only for check_similar_account (then tokens and me are empty). Never names the other
   // address.
   bool similar_account = 3;
+  // ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+  // no action. The client shows no "confirm your email" onboarding step and no bar (unless
+  // email_invite_pending); the address is offered for confirmation in the account settings.
+  // false (also from servers before ADR-0065): ask as ADR-0023 says.
+  bool email_verification_optional = 4;
+  // ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+  // only after the confirmation (ADR-0027), so the client asks for it even when
+  // email_verification_optional. Set only when email_verification_optional.
+  bool email_invite_pending = 5;
 }
 
 // POST /api/auth/login
@@ -75,6 +85,15 @@ message LoginRequest {
 message LoginResponse {
   AuthTokens tokens = 1;
   Me me = 2;
+  // ADR-0065: the server runs EMAIL_VERIFICATION=optional — an unconfirmed address blocks
+  // no action. The client shows no "confirm your email" onboarding step and no bar (unless
+  // email_invite_pending); the address is offered for confirmation in the account settings.
+  // false (also from servers before ADR-0065): ask as ADR-0023 says.
+  bool email_verification_optional = 3;
+  // ADR-0065: an email invitation waits for this account's unconfirmed address; it joins
+  // only after the confirmation (ADR-0027), so the client asks for it even when
+  // email_verification_optional. Set only when email_verification_optional.
+  bool email_invite_pending = 4;
 }
 
 // POST /api/auth/refresh (no access token needed).

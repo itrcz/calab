@@ -26,6 +26,7 @@ import (
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
+	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/rooms"
@@ -41,6 +42,13 @@ type Handlers struct {
 	db     *db.DB
 	events events.Publisher
 	status StatusNotifier
+	// UsernameLimit bounds GET /api/usernames/{name}/available per user (ADR-0077).
+	UsernameLimit interface {
+		Take(ctx context.Context, key string) error
+	}
+	// TaskRelaysChanged: a user changed task_notify_bots (ADR-0090): the bots' cache of the
+	// users with a relay reloads.
+	TaskRelaysChanged func()
 }
 
 // NewHandlers creates the /api/me handlers.
@@ -53,6 +61,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("GET /api/me", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/me", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("PATCH /api/me/status", wrap(httpx.HandlerFunc(h.updateStatus)))
+	mux.Handle("GET /api/usernames/{name}/available", wrap(httpx.HandlerFunc(h.usernameAvailable)))
 	mux.Handle("GET /api/users/{id}/note", wrap(httpx.HandlerFunc(h.getNote)))
 	mux.Handle("PUT /api/users/{id}/note", wrap(httpx.HandlerFunc(h.putNote)))
 	mux.Handle("DELETE /api/users/{id}/note", wrap(httpx.HandlerFunc(h.deleteNote)))
@@ -83,11 +92,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
 		return err
-	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil) {
+	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil ||
+		req.Phone != nil || req.Username != nil || req.TaskNotifyBots != nil) {
 		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
 	}
 	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil ||
-		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil) {
+		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil || req.HideMessageTextInNotifications != nil ||
+		req.Phone != nil || req.Username != nil || req.TaskNotifyOff != nil || req.TaskNotifyBots != nil) { // a bot's username is its bot username (ADR-0077)
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -147,7 +158,25 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	if req.Phone != nil { // ADR-0077: informational, not verified
+		phone, err := NormalizePhone(req.GetPhone())
+		if err != nil {
+			return err
+		}
+		p.SetPhone = true
+		if phone != "" {
+			p.Phone = &phone
+		}
+	}
+	if req.Username != nil { // ADR-0077: global, unique (the index decides races)
+		name, err := usernameColumn(req.GetUsername())
+		if err != nil {
+			return err
+		}
+		p.SetUsername, p.Username = true, name
+	}
 	p.BirthdayHidden = req.BirthdayHidden
+	p.HideMessageTextInNotifications = req.HideMessageTextInNotifications
 	if req.Settings != nil {
 		st := req.GetSettings()
 		if st.AudioBitrateKbps != nil && !rooms.ValidAudioBitrate(st.GetAudioBitrateKbps()) {
@@ -166,6 +195,20 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	var taskOff []string
+	if to := req.GetTaskNotifyOff(); to != nil { // ADR-0089: the mandatory kinds are dropped
+		var err error
+		if taskOff, err = notifications.TaskNotifyOff(to.GetKinds()); err != nil {
+			return httpx.Validation("taskNotifyOff.kinds", err.Error())
+		}
+	}
+	var relayBots []uuid.UUID
+	if tb := req.GetTaskNotifyBots(); tb != nil { // ADR-0090
+		var err error
+		if relayBots, err = taskNotifyBots(r.Context(), h.db.Q, id.UserID, tb.GetBotUserIds()); err != nil {
+			return err
+		}
+	}
 	var workStart, workEnd int16
 	var workDays []int16
 	if wh := req.GetWorkHours(); wh != nil { // ADR-0041
@@ -177,6 +220,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	u, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) { return guarded.UpdateUser(r.Context(), p) })
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("avatarFileId", "file not found")
+	}
+	if isUsernameConflict(err) {
+		return errUsernameTaken()
 	}
 	if err != nil {
 		return err
@@ -190,6 +236,23 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	if req.GetTaskNotifyOff() != nil {
+		if u, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+			return guarded.SetUserTaskNotifyOff(r.Context(), sqlc.SetUserTaskNotifyOffParams{ID: id.UserID, TaskNotifyOff: taskOff})
+		}); err != nil {
+			return err
+		}
+	}
+	if req.GetTaskNotifyBots() != nil {
+		if u, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+			return guarded.SetUserTaskNotifyBots(r.Context(), sqlc.SetUserTaskNotifyBotsParams{ID: id.UserID, TaskNotifyBots: relayBots})
+		}); err != nil {
+			return err
+		}
+		if h.TaskRelaysChanged != nil {
+			h.TaskRelaysChanged()
+		}
+	}
 	if req.GetWorkHours() != nil {
 		if u, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
 			return guarded.SetUserWorkHours(r.Context(), sqlc.SetUserWorkHoursParams{
@@ -200,7 +263,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil || req.Timezone != nil ||
-		req.Birthday != nil || req.BirthdayHidden != nil
+		req.Birthday != nil || req.BirthdayHidden != nil || req.Phone != nil || req.Username != nil
 	profile.Publish(r.Context(), h.db.Q, h.events, u, public)
 	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
 	return nil

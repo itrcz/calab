@@ -122,12 +122,23 @@ ROOM_ADMISSION_DECIDED        { admission } — ADMITTED | DECLINED (no_answer �
 BOARD_CREATE / BOARD_UPDATE   { board } — доска (ADR-0042) с Board.permissions получателя; UPDATE — и статусы, лейблы, вехи, общие виды, доступ
 BOARD_DELETE                  { workspace_id, board_id, purged } — в архив (purged false) или удалена; или доска перестала быть видна
 TASK_CREATE / TASK_UPDATE     { task } — полная задача без ленты; TASK_UPDATE в user:<id> — с viewer_state (subscribed, muted, unread) и notice
+                              notice.kind (ADR-0089) += UNASSIGNED, WATCHER_ADDED, DUE_SOON, OVERDUE (адресные; actor_id пуст у DUE_SOON / OVERDUE),
+                              DUE_CHANGED, PRIORITY, MILESTONE, MOVED, EDITED, ATTACHMENT, ARCHIVED (подписчикам); notice.due_on "YYYY-MM-DD"
+                              (DUE_SOON / OVERDUE / DUE_CHANGED, "" = срок снят), notice.days_left (DUE_SOON 1 / 0, OVERDUE −1), notice.text —
+                              детали (MILESTONE — имя вехи, MOVED — имя доски, EDITED — title | description, ATTACHMENT — имя файла).
+                              Неизвестный клиенту вид показывается как «Задача обновлена».
+TASK_NOTICE                   { workspace_id, user_id, task, notice, task_url, board_key, board_name } — (97, ADR-0090) уведомление
+                              человека о задаче, переданное выбранному им боту (UserSettings.task_notify_bots): только в user:<bot> и
+                              в вебхук бота, если бот — участник пространства задачи; task — без состояния смотрящего. Людям не приходит
 TASK_DELETE                   { workspace_id, board_id, task_id, purged } — архив задачи (или переезд на другую доску)
 TASK_ACTIVITY                 { workspace_id, activity } — одна запись журнала задачи
 BOARD_CATEGORY_CREATE / UPDATE { category } — категория досок (ADR-0058; 87/88), всем участникам пространства, кроме гостей; в READY — `WorkspaceSnapshot.board_categories`; перенос — UPDATE каждой сдвинутой
 BOARD_CATEGORY_DELETE         { workspace_id, category_id } — (89) её доски уходят в «без категории» хвостом, каждой — `BOARD_UPDATE`
 TASK_CHECKLIST_UPDATE         { workspace_id, board_id, task_id, checklist, checklist_total, checklist_done } — (90) чек-лист создан/изменён, целиком (≤ 100 пунктов), зрителям доски. **`TASK_UPDATE` на операции чек-листа не шлётся**: клиент патчит два счётчика задачи; рядом — обычный `TASK_ACTIVITY` (`kind = checklist`)
 TASK_CHECKLIST_DELETE         { workspace_id, board_id, task_id, checklist_id, checklist_total, checklist_done } — (91) чек-лист удалён, новые счётчики
+BOARD_RULE_UPDATE             { workspace_id, board_id, rule } — (92) правило автоматизации создано/изменено (ADR-0060); после срабатываний — только когда сменилось last_error; зрителям доски (`VIEW_BOARD`, не по карточкам)
+BOARD_RULE_DELETE             { workspace_id, board_id, rule_id } — (93) правило удалено; создание/удаление сопровождает `BOARD_UPDATE` (`rules_count`)
+TASK_GIT_LINKS_UPDATE         { workspace_id, board_id, task_id, links, count } — (94) Git-связи задачи (все, ≤ 50) изменились; зрителям доски и приглашённым по карточке (ADR-0059); рядом `TASK_UPDATE` (`git_links_count`) и `TASK_ACTIVITY` (`kind = git`)
 SIP_CALL_UPDATE               { call: SipCall } — телефонный звонок комнаты начат или сменил статус (ADR-0046); в READY — WorkspaceSnapshot.sip_calls (живые)
 WORKSPACE_APP_UPSERT          { app: WorkspaceApp } — веб-приложение пространства добавлено / изменено / перенесено (ADR-0050; перенумерация — по событию на каждое); в READY — WorkspaceSnapshot.apps
 WORKSPACE_APP_DELETE          { workspace_id, app_id } — приложение удалено: клиент убирает иконку, десктоп закрывает вид и чистит данные сайта
@@ -284,7 +295,7 @@ POST · PATCH · DELETE /api/boards/{id}/milestones[/{sid}]
 GET · POST · PATCH · DELETE /api/boards/{id}/views[/{sid}] общие (shared, MANAGE_BOARD) и личные (автор)
 POST   /api/boards/{id}/files                        загрузка вложения задачи или комментария (VIEW_BOARD, квота пространства)
 GET    /api/boards/{id}/activity?since&until&actor&kind&cursor[&format=csv]   журнал (MANAGE_BOARD или EDIT_TASKS), CSV — целиком
-GET    /api/boards/{id}/tasks?filter=<TaskFilter JSON>&archived=1&updated_after&cursor&limit   ≤ 500 за страницу (по номеру) → {tasks, next_cursor}
+GET    /api/boards/{id}/tasks?filter=<TaskFilter JSON>&archived=1&updated_after&cursor&limit   ≤ 500 за страницу (по номеру) → {tasks, next_cursor}; updated_after видит и смену вех задачи (ADR-0063: авто-выполнение вехи меняет только её updated_at)
 POST   /api/boards/{id}/tasks                        CreateTaskRequest → 201 TaskResponse (CREATE_TASKS)
 GET    /api/tasks/{id}                               TaskResponse {task (+attachments), subtasks, related, parent, room}
 PATCH  /api/tasks/{id}                               UpdateTaskRequest (EDIT_TASKS; CREATE_TASKS — свои и назначенные); status_id + after_task_id/before_task_id — перенос; board_id — на другую доску (MANAGE_BOARD на обеих)
@@ -296,11 +307,12 @@ PATCH · DELETE /api/checklists/{id}                  {title?, position?}; DELET
 POST   /api/checklists/{id}/items {text, position?}  201; ≤ 100 на чек-лист (409 CHECKLIST_ITEM_LIMIT)
 PATCH · DELETE /api/checklist-items/{id}             {text?, done?, position?, checklist_id?} (перенос внутри задачи); → TaskChecklistResponse
 POST   /api/checklist-items/{id}/convert             → 201 ConvertChecklistItemResponse {task, checklist, счётчики}: подзадача с текстом пункта, пункт удалён (фича SUBTASKS; задача сама не подзадача)
+PUT    /api/tasks/{id}/watchers {user_id}            наблюдатель (ADR-0076): редактор задачи; DELETE …/watchers?user_id= — редактор или сам
 PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read — снять «непрочитано»
-GET    /api/tasks/{id}/activity?before&limit         лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7)
+GET    /api/tasks/{id}/activity?before&limit&only    лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7); only=journal — только журнал (с comment*), only=comments — только сообщения (ADR-0091)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)
 GET    /api/me/tasks?workspace_id&scope=assigned|lead|created|subscribed&open=1&cursor
-GET    /api/workspaces/{id}/tasks/search?q&limit     ⌘K: ключ и слова по видимым доскам
+GET    /api/workspaces/{id}/tasks/search?q&limit     ключ и слова по видимым доскам (тот же разбор, что /api/search, ADR-0062)
 ```
 
 - Комментарии — сообщения комнаты `task.room_id` через обычные `/api/rooms/{room_id}/messages*`, реакции, стикеры, закрепы (`EDIT_TASKS`), поиск, пересылка, прочтение и typing; `@<user_id>` подписывает и уведомляет упомянутого, если он видит доску.
@@ -342,9 +354,49 @@ GET    /api/me/blocked-bots                      ListBlockedBotsResponse; POST /
 - **DM.** Бот пишет участникам общих пространств (`POST /api/dms`, как человек). Человек блокирует бота — боту `403 BOT_BLOCKED` на новый DM и на сообщения в DM с ним; человек может писать боту.
 - **Webhook.** Боту с webhook в очередь `bot_webhook_deliveries` ставятся `MESSAGE_CREATE/UPDATE/DELETE` и `MESSAGE_REACTION_ADD/REMOVE` комнат, которые он видит, и его DM (кроме своих сообщений и реакций). `POST <url>`, тело — `BotWebhookUpdate {id, botUserId, createdAt, event}` (protojson), заголовки `X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, тело)>`, `X-Calab-Delivery: <id>`; успех — любой 2xx за 10 с, редиректы не выполняются. Адрес — только https и публичный (фильтр SSRF как у превью ссылок). Ретраи 1 мин → 1 ч; доставка живёт сутки; webhook, падающий сутки подряд, отключается (`webhook.disabledAt`, очередь сброшена, `BOT_UPDATE` владельцу и управляющим); `PUT` включает снова. Порядок доставок не гарантирован — дедуплицировать по `id`. Воркер один на кластер (Valkey `bots:webhook:worker`).
 
+## Вики: сокет синхронизации (ADR-0096 §4)
+
+Содержимое страницы вики (Yjs) идёт не через шлюз, а через свой WebSocket `GET /api/wiki/pages/{id}/sync` (`internal/wiki/sync.go`; клиент — `lib/wikiSync.ts`, кадры — `lib/wiki/frames.ts`). Сервер Yjs не исполняет: хранит и ретранслирует байты.
+- **Вход.** Origin — как у шлюза. Первое сообщение клиента — **текстовый** кадр с access-токеном человека или токеном бота (за 10 с); бот — такой же участник: права по его ролям и переопределениям, те же лимиты. Токен бота (строки сессии нет) каждые 30 с проверяется заново: заменённый или отозванный — закрытие `4010`; вход бота не трогает сессии и `last_active_at`. Нужен `WIKI_VIEW` и политика доступа пространства (как у REST); без `WIKI_WRITE` (или при запрете записи политикой / приостановке) сокет только принимает. Доступ и сессия перепроверяются раз в 30 с и сразу при корзине/смене доступа страницы.
+- **Кадры** — бинарные, первый байт — тип, целые — big-endian:
+
+| Тип | Направление | Раскладка |
+|---|---|---|
+| 0 `SNAPSHOT` | сервер → клиент | `u8 0 \| u64 through_seq \| state` |
+| 1 `UPDATE` | оба | `u8 1 \| u64 seq \| update` (от клиента `seq = 0`, сервер присваивает) |
+| 2 `AWARENESS` | оба | `u8 2 \| awareness update` (не хранится) |
+| 3 `COMPACT_REQUEST` | сервер → клиент | `u8 3` |
+| 4 `SNAPSHOT_POST` | клиент → сервер | `u8 4 \| u64 through_seq \| u32 meta_len \| meta (UTF-8 JSON {plain_text, title, preview, broadcast?}) \| state` |
+
+- **Поток.** Сокет сначала подписывается на `wiki:<pageId>` (ждёт подтверждения SUBSCRIBE, ≤ 5 с, иначе 4000), затем читает снимок и обновления из БД — кадр, опубликованный между ними, не теряется (дубликаты отбрасываются по `seq`; после переподписки все сокеты страницы добирают из БД). При подключении сервер всегда шлёт один `SNAPSHOT` (без снимка — `through_seq 0` и пустой документ `0x00 0x00`), затем каждый `UPDATE` после него. `UPDATE` клиента записывается под следующий `seq` страницы (≤ 64 КиБ данных), возвращается отправителю с этим `seq` и рассылается остальным сокетам страницы на всех экземплярах (Valkey `wiki:<pageId>`). `seq` страницы непрерывны: пропуск (потерянный кадр) сервер добирает из БД, дубликаты отбрасывает. `AWARENESS` — только пишущим, ≤ 10/с (лишнее отбрасывается), рассылается остальным.
+- **Компакция.** Когда после снимка > 500 обновлений или > 1 МиБ, писавшему последним приходит `COMPACT_REQUEST` (не чаще раза в 10 с на страницу). `SNAPSHOT_POST` (state ≤ 2 МиБ, ≤ 2 сразу, затем 1 раз в 2 с на сокет — сверх закрытие 4008; клиент сам выдерживает 2 с между снимками, кроме закрытия страницы): принимается, если `through_seq` ≥ сохранённого и ≤ последнего выданного `seq`, иначе молча игнорируется; удаляет обновления ≤ `through_seq`, обновляет текст (≤ 256 КиБ, поиск), превью, размер, непустой `title` (пустой — заголовок не трогает; смена → `WIKI_PAGE_UPSERT`), раз в ≥ 5 мин при изменении текста/заголовка пишет версию. Обычный снимок — тихая компакция: никому ничего не шлётся (подтверждение клиенту не нужно). Только снимок с `"broadcast": true` в meta — клиент ставит его, когда снимок несёт правку, не ушедшую `UPDATE` (транзакция больше кадра), — рассылается **остальным** сокетам страницы как `SNAPSHOT` с новым `through_seq`; устаревший broadcast-снимок не сохраняется, но рассылается с `through_seq 0` (ничью позицию не двигает), а отправителю приходит `COMPACT_REQUEST`.
+- **Лимиты и закрытие.** Лимит входящего сообщения — 64 КиБ + 16 для читающих, 2 МиБ + 1 МиБ meta для пишущих; размеры по типам проверяются отдельно. ≤ 20 `UPDATE`/с на сокет, ≤ 10 сокетов на страницу у человека (Valkey), ping раз в 25 с, без pong — закрытие.
+
+| Код | Значение |
+|---|---|
+| 4000 | сбой зависимости — переподключиться |
+| 4002 | плохой или неожиданный кадр |
+| 4003 | нет `WIKI_VIEW` (или не участник), бот, политика доступа, запись без `WIKI_WRITE` |
+| 4004 | токен неверен или истёк — обновить токен |
+| 4008 | лимит частоты или сокетов |
+| 4009 | нет pong |
+| 4010 | сессия отозвана |
+| 4404 | страницы нет или она в корзине |
+
+Публичное чтение без сокета: `GET /api/public/wiki/{code}/state[?page=]` — тело `application/octet-stream` из записей `u32 BE длина | кадр`: сначала `SNAPSHOT`, затем `UPDATE` после него (снимок и обновления читаются в одной repeatable-read транзакции).
+
 ## REST
 
 Тела запросов и ответов — proto-сообщения из `proto/calaba/v1/*.proto` в JSON (`protojson`): поля в lowerCamelCase (`displayName`), enum — полными именами (`"ROOM_TYPE_VOICE"`), `uint64` (биты прав, байты) — строками, время — RFC 3339; скалярные поля по умолчанию в ответе присутствуют, неизвестные поля в запросе игнорируются. Авторизация — `Authorization: Bearer <access JWT>`.
+
+### Единый поиск (ADR-0062)
+
+`GET /api/search?q=&scope=<workspace_id>|all&types=<csv>&type=<one>&limit=&cursor=&sort=relevance|new` → `SearchResponse {sections[]}` (`search.proto`). Разделы: `messages` (комнаты, при `scope=all` — и свои DM после «Удалить чат»), `task_comments`, `tasks`, `events`, `files`, `notes` (свои полки; только `scope=all` или явно в `types`/`type`, ботам — никогда), `transcripts`.
+- Без `type` — сводка для ⌘K: каждый раздел, `limit` 1..20 (по умолчанию 4), сообщения/комментарии/заметки — свежие первыми, остальное — по релевантности. С `type` — лента раздела (`limit` по умолчанию 20) с `next_cursor`; курсор непрозрачный и привязан к `q`/`scope`/`type`/`sort`, чужой — 400.
+- `q` 1..200 символов: слова по основе (russian) и как написаны (simple), последнее слово от 2 символов — ещё и префикс, `"фраза"`, `-исключение`, `or`; короткие поля (названия задач и событий, имена файлов) — с опечатками и подстрокой (`pg_trgm`); `ABC-12` — задача по ключу первой. Без слов после удаления пунктуации — 422 (`field = q`).
+- `SearchHit`: `snippet` с подсветкой `\u0002…\u0003` (клиент рисует `<mark>`, не HTML), `title`, `workspace_id` (пусто — DM/заметки), `at`, `author_id`, ссылка `oneof` (сообщение + комната; комментарий + ключ задачи; задача; событие + ближайшее вхождение; файл + сообщение; запись + `offset_ms` первого совпавшего сегмента).
+- Права — только существующие функции видимости (docs/16 «Поиск»). `scope=<ws>` не участнику — 404; при `scope=all` пространства, закрытые политикой доступа сессии, пропускаются.
+- Каждый раздел — своя read-only транзакция с `statement_timeout` 1,5 с; не уложившийся раздел приходит пустым с `timed_out = true`, остальные не ждут. Лимит частоты — 30 сразу, 1/с на пользователя (429).
 
 ### Стикеры (ADR-0030)
 
@@ -462,7 +514,7 @@ P0.5 (docs/09 #31–35):
 ```
 PATCH  /api/rooms/{id}                         + userLimit (0..99, только voice); POST …/rooms — + userLimit
 POST   /api/rooms/{id}/join                    409 ERROR_CODE_ROOM_FULL, если различных пользователей в комнате ≥ userLimit
-                                               (MOVE_MEMBERS — вход сверх лимита; второе устройство того же пользователя не считается)
+                                               (вход сверх лимита — только владелец пространства, 07.10; второе устройство того же пользователя не считается)
 POST   /api/rooms/{id}/voice/{userId}/move     MoveMemberRequest{targetRoomId} → 204   (MOVE_MEMBERS в обеих комнатах;
                                                у перемещаемого VIEW_ROOM+CONNECT в цели; лимит цели — кроме ADMINISTRATOR)
 GET    /api/workspaces/{id}/members/{userId}   → GetMemberResponse{member, openTasks} (ADR-0051; @me — сам): участник, гость — только
@@ -503,7 +555,7 @@ DELETE /api/categories/{id}                            204; комнаты вы�
 PUT    /api/workspaces/{id}/rooms/order                SetRoomOrderRequest → SetRoomOrderResponse   (drag & drop, одна транзакция)
 PATCH  /api/rooms/{id}                                 + categoryId ("" — без категории); POST …/rooms — + categoryId
 GET    /api/rooms/{id}/messages?q=&before=&limit=      поиск в комнате (FTS)
-GET    /api/workspaces/{id}/messages/search?q=&room_id=&author_id=&before=&limit=   поиск по видимым комнатам
+GET    /api/workspaces/{id}/messages/search?q=&room_id=&author_id=&before=&limit=   поиск по видимым комнатам (разбор и план — как раздел messages /api/search)
 PUT    /api/messages/{id}/reactions/{emoji}            204, идемпотентно  (SEND_MESSAGES; ≤ 20 разных эмодзи на сообщение)
 DELETE /api/messages/{id}/reactions/{emoji}            204, своя реакция
 PUT    /api/messages/{id}/pin | DELETE …/pin           204   (MANAGE_MESSAGES; ≤ 50 на комнату) → MESSAGE_UPDATE
@@ -543,6 +595,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   - Presence и профиль peer приходят через общие пространства; если общего пространства больше нет, DM остаётся, но `PRESENCE_UPDATE` / `USER_UPDATE` peer не приходят (профиль — из `DmSummary.peer` при следующем READY).
 - **Заметки** (ADR-0039). Полка — комната `type = NOTES` без `workspace_id`, единственный участник — владелец; сообщения, файлы (`POST /api/dms/{id}/files`, личная квота: `413 FILE_QUOTA_EXCEEDED`, `reason = PERSONAL_QUOTA`), реакции, закрепы, read-state, поиск (`GET /api/rooms/{id}/messages?q=`) — те же эндпоинты, события — по `user:<id>` владельцу с пустым `workspace_id`. Пересылка (ADR-0033) — в обе стороны без новых правил; копия из полки не раскрывает её (`Forward.room_id` пустой). `NotesShelf { room (name, position, last_message_*), emoji, last_message }`. Голос/звонки/стрим/камера в полке — `404`; боты и гостевые аккаунты — `403` на `/api/notes*`. Суперадмин: `GET|PUT /api/admin/users/{id}/storage-quota {quota_bytes?}` → `UserStorageQuota {quota_bytes, used_bytes, is_default}` (без `quota_bytes` — вернуть к `DEFAULT_PERSONAL_QUOTA_BYTES`).
 - **Гости** (`role = guest`) видят участников, presence, voice-state и события о людях только из тех комнат, которые видят сами (READY, `GET …/members`, gateway). Когда общая комната появляется или пропадает, гость получает синтетические `WORKSPACE_MEMBER_ADD` (+ `PRESENCE_UPDATE`) / `WORKSPACE_MEMBER_REMOVE`.
+- **Контакты** (ADR-0077): `User.email` / `email_verified` / `phone` заполнены, только если и получатель, и человек — участники этого пространства и ни один не гость; ботам — никогда. READY и `GET …/members[/{id}]` решают по роли получателя; `USER_UPDATE` и `WORKSPACE_MEMBER_ADD/UPDATE` публикуются с контактами, gateway снимает их для остальных получателей и шлёт такую копию под производным id (копия без контактов из одного пространства не гасит дедупликацией полную из общего). `User` без `email` о контактах ничего не говорит: клиент оставляет известные и показывает их по тому же правилу над своими пространствами. `User.username` публичен.
 - **Камеры** (v0.2).
   - Право `VIDEO` (1<<14; у member по умолчанию есть, у guest — нет). Лимит — `RoomMediaSettings.camera_limit`: 0..25, 0 — камеры в комнате выключены. Default workspace — 6 (`UpdateWorkspaceRequest.default_camera_limit`), override комнаты — `RoomMediaOverride.camera_limit`. `JoinVoiceResponse.can_video` = VIDEO и лимит > 0.
   - Порядок как у стримов. В join-токене camera-источника нет. Перед публикацией клиент вызывает `POST …/camera/request`: сервер проверяет, что есть свободное место, резервирует его на 10 мин и добавляет `camera` в `canPublishSources`. Источник остаётся в grant, пока у устройства есть резерв или включённая камера.
@@ -579,13 +632,13 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 
   Кэш в Redis: 24 ч, негативный — 1 ч. Rate limit — 30 подряд, 120 в минуту на пользователя. Картинки и favicon идут только через `/api/unfurl/image`: ссылка подписана HMAC, поэтому это не открытый прокси; только растровые типы по сигнатуре (SVG — никогда), ≤ 5 MB, таймаут 10 с. IP пользователей сторонним сайтам не виден.
 - **Время звонка.** `VoiceState.joined_at` — самый ранний вход устройств пользователя в эту комнату. `Room.voice_started_at` — когда в комнате без звонка подключилось первое устройство (снятие `pending` по `participant_joined`/reconcile; устройство, записанное сразу подключённым, — его `joined_at`), сбрасывается, когда уходит последнее подключённое. Pending-устройства (оптимистичный `/join`, app-level move) звонка не начинают и не продлевают, так что откат pending не оставляет фантомного звонка. Приходит в READY / WORKSPACE_CREATE и в `ROOM_UPDATE`: при старте звонка (с `voice_started_at`) и при его конце (без поля) сервер рассылает `ROOM_UPDATE` с комнатой — из одной точки под блокировкой voice-состояния workspace, так что события одной комнаты идут в порядке изменений; если Valkey недоступен, событие не отправляется (а не сбрасывает таймер); любой другой `ROOM_UPDATE` голосовой комнаты (переименование, настройки) тоже несёт текущее значение, так что клиент просто берёт поле из последнего события. Таймер считается от серверного времени.
-- **Упоминания.** Формат в `content`: `@<user_id>` (UUID; клиент вставляет его при выборе участника и рендерит как имя), `@everyone` и `@here` — все, кто видит комнату; действуют только при праве `MENTION_EVERYONE` в комнате (у owner/admin — по роли, остальным — через override), иначе остаются обычным текстом (для истории `@here` = `@everyone`). Внутри `` `код` `` и блоков кода упоминаний нет; своё сообщение себя не упоминает; учитываются только участники workspace, ≤ 50 прямых упоминаний на сообщение. Сервер сохраняет упоминания при создании и правке (правка пересчитывает), удаление сообщения их убирает. `MESSAGE_CREATE` несёт `content` — бейджи клиент считает сам; `GET /api/me/mentions` нужен для истории: от новых к старым, курсор `before`, `limit` ≤ 100 (по умолчанию 50), `workspace_id` — фильтр, `after` не поддерживается.
+- **Упоминания.** Формат в `content`: `@<user_id>` (UUID; клиент вставляет его при выборе участника и рендерит как имя), `@everyone` и `@here` — все, кто видит комнату; действуют только при праве `MENTION_EVERYONE` в комнате (у owner/admin — по роли, остальным — через override), иначе остаются обычным текстом (для истории `@here` = `@everyone`). Внутри `` `код` `` и блоков кода упоминаний нет; своё сообщение себя не упоминает; учитываются только участники workspace, ≤ 50 прямых упоминаний на сообщение. Литеральный `@nick` (ADR-0077: набран руками, ботом или через API) сервер при создании и правке заменяет на `@<user_id>`, если этот человек виден отправителю там: в DM — его участники, в комнате (и комментариях задач) — участники пространства, гостю — только видимые ему (`perm.GuestVisible`); прочие ники остаются текстом. Сервер сохраняет упоминания при создании и правке (правка пересчитывает), удаление сообщения их убирает. `MESSAGE_CREATE` несёт `content` — бейджи клиент считает сам; `GET /api/me/mentions` нужен для истории: от новых к старым, курсор `before`, `limit` ≤ 100 (по умолчанию 50), `workspace_id` — фильтр, `after` не поддерживается.
 - **Смена пароля и email** (раздел «Профиль»). Обе операции требуют текущий пароль.
   - Неверный пароль → 403 `INVALID_CREDENTIALS` (не 401: клиент не должен уходить в refresh/logout). Гости (без пароля) → 403 `FORBIDDEN`.
   - Проверки пароля ограничены 5 за 15 мин на аккаунт (429 + `Retry-After`); запросы с неверным форматом (`newPassword` не 8..256 символов → 422, невалидный `newEmail` → 422) бюджет не тратят.
   - Новый пароль — argon2id. Все **другие** сессии отзываются сразу, их access-токены отклоняются по Redis-маркеру, а gateway закрывает их сокеты; текущая сессия остаётся.
   - Email уникален без учёта регистра (citext), занятый → 409 `CONFLICT`. Новый адрес становится `me.pendingEmail`, на него уходит код; `POST /api/auth/verify` делает его адресом входа (ADR-0023; без SMTP — сразу). Устройства пользователя получают `USER_UPDATE {me}`; другим участникам email не рассылается.
-- **Почта (ADR-0023).** `Me.emailVerified` (READY, `GET /api/me`, login/register, `USER_UPDATE {me}`), `Me.pendingEmail`, `Me.locale` (язык писем; `PATCH /api/me {locale}` — BCP 47 → `en|ru|es|zh-CN`, `""` — сброс; при регистрации — `RegisterRequest.locale`, иначе `Accept-Language`). Неподтверждённый: неубираемая плашка с полем кода; `403 EMAIL_NOT_VERIFIED` на создание пространств, приглашения и новые DM. Коды: `422 CODE_INVALID` (неверный; в сообщении — сколько попыток осталось), `422 CODE_EXPIRED` (нет живого кода — запросить новый), `429` + `Retry-After` (код < 60 с назад / 3 письма в час на адрес / приглашение тому же адресу < 24 ч). Подтверждение принимает ожидающие email-приглашения: `WORKSPACE_CREATE` на каждое пространство.
+- **Почта (ADR-0023).** `Me.emailVerified` (READY, `GET /api/me`, login/register, `USER_UPDATE {me}`), `Me.pendingEmail`, `Me.locale` (язык писем; `PATCH /api/me {locale}` — BCP 47 → `en|ru|es|zh-CN`, `""` — сброс; при регистрации — `RegisterRequest.locale`, иначе `Accept-Language`). Неподтверждённый: неубираемая плашка с полем кода; `403 EMAIL_NOT_VERIFIED` на создание пространств, приглашения и новые DM. Коды: `422 CODE_INVALID` (неверный; в сообщении — сколько попыток осталось), `422 CODE_EXPIRED` (нет живого кода — запросить новый), `429` + `Retry-After` (код < 60 с назад / 3 письма в час на адрес / приглашение тому же адресу < 24 ч). Подтверждение принимает ожидающие email-приглашения: `WORKSPACE_CREATE` на каждое пространство. **`EMAIL_VERIFICATION=optional` (ADR-0065):** `RegisterResponse` / `LoginResponse` / `READY` несут `emailVerificationOptional` (ни одно действие не ждёт подтверждения — 403 только при вступлении по email-коду, плашки и шага нет) и `emailInvitePending` (для неподтверждённого адреса ждёт email-приглашение — плашка и код, как раньше); адрес остаётся неподтверждённым и не доверенным (поиск/приглашения по почте, OAuth, суперадмин). Код при регистрации/входе уходит только при `required` или `emailInvitePending`.
 - **Один код приглашения (ADR-0027, docs/09 #36).** Код из письма-приглашения и код ссылки `/join/<code>` — оба валидный `invite_code` регистрации (`REGISTRATION_MODE=invite`), превью и вступления. Код ссылки: регистрация сразу вступает. Код из письма: только для приглашённого адреса (иначе `403 INVITE_EMAIL_MISMATCH`), аккаунт создаётся неподтверждённым, вступление — после `POST /api/auth/verify` (ответ `joinedWorkspaceIds` + `WORKSPACE_CREATE`). Клиент: `/join/<code>` без сессии → регистрация с карточкой «Приглашение в «…»», код скрыт, адрес из приглашения заблокирован; после регистрации по приглашению онбординг не показывает шаг «Присоединиться» и диалог вступления не открывается; подтверждение с `joinedWorkspaceIds` открывает пространство (одно уведомление).
 - **Непрочитанное в READY.** `read_states` в READY — по одному на **каждую видимую комнату**. Каждый несёт:
   - `unread_count` — чужие живые сообщения после `last_read_message_id`, максимум 999 (показывать «999+»);
@@ -607,7 +660,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 `POST /api/rooms/:id/messages` идемпотентен по `nonce`: `id` генерирует Postgres (`uuidv7()`), а повтор с уже использованным `(author_id, nonce)` возвращает существующее сообщение (`200` вместо `201`) без повторного `MESSAGE_CREATE`.
 
 Тарифы (ADR-0024):
-- `READY.plan_contact` и `GET /api/version` → `planContact`: куда писать за подпиской (`PLAN_CONTACT_URL`, иначе `mailto:` + `PLAN_CONTACT_EMAIL`, по умолчанию `mailto:it@gptunnel.ai`). `READY.me.is_superadmin`.
+- `READY.plan_contact` и `GET /api/version` → `planContact`: куда писать за подпиской (`PLAN_CONTACT_URL`, иначе `mailto:` + `PLAN_CONTACT_EMAIL`, по умолчанию `mailto:it@gptunnel.ai`). `READY.me.is_superadmin`. `READY.billing_self_serve` (ADR-0080) — `BILLING_ENABLED` и `BILLING_SELF_SERVE`: только тогда клиент спрашивает `GET …/billing` для пространства без `Workspace.billing` (шильдик тарифа, выбор тарифа после создания); при выключенной оплате — ни одного лишнего запроса.
 - `Workspace.plan {plan, limits, valid_until, expired}` — в READY / `WORKSPACE_CREATE` / `WORKSPACE_UPDATE` и REST пространства (не в discover и превью инвайта).
 - `POST /api/rooms/{id}/join` → `media` урезан планом (`max_stream_preset`, `max_streams`), `plan_limits`. Места в комнате: pending считается; упор в план → `409 ROOM_FULL` с `reason: "PLAN_LIMIT"`, `used`, `limit`.
 - `POST …/stream/request {preset, fps?}` → `{preset, fps}` фактические (1080p на free → `H720` / 15). `POST …/camera/request {preset?, fps?}` → `200 {preset, fps}` (раньше 204): `min(запрошенное, план)`; `UNSPECIFIED`/0 = без ограничения.

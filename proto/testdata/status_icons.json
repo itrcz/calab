@@ -1,0 +1,5 @@
+{
+  "_comment": "Board status icon tokens (ADR-0093). Go boards.StatusIcons and TS STATUS_ICONS must equal `icons` in this order; `byType` is the icon of an empty token.",
+  "icons": ["dashed", "circle", "quarter", "half", "three-quarters", "check", "x", "eye", "shield-check", "hourglass", "pause", "flag", "star", "bolt", "rocket", "bug", "inbox", "archive", "lock"],
+  "byType": {"backlog": "dashed", "unstarted": "circle", "started": "half", "completed": "check", "cancelled": "x"}
+}

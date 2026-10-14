@@ -8,17 +8,20 @@ import {
   CalendarSync,
   Check,
   DoorOpen,
+  FolderOpen,
   KeyRound,
   LayoutGrid,
   Lock,
   MessagesSquare,
-  NotebookPen,
+  BookOpenText,
   Server,
   ShieldCheck,
   Globe,
   Guitar,
   Headphones,
   Phone,
+  Mail,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -129,7 +132,7 @@ const figure = (name: ScreenName, locale: Locale, alt: string, caption: string, 
 
 /**
  * Landing v3 feature sections (docs/09 #139), in the order of the brief: voice and video, chat,
- * calendar, boards, notes, guests, bots, self-hosted. Every screenshot is the app in the page's
+ * calendar, boards, mail, search, wiki, disk, guests, web apps, bots, self-hosted. Every screenshot is the app in the page's
  * language with that language's team; nothing here needs JS.
  */
 export function Features({ t, locale }: { t: T; locale: Locale }) {
@@ -232,24 +235,67 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
             {shot('timeline', locale, t.boards.timelineAlt, '(min-width: 1232px) 780px, (min-width: 768px) 66vw, calc(100vw - 32px)')}
             {shot('task', locale, t.boards.taskAlt, '(min-width: 1232px) 360px, (min-width: 768px) 30vw, calc(100vw - 32px)')}
           </div>
+          <div className="mt-6">{figure('taskhistory', locale, t.boards.historyAlt, t.boards.historyTitle, '(min-width: 1232px) 1152px, calc(100vw - 32px)')}</div>
         </Container>
       </section>
 
       <Split
-        id="notes"
+        id="mail"
         text={
           <>
-            <Intro id="notes-title" icon={NotebookPen} {...t.notes} />
-            <Points items={t.notes.points} className="mt-7" />
+            <Intro id="mail-title" icon={Mail} {...t.mail} />
+            <Points items={t.mail.points} className="mt-7" />
+            <p className="mt-5 text-[14px] leading-5 text-fg-2">{t.mail.note}</p>
           </>
         }
-        shot={shot('notes', locale, t.notes.alt)}
+        shot={shot('mail', locale, t.mail.alt)}
+      />
+
+      <Split
+        id="search"
+        alt
+        flip
+        text={
+          <>
+            <Intro id="search-title" icon={Search} {...t.search} />
+            <Points items={t.search.points} className="mt-7" />
+          </>
+        }
+        shot={
+          <div className="mx-auto max-w-[560px]">
+            <Frame>
+              <Screen name="search" locale={locale} alt={t.search.alt} sizes="(min-width: 1024px) 560px, calc(100vw - 32px)" />
+            </Frame>
+          </div>
+        }
+      />
+
+      <Split
+        id="wiki"
+        text={
+          <>
+            <Intro id="wiki-title" icon={BookOpenText} {...t.wiki} />
+            <Points items={t.wiki.points} className="mt-7" />
+          </>
+        }
+        shot={shot('wiki', locale, t.wiki.alt)}
+      />
+
+      <Split
+        id="disk"
+        alt
+        flip
+        text={
+          <>
+            <Intro id="disk-title" icon={FolderOpen} {...t.disk} />
+            <Points items={t.disk.points} className="mt-7" />
+          </>
+        }
+        shot={shot('disk', locale, t.disk.alt)}
       />
 
       <Split
         id="guests"
-        alt
-        flip
         text={
           <>
             <Intro id="guests-title" icon={DoorOpen} {...t.guests} />
@@ -268,6 +314,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
 
       <Split
         id="webapps"
+        alt
         flip
         text={
           <>
@@ -280,7 +327,6 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
 
       <Split
         id="bots"
-        alt
         text={
           <>
             <Intro id="bots-title" icon={Bot} {...t.bots} />

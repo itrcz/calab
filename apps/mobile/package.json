@@ -1,0 +1,38 @@
+{
+  "name": "@calaba/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Calab phone host: the shared web client in a WebView (ADR-0067)",
+  "author": "GPTunneL <it@gptunnel.ai>",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run && node --test plugins/*.test.js",
+    "config:check": "expo config --type public --json",
+    "export:check": "expo export --output-dir dist --platform ios --platform android"
+  },
+  "dependencies": {
+    "expo": "57.0.26",
+    "expo-build-properties": "57.0.22",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.4",
+    "@types/react": "^19.2.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^3.0.0"
+  },
+  "license": "BUSL-1.1"
+}

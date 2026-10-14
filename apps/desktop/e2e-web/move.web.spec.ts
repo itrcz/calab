@@ -46,7 +46,7 @@ async function signIn(browser: Browser, baseURL: string | undefined, who: { logi
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   // First run on this device: onboarding (docs/08) — skip it, it has its own visual tests.
   const skip = page.getByRole('button', { name: 'Пропустить настройку' });
-  const rail = page.getByRole('navigation', { name: 'Пространства' });
+  const rail = page.getByRole('navigation', { name: 'Разделы' });
   await expect(skip.or(rail)).toBeVisible({ timeout: 20_000 });
   if (await skip.isVisible()) await skip.click();
   await expect(rail).toBeVisible();
@@ -73,16 +73,15 @@ async function findWorkspace(c: Client): Promise<Workspace | undefined> {
   return (json.workspaces ?? []).find((w) => w.name === WS_NAME);
 }
 
-/** Opens the workspace in the rail; creates it through the UI when A has none (the server derives the slug). */
+/** Opens the workspace in the title bar's switcher (ADR-0074); creates it through the UI when A has none (the server derives the slug). */
 async function openWorkspace(c: Client, createIfMissing: boolean): Promise<void> {
-  const rail = c.page.getByRole('navigation', { name: 'Пространства' });
-  const button = rail.getByRole('button', { name: new RegExp(`^${escapeRe(WS_NAME)}\\b`) }).first();
+  await c.page.getByTestId('titlebar-title').click();
   if (createIfMissing && (await findWorkspace(c)) === undefined) {
-    await c.page.getByRole('button', { name: 'Создать пространство' }).first().click();
+    await c.page.getByRole('menuitem', { name: 'Создать пространство' }).click();
     await c.page.getByRole('textbox', { name: 'Название', exact: true }).fill(WS_NAME);
     await c.page.getByRole('button', { name: 'Создать', exact: true }).click();
   } else {
-    await button.click();
+    await c.page.getByRole('menuitem', { name: new RegExp(`^${escapeRe(WS_NAME)}\\b`) }).first().click();
   }
   // The room list of that workspace is on screen (an empty one offers «Создать комнату»).
   await expect(sidebar(c.page).getByRole('button', { name: 'Создать комнату' }).or(sidebar(c.page).getByRole('button', { name: FROM, exact: true })).first()).toBeVisible();

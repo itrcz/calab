@@ -11,8 +11,8 @@ export const DOWNLOADS = {
   appImage: `${LATEST_URL}/Calab-linux-x86_64.AppImage`,
   deb: `${LATEST_URL}/calab-linux-amd64.deb`,
 } as const;
-// Single contact for licensing and support.
-export const CONTACT_EMAIL = 'it@gptunnel.ai';
+// Public intake form for the CALAB board.
+export const CONTACT_FORM_URL = 'https://app.calab.ru/f/_y56peSvjI6J4kIqy62NF97shkLcfg71VNu7heERWJo';
 export const GPTUNNEL_URL = 'https://gptunnel.ai';
 export const REPO_URL = 'https://github.com/itrcz/calab';
 export const repoFile = (path: string): string => `${REPO_URL}/blob/main/${path}`;

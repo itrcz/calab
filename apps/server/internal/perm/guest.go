@@ -4,10 +4,9 @@ import "github.com/google/uuid"
 
 // GuestRoom is a room as GuestVisible needs it.
 type GuestRoom struct {
-	ID         uuid.UUID
-	Restricted bool
-	Overrides  []OverrideTarget
-	CreatedBy  uuid.UUID // uuid.Nil: not recorded
+	ID        uuid.UUID
+	Flags     RoomFlags // Flags.CreatedBy: uuid.Nil when not recorded
+	Overrides []OverrideTarget
 }
 
 // GuestVisible returns the members a guest may see (ADR-0016, amended 2026-10-02): itself and,
@@ -27,12 +26,12 @@ func GuestVisible(guest uuid.UUID, members map[uuid.UUID]Member, rooms []GuestRo
 	mine := map[uuid.UUID]bool{}
 	for i := range rooms {
 		r := &rooms[i]
-		if !ComputeIn(me, r.Restricted, r.Overrides).Has(ViewRoom) {
+		if !ComputeIn(me, r.Flags, r.Overrides).Has(ViewRoom) {
 			continue
 		}
 		mine[r.ID] = true
 		viewer := func(u uuid.UUID) {
-			if m, ok := members[u]; ok && !out[u] && ComputeIn(m, r.Restricted, r.Overrides).Has(ViewRoom) {
+			if m, ok := members[u]; ok && !out[u] && ComputeIn(m, r.Flags, r.Overrides).Has(ViewRoom) {
 				out[u] = true
 			}
 		}
@@ -43,8 +42,8 @@ func GuestVisible(guest uuid.UUID, members map[uuid.UUID]Member, rooms []GuestRo
 				}
 			}
 		}
-		if r.CreatedBy != uuid.Nil {
-			viewer(r.CreatedBy)
+		if r.Flags.CreatedBy != uuid.Nil {
+			viewer(r.Flags.CreatedBy)
 		}
 		for u := range authors[r.ID] {
 			if _, ok := members[u]; ok {
@@ -65,7 +64,7 @@ func GuestVisible(guest uuid.UUID, members map[uuid.UUID]Member, rooms []GuestRo
 func GuestRoomIDs(guest Member, rooms []GuestRoom) []uuid.UUID {
 	var out []uuid.UUID
 	for i := range rooms {
-		if ComputeIn(guest, rooms[i].Restricted, rooms[i].Overrides).Has(ViewRoom) {
+		if ComputeIn(guest, rooms[i].Flags, rooms[i].Overrides).Has(ViewRoom) {
 			out = append(out, rooms[i].ID)
 		}
 	}

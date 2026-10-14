@@ -113,10 +113,19 @@ func TestIdentityLeaseSlowRefreshDoesNotSerializeFanout(t *testing.T) {
 	}
 	close(release)
 	workers.Wait()
-	for _, s := range sessions {
-		if s.allowsEvent(leaseEvent(a)) {
-			t.Fatal("refresh error kept positive lease")
+	// A dependency failure is not a revocation (incident 2026-10-05): the stored lease
+	// stays until it expires. A definitive denial drops it at once.
+	for _, s := range sessions[1:] { // sessions[0] left the workspace above
+		if !s.allowsEvent(leaseEvent(a)) {
+			t.Fatal("transient refresh error dropped a positive lease")
 		}
+	}
+	h.checkWorkspace = func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		return identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, time.Now(), nil
+	}
+	_, _ = sessions[1].refreshWorkspaceLease(context.Background(), a)
+	if sessions[1].allowsEvent(leaseEvent(a)) {
+		t.Fatal("denial kept positive lease")
 	}
 }
 
@@ -515,6 +524,9 @@ func TestIdentityUserChannelPresenceOnlyAboutSelf(t *testing.T) {
 		{&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: other}}}}, false},
 		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: &v1.Me{}}}}, true},
 		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{User: &v1.User{Id: other}}}}, false},
+		// A reminder of the user's own imported event (ADR-0045 amendment 3); an empty one is denied.
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_EventReminder{EventReminder: &v1.CalendarEventReminder{ExternalEvent: &v1.ExternalEvent{Uid: "u"}, Minutes: 5}}}, true},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_EventReminder{EventReminder: &v1.CalendarEventReminder{Minutes: 5}}}, false},
 	} {
 		enc := newEnc(c.ev)
 		h.prepareEvent(context.Background(), enc)

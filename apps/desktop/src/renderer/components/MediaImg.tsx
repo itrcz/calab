@@ -8,13 +8,16 @@ import { platform } from '../platform';
  * (Electron: the <img>'s own error event).
  */
 export function useMediaUrl(path: string | null | undefined, onError?: () => void): string | undefined {
+  // Anonymous routes (a public wiki page's pictures, ADR-0096 §6) need no token: a plain URL, no
+  // blob cache — whose entries a sign-out / boot swap would cancel under an anonymous visitor.
+  const open = path?.startsWith('/api/public/') ? `${platform.apiBase}${path}` : undefined;
   const [url, setUrl] = useState<string | undefined>(() => (path && platform.directMedia ? `${platform.apiBase}${path}` : undefined));
   const failed = useRef(onError);
   useEffect(() => {
     failed.current = onError;
   });
   useEffect(() => {
-    if (!path) return;
+    if (!path || open) return;
     let alive = true;
     void platform.mediaUrl(path).then(
       (u) => {
@@ -27,8 +30,8 @@ export function useMediaUrl(path: string | null | undefined, onError?: () => voi
     return () => {
       alive = false;
     };
-  }, [path]);
-  return path ? url : undefined;
+  }, [path, open]);
+  return path ? (open ?? url) : undefined;
 }
 
 /**

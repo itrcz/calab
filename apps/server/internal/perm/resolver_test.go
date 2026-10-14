@@ -3,6 +3,7 @@ package perm
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ type fakeStore struct {
 	access      map[key]sqlc.GetRoomAccessRow
 	boards      map[key]sqlc.GetBoardAccessRow
 	taskRooms   map[uuid.UUID]sqlc.GetTaskRoomRefRow
+	invites     map[key][3]bool // (task, user) → assignee, approver, watcher
 	memberCalls int
 	accessCalls int
 	err         error
@@ -42,6 +44,25 @@ func (f *fakeStore) GetRoomAccess(_ context.Context, a sqlc.GetRoomAccessParams)
 	return row, nil
 }
 
+// GetRoomAccesses answers like the query: one row per user in order (a user without a stored
+// row gets the empty row of a non-member), or none when no user has a row (no room).
+func (f *fakeStore) GetRoomAccesses(_ context.Context, a sqlc.GetRoomAccessesParams) ([]sqlc.GetRoomAccessesRow, error) {
+	f.accessCalls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	rows, found := make([]sqlc.GetRoomAccessesRow, len(a.UserIds)), false
+	for i, u := range a.UserIds {
+		if row, ok := f.access[key{a.RoomID, u}]; ok {
+			rows[i], found = sqlc.GetRoomAccessesRow(row), true
+		}
+	}
+	if !found {
+		return nil, nil
+	}
+	return rows, nil
+}
+
 func (f *fakeStore) GetBoardAccess(_ context.Context, a sqlc.GetBoardAccessParams) (sqlc.GetBoardAccessRow, error) {
 	row, ok := f.boards[key{a.BoardID, a.UserID}]
 	if !ok {
@@ -50,11 +71,13 @@ func (f *fakeStore) GetBoardAccess(_ context.Context, a sqlc.GetBoardAccessParam
 	return row, nil
 }
 
-func (f *fakeStore) GetTaskRoomRef(_ context.Context, roomID uuid.UUID) (sqlc.GetTaskRoomRefRow, error) {
-	row, ok := f.taskRooms[roomID]
+func (f *fakeStore) GetTaskRoomRef(_ context.Context, a sqlc.GetTaskRoomRefParams) (sqlc.GetTaskRoomRefRow, error) {
+	row, ok := f.taskRooms[a.RoomID]
 	if !ok {
 		return sqlc.GetTaskRoomRefRow{}, pgx.ErrNoRows
 	}
+	inv := f.invites[key{row.TaskID, a.UserID}]
+	row.Assignee, row.Approver, row.Watcher = inv[0], inv[1], inv[2]
 	return row, nil
 }
 
@@ -106,6 +129,48 @@ func TestResolverTaskRoom(t *testing.T) {
 	r = NewResolver(s)
 	if acc, _ := r.Room(ctx, room, u); acc.Bits != ViewRoom|ManageMessages {
 		t.Fatalf("comments off: task room must be read-only: %d", acc.Bits)
+	}
+	// ADR-0059: a member without VIEW_BOARD invited on the task sees its room like a viewer
+	// (no moderation); once the task is archived, the invitation no longer counts.
+	s.boards[key{board, other}] = func() sqlc.GetBoardAccessRow {
+		r := access(true, false)
+		r.Invited = true
+		return r
+	}()
+	s.invites = map[key][3]bool{{task, other}: {false, true, false}}
+	r = NewResolver(s)
+	if b, _ := r.Board(ctx, board, other); b.Bits != 0 || !b.TaskScoped {
+		t.Fatalf("invited on a private board: %+v", b)
+	}
+	if acc, _ := r.Room(ctx, room, other); acc.Bits != ViewRoom|SendMessages|AttachFiles {
+		t.Fatalf("approver of the task: %d", acc.Bits)
+	}
+	s.taskRooms[room] = sqlc.GetTaskRoomRefRow{TaskID: task, BoardID: board, TaskArchived: true}
+	r = NewResolver(s)
+	if acc, _ := r.Room(ctx, room, other); acc.Bits != 0 {
+		t.Fatalf("archived task: the invitation must not count: %d", acc.Bits)
+	}
+	// ADR-0076: a restricted board is task-scoped for its invitees too, and a watcher sees the
+	// task room like an approver.
+	s.taskRooms[room] = sqlc.GetTaskRoomRefRow{TaskID: task, BoardID: board}
+	s.invites = map[key][3]bool{{task, other}: {false, false, true}}
+	restricted := access(true, false)
+	restricted.Invited, restricted.Restricted = true, true
+	s.boards[key{board, other}] = restricted
+	r = NewResolver(s)
+	if b, _ := r.Board(ctx, board, other); !b.TaskScoped || b.Bits != 0 {
+		t.Fatalf("restricted board, invited: %+v", b)
+	}
+	if acc, _ := r.Room(ctx, room, other); acc.Bits != ViewRoom|SendMessages|AttachFiles {
+		t.Fatalf("watcher of the task: %d", acc.Bits)
+	}
+	// A guest is never task-scoped.
+	guest := restricted
+	guest.Role = ptr("guest")
+	s.boards[key{board, other}] = guest
+	r = NewResolver(s)
+	if b, _ := r.Board(ctx, board, other); b.TaskScoped {
+		t.Fatalf("guest task-scoped: %+v", b)
 	}
 	if TaskRoom(ViewBoard, false, false) != ViewRoom|SendMessages|AttachFiles || TaskRoom(CreateTasks, false, false) != 0 ||
 		TaskRoom(ViewBoard, false, true) != ViewRoom || !CommentsOff(1<<12) || CommentsOff(1<<9) {
@@ -228,13 +293,13 @@ func TestComputeInPrivateRoom(t *testing.T) {
 		{TargetType: "role", TargetID: memberID, Override: Override{Deny: ViewRoom}},
 		{TargetType: "user", TargetID: u, Override: Override{Allow: ViewRoom}},
 	}
-	if ComputeIn(roles.Member(uuid.NewString(), RoleMember, []string{memberID}), false, ovs) != 0 {
+	if ComputeIn(roles.Member(uuid.NewString(), RoleMember, []string{memberID}), RoomFlags{}, ovs) != 0 {
 		t.Fatal("private room visible to other members")
 	}
-	if !ComputeIn(roles.Member(u, RoleMember, []string{memberID}), false, ovs).Has(ViewRoom) {
+	if !ComputeIn(roles.Member(u, RoleMember, []string{memberID}), RoomFlags{}, ovs).Has(ViewRoom) {
 		t.Fatal("private room hidden from allowed user")
 	}
-	if got := ComputeIn(roles.Member(u, RoleGuest, []string{guestID, "unknown"}), false, ovs); got != ViewRoom|Connect|Speak {
+	if got := ComputeIn(roles.Member(u, RoleGuest, []string{guestID, "unknown"}), RoomFlags{}, ovs); got != ViewRoom|Connect|Speak {
 		t.Fatalf("guest with user allow: %d", got)
 	}
 }
@@ -265,5 +330,95 @@ func TestResolverRestricted(t *testing.T) {
 	}
 	if acc, err := r.Room(ctx, room, ownerU); err != nil || acc.Bits != All {
 		t.Fatalf("owner: %+v %v", acc, err)
+	}
+}
+
+// ADR-0078: a private temporary room (live or archived) has no bypass — neither the admin nor
+// the owner sees it; its creator does without a personal allow, a guest creator never.
+func TestResolverPrivateTemp(t *testing.T) {
+	ws, room := uuid.New(), uuid.New()
+	adminU, ownerU, creatorU, chosenU := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	adminR, ownerR, memberR := uuid.New(), uuid.New(), uuid.New()
+	row := func(role string, top uuid.UUID, pos int32, perms Bits, userAllow Bits, archived bool) sqlc.GetRoomAccessRow {
+		r := sqlc.GetRoomAccessRow{
+			WorkspaceID: &ws, Type: "voice", Role: ptr(role), IsPrivate: true, Temp: true, CreatedBy: &creatorU, Archived: archived,
+			RoleIds: []uuid.UUID{memberR, top}, RolePositions: []int32{PosMember, pos},
+			RolePermissions: []int64{i64(RoleDefaults[RoleMember]), i64(perms)},
+			RoleAllows:      []int64{0, 0}, RoleDenies: []int64{int64(ViewRoom), 0},
+		}
+		if userAllow != 0 {
+			r.UserAllow, r.UserDeny = ptr(i64(userAllow)), ptr(int64(0))
+		}
+		return r
+	}
+	s := &fakeStore{access: map[key]sqlc.GetRoomAccessRow{
+		{room, adminU}:   row("admin", adminR, PosAdmin, Administrator, 0, false),
+		{room, ownerU}:   row("owner", ownerR, PosOwner, Administrator, 0, true),
+		{room, creatorU}: row("member", uuid.New(), PosCustom, 0, 0, false),
+		{room, chosenU}:  row("admin", adminR, PosAdmin, Administrator, ViewRoom|Connect, false),
+	}}
+	r := NewResolver(s)
+	ctx := context.Background()
+	if acc, err := r.Room(ctx, room, adminU); err != nil || acc.Bits != 0 || !acc.PrivateTemp {
+		t.Fatalf("admin: %+v %v", acc, err)
+	}
+	if acc, err := r.ReadRoom(ctx, room, ownerU); err != nil || acc.Bits != 0 {
+		t.Fatalf("owner, archived room: %+v %v", acc, err)
+	}
+	if acc, err := r.Room(ctx, room, creatorU); err != nil || acc.Bits != RoleDefaults[RoleMember] {
+		t.Fatalf("creator: %+v %v", acc, err)
+	}
+	if acc, err := r.Room(ctx, room, chosenU); err != nil || acc.Bits != RoleDefaults[RoleMember] {
+		t.Fatalf("chosen admin: %+v %v, want the member's bits", acc, err)
+	}
+	// A guest is never the creator (ADR-0044), whatever created_by says.
+	guest := Member{UserID: creatorU.String(), Role: RoleGuest, Roles: []RoleBits{{ID: "g", Permissions: RoleDefaults[RoleGuest]}}}
+	if got := ComputeIn(guest, RoomFlags{PrivateTemp: true, CreatedBy: creatorU}, nil); got != 0 {
+		t.Fatalf("guest creator: %d", got)
+	}
+	// A public temporary room keeps the admin's bypass.
+	admin := Member{UserID: adminU.String(), Role: RoleAdmin, Roles: []RoleBits{{ID: "a", Position: PosAdmin, Permissions: Administrator}}}
+	if got := ComputeIn(admin, Flags(false, false, true, &creatorU), nil); got != All {
+		t.Fatalf("admin in a public temporary room: %d", got)
+	}
+	// A private permanent room too (ADR-0008).
+	if got := ComputeIn(admin, Flags(false, true, false, &creatorU), nil); got != All {
+		t.Fatalf("admin in a private permanent room: %d", got)
+	}
+}
+
+func TestPrimeRoomAnswersLikeReadRoom(t *testing.T) {
+	ws, room := uuid.New(), uuid.New()
+	member, outsider, archived := uuid.New(), uuid.New(), uuid.New()
+	rows := map[key]sqlc.GetRoomAccessRow{
+		{room, member}:   {WorkspaceID: &ws, Type: "voice", Role: ptr("member")},
+		{room, archived}: {WorkspaceID: &ws, Type: "voice", Role: ptr("member"), Archived: true},
+	}
+	users := []uuid.UUID{member, outsider, archived}
+	single := NewResolver(&fakeStore{access: rows})
+	primedStore := &fakeStore{access: rows}
+	primed := NewResolver(primedStore)
+	if err := primed.PrimeRoom(context.Background(), room, users); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range users {
+		want, wantErr := single.ReadRoom(context.Background(), room, u)
+		got, gotErr := primed.ReadRoom(context.Background(), room, u)
+		if !reflect.DeepEqual(got, want) || !errors.Is(gotErr, wantErr) {
+			t.Fatalf("user %s: primed %+v/%v, single %+v/%v", u, got, gotErr, want, wantErr)
+		}
+	}
+	if primedStore.accessCalls != 1 {
+		t.Fatalf("primed resolver queried %d times, want 1", primedStore.accessCalls)
+	}
+	// A failed prime caches nothing: ReadRoom then loads the user itself.
+	failing := &fakeStore{access: rows, err: errors.New("db down")}
+	r := NewResolver(failing)
+	if err := r.PrimeRoom(context.Background(), room, users); err == nil {
+		t.Fatal("prime over a failing store succeeded")
+	}
+	failing.err = nil
+	if acc, err := r.ReadRoom(context.Background(), room, member); err != nil || acc.WorkspaceID != ws {
+		t.Fatalf("after a failed prime: %+v %v", acc, err)
 	}
 }

@@ -9,6 +9,9 @@ SELECT * FROM sessions WHERE id = $1 FOR UPDATE;
 -- name: GetSession :one
 SELECT * FROM sessions WHERE id = $1;
 
+-- name: ListSessionsByIDs :many
+SELECT * FROM sessions WHERE id = ANY(sqlc.arg('ids')::uuid[]);
+
 -- name: RotateSession :one
 -- A new refresh generation: unused, with its secret sealed under the previous one (replay.go).
 UPDATE sessions SET

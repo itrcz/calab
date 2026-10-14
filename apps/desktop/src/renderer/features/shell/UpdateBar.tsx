@@ -8,6 +8,7 @@ import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
+import { reloadForUpdate } from '../../services/resumeVoice';
 import { laterAllowed, pendingUpdate, snooze, snoozed, type UpdateBarModel } from './updateBarModel';
 
 declare global {
@@ -24,7 +25,8 @@ declare global {
  * also in a call: the relaunched app rejoins the same room / call, docs/09 #126; in a call the
  * hint says so) + a quiet «Позже» (4 h, until
  * the next start at most); after three «Позже» only «×» (24 h). Web: «Обновить страницу» when the
- * server is newer than the loaded bundle. The logic is pure in updateBarModel.ts; this leaf is the only
+ * server is newer than the loaded bundle (the reloaded page rejoins the room with the same mic /
+ * deafen state, services/resumeVoice.reloadForUpdate). The logic is pure in updateBarModel.ts; this leaf is the only
  * subscriber to the update status (download progress re-renders just the bar).
  */
 export function UpdateBar(): ReactNode {
@@ -80,20 +82,20 @@ export function UpdateBar(): ReactNode {
     <div
       role="status"
       data-testid="update-bar"
-      className="z-[var(--z-sticky)] flex min-h-8 shrink-0 items-center justify-center gap-x-3 gap-y-1 bg-accent-strong px-3 py-1 text-caption font-medium text-accent-fg mobile:flex-wrap"
+      className="z-[var(--z-sticky)] flex min-h-8 shrink-0 items-center justify-center gap-x-3 gap-y-1 bg-accent-strong px-3 py-1 text-caption font-medium text-accent-fg mobile:min-h-[52px] mobile:justify-start mobile:gap-x-2 mobile:px-4 mobile:py-1"
     >
       <CircleArrowUp className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 break-words leading-4">{text(model)}</span>
+      <span className="min-w-0 break-words leading-4 mobile:flex-1">{text(model)}</span>
       <Action model={model} inVoice={inVoice} installing={installing} onInstall={install} />
       {model.kind === 'downloading' ? null : laterAllowed(nag, appVersion) ? (
         <Tip label={t('update.laterHint')}>
-          <button type="button" onClick={() => hide('later')} className={cx(barButton, 'px-2 hover:bg-white/15')}>
+          <button type="button" onClick={() => hide('later')} className={cx(barButton, 'px-2 hover:bg-white/15 mobile:px-3')}>
             {t('update.later')}
           </button>
         </Tip>
       ) : (
         <Tip label={t('update.close')}>
-          <button type="button" aria-label={t('update.close')} onClick={() => hide('close')} className={cx(barButton, 'w-6 justify-center hover:bg-white/15')}>
+          <button type="button" aria-label={t('update.close')} onClick={() => hide('close')} className={cx(barButton, 'w-6 justify-center hover:bg-white/15 mobile:w-11')}>
             <X className="size-3.5" aria-hidden />
           </button>
         </Tip>
@@ -103,7 +105,7 @@ export function UpdateBar(): ReactNode {
 }
 
 const barButton =
-  'flex h-6 shrink-0 items-center rounded-[var(--radius-control)] text-caption font-semibold text-accent-fg transition-colors duration-[var(--motion-fast)] focus-visible:outline-white';
+  'flex h-6 shrink-0 items-center rounded-[var(--radius-control)] mobile:h-11 mobile:text-[13px] text-caption font-semibold text-accent-fg transition-colors duration-[var(--motion-fast)] focus-visible:outline-white';
 
 /** The primary action: white on the accent strip (the birthday card's pill does the same). */
 const primary = cx(barButton, 'rounded-full bg-white px-3 text-[var(--color-accent-strong)] hover:bg-white/90 disabled:opacity-80');
@@ -147,7 +149,7 @@ function Action({ model, inVoice, installing, onInstall }: { model: UpdateBarMod
       );
     case 'web':
       return (
-        <button type="button" onClick={() => window.location.reload()} className={primary}>
+        <button type="button" onClick={() => void reloadForUpdate()} className={primary}>
           {t('update.reload')}
         </button>
       );

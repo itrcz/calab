@@ -14,7 +14,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.owner': '所有者',
   'people.you': '你',
   'people.empty': '这里还没有人',
-  'people.openProfile': '{name}的资料',
+  'people.openProfile': '打开{name}的资料',
 
   // profile popover
   'people.profile.role': '角色',

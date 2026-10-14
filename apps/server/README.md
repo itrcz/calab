@@ -59,7 +59,9 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `REDIS_KEY_PREFIX` | пусто | пространство имён всех ключей и каналов pub/sub API в Valkey, например `calab:` (буквы, цифры, `._-:`, в конце `:`): для Valkey, общего с другими приложениями, под ACL-пользователем `~calab:* &calab:*` (docs/06 «Общий Valkey»); пусто — прежние имена |
 | `JWT_SECRET` | — (обязательна, ≥ 32 байт) | подпись access JWT (HS256) |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `24h` / `8760h` | время жизни access JWT / сессии (скользящее, 1 год); отзыв мгновенный при любых сроках (docs/04 «Auth») |
+| `GUEST_INACTIVITY` | `48h` | гостевые аккаунты и членства-гости уходят после стольких часов без активности (ADR-0098; ≥ `1h`) |
 | `REGISTRATION_MODE` | `invite` | `open` \| `invite` (без кода — только первый пользователь сервера) |
+| `EMAIL_VERIFICATION` | `required` | `required` \| `optional` (ADR-0065). `required` — неподтверждённая почта: 403 `EMAIL_NOT_VERIFIED` на создание пространств, приглашения, ботов, новые DM, внешних участников встреч (ADR-0023). `optional` — ничего не блокирует, кода при регистрации нет (кроме приглашённых по почте); адрес остаётся неподтверждённым и не считается доказанным (поиск/добавление по почте, вступление по email-приглашению, OAuth `email`, суперадмин). Без `SMTP_HOST` не влияет: адреса подтверждены сразу |
 | `AUTH_RATE_BURST` / `AUTH_RATE_PER_MINUTE` | `10` / `10` | token bucket по IP на login и register |
 | `LOGIN_ACCOUNT_ATTEMPTS` | `10` | попыток входа на один email за 15 мин с любых IP (429 + `Retry-After`) |
 | `MAX_WORKSPACES_PER_USER` | `5` | сколько workspace может принадлежать одному пользователю (409 `WORKSPACE_LIMIT`) |
@@ -70,6 +72,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `PUBLIC_APP_URL` | `http://localhost:3000` | внешний URL веб-клиента; его origin разрешён для cookie-auth (CSRF) и WS-апгрейда |
 | `PUBLIC_APP_URL_ALT` | — | запасной домен веб-клиента (совместимость), разрешён так же |
 | `PUBLIC_APP_URLS` | — | все origin веб-клиента через запятую (`https://app.calab.io,https://colaba.gptunnel.ai,…`); разрешённый список = `PUBLIC_APP_URL` + `PUBLIC_APP_URL_ALT` + этот; `PUBLIC_APP_URL` остаётся основным (ссылки) |
+| `PUBLIC_LANDING_URLS` | — | origin лендинга через запятую (`https://calab.io`): только `GET /api/billing/public/offers` отвечает им CORS-заголовком (без credentials), ADR-0083 |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error`, JSON в stdout |
 | `MIGRATE_ON_START` | `true` | применять миграции при `serve` |
 | `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011): `fs` — каталог, `s3` — бакет S3 (`STORAGE_S3_*`, docs/06 «Файлы в S3») |
@@ -97,11 +100,85 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `GATEWAY_HEARTBEAT_INTERVAL` | `41s` | интервал heartbeat (presence TTL = 2×) |
 | `GATEWAY_MAX_SESSIONS_PER_USER` | `5` | лимит устройств с активным gateway |
 
+## Оплата: Точка (RU, ₽; ADR-0083)
+
+Второй эквайер рядом со Stripe: рынок `ru`, валюта RUB, ручное пополнение картой МИР или по СБП
+через платёжную ссылку банка с чеком 54-ФЗ (облачная касса Точки). Все флаги выключены по
+умолчанию; прод не включает их без отдельного решения.
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `BILLING_TOCHKA_ENABLED` | `false` | адаптер Точки: новые оплаты, вебхук, опрос; нужен `BILLING_ENABLED` и `BILLING_PROVIDERS=stripe:global,tochka:ru` |
+| `TOCHKA_API_TOKEN` | — | JWT-ключ мерчанта (Bearer). Только в секретах; не логируется |
+| `TOCHKA_CUSTOMER_CODE` / `TOCHKA_MERCHANT_ID` | — | код клиента (9 символов) и торговая точка (15 цифр); чужие операции не принимаются |
+| `TOCHKA_API_URL` | `https://enter.tochka.com/uapi` | песочница `https://enter.tochka.com/sandbox/v2` отвечает заготовками (только формат) |
+| `TOCHKA_TAX_SYSTEM` / `TOCHKA_VAT_TYPE` | `usn_income` / `none` | система налогообложения и НДС в чеке (оферта: ООО «Громтех», АУСН, без НДС) |
+| `TOCHKA_RECEIPT_PAYMENT_METHOD` | `full_prepayment` | признак способа расчёта строки чека: `full_prepayment` или `full_payment` (других банк не принимает); решает бухгалтер, ответ банка пишется в лог `tochka receipt` — сверить на первом живом чеке |
+| `TOCHKA_WEBHOOK_PUBLIC_KEY` | ключ в адаптере | JWK банка для RS256 вебхуков; ротация — массив `[старый, новый]` и выкладка |
+| `TOCHKA_CLIENT_ID` | `iss` токена | client_id для API вебхуков |
+
+Лимиты ручного пополнения 150..500 000 ₽ (матрица `provider.DefaultMatrix`, проверка на сервере).
+Суперадмин закрывает эквайер для новых клиентов в «Оплата → Эквайеры» без выкладки
+(`PUT /api/admin/billing/providers/{id}`); уже оплатившие продолжают платить через него.
+
+Шаги оператора (`server tochka …` читает только `TOCHKA_*`, токен не печатает):
+
+1. `server tochka key` — закреплённый ключ вебхуков совпадает с опубликованным банком.
+2. Выкатить сервер с `BILLING_TOCHKA_ENABLED=true` и `TOCHKA_WEBHOOK_URL=https://app.calab.io/api/billing/tochka/webhook`:
+   после старта слушателя сервер сам читает вебхук банка и, если URL другой или нет события `acquiringInternetPayment`,
+   ставит его (одна реплика за раз — Redis-замок `tochka:webhook`; при ошибке повтор через 10 с, 30 с, 1 мин, 5 мин, затем раз в 30 мин;
+   сверка раз в 6 ч, если кто-то поменял URL в кабинете банка). Пусто = сервер вебхук не трогает (по умолчанию; для dev с боевым токеном).
+   Один URL на `client_id`; банк шлёт тестовый вебхук и сохраняет URL, только если получил 200
+   (с выключенной Точкой маршрут отвечает 501 — регистрация не пройдёт). Вручную по-прежнему:
+   `server tochka webhook set <url>`; проверка: `server tochka webhook get` / `webhook test`.
+3. Без вебхуков всё работает опросом: открытые оплаты опрашиваются через 30 с, 1, 2, 4, 8 мин, затем раз в 15 мин.
+   Не-200 банк повторяет 30 раз раз в 10 с и бросает — деньги дойдут опросом.
+
+### Сохранённая карта и оплата в один клик (ADR-0083, фаза 2)
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `TOCHKA_RECURRING_ENABLED` | `false` | привязка карты в RU: пополнение картой с «сохранить карту» создаёт подписку без графика, дальше `Charge Subscription` (автопополнение и оплата в один клик). Включать после живой проверки 2 ₽ (ADR-0083 «Фаза 2») |
+| `BILLING_SAVED_METHOD_TOPUP_ENABLED` | `false` | ручное пополнение сохранённой картой без платёжной страницы (Stripe и Точка): `POST /api/workspaces/{id}/billing/saved-method-topups`, состояние — `GET …/{tid}`; 5 запросов в минуту на счёт |
+| `BILLING_AUTO_TOPUP_ENABLED` | `false` | автопополнение (теперь и RUB: потолок по умолчанию 50 000 ₽, максимум 500 000 ₽); нужен Stripe или Точка |
+
+Списание сохранённой картой — одна очередь с автопополнением (`billing_autotopup_attempts`, `kind`
+auto/manual): на счёт не больше одного списания в полёте. Точка без ключей идемпотентности:
+запрос отправляется один раз, списание находится по новой записи `Order[]` подписки; потерянный ответ
+дочитывается фоном (ошибка в логе через 24 ч, закрытие `not_found` через 7 дней), повтор не шлётся
+никогда. Stripe в один клик подтверждает платёж on-session: карта с 3-D Secure отвечает страницей
+подтверждения (`action_url`, `hooks.stripe.com`), без подтверждения платёж отменяется через 30 мин.
+Возвраты платежей подписки Точки — только в интернет-банке (`needs_review`). Отвязать карту у банка
+нельзя (статус подписки без графика не меняется): «Удалить» отвязывает у нас, карта больше не списывается.
+
+### Точка: привязка СБП (Pay Gateway; ADR-0083, фаза 3)
+
+Адаптер `providers/tochkapay` готов, включение ждёт онбординга в Pay Gateway (siteUid, регистрация
+нашего ключа подписи). Флаг выключен по умолчанию; ручное пополнение не меняется.
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `TOCHKA_WEBHOOK_URL` | — | https-URL `/api/billing/tochka/webhook`, который сервер сам регистрирует в банке после старта и сверяет раз в 6 ч; пусто = не трогать; нужен `BILLING_TOCHKA_ENABLED` |
+| `BILLING_TOCHKA_SBP_BINDING_ENABLED` | `false` | провайдер `tochkapay`, его строка матрицы (RU, СБП, только автопополнение) и вебхук `/api/billing/tochkapay/webhook`; нужен `BILLING_TOCHKA_ENABLED` |
+| `TOCHKA_PAY_SITE_UID` | — | сайт, выданный банком (тестовый, затем боевой) |
+| `TOCHKA_PAY_SIGNING_KEY` | — | наш приватный RSA-2048 (PEM или base64 PEM), подпись `Signature` списаний и возвратов. Только в секретах |
+| `TOCHKA_PAY_LIVE` | `false` | `false` — тестовый сайт: любой ответ с `isTest=false` отклоняется |
+| `TOCHKA_PAY_API_TOKEN` | `TOCHKA_API_TOKEN` | отдельный JWT, если банк выдаст его для шлюза |
+| `TOCHKA_PAY_API_URL` / `TOCHKA_PAY_CALLBACK_URL` | `https://enter.tochka.com/uapi/pay` / — | адрес API; URL вебхука в каждой операции (иначе тот, что дали банку) |
+
+Шаги оператора (`server tochkapay …` читает только `TOCHKA_*`):
+
+1. `openssl genrsa -out tochkapay.pem 2048`, ключ — в секреты как `TOCHKA_PAY_SIGNING_KEY`;
+   `server tochkapay pubkey` печатает публичную часть в форме, которую просит банк.
+2. Получив тестовый `siteUid`: `server tochkapay smoke` — привязка (сценарий банка), списание 1 ₽ по
+   токену, повтор без второго списания, возврат. Каждое допущение адаптера проверяется здесь.
+
 ## Фоновые задачи (в каждом инстансе, с блокировками там, где нужен один исполнитель)
 
 - gateway: подписка на Redis pub/sub, lease инстанса, sweeper presence (15 с, лок в Redis);
 - files: чистка файлов-сирот раз в час (не прикреплены > 24 ч, не аватар/иконка; `pg_try_advisory_xact_lock`);
-- rtc: reconcile voice state с LiveKit раз в 30 с (лок в Redis).
+- rtc: reconcile voice state с LiveKit раз в 30 с (лок в Redis);
+- billing (при `BILLING_ENABLED`): inbox вебхуков, сверка раз в 5 мин, опрос открытых оплат провайдеров без вебхуков об отказе (Точка, раз в 15 с ищет должные), суточные списания (`FOR UPDATE SKIP LOCKED`).
 
 При SIGTERM gateway рассылает `RECONNECT` с разбросом до 5 с и отдаёт сессии (их можно `RESUME` на любом инстансе), затем останавливается HTTP.
 

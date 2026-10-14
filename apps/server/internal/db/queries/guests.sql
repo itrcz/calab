@@ -27,9 +27,6 @@ WHERE id = $1 AND is_guest;
 -- name: ClearGuestExpiry :exec
 UPDATE users SET guest_expires_at = NULL WHERE id = $1;
 
--- name: DeleteUserMemberships :exec
-DELETE FROM workspace_members WHERE user_id = $1;
-
 -- name: DeleteUserRoomOverrides :exec
 DELETE FROM room_permissions WHERE target_type = 'user' AND target_id = sqlc.arg('user_id')::text;
 

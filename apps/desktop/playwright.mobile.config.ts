@@ -32,6 +32,6 @@ export default defineConfig({
     timeout: 15_000,
     toHaveScreenshot: { maxDiffPixelRatio: 0.002, animations: 'disabled', caret: 'hide', scale: 'css' },
   },
-  use: { trace: 'retain-on-failure', locale: 'ru-RU', timezoneId: 'Europe/Moscow', colorScheme: 'dark' },
+  use: { trace: 'retain-on-failure', locale: 'ru-RU', timezoneId: 'Europe/Moscow', colorScheme: 'dark', reducedMotion: 'reduce' },
   projects: PHONES.map((p) => ({ name: p.name, use: { ...devices[p.device], browserName: 'webkit' as const } })),
 });

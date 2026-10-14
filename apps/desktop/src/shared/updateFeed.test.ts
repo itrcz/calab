@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { downloadPage, feedUrl, httpsFeed } from './updateFeed';
+import { type FeedSource, downloadPage, feedKey, feedUrl, githubSource, httpsFeed, parseUpdateChannel, pinnedSource, sourcePage } from './updateFeed';
 
 describe('update feed (review M3)', () => {
   it('app.X → https://releases.X/', () => {
@@ -66,5 +66,41 @@ describe('download page (review pass 3 L)', () => {
     expect(downloadPage('http://localhost:3000', 'https://releases.calab.io/')).toBe('https://releases.calab.io/');
     expect(downloadPage('not a url', null)).toBeNull();
     expect(downloadPage('', null)).toBeNull();
+  });
+});
+
+describe('update channel (owner 12.10: GitHub or S3, GitHub by default)', () => {
+  const S3 = 'https://releases.calab.io/';
+  const GH: FeedSource = { provider: 'github', owner: 'itrcz', repo: 'calab' };
+  it('stored / sent values: only github | s3, anything else → github', () => {
+    expect(parseUpdateChannel('s3')).toBe('s3');
+    expect(parseUpdateChannel('github')).toBe('github');
+    expect(parseUpdateChannel(undefined)).toBe('github');
+    expect(parseUpdateChannel('https://evil.example/')).toBe('github');
+    expect(parseUpdateChannel(1)).toBe('github');
+  });
+  it('github repo: owner/repo only', () => {
+    expect(GH).toEqual({ provider: 'github', owner: 'itrcz', repo: 'calab' });
+    expect(githubSource(' itrcz/calab ')).toEqual(GH);
+    expect(githubSource('')).toBeNull();
+    expect(githubSource('itrcz')).toBeNull();
+    expect(githubSource('itrcz/calab/releases')).toBeNull();
+    expect(githubSource('https://github.com/itrcz/calab')).toBeNull();
+    expect(githubSource('-x/calab')).toBeNull();
+    expect(githubSource('itrcz/..')).toBeNull();
+  });
+  it('the chosen channel when baked in, else the other pinned one, else none', () => {
+    expect(pinnedSource('github', S3, GH)).toEqual(GH);
+    expect(pinnedSource('s3', S3, GH)).toEqual({ provider: 'generic', url: S3 });
+    expect(pinnedSource('github', S3, null)).toEqual({ provider: 'generic', url: S3 });
+    expect(pinnedSource('s3', null, GH)).toEqual(GH);
+    expect(pinnedSource('github', null, null)).toBeNull();
+    expect(pinnedSource('s3', null, null)).toBeNull();
+  });
+  it('keys and pages', () => {
+    expect(feedKey(GH)).toBe('github:itrcz/calab');
+    expect(feedKey({ provider: 'generic', url: S3 })).toBe(S3);
+    expect(sourcePage(GH)).toBe('https://github.com/itrcz/calab/releases/latest');
+    expect(sourcePage({ provider: 'generic', url: S3 })).toBe(S3);
   });
 });

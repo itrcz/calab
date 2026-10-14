@@ -22,6 +22,7 @@ export const esRecording: DictShape<typeof ruRecording> = {
   'rec.stop.empty': 'Grabación detenida: no hubo nadie en la llamada durante 2 minutos',
   'rec.stop.maxDuration': 'Grabación detenida: se alcanzó el límite de 4 horas',
   'rec.stop.disabled': 'Grabación detenida: se desactivó en los ajustes de la sala',
+  'rec.stop.planInactive': 'Grabación detenida: el plan del espacio no está activo',
   'rec.stop.egress': 'Grabación detenida: la llamada terminó',
   'rec.stop.lost': 'Grabación interrumpida: el grabador dejó de responder',
   'rec.stop.other': 'Grabación detenida',

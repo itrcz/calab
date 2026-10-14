@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
-import { CalendarClock, ChevronRight, Copy, CopyPlus, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
+import { CalendarClock, ChevronRight, Copy, CopyPlus, Diamond, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -8,19 +8,21 @@ import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
 import { archiveTask, copyTaskKey, copyTaskLink, duplicateTask, setAssignees, updateTask } from '../../services/boards';
 import { featureOn } from '../../lib/boards/features';
-import { checklistProgress, useBoards } from '../../stores/boards';
+import { checklistProgress, milestoneChipOf, useBoards } from '../../stores/boards';
 import { useBoardsUi, type CardMenu } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
-import { ApprovalBadge } from './Approvals';
+import { ApprovalTag } from './Approvals';
+import { GitBadge } from './GitLinks';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue, PRIORITIES } from './visuals';
 import { chordLabel, BOARD_HOTKEYS, type BoardHotkeyId } from './hotkeys';
 import { IS_MAC } from '../../services/hotkeys';
 import { useDisabledFeatures, useFeatureOn } from './useBoardView';
+import { useBoardScoped, useTaskPerms } from './useTaskPerms';
 
 /** A label dragged onto a card (from the panel / settings): the card gets it. */
 export const DRAG_LABEL = 'application/x-calab-label';
@@ -52,9 +54,11 @@ export const TaskCard = memo(function TaskCard({
   onPointerDownCapture?: (e: React.PointerEvent) => void;
 }): ReactNode {
   const task = useBoards((s) => s.tasks[id]);
-  const perms = useBoards((s) => s.boards[boardId]?.permissions);
+  const perms = useTaskPerms(task);
+  const scoped = useBoardScoped(boardId);
   const statusType = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.type : undefined));
   const statusColor = useBoards((s) => (task ? (s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.color ?? 0) : 0));
+  const statusIcon = useBoards((s) => (task ? (s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.icon ?? '') : ''));
   const blocked = useBlockedStatuses(task, boardId);
   const focused = useBoardsUi((s) => s.focused === id);
   const selected = useBoardsUi((s) => !!s.selected[id]);
@@ -70,6 +74,8 @@ export const TaskCard = memo(function TaskCard({
     (e: MouseEvent) => {
       const ui = useBoardsUi.getState();
       if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        // No selection without a bulk bar on a scoped board (ADR-0059).
+        if (useBoards.getState().boards[boardId]?.taskScoped) return;
         ui.toggleSelected(id);
         ui.setFocused(id);
         return;
@@ -78,7 +84,7 @@ export const TaskCard = memo(function TaskCard({
       ui.setFocused(id);
       ui.openTask(id);
     },
-    [id],
+    [id, boardId],
   );
 
   if (!task) return null;
@@ -126,7 +132,7 @@ export const TaskCard = memo(function TaskCard({
       onDragLeave={() => setDropOver(false)}
       onDrop={onDrop}
       className={cx(
-        'group/card relative flex cursor-default select-none flex-col gap-1.5 rounded-[var(--radius-card)] border bg-elev px-3 py-2.5 text-left transition-[border-color,opacity] duration-[var(--motion-fast)]',
+        'group/card tap-inert relative flex cursor-default select-none flex-col gap-1.5 rounded-[var(--radius-card)] border bg-elev px-3 py-2.5 text-left transition-[border-color,opacity] duration-[var(--motion-fast)]',
         open || focused ? 'border-accent' : selected ? 'border-[color-mix(in_srgb,var(--color-accent)_60%,transparent)]' : 'border-line hover:border-[var(--color-fill-hover)]',
         selected && 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg-elevated))]',
         dragging && 'opacity-40',
@@ -174,7 +180,7 @@ export const TaskCard = memo(function TaskCard({
       <div className="flex min-w-0 items-start gap-2">
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...menuOpen('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.status')} className="mt-[3px] shrink-0 rounded-full disabled:cursor-default" data-testid="card-status">
-            <StatusIcon type={statusType ?? 0} color={statusColor} />
+            <StatusIcon type={statusType ?? 0} color={statusColor} icon={statusIcon} />
           </button>
         </StatusMenu>
         <span className={cx('line-clamp-2 min-w-0 flex-1 break-words text-control font-medium', done ? 'text-muted' : 'text-fg')} data-testid="card-title">
@@ -189,7 +195,7 @@ export const TaskCard = memo(function TaskCard({
             </button>
           </PriorityMenu>
         ) : null}
-        {on(BoardFeature.LABELS) ? <CardLabels task={task} boardId={boardId} canEdit={canEdit} canCreate={hasBit(perms, CREATE_TASKS)} chip={chip} req={menuOpen('label')} /> : null}
+        {on(BoardFeature.LABELS) ? <CardLabels task={task} boardId={boardId} canEdit={canEdit} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} chip={chip} req={menuOpen('label')} /> : null}
         {on(BoardFeature.DUE_DATE) && (task.dueOn || menuReq?.kind === 'due') ? (
           <DateMenu value={task.dueOn} onPick={(d) => void updateTask(id, { dueOn: d })} title={t('boards.f.dueOn')} {...menuOpen('due')}>
             <button type="button" onClick={stop} disabled={!canEdit} className={cx(chip, overdue && 'border-[color-mix(in_srgb,var(--color-red)_45%,transparent)] text-danger-text')} data-testid="card-due">
@@ -198,7 +204,7 @@ export const TaskCard = memo(function TaskCard({
             </button>
           </DateMenu>
         ) : null}
-        {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} /> : null}
+        {on(BoardFeature.APPROVALS) ? <ApprovalTag id={id} /> : null}
         {on(BoardFeature.SUBTASKS) && task.subtaskCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.subtasks')}>
             <GitFork className="size-3" aria-hidden />
@@ -206,6 +212,8 @@ export const TaskCard = memo(function TaskCard({
           </span>
         ) : null}
         {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {on(BoardFeature.MILESTONES) ? <MilestoneBadge id={id} /> : null}
+        {on(BoardFeature.GIT_LINKS) ? <GitBadge id={id} /> : null}
         {on(BoardFeature.COMMENTS) && task.commentCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.comments')}>
             <MessageSquare className="size-3" aria-hidden />
@@ -217,7 +225,7 @@ export const TaskCard = memo(function TaskCard({
     </article>
   );
 
-  return <TaskContextMenu task={task} canEdit={canEdit} canArchive={mayArchiveTask(task, perms, me)} manage={hasBit(perms, MANAGE_BOARD)}>{card}</TaskContextMenu>;
+  return <TaskContextMenu task={task} canEdit={canEdit} canArchive={mayArchiveTask(task, perms, me)} manage={!scoped && hasBit(perms, MANAGE_BOARD)}>{card}</TaskContextMenu>;
 });
 
 /**
@@ -230,6 +238,22 @@ export const ChecklistBadge = memo(function ChecklistBadge({ id }: { id: string 
   return (
     <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.cl.title')} data-testid="card-checklist">
       <ListChecks className="size-3" aria-hidden />
+      {text}
+    </span>
+  );
+});
+
+/**
+ * The card's milestones chip «◇ 2/4» (ADR-0063 §5, shown while the task has milestones): a leaf
+ * with a primitive selector — a milestone change re-renders this chip, not the card.
+ */
+export const MilestoneBadge = memo(function MilestoneBadge({ id }: { id: string }): ReactNode {
+  const text = useBoards((s) => milestoneChipOf(s, id));
+  if (!text) return null;
+  const [done, total] = text.split('/');
+  return (
+    <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.ms.chip', { done: done ?? '', total: total ?? '' })} data-testid="card-milestones">
+      <Diamond className="size-3" aria-hidden />
       {text}
     </span>
   );
@@ -275,8 +299,10 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const blocked = useBlockedStatuses(task, task.boardId);
   const priority = useFeatureOn(task.boardId, BoardFeature.PRIORITY);
+  const scoped = useBoardScoped(task.boardId);
   const me = myUserId();
-  const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf(id)}</span>;
+  // Key hints are for a keyboard: not on a phone (the long-press menu there).
+  const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf(id)}</span>;
   const item = cx(menuItem, 'group');
   const sub = cx(menuItem, 'group data-[state=open]:not-data-[highlighted]:bg-hover');
   return (
@@ -293,9 +319,9 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={sub}>
-                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} /> {t('boards.f.status')}
-                  <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('status')}</span>
-                  <ChevronRight className="size-4" aria-hidden />
+                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} icon={statuses?.find((s) => s.id === task.statusId)?.icon} /> {t('boards.f.status')}
+                  <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('status')}</span>
+                  <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                 </ContextMenu.SubTrigger>
                 <ContextMenu.Portal>
                   <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>
@@ -303,7 +329,7 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                       .sort((a, b) => a.position - b.position)
                       .map((s) => (
                         <ContextMenu.Item key={s.id} className={item} disabled={blocked?.has(s.id)} onSelect={() => s.id !== task.statusId && void updateTask(task.id, { statusId: s.id })}>
-                          <StatusIcon type={s.type} color={s.color} /> {s.name}
+                          <StatusIcon type={s.type} color={s.color} icon={s.icon} /> {s.name}
                           {blocked?.has(s.id) ? <span className="ml-auto pl-3 text-caption text-muted">{t('boards.gate.hint')}</span> : null}
                         </ContextMenu.Item>
                       ))}
@@ -314,8 +340,8 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                 <ContextMenu.Sub>
                   <ContextMenu.SubTrigger className={sub}>
                     <PriorityIcon priority={task.priority} /> {t('boards.f.priority')}
-                    <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('priority')}</span>
-                    <ChevronRight className="size-4" aria-hidden />
+                    <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('priority')}</span>
+                    <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                   </ContextMenu.SubTrigger>
                   <ContextMenu.Portal>
                     <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>
@@ -344,7 +370,7 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
             <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
             {kbd('copyLink')}
           </ContextMenu.Item>
-          {manage || canEdit ? (
+          {!scoped && (manage || canEdit) ? (
             <ContextMenu.Item className={item} onSelect={() => void duplicateTask(task.id)}>
               <CopyPlus className="size-4" aria-hidden /> {t('boards.duplicate')}
             </ContextMenu.Item>

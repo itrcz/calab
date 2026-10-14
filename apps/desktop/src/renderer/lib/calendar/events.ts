@@ -40,15 +40,42 @@ export function involvesAny(ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>
 
 export const isAttendee =(ev: Pick<CalendarEvent, 'attendees'>, me: string): boolean => ev.attendees.some((a) => a.userId === me);
 
+/**
+ * The invitation rule (ADR-0038 amendment «Кому уходит приглашение»), the client's half of the
+ * invariant the server holds for mail (calendar/recipients.go): I am invited only by an explicit
+ * attendee row of mine on a meeting I do not organize — never by a meeting I merely see because
+ * its room is visible to me (EVENT_* reaches every viewer of the room), never by my own meeting,
+ * and never through `my_status` alone. Everything that offers Accept / Decline checks this and
+ * nothing else; guests have no calendar (the caller checks the role).
+ */
+export const isInvitee = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, me: string): boolean => !!me && ev.organizerId !== me && isAttendee(ev, me);
+
+/** An invitee who has not answered: the only state in which anything may read as an invitation. */
+export const awaitsAnswer = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees' | 'myStatus'>, me: string): boolean =>
+  isInvitee(ev, me) && myStatusOf(ev, me) === AttendeeStatus.PENDING;
+
 /** My meetings (docs/09 #140): I organize it or I am on its attendee list. `mine` '' = no filter. */
 export const isMine = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, mine: string): boolean => !mine || ev.organizerId === mine || isAttendee(ev, mine);
 
 /**
- * The calendar's default scope (owner, 02.10): my meetings (`mine`), plus those involving the people
- * selected in the «Люди» filter. Neither given = everything.
+ * The calendar's scope: without a «Люди» selection — my meetings (`mine`, owner 02.10); with one —
+ * only the meetings of the selected people (owner, 05.10: «когда выбраны люди, нужно показывать
+ * встречи выбранных людей», not mine; me among them brings mine back). Neither given = everything.
  */
 const inScope = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, people: ReadonlySet<string> | undefined, mine: string): boolean =>
-  (!people && !mine) || (!!mine && isMine(ev, mine)) || (!!people && involvesAny(ev, people));
+  people ? involvesAny(ev, people) : !mine || isMine(ev, mine);
+
+/**
+ * Which of the selected people (positions in the filter's order — their chip colours) a meeting
+ * involves: the person dots on its block in the filtered day.
+ */
+export function involvedIndexes(ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, people: readonly string[]): number[] {
+  const out: number[] = [];
+  people.forEach((id, i) => {
+    if (involvesAny(ev, new Set([id]))) out.push(i);
+  });
+  return out;
+}
 
 const overlaps = (ev: CalendarEvent, from: number, to: number): boolean => {
   const { start, end } = eventSpan(ev);

@@ -50,8 +50,8 @@ export const ruGuests = {
   'adm.errDeclined': 'Организатор недавно отклонил вход. Постучать снова можно через 10 минут',
   'adm.errQueueFull': 'В комнату уже ждут 50 гостей. Попробуйте позже',
   // deciders
-  'adm.knockTitle': '{name} просит войти в «{room}»',
-  'adm.knockAsks': 'просит войти в «{room}»',
+  'adm.knockTitle': 'Гость «{name}» просит войти в «{room}»',
+  'adm.knockByLink': 'По ссылке от {author}',
   'adm.knockBody': 'Гость по ссылке ждёт подтверждения',
   'adm.knockRegion': 'Запросы на вход',
   'adm.admit': 'Пустить',

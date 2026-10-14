@@ -55,6 +55,10 @@ type Service struct {
 	origins []string
 	// Plans fills Workspace.plan in the snapshot of a newly joined workspace (nil = unset).
 	Plans *plans.Service
+	// Present says whether the user is connected to the gateway or in a call right now
+	// (gateway.Hub.Present): the guest-membership sweep skips them (ADR-0098). nil = nobody
+	// is present (tests without a gateway).
+	Present func(ctx context.Context, user uuid.UUID) (bool, error)
 }
 
 // NewService creates the guests service.
@@ -161,8 +165,8 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// Invitations need a verified email (ADR-0023).
-	if _, err := auth.VerifiedUser(r.Context(), s.db.Q, auth.MustFromContext(r.Context()).UserID); err != nil {
+	// Invitations need a verified email (ADR-0023) unless EMAIL_VERIFICATION=optional (ADR-0065).
+	if _, err := s.auth.EmailGate().User(r.Context(), s.db.Q, auth.MustFromContext(r.Context()).UserID); err != nil {
 		return err
 	}
 	var req v1.CreateRoomInviteRequest
@@ -378,8 +382,12 @@ func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomIn
 	if err != nil && !db.IsNotFound(err) {
 		return granted{}, err
 	}
-	// A suspended workspace takes nobody in; banned users stay out (item 32).
+	// A suspended workspace takes nobody in; banned users stay out (item 32). A guest takes no
+	// paid seat, but a workspace suspended for billing takes nobody in either (ADR-0080 §12).
 	if err := moderation.CheckSuspended(ctx, q, wsID); err != nil {
+		return granted{}, err
+	}
+	if err := s.Plans.CheckBillingOpen(ctx, q, wsID); err != nil {
 		return granted{}, err
 	}
 	if !isMember {
@@ -399,6 +407,11 @@ func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomIn
 		if acc.Bits.Has(perm.ViewRoom) {
 			return granted{}, nil // (a) already has access: nothing to change, no use consumed
 		}
+	}
+	// The restricted mode (ADR-0086 amendment) lets nobody new in by a room link, guests
+	// included; who already has access (a) passed above.
+	if err := s.Plans.CheckActive(ctx, wsID, plans.RestrictedInvite); err != nil {
+		return granted{}, err
 	}
 	// Members of the workspace never wait (not in v1: ADR-0040); guests (b)/(c) do.
 	wait := RequiresApproval(row.Room.GuestApproval, row.RoomInvite.RequireApproval) &&
@@ -558,13 +571,19 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 
 // ---- cleanup ----
 
-// Cleanup removes guest accounts inactive for 7 days: memberships, room overrides, files
-// and sessions are deleted; the user row is anonymised ("Гость (удалён)") so that their
-// messages stay readable. One instance at a time (advisory lock).
+// Cleanup removes guests inactive for GUEST_INACTIVITY (ADR-0098), in two passes:
+//   - guest accounts (ADR-0016): memberships (kept as former members), room overrides, files
+//     and sessions are deleted; the user row is anonymised ("Гость (удалён)") so that their
+//     messages stay readable;
+//   - guest memberships of registered users idle that long and not present right now: removed
+//     like a kick, with reason guest_expired (CleanupMemberships).
+//
+// Row locks re-check every candidate, so concurrent instances do not remove twice. Returns
+// the number of guest accounts and memberships removed.
 func (s *Service) Cleanup(ctx context.Context) (int, error) {
 	now := time.Now()
 	ids, err := s.db.Q.ListExpiredGuests(ctx, &now)
-	if err != nil || len(ids) == 0 {
+	if err != nil {
 		return 0, err
 	}
 	// One post-commit budget for the whole pass (session revocations and MEMBER_REMOVE of
@@ -578,19 +597,77 @@ func (s *Service) Cleanup(ctx context.Context) (int, error) {
 		}
 		n++
 	}
+	m, err := s.CleanupMemberships(ctx, now.Add(-s.auth.GuestInactivity()))
+	return n + m, err
+}
+
+// CleanupMemberships removes registered users' guest memberships with no activity since
+// before (ADR-0098 §2), skipping users present on the gateway or in a call: the same removal
+// as a kick (identity invalidated, seat, overrides, former-member row with reason
+// guest_expired, WORKSPACE_MEMBER_REMOVE). The user may come back by a new link.
+func (s *Service) CleanupMemberships(ctx context.Context, before time.Time) (int, error) {
+	rows, err := s.db.Q.ListIdleGuestMemberships(ctx, before)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, row := range rows {
+		f, removed, err := s.removeIdleMembership(ctx, row.WorkspaceID, row.UserID, before)
+		if err != nil {
+			return n, err
+		}
+		if removed {
+			workspaces.PublishRemoved(ctx, s.events, f)
+			n++
+		}
+	}
 	return n, nil
 }
 
-func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
-	wids, err := s.db.Q.ListUserWorkspaceIDs(ctx, uid)
-	if err != nil {
+func (s *Service) removeIdleMembership(ctx context.Context, wsID, userID uuid.UUID, before time.Time) (f sqlc.WorkspaceFormerMember, removed bool, err error) {
+	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		// Workspace lock first (the one InvalidateIdentity takes, as DELETE …/members does);
+		// then the row lock re-checks the membership is still an idle guest one, and the
+		// presence is checked under it (an activity touch waits for the lock).
+		if _, err := q.LockOAuthWorkspace(ctx, wsID); err != nil {
+			return err
+		}
+		if _, err := q.LockIdleGuestMembership(ctx, sqlc.LockIdleGuestMembershipParams{WorkspaceID: wsID, UserID: userID, Before: before}); err != nil {
+			if db.IsNotFound(err) {
+				return errNotExpired
+			}
+			return err
+		}
+		if s.Present != nil {
+			here, err := s.Present(ctx, userID)
+			if err != nil {
+				return err // fail closed: nobody is removed while presence cannot be told
+			}
+			if here {
+				// Connected for long without a request: being here is activity.
+				return q.TouchGuestMemberships(ctx, userID)
+			}
+		}
+		if err := auth.InvalidateIdentity(ctx, q, wsID, &userID, nil, "member_removed"); err != nil {
+			return err
+		}
+		var err error
+		f, removed, err = workspaces.RemoveMembership(ctx, q, s.Plans, wsID, userID, workspaces.ReasonGuestExpired, nil)
 		return err
+	})
+	if errors.Is(err, errNotExpired) {
+		return f, false, nil
 	}
+	return f, removed, err
+}
+
+func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 	var (
 		gone     []sqlc.File
 		sessions []uuid.UUID
+		formers  []sqlc.WorkspaceFormerMember
 	)
-	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		// Row lock + re-check: a refresh may have extended the guest since the listing.
 		if _, err := q.LockExpiredGuest(ctx, uid); err != nil {
 			if db.IsNotFound(err) {
@@ -620,7 +697,7 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 		if err := q.DeleteUserRoomOverrides(ctx, uid.String()); err != nil {
 			return err
 		}
-		if err := q.DeleteUserMemberships(ctx, uid); err != nil {
+		if formers, err = q.RemoveUserMembershipsAsFormer(ctx, sqlc.RemoveUserMembershipsAsFormerParams{UserID: uid, Reason: workspaces.ReasonGuestExpired}); err != nil {
 			return err
 		}
 		if err := q.DeleteNotesAbout(ctx, uid); err != nil { // by and about the guest
@@ -642,9 +719,9 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 		blob.DeleteThumbs(ctx, s.store, f.Key, f.ThumbnailKey)
 	}
 	s.auth.MarkRevoked(ctx, auth.RevokeGuestExpired, sessions...) // access tokens die now, gateway closes with 4010 (own budget)
-	for _, w := range wids {
-		s.events.Workspace(ctx, w, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
-			WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: w.String(), UserId: uid.String()},
+	for _, f := range formers {
+		s.events.Workspace(ctx, f.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
+			WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: f.WorkspaceID.String(), UserId: uid.String(), Former: workspaces.FormerInfo(f)},
 		}})
 	}
 	return nil

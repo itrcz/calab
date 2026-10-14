@@ -15,7 +15,7 @@ import (
 const confirmPendingEmail = `-- name: ConfirmPendingEmail :one
 UPDATE users SET email = pending_email, pending_email = NULL, email_verified_at = now()
 WHERE id = $1 AND pending_email IS NOT NULL
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 // The confirmed pending address becomes the login email (unique: may fail with 23505).
@@ -53,6 +53,11 @@ func (q *Queries) ConfirmPendingEmail(ctx context.Context, id uuid.UUID) (User, 
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -71,7 +76,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name, settings, locale, email_verified_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type CreateUserParams struct {
@@ -124,6 +129,11 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -136,7 +146,7 @@ WHERE id IN (
     LIMIT 500
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 // Clears temporary custom statuses that ran out (the presence sweeper, one instance at a
@@ -181,6 +191,11 @@ func (q *Queries) ExpireCustomStatuses(ctx context.Context) ([]User, error) {
 			&i.WorkStartMin,
 			&i.WorkEndMin,
 			&i.WorkDays,
+			&i.HideMessageTextInNotifications,
+			&i.Username,
+			&i.Phone,
+			&i.TaskNotifyOff,
+			&i.TaskNotifyBots,
 		); err != nil {
 			return nil, err
 		}
@@ -234,7 +249,7 @@ func (q *Queries) ExpireManualPresence(ctx context.Context) ([]ExpireManualPrese
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days FROM users WHERE id = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -271,12 +286,17 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days FROM users WHERE email = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, error) {
@@ -313,6 +333,11 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, erro
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -388,6 +413,66 @@ func (q *Queries) ListManualPresence(ctx context.Context) ([]ListManualPresenceR
 	return items, nil
 }
 
+const listUsersByIDs = `-- name: ListUsersByIDs :many
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots FROM users WHERE id = ANY($1::uuid[])
+`
+
+func (q *Queries) ListUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsersByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordHash,
+			&i.DisplayName,
+			&i.AvatarFileID,
+			&i.StatusText,
+			&i.Settings,
+			&i.CreatedAt,
+			&i.DisabledAt,
+			&i.StatusEmoji,
+			&i.StatusExpiresAt,
+			&i.IsGuest,
+			&i.GuestExpiresAt,
+			&i.Timezone,
+			&i.EmailVerifiedAt,
+			&i.PendingEmail,
+			&i.Locale,
+			&i.PresenceStatus,
+			&i.PresenceUntil,
+			&i.IsBot,
+			&i.BirthdayDay,
+			&i.BirthdayMonth,
+			&i.BirthdayYear,
+			&i.BirthdayHidden,
+			&i.EventReminders,
+			&i.EventRemindersDnd,
+			&i.StorageQuotaBytes,
+			&i.WorkStartMin,
+			&i.WorkEndMin,
+			&i.WorkDays,
+			&i.HideMessageTextInNotifications,
+			&i.Username,
+			&i.Phone,
+			&i.TaskNotifyOff,
+			&i.TaskNotifyBots,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockPasswordHash = `-- name: LockPasswordHash :one
 SELECT password_hash FROM users WHERE id = $1 FOR SHARE
 `
@@ -412,9 +497,77 @@ func (q *Queries) LockRegistration(ctx context.Context) error {
 	return err
 }
 
+const resolveMemberUsernames = `-- name: ResolveMemberUsernames :many
+SELECT u.id, u.username::text AS username FROM users u
+JOIN workspace_members m ON m.user_id = u.id AND m.workspace_id = $1
+WHERE u.username = ANY($2::citext[]) AND u.disabled_at IS NULL
+`
+
+type ResolveMemberUsernamesParams struct {
+	WorkspaceID uuid.UUID
+	Names       []string
+}
+
+type ResolveMemberUsernamesRow struct {
+	ID       uuid.UUID
+	Username string
+}
+
+// ADR-0077: literal @nick mentions → live members of a workspace.
+func (q *Queries) ResolveMemberUsernames(ctx context.Context, arg ResolveMemberUsernamesParams) ([]ResolveMemberUsernamesRow, error) {
+	rows, err := q.db.Query(ctx, resolveMemberUsernames, arg.WorkspaceID, arg.Names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ResolveMemberUsernamesRow{}
+	for rows.Next() {
+		var i ResolveMemberUsernamesRow
+		if err := rows.Scan(&i.ID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resolveUsernames = `-- name: ResolveUsernames :many
+SELECT id, username::text AS username FROM users
+WHERE username = ANY($1::citext[]) AND disabled_at IS NULL
+`
+
+type ResolveUsernamesRow struct {
+	ID       uuid.UUID
+	Username string
+}
+
+// ADR-0077: literal @nick mentions → live accounts (the caller checks visibility).
+func (q *Queries) ResolveUsernames(ctx context.Context, names []string) ([]ResolveUsernamesRow, error) {
+	rows, err := q.db.Query(ctx, resolveUsernames, names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ResolveUsernamesRow{}
+	for rows.Next() {
+		var i ResolveUsernamesRow
+		if err := rows.Scan(&i.ID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setEmail = `-- name: SetEmail :one
 UPDATE users SET email = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type SetEmailParams struct {
@@ -456,13 +609,18 @@ func (q *Queries) SetEmail(ctx context.Context, arg SetEmailParams) (User, error
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
 
 const setEmailAndVerified = `-- name: SetEmailAndVerified :one
 UPDATE users SET email = $2, pending_email = NULL, email_verified_at = now() WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type SetEmailAndVerifiedParams struct {
@@ -505,13 +663,18 @@ func (q *Queries) SetEmailAndVerified(ctx context.Context, arg SetEmailAndVerifi
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
 
 const setEmailVerified = `-- name: SetEmailVerified :one
 UPDATE users SET email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 // Marks the current address verified (no-op if it already is).
@@ -549,6 +712,11 @@ func (q *Queries) SetEmailVerified(ctx context.Context, id uuid.UUID) (User, err
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -586,7 +754,7 @@ func (q *Queries) SetPasswordHash(ctx context.Context, arg SetPasswordHashParams
 
 const setPendingEmail = `-- name: SetPendingEmail :one
 UPDATE users SET pending_email = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type SetPendingEmailParams struct {
@@ -628,14 +796,168 @@ func (q *Queries) SetPendingEmail(ctx context.Context, arg SetPendingEmailParams
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
+}
+
+const setUserTaskNotifyBots = `-- name: SetUserTaskNotifyBots :one
+UPDATE users SET task_notify_bots = $2 WHERE id = $1
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
+`
+
+type SetUserTaskNotifyBotsParams struct {
+	ID             uuid.UUID
+	TaskNotifyBots []uuid.UUID
+}
+
+// The bots that get the user's task notices (ADR-0090), replaced.
+func (q *Queries) SetUserTaskNotifyBots(ctx context.Context, arg SetUserTaskNotifyBotsParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserTaskNotifyBots, arg.ID, arg.TaskNotifyBots)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.AvatarFileID,
+		&i.StatusText,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
+		&i.IsGuest,
+		&i.GuestExpiresAt,
+		&i.Timezone,
+		&i.EmailVerifiedAt,
+		&i.PendingEmail,
+		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
+		&i.IsBot,
+		&i.BirthdayDay,
+		&i.BirthdayMonth,
+		&i.BirthdayYear,
+		&i.BirthdayHidden,
+		&i.EventReminders,
+		&i.EventRemindersDnd,
+		&i.StorageQuotaBytes,
+		&i.WorkStartMin,
+		&i.WorkEndMin,
+		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
+	)
+	return i, err
+}
+
+const setUserTaskNotifyOff = `-- name: SetUserTaskNotifyOff :one
+UPDATE users SET task_notify_off = $2 WHERE id = $1
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
+`
+
+type SetUserTaskNotifyOffParams struct {
+	ID            uuid.UUID
+	TaskNotifyOff []string
+}
+
+// The task notification kinds switched off (ADR-0089), replaced.
+func (q *Queries) SetUserTaskNotifyOff(ctx context.Context, arg SetUserTaskNotifyOffParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserTaskNotifyOff, arg.ID, arg.TaskNotifyOff)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.AvatarFileID,
+		&i.StatusText,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
+		&i.IsGuest,
+		&i.GuestExpiresAt,
+		&i.Timezone,
+		&i.EmailVerifiedAt,
+		&i.PendingEmail,
+		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
+		&i.IsBot,
+		&i.BirthdayDay,
+		&i.BirthdayMonth,
+		&i.BirthdayYear,
+		&i.BirthdayHidden,
+		&i.EventReminders,
+		&i.EventRemindersDnd,
+		&i.StorageQuotaBytes,
+		&i.WorkStartMin,
+		&i.WorkEndMin,
+		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
+	)
+	return i, err
+}
+
+const taskNotifyBotsAvailable = `-- name: TaskNotifyBotsAvailable :many
+SELECT b.user_id FROM bots b
+JOIN users bu ON bu.id = b.user_id
+WHERE b.user_id = ANY($1::uuid[]) AND bu.is_bot AND bu.disabled_at IS NULL
+  AND b.token_hash IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM bot_blocks k WHERE k.user_id = $2 AND k.bot_user_id = b.user_id)
+  AND EXISTS (
+    SELECT 1 FROM workspace_members mb
+    JOIN workspace_members mu ON mu.workspace_id = mb.workspace_id AND mu.user_id = $2 AND mu.role <> 'guest'
+    WHERE mb.user_id = b.user_id
+  )
+`
+
+type TaskNotifyBotsAvailableParams struct {
+	BotIds []uuid.UUID
+	UserID uuid.UUID
+}
+
+// Of bot_ids, the bots the user may relay task notices to (ADR-0090 §1): an enabled bot with a
+// valid token (the gateway; a webhook needs one too) that shares a workspace with the user (where
+// the user is not a guest) and is not blocked by them.
+func (q *Queries) TaskNotifyBotsAvailable(ctx context.Context, arg TaskNotifyBotsAvailableParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, taskNotifyBotsAvailable, arg.BotIds, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateStatus = `-- name: UpdateStatus :one
 UPDATE users SET status_text = $2, status_emoji = $3, status_expires_at = $4
 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type UpdateStatusParams struct {
@@ -684,6 +1006,11 @@ func (q *Queries) UpdateStatus(ctx context.Context, arg UpdateStatusParams) (Use
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -699,27 +1026,35 @@ UPDATE users SET
     birthday_day    = CASE WHEN $10::boolean THEN $11::smallint ELSE birthday_day END,
     birthday_month  = CASE WHEN $10::boolean THEN $12::smallint ELSE birthday_month END,
     birthday_year   = CASE WHEN $10::boolean THEN $13::smallint ELSE birthday_year END,
-    birthday_hidden = coalesce($14::boolean, birthday_hidden)
-WHERE id = $15
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+    birthday_hidden = coalesce($14::boolean, birthday_hidden),
+    hide_message_text_in_notifications = coalesce($15::boolean, hide_message_text_in_notifications),
+    phone          = CASE WHEN $16::boolean THEN $17::text ELSE phone END,
+    username       = CASE WHEN $18::boolean THEN $19::citext ELSE username END
+WHERE id = $20
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type UpdateUserParams struct {
-	DisplayName    *string
-	StatusText     *string
-	SetAvatar      bool
-	AvatarFileID   *uuid.UUID
-	Settings       []byte
-	SetTimezone    bool
-	Timezone       *string
-	SetLocale      bool
-	Locale         *string
-	SetBirthday    bool
-	BirthdayDay    *int16
-	BirthdayMonth  *int16
-	BirthdayYear   *int16
-	BirthdayHidden *bool
-	ID             uuid.UUID
+	DisplayName                    *string
+	StatusText                     *string
+	SetAvatar                      bool
+	AvatarFileID                   *uuid.UUID
+	Settings                       []byte
+	SetTimezone                    bool
+	Timezone                       *string
+	SetLocale                      bool
+	Locale                         *string
+	SetBirthday                    bool
+	BirthdayDay                    *int16
+	BirthdayMonth                  *int16
+	BirthdayYear                   *int16
+	BirthdayHidden                 *bool
+	HideMessageTextInNotifications *bool
+	SetPhone                       bool
+	Phone                          *string
+	SetUsername                    bool
+	Username                       *string
+	ID                             uuid.UUID
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
@@ -738,6 +1073,11 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		arg.BirthdayMonth,
 		arg.BirthdayYear,
 		arg.BirthdayHidden,
+		arg.HideMessageTextInNotifications,
+		arg.SetPhone,
+		arg.Phone,
+		arg.SetUsername,
+		arg.Username,
 		arg.ID,
 	)
 	var i User
@@ -772,6 +1112,23 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
+}
+
+const usernameOwner = `-- name: UsernameOwner :one
+SELECT id FROM users WHERE username = $1
+`
+
+// ADR-0077: who holds a nickname (people and bots share the namespace); no rows = free.
+func (q *Queries) UsernameOwner(ctx context.Context, username *string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, usernameOwner, username)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }

@@ -35,6 +35,13 @@ export interface FilterState {
   any: boolean;
 }
 
+/**
+ * Client-only ASSIGNEE value «бывшие участники» (ADR-0097 §4): matches a task that has an assignee
+ * who is no longer a member (`MatchCtx.gone`). The server knows no such id, so a condition that
+ * carries it is never sent (`toTaskFilter`).
+ */
+export const FORMER = '@former';
+
 export const EMPTY_FILTER: FilterState = { conds: [], any: false };
 
 /** A condition is complete (applies) when its op needs no value or it has one. */
@@ -64,7 +71,9 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The wire form: instants (created / updated) as from / to; ESTIMATE GT / LT as `number`. */
 export function toTaskFilter(f: FilterState): TaskFilter {
-  const conditions = activeConds(f).map((c) => {
+  const conditions = activeConds(f)
+    .filter((c) => !c.values.includes(FORMER))
+    .map((c) => {
     const def = fieldDef(c.field);
     if (def?.kind === 'datetime') {
       const [a = '', b = ''] = c.values;
@@ -189,6 +198,8 @@ export interface MatchCtx {
   statuses: Readonly<Record<string, Pick<BoardStatus, 'type'>>>;
   /** Today's key in the viewer's zone ("YYYY-MM-DD"). */
   today: string;
+  /** Not a member of the workspace any more (ADR-0097); absent = nobody is. */
+  gone?: (userId: string) => boolean;
 }
 
 const TYPE_TOKEN: Record<number, string> = {
@@ -267,6 +278,16 @@ function boolMatch(v: boolean, c: Cond): boolean {
   return (c.values[0] ?? 'true') === 'true' ? v : !v;
 }
 
+/** setMatch() that also understands the FORMER token (an assignee who left). */
+function assigneeMatch(have: readonly string[], c: Cond, ctx: MatchCtx): boolean {
+  if (!c.values.includes(FORMER)) return setMatch(have, c, ctx);
+  const rest = { ...c, values: c.values.filter((v) => v !== FORMER) };
+  const former = !!ctx.gone && have.some((id) => ctx.gone?.(id));
+  const other = rest.values.length > 0 && setMatch(have, rest, ctx);
+  if (c.op === TaskOp.IS_NOT || c.op === TaskOp.NONE_OF) return !former && (rest.values.length === 0 || setMatch(have, rest, ctx));
+  return former || other;
+}
+
 export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
   switch (c.field) {
     case TaskField.STATUS:
@@ -274,7 +295,7 @@ export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
     case TaskField.STATUS_TYPE:
       return setMatch([TYPE_TOKEN[ctx.statuses[t.statusId]?.type ?? 0] ?? ''], c, ctx);
     case TaskField.ASSIGNEE:
-      return setMatch(
+      return assigneeMatch(
         t.assignees.map((a) => a.userId),
         c,
         ctx,

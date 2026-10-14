@@ -44,6 +44,7 @@ export function AudioAttachment({
   roomId,
   label,
   subtitle,
+  className,
 }: {
   f: FileMeta;
   messageId: string;
@@ -51,6 +52,8 @@ export function AudioAttachment({
   /** Shown (and in the mini-player) instead of the file name's title / performer (a meeting recording). */
   label?: string;
   subtitle?: string;
+  /** Width classes instead of the bubble's 300 / 260 px (the recording window: the full width). */
+  className?: string;
 }): ReactNode {
   const active = usePlayer((s) => s.track?.fileId === f.id && s.track.messageId === messageId);
   const playing = usePlayer((s) => active && s.playing);
@@ -76,7 +79,7 @@ export function AudioAttachment({
       aria-label={t('media.audio', { name: f.name })}
       data-testid="audio-player"
       data-playing={playing || undefined}
-      className="flex w-[300px] max-w-full items-center gap-3 rounded-[var(--radius-row)] py-1 mobile:w-[260px]"
+      className={cx('flex max-w-full items-center gap-3 rounded-[var(--radius-row)] py-1', className ?? 'w-[300px] mobile:w-[260px]')}
       onKeyDown={(e) => {
         if (isSpace(e) && (e.target === e.currentTarget || (e.target as Element).getAttribute('role') === 'slider')) {
           e.preventDefault();

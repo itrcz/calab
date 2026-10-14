@@ -2,7 +2,6 @@ package boards
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -34,6 +33,15 @@ const (
 	// MaxApprovalReminders: daily reminders of a pending vote (ADR-0049 §5).
 	MaxApprovalReminders = 3
 )
+
+// Why an approver is asked (task_approvers.notify_reason, ADR-0082).
+const (
+	reasonRequested   = "requested"    // became an approver
+	reasonReRequested = "re_requested" // the task changed and the decided vote was reset
+)
+
+// approvalNotifyDelays: the allowed boards.approval_notify_delay_seconds (ADR-0082).
+var approvalNotifyDelays = map[uint32]int32{0: 0, 60: 60, 300: 300, 900: 900, 1800: 1800, 3600: 3600}
 
 // Stored approver states (task_approvers.state).
 const (
@@ -177,8 +185,9 @@ func approverProto(a sqlc.TaskApprover) *v1.TaskApprover {
 		DecidedAt: tsp(a.DecidedAt), AddedBy: idp(a.AddedBy), AddedAt: timestamppb.New(a.AddedAt)}
 }
 
-// approversIn validates a requested approver list (ADR-0049 §1): ≤ 10 distinct members who
-// see the board, not guests nor bots; required 0 = all, else ≤ their number.
+// approversIn validates a requested approver list (ADR-0049 §1, ADR-0059, ADR-0076): ≤ 10
+// distinct members, not guests nor bots, who see the board or will see it through the task
+// (restricted boards too); required 0 = all, else ≤ their number.
 func approversIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, raw []string, required uint32, field, reqField string) ([]uuid.UUID, int16, error) {
 	if len(raw) > MaxApprovers {
 		return nil, 0, httpx.Validation(field, "at most 10 approvers")
@@ -207,12 +216,12 @@ func approversIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, raw []
 		if usr.IsBot || usr.IsGuest {
 			return nil, 0, httpx.Validation(f, "bots and guests cannot approve")
 		}
-		acc, err := res.Board(ctx, boardID, u)
-		if errors.Is(err, perm.ErrNoBoard) || (err == nil && (!acc.Bits.Has(perm.ViewBoard) || acc.Role == perm.RoleGuest)) {
-			return nil, 0, httpx.Validation(f, "the user does not see this board")
-		}
+		ok, err := mayInvite(ctx, q, res, boardID, u)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !ok {
+			return nil, 0, httpx.Validation(f, "the user does not see this board")
 		}
 		out = append(out, u)
 	}
@@ -222,7 +231,7 @@ func approversIn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, raw []
 // writeApprovers makes the task's approvers ids with the quorum required: those who stay keep
 // their votes, removed ones lose them, new ones start pending. Returns the new approvers,
 // the previous list and whether anything changed.
-func writeApprovers(ctx context.Context, q *sqlc.Queries, t taskRow, ids []uuid.UUID, required int16, me uuid.UUID) ([]uuid.UUID, []sqlc.TaskApprover, bool, error) {
+func writeApprovers(ctx context.Context, q *sqlc.Queries, t taskRow, ids []uuid.UUID, required int16, me *uuid.UUID) ([]uuid.UUID, []sqlc.TaskApprover, bool, error) {
 	cur, err := q.ListTaskApprovers(ctx, []uuid.UUID{t.ID})
 	if err != nil {
 		return nil, nil, false, err
@@ -244,7 +253,7 @@ func writeApprovers(ctx context.Context, q *sqlc.Queries, t taskRow, ids []uuid.
 		}
 	}
 	for _, u := range added {
-		if err := q.InsertTaskApprover(ctx, sqlc.InsertTaskApproverParams{TaskID: t.ID, UserID: u, AddedBy: &me}); err != nil {
+		if err := q.InsertTaskApprover(ctx, sqlc.InsertTaskApproverParams{TaskID: t.ID, UserID: u, AddedBy: me}); err != nil {
 			return nil, nil, false, err
 		}
 	}
@@ -273,20 +282,48 @@ func voteStates(as []sqlc.TaskApprover) []string {
 	return out
 }
 
-// notifyApprovers subscribes approvers who see the board and sends them APPROVAL_REQUESTED
-// (mandatory, ADR-0049 §5).
+// notifyApprovers asks approvers for their vote (APPROVAL_REQUESTED, mandatory, ADR-0049 §5):
+// after the board's approval_notify_delay_seconds (ADR-0082, the delivery worker), or at once
+// when the delay is 0.
 func (s *Service) notifyApprovers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, users []uuid.UUID, c *change) error {
+	return s.askApprovers(ctx, q, t, actor, users, reasonRequested, c)
+}
+
+// askApprovers schedules (delay > 0) or sends the approval notice of users with reason
+// (reasonRequested | reasonReRequested). The actor is never asked by their own change.
+func (s *Service) askApprovers(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, users []uuid.UUID, reason string, c *change) error {
+	users = slices.DeleteFunc(slices.Clone(users), func(u uuid.UUID) bool { return u == actor })
 	if len(users) == 0 {
 		return nil
 	}
-	users, err := sees(ctx, q, t.BoardID, users)
+	delay, err := q.BoardApprovalNotifyDelay(ctx, t.BoardID)
+	if err != nil {
+		return err
+	}
+	if delay > 0 {
+		return q.ScheduleApprovalNotices(ctx, sqlc.ScheduleApprovalNoticesParams{TaskID: t.ID, UserIds: users, Delay: delay, Reason: reason})
+	}
+	return s.sendApprovalRequest(ctx, q, t, actor, users, reason == reasonReRequested, c)
+}
+
+// sendApprovalRequest subscribes the approvers who see the task and adds their
+// APPROVAL_REQUESTED notice to c (sent after the commit).
+func (s *Service) sendApprovalRequest(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, users []uuid.UUID, reRequested bool, c *change) error {
+	users, err := sees(ctx, q, t, users)
 	if err != nil || len(users) == 0 {
 		return err
 	}
 	if err := q.Subscribe(ctx, sqlc.SubscribeParams{TaskID: t.ID, UserIds: users}); err != nil {
 		return err
 	}
-	return decide(ctx, q, t, actor, notifications.TaskApprovalRequested, users, uuid.Nil, nil, c)
+	from := len(c.notices)
+	if err := decide(ctx, q, t, actor, notifications.TaskApprovalRequested, users, uuid.Nil, nil, c); err != nil {
+		return err
+	}
+	for i := from; i < len(c.notices); i++ {
+		c.notices[i].reRequested = reRequested
+	}
+	return nil
 }
 
 // notifyOutcome sends APPROVED / REJECTED: mandatory to the task's creator and lead assignee,
@@ -320,7 +357,7 @@ func (s *Service) notifyOutcome(ctx context.Context, q *sqlc.Queries, t taskRow,
 	for _, sb := range subs {
 		add(sb.UserID)
 	}
-	if users, err = sees(ctx, q, t.BoardID, users); err != nil {
+	if users, err = sees(ctx, q, t, users); err != nil {
 		return err
 	}
 	// The creator and the lead get a subscription row (kept muted if they unsubscribed) so the
@@ -340,7 +377,8 @@ func (s *Service) notifyOutcome(ctx context.Context, q *sqlc.Queries, t taskRow,
 }
 
 // resetApprovals: the title, description or its attachments changed (ADR-0049 §3) — every
-// vote goes back to pending, journal "approvals_reset", every approver is asked again.
+// vote goes back to pending, journal "approvals_reset"; the approvers whose decided vote was
+// reset are asked again (re_requested, ADR-0082), pending ones keep their schedule.
 func (s *Service) resetApprovals(ctx context.Context, q *sqlc.Queries, t taskRow, me uuid.UUID, c *change) error {
 	aps, err := q.ListTaskApprovers(ctx, []uuid.UUID{t.ID})
 	if err != nil {
@@ -350,13 +388,14 @@ func (s *Service) resetApprovals(ctx context.Context, q *sqlc.Queries, t taskRow
 	if tl.Approved == 0 && tl.Rejected == 0 {
 		return nil // nothing was decided: nothing to reset
 	}
-	if err := q.ResetTaskApprovals(ctx, t.ID); err != nil {
+	reset, err := q.ResetTaskApprovals(ctx, t.ID)
+	if err != nil {
 		return err
 	}
 	if err := c.record(ctx, q, t, me, "approvals_reset", map[string]any{"approved": tl.Approved, "rejected": tl.Rejected}, nil); err != nil {
 		return err
 	}
-	return s.notifyApprovers(ctx, q, t, me, approverIDs(aps), c)
+	return s.askApprovers(ctx, q, t, me, reset, reasonReRequested, c)
 }
 
 // ---- handlers ----
@@ -387,7 +426,7 @@ func (s *Service) setApprovers(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		added, old, changed, err := writeApprovers(r.Context(), q, t, ids, required, me)
+		added, old, changed, err := writeApprovers(r.Context(), q, t, ids, required, &me)
 		if err != nil || !changed {
 			return err
 		}
@@ -397,31 +436,44 @@ func (s *Service) setApprovers(w http.ResponseWriter, r *http.Request) error {
 		if err := requireFeature(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS, "userIds", sets); err != nil {
 			return err
 		}
-		if err := c.record(r.Context(), q, t, me, "approvers",
-			map[string]any{"user_ids": idsJSON(approverIDs(old)), "required": int(t.ApprovalRequired)},
-			map[string]any{"user_ids": idsJSON(ids), "required": int(required)}); err != nil {
-			return err
-		}
-		if err := s.notifyApprovers(r.Context(), q, t, me, added, &c); err != nil {
-			return err
-		}
-		// Removing a pending approver or lowering the quorum may complete the approval.
-		before := TallyOf(voteStates(old), int(t.ApprovalRequired))
-		t.ApprovalRequired = required
-		after, err := taskTally(r.Context(), q, t)
-		if err != nil {
-			return err
-		}
-		if after.State() == v1.TaskApprovalState_TASK_APPROVAL_STATE_APPROVED && before.State() != after.State() {
-			return s.notifyOutcome(r.Context(), q, t, me, notifications.TaskApproved, &c)
-		}
-		return nil
+		return s.approversChanged(r.Context(), q, t, me, old, ids, added, required, &c)
 	})
 	if err != nil {
 		return err
 	}
 	s.publish(r.Context(), taskID, &c, false)
 	return s.respondTask(w, r, taskID, http.StatusOK, false)
+}
+
+// approversChanged journals a change of the approver list (old → ids, quorum required), asks
+// the added approvers and announces an approval it completes (removing a pending approver or
+// lowering the quorum); such an entry carries approval_state "approved" (ADR-0060 trigger).
+// The PUT route and the rule action set_approvers share it.
+func (s *Service) approversChanged(ctx context.Context, q *sqlc.Queries, t taskRow, me uuid.UUID, old []sqlc.TaskApprover,
+	ids, added []uuid.UUID, required int16, c *change) error {
+	before := TallyOf(voteStates(old), int(t.ApprovalRequired))
+	prevRequired := t.ApprovalRequired
+	t.ApprovalRequired = required
+	after, err := taskTally(ctx, q, t)
+	if err != nil {
+		return err
+	}
+	approved := after.State() == v1.TaskApprovalState_TASK_APPROVAL_STATE_APPROVED && before.State() != after.State()
+	entry := map[string]any{"user_ids": idsJSON(ids), "required": int(required)}
+	if approved {
+		entry["approval_state"] = voteApproved
+	}
+	if err := c.record(ctx, q, t, me, "approvers",
+		map[string]any{"user_ids": idsJSON(approverIDs(old)), "required": int(prevRequired)}, entry); err != nil {
+		return err
+	}
+	if err := s.notifyApprovers(ctx, q, t, me, added, c); err != nil {
+		return err
+	}
+	if approved {
+		return s.notifyOutcome(ctx, q, t, me, notifications.TaskApproved, c)
+	}
+	return nil
 }
 
 var decisionStates = map[v1.TaskApprovalDecision]string{
@@ -490,18 +542,29 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 		if err := q.TouchTask(r.Context(), t.ID); err != nil {
 			return err
 		}
+		// The decision of the task, if this vote makes one (the rule trigger approval_changed).
+		outcome := ""
+		switch {
+		case state == voteRejected && mine.State != voteRejected:
+			outcome = voteRejected
+		case after.State() == v1.TaskApprovalState_TASK_APPROVAL_STATE_APPROVED && before.State() != after.State():
+			outcome = voteApproved
+		}
+		entry := map[string]any{"user_id": me.String(), "state": state, "comment": comment}
+		if outcome != "" {
+			entry["approval_state"] = outcome
+		}
 		if err := c.record(r.Context(), q, t, me, "approval",
-			map[string]any{"user_id": me.String(), "state": mine.State, "comment": mine.Comment},
-			map[string]any{"user_id": me.String(), "state": state, "comment": comment}); err != nil {
+			map[string]any{"user_id": me.String(), "state": mine.State, "comment": mine.Comment}, entry); err != nil {
 			return err
 		}
 		if err := q.Subscribe(r.Context(), sqlc.SubscribeParams{TaskID: t.ID, UserIds: []uuid.UUID{me}}); err != nil {
 			return err
 		}
-		switch {
-		case state == voteRejected && mine.State != voteRejected:
+		switch outcome {
+		case voteRejected:
 			return s.notifyOutcome(r.Context(), q, t, me, notifications.TaskRejected, &c)
-		case after.State() == v1.TaskApprovalState_TASK_APPROVAL_STATE_APPROVED && before.State() != after.State():
+		case voteApproved:
 			return s.notifyOutcome(r.Context(), q, t, me, notifications.TaskApproved, &c)
 		}
 		return nil
@@ -548,7 +611,7 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 					return err
 				}
 				claimed = len(users)
-				if users, err = sees(ctx, q, t.BoardID, users); err != nil || len(users) == 0 {
+				if users, err = sees(ctx, q, t, users); err != nil || len(users) == 0 {
 					return err
 				}
 				return decide(ctx, q, t, uuid.Nil, notifications.TaskApprovalRequested, users, uuid.Nil, nil, &c)

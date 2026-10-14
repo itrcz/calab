@@ -1,5 +1,8 @@
+import type { HostCallsCapability } from '../../shared/hostCalls';
 import type { CalabaApi } from '../../preload/api';
 import type { AuthSession, IpcResult } from '../../shared/ipc';
+import type { MailApi } from '../../shared/mail';
+import type { SessionActivityCapability, HostNotificationsCapability } from '../../shared/hostActivity';
 
 /** Result of a guest sign-in by a room link (ADR-0016). */
 export interface GuestJoin {
@@ -14,11 +17,22 @@ export interface GuestJoin {
  * Platform layer (ADR-0015): everything the renderer needs from its host.
  * `electron` — preload bridge (IPC to main); `web` — browser APIs, same-origin API.
  */
-export interface Platform extends CalabaApi {
+export interface Platform extends Omit<CalabaApi, 'mail'> {
+  /**
+   * The local mail client (ADR-0088): Electron only (the engine is a utilityProcess); undefined on the
+   * web and the phone. The renderer goes through `getMailApi()` (features/mail/api.ts), which may swap in the mock.
+   */
+  mail?: MailApi;
+  /** Optional status-only phone host capability; absent in ordinary browsers/older hosts. */
+  sessionActivity?: SessionActivityCapability;
+  notifications?: HostNotificationsCapability;
+  incomingCalls?: HostCallsCapability;
   kind: 'electron' | 'web';
   finishSso?(): Promise<import('../../shared/ipc').IpcResult<import('../../shared/ipc').SsoResult>>;
   /** Prefix for API paths (`calaba-api://api` in Electron, '' on the web = same origin). */
   apiBase: string;
+  /** The host can capture a screen / window (Electron always; the web needs `getDisplayMedia`, phones have none). */
+  canShareScreen(): boolean;
   /** Authenticated API request (Bearer + one refresh-and-retry on 401 where needed). */
   apiFetch(path: string, init?: RequestInit): Promise<Response>;
   /** Headers for requests the platform cannot wrap itself (XHR uploads). */
@@ -28,6 +42,8 @@ export interface Platform extends CalabaApi {
    * Web: a blob: URL of an authenticated fetch (cached).
    */
   mediaUrl(path: string): Promise<string>;
+  /** Web: the blob: URL of `path` if `mediaUrl` has already loaded it, else null (sync). */
+  loadedMediaUrl?(path: string): string | null;
   /** Whether the platform can hand out a synchronous media URL (no blob fetch needed). */
   directMedia: boolean;
   clearProtectedMedia?(): void;

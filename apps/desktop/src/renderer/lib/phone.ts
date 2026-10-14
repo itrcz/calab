@@ -15,3 +15,11 @@ export function autoFocusAllowed(): boolean {
   if (typeof window === 'undefined' || typeof document === 'undefined') return true;
   return !(document.documentElement.classList.contains('web') && window.matchMedia(MOBILE_QUERY).matches);
 }
+
+/**
+ * The primary input cannot hover (a phone / tablet): tooltips never open and hover-only controls
+ * are unreachable there, so such UI shows its text as a toast / stays visible (docs/08 «Мобильный веб»).
+ */
+export function isTouchPrimary(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches;
+}

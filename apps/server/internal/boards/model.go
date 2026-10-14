@@ -64,7 +64,7 @@ const (
 // ---- board features (ADR-0058 §3) ----
 
 // featureBit is the bit of a feature in boards.disabled_features (bit = the enum value).
-func featureBit(f v1.BoardFeature) int64 { return 1 << uint(f) } //nolint:gosec // 1..13
+func featureBit(f v1.BoardFeature) int64 { return 1 << uint(f) } //nolint:gosec // 1..16
 
 // Disabled reports whether feature f is switched off in a disabled_features mask.
 func Disabled(mask int64, f v1.BoardFeature) bool { return mask&featureBit(f) != 0 }
@@ -169,6 +169,17 @@ func StatusTypeFromDB(s string) v1.BoardStatusType {
 	}
 	return v1.BoardStatusType_BOARD_STATUS_TYPE_UNSPECIFIED
 }
+
+// StatusIcons are the status icon tokens (ADR-0093) in picker order; the same list is TS
+// STATUS_ICONS (packages/protocol), both checked against proto/testdata/status_icons.json.
+// "" (not listed) = the icon of the status type.
+var StatusIcons = []string{
+	"dashed", "circle", "quarter", "half", "three-quarters", "check", "x",
+	"eye", "shield-check", "hourglass", "pause", "flag", "star", "bolt", "rocket", "bug", "inbox", "archive", "lock",
+}
+
+// ValidStatusIcon reports a known icon token or "" (the type's icon).
+func ValidStatusIcon(s string) bool { return s == "" || slices.Contains(StatusIcons, s) }
 
 // Finished reports a completed / cancelled status type.
 func Finished(t string) bool { return t == "completed" || t == "cancelled" }

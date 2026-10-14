@@ -1,4 +1,5 @@
 import { API_ORIGIN } from '../../shared/ipc';
+import { createMailClient } from '../../shared/mail';
 import type { Platform } from './types';
 
 /** Electron: everything goes through the preload bridge; API via the calaba-api:// scheme. */
@@ -7,6 +8,7 @@ export function createElectronPlatform(): Platform {
   return {
     ...c,
     kind: 'electron',
+    canShareScreen: () => true,
     apiBase: API_ORIGIN,
     apiFetch: (path, init) => fetch(`${API_ORIGIN}${path}`, init),
     authHeaders: () => Promise.resolve({}),
@@ -17,5 +19,7 @@ export function createElectronPlatform(): Platform {
     },
     // Room links (ADR-0016): the guest session is created and kept by main (keychain), like a login.
     guestJoin: (code, nickname) => c.auth.guestJoin(code, nickname),
+    // The mail engine (ADR-0088 §7): a typed MailApi over the raw preload bridge.
+    mail: c.mail ? createMailClient(c.mail) : undefined,
   };
 }

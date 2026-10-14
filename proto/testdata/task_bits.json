@@ -1,0 +1,19 @@
+{
+  "_comment": "perm.TaskBits (Go) / taskPermissions (TS), ADR-0059 §2 + ADR-0076 §3. bits: the board bits of the viewer (VIEW_BOARD 131072, CREATE_TASKS 262144, EDIT_TASKS 524288); scoped: BoardAccess.TaskScoped / Board.taskScoped; assignee/approver/watcher: the viewer's role on a live task; want: the expected task bits.",
+  "cases": [
+    { "name": "viewer keeps the board bits", "bits": 393216, "scoped": false, "assignee": false, "approver": false, "watcher": false, "want": 393216 },
+    { "name": "viewer assigned keeps the board bits", "bits": 131072, "scoped": false, "assignee": true, "approver": true, "watcher": true, "want": 131072 },
+    { "name": "editor keeps EDIT_TASKS", "bits": 655360, "scoped": false, "assignee": false, "approver": true, "watcher": false, "want": 655360 },
+    { "name": "viewer watcher keeps the board bits", "bits": 393216, "scoped": false, "assignee": false, "approver": false, "watcher": true, "want": 393216 },
+    { "name": "scoped assignee", "bits": 0, "scoped": true, "assignee": true, "approver": false, "watcher": false, "want": 393216 },
+    { "name": "scoped assignee and approver", "bits": 0, "scoped": true, "assignee": true, "approver": true, "watcher": false, "want": 393216 },
+    { "name": "scoped assignee and watcher", "bits": 0, "scoped": true, "assignee": true, "approver": false, "watcher": true, "want": 393216 },
+    { "name": "scoped approver", "bits": 0, "scoped": true, "assignee": false, "approver": true, "watcher": false, "want": 131072 },
+    { "name": "scoped watcher", "bits": 0, "scoped": true, "assignee": false, "approver": false, "watcher": true, "want": 131072 },
+    { "name": "scoped approver and watcher", "bits": 0, "scoped": true, "assignee": false, "approver": true, "watcher": true, "want": 131072 },
+    { "name": "scoped, another task", "bits": 0, "scoped": true, "assignee": false, "approver": false, "watcher": false, "want": 0 },
+    { "name": "not scoped, invited (guest / bot / archived board)", "bits": 0, "scoped": false, "assignee": true, "approver": true, "watcher": true, "want": 0 },
+    { "name": "not scoped, watcher only", "bits": 0, "scoped": false, "assignee": false, "approver": false, "watcher": true, "want": 0 },
+    { "name": "no access", "bits": 0, "scoped": false, "assignee": false, "approver": false, "watcher": false, "want": 0 }
+  ]
+}

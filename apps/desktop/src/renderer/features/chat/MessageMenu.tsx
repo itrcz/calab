@@ -1,6 +1,6 @@
-import { RoomType, type PermissionBits } from '@calaba/protocol';
+import { RoomType, type FileMeta, type PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Copy, CornerUpLeft, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Copy, CornerUpLeft, Download, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
@@ -9,6 +9,7 @@ import { can, mayPin } from '../../lib/permissions';
 import { firstLink, parseMarkdown } from '../../lib/markdown/parse';
 import { deleteMessage, setEmbedsHidden, setPinned, toggleReaction } from '../../services/chat';
 import { openForward } from '../../services/forward';
+import { platform } from '../../platform';
 import { useRooms } from '../../stores/rooms';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -24,7 +25,7 @@ import { canToggleReaction } from './reactionLimit';
 /** macOS menu look (opaque popover, 28 px rows, accent highlight). */
 export const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-56 rounded-[var(--radius-card)] p-1';
 export const menuItem =
-  'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-body text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';
+  'flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2.5 text-body text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';
 
 /** Text selected inside this message, if any (copy copies the selection first, like Telegram). */
 function selectionWithin(key: string): string {
@@ -45,8 +46,16 @@ function menuPadding(): { top: number; right: number; bottom: number; left: numb
   return { top: 8, right: 8, left: 8, bottom: Math.max(8, window.innerHeight - top + 8) };
 }
 
+/** «Скачать картинку»: the original, the way every attachment is saved (desktop: ~/Downloads; web: <a download>). */
+function downloadImage(f: FileMeta): void {
+  void platform.files.download({ fileId: f.id, name: f.name }).then(
+    () => toast.success(t('chat.downloaded', { name: f.name })),
+    (e: unknown) => toast.fail(e, t('err.ctx.download')),
+  );
+}
+
 /** Right click / long press on a bubble (docs/09 #38); also «Ещё…» of the hover bar (MessageActions.tsx). */
-export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: boolean; roomId: string; perms: PermissionBits }): ReactNode {
+export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; own: boolean; roomId: string; perms: PermissionBits; image?: FileMeta }): ReactNode {
   const m = c.msg;
   const canSend = can(perms, 'SEND_MESSAGES');
   const canManage = can(perms, 'MANAGE_MESSAGES');
@@ -70,8 +79,9 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
       <ContextMenu.Content className={menuBox} aria-label={t('chat.menu')} collisionPadding={menuPadding()}>
         {canSend ? (
           <>
-            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5" role="group" aria-label={t('chat.react')}>
-              {QUICK_REACTIONS.map((e) => {
+            {/* Phone card (≤ 360 px): eight 44 px targets edge to edge; the narrowest phones (card < 352 px) drop the last one. */}
+            <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5 mobile:-mx-1.5 mobile:justify-between mobile:gap-0 mobile:px-0" role="group" aria-label={t('chat.react')}>
+              {QUICK_REACTIONS.map((e, i) => {
                 const mine = m.reactions.some((r) => r.emoji === e && r.me);
                 // Past the per-user limit (docs/09 #27): dimmed; a pick shows the hint instead.
                 const blocked = !canToggleReaction(m.reactions, e);
@@ -85,9 +95,10 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
                       void toggleReaction(roomId, m, e);
                     }}
                     className={cx(
-                      'grid size-8 cursor-default place-items-center rounded-full text-title outline-none transition-transform duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
+                      'grid size-8 cursor-default place-items-center rounded-full text-title outline-none transition-transform mobile:size-11 duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
                       mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]',
                       blocked && 'opacity-40',
+                      i === QUICK_REACTIONS.length - 1 && 'mobile:max-[383px]:hidden',
                     )}
                   >
                     {e}
@@ -104,6 +115,11 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
         {m.content ? (
           <ContextMenu.Item className={menuItem} onSelect={copy}>
             <Copy className="size-4" aria-hidden /> {t('chat.copy')}
+          </ContextMenu.Item>
+        ) : null}
+        {image ? (
+          <ContextMenu.Item className={menuItem} onSelect={() => downloadImage(image)} data-testid="message-download-image">
+            <Download className="size-4" aria-hidden /> {t('chat.downloadImage')}
           </ContextMenu.Item>
         ) : null}
         <ContextMenu.Item className={menuItem} onSelect={() => openForward(roomId, m.id)} data-testid="message-forward">

@@ -43,9 +43,13 @@ UPDATE workspace_roles SET position = $3 WHERE id = $1 AND workspace_id = $2 RET
 DELETE FROM workspace_roles WHERE id = $1 AND workspace_id = $2 AND builtin IS NULL;
 
 -- name: DeleteRoleOverrides :many
--- The deleted role's room and board overrides; returns the affected rooms.
+-- The deleted role's room, board, disk and wiki overrides; returns the affected rooms.
 WITH boards_gone AS (
     DELETE FROM board_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
+), disk_gone AS (
+    DELETE FROM disk_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
+), wiki_gone AS (
+    DELETE FROM wiki_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 )
 DELETE FROM room_permissions WHERE target_type = 'role' AND target_id = sqlc.arg('role_id')::text
 RETURNING room_id;
@@ -64,13 +68,15 @@ ON CONFLICT DO NOTHING;
 DELETE FROM member_roles WHERE workspace_id = $1 AND user_id = $2 AND role_id = $3;
 
 -- name: ListWorkspaceMemberRoles :many
--- Every member's built-in role and role ids (highest first): the gateway's workspace state
--- and guest visibility.
+-- Every member's built-in role and role ids (highest first) and whether it is a bot: the
+-- gateway's workspace state and guest visibility.
 SELECT m.user_id, m.role,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
-                 WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
+                 WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids,
+       u.is_bot
 FROM workspace_members m
+JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1;
 
 -- name: GetMemberAccess :one

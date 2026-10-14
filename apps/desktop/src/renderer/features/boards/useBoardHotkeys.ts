@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { featureOn } from '../../lib/boards/features';
 import { archiveTask, copyTaskKey, copyTaskLink, moveTask } from '../../services/boards';
 import { IS_MAC } from '../../services/hotkeys';
-import { useBoards } from '../../stores/boards';
+import { taskPermsOf, useBoards } from '../../stores/boards';
 import { MY_TASKS, prefsOf, useBoardsUi, type ViewKind } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
@@ -76,8 +76,10 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
       const board = boardId !== MY_TASKS ? s.boards[boardId] : undefined;
       const target = ui.focused ?? ui.taskId;
       const task = target ? s.tasks[target] : undefined;
-      const perms = task ? s.boards[task.boardId]?.permissions : board?.permissions;
       const me = myUserId();
+      // Per-task bits (ADR-0059): a scoped viewer holds them on his own cards only.
+      const perms = task ? taskPermsOf(s, task, me) : board?.permissions;
+      const scoped = !!board?.taskScoped;
       if (h.needsTask && !task) return;
       // ⌘C with text selected is the system copy.
       if ((h.id === 'copyKey' || h.id === 'copyLink') && (window.getSelection()?.toString() ?? '') !== '') return;
@@ -133,7 +135,7 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
               }
             }
             if (!next) return true;
-            if ((id === 'extendUp' || id === 'extendDown') && ui.focused) {
+            if ((id === 'extendUp' || id === 'extendDown') && ui.focused && !scoped) {
               const sel = { ...ui.selected, [ui.focused]: true as const, [next]: true as const };
               ui.setSelected(sel);
             }
@@ -190,7 +192,8 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
             copyTaskLink(task.key);
             return true;
           case 'select':
-            if (!task) return false;
+            // No multi-selection on a board seen only through its cards (no bulk actions, ADR-0059).
+            if (!task || scoped) return false;
             ui.toggleSelected(task.id);
             return true;
           case 'moveLeft':

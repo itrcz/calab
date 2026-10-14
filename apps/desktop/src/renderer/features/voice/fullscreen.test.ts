@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CalabaApi } from '../../../preload/api';
-import { FullscreenState, isExitKey, windowHost } from './fullscreen';
+import { FullscreenState, isExitKey, pickFullscreen, windowHost } from './fullscreen';
 
 /** The preload's `window` API over a fake main: setFullScreen answers with the change event. */
 function fakeIpc() {
@@ -113,5 +113,21 @@ describe('isExitKey', () => {
     expect(isExitKey(k('f', 'KeyF', true, true))).toBe(true);
     expect(isExitKey(k('f', 'KeyF'))).toBe(false);
     expect(isExitKey(k('f', 'KeyF', false, true))).toBe(false);
+  });
+});
+
+describe('pickFullscreen (iPhone has no requestFullscreen on elements)', () => {
+  const video = { webkitEnterFullscreen: () => undefined };
+  it('uses the Fullscreen API where the element has it', () => {
+    const el = { requestFullscreen: () => Promise.resolve(), querySelector: () => video } as never;
+    expect(pickFullscreen(el)).toEqual({ kind: 'element' });
+  });
+  it('falls back to the native player of the inner video', () => {
+    const el = { querySelector: () => video } as never;
+    expect(pickFullscreen(el)).toEqual({ kind: 'video', video });
+  });
+  it('is null when neither exists', () => {
+    expect(pickFullscreen({ querySelector: () => null } as never)).toBeNull();
+    expect(pickFullscreen({ querySelector: () => ({}) } as never)).toBeNull();
   });
 });

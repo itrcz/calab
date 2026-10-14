@@ -9,12 +9,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { PERMISSION_BITS, WorkspaceRole, type PermissionBits, type PermissionName, type Role, type WorkspaceMember } from '@calaba/protocol';
+import { BILLING_PERMISSIONS, PERMISSION_BITS, WorkspaceRole, type PermissionBits, type PermissionName, type Role, type WorkspaceMember } from '@calaba/protocol';
 import { AtSign, Check, ChevronDown, ChevronLeft, ChevronRight, Crown, GripVertical, Plus, ShieldCheck, Trash2, TriangleAlert, UserRound, X } from 'lucide-react';
 import { memo, useId, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Badge, Button, Card, Empty, IconButton, Input, Row, Segmented, Toggle, cx } from '../../components/ui';
+import { Badge, Button, Card, Empty, IconButton, Input, Row, Toggle, cx } from '../../components/ui';
 import { plural, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
@@ -24,6 +24,10 @@ import {
   ROLE_PALETTE,
   ROLE_PERM_GROUPS,
   ROLE_TEMPLATES,
+  BILLING_PERM_BIT,
+  BILLING_PERM_ORDER,
+  billingEditableBits,
+  billingOn,
   botsWithRole,
   canAssignRole,
   canCreateRole,
@@ -44,9 +48,11 @@ import {
   rolesOfMember,
   templateBits,
   templateClipped,
+  toggleBilling,
   topRole,
   uniqueRoleName,
   warnBotsAdmin,
+  type BillingPermName,
   type PermDefault,
   type PermGroupId,
   type RoleActor,
@@ -63,6 +69,7 @@ import { memberItems, type PeoplePickItem } from '../people/memberPickItems';
 import { PERM_HINT, PERM_LABEL } from './RoomDialogs';
 import { toggleMemberRole } from '../people/actions';
 import { nameOf } from '../people/members';
+import { Choice } from '../../components/Choice';
 
 /*
  * Workspace settings → «Роли» (ADR-0026, ADR-0048 §3, docs/08 «Роли»): the list (colour, member
@@ -86,6 +93,18 @@ const GROUP_LABEL: Record<PermGroupId, MessageKey> = {
   recordings: 'roles.group.recordings',
   integrations: 'roles.group.integrations',
   journals: 'roles.group.journals',
+};
+
+/** The «Биллинг» group (ADR-0087): label and «что даёт» of each bit. */
+const BILLING_LABEL: Record<BillingPermName, MessageKey> = {
+  BILLING_VIEW: 'perm.BILLING_VIEW',
+  BILLING_TOPUP: 'perm.BILLING_TOPUP',
+  BILLING_MANAGE: 'perm.BILLING_MANAGE',
+};
+const BILLING_HINT: Record<BillingPermName, MessageKey> = {
+  BILLING_VIEW: 'perm.hint.BILLING_VIEW',
+  BILLING_TOPUP: 'perm.hint.BILLING_TOPUP',
+  BILLING_MANAGE: 'perm.hint.BILLING_MANAGE',
 };
 
 const DEFAULT_LABEL: Record<PermDefault, MessageKey> = {
@@ -295,6 +314,7 @@ function RoleCard({ workspaceId, role, onBack }: { workspaceId: string; role: Ro
   const name = roleName(role);
   const editable = canEditRole(actor, role);
   const bits = editableBits(actor, role);
+  const billingBits = billingEditableBits(actor, role);
   const full = isFullRole(role);
 
   const patch = async (init: Parameters<typeof api.roles.update>[2]): Promise<void> => {
@@ -365,6 +385,7 @@ function RoleCard({ workspaceId, role, onBack }: { workspaceId: string; role: Ro
             idPrefix={role.id}
             bits={role.permissions}
             editable={bits}
+            billingEditable={billingBits}
             guest={role.builtin === WorkspaceRole.GUEST}
             lockedHint={editable}
             onChange={(p) => void patch({ permissions: p })}
@@ -506,6 +527,7 @@ function PermissionMatrix({
   idPrefix,
   bits,
   editable,
+  billingEditable,
   guest,
   lockedHint,
   onChange,
@@ -513,6 +535,8 @@ function PermissionMatrix({
   idPrefix: string;
   bits: PermissionBits;
   editable: PermissionBits;
+  /** Billing bits I may toggle (ADR-0087: the owner only; lib/roles billingEditableBits). */
+  billingEditable: PermissionBits;
   guest: boolean;
   /** The role is editable by me: a disabled bit explains itself. */
   lockedHint: boolean;
@@ -549,6 +573,31 @@ function PermissionMatrix({
           </Card>
         );
       })}
+      {guest ? null : (
+        <Card title={t('roles.group.billing')} footer={t('roles.billing.footer')}>
+          <div data-testid="role-billing-group">
+            {BILLING_PERM_ORDER.map((p) => {
+              const on = billingOn(bits, p);
+              const can = (billingEditable & BILLING_PERM_BIT[p]) !== 0n;
+              const id = `perm-${idPrefix}-${p}`;
+              return (
+                <Row key={p} label={t(BILLING_LABEL[p])} hint={`${t(BILLING_HINT[p])} · ${t('perm.default.nobody')}`} htmlFor={id}>
+                  <input
+                    id={id}
+                    type="checkbox"
+                    checked={on}
+                    disabled={!can}
+                    title={!can && lockedHint ? t('roles.billing.ownerOnly') : undefined}
+                    data-testid={`role-perm-${p}`}
+                    onChange={(e) => onChange(toggleBilling(bits, p, e.target.checked))}
+                    className="size-[18px] cursor-pointer rounded-[4px] accent-[var(--color-accent-strong)] disabled:cursor-default disabled:opacity-50"
+                  />
+                </Row>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </>
   );
 }
@@ -639,6 +688,7 @@ function RoleDraft({ workspaceId, onCancel, onCreated }: { workspaceId: string; 
   const [error, setError] = useState<string | null>(null);
   const errId = useId();
   const editable = useMemo(() => editableBits(actor, { position: 2, builtin: WorkspaceRole.UNSPECIFIED }), [actor]);
+  const billingEditable = billingEditableBits(actor, { position: 2, builtin: WorkspaceRole.UNSPECIFIED });
   const problem = roleNameError(name, roles);
   const clipped = templateClipped(tpl, editable) !== 0n;
 
@@ -710,12 +760,12 @@ function RoleDraft({ workspaceId, onCancel, onCreated }: { workspaceId: string; 
       </Card>
       <Card title={t('roles.tpl.label')} footer={t('roles.tpl.hint')}>
         <div className="flex flex-col gap-2 px-3 py-2.5" data-testid="role-template">
-          <Segmented label={t('roles.tpl.label')} value={tpl} onChange={apply} options={ROLE_TEMPLATES.map((x) => ({ value: x.id, label: t(TEMPLATE_LABEL[x.id]) }))} />
+          <Choice label={t('roles.tpl.label')} value={tpl} onChange={apply} options={ROLE_TEMPLATES.map((x) => ({ value: x.id, label: t(TEMPLATE_LABEL[x.id]) }))} />
           {tpl === 'observer' ? <p className="text-caption text-muted">{t('roles.tpl.observerNote')}</p> : null}
           {clipped ? <p className="text-caption text-muted" data-testid="role-template-clipped">{t('roles.tpl.clipped')}</p> : null}
         </div>
       </Card>
-      <PermissionMatrix idPrefix="new" bits={bits} editable={editable} guest={false} lockedHint onChange={setBits} />
+      <PermissionMatrix idPrefix="new" bits={bits} editable={editable} billingEditable={billingEditable} guest={false} lockedHint onChange={setBits} />
       <RolePreview workspaceId={workspaceId} roleId="" position={2} builtin={WorkspaceRole.UNSPECIFIED} bits={bits} />
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel}>
@@ -754,7 +804,12 @@ function RoleMembers({ workspaceId, role, actor, onError }: { workspaceId: strin
   }
   const assignable = (m: WorkspaceMember): boolean => {
     const theirs = rolesOfMember(all, m);
-    return canAssignRole(actor, role, topRole(theirs)?.position ?? -1, m.user?.id === me) && !(role.builtin === WorkspaceRole.ADMIN && m.role === WorkspaceRole.GUEST);
+    return (
+      canAssignRole(actor, role, topRole(theirs)?.position ?? -1, m.user?.id === me) &&
+      !(role.builtin === WorkspaceRole.ADMIN && m.role === WorkspaceRole.GUEST) &&
+      // ADR-0087: bots never hold billing bits.
+      !(m.user?.isBot && (role.permissions & BILLING_PERMISSIONS) !== 0n)
+    );
   };
   const held = new Set(list.map((m) => m.user?.id ?? ''));
   const items = memberItems(Object.values(entry.members), {

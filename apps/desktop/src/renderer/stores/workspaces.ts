@@ -9,8 +9,11 @@ import type {
   WorkspaceMember,
   WorkspaceSnapshot,
 } from '@calaba/protocol';
-import { WorkspaceRole } from '@calaba/protocol';
+import { BillingState, FormerMemberReason, UserSchema, WorkspaceBillingStatusSchema, WorkspaceRole } from '@calaba/protocol';
+import type { FormerMemberInfo, UserRef } from '@calaba/protocol';
+import { create as createMessage } from '@bufbuild/protobuf';
 import { create } from 'zustand';
+import { useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { t } from '../i18n';
 import { customLook, legacyRoles, rolesOfMember, sortRoles } from '../lib/roles';
@@ -32,6 +35,20 @@ export interface WorkspaceEntry {
   voice: Record<string, VoiceState>;
 }
 
+/** Why and when a user is no longer a member of one workspace (ADR-0097); `leftAt` in epoch ms, 0 = unknown. */
+export interface FormerInfo {
+  leftAt: number;
+  reason: FormerMemberReason;
+}
+
+/** Key of `former`: the flag is per workspace (a person can be a member of one and gone from another). */
+export const formerKey = (wsId: string, userId: string): string => `${wsId}:${userId}`;
+
+const formerOf = (info: Pick<FormerMemberInfo, 'leftAt' | 'reason'> | undefined): FormerInfo => ({
+  leftAt: info?.leftAt ? Number(info.leftAt.seconds) * 1000 : 0,
+  reason: info?.reason ?? FormerMemberReason.UNSPECIFIED,
+});
+
 interface WorkspacesState {
   byId: Record<string, WorkspaceEntry>;
   order: string[];
@@ -39,9 +56,16 @@ interface WorkspacesState {
   presences: Record<string, Presence>;
   /** Profiles of everyone we share a workspace with. */
   users: Record<string, User>;
+  /** `formerKey(ws, user)` → who left this workspace; the profile itself stays in `users` (ADR-0097 §5). */
+  former: Record<string, FormerInfo>;
   reset: () => void;
   applySnapshot: (s: WorkspaceSnapshot) => void;
   remove: (workspaceId: string) => void;
+  /**
+   * The workspace was closed for unpaid billing (ADR-0080 §8): keep who it is and my role (the
+   * paywall / the notice), drop everything of its content.
+   */
+  toBillingStub: (workspaceId: string) => void;
   updateWorkspace: (ws: Workspace) => void;
   upsertMember: (m: WorkspaceMember) => void;
   /** My own member record changed (WORKSPACE_MEMBER_UPDATE): the entry's built-in role follows it. */
@@ -59,7 +83,10 @@ interface WorkspacesState {
   upsertBackground: (b: WorkspaceBackground) => void;
   /** BACKGROUND_DELETE. */
   removeBackground: (workspaceId: string, backgroundId: string) => void;
-  removeMember: (workspaceId: string, userId: string) => void;
+  /** `former` set: the profile stays and is marked (ADR-0097 §5); unset: the profile is dropped as before. */
+  removeMember: (workspaceId: string, userId: string, former?: FormerMemberInfo) => void;
+  /** GET …/users?ids=: profiles of past members; unknown ones are filled in, a former mark is set. */
+  applyUserRefs: (workspaceId: string, refs: readonly UserRef[]) => void;
   setPresence: (p: Presence) => void;
   setVoiceState: (v: VoiceState) => void;
   /** ROOM_DELETE (deleted or no longer visible): nobody is shown in that room any more. */
@@ -68,10 +95,23 @@ interface WorkspacesState {
 }
 
 /**
+ * Contacts (ADR-0077) arrive only where the server may show them, judged per workspace: a User
+ * without email says nothing about them (a guest's view of the same person in another workspace,
+ * an event that does not carry them). Such a copy keeps the contacts already known; a User with
+ * email replaces them (a cleared phone included). Who sees them is decided when shown
+ * (features/people/contacts.ts).
+ */
+export function keepContacts(prev: User | undefined, next: User): User {
+  if (next.email || !prev || (!prev.email && !prev.phone)) return next;
+  return { ...next, email: prev.email, emailVerified: prev.emailVerified, phone: prev.phone };
+}
+
+/**
  * A user object lives in `users` and, per workspace, inside `members[id].user` (READY snapshots);
  * the member list renders the latter, so a profile / custom status change has to reach both.
  */
-const withUser = (s: WorkspacesState, u: User): Partial<WorkspacesState> => {
+const withUser = (s: WorkspacesState, next: User): Partial<WorkspacesState> => {
+  const u = keepContacts(s.users[next.id], next);
   const byId = { ...s.byId };
   let touched = false;
   for (const [wsId, e] of Object.entries(byId)) {
@@ -97,17 +137,24 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
   order: [],
   presences: {},
   users: {},
-  reset: () => set({ byId: {}, order: [], presences: {}, users: {} }),
+  former: {},
+  reset: () => set({ byId: {}, order: [], presences: {}, users: {}, former: {} }),
   applySnapshot: (snap) =>
     set((s) => {
       const ws = snap.workspace;
       if (!ws) return {};
       const members: Record<string, WorkspaceMember> = {};
       const users = { ...s.users };
+      let former = s.former;
       for (const m of snap.members) {
         if (!m.user) continue;
-        members[m.user.id] = m;
-        users[m.user.id] = m.user;
+        if (m.user.id && formerKey(ws.id, m.user.id) in former) {
+          if (former === s.former) former = { ...former };
+          delete former[formerKey(ws.id, m.user.id)];
+        }
+        const u = keepContacts(users[m.user.id], m.user);
+        members[u.id] = u === m.user ? m : { ...m, user: u };
+        users[u.id] = u;
       }
       const voice: Record<string, VoiceState> = {};
       for (const v of snap.voiceStates) if (v.roomId) voice[v.userId] = v;
@@ -119,7 +166,7 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       for (const b of snap.badges) badges[b.id] = b;
       const backgrounds: Record<string, WorkspaceBackground> = {};
       for (const b of snap.backgrounds) backgrounds[b.id] = b;
-      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, badges, backgrounds, voice } }, order, presences, users };
+      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, badges, backgrounds, voice } }, order, presences, users, former };
     }),
   remove: (id) =>
     set((s) => {
@@ -127,14 +174,34 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       delete byId[id];
       return { byId, order: s.order.filter((x) => x !== id) };
     }),
+  toBillingStub: (id) =>
+    set((s) =>
+      withEntry(s, id, (e) => ({
+        ws: { ...e.ws, billing: createMessage(WorkspaceBillingStatusSchema, { suspendAt: e.ws.billing?.suspendAt, source: e.ws.billing?.source, state: BillingState.SUSPENDED }) },
+        role: e.role,
+        members: {},
+        roles: legacyRoles(id),
+        badges: {},
+        backgrounds: {},
+        voice: {},
+      })),
+    ),
   updateWorkspace: (ws) => set((s) => withEntry(s, ws.id, (e) => ({ ...e, ws }))),
   upsertMember: (m) =>
     set((s) => {
       if (!m.user) return {};
-      const user = m.user;
+      const user = keepContacts(s.users[m.user.id], m.user);
+      const member = user === m.user ? m : { ...m, user };
+      const key = formerKey(m.workspaceId, user.id);
+      let former = s.former;
+      if (key in former) {
+        former = { ...former };
+        delete former[key];
+      }
       return {
-        ...withEntry(s, m.workspaceId, (e) => ({ ...e, members: { ...e.members, [user.id]: m } })),
+        ...withEntry(s, m.workspaceId, (e) => ({ ...e, members: { ...e.members, [user.id]: member } })),
         users: { ...s.users, [user.id]: user },
+        ...(former !== s.former ? { former } : {}),
       };
     }),
   setMyRole: (wsId, role) => set((s) => withEntry(s, wsId, (e) => (e.role === role ? e : { ...e, role }))),
@@ -177,16 +244,41 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
         return { ...e, backgrounds };
       }),
     ),
-  removeMember: (wsId, userId) =>
-    set((s) =>
-      withEntry(s, wsId, (e) => {
+  removeMember: (wsId, userId, formerInfo) =>
+    set((s) => ({
+      ...withEntry(s, wsId, (e) => {
         const members = { ...e.members };
         delete members[userId];
         const voice = { ...e.voice };
         delete voice[userId];
         return { ...e, members, voice };
       }),
-    ),
+      ...(formerInfo ? { former: { ...s.former, [formerKey(wsId, userId)]: formerOf(formerInfo) } } : {}),
+    })),
+  applyUserRefs: (wsId, refs) =>
+    set((s) => {
+      if (refs.length === 0) return {};
+      const users = { ...s.users };
+      const former = { ...s.former };
+      const members = s.byId[wsId]?.members ?? {};
+      for (const r of refs) {
+        if (!r.userId) continue;
+        // A richer profile we already hold (snapshot, events) wins; the ref only fills the gap.
+        if (!users[r.userId]) {
+          users[r.userId] = createMessage(UserSchema, {
+            id: r.userId,
+            displayName: r.displayName,
+            avatarFileId: r.avatarFileId,
+            isGuest: r.isGuest,
+            isBot: r.isBot,
+          });
+        }
+        const key = formerKey(wsId, r.userId);
+        if (r.former && !members[r.userId]) former[key] = formerOf(r);
+        else delete former[key];
+      }
+      return { users, former };
+    }),
   // PRESENCE_UPDATE also carries the custom status (docs/05): the member list, profile and
   // header read it from `users`, so keep that copy in sync (set / edited / cleared / expired).
   setPresence: (p) =>
@@ -227,8 +319,35 @@ export function memberName(wsId: string | null, userId: string): string {
   return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || t('common.unknownUser');
 }
 
+type UnknownUserHandler = (wsId: string, userId: string) => void;
+let onUnknownUser: UnknownUserHandler | undefined;
+/** services/users registers the batching resolver here (the store must not import services). */
+export function setUnknownUserHandler(fn: UnknownUserHandler): void {
+  onUnknownUser = fn;
+}
+
+/** The profile of a past or present member is not in the store: ask the resolver (once, batched). */
+export function useResolveUnknown(wsId: string | null | undefined, userId: string): void {
+  // Known = a member (or already marked); a profile held from elsewhere still lacks the per-workspace «former» mark.
+  const known = useWorkspaces((st) => !userId || !wsId || !!st.byId[wsId]?.members[userId] || formerKey(wsId, userId) in st.former);
+  useEffect(() => {
+    if (!known && wsId && userId) onUnknownUser?.(wsId, userId);
+  }, [known, wsId, userId]);
+}
+
+/** Former-member mark of the user in this workspace (a stable store object), undefined for a member. */
+export function useFormerInfo(wsId: string | null | undefined, userId: string): FormerInfo | undefined {
+  return useWorkspaces((st) => (wsId && userId ? st.former[formerKey(wsId, userId)] : undefined));
+}
+
+/** Non-reactive useFormerInfo(). */
+export function formerInfo(wsId: string | null | undefined, userId: string): FormerInfo | undefined {
+  return wsId && userId ? useWorkspaces.getState().former[formerKey(wsId, userId)] : undefined;
+}
+
 /** Reactive memberName(): re-renders when the nickname or profile name changes. */
 export function useMemberName(wsId: string | null, userId: string): string {
+  useResolveUnknown(wsId, userId);
   return useWorkspaces((st) => {
     const m = wsId ? st.byId[wsId]?.members[userId] : undefined;
     return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || t('common.unknownUser');

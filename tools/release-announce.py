@@ -7,7 +7,7 @@
 Env:
   CALAB_RELEASE_BOT_TOKEN  bot token (required unless --dry-run); sent only as `Authorization: Bearer`
   CALAB_API_URL            default https://app.calab.io
-  CALAB_RELEASE_ROOM       default «Calab - что нового? ✨» (exact room name)
+  CALAB_RELEASE_ROOM       default «Что нового? ✨» (exact room name)
 
 If the section has a `### Коротко` block (3-7 one-line bullets), only it is posted: header, the bullets,
 footer — no link (owner, 03.10). Without it the whole section is rendered (old versions, --all).
@@ -35,7 +35,7 @@ import urllib.request
 
 MAX_CONTENT = 4000  # runes; apps/server/internal/messages MaxContent
 DEFAULT_API = "https://app.calab.io"
-DEFAULT_ROOM = "Calab - что нового? ✨"
+DEFAULT_ROOM = "Что нового? ✨"
 
 # Section order and emoji; «Обновление» (operator notes: migrations, env) is never posted.
 SECTIONS = [("Добавлено", "✨"), ("Изменено", "🔧"), ("Исправлено", "🐞"),

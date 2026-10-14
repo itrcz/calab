@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
@@ -38,44 +40,79 @@ const (
 	evCommentPfx   = "task.comment."
 )
 
-// taskTx is s.tx for task mutations: after fn, in the same transaction, the journal entries
-// collected in c are queued for the board webhooks; the worker is woken after the commit.
+// taskTx is s.tx for task mutations: after fn, in the same transaction, the board's automation
+// rules run on the journal entries collected in c (ADR-0060), then every entry — the change's
+// and the rules' — is queued for the board webhooks; after the commit the worker is woken and
+// what the rules did is published.
 func (s *Service) taskTx(ctx context.Context, c *change, fn func(q *sqlc.Queries, tx pgx.Tx) error) error {
 	queued := 0
 	err := s.tx(ctx, func(q *sqlc.Queries, tx pgx.Tx) error {
+		c.auto = nil // a retried closure starts clean
 		if err := fn(q, tx); err != nil {
 			return err
 		}
+		if err := s.runRules(ctx, q, tx, c); err != nil {
+			return err
+		}
+		if err := s.syncMilestones(ctx, q, tx, c); err != nil { // ADR-0063 §2
+			return err
+		}
+		acts := c.acts
+		var rules map[uuid.UUID]string
+		if c.auto != nil {
+			acts = append(slices.Clip(acts), c.auto.acts...)
+			rules = c.auto.ruleNames
+		}
 		var err error
-		queued, err = s.webhookOutbox(ctx, q, tx, c.acts)
+		queued, err = s.webhookOutbox(ctx, q, tx, acts, rules)
 		return err
 	})
-	if err == nil && queued > 0 {
+	if err != nil {
+		return err
+	}
+	if queued > 0 {
 		s.hooks.wake()
 	}
-	return err
+	s.publishAuto(ctx, c.auto)
+	return nil
 }
 
-// webhookOutbox queues the journal entries of one transaction: one event per task (a move
-// between boards: moved_out to the old board and moved_in to the new one). Returns how many
-// deliveries were queued.
-func (s *Service) webhookOutbox(ctx context.Context, q *sqlc.Queries, tx sqlc.DBTX, acts []sqlc.TaskActivity) (int, error) {
+// webhookOutbox queues the journal entries of one transaction: one event per task and author —
+// the change itself, and each automation rule that acted (actor null, rule set; names: the rules
+// by id) — a move between boards making moved_out to the old board and moved_in to the new one.
+// Returns how many deliveries were queued.
+func (s *Service) webhookOutbox(ctx context.Context, q *sqlc.Queries, tx sqlc.DBTX, acts []sqlc.TaskActivity, names map[uuid.UUID]string) (int, error) {
 	if len(acts) == 0 {
 		return 0, nil
 	}
-	var order []uuid.UUID
-	byTask := map[uuid.UUID][]sqlc.TaskActivity{}
+	type group struct {
+		task uuid.UUID
+		rule uuid.UUID // Nil: not a rule
+	}
+	var order []group
+	by := map[group][]sqlc.TaskActivity{}
 	for _, a := range acts {
-		if _, ok := byTask[a.TaskID]; !ok {
-			order = append(order, a.TaskID)
+		if isCommentKind(a.Kind) {
+			continue // task.comment.* go from the comment hooks, not as task.updated (ADR-0091)
 		}
-		byTask[a.TaskID] = append(byTask[a.TaskID], a)
+		g := group{task: a.TaskID}
+		if a.RuleID != nil {
+			g.rule = *a.RuleID
+		}
+		if _, ok := by[g]; !ok {
+			order = append(order, g)
+		}
+		by[g] = append(by[g], a)
 	}
 	n := 0
-	for _, id := range order {
-		as := byTask[id]
+	for _, g := range order {
+		as := by[g]
+		var rule *v1.BoardWebhookEvent_Rule
+		if g.rule != uuid.Nil {
+			rule = &v1.BoardWebhookEvent_Rule{Id: g.rule.String(), Name: names[g.rule]}
+		}
 		for _, e := range taskEvents(as) {
-			ok, err := s.enqueueWebhook(ctx, q, tx, e.board, e.typ, as[0].ActorID, id, as, nil)
+			ok, err := s.enqueueWebhook(ctx, q, tx, e.board, e.typ, as[0].ActorID, g.task, as, nil, rule)
 			if err != nil {
 				return n, err
 			}
@@ -121,7 +158,7 @@ func taskEvents(as []sqlc.TaskActivity) []boardEvent {
 // is not archived and its workspace's plan includes webhooks (else nothing: paused). q / tx
 // belong to the transaction of the change. true = queued.
 func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.DBTX, board uuid.UUID, typ string,
-	actor *uuid.UUID, taskID uuid.UUID, as []sqlc.TaskActivity, comment *v1.BoardWebhookEvent_Comment) (bool, error) {
+	actor *uuid.UUID, taskID uuid.UUID, as []sqlc.TaskActivity, comment *v1.BoardWebhookEvent_Comment, rule *v1.BoardWebhookEvent_Rule) (bool, error) {
 	wh, err := q.GetBoardWebhook(ctx, board)
 	if db.IsNotFound(err) {
 		return false, nil // the common case: one index lookup
@@ -147,6 +184,7 @@ func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.D
 	if err != nil {
 		return false, err
 	}
+	ev.Rule = rule
 	if typ == evTaskMovedOut {
 		movedOut(ev, board, taskID, as)
 		return s.insertWebhook(ctx, q, board, seq, typ, ev)
@@ -164,7 +202,10 @@ func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.D
 		ev.TaskUrl = strings.TrimRight(s.PublicURL, "/") + "/t/" + pbs[0].GetKey()
 	}
 	for _, a := range as {
-		ev.Changes = append(ev.Changes, &v1.BoardWebhookEvent_Change{Field: a.Kind, Before: jsonStruct(a.Before), After: jsonStruct(a.After)})
+		// The other task of a relation / parent by id only: it may be on a board the webhook's
+		// board does not show (ADR-0059).
+		ev.Changes = append(ev.Changes, &v1.BoardWebhookEvent_Change{Field: a.Kind,
+			Before: jsonStruct(withoutTaskRef(a.Kind, a.Before)), After: jsonStruct(withoutTaskRef(a.Kind, a.After))})
 	}
 	ev.Comment = comment
 	return s.insertWebhook(ctx, q, board, seq, typ, ev)
@@ -222,36 +263,33 @@ func (s *Service) webhookEvent(ctx context.Context, q *sqlc.Queries, b sqlc.Boar
 	return ev, nil
 }
 
-// TaskCommentHook queues task.comment.<kind> ("created", "updated", "deleted") of a comment
-// after it committed (messages.Handlers.TaskCommentHook; created via TaskHook). The window
-// between the message commit and this transaction is accepted (ADR-0058 §4). A deleted comment
-// goes without its text and attachments.
-func (s *Service) TaskCommentHook(ctx context.Context, acc perm.RoomAccess, kind string, msg sqlc.Message, actor uuid.UUID) {
-	if !acc.Task {
-		return
+// commentWebhook queues task.comment.<kind> ("created", "updated", "deleted") of a comment of
+// task t in the transaction of q / tx; files: its attachments. A deleted comment goes without
+// its text and attachments. true = queued.
+func (s *Service) commentWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.DBTX, t taskRow, kind string, msg sqlc.Message,
+	files []sqlc.ListAttachmentsRow, actor uuid.UUID) (bool, error) {
+	c := &v1.BoardWebhookEvent_Comment{Id: msg.ID.String(), AuthorId: msg.AuthorID.String(),
+		CreatedAt: timestamppb.New(msg.CreatedAt), EditedAt: tsp(msg.EditedAt), Attachments: []*v1.BoardWebhookEvent_CommentAttachment{}}
+	if kind != "deleted" {
+		c.Text = msg.Content
+		for _, r := range files {
+			c.Attachments = append(c.Attachments, &v1.BoardWebhookEvent_CommentAttachment{
+				Name: r.File.Name, Size: uint64(max(r.File.Size, 0)), Mime: r.File.Mime}) //nolint:gosec // a size
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
+	return s.enqueueWebhook(ctx, q, tx, t.BoardID, evCommentPfx+kind, &actor, t.ID, nil, c, nil)
+}
+
+// commentCreated queues task.comment.created after TaskHook committed (its own transaction: the
+// window between the commits is accepted, ADR-0058 §4).
+func (s *Service) commentCreated(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message, files []sqlc.ListAttachmentsRow) {
 	queued := false
 	err := s.tx(ctx, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, ok, err := taskByID(ctx, tx, acc.TaskID, false)
 		if err != nil || !ok {
 			return err
 		}
-		c := &v1.BoardWebhookEvent_Comment{Id: msg.ID.String(), AuthorId: msg.AuthorID.String(),
-			CreatedAt: timestamppb.New(msg.CreatedAt), EditedAt: tsp(msg.EditedAt), Attachments: []*v1.BoardWebhookEvent_CommentAttachment{}}
-		if kind != "deleted" {
-			c.Text = msg.Content
-			rows, err := q.ListAttachments(ctx, []uuid.UUID{msg.ID})
-			if err != nil {
-				return err
-			}
-			for _, r := range rows {
-				c.Attachments = append(c.Attachments, &v1.BoardWebhookEvent_CommentAttachment{
-					Name: r.File.Name, Size: uint64(max(r.File.Size, 0)), Mime: r.File.Mime}) //nolint:gosec // a size
-			}
-		}
-		queued, err = s.enqueueWebhook(ctx, q, tx, t.BoardID, evCommentPfx+kind, &actor, t.ID, nil, c)
+		queued, err = s.commentWebhook(ctx, q, tx, t, "created", msg, files, msg.AuthorID)
 		return err
 	})
 	if err != nil {
@@ -261,4 +299,61 @@ func (s *Service) TaskCommentHook(ctx context.Context, acc perm.RoomAccess, kind
 	if queued {
 		s.hooks.wake()
 	}
+}
+
+// TaskCommentHook runs after an edit or a deletion of a task comment committed
+// (messages.Handlers.TaskCommentHook): one transaction journals it — comment_edit with the text
+// before and after (merged per comment, ADR-0081 / ADR-0091; an edit that changed no text makes
+// none), comment_delete with the comment as it was and its author — and queues
+// task.comment.updated / deleted (ADR-0058 §4). The entry goes out as TASK_ACTIVITY.
+func (s *Service) TaskCommentHook(ctx context.Context, acc perm.RoomAccess, ch messages.TaskCommentChange) {
+	if !acc.Task {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	var c change
+	queued := false
+	err := s.taskTx(ctx, &c, func(q *sqlc.Queries, tx pgx.Tx) error {
+		c.acts, c.journal = nil, nil // a retried closure starts clean
+		// Locked like any task write: a merge of edits (ADR-0081) reads and replaces the entry.
+		t, ok, err := taskByID(ctx, tx, acc.TaskID, true)
+		if err != nil || !ok {
+			return err
+		}
+		switch ch.Kind {
+		case "updated":
+			rows, err := q.ListAttachments(ctx, []uuid.UUID{ch.Msg.ID})
+			if err != nil {
+				return err
+			}
+			if ch.Before != ch.Msg.Content { // the files of a comment do not change on an edit
+				files := attachmentsSnap(rows)
+				prev := ch.Msg
+				prev.Content = ch.Before
+				if err := c.record(ctx, q, t, ch.Actor, kindCommentEdit, commentSnap(prev, files), commentSnap(ch.Msg, files)); err != nil {
+					return err
+				}
+			}
+			queued, err = s.commentWebhook(ctx, q, tx, t, ch.Kind, ch.Msg, rows, ch.Actor)
+			return err
+		case "deleted":
+			before := commentSnap(ch.Msg, attachmentsSnap(ch.Files))
+			before["author_id"] = ch.Msg.AuthorID.String()
+			if err := c.record(ctx, q, t, ch.Actor, kindCommentDelete, before, nil); err != nil {
+				return err
+			}
+			queued, err = s.commentWebhook(ctx, q, tx, t, ch.Kind, ch.Msg, nil, ch.Actor)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "boards: comment hook", "task", acc.TaskID, "kind", ch.Kind, "err", err)
+		return
+	}
+	if queued {
+		s.hooks.wake()
+	}
+	s.publishJournal(ctx, c.journal)
 }

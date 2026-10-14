@@ -129,6 +129,7 @@ func TestTaskApprovals(t *testing.T) {
 	o.must(200, "PUT", "/api/tasks/"+id+"/approvers", &v1.SetTaskApproversRequest{UserIds: []string{bob.id, carol.id}, Required: 1}, nil)
 	patchTask(t, o, id, &v1.UpdateTaskRequest{StatusId: &doing}, 409) // 1 of 2 approved, but vetoed
 	gateRefused(t, o.client, 1, 1)
+	ageActivity(t, id) // else required 1 and back merge into nothing (ADR-0081)
 	setApprovers(o, id, 200, 0, bob.id, carol.id)
 	// Withdraw: back to pending; then approve: all approved → forward allowed.
 	if a := voteTask(carol, id, 200, withdraw, "ignored").GetApprovers()[1]; a.GetState() != v1.ApproverState_APPROVER_STATE_PENDING || a.GetComment() != "" || a.GetDecidedAt() != nil {
@@ -241,6 +242,8 @@ func TestTaskApprovalNotifications(t *testing.T) {
 	wid := ws.GetId()
 	carol := register(t, invite(t, o, wid))
 	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Notify approvals", Key: "NAP"}, 201)
+	// Immediate notices on this board (the default delay is a minute, ADR-0082).
+	setNotifyDelay(t, o, b.GetId(), 0, 200)
 	levelNone := v1.NotificationLevel_NOTIFICATION_LEVEL_NONE
 	for _, u := range []*user{o, bob, carol} {
 		u.must(200, "PUT", "/api/workspaces/"+wid+"/notifications", &v1.UpdateWorkspaceNotificationSettingsRequest{TaskLevel: &levelNone}, nil)
@@ -277,7 +280,10 @@ func TestTaskApprovalNotifications(t *testing.T) {
 	bob.must(200, "PUT", "/api/tasks/"+task.GetId()+"/subscription", &v1.SetTaskSubscriptionRequest{Muted: true}, nil)
 	title := "Бюджет v2"
 	patchTask(t, o, task.GetId(), &v1.UpdateTaskRequest{Title: &title}, 200)
-	gb.wait("APPROVAL_REQUESTED after the reset", notice(v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED, task.GetId()))
+	ev = gb.wait("APPROVAL_REQUESTED after the reset", notice(v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED, task.GetId()))
+	if !ev.GetTaskUpdate().GetNotice().GetReRequested() {
+		t.Fatalf("reset notice %v, want re_requested", ev.GetTaskUpdate().GetNotice())
+	}
 
 	// Reminders: a vote pending for 24 h — once per 24 h, at most 3, not after the vote.
 	ctx := context.Background()

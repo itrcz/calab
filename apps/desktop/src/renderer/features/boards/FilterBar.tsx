@@ -1,14 +1,14 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { TaskField, TaskOp, WorkspaceRole, type Board } from '@calaba/protocol';
-import { ArrowLeft, Check, CircleSlash, Filter, X } from 'lucide-react';
+import { ArrowLeft, Check, CircleSlash, Filter, UserX, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { PickerPanel } from '../../components/picker/Picker';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState, type QuickChip } from '../../lib/boards/filter';
+import { FORMER, addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState, type QuickChip } from '../../lib/boards/filter';
 import { estimateName, fieldOff, scaleValues } from '../../lib/boards/features';
 import { APPROVAL_VALUES, DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, opLabel, opNeedsValue, type FieldDef } from '../../lib/boards/filterFields';
 import { autoFocusAllowed } from '../../lib/mobile';
@@ -44,7 +44,7 @@ interface ValueChoice extends Choice {
   op?: TaskOp;
 }
 
-function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: string, cond: Cond | null): ValueChoice[] {
+function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: string, cond: Cond | null, noMe: boolean): ValueChoice[] {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const today = useToday();
   return useMemo(() => {
@@ -52,7 +52,7 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
     const c = (value: string, label: string, icon?: ReactNode, op?: TaskOp): ValueChoice => ({ id: `${op ?? ''}:${value}`, value, label, search: [label], ...(icon ? { icon } : {}), checked: op !== undefined ? cond?.op === op : on(value), ...(op !== undefined ? { op } : {}) });
     switch (def.kind) {
       case 'status':
-        return [...(board?.statuses ?? [])].sort((a, b) => a.position - b.position).map((s) => c(s.id, s.name, <StatusIcon type={s.type} color={s.color} />));
+        return [...(board?.statuses ?? [])].sort((a, b) => a.position - b.position).map((s) => c(s.id, s.name, <StatusIcon type={s.type} color={s.color} icon={s.icon} />));
       case 'statusType':
         return STATUS_TYPES.map((ty) => c(STATUS_TYPE_TOKEN[ty] ?? '', t(STATUS_TYPE_LABEL[ty] ?? 'boards.type.unstarted'), <StatusIcon type={ty} color={0x8e8e93} />));
       case 'user': {
@@ -61,7 +61,9 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
           .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
           .map((m) => c(m.user?.id ?? '', nameOf(m), <Avatar userId={m.user?.id ?? ''} name={nameOf(m)} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />));
         const extra = def.field === TaskField.ASSIGNEE || def.field === TaskField.LEAD ? [c('', t('boards.noAssignee'), <CircleSlash className="size-4 text-muted" />, TaskOp.EMPTY)] : [];
-        return [c('me', t('boards.me')), ...extra, ...people];
+        // ADR-0097 §4: what to hand out after someone left.
+        if (def.field === TaskField.ASSIGNEE) extra.push(c(FORMER, t('former.filterValue'), <UserX className="size-4 text-muted" />));
+        return [...(noMe ? [] : [c('me', t('boards.me'))]), ...extra, ...people];
       }
       case 'priority':
         return PRIORITIES.map((p) => c(String(p), t(PRIORITY_LABEL[p] ?? 'boards.prio.none'), <PriorityIcon priority={p} />));
@@ -95,12 +97,12 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
       default:
         return [];
     }
-  }, [def, board, members, cond, today]);
+  }, [def, board, members, cond, today, noMe]);
 }
 
 /** The values list of one field; `onChange` receives the edited condition. */
-function ValuePanel({ def, board, workspaceId, cond, onChange, onBack }: { def: FieldDef; board: Board | undefined; workspaceId: string; cond: Cond | null; onChange: (c: Cond) => void; onBack?: () => void }): ReactNode {
-  const choices = useValueChoices(def, board, workspaceId, cond);
+function ValuePanel({ def, board, workspaceId, cond, onChange, onBack, noMe = false }: { def: FieldDef; board: Board | undefined; workspaceId: string; cond: Cond | null; onChange: (c: Cond) => void; onBack?: () => void; noMe?: boolean }): ReactNode {
+  const choices = useValueChoices(def, board, workspaceId, cond, noMe);
   const [text, setText] = useState(cond?.field === TaskField.TEXT ? (cond.values[0] ?? '') : '');
   const input = useRef<HTMLInputElement>(null);
   const base: Cond = cond ?? { field: def.field, op: def.op, values: [] };
@@ -180,6 +182,50 @@ export function FilterButton({ boardId, workspaceId, compact = false }: { boardI
   const setOpen = useBoardsUi((s) => s.setFilterOpen);
   const board = useBoards((s) => s.boards[boardId]);
   const [filter, setFilter] = useFilter(boardId);
+  return (
+    <FilterPopover board={board} workspaceId={workspaceId} filter={filter} setFilter={setFilter} open={open} setOpen={setOpen} label={t('boards.filter')}>
+      <Tip label={t('boards.filter')} shortcut="F">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className={cx('inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg', compact && 'px-2')}
+            data-testid="filter-button"
+          >
+            <Filter className="size-3.5" aria-hidden />
+            {compact ? null : t('boards.filter')}
+          </button>
+        </Popover.Trigger>
+      </Tip>
+    </FilterPopover>
+  );
+}
+
+/**
+ * The field list → values popover over any filter value (the board's filter, a rule's «Если»
+ * block, ADR-0060 §6). `children` holds the `Popover.Trigger`. `noMe`: no «Я» among people (a
+ * rule has no viewer).
+ */
+export function FilterPopover({
+  board,
+  workspaceId,
+  filter,
+  setFilter,
+  open,
+  setOpen,
+  label,
+  noMe = false,
+  children,
+}: {
+  board: Board | undefined;
+  workspaceId: string;
+  filter: FilterState;
+  setFilter: (f: FilterState) => void;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  label: string;
+  noMe?: boolean;
+  children: ReactNode;
+}): ReactNode {
   const [field, setField] = useState<TaskField | null>(null);
   const [index, setIndex] = useState<number>(-1);
   const input = useRef<HTMLInputElement>(null);
@@ -211,18 +257,7 @@ export function FilterButton({ boardId, workspaceId, compact = false }: { boardI
       }}
       modal={false}
     >
-      <Tip label={t('boards.filter')} shortcut="F">
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            className={cx('inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg', compact && 'px-2')}
-            data-testid="filter-button"
-          >
-            <Filter className="size-3.5" aria-hidden />
-            {compact ? null : t('boards.filter')}
-          </button>
-        </Popover.Trigger>
-      </Tip>
+      {children}
       <Popover.Portal>
         <Popover.Content
           align="start"
@@ -233,7 +268,7 @@ export function FilterButton({ boardId, workspaceId, compact = false }: { boardI
             if (autoFocusAllowed()) input.current?.focus();
           }}
           onKeyDown={(e) => e.stopPropagation()}
-          aria-label={t('boards.filter')}
+          aria-label={label}
           className="mat-popover anim-in z-[var(--z-modal-popover)] flex w-[280px] flex-col rounded-[var(--radius-card)] p-1.5"
           style={{ maxHeight: 'var(--radix-popover-content-available-height)' }}
           data-testid="filter-menu"
@@ -245,6 +280,7 @@ export function FilterButton({ boardId, workspaceId, compact = false }: { boardI
               workspaceId={workspaceId}
               cond={cond}
               onChange={change}
+              noMe={noMe}
               onBack={() => {
                 setField(null);
                 setIndex(-1);
@@ -256,7 +292,7 @@ export function FilterButton({ boardId, workspaceId, compact = false }: { boardI
               inputRef={input}
               autoFocus={false}
               placeholder={t('boards.addFilter')}
-              label={t('boards.filter')}
+              label={label}
               height={360}
               onSelect={(c) => {
                 setField(c.def.field);
@@ -292,6 +328,7 @@ function valueText(c: Cond, board: Board | undefined, workspaceId: string, today
       }
       case 'user': {
         if (v === 'me') return t('boards.me');
+        if (v === FORMER) return t('former.filterValue');
         const m = useWorkspaces.getState().byId[workspaceId]?.members[v];
         return m ? nameOf(m) : '?';
       }
@@ -327,12 +364,17 @@ function valueText(c: Cond, board: Board | undefined, workspaceId: string, today
 export function FilterChips({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
   const [filter, setFilter] = useFilter(boardId);
   const board = useBoards((s) => s.boards[boardId]);
-  const today = useToday();
   if (filter.conds.length === 0) return null;
+  return <ConditionChips board={board} workspaceId={workspaceId} filter={filter} setFilter={setFilter} className="px-4 pb-2" />;
+}
+
+/** Condition chips of any filter value (the board's, a rule's «Если» block); `children` after them. */
+export function ConditionChips({ board, workspaceId, filter, setFilter, className, noMe = false, children }: { board: Board | undefined; workspaceId: string; filter: FilterState; setFilter: (f: FilterState) => void; className?: string; noMe?: boolean; children?: ReactNode }): ReactNode {
+  const today = useToday();
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-4 pb-2" data-testid="filter-chips">
+    <div className={cx('flex min-w-0 flex-wrap items-center gap-1.5', className)} data-testid="filter-chips">
       {filter.conds.map((c, i) => (
-        <FilterChip key={i} cond={c} board={board} workspaceId={workspaceId} text={valueText(c, board, workspaceId, today)} onChange={(n) => setFilter(setCond(filter, i, n))} onRemove={() => setFilter(removeCond(filter, i))} />
+        <FilterChip key={i} cond={c} board={board} workspaceId={workspaceId} noMe={noMe} text={valueText(c, board, workspaceId, today)} onChange={(n) => setFilter(setCond(filter, i, n))} onRemove={() => setFilter(removeCond(filter, i))} />
       ))}
       {filter.conds.length > 1 ? (
         <button
@@ -345,14 +387,17 @@ export function FilterChips({ boardId, workspaceId }: { boardId: string; workspa
           {filter.any ? t('boards.anyCond') : t('boards.allConds')}
         </button>
       ) : null}
-      <button type="button" onClick={() => setFilter({ conds: [], any: false })} className="h-6 rounded-full px-2 text-caption text-muted hover:bg-hover hover:text-fg" data-testid="filter-reset">
-        {t('common.reset')}
-      </button>
+      {filter.conds.length > 0 ? (
+        <button type="button" onClick={() => setFilter({ conds: [], any: false })} className="h-6 rounded-full px-2 text-caption text-muted hover:bg-hover hover:text-fg" data-testid="filter-reset">
+          {t('common.reset')}
+        </button>
+      ) : null}
+      {children}
     </div>
   );
 }
 
-function FilterChip({ cond, board, workspaceId, text, onChange, onRemove }: { cond: Cond; board: Board | undefined; workspaceId: string; text: string; onChange: (c: Cond) => void; onRemove: () => void }): ReactNode {
+function FilterChip({ cond, board, workspaceId, text, onChange, onRemove, noMe }: { cond: Cond; board: Board | undefined; workspaceId: string; text: string; onChange: (c: Cond) => void; onRemove: () => void; noMe: boolean }): ReactNode {
   const def = fieldDef(cond.field);
   const [open, setOpen] = useState(false);
   if (!def) return null;
@@ -393,7 +438,7 @@ function FilterChip({ cond, board, workspaceId, text, onChange, onRemove }: { co
           </Popover.Trigger>
           <Popover.Portal>
             <Popover.Content align="start" sideOffset={4} collisionPadding={8} onKeyDown={(e) => e.stopPropagation()} className="mat-popover anim-in z-[var(--z-modal-popover)] flex w-[280px] flex-col rounded-[var(--radius-card)] p-1.5">
-              <ValuePanel def={def} board={board} workspaceId={workspaceId} cond={cond} onChange={onChange} />
+              <ValuePanel def={def} board={board} workspaceId={workspaceId} cond={cond} onChange={onChange} noMe={noMe} />
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>

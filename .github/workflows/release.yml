@@ -37,6 +37,10 @@ on:
         description: 'Publish to the update feed (S3, or the stand when S3 secrets are absent)'
         type: boolean
         default: false
+      require_ci:
+        description: 'Require a successful ci run (push on main or this ref) for the commit being built'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -54,10 +58,15 @@ env:
 
 jobs:
   # A tag must never ship clients pointing to a dead host: the feed and the default server baked into the
-  # build have to answer over valid TLS before anything is built (docs/06 «Домены»).
+  # build have to answer over valid TLS before anything is built (docs/06 «Домены»). And it must never
+  # ship a commit that did not pass ci.yml: on a tag push (and on a dispatch with require_ci) the build
+  # waits for a successful push run of ci.yml for this SHA — on main or on the tag itself (a tag on a
+  # SHA verified on main passes ci in about a minute, see ci.yml).
   preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 20
+    permissions:
+      actions: read   # ci.yml runs of this SHA
     steps:
       - name: update feed and app host answer over TLS
         run: |
@@ -74,6 +83,37 @@ jobs:
           probe "$APP_ORIGIN/api/version" "default server (APP_ORIGIN)"
           probe "$HOMEPAGE/" "site (HOMEPAGE)"
           exit $fail
+
+      - name: ci passed for this commit
+        if: github.event_name == 'push' || inputs.require_ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # push runs of ci.yml for exactly this SHA on main or on this ref: "<conclusion|status> <url>"
+          runs() {
+            gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&per_page=20" \
+              --jq '.workflow_runs[] | select(.head_sha == env.SHA and (.head_branch == "main" or .head_branch == env.REF_NAME))
+                    | "\(.conclusion // .status) \(.html_url)"'
+          }
+          for i in $(seq 1 30); do   # 30 x 30 s = 15 min
+            out=$(runs) || { echo "::warning::Actions API query failed (attempt $i)"; out="pending -"; }
+            ok=$(grep -m1 '^success ' <<<"$out" || true)
+            if [[ -n "$ok" ]]; then echo "ci passed for $SHA: ${ok#success }"; exit 0; fi
+            # every run finished and none succeeded: no point in waiting (the first minute is left for
+            # the tag's own run to appear)
+            if (( i > 2 )) && [[ -n "$out" ]] && ! grep -qvE '^(failure|cancelled|timed_out|action_required|skipped|startup_failure|stale|neutral) ' <<<"$out"; then
+              echo "$out"
+              echo "::error::ci.yml did not pass for $SHA (main or $REF_NAME): fix CI (or re-run it), then re-run this workflow"
+              exit 1
+            fi
+            echo "waiting for ci on $SHA (attempt $i/30): ${out:-no run yet}"
+            sleep 30
+          done
+          echo "::error::no successful ci.yml run for $SHA (main or $REF_NAME) within 15 min: check the ci run of this commit, then re-run this workflow"
+          exit 1
 
   build:
     name: build (${{ matrix.target }})
@@ -100,7 +140,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -229,11 +269,13 @@ jobs:
           { echo "sign=$sign"; echo "args=$args"; echo "trusted=$trusted"; } >> "$GITHUB_OUTPUT"
 
       # build:app = electron-vite build + build/.gen/THIRD-PARTY-NOTICES.txt (packaged as extraResources)
-      # MAIN_VITE_* are baked in at build time (main process): the update feed, and whether auto-install
+      # MAIN_VITE_* are baked in at build time (main process): the update sources (S3 feed + the GitHub
+      # repo of this release — «Источник обновлений», shared/updateFeed.ts), and whether auto-install
       # may be offered — only when THIS platform's build is really signed (client, electron-vite env).
       - name: build:app (electron-vite + third-party notices)
         env:
           MAIN_VITE_UPDATE_FEED: ${{ env.UPDATE_URL }}
+          MAIN_VITE_UPDATE_GITHUB: ${{ env.RELEASE_REPO }}
           MAIN_VITE_DEFAULT_SERVER_URL: ${{ env.APP_ORIGIN }}   # the host the preflight job checked
           MAIN_VITE_UPDATES_SIGNED: ${{ steps.sign.outputs.trusted == '1' && '1' || '' }}
         run: pnpm -F @calaba/desktop run build:app
@@ -263,7 +305,7 @@ jobs:
       - name: native module is packaged and patched (check-native)
         run: node apps/desktop/scripts/check-native.mjs apps/desktop/dist-release
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.target }}
           if-no-files-found: error
@@ -290,7 +332,7 @@ jobs:
             CHANGELOG.md
             infra/ci
           sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
           merge-multiple: true
@@ -300,6 +342,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -l dist-release
+          # The GitHub update channel (electron-updater `github` provider) resolves each url:/path: as an asset
+          # of this release: they must be bare file names. Only publish-s3 rewrites its own copies to releases/<ver>/.
+          if grep -EHn '^\s*(- url|path): *\S*/' dist-release/*.yml; then
+            echo "::error::latest*.yml file URLs must be bare asset names on the GitHub release"; exit 1
+          fi
           # update feeds are per channel: latest*.yml, or rc*/beta*/alpha* for prerelease versions
           ver=$(sed -n 's/^version: //p' dist-release/*-linux.yml | head -1); [[ -n "$ver" ]]
           # Always a DRAFT: publishing a release for a tag push with the Actions token fails with
@@ -349,7 +396,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
           merge-multiple: true
@@ -361,9 +408,12 @@ jobs:
             echo "::notice::S3_* secrets not configured — S3 publishing skipped (stand fallback runs instead)"
             echo "published=0" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          export AWS_DEFAULT_REGION="${S3_REGION:-ru-central1}"   # Yandex Object Storage
+          export AWS_DEFAULT_REGION="${S3_REGION:-ru-central1}"   # ru-central1 Yandex, ru-msk VK Cloud
           aws configure set default.s3.addressing_style path
-          s3() { aws --endpoint-url "$S3_ENDPOINT" s3 "$@"; }
+          # --acl public-read on every object: releases.calab.* proxies the bucket anonymously. Yandex made the whole
+          # bucket public; VK Cloud Object Storage (hb.vkcloud-storage.ru) has no working bucket policy — per-object
+          # ACL is the only way there. Harmless on Yandex.
+          s3() { aws --endpoint-url "$S3_ENDPOINT" s3 "$@" --acl public-read; }
           cd dist-release
           ver=$(sed -n 's/^version: //p' ./*-linux.yml | head -1); [[ -n "$ver" ]]
           feeds=(*.yml)   # latest-mac.yml latest-linux.yml latest.yml — or rc-*.yml / rc.yml for prereleases
@@ -426,7 +476,7 @@ jobs:
     if: always() && needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && needs.publish-s3.outputs.published != '1'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
           merge-multiple: true

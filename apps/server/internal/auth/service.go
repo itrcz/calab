@@ -11,6 +11,7 @@ import (
 	"net/http"
 	netmail "net/mail"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -57,8 +58,10 @@ type Service struct {
 	tokens       *Tokens
 	events       events.Publisher
 	mode         config.RegistrationMode
+	emailGate    EmailGate
 	refresh      time.Duration
 	accessTL     time.Duration
+	guestIdle    time.Duration
 	now          func() time.Time
 	used         usedGens
 
@@ -69,6 +72,9 @@ type Service struct {
 	// email invitations, see workspaces.AcceptEmailInvites) and returns the joined workspaces.
 	// Optional.
 	OnEmailVerified func(ctx context.Context, u sqlc.User) []uuid.UUID
+	// OnSessionsRevoked deletes optional native endpoints after every common revocation hook.
+	// Each call has its own bounded context and runs even when Redis markers failed.
+	OnSessionsRevoked func(context.Context, []uuid.UUID) error
 	// BotLimiter bounds the requests of one bot (ADR-0031, BOT_RATE_PER_SEC); nil = none.
 	BotLimiter *redisx.RateLimiter
 	// OnBotRequest runs for every authenticated bot request (presence of webhook-only bots).
@@ -78,23 +84,39 @@ type Service struct {
 	// has no seat left (ADR-0024, plans.Check); called inside the registration transaction.
 	// Optional.
 	CheckSeat func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error
+	// AdmitSeat is the billing hook of that join (ADR-0080, plans.Service.AdmitSeat): called in
+	// the same transaction after the membership row is written. Optional.
+	AdmitSeat func(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID, role string) error
+
+	// billingEnforced: BILLING_ENABLED && BILLING_ENFORCEMENT_ENABLED (billing suspension).
+	billingEnforced atomic.Bool
 }
 
 // NewService wires the auth service.
 func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publisher) *Service {
-	return &Service{
+	s := &Service{
 		db:           d,
 		redis:        r,
 		tokens:       NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
 		events:       ev,
 		mode:         cfg.RegistrationMode,
+		emailGate:    NewEmailGate(cfg.EmailVerification),
 		refresh:      cfg.RefreshTokenTTL,
 		accessTL:     cfg.AccessTokenTTL,
+		guestIdle:    cfg.GuestInactivity,
 		now:          time.Now,
 		Policy:       &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(d.Q, cfg.IdentityEntitlements())},
 		entitlements: cfg.IdentityEntitlements(),
 	}
+	if s.guestIdle <= 0 {
+		s.guestIdle = DefaultGuestInactivity
+	}
+	s.billingEnforced.Store(s.entitlements.BillingEnforcement)
+	return s
 }
+
+// EmailGate is the configured EMAIL_VERIFICATION policy for actions (ADR-0065).
+func (s *Service) EmailGate() EmailGate { return s.emailGate }
 
 // Tokens exposes the access-token verifier (used by the gateway for IDENTIFY).
 func (s *Service) Tokens() *Tokens { return s.tokens }
@@ -182,11 +204,15 @@ func ErrInviteInvalid() error { return errInviteInvalid }
 func ErrInviteEmailMismatch() error { return errInviteEmail }
 
 // Guest accounts (ADR-0016): short sessions renewed by activity; the account is removed
-// (anonymised) after GuestInactivity without a refresh.
+// (anonymised) after GuestInactivity (GUEST_INACTIVITY, ADR-0098) without a refresh.
 const (
 	GuestSessionTTL = 24 * time.Hour
-	GuestInactivity = 7 * 24 * time.Hour
+	// DefaultGuestInactivity applies when the config leaves GUEST_INACTIVITY zero.
+	DefaultGuestInactivity = 48 * time.Hour
 )
+
+// GuestInactivity is how long a guest (account or guest membership) lives without activity.
+func (s *Service) GuestInactivity() time.Duration { return s.guestIdle }
 
 // NewGuest creates a guest account named name and its first session inside q.
 func (s *Service) NewGuest(ctx context.Context, q *sqlc.Queries, name string, c Client) (sqlc.User, *v1.AuthTokens, error) {
@@ -194,7 +220,7 @@ func (s *Service) NewGuest(ctx context.Context, q *sqlc.Queries, name string, c 
 	if err != nil {
 		return sqlc.User{}, nil, err
 	}
-	exp := s.now().Add(GuestInactivity)
+	exp := s.now().Add(s.guestIdle)
 	u, err := q.CreateGuestUser(ctx, sqlc.CreateGuestUserParams{DisplayName: name, Settings: settings, GuestExpiresAt: &exp})
 	if err != nil {
 		return u, nil, err
@@ -394,6 +420,9 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			if err := moderation.CheckSuspended(ctx, q, *gate); err != nil {
 				return err
 			}
+			if err := s.CheckBillingOpen(ctx, q, *gate); err != nil {
+				return err
+			}
 			if err := moderation.CheckBan(ctx, q, *gate, user.ID, &email); err != nil {
 				return err
 			}
@@ -407,6 +436,11 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(role)})
 			if err != nil {
 				return err
+			}
+			if s.AdmitSeat != nil {
+				if err := s.AdmitSeat(ctx, q, inv.WorkspaceID, user.ID, m.Role); err != nil {
+					return err
+				}
 			}
 			joined = &m
 		}
@@ -437,14 +471,18 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		ids, err := s.db.Q.ListMemberRoleIDs(ctx, sqlc.ListMemberRoleIDsParams{WorkspaceID: joined.WorkspaceID, UserID: joined.UserID})
 		if err == nil {
 			s.events.Workspace(ctx, joined.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
-				WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(*joined, user, ids)},
+				WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.MemberEvent(*joined, user, ids)}, // gateway strips contacts per recipient
 			}})
 		}
 	}
-	if user.EmailVerifiedAt == nil {
+	// EMAIL_VERIFICATION=optional (ADR-0065): no code unless an email invitation waits for
+	// the address (its join needs the confirmation); the user asks for one in the settings.
+	vs := s.Verification(ctx, user)
+	if user.EmailVerifiedAt == nil && vs.Ask() {
 		s.sendVerificationQuietly(ctx, user)
 	}
-	return &v1.RegisterResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
+	return &v1.RegisterResponse{Tokens: tokens, Me: pbconv.Me(user),
+		EmailVerificationOptional: vs.Optional, EmailInvitePending: vs.InvitePending}, nil
 }
 
 // Login verifies credentials and opens a new session.
@@ -483,13 +521,16 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 		return nil, err
 	}
 	// Unverified (e.g. accounts from before ADR-0023): a fresh code with every sign-in,
-	// unless one was sent less than 60 s ago.
-	s.sendVerificationQuietly(ctx, user)
+	// unless one was sent less than 60 s ago — not when nothing asks for it (ADR-0065).
+	vs := s.Verification(ctx, user)
+	if vs.Ask() {
+		s.sendVerificationQuietly(ctx, user)
+	}
 	me, err := pbconv.LocalMe(ctx, s.db.Q, user)
 	if err != nil {
 		return nil, err
 	}
-	return &v1.LoginResponse{Tokens: tokens, Me: me}, nil
+	return &v1.LoginResponse{Tokens: tokens, Me: me, EmailVerificationOptional: vs.Optional, EmailInvitePending: vs.InvitePending}, nil
 }
 
 // Refresh rotates the refresh token of a session. The previous token gets the same new pair
@@ -619,8 +660,8 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		}
 		ttl := s.refresh
 		if user.IsGuest && user.GuestExpiresAt != nil { // promoted guests get normal sessions
-			ttl = GuestSessionTTL // renewed by activity; the account itself lives 7 days past the last refresh
-			if err := q.TouchGuest(ctx, sqlc.TouchGuestParams{ID: user.ID, GuestExpiresAt: ptrTime(now.Add(GuestInactivity))}); err != nil {
+			ttl = GuestSessionTTL // renewed by activity; the account itself lives GuestInactivity past the last refresh
+			if err := q.TouchGuest(ctx, sqlc.TouchGuestParams{ID: user.ID, GuestExpiresAt: ptrTime(now.Add(s.guestIdle))}); err != nil {
 				return err
 			}
 		}
@@ -804,6 +845,13 @@ func (s *Service) afterRevokeMany(ctx context.Context, sids []uuid.UUID, reason 
 		}
 	}
 	done()
+	if s.OnSessionsRevoked != nil {
+		cleanup, cancel := context.WithTimeout(ctx, revokeBudget)
+		if err := s.OnSessionsRevoked(cleanup, sids); err != nil {
+			slog.WarnContext(ctx, "native endpoint revocation cleanup failed")
+		}
+		cancel()
+	}
 	pctx := events.WithBudget(ctx, revokeBudget)
 	for _, sid := range sids {
 		s.events.SessionRevoked(pctx, sid, reason)

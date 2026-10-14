@@ -200,6 +200,7 @@ func (h *Hub) loop(c *conn, s *Session) {
 				continue
 			}
 			if p.SetPresence.GetUntil() != nil {
+				h.sessionActive(s)
 				h.setManualPresence(s.user, p.SetPresence.GetStatus(), p.SetPresence.GetUntil())
 			} else {
 				h.setPresence(s, p.SetPresence.GetStatus())
@@ -326,9 +327,22 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 	// Register first so that events published while READY is being built are queued.
 	h.register(s, wids)
 	for _, w := range wids {
-		h.ensureState(ctx, w)
+		if !h.ensureState(ctx, w) {
+			// No workspace state to filter its events with: try again later rather than
+			// run without them (stateFailed).
+			c.closeGraceful(4000, "try again")
+			h.destroy(s, 4000, "try again")
+			return nil
+		}
 	}
 	_ = h.pres.set(ctx, s.user, s.id, s.status, s.client)
+	// Connecting is activity of the user's guest memberships (ADR-0098); best effort, the
+	// live presence alone keeps them from the sweep meanwhile.
+	if !id.IsBot {
+		if err := h.db.Q.TouchGuestMemberships(ctx, id.UserID); err != nil {
+			slog.WarnContext(ctx, "gateway: guest activity touch", "err", err)
+		}
+	}
 	ready, err := h.buildReady(ctx, s, id.UserID)
 	if err != nil {
 		slog.Error("gateway: build READY", "err", err)
@@ -346,6 +360,15 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 	ready.PendingAdmissions = filtered
 	s.mu.Lock()
 	s.attachLocked(c)
+	if s.broken.Load() {
+		// Events were lost for it before its socket was attached (requireResync found no
+		// socket to close): e.g. another IDENTIFY's workspace load failed and stateFailed
+		// dropped the state this READY relies on. Try again rather than go live without them.
+		// A requireResync after this point sees the socket and closes it.
+		s.mu.Unlock()
+		h.destroy(s, 4000, "try again")
+		return nil
+	}
 	s.ready = true
 	s.emit(uuid.New(), enc)
 	s.flushPending(nil)
@@ -369,9 +392,13 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err != nil {
 		return nil, err
 	}
-	ready := &v1.Ready{SessionId: s.id.String(), Me: me, PlanContact: h.cfg.PlanContact}
+	ready := &v1.Ready{SessionId: s.id.String(), Me: me, PlanContact: h.cfg.PlanContact, BillingSelfServe: h.cfg.BillingSelfServe}
 	if s.principal.Authority == identitypolicy.WorkspaceSSO {
 		ready.Me = pbconv.ScopedMe(u)
+	}
+	if h.auth != nil { // nil (tests): false, the client asks as ADR-0023 says
+		vs := h.auth.Verification(ctx, u)
+		ready.EmailVerificationOptional, ready.EmailInvitePending = vs.Optional, vs.InvitePending
 	}
 	if m := manualFromDB(u.PresenceStatus, u.PresenceUntil, time.Now()); s.principal.Authority == identitypolicy.LocalAccount && m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
 		ready.Presence = m.self(uid)
@@ -384,6 +411,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			ready.Call = c.Proto()
 		}
 	}
+	var stubs []*v1.WorkspaceSnapshot // closed for unpaid billing: appended after every fill below
 	for _, w := range wss {
 		var access *v1.WorkspaceIdentityAccess
 		if !s.bot {
@@ -409,6 +437,14 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
 			}
 			ready.IdentityAccess = append(ready.IdentityAccess, access)
+			if billingDenied(decision, err) && s.billingStubAllows(w.ID) {
+				stub, err := h.billingStub(ctx, w, uid)
+				if err != nil {
+					return nil, err
+				}
+				stubs = append(stubs, stub)
+				continue
+			}
 			if !decision.Allowed || err != nil {
 				continue
 			}
@@ -424,7 +460,9 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		if access != nil {
 			snap.Workspace.IdentityAccess = access
 		}
-		h.fillLive(ctx, w.ID, uid, snap)
+		if err := h.fillLive(ctx, w.ID, uid, snap); err != nil {
+			return nil, err // "try again": not a READY with every call shown empty
+		}
 		if u.IsBot {
 			snap.Apps = nil // web apps are for people (ADR-0050)
 		}
@@ -440,6 +478,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err := guests.FillAdmissions(ctx, h.db.Q, uid, ready.Workspaces); err != nil {
 		return nil, err
 	}
+	narrowKnocks(uid, ready.Workspaces) // the knocks they are asked to decide (knockAudience)
 	// Meetings around now in the visible rooms (ADR-0038 §6): one query for all workspaces.
 	if err := calendar.FillActive(ctx, h.db.Q, uid, u.IsBot, ready.Workspaces, time.Now()); err != nil {
 		return nil, err
@@ -510,7 +549,27 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		}
 		ready.WorkspaceNotificationSettings = append(ready.WorkspaceNotificationSettings, pbconv.WorkspaceNotificationSettings(n))
 	}
+	// Billing stubs last, so none of the fills above (admissions, meetings, read states) adds
+	// anything to them: only the workspace and the recipient's role (isBillingStub).
+	ready.Workspaces = append(ready.Workspaces, stubs...)
 	return ready, nil
+}
+
+// billingStub is the READY snapshot of a workspace closed for unpaid billing (ADR-0080 §8):
+// workspaces.BillingStub and the recipient's role, nothing else. The caller's decision was a
+// billing suspension, which comes after the membership check.
+func (h *Hub) billingStub(ctx context.Context, w sqlc.Workspace, uid uuid.UUID) (*v1.WorkspaceSnapshot, error) {
+	ws, err := workspaces.BillingStub(ctx, h.cfg.Plans, w)
+	if err != nil {
+		return nil, err
+	}
+	snap := &v1.WorkspaceSnapshot{Workspace: ws}
+	if m, err := h.db.Q.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: w.ID, UserID: uid}); err == nil {
+		snap.Role = perm.Role(m.Role).Proto()
+	} else if !db.IsNotFound(err) {
+		return nil, err
+	}
+	return snap, nil
 }
 
 func (h *Hub) invalid(c *conn) {
@@ -597,7 +656,10 @@ func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Sess
 	s.client = h.pres.client(ctx, meta.user, gsid)
 	h.register(s, wids) // events from now on are queued (s.ready=false)
 	for _, w := range wids {
-		h.ensureState(ctx, w)
+		if !h.ensureState(ctx, w) {
+			h.abandon(s) // the client IDENTIFYs (INVALID_SESSION) and loads it again
+			return nil
+		}
 	}
 	ch := make(chan struct{})
 	h.mu.Lock()
@@ -768,6 +830,27 @@ func (h *Hub) setPresence(s *Session, st v1.PresenceStatus) {
 	defer cancel()
 	if err := h.pres.set(ctx, s.user, s.id, st, s.client); err == nil {
 		h.publishPresence(ctx, s.user)
+	}
+}
+
+// sessionActive ends the session's automatic AFK idle: choosing a manual status is input on
+// this device. Without it a stale idle (e.g. an older client that does not report «back»
+// after a manual choice) would show the user as away once the manual status is cleared.
+// Nothing is published here: setManualPresence announces the new aggregate.
+func (h *Hub) sessionActive(s *Session) {
+	s.mu.Lock()
+	idle := s.status == v1.PresenceStatus_PRESENCE_STATUS_IDLE
+	if idle {
+		s.status = v1.PresenceStatus_PRESENCE_STATUS_ONLINE
+	}
+	s.mu.Unlock()
+	if !idle {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := h.pres.set(ctx, s.user, s.id, v1.PresenceStatus_PRESENCE_STATUS_ONLINE, s.client); err != nil {
+		slog.Warn("gateway: session active", "err", err)
 	}
 }
 

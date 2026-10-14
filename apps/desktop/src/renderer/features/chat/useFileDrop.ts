@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { dragOutActive } from '../../lib/dragOut';
 import { DropState } from '../../lib/dropState';
 
 export interface FileDropHandlers {
@@ -64,15 +65,16 @@ export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void):
 
   const handlers = useMemo<FileDropHandlers>(
     () => ({
+      // Our own image dragged out of the feed (lib/dragOut.ts) is never a file to attach.
       onDragEnter: (e) => {
-        if (enabledRef.current) state.current?.enter(e.dataTransfer.types);
+        if (enabledRef.current && !dragOutActive()) state.current?.enter(e.dataTransfer.types);
       },
       onDragOver: (e) => {
-        if (enabledRef.current && state.current?.over(e.dataTransfer.types)) e.preventDefault();
+        if (enabledRef.current && !dragOutActive() && state.current?.over(e.dataTransfer.types)) e.preventDefault();
       },
       onDragLeave: () => state.current?.leave(),
       onDrop: (e) => {
-        const accept = enabledRef.current && (state.current?.active ?? false);
+        const accept = enabledRef.current && !dragOutActive() && (state.current?.active ?? false);
         e.preventDefault();
         state.current?.end();
         if (accept) onFilesRef.current(Array.from(e.dataTransfer.files));

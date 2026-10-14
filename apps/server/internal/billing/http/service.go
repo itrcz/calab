@@ -1,0 +1,288 @@
+package billinghttp
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/billing"
+	"github.com/calaba/calaba/server/internal/billing/core"
+	"github.com/calaba/calaba/server/internal/billing/inbox"
+	"github.com/calaba/calaba/server/internal/billing/provider"
+	"github.com/calaba/calaba/server/internal/billing/sales"
+	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
+)
+
+// Config of the owner and public handlers.
+type Config struct {
+	// Checkouts (BILLING_STRIPE_ENABLED): new top-ups may be opened. Off is the kill switch of
+	// new payments; the webhook, pull-sync and reads keep working.
+	Checkouts bool
+	// ReturnURL (BILLING_PUBLIC_RETURN_URL): success / cancel URL of hosted checkout; the
+	// checkout id is appended as ?checkout={id}.
+	ReturnURL string
+	// AppURL (PUBLIC_APP_URL): the «back to Calab» link of the return page.
+	AppURL string
+	// CheckoutTTL: lifetime of a hosted page (Stripe: 30 min .. 24 h). Default 35 min: one open
+	// checkout per account, so a short page lets the owner change the amount soon.
+	CheckoutTTL time.Duration
+	// SelfServe (BILLING_SELF_SERVE): an owner without a live account may start billing — GET
+	// answers self_serve, a quote with purpose ACTIVATE creates the inactive account (in the
+	// chosen open market, ADR-0083) like the superadmin's enable. Off: only a superadmin enables a
+	// workspace.
+	SelfServe bool
+	// PlanLimits are the limits of a plan on this server (plans.Service.PlanLimits) for the plan
+	// offers of GET …/billing; nil sends offers without limits.
+	PlanLimits func(v1.Plan) *v1.PlanLimits
+	// Plans checks the owner's plan transitions in the quote and lists the violations of the
+	// offers (ADR-0086; the commit is checked by core.Hooks.Guard). nil: no checks.
+	Plans *plans.Service
+	// Contact is the «contact us» link of paid plans (config.PlanContact) for the public offers.
+	Contact string
+	// LandingOrigins (PUBLIC_LANDING_URLS) are the browser origins of the marketing landing, which
+	// lives on another host than the app: GET /api/billing/public/offers answers them with CORS
+	// (no credentials). Nothing else is opened.
+	LandingOrigins []string
+	// PublicLimiter rate-limits GET /api/billing/public/offers per client IP (nil: none).
+	PublicLimiter interface {
+		Take(ctx context.Context, key string) error
+	}
+	// SavedMethodTopups (BILLING_SAVED_METHOD_TOPUP_ENABLED): the owner may top up with a saved
+	// card in one click (POST …/saved-method-topups through Charger). Off: saved cards are only
+	// for auto-topup and every manual top-up opens the hosted page.
+	SavedMethodTopups bool
+	// Charger runs the one-click top-ups (autotopup.Job).
+	Charger Charger
+	// ChargeLimiter rate-limits one-click top-ups per billing account (nil: none).
+	ChargeLimiter interface {
+		Take(ctx context.Context, key string) error
+	}
+	// Committed runs after a self-serve account was created (WORKSPACE_UPDATE with
+	// Workspace.billing, BILLING_UPDATE) — core.Hooks.Committed of the wiring.
+	Committed func(ctx context.Context, acc sqlc.BillingAccount)
+}
+
+// QuoteTTL is how long a quote id is accepted by the actions.
+const QuoteTTL = 10 * time.Minute
+
+// Service implements the owner routes (/api/workspaces/{id}/billing) and the public ones
+// (webhook, return page). Every money effect goes through core (T1) and inbox (T5).
+type Service struct {
+	db    *db.DB
+	core  *core.Core
+	reg   *provider.Registry
+	inbox *inbox.Inbox
+	clock billing.Clock
+	cfg   Config
+	sales *sales.Sales
+}
+
+// New creates the service.
+func New(d *db.DB, c *core.Core, reg *provider.Registry, in *inbox.Inbox, clock billing.Clock, cfg Config) *Service {
+	if cfg.CheckoutTTL <= 0 {
+		cfg.CheckoutTTL = 35 * time.Minute
+	}
+	return &Service{db: d, core: c, reg: reg, inbox: in, clock: clock, cfg: cfg, sales: sales.New(reg)}
+}
+
+// Owner returns the owner route implementations (Handlers.Owner). The auto-topup routes store
+// the consent only; T7 runs the attempts.
+func (s *Service) Owner() map[string]httpx.HandlerFunc {
+	return map[string]httpx.HandlerFunc{
+		"GET /api/workspaces/{id}/billing":                           s.get,
+		"POST /api/workspaces/{id}/billing/quote":                    s.quote,
+		"POST /api/workspaces/{id}/billing/activate":                 s.activate,
+		"POST /api/workspaces/{id}/billing/stop":                     s.stop,
+		"POST /api/workspaces/{id}/billing/change-plan":              s.changePlan,
+		"POST /api/workspaces/{id}/billing/resume":                   s.resume,
+		"GET /api/workspaces/{id}/billing/payer":                     s.getPayer,
+		"PUT /api/workspaces/{id}/billing/payer":                     s.putPayer,
+		"GET /api/workspaces/{id}/billing/payer-schema":              s.payerSchema,
+		"POST /api/workspaces/{id}/billing/topups":                   s.topup,
+		"GET /api/workspaces/{id}/billing/checkouts/{cid}":           s.checkout,
+		"GET /api/workspaces/{id}/billing/auto-topup":                s.autoTopup,
+		"PUT /api/workspaces/{id}/billing/auto-topup":                s.putAutoTopup,
+		"DELETE /api/workspaces/{id}/billing/auto-topup":             s.deleteAutoTopup,
+		"GET /api/workspaces/{id}/billing/payment-methods":           s.methods,
+		"DELETE /api/workspaces/{id}/billing/payment-methods/{pmId}": s.deleteMethod,
+		"POST /api/workspaces/{id}/billing/saved-method-topups":      s.savedTopup,
+		"GET /api/workspaces/{id}/billing/saved-method-topups/{tid}": s.savedTopupStatus,
+		"GET /api/workspaces/{id}/billing/ledger":                    s.ledger,
+		"GET /api/workspaces/{id}/billing/payments":                  s.payments,
+	}
+}
+
+// Public returns the public route implementations (Handlers.Public).
+func (s *Service) Public() map[string]httpx.HandlerFunc {
+	return map[string]httpx.HandlerFunc{
+		"POST /api/billing/stripe/webhook":    s.stripeWebhook,
+		"POST /api/billing/tochka/webhook":    s.tochkaWebhook,
+		"POST /api/billing/tochkapay/webhook": s.tochkapayWebhook,
+		"GET /api/billing/public/offers":      s.publicOffers,
+		"GET /api/billing/return":             s.returnPage,
+	}
+}
+
+// caller is the request's workspace, its viewer, the viewer's billing bits (ADR-0087: the owner
+// has all three) and the live account.
+type caller struct {
+	user  uuid.UUID
+	ws    sqlc.Workspace
+	owner bool
+	bits  perm.Bits // perm.BillingOf: BILLING_VIEW / TOPUP / MANAGE, implications applied
+	acc   sqlc.BillingAccount
+	hasAc bool
+}
+
+// can reports whether the caller holds billing bit b.
+func (c caller) can(b perm.Bits) bool { return c.bits.Has(b) }
+
+// who resolves the workspace of {id} for the caller: 404 for non-members (the identity gate
+// already refuses them; this is the second line).
+func (s *Service) who(r *http.Request) (caller, error) {
+	ctx := r.Context()
+	c := caller{user: auth.MustFromContext(ctx).UserID}
+	wsID, err := httpx.PathUUID(r, "id", "workspace")
+	if err != nil {
+		return c, err
+	}
+	if c.ws, err = s.db.Q.GetWorkspace(ctx, wsID); db.IsNotFound(err) {
+		return c, httpx.NotFound("workspace")
+	} else if err != nil {
+		return c, err
+	}
+	c.owner = c.ws.OwnerID == c.user
+	bits, member, err := perm.LoadBilling(ctx, s.db.Q, wsID, c.ws.OwnerID, c.user)
+	if err != nil {
+		return c, err
+	}
+	if !member && !c.owner {
+		return c, httpx.NotFound("workspace")
+	}
+	c.bits = bits
+	if c.owner {
+		c.bits = perm.Billing
+	}
+	acc, err := s.db.Q.GetLiveBillingAccountByWorkspace(ctx, &wsID)
+	switch {
+	case err == nil:
+		c.acc, c.hasAc = acc, true
+	case !db.IsNotFound(err):
+		return c, err
+	}
+	return c, nil
+}
+
+// holderOf is who for a route that needs billing bit b (ADR-0087: perm.BillingView / Topup /
+// Manage): 403 BILLING_PERMISSION_REQUIRED without it, 404 BILLING_ACCOUNT_NOT_FOUND without a
+// live account.
+func (s *Service) holderOf(r *http.Request, b perm.Bits) (caller, error) {
+	c, err := s.who(r)
+	if err != nil {
+		return c, err
+	}
+	if !c.can(b) {
+		return c, billing.ErrPermissionRequired
+	}
+	if !c.hasAc {
+		return c, billing.ErrAccountNotFound
+	}
+	return c, nil
+}
+
+func parseRequestID(s string) (uuid.UUID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, httpx.Validation("request_id", "request_id must be a uuid")
+	}
+	return id, nil
+}
+
+// bodyHash is sha256 over action and the deterministic encoding of msg (the request without
+// its request_id): a retry with the same id must carry the same body.
+func bodyHash(action string, msg proto.Message) []byte {
+	b, _ := proto.MarshalOptions{Deterministic: true}.Marshal(msg)
+	h := sha256.Sum256(append([]byte(action+"\x00"), b...))
+	return h[:]
+}
+
+// audit records a billing action of the caller (actor_id: the caller, ADR-0087) under its request_id (billing_audit, append-only). A replay
+// with the same body passes (the core commands are idempotent by request id), another body or
+// another account is billing.ErrRequestReused.
+func (s *Service) audit(ctx context.Context, c caller, action string, requestID uuid.UUID, hash []byte) (replay bool, err error) {
+	wsID := c.ws.ID
+	row, err := db.GuardValue(ctx, s.db, func(q *sqlc.Queries) (sqlc.BillingAudit, error) {
+		return q.InsertBillingAudit(ctx, sqlc.InsertBillingAuditParams{
+			RequestID: requestID, BodyHash: hash, AccountID: &c.acc.ID, WorkspaceID: &wsID, ActorID: &c.user,
+			Action: action, Details: []byte("{}"),
+		})
+	})
+	if err == nil {
+		_ = row
+		return false, nil
+	}
+	if !db.IsNotFound(err) {
+		return false, err
+	}
+	old, err := s.db.Q.GetBillingAuditByRequest(ctx, requestID)
+	if err != nil {
+		return false, err
+	}
+	if old.Action != action || !bytes.Equal(old.BodyHash, hash) || old.AccountID == nil || *old.AccountID != c.acc.ID {
+		return false, billing.ErrRequestReused
+	}
+	return true, nil
+}
+
+// quoteID encodes the revision and the expiry of a quote: q1.{revision}.{unix expiry}. It is
+// informative (amounts are always recomputed under the account lock); actions refuse an
+// expired one.
+func quoteID(rev int64, exp time.Time) string {
+	return "q1." + strconv.FormatInt(rev, 10) + "." + strconv.FormatInt(exp.Unix(), 10)
+}
+
+func checkQuote(id string, now time.Time) error {
+	if id == "" {
+		return nil
+	}
+	parts := strings.Split(id, ".")
+	if len(parts) != 3 || parts[0] != "q1" {
+		return httpx.Validation("quote_id", "malformed quote_id")
+	}
+	exp, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return httpx.Validation("quote_id", "malformed quote_id")
+	}
+	if now.After(time.Unix(exp, 0)) {
+		return billing.ErrQuoteExpired
+	}
+	return nil
+}
+
+func checkRevision(expected uint64, acc sqlc.BillingAccount) error {
+	if expected != 0 && expected != uint64(acc.Revision) { //nolint:gosec // revision >= 1 (CHECK)
+		return billing.ErrRevisionConflict
+	}
+	return nil
+}
+
+func (s *Service) now(ctx context.Context) time.Time {
+	t, err := s.clock.Now(ctx, s.db.Q)
+	if err != nil {
+		return time.Now().UTC()
+	}
+	return t
+}

@@ -134,3 +134,11 @@ SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id IS NULL
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_file_id = f.id);
+
+-- name: ListSearchPersonalRooms :many
+-- The user's live DMs and notes shelves with their «Удалить чат» mark (unified search, ADR-0062:
+-- the user is a participant, as perm.ReadRoom checks for these rooms).
+SELECT r.id, r.type, ds.cleared_before FROM dm_members d
+JOIN rooms r ON r.id = d.room_id AND r.archived_at IS NULL AND r.type IN ('dm', 'notes')
+LEFT JOIN dm_state ds ON ds.user_id = d.user_id AND ds.room_id = r.id
+WHERE d.user_id = $1;

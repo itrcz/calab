@@ -207,8 +207,12 @@ function CardMenu({ onForward, onCopy, onDelete }: { onForward: (() => void) | u
 /** Summary lines shown folded (docs/08: 4–6 lines); 20 px each. */
 const FOLDED_PX = 6 * 20;
 
-/** GPTunneL's summary: headings, lists, inline markdown-lite; folded to 6 lines with «Показать всё». */
-function Summary({ text }: { text: string }): ReactNode {
+/**
+ * GPTunneL's summary: headings, lists, inline markdown-lite; folded to 6 lines with «Показать всё».
+ * Also in the recording window opened from search (RecordingResult): the copy button shows on
+ * hover / focus of the nearest `group/rec`.
+ */
+export function Summary({ text }: { text: string }): ReactNode {
   const [open, setOpen] = useState(false);
   const [tall, setTall] = useState(false);
   const box = useRef<HTMLDivElement>(null);

@@ -348,7 +348,7 @@ func TestGatewayFlow(t *testing.T) {
 		}
 	}
 	if snap == nil || len(snap.GetRooms()) != 1 || snap.GetRole() != v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER ||
-		snap.GetPermissions()[room.GetId()] != 8798327 /* member defaults with the board bits (ADR-0042) and CREATE_TEMP_ROOMS (ADR-0044) */ || len(snap.GetMembers()) != 2 || snap.GetRooms()[0].GetMedia().GetMaxStreams() != 3 {
+		snap.GetPermissions()[room.GetId()] != 8798327|3<<35|3<<38 /* member defaults with the board bits (ADR-0042), CREATE_TEMP_ROOMS (ADR-0044), DISK_VIEW | DISK_WRITE (ADR-0094) and WIKI_VIEW | WIKI_WRITE (ADR-0096) */ || len(snap.GetMembers()) != 2 || snap.GetRooms()[0].GetMedia().GetMaxStreams() != 3 {
 		t.Fatalf("snapshot: %v", snap)
 	}
 	online := false

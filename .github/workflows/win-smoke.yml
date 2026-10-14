@@ -1,0 +1,284 @@
+# Manual Windows smoke test of a released desktop build (TESTING.md «Windows smoke»).
+# Never part of required CI: we have no Windows machine, this is how a Windows crash is reproduced.
+#
+#   gh workflow run win-smoke.yml -f version=3.1.2 [-f from=3.0.9] [-f unicode=true] [-f update_from=3.1.1]
+#
+# Job `smoke`: installs Calab-Setup-<version>-x64.exe from the GitHub release silently (optionally over
+# <from>, launched first so the upgrade sees an existing userData; `unicode`: install dir and userData
+# under Cyrillic paths), launches it (+ a second instance with a mail deep link), then with the test
+# tools of this ref: logged in to the e2e-support mock API through every section and settings tab
+# (scripts/win-smoke-app.mjs, screenshots), and the mail engine against mail-fake-server.mjs
+# (scripts/win-smoke-mail.mjs). Job `update` (update_from): the auto-update from that version to the
+# feed's latest, installed on quit, then relaunched (scripts/win-smoke-update.mjs).
+# Artifacts: summary.txt, main.log, crash dumps, stdout/stderr, process lists, screenshots and the
+# Windows «Application Error» / WER events.
+name: win-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Released version to test (e.g. 3.1.2)'
+        required: true
+      from:
+        description: 'Optional: install and run this version first, then upgrade over it'
+        required: false
+        default: ''
+      wait:
+        description: 'Seconds to keep the app running per phase'
+        required: false
+        default: '60'
+      unicode:
+        description: 'Install and keep userData under non-ASCII paths (a Cyrillic Windows user name)'
+        type: boolean
+        default: false
+      update_from:
+        description: 'Optional: also test the auto-update path from this installed version (to the feed latest)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(format('[{{"version":"{0}","from":"{1}","unicode":{2}}}]', inputs.version, inputs.from, inputs.unicode)) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ matrix.version }}
+      FROM: ${{ matrix.from }}
+      UNI: ${{ matrix.unicode }}
+      WAIT: ${{ inputs.wait || '60' }}
+    steps:
+      - name: Smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = Join-Path $env:RUNNER_TEMP 'smoke'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $started = Get-Date
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Calab\Calab.exe'
+          $ud = Join-Path $env:APPDATA 'Calaba'   # default userData (src/main/index.ts), the real-user path
+          $base = $env:RUNNER_TEMP
+          $instArgs = @('/S')
+          if ($env:UNI -eq 'true') {
+            # As under C:\Users\Иван: the install dir, userData and the test dirs all non-ASCII.
+            $dir = Join-Path $env:LOCALAPPDATA 'Программы Тест\Calab'
+            $exe = Join-Path $dir 'Calab.exe'
+            $ud = Join-Path $env:APPDATA 'Пользователь Тест\Calaba'
+            $base = Join-Path $env:RUNNER_TEMP 'Тест'
+            New-Item -ItemType Directory -Force $base | Out-Null
+            $env:CALABA_USER_DATA = $ud
+            $instArgs = @('/S', "/D=$dir")
+          }
+          "CALAB_EXE=$exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "UD_BASE=$base" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+          function Install-Calab([string]$v) {
+            $setup = Join-Path $env:RUNNER_TEMP "Calab-Setup-$v-x64.exe"
+            gh release download "v$v" -R $env:GITHUB_REPOSITORY -p "Calab-Setup-$v-x64.exe" -D $env:RUNNER_TEMP --clobber
+            $p = Start-Process -FilePath $setup -ArgumentList $instArgs -Wait -PassThru
+            "install $v exit=$($p.ExitCode) exe=$(Test-Path $exe)" | Tee-Object -Append (Join-Path $out 'summary.txt')
+          }
+
+          function Snapshot([string]$phase) {
+            Get-CimInstance Win32_Process -Filter "Name='Calab.exe'" |
+              Select-Object ProcessId, ParentProcessId, CommandLine |
+              Format-List | Out-File (Join-Path $out "processes-$phase.txt") -Width 4096
+            $n = @(Get-Process -Name Calab -ErrorAction SilentlyContinue).Count
+            "$phase alive processes=$n" | Tee-Object -Append (Join-Path $out 'summary.txt')
+          }
+
+          function Run-Phase([string]$phase) {
+            $p = Start-Process -FilePath $exe -ArgumentList '--enable-logging', '--v=0' -PassThru `
+              -RedirectStandardOutput (Join-Path $out "$phase-stdout.txt") -RedirectStandardError (Join-Path $out "$phase-stderr.txt")
+            Start-Sleep -Seconds ([int]$env:WAIT)
+            "$phase main pid=$($p.Id) exited=$($p.HasExited) exit=$(if ($p.HasExited) { '0x{0:X}' -f $p.ExitCode })" | Tee-Object -Append (Join-Path $out 'summary.txt')
+            Snapshot "$phase-after-start"
+            # Second instance with a deep link (Windows delivers deep links this way).
+            Start-Process -FilePath $exe -ArgumentList 'calab://mail/inbox' | Out-Null
+            Start-Sleep -Seconds 15
+            "$phase after deep link: main exited=$($p.HasExited) exit=$(if ($p.HasExited) { '0x{0:X}' -f $p.ExitCode })" | Tee-Object -Append (Join-Path $out 'summary.txt')
+            Snapshot "$phase-after-deeplink"
+            Get-Process -Name Calab -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 3
+            if (Test-Path $ud) { Copy-Item -Recurse -Force (Join-Path $ud 'logs') (Join-Path $out "$phase-logs") -ErrorAction SilentlyContinue }
+          }
+
+          if ($env:FROM) {
+            Install-Calab $env:FROM
+            Run-Phase "from-$env:FROM"
+          }
+          Install-Calab $env:VERSION
+          Run-Phase "v$env:VERSION"
+          # Same build again on the now-existing userData (second launch).
+          Run-Phase "v$env:VERSION-relaunch"
+
+          Get-ChildItem -Recurse $ud -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize |
+            Out-File (Join-Path $out 'userdata-tree.txt') -Width 4096
+
+      # The test tools (mock API, fake mail server, Playwright) from this ref; no native builds.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install test tools
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter '@calaba/desktop...'
+
+      # Logged in to the e2e-support mock API: every rail section and settings tab (scripts/win-smoke-app.mjs).
+      - name: Logged-in app
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          out="$RUNNER_TEMP/smoke"
+          npx tsx e2e-support/mock-server.ts --port 3900 --scenario data --quiet > "$out/mock-server.txt" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:3900/__mock/ids > /dev/null && break; sleep 1; done
+          ud="$UD_BASE/ud-app"
+          timeout 600 node scripts/win-smoke-app.mjs "$CALAB_EXE" "$ud" "$out" http://127.0.0.1:3900 || echo "app driver exit=$?" >> "$out/summary.txt"
+          taskkill //F //IM Calab.exe || true
+          sleep 3
+          cp -r "$ud/logs" "$out/app-logs" || true
+          grep "app:" "$out/summary.txt" || true
+
+      # Mail engine on the installed build (no Calab login needed): scripts/win-smoke-mail.mjs.
+      - name: Mail engine
+        shell: bash
+        run: |
+          set -x
+          out="$RUNNER_TEMP/smoke"
+          certs=infra/docker/greenmail/certs; mkdir -p "$certs"
+          MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout "$certs/key.pem" -out "$certs/ca.pem"
+          node apps/desktop/scripts/mail-fake-server.mjs > "$out/mail-fake-server.txt" 2>&1 &
+          sleep 5
+          (sleep 40; node apps/desktop/scripts/mail-fake-server.mjs send >> "$out/mail-fake-server.txt" 2>&1) &
+          export NODE_EXTRA_CA_CERTS="$PWD/infra/docker/greenmail/certs/ca.pem"
+          ud="$UD_BASE/ud-mail"
+          timeout 300 node apps/desktop/scripts/win-smoke-mail.mjs "$CALAB_EXE" "$ud" "$out" || echo "mail driver exit=$?" >> "$out/summary.txt"
+          taskkill //F //IM Calab.exe || true
+          sleep 3
+          # As a user starts it (shortcut): no inherited stdio handles; the account exists, so the
+          # engine is forked at startup. Fatal when nothing survived: exactly this launch killed
+          # 3.1.1 and 3.2.0 (no stdout handle for the forked engine), and a logged count alone
+          # let it pass win-smoke as green.
+          CALABA_USER_DATA="$ud" pwsh -NoProfile -Command 'Start-Process -FilePath $env:CALAB_EXE'
+          sleep 45
+          alive=$(tasklist //FI 'IMAGENAME eq Calab.exe' //NH | grep -c Calab.exe || true)
+          # The `|| true` is only in the capture: `grep -c` exits 1 on zero matches and `set -e`
+          # would abort before the count and the FAIL line reach summary.txt. The check itself is
+          # fatal, no `|| true` after it.
+          echo "mail: shortcut-style launch alive processes=$alive" >> "$out/summary.txt"
+          if [ "$alive" -eq 0 ]; then
+            echo "FAIL: Calab died after a shortcut-style launch (no stdio handles)" | tee -a "$out/summary.txt"
+            exit 1
+          fi
+          tasklist //V //FI 'IMAGENAME eq Calab.exe' > "$out/mail-processes-shortcut.txt" || true
+          taskkill //F //IM Calab.exe || true
+          sleep 3
+          cp -r "$ud/logs" "$out/mail-logs" || true
+          find "$ud" -maxdepth 3 > "$out/mail-userdata-tree.txt" 2>/dev/null || true
+          cat "$out/summary.txt"; tail -150 "$out/mail-logs/main.log" || true
+
+      - name: Events
+        if: always()
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'smoke'
+          $since = (Get-Date).AddHours(-1)
+          foreach ($provider in 'Application Error', 'Windows Error Reporting', 'Application Hang') {
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = $provider; StartTime = $since } -ErrorAction SilentlyContinue |
+              Format-List TimeCreated, Id, ProviderName, Message |
+              Out-File -Append (Join-Path $out 'events.txt') -Width 4096
+          }
+          if (Test-Path (Join-Path $out 'events.txt')) { Get-Content (Join-Path $out 'events.txt') }
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
+        with:
+          name: win-smoke-${{ matrix.version }}${{ matrix.from && format('-from-{0}', matrix.from) || '' }}${{ matrix.unicode && '-unicode' || '' }}
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: warn
+
+  # Auto-update on Windows: <from> installed, mail engine running, the feed's latest downloaded and
+  # installed on quit (scripts/win-smoke-update.mjs), then the result launched as a user would.
+  update:
+    if: inputs.update_from != ''
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        from: ${{ fromJSON(format('["{0}"]', inputs.update_from)) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FROM: ${{ matrix.from }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install test tools
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter '@calaba/desktop...'
+      - name: Update
+        shell: bash
+        run: |
+          set -x
+          out="$RUNNER_TEMP/smoke"; mkdir -p "$out"
+          exe="$LOCALAPPDATA/Programs/Calab/Calab.exe"
+          certs=infra/docker/greenmail/certs; mkdir -p "$certs"
+          MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout "$certs/key.pem" -out "$certs/ca.pem"
+          node apps/desktop/scripts/mail-fake-server.mjs > "$out/mail-fake-server.txt" 2>&1 &
+          export NODE_EXTRA_CA_CERTS="$PWD/$certs/ca.pem"
+          gh release download "v$FROM" -R "$GITHUB_REPOSITORY" -p "Calab-Setup-$FROM-x64.exe" -D "$RUNNER_TEMP" --clobber
+          pwsh -NoProfile -Command "Start-Process -Wait -FilePath '$RUNNER_TEMP\Calab-Setup-$FROM-x64.exe' -ArgumentList '/S'"
+          ver() { pwsh -NoProfile -Command "(Get-Item '$LOCALAPPDATA\Programs\Calab\Calab.exe').VersionInfo.ProductVersion"; }
+          echo "update: installed $(ver)" >> "$out/summary.txt"
+          timeout 300 node apps/desktop/scripts/win-smoke-update.mjs "$exe" "$out" || echo "update driver exit=$?" >> "$out/summary.txt"
+          # The installer runs after quit (silent): wait until no setup / Calab process is left.
+          for i in $(seq 1 60); do tasklist | grep -qi "Calab" || break; sleep 3; done
+          tasklist //V | grep -i "calab\|setup" > "$out/processes-after-install.txt" || true
+          echo "update: after install $(ver)" >> "$out/summary.txt"
+          pwsh -NoProfile -Command "Start-Process -FilePath \"$LOCALAPPDATA\\Programs\\Calab\\Calab.exe\""
+          sleep 60
+          echo "update: relaunch alive processes=$(tasklist //FI 'IMAGENAME eq Calab.exe' //NH | grep -c Calab.exe)" >> "$out/summary.txt"
+          tasklist //V //FI 'IMAGENAME eq Calab.exe' > "$out/processes-relaunch.txt" || true
+          taskkill //F //IM Calab.exe || true
+          sleep 3
+          cp -r "$APPDATA/Calaba/logs" "$out/logs" || true
+          ls -la "$LOCALAPPDATA/Programs/Calab" "$LOCALAPPDATA/Programs/Calab/resources" > "$out/install-tree.txt" 2>&1 || true
+          cat "$out/summary.txt"; tail -80 "$out/logs/main.log" || true
+      - name: Events
+        if: always()
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'smoke'
+          foreach ($provider in 'Application Error', 'Windows Error Reporting', 'Application Hang') {
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = $provider; StartTime = (Get-Date).AddHours(-1) } -ErrorAction SilentlyContinue |
+              Format-List TimeCreated, Id, ProviderName, Message |
+              Out-File -Append (Join-Path $out 'events.txt') -Width 4096
+          }
+          if (Test-Path (Join-Path $out 'events.txt')) { Get-Content (Join-Path $out 'events.txt') }
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
+        with:
+          name: win-update-from-${{ matrix.from }}
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: warn

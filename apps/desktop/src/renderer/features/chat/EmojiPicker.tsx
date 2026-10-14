@@ -79,7 +79,7 @@ export function EmojiPicker({
           aria-label={t('chat.emoji')}
           data-testid="emoji-picker"
           className={cx(
-            'mat-popover dense anim-in flex h-[372px] w-[348px] mobile:h-[min(75dvh,560px)] flex-col overflow-hidden rounded-[var(--radius-panel)]',
+            'mat-popover dense anim-in flex h-[372px] w-[348px] mobile:h-[min(var(--phone-card-max-h),560px)] flex-col overflow-hidden rounded-[var(--radius-panel)]',
             // A short window: the grid shrinks to the room under the button (the picker scrolls anyway).
             inModal ? 'z-[var(--z-modal-popover)] max-h-[var(--radix-popover-content-available-height)]' : 'z-[var(--z-popover)]',
           )}

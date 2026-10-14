@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
-import { WorkspaceRole, type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
-import { Check, ChevronLeft, ChevronRight, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
+import { type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
+import { Check, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
@@ -8,15 +8,18 @@ import { PickerPanel } from '../../components/picker/Picker';
 import type { PickerGroup, PickerItem } from '../../components/picker/pickerModel';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { addDays, addMonths, dayKey, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
+import { addDays, dayKey, monthOf } from '../../lib/calendar/time';
 import { MAX_APPROVERS } from '../../lib/boards/approvals';
+import { MAX_WATCHERS } from '../../lib/boards/watchers';
 import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { createLabel } from '../../services/boards';
+import { accessChoice, pickerAccess, type PickerAccess } from '../../lib/boards/access';
 import { useBoards } from '../../stores/boards';
 import { useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
+import { MonthPicker } from '../calendar/MonthPicker';
 import { useToday } from '../calendar/MiniCalendar';
 import { doneType } from './model';
 import { Dot, PALETTE, PRIORITIES, PRIORITY_LABEL, PriorityIcon, StatusIcon, colorCss, formatDue } from './visuals';
@@ -35,6 +38,9 @@ export interface Choice extends PickerItem {
   checked?: boolean;
   /** Muted text before the check (counts). */
   note?: string;
+  /** Secondary caption after the name («увидит только эту карточку», ADR-0059); `title` is its tooltip. */
+  caption?: string;
+  title?: string;
 }
 
 interface MenuShell {
@@ -127,7 +133,10 @@ export function ChoiceMenu({
             renderItem={(c, active) => (
               <>
                 {c.icon ? <span className="grid size-5 shrink-0 place-items-center">{c.icon}</span> : null}
-                <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                <span className="min-w-0 flex-1 truncate" {...(c.title ? { title: c.title } : {})}>
+                  {c.label}
+                </span>
+                {c.caption ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{c.caption}</span> : null}
                 {c.note ? <span className={cx('shrink-0 text-caption tabular-nums', active ? 'opacity-75' : 'text-muted')}>{c.note}</span> : null}
                 {c.checked ? <Check className="size-3.5 shrink-0" aria-label={t('boards.selected')} /> : <span className="size-3.5 shrink-0" />}
                 {digits ? (
@@ -165,7 +174,7 @@ export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuSh
           .sort((a, b) => a.position - b.position)
           .map((s): Choice => {
             const off = !!blocked?.has(s.id);
-            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
+            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} icon={s.icon} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
           }),
       },
     ],
@@ -219,10 +228,19 @@ export function AssigneeMenu({
   const [open, setOpen] = useOpen(shell);
   // Only while open: a closed menu on every card must not re-render on presence / voice changes.
   const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
+  const roles = useWorkspaces((s) => (open ? s.byId[workspaceId]?.roles : undefined));
+  const board = useBoards((s) => (open ? s.boards[boardId] : undefined));
   const counts = useAssigneeCounts(boardId, open);
   const openDialog = useUi((s) => s.openDialog);
   const groups = useMemo((): Array<PickerGroup<Choice>> => {
-    const list = Object.values(members ?? {}).filter((m) => m.user && m.role !== WorkspaceRole.GUEST);
+    // ADR-0059: every non-guest member (a bot only when it sees the board).
+    const access = new Map<string, PickerAccess>();
+    const list = Object.values(members ?? {}).filter((m) => {
+      if (!m.user) return false;
+      const a = pickerAccess(board, roles ?? [], m);
+      access.set(m.user.id, a);
+      return a !== 'hidden' || value.includes(m.user.id);
+    });
     const person = (id: string, name: string, fileId: string): Choice => ({
       id,
       search: [name],
@@ -230,6 +248,7 @@ export function AssigneeMenu({
       icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
       checked: value.includes(id),
       note: String(counts[id] ?? 0),
+      ...accessChoice(access.get(id)),
     });
     const chosen = list.filter((m) => value.includes(m.user?.id ?? '')).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
     const others = list
@@ -242,14 +261,14 @@ export function AssigneeMenu({
       { id: 'members', label: t('boards.members'), items: others },
       { id: 'invite', label: t('boards.newUser'), items: [{ id: '__invite', search: [t('boards.inviteAssign')], label: t('boards.inviteAssign'), icon: <Send className="size-4 text-muted" /> }] },
     ];
-  }, [members, value, counts]);
+  }, [members, roles, board, value, counts]);
   return (
     <ChoiceMenu
       {...shell}
       open={open}
       onOpenChange={setOpen}
       multi
-      width={300}
+      width={340}
       groups={groups}
       onPick={(c) => {
         if (c.id === '__none') onNone();
@@ -271,18 +290,30 @@ export function AssigneeMenu({
  */
 export function ApproverMenu({
   workspaceId,
+  boardId,
   value,
   onToggle,
   ...shell
-}: MenuShell & { workspaceId: string; value: readonly string[]; onToggle: (userId: string) => void }): ReactNode {
+}: MenuShell & { workspaceId: string; boardId: string; value: readonly string[]; onToggle: (userId: string) => void }): ReactNode {
   const [open, setOpen] = useOpen(shell);
   const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
+  const roles = useWorkspaces((s) => (open ? s.byId[workspaceId]?.roles : undefined));
+  const board = useBoards((s) => (open ? s.boards[boardId] : undefined));
   const groups = useMemo((): Array<PickerGroup<Choice>> => {
     const full = value.length >= MAX_APPROVERS;
-    const list = Object.values(members ?? {}).filter((m) => m.user && !m.user.isBot && m.role !== WorkspaceRole.GUEST);
+    const access = new Map<string, PickerAccess>();
+    const list = Object.values(members ?? {}).filter((m) => {
+      if (!m.user) return false;
+      const a = pickerAccess(board, roles ?? [], m);
+      access.set(m.user.id, a);
+      // A bot only when it sees the board; a guest never (ADR-0059).
+      return a !== 'hidden' && (!m.user.isBot || a === 'ok');
+    });
     const person = (id: string, name: string, fileId: string): Choice => {
       const on = value.includes(id);
+      const acc = accessChoice(access.get(id));
       return {
+        ...acc,
         id,
         search: [name],
         label: name,
@@ -303,14 +334,14 @@ export function ApproverMenu({
       { id: 'chosen', label: '', items: chosen },
       { id: 'members', label: t('boards.members'), items: others },
     ];
-  }, [members, value]);
+  }, [members, roles, board, value]);
   return (
     <ChoiceMenu
       {...shell}
       open={open}
       onOpenChange={setOpen}
       multi
-      width={300}
+      width={340}
       groups={groups}
       onPick={(c) => onToggle(c.id)}
       placeholder={t('boards.approverMenu')}
@@ -321,6 +352,70 @@ export function ApproverMenu({
 }
 
 // ------------------------------------------------------------------ labels
+
+/**
+ * «+ Добавить» of «Наблюдатели» (ADR-0076 §7): every member of the workspace except guests (a bot
+ * only when it sees the board); those who do not see the board are marked «увидит только эту
+ * задачу». At most MAX_WATCHERS (the rest disabled once full). The server checks access.
+ */
+export function WatcherMenu({
+  workspaceId,
+  boardId,
+  value,
+  onToggle,
+  ...shell
+}: MenuShell & { workspaceId: string; boardId: string; value: readonly string[]; onToggle: (userId: string) => void }): ReactNode {
+  const [open, setOpen] = useOpen(shell);
+  // Only while open: a closed menu must not re-render on presence changes.
+  const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
+  const roles = useWorkspaces((s) => (open ? s.byId[workspaceId]?.roles : undefined));
+  const board = useBoards((s) => (open ? s.boards[boardId] : undefined));
+  const groups = useMemo((): Array<PickerGroup<Choice>> => {
+    const full = value.length >= MAX_WATCHERS;
+    const access = new Map<string, PickerAccess>();
+    const list = Object.values(members ?? {}).filter((m) => {
+      if (!m.user) return false;
+      const a = pickerAccess(board, roles ?? [], m);
+      access.set(m.user.id, a);
+      return a !== 'hidden' || value.includes(m.user.id);
+    });
+    const person = (id: string, name: string, fileId: string): Choice => {
+      const on = value.includes(id);
+      return {
+        ...accessChoice(access.get(id)),
+        id,
+        search: [name],
+        label: name,
+        icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
+        checked: on,
+        ...(full && !on ? { disabled: true, note: t('boards.watchersMax') } : {}),
+      };
+    };
+    const chosen = list.filter((m) => value.includes(m.user?.id ?? '')).map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
+    const others = list
+      .filter((m) => !value.includes(m.user?.id ?? ''))
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+      .map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
+    return [
+      { id: 'chosen', label: '', items: chosen },
+      { id: 'members', label: t('boards.members'), items: others },
+    ];
+  }, [members, roles, board, value]);
+  return (
+    <ChoiceMenu
+      {...shell}
+      open={open}
+      onOpenChange={setOpen}
+      multi
+      width={340}
+      groups={groups}
+      onPick={(c) => onToggle(c.id)}
+      placeholder={t('boards.watcherMenu')}
+      label={t('boards.watchers')}
+      testId="watcher-menu"
+    />
+  );
+}
 
 export function LabelMenu({ boardId, value, onToggle, canCreate, ...shell }: MenuShell & { boardId: string; value: readonly string[]; onToggle: (labelId: string) => void; canCreate: boolean }): ReactNode {
   const labels = useBoards(useShallow((s) => s.boards[boardId]?.labels ?? NO_LABELS));
@@ -432,8 +527,6 @@ export function DateMenu({ value, onPick, title, ...shell }: MenuShell & { value
       setFocus(value || today);
     }
   }
-  const first = weekStart();
-  const grid = useMemo(() => monthGrid(month, first), [month, first]);
   const pick = (d: string): void => {
     onPick(d);
     setOpen(false);
@@ -485,47 +578,7 @@ export function DateMenu({ value, onPick, title, ...shell }: MenuShell & { value
               </button>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 pb-1">
-            <span className="flex-1 pl-1 text-control font-semibold">{formatMonth(month)}</span>
-            <button type="button" aria-label={t('cal.prevMonth')} onClick={() => setMonth(addMonths(month, -1))} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg">
-              <ChevronLeft className="size-4" aria-hidden />
-            </button>
-            <button type="button" aria-label={t('cal.nextMonth')} onClick={() => setMonth(addMonths(month, 1))} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg">
-              <ChevronRight className="size-4" aria-hidden />
-            </button>
-          </div>
-          <div className="grid grid-cols-7 text-center text-micro text-faint">
-            {weekdayNames(first).map((d, i) => (
-              <span key={i} className="py-1">
-                {d}
-              </span>
-            ))}
-          </div>
-          <div className="grid grid-cols-7" role="grid" aria-label={formatMonth(month)}>
-            {grid.map((d) => {
-              const other = monthOf(d) !== month;
-              const sel = d === value;
-              const isToday = d === today;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  tabIndex={-1}
-                  onClick={() => pick(d)}
-                  aria-pressed={sel}
-                  data-day={d}
-                  className={cx(
-                    'mx-auto grid size-8 place-items-center rounded-full text-control tabular-nums',
-                    sel ? 'bg-accent-strong text-accent-fg' : isToday ? 'font-semibold text-accent-text' : other ? 'text-faint' : 'text-fg',
-                    !sel && 'hover:bg-hover',
-                    d === focus && !sel && 'ring-1 ring-accent',
-                  )}
-                >
-                  {Number(d.slice(8))}
-                </button>
-              );
-            })}
-          </div>
+          <MonthPicker month={month} onMonth={setMonth} value={value} today={today} focus={focus} onPick={pick} />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -538,8 +591,13 @@ export { useToday, dayKey };
 /** A 20 px avatar of a member (cards, rows, chips). */
 export function MemberAvatar({ workspaceId, userId, size = 20 }: { workspaceId: string; userId: string; size?: number }): ReactNode {
   const m = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]);
-  const name = m ? nameOf(m) : '';
-  return m ? <Avatar userId={userId} name={name} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={size} /> : <UserRound className="shrink-0 text-muted" style={{ width: size, height: size }} aria-hidden />;
+  // Someone who left (ADR-0097): the profile comes by id, the picture is grey with the «left» glyph.
+  const u = useWorkspaces((s) => (m ? undefined : s.users[userId]));
+  const former = !!useFormerInfo(workspaceId, userId);
+  useResolveUnknown(workspaceId, userId);
+  if (m) return <Avatar userId={userId} name={nameOf(m)} {...(m.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={size} />;
+  if (u) return <Avatar userId={userId} name={u.displayName} {...(u.avatarFileId ? { fileId: u.avatarFileId } : {})} size={size} former={former} />;
+  return <UserRound className="shrink-0 text-muted" style={{ width: size, height: size }} aria-hidden />;
 }
 
 export { colorCss };

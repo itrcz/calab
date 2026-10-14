@@ -1,6 +1,12 @@
+import { AttendeeStatus } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   daysOf,
+  deletePrompt,
+  deleteRole,
+  restoreExternal,
+  withoutExternal,
+  withMyStatus,
   eventsByDay,
   externalKey,
   externalSignature,
@@ -17,10 +23,10 @@ import { dayStart } from './time';
 const at = (d: number, h: number, m = 0): number => new Date(2026, 0, d, h, m).getTime();
 
 function ev(uid: string, start: number, end: number, extra: Partial<ExternalEvent> = {}): ExternalEvent {
-  return { uid, start, end, allDay: false, summary: uid, location: '', attendees: [], organizer: '', url: '', ...extra };
+  return { uid, start, end, allDay: false, summary: uid, location: '', attendees: [], organizer: '', url: '', href: '', recurring: false, webUrl: '', myStatus: AttendeeStatus.UNSPECIFIED, ...extra };
 }
 
-const att = (email: string, userId = '', name = ''): ExternalAttendee => ({ email, userId, name });
+const att = (email: string, userId = '', name = ''): ExternalAttendee => ({ email, userId, name, status: AttendeeStatus.PENDING });
 
 describe('attendees of an external event → the meeting dialog (ADR-0045 §3)', () => {
   const members = new Set(['u-boris', 'u-vera']);
@@ -93,5 +99,61 @@ describe('external events by day', () => {
     ]);
     // A new title (not a time) keeps the signature: only the card re-renders.
     expect(externalSignature([{ ...(list[0] as ExternalEvent), summary: 'x' }, list[1] as ExternalEvent])).toBe(sig);
+  });
+});
+
+describe('«Удалить из календаря» (ADR-0045 amendment 1)', () => {
+  const me = ['Anna@Example.com', 'anna@yandex.ru'];
+
+  it('the organizer with others warns about the cancellation; an attendee or a private event — only my calendar', () => {
+    const others = [att('anna@example.com'), att('boris@x.ru')];
+    expect(deleteRole({ organizer: 'anna@yandex.ru', attendees: others }, me)).toBe('organizer');
+    expect(deleteRole({ organizer: 'boris@x.ru', attendees: others }, me)).toBe('attendee');
+    expect(deleteRole({ organizer: 'anna@example.com', attendees: [att('anna@example.com')] }, me)).toBe('attendee');
+    expect(deleteRole({ organizer: '', attendees: [] }, me)).toBe('attendee');
+    expect(deleteRole({ organizer: 'anna@example.com', attendees: others }, ['', ''])).toBe('attendee');
+  });
+
+  it('the confirmation names what goes and whom it reaches', () => {
+    const mine = ev('s', at(15, 9), at(15, 10), { summary: 'Планёрка', organizer: 'anna@example.com', attendees: [att('boris@x.ru')] });
+    expect(deletePrompt(mine, 'this', me)).toEqual({
+      title: 'Удалить «Планёрка» из календаря?',
+      text: 'Вы организатор — участникам уйдёт отмена от вашего календаря.',
+      action: 'Удалить',
+    });
+    const invited = { ...mine, organizer: 'boris@x.ru', recurring: true };
+    expect(deletePrompt(invited, 'series', me)).toMatchObject({ title: 'Удалить все повторения «Планёрка»?', text: 'Событие исчезнет только из вашего календаря.' });
+    expect(deletePrompt(invited, 'this', me).title).toMatch(/^Удалить событие .*15 января.* из календаря\?$/);
+    expect(deletePrompt({ ...mine, summary: '' }, 'this', me).title).toBe('Удалить «Без названия» из календаря?');
+  });
+
+  it('gone at once: this occurrence or every one of the uid; back on a refusal, without doubles', () => {
+    const a1 = ev('a', at(15, 9), at(15, 10), { recurring: true });
+    const a2 = ev('a', at(16, 9), at(16, 10), { recurring: true });
+    const b = ev('b', at(15, 11), at(15, 12));
+    const days = { '2026-01-15': [a1, b], '2026-01-16': [a2] };
+    const one = withoutExternal(days, a1, false);
+    expect(one.days['2026-01-15']).toEqual([b]);
+    expect(one.days['2026-01-16']).toBe(days['2026-01-16']);
+    expect(one.removed).toEqual({ '2026-01-15': [a1] });
+    const all = withoutExternal(days, a1, true);
+    expect(all.days).toEqual({ '2026-01-15': [b], '2026-01-16': [] });
+    expect(restoreExternal(all.days, all.removed)).toEqual(days);
+    // Loaded again meanwhile: not doubled.
+    expect(restoreExternal({ '2026-01-15': [a1, b], '2026-01-16': [] }, all.removed)).toEqual(days);
+  });
+});
+
+describe('my answer to an external event (ADR-0045 amendment 2)', () => {
+  it('shows on every occurrence of the uid; untouched days keep their list', () => {
+    const a1 = ev('a', at(15, 9), at(15, 10), { recurring: true, myStatus: AttendeeStatus.PENDING });
+    const a2 = ev('a', at(16, 9), at(16, 10), { recurring: true, myStatus: AttendeeStatus.PENDING });
+    const b = ev('b', at(17, 11), at(17, 12), { myStatus: AttendeeStatus.PENDING });
+    const days = { '2026-01-15': [a1], '2026-01-16': [a2], '2026-01-17': [b] };
+    const next = withMyStatus(days, 'a', AttendeeStatus.ACCEPTED);
+    expect(next['2026-01-15']?.[0]?.myStatus).toBe(AttendeeStatus.ACCEPTED);
+    expect(next['2026-01-16']?.[0]?.myStatus).toBe(AttendeeStatus.ACCEPTED);
+    expect(next['2026-01-17']).toBe(days['2026-01-17']);
+    expect(withMyStatus(next, 'a', AttendeeStatus.ACCEPTED)['2026-01-15']).toBe(next['2026-01-15']);
   });
 });

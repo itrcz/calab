@@ -43,6 +43,11 @@ type Config struct {
 	// nil disables (unit fixtures). Pre-authentication limits are keyed by IP and
 	// applied by the integrator before the handler.
 	Quota func(ctx context.Context, endpoint string, ws, client, user uuid.UUID) error
+	// PlanActive refuses creating a client in a workspace in the restricted mode («тариф не
+	// активен», ADR-0086 amendment 1; plans.Service.CheckActive): the route is public for the
+	// identity gate, so the provider asks after its own authorization. The action names what is
+	// refused. nil disables (unit fixtures).
+	PlanActive func(ctx context.Context, ws uuid.UUID, action string) error
 }
 
 // Service exposes protocol routes and Calaba consent/management routes.

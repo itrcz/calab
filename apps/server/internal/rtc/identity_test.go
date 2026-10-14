@@ -3,13 +3,20 @@ package rtc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type identitySFU struct {
@@ -44,7 +51,7 @@ func TestIdentitySweepSlowDependencyMultipleRooms(t *testing.T) {
 		}
 		room := voice.RoomName(ws, uuid.New())
 		f.rooms = append(f.rooms, Room{Name: room})
-		for j := 0; j < 20; j++ {
+		for j := 0; j < 2; j++ {
 			f.people[room] = append(f.people[room], Participant{Identity: voice.Identity(uuid.New(), uuid.New())})
 		}
 	}
@@ -63,16 +70,29 @@ func TestIdentitySweepSlowDependencyMultipleRooms(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	start := time.Now()
-	if err := svc.EnforceIdentity(ctx); err != nil {
-		t.Fatal(err)
+	// A slow gate is a transient failure: the first sweep keeps everyone, a sweep after
+	// identityTransientGrace of unbroken failures evicts. Both stay within budget.
+	now := time.Now()
+	svc.identitySweep.now = func() time.Time { return now }
+	for sweep := 0; sweep < 2; sweep++ {
+		if sweep == 1 {
+			if len(f.removed) != 0 {
+				t.Fatalf("first slow sweep evicted %d participants", len(f.removed))
+			}
+			now = now.Add(identityTransientGrace)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		start := time.Now()
+		if err := svc.EnforceIdentity(ctx); err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		cancel()
+		if time.Since(start) > 4*time.Second {
+			t.Fatal("slow dependency starved later rooms")
+		}
 	}
-	if time.Since(start) > 4*time.Second {
-		t.Fatal("slow dependency starved later rooms")
-	}
-	if maxInFlight.Load() > 64 {
+	if maxInFlight.Load() > identityParticipantWorkers {
 		t.Fatalf("unbounded concurrency: %d", maxInFlight.Load())
 	}
 	for i, room := range f.rooms {
@@ -455,5 +475,183 @@ func TestIdentitySweepJoinsCancelledRemoval(t *testing.T) {
 	}
 	if active.Load() {
 		t.Fatal("removal outlived its sweep")
+	}
+}
+
+func identityOneParticipant(t *testing.T) (*identitySFU, string) {
+	t.Helper()
+	room := voice.RoomName(uuid.New(), uuid.New())
+	f := &identitySFU{rooms: []Room{{Name: room}}, people: map[string][]Participant{}, removed: map[string]int{}}
+	id := voice.Identity(uuid.New(), uuid.New())
+	f.people[room] = []Participant{{Identity: id}}
+	return f, room + id
+}
+
+func identitySweepAt(t *testing.T, svc *Service, at time.Time) {
+	t.Helper()
+	svc.identitySweep.now = func() time.Time { return at }
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := svc.EnforceIdentity(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A database stall (503 from the gate) must not drop people from calls; an outage that
+// outlasts the grace still evicts.
+func TestIdentitySweepTransientFailureWaitsForGrace(t *testing.T) {
+	f, key := identityOneParticipant(t)
+	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		return httpx.Unavailable(errors.New("pool timeout"))
+	}}
+	t0 := time.Now()
+	identitySweepAt(t, svc, t0)
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace-time.Second))
+	if f.removed[key] != 0 {
+		t.Fatal("transient failure evicted before the grace")
+	}
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace))
+	if f.removed[key] != 1 {
+		t.Fatalf("unbroken failure past the grace: removal=%d want 1", f.removed[key])
+	}
+}
+
+func TestIdentitySweepDenialEvictsAtOnce(t *testing.T) {
+	for name, deny := range map[string]error{
+		"forbidden": httpx.Forbidden("account disabled"),
+		"not found": httpx.NotFound("room"),
+		"unknown":   errors.New("denied"),
+		// the gate wraps these decisions in 503
+		"session revoked": httpx.Unavailable(auth.ErrSessionRevoked),
+		"user gone":       httpx.Unavailable(pgx.ErrNoRows),
+		"policy denial":   httpx.Unavailable(identitypolicy.ErrDenied),
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, key := identityOneParticipant(t)
+			svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return deny }}
+			identitySweepAt(t, svc, time.Now())
+			if f.removed[key] != 1 {
+				t.Fatalf("denial: removal=%d want 1", f.removed[key])
+			}
+		})
+	}
+}
+
+// A successful check ends the run: failures before and after a success do not add up.
+func TestIdentitySweepSuccessResetsTransientRun(t *testing.T) {
+	f, key := identityOneParticipant(t)
+	var fail atomic.Bool
+	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		if fail.Load() {
+			return httpx.Unavailable(errors.New("stall"))
+		}
+		return nil
+	}}
+	t0 := time.Now()
+	fail.Store(true)
+	identitySweepAt(t, svc, t0)
+	fail.Store(false)
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace/2))
+	fail.Store(true)
+	identitySweepAt(t, svc, t0.Add(identityTransientGrace))
+	if f.removed[key] != 0 {
+		t.Fatal("failures separated by a success were summed")
+	}
+}
+
+func TestIdentityWorkersStayBelowDBPool(t *testing.T) {
+	if got := (&Service{}).identityWorkers(); got != identityParticipantWorkers {
+		t.Fatalf("no pool: %d workers, want %d", got, identityParticipantWorkers)
+	}
+	for _, c := range []struct{ conns, want int }{{1, 1}, {2, 1}, {5, 4}, {9, 8}, {20, identityParticipantWorkers}} {
+		cfg, err := pgxpool.ParseConfig(fmt.Sprintf("postgres://calaba@127.0.0.1:1/calaba?pool_max_conns=%d", c.conns))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pool, err := pgxpool.NewWithConfig(context.Background(), cfg) // lazy: never dials here
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := (&Service{db: &db.DB{Pool: pool}}).identityWorkers()
+		pool.Close()
+		if got != c.want {
+			t.Fatalf("pool of %d: %d workers, want %d", c.conns, got, c.want)
+		}
+	}
+}
+
+func TestIdentitySweepRoomBatchChecksEachRoomInOneCall(t *testing.T) {
+	ws := uuid.New()
+	small, big := voice.RoomName(ws, uuid.New()), voice.RoomName(ws, uuid.New())
+	f := &identitySFU{rooms: []Room{{Name: small}, {Name: big}}, people: map[string][]Participant{}, removed: map[string]int{}}
+	for range 3 {
+		f.people[small] = append(f.people[small], Participant{Identity: voice.Identity(uuid.New(), uuid.New())})
+	}
+	for range identityRoomBatch + 6 {
+		f.people[big] = append(f.people[big], Participant{Identity: voice.Identity(uuid.New(), uuid.New())})
+	}
+	denied := f.people[small][1].Identity
+	var mu sync.Mutex
+	calls := map[uuid.UUID][]int{}
+	svc := &Service{lk: f,
+		IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+			t.Error("per-device gate called while the room gate is set")
+			return nil
+		},
+		IdentityAccessRoom: func(_ context.Context, _, room uuid.UUID, people []IdentityKey) []error {
+			mu.Lock()
+			calls[room] = append(calls[room], len(people))
+			mu.Unlock()
+			out := make([]error, len(people))
+			for i, p := range people {
+				if voice.Identity(p.User, p.Session) == denied {
+					out[i] = httpx.Forbidden("revoked")
+				}
+			}
+			return out
+		}}
+	if err := svc.EnforceIdentity(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, smallID, _ := voice.ParseRoomName(small)
+	_, bigID, _ := voice.ParseRoomName(big)
+	if got := calls[smallID]; len(got) != 1 || got[0] != 3 {
+		t.Fatalf("small room batches=%v, want [3]", got)
+	}
+	if got := calls[bigID]; len(got) != 2 || got[0]+got[1] != identityRoomBatch+6 || max(got[0], got[1]) != identityRoomBatch {
+		t.Fatalf("big room batches=%v, want one full batch of %d and the rest", got, identityRoomBatch)
+	}
+	if len(f.removed) != 1 || f.removed[small+denied] != 1 {
+		t.Fatalf("removed=%v, want only the denied device", f.removed)
+	}
+}
+
+func TestIdentitySweepRoomBatchTransientWaitsForGrace(t *testing.T) {
+	room := identityNumberedRoom(1)
+	f := &identitySFU{rooms: []Room{{Name: room}}, people: map[string][]Participant{}, removed: map[string]int{}}
+	for range 4 {
+		f.people[room] = append(f.people[room], Participant{Identity: voice.Identity(uuid.New(), uuid.New())})
+	}
+	verdicts := 4
+	svc := &Service{lk: f, IdentityAccessRoom: func(_ context.Context, _, _ uuid.UUID, _ []IdentityKey) []error {
+		out := make([]error, verdicts)
+		for i := range out {
+			out[i] = httpx.Unavailable(errors.New("db down"))
+		}
+		return out
+	}}
+	now := time.Now()
+	svc.identitySweep.now = func() time.Time { return now }
+	if err := svc.EnforceIdentity(context.Background()); err != nil || len(f.removed) != 0 {
+		t.Fatalf("first undecided sweep: err=%v removed=%v", err, f.removed)
+	}
+	// A gate that answers the wrong number of verdicts is undecided too, never a denial.
+	verdicts = 1
+	if err := svc.EnforceIdentity(context.Background()); err != nil || len(f.removed) != 0 {
+		t.Fatalf("broken gate evicted: err=%v removed=%v", err, f.removed)
+	}
+	now = now.Add(identityTransientGrace)
+	if err := svc.EnforceIdentity(context.Background()); err != nil || len(f.removed) != 4 {
+		t.Fatalf("after grace: err=%v removed=%d, want 4", err, len(f.removed))
 	}
 }

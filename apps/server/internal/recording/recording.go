@@ -99,7 +99,32 @@ type Service struct {
 	// OnStarted is told about every recording that started (the calendar links it to the
 	// room's meeting, ADR-0038 §6); nil = nobody.
 	OnStarted func(ctx context.Context, rec sqlc.RoomRecording)
+	// PlanInactive reports the workspace in the restricted mode («тариф не активен», ADR-0086
+	// amendment 1): its recordings stop (Maintain, StopWorkspace). nil = never. An unreadable
+	// plan keeps recording: the start route is closed by the identity gate anyway.
+	PlanInactive func(ctx context.Context, workspace uuid.UUID) bool
 }
+
+// StopPlanInactive stops the running recordings of a workspace that just entered the restricted
+// mode (billing hook; Maintain repeats it for the rows this instance missed).
+func (s *Service) StopPlanInactive(ctx context.Context, workspace uuid.UUID) {
+	rows, err := s.db.Q.ListActiveRecordings(ctx, &workspace)
+	if err != nil {
+		slog.WarnContext(ctx, "recording: list active for the plan stop", "workspace", workspace, "err", err)
+		return
+	}
+	for _, rec := range rows {
+		if rec.Status != "recording" || rec.StoppedAt != nil {
+			continue
+		}
+		if _, err := s.requestStop(ctx, rec, StopPlanInactive, nil); err != nil {
+			slog.WarnContext(ctx, "recording: plan stop", "recording", rec.ID, "err", err)
+		}
+	}
+}
+
+// StopPlanInactive is RoomRecording.stop_reason of a recording stopped by the restricted mode.
+const StopPlanInactive = "plan_inactive"
 
 // New creates the service. eg nil = recording unavailable (start answers 503).
 func New(cfg Config, d *db.DB, r rueidis.Client, eg rtc.Egress, gpt *gptunnel.Client, ev events.Publisher) *Service {

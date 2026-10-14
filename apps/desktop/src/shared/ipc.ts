@@ -1,5 +1,6 @@
 import type { KeySource } from './keySource';
 import type { PttMode } from './pttGate';
+import type { UpdateChannel } from './updateFeed';
 
 /**
  * IPC contract between main and renderer (via preload). Keep it narrow:
@@ -55,6 +56,8 @@ export const IPC = {
   appNetworkOnline: 'app:network-online',
   appLog: 'app:log',
   appOpenExternal: 'app:open-external',
+  /** A provider's hosted checkout in the in-app checkout window (ADR-0084) → CheckoutWindowOutcome on close. */
+  appOpenCheckout: 'app:open-checkout',
   appLegal: 'app:legal',
   appAttention: 'app:attention',
   /** Mentions + unread DM messages → Dock badge / badge count / tray tooltip (docs/09 item 22). */
@@ -90,6 +93,10 @@ export const IPC = {
   // ---- files ----
   filesDownload: 'files:download',
   filesProgress: 'files:progress',
+  /** Drag an image out of the window (main/dragOut.ts): fetch the original into temp ahead… */
+  filesDragPrepare: 'files:drag-prepare',
+  /** …then start the OS drag of that file from the sender's window. */
+  filesDragStart: 'files:drag-start',
   /** A picture Chromium cannot decode (HEIC) → JPEG by the OS (main/imageDecode.ts); null = cannot. */
   filesDecodeImage: 'files:decode-image',
 
@@ -152,6 +159,15 @@ export const IPC = {
   webAppForget: 'webapp:forget',
   /** main → renderer: WebAppNavState of an app (navigation, title, loading, failure). */
   webAppState: 'webapp:state',
+  /** A tooltip over the shown app: drawn by a native overlay above it (WebAppTip; ADR-0053 «Поправка 1»). */
+  webAppTipShow: 'webapp:tip-show',
+  webAppTipHide: 'webapp:tip-hide',
+
+  // ---- mail (ADR-0088 §7): main relays to the mail engine utilityProcess ----
+  /** renderer → main: a MailCall → MailReply (shared/mail.ts). */
+  mailRequest: 'mail:request',
+  /** main → renderer: a MailEvent. */
+  mailEvent: 'mail:event',
 } as const;
 
 /** ◀ ▶ ⟳ of the navigation strip. */
@@ -162,6 +178,16 @@ export interface WebAppBounds {
   y: number;
   width: number;
   height: number;
+}
+
+/** A tooltip the overlay draws over the app: `rect` in CSS px of the main window. */
+export interface WebAppTip {
+  text: string;
+  /** The tooltip's shortcut hint ('' = none). */
+  shortcut: string;
+  rect: WebAppBounds;
+  theme: 'dark' | 'light';
+  side: 'top' | 'right' | 'bottom' | 'left';
 }
 
 /** A view's state for the navigation strip (updated by events, no polling). */
@@ -205,6 +231,10 @@ export interface AuthSession {
   me: unknown;
   /** Public session authority, encoded using the generated schema. */
   authority?: unknown;
+  /** Login / RegisterResponse.email_verification_optional (ADR-0065); absent = false. */
+  emailVerificationOptional?: boolean;
+  /** Login / RegisterResponse.email_invite_pending (ADR-0065); absent = false. */
+  emailInvitePending?: boolean;
 }
 
 export interface LoginArgs {
@@ -235,6 +265,17 @@ export function noSession(similar: boolean | undefined, status: number): ApiErro
     : { code: 'ERROR_CODE_INTERNAL', message: 'no session in the response', status };
 }
 
+/** The email-verification flags of a login / register answer (ADR-0065); only `true` is kept. */
+export function verificationOf(data: {
+  emailVerificationOptional?: boolean;
+  emailInvitePending?: boolean;
+}): Pick<AuthSession, 'emailVerificationOptional' | 'emailInvitePending'> {
+  return {
+    ...(data.emailVerificationOptional === true ? { emailVerificationOptional: true } : {}),
+    ...(data.emailInvitePending === true ? { emailInvitePending: true } : {}),
+  };
+}
+
 /** 'reset' = ended by reuse detection (after a connection loss), shared/logoutReason.ts. */
 export type LogoutReason = 'logout' | 'expired' | 'revoked' | 'reset';
 
@@ -245,6 +286,12 @@ export interface AppSettings {
   serverUrl: string;
   /** electron-updater generic feed URL; empty = updates off. */
   updateUrl: string;
+  /**
+   * «Источник обновлений» (owner 12.10): 'github' (default; GitHub Releases) or 's3' (the Calab
+   * feed, releases.calab.io). Both are pinned at build time (shared/updateFeed.ts); a file
+   * without the key reads as 'github'.
+   */
+  updateChannel: UpdateChannel;
   autostart: boolean;
   /**
    * «Автоматически обновлять» (default on): download in the background and install on restart /
@@ -380,6 +427,10 @@ export interface MainStrings {
   webAppOpenLink: string;
   webAppCopyLink: string;
   webAppOpenPage: string;
+  /** The checkout window's title (ADR-0084). */
+  checkoutTitle: string;
+  /** Its title bar's cancel button. */
+  checkoutCancel: string;
 }
 
 export const MAIN_STRING_KEYS = [
@@ -461,7 +512,17 @@ export const MAIN_STRING_KEYS = [
   'webAppOpenLink',
   'webAppCopyLink',
   'webAppOpenPage',
+  'checkoutTitle',
+  'checkoutCancel',
 ] as const satisfies ReadonlyArray<keyof MainStrings>;
+
+/**
+ * How the in-app checkout window ended (ADR-0084): `returned` = our return page (success and
+ * cancel share it), `success` / `fail` = the landing's return pages, `closed` = the person closed
+ * the window, `external` = no window here (the web: a new tab). Never the payment's truth — the
+ * renderer polls the checkout on every outcome.
+ */
+export type CheckoutWindowOutcome = 'returned' | 'success' | 'fail' | 'closed' | 'external';
 
 export type PowerEvent = 'suspend' | 'resume' | 'lock-screen' | 'unlock-screen';
 

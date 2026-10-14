@@ -4,6 +4,7 @@ import { Copy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button, Card, Input, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
+import { useMobile } from '../../lib/mobile';
 import { api } from '../../lib/api/endpoints';
 import { mayInviteGuestsIn } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
@@ -33,6 +34,7 @@ export function useGuestInviteShown(roomId: string): boolean {
 export function RoomGuestInviteCard({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
   const canCreate = useGuestInviteShown(roomId);
+  const phone = useMobile();
   const qc = useQueryClient();
   const key = ['roomInvites', roomId];
   const q = useQuery({ queryKey: key, queryFn: () => api.roomInvites.list(roomId), enabled: canCreate && !!room });
@@ -68,15 +70,27 @@ export function RoomGuestInviteCard({ roomId }: { roomId: string }): ReactNode {
         </>
       }
     >
-      <div className="flex min-h-12 items-center gap-2 px-3 py-2" data-testid="guest-invite">
+      <div className="flex min-h-12 items-center gap-2 px-3 py-2 mobile:flex-col mobile:items-stretch mobile:gap-3 mobile:py-3" data-testid="guest-invite">
         {q.isError ? (
           <span className="text-body text-muted">{roomLinkError(q.error)}</span>
         ) : mode === 'loading' ? (
           <Spinner className="mx-auto size-4" />
         ) : mode === 'link' ? (
           <>
-            <Input readOnly value={link} aria-label={t('guestInvite.link')} className="min-w-0 flex-1 font-mono" onFocus={(e) => e.currentTarget.select()} />
-            <Button variant="secondary" disabled={!link} onClick={copy}>
+            {phone ? (
+              // Phone: the whole address, wrapped on any character (a one-line field cut it off).
+              <textarea
+                readOnly
+                rows={Math.min(4, Math.max(2, Math.ceil(link.length / 28)))}
+                value={link}
+                aria-label={t('guestInvite.link')}
+                className="selectable w-full resize-none break-all rounded-[14px] border border-line bg-elev px-3 py-2 font-mono text-[16px] leading-snug text-fg"
+                onFocus={(e) => e.currentTarget.select()}
+              />
+            ) : (
+              <Input readOnly value={link} aria-label={t('guestInvite.link')} className="min-w-0 flex-1 font-mono" onFocus={(e) => e.currentTarget.select()} />
+            )}
+            <Button variant="secondary" disabled={!link} onClick={copy} className="mobile:w-full">
               <Copy className="size-4" aria-hidden /> {t('people.link.copy')}
             </Button>
           </>

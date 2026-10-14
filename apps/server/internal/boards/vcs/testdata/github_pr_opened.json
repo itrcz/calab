@@ -1,0 +1,17 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "number": 42,
+    "title": "FNG-12 Login form",
+    "body": "Closes FNG-13. Not BAR-1.",
+    "html_url": "https://github.com/acme/app/pull/42",
+    "state": "open",
+    "merged": false,
+    "user": {"login": "octocat"},
+    "head": {"ref": "feature/FNG-12-login", "sha": "6113728f"},
+    "base": {"ref": "main"}
+  },
+  "repository": {"full_name": "acme/app", "html_url": "https://github.com/acme/app"},
+  "sender": {"login": "octocat"}
+}

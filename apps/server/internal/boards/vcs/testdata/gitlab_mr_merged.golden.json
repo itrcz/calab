@@ -1,0 +1,44 @@
+{
+  "Event": {
+    "Provider": "gitlab",
+    "Repo": "gitlabhq/gitlab-test",
+    "RepoURL": "https://gitlab.example.com/gitlabhq/gitlab-test",
+    "Author": "root",
+    "Push": false,
+    "Branch": "",
+    "BranchCreated": false,
+    "Commits": null,
+    "PR": {
+      "Number": 7,
+      "Title": "Search page",
+      "Body": "Implements FNG-5 and FNG-6",
+      "URL": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/7",
+      "State": "merged",
+      "Branch": "FNG-5-search",
+      "Author": "root",
+      "Event": "PR_MERGED"
+    }
+  },
+  "Links": [
+    {
+      "Number": 5,
+      "Kind": "pr",
+      "Ref": "7",
+      "Title": "Search page",
+      "URL": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/7",
+      "State": "merged",
+      "Author": "root",
+      "Event": "PR_MERGED"
+    },
+    {
+      "Number": 6,
+      "Kind": "pr",
+      "Ref": "7",
+      "Title": "Search page",
+      "URL": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/7",
+      "State": "merged",
+      "Author": "root",
+      "Event": "PR_MERGED"
+    }
+  ]
+}

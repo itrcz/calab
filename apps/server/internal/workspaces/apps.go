@@ -1,7 +1,6 @@
 package workspaces
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/iconfile"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 )
@@ -57,40 +57,6 @@ func appURL(s string) (string, error) {
 		return "", httpx.Validation("url", err.Error())
 	}
 	return u, nil
-}
-
-// appIcon checks the icon: an image the caller uploaded to this workspace (or the app's current
-// icon, cur), not a sticker's file. An app icon is readable by the members who see apps
-// (files.CanRead), so someone else's file — e.g. an attachment of a restricted room — must not
-// become one (the badge / board icon rule). "" = none.
-func appIcon(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, cur *uuid.UUID, raw string) (*uuid.UUID, error) {
-	if raw == "" {
-		return nil, nil
-	}
-	bad := httpx.Validation("iconFileId", "an image you uploaded to this workspace is required")
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		return nil, bad
-	}
-	if cur != nil && *cur == id {
-		return &id, nil
-	}
-	f, err := q.GetFile(ctx, id)
-	if db.IsNotFound(err) {
-		return nil, bad
-	}
-	if err != nil {
-		return nil, err
-	}
-	if f.WorkspaceID == nil || *f.WorkspaceID != wsID || f.UploaderID != caller || !pbconv.IsImage(f.Mime) {
-		return nil, bad
-	}
-	if _, err := q.GetStickerFileWorkspace(ctx, id); err == nil {
-		return nil, bad
-	} else if !db.IsNotFound(err) {
-		return nil, err
-	}
-	return &id, nil
 }
 
 // loadApp resolves /api/workspace-apps/{appId} for the caller: the app and the caller's bits in
@@ -175,7 +141,7 @@ func (h *Handlers) createApp(w http.ResponseWriter, r *http.Request) error {
 		if n >= MaxApps {
 			return httpx.Conflict("a workspace has at most " + strconv.Itoa(MaxApps) + " apps")
 		}
-		icon, err := appIcon(r.Context(), q, wsID, me, nil, req.GetIconFileId())
+		icon, err := iconfile.Own(r.Context(), q, wsID, me, nil, req.GetIconFileId())
 		if err != nil {
 			return err
 		}
@@ -218,7 +184,7 @@ func (h *Handlers) updateApp(w http.ResponseWriter, r *http.Request) error {
 		p.Url = &u
 	}
 	if req.IconFileId != nil {
-		icon, err := appIcon(r.Context(), h.db.Q, cur.WorkspaceID, uid(r), cur.IconFileID, req.GetIconFileId())
+		icon, err := iconfile.Own(r.Context(), h.db.Q, cur.WorkspaceID, uid(r), cur.IconFileID, req.GetIconFileId())
 		if err != nil {
 			return err
 		}

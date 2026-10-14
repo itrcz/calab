@@ -62,6 +62,16 @@ func (s *Service) unfurlTask(r *http.Request, raw string) (*v1.UnfurlResponse, e
 		if err != nil {
 			continue
 		}
+		row, ok, err := taskByID(r.Context(), s.db.Pool, t.ID, false)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		if _, err := taskOf(r, s.db.Q, row); err != nil { // ADR-0059: the task itself must be visible
+			continue
+		}
 		acc, err := board(r, t.BoardID, false)
 		if err != nil {
 			continue
@@ -70,7 +80,7 @@ func (s *Service) unfurlTask(r *http.Request, raw string) (*v1.UnfurlResponse, e
 		if err != nil {
 			return nil, err
 		}
-		b, err := s.boardFor(r.Context(), s.db.Q, t.BoardID, uuid.Nil, acc.Bits)
+		b, err := s.boardFor(r.Context(), s.db.Q, t.BoardID, uuid.Nil, acc)
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +106,7 @@ func (s *Service) unfurlBoard(r *http.Request, raw string) (*v1.UnfurlResponse, 
 	if err != nil {
 		return nil, err
 	}
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uuid.Nil, acc.Bits)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uuid.Nil, acc)
 	if err != nil {
 		return nil, err
 	}

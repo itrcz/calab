@@ -1,18 +1,25 @@
-import { Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
+import { BILLING_BITS, Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { ExternalLink, TriangleAlert } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, Row, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import { fmt } from '../../lib/format';
-import { PLAN_LABEL, atLimit, contactHref, countText, planKind, planUsage, storageText, videoLimitText } from '../../lib/plan';
+import { atLimit, contactHref, countText, planDisplayName, planKind, planUsage, storageText, videoLimitText } from '../../lib/plan';
 import { platform } from '../../platform';
-import { openPlanContact, planContact } from '../../services/plan';
+import { openPlanContact, planContact, planOffersAllowed } from '../../services/plan';
 import { loadWorkspaceStickers } from '../../services/stickers';
 import { useSession } from '../../stores/session';
 import { useStickers } from '../../stores/stickers';
 import { useWorkspaces } from '../../stores/workspaces';
+import { BillingSection } from './billing/BillingSection';
+import { PlansDialog } from './billing/PlansDialog';
+import { useBillingBits } from './billing/access';
+import { billingPaymentsAllowed } from '../../services/billing';
+import { AdminAssignedNote } from './billing/Violations';
+import { useBilling } from '../../stores/billing';
+import { BuyStorage, UsageMeter } from '../disk/UsageMeter';
 
 /** Members that take a seat: everyone but guests (bots count, ADR-0024). */
 const seats = (members: Record<string, WorkspaceMember> | undefined): number => {
@@ -50,19 +57,22 @@ export function PlanFullNote({ text, testId }: { text: string; testId?: string }
   );
 }
 
-/** Plan name as a pill (docs/08 «Тариф»): Free neutral, Team / Enterprise accent, Custom green. */
-export function PlanPill({ plan, className }: { plan: Plan; className?: string }): ReactNode {
+/**
+ * Plan name as a pill (docs/08 «Тариф»): Free neutral, Team / Enterprise accent, Custom green.
+ * `name`: a custom plan's own name (ADR-0086; empty = «Индивидуальный»), truncated when long.
+ */
+export function PlanPill({ plan, name, className }: { plan: Plan; name?: string | undefined; className?: string }): ReactNode {
   const kind = plan === Plan.UNSPECIFIED ? Plan.FREE : plan;
   return (
     <span
       data-plan={Plan[kind]}
       className={cx(
-        'inline-flex h-5 shrink-0 items-center rounded-full px-2 text-caption font-semibold',
+        'inline-flex h-5 min-w-0 max-w-56 shrink-0 items-center rounded-full px-2 text-caption font-semibold',
         kind === Plan.TEAM || kind === Plan.ENTERPRISE ? 'bg-accent-strong text-accent-fg' : kind === Plan.CUSTOM ? 'bg-ok-fill text-white' : 'bg-[var(--color-fill-hover)] text-fg',
         className,
       )}
     >
-      {t(PLAN_LABEL[kind])}
+      <span className="truncate">{planDisplayName(kind, name)}</span>
     </span>
   );
 }
@@ -93,11 +103,12 @@ interface LimitRow {
   used: ReactNode;
   max: string;
   meter?: { used: number; limit: number };
+  /** «Файлы»: the Disk's three-segment meter on a full-width line under the numbers (ADR-0094 §6). */
+  storage?: boolean;
 }
 
 function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof planUsage>, storageUsed: bigint, packs: number | undefined): LimitRow[] {
   const l = limits;
-  const storageLimitBytes = Number(l?.storageMb ?? 0n) * 1024 * 1024;
   const counted = (label: string, used: number, limit: number): LimitRow => ({ label, used: fmt.number(used), max: countText(limit), meter: { used, limit } });
   return [
     { label: t('plan.limit.roomMembers'), used: fmt.number(usage.roomPeak), max: countText(l?.roomMembers ?? 0) },
@@ -113,6 +124,7 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
     // ADR-0058 §5: checklists (Team and above), the board webhook (Business).
     { label: t('admin.limit.checklists'), used: '—', max: t(l?.checklistsDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     { label: t('admin.limit.boardWebhooks'), used: '—', max: t(l?.boardWebhooksDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
+    { label: t('admin.limit.automations'), used: '—', max: t(l?.automationsDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     // ADR-0046 (owner, 02.10): telephony SIP is Business only.
     { label: t('admin.limit.telephony'), used: '—', max: t(l?.telephonyDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     packs === undefined
@@ -122,9 +134,51 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
       label: t('plan.limit.storage'),
       used: fmt.size(storageUsed),
       max: storageText(l?.storageMb ?? 0n),
-      meter: { used: Number(storageUsed), limit: storageLimitBytes },
+      meter: { used: Number(storageUsed), limit: Number(l?.storageMb ?? 0n) * 1024 * 1024 },
+      storage: true,
     },
   ];
+}
+
+/**
+ * «Сменить тариф» (owner, 10.10): the plans comparison opens over settings from here — the plan
+ * badge leads to this tab. A plan a superadmin assigned is not changed by self-serve (ADR-0086):
+ * the note with «Написать в поддержку» instead. BILLING_MANAGE only (ADR-0087; the owner has it),
+ * never in the iOS shell (App Store rules); primitive selectors.
+ */
+function PlanSwitch({ workspaceId }: { workspaceId: string }): ReactNode {
+  const owner = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n && billingPaymentsAllowed();
+  const assigned = useBilling((s) => !!s.byWs[workspaceId]?.data?.adminAssigned);
+  const canSwitch = useBilling((s) => {
+    const d = s.byWs[workspaceId]?.data;
+    return !!d && (!!d.summary || d.selfServe) && d.offers.length > 0;
+  });
+  // ADR-0086 «Индивидуальный тариф»: billed from the balance, changed only by a superadmin — its terms
+  // (price, limits) open in the plans dialog, read-only.
+  const custom = useBilling((s) => s.byWs[workspaceId]?.data?.summary?.plan === Plan.CUSTOM);
+  const [open, setOpen] = useState(false);
+  if (!owner) return null;
+  if (assigned && custom) {
+    return (
+      <div className="flex flex-col items-start gap-2 px-3 py-3" data-testid="plan-custom-terms">
+        <p className="text-body text-muted">{t('customPlan.note')}</p>
+        <Button variant="secondary" onClick={() => setOpen(true)} data-testid="plan-custom-open">
+          {t('customPlan.terms')}
+        </Button>
+        {open ? <PlansDialog workspaceId={workspaceId} welcome={false} inSettings onClose={() => setOpen(false)} /> : null}
+      </div>
+    );
+  }
+  if (assigned) return <AdminAssignedNote />;
+  if (!canSwitch) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-3 py-3">
+      <Button onClick={() => setOpen(true)} data-testid="plan-switch">
+        {t('billing.switchPlan')}
+      </Button>
+      {open ? <PlansDialog workspaceId={workspaceId} welcome={false} inSettings onClose={() => setOpen(false)} /> : null}
+    </div>
+  );
 }
 
 /**
@@ -134,8 +188,11 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
  */
 export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
-  const contact = useSession((s) => contactHref(s.planContact));
+  const contact = useSession((s) => (planOffersAllowed() ? contactHref(s.planContact) : null));
   const packs = useStickers((s) => s.byWorkspace[workspaceId]?.length);
+  // Balance billing manages the plan (ADR-0080): the cabinet above replaces «Связаться для покупки».
+  const billingCabinet = useBilling((s) => !!s.byWs[workspaceId]?.data?.summary);
+  const billingManaged = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.billing?.state) || billingCabinet;
   useEffect(() => {
     void loadWorkspaceStickers(workspaceId);
   }, [workspaceId]);
@@ -148,13 +205,15 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
     Object.values(entry.members).map((m) => ({ guest: m.role === WorkspaceRole.GUEST, bot: !!m.user?.isBot })),
   );
   const rows = limitRows(plan.limits, usage, entry.ws.storageUsedBytes, packs);
-  const pricing = import.meta.env.VITE_PRICING_URL;
+  // The Disk's meter (ADR-0094 §6) needs GET …/disk/usage: members only (guests keep the plain bar).
+  const diskMeter = entry.role !== WorkspaceRole.GUEST;
+  const pricing = planOffersAllowed() ? import.meta.env.VITE_PRICING_URL : undefined;
   return (
     <>
       <Card title={t('plan.card.current')}>
-        <Row label={t('plan.row.plan')}>
+        <Row label={t('plan.row.plan')} hint={kind === Plan.CUSTOM && plan.description ? plan.description : undefined}>
           {plan.expired ? <ExpiredBadge /> : null}
-          <PlanPill plan={kind} />
+          <PlanPill plan={kind} name={plan.displayName} />
         </Row>
         <Row label={t('plan.row.validUntil')}>
           <span className={cx('text-body', plan.expired ? 'text-danger-text' : 'text-muted')}>{until ? fmt.date(until) : t('plan.noExpiry')}</span>
@@ -165,7 +224,10 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
             {t('plan.expired', { date: fmt.date(until) })}
           </p>
         ) : null}
+        <PlanSwitch workspaceId={workspaceId} />
       </Card>
+      {/* Balance billing (ADR-0080 v5): the owner's cabinet / the members' stub; nothing without an account. */}
+      <BillingSection workspaceId={workspaceId} />
 
       <section className="flex flex-col gap-1.5" data-settings-row>
         <h3 className="px-1 text-caption font-semibold text-muted" data-settings-label>
@@ -173,7 +235,7 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
         </h3>
         {/* A macOS-like table: header row in secondary text, hairlines between rows, numbers right-aligned. */}
         <div role="table" aria-label={t('plan.card.limits')} className="overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)] text-body" data-testid="plan-limits">
-          <div role="row" className="grid grid-cols-[minmax(0,1fr)_128px_148px] gap-3 border-b border-[var(--color-card-line)] px-3 py-1.5 text-caption font-medium text-muted">
+          <div role="row" className="grid grid-cols-[minmax(0,1fr)_128px_148px] gap-3 border-b mobile:hidden border-[var(--color-card-line)] px-3 py-1.5 text-caption font-medium text-muted">
             <span role="columnheader">{t('plan.col.limit')}</span>
             <span role="columnheader" className="text-right">
               {t('plan.col.used')}
@@ -182,25 +244,37 @@ export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
               {t('plan.col.max')}
             </span>
           </div>
-          {rows.map((r) => (
-            <div key={r.label} role="row" className="grid min-h-10 grid-cols-[minmax(0,1fr)_128px_148px] items-center gap-3 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0">
-              <span role="cell" className="min-w-0 truncate" data-settings-label>
-                {r.label}
-              </span>
-              <span role="cell" className="text-right tabular-nums text-muted">
-                {r.used}
-                {r.meter ? <Meter used={r.meter.used} limit={r.meter.limit} /> : null}
-              </span>
-              <span role="cell" className="text-right tabular-nums">
-                {r.max}
-              </span>
-            </div>
-          ))}
+          {rows.map((r) => {
+            const noUse = r.used === '—';
+            return (
+              // Phone: the label on its own line (it never truncates), the values under it.
+              <div key={r.label} role="row" className="grid min-h-10 grid-cols-[minmax(0,1fr)_128px_148px] items-center gap-3 border-b border-[var(--color-card-line)] px-3 py-2 last:border-b-0 mobile:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] mobile:gap-y-1">
+                <span role="cell" className="min-w-0 truncate mobile:col-span-2 mobile:whitespace-normal" data-settings-label>
+                  {r.label}
+                </span>
+                <span role="cell" className={cx('text-right tabular-nums text-muted mobile:text-left', noUse && 'mobile:hidden')}>
+                  {r.used}
+                  {r.meter && !(r.storage && diskMeter) ? <Meter used={r.meter.used} limit={r.meter.limit} /> : null}
+                </span>
+                <span role="cell" className={cx('text-right tabular-nums', noUse && 'mobile:col-span-2 mobile:text-left')}>
+                  {r.max}
+                </span>
+                {r.storage && diskMeter ? (
+                  <span role="cell" className="col-span-3 pb-1 mobile:col-span-2" data-testid="plan-storage-meter">
+                    <UsageMeter workspaceId={workspaceId} />
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
         <p className="px-1 text-caption text-faint">{t('plan.limitsFooter')}</p>
       </section>
 
-      {contact || pricing ? (
+      {/* «Докупить место» (ADR-0094 §6): the storage packs, buying off until payments are on. */}
+      <BuyStorage workspaceId={workspaceId} />
+
+      {(contact || pricing) && !billingManaged ? (
         <Card title={t('plan.card.buy')}>
           <div className="flex flex-col items-start gap-3 px-3 py-3">
             <p className="text-body text-muted">{kind === Plan.FREE || plan.expired ? t('plan.teamPitch') : t('plan.paidPitch')}</p>

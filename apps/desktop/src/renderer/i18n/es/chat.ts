@@ -79,6 +79,8 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.pinned': 'Fijados',
   'chat.pinnedOne': 'Mensaje fijado',
   'chat.pinnedN': 'Mensaje fijado {n} de {total}',
+  'chat.pinnedShortOne': 'Fijado',
+  'chat.pinnedShortN': 'Fijado {n}/{total}',
   'chat.noPins': 'No hay mensajes fijados',
   // room notifications (bell menu)
   'chat.notify': 'Notificaciones',
@@ -116,8 +118,8 @@ export const esChat: DictShape<typeof enChat> = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': 'Buscar',
-  'search.hint': 'Salas, miembros y mensajes; flechas para elegir, Intro para el primer botón de la fila (unirse, abrir chat, escribir), Mayús+Intro para el segundo',
-  'search.placeholder': 'Buscar una sala, persona o mensaje',
+  'search.hint': 'Salas, personas, mensajes, tareas, eventos, archivos, notas y transcripciones; flechas para elegir, Tab para la siguiente sección, Intro para el primer botón de la fila, Mayús+Intro para el segundo, Cmd/Ctrl+Intro para todos los resultados de la sección',
+  'search.placeholder': 'Buscar en todo: mensajes, tareas, eventos, archivos',
   'search.rooms': 'Salas',
   'search.members': 'Miembros',
   'search.messages': 'Mensajes',

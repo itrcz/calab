@@ -243,6 +243,20 @@ func (s Store) Rooms(ctx context.Context, wid uuid.UUID) (map[uuid.UUID]uuid.UUI
 	return out, nil
 }
 
+// State returns one user's current aggregated voice state in the workspace (empty RoomId:
+// not in voice), server mute included.
+func (s Store) State(ctx context.Context, wid, userID uuid.UUID) (*v1.VoiceState, error) {
+	all, err := s.List(ctx, wid)
+	if err != nil {
+		return nil, err
+	}
+	out := Aggregate(wid, userID, all)
+	if out.ServerMuted, err = s.ServerMuted(ctx, wid, userID); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // States returns every user's aggregated voice state in the workspace (READY snapshots).
 func (s Store) States(ctx context.Context, wid uuid.UUID) ([]*v1.VoiceState, error) {
 	all, err := s.List(ctx, wid)

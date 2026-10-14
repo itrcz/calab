@@ -219,8 +219,19 @@ func TestBoardWebhook(t *testing.T) {
 		t.Fatal("the failed change was committed")
 	}
 
-	// Downgrade: the webhook stays, paused (PLAN); nothing is queued.
-	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	// Downgrade over the limits (ADR-0086): refused with the violation, then overridden by the
+	// superadmin explicitly and written to the plan log.
+	st, ae := superadminUser(t).apiErrBody("PUT", "/api/admin/workspaces/"+wid+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	if st != 409 || ae.GetReason() != "PLAN_LIMITS_EXCEEDED" || len(ae.GetPlanLimitsExceeded().GetViolations()) != 1 ||
+		ae.GetPlanLimitsExceeded().GetViolations()[0].GetKind() != v1.PlanLimitKind_PLAN_LIMIT_KIND_BOARD_WEBHOOKS {
+		t.Fatalf("downgrade without override: %d %v", st, ae)
+	}
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM, Note: "downgrade", OverrideLimits: true})
+	var planLog v1.AdminPlanLogResponse
+	superadminUser(t).must(200, "GET", "/api/admin/workspaces/"+wid+"/plan/log", nil, &planLog)
+	if n := planLog.GetEntries()[0].GetNote(); n != "downgrade [over limits: board_webhooks 1>0]" {
+		t.Fatalf("plan log note %q", n)
+	}
 	o.must(200, "GET", path, nil, &gr)
 	if gr.GetWebhook().GetPausedReason() != v1.BoardWebhookPauseReason_BOARD_WEBHOOK_PAUSE_REASON_PLAN {
 		t.Fatalf("paused: %v", gr.GetWebhook())

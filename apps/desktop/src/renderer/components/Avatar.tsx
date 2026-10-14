@@ -1,4 +1,5 @@
 import { PresenceStatus } from '@calaba/protocol';
+import { LogOut } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { thumbnailPath } from '../lib/api/endpoints';
 import { MediaImg } from './MediaImg';
@@ -35,6 +36,25 @@ function PresenceDot({ status, size, ring }: { status: PresenceStatus | undefine
   return (
     <span data-presence={g} aria-hidden className={cx('absolute box-content overflow-hidden rounded-full border-solid border-[var(--dot-ring)]', GLYPH_FILL[g])} style={style}>
       <GlyphCut g={g} dot={dot} />
+    </span>
+  );
+}
+
+/**
+ * The «left» corner glyph of a former member (ADR-0097 §4, docs/08 «Бывший участник»): a small
+ * door-out disc at the presence dot's place, cut out of the avatar with the same ring technique.
+ */
+function FormerGlyph({ size, ring }: { size: number; ring: string | undefined }): ReactNode {
+  const { dot, ring: border, offset } = presenceDotGeometry(size);
+  const style = { width: dot, height: dot, right: offset, bottom: offset, borderWidth: border, '--dot-ring': ring ?? 'var(--color-side)' } as CSSProperties;
+  return (
+    <span
+      data-former-glyph
+      aria-hidden
+      className="absolute box-content grid place-items-center overflow-hidden rounded-full border-solid border-[var(--dot-ring)] bg-faint text-white"
+      style={style}
+    >
+      <LogOut style={{ width: dot * 0.65, height: dot * 0.65 }} strokeWidth={3} />
     </span>
   );
 }
@@ -88,6 +108,7 @@ export function Avatar({
   speaking,
   connecting,
   ringInside = false,
+  former = false,
   className,
 }: {
   userId: string;
@@ -103,6 +124,8 @@ export function Avatar({
   speaking?: boolean;
   connecting?: boolean;
   ringInside?: boolean;
+  /** A former member (ADR-0097): grey picture and the «left» glyph instead of any presence dot. */
+  former?: boolean;
   className?: string;
 }): ReactNode {
   if (connecting) speaking = false;
@@ -111,25 +134,26 @@ export function Avatar({
   const outsetSpeaking = !ringInside && speaking ? 'true' : undefined;
   const stored = useWorkspaces((s) => (presence && status === undefined ? s.presences[userId]?.status : undefined));
   return (
-    <span className={cx('relative inline-block shrink-0', className)} style={{ width: size, height: size }}>
+    <span className={cx('relative inline-block shrink-0', className)} data-former={former ? 'true' : undefined} style={{ width: size, height: size }}>
       {fileId ? (
         <MediaImg
           path={thumbnailPath(fileId)}
           alt=""
           draggable={false}
           data-speaking={outsetSpeaking}
-          className={cx(!ringInside && 'speak-ring', 'size-full rounded-full object-cover')}
+          className={cx(!ringInside && 'speak-ring', 'size-full rounded-full object-cover', former && 'grayscale')}
         />
       ) : (
         <span
           data-speaking={outsetSpeaking}
-          className={cx(!ringInside && 'speak-ring', 'grid size-full place-items-center rounded-full font-semibold text-white')}
+          className={cx(!ringInside && 'speak-ring', 'grid size-full place-items-center rounded-full font-semibold text-white', former && 'grayscale')}
           style={{ background: avatarColor(userId), fontSize: Math.round(size * 0.42) }}
         >
           {(name.trim()[0] ?? '?').toUpperCase()}
         </span>
       )}
-      {presence || status !== undefined ? <PresenceDot status={status ?? stored} size={size} ring={ring} /> : null}
+      {former ? <FormerGlyph size={size} ring={ring} /> : null}
+      {!former && (presence || status !== undefined) ? <PresenceDot status={status ?? stored} size={size} ring={ring} /> : null}
       {ringInside && !connecting ? <span data-speaking={speaking ? 'true' : undefined} className="speak-ring-inset" aria-hidden /> : null}
       {connecting ? <span className={cx('connect-ring', ringInside && 'connect-ring-inset')} data-testid="connect-ring" aria-hidden /> : null}
     </span>

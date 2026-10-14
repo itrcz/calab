@@ -61,6 +61,7 @@ import {
   SetBoardPositionRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
+  SetTaskWatcherRequestSchema,
   TaskActivityPageSchema,
   TaskFilterSchema,
   TaskApprovalRequestSchema,
@@ -78,6 +79,43 @@ import {
   type TaskRelationKind,
 } from '@calaba/protocol';
 import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
+import { DiskError, DiskMock } from './mock-disk';
+import { WikiError, WikiMock } from './mock-wiki';
+import {
+  CreateDiskFolderRequestSchema,
+  CreateDiskLinkRequestSchema,
+  DISK_BITS,
+  DiskActivityPageSchema,
+  DiskItemKind,
+  DiskItemResponseSchema,
+  DiskLinkResponseSchema,
+  DiskLinkSchema,
+  DiskPathResponseSchema,
+  DiskPermissionEntrySchema,
+  DiskPermissionsResponseSchema,
+  DiskSettingsSchema,
+  DiskUsageSchema,
+  EmptyDiskTrashResponseSchema,
+  FileMetaSchema,
+  ListDiskItemsResponseSchema,
+  UpdateDiskItemRequestSchema,
+  UpdateDiskPermissionsRequestSchema,
+  CreateWikiLinkRequestSchema,
+  CreateWikiPageRequestSchema,
+  EmptyWikiTrashResponseSchema,
+  ListWikiPagesResponseSchema,
+  PublicWikiPageSchema,
+  UpdateWikiPageRequestSchema,
+  UpdateWikiPermissionsRequestSchema,
+  WIKI_BITS,
+  WikiLinkResponseSchema,
+  WikiPageResponseSchema,
+  WikiPathResponseSchema,
+  WikiPermissionEntrySchema,
+  WikiPermissionsResponseSchema,
+  WikiSettingsSchema,
+  WikiVersionsResponseSchema,
+} from '@calaba/protocol';
 import {
   AdminGetWorkspaceResponseSchema,
   CallActionResponseSchema,
@@ -117,6 +155,8 @@ import {
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
+  ListFormerMembersResponseSchema,
+  ListWorkspaceUsersResponseSchema,
   WorkspaceBanSchema,
   WorkspaceSuspensionSchema,
   AdminSetPlanResponseSchema,
@@ -262,6 +302,7 @@ import {
   CreateDmResponseSchema,
   UpdateDmStateRequestSchema,
   UpdateDmStateResponseSchema,
+  DmLastMessageSchema,
   DmSummarySchema,
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
@@ -279,6 +320,7 @@ import {
   MoveMemberRequestSchema,
   MessageSchema,
   MicMode,
+  BILLING_PERMISSIONS,
   PERMISSION_BITS,
   PermissionTargetType,
   PresenceSchema,
@@ -309,6 +351,7 @@ import {
   UpdateCategoryResponseSchema,
   UpdateMeRequestSchema,
   UpdateMeResponseSchema,
+  UsernameAvailabilityResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberBirthdayRequestSchema,
   UpdateMemberBirthdayResponseSchema,
@@ -334,6 +377,8 @@ import {
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
   UploadFileResponseSchema,
+  SearchResponseSchema,
+  SearchType,
   VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
@@ -347,6 +392,7 @@ import {
   WorkspaceSnapshotSchema,
   WorkspaceVisibility,
   computeMemberRoomPermissions,
+  tempRoomScope,
   computePermissions,
   has,
   workspacePermissions,
@@ -363,6 +409,7 @@ import {
   UpdateRoleResponseSchema,
   type Role,
   type DispatchEvent,
+  type DmLastMessage,
   type DmSummary,
   type NotesShelf,
   type GatewayFrame,
@@ -459,7 +506,7 @@ import {
   type EmailView,
   type Occurrence,
 } from './mock-calendar';
-import { cardPicture, encodePng, pngSize } from './png';
+import { avatarPicture, cardPicture, encodePng, pngSize } from './png';
 import { freeWindows, intersectIntervals, workIntervals } from '../src/renderer/lib/calendar/freebusy';
 import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
@@ -531,6 +578,9 @@ export interface AddEventArgs {
   attendees?: { userId?: string; email?: string; required?: boolean; status?: AttendeeStatus }[];
 }
 
+/** A generated room picture (ADR-0092): a logo (a disc on a square) or a photo-like gradient landscape. */
+export type RoomPictureColors = { bg: [number, number, number]; fg: [number, number, number] } | { photo: [[number, number, number], [number, number, number]] };
+
 export interface MockServer {
   url: string;
   port: number;
@@ -580,6 +630,11 @@ export interface MockServer {
   setMemberRoles(workspaceId: string, userId: string, roleIds: string[]): void;
   /** docs/09 #82: a badge of the workspace library with a generated square picture → BADGE_CREATE; its id. */
   addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string;
+  /**
+   * ADR-0092: the room's picture (a generated square; null = none) set by `byUserId` → ROOM_UPDATE
+   * and the system line «… изменил(а) картинку комнаты» (MESSAGE_CREATE), as PATCH icon_file_id.
+   */
+  setRoomPicture(roomId: string, colors: RoomPictureColors | null, byUserId: string): void;
   /** docs/09 #82: the member's badge ('' = none) → WORKSPACE_MEMBER_UPDATE. */
   setMemberBadge(workspaceId: string, userId: string, badgeId: string): void;
   /** ADR-0035 addendum: a camera background of the workspace with a generated 16:9 picture (a diagonal gradient) → BACKGROUND_CREATE; its id. */
@@ -735,6 +790,10 @@ export interface MockServer {
   failMessagesOnce(roomId: string): void;
   /** Task boards (ADR-0042, mock-boards.ts): the live domain (tasks, boards, activity). */
   readonly boards: BoardsMock;
+  /** Disk (ADR-0094, mock-disk.ts): the live items, rights and links (marketing scenes rename the fixture). */
+  readonly disk: DiskMock;
+  /** Wiki (ADR-0096, mock-wiki.ts): the live pages, documents and sync sockets (marketing scenes replace the fixture). */
+  readonly wiki: WikiMock;
   /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
   updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
 }
@@ -759,6 +818,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setPresence: (u, st) => impl.setPresence(u, st),
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
     addBadge: (w, name, colors) => impl.addBadge(w, name, colors),
+    setRoomPicture: (r, colors, by) => impl.setRoomPicture(r, colors, by),
     setMemberBadge: (w, u, id) => impl.setMemberBadge(w, u, id),
     addBackground: (w, name, colors) => impl.addBackground(w, name, colors),
     addSound: (w, name, emoji) => impl.addSound(w, name, emoji),
@@ -804,6 +864,12 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     eventGuestLink: (id, email) => impl.eventGuestLink(id, email),
     get boards() {
       return impl.boards;
+    },
+    get disk() {
+      return impl.disk;
+    },
+    get wiki() {
+      return impl.wiki;
     },
     updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
     failMessagesOnce: (roomId) => impl.failMessages.set(roomId, (impl.failMessages.get(roomId) ?? 0) + 1),
@@ -873,6 +939,18 @@ function mailLocale(tag: string): string | null {
   if (/^en\b/.test(l)) return 'en';
   return null;
 }
+
+const RESERVED_USERNAMES = new Set(['here', 'everyone', 'channel', 'all', 'admin', 'support', 'calab', 'system', 'bot']);
+
+/** ADR-0077: a normalized nickname ('' clears), null when the server would refuse it. */
+function mockUsername(raw: string): string | null {
+  const n = raw.trim().replace(/^@/, '').toLowerCase();
+  if (n === '') return '';
+  return /^[a-z][a-z0-9_]{2,31}$/.test(n) && !RESERVED_USERNAMES.has(n) ? n : null;
+}
+
+/** The public link of «Справочник команды» in the data scenario (`/w/{code}`, with subpages). */
+export const WIKI_PUBLIC_CODE = 'mockWikiPublicHandbook'.padEnd(43, 'x');
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
@@ -1110,6 +1188,12 @@ class MockImpl {
   private readonly calEvents = new Map<string, CalEventRec>();
   /** Task boards (ADR-0042); rebuilt with the state. */
   boards: BoardsMock;
+  /** Disk (ADR-0094); rebuilt with the state. */
+  disk: DiskMock;
+  /** Wiki (ADR-0096); rebuilt with the state. */
+  wiki: WikiMock;
+  /** The wiki sync sockets (snapshots up to 2 MiB: not the gateway's 64 KiB limit). */
+  private readonly wikiWss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
   /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
   readonly calWorkHours = new Map<string, WorkHoursRec>();
   readonly calExternal = new Map<string, ExternalSpan[]>();
@@ -1121,6 +1205,8 @@ class MockImpl {
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
     this.boards = this.newBoards();
+    this.disk = this.newDisk();
+    this.wiki = this.newWiki();
     this.lk = {
       url: opts.livekitUrl ?? 'ws://127.0.0.1:7880',
       key: opts.livekitKey ?? 'devkey',
@@ -1135,8 +1221,18 @@ class MockImpl {
     this.admissionRoutes();
     this.boardRoutes();
     this.seedBoards();
+    this.diskRoutes();
+    this.seedDisk();
+    this.wikiRoutes();
+    this.seedWiki();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
+      const sync = /^\/api\/wiki\/pages\/([^/]+)\/sync$/.exec(path);
+      if (sync?.[1]) {
+        const pageId = sync[1];
+        this.wikiWss.handleUpgrade(req, socket, head, (ws) => this.wiki.connect(ws, pageId, (token) => this.byAccessToken(token.trim())?.user.user.id ?? null));
+        return;
+      }
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
         socket.destroy();
         return;
@@ -1165,8 +1261,10 @@ class MockImpl {
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
     for (const c of this.conns) c.ws.terminate();
+    this.wiki.closeAll();
     this.conns.clear();
     await new Promise<void>((r) => this.wss.close(() => r()));
+    await new Promise<void>((r) => this.wikiWss.close(() => r()));
     this.http.closeAllConnections();
     await new Promise<void>((r) => this.http.close(() => r()));
   }
@@ -1178,6 +1276,11 @@ class MockImpl {
     this.state = buildState(scenario);
     this.boards = this.newBoards();
     this.seedBoards();
+    this.disk = this.newDisk();
+    this.seedDisk();
+    this.wiki.closeAll();
+    this.wiki = this.newWiki();
+    this.seedWiki();
     this.voiceSessions.clear();
     this.calls.clear();
     this.userCall.clear();
@@ -1248,7 +1351,7 @@ class MockImpl {
     const m = this.member(room.workspaceId, userId);
     // ADR-0029: in a restricted room admins count as members; the owner (owner_id) has everything.
     const owner = this.state.workspaces.get(room.workspaceId)?.ownerId === userId;
-    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides, room.restricted, owner) : 0n;
+    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides, room.restricted, owner, tempRoomScope(room)) : 0n;
   }
 
   /** The other participant of a DM room, or null when `userId` is not in it (or it is no DM). */
@@ -1478,8 +1581,10 @@ class MockImpl {
   }
 
   /** Bits a caller may put on / take off a role: never ADMINISTRATOR; a non-admin only its own, never MANAGE_ROLES / MANAGE_WORKSPACE. */
-  private checkGrant(a: { admin: boolean; perms: bigint }, bits: bigint): void {
+  private checkGrant(a: { owner: boolean; admin: boolean; perms: bigint }, bits: bigint): void {
     if (bits & PERMISSION_BITS.ADMINISTRATOR) throw forbidden('ADMINISTRATOR is not grantable');
+    // ADR-0087: the billing bits are the owner's alone to grant or revoke.
+    if (bits & BILLING_PERMISSIONS && !a.owner) throw forbidden('only the owner grants billing permissions');
     if (a.admin) return;
     if (bits & (PERMISSION_BITS.MANAGE_ROLES | PERMISSION_BITS.MANAGE_WORKSPACE)) throw forbidden('only admins grant role / workspace management');
     if (bits & ~a.perms) throw forbidden('cannot grant permissions you lack');
@@ -1594,6 +1699,22 @@ class MockImpl {
       boards: boards.boards,
       unreadTaskIds: boards.unreadTaskIds,
       boardCategories: boards.boardCategories,
+      // ADR-0073 §5: the newest live message of every room, as the room-list preview (server: first 200 chars).
+      roomLastMessages: Object.fromEntries(
+        rooms.flatMap((r): [string, DmLastMessage][] => {
+          const last = this.visibleMessages(userId, r.id).at(-1);
+          if (!last) return [];
+          return [[r.id, create(DmLastMessageSchema, {
+            id: last.id,
+            authorId: last.authorId,
+            content: Array.from(last.content).slice(0, 200).join(''),
+            attachmentCount: last.attachments.length,
+            stickerEmoji: last.sticker?.emoji ?? '',
+            ...(last.kind === MessageKind.SYSTEM && last.system ? { system: last.system } : {}),
+            ...(last.createdAt ? { createdAt: last.createdAt } : {}),
+          })]];
+        }),
+      ),
     });
   }
 
@@ -2034,6 +2155,41 @@ class MockImpl {
     const png = encodePng(64, 64, (x, y) => ((x - 0.5) ** 2 + (y - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg));
     u.user.avatarFileId = this.storeFile('', botUserId, { name: 'avatar.png', mime: 'image/png', bytes: png });
     this.emitUserUpdate(u);
+  }
+
+  setRoomPicture(roomId: string, colors: RoomPictureColors | null, byUserId: string): void {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    // A 64×64 «logo»: a filled square with a centred disc (what the client uploads after its crop).
+    // `photo`: a photo-like picture (a dusk landscape, avatarPicture); else a logo — a disc on a square.
+    const png = !colors
+      ? null
+      : 'photo' in colors
+        ? encodePng(128, 128, avatarPicture(colors.photo[0], colors.photo[1]))
+        : encodePng(64, 64, (u, v) => ((u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg));
+    const fileId = png ? this.storeFile(room.workspaceId, byUserId, { name: 'room.png', mime: 'image/png', bytes: png }) : '';
+    this.applyRoomPicture(room, fileId, byUserId);
+  }
+
+  /** ADR-0092: a changed picture → ROOM_UPDATE and the system line from `byUserId` (no notification). */
+  private applyRoomPicture(room: Room, fileId: string, byUserId: string): void {
+    if (room.iconFileId === fileId) return;
+    const before = create(RoomSchema, room);
+    room.iconFileId = fileId;
+    this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
+    const list = this.state.messages.get(room.id) ?? [];
+    const msg = create(MessageSchema, {
+      id: nextId(this.state, 'message'),
+      roomId: room.id,
+      authorId: byUserId,
+      content: '',
+      kind: MessageKind.SYSTEM,
+      system: { payload: { case: 'roomIcon', value: { fileId } } },
+      createdAt: tick(this.state),
+    });
+    list.push(msg);
+    this.state.messages.set(room.id, list);
+    this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
   }
 
   addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string {
@@ -2794,6 +2950,20 @@ class MockImpl {
       }
       if (b.statusText !== undefined) u.user.statusText = b.statusText;
       if (b.timezone !== undefined) u.user.timezone = b.timezone;
+      // ADR-0077 (the server's rules, users/contacts.go).
+      if (b.username !== undefined) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('not for guests and bots');
+        const name = mockUsername(b.username);
+        if (name === null) throw new HttpError(422, ErrorCode.USERNAME_INVALID, 'bad username', 'username');
+        if (name && [...s().users.values()].some((x) => x !== u && x.user.username === name)) throw new HttpError(409, ErrorCode.USERNAME_TAKEN, 'username is taken', 'username');
+        u.user.username = name;
+      }
+      if (b.phone !== undefined) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('not for guests and bots');
+        const p = b.phone.trim().replace(/\s+/g, ' ');
+        if (p && (p.length > 32 || !/^\+?[0-9() -]+$/.test(p) || p.replace(/\D/g, '').length < 3)) throw invalid('phone', 'bad phone');
+        u.user.phone = p;
+      }
       if (b.birthday) {
         // docs/09 #76 (the server checks the date too); day = month = 0 clears.
         const { day, month, year } = b.birthday;
@@ -2832,6 +3002,18 @@ class MockImpl {
       }
       this.emitUserUpdate(u);
       sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
+    });
+
+    // ADR-0077: a hint for the profile form (the caller's own nickname is available).
+    this.route('GET', '/api/usernames/:name/available', (c) => {
+      const me = this.auth(c).user;
+      const name = mockUsername(decodeURIComponent(c.params[0] ?? ''));
+      const taken = name !== null && [...s().users.values()].some((x) => x !== me && x.user.username === name);
+      sendMsg(c.res, 200, UsernameAvailabilityResponseSchema, {
+        username: name ?? '',
+        available: name !== null && name !== '' && !taken,
+        reason: name === null || name === '' ? ErrorCode.USERNAME_INVALID : taken ? ErrorCode.USERNAME_TAKEN : ErrorCode.UNSPECIFIED,
+      });
     });
 
     this.route('PATCH', '/api/me/status', (c) => {
@@ -3202,6 +3384,42 @@ class MockImpl {
       noContent(c.res);
     });
 
+    // ---------------- former members (ADR-0097)
+    this.route('GET', '/api/workspaces/:id/users', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const ids = (c.url.searchParams.get('ids') ?? '').split(',').filter(Boolean).slice(0, 100);
+      const former = s().formerMembers.get(ws.id) ?? [];
+      const out = ids.flatMap((id) => {
+        const u = s().users.get(id);
+        if (!u) return [];
+        const f = former.find((x) => x.userId === id);
+        if (!f && !this.member(ws.id, id)) return [];
+        return [{ userId: id, displayName: u.user.displayName, avatarFileId: u.user.avatarFileId, former: !!f, ...(f ? { leftAt: f.leftAt, reason: f.reason } : {}) }];
+      });
+      sendMsg(c.res, 200, ListWorkspaceUsersResponseSchema, { users: out });
+    });
+    this.route('GET', '/api/workspaces/:id/former-members', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
+      const q = (c.url.searchParams.get('q') ?? '').trim().toLowerCase();
+      const guests = c.url.searchParams.get('guests') === '1';
+      const rows = (s().formerMembers.get(ws.id) ?? [])
+        .filter((f) => guests || f.role !== WorkspaceRole.GUEST)
+        .flatMap((f) => {
+          const u = s().users.get(f.userId);
+          if (!u || (q && !u.user.displayName.toLowerCase().includes(q))) return [];
+          return [
+            {
+              user: { userId: f.userId, displayName: u.user.displayName, avatarFileId: u.user.avatarFileId, former: true, leftAt: f.leftAt, reason: f.reason },
+              role: f.role,
+              removedBy: f.removedBy ?? '',
+              openTasks: f.openTasks ?? 0,
+            },
+          ];
+        });
+      sendMsg(c.res, 200, ListFormerMembersResponseSchema, { members: rows, nextCursor: '' });
+    });
+
     // ---------------- bans (docs/09 #32): MANAGE_MEMBERS (ADR-0048), the rules of a kick
     this.route('GET', '/api/workspaces/:id/bans', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
@@ -3534,6 +3752,7 @@ class MockImpl {
       if (!role) throw notFound('role not found');
       if (role.builtin !== WorkspaceRole.UNSPECIFIED) throw invalid('role', 'built-in roles cannot be deleted');
       if (!a.owner && role.position >= a.top) throw forbidden('the role is not below your highest role');
+      if (!a.owner && (role.permissions & BILLING_PERMISSIONS) !== 0n) throw forbidden('only the owner deletes billing roles');
       const touched: Room[] = [];
       this.withVisibility(ws.id, () => {
         s().roles.set(ws.id, all.filter((r) => r !== role));
@@ -3608,6 +3827,7 @@ class MockImpl {
             if (!a.owner) throw forbidden('only the owner manages admins');
             if (target.role === WorkspaceRole.GUEST) throw forbidden('a guest is promoted first');
           } else {
+            if (!a.owner && (r.permissions & BILLING_PERMISSIONS) !== 0n) throw forbidden('only the owner assigns billing roles');
             if (!a.owner && r.position >= a.top) throw forbidden('the role is not below your highest role');
             if (!a.admin && (r.permissions & ~a.perms) !== 0n) throw forbidden('the role has permissions you lack');
           }
@@ -3911,7 +4131,18 @@ class MockImpl {
         room.restricted = b.restricted;
       }
       if (b.guestApproval !== undefined) room.guestApproval = b.guestApproval; // ADR-0040
+      // ADR-0092: an image the caller uploaded to this workspace ("" = none); text and voice rooms.
+      let picture: string | undefined;
+      if (b.iconFileId !== undefined) {
+        if (room.type !== RoomType.TEXT && room.type !== RoomType.VOICE) throw invalid('iconFileId', 'only text and voice rooms have a picture');
+        const f = b.iconFileId ? s().files.get(b.iconFileId)?.meta : undefined;
+        if (b.iconFileId && b.iconFileId !== room.iconFileId && (!f || f.workspaceId !== room.workspaceId || f.uploaderId !== me || !f.mime.startsWith('image/'))) {
+          throw invalid('iconFileId', 'an image you uploaded to this workspace is required');
+        }
+        picture = b.iconFileId;
+      }
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
+      if (picture !== undefined) this.applyRoomPicture(room, picture, me);
       if (b.allowRecording === false && s().recordings.has(room.id)) this.stopRecording(room, 'disabled', '');
       sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
     });
@@ -5171,7 +5402,13 @@ class MockImpl {
             : b.plan === Plan.ENTERPRISE
               ? ENTERPRISE_PLAN_LIMITS
               : FREE_PLAN_LIMITS;
-      ws.plan = create(WorkspacePlanSchema, { plan: b.plan, limits, ...(b.validUntil ? { validUntil: b.validUntil } : {}), expired: false });
+      // ADR-0086: a custom plan's name and description (trimmed, CUSTOM only, like the server).
+      if (b.plan !== Plan.CUSTOM && (b.displayName.trim() || b.description.trim())) throw invalid('displayName', 'a name and description are only set for PLAN_CUSTOM');
+      const displayName = b.plan === Plan.CUSTOM ? b.displayName.replace(/\s+/g, ' ').trim() : '';
+      const description = b.plan === Plan.CUSTOM ? b.description.replace(/\s+/g, ' ').trim() : '';
+      if (Array.from(displayName).length > 40) throw invalid('displayName', 'the plan name must be at most 40 characters');
+      if (Array.from(description).length > 140) throw invalid('description', 'the plan description must be at most 140 characters');
+      ws.plan = create(WorkspacePlanSchema, { plan: b.plan, limits, ...(b.validUntil ? { validUntil: b.validUntil } : {}), expired: false, displayName, description });
       s().planMeta.set(ws.id, { note: b.note, updatedBy: me, updatedAt: now });
       const log = s().planLog.get(ws.id) ?? [];
       log.unshift(
@@ -5185,6 +5422,8 @@ class MockImpl {
           ...(b.validUntil ? { validUntil: b.validUntil } : {}),
           note: b.note,
           createdAt: now,
+          displayName,
+          description,
         }),
       );
       s().planLog.set(ws.id, log.slice(0, 100));
@@ -6579,10 +6818,12 @@ class MockImpl {
       const me = davUser(c);
       const a = this.calDav.get(me);
       if (!a) throw notFound('no CalDAV account');
-      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { shareLevel?: unknown };
-      const level = shareLevelIn(b.shareLevel);
-      if (!level) throw invalid('shareLevel', 'one of busy, title, details');
-      a.shareLevel = level;
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { shareLevel?: unknown; remind?: unknown };
+      const remind = typeof b.remind === 'boolean' ? b.remind : undefined;
+      const level = b.shareLevel === undefined && remind !== undefined ? null : shareLevelIn(b.shareLevel);
+      if (!level && remind === undefined) throw invalid('shareLevel', 'one of busy, title, details');
+      if (level) a.shareLevel = level;
+      if (remind !== undefined) a.remind = remind;
       send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
     });
     this.route('GET', '/api/me/external-events', (c) => {
@@ -6597,6 +6838,21 @@ class MockImpl {
       }
       const match = (e: string): string => (wsId ? this.memberByEmail(wsId, e) : '');
       send(c.res, 200, JSON.stringify(externalEventsOut(this.calExternal.get(me) ?? [], from, to, match)), 'application/json');
+    });
+    // ADR-0045 amendment 1: the event (THIS: that occurrence; SERIES or no repeats: the uid) out of
+    // the fake calendar; an href ending in «readonly.ics» answers 422 like a read-only calendar.
+    this.route('DELETE', '/api/me/external-events', (c) => {
+      const me = davUser(c);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { uid?: string; href?: string; start?: string; scope?: string };
+      const list = this.calExternal.get(me) ?? [];
+      const start = Date.parse(b.start ?? '');
+      const at = list.findIndex((x, i) => (x.uid ?? `ext${i}`) === b.uid && x.href === b.href && x.startMs === start);
+      const target = list[at];
+      if (!target || !b.href) throw notFound('external event not found');
+      if (b.href.endsWith('readonly.ics')) throw invalid('href', 'the calendar is read-only');
+      const whole = b.scope === 'EXTERNAL_DELETE_SCOPE_SERIES' || !target.recurring;
+      this.calExternal.set(me, list.filter((x, i) => (whole ? (x.uid ?? `ext${i}`) !== b.uid : i !== at)));
+      noContent(c.res);
     });
     this.route('POST', '/api/me/caldav/sync', (c) => {
       const me = davUser(c);
@@ -7080,6 +7336,14 @@ class MockImpl {
       const kind: TaskRelationKind = Number(q(c, 'kind'));
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
     });
+    // ADR-0076: watchers.
+    this.boardRoute('PUT', '/api/tasks/:id/watchers', (c, me) => {
+      const r = parseBody(c, SetTaskWatcherRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setWatcher(c.params[0] ?? '', me, r.userId, true).task.id, me));
+    });
+    this.boardRoute('DELETE', '/api/tasks/:id/watchers', (c, me) => {
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setWatcher(c.params[0] ?? '', me, q(c, 'user_id'), false).task.id, me));
+    });
     this.boardRoute('PUT', '/api/tasks/:id/subscription', (c, me) => {
       const r = parseBody(c, SetTaskSubscriptionRequestSchema);
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setSubscription(c.params[0] ?? '', me, r.muted).task.id, me));
@@ -7089,7 +7353,7 @@ class MockImpl {
       noContent(c.res);
     });
     this.boardRoute('GET', '/api/tasks/:id/activity', (c, me) => {
-      const r = b().feed(c.params[0] ?? '', me, q(c, 'before'), Number(q(c, 'limit')) || 50);
+      const r = b().feed(c.params[0] ?? '', me, q(c, 'before'), Number(q(c, 'limit')) || 50, q(c, 'only'));
       sendMsg(c.res, 200, TaskActivityPageSchema, {
         items: r.items.map((x) => (x.message ? { item: { case: 'message' as const, value: this.msgOut(x.message, me) } } : { item: { case: 'activity' as const, value: x.activity as TaskActivity } })),
         hasMore: r.hasMore,
@@ -7136,6 +7400,335 @@ class MockImpl {
     this.state.reactions.set(m2.id, new Map([['👍', new Set([IDS.users.boris])]]));
     m2.reactions = [create(ReactionSchema, { emoji: '👍', count: 1, me: false })];
     t3.task.commentCount = list.length;
+  }
+
+  // ------------------------------------------------ Disk (ADR-0094, mock-disk.ts)
+
+  private newDisk(): DiskMock {
+    return new DiskMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      membersOf: (w) => this.membersOf(w),
+      quotaOf: (w) => {
+        const ws = this.state.workspaces.get(w);
+        const plan = this.planLimits(w).storageMb * 1024n * 1024n;
+        const quota = ws?.storageQuotaBytes ?? 0n;
+        return plan > 0n && (quota === 0n || plan < quota) ? plan : quota;
+      },
+      tick: () => tick(this.state),
+      nextId: () => nextId(this.state, 'file'),
+      emit: (wsId, item, removed, viewers) =>
+        this.fanout((u) => {
+          if (!this.member(wsId, u) || !viewers(u)) return null;
+          return removed
+            ? { event: { case: 'diskItemRemove', value: { workspaceId: wsId, itemId: item.id, parentId: item.parentId } } }
+            : { event: { case: 'diskItemUpsert', value: { workspaceId: wsId, item: { ...item, myBits: 0n } } } };
+        }),
+    });
+  }
+
+  /**
+   * The Disk of «Команда Calab» (data scenario): folders «Проекты» (with «Q4» inside), «Дизайн»,
+   * «Договоры» (restricted, shared with Борис), pictures with thumbnails, a PDF, a table, a
+   * video with a public link; in the trash an old mock-up and a draft. File sizes are inflated in
+   * the metadata (the bytes stay tiny) so the meter reads like a real workspace.
+   */
+  private seedDisk(): void {
+    if (this.state.scenario !== 'data') return;
+    const ws = IDS.workspaces.main;
+    const U = IDS.users;
+    const at = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
+    const file = (name: string, mime: string, size: bigint, pic?: { w: number; h: number; bg: [number, number, number]; fg: [number, number, number] }): FileMeta => {
+      const id = nextId(this.state, 'file');
+      const bytes = pic ? encodePng(pic.w, pic.h, cardPicture(pic.bg, [255, 255, 255], pic.fg, pic.w / pic.h)) : Buffer.from(`mock ${name}`);
+      const meta = create(FileMetaSchema, { ...fileMeta(id, ws, U.anna, name, mime, bytes, at('2026-01-10T10:00:00Z'), pic ? { width: pic.w, height: pic.h } : null), size });
+      this.state.files.set(id, { meta, bytes, ...(pic ? { thumbnail: { bytes, mime } } : {}) });
+      return meta;
+    };
+    const d = this.disk;
+    const F = DiskItemKind.FOLDER;
+    const FI = DiskItemKind.FILE;
+    const projects = d.put({ workspaceId: ws, kind: F, name: 'Проекты', ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z') });
+    d.put({ workspaceId: ws, kind: F, name: 'Q4', parentId: projects.id, ownerId: U.anna, createdAt: at('2026-01-06T09:00:00Z') });
+    d.put({ workspaceId: ws, kind: F, name: 'Дизайн', ownerId: U.vera, createdAt: at('2026-01-07T11:00:00Z'), updatedAt: at('2026-01-13T12:10:00Z') });
+    const contracts = d.put({ workspaceId: ws, kind: F, name: 'Договоры', ownerId: U.anna, restricted: true, createdAt: at('2026-01-08T10:00:00Z'), updatedAt: at('2026-01-12T10:00:00Z') });
+    d.perms.set(contracts.id, [
+      create(DiskPermissionEntrySchema, { targetType: PermissionTargetType.USER, targetId: U.boris, allow: DISK_BITS.VIEW | DISK_BITS.WRITE }),
+      create(DiskPermissionEntrySchema, { targetType: PermissionTargetType.USER, targetId: U.vera, allow: DISK_BITS.VIEW, deny: DISK_BITS.WRITE }),
+    ]);
+    const blue = { bg: [91, 141, 239] as [number, number, number], fg: [214, 228, 255] as [number, number, number] };
+    const green = { bg: [64, 170, 140] as [number, number, number], fg: [204, 240, 228] as [number, number, number] };
+    const orange = { bg: [236, 140, 72] as [number, number, number], fg: [255, 226, 200] as [number, number, number] };
+    d.put({ workspaceId: ws, kind: FI, name: 'Обложка релиза.png', ownerId: U.vera, file: file('Обложка релиза.png', 'image/png', 4_812_000n, { w: 480, h: 300, ...blue }), updatedAt: at('2026-01-14T15:00:00Z') });
+    d.put({ workspaceId: ws, kind: FI, name: 'Офис.png', ownerId: U.boris, file: file('Офис.png', 'image/png', 3_250_000n, { w: 400, h: 300, ...green }), updatedAt: at('2026-01-11T09:30:00Z') });
+    d.put({ workspaceId: ws, kind: FI, name: 'Отчёт за квартал.pdf', ownerId: U.anna, file: file('Отчёт за квартал.pdf', 'application/pdf', 2_400_000n), updatedAt: at('2026-01-13T18:45:00Z') });
+    d.put({ workspaceId: ws, kind: FI, name: 'Бюджет 2026.xlsx', ownerId: U.grigory, file: file('Бюджет 2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 312_000n), updatedAt: at('2026-01-09T14:00:00Z') });
+    const demo = d.put({ workspaceId: ws, kind: FI, name: 'Демо продукта.mp4', ownerId: U.anna, file: file('Демо продукта.mp4', 'video/mp4', 2_960_000_000n), updatedAt: at('2026-01-12T11:00:00Z') });
+    d.links.set(demo.id, create(DiskLinkSchema, { code: 'mockLinkDemo'.padEnd(43, 'x'), itemId: demo.id, createdBy: U.anna, createdAt: at('2026-01-12T11:05:00Z'), downloads: 14 }));
+    d.put({ workspaceId: ws, kind: FI, name: 'Исходники.zip', ownerId: U.boris, file: file('Исходники.zip', 'application/zip', 186_000_000n), updatedAt: at('2026-01-08T17:00:00Z') });
+    const trashed = (name: string, mime: string, size: bigint, by: string, iso: string, pic?: Parameters<typeof file>[3]): void => {
+      d.put({ workspaceId: ws, kind: FI, name, ownerId: by, file: file(name, mime, size, pic), trashedAt: at(iso), trashedBy: by, trashedRoot: true, updatedAt: at(iso) });
+    };
+    trashed('Старый макет.png', 'image/png', 412_000_000n, U.vera, '2026-01-14T10:00:00Z', { w: 400, h: 300, ...orange });
+    trashed('Черновик договора.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 96_000n, U.anna, '2026-01-13T09:00:00Z');
+    let disk = 0n;
+    for (const it of d.items.values()) disk += it.file?.size ?? 0n;
+    const w = this.state.workspaces.get(ws);
+    if (w) w.storageUsedBytes += disk;
+  }
+
+  private diskRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof DiskError) throw new HttpError(e.status, e.code, e.message, e.field, e.extra);
+        throw e;
+      }
+    });
+  }
+
+  private diskRoutes(): void {
+    const d = (): DiskMock => this.disk;
+    const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
+    const p0 = (c: Ctx): string => c.params[0] ?? '';
+    this.diskRoute('GET', '/api/workspaces/:id/disk/items', (c, me) => {
+      const r = d().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true', sort: q(c, 'sort'), cursor: q(c, 'cursor'), limit: Number(q(c, 'limit')) || 0 });
+      sendMsg(c.res, 200, ListDiskItemsResponseSchema, r);
+    });
+    this.diskRoute('POST', '/api/workspaces/:id/disk/folders', (c, me) => {
+      const b = parseBody(c, CreateDiskFolderRequestSchema);
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: d().createFolder(p0(c), me, b.parentId, b.name) });
+    });
+    this.diskRoute('POST', '/api/workspaces/:id/disk/upload', async (c, me) => {
+      const wsId = p0(c);
+      this.workspaceFor(wsId, me);
+      const f = await parseMultipartFile(c);
+      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      const id = this.storeFile(wsId, me, f);
+      const meta = this.state.files.get(id)?.meta;
+      if (!meta) throw notFound();
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: d().upload(wsId, me, q(c, 'parent'), meta) });
+    });
+    this.diskRoute('POST', '/api/workspaces/:id/disk/trash/empty', (c, me) => {
+      const r = d().emptyTrash(p0(c), me);
+      sendMsg(c.res, 200, EmptyDiskTrashResponseSchema, { deleted: r.deleted, freedBytes: r.freed });
+    });
+    this.diskRoute('GET', '/api/workspaces/:id/disk/usage', (c, me) => sendMsg(c.res, 200, DiskUsageSchema, d().usage(p0(c), me)));
+    this.diskRoute('GET', '/api/workspaces/:id/disk/activity', (c, me) => sendMsg(c.res, 200, DiskActivityPageSchema, { activities: d().wsActivity(p0(c), me) }));
+    this.diskRoute('GET', '/api/workspaces/:id/disk/settings', (c, me) => sendMsg(c.res, 200, DiskSettingsSchema, { trashDays: d().settings(p0(c), me) }));
+    this.diskRoute('PUT', '/api/workspaces/:id/disk/settings', (c, me) => {
+      const b = parseBody(c, DiskSettingsSchema);
+      d().setSettings(p0(c), me, b.trashDays);
+      sendMsg(c.res, 200, DiskSettingsSchema, { trashDays: d().settings(p0(c), me) });
+    });
+    this.diskRoute('PATCH', '/api/disk/items/:id', (c, me) => {
+      const b = parseBody(c, UpdateDiskItemRequestSchema);
+      sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().update(p0(c), me, b) });
+    });
+    this.diskRoute('DELETE', '/api/disk/items/:id', (c, me) => {
+      d().remove(p0(c), me);
+      noContent(c.res);
+    });
+    this.diskRoute('POST', '/api/disk/items/:id/trash', (c, me) => sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().trash(p0(c), me) }));
+    this.diskRoute('POST', '/api/disk/items/:id/restore', (c, me) => sendMsg(c.res, 200, DiskItemResponseSchema, { item: d().restore(p0(c), me) }));
+    this.diskRoute('GET', '/api/disk/items/:id/permissions', (c, me) => sendMsg(c.res, 200, DiskPermissionsResponseSchema, d().permissions(p0(c), me)));
+    this.diskRoute('PUT', '/api/disk/items/:id/permissions', (c, me) => {
+      const b = parseBody(c, UpdateDiskPermissionsRequestSchema);
+      d().setPermissions(p0(c), me, b.entries, b.restricted);
+      sendMsg(c.res, 200, DiskPermissionsResponseSchema, d().permissions(p0(c), me));
+    });
+    this.diskRoute('POST', '/api/disk/items/:id/link', (c, me) => {
+      const b = parseBody(c, CreateDiskLinkRequestSchema);
+      sendMsg(c.res, 200, DiskLinkResponseSchema, d().createLink(p0(c), me, b.expiresAt));
+    });
+    this.diskRoute('DELETE', '/api/disk/items/:id/link', (c, me) => {
+      d().deleteLink(p0(c), me);
+      noContent(c.res);
+    });
+    this.diskRoute('GET', '/api/disk/items/:id/activity', (c, me) => sendMsg(c.res, 200, DiskActivityPageSchema, { activities: d().itemActivity(p0(c), me) }));
+    this.diskRoute('GET', '/api/disk/items/:id/path', (c, me) => sendMsg(c.res, 200, DiskPathResponseSchema, { items: d().path(p0(c), me) }));
+  }
+
+  // ------------------------------------------------ Wiki (ADR-0096, mock-wiki.ts)
+
+  private newWiki(): WikiMock {
+    return new WikiMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      tick: () => tick(this.state),
+      nextId: () => nextId(this.state, 'file'),
+      // As the gateway: the recipient's own bits in my_bits; the event page has no link and no `shared` flag.
+      emit: (wsId, page, removed, bitsOf) =>
+        this.fanout((u) => {
+          const bits = this.member(wsId, u) ? bitsOf(u) : 0n;
+          if (!(bits & WIKI_BITS.VIEW)) return null;
+          return removed
+            ? { event: { case: 'wikiPageRemove', value: { workspaceId: wsId, pageId: page.id, parentId: page.parentId } } }
+            : { event: { case: 'wikiPageUpsert', value: { workspaceId: wsId, page: { ...page, myBits: bits, shared: false, link: undefined } } } };
+        }),
+    });
+  }
+
+  /**
+   * The Wiki of «Команда Calab» (data scenario): «Справочник команды» (cover, icon, a real document
+   * with headings, lists, a checklist, a quote, code and a table; two versions) with «Онбординг»
+   * (→ «Первый день»), «Процессы» (→ «Релизы», «Код-ревью») and «Глоссарий»; «Встречи» (→ «Ретро
+   * 14.01»); «Черновики» (restricted, shared with Борис); in the trash «Старый регламент» and
+   * «Заметки Q3».
+   */
+  private seedWiki(): void {
+    if (this.state.scenario !== 'data') return;
+    const ws = IDS.workspaces.main;
+    const U = IDS.users;
+    const at = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
+    const w = this.wiki;
+    const coverBytes = encodePng(960, 240, cardPicture([64, 104, 196], [255, 255, 255], [150, 186, 255], 4));
+    const coverId = nextId(this.state, 'file');
+    const coverMeta = create(FileMetaSchema, fileMeta(coverId, ws, U.anna, 'cover.png', 'image/png', coverBytes, at('2026-01-10T10:00:00Z'), { width: 960, height: 240 }));
+    this.state.files.set(coverId, { meta: coverMeta, bytes: coverBytes, thumbnail: { bytes: coverBytes, mime: 'image/png' } });
+    const handbookMd = [
+      '## Зачем этот раздел',
+      'Здесь собрано всё, что нужно знать новому человеку в команде: как мы работаем, где что лежит и к кому идти с вопросами. Страницы правят все — если видите неточность, исправьте **сразу**.',
+      '## Первая неделя',
+      '- [x] Получить доступ к Calab и рабочей почте',
+      '- [x] Познакомиться с командой на утренней планёрке',
+      '- [ ] Пройти онбординг по продукту',
+      '- [ ] Выбрать первую задачу с меткой `good first issue`',
+      '> Не бойтесь задавать вопросы — лучше спросить дважды, чем гадать.',
+      '## Полезные команды',
+      '```bash\npnpm install && make gen\npnpm dev:desktop\n```',
+      '## Кто за что отвечает',
+      '| Область | Ответственный |\n| --- | --- |\n| Голос и видео | Борис |\n| Дизайн | Вера |\n| Релизы | Анна |',
+    ].join('\n\n');
+    const handbook = w.put({ workspaceId: ws, title: 'Справочник команды', icon: '📘', cover: coverMeta, ownerId: U.anna, createdAt: at('2026-01-05T09:00:00Z'), updatedAt: at('2026-01-14T16:20:00Z'), updatedBy: U.vera, preview: 'Здесь собрано всё, что нужно знать новому человеку в команде' }, handbookMd);
+    w.seedLink(handbook.id, WIKI_PUBLIC_CODE, true);
+    const onboarding = w.put({ workspaceId: ws, parentId: handbook.id, title: 'Онбординг', icon: '🚀', ownerId: U.anna }, '## Добро пожаловать\n\nПервые шаги в команде.');
+    w.put({ workspaceId: ws, parentId: onboarding.id, title: 'Первый день', ownerId: U.anna }, 'Что сделать в первый день.');
+    const processes = w.put({ workspaceId: ws, parentId: handbook.id, title: 'Процессы', icon: '⚙️', ownerId: U.boris, preview: 'Как мы выпускаем релизы и смотрим код' }, 'Как мы выпускаем релизы и смотрим код.');
+    w.put({ workspaceId: ws, parentId: processes.id, title: 'Релизы', ownerId: U.anna }, 'Релиз — по тегу.');
+    w.put({ workspaceId: ws, parentId: processes.id, title: 'Код-ревью', ownerId: U.boris }, 'Одно ревью на изменение.');
+    w.put({ workspaceId: ws, parentId: handbook.id, title: 'Глоссарий', icon: '📖', ownerId: U.vera, preview: 'Термины продукта от «островка» до «рейла»' }, 'Термины продукта.');
+    const meetings = w.put({ workspaceId: ws, title: 'Встречи', icon: '🗓️', ownerId: U.boris }, 'Протоколы встреч.');
+    w.put({ workspaceId: ws, parentId: meetings.id, title: 'Ретро 14.01', ownerId: U.boris }, 'Что получилось, что нет.');
+    const drafts = w.put({ workspaceId: ws, title: 'Черновики', icon: '📝', ownerId: U.anna, restricted: true }, 'Наброски.');
+    w.perms.set(drafts.id, [create(WikiPermissionEntrySchema, { targetType: PermissionTargetType.USER, targetId: U.boris, allow: WIKI_BITS.VIEW | WIKI_BITS.WRITE })]);
+    w.put({ workspaceId: ws, title: 'Старый регламент', icon: '📄', ownerId: U.anna, trashedAt: at('2026-01-14T10:00:00Z'), trashedBy: U.anna, trashedRoot: true }, 'Устарело.');
+    w.put({ workspaceId: ws, title: 'Заметки Q3', ownerId: U.vera, trashedAt: at('2026-01-13T09:00:00Z'), trashedBy: U.vera, trashedRoot: true }, 'Заметки.');
+    w.addVersion(handbook.id, '## Зачем этот раздел\n\nЗдесь собрано всё, что нужно знать новому человеку.\n\n## Первая неделя\n\n- [ ] Получить доступ к Calab\n- [ ] Пройти онбординг', [U.anna], at('2026-01-12T11:00:00Z'));
+    w.addVersion(handbook.id, handbookMd.replace('**сразу**', 'сразу').replace('- [x] Познакомиться', '- [ ] Познакомиться'), [U.anna, U.vera], at('2026-01-14T15:40:00Z'));
+  }
+
+  private wikiRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof WikiError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    });
+  }
+
+  private wikiRoutes(): void {
+    const w = (): WikiMock => this.wiki;
+    const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
+    const p0 = (c: Ctx): string => c.params[0] ?? '';
+    this.wikiRoute('GET', '/api/workspaces/:id/wiki/pages', (c, me) => {
+      const pages = w().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true' });
+      sendMsg(c.res, 200, ListWikiPagesResponseSchema, { pages });
+    });
+    this.wikiRoute('POST', '/api/workspaces/:id/wiki/pages', (c, me) => {
+      const b = parseBody(c, CreateWikiPageRequestSchema);
+      sendMsg(c.res, 201, WikiPageResponseSchema, { page: w().create(p0(c), me, b) });
+    });
+    // Search of the wiki section only (the one the Wiki tree uses): the shape of the real server's answer.
+    this.wikiRoute('GET', '/api/search', (c, me) => {
+      const hits = q(c, 'type') === 'wiki' ? w().search(q(c, 'scope'), me, q(c, 'q'), Number(q(c, 'limit')) || 20) : [];
+      sendMsg(c.res, 200, SearchResponseSchema, {
+        sections: q(c, 'type') === 'wiki' ? [{ type: SearchType.WIKI, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: h.title, title: h.title, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'wiki' as const, value: { pageId: h.id, icon: h.icon } } })) }] : [],
+      });
+    });
+    this.wikiRoute('POST', '/api/workspaces/:id/wiki/trash/empty', (c, me) => sendMsg(c.res, 200, EmptyWikiTrashResponseSchema, { deleted: w().emptyTrash(p0(c), me) }));
+    this.wikiRoute('GET', '/api/workspaces/:id/wiki/settings', (c, me) => sendMsg(c.res, 200, WikiSettingsSchema, { trashDays: w().settings(p0(c), me) }));
+    this.wikiRoute('PUT', '/api/workspaces/:id/wiki/settings', (c, me) => {
+      const b = parseBody(c, WikiSettingsSchema);
+      w().setSettings(p0(c), me, b.trashDays);
+      sendMsg(c.res, 200, WikiSettingsSchema, { trashDays: w().settings(p0(c), me) });
+    });
+    this.wikiRoute('GET', '/api/wiki/pages/:id', (c, me) => sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().get(p0(c), me) }));
+    this.wikiRoute('PATCH', '/api/wiki/pages/:id', (c, me) => {
+      const b = parseBody(c, UpdateWikiPageRequestSchema);
+      sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().update(p0(c), me, b, (id) => this.state.files.get(id)?.meta) });
+    });
+    this.wikiRoute('DELETE', '/api/wiki/pages/:id', (c, me) => {
+      w().remove(p0(c), me);
+      noContent(c.res);
+    });
+    this.wikiRoute('GET', '/api/wiki/pages/:id/path', (c, me) => sendMsg(c.res, 200, WikiPathResponseSchema, { pages: w().path(p0(c), me) }));
+    this.wikiRoute('POST', '/api/wiki/pages/:id/trash', (c, me) => sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().trash(p0(c), me) }));
+    this.wikiRoute('POST', '/api/wiki/pages/:id/restore', (c, me) => sendMsg(c.res, 200, WikiPageResponseSchema, { page: w().restore(p0(c), me) }));
+    this.wikiRoute('GET', '/api/wiki/pages/:id/permissions', (c, me) => sendMsg(c.res, 200, WikiPermissionsResponseSchema, w().permissions(p0(c), me)));
+    this.wikiRoute('PUT', '/api/wiki/pages/:id/permissions', (c, me) => {
+      const b = parseBody(c, UpdateWikiPermissionsRequestSchema);
+      w().setPermissions(p0(c), me, b.entries, b.restricted);
+      noContent(c.res);
+    });
+    this.wikiRoute('POST', '/api/wiki/pages/:id/link', (c, me) => {
+      const b = parseBody(c, CreateWikiLinkRequestSchema);
+      sendMsg(c.res, 200, WikiLinkResponseSchema, w().createLink(p0(c), me, b));
+    });
+    this.wikiRoute('DELETE', '/api/wiki/pages/:id/link', (c, me) => {
+      w().deleteLink(p0(c), me);
+      noContent(c.res);
+    });
+    this.wikiRoute('GET', '/api/wiki/pages/:id/versions', (c, me) => sendMsg(c.res, 200, WikiVersionsResponseSchema, { versions: w().listVersions(p0(c), me) }));
+    this.wikiRoute('GET', '/api/wiki/pages/:id/versions/:vid', (c, me) => {
+      const state = w().versionState(p0(c), c.params[1] ?? '', me);
+      c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(state.length) });
+      c.res.end(Buffer.from(state));
+    });
+    // Public pages (ADR-0096 §6): anonymous, no sockets.
+    const pub = (h: (c: Ctx) => void): ((c: Ctx) => void) => (c) => {
+      try {
+        h(c);
+      } catch (e) {
+        if (e instanceof WikiError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    };
+    this.route('GET', '/api/public/wiki/:code', pub((c) => sendMsg(c.res, 200, PublicWikiPageSchema, w().publicMeta(p0(c), q(c, 'page')))));
+    this.route(
+      'GET',
+      '/api/public/wiki/:code/state',
+      pub((c) => {
+        const body = w().publicState(p0(c), q(c, 'page'));
+        c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(body.length), 'Cache-Control': 'no-store' });
+        c.res.end(Buffer.from(body));
+      }),
+    );
+    this.route(
+      'GET',
+      '/api/public/wiki/:code/files/:fid',
+      pub((c) => {
+        const f = w().publicFileAllowed(p0(c), c.params[1] ?? '') ? this.state.files.get(c.params[1] ?? '') : undefined;
+        if (!f) throw notFound();
+        send(c.res, 200, f.bytes, f.meta.mime, { 'Cache-Control': 'no-store' });
+      }),
+    );
+    this.wikiRoute('POST', '/api/wiki/pages/:id/files', async (c, me) => {
+      const page = w().get(p0(c), me);
+      w().canUpload(page.id, me);
+      const f = await parseMultipartFile(c);
+      const id = this.storeFile(page.workspaceId, me, f);
+      const meta = this.state.files.get(id)?.meta;
+      if (!meta) throw notFound();
+      sendMsg(c.res, 201, UploadFileResponseSchema, { file: meta }); // {file}, like POST /api/files
+    });
   }
 
   private newBoards(): BoardsMock {

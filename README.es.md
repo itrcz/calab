@@ -88,9 +88,19 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - Filtros, vistas guardadas, acciones en bloque; **una tarea desde cualquier mensaje**; el enlace a una tarea se despliega como tarjeta en el chat.
 
 - **Aprobaciones** — asigna aprobadores y cuántas aprobaciones hacen falta (todas o N de M); una tarea no avanza en el tablero hasta que se aprueba ([ADR-0049](docs/adr/0049-task-approvals.md)).
-### 📝 Notas
+### 📚 Wiki
 
-<img src="apps/landing/public/screens/es/notes.webp" width="880" alt="Estantes de Notas">
+<img src="apps/landing/public/screens/es/wiki.webp" width="880" alt="Wiki del equipo">
+
+Páginas y subpáginas como en Notion: editor con tablas, listas de tareas, código e imágenes, edición conjunta en tiempo real con cursores, historial de versiones con restauración, acceso por página y enlaces públicos de solo lectura.
+
+### 🗂️ Disco
+
+<img src="apps/landing/public/screens/es/disk.webp" width="880" alt="Disco del equipo">
+
+Carpetas y archivos del espacio: subida arrastrando, mosaico o lista, acceso por carpeta (las privadas no las ven ni los administradores), enlaces públicos, papelera con limpieza automática e indicador de espacio claro.
+
+### 📝 Notas
 
 Hasta 20 estantes privados con tus nombres y emoji, como «Mensajes guardados» de Telegram, pero varios. Arrastra mensajes y archivos a un estante, reenvíalos, fíjalos y búscalos.
 

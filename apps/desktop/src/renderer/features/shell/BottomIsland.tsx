@@ -6,7 +6,8 @@ import { MeetingRecordPrompt } from '../calendar/RoomEvent';
 /**
  * Bottom island (docs/08 «Нижний островок», Discord reference): «Голос подключён» and
  * the self panel as one floating block across the whole left part — from the rail's
- * left edge to the room column's right edge, 8 px in, radius 12, on the window layer. The rail
+ * left edge to the room column's right edge, 8 px in (4 px up from the bottom, so my avatar lands
+ * on the rail's axis at the inset the old rail avatar had), radius 12, on the window layer. The rail
  * and the room list end above it: its height is published as `--island-height` on the parent
  * (their bottom padding).
  */

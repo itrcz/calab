@@ -2,17 +2,18 @@ import { notFound } from 'next/navigation';
 import { Downloads } from '@/components/downloads';
 import { Faq } from '@/components/faq';
 import { StoryMotion } from '@/components/story-motion';
-import { Capabilities } from '@/components/capabilities';
-import { ShowcaseRows } from '@/components/showcase-rows';
+import { FeatureCatalog } from '@/components/feature-catalog';
+import { MobileSoon } from '@/components/mobile-soon';
+import { Notifications } from '@/components/notifications';
 import { ControlInfographic } from '@/components/control-infographic';
 import { Container } from '@/components/ui';
 import { StickerFinale } from '@/components/sticker-finale';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { ConferenceStrip } from '@/components/conference-strip';
+import { MailLinkCard } from '@/components/mail-link-card';
 import { Hero } from '@/components/hero';
 import { Pricing } from '@/components/pricing';
-import { getCapabilities } from '@/i18n/capabilities';
 import { getStory } from '@/i18n/story';
 import { getDict, isLocale, LOCALE_INFO, localePath } from '@/i18n';
 import { APP_URL, DOWNLOADS, REPO_URL, SITE_URL } from '@/lib/site';
@@ -48,16 +49,18 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(locale) }} />
       <StoryMotion />
+      <MailLinkCard t={t.mailLink} />
       <Header t={t.header} locale={locale} />
       <main id="main">
         <Hero t={t.hero} locale={locale} />
-        <Capabilities locale={locale} />
-        <ShowcaseRows locale={locale} more={getCapabilities(locale).more} />
+        <FeatureCatalog locale={locale} />
+        <Notifications locale={locale} />
+        <MobileSoon locale={locale} />
         <ConferenceStrip locale={locale} />
         <section id="control" className="story-section control-section" aria-labelledby="control-title">
           <Container><ControlInfographic locale={locale} title={getStory(locale).control} /></Container>
         </section>
-        <Pricing t={t.pricing} />
+        <Pricing locale={locale} t={t.pricing} />
         <Downloads t={t.downloads} />
         <Faq t={t.faq} />
         <StickerFinale locale={locale} />

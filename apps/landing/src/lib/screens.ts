@@ -2,21 +2,19 @@
 // Files: public/screens/<lang>/<name>.webp and <name>@2x.webp, the app and its team in that language.
 export const SCREENS = {
   voice: { width: 1440, height: 900 },
-  chat: { width: 600, height: 690 },
+  chat: { width: 600, height: 760 },
   call: { width: 1440, height: 870 },
   calendar: { width: 1110, height: 870 },
   findtime: { width: 1110, height: 870 },
   kanban: { width: 1110, height: 600 },
   timeline: { width: 1110, height: 870 },
   task: { width: 510, height: 870 },
-  notes: { width: 1370, height: 560 },
   guest: { width: 600, height: 460 },
   sipdial: { width: 1110, height: 300 },
   siproom: { width: 1440, height: 500 },
   sipsettings: { width: 940, height: 660 },
   siplog: { width: 940, height: 660 },
   webapps: { width: 1440, height: 870 },
-  boards2: { width: 890, height: 640 },
   checklists: { width: 480, height: 870 },
   boardfeatures: { width: 940, height: 660 },
   boardhook: { width: 940, height: 660 },
@@ -26,6 +24,19 @@ export const SCREENS = {
   stickerchat: { width: 1110, height: 870 },
   stickerpicker: { width: 1110, height: 870 },
   voicelist: { width: 340, height: 440 },
+  // Landing 3.3 (e2e-marketing/landing-v5.spec.ts, landing-mail.spec.ts)
+  mail: { width: 1440, height: 758 },
+  taskhistory: { width: 1110, height: 870 },
+  notify: { width: 920, height: 640 },
+  notifyrelay: { width: 920, height: 640 },
+  gallery: { width: 872, height: 504 },
+  disk: { width: 990, height: 570 },
+  wiki: { width: 990, height: 750 },
+  search: { width: 660, height: 650 },
+  'phone-rooms': { width: 390, height: 844 },
+  'phone-chat': { width: 390, height: 844 },
+  'phone-voice': { width: 390, height: 844 },
+  'phone-board': { width: 390, height: 844 },
 } as const;
 
 export type ScreenName = keyof typeof SCREENS;

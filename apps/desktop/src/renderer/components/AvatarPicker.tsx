@@ -37,6 +37,7 @@ export function AvatarButtons({
   onUpload,
   onRemove,
   removeLabel = t('profile.removeAvatar'),
+  uploadLabel = t('profile.avatar'),
   size = 'md',
   testId,
 }: {
@@ -44,6 +45,7 @@ export function AvatarButtons({
   onUpload: (file: File) => Promise<void>;
   onRemove: () => Promise<void>;
   removeLabel?: string;
+  uploadLabel?: string;
   size?: 'sm' | 'md';
   testId?: string;
 }): ReactNode {
@@ -58,7 +60,7 @@ export function AvatarButtons({
   return (
     <div className="flex gap-2">
       <Button variant="secondary" size={size} busy={busy} onClick={picker.open} data-testid={testId ? `${testId}-upload` : undefined}>
-        <Upload className={size === 'sm' ? 'size-3.5' : 'size-4'} aria-hidden /> {t('profile.avatar')}
+        <Upload className={size === 'sm' ? 'size-3.5' : 'size-4'} aria-hidden /> {uploadLabel}
       </Button>
       {hasAvatar ? (
         <Button

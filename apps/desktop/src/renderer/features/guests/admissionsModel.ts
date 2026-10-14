@@ -136,6 +136,8 @@ export type AdmissionAction =
   /** …and comes back when the server refused. */
   | { type: 'restore'; admission: RoomAdmission }
   | { type: 'dismissToast'; key: string }
+  /** The knock is still pending and its toast was held back: show it now (60 s escalation). */
+  | { type: 'showToast'; key: string }
   /** The guest's knock is closed (entered the room, «Закрыть»). */
   | { type: 'forget'; roomId: string }
   | { type: 'hide'; roomId: string }
@@ -227,6 +229,11 @@ export function reduce(s: AdmissionsData, act: AdmissionAction): AdmissionsData 
       delete gone[key];
       const list = [...(without(s.byRoom[a.roomId], userId) ?? []), a].sort(byRequested);
       return { ...s, byRoom: setRoom(s.byRoom, a.roomId, list), gone };
+    }
+    case 'showToast': {
+      const { roomId, userId } = splitKey(act.key);
+      if (s.toasts.includes(act.key) || !s.byRoom[roomId]?.some((x) => x.user?.id === userId)) return s;
+      return { ...s, toasts: [...s.toasts, act.key] };
     }
     case 'dismissToast':
       return s.toasts.includes(act.key) ? { ...s, toasts: s.toasts.filter((k) => k !== act.key) } : s;

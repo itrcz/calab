@@ -1,0 +1,1 @@
+{"Data":{"Retailer":[{"status":"REG","isActive":true,"mcc":"7372","rate":2.8,"name":"EXAMPLE.TEST","url":"https://example.test","merchantId":"200000000001234","terminalId":"20001234","paymentModes":["sbp","tinkoff","card"],"cashbox":"digitalKassaTochka"}]},"Links":{"self":"https://enter.tochka.com/uapi/acquiring/v1.0/retailers"},"Meta":{"totalPages":1}}

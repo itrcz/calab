@@ -27,9 +27,9 @@ const MAX = 300_000;
 export const CROPS = {
   // hero: the whole window in a call — the shared slide on the stage, cameras, the room list
   voice: null,
-  // chat: the room header and a narrow feed only (mockup with reactions, a reply, a sticker; the capture's
-  // window is 930×800, so the members column is hidden and the sticker sits next to the messages)
-  chat: { left: 330, top: 30, width: 600, height: 690 },
+  // chat: the room header (with «… печатает») and a narrow feed down to the composer: the mockup's end, a reply
+  // quote, short lines of four people with reactions, my last one read (the capture's window is 930×800)
+  chat: { left: 330, top: 40, width: 600, height: 760 },
   // one-to-one call: the DM with «Звонок · 00:00 · Завершить», the island
   call: { left: 0, top: 30, width: 1440, height: 870 },
   // calendar: the day with the planning meeting's card
@@ -40,8 +40,6 @@ export const CROPS = {
   kanban: { left: 330, top: 30, width: 1110, height: 600 },
   timeline: { left: 330, top: 30, width: 1110, height: 870 },
   task: { left: 930, top: 30, width: 510, height: 870 },
-  // notes: the shelves and the open shelf
-  notes: { left: 70, top: 30, width: 1370, height: 560 },
   // the guest's waiting card
   guest: { left: 420, top: 220, width: 600, height: 460 },
   // landing v4 (e2e-marketing/landing-v4.spec.ts): SIP dialer popover over the room header and the members
@@ -51,12 +49,10 @@ export const CROPS = {
   // workspace settings → Телефония: the provider card / the connection test and the call journal
   sipsettings: { left: 250, top: 120, width: 940, height: 660 },
   siplog: { left: 250, top: 120, width: 940, height: 660 },
-  // a workspace web app (the test dashboard) open in the window, the call island kept
+  // the «Продажи» web app open from its rail icon (the tip with its name), the bot's daily summary
+  // laid over the bottom right (OVERLAYS below)
   webapps: { left: 0, top: 30, width: 1440, height: 870 },
   // Calab 2.0 (e2e-marketing/landing-v2.spec.ts)
-  // boards: three kanban columns with checklist progress «3/7» on the cards (the capture's window is
-  // 1220 px wide; the boards list on the left is cut off)
-  boards2: { left: 330, top: 30, width: 890, height: 640 },
   // the task panel with two named checklists
   checklists: { left: 960, top: 30, width: 480, height: 870 },
   // board settings windows: «Фичи», «Вебхук» (Business)
@@ -72,7 +68,56 @@ export const CROPS = {
   stickerpicker: { left: 330, top: 30, width: 1110, height: 870 },
   // the room list: people in a voice room and «Войти»
   voicelist: { left: 0, top: 30, width: 340, height: 440 },
+  // Landing 3.3 (e2e-marketing/landing-v5.spec.ts, landing-mail.spec.ts)
+  // the desktop mail client (Electron, its window is 1440×758 CSS px on the capture machine)
+  mail: { left: 0, top: 0, width: 1440, height: 758 },
+  // the board with the opened task on «История»
+  taskhistory: { left: 330, top: 30, width: 1110, height: 870 },
+  // settings → Уведомления: the task triggers / their end with «Передавать боту»
+  notify: { left: 260, top: 130, width: 920, height: 640 },
+  notifyrelay: { left: 260, top: 130, width: 920, height: 640 },
+  // a video meeting in «Галерея»: the 2 × 2 camera grid only (tiles at 341,214–1189,694 + 12 px)
+  gallery: { left: 329, top: 202, width: 872, height: 504 },
+  // «Диск» as tiles: folders (one restricted), files with thumbnails, the storage meter (window 1060×600)
+  disk: { left: 70, top: 30, width: 990, height: 570 },
+  // «Вики»: the page tree with branches open and a page with a cover, a checklist, a table and two carets (window 1060×780)
+  wiki: { left: 70, top: 30, width: 990, height: 750 },
+  // ⌘K with the unified search sections
+  search: { left: 390, top: 115, width: 660, height: 650 },
+  // the phone (iPhone 14 viewport, 390×844): rooms, chat, «В голосе», a board
+  'phone-rooms': { left: 0, top: 0, width: 390, height: 844 },
+  'phone-chat': { left: 0, top: 0, width: 390, height: 844 },
+  'phone-voice': { left: 0, top: 0, width: 390, height: 844 },
+  'phone-board': { left: 0, top: 0, width: 390, height: 844 },
 };
+
+// A second capture laid over a crop as a floating card (CSS px from the crop's right / bottom edge,
+// rounded, a hairline border and a soft shadow): webapps = the sales dashboard + the bot's daily summary.
+const OVERLAYS = {
+  webapps: { from: 'webapps-bot', right: 36, bottom: 36, radius: 16 },
+};
+
+/** sharp composite inputs: the card's shadow, the rounded card, its border — at the crop's bottom right. */
+async function floating(file, cw, ch, bw, bh, { right, bottom, radius }) {
+  const r = radius * SCALE;
+  const left = bw - right * SCALE - cw;
+  const top = bh - bottom * SCALE - ch;
+  const blur = 24 * SCALE;
+  const shadow = await sharp(Buffer.from(`<svg width="${cw + blur * 2}" height="${ch + blur * 2}" xmlns="http://www.w3.org/2000/svg"><rect x="${blur}" y="${blur + 8 * SCALE}" width="${cw}" height="${ch}" rx="${r}" fill="#000" fill-opacity=".7"/></svg>`))
+    .blur(blur / 2)
+    .png()
+    .toBuffer();
+  const card = await sharp(file)
+    .composite([{ input: Buffer.from(`<svg width="${cw}" height="${ch}"><rect width="${cw}" height="${ch}" rx="${r}" ry="${r}"/></svg>`), blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+  const border = Buffer.from(`<svg width="${cw}" height="${ch}" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="${cw - 2}" height="${ch - 2}" rx="${r - 1}" fill="none" stroke="#ffffff" stroke-opacity=".14" stroke-width="2"/></svg>`);
+  return [
+    { input: shadow, left: left - blur, top: top - blur },
+    { input: card, left, top },
+    { input: border, left, top },
+  ];
+}
 
 // `--only=sipdial,siproom` regenerates just those images (raw captures of the other scenes are not needed,
 // the existing files stay untouched; the OpenGraph cards are redrawn only when `voice` is in the list).
@@ -100,7 +145,16 @@ for (const [short, lang] of Object.entries(LOCALES)) {
     if (only && !only.includes(name)) continue;
     const path = join(src, `${name}-${short}@2x.png`);
     if (!existsSync(path)) throw new Error(`missing ${path}: run the landing captures first`);
-    const base = crop ? sharp(path).extract(scaled(crop)) : sharp(path);
+    let base = crop ? sharp(path).extract(scaled(crop)) : sharp(path);
+    const layer = OVERLAYS[name];
+    if (layer) {
+      const card = join(src, `${layer.from}-${short}@2x.png`);
+      if (!existsSync(card)) throw new Error(`missing ${card}: run the landing captures first`);
+      const { width: cw = 0, height: ch = 0 } = await sharp(card).metadata();
+      const { width: bw, height: bh } = scaled(crop ?? { width: 1440, height: 900 });
+      // Flattened first: sharp composites after a resize, and the 1x copies are resized.
+      base = sharp(await sharp(await base.png().toBuffer()).composite(await floating(card, cw, ch, bw, bh, layer)).png().toBuffer());
+    }
     const { width } = crop ?? { width: 1440 };
     const big = await webp(base.clone(), join(dir, `${name}@2x.webp`));
     const small = await webp(base.clone().resize({ width, kernel: 'lanczos3' }), join(dir, `${name}.webp`));

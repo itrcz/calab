@@ -11,6 +11,14 @@ export function accessLocked(access: WorkspaceIdentityAccess | undefined, now = 
     (access.reason !== IdentityAccessReason.ALLOWED || (!!access.validUntil && timestampDate(access.validUntil).getTime() <= now))
   );
 }
+/** Closed for unpaid billing (ADR-0080 §8): content is locked, the workspace stays as a stub with the paywall. */
+export function billingLocked(access: WorkspaceIdentityAccess | undefined): boolean {
+  return access?.reason === IdentityAccessReason.BILLING_SUSPENDED;
+}
+/** The lock screen («Пространство заблокировано», SSO step-up…): any lock except billing, which shows the paywall. */
+export function lockScreen(access: WorkspaceIdentityAccess | undefined, now = Date.now()): boolean {
+  return accessLocked(access, now) && !billingLocked(access);
+}
 export function reasonKey(reason: IdentityAccessReason): MessageKey {
   switch (reason) {
     case IdentityAccessReason.ALLOWED:
@@ -24,10 +32,18 @@ export function reasonKey(reason: IdentityAccessReason): MessageKey {
     case IdentityAccessReason.RECOVERY_ONLY:
       return 'identity.recoveryOnly';
     case IdentityAccessReason.DEPENDENCY_UNAVAILABLE:
-      return 'identity.unavailable';
+      return 'identity.checkUnavailable';
     default:
       return 'identity.required';
   }
+}
+/**
+ * Title of a workspace the client holds closed. A dependency outage (the server could not
+ * evaluate access, e.g. a DB timeout) is not a lock and must not read «workspace locked» (#115).
+ */
+export function lockTitleKey(reason: IdentityAccessReason | undefined): MessageKey {
+  if (reason === IdentityAccessReason.BILLING_SUSPENDED) return 'billing.paywall.title';
+  return reason === IdentityAccessReason.DEPENDENCY_UNAVAILABLE ? 'identity.lockedUnavailable' : 'identity.locked';
 }
 export function consentHandle(url: string): string | null {
   const parsed = new URL(url);

@@ -3,6 +3,8 @@
 //	server [serve]          run the HTTP server (migrates first unless MIGRATE_ON_START=false)
 //	server migrate [status] apply pending migrations (or print their status) and exit
 //	server healthcheck      GET /readyz on HTTP_ADDR, exit 0 if ready (container healthcheck)
+//	server tochka …         Tochka webhook registration and key check (ADR-0083; TOCHKA_* env only)
+//	server tochkapay …      Pay Gateway public key and test-site smoke (ADR-0083 phase 3; TOCHKA_* env only)
 package main
 
 import (
@@ -25,6 +27,7 @@ import (
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/plans"
+	"github.com/calaba/calaba/server/internal/push"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
@@ -50,6 +53,12 @@ func run(args []string) error {
 	}
 	if cmd == "healthcheck" { // needs only HTTP_ADDR, not the full config
 		return healthcheck(os.Getenv("HTTP_ADDR"))
+	}
+	if cmd == "tochka" { // needs only TOCHKA_*, not the full config
+		return tochkaCmd(context.Background(), args[1:], os.Stdout)
+	}
+	if cmd == "tochkapay" { // needs only TOCHKA_*, not the full config
+		return tochkapayCmd(context.Background(), args[1:], os.Stdout)
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -112,7 +121,11 @@ func serve(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Blob: store})
+	providers, err := push.NewProviders(cfg)
+	if err != nil {
+		return err
+	}
+	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Blob: store, Push: providers})
 	bg, stopBG := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopBG()
 	a.Run(bg)
@@ -126,13 +139,18 @@ func serve(ctx context.Context, cfg *config.Config) error {
 		// No WriteTimeout: gateway sockets and file downloads are long-lived; handlers set
 		// their own deadlines via http.ResponseController.
 	}
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.HTTPAddr)
+	if err != nil {
+		return err
+	}
 	errc := make(chan error, 1)
 	go func() {
 		slog.Info("listening", "addr", cfg.HTTPAddr, "version", buildinfo.Version, "commit", buildinfo.Info().GetCommit(),
 			"registration", cfg.RegistrationMode,
 			"storage", cfg.StorageDriver, "livekit", cfg.LiveKitEnabled(), "mail", cfg.MailEnabled())
-		errc <- srv.ListenAndServe()
+		errc <- srv.Serve(ln)
 	}()
+	a.RunAfterListen(bg) // the socket is bound: early connections queue until Serve accepts
 	select {
 	case err := <-errc:
 		if !errors.Is(err, http.ErrServerClosed) {

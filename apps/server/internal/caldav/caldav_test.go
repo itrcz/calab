@@ -192,7 +192,7 @@ func TestDiscoverQueryPutDelete(t *testing.T) {
 
 	s.SetObject("a.ics", ics("BEGIN:VEVENT\r\nUID:q\r\nDTSTART:20261001T090000Z\r\nDTEND:20261001T100000Z\r\nEND:VEVENT\r\n"))
 	objs, err := c.Query(ctx, cals[0].Href, cr, utc("2026-09-30T00:00:00Z"), utc("2026-10-30T00:00:00Z"))
-	if err != nil || len(objs) != 1 || !strings.Contains(objs[0], "UID:q") {
+	if err != nil || len(objs) != 1 || !strings.Contains(objs[0].Data, "UID:q") || objs[0].Href != cals[0].Href+"a.ics" || objs[0].ETag != `"1"` {
 		t.Fatalf("query %v %v", objs, err)
 	}
 	last := s.Requests()[len(s.Requests())-1]
@@ -254,5 +254,101 @@ func TestClientLimits(t *testing.T) {
 	}
 	if _, err := CheckURL("https://localhost:1/", func(a netip.Addr) bool { return !a.IsLoopback() }); !errors.Is(err, ErrURL) {
 		t.Errorf("localhost: %v", err)
+	}
+}
+
+// Conditional writes (ADR-0045 amendment 1): the ETag of the import and of GET, If-Match, 412,
+// a read-only calendar.
+func TestConditionalWrites(t *testing.T) {
+	s := caldavtest.New("anna", "app-pass")
+	defer s.Close()
+	c := testClient(s)
+	ctx := context.Background()
+	cr := creds{"anna", "app-pass"}
+	target := s.URL + s.Calendar() + "a.ics"
+	s.SetObject("a.ics", ics("BEGIN:VEVENT\r\nUID:q\r\nDTSTART:20261001T090000Z\r\nDTEND:20261001T100000Z\r\nEND:VEVENT\r\n"))
+	objs, err := c.Query(ctx, s.URL+s.Calendar(), cr, utc("2026-09-30T00:00:00Z"), utc("2026-10-30T00:00:00Z"))
+	if err != nil || len(objs) != 1 || objs[0].Href != target || objs[0].ETag != s.ETag(s.Calendar()+"a.ics") {
+		t.Fatalf("query %+v %v", objs, err)
+	}
+	etag := objs[0].ETag
+	obj, err := c.Get(ctx, target, cr)
+	if err != nil || obj.ETag != etag || !strings.Contains(obj.Data, "UID:q") {
+		t.Fatalf("get %+v %v", obj, err)
+	}
+	if err := c.PutIf(ctx, target, cr, obj.Data, `"stale"`); !errors.Is(err, ErrChanged) {
+		t.Fatalf("stale put: %v", err)
+	}
+	if err := c.PutIf(ctx, target, cr, obj.Data, etag); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteIf(ctx, target, cr, etag); !errors.Is(err, ErrChanged) {
+		t.Fatalf("delete with the old etag after a write: %v", err)
+	}
+	s.ReadOnly = true
+	if err := c.DeleteIf(ctx, target, cr, s.ETag(s.Calendar()+"a.ics")); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("read-only: %v", err)
+	}
+	s.ReadOnly = false
+	if err := c.DeleteIf(ctx, target, cr, s.ETag(s.Calendar()+"a.ics")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteIf(ctx, target, cr, etag); err != nil {
+		t.Fatalf("delete of a missing object: %v", err)
+	}
+	if _, err := c.Get(ctx, target, cr); !errors.Is(err, ErrChanged) {
+		t.Fatalf("get of a missing object: %v", err)
+	}
+	if !sameETag(`W/"1"`, `"1"`) || sameETag(`"1"`, `"2"`) {
+		t.Error("sameETag")
+	}
+}
+
+// The target of a write (ADR-0045 amendment 1, security review): only an object right inside the
+// chosen calendar, on its origin; never unconditional.
+func TestInCalendarAndNoETag(t *testing.T) {
+	cal := "https://dav.example.com/calendars/anna/work/"
+	for href, want := range map[string]bool{
+		cal + "a.ics": true,
+		"https://DAV.example.com/calendars/anna/work/b.ics": true,
+		cal:               false, // the collection itself
+		cal + "sub/a.ics": false,
+		cal + "..":        false,
+		cal + "%2e%2e":    false,
+		cal + "a%2Fb.ics": false,
+		"https://dav.example.com/calendars/anna/home/a.ics":      false,
+		"https://dav.example.com/calendars/anna/workx.ics":       false,
+		"https://evil.example/calendars/anna/work/a.ics":         false,
+		"https://dav.example.com:8443/calendars/anna/work/a.ics": false,
+		"http://dav.example.com/calendars/anna/work/a.ics":       false,
+		"https://x@dav.example.com/calendars/anna/work/a.ics":    false,
+		cal + "a.ics?x=1":            false,
+		cal + "a.ics#f":              false,
+		"/calendars/anna/work/a.ics": false,
+		"":                           false,
+	} {
+		if got := InCalendar(href, cal); got != want {
+			t.Errorf("InCalendar(%q) = %v", href, got)
+		}
+	}
+	if !InCalendar(cal+"a.ics", "https://dav.example.com/calendars/anna/work") {
+		t.Error("a calendar href without the trailing slash")
+	}
+
+	s := caldavtest.New("anna", "app-pass")
+	defer s.Close()
+	c := testClient(s)
+	cr := creds{"anna", "app-pass"}
+	target := s.URL + s.Calendar() + "a.ics"
+	s.SetObject("a.ics", ics("BEGIN:VEVENT\r\nUID:q\r\nDTSTART:20261001T090000Z\r\nDTEND:20261001T100000Z\r\nEND:VEVENT\r\n"))
+	n := len(s.Requests())
+	if err := c.DeleteIf(context.Background(), target, cr, ""); !errors.Is(err, errNoETag) {
+		t.Fatalf("delete without an etag: %v", err)
+	}
+	if err := c.PutIf(context.Background(), target, cr, "x", ""); !errors.Is(err, errNoETag) {
+		t.Fatalf("put without an etag: %v", err)
+	}
+	if len(s.Requests()) != n {
+		t.Fatal("an unconditional write was sent")
 	}
 }

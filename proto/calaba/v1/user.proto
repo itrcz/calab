@@ -1,6 +1,7 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "calaba/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
 // Public profile, visible to members of shared workspaces.
@@ -22,6 +23,19 @@ message User {
   // Birthday (docs/09 #76); unset = not given, or hidden by its owner (Me.birthday_hidden):
   // a hidden birthday is sent to nobody but the owner (in Me.user).
   Birthday birthday = 11;
+  // Contacts (ADR-0077): filled only for a viewer who shares a workspace with the user where
+  // neither of them is a guest; never for guests, bots or bot viewers (bot API, webhooks).
+  // Workspace-scoped payloads (READY snapshot, members, WORKSPACE_MEMBER_*, USER_UPDATE)
+  // decide by that workspace alone: a User without email says nothing about the contacts,
+  // so clients keep the ones they already have. Never used for authentication or invitations.
+  string email = 12;
+  // false = the address is not confirmed (ADR-0065): show it marked "not verified".
+  bool email_verified = 13;
+  // Informational, unverified phone ("+7 999 123-45-67"); empty = not given or not visible.
+  string phone = 14;
+  // Global nickname (ADR-0077), lower case, without "@"; empty = none. Public: everyone who
+  // sees the user sees it, guests too. Bots carry their bot username.
+  string username = 15;
 }
 
 // A birthday: day and month always, the year only if the user gave it. 29 February is valid
@@ -60,6 +74,20 @@ message UserSettings {
   // Working hours (ADR-0041), read-only here like event_reminders: changed with
   // UpdateMeRequest.work_hours. Default 10:00–19:00 Mon–Fri in the user's zone.
   WorkHours work_hours = 9;
+  // Read-only here; changed by UpdateMeRequest.hide_message_text_in_notifications.
+  // Default false. Older audio-settings replacements must not reset privacy.
+  bool hide_message_text_in_notifications = 10;
+  // Task notification triggers switched off (ADR-0089), read-only here like event_reminders:
+  // changed with UpdateMeRequest.task_notify_off. Values of calaba.v1.TaskNoticeKind
+  // (boards.proto, which imports this file: hence int32); default [] = everything on, so
+  // kinds added later are on by themselves. Never holds the mandatory APPROVAL_REQUESTED,
+  // APPROVED, REJECTED.
+  repeated int32 task_notify_off = 11;
+  // Bots that get the user's task notices (ADR-0090): ids of bot users, read-only here like
+  // task_notify_off: changed with UpdateMeRequest.task_notify_bots. A bot gets a
+  // TASK_NOTICE (TaskNoticeRelay) for every task notice the user gets, while it is a member
+  // of the task's workspace. May hold bots that left since (skipped when sending).
+  repeated string task_notify_bots = 12;
 }
 
 // Working hours of a user (ADR-0041) in their profile zone (UTC without one): minutes from
@@ -76,6 +104,21 @@ message EventReminderSettings {
   bool dnd = 2;
 }
 
+// PATCH /api/me task_notify_off (ADR-0089): replaces the list of switched-off task notification
+// triggers, TaskNoticeKind values. The server drops the mandatory kinds (APPROVAL_REQUESTED,
+// APPROVED, REJECTED); 422 for UNSPECIFIED, an unknown value or more than 64 values.
+message TaskNotifyOff {
+  repeated int32 kinds = 1;
+}
+
+// PATCH /api/me task_notify_bots (ADR-0090): replaces the list of bots that get the user's task
+// notices. Each id: a bot that shares a workspace with the user and has a valid token (gateway)
+// or a webhook; at most 10. 422 VALIDATION (field taskNotifyBots.botUserIds, reason
+// TASK_NOTIFY_BOT_UNAVAILABLE) otherwise; 403 for bots and guests.
+message TaskNotifyBots {
+  repeated string bot_user_ids = 1;
+}
+
 // The authenticated user: public profile + private fields.
 message Me {
   User user = 1;
@@ -87,6 +130,10 @@ message Me {
   // Unverified accounts may sign in and read, but get 403 EMAIL_NOT_VERIFIED on creating
   // workspaces, invites and new DMs. Accounts from before ADR-0023 start unverified too
   // (no grandfathering): show a non-dismissable "confirm your email" bar with a code field.
+  // With EMAIL_VERIFICATION=optional (ADR-0065) nothing is blocked and the bar is shown only
+  // for a waiting email invitation (Ready / LoginResponse / RegisterResponse:
+  // email_verification_optional, email_invite_pending), but the address stays unconfirmed
+  // and is not trusted (email invitations, OAuth claims, superadmin).
   // Always true for guests (no email). Servers without SMTP verify at registration.
   bool email_verified = 5;
   // Requested new address (PATCH /api/me/email) waiting for its code; empty = none.
@@ -122,6 +169,30 @@ message UpdateMeRequest {
   // Working hours (ADR-0041); unset = unchanged. Not for guests and bots (403); 422 for
   // start_min ≥ end_min, end_min > 1440, no days or a day outside 1..7.
   WorkHours work_hours = 10;
+  // Omitted = unchanged; hides authored message text in provider push payloads.
+  optional bool hide_message_text_in_notifications = 11;
+  // Phone (ADR-0077): up to 32 characters of "+", digits, spaces and "-()" ("" clears);
+  // 422 VALIDATION (field "phone") otherwise. Not for guests (403) and bots (403).
+  optional string phone = 12;
+  // Nickname (ADR-0077): 3..32 of a-z, 0-9, "_", starting with a letter (a leading "@" and
+  // upper case are accepted and normalized); "" clears it. 422 USERNAME_INVALID: bad format or
+  // a reserved name; 409 USERNAME_TAKEN: someone (a person or a bot) has it. Not for guests
+  // and bots (403).
+  optional string username = 13;
+  // Task notification triggers switched off (ADR-0089); unset = unchanged. Not for bots (403).
+  TaskNotifyOff task_notify_off = 14;
+  // Bots that get the user's task notices (ADR-0090); unset = unchanged. Not for bots and
+  // guests (403).
+  TaskNotifyBots task_notify_bots = 15;
+}
+
+// GET /api/usernames/{name}/available → whether the caller may take the nickname now (the
+// caller's own nickname is available). Rate limited (429). A hint only: PATCH /api/me decides.
+message UsernameAvailabilityResponse {
+  bool available = 1;
+  // Why not: USERNAME_INVALID (format or reserved) or USERNAME_TAKEN; UNSPECIFIED when available.
+  ErrorCode reason = 2;
+  string username = 3; // the normalized name that was checked
 }
 
 message UpdateMeResponse {

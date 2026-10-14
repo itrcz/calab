@@ -1,3 +1,4 @@
+import { AUTO_MUTE_OPTIONS } from '../../lib/autoMute';
 import { usePrefs, type MicMode } from '../../stores/prefs';
 
 /** Radix radio values of the mic ▾ «Режим» section (docs/09 #28). */
@@ -11,6 +12,16 @@ export function selectMicMode(value: string): void {
   const mode = MIC_MODES.find((m) => m === value);
   if (!mode || usePrefs.getState().micMode === mode) return;
   usePrefs.getState().setPrefs({ micMode: mode });
+}
+
+/**
+ * Mic ▾ «Выключать, если я молчу» submenu / Settings → «Голос и устройства» (lib/autoMute.ts): the
+ * radio value is the period in seconds as a string; unknown values are ignored.
+ */
+export function selectAutoMute(value: string): void {
+  const sec = AUTO_MUTE_OPTIONS.find((o) => String(o) === value);
+  if (sec === undefined || usePrefs.getState().autoMuteSec === sec) return;
+  usePrefs.getState().setPrefs({ autoMuteSec: sec });
 }
 
 /**

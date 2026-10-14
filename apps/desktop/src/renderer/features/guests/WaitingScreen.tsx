@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
 import { Button } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
+import { AuthLegalFooter } from '../legal/Legal';
 import { fmt } from '../../lib/format';
 import { useSession } from '../../stores/session';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -23,8 +24,8 @@ export function WaitingScreen(): ReactNode {
   const k = useFocusKnock();
   if (!k) return null;
   return (
-    <div className="mat-content drag flex h-full items-center justify-center overflow-y-auto px-4 py-8 mobile:pb-[calc(var(--safe-bottom)+32px)] mobile:pt-[calc(var(--safe-top)+32px)]">
-      <main className="mat-popover no-drag w-full max-w-[400px] rounded-[var(--radius-panel)] p-8" data-testid="guest-waiting" data-phase={k.phase}>
+    <div className="mat-content drag flex h-full flex-col items-center overflow-y-auto px-4 py-8 mobile:pb-[calc(var(--safe-bottom)+24px)] mobile:pt-[calc(var(--safe-top)+16px)]">
+      <main className="mat-popover no-drag my-auto w-full max-w-[400px] shrink-0 rounded-[var(--radius-panel)] p-8 mobile:p-6" data-testid="guest-waiting" data-phase={k.phase}>
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={64} alt="Calab" className="mb-4" />
           <h1 className="max-w-full truncate text-title font-semibold" title={k.roomName}>
@@ -39,6 +40,7 @@ export function WaitingScreen(): ReactNode {
         {/* key: a new phase is a new status, announced once by the live region. */}
         <Phase key={k.phase} k={k} />
       </main>
+      <AuthLegalFooter className="no-drag mt-6 shrink-0" />
     </div>
   );
 }

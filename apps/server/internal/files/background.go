@@ -116,6 +116,32 @@ func (s *Service) PrepareBackground(ctx context.Context, src sqlc.File) (*Prepar
 	return &PreparedFile{st: st, workspaceID: *src.WorkspaceID, uploader: src.UploaderID}, nil
 }
 
+// PrepareImage stores data, a picture the server made (mime, w×h), as a new file of the workspace
+// wsID uploaded by uploader: InsertPrepared (or InsertPreparedUnchecked) in the caller's
+// transaction, or Discard.
+func (s *Service) PrepareImage(ctx context.Context, wsID, uploader uuid.UUID, name, mime string, data []byte, w, h int32) (*PreparedFile, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(data)
+	st := &stored{id: id, key: blob.FileKey(wsID, id), name: name, mime: mime,
+		size: int64(len(data)), sha256: hex.EncodeToString(sum[:]), width: &w, height: &h}
+	if err := s.store.Put(ctx, st.key, bytes.NewReader(data), st.size, mime); err != nil {
+		return nil, fmt.Errorf("store %s: %w", name, err)
+	}
+	return &PreparedFile{st: st, workspaceID: wsID, uploader: uploader}, nil
+}
+
+// InsertPreparedUnchecked inserts the file's row and counts its bytes into the workspace usage
+// without the quota check: for one-shot data migrations that must not fail on a full workspace.
+func (s *Service) InsertPreparedUnchecked(ctx context.Context, q *sqlc.Queries, p *PreparedFile) (sqlc.File, error) {
+	if err := q.AddWorkspaceUsage(ctx, sqlc.AddWorkspaceUsageParams{ID: p.workspaceID, Size: p.st.size}); err != nil {
+		return sqlc.File{}, err
+	}
+	return q.InsertFile(ctx, s.row(p.st, &p.workspaceID, p.uploader))
+}
+
 // InsertPrepared reserves the file's bytes in the workspace quota (413 / 507 like an upload) and
 // inserts its row, inside the caller's transaction.
 func (s *Service) InsertPrepared(ctx context.Context, q *sqlc.Queries, p *PreparedFile) (sqlc.File, error) {

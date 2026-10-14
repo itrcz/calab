@@ -1,4 +1,5 @@
 import { localAuthority } from '../features/identity/model';
+import { openWorkspace } from '../features/shell/sectionNav';
 import { isMenuAction, type MenuAction, type MenuState } from '../../shared/menu';
 import { cameraBlock } from '../lib/media/cameraLogic';
 import { mayArrangeRooms, mayInviteMembers } from '../lib/permissions';
@@ -13,6 +14,9 @@ import { useVoice } from '../stores/voice';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { IS_MAC } from './hotkeys';
 import { voice } from './voice';
+import { useMail } from '../stores/mail';
+import { useMailUi } from '../stores/mailUi';
+import { composeNew } from '../features/mail/actions';
 
 /**
  * The macOS menu bar / Dock menu (docs/08 «Меню macOS», shared/menu.ts): pushes a small state
@@ -86,7 +90,8 @@ export function runMenuAction(a: MenuAction): void {
   if (!st.signedIn) return;
   if (a.startsWith('workspace:')) {
     const id = a.slice('workspace:'.length);
-    if (st.workspaces.some((w) => w.id === id)) ui.setWorkspace(id);
+    // ⌘1…⌘9: the workspace on the section it was left on (ADR-0074 §2).
+    if (st.workspaces.some((w) => w.id === id)) openWorkspace(id);
     return;
   }
   const v = st.voice;
@@ -101,6 +106,11 @@ export function runMenuAction(a: MenuAction): void {
       ui.openDialog({ kind: 'settings', tab: 'hotkeys' });
       return;
     case 'new-message':
+      // ⌘N in «Почта» is a new letter (ADR-0088 §8, Apple Mail).
+      if (useMailUi.getState().active) {
+        if (useMail.getState().accountIds.length) composeNew();
+        return;
+      }
       if (!localAuthority(useSession.getState().authority)) return;
       ui.openDialog({ kind: 'new-dm' });
       return;

@@ -5,6 +5,7 @@ import { API_SCHEME } from '../shared/ipc';
 import { apiSession, resetApiTransport, stall } from './apiTransport';
 import { currentServerUrl, forceRefresh, identityAccessToken } from './auth';
 import { log } from './logging';
+import { MAIL_SCHEME_PRIVILEGES } from './mail/scheme';
 
 /**
  * `calaba-api://api/<path>` → `<serverUrl>/<path>` with `Authorization: Bearer`.
@@ -34,6 +35,7 @@ export function registerApiScheme(): void {
       scheme: API_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
     },
+    MAIL_SCHEME_PRIVILEGES, // calaba-mail:// attachments (ADR-0088 §7); one registerSchemesAsPrivileged call only
   ]);
 }
 
@@ -302,7 +304,7 @@ export function handleApiScheme(): void {
     } catch (err) {
       disarmAll();
       if (err instanceof DOMException && err.name === 'TimeoutError') {
-        log.warn(`api request timeout ${req.method} ${url.pathname}`);
+        log.warn(`api request timeout ${req.method} ${url.pathname.replace(/^(\/api\/(?:public\/)?forms)\/[^/]+/, '$1/{code}')}`);
         // Several of these at once = the connection, not the request (apiStall.ts).
         const reason = stall.timedOut(stallId);
         if (reason) void resetApiTransport(reason);

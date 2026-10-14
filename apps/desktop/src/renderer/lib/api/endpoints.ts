@@ -36,6 +36,8 @@ import {
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
+  ListFormerMembersResponseSchema,
+  ListWorkspaceUsersResponseSchema,
   RequestCameraRequestSchema,
   RequestCameraResponseSchema,
   PutUserNoteRequestSchema,
@@ -95,6 +97,7 @@ import {
   UpdateMemberBirthdayRequestSchema,
   UpdateMemberBirthdayResponseSchema,
   UpdateMeResponseSchema,
+  UsernameAvailabilityResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
   ListRolesResponseSchema,
@@ -107,6 +110,13 @@ import {
   SetMemberRolesRequestSchema,
   SetMemberRolesResponseSchema,
   ListBadgesResponseSchema,
+  ListAchievementsResponseSchema,
+  ListMemberAchievementsResponseSchema,
+  MemberAchievementSchema,
+  GrantAchievementRequestSchema,
+  AchievementSchema,
+  CreateAchievementRequestSchema,
+  UpdateAchievementRequestSchema,
   ListBackgroundsResponseSchema,
   CreateBackgroundRequestSchema,
   CreateBackgroundResponseSchema,
@@ -184,13 +194,14 @@ import {
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
   SetBotAvatarResponseSchema,
+  SearchResponseSchema,
   type StickerPackResponse,
   type UploadStickersResponse,
   type FileMeta,
   type ScreenSharePreset,
   type WorkspaceRole,
 } from '@calaba/protocol';
-import type { MessageInitShape } from '@bufbuild/protobuf';
+import type { DescMessage, MessageInitShape, MessageShape } from '@bufbuild/protobuf';
 import { platform } from '../../platform';
 import { ApiError, apiUrl, body, call, callEmpty, qs, toApiError } from './client';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
@@ -200,6 +211,11 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 export const api = {
   /** Public build info; the web compares its bundle with it (docs/09 #125, «Обновить страницу»). */
   version: () => call('GET', '/api/version', GetVersionResponseSchema),
+  /**
+   * Unified search (ADR-0062): `q`, `scope` (workspace id | all), `types` / `type`, `limit`,
+   * `cursor`, `sort` — built by lib/search/query.ts. 429 RATE_LIMITED, 422 for a query without words.
+   */
+  search: (p: Record<string, string>, signal?: AbortSignal) => call('GET', `/api/search${qs(p)}`, SearchResponseSchema, undefined, signal),
   /** Email verification and password reset (ADR-0023). */
   auth: {
     /** 204: a code to me.pendingEmail or me.email; 409 = already verified; 429 + Retry-After. */
@@ -217,6 +233,9 @@ export const api = {
     get: () => call('GET', '/api/me', GetMeResponseSchema),
     update: (init: MessageInitShape<typeof UpdateMeRequestSchema>) =>
       call('PATCH', '/api/me', UpdateMeResponseSchema, body(UpdateMeRequestSchema, init)),
+    /** ADR-0077: whether I may take the nickname now (a hint; PATCH /api/me decides). Rate limited. */
+    usernameAvailable: (name: string) =>
+      call('GET', `/api/usernames/${encodeURIComponent(name)}/available`, UsernameAvailabilityResponseSchema),
     sessions: () => call('GET', '/api/me/sessions', ListSessionsResponseSchema),
     revokeSession: (id: string) => callEmpty('DELETE', `/api/me/sessions/${id}`),
     /** 204; every other session is revoked, this one stays. 403 INVALID_CREDENTIALS = wrong current password. */
@@ -290,6 +309,18 @@ export const api = {
     revokeEmailInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/email/${inviteId}`),
     /** Bans (docs/09 #32; MANAGE_WORKSPACE): newest first. */
     bans: (id: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${id}/bans`, ListBansResponseSchema, undefined, signal),
+    /** Profiles by id for any past or present member (ADR-0097 §2): ≤ 100 ids. */
+    users: (id: string, ids: readonly string[], signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${id}/users?ids=${ids.map(encodeURIComponent).join(',')}`, ListWorkspaceUsersResponseSchema, undefined, signal),
+    /** Former members (ADR-0097 §3; MANAGE_MEMBERS): newest first, 50 per page. */
+    formerMembers: (id: string, o: { guests: boolean; q: string; cursor?: string }, signal?: AbortSignal) => {
+      const qs = new URLSearchParams();
+      if (o.guests) qs.set('guests', '1');
+      if (o.q) qs.set('q', o.q);
+      if (o.cursor) qs.set('cursor', o.cursor);
+      const s = qs.toString();
+      return call('GET', `/api/workspaces/${id}/former-members${s ? `?${s}` : ''}`, ListFormerMembersResponseSchema, undefined, signal);
+    },
     /** 201: removes the member (if one) and keeps them out (403 BANNED on every way back). */
     ban: (id: string, userId: string, reason: string) =>
       call('POST', `/api/workspaces/${id}/bans`, CreateBanResponseSchema, body(CreateBanRequestSchema, { userId, reason })),
@@ -314,6 +345,30 @@ export const api = {
     /** "" clears → WORKSPACE_MEMBER_UPDATE. */
     setMember: (workspaceId: string, userId: string, badgeId: string) =>
       call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
+  },
+  /**
+   * Achievements (ADR-0061, amendment 1): the workspace catalog — read by any member (archived
+   * ones included, `archivedAt` set), changed with MANAGE_WORKSPACE; grants per member — list for
+   * members, grant / revoke with MANAGE_MEMBERS.
+   */
+  achievements: {
+    catalog: (workspaceId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/achievements`, ListAchievementsResponseSchema, undefined, signal),
+    /** 201; fileId = a PNG / WebP just uploaded to the workspace. 422 IMAGE_NEEDS_ALPHA, 409 ACHIEVEMENT_LIMIT. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateAchievementRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/achievements`, AchievementSchema, body(CreateAchievementRequestSchema, init)),
+    /** Unset fields stay; fileId replaces the picture (the create's rules). */
+    update: (id: string, init: MessageInitShape<typeof UpdateAchievementRequestSchema>) =>
+      call('PATCH', `/api/achievements/${id}`, AchievementSchema, body(UpdateAchievementRequestSchema, init)),
+    /** 204; 409 ACHIEVEMENT_IN_USE once granted (archive it instead). */
+    remove: (id: string) => callEmpty('DELETE', `/api/achievements/${id}`),
+    list: (workspaceId: string, userId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/members/${userId}/achievements`, ListMemberAchievementsResponseSchema, undefined, signal),
+    /** 422: note empty / too long, SELF_GRANT, a guest or bot, an archived achievement. */
+    grant: (workspaceId: string, userId: string, init: { achievementId: string; note: string; announce: boolean }) =>
+      call('POST', `/api/workspaces/${workspaceId}/members/${userId}/achievements`, MemberAchievementSchema, body(GrantAchievementRequestSchema, init)),
+    /** 204; the chat card stays. */
+    revoke: (workspaceId: string, userId: string, grantId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/members/${userId}/achievements/${grantId}`),
   },
   /**
    * Web apps of a workspace (ADR-0050): the list for members (not guests); create / edit / delete
@@ -579,7 +634,7 @@ export const api = {
    */
   calls: {
     start: (dmRoomId: string) => call('POST', `/api/dms/${dmRoomId}/call`, StartCallResponseSchema),
-    act: (callId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup') => call('POST', `/api/calls/${callId}/${action}`, CallActionResponseSchema),
+    act: (callId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup', signal?: AbortSignal) => call('POST', `/api/calls/${callId}/${action}`, CallActionResponseSchema, undefined, signal),
   },
   /**
    * Telephony (ADR-0046, sip.proto). Settings, the connection test (a real call, up to ~25 s) and
@@ -697,8 +752,24 @@ export function uploadPath(workspaceId: string, roomId: string): string {
  * (`uploadPath()`: `POST /api/workspaces/{id}/files` or `/api/dms/{id}/files`).
  */
 export function uploadFile(path: string, file: Blob, name: string, onProgress: (fraction: number) => void): UploadHandle {
+  return uploadInto(path, UploadFileResponseSchema, (r) => r.file, file, name, onProgress);
+}
+
+/**
+ * The multipart upload with progress behind uploadFile, for any route whose answer is a message
+ * (`schema`) carrying the result (`pick`; undefined = a bad answer): the Disk's
+ * `POST …/disk/upload?parent=` answers DiskItemResponse (ADR-0094 §7).
+ */
+export function uploadInto<S extends DescMessage, R>(
+  path: string,
+  schema: S,
+  pick: (res: MessageShape<S>) => R | undefined,
+  file: Blob,
+  name: string,
+  onProgress: (fraction: number) => void,
+): { promise: Promise<R>; abort(): void } {
   const xhr = new XMLHttpRequest();
-  const promise = new Promise<FileMeta>((resolve, reject) => {
+  const promise = new Promise<R>((resolve, reject) => {
     xhr.open('POST', apiUrl(path));
     xhr.responseType = 'text';
     xhr.upload.onprogress = (e) => {
@@ -708,13 +779,13 @@ export function uploadFile(path: string, file: Blob, name: string, onProgress: (
       const res = new Response(xhr.responseText, { status: xhr.status });
       if (xhr.status >= 200 && xhr.status < 300) {
         // A throw inside onload would leave the promise (and the message) pending forever (review L6).
-        let file: FileMeta | undefined;
+        let out: R | undefined;
         try {
-          file = fromJson(UploadFileResponseSchema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }).file;
+          out = pick(fromJson(schema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }));
         } catch {
-          file = undefined;
+          out = undefined;
         }
-        if (file) resolve(file);
+        if (out !== undefined) resolve(out);
         else reject(new ApiError('ERROR_CODE_INTERNAL', 'bad upload response', xhr.status));
       } else {
         toApiError(res).then(reject, () => reject(new ApiError('ERROR_CODE_INTERNAL', `HTTP ${xhr.status}`, xhr.status)));

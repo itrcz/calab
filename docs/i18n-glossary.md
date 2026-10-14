@@ -75,3 +75,4 @@
 | выгнать / отключить от голоса | disconnect (from voice) | desconectar | 断开连接 | |
 | переместить | move | mover | 移动 | |
 | как в системе | system default / “Use system language” | según el sistema | 跟随系统 | |
+| вики | Wiki | Wiki | 维基 | Раздел страниц рабочей области (ADR-0096) |

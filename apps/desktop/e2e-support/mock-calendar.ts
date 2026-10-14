@@ -233,6 +233,8 @@ export interface CalDavRec {
   lastError: string;
   /** What colleagues see of the imported events (ADR-0045 §2). */
   shareLevel?: ShareLevelRec;
+  /** Reminders of the imported events (ADR-0045 amendment 3). */
+  remind?: boolean;
 }
 
 export type ShareLevelRec = 'busy' | 'title' | 'details';
@@ -245,6 +247,10 @@ export interface ExternalSpan extends Span {
   attendees?: ReadonlyArray<{ email: string; name?: string }>;
   organizer?: string;
   url?: string;
+  /** ADR-0045 amendment 1: the object (deletable when set), a series, the provider's page. */
+  href?: string;
+  recurring?: boolean;
+  webUrl?: string;
 }
 
 const SHARE_WIRE: Record<ShareLevelRec, string> = { busy: 'CAL_DAV_SHARE_LEVEL_BUSY', title: 'CAL_DAV_SHARE_LEVEL_TITLE', details: 'CAL_DAV_SHARE_LEVEL_DETAILS' };
@@ -296,6 +302,9 @@ export function externalEventsOut(list: readonly ExternalSpan[], fromMs: number,
       }),
       organizer: x.organizer ?? '',
       url: x.url ?? '',
+      href: x.href ?? '',
+      recurring: !!x.recurring,
+      webUrl: x.webUrl ?? '',
     }));
   return { events };
 }
@@ -323,6 +332,7 @@ export function davOut(a: CalDavRec | undefined): Record<string, unknown> {
       lastError: a.lastError,
       calendars: davCalendars(a.url),
       shareLevel: SHARE_WIRE[a.shareLevel ?? 'busy'],
+      remind: a.remind ?? false,
     },
   };
 }

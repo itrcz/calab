@@ -47,6 +47,8 @@ export interface Copy {
     voiceIntro: string;
     mention: string;
     answer: string;
+    /** The morning thread's end after the reply to the mockup: Вера, Борис, Дина, Анна (reactions in seed.ts). */
+    thread: [vera: string, boris: string, dina: string, anna: string];
   };
   /** The screen-share slide (1280×720). */
   slide: { eyebrow: string; title: string; items: string[]; done: number; footer: string };
@@ -116,6 +118,7 @@ const ru: Copy = {
     voiceIntro: 'Коротко голосом, что осталось по релизу',
     mention: 'глянешь чек-лист релиза перед планёркой?',
     answer: 'Да, уже открыла. Буду в «Переговорке» в 14:00.',
+    thread: ['Сделаю светлее и пришлю вечером ✨', 'И кнопку «Скачать» покрупнее бы 👀', 'Проверю на телефоне после обеда 📱', 'Отлично, решим на планёрке в 14:00 🙌'],
   },
   slide: {
     eyebrow: 'Планёрка · 15 января',
@@ -219,6 +222,7 @@ const en: Copy = {
     voiceIntro: 'Quick voice note on what’s left for the release',
     mention: 'could you check the release checklist before planning?',
     answer: 'Yes, on it. See you in the Meeting room at 2 pm.',
+    thread: ['I’ll make it lighter and send it tonight ✨', 'And maybe a bigger “Download” button 👀', 'I’ll check it on my phone after lunch 📱', 'Great, let’s settle it at the 2 pm planning 🙌'],
   },
   slide: {
     eyebrow: 'Planning · January 15',
@@ -322,6 +326,7 @@ const es: Copy = {
     voiceIntro: 'Un audio rápido con lo que falta para la versión',
     mention: '¿puedes revisar la checklist de la versión antes de la reunión?',
     answer: 'Sí, ya la tengo abierta. Nos vemos en la Sala de reuniones a las 14:00.',
+    thread: ['Lo aclaro y te lo paso esta tarde ✨', 'Y el botón «Descargar», un poco más grande 👀', 'Lo pruebo en el móvil después de comer 📱', 'Perfecto, lo decidimos en la reunión de las 14:00 🙌'],
   },
   slide: {
     eyebrow: 'Planificación · 15 de enero',
@@ -425,6 +430,7 @@ const zh: Copy = {
     voiceIntro: '用语音简单说下发布还剩什么',
     mention: '规划会前能看一下发布清单吗？',
     answer: '好的，已经在看了。14:00 会议室见。',
+    thread: ['我调亮一点，晚上发出来 ✨', '“下载”按钮也可以再大一点 👀', '午饭后我在手机上测一下 📱', '好的，下午 2 点规划会上定 🙌'],
   },
   slide: {
     eyebrow: '规划会 · 1 月 15 日',

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { IDS, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, THEMES, VIEWPORTS, checkpoint, type Shot } from './harness';
 import { seedDay } from './calendarWeb';
 
@@ -43,14 +43,15 @@ for (const theme of THEMES) {
         const bar = page.getByTestId('titlebar');
         await expect(bar).toHaveAttribute('data-variant', 'web');
         const box = await bar.boundingBox();
-        expect(box?.height, 'web top bar height').toBe(30);
+        expect(box?.height, 'web top bar height').toBe(38);
         expect(box?.y).toBe(0);
-        // No traffic-light inset: the workspace menu sits at the left edge (docs/09 #140; no «‹ ›»).
+        // No traffic-light inset (Electron on macOS only): the workspace menu starts at the normal
+        // left padding (docs/09 #140; no «‹ ›»; owner 07.10).
         const title = bar.getByTestId('titlebar-title');
-        await expect(title).toHaveText('Команда Calab');
+        await expect(title).toContainText('Команда Calab');
         await expect(bar.getByRole('button', { name: 'Назад' })).toHaveCount(0);
         const box2 = await title.boundingBox();
-        expect(box2?.x ?? 99, 'workspace menu at the left edge').toBeLessThanOrEqual(8);
+        expect(box2?.x ?? 99, 'workspace menu at the left padding').toBeLessThanOrEqual(8);
         await expect(bar.getByRole('button', { name: /^Упоминания/ })).toBeVisible();
         await expect(bar.getByRole('button', { name: 'Горячие клавиши' })).toBeVisible();
         // The search pill: at every width (docs/09 #53, no field in the room header).
@@ -337,6 +338,45 @@ test('guest admission: cancel → join card → knock again; declined shows the 
     await expect(waiting.getByRole('button', { name: 'Постучать снова' })).toHaveCount(0);
     await waiting.getByRole('button', { name: 'Закрыть' }).click();
     await expect(page.getByTestId('guest-waiting')).toHaveCount(0);
+  } finally {
+    await mock?.close();
+  }
+});
+
+/**
+ * The public wiki page /w/{code} (ADR-0096 §6, a new interface): the shared handbook with its
+ * subpages outline, read-only in the editor; the dark 960 shot is `wiki-public`, a subpage and a
+ * revoked link are behaviour (the phone shot is m-wiki-public in mobile.visual.spec.ts).
+ */
+test('wiki-public', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    const viewport = { width: 960, height: 600 };
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(NOW);
+    await page.goto(`${mock.url}/?visual-test`);
+    await page.evaluate(() => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 })));
+    await page.goto(`${mock.url}/w/${WIKI_PUBLIC_CODE}?visual-test`);
+    await expect(page.getByTestId('wiki-public-title')).toHaveText('Справочник команды');
+    await expect(page.locator('.wiki-prose')).toContainText('Первая неделя');
+    await expect(page.locator('.wiki-prose')).toHaveAttribute('contenteditable', 'false');
+    await expect(page.getByTestId('wiki-public-outline-row')).toHaveCount(7);
+    await expect(page.getByTestId('wiki-public-footer')).toContainText('Открыто по ссылке');
+    await expect(page.getByTestId('wiki-public-cover').locator('img')).toBeVisible();
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex,nofollow');
+    await checkpoint({ page, theme: 'dark', viewport }, 'wiki-public');
+
+    // A subpage of the branch: the outline stays, the address carries ?page=.
+    await page.getByTestId('wiki-public-outline-row').filter({ hasText: 'Процессы' }).click();
+    await expect(page.getByTestId('wiki-public-title')).toHaveText('Процессы');
+    await expect(page.locator('.wiki-prose')).toContainText('Как мы выпускаем релизы');
+    expect(page.url()).toContain('?page=');
+
+    // A code with no link behind it.
+    await page.goto(`${mock.url}/w/${'x'.repeat(43)}?visual-test`);
+    await expect(page.getByTestId('wiki-public-gone')).toBeVisible();
   } finally {
     await mock?.close();
   }

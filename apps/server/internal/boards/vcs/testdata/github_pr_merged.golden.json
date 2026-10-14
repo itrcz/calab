@@ -1,0 +1,34 @@
+{
+  "Event": {
+    "Provider": "github",
+    "Repo": "acme/app",
+    "RepoURL": "https://github.com/acme/app",
+    "Author": "octocat",
+    "Push": false,
+    "Branch": "",
+    "BranchCreated": false,
+    "Commits": null,
+    "PR": {
+      "Number": 42,
+      "Title": "FNG-12 Login form",
+      "Body": "",
+      "URL": "https://github.com/acme/app/pull/42",
+      "State": "merged",
+      "Branch": "feature/FNG-12-login",
+      "Author": "octocat",
+      "Event": "PR_MERGED"
+    }
+  },
+  "Links": [
+    {
+      "Number": 12,
+      "Kind": "pr",
+      "Ref": "42",
+      "Title": "FNG-12 Login form",
+      "URL": "https://github.com/acme/app/pull/42",
+      "State": "merged",
+      "Author": "octocat",
+      "Event": "PR_MERGED"
+    }
+  ]
+}

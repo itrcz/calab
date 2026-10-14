@@ -25,11 +25,10 @@ describe('rowActions', () => {
 });
 
 describe('keyAction', () => {
-  it('Enter joins a voice room, ⇧Enter / ⌘Enter / Ctrl+Enter open its chat', () => {
+  it('Enter joins a voice room, ⇧Enter opens its chat (⌘Enter is «Все результаты»)', () => {
     expect(keyAction(voice, none)).toBe('join');
     expect(keyAction(voice, { ...none, shiftKey: true })).toBe('chat');
-    expect(keyAction(voice, { ...none, metaKey: true })).toBe('chat');
-    expect(keyAction(voice, { ...none, ctrlKey: true })).toBe('chat');
+    expect(keyAction(voice, { ...none, metaKey: true })).toBe('join');
   });
   it('a member: Enter filters, ⇧Enter writes', () => {
     expect(keyAction({ kind: 'member', canDm: true }, none)).toBe('filter');

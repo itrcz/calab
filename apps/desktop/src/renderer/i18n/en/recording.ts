@@ -22,6 +22,7 @@ export const enRecording: DictShape<typeof ruRecording> = {
   'rec.stop.empty': 'Recording stopped: nobody was in the call for 2 minutes',
   'rec.stop.maxDuration': 'Recording stopped: the 4-hour limit was reached',
   'rec.stop.disabled': 'Recording stopped: it was turned off in the room settings',
+  'rec.stop.planInactive': 'Recording stopped: the workspace plan is not active',
   'rec.stop.egress': 'Recording stopped: the call ended',
   'rec.stop.lost': 'Recording interrupted: the recorder stopped responding',
   'rec.stop.other': 'Recording stopped',

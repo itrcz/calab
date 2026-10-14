@@ -40,7 +40,9 @@ const (
 	MaxCallTime    = 2 * time.Hour
 	testRinging    = 15 * time.Second
 	testMaxCall    = 5 * time.Second
-	journalPage    = 100
+	// testDeadline bounds the whole connection test request (the client waits up to 45 s).
+	testDeadline = testRinging + 10*time.Second
+	journalPage  = 100
 )
 
 // Error codes of the telephony API (common.proto).

@@ -44,12 +44,28 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
+/** Most characters of a custom plan's name / description (the server's limits, ADR-0086). */
+export const CUSTOM_NAME_MAX = 40;
+export const CUSTOM_DESCRIPTION_MAX = 140;
+
+/**
+ * The plan's name as members see it (ADR-0086 «Индивидуальный тариф»): a custom plan carries the
+ * name a superadmin gave it; without one — and for every other plan — the localized name.
+ */
+export function planDisplayName(plan: Plan, displayName: string | undefined): string {
+  const name = plan === Plan.CUSTOM ? (displayName ?? '').trim() : '';
+  return name || t(PLAN_LABEL[plan === Plan.UNSPECIFIED ? Plan.FREE : plan]);
+}
+
+/** planDisplayName of Workspace.plan. */
+export const workspacePlanName = (p: WorkspacePlan | undefined): string => planDisplayName(planKind(p), p?.displayName);
+
 /**
  * Plan features that are not part of every plan: CalDAV, musician mode (ADR-0052), task
  * checklists — Team and above; board webhooks (ADR-0058 §5) and telephony SIP (ADR-0046, owner
  * 02.10) — Business only.
  */
-export type PlanFeature = 'caldav' | 'musician' | 'checklists' | 'boardWebhooks' | 'telephony';
+export type PlanFeature = 'caldav' | 'musician' | 'checklists' | 'boardWebhooks' | 'telephony' | 'automations';
 
 /** The «disabled» flag of PlanLimits behind each feature. */
 const DISABLED_FLAG = {
@@ -58,6 +74,7 @@ const DISABLED_FLAG = {
   checklists: 'checklistsDisabled',
   boardWebhooks: 'boardWebhooksDisabled',
   telephony: 'telephonyDisabled',
+  automations: 'automationsDisabled',
 } as const satisfies Record<PlanFeature, keyof PlanLimits>;
 
 /**
@@ -188,6 +205,9 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
   const e = apiLike(err);
   if (!e) return null;
   const x = e.extra ?? {};
+  // «Тариф не активен» (ADR-0086 amendment): nothing to buy from here — the owner pays or moves to Free.
+  if (x.reason === 'WORKSPACE_PLAN_INACTIVE')
+    return { text: t(e.code === 'ERROR_CODE_ROOM_FULL' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error'), contact: false };
   const byPlan = x.reason === 'PLAN_LIMIT';
   if (e.code === 'ERROR_CODE_ROOM_FULL' && byPlan) {
     const n = x.limit ?? 0;
@@ -208,6 +228,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     // Board webhooks — Business only, checklists — Team and above (ADR-0058 §5): features too.
     if (/webhook/i.test(msg)) return { text: t('plan.boardWebhooksLocked'), contact: true };
     if (/checklist/i.test(msg)) return { text: t('plan.checklistsLocked'), contact: true };
+    // Board automations and their Git webhook — Team and above (ADR-0060).
+    if (/automation/i.test(msg)) return { text: t('plan.automationsLocked'), contact: true };
     // Telephony SIP — Business only (ADR-0046, owner 02.10).
     if (/telephony/i.test(msg)) return { text: t('plan.telephonyLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
@@ -231,6 +253,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
 
 /** The CUSTOM form's fields as typed (strings: inputs), converted by `limitsFromForm`. */
 export interface LimitsForm {
+  boardFormsDisabled: boolean;
+  boardFormsPerBoard: string;
   roomMembers: string;
   streamMaxPreset: ScreenSharePreset;
   streamMaxFps: string;
@@ -247,6 +271,7 @@ export interface LimitsForm {
   checklistsDisabled: boolean;
   boardWebhooksDisabled: boolean;
   telephonyDisabled: boolean;
+  automationsDisabled: boolean;
 }
 
 /**
@@ -256,6 +281,8 @@ export interface LimitsForm {
 export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): LimitsForm {
   const src = plan === Plan.CUSTOM && limits ? limits : null;
   return {
+    boardFormsDisabled: src?.boardFormsDisabled ?? false,
+    boardFormsPerBoard: String(src?.boardFormsPerBoard ?? 0),
     roomMembers: String(src ? src.roomMembers : FREE_LIMITS.roomMembers),
     streamMaxPreset: src ? src.streamMaxPreset : FREE_LIMITS.streamMaxPreset,
     streamMaxFps: String(src ? src.streamMaxFps : FREE_LIMITS.streamMaxFps),
@@ -271,6 +298,7 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     checklistsDisabled: src ? src.checklistsDisabled : CUSTOM_DEFAULT_FLAGS.checklistsDisabled,
     boardWebhooksDisabled: src ? src.boardWebhooksDisabled : CUSTOM_DEFAULT_FLAGS.boardWebhooksDisabled,
     telephonyDisabled: src ? src.telephonyDisabled : CUSTOM_DEFAULT_FLAGS.telephonyDisabled,
+    automationsDisabled: src ? src.automationsDisabled : CUSTOM_DEFAULT_FLAGS.automationsDisabled,
   };
 }
 
@@ -278,10 +306,11 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
  * The feature flags a CUSTOM plan starts with: checklists on, board webhooks off (ADR-0058 §5),
  * telephony off (ADR-0046: Business only) — the server's CustomBase.
  */
-export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true, telephonyDisabled: true } as const;
+export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true, telephonyDisabled: true, automationsDisabled: false } as const;
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
-const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
+const MAX: Record<'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
+  boardFormsPerBoard: 1_000_000,
   roomMembers: 10_000,
   streamMaxFps: 120,
   cameraMaxFps: 120,
@@ -295,6 +324,8 @@ const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerR
 export type LimitsField = keyof typeof MAX;
 
 export interface PlanLimitsInit {
+  boardFormsDisabled: boolean;
+  boardFormsPerBoard: number;
   roomMembers: number;
   streamMaxPreset: ScreenSharePreset;
   streamMaxFps: number;
@@ -309,6 +340,7 @@ export interface PlanLimitsInit {
   checklistsDisabled: boolean;
   boardWebhooksDisabled: boolean;
   telephonyDisabled: boolean;
+  automationsDisabled: boolean;
 }
 
 /**
@@ -325,6 +357,8 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
   }
   return {
     limits: {
+      boardFormsDisabled: f.boardFormsDisabled,
+      boardFormsPerBoard: out.boardFormsPerBoard ?? 0,
       roomMembers: out.roomMembers ?? 0,
       streamMaxPreset: f.streamMaxPreset,
       streamMaxFps: out.streamMaxFps ?? 0,
@@ -339,6 +373,7 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       checklistsDisabled: f.checklistsDisabled,
       boardWebhooksDisabled: f.boardWebhooksDisabled,
       telephonyDisabled: f.telephonyDisabled,
+      automationsDisabled: f.automationsDisabled,
     },
   };
 }
@@ -350,6 +385,9 @@ export interface PlanForm {
   /** `<input type="date">` value; '' = no end date. */
   validUntil: string;
   note: string;
+  /** CUSTOM only: the name members see ('' / unset = «Индивидуальный») and a short description. */
+  displayName?: string;
+  description?: string;
 }
 
 export const NOTE_MAX = 500;
@@ -359,7 +397,9 @@ export const NOTE_MAX = 500;
  * TEAM take theirs from the server config, ENTERPRISE has none), the end of the chosen day, the trimmed note. Returns
  * the first invalid field instead when the CUSTOM numbers are wrong.
  */
-export function setPlanBody(f: PlanForm): { body: { plan: Plan; limits?: PlanLimitsInit; validUntil?: Date; note: string } } | { error: LimitsField } {
+export function setPlanBody(
+  f: PlanForm,
+): { body: { plan: Plan; limits?: PlanLimitsInit; validUntil?: Date; note: string; displayName?: string; description?: string } } | { error: LimitsField } {
   let limits: PlanLimitsInit | undefined;
   if (f.plan === Plan.CUSTOM) {
     const r = limitsFromForm(f.limits);
@@ -373,6 +413,7 @@ export function setPlanBody(f: PlanForm): { body: { plan: Plan; limits?: PlanLim
       ...(limits ? { limits } : {}),
       ...(until ? { validUntil: until } : {}),
       note: f.note.trim().slice(0, NOTE_MAX),
+      ...(f.plan === Plan.CUSTOM ? { displayName: (f.displayName ?? '').trim().slice(0, CUSTOM_NAME_MAX), description: (f.description ?? '').trim().slice(0, CUSTOM_DESCRIPTION_MAX) } : {}),
     },
   };
 }

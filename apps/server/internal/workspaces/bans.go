@@ -62,6 +62,7 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 	actor := uid(r)
 	var (
 		ban     sqlc.WorkspaceBan
+		former  sqlc.WorkspaceFormerMember
 		removed bool
 	)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
@@ -77,13 +78,9 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 			case role == perm.RoleAdmin && actorRole != perm.RoleOwner:
 				return httpx.Forbidden("only the owner can ban an admin")
 			}
-			if _, err := q.RemoveMember(r.Context(), sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: target}); err != nil {
+			if former, removed, err = RemoveMembership(r.Context(), q, h.limits.Plans, wsID, target, ReasonBanned, &actor); err != nil {
 				return err
 			}
-			if err := q.DeleteUserOverridesInWorkspace(r.Context(), sqlc.DeleteUserOverridesInWorkspaceParams{WorkspaceID: wsID, UserID: target.String()}); err != nil {
-				return err
-			}
-			removed = true
 		case !db.IsNotFound(err):
 			return err
 		}
@@ -106,13 +103,7 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 	perm.FromContext(r.Context()).Invalidate()
 	slog.InfoContext(r.Context(), "member banned", "workspace", wsID, "user", target, "by", actor, "was_member", removed)
 	if removed {
-		// LiveKit participants of the removed user are disconnected by rtc.SyncPublisher.
-		h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
-			WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: wsID.String(), UserId: target.String()},
-		}})
-		h.events.User(r.Context(), target, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{
-			WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: wsID.String()},
-		}})
+		PublishRemoved(r.Context(), h.events, former)
 	}
 	pb := pbconv.Ban(ban, u)
 	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceBanAdd{

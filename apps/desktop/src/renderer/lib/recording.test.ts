@@ -97,7 +97,7 @@ describe('recording state from READY and ROOM_RECORDING', () => {
   });
 
   it('every stop reason has its own text', () => {
-    const reasons = ['user', 'empty', 'max_duration', 'disabled', 'egress', 'lost'];
+    const reasons = ['user', 'empty', 'max_duration', 'disabled', 'plan_inactive', 'egress', 'lost'];
     const keys = reasons.map(stopReasonKey);
     expect(new Set(keys).size).toBe(reasons.length);
     expect(stopReasonKey('something-new')).toBe('rec.stop.other');

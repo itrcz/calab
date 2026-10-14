@@ -87,7 +87,7 @@ func TestRolesCRUD(t *testing.T) {
 		"control char":  {Name: "a\nb"},
 		"color":         {Name: "c", Color: 0x1000000},
 		"administrator": {Name: "a", Permissions: uint64(perm.Administrator)},
-		"unknown bit":   {Name: "u", Permissions: 1 << 40},
+		"unknown bit":   {Name: "u", Permissions: 1 << 41},
 	} {
 		if st := o.do("POST", base, req, nil); st != 422 {
 			t.Errorf("%s: status %d, want 422", name, st)

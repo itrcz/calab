@@ -31,7 +31,7 @@ func (s *Service) StoreSystemFile(ctx context.Context, wsID, uploader uuid.UUID,
 	if err != nil {
 		return sqlc.File{}, err
 	}
-	quota, planQuota, err := s.quota(ctx, ws)
+	quota, planQuota, err := s.quota(ctx, s.db.Q, ws)
 	if err != nil {
 		return sqlc.File{}, err
 	}

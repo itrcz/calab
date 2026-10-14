@@ -21,7 +21,7 @@ const patchOf = (page: Page) => page.waitForRequest((r) => r.method() === 'PATCH
 
 test('boards timeline: move, resize, place from «Без дат»', async ({ page, mock }) => {
   await signIn(page, mock);
-  await page.getByTestId('boards-button').click();
+  await page.getByTestId('section-boards').click();
   await expect(page.getByTestId('kanban')).toBeVisible();
   await page.keyboard.press('3');
   const tl = page.getByTestId('timeline');

@@ -512,6 +512,8 @@ func (s *Service) Maintain(ctx context.Context) {
 			reason = "max_duration"
 		case !s.roomAllows(ctx, rec.RoomID):
 			reason = "disabled"
+		case s.PlanInactive != nil && s.PlanInactive(ctx, rec.WorkspaceID):
+			reason = StopPlanInactive
 		case started != nil:
 			if _, busy := started[rec.RoomID]; busy {
 				if rec.EmptySince != nil {

@@ -24,23 +24,24 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 )
 
-// boardFor renders one board as viewer sees it (bits: theirs; 0 = a broadcast, shared views only).
-func (s *Service) boardFor(ctx context.Context, q *sqlc.Queries, id, viewer uuid.UUID, bits perm.Bits) (*v1.Board, error) {
+// boardFor renders one board as viewer sees it (acc: theirs; zero = a broadcast, shared views
+// only; acc.TaskScoped = the task-scoped form of ADR-0064).
+func (s *Service) boardFor(ctx context.Context, q *sqlc.Queries, id, viewer uuid.UUID, acc perm.BoardAccess) (*v1.Board, error) {
 	b, err := q.GetBoard(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	p, err := loadParts(ctx, q, []uuid.UUID{id}, viewer, bits != 0)
+	p, err := loadParts(ctx, q, []uuid.UUID{id}, viewer, acc.Bits != 0 || acc.TaskScoped)
 	if err != nil {
 		return nil, err
 	}
-	return boardProto(b, p, bits), nil
+	return boardProto(b, p, acc.Bits, acc.TaskScoped), nil
 }
 
 // publishBoard sends BOARD_UPDATE (or create) of a board to its viewers (the gateway fills in
 // each recipient's bits).
 func (s *Service) publishBoard(ctx context.Context, wsID, id uuid.UUID, created bool) {
-	b, err := s.boardFor(ctx, s.db.Q, id, uuid.Nil, 0)
+	b, err := s.boardFor(ctx, s.db.Q, id, uuid.Nil, perm.BoardAccess{})
 	if err != nil {
 		return
 	}
@@ -57,7 +58,7 @@ func (s *Service) respondBoard(w http.ResponseWriter, r *http.Request, id uuid.U
 	if fresh, err := perm.FromContext(r.Context()).Board(r.Context(), id, uid(r)); err == nil {
 		acc = fresh
 	}
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc.Bits)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc)
 	if err != nil {
 		return err
 	}
@@ -147,7 +148,7 @@ func (s *Service) listBoards(w http.ResponseWriter, r *http.Request) error {
 		if err != nil || !acc.Bits.Has(perm.ViewBoard|perm.ManageBoard) {
 			continue
 		}
-		pb, err := s.boardFor(r.Context(), s.db.Q, b.ID, uid(r), acc.Bits)
+		pb, err := s.boardFor(r.Context(), s.db.Q, b.ID, uid(r), acc)
 		if err != nil {
 			return err
 		}
@@ -313,7 +314,7 @@ func (s *Service) getBoard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc.Bits)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc)
 	if err != nil {
 		return err
 	}
@@ -385,6 +386,13 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 			}
 			p.DefaultViewID = &vid
 		}
+	}
+	if req.ApprovalNotifyDelaySeconds != nil {
+		d, ok := approvalNotifyDelays[req.GetApprovalNotifyDelaySeconds()]
+		if !ok {
+			return httpx.Validation("approvalNotifyDelaySeconds", "approval notify delay must be 0, 60, 300, 900, 1800 or 3600 seconds")
+		}
+		p.ApprovalNotifyDelaySeconds = &d
 	}
 	// Board features (ADR-0058 §3): the disabled set and the estimate scale.
 	var features sqlc.SetBoardFeaturesParams
@@ -610,11 +618,20 @@ func (s *Service) getPermissions(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Bits.Has(perm.ManageBoard) {
 		return httpx.Forbidden("MANAGE_BOARD required")
 	}
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc.Bits)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), acc)
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.BoardPermissionsResponse{Overrides: b.GetPermissionOverrides(), Board: b})
+	return writePermissions(w, r, s.db.Q, id, b)
+}
+
+// writePermissions answers GET / PUT permissions with the task-scoped count (ADR-0076).
+func writePermissions(w http.ResponseWriter, r *http.Request, q *sqlc.Queries, id uuid.UUID, b *v1.Board) error {
+	n, err := taskScopedCount(r.Context(), q, id)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.BoardPermissionsResponse{Overrides: b.GetPermissionOverrides(), Board: b, TaskScopedCount: n})
 	return nil
 }
 
@@ -654,7 +671,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	perm.FromContext(r.Context()).Invalidate()
-	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), 0)
+	b, err := s.boardFor(r.Context(), s.db.Q, id, uid(r), perm.BoardAccess{})
 	if err != nil {
 		return err
 	}
@@ -663,8 +680,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 	if err == nil {
 		b.Permissions = uint64(fresh.Bits)
 	}
-	httpx.Write(w, http.StatusOK, &v1.BoardPermissionsResponse{Overrides: b.GetPermissionOverrides(), Board: b})
-	return nil
+	return writePermissions(w, r, s.db.Q, id, b)
 }
 
 // validateOverrides checks board override targets and bits like room overrides (rooms): role
@@ -781,6 +797,9 @@ func (s *Service) createStatus(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if !ValidStatusIcon(req.GetIcon()) {
+		return httpx.Validation("icon", "unknown status icon")
+	}
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
 			return err
@@ -798,7 +817,7 @@ func (s *Service) createStatus(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		st, err := q.CreateBoardStatus(r.Context(), sqlc.CreateBoardStatusParams{BoardID: id, Name: name, Type: typ, Color: c,
-			Position: int32(len(ss)), IsDefault: req.GetIsDefault() || len(ss) == 0}) //nolint:gosec // ≤ 20
+			Position: int32(len(ss)), IsDefault: req.GetIsDefault() || len(ss) == 0, Icon: req.GetIcon()}) //nolint:gosec // ≤ 20
 		if err != nil || req.Position == nil {
 			return err
 		}
@@ -876,6 +895,12 @@ func (s *Service) updateStatus(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		p.Color = &c
+	}
+	if req.Icon != nil {
+		if !ValidStatusIcon(req.GetIcon()) {
+			return httpx.Validation("icon", "unknown status icon")
+		}
+		p.Icon = req.Icon
 	}
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
@@ -990,7 +1015,7 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	for _, t := range moved {
-		s.publish(r.Context(), t, &change{acts: actsOf(c.acts, t)}, false)
+		s.publish(r.Context(), t, &change{acts: actsOf(c.acts, t), journal: journalOf(c.journal, t)}, false)
 	}
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
 }

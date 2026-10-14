@@ -3,6 +3,7 @@ import { isDone, matchTask, type FilterState, type MatchCtx } from '../../lib/bo
 import { byPosition } from '../../lib/boards/position';
 import type { BoardsData } from '../../lib/boards/reducers';
 import type { BoardPrefs } from '../../stores/boardsUi';
+import { statusShown } from '../../lib/boards/completion';
 
 /**
  * What the board views show (ADR-0042 §5): permissions of the viewer (Board.permissions, the
@@ -37,12 +38,12 @@ export function statusMap(b: Pick<Board, 'statuses'> | undefined): Record<string
   return out;
 }
 
-/** The kanban's columns: shown (in order) and hidden (the «Скрытые» strip). */
-export function columnsOf(b: Board | undefined, prefs: Pick<BoardPrefs, 'hidden' | 'showCompleted'>): { shown: BoardStatus[]; hidden: BoardStatus[] } {
+/** The kanban's columns: shown (in order) and hidden (the «Скрытые» strip: hidden by hand or by the completion filter). */
+export function columnsOf(b: Board | undefined, prefs: Pick<BoardPrefs, 'hidden' | 'completion'>): { shown: BoardStatus[]; hidden: BoardStatus[] } {
   const shown: BoardStatus[] = [];
   const hidden: BoardStatus[] = [];
   for (const s of sortedStatuses(b)) {
-    if (prefs.hidden.includes(s.id) || (!prefs.showCompleted && doneType(s.type))) hidden.push(s);
+    if (prefs.hidden.includes(s.id) || !statusShown(prefs.completion, s.type)) hidden.push(s);
     else shown.push(s);
   }
   return { shown, hidden };
@@ -61,10 +62,10 @@ export function visibleColumn(s: BoardsData, boardId: string, statusId: string, 
 }
 
 /** Every visible task of the board (list view, keyboard navigation), status by status. */
-export function visibleTasks(s: BoardsData, b: Board, prefs: Pick<BoardPrefs, 'filter' | 'showCompleted'>, ctx: MatchCtx): Task[] {
+export function visibleTasks(s: BoardsData, b: Board, prefs: Pick<BoardPrefs, 'filter' | 'completion'>, ctx: MatchCtx): Task[] {
   const out: Task[] = [];
   for (const st of sortedStatuses(b)) {
-    if (!prefs.showCompleted && doneType(st.type)) continue;
+    if (!statusShown(prefs.completion, st.type)) continue;
     for (const id of s.columns[b.id]?.[st.id] ?? EMPTY) {
       const t = s.tasks[id];
       if (t && matchTask(t, prefs.filter, ctx)) out.push(t);

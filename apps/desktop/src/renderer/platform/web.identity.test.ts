@@ -24,6 +24,7 @@ const scoped = {
 };
 let platform: ReturnType<(typeof import('./web'))['createWebPlatform']>;
 beforeEach(async () => {
+  delete window.CalabHostActivity;
   vi.resetModules();
   mem.clear();
   fetchSpy.mockReset();
@@ -34,6 +35,14 @@ function pending(purpose: string, sessionId = ''): void {
   mem.set('calab-sso-flow', JSON.stringify({ purpose, workspaceId: 'a', flowId: 'flow', expiresAt: Date.now() + 240_000, sessionId }));
 }
 describe('web generated SSO adapter', () => {
+  it('phone host rejects external SSO before creating flow or navigating', async () => {
+    window.CalabHostActivity = { version: 1, host: 0, document: 'phone', send: vi.fn(), rotateDocument: vi.fn() };
+    const result = await platform.auth.ssoBegin({ workspaceId: 'a', purpose: 'login' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE' } });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(mem.has('calab-sso-flow')).toBe(false);
+  });
   it('anonymous restore retains pending standalone flow and finishes with a scoped bearer', async () => {
     pending('login');
     fetchSpy.mockResolvedValueOnce(json(401, {}));

@@ -116,6 +116,32 @@ func (q *Queries) ClaimEventRoomSignal(ctx context.Context, arg ClaimEventRoomSi
 	return result.RowsAffected(), nil
 }
 
+const claimExternalReminder = `-- name: ClaimExternalReminder :execrows
+INSERT INTO external_reminders_sent (user_id, uid, occurrence_at, minutes) VALUES ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING
+`
+
+type ClaimExternalReminderParams struct {
+	UserID       uuid.UUID
+	Uid          string
+	OccurrenceAt time.Time
+	Minutes      int16
+}
+
+// An imported event's reminder (ADR-0045 amendment 3), once per user, event, occurrence, minutes.
+func (q *Queries) ClaimExternalReminder(ctx context.Context, arg ClaimExternalReminderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimExternalReminder,
+		arg.UserID,
+		arg.Uid,
+		arg.OccurrenceAt,
+		arg.Minutes,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createEventRoomInvite = `-- name: CreateEventRoomInvite :one
 INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, not_before, event_id)
 VALUES ($1, $2, $3, $4, 1, true, $5, $6, $7)
@@ -192,7 +218,8 @@ func (q *Queries) DeleteExternalAttendee(ctx context.Context, arg DeleteExternal
 }
 
 const deleteOldEventSignals = `-- name: DeleteOldEventSignals :exec
-WITH r AS (DELETE FROM event_reminders_sent WHERE event_reminders_sent.sent_at < $1)
+WITH r AS (DELETE FROM event_reminders_sent WHERE event_reminders_sent.sent_at < $1),
+x AS (DELETE FROM external_reminders_sent WHERE external_reminders_sent.sent_at < $1)
 DELETE FROM event_room_signals WHERE event_room_signals.sent_at < $1
 `
 
@@ -693,6 +720,49 @@ func (q *Queries) ListEventUsers(ctx context.Context, ids []uuid.UUID) ([]ListEv
 	return items, nil
 }
 
+const listEventsByIDs = `-- name: ListEventsByIDs :many
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at FROM events WHERE id = ANY($1::uuid[])
+`
+
+// Events of a search page (unified search, ADR-0062); the caller keeps its own order.
+func (q *Queries) ListEventsByIDs(ctx context.Context, ids []uuid.UUID) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEventsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Tz,
+			&i.OrganizerID,
+			&i.Record,
+			&i.Rrule,
+			&i.UntilAt,
+			&i.Sequence,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEventsForRecording = `-- name: ListEventsForRecording :many
 SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at FROM events
 WHERE room_id = $1 AND organizer_id = $2 AND cancelled_at IS NULL
@@ -1114,7 +1184,7 @@ func (q *Queries) SetExternalAttendeeStatus(ctx context.Context, arg SetExternal
 
 const setUserEventReminders = `-- name: SetUserEventReminders :one
 UPDATE users SET event_reminders = $2, event_reminders_dnd = $3 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type SetUserEventRemindersParams struct {
@@ -1157,6 +1227,11 @@ func (q *Queries) SetUserEventReminders(ctx context.Context, arg SetUserEventRem
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }

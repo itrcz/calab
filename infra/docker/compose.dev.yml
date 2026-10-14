@@ -26,7 +26,7 @@ services:
   # Mail catcher (ADR-0023): the API sends to SMTP localhost:1025 (SMTP_TLS=none),
   # letters are read at http://localhost:8025. Nothing leaves the machine.
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: axllent/mailpit:v1.30
     ports:
       - "1025:1025"
       - "8025:8025"
@@ -88,6 +88,24 @@ services:
     volumes:
       - ../../apps/server/data/recordings:/out
     depends_on: [livekit, valkey]
+
+  # Почтовый движок десктопа (ADR-0088 §11), только по запросу: IMAP/SMTP для интеграционного
+  # теста (`CALABA_MAIL_IT=1`). Сначала `infra/docker/greenmail/gen-cert.sh` (TLS для localhost:
+  # движок проверяет сертификат строго), затем `docker compose -f infra/docker/compose.dev.yml
+  # --profile mail up -d greenmail`. Пользователи alice / bob, пароль secret.
+  greenmail:
+    image: greenmail/standalone:2.1.13@sha256:3df66b7edd01c8a301343ca5e3601d8674760d4708655573560c24745e624fb2
+    profiles: [mail]
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=alice:secret@example.test,bob:secret@example.test
+        -Dgreenmail.tls.keystore.file=/certs/greenmail.p12 -Dgreenmail.tls.keystore.password=changeit
+    volumes:
+      - ./greenmail/certs:/certs:ro
+    ports:
+      - "127.0.0.1:3993:3993"   # IMAPS
+      - "127.0.0.1:3465:3465"   # SMTPS
 
 volumes:
   pg_dev:

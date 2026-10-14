@@ -55,6 +55,12 @@ enum IdentityAccessReason {
   IDENTITY_ACCESS_REASON_RECOVERY_ONLY = 7;
   IDENTITY_ACCESS_REASON_DEPENDENCY_UNAVAILABLE = 8;
   IDENTITY_ACCESS_REASON_RECENT_AUTH_REQUIRED = 9;
+  // Closed for unpaid billing (ADR-0080 §8). Content is closed like SUSPENDED, but the workspace
+  // stays listed for its members as a stub (READY snapshot / GET /api/workspaces with only the
+  // workspace, Workspace.billing.state = SUSPENDED): the owner sees the paywall and keeps the
+  // /api/workspaces/{id}/billing routes and BILLING_UPDATE, other members a notice. Older clients
+  // treat the unknown value as a lock.
+  IDENTITY_ACCESS_REASON_BILLING_SUSPENDED = 10;
 }
 message WorkspaceAssurance {
   string workspace_id = 1;

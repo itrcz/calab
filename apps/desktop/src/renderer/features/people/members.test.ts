@@ -43,8 +43,11 @@ describe('groupMembers', () => {
       g: p('g', PresenceStatus.ONLINE),
       a: p('a', PresenceStatus.OFFLINE),
     });
-    expect(g.online.map((m) => m.user?.id)).toEqual(['o', 'm2', 'm1', 'g']);
+    expect(g.online.map((m) => m.user?.id)).toEqual(['o', 'm2', 'm1']);
     expect(g.offline.map((m) => m.user?.id)).toEqual(['a']);
+    // ADR-0098 §3: guests are a section of their own
+    expect(g.guests.map((m) => m.user?.id)).toEqual(['g']);
+    expect(g.guestsOnline.has('g')).toBe(true);
   });
 
   it('counts people in voice as online and skips members without a user', () => {

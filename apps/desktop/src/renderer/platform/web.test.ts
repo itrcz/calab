@@ -33,6 +33,7 @@ const json = (status: number, body: unknown): Response => new Response(JSON.stri
 let platform: ReturnType<(typeof import('./web'))['createWebPlatform']>;
 
 beforeEach(async () => {
+  delete window.CalabHostActivity;
   vi.resetModules();
   fetchSpy.mockClear();
   created.length = 0;
@@ -44,6 +45,19 @@ afterEach(() => {
 });
 
 describe('web auth', () => {
+  it('clears the native session before logout listeners tear down the old web session', async () => {
+    const send=vi.fn();
+    const bridge={version:1,callsVersion:1,host:0,document:'current',send,rotateDocument:()=>{bridge.document='next';}};
+    window.CalabHostActivity=bridge;
+    platform=(await import('./web')).createWebPlatform();
+    for(const fn of listeners.get('calab-host-activity-ready')??[])fn({detail:{v:1,host:0,document:'current',capability:'notifications',calls:1}});
+    platform.auth.onLoggedOut(()=>{
+      expect(JSON.parse(String(send.mock.calls[0]?.[0]))).toMatchObject({type:'revoke',reason:'logout',document:'current'});
+    });
+    handler=()=>Promise.resolve(new Response(null,{status:204}));
+    await platform.auth.logout(false);
+    expect(bridge.document).toBe('next');
+  });
   it('a transient refresh failure is not a logout (review H3)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const out: string[] = [];
@@ -176,5 +190,21 @@ describe('web media cache (review M10)', () => {
     const again = await platform.mediaUrl('/api/files/slow');
     expect(again).not.toBe(u);
     expect(fetchSpy.mock.calls.filter((c) => c[0] === '/api/files/slow')).toHaveLength(1);
+  });
+});
+
+describe('web openExternal (ADR-0045 amendment 1: «Подключиться» of an external event)', () => {
+  it('opens http(s) links whatever the case of the scheme, refuses other schemes', async () => {
+    const opened: string[] = [];
+    vi.stubGlobal('open', (u: string) => {
+      opened.push(u);
+      return null;
+    });
+    await platform.app.openExternal('https://telemost.yandex.ru/j/1');
+    await platform.app.openExternal('HTTPS://Zoom.us/j/9');
+    await platform.app.openExternal('  https://meet.google.com/abc-defg-hij ');
+    await platform.app.openExternal('javascript:alert(1)');
+    await platform.app.openExternal('file:///etc/passwd');
+    expect(opened).toEqual(['https://telemost.yandex.ru/j/1', 'HTTPS://Zoom.us/j/9', 'https://meet.google.com/abc-defg-hij']);
   });
 });

@@ -202,8 +202,8 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	if err := checkAttendees(ctx, s.db.Q, wsID, me, v.bot, want); err != nil {
 		return err
 	}
-	if hasExternals(want) { // mail to outside addresses needs a confirmed sender (ADR-0023)
-		if _, err := auth.VerifiedUser(ctx, s.db.Q, me); err != nil {
+	if hasExternals(want) { // mail to outside addresses needs a confirmed sender (ADR-0023, ADR-0065)
+		if _, err := s.EmailGate.User(ctx, s.db.Q, me); err != nil {
 			return err
 		}
 	}
@@ -431,7 +431,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 				return httpx.Forbidden("a bot adds outside addresses only to the meetings it organizes")
 			}
 			if hasExternals(addWant) {
-				if _, err := auth.VerifiedUser(ctx, q, me); err != nil {
+				if _, err := s.EmailGate.User(ctx, q, me); err != nil {
 					return err
 				}
 			}

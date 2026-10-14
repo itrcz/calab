@@ -4,11 +4,14 @@ package app_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
@@ -33,6 +36,43 @@ func suspend(t *testing.T, wsID string, on bool, reason string) *v1.AdminWorkspa
 	var r v1.AdminSetSuspensionResponse
 	superadminUser(t).must(200, "PUT", "/api/admin/workspaces/"+wsID+"/suspension", &v1.AdminSetSuspensionRequest{Suspended: on, Reason: reason}, &r)
 	return r.GetWorkspace()
+}
+
+// workspaceStateOrResync waits on g for a WORKSPACE_UPDATE of ws matching pred and returns
+// that workspace. A suspension change also bumps the workspace identity policy; its notice
+// reaches the gateway through the outbox up to a second later. An event admitted under the
+// old lease and written after the notice lands is re-checked at emit/write time and the
+// gateway fails closed with 4000 "identity resync required" (by design: it cannot re-check
+// durable access without a DB round trip there). The client then IDENTIFYs again and takes
+// the state from READY, and so does the test: it returns the new connection and the READY
+// snapshot of ws, which must match pred as well.
+func workspaceStateOrResync(t *testing.T, g *gw, token, ws, what string, pred func(*v1.Workspace) bool) (*gw, *v1.Workspace) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		f, err := g.read(time.Until(deadline))
+		var ce websocket.CloseError
+		if errors.As(err, &ce) && ce.Code == 4000 && strings.HasSuffix(ce.Reason, "resync required") {
+			fresh := dialGW(t)
+			for _, s := range fresh.identify(token).GetWorkspaces() {
+				if s.GetWorkspace().GetId() == ws {
+					if !pred(s.GetWorkspace()) {
+						t.Fatalf("%s: READY after %q: %v", what, ce.Reason, s.GetWorkspace())
+					}
+					return fresh, s.GetWorkspace()
+				}
+			}
+			t.Fatalf("%s: workspace missing from READY after %q", what, ce.Reason)
+		}
+		if err != nil {
+			t.Fatalf("waiting for %s: %v", what, err)
+		}
+		if w := f.GetDispatch().GetWorkspaceUpdate().GetWorkspace(); w.GetId() == ws && pred(w) {
+			return g, w
+		}
+	}
+	t.Fatalf("timeout waiting for %s", what)
+	return nil, nil
 }
 
 func TestWorkspaceSuspension(t *testing.T) {
@@ -65,13 +105,14 @@ func TestWorkspaceSuspension(t *testing.T) {
 		t.Fatalf("admin view: %v", aw)
 	}
 	// WORKSPACE_UPDATE: the owner sees the reason, a member only the flag.
-	ev := gOwner.wait("owner WORKSPACE_UPDATE", func(e *v1.DispatchEvent) bool { return e.GetWorkspaceUpdate().GetWorkspace().GetSuspension() != nil })
-	if ev.GetWorkspaceUpdate().GetWorkspace().GetSuspension().GetReason() != "unpaid invoice" {
-		t.Fatalf("owner update: %v", ev)
+	suspended := func(w *v1.Workspace) bool { return w.GetSuspension() != nil }
+	gOwner, w := workspaceStateOrResync(t, gOwner, o.token, wid, "owner WORKSPACE_UPDATE", suspended)
+	if w.GetSuspension().GetReason() != "unpaid invoice" {
+		t.Fatalf("owner update: %v", w)
 	}
-	ev = gb.wait("member WORKSPACE_UPDATE", func(e *v1.DispatchEvent) bool { return e.GetWorkspaceUpdate().GetWorkspace().GetSuspension() != nil })
-	if ev.GetWorkspaceUpdate().GetWorkspace().GetSuspension().GetReason() != "" {
-		t.Fatalf("member sees the reason: %v", ev)
+	_, w = workspaceStateOrResync(t, gb, bob.token, wid, "member WORKSPACE_UPDATE", suspended)
+	if w.GetSuspension().GetReason() != "" {
+		t.Fatalf("member sees the reason: %v", w)
 	}
 	var gr v1.GetWorkspaceResponse
 	bob.must(200, "GET", "/api/workspaces/"+wid, nil, &gr)
@@ -145,9 +186,7 @@ func TestWorkspaceSuspension(t *testing.T) {
 	if aw.GetWorkspace().GetSuspension() != nil || aw.GetSuspendedBy() != "" {
 		t.Fatalf("resumed: %v", aw)
 	}
-	gOwner.wait("resume WORKSPACE_UPDATE", func(e *v1.DispatchEvent) bool {
-		return e.GetWorkspaceUpdate() != nil && e.GetWorkspaceUpdate().GetWorkspace().GetSuspension() == nil
-	})
+	workspaceStateOrResync(t, gOwner, o.token, wid, "resume WORKSPACE_UPDATE", func(w *v1.Workspace) bool { return w.GetSuspension() == nil })
 	send(t, bob, text, "after", "")
 	stranger.must(200, "POST", "/api/invites/"+code+"/join", nil, nil)
 	var n int

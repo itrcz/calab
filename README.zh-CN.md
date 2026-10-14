@@ -88,9 +88,19 @@ Calab 是一款以**语音**为核心的团队通讯工具。进入房间就能�
 - 筛选、保存的视图、批量操作；**从任意消息创建任务**；任务链接在聊天中展开为卡片。
 
 - **审批**——指定审批人以及所需的通过数（全部或 N/M）；任务获批之前无法在看板上继续流转（[ADR-0049](docs/adr/0049-task-approvals.md)）。
-### 📝 笔记
+### 📚 维基
 
-<img src="apps/landing/public/screens/zh-CN/notes.webp" width="880" alt="笔记书架">
+<img src="apps/landing/public/screens/zh-CN/wiki.webp" width="880" alt="团队维基">
+
+像 Notion 一样的页面与子页面：支持表格、清单、代码和图片的编辑器，实时协同编辑与光标，版本历史可恢复，按页面授权，公开只读链接。
+
+### 🗂️ 网盘
+
+<img src="apps/landing/public/screens/zh-CN/disk.webp" width="880" alt="团队网盘">
+
+空间内的文件夹与文件：拖拽上传，平铺或列表，按文件夹授权（私有文件夹连管理员也看不到），公开文件链接，自动清理的回收站和清晰的空间用量。
+
+### 📝 笔记
 
 最多 20 个私人书架，名称和表情由你决定——就像 Telegram 的“收藏夹”，但可以有多个。可以把消息和文件拖到书架上、转发、置顶和搜索。
 

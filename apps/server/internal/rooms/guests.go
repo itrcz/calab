@@ -38,11 +38,7 @@ func GuestVisibleUsers(ctx context.Context, q *sqlc.Queries, voice VoiceRooms, w
 	}
 	rooms := make([]perm.GuestRoom, 0, len(rs))
 	for _, r := range rs {
-		gr := perm.GuestRoom{ID: r.ID, Restricted: r.Restricted, Overrides: byRoom[r.ID]}
-		if r.CreatedBy != nil {
-			gr.CreatedBy = *r.CreatedBy
-		}
-		rooms = append(rooms, gr)
+		rooms = append(rooms, perm.GuestRoom{ID: r.ID, Flags: perm.FlagsOf(r), Overrides: byRoom[r.ID]})
 	}
 	var authors map[uuid.UUID]map[uuid.UUID]bool
 	if ids := perm.GuestRoomIDs(me, rooms); len(ids) > 0 {

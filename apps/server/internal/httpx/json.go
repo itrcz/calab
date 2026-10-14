@@ -24,6 +24,16 @@ var (
 
 // Decode reads a protojson body into msg. An empty body leaves msg zero-valued.
 func Decode(w http.ResponseWriter, r *http.Request, msg proto.Message) error {
+	return decode(w, r, msg, unmarshalOpts)
+}
+
+// DecodeStrict rejects unknown properties, including those nested in messages.
+// Use it for APIs whose contract must not silently discard client intent.
+func DecodeStrict(w http.ResponseWriter, r *http.Request, msg proto.Message) error {
+	return decode(w, r, msg, protojson.UnmarshalOptions{})
+}
+
+func decode(w http.ResponseWriter, r *http.Request, msg proto.Message, opts protojson.UnmarshalOptions) error {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxJSONBody))
 	if err != nil {
 		var mbe *http.MaxBytesError
@@ -35,7 +45,7 @@ func Decode(w http.ResponseWriter, r *http.Request, msg proto.Message) error {
 	if len(body) == 0 {
 		return nil
 	}
-	if err := unmarshalOpts.Unmarshal(body, msg); err != nil {
+	if err := opts.Unmarshal(body, msg); err != nil {
 		return BadRequest("invalid JSON: " + err.Error())
 	}
 	return nil

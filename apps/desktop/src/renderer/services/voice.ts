@@ -1,3 +1,6 @@
+import { useCall } from '../stores/call';
+import { HostCallAudioSession } from '../lib/media/hostCallAudio';
+import { audioUUID, type HostAudioControls } from '../../shared/hostCallAudio';
 import { SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceDisconnected, type VoiceMoved, VoiceDisconnectReason } from '@calaba/protocol';
 import {
   ConnectionState,
@@ -20,7 +23,8 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
-import { roomPerms, voiceCaps } from '../lib/permissions';
+import { isLapsed } from '../lib/billing/model';
+import { restrictedPerms, roomPerms, voiceCaps } from '../lib/permissions';
 import { MicPipeline } from '../lib/media/micPipeline';
 import type { MicReport } from '../lib/media/micReport';
 import {
@@ -43,9 +47,10 @@ import { denoiseMode, wakeDbFor } from '../lib/media/denoiseSleep';
 import { playSound } from '../lib/sounds';
 import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
+import { AUTO_MUTE_TOAST, AutoMuteTimer, autoMuteArmed, type AutoMuteSec } from '../lib/autoMute';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
@@ -59,8 +64,11 @@ import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQu
 import { platform } from '../platform';
 import { VOICE_TABS_CHANNEL, parseClaim, yieldsTo, type VoiceClaim } from '../lib/voiceTabs';
 import { cameraWanted } from '../lib/media/cameraLogic';
+import { CameraShown, type ShownQuality } from '../lib/media/cameraShown';
+import { activeRoomId, useUi } from '../stores/ui';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
+import { lastSpoke, speakingStarts } from '../lib/lastSpoke';
 import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
 import { seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
 import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
@@ -174,8 +182,16 @@ export function defaultStage(roomId: string | null): 'pip' | 'expanded' {
 
 const setLink = (p: Partial<VoiceLink>): void => setVoice({ link: { ...useVoice.getState().link, ...p } });
 
+
+/** «Тариф не активен» (ADR-0086 amendment): audio only — no stream / camera buttons (the server drops the grants too). */
+function lapsedPerms(workspaceId: string, perms: bigint): bigint {
+  return restrictedPerms(perms, isLapsed(useWorkspaces.getState().byId[workspaceId]?.ws.billing));
+}
+
 class VoiceEngine {
   private room: Room | null = null;
+  private nativeAudio: HostCallAudioSession | null = null;
+  private nativeCallEvent: string | undefined;
   private roomId: string | null = null;
   private joinSeq = 0;
   private mic: MicPipeline | null = null;
@@ -228,6 +244,8 @@ class VoiceEngine {
   private levelSpeakOn = false;
   private levelTick = 0;
   private selfSpeaking = false;
+  /** «Выключать микрофон, если я молчу» (lib/autoMute.ts): one timeout off my VAD edges, nothing while not in voice. */
+  private readonly autoMute = new AutoMuteTimer((sec) => this.onAutoMute(sec));
   private readonly active = new ActiveSpeaker((id) => this.onActiveSpeaker(id));
   /** My webcam (services/camera.ts). */
   readonly camera: CameraController;
@@ -250,6 +268,12 @@ class VoiceEngine {
   private failedSeat: { roomId: string; workspaceId: string; at: number } | null = null;
   /** The current user join brings me back after a window reload / update restart: its cue is «reconnect», not «join». */
   private resumedJoin = false;
+  /** «Войти и смотреть» (ADR-0066 §3): the room whose join opens the call view. */
+  private videoOnJoin: string | null = null;
+  /** The cameras present at connect are known: a camera after that «turned on» (ADR-0066 §3). */
+  private camerasPrimed = false;
+  /** Remote cameras on screen (ADR-0066 §4): only these are subscribed. */
+  private readonly shownCams = new CameraShown(() => this.applyCameras());
   /** The connect() attempt in flight (the latest one; a superseded attempt never clears it). */
   private attempt: ConnectAttempt | null = null;
   /** Watchdog retries spent on the current intent (docs/09 #131): one fresh Room + token, then out with a toast. */
@@ -285,6 +309,8 @@ class VoiceEngine {
         this.applyVolumes();
         this.applyAudioSubscriptions();
       }
+      // A moderator mute / lost SPEAK lands here without applyTransmit: the auto-mute stops too.
+      if (s.muted !== p.muted || s.deafened !== p.deafened || s.serverMuted !== p.serverMuted || s.canSpeak !== p.canSpeak) this.syncAutoMute();
     });
   }
 
@@ -343,6 +369,7 @@ class VoiceEngine {
     if (s.echoMode !== p.echoMode) this.applyDuck();
     if (s.red !== p.red && this.micTrack && this.room) void this.republishMic();
     if (s.personalBitrateKbps !== p.personalBitrateKbps) this.applyMicTier();
+    if (s.autoMuteSec !== p.autoMuteSec) this.syncAutoMute();
     if (s.musicianMode !== p.musicianMode) this.onMusicianMode(s.musicianMode);
     if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
     if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
@@ -387,7 +414,7 @@ class VoiceEngine {
    * voice activation only. `resumed`: back into the seat left by a reload / update restart
    * (services/resumeVoice.ts) — the «reconnect» cue instead of «join».
    */
-  async join(roomId: string, workspaceId: string, opts: { call?: boolean; resumed?: boolean } = {}): Promise<void> {
+  async join(roomId: string, workspaceId: string, opts: { call?: boolean; resumed?: boolean; video?: boolean; nativeCallEvent?: string } = {}): Promise<void> {
     // A suspended workspace has no calls (docs/09 #32): say so instead of a 403 toast.
     if (useWorkspaces.getState().byId[workspaceId]?.ws.suspension) {
       toast.info(t('suspended.voice'));
@@ -399,12 +426,21 @@ class VoiceEngine {
     this.takenOverRoom = null;
     this.stuckRetries = 0;
     this.resumedJoin = opts.resumed === true;
+    // «Войти и смотреть» (ADR-0066 §3): the call view opens as soon as the cameras are known.
+    this.videoOnJoin = opts.video === true ? roomId : null;
+    // The chat follows the voice (issue #127): a user join shows the room's own chat, so a message
+    // is not sent to the previously open room by mistake. A click on another room still opens it.
+    // Not for a reload resume / a DM call, and not on a phone (opening a chat there pushes a screen).
+    if (opts.resumed !== true && opts.call !== true && workspaceId) {
+      const ui = useUi.getState();
+      if (!ui.phone.on && activeRoomId() !== roomId) ui.openRoom(workspaceId, roomId);
+    }
     this.announceJoin();
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
     // call is still being torn down; connect() takes over with phase 'connecting'.
-    if (!(this.roomId === roomId && this.room)) setVoice({ joining: { roomId, workspaceId } });
-    await this.connect(roomId, workspaceId, false, undefined, undefined, opts.call === true);
+    if (!(this.roomId === roomId && (this.room || this.nativeAudio))) setVoice({ joining: { roomId, workspaceId } });
+    await this.connect(roomId, workspaceId, false, undefined, undefined, opts.call === true, opts.nativeCallEvent);
   }
 
   /**
@@ -459,12 +495,12 @@ class VoiceEngine {
    * `keepServerMuted`: the moderator mute to carry over the teardown (a rejoin or a move's /join
    * fallback); teardown resets it, and until the new grant arrives the UI would show «not muted».
    */
-  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean, call?: boolean): Promise<void> {
+  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean, call?: boolean, nativeCallEvent?: string): Promise<void> {
     if (this.roomId === roomId && this.roomAlive()) return;
     const attempt: ConnectAttempt = { stage: 'teardown', since: Date.now() };
     this.attempt = attempt;
     try {
-      await this.connectOnce(attempt, roomId, workspaceId, quiet, moved, keepServerMuted, call);
+      await this.connectOnce(attempt, roomId, workspaceId, quiet, moved, keepServerMuted, call, nativeCallEvent);
     } finally {
       if (this.attempt === attempt) this.attempt = null;
     }
@@ -476,6 +512,7 @@ class VoiceEngine {
    */
   private roomAlive(): boolean {
     const room = this.room;
+    if (this.nativeAudio) return this.nativeAudio.alive;
     if (!room) return false;
     if (room.state === ConnectionState.Connected || room.state === ConnectionState.Reconnecting || room.state === ConnectionState.SignalReconnecting) return true;
     return this.attempt !== null && Date.now() - this.attempt.since < CONNECT_STUCK_MS;
@@ -489,6 +526,7 @@ class VoiceEngine {
     moved?: MoveCreds,
     keepServerMuted?: boolean,
     call?: boolean,
+    nativeCallEvent?: string,
   ): Promise<void> {
     // The intent token is taken *before* the teardown (which awaits a network disconnect):
     // a leave() or a newer join during that window bumps it, and this call bails out, so the
@@ -507,10 +545,10 @@ class VoiceEngine {
       }
       if (intent !== this.intentSeq) return;
     }
-    if (this.room) await this.teardown(false, quiet);
+    if (this.room || this.nativeAudio) await this.teardown(false, quiet);
     if (intent !== this.intentSeq) return;
     // A fresh join decides the mic mode (a call: voice only); a reconnect / move keeps it.
-    if (call !== undefined) this.setCallMode(call);
+    if (call !== undefined) { this.setCallMode(call); this.nativeCallEvent = call ? nativeCallEvent : undefined; }
     const seq = ++this.joinSeq;
     this.roomId = roomId;
     // A new call (not a reconnect of this one) may warn about echo again.
@@ -534,8 +572,10 @@ class VoiceEngine {
       activeSpeaker: null,
       focusedTile: null,
       videoPip: true,
+      galleryPage: 0,
       ...(carried !== undefined ? { serverMuted: carried } : {}),
     });
+    this.camerasPrimed = false;
     try {
       attempt.stage = 'join';
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
@@ -551,6 +591,51 @@ class VoiceEngine {
       this.lastJoin = { url: res.url, token: res.token };
       setLink({ rtcHost: hostOfUrl(res.url) });
       this.audioBitrateKbps = res.media?.audioBitrateKbps || 32;
+      const nativeCapability = platform.incomingCalls?.audio;
+      if (this.callMode && this.nativeCallEvent && nativeCapability) {
+        attempt.stage = 'signal';
+        const session = new HostCallAudioSession(nativeCapability, {
+          eventId: this.nativeCallEvent, connectionId: crypto.randomUUID(), roomId,
+          url: res.url, token: res.token, relayOnly: useSession.getState().appInfo?.forceRelay === true,
+          bitrate: Math.min(64, Math.max(8, this.micTier().kbps)) * 1000,
+          canSpeak: res.canSpeak, controls: this.nativeControls(),
+        }, state => {
+          if (seq !== this.joinSeq || this.nativeAudio !== session) return;
+          if (state.phase === 'failed' || state.phase === 'ended') {
+            // Reuse the web engine's seat ownership rules: an SFU removal can precede
+            // the gateway takeover event. Never hang up the call on the new device.
+            if (state.error === 'removed') {
+              this.clearRemoved();
+              this.removed = { roomId, timer: window.setTimeout(() => {
+                this.removed = null;
+                if (this.nativeAudio === session) void this.leave(false);
+              }, REMOVED_GRACE_MS) };
+            } else if (state.error === 'duplicate') {
+              this.takenOverRoom = roomId;
+              void this.leave(false, false);
+            } else if (state.error === 'network') {
+              void this.rejoin();
+            } else void this.leave(false);
+            return;
+          }
+          if (state.phase === 'connected' || state.phase === 'reconnecting') {
+            setVoice({ phase: state.phase, canSpeak: state.canSpeak,
+              speaking: Object.fromEntries(state.speakers.map(id => [id, true])) });
+          }
+        });
+        this.nativeAudio = session;
+        // Settings may have left a mic test running before the system answer.
+        this.micTesting = false;
+        this.stopMicPipeline();
+        // The local audio proof has no native video transport; never start a second web room.
+        setVoice({ canSpeak: res.canSpeak, canStream: false, canVideo: false });
+        await session.start();
+        if (seq !== this.joinSeq || this.nativeAudio !== session) { session.stop(); return; }
+        setLink({ attempts: 0, lastError: null, blockedHost: null });
+        session.control(this.nativeControls());
+        this.pushSelfState(); this.syncTray();
+        return;
+      }
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -597,6 +682,11 @@ class VoiceEngine {
       this.pushSelfState();
       this.refreshStreams();
       this.refreshCameras();
+      this.camerasPrimed = true;
+      if (this.videoOnJoin === roomId) {
+        this.videoOnJoin = null;
+        if (this.anyCamera() && !useVoice.getState().watching) setVoice({ stage: 'expanded', videoPip: true });
+      }
       // Back in after a lost connection (the rejoin cycle) or a reload: «reconnect», else «join».
       playSound(quiet || this.resumedJoin ? 'reconnect' : 'join');
       this.resumedJoin = false;
@@ -650,7 +740,7 @@ class VoiceEngine {
       token: moved.token,
       canSpeak: true,
       // The camera needs /camera/request in the target anyway (the server re-checks VIDEO + limit).
-      ...voiceCaps(roomPerms(role, me, room), room),
+      ...voiceCaps(lapsedPerms(workspaceId, roomPerms(role, me, room)), room),
       media: { audioBitrateKbps: planAudio(workspaceId, room?.media?.audioBitrateKbps || this.audioBitrateKbps) },
     };
   }
@@ -677,7 +767,7 @@ class VoiceEngine {
       this.applyMicTier();
     }
     if (roles.length === 0) return;
-    const next = voiceCaps(roomPerms(roles, me, room), room);
+    const next = voiceCaps(lapsedPerms(workspaceId, roomPerms(roles, me, room)), room);
     if (next.canStream !== canStream || next.canVideo !== canVideo) setVoice(next);
   }
 
@@ -721,7 +811,7 @@ class VoiceEngine {
         if (gen !== this.rejoinGen) return;
         await this.connect(roomId, wsId, true, undefined, serverMuted);
         if (gen !== this.rejoinGen) return;
-        if (this.room) {
+        if (this.room || this.nativeAudio?.connected) {
           if (stream) toast.info(t('mediaErr.stream.restart'));
           // The camera comes back by itself (a new capture, no preview); start() explains a failure.
           if (camera) void this.camera.start();
@@ -810,7 +900,7 @@ class VoiceEngine {
     const intent = this.intentSeq;
     await this.teardown(false, true);
     if (intent !== this.intentSeq) return; // the user left or clicked elsewhere meanwhile
-    await this.connect(roomId, workspaceId, false, undefined, serverMuted, call);
+    await this.connect(roomId, workspaceId, false, undefined, serverMuted, call, this.nativeCallEvent);
   }
 
   /**
@@ -820,11 +910,11 @@ class VoiceEngine {
    */
   private onReconnectStuck(ms: number): void {
     const v = useVoice.getState();
-    const st = this.room && this.roomId === v.roomId ? this.room.state : null;
+    const st = this.seatView().livekit;
     const attempt = this.attempt;
     const verdict = reconnectVerdict({
       loop: this.rejoinRoomId !== null && (attempt === null || Date.now() - attempt.since < RECONNECT_STUCK_MS),
-      livekit: st === ConnectionState.Connected ? 'connected' : st === ConnectionState.Reconnecting || st === ConnectionState.SignalReconnecting ? 'reconnecting' : 'none',
+      livekit: st,
       ms,
     });
     if (verdict === 'wait') {
@@ -841,7 +931,7 @@ class VoiceEngine {
     const reason = t('voice.stuck.reconnect');
     if (this.stuckRetries === 0) {
       this.stuckRetries = 1;
-      log.warn(`voice: reconnecting to ${v.roomId} for ${secs} s without progress (LiveKit ${st ?? 'none'}, stage ${attempt?.stage ?? 'none'}), resetting and rejoining with a fresh token`);
+      log.warn(`voice: reconnecting to ${v.roomId} for ${secs} s without progress (LiveKit ${st}, stage ${attempt?.stage ?? 'none'}), resetting and rejoining with a fresh token`);
       setLink({ lastError: t('voice.stuck.retry', { reason, s: secs }) });
       this.watchdog.rearm();
       this.resetConnection();
@@ -914,7 +1004,7 @@ class VoiceEngine {
   private seatView(): SeatView {
     const v = useVoice.getState();
     const room = this.room;
-    const st = room && this.roomId === v.roomId ? room.state : null;
+    const st = this.nativeAudio?.state?.phase === 'connected' ? ConnectionState.Connected : this.nativeAudio?.state?.phase === 'reconnecting' ? ConnectionState.Reconnecting : room && this.roomId === v.roomId ? room.state : null;
     return {
       seatRoom: v.roomId,
       // A join / switch / leave / move in progress settles the server by itself.
@@ -942,8 +1032,10 @@ class VoiceEngine {
       case 'watch': {
         // LiveKit is resuming by itself: a moment for it, then a fresh token instead.
         const room = this.room;
+        const native = this.nativeAudio;
         await new Promise((r) => setTimeout(r, SEAT_RECONNECT_GRACE_MS));
-        if (room && this.room === room && room.state !== ConnectionState.Connected && !this.rejoinRoomId) {
+        if (((room && this.room === room && room.state !== ConnectionState.Connected) ||
+          (native && this.nativeAudio === native && !native.connected)) && !this.rejoinRoomId) {
           log.info('voice: LiveKit still reconnecting after the gateway is back, rejoining');
           void this.rejoin();
           return;
@@ -977,8 +1069,8 @@ class VoiceEngine {
    */
   private async reassertSeat(roomId: string, strays: string[]): Promise<void> {
     for (const r of strays) await this.leaveStray(r);
-    const room = this.room;
-    const same = (): boolean => this.room === room && this.roomId === roomId;
+    const room = this.room; const native = this.nativeAudio;
+    const same = (): boolean => this.room === room && this.nativeAudio === native && this.roomId === roomId;
     await this.settleSeatRequests();
     if (!same()) return;
     let res: Awaited<ReturnType<typeof api.voice.join>>;
@@ -1161,9 +1253,11 @@ class VoiceEngine {
 
   private async doTeardown(sound: boolean, keepSeat: boolean): Promise<void> {
     this.joinSeq++;
+    this.nativeAudio?.stop(); this.nativeAudio = null;
     this.endPttTail();
     this.resetSpeaking();
     this.active.reset();
+    lastSpoke.clear();
     this.clearMoveTimer();
     this.stopStats();
     this.resetEcho();
@@ -1174,6 +1268,7 @@ class VoiceEngine {
     this.room = null;
     this.roomId = null;
     this.micTrack = null;
+    this.autoMute.cancel(); // left: no timer outside voice
     // disconnect(false): unpublish without stopping. disconnect(true) would stop the pipeline's
     // publish track, and a running mic test keeps that pipeline for the next call → a dead
     // mic there (review M1). The pipeline is stopped below when nobody needs it.
@@ -1204,6 +1299,7 @@ class VoiceEngine {
       cameras: [],
       activeSpeaker: null,
       focusedTile: null,
+      galleryPage: 0,
       quality: 'unknown',
       rttMs: null,
       lossPct: null,
@@ -1352,6 +1448,7 @@ class VoiceEngine {
         this.setSelfSpeaking(useVoice.getState().transmitting); // the mic stays on air across the move
         this.startLevelSpeaking(); // stops itself on the first tick if no mic track is left
         this.active.reset();
+        lastSpoke.clear();
         for (const set of this.viewers.values()) set.clear();
         for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
         this.refreshStreams();
@@ -1565,7 +1662,7 @@ class VoiceEngine {
 
   // ------------------------------------------------------------ cameras
 
-  /** Speaking rings now; the active speaker for video only after 2 s of speech (lib/activeSpeaker.ts). */
+  /** Speaking rings now; the active speaker for video only after 800 ms of speech (lib/activeSpeaker.ts). */
   private syncSpeaking(): void {
     const local = this.room?.localParticipant.identity ?? null;
     const me = this.myId() || null;
@@ -1613,6 +1710,37 @@ class VoiceEngine {
     this.syncSpeaking();
   }
 
+  /**
+   * The auto-mute timer follows my mic (lib/autoMute.ts): armed while a published mic is open in
+   * voice activation; my local VAD (`selfSpeaking`, the ring's own signal) resets it. The native
+   * call audio has no local VAD here — never armed there.
+   */
+  private syncAutoMute(): void {
+    this.autoMute.update(this.autoMuteArmed(), this.selfSpeaking, prefs().autoMuteSec);
+  }
+
+  private autoMuteArmed(): boolean {
+    const v = useVoice.getState();
+    const live = this.room !== null && this.micTrack !== null && this.nativeAudio === null;
+    return autoMuteArmed({ live, mode: this.micMode(), muted: v.muted, deafened: v.deafened, serverMuted: v.serverMuted, canSpeak: v.canSpeak });
+  }
+
+  /** Silent for the whole period: mute like the button (sound, voice-state), say why, offer to undo. */
+  private onAutoMute(sec: Exclude<AutoMuteSec, 0>): void {
+    if (this.selfSpeaking || !this.autoMuteArmed()) return;
+    log.info(`voice: auto-mute after ${sec} s of silence`);
+    this.toggleMute();
+    const room = this.room;
+    useToasts.getState().push('info', t(AUTO_MUTE_TOAST[sec]), {
+      label: t('autoMute.unmute'),
+      run: () => {
+        // Still in that call and still muted by us (not deafened since): turn the mic back on.
+        const s = useVoice.getState();
+        if (this.room === room && s.muted && !s.deafened && !s.serverMuted) this.toggleMute();
+      },
+    });
+  }
+
   private resetSpeaking(): void {
     this.remoteSpeakers = [];
     this.stopLevelSpeaking();
@@ -1622,7 +1750,10 @@ class VoiceEngine {
   }
 
   private onSpeaking(speaking: Record<string, boolean>): void {
+    // «Last spoke at» for the call grid (ADR-0066 §2): speaking starts only, outside the store.
+    const starts = speakingStarts(useVoice.getState().speaking, speaking);
     setVoice({ speaking });
+    lastSpoke.mark(starts, performance.now());
     this.active.update(speaking);
   }
 
@@ -1654,7 +1785,34 @@ class VoiceEngine {
     if (!same || focusGone) setVoice({ ...(same ? {} : { cameras }), ...(focusGone ? { focusedTile: null } : {}) });
     // Last camera gone and no stream on the stage: back to the chat.
     if (!this.anyCamera() && st.stage === 'expanded' && !st.watching) setVoice({ stage: 'pip' });
+    // The first remote camera of the call turned on (not the ones already on when I joined).
+    const first = cameras[0];
+    if (this.camerasPrimed && st.cameras.length === 0 && first && st.stage === 'pip' && !st.watching) this.firstCamera(first.userId);
     this.applyCameras();
+  }
+
+  /**
+   * ADR-0066 §3: the first remote camera turned on while the call view is closed. A (nearly) empty
+   * chat — the same rule as a new stream (defaultStage) — opens the view; a busy one gets a toast
+   * «Анна: включена камера · Смотреть».
+   */
+  private firstCamera(userId: string): void {
+    const { roomId, workspaceId } = useVoice.getState();
+    if (!roomId) return;
+    if (defaultStage(roomId) === 'expanded') {
+      setVoice({ stage: 'expanded', videoPip: true });
+      this.applyWatching();
+      return;
+    }
+    const name = memberName(workspaceId, userId);
+    useToasts.getState().push('info', t('video.cameraOnToast', { name }), {
+      label: t('video.watchAction'),
+      run: () => {
+        if (useVoice.getState().roomId !== roomId) return;
+        if (workspaceId) useUi.getState().openRoom(workspaceId, roomId);
+        this.showVideo();
+      },
+    });
   }
 
   private inRoom(userId: string): boolean {
@@ -1689,14 +1847,25 @@ class VoiceEngine {
     const room = this.room;
     if (!room) return;
     const p = prefs();
-    const wanted = cameraWanted(useVoice.getState().cameras.map((c) => c.userId), { hidden: p.hiddenVideo, saveTraffic: p.saveTraffic, primary: this.primaryCamera(), me: this.myId() });
+    const shown = this.shownCams.ids();
+    const wanted = cameraWanted(useVoice.getState().cameras.map((c) => c.userId), { hidden: p.hiddenVideo, saveTraffic: p.saveTraffic, primary: this.primaryCamera(), me: this.myId(), shown });
     for (const rp of room.remoteParticipants.values()) {
       const pub = rp.getTrackPublication(Track.Source.Camera);
       if (!pub) continue;
-      const on = wanted.has(userIdOf(rp.identity)) && !pub.isMuted;
+      const userId = userIdOf(rp.identity);
+      const on = wanted.has(userId) && !pub.isMuted;
       this.subscribe(pub, on);
-      if (on) pub.setVideoQuality(p.saveTraffic ? VideoQuality.MEDIUM : VideoQuality.HIGH);
+      // A 16+ gallery page asks for 360p at most (ADR-0066 §4); adaptive stream picks below the cap.
+      if (on) pub.setVideoQuality(p.saveTraffic || this.shownCams.quality(userId) === 'medium' ? VideoQuality.MEDIUM : VideoQuality.HIGH);
     }
+  }
+
+  /**
+   * A camera <video> of `userId` is on screen (lib/media/cameraShown.ts): subscribe to it at most
+   * at `quality`. Call the returned function when the element goes; the subscription lingers 3 s.
+   */
+  showCamera(userId: string, quality: ShownQuality): () => void {
+    return this.shownCams.claim(userId, quality);
   }
 
   /** Remote camera track of a user in my room (subscribed), for a tile. */
@@ -1709,9 +1878,22 @@ class VoiceEngine {
   focusTile(userId: string | null): void {
     const st = useVoice.getState();
     const focusedTile = userId !== null && st.focusedTile === userId ? null : userId;
-    setVoice({ focusedTile, watching: null, stage: 'expanded' });
+    this.pinTile(focusedTile);
+  }
+
+  /**
+   * Pin `userId` (no toggle) and open the call view: large in «Спикер», first on page 1 in the
+   * gallery (ADR-0066 §1). Also the sidebar's camera icon (§3).
+   */
+  pinTile(userId: string | null): void {
+    setVoice({ focusedTile: userId, watching: null, stage: 'expanded', ...(userId !== null ? { galleryPage: 0, videoPip: true } : {}) });
     this.applyWatching();
     this.applyCameras();
+  }
+
+  /** Gallery page flip (clamped by the view; subscriptions follow the tiles with a 3 s linger). */
+  setGalleryPage(page: number): void {
+    if (useVoice.getState().galleryPage !== page) setVoice({ galleryPage: Math.max(0, page) });
   }
 
   /** Opens the camera grid (the stream, if one is watched, stays the main picture). */
@@ -1743,7 +1925,19 @@ class VoiceEngine {
     for (const el of track.detach()) el.remove();
   }
 
+  private nativeControls(): HostAudioControls {
+    const v = useVoice.getState(); const p = prefs();
+    const call = useCall.getState().call;
+    const ids = call ? [call.callerId, call.calleeId] : [];
+    const userVolumes = Object.fromEntries(ids.filter(audioUUID).map(id => {
+      const audio = remoteAudio({ ...p, deafened: v.deafened, userId: id, stream: false, streamVolume: {} });
+      return [id, audio.muted ? 0 : audio.volume];
+    }));
+    return { muted: v.muted || v.serverMuted, deafened: v.deafened, volume: Math.max(0,Math.min(1,p.outputVolume)), userVolumes };
+  }
+
   private applyVolumes(): void {
+    this.nativeAudio?.control(this.nativeControls());
     this.audioOut.applyAll();
   }
 
@@ -1770,6 +1964,7 @@ class VoiceEngine {
 
   /** Mic test in settings (works outside a call too). */
   async startMicTest(): Promise<void> {
+    if (this.nativeAudio) return; // Native CallKit audio is the sole capture owner.
     this.micTesting = true;
     await this.ensureMic();
     this.applyDenoise();
@@ -2123,6 +2318,7 @@ class VoiceEngine {
    *    The track stays published, so opening is instant.
    */
   private applyTransmit(): void {
+    if (this.nativeAudio) { this.autoMute.cancel(); this.nativeAudio.control(this.nativeControls()); return; }
     const t = this.micTrack;
     const d = this.decision();
     // Closing is the latency-critical edge (PTT key-up): silence the sender first, synchronously —
@@ -2133,6 +2329,7 @@ class VoiceEngine {
     this.applyDuck(); // PTT pressed / deafen: the duck follows at once, not at the next level tick
     setVoice({ transmitting: d.transmitting && t !== null });
     this.setSelfSpeaking(d.speaking && t !== null);
+    this.syncAutoMute();
     if (!t) return;
     // `isMuted` flips only after LiveKit's async mute lock: while a mute/unmute is in flight,
     // wait for it and re-evaluate, so mute→unmute in quick succession ends in the state the
@@ -2352,6 +2549,14 @@ class VoiceEngine {
     this.moveTimer = null;
   }
 
+  /** Idempotent system controls reuse the same moderator/deafen/capture rules as the UI. */
+  setMuted(muted: boolean): boolean {
+    const v = useVoice.getState();
+    if ((v.muted || v.deafened || v.serverMuted) !== muted) this.toggleMute();
+    const next = useVoice.getState();
+    return (next.muted || next.deafened || next.serverMuted) === muted;
+  }
+
   toggleMute(): void {
     const v = useVoice.getState();
     // A moderator mute (VoiceState.server_muted) can't be lifted by the user: the server removed
@@ -2385,7 +2590,7 @@ class VoiceEngine {
 
   /** Optimistic voice state for everyone (docs/05: PATCH /api/voice/self). */
   private pushSelfState(): void {
-    if (!this.room) return;
+    if (!this.room && !this.nativeAudio) return;
     const v = useVoice.getState();
     const musician = prefs().musicianMode;
     void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician }).catch((e: unknown) => {
@@ -2402,7 +2607,7 @@ class VoiceEngine {
   /** Server view of our voice state differs from local (e.g. PATCH raced the join) → push again. */
   reconcileSelfState(s: { roomId: string; muted: boolean; deafened: boolean; serverMuted?: boolean; musician?: boolean }): void {
     const v = useVoice.getState();
-    if (!this.room || s.roomId !== this.roomId) {
+    if ((!this.room && !this.nativeAudio) || s.roomId !== this.roomId) {
       // Not where I am connected (docs/09 #71): the server may have lost this device.
       if (this.room && this.roomId) this.scheduleSelfCheck();
       return;

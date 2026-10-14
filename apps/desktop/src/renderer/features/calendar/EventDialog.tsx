@@ -32,7 +32,8 @@ import { myUserId } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { MEMBERS_COLUMN_MIN, type EventDraftInit } from '../../stores/ui';
 import { useMediaQuery } from '../../lib/useMediaQuery';
-import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { FormerChip } from '../people/MemberBits';
 import { memberItems } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
 import { REPEAT_LABEL } from './EventCard';
@@ -469,7 +470,8 @@ function Chip({
   onRemove: () => void;
 }): ReactNode {
   const name = useMemberName(workspaceId, userId);
-  const avatar = useWorkspaces((s) => (userId ? (s.byId[workspaceId]?.members[userId]?.user?.avatarFileId ?? '') : ''));
+  const avatar = useWorkspaces((s) => (userId ? (s.byId[workspaceId]?.members[userId]?.user?.avatarFileId ?? s.users[userId]?.avatarFileId ?? '') : ''));
+  const former = !!useFormerInfo(workspaceId, userId);
   const label = userId ? name : email;
   return (
     <li
@@ -485,13 +487,14 @@ function Chip({
         className="flex min-w-0 items-center gap-1.5 rounded-full pr-1"
       >
         {userId ? (
-          <Avatar userId={userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
+          <Avatar userId={userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} former={former} />
         ) : (
           <span className="grid size-5 place-items-center rounded-full bg-[var(--color-fill-hover)]">
             <Mail className="size-3" aria-hidden />
           </span>
         )}
         <span className="max-w-40 truncate text-fg">{label}</span>
+        {userId ? <FormerChip workspaceId={workspaceId} userId={userId} /> : null}
         {required ? null : <span className="text-muted">{t('cal.optional')}</span>}
       </button>
       <button type="button" onClick={onRemove} aria-label={t('cal.f.remove', { name: label })} className="grid size-6 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">

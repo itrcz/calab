@@ -174,7 +174,7 @@ func (h *Handlers) createTemp(w http.ResponseWriter, r *http.Request) error {
 		if !bits.Has(perm.InviteGuests) {
 			return httpx.Forbidden("INVITE_GUESTS required for a link that admits guests (guests=false: members only)")
 		}
-		if _, err := auth.VerifiedUser(ctx, h.db.Q, me); err != nil { // invitations need a verified email (ADR-0023)
+		if _, err := h.EmailGate.User(ctx, h.db.Q, me); err != nil { // invitations need a verified email (ADR-0023, ADR-0065)
 			return err
 		}
 	}
@@ -344,7 +344,7 @@ func (h *Handlers) listArchived(w http.ResponseWriter, r *http.Request, wsID uui
 	out := &v1.ListRoomsResponse{Rooms: make([]*v1.Room, 0, len(rows))}
 	for _, row := range rows {
 		ovs := byRoom[row.Room.ID]
-		if !perm.ComputeIn(m, row.Room.Restricted, pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
+		if !perm.ComputeIn(m, perm.FlagsOf(row.Room), pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
 			continue
 		}
 		pb := pbconv.Room(row.Room, defaults, ovs)

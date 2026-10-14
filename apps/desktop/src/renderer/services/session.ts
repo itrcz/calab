@@ -1,3 +1,4 @@
+import { formPageCode } from './boardForms';
 import { installIdentityDenials } from './identity';
 import { useIdentity } from '../stores/identity';
 import { resetIdentityGate } from '../lib/api/identityGate';
@@ -7,6 +8,7 @@ import type { AuthSession, LogoutReason } from '../../shared/ipc';
 import { log } from '../lib/log';
 import { useDms } from '../stores/dms';
 import { useNotes } from '../stores/notes';
+import { useRoomPreviews } from '../stores/roomPreviews';
 import { useStickers } from '../stores/stickers';
 import { useBots } from '../stores/bots';
 import { useCalendar } from '../stores/calendar';
@@ -110,7 +112,7 @@ export async function bootstrap(): Promise<void> {
   // Web /e/<id>?t=… (a meeting link of an invited address, ADR-0038): the public meeting page, not
   // the in-app card — the token says who answers, not the session.
   const eventPage = takeEventPage();
-  const webLink = platform.kind === 'web' && !eventPage ? await platform.app.takeDeepLink() : null;
+  const webLink = platform.kind === 'web' && !eventPage && !formPageCode() ? await platform.app.takeDeepLink() : null;
   const landed = webLink !== null && showLinkLanding(webLink);
 
   try {
@@ -148,6 +150,8 @@ export function beginSession(s: AuthSession): void {
     serverUrl: s.serverUrl,
     sessionId: s.sessionId,
     me,
+    emailVerificationOptional: s.emailVerificationOptional === true,
+    emailInvitePending: s.emailInvitePending === true,
     ready: false,
     tooManySessions: false,
     loggedOutReason: null,
@@ -216,6 +220,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useInbox.getState().reset();
   useDms.getState().reset();
   useNotes.getState().reset();
+  useRoomPreviews.getState().reset();
   useStickers.getState().reset();
   useBots.getState().reset();
   useCalendar.getState().reset();
@@ -231,7 +236,18 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useUi.getState().openDialog(null);
   useSession
     .getState()
-    .set({ status: 'anon', authority: null, me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });
+    .set({
+      status: 'anon',
+      authority: null,
+      me: null,
+      sessionId: '',
+      ready: false,
+      gateway: 'idle',
+      loggedOutReason: reason,
+      emailVerificationOptional: false,
+      emailInvitePending: false,
+      billingSelfServe: false,
+    });
   const notice = logoutToastKey(reason);
   if (notice) toast.info(t(notice));
 }

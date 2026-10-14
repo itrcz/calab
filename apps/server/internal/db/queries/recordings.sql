@@ -169,11 +169,35 @@ WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
 
 -- name: SetRecordingResult :one
--- The result job ended: ready (with whatever GPTunneL gave) or unavailable.
-UPDATE room_recordings SET summary = $2, language = $3, transcript_json = $4, result_state = $5,
-    result_next_at = NULL, updated_at = now()
-WHERE id = $1 AND result_state = 'pending' AND deleted_at IS NULL
+-- The result job ended: ready (with whatever GPTunneL gave) or unavailable. transcript_text is
+-- the segments' texts one per line (unified search, ADR-0062; same expression as
+-- BackfillTranscriptText); NULL without a transcript.
+UPDATE room_recordings SET summary = sqlc.arg('summary'), language = sqlc.arg('language'),
+    transcript_json = sqlc.narg('transcript_json')::jsonb,
+    transcript_text = CASE WHEN sqlc.narg('transcript_json')::jsonb IS NULL THEN NULL ELSE coalesce((
+        SELECT string_agg(s.seg->>'text', E'\n' ORDER BY s.ord)
+        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(sqlc.narg('transcript_json')::jsonb) = 'array'
+                                       THEN sqlc.narg('transcript_json')::jsonb ELSE '[]'::jsonb END)
+             WITH ORDINALITY AS s (seg, ord)), '') END,
+    result_state = sqlc.arg('result_state'), result_next_at = NULL, updated_at = now()
+WHERE id = sqlc.arg('id') AND result_state = 'pending' AND deleted_at IS NULL
 RETURNING *;
+
+-- name: BackfillTranscriptText :execrows
+-- One batch of the transcript_text backfill (00064): results stored before the column existed.
+-- SKIP LOCKED: replicas share the work; a row is never converted twice (transcript_text IS NULL).
+UPDATE room_recordings r SET transcript_text = coalesce((
+        SELECT string_agg(s.seg->>'text', E'\n' ORDER BY s.ord)
+        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.transcript_json) = 'array'
+                                       THEN r.transcript_json ELSE '[]'::jsonb END)
+             WITH ORDINALITY AS s (seg, ord)), '')
+WHERE r.id IN (
+    SELECT x.id FROM room_recordings x
+    WHERE x.transcript_json IS NOT NULL AND x.transcript_text IS NULL
+    ORDER BY x.id
+    LIMIT sqlc.arg('lim')
+    FOR UPDATE SKIP LOCKED
+);
 
 -- name: RetryRecordingResult :exec
 UPDATE room_recordings SET result_attempts = result_attempts + 1, result_next_at = $2, updated_at = now()
@@ -201,7 +225,7 @@ RETURNING *;
 UPDATE room_recordings SET deleted_at = now(), deleted_by = sqlc.narg('deleted_by')::uuid,
     status = CASE WHEN status IN ('uploading', 'processing') THEN 'failed' ELSE status END,
     error = CASE WHEN status IN ('uploading', 'processing') THEN 'deleted' ELSE error END,
-    next_at = NULL, summary = '', language = '', transcript_json = NULL,
+    next_at = NULL, summary = '', language = '', transcript_json = NULL, transcript_text = NULL,
     result_state = CASE WHEN result_state = 'pending' THEN 'unavailable' ELSE result_state END,
     result_next_at = NULL, file_id = NULL, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL AND status NOT IN ('pending', 'recording')
@@ -238,10 +262,3 @@ INSERT INTO message_attachments (message_id, file_id, position, forwarded)
 SELECT m.id, sqlc.arg('file_id')::uuid, 0, true FROM messages m
 WHERE m.forwarded_from = sqlc.arg('message_id')::uuid AND m.deleted_at IS NULL
 ON CONFLICT DO NOTHING;
-
--- name: RecordingVisibleInRoom :one
--- The card of the recording was forwarded into the room and that copy is live (ADR-0033 §4).
-SELECT EXISTS (
-    SELECT 1 FROM messages
-    WHERE forwarded_from = sqlc.arg('message_id')::uuid AND room_id = sqlc.arg('room_id')::uuid AND deleted_at IS NULL
-)::boolean;

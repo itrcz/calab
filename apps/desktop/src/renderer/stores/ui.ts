@@ -1,12 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { emptyHistory, pushLoc, step, type History, type Loc } from '../lib/roomHistory';
+import { emptyPhoneNav, openChat, visibleRoom, type PhoneNav } from '../lib/phoneNav';
 import { HOME } from './dms';
 import { RoomType } from '@calaba/protocol';
 import { useRooms } from './rooms';
 import type { LightboxImage } from '../lib/lightbox';
 import { useBoardsUi } from './boardsUi';
 import { useWebApps } from './webApps';
+import { leaveMail } from './mailUi';
+import { leaveDisk } from './diskUi';
+import { leaveWiki } from './wikiUi';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -22,8 +26,13 @@ export type Dialog =
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
   | { kind: 'camera-preview' }
-  /** The image viewer; `images` are the message's images (←/→), `index` the one opened. */
-  | { kind: 'image'; images: LightboxImage[]; index: number }
+  /** The image viewer; `images` are the message's images (←/→), `index` the one opened; `inChat`: «Показать в чате». */
+  | { kind: 'image'; images: LightboxImage[]; index: number; inChat?: { roomId: string; messageId: string } }
+  /**
+   * A meeting recording opened from a search hit at a segment (ADR-0062 §4): the player and the
+   * summary from its card message (messageId, '' = gone), the transcript.
+   */
+  | { kind: 'transcript'; roomId: string; recordingId: string; messageId: string; offsetMs: number; startedAt: number }
   /** ⌘K search; `query` pre-fills it (typed into the room header's search field). */
   | { kind: 'quick-switcher'; query?: string }
   /** «Новое сообщение»: pick a person to write to (ADR-0020). */
@@ -42,7 +51,12 @@ export type Dialog =
    */
   | { kind: 'event'; workspaceId: string; eventKey?: string; draft?: EventDraftInit }
   /** Add (no `appId`) / edit a web app of the workspace (ADR-0050 §3). */
-  | { kind: 'web-app'; workspaceId: string; appId?: string };
+  | { kind: 'web-app'; workspaceId: string; appId?: string }
+  /**
+   * «Тариф и оплата» (ADR-0080): the plans side by side and the one pay path; `welcome` — the step
+   * right after creating the workspace («Начать бесплатно» first).
+   */
+  | { kind: 'billing-plans'; workspaceId: string; welcome?: boolean };
 
 /** Prefill of the meeting dialog (features/calendar/EventDialog.tsx). */
 export interface EventDraftInit {
@@ -69,9 +83,12 @@ interface UiState {
   /** Narrow window (< MEMBERS_COLUMN_MIN): the members list floats over the chat; not persisted. */
   membersOverlay: boolean;
   setMembersOverlay: (open: boolean) => void;
-  /** Phone layout (ADR-0021): the rail + room column slide in from the left; not persisted. */
-  navDrawer: boolean;
-  setNavDrawer: (open: boolean) => void;
+  /**
+   * Phone layout (ADR-0073): the tab and the stack of pushed screens; not persisted. Kept in step
+   * with the browser history and the feature flags by services/phoneNav.ts.
+   */
+  phone: PhoneNav;
+  setPhone: (update: (nav: PhoneNav) => PhoneNav) => void;
   /** Reply target per room. */
   replyTo: Record<string, string | undefined>;
   editing: string | null;
@@ -134,7 +151,12 @@ export const useUi = create<UiState>()(
       dialog: null,
       membersPanel: true,
       membersOverlay: false,
-      navDrawer: false,
+      phone: emptyPhoneNav(),
+      setPhone: (update) =>
+        set((s) => {
+          const phone = update(s.phone);
+          return phone === s.phone ? {} : { phone };
+        }),
       replyTo: {},
       editing: null,
       sidebarWidth: SIDEBAR_DEFAULT,
@@ -154,7 +176,10 @@ export const useUi = create<UiState>()(
       openCalendarDay: (day, eventKey) =>
         set((s) => {
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
-          return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), navDrawer: false, membersOverlay: false, editing: null };
+          leaveMail();
+          leaveDisk();
+          leaveWiki();
+          return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), membersOverlay: false, editing: null };
         }),
       selectCalEvent: (calEvent) => set({ calEvent }),
       closeCalendar: () => set({ calDay: null, calEvent: null }),
@@ -162,6 +187,7 @@ export const useUi = create<UiState>()(
         set((s) => {
           // A click on a workspace (the open one too) leads back to its rooms (ADR-0050 §3).
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+          leaveMail();
           return {
           calDay: null,
           calEvent: null,
@@ -175,6 +201,9 @@ export const useUi = create<UiState>()(
           // a web app (ADR-0050).
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
           if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+          leaveMail();
+          leaveDisk();
+          leaveWiki();
           return {
           calDay: null,
           calEvent: null,
@@ -182,7 +211,8 @@ export const useUi = create<UiState>()(
           lastRoom: { ...s.lastRoom, [wsId]: roomId },
           editing: null,
           membersOverlay: false,
-          navDrawer: false,
+          // Phone (ADR-0073 §1): the room / DM is pushed over its tab's root.
+          phone: s.phone.on ? openChat(s.phone, wsId === HOME ? { kind: 'dm', room: roomId } : { kind: 'room', ws: wsId, room: roomId }) : s.phone,
           history: pushLoc(s.history, here(s), { ws: wsId, room: roomId }),
           };
         }),
@@ -196,11 +226,9 @@ export const useUi = create<UiState>()(
           else collapsed[id] = true;
           return { collapsed };
         }),
-      // A dialog opened from the phone drawer replaces it (one layer at a time, ADR-0021).
-      openDialog: (dialog) => set(dialog ? { dialog, navDrawer: false } : { dialog }),
+      openDialog: (dialog) => set({ dialog }),
       toggleMembers: () => set((s) => ({ membersPanel: !s.membersPanel })),
-      setMembersOverlay: (membersOverlay) => set(membersOverlay ? { membersOverlay, navDrawer: false } : { membersOverlay }),
-      setNavDrawer: (navDrawer) => set(navDrawer ? { navDrawer, membersOverlay: false } : { navDrawer }),
+      setMembersOverlay: (membersOverlay) => set({ membersOverlay }),
       setReply: (roomId, messageId) => set((s) => ({ replyTo: { ...s.replyTo, [roomId]: messageId } })),
       setEditing: (editing) => set({ editing }),
     }),
@@ -246,6 +274,9 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   const r = step(s.history, here(s), dir, reachable);
   if (!r) return {};
   if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+  leaveMail();
+  leaveDisk();
+  leaveWiki();
   const { ws, room } = r.to;
   return {
     calDay: null,
@@ -255,14 +286,15 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
     lastRoom: room ? { ...s.lastRoom, [ws]: room } : s.lastRoom,
     editing: null,
     membersOverlay: false,
-    navDrawer: false,
   };
 }
 
 export const canGoBack = (s: UiState): boolean => s.history.back.length > 0;
 export const canGoForward = (s: UiState): boolean => s.history.forward.length > 0;
 
+/** The room on screen: on a phone only while its screen is on top (the room list shows none). */
 export function activeRoomId(): string | null {
   const s = useUi.getState();
+  if (s.phone.on) return visibleRoom(s.phone);
   return s.activeWorkspaceId ? (s.lastRoom[s.activeWorkspaceId] ?? null) : null;
 }

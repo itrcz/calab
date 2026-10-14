@@ -250,7 +250,7 @@ func (h *Handlers) setOrder(w http.ResponseWriter, r *http.Request) error {
 		for _, row := range updated {
 			// A room the caller cannot see (a restricted room, ADR-0029) is not theirs to
 			// place, and the answer must not reveal it.
-			if !perm.ComputeIn(me, row.Restricted, pbconv.OverrideTargets(byRoom[row.ID])).Has(perm.ViewRoom) {
+			if !perm.ComputeIn(me, perm.FlagsOf(row), pbconv.OverrideTargets(byRoom[row.ID])).Has(perm.ViewRoom) {
 				return httpx.Validation("rooms", "room "+row.ID.String()+" not found in this workspace")
 			}
 			resp.Rooms = append(resp.Rooms, pbconv.Room(row, defaults, byRoom[row.ID]))

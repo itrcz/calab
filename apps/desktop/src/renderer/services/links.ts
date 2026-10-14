@@ -3,6 +3,7 @@ import { HOME } from '../stores/dms';
 import { setPendingInvite } from '../stores/invite';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
+import { parseMailLink } from '../features/mail/mailLink';
 
 /**
  * Invite links: `https://<server>/join/<code>` (shareable: opens the web client, and the
@@ -151,6 +152,13 @@ export function openOwnLink(href: string): boolean {
 }
 
 export function handleDeepLink(url: string): void {
+  // Mail links (ADR-0088 §12): `calab://mail/<payload>` carries a password — parsed here, never
+  // logged; the section and its form are loaded lazily (desktop only, a no-op elsewhere).
+  const mail = parseMailLink(url);
+  if (mail) {
+    void import('../features/mail/links').then((m) => m.openMailLink(mail)).catch(() => undefined);
+    return;
+  }
   const msg = parseMessageLink(url);
   if (msg) {
     void import('./messageLink').then((m) => m.openMessageLink(msg.roomId, msg.messageId)).catch(() => undefined);

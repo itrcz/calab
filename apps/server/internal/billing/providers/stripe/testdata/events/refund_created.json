@@ -1,0 +1,28 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791561600,
+  "data": {
+    "object": {
+      "amount": 300,
+      "charge": "ch_FIXTURE0002",
+      "currency": "usd",
+      "id": "re_FIXTURE0001",
+      "metadata": {
+        "calab_account_id": "3ec8d17f-f6cb-4706-801f-f21d2fc8a7d0"
+      },
+      "object": "refund",
+      "payment_intent": "pi_FIXTURE0003",
+      "reason": "requested_by_customer",
+      "status": "succeeded"
+    }
+  },
+  "id": "evt_FIXTURE_refund_created",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 1,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "refund.created"
+}

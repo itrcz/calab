@@ -1,0 +1,121 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Achievements (ADR-0061, amendment 1): every workspace keeps its own catalog (at most 100),
+// managed by MANAGE_WORKSPACE (the owner and admins) in the workspace settings; people with
+// MANAGE_MEMBERS grant achievements to members of that workspace with a short «for what» note.
+// A grant may post a card into the workspace's general chat (SystemMessage.achievement). The
+// member's live count is WorkspaceMember.achievement_count; a change comes as
+// WORKSPACE_MEMBER_UPDATE. A change of the catalog comes as WORKSPACE_ACHIEVEMENTS_UPDATE (to
+// every member; clients refetch the list).
+
+// An achievement of a workspace catalog.
+message Achievement {
+  reserved 4;
+  reserved "image_url";
+  string id = 1;
+  string title = 2;       // 1..60 characters
+  string description = 3; // 0..200 characters
+  uint32 image_size = 5;  // bytes of the picture
+  uint32 width = 6;       // 512
+  uint32 height = 7;      // 512
+  int32 position = 8;     // catalog order, ascending
+  // Set = archived: cannot be granted any more; granted ones stay visible (profiles, cards).
+  google.protobuf.Timestamp archived_at = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+  string workspace_id = 12;
+  // The picture: a file of the workspace (GET /api/files/{file_id}), a 512x512 WebP with a
+  // transparent background made by the server; any member of the workspace (guests too) reads
+  // it. Empty = no picture (an entry moved from the former host catalog whose picture is still
+  // being copied, or was lost).
+  string file_id = 13;
+  // Live grants of it in the workspace (revoked ones are not counted).
+  uint32 granted_count = 14;
+  // It was ever granted (revoked grants included): DELETE answers 409 ACHIEVEMENT_IN_USE, archive
+  // it instead.
+  bool in_use = 15;
+}
+
+// GET /api/workspaces/{id}/achievements (any member of the workspace, guests and bots too): the
+// workspace's catalog by position, archived ones included (archived_at set) so that granted
+// achievements and old cards still resolve; clients offer only the live ones for granting. The
+// response has an ETag that changes with any change of the catalog (If-None-Match -> 304).
+message ListAchievementsResponse {
+  repeated Achievement achievements = 1;
+}
+
+// POST /api/workspaces/{id}/achievements -> 201 Achievement. MANAGE_WORKSPACE (bot tokens: 403
+// BOT_NOT_ALLOWED). file_id: a PNG or WebP the caller uploaded to this workspace (POST
+// /api/files), at most 4 MB, each side 128..2048 px, with an alpha channel and a transparent
+// background (else 422 reason IMAGE_NEEDS_ALPHA); the server crops it to the visible part
+// (+4 % margin) and makes a new 512x512 WebP file with alpha in the workspace quota (the upload
+// itself is left to the orphan cleanup). title 1..60, description 0..200 characters. A new
+// achievement goes to the end of the catalog. 409 CONFLICT reason ACHIEVEMENT_LIMIT (used / limit)
+// when the workspace has 100 already.
+message CreateAchievementRequest {
+  string title = 1;
+  string description = 2;
+  string file_id = 3;
+}
+
+// PATCH /api/achievements/{id} -> Achievement. MANAGE_WORKSPACE in the achievement's workspace
+// (others: 404 when not a member, 403 without the right; bot tokens 403 BOT_NOT_ALLOWED). Unset
+// fields are left unchanged; file_id replaces the picture by the rules of the create.
+// position: 0..1000000. DELETE /api/achievements/{id} -> 204; 409 reason ACHIEVEMENT_IN_USE once
+// it was granted (revoked grants included: archive it instead).
+message UpdateAchievementRequest {
+  optional string title = 1;
+  optional string description = 2;
+  optional int32 position = 3;
+  optional bool archived = 4;
+  optional string file_id = 5;
+}
+
+// The catalog of the workspace changed (an achievement created, edited, archived, reordered or
+// deleted): clients refetch GET /api/workspaces/{id}/achievements. To every member.
+message WorkspaceAchievementsUpdate {
+  string workspace_id = 1;
+}
+
+// A grant of an achievement to a member of a workspace.
+message MemberAchievement {
+  string id = 1;
+  string workspace_id = 2;
+  string user_id = 3; // the recipient
+  string achievement_id = 4;
+  string note = 5;       // «for what», 1..120 characters
+  string granted_by = 6; // user id; empty = that account is gone
+  google.protobuf.Timestamp granted_at = 7;
+  // The card in the general chat (SystemMessage.achievement) and its room; empty = no card
+  // (announce = false or the workspace has no text room).
+  string message_id = 8;
+  string room_id = 9;
+}
+
+// POST /api/workspaces/{id}/members/{userId}/achievements -> MemberAchievement.
+// MANAGE_MEMBERS (bot tokens: 403 BOT_NOT_ALLOWED). The recipient is a member of the workspace,
+// not a guest, not a bot (422) and not the caller (422 reason SELF_GRANT); the achievement is one
+// of this workspace's catalog and is not archived (422). note: 1..120 characters after trimming,
+// required (422).
+// announce = true posts the card (SystemMessage.achievement, author = the recipient, who is
+// mentioned by it) into the workspace's announcement room — its first text room, a non-private
+// one preferred, as for birthday cards; without a text room the grant succeeds with no card.
+// Proto3 has no default true: clients send announce explicitly.
+// The same achievement may be granted again (the profile shows it as a stack).
+message GrantAchievementRequest {
+  string achievement_id = 1;
+  string note = 2;
+  bool announce = 3;
+}
+
+// GET /api/workspaces/{id}/members/{userId}/achievements: the member's live grants, newest
+// first. Any member of the workspace; a guest only for the members visible to them (the profile
+// rule, ADR-0051; others 404); bots read too.
+// DELETE /api/workspaces/{id}/members/{userId}/achievements/{grantId} revokes a grant
+// (MANAGE_MEMBERS, not bots; 204): it leaves the profile, its card in the chat stays.
+message ListMemberAchievementsResponse {
+  repeated MemberAchievement items = 1;
+}

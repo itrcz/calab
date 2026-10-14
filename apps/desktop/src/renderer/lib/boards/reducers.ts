@@ -1,5 +1,6 @@
 import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist } from '@calaba/protocol';
 import { putChecklist, putChecklists } from './checklists';
+import { mergeMilestones } from './milestones';
 import { byPosition } from './position';
 
 /**
@@ -20,6 +21,9 @@ export interface BoardsData {
   unread: Readonly<Record<string, string>>;
   /** Journal entries that arrived live, per task (the panel merges them with its loaded page). */
   activity: Readonly<Record<string, readonly TaskActivity[]>>;
+  /** Task id → journal entries gone since the panel loaded its page: merged into a newer one or
+   * cancelled out (ADR-0081, TASK_ACTIVITY.replaced_id); the panel hides them. */
+  activityGone: Readonly<Record<string, readonly string[]>>;
   /** Board categories by id (ADR-0058 §1; READY + BOARD_CATEGORY_*). */
   categories: Readonly<Record<string, BoardCategory>>;
   /** Task id → its checklists by position: only tasks opened in the panel (GET /tasks/{id}). */
@@ -37,7 +41,7 @@ export interface CheckCounts {
   done: number;
 }
 
-export const EMPTY_DATA: BoardsData = { boards: {}, tasks: {}, columns: {}, roomTask: {}, unread: {}, activity: {}, categories: {}, checklists: {}, checkCounts: {} };
+export const EMPTY_DATA: BoardsData = { boards: {}, tasks: {}, columns: {}, roomTask: {}, unread: {}, activity: {}, activityGone: {}, categories: {}, checklists: {}, checkCounts: {} };
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -115,7 +119,7 @@ export function setBoardTasks(d: BoardsData, boardId: string, list: readonly Tas
   let counts = d.checkCounts;
   for (const t of sorted) {
     counts = keepCounts(counts, d.tasks[t.id], t);
-    tasks[t.id] = keepViewer(d.tasks[t.id], t);
+    tasks[t.id] = keepMilestones(d.tasks[t.id], keepViewer(d.tasks[t.id], t));
     if (t.roomId) roomTask[t.roomId] = t.id;
     (cols[t.statusId] ??= []).push(t.id);
   }
@@ -142,13 +146,26 @@ function keepViewer(prev: Task | undefined, t: Task): Task {
 }
 
 /**
+ * The task's milestones (ADR-0063) travel in every task: unchanged ones keep their objects, so a
+ * TASK_UPDATE re-renders only the milestone rows / diamonds that changed.
+ */
+function keepMilestones(prev: Task | undefined, t: Task): Task {
+  if (!prev || prev.milestones === t.milestones || (!prev.milestones.length && !t.milestones.length)) return t;
+  const milestones = mergeMilestones(prev.milestones, t.milestones);
+  const p = prev.milestoneProgress;
+  const q = t.milestoneProgress;
+  const milestoneProgress = p && q && p.done === q.done && p.total === q.total ? p : q;
+  return milestones === t.milestones && milestoneProgress === q ? t : { ...t, milestones, milestoneProgress };
+}
+
+/**
  * TASK_CREATE / TASK_UPDATE / a REST answer / an optimistic change. The column lists change only
  * when the status or the position did; an archived task leaves the board.
  */
 export function upsertTask(d: BoardsData, task: Task): Partial<BoardsData> {
   if (task.archivedAt) return removeTask(d, task.id, task);
   const prev = d.tasks[task.id];
-  const next = keepViewer(prev, task);
+  const next = keepMilestones(prev, keepViewer(prev, task));
   const out: Partial<BoardsData> = { tasks: { ...d.tasks, [task.id]: next } };
   const cc = keepCounts(d.checkCounts, prev, next);
   if (cc !== d.checkCounts) out.checkCounts = cc;
@@ -210,11 +227,27 @@ export function setUnread(d: BoardsData, workspaceId: string, ids: readonly stri
   return { unread };
 }
 
-/** TASK_ACTIVITY: one journal row (dedup by id). */
-export function appendActivity(d: BoardsData, a: TaskActivity): Partial<BoardsData> {
-  const list = d.activity[a.taskId] ?? [];
-  if (list.some((x) => x.id === a.id)) return {};
-  return { activity: { ...d.activity, [a.taskId]: [...list, a] } };
+const NO_ACTIVITY: readonly TaskActivity[] = [];
+
+/**
+ * TASK_ACTIVITY: one journal row (dedup by id). replacedId (ADR-0081): a repeated change of a
+ * field merged that row into this one (a newer id, so it sorts last) or, without a row, the
+ * change cancelled out — the old row goes either way. taskId: the event's, for a removal.
+ */
+export function appendActivity(d: BoardsData, a: TaskActivity | undefined, replacedId = '', taskId = ''): Partial<BoardsData> {
+  const tid = a?.taskId || taskId;
+  if (!tid) return {};
+  const prev = d.activity[tid] ?? NO_ACTIVITY;
+  let list = prev;
+  const out: Partial<BoardsData> = {};
+  if (replacedId) {
+    if (list.some((x) => x.id === replacedId)) list = list.filter((x) => x.id !== replacedId);
+    const gone = d.activityGone[tid] ?? [];
+    if (!gone.includes(replacedId)) out.activityGone = { ...d.activityGone, [tid]: [...gone, replacedId] };
+  }
+  if (a && !list.some((x) => x.id === a.id)) list = [...list, a];
+  if (list !== prev) out.activity = { ...d.activity, [tid]: list };
+  return out;
 }
 
 // ------------------------------------------------------------------ board categories (ADR-0058 §1)

@@ -14,6 +14,7 @@ const win = (n: number, extra: Partial<RoomMessages> = {}): RoomMessages => ({
   loading: false,
   loaded: true,
   error: null,
+  base: 0,
   ...extra,
 });
 

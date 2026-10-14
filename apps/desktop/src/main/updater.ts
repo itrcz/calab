@@ -2,7 +2,7 @@ import { app, autoUpdater as nativeUpdater, BrowserWindow, Notification, powerMo
 import log from 'electron-log/main';
 import electronUpdater from 'electron-updater';
 import { IPC, type UpdateStatus } from '../shared/ipc';
-import { downloadPage, feedUrl, httpsFeed } from '../shared/updateFeed';
+import { downloadPage, feedUrl, githubSource, httpsFeed, pinnedSource, sourcePage } from '../shared/updateFeed';
 import { currentServerUrl, refreshSettled } from './auth';
 import { forceQuit } from './appLifecycle';
 import { prepareRestart } from './resumeVoice';
@@ -12,22 +12,24 @@ import { setTrayUpdate } from './tray';
 import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlow';
 
 /**
- * Auto-update (electron-updater, generic provider). The logic lives in updateFlow.ts (pure,
- * unit-tested); this file wires it to Electron.
+ * Auto-update (electron-updater: `github` or `generic` provider). The logic lives in updateFlow.ts
+ * (pure, unit-tested); this file wires it to Electron.
  *
  * - Feeds (security review M3, review pass 3 B1): decided in main, never by the renderer —
- *   shared/updateFeed.ts. Auto-install only from the build-time feed MAIN_VITE_UPDATE_FEED
- *   (release builds: `https://releases.calab.io/`, .env.production; https only). Without it
- *   (dev / self-built) the feed derived from the server (`https://app.X` → `https://releases.X/`,
- *   else `https://<host>/download/`) is used for notify-only. CALABA_UPDATE_URL (runtime) is a
- *   notify-only override: it replaces the feed and disables auto-install.
+ *   shared/updateFeed.ts. Auto-install only from a source pinned at build time, per the
+ *   «Источник обновлений» setting (updateChannel): GitHub Releases of MAIN_VITE_UPDATE_GITHUB
+ *   (default; `itrcz/calab`) or the S3 feed MAIN_VITE_UPDATE_FEED (`https://releases.calab.io/`;
+ *   both in .env.production). Without either (dev / self-built) the feed derived from the server
+ *   (`https://app.X` → `https://releases.X/`, else `https://<host>/download/`) is used for
+ *   notify-only. CALABA_UPDATE_URL (runtime) is a notify-only override: it replaces the feed and
+ *   disables auto-install. Changing the channel re-runs a check (updateChannelChanged).
  * - Checks: 10 s after start, then hourly (± 5 min) — also while an update waits —, «Проверить» in
  *   «О программе», and — at most once per 10 min — after wake from sleep, screen unlock, window
  *   focus and when the network returns (the renderer's `online` event). «Проверять обновления
  *   автоматически» off → only «Проверить».
  * - A call / stream defers nothing: the update downloads, and «Перезапустить» restarts at once —
  *   the relaunched app rejoins the same room / 1:1 call (prepareRestart, main/resumeVoice.ts).
- * - Auto (build feed + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
+ * - Auto (pinned source + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
  *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, an accent bar under the
  *   title bar («Доступна версия X — обновление уже загружено · Перезапустить и обновить», docs/09
  *   #125) and a tray item, install on restart or on quit. A pending download is re-validated
@@ -36,13 +38,14 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  *   replaces it. macOS stages the newest download in Squirrel.Mac only right before installing
  *   (stageSquirrel) — one update, to the newest (updateFlow.ts).
  * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`. When the
- *   update is `installable` (build feed + a platform able to apply it, only the setting is off)
+ *   update is `installable` (pinned source + a platform able to apply it, only the setting is off)
  *   «О программе» offers «Скачать и установить» — the same flow, on request.
  * - Errors go to the log (electron-log) only; the status turns 'error' for «О программе».
  */
 /** Build-time only: a runtime env must not change what gets installed silently. */
 const SIGNED = (import.meta.env.MAIN_VITE_UPDATES_SIGNED ?? '') === '1';
 const BUILD_FEED = httpsFeed(import.meta.env.MAIN_VITE_UPDATE_FEED ?? '');
+const BUILD_GITHUB = githubSource(import.meta.env.MAIN_VITE_UPDATE_GITHUB ?? '');
 /** Runtime notify-only override (testing another feed). */
 const FEED_OVERRIDE = process.env['CALABA_UPDATE_URL'] ?? '';
 
@@ -72,6 +75,12 @@ function notifyAvailable(version: string, page: string): void {
   n.show();
 }
 
+/** The pinned source of the chosen channel; null in dev builds and with CALABA_UPDATE_URL. */
+function pinnedFeed(): ReturnType<typeof pinnedSource> {
+  if (!app.isPackaged || FEED_OVERRIDE.trim()) return null;
+  return pinnedSource(getSettings().updateChannel, BUILD_FEED, BUILD_GITHUB);
+}
+
 function getFlow(): UpdateFlow {
   if (flow) return flow;
   const { autoUpdater } = electronUpdater;
@@ -83,10 +92,13 @@ function getFlow(): UpdateFlow {
     currentVersion: app.getVersion(),
     autoUpdate: () => getSettings().autoUpdate,
     autoCheck: () => getSettings().autoCheckUpdates,
-    // Dev (unpackaged) builds never check; an override replaces the pinned feed (notify-only).
-    buildFeed: app.isPackaged && !FEED_OVERRIDE.trim() ? BUILD_FEED : null,
+    // Dev (unpackaged) builds never check; an override replaces the pinned sources (notify-only).
+    pinnedFeed,
     notifyFeed: () => (app.isPackaged ? feedUrl(currentServerUrl(), FEED_OVERRIDE) : null),
-    downloadPage: () => downloadPage(currentServerUrl(), BUILD_FEED),
+    downloadPage: () => {
+      const pinned = pinnedFeed();
+      return downloadPage(currentServerUrl(), pinned ? sourcePage(pinned) : null);
+    },
     publish: broadcast,
     notify: notifyAvailable,
     log,
@@ -202,4 +214,10 @@ export function downloadUpdate(): boolean {
 /** «Автоматически обновлять» changed. */
 export function updateSettingsChanged(): void {
   getFlow().applySettings();
+}
+
+/** «Источник обновлений» changed: check the new source now (a running download goes on). */
+export function updateChannelChanged(): void {
+  if (process.env['CALABA_VISUAL_TEST'] === '1') return;
+  void getFlow().check();
 }

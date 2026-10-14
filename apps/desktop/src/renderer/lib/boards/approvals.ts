@@ -1,4 +1,4 @@
-import { ApproverState, BoardStatusType, TaskApprovalState, type BoardStatus, type Task } from '@calaba/protocol';
+import { ApproverState, BoardFeature, BoardStatusType, TaskApprovalState, type BoardStatus, type Task } from '@calaba/protocol';
 
 /**
  * Task approvals on the client (ADR-0049 §6, «Контракт для клиента»): the quorum caption, the
@@ -66,6 +66,28 @@ export function approvalBadge(t: Approvals): ApprovalBadge {
   return { kind: 'pending', approved: approvedCount(t), quorum: quorumOf(t) };
 }
 
+/**
+ * The card / row tag (docs/08 «Доски»): «✓ 3/3» filled green once approved, «2/3» outlined orange
+ * while waiting, «✕ 1/3» outlined red after a veto — approvals given of the quorum (capped by it
+ * once approved). Encoded as a primitive ("kind:n:m", "" = no tag) so a card's selector re-renders
+ * the tag only when it changes.
+ */
+export type ApprovalTagKind = 'approved' | 'pending' | 'rejected';
+
+export function approvalTagKey(t: Approvals | undefined): string {
+  const b = t ? approvalBadge(t) : null;
+  if (!t || !b) return '';
+  const m = quorumOf(t);
+  const n = Math.min(approvedCount(t), m);
+  return `${b.kind}:${n}:${m}`;
+}
+
+export function parseApprovalTag(key: string): { kind: ApprovalTagKind; n: number; m: number } | null {
+  const [kind, n, m] = key.split(':');
+  if (kind !== 'approved' && kind !== 'pending' && kind !== 'rejected') return null;
+  return { kind, n: Number(n), m: Number(m) };
+}
+
 /** Edits of the approver list: toggle (≤ 10), the quorum kept valid (≤ the number of approvers). */
 export function toggleApprover(ids: readonly string[], userId: string): string[] {
   if (ids.includes(userId)) return ids.filter((x) => x !== userId);
@@ -105,4 +127,18 @@ export function approvalControls(t: Pick<Task, 'approvers' | 'archivedAt'>, canE
     vote: !!own && seesBoard && !t.archivedAt,
     mine: own?.state ?? ApproverState.UNSPECIFIED,
   };
+}
+
+/** Approvers who already decided (approved or rejected): the votes an edit of the task would drop. */
+export function decidedApprovers(t: Pick<Task, 'approvers'>): Task['approvers'] {
+  return t.approvers.filter((a) => a.state === ApproverState.APPROVED || a.state === ApproverState.REJECTED);
+}
+
+/**
+ * Editing the title, description or attachments resets every vote (ADR-0049 §3) — but only when
+ * the board has APPROVALS on (`disabled` = `Board.disabledFeatures`) and at least one approver has
+ * decided; the UI asks before such an edit. Mirrors the server's `resetApprovals`.
+ */
+export function approvalsWouldReset(t: Pick<Task, 'approvers'>, disabled: readonly BoardFeature[] | undefined): boolean {
+  return !disabled?.includes(BoardFeature.APPROVALS) && decidedApprovers(t).length > 0;
 }

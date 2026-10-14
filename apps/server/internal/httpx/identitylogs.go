@@ -19,7 +19,21 @@ func sensitiveConsentPath(r *http.Request) bool {
 	return false
 }
 
+func sensitiveFormPath(r *http.Request) bool {
+	for _, value := range []string{r.URL.Path, path.Clean(r.URL.Path)} {
+		for _, prefix := range []string{"/api/public/forms", "/api/forms", "/f"} {
+			if value == prefix || strings.HasPrefix(value, prefix+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func safeLogPath(r *http.Request) string {
+	if sensitiveFormPath(r) {
+		return "/forms/{code}"
+	}
 	if sensitiveConsentPath(r) {
 		if strings.HasSuffix(r.URL.Path, "/bind") {
 			return "/api/oauth/requests/{request}/bind"
@@ -33,6 +47,9 @@ func safeLogPath(r *http.Request) string {
 }
 
 func safeLogError(r *http.Request, err error) any {
+	if sensitiveFormPath(r) {
+		return "form request failed"
+	}
 	if sensitiveConsentPath(r) {
 		return "consent request failed"
 	}

@@ -1,40 +1,49 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
-import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Popover from '@radix-ui/react-popover';
+import { CalendarDays, CalendarPlus, CalendarSearch, Ellipsis, ChevronLeft, ChevronRight, Link2, Pencil, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent } from 'react';
+import { CreateButton } from '../../components/CreateButton';
 import { Button, IconButton, Modal, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
-import { dayKeys, daySignature, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
+import { dayKeys, daySignature, involvedIndexes, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
 import { externalSignature, isExternalKey, parseExternalSignature, sharedLabel } from '../../lib/calendar/external';
 import { chunkOf } from '../../lib/calendar/freebusy';
 import { layoutDay } from '../../lib/calendar/layout';
 import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan, formatLongDay, formatMinutes, formatRange, formatTime, monthOf } from '../../lib/calendar/time';
 import { dateTimeFormat } from '../../lib/format';
-import { addPeople } from '../../lib/calendar/people';
+import { addPeople, personColor } from '../../lib/calendar/people';
+import { haptics } from '../../lib/haptics';
 import { useMobile } from '../../lib/mobile';
+import { daySwipeStep, lockAxis, type AxisGesture } from '../../lib/swipeGestures';
 import { calendarAvailable, canEditEvent, copyEventLink, ensureMonth, eventOf, moveOccurrence } from '../../services/calendar';
 import { useCalendar } from '../../stores/calendar';
 import { busySignature, ensureBusy, ensureExternal, loadCalDav, parseBusySignature } from '../../services/freebusy';
 import { entryKey, selectPeople, useFreeBusy } from '../../stores/freebusy';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
-import { useWorkspaces } from '../../stores/workspaces';
+import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { NavButton } from '../shell/MobileShell';
+import { Bar } from '../../components/Bar';
+import { CreateSlot, NavButton, PhoneSearchButton } from '../../components/PhoneHeader';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
 import { ExternalBlock, ExternalChip } from './ExternalEventCard';
 import { useDayDrag } from './dragState';
 import { useToday } from './MiniCalendar';
 import { FindTimePane } from './FindTime';
 import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, PX_PER_MIN } from './gridParts';
+import { MonthPicker } from './MonthPicker';
 import { PeopleBar } from './PeopleBar';
 
 export { HOUR_PX };
 /** Hold near the grid's left / right edge this long while dragging → previous / next day. */
 const EDGE_DWELL_MS = 700;
 const EDGE_PX = 24;
+/** A day swipe never starts this close to the screen's left edge (the shell's / Safari's «back»). */
+const SWIPE_EDGE_PX = 28;
 
 /**
  * Day view (ADR-0038 §7, Apple Calendar): the day in the centre pane instead of the room — hour
@@ -45,8 +54,11 @@ const EDGE_PX = 24;
  * switches the day while dragging); a press-and-drag on the empty grid selects a range for a new
  * meeting, a click proposes 30 minutes. Keys: N new, ←/→ day, T today, Delete cancels.
  * The drag lives in a leaf store (dragState.ts); the calendar store is written once, on drop.
- * «Люди» (ADR-0041 §3): the chips over the grid narrow it to those people's meetings, their busy
- * time I may not see as grey «Занято» blocks; my own external calendar's busy time always shows.
+ * «Люди» (ADR-0041 §3): the chips over the grid switch it to those people's meetings (only theirs —
+ * owner, 05.10; me among them brings mine back), each block dotted in the colours of the selected
+ * people it involves; their busy time I may not see — grey «Занято» blocks (the server decides
+ * what I see: ADR-0041 §1, ADR-0045 §4). My external calendar shows without a selection or with me
+ * selected.
  * «Подобрать время» replaces the grid with the availability columns (FindTime.tsx).
  */
 export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
@@ -72,27 +84,29 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   // not on an answer / title (the blocks subscribe to those themselves).
   const people = useFreeBusy(selectPeople(workspaceId));
   const peopleSet = useMemo(() => (people.length ? new Set(people) : undefined), [people]);
-  // Default scope (owner, 02.10): only meetings I organize or attend; selected people add theirs.
+  // Scope: without a selection only meetings I organize or attend (owner, 02.10); with one — only
+  // the selected people's (owner, 05.10).
   const me = myUserId();
   const mine = me;
   const sig = useCalendar((s) => daySignature(s.occ, dayKeys(s.occ, workspaceId, day, peopleSet, mine)));
   const items = useMemo(() => parseSignature(sig), [sig]);
-  // Busy time from free / busy: the selected people's (what I cannot see as a meeting), else — and
-  // my external calendar's (shown with the filter too). A primitive per person: a busy change of someone
-  // else re-renders nothing.
+  // Busy time from free / busy: the selected people's (what I cannot see as a meeting), else my
+  // external calendar's. A primitive per person: a busy change of someone else re-renders nothing.
   const own = people.length === 0;
+  // My external calendar's events: in my own day, or when I am one of the selected people.
+  const showMine = own || (!!me && people.includes(me));
   const watched = useMemo(() => (!own ? people : me ? [me] : NO_PEOPLE), [own, people, me]);
   useEffect(() => ensureBusy(workspaceId, watched, dayStart(day), dayEnd(day)), [workspaceId, watched, day]);
   const fbSig = useFreeBusy((s) => watched.map((u) => `${u}#${busySignature(s.entries[entryKey(workspaceId, u)], dayStart(day), dayEnd(day))}`).join('¦'));
   // My external calendar's events with their details (ADR-0045 §3) wherever my busy time shows:
   // cards instead of my grey external blocks once the day is loaded.
-  const extOn = useFreeBusy((s) => !!s.caldav?.calendarHref && s.caldav.import);
+  const extOn = useFreeBusy((s) => showMine && !!s.caldav?.calendarHref && s.caldav.import);
   const extLoaded = useFreeBusy((s) => s.externalWs === workspaceId && !!s.externalChunks[chunkOf(dayStart(day))] && !!s.externalChunks[chunkOf(dayEnd(day) - 1)]);
   useEffect(() => {
     if (extOn && !extLoaded) ensureExternal(workspaceId, dayStart(day), dayEnd(day));
   }, [workspaceId, day, extOn, extLoaded]);
-  const extSig = useFreeBusy((s) => (s.externalWs === workspaceId ? externalSignature(s.external[day]) : ''));
-  const extHeld = useFreeBusy((s) => s.externalWs === workspaceId && s.external[day] !== undefined);
+  const extSig = useFreeBusy((s) => (showMine && s.externalWs === workspaceId ? externalSignature(s.external[day]) : ''));
+  const extHeld = useFreeBusy((s) => showMine && s.externalWs === workspaceId && s.external[day] !== undefined);
   const ext = useMemo<SigItem[]>(() => parseExternalSignature(extSig).map((e) => ({ key: e.key, allDay: e.allDay, start: e.start, end: e.end })), [extSig]);
   const busy = useMemo(() => busyItems(fbSig, items, own, extHeld ? me : ''), [fbSig, items, own, extHeld, me]);
   const timed = useMemo(() => [...items.filter((i) => !i.allDay), ...busy.filter((i) => !i.allDay), ...ext.filter((i) => !i.allDay)], [items, busy, ext]);
@@ -149,6 +163,7 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   }, [day]);
 
   const drag = useDragController({ workspaceId, day, grid, scroller, creatable, mobile });
+  const swipe = useDaySwipe(mobile, day);
 
   useDayKeys(workspaceId, day, creatable);
 
@@ -157,7 +172,7 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
       <DayHeader workspaceId={workspaceId} day={day} today={today} creatable={creatable} mobile={mobile} people={people.length} />
       {mobile ? null : <FilterRow workspaceId={workspaceId} people={people} />}
       <AllDayRow workspaceId={workspaceId} keys={allDay} day={day} onDown={drag.onBlockDown} />
-      <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="day-scroller">
+      <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="day-scroller" {...swipe}>
         <div className="relative flex" style={{ height: 24 * HOUR_PX + 16 }}>
           <HourScale />
           <div
@@ -198,59 +213,139 @@ function DropCursor(): ReactNode {
   return locked ? <div className="fixed inset-0 z-[var(--z-popover)] cursor-not-allowed" aria-hidden /> : null;
 }
 
+/** Phone: the header's date is a button; a tap opens a centred month card to jump to a day. */
+function DatePickCard({ day, today, title, onPick }: { day: string; today: string; title: string; onPick: (day: string) => void }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [month, setMonth] = useState(monthOf(day));
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (o) setMonth(monthOf(day));
+        setOpen(o);
+      }}
+      modal={false}
+    >
+      <h1 className="flex">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label={`${title}. ${t('cal.pickDate')}`}
+            aria-haspopup="dialog"
+            className="relative h-9 min-w-[64px] truncate rounded-[var(--radius-icon)] px-2 text-center text-list font-semibold first-letter:uppercase before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
+            data-testid="day-date"
+          >
+            <span aria-live="polite">{title}</span>
+          </button>
+        </Popover.Trigger>
+      </h1>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="center"
+          sideOffset={4}
+          collisionPadding={8}
+          aria-label={t('cal.pickDate')}
+          data-testid="day-date-card"
+          className="mat-popover anim-in z-[var(--z-modal-popover)] w-[300px] rounded-[var(--radius-card)] p-2 text-body"
+        >
+          <MonthPicker
+            month={month}
+            onMonth={setMonth}
+            value={day}
+            today={today}
+            onPick={(d) => {
+              haptics.select();
+              setOpen(false);
+              onPick(d);
+            }}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { workspaceId: string; day: string; today: string; creatable: boolean; mobile: boolean; people: number }): ReactNode {
   const open = useUi((s) => s.openCalendarDay);
   const [sheet, setSheet] = useState(false);
-  // Phone: «15 янв.» leaves room for «Люди», «Подобрать время» and «+» (the weekday is in the grid's context).
-  const title = mobile ? dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day)) : formatLongDay(dayStart(day));
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
+  if (mobile) {
+    // Phone: a compact «‹ ср, 14 окт ›» group (the date opens a month card), «+» as a plain header icon, the rest («Сегодня», «Люди»,
+    // «Подобрать время») behind «…» — the header keeps room for the shell's nav button.
+    const title = dateTimeFormat({ weekday: 'short', day: 'numeric', month: 'short' }).format(dayStart(day));
+    return (
+      <Bar>
+        <NavButton />
+        <IconButton label={t('cal.prevDay')} tip={false} onClick={() => open(addDays(day, -1))}>
+          <ChevronLeft className="size-[18px]" />
+        </IconButton>
+        <DatePickCard day={day} today={today} title={title} onPick={open} />
+        <IconButton label={t('cal.nextDay')} tip={false} onClick={() => open(addDays(day, 1))}>
+          <ChevronRight className="size-[18px]" />
+        </IconButton>
+        <span className="flex-1" />
+        <Dropdown.Root modal={false}>
+          <Dropdown.Trigger asChild>
+            <IconButton label={t('boards.more')} tip={false} className="relative data-[state=open]:bg-active" data-testid="day-more">
+              <Ellipsis className="size-[18px]" />
+              {people > 0 ? <span className="absolute right-1 top-1 size-2 rounded-full bg-accent-strong" aria-hidden /> : null}
+            </IconButton>
+          </Dropdown.Trigger>
+          <Dropdown.Portal>
+            <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
+              {day !== today ? (
+                <Dropdown.Item className={menuItem} onSelect={() => open(today)} data-testid="day-today">
+                  <CalendarDays className="size-4" aria-hidden /> {t('cal.today')}
+                </Dropdown.Item>
+              ) : null}
+              {creatable ? (
+                <>
+                  <Dropdown.Item className={menuItem} onSelect={() => setSheet(true)} data-testid="day-people">
+                    <Users className="size-4" aria-hidden /> <span className="flex-1">{t('fb.filter')}</span>
+                    {people > 0 ? <span className="text-caption tabular-nums text-muted">{people}</span> : null}
+                  </Dropdown.Item>
+                  <Dropdown.Item className={menuItem} onSelect={() => startFind(workspaceId)} data-testid="day-find">
+                    <CalendarSearch className="size-4" aria-hidden /> {t('fb.find')}
+                  </Dropdown.Item>
+                </>
+              ) : null}
+            </Dropdown.Content>
+          </Dropdown.Portal>
+        </Dropdown.Root>
+        <PhoneSearchButton />
+        {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : <CreateSlot />}
+        {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
+      </Bar>
+    );
+  }
   return (
-    <header className={cx('mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2', mobile && 'pl-1')}>
-      {mobile ? <NavButton /> : null}
-      <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => open(addDays(day, -1))} className={touch}>
+    <Bar className="gap-1 pl-3 pr-2">
+      <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => open(addDays(day, -1))}>
         <ChevronLeft className="size-[18px]" />
       </IconButton>
-      <IconButton label={t('cal.nextDay')} shortcut="→" onClick={() => open(addDays(day, 1))} className={touch}>
+      <IconButton label={t('cal.nextDay')} shortcut="→" onClick={() => open(addDays(day, 1))}>
         <ChevronRight className="size-[18px]" />
       </IconButton>
       <h1 className="ml-1 min-w-0 flex-1 truncate text-list font-semibold first-letter:uppercase" aria-live="polite">
-        {title}
+        {formatLongDay(dayStart(day))}
       </h1>
       {day !== today ? (
-        <Button variant="secondary" size={mobile ? 'md' : 'sm'} onClick={() => open(today)} title="T">
+        <Button variant="secondary" size="sm" onClick={() => open(today)} title="T">
           {t('cal.today')}
         </Button>
       ) : null}
-      {creatable && mobile ? (
-        // Phone: «Люди» and «Подобрать время» as icons; the filter is a sheet (ADR-0041 §3).
+      {creatable ? (
         <>
-          <IconButton label={t('fb.filter')} tip={false} onClick={() => setSheet(true)} className={cx(touch, 'relative')} active={people > 0} data-testid="day-people">
-            <Users className="size-[18px]" />
-            {people > 0 ? <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-micro font-semibold tabular-nums text-accent-fg">{people}</span> : null}
-          </IconButton>
-          <IconButton label={t('fb.find')} tip={false} onClick={() => startFind(workspaceId)} className={touch} data-testid="day-find">
-            <CalendarSearch className="size-[18px]" />
-          </IconButton>
+          <Button variant="secondary" size="sm" onClick={() => startFind(workspaceId)} data-testid="day-find">
+            <CalendarSearch className="size-3.5" aria-hidden />
+            {t('fb.find')}
+          </Button>
+          <Button size="sm" onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" title="N">
+            {t('cal.newEvent')}
+          </Button>
         </>
-      ) : creatable ? (
-        <Button variant="secondary" size="sm" onClick={() => startFind(workspaceId)} data-testid="day-find">
-          <CalendarSearch className="size-3.5" aria-hidden />
-          {t('fb.find')}
-        </Button>
       ) : null}
-      {creatable && mobile ? (
-        // Phone: a 40 px round «+» (the header keeps room for the date).
-        <IconButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" className="size-10 rounded-full bg-accent-strong text-accent-fg hover:bg-accent-strong hover:text-accent-fg">
-          <Plus className="size-5" />
-        </IconButton>
-      ) : creatable ? (
-        <Button size="sm" onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" title="N">
-          <Plus className="size-3.5" aria-hidden />
-          {t('cal.newEvent')}
-        </Button>
-      ) : null}
-      {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
-    </header>
+    </Bar>
   );
 }
 
@@ -305,7 +400,7 @@ function ConnectControl(): ReactNode {
   );
 }
 
-/** Phone: the filter as a bottom sheet with the chips. */
+/** Phone: the filter as a centred dialog card with the chips. */
 function PeopleSheet({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
   const people = useFreeBusy(selectPeople(workspaceId));
   const dispatch = useFreeBusy((s) => s.dispatchPeople);
@@ -454,7 +549,8 @@ type BlockDown = (e: ReactPointerEvent<HTMLElement>, key: string, mode: 'move' |
 /** How a block looks: my answer tints it (declined — faded, no answer yet — dashed), selected — filled. */
 function blockTone(status: AttendeeStatus, selected: boolean): string {
   if (selected) return 'bg-accent-strong text-accent-fg border-accent-strong';
-  if (status === AttendeeStatus.DECLINED) return 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg))] text-muted border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)]';
+  // Declined: already `muted` — the time line's extra opacity-80 would drop it below 4.5:1 (4.48 in light).
+  if (status === AttendeeStatus.DECLINED) return 'bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-bg))] text-muted border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] [&_.opacity-80]:opacity-100';
   if (status === AttendeeStatus.PENDING) return 'bg-[color-mix(in_srgb,var(--color-accent)_12%,var(--color-bg))] text-fg border-accent border-dashed';
   return 'bg-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-bg))] text-fg border-accent';
 }
@@ -526,11 +622,13 @@ const EventBlock = memo(function EventBlock({
             <p className={cx('truncate text-caption font-semibold', status === AttendeeStatus.DECLINED && !selected && 'line-through')}>{ev.title}</p>
             <p className="truncate text-caption opacity-80">
               {time}
-              {roomName ? ` · ${roomName}` : ''}
+              {/* phone: side-by-side events are narrow — the full time stays, the room name goes */}
+              {roomName ? <span className={cx(cols > 1 && 'mobile:hidden')}>{` · ${roomName}`}</span> : null}
             </p>
             {px > 70 && ev.repeat !== EventRepeat.UNSPECIFIED ? <Repeat className="mt-0.5 size-3 opacity-70" aria-hidden /> : null}
           </>
         )}
+        <PersonDots occKey={occKey} className="absolute right-1 top-1" />
         {editable ? (
           <span
             aria-hidden
@@ -634,11 +732,37 @@ const AllDayChip = memo(function AllDayChip({ occKey, onDown }: { occKey: string
             useUi.getState().selectCalEvent(occKey);
           }
         }}
-        className={cx('truncate rounded-[6px] border-l-[3px] px-1.5 text-caption font-semibold leading-5 outline-none focus-visible:ring-2 focus-visible:ring-accent', blockTone(myStatusOf(ev, myUserId()), selected))}
+        className={cx('flex min-w-0 items-center gap-1 rounded-[6px] border-l-[3px] px-1.5 text-caption font-semibold leading-5 outline-none focus-visible:ring-2 focus-visible:ring-accent', blockTone(myStatusOf(ev, myUserId()), selected))}
       >
-        {ev.title}
+        <span className="min-w-0 flex-1 truncate">{ev.title}</span>
+        <PersonDots occKey={occKey} />
       </div>
     </BlockMenu>
+  );
+});
+
+/**
+ * With the «Люди» filter on: a dot per selected person the meeting involves, in their chip colour
+ * (docs/08 «Фильтр «Люди»»). A leaf: a selection change re-renders the dots, not the block.
+ */
+const PersonDots = memo(function PersonDots({ occKey, className }: { occKey: string; className?: string }): ReactNode {
+  const ws = useCalendar((s) => s.occ[occKey]?.workspaceId ?? '');
+  const people = useFreeBusy(selectPeople(ws));
+  // A primitive: the involved positions, re-computed only when the meeting or the selection changes.
+  const sig = useCalendar((s) => {
+    const ev = s.occ[occKey];
+    return ev && people.length ? involvedIndexes(ev, people).join(',') : '';
+  });
+  if (!sig) return null;
+  const idx = sig.split(',').map(Number);
+  const names = idx.map((i) => memberName(ws, people[i] ?? '')).join(', ');
+  return (
+    <span className={cx('pointer-events-none flex shrink-0 items-center gap-0.5', className)} title={names} data-testid="person-dots">
+      {idx.map((i) => (
+        <span key={i} className="size-1.5 rounded-full ring-1 ring-[var(--color-bg)]" style={{ background: personColor(i) }} aria-hidden />
+      ))}
+      <span className="sr-only">{names}</span>
+    </span>
   );
 });
 
@@ -660,6 +784,42 @@ const DragGhost = memo(function DragGhost(): ReactNode {
     </div>
   );
 });
+
+// ---------------------------------------------------------------- day swipe
+
+/**
+ * Phone (docs/08 «Свайпы и долгое нажатие»): a horizontal swipe over the day (≥ 60 px) opens the
+ * next (left) or previous (right) day, as ‹ ›; a vertical one scrolls the hours. No state, no
+ * render: a gesture is a ref until its release.
+ */
+function useDaySwipe(enabled: boolean, day: string): { onTouchStart: (e: TouchEvent) => void; onTouchMove: (e: TouchEvent) => void; onTouchEnd: (e: TouchEvent) => void } | undefined {
+  const gesture = useRef<AxisGesture | null>(null);
+  if (!enabled) return undefined;
+  return {
+    onTouchStart: (e) => {
+      const p = e.touches[0];
+      gesture.current = p && e.touches.length === 1 && p.clientX > SWIPE_EDGE_PX ? { x: p.clientX, y: p.clientY, axis: null } : null;
+    },
+    onTouchMove: (e) => {
+      const g = gesture.current;
+      const p = e.touches[0];
+      if (!g || !p) return;
+      if (lockAxis(g, p.clientX, p.clientY) === 'y') gesture.current = null;
+      else if (g.axis === 'x') e.stopPropagation();
+    },
+    onTouchEnd: (e) => {
+      const g = gesture.current;
+      const p = e.changedTouches[0];
+      gesture.current = null;
+      if (!g || !p) return;
+      const step = daySwipeStep(g, p.clientX, p.clientY);
+      if (!step) return;
+      e.stopPropagation();
+      haptics.select();
+      useUi.getState().openCalendarDay(addDays(day, step));
+    },
+  };
+}
 
 // ---------------------------------------------------------------- drag controller
 

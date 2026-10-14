@@ -42,6 +42,10 @@ export interface MemberGroups {
   offline: WorkspaceMember[];
   /** Bots (ADR-0031 §7): a section of their own, by name — never «в сети» / «не в сети». */
   bots: WorkspaceMember[];
+  /** Guests (ADR-0098 §3): a collapsible section of their own, online first; the list does not grow with a crowd of «ссылочных». */
+  guests: WorkspaceMember[];
+  /** Which of `guests` are online (the row's dimming). */
+  guestsOnline: ReadonlySet<string>;
 }
 
 /**
@@ -57,13 +61,15 @@ export function groupMembers(
   const all = members.filter((m) => m.user);
   const byName = (a: WorkspaceMember, b: WorkspaceMember): number => nameOf(a).localeCompare(nameOf(b), getLocale());
   const bots = all.filter((m) => m.user?.isBot).sort(byName);
-  const list = all.filter((m) => !m.user?.isBot);
-  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || byName(a, b));
+  const people = all.filter((m) => !m.user?.isBot);
   const on = (m: WorkspaceMember): boolean => {
     const id = m.user?.id ?? '';
     return isOnline(presences[id]?.status) || !!voice[id]?.roomId;
   };
-  return { online: list.filter(on), offline: list.filter((m) => !on(m)), bots };
+  const guests = people.filter((m) => m.role === WorkspaceRole.GUEST).sort((a, b) => Number(on(b)) - Number(on(a)) || byName(a, b));
+  const list = people.filter((m) => m.role !== WorkspaceRole.GUEST);
+  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || byName(a, b));
+  return { online: list.filter(on), offline: list.filter((m) => !on(m)), bots, guests, guestsOnline: new Set(guests.filter(on).map((m) => m.user?.id ?? '')) };
 }
 
 // ---------------------------------------------------------------- context menu
@@ -111,6 +117,8 @@ export interface MenuActions {
    * target's roles I may not touch (shown checked, disabled); null = no submenu.
    */
   roles: RoleToggle[] | null;
+  /** «Вручить ачивку…» (ADR-0061): canGrantAchievement. */
+  grantAchievement: boolean;
   promote: boolean;
   removeGuest: boolean;
   kick: boolean;
@@ -194,6 +202,15 @@ export function canSetMemberBadge(myRoles: readonly Role[], targetRoles: readonl
   return self || actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
 }
 
+/**
+ * «Вручить ачивку…» (ADR-0061 §3, server achievements.grant): MANAGE_MEMBERS; the recipient is a
+ * member — not a guest, not a bot — and not me (422 SELF_GRANT).
+ */
+export function canGrantAchievement(myRoles: readonly RoleBits[] | undefined, target: Pick<WorkspaceMember, 'role' | 'user'>, self: boolean): boolean {
+  if (self || !mayManageMembers(myRoles)) return false;
+  return target.role !== WorkspaceRole.GUEST && !target.user?.isGuest && !target.user?.isBot;
+}
+
 export function memberActions(c: MenuContext): MenuActions {
   const userId = c.target.user?.id ?? '';
   const self = userId === c.meId;
@@ -238,6 +255,7 @@ export function memberActions(c: MenuContext): MenuActions {
     rename: canRenameMember(myRoles, self, c.allowSelfNickname),
     birthday: canEditMemberBirthday(myRoles, targetRoles, c.target, self),
     roles: roleToggles(all, myRoles, targetRoles, self, guest),
+    grantAchievement: canGrantAchievement(myRoles, c.target, self),
     promote: manage && guest && !self,
     removeGuest: removable && guest,
     kick: removable && !guest,
@@ -246,5 +264,26 @@ export function memberActions(c: MenuContext): MenuActions {
 }
 
 export function hasAnyAction(a: MenuActions): boolean {
-  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick || a.ban;
+  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.grantAchievement || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick || a.ban;
+}
+
+/** A user's custom status as one line («🍔 на обеде»); '' = none. */
+export const customStatusLine = (u: { statusEmoji?: string; statusText?: string } | undefined): string =>
+  [u?.statusEmoji, u?.statusText].filter(Boolean).join(' ');
+
+/** Live activity on a member row's second line, besides the custom status. */
+export type MemberActivity = 'stream' | 'voice' | 'call' | null;
+
+export function memberActivity(v: { roomId?: string; streaming?: boolean } | undefined, onCall: boolean): MemberActivity {
+  if (v?.roomId) return v.streaming ? 'stream' : 'voice';
+  return onCall ? 'call' : null;
+}
+
+/**
+ * Members column, second line (docs/08 «Колонка участников»): the custom status and the live
+ * activity share one 16 px line — the status first (what the person chose to say), the
+ * activity compact after a «·» (icon + short label); either alone takes the whole line.
+ */
+export function memberSecondLine(status: string, activity: MemberActivity): { status: string; activity: MemberActivity; compact: boolean } {
+  return { status, activity, compact: status !== '' && activity !== null };
 }

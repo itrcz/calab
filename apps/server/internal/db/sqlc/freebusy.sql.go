@@ -104,6 +104,41 @@ func (q *Queries) DeleteExternalBusy(ctx context.Context, userID uuid.UUID) erro
 	return err
 }
 
+const deleteMyExternalOccurrence = `-- name: DeleteMyExternalOccurrence :execrows
+DELETE FROM external_busy WHERE user_id = $1 AND uid = $2 AND starts_at = $3
+`
+
+type DeleteMyExternalOccurrenceParams struct {
+	UserID   uuid.UUID
+	Uid      string
+	StartsAt time.Time
+}
+
+func (q *Queries) DeleteMyExternalOccurrence(ctx context.Context, arg DeleteMyExternalOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMyExternalOccurrence, arg.UserID, arg.Uid, arg.StartsAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteMyExternalSeries = `-- name: DeleteMyExternalSeries :execrows
+DELETE FROM external_busy WHERE user_id = $1 AND uid = $2
+`
+
+type DeleteMyExternalSeriesParams struct {
+	UserID uuid.UUID
+	Uid    string
+}
+
+func (q *Queries) DeleteMyExternalSeries(ctx context.Context, arg DeleteMyExternalSeriesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMyExternalSeries, arg.UserID, arg.Uid)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const enqueueCalDavPushes = `-- name: EnqueueCalDavPushes :execrows
 INSERT INTO caldav_pushes (user_id, event_id)
 SELECT a.user_id, $1::uuid FROM caldav_accounts a
@@ -127,7 +162,7 @@ func (q *Queries) EnqueueCalDavPushes(ctx context.Context, arg EnqueueCalDavPush
 }
 
 const getCalDavAccount = `-- name: GetCalDavAccount :one
-SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level FROM caldav_accounts WHERE user_id = $1
+SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level, remind FROM caldav_accounts WHERE user_id = $1
 `
 
 func (q *Queries) GetCalDavAccount(ctx context.Context, userID uuid.UUID) (CaldavAccount, error) {
@@ -147,16 +182,60 @@ func (q *Queries) GetCalDavAccount(ctx context.Context, userID uuid.UUID) (Calda
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ShareLevel,
+		&i.Remind,
+	)
+	return i, err
+}
+
+const getMyExternalEvent = `-- name: GetMyExternalEvent :one
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url FROM external_busy
+WHERE user_id = $1 AND uid = $2 AND starts_at = $3 AND href = $4::text
+LIMIT 1
+`
+
+type GetMyExternalEventParams struct {
+	UserID   uuid.UUID
+	Uid      string
+	StartsAt time.Time
+	Href     string
+}
+
+// One imported occurrence of the caller (ADR-0045, amendment 1): a delete names it by uid, start and href.
+func (q *Queries) GetMyExternalEvent(ctx context.Context, arg GetMyExternalEventParams) (ExternalBusy, error) {
+	row := q.db.QueryRow(ctx, getMyExternalEvent,
+		arg.UserID,
+		arg.Uid,
+		arg.StartsAt,
+		arg.Href,
+	)
+	var i ExternalBusy
+	err := row.Scan(
+		&i.UserID,
+		&i.Uid,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.AllDay,
+		&i.Summary,
+		&i.Location,
+		&i.Attendees,
+		&i.Organizer,
+		&i.Url,
+		&i.Href,
+		&i.Etag,
+		&i.Recurring,
+		&i.WebUrl,
 	)
 	return i, err
 }
 
 const insertExternalBusy = `-- name: InsertExternalBusy :exec
-INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url)
+INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url,
+    href, etag, recurring, web_url)
 SELECT $1::uuid, unnest($2::text[]), unnest($3::timestamptz[]),
     unnest($4::timestamptz[]), unnest($5::boolean[]), unnest($6::text[]),
     unnest($7::text[]), unnest($8::text[])::jsonb, unnest($9::text[]),
-    unnest($10::text[])
+    unnest($10::text[]), unnest($11::text[]), unnest($12::text[]),
+    unnest($13::boolean[]), unnest($14::text[])
 `
 
 type InsertExternalBusyParams struct {
@@ -170,6 +249,10 @@ type InsertExternalBusyParams struct {
 	Attendees  []string
 	Organizers []string
 	Urls       []string
+	Hrefs      []string
+	Etags      []string
+	Recurrings []bool
+	WebUrls    []string
 }
 
 func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusyParams) error {
@@ -184,6 +267,10 @@ func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusy
 		arg.Attendees,
 		arg.Organizers,
 		arg.Urls,
+		arg.Hrefs,
+		arg.Etags,
+		arg.Recurrings,
+		arg.WebUrls,
 	)
 	return err
 }
@@ -275,8 +362,86 @@ func (q *Queries) ListDueCalDavImports(ctx context.Context, arg ListDueCalDavImp
 	return items, nil
 }
 
+const listDueExternalReminders = `-- name: ListDueExternalReminders :many
+SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.summary, b.location, b.attendees, b.organizer, b.url,
+    b.href, b.recurring, b.web_url, m.minutes::int AS minutes, u.event_reminders_dnd, a.username AS login
+FROM caldav_accounts a
+JOIN users u ON u.id = a.user_id
+CROSS JOIN LATERAL unnest(u.event_reminders) AS m (minutes)
+JOIN external_busy b ON b.user_id = a.user_id
+WHERE a.remind AND a.import AND a.calendar_href IS NOT NULL
+  AND u.disabled_at IS NULL AND NOT u.is_bot AND NOT u.is_guest AND NOT b.all_day
+  AND b.starts_at > $1::timestamptz AND b.starts_at <= $2::timestamptz
+  AND b.starts_at - m.minutes * interval '1 minute' <= $1::timestamptz
+  AND b.starts_at - m.minutes * interval '1 minute' > $3::timestamptz
+ORDER BY b.user_id, b.starts_at, b.uid, m.minutes
+`
+
+type ListDueExternalRemindersParams struct {
+	Now   time.Time
+	To    time.Time
+	Since time.Time
+}
+
+type ListDueExternalRemindersRow struct {
+	UserID            uuid.UUID
+	Uid               string
+	StartsAt          time.Time
+	EndsAt            time.Time
+	Summary           string
+	Location          string
+	Attendees         []byte
+	Organizer         string
+	Url               string
+	Href              string
+	Recurring         bool
+	WebUrl            string
+	Minutes           int32
+	EventRemindersDnd bool
+	Login             string
+}
+
+// Reminders of imported events due at now (ADR-0045 amendment 3): accounts that remind and import
+// a chosen calendar, enabled people; timed (not all-day) events starting in (now, to] whose moment
+// (start − one of the user's event_reminders) is in (since, now] — since = now − the grace.
+func (q *Queries) ListDueExternalReminders(ctx context.Context, arg ListDueExternalRemindersParams) ([]ListDueExternalRemindersRow, error) {
+	rows, err := q.db.Query(ctx, listDueExternalReminders, arg.Now, arg.To, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDueExternalRemindersRow{}
+	for rows.Next() {
+		var i ListDueExternalRemindersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Uid,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.Summary,
+			&i.Location,
+			&i.Attendees,
+			&i.Organizer,
+			&i.Url,
+			&i.Href,
+			&i.Recurring,
+			&i.WebUrl,
+			&i.Minutes,
+			&i.EventRemindersDnd,
+			&i.Login,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExternalBusy = `-- name: ListExternalBusy :many
-SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.all_day, b.summary, b.location, b.attendees, b.organizer, b.url, coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
+SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.all_day, b.summary, b.location, b.attendees, b.organizer, b.url, b.href, b.etag, b.recurring, b.web_url, coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
 LEFT JOIN caldav_accounts a ON a.user_id = b.user_id
 WHERE b.user_id = ANY($1::uuid[]) AND b.starts_at < $2 AND b.ends_at > $3
 ORDER BY b.user_id, b.starts_at
@@ -314,6 +479,10 @@ func (q *Queries) ListExternalBusy(ctx context.Context, arg ListExternalBusyPara
 			&i.ExternalBusy.Attendees,
 			&i.ExternalBusy.Organizer,
 			&i.ExternalBusy.Url,
+			&i.ExternalBusy.Href,
+			&i.ExternalBusy.Etag,
+			&i.ExternalBusy.Recurring,
+			&i.ExternalBusy.WebUrl,
 			&i.ShareLevel,
 		); err != nil {
 			return nil, err
@@ -374,7 +543,7 @@ func (q *Queries) ListFreeBusyMembers(ctx context.Context, arg ListFreeBusyMembe
 }
 
 const listMyExternalEvents = `-- name: ListMyExternalEvents :many
-SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url FROM external_busy
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url FROM external_busy
 WHERE user_id = $1 AND starts_at < $2 AND ends_at > $3
 ORDER BY starts_at, ends_at, uid
 `
@@ -405,6 +574,10 @@ func (q *Queries) ListMyExternalEvents(ctx context.Context, arg ListMyExternalEv
 			&i.Attendees,
 			&i.Organizer,
 			&i.Url,
+			&i.Href,
+			&i.Etag,
+			&i.Recurring,
+			&i.WebUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -469,7 +642,7 @@ func (q *Queries) ListRoomBusyEvents(ctx context.Context, arg ListRoomBusyEvents
 }
 
 const lockCalDavAccount = `-- name: LockCalDavAccount :one
-SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level FROM caldav_accounts WHERE user_id = $1 FOR UPDATE
+SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level, remind FROM caldav_accounts WHERE user_id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockCalDavAccount(ctx context.Context, userID uuid.UUID) (CaldavAccount, error) {
@@ -489,6 +662,7 @@ func (q *Queries) LockCalDavAccount(ctx context.Context, userID uuid.UUID) (Cald
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ShareLevel,
+		&i.Remind,
 	)
 	return i, err
 }
@@ -532,6 +706,42 @@ func (q *Queries) MatchMemberEmails(ctx context.Context, arg MatchMemberEmailsPa
 	return items, nil
 }
 
+const patchCalDavAccount = `-- name: PatchCalDavAccount :one
+UPDATE caldav_accounts SET share_level = coalesce($2::text, share_level),
+    remind = coalesce($3::boolean, remind), updated_at = now()
+WHERE user_id = $1
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level, remind
+`
+
+type PatchCalDavAccountParams struct {
+	UserID     uuid.UUID
+	ShareLevel *string
+	Remind     *bool
+}
+
+// What colleagues see (ADR-0045 §2) and the reminders (amendment 3); NULL = unchanged.
+func (q *Queries) PatchCalDavAccount(ctx context.Context, arg PatchCalDavAccountParams) (CaldavAccount, error) {
+	row := q.db.QueryRow(ctx, patchCalDavAccount, arg.UserID, arg.ShareLevel, arg.Remind)
+	var i CaldavAccount
+	err := row.Scan(
+		&i.UserID,
+		&i.Url,
+		&i.Username,
+		&i.SecretEnc,
+		&i.Calendars,
+		&i.CalendarHref,
+		&i.Import,
+		&i.Push,
+		&i.LastSyncAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ShareLevel,
+		&i.Remind,
+	)
+	return i, err
+}
+
 const retryCalDavPush = `-- name: RetryCalDavPush :exec
 UPDATE caldav_pushes SET attempts = attempts + 1, next_at = $4, error = $5
 WHERE user_id = $1 AND event_id = $2 AND gen = $3
@@ -570,40 +780,9 @@ func (q *Queries) SetCalDavError(ctx context.Context, arg SetCalDavErrorParams) 
 	return err
 }
 
-const setCalDavShareLevel = `-- name: SetCalDavShareLevel :one
-UPDATE caldav_accounts SET share_level = $2, updated_at = now() WHERE user_id = $1
-RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
-`
-
-type SetCalDavShareLevelParams struct {
-	UserID     uuid.UUID
-	ShareLevel string
-}
-
-func (q *Queries) SetCalDavShareLevel(ctx context.Context, arg SetCalDavShareLevelParams) (CaldavAccount, error) {
-	row := q.db.QueryRow(ctx, setCalDavShareLevel, arg.UserID, arg.ShareLevel)
-	var i CaldavAccount
-	err := row.Scan(
-		&i.UserID,
-		&i.Url,
-		&i.Username,
-		&i.SecretEnc,
-		&i.Calendars,
-		&i.CalendarHref,
-		&i.Import,
-		&i.Push,
-		&i.LastSyncAt,
-		&i.LastError,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ShareLevel,
-	)
-	return i, err
-}
-
 const setCalDavSynced = `-- name: SetCalDavSynced :one
 UPDATE caldav_accounts SET last_sync_at = $2, last_error = $3 WHERE user_id = $1
-RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level, remind
 `
 
 type SetCalDavSyncedParams struct {
@@ -629,6 +808,7 @@ func (q *Queries) SetCalDavSynced(ctx context.Context, arg SetCalDavSyncedParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ShareLevel,
+		&i.Remind,
 	)
 	return i, err
 }
@@ -636,7 +816,7 @@ func (q *Queries) SetCalDavSynced(ctx context.Context, arg SetCalDavSyncedParams
 const setUserWorkHours = `-- name: SetUserWorkHours :one
 
 UPDATE users SET work_start_min = $2, work_end_min = $3, work_days = $4 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots
 `
 
 type SetUserWorkHoursParams struct {
@@ -686,6 +866,11 @@ func (q *Queries) SetUserWorkHours(ctx context.Context, arg SetUserWorkHoursPara
 		&i.WorkStartMin,
 		&i.WorkEndMin,
 		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
 	)
 	return i, err
 }
@@ -693,7 +878,7 @@ func (q *Queries) SetUserWorkHours(ctx context.Context, arg SetUserWorkHoursPara
 const updateCalDavAccount = `-- name: UpdateCalDavAccount :one
 UPDATE caldav_accounts SET calendar_href = $2, import = $3, push = $4, last_error = '', updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level, remind
 `
 
 type UpdateCalDavAccountParams struct {
@@ -725,6 +910,7 @@ func (q *Queries) UpdateCalDavAccount(ctx context.Context, arg UpdateCalDavAccou
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ShareLevel,
+		&i.Remind,
 	)
 	return i, err
 }
@@ -735,7 +921,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (user_id) DO UPDATE SET url = EXCLUDED.url, username = EXCLUDED.username,
     secret_enc = EXCLUDED.secret_enc, calendars = EXCLUDED.calendars, calendar_href = EXCLUDED.calendar_href,
     import = EXCLUDED.import, push = EXCLUDED.push, last_sync_at = NULL, last_error = '', updated_at = now()
-RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level, remind
 `
 
 type UpsertCalDavAccountParams struct {
@@ -775,6 +961,7 @@ func (q *Queries) UpsertCalDavAccount(ctx context.Context, arg UpsertCalDavAccou
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ShareLevel,
+		&i.Remind,
 	)
 	return i, err
 }

@@ -5,6 +5,7 @@ import { Check, Ellipsis, NotebookText, Plus, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { confirmAction } from '../../components/Confirm';
+import { InlineAdd } from '../../components/CreateButton';
 import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
@@ -19,6 +20,7 @@ import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { useChatDrop } from '../chat/useChatDrop';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { GROUP_LABEL, ROW_HOVER } from '../shell/ColumnHeader';
 import { applyChatDrop } from './dropActions';
 
 /**
@@ -41,24 +43,14 @@ export function NotesSection(): ReactNode {
   return (
     <section className="mb-2" aria-label={t('notes.section')} data-testid="notes-section">
       <div
-        className={cx('group/cat flex h-7 items-center rounded-[var(--radius-row)] pr-1 pt-1', headerOver && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)]')}
+        className={cx('group/cat flex h-8 items-center rounded-[var(--radius-row)] pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-0', headerOver && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)]')}
         data-testid="notes-header"
         {...headerDrop}
       >
-        <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">
+        <h2 className={cx('min-w-0 flex-1 truncate pl-2 mobile:pl-3', GROUP_LABEL)}>
           {headerOver && firstEntry ? <span className="normal-case tracking-normal text-accent-text">{t('notes.saveTo', { name: shelfTitle(firstEntry) })}</span> : t('notes.section')}
         </h2>
-        <Tip label={t('notes.new')}>
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            aria-label={t('notes.new')}
-            data-testid="notes-new"
-            className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-          >
-            <Plus className="size-4" aria-hidden />
-          </button>
-        </Tip>
+        <InlineAdd label={t('notes.new')} onClick={() => setCreating(true)} data-testid="notes-new" />
       </div>
       {list.length ? <ShelfList list={list} /> : null}
       {creating ? (
@@ -72,7 +64,7 @@ export function NotesSection(): ReactNode {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="mt-0.5 flex w-full items-center gap-2.5 rounded-[var(--radius-row)] border border-dashed border-line px-2 py-2 text-left text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+          className="mt-0.5 flex w-full items-center gap-2.5 rounded-[var(--radius-row)] border border-dashed mobile:mx-3 mobile:w-[calc(100%-1.5rem)] border-line px-2 py-2 text-left text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
           data-testid="notes-empty"
         >
           <Plus className="size-4 shrink-0" aria-hidden />
@@ -125,7 +117,7 @@ function ShelfList({ list }: { list: ShelfEntry[] }): ReactNode {
 
   return (
     <DndContext sensors={sensors} onDragStart={onStart} onDragMove={onMove} onDragEnd={onEnd} onDragCancel={reset}>
-      <ul ref={listRef} className="relative mt-0.5 flex flex-col gap-px" data-testid="notes-list">
+      <ul ref={listRef} className="relative mt-0.5 flex flex-col gap-px mobile:mt-0 mobile:gap-0" data-testid="notes-list">
         {list.map((e) => (
           <ShelfRow key={e.roomId} entry={e} canDrag={!mobile} />
         ))}
@@ -148,11 +140,15 @@ function ShelfList({ list }: { list: ShelfEntry[] }): ReactNode {
   );
 }
 
-function ShelfIcon({ emoji, size }: { emoji: string; size: number }): ReactNode {
+/** `round`: the phone's disc (44 px, the room row's icon: fill, muted), else the desktop's tinted square. */
+function ShelfIcon({ emoji, size, round = false }: { emoji: string; size: number; round?: boolean }): ReactNode {
   return (
     <span
       aria-hidden
-      className="grid shrink-0 place-items-center rounded-[var(--radius-control)] bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] leading-none text-accent-text"
+      className={cx(
+        'grid shrink-0 place-items-center leading-none',
+        round ? 'rounded-full bg-[var(--color-fill)] text-muted' : 'rounded-[var(--radius-control)] bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-accent-text',
+      )}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.56) }}
     >
       {emoji || <NotebookText style={{ width: size * 0.55, height: size * 0.55 }} strokeWidth={1.75} />}
@@ -161,6 +157,8 @@ function ShelfIcon({ emoji, size }: { emoji: string; size: number }): ReactNode 
 }
 
 const ShelfRow = memo(function ShelfRow({ entry, canDrag }: { entry: ShelfEntry; canDrag: boolean }): ReactNode {
+  // Phone (owner, 13.10): the room row's 68 px chat-list geometry (ADR-0073 §3).
+  const phone = useMobile();
   // Memo row: re-render on a language / clock format switch too (ADR-0022, docs/09 #73).
   useLocale();
   useTimeFormat();
@@ -210,8 +208,12 @@ const ShelfRow = memo(function ShelfRow({ entry, canDrag }: { entry: ShelfEntry;
         data-testid="notes-shelf"
         data-over={over || undefined}
         className={cx(
-          'group/row relative flex h-[46px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]',
-          over ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]' : active ? 'bg-active' : 'hover:bg-hover',
+          'group/row relative flex items-center transition-colors duration-[var(--motion-fast)]',
+          phone
+            ? // The divider runs under the text, from the icon's right edge to the 12 px margin (like the room row's).
+              'h-[68px] after:absolute after:bottom-0 after:left-[68px] after:right-3 after:border-b after:border-line last:after:hidden'
+            : 'h-[46px] rounded-[var(--radius-card)]',
+          over ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]' : active ? 'bg-active' : phone ? 'active:bg-hover' : ROW_HOVER,
           isDragging && 'opacity-40',
         )}
         {...drop}
@@ -221,18 +223,21 @@ const ShelfRow = memo(function ShelfRow({ entry, canDrag }: { entry: ShelfEntry;
           onClick={() => openShelf(roomId)}
           aria-current={active ? 'page' : undefined}
           aria-label={shelfTitle(entry)}
-          className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-[var(--radius-row)] pl-2 pr-1 text-left"
+          className={cx('flex h-full min-w-0 flex-1 items-center text-left', phone ? 'select-none gap-3 pl-3' : 'gap-2.5 rounded-[var(--radius-row)] pl-2 pr-1')}
           {...(canDrag ? listeners : {})}
         >
-          <ShelfIcon emoji={emoji} size={32} />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span className={cx('min-w-0 flex-1 truncate text-list leading-5', active || over ? 'text-fg' : 'text-muted group-hover/row:text-fg')} title={name}>
+          <ShelfIcon emoji={emoji} size={phone ? 44 : 32} round={phone} />
+          <span className={cx('flex min-w-0 flex-1 flex-col', phone && 'h-full justify-center gap-0.5 py-2.5')}>
+            <span className={cx('flex min-w-0 gap-2', phone ? 'h-5 items-center' : 'items-baseline')}>
+              <span
+                className={cx('min-w-0 flex-1 truncate text-list leading-5', phone || active || over ? 'text-fg' : 'text-muted group-hover/row:text-fg')}
+                title={name}
+              >
                 {name}
               </span>
-              <span className="shrink-0 text-micro text-faint">{time}</span>
+              <span className={cx('shrink-0 text-micro text-faint', phone && 'tabular-nums')}>{time}</span>
             </span>
-            <span className="min-w-0 truncate text-caption leading-4 text-muted">{line}</span>
+            <span className={cx('min-w-0 truncate text-caption text-muted', phone ? 'h-5 leading-5' : 'leading-4')}>{line}</span>
           </span>
         </button>
         <ShelfMenu roomId={roomId} name={name} onEdit={setEditing}>
@@ -240,7 +245,12 @@ const ShelfRow = memo(function ShelfRow({ entry, canDrag }: { entry: ShelfEntry;
             type="button"
             aria-label={t('notes.more')}
             data-testid="notes-shelf-more"
-            className="mr-1 grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 mobile:opacity-100"
+            className={cx(
+              'grid shrink-0 place-items-center text-muted transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 data-[state=open]:opacity-100',
+              phone
+                ? 'h-full w-11'
+                : 'mr-1 size-6 rounded-[var(--radius-icon)] opacity-0 group-hover/row:opacity-100',
+            )}
           >
             <Ellipsis className="size-4" aria-hidden />
           </button>

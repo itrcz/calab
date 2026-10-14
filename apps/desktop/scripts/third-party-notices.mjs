@@ -31,7 +31,10 @@ if (withProd) {
   // Run pnpm through node only when npm_execpath is its JS entry (pnpm.cjs; the native @pnpm/exe binary is
   // spawned directly): on Windows there is only a
   // pnpm.cmd shim, which execFileSync cannot spawn without a shell (pnpm/action-setup v6 no longer adds pnpm.exe).
-  const pnpmArgs = ['licenses', 'list', '--json', '--prod'];
+  // `--filter .`: only this app's production tree. Without it pnpm lists every workspace
+  // project's prod deps (the phone host's Expo CLI brings node-forge, GPL-2.0 dual licence),
+  // none of which is packaged into the desktop app.
+  const pnpmArgs = ['licenses', 'list', '--json', '--prod', '--filter', '.'];
   const execPath = process.env.npm_execpath;
   const [cmd, argv] = execPath && /pnpm/i.test(execPath) && /\.c?js$/i.test(execPath)
     ? [process.execPath, [execPath, ...pnpmArgs]]
@@ -122,6 +125,17 @@ for (const p of pkgs.values()) {
   if (extra) {
     p.license = `${p.license} (bundles libuiohook: LGPL-3.0-or-later)`;
     p.texts.unshift(extra);
+  }
+}
+
+// Dual-licensed packages: we take the permissive option (checked by hand). mailparser's MIME
+// splitter (ADR-0088 mail engine) is «MIT OR EUPL-1.1+» and ships both licence files.
+const ELECTED = { '@zone-eu/mailsplit': 'MIT' };
+for (const p of pkgs.values()) {
+  const pick = ELECTED[p.name];
+  if (pick) {
+    p.license = `${pick} (dual-licensed, MIT elected)`;
+    p.texts = p.texts.filter((t) => !/European Union Public Licen[cs]e/i.test(t));
   }
 }
 

@@ -18,6 +18,8 @@ import { toast } from '../../stores/toasts';
  * words; a click on a remark plays the recording from there (the chat's player; the remark
  * being played is highlighted); «Копировать» and «Скачать .txt». The list is virtualised: a
  * 4-hour meeting has thousands of remarks.
+ * With `lead` (the recording window opened from search, RecordingResult) it is «Запись встречи»:
+ * the player and the summary above, the transcript under a hairline with a shorter list.
  */
 export default function RecordingTranscript({
   roomId,
@@ -26,6 +28,8 @@ export default function RecordingTranscript({
   started,
   track,
   onClose,
+  initialMs,
+  lead,
 }: {
   roomId: string;
   recordingId: string;
@@ -34,6 +38,10 @@ export default function RecordingTranscript({
   /** The recording's audio in the chat's player; null = no audio kept (no seeking). */
   track: Track | null;
   onClose: () => void;
+  /** Open at this offset (a search hit, ADR-0062 §4): the remark there is centred and marked. */
+  initialMs?: number;
+  /** Above the transcript (the player, the summary); the dialog is then «Запись встречи». */
+  lead?: ReactNode;
 }): ReactNode {
   const q = useQuery({
     queryKey: ['recording-transcript', recordingId],
@@ -47,6 +55,7 @@ export default function RecordingTranscript({
   // Only the index of the remark under the player re-renders the list, not every time tick.
   const playing = usePlayer((s) => (track && s.track?.fileId === track.fileId && s.track.messageId === track.messageId ? segmentAt(segments, s.position) : -1));
   const list = useRef<VirtuosoHandle>(null);
+  const focus = useMemo(() => (initialMs === undefined || !segments.length ? -1 : segmentAt(segments, initialMs / 1000)), [initialMs, segments]);
   const speaker = (n: number): string => t('rec.tr.speaker', { n });
   const text = (): string => transcriptText(segments, speaker, `${title} — ${fmt.dateTime(started)}`);
 
@@ -69,8 +78,10 @@ export default function RecordingTranscript({
   };
 
   return (
-    <Modal open onClose={onClose} title={t('rec.tr.title')} description={title} wide>
+    <Modal open onClose={onClose} title={lead ? t('rec.card.label') : t('rec.tr.title')} description={title} wide>
       <div className="flex flex-col gap-3" data-testid="recording-transcript">
+        {lead}
+        {lead ? <h3 className="border-t border-line pt-3 text-body font-semibold text-fg">{t('rec.tr.title')}</h3> : null}
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-[200px] flex-1">
             <Input
@@ -108,7 +119,8 @@ export default function RecordingTranscript({
         ) : (
           <Virtuoso
             ref={list}
-            style={{ height: 'min(60vh, 560px)' }}
+            style={{ height: lead ? 'min(44vh, 440px)' : 'min(60vh, 560px)' }}
+            {...(focus >= 0 && !query ? { initialTopMostItemIndex: { index: focus, align: 'center' as const } } : {})}
             data={shown}
             computeItemKey={(_i, idx) => idx}
             itemContent={(_i, idx) => {
@@ -140,7 +152,7 @@ export default function RecordingTranscript({
                   </span>
                 </>
               );
-              const row = cx('flex w-full gap-3 rounded-[var(--radius-row)] px-2 py-1.5 text-left', idx === playing && 'bg-accent/12');
+              const row = cx('flex w-full gap-3 rounded-[var(--radius-row)] px-2 py-1.5 text-left', (idx === playing || (playing < 0 && idx === focus)) && 'bg-accent/12');
               return track ? (
                 <button type="button" className={cx(row, 'hover:bg-hover')} onClick={() => seek(s.startMs)} title={t('rec.tr.playFrom', { time: stamp(s.startMs) })} aria-current={idx === playing || undefined} data-testid="recording-transcript-row">
                   {body}

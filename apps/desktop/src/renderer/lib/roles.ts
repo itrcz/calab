@@ -1,6 +1,8 @@
 import { create } from '@bufbuild/protobuf';
 import {
   ALL_PERMISSIONS,
+  BILLING_BITS,
+  BILLING_PERMISSIONS,
   BUILTIN_ROLE_POSITION,
   PERMISSION_BITS,
   ROLE_DEFAULTS,
@@ -281,7 +283,9 @@ export function canEditRole(a: RoleActor, r: Pick<Role, 'position'>): boolean {
   return canManageRoles(a) && (a.owner || r.position < a.top);
 }
 
-export const canDeleteRole = (a: RoleActor, r: Pick<Role, 'position' | 'builtin'>): boolean => isCustomRole(r) && canEditRole(a, r);
+/** A role with billing bits is deleted by the owner only (ADR-0087). */
+export const canDeleteRole = (a: RoleActor, r: Pick<Role, 'position' | 'builtin'> & { permissions?: PermissionBits }): boolean =>
+  isCustomRole(r) && canEditRole(a, r) && (a.owner || ((r.permissions ?? 0n) & BILLING_PERMISSIONS) === 0n);
 
 /** Name is fixed for the built-ins. */
 export const canRenameRole = (a: RoleActor, r: Pick<Role, 'position' | 'builtin'>): boolean => isCustomRole(r) && canEditRole(a, r);
@@ -298,6 +302,46 @@ export function editableBits(a: RoleActor, r: Pick<Role, 'position' | 'builtin'>
   return bits;
 }
 
+// ---------------------------------------------------------------- billing bits (ADR-0087)
+
+export type BillingPermName = 'BILLING_VIEW' | 'BILLING_TOPUP' | 'BILLING_MANAGE';
+
+/** The «Биллинг» group of the role card, lowest first (each implies the ones above it). */
+export const BILLING_PERM_ORDER: readonly BillingPermName[] = ['BILLING_VIEW', 'BILLING_TOPUP', 'BILLING_MANAGE'];
+
+export const BILLING_PERM_BIT: Record<BillingPermName, PermissionBits> = {
+  BILLING_VIEW: BILLING_BITS.VIEW,
+  BILLING_TOPUP: BILLING_BITS.TOPUP,
+  BILLING_MANAGE: BILLING_BITS.MANAGE,
+};
+
+/**
+ * Billing bits I may toggle on a role: the owner only (ADMINISTRATOR does not include them), on a
+ * custom role or the member role (never owner / admin: fixed; never the guest role: guests never pay).
+ */
+export function billingEditableBits(a: RoleActor, r: Pick<Role, 'position' | 'builtin'>): PermissionBits {
+  if (!a.owner || isFullRole(r) || r.builtin === WorkspaceRole.GUEST || !canEditRole(a, r)) return 0n;
+  return BILLING_PERMISSIONS;
+}
+
+/**
+ * The role's bits with billing permission `name` switched: on adds it and what it implies (MANAGE →
+ * TOPUP → VIEW), off removes it and what implies it — the stored bits always match what the
+ * checkboxes show and what the server computes.
+ */
+export function toggleBilling(bits: PermissionBits, name: BillingPermName, on: boolean): PermissionBits {
+  const i = BILLING_PERM_ORDER.indexOf(name);
+  let mask = 0n;
+  for (const [j, n] of BILLING_PERM_ORDER.entries()) if (on ? j <= i : j >= i) mask |= BILLING_PERM_BIT[n];
+  return on ? bits | mask : bits & ~mask;
+}
+
+/** Whether the role's billing bit `name` is on, implications included. */
+export function billingOn(bits: PermissionBits, name: BillingPermName): boolean {
+  const i = BILLING_PERM_ORDER.indexOf(name);
+  return BILLING_PERM_ORDER.some((n, j) => j >= i && (bits & BILLING_PERM_BIT[n]) !== 0n);
+}
+
 /**
  * May I give / take `role` to / from a member whose most senior role sits at `targetTop`
  * (docs/04 «Назначение»)? MEMBER / GUEST follow the member itself, OWNER never; ADMIN — the
@@ -306,6 +350,8 @@ export function editableBits(a: RoleActor, r: Pick<Role, 'position' | 'builtin'>
  */
 export function canAssignRole(a: RoleActor, role: Pick<Role, 'position' | 'builtin' | 'permissions'>, targetTop: number, self: boolean): boolean {
   if (!canAssignRoles(a)) return false;
+  // ADR-0087: roles with billing bits are the owner's to give and take.
+  if ((role.permissions & BILLING_PERMISSIONS) !== 0n && !a.owner) return false;
   if (role.builtin === WorkspaceRole.MEMBER || role.builtin === WorkspaceRole.GUEST || role.builtin === WorkspaceRole.OWNER) return false;
   if (role.builtin === WorkspaceRole.ADMIN) return a.owner && !self;
   if (!a.owner && role.position >= a.top) return false;

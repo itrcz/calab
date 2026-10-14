@@ -21,6 +21,8 @@ export const zhIdentity: DictShape<typeof ruIdentity> = {
   'identity.refresh': '刷新',
   'identity.unavailable': '企业登录不可用，请联系工作区所有者检查配置。',
   'identity.locked': '工作区已锁定',
+  'identity.lockedUnavailable': '工作区暂时不可用',
+  'identity.checkUnavailable': '服务器暂时无法验证对该工作区的访问。连接恢复后将自动恢复。',
   'identity.required': '此工作区需要重新企业登录。其他工作区和私信仍可使用。',
   'identity.scope': '此会话仅限企业工作区，个人功能需要登录本地账户。',
   'identity.directoryDenied': '组织目录不允许访问，请联系所有者。',

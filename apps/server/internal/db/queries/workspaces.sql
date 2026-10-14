@@ -45,6 +45,10 @@ RETURNING *;
 DELETE FROM workspaces WHERE id = $1;
 
 -- name: AddMember :one
+-- Joining again clears the former-member row (ADR-0097): back to an ordinary member.
+WITH back AS (
+    DELETE FROM workspace_former_members f WHERE f.workspace_id = $1 AND f.user_id = $2
+)
 INSERT INTO workspace_members (workspace_id, user_id, role)
 VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id, user_id) DO NOTHING
@@ -73,7 +77,9 @@ ORDER BY m.joined_at;
 -- name: UpdateMember :one
 UPDATE workspace_members SET
     role     = coalesce(sqlc.narg('role'), role),
-    nickname = coalesce(sqlc.narg('nickname'), nickname)
+    nickname = coalesce(sqlc.narg('nickname'), nickname),
+    -- A member made a guest starts the guest inactivity clock now (ADR-0098).
+    last_active_at = CASE WHEN sqlc.narg('role')::text = 'guest' AND role <> 'guest' THEN now() ELSE last_active_at END
 WHERE workspace_id = sqlc.arg('workspace_id') AND user_id = sqlc.arg('user_id')
 RETURNING *;
 
@@ -81,11 +87,19 @@ RETURNING *;
 DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
 
 -- name: DeleteUserOverridesInWorkspace :exec
--- A member leaves: their room overrides and board overrides (ADR-0042) go.
+-- A member leaves: their room, board (ADR-0042), disk (ADR-0094) and wiki (ADR-0096) overrides go.
 WITH boards_gone AS (
     DELETE FROM board_permissions bp USING boards bb
     WHERE bp.board_id = bb.id AND bb.workspace_id = sqlc.arg('workspace_id')::uuid
       AND bp.target_type = 'user' AND bp.target_id = sqlc.arg('user_id')::text
+), disk_gone AS (
+    DELETE FROM disk_permissions dp USING disk_items di
+    WHERE dp.item_id = di.id AND di.workspace_id = sqlc.arg('workspace_id')::uuid
+      AND dp.target_type = 'user' AND dp.target_id = sqlc.arg('user_id')::text
+), wiki_gone AS (
+    DELETE FROM wiki_permissions wpm USING wiki_pages wp
+    WHERE wpm.page_id = wp.id AND wp.workspace_id = sqlc.arg('workspace_id')::uuid
+      AND wpm.target_type = 'user' AND wpm.target_id = sqlc.arg('user_id')::text
 )
 DELETE FROM room_permissions rp
 USING rooms r

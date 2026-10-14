@@ -97,12 +97,16 @@ func (q *Queries) DeleteRole(ctx context.Context, arg DeleteRoleParams) (int64, 
 const deleteRoleOverrides = `-- name: DeleteRoleOverrides :many
 WITH boards_gone AS (
     DELETE FROM board_permissions WHERE target_type = 'role' AND target_id = $1::text
+), disk_gone AS (
+    DELETE FROM disk_permissions WHERE target_type = 'role' AND target_id = $1::text
+), wiki_gone AS (
+    DELETE FROM wiki_permissions WHERE target_type = 'role' AND target_id = $1::text
 )
 DELETE FROM room_permissions WHERE target_type = 'role' AND target_id = $1::text
 RETURNING room_id
 `
 
-// The deleted role's room and board overrides; returns the affected rooms.
+// The deleted role's room, board, disk and wiki overrides; returns the affected rooms.
 func (q *Queries) DeleteRoleOverrides(ctx context.Context, roleID string) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, deleteRoleOverrides, roleID)
 	if err != nil {
@@ -252,8 +256,10 @@ const listWorkspaceMemberRoles = `-- name: ListWorkspaceMemberRoles :many
 SELECT m.user_id, m.role,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
-                 WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
+                 WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids,
+       u.is_bot
 FROM workspace_members m
+JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1
 `
 
@@ -261,10 +267,11 @@ type ListWorkspaceMemberRolesRow struct {
 	UserID  uuid.UUID
 	Role    string
 	RoleIds []uuid.UUID
+	IsBot   bool
 }
 
-// Every member's built-in role and role ids (highest first): the gateway's workspace state
-// and guest visibility.
+// Every member's built-in role and role ids (highest first) and whether it is a bot: the
+// gateway's workspace state and guest visibility.
 func (q *Queries) ListWorkspaceMemberRoles(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceMemberRolesRow, error) {
 	rows, err := q.db.Query(ctx, listWorkspaceMemberRoles, workspaceID)
 	if err != nil {
@@ -274,7 +281,12 @@ func (q *Queries) ListWorkspaceMemberRoles(ctx context.Context, workspaceID uuid
 	items := []ListWorkspaceMemberRolesRow{}
 	for rows.Next() {
 		var i ListWorkspaceMemberRolesRow
-		if err := rows.Scan(&i.UserID, &i.Role, &i.RoleIds); err != nil {
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Role,
+			&i.RoleIds,
+			&i.IsBot,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

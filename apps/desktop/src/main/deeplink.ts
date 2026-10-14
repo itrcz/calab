@@ -4,7 +4,8 @@ import { getMainWindow, showMainWindow } from './windows';
 import { isSsoDeepLink } from './ssoHandoff';
 
 /**
- * Deep links: `calab://join/<code>` (workspace invite, docs/04) and `calab://r/<code>` (room link,
+ * Deep links: `calab://join/<code>` (workspace invite, docs/04), `calab://mail/…` (ADR-0088 §12: the
+ * add-account payload carries a password — never logged here or in the renderer) and `calab://r/<code>` (room link,
  * ADR-0016). `calaba://` — the scheme before the rename (docs/10) — stays registered as an alias
  * so links already shared keep opening the app.
  */

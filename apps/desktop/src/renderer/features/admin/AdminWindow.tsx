@@ -1,34 +1,38 @@
-import { Plan, ScreenSharePreset, type AdminWorkspace, type PlanLogEntry } from '@calaba/protocol';
+import { Plan, type AdminWorkspace, type PlanLogEntry } from '@calaba/protocol';
 import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
 import * as DialogP from '@radix-ui/react-dialog';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
-import { plural, t, type MessageKey } from '../../i18n';
+import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Spinner, cx } from '../../components/ui';
+import { plural, t } from '../../i18n';
 import { adminApi } from '../../lib/api/endpoints';
 import { onApiError } from '../../lib/api/client';
 import { errorText, recentAuthRequired } from '../../lib/api/errors';
 import { fmt } from '../../lib/format';
-import { audioTierLabel } from '../../lib/audioTierLabel';
 import {
-  AUDIO_CAP_OPTIONS,
+  CUSTOM_DESCRIPTION_MAX,
+  CUSTOM_NAME_MAX,
   NOTE_MAX,
   PLAN_LABEL,
   inputFromDate,
   limitsFormFrom,
+  planDisplayName,
   planKind,
   setPlanBody,
-  type LimitsField,
   type LimitsForm,
   type PlanForm,
 } from '../../lib/plan';
+import { CustomLimitsFields, FIELD_LABEL } from './CustomLimitsFields';
 import { platform } from '../../platform';
 import { toast } from '../../stores/toasts';
 import { ExpiredBadge, PlanPill } from '../workspace/PlanTab';
 import { SuspendedBadge, SuspendedMark, SuspensionCard } from './SuspensionCard';
 import { LocalReauth } from '../identity/SignIn';
+import { AdminBillingPane, AdminBillingSide, AdminBillingWorkspaceCard, AdminSectionSwitch, type AdminSection, type BillingView } from './billing/AdminBilling';
+import { billingStateOf } from '../../lib/billing/model';
+import { violationText, violationsOf } from '../../lib/billing/violations';
 
 /** The search waits this long after the last keystroke (admin API: 60 requests / min). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -106,6 +110,13 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim(), SEARCH_DEBOUNCE_MS);
   const [selected, setSelected] = useState<string | null>(workspaceId ?? null);
+  // «Пространства | Оплата» (ADR-0080 §13): the billing section has its own list and pages.
+  const [section, setSection] = useState<AdminSection>('workspaces');
+  const [billingView, setBillingView] = useState<BillingView>(null);
+  const openBilling = useCallback((view: BillingView) => {
+    setSection('billing');
+    setBillingView(view);
+  }, []);
   const list = useQuery({
     queryKey: KEY.search(dq),
     queryFn: ({ signal }) => adminApi.search(dq, signal),
@@ -147,6 +158,9 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
     };
   }, []);
 
+  const backToBillingList = useCallback(() => setBillingView(null), []);
+  const billingPage = section === 'billing' && billingView !== null;
+  const billingList = section === 'billing' && billingView === null;
   const items = list.data?.workspaces ?? [];
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
@@ -163,35 +177,50 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
           }}
           className="mat-sheet anim-in fixed left-1/2 top-[max(46px,calc(50vh-320px))] z-[var(--z-modal)] flex h-[min(640px,calc(100vh-62px))] w-[min(920px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-[var(--radius-panel)] focus:outline-none mobile:inset-x-0 mobile:bottom-0 mobile:top-[calc(var(--safe-top)+8px)] mobile:h-auto mobile:w-full mobile:translate-x-0 mobile:flex-col mobile:rounded-b-none mobile:rounded-t-[16px]"
         >
-          <div className="mat-sheet-side flex w-[300px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[280px] mobile:max-h-[45%] mobile:w-full mobile:border-b mobile:border-r-0">
+          <div
+            className={cx(
+              'mat-sheet-side flex w-[300px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[280px] mobile:w-full mobile:border-b mobile:border-r-0',
+              // Phone: «Оплата» is two screens — the list, then the account page (a back button), never both.
+              billingPage ? 'mobile:hidden' : billingList ? 'mobile:min-h-0 mobile:flex-1' : 'mobile:max-h-[45%]',
+            )}
+          >
             <DialogP.Title className="flex items-center gap-2 px-2 pt-2 text-body font-semibold text-fg">
               <ShieldCheck className="size-4 text-accent" aria-hidden />
               {t('admin.title')}
             </DialogP.Title>
-            <label className="relative flex items-center">
-              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted" aria-hidden />
-              <input
-                type="search"
-                role="searchbox"
-                aria-label={t('admin.search')}
-                placeholder={t('admin.search')}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:h-10 [&::-webkit-search-cancel-button]:hidden"
-              />
-            </label>
-            <div role="listbox" aria-label={t('admin.title')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1" data-testid="admin-list">
-              {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
-              {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{t('admin.loadFailed')}</p> : null}
-              {list.isSuccess && items.length === 0 ? <p className="px-2 py-3 text-body text-muted">{t('admin.none')}</p> : null}
-              {items.map((a) =>
-                a.workspace ? <WorkspaceCard key={a.workspace.id} a={a} selected={a.workspace.id === selected} onSelect={() => setSelected(a.workspace?.id ?? null)} /> : null,
-              )}
-            </div>
+            <AdminSectionSwitch value={section} onChange={setSection} />
+            {section === 'billing' ? (
+              <AdminBillingSide view={billingView} onView={setBillingView} />
+            ) : (
+              <>
+                <label className="relative flex items-center">
+                  <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted" aria-hidden />
+                  <input
+                    type="search"
+                    role="searchbox"
+                    aria-label={t('admin.search')}
+                    placeholder={t('admin.search')}
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    className="selectable h-7 w-full min-w-0 rounded-full border border-line bg-elev pl-7 pr-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted mobile:tap-h [&::-webkit-search-cancel-button]:hidden"
+                  />
+                </label>
+                <div role="listbox" aria-label={t('admin.title')} className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-0.5 pb-1" data-testid="admin-list">
+                  {list.isLoading ? <Spinner className="mx-auto mt-6" /> : null}
+                  {list.isError && !recentAuthRequired(list.error) ? <p className="px-2 py-3 text-body text-danger-text">{t('admin.loadFailed')}</p> : null}
+                  {list.isSuccess && items.length === 0 ? <p className="px-2 py-3 text-body text-muted">{t('admin.none')}</p> : null}
+                  {items.map((a) =>
+                    a.workspace ? <WorkspaceCard key={a.workspace.id} a={a} selected={a.workspace.id === selected} onSelect={() => setSelected(a.workspace?.id ?? null)} /> : null,
+                  )}
+                </div>
+              </>
+            )}
           </div>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]">
-            {selected ? (
-              <AdminDetail key={selected} id={selected} onClose={onClose} notice={notice} />
+          <div className={cx('flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]', billingList && 'mobile:hidden')}>
+            {section === 'billing' ? (
+              <AdminBillingPane view={billingView} onClose={onClose} onBack={backToBillingList} notice={notice} />
+            ) : selected ? (
+              <AdminDetail key={selected} id={selected} onClose={onClose} notice={notice} onOpenBilling={openBilling} />
             ) : (
               <>
                 <PaneHeader title={t('admin.title')} onClose={onClose} />
@@ -230,27 +259,6 @@ function PaneHeader({ title, onClose, children }: { title: string; onClose: () =
   );
 }
 
-const STREAM_PRESETS = [ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL];
-const CAMERA_PRESET_OPTIONS = [ScreenSharePreset.UNSPECIFIED, ScreenSharePreset.H720, ScreenSharePreset.H1080];
-const PRESET_NAME: Record<ScreenSharePreset, MessageKey> = {
-  [ScreenSharePreset.UNSPECIFIED]: 'plan.unlimited',
-  [ScreenSharePreset.ECONOMY]: 'preset.economy',
-  [ScreenSharePreset.H720]: 'preset.h720',
-  [ScreenSharePreset.H1080]: 'preset.h1080',
-  [ScreenSharePreset.ORIGINAL]: 'preset.original',
-};
-
-const FIELD_LABEL: Record<LimitsField, MessageKey> = {
-  roomMembers: 'plan.limit.roomMembers',
-  members: 'plan.limit.members',
-  streamsPerRoom: 'plan.limit.streams',
-  streamMaxFps: 'admin.limit.streamFps',
-  cameraMaxFps: 'admin.limit.cameraFps',
-  storageMb: 'admin.limit.storageMb',
-  bots: 'plan.limit.bots',
-  stickerPacks: 'plan.limit.stickerPacks',
-};
-
 function formFrom(a: AdminWorkspace): PlanForm {
   const p = a.workspace?.plan;
   const kind = planKind(p);
@@ -259,50 +267,13 @@ function formFrom(a: AdminWorkspace): PlanForm {
     limits: limitsFormFrom(kind, p?.limits),
     validUntil: inputFromDate(p?.validUntil ? timestampDate(p.validUntil) : null),
     note: a.planNote,
+    displayName: kind === Plan.CUSTOM ? (p?.displayName ?? '') : '',
+    description: kind === Plan.CUSTOM ? (p?.description ?? '') : '',
   };
 }
 
-function NumberField({ field, form, onChange }: { field: LimitsField; form: LimitsForm; onChange: (f: LimitsForm) => void }): ReactNode {
-  const label = t(FIELD_LABEL[field]);
-  return (
-    <Row label={label}>
-      <Input
-        aria-label={label}
-        inputMode="numeric"
-        className="w-28 text-right tabular-nums"
-        value={form[field]}
-        onChange={(e) => onChange({ ...form, [field]: e.target.value.replace(/[^\d]/g, '') })}
-      />
-    </Row>
-  );
-}
-
-function PresetField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: ScreenSharePreset;
-  options: ScreenSharePreset[];
-  onChange: (p: ScreenSharePreset) => void;
-}): ReactNode {
-  return (
-    <Row label={label}>
-      <Select aria-label={label} className="w-44" value={value} onChange={(e) => onChange(Number(e.target.value))}>
-        {options.map((p) => (
-          <option key={p} value={p}>
-            {t(PRESET_NAME[p])}
-          </option>
-        ))}
-      </Select>
-    </Row>
-  );
-}
-
 /** The chosen workspace: summary, the plan form (PUT with a confirmation), the change log. */
-function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void; notice: ReactNode }): ReactNode {
+function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClose: () => void; notice: ReactNode; onOpenBilling: (v: BillingView) => void }): ReactNode {
   const qc = useQueryClient();
   const ws = useQuery({ queryKey: KEY.ws(id), queryFn: ({ signal }) => adminApi.get(id, signal), retry: false });
   const log = useQuery({ queryKey: KEY.log(id), queryFn: ({ signal }) => adminApi.log(id, signal), retry: false });
@@ -323,7 +294,19 @@ function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void;
       void qc.invalidateQueries({ queryKey: ['admin', 'search'] });
       void qc.invalidateQueries({ queryKey: KEY.log(id) });
     },
-    onError: (e) => setError(errorText(e, t('err.ctx.save'))),
+    onError: (e, body) => {
+      // ADR-0086: the workspace already exceeds the plan — never silent: list it and ask once more.
+      const over = violationsOf(e);
+      if (over.length && !body.overrideLimits && form) {
+        const plan = t(PLAN_LABEL[form.plan]);
+        const text = [...over.map((v) => `• ${violationText(v, plan)}`), t('admin.plan.overText')].join('\n');
+        void confirmAction(t('admin.plan.overTitle'), text, t('admin.plan.overConfirm')).then((ok) => {
+          if (ok) save.mutate({ ...body, overrideLimits: true });
+        });
+        return;
+      }
+      setError(errorText(e, t('err.ctx.save')));
+    },
   });
 
   if (!a?.workspace || !form) {
@@ -345,7 +328,7 @@ function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void;
       setError(t('admin.invalid', { field: t(FIELD_LABEL[r.error]) }));
       return;
     }
-    const ok = await confirmAction(t('admin.saveTitle'), t('admin.saveText', { name: w.name, plan: t(PLAN_LABEL[form.plan]) }), t('admin.save'), 'primary');
+    const ok = await confirmAction(t('admin.saveTitle'), t('admin.saveText', { name: w.name, plan: planDisplayName(form.plan, form.displayName) }), t('admin.save'), 'primary');
     if (!ok) return;
     const { validUntil, ...rest } = r.body;
     save.mutate({ ...rest, ...(validUntil ? { validUntil: timestampFromDate(validUntil) } : {}) });
@@ -358,7 +341,7 @@ function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void;
       <PaneHeader title={w.name} onClose={onClose}>
         {w.suspension ? <SuspendedBadge /> : null}
         {w.plan?.expired ? <ExpiredBadge /> : null}
-        <PlanPill plan={planKind(w.plan)} />
+        <PlanPill plan={planKind(w.plan)} name={w.plan?.displayName} />
       </PaneHeader>
       {notice}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 mobile:px-4" data-testid="admin-detail">
@@ -420,51 +403,27 @@ function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void;
 
           {form.plan === Plan.CUSTOM ? (
             <Card title={t('admin.card.limits')} footer={t('admin.limitsHint')}>
-              <NumberField field="roomMembers" form={form.limits} onChange={setLimits} />
-              <NumberField field="streamsPerRoom" form={form.limits} onChange={setLimits} />
-              <PresetField
-                label={t('admin.limit.streamPreset')}
-                value={form.limits.streamMaxPreset}
-                options={STREAM_PRESETS}
-                onChange={(p) => setLimits({ ...form.limits, streamMaxPreset: p })}
-              />
-              <NumberField field="streamMaxFps" form={form.limits} onChange={setLimits} />
-              <PresetField
-                label={t('admin.limit.cameraPreset')}
-                value={form.limits.cameraMaxPreset}
-                options={CAMERA_PRESET_OPTIONS}
-                onChange={(p) => setLimits({ ...form.limits, cameraMaxPreset: p })}
-              />
-              <NumberField field="cameraMaxFps" form={form.limits} onChange={setLimits} />
-              <NumberField field="storageMb" form={form.limits} onChange={setLimits} />
-              <NumberField field="members" form={form.limits} onChange={setLimits} />
-              <Row label={t('admin.limit.audio')}>
-                <Select
-                  aria-label={t('admin.limit.audio')}
-                  className="w-44"
-                  value={form.limits.audioTierMaxKbps}
-                  onChange={(e) => setLimits({ ...form.limits, audioTierMaxKbps: Number(e.target.value) })}
-                >
-                  {AUDIO_CAP_OPTIONS.map((k) => (
-                    <option key={k} value={k}>
-                      {k === 0 ? t('plan.unlimited') : audioTierLabel(k)}
-                    </option>
-                  ))}
-                </Select>
+              <Row label={t('admin.row.planName')} hint={t('adminCustom.nameHint')}>
+                <Input
+                  aria-label={t('admin.row.planName')}
+                  className="w-72"
+                  maxLength={CUSTOM_NAME_MAX}
+                  placeholder={t('adminCustom.namePh')}
+                  value={form.displayName ?? ''}
+                  onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                  data-testid="admin-plan-name"
+                />
               </Row>
-              <NumberField field="bots" form={form.limits} onChange={setLimits} />
-              <NumberField field="stickerPacks" form={form.limits} onChange={setLimits} />
-              {/* ADR-0058 §5: written with the plan — without them a save would switch both on. */}
-              <Row label={t('admin.limit.checklists')} hint={t('admin.limit.checklistsHint')}>
-                <Toggle label={t('admin.limit.checklists')} checked={!form.limits.checklistsDisabled} onChange={(v) => setLimits({ ...form.limits, checklistsDisabled: !v })} />
+              <Row label={t('admin.row.planDescription')} hint={t('adminCustom.descriptionHint')}>
+                <Input
+                  aria-label={t('admin.row.planDescription')}
+                  className="w-72"
+                  maxLength={CUSTOM_DESCRIPTION_MAX}
+                  value={form.description ?? ''}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                />
               </Row>
-              <Row label={t('admin.limit.boardWebhooks')} hint={t('admin.limit.boardWebhooksHint')}>
-                <Toggle label={t('admin.limit.boardWebhooks')} checked={!form.limits.boardWebhooksDisabled} onChange={(v) => setLimits({ ...form.limits, boardWebhooksDisabled: !v })} />
-              </Row>
-              {/* ADR-0046 (owner, 02.10): telephony is Business only; a new Custom plan starts without it. */}
-              <Row label={t('admin.limit.telephony')} hint={t('admin.limit.telephonyHint')}>
-                <Toggle label={t('admin.limit.telephony')} checked={!form.limits.telephonyDisabled} onChange={(v) => setLimits({ ...form.limits, telephonyDisabled: !v })} />
-              </Row>
+              <CustomLimitsFields form={form.limits} onChange={setLimits} />
             </Card>
           ) : null}
 
@@ -482,6 +441,8 @@ function AdminDetail({ id, onClose, notice }: { id: string; onClose: () => void;
           <PlanLog entries={entries} loading={log.isLoading} />
 
           <SuspensionCard a={a} onSaved={(next) => qc.setQueryData(KEY.ws(id), { workspace: next })} />
+
+          <AdminBillingWorkspaceCard workspaceId={w.id} name={w.name} state={billingStateOf(w.billing)} onOpen={() => onOpenBilling(null)} />
         </div>
       </div>
     </>
@@ -516,7 +477,7 @@ function PlanLog({ entries, loading }: { entries: PlanLogEntry[]; loading: boole
                 {e.actorEmail || '—'}
               </span>
               <span role="cell">
-                <PlanPill plan={e.plan} />
+                <PlanPill plan={e.plan} name={e.displayName} />
               </span>
               <span role="cell" className="tabular-nums text-muted">
                 {e.validUntil ? fmt.shortDate(timestampDate(e.validUntil)) : '—'}

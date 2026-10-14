@@ -1,3 +1,5 @@
+import { create } from '@bufbuild/protobuf';
+import { MessageKind, MessageSchema } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { applyMention, codeRanges, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, mentionsMe, toWire } from './mentions';
 
@@ -92,6 +94,18 @@ describe('filters', () => {
     expect(filterCandidates('zz', list)).toEqual([]);
   });
 
+  it('finds by the nickname too and still inserts the name (ADR-0077)', () => {
+    const nicks = [...list, { id: 'u-ivan', name: 'Иван Петров', alt: [], nick: 'vanya_p' }];
+    const found = filterCandidates('vany', nicks);
+    expect(found.map((c) => c.id)).toEqual(['u-ivan']);
+    expect(found[0]?.name).toBe('Иван Петров');
+    expect(filterCandidates('VANYA_P', nicks).map((c) => c.id)).toEqual(['u-ivan']);
+    // By name as before, the nickname does not hide them.
+    expect(filterCandidates('иван', nicks).map((c) => c.id)).toEqual(['u-ivan']);
+    // The picked name goes over the wire as @<user_id>.
+    expect(toWire('@Иван Петров привет', new Map([['Иван Петров', 'u-ivan']]))).toBe('@u-ivan привет');
+  });
+
   it('special mentions by English and Russian words', () => {
     expect(filterSpecial('')).toEqual(['everyone', 'here']);
     expect(filterSpecial('все')).toEqual(['everyone']);
@@ -134,5 +148,22 @@ describe('mentionsMe', () => {
 
   it('never for a forwarded copy (ADR-0033: someone else’s text notifies nobody)', () => {
     expect(mentionsMe({ content: `@${ME} @here`, authorId: OTHER, forward: { authorId: OTHER } }, ME)).toBe(false);
+  });
+
+  it('my achievement card mentions me (ADR-0061: its author is the recipient)', () => {
+    const card = (authorId: string, forward?: unknown) =>
+      create(MessageSchema, {
+        authorId,
+        kind: MessageKind.SYSTEM,
+        system: { payload: { case: 'achievement', value: { achievementId: 'a1', grantId: 'g1', note: 'за релиз', grantedBy: OTHER } } },
+        ...(forward ? { forward: { authorId: OTHER } } : {}),
+      });
+    expect(mentionsMe(card(ME), ME)).toBe(true);
+    expect(mentionsMe(card(OTHER), ME)).toBe(false); // someone else's card
+    expect(mentionsMe(card(ME, true), ME)).toBe(false); // a forwarded copy
+    expect(mentionsMe(card(ME), '')).toBe(false);
+    // A birthday card is authored by its person too, yet mentions nobody.
+    const bday = create(MessageSchema, { authorId: ME, kind: MessageKind.SYSTEM, system: { payload: { case: 'birthday', value: { day: 1, month: 2 } } } });
+    expect(mentionsMe(bday, ME)).toBe(false);
   });
 });

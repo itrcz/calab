@@ -1,5 +1,6 @@
 import { DEFAULT_LOCALE, hreflangAlternates, LOCALE_INFO, LOCALE_STORAGE_KEY, LOCALES, localePath } from '@/i18n/locales';
 import { SITE_URL } from '@/lib/site';
+import { PREFERENCES_KEY, PREFERENCES_TTL, PREFERENCES_VERSION } from '@/lib/site-preferences';
 
 // `/` — the language router (ADR-0022 §3): no content, no React runtime. Order: the switcher's saved choice
 // (localStorage) → navigator.languages (first one we support: ru/uk/be/kk → ru, zh* → zh, es* → es,
@@ -10,7 +11,9 @@ export const dynamic = 'force-static';
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 const script = `(function(){var L=${JSON.stringify(LOCALES)},l=null;
-try{l=localStorage.getItem(${JSON.stringify(LOCALE_STORAGE_KEY)})}catch(e){}
+try{var p=JSON.parse(localStorage.getItem(${JSON.stringify(PREFERENCES_KEY)})),n=Date.now();
+if(p&&p.version===${PREFERENCES_VERSION}&&typeof p.savedAt==="number"&&Number.isFinite(p.savedAt)&&p.savedAt<=n&&typeof p.expiresAt==="number"&&Number.isFinite(p.expiresAt)&&p.expiresAt>n&&p.expiresAt<=p.savedAt+${PREFERENCES_TTL}&&typeof p.language==="boolean"&&p.analytics===false&&p.marketing===false&&p.language){l=localStorage.getItem(${JSON.stringify(LOCALE_STORAGE_KEY)})}
+else{localStorage.removeItem(${JSON.stringify(LOCALE_STORAGE_KEY)})}}catch(e){try{localStorage.removeItem(${JSON.stringify(LOCALE_STORAGE_KEY)})}catch(e){}}
 if(L.indexOf(l)<0){l=${JSON.stringify(DEFAULT_LOCALE)};var n=navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||""];
 for(var i=0;i<n.length;i++){var p=String(n[i]).toLowerCase().split(/[-_]/)[0],m=/^(ru|uk|be|kk)$/.test(p)?"ru":p==="zh"||p==="es"||p==="en"?p:null;if(m){l=m;break}}}
 location.replace("/"+l+"/"+location.search+location.hash)})()`;

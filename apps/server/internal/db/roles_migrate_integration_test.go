@@ -105,8 +105,9 @@ func TestMigration21Roles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// member: 16503 from 00021, plus VIEW_BOARD | CREATE_TASKS from 00046 (ADR-0042) and
-	// CREATE_TEMP_ROOMS from 00048 (ADR-0044).
-	want := map[string][2]int64{"owner": {1001, 1024}, "admin": {1000, 1024}, "member": {1, 8798327}, "guest": {0, 48}}
+	// CREATE_TEMP_ROOMS from 00048 (ADR-0044), DISK_VIEW | DISK_WRITE from 00088 (ADR-0094) and
+	// WIKI_VIEW | WIKI_WRITE from 00090 (ADR-0096).
+	want := map[string][2]int64{"owner": {1001, 1024}, "admin": {1000, 1024}, "member": {1, 8798327 | 3<<35 | 3<<38}, "guest": {0, 48}}
 	for rows.Next() {
 		var bi string
 		var id uuid.UUID

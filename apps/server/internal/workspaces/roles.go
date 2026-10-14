@@ -109,13 +109,17 @@ func validateColor(c uint32) (int32, error) {
 
 // checkGrant validates a role's permissions going from old to next, set by actor (ADR-0026 §3):
 // ADMINISTRATOR is never grantable; a non-admin cannot change MANAGE_ROLES / MANAGE_WORKSPACE
-// nor any permission they do not hold themselves.
+// nor any permission they do not hold themselves. The billing bits (ADR-0087) are the owner's
+// alone to grant or revoke: ADMINISTRATOR does not include them.
 func checkGrant(actor perm.Member, old, next perm.Bits) error {
-	if next&^perm.All != 0 {
+	if next&^perm.Known != 0 {
 		return httpx.Validation("permissions", "unknown permission bits")
 	}
 	if next&perm.Administrator != 0 {
 		return httpx.Validation("permissions", "ADMINISTRATOR cannot be given to a role")
+	}
+	if (old^next)&perm.Billing != 0 && actor.Role != perm.RoleOwner {
+		return httpx.Forbidden("only the owner can grant or revoke billing permissions")
 	}
 	own := actor.Workspace()
 	if own.Has(perm.Administrator) {
@@ -326,6 +330,9 @@ func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) error {
 		}
 		if !above(actor, cur.Position) {
 			return httpx.Forbidden("cannot delete a role at or above your highest role")
+		}
+		if perm.Bits(uint64(cur.Permissions))&perm.Billing != 0 && actor.Role != perm.RoleOwner { //nolint:gosec // bit mask
+			return httpx.Forbidden("only the owner can delete a role with billing permissions") // ADR-0087
 		}
 		roleID = cur.ID
 		// Holders keep their other roles (MEMBER / GUEST at least): member_roles cascade.
@@ -559,6 +566,11 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 				return httpx.Validation("roleIds", "promote the guest to a member first")
 			case b == perm.RoleAdmin && want[id] && tu.IsBot:
 				return errBotAdmin
+			case perm.Bits(uint64(rr.Permissions))&perm.Billing != 0 && actor.Role != perm.RoleOwner: //nolint:gosec // bit mask
+				// ADR-0087: money rights are the owner's to hand out and to take back.
+				return httpx.Forbidden("only the owner can assign or remove roles with billing permissions")
+			case perm.Bits(uint64(rr.Permissions))&perm.Billing != 0 && want[id] && tu.IsBot: //nolint:gosec // bit mask
+				return httpx.Validation("roleIds", "bots cannot hold billing permissions")
 			case !above(actor, rr.Position):
 				return httpx.Forbidden("cannot assign roles at or above your highest role")
 			case !own.Has(perm.Administrator) && perm.Bits(uint64(rr.Permissions))&^own != 0: //nolint:gosec // bit mask
@@ -584,8 +596,13 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 			return false
 		}
 		if next := legacyRole(hasBuiltin, base); next != perm.Role(m.Role) {
-			s := string(next)
+			s, before := string(next), m.Role
 			if m, err = q.UpdateMember(r.Context(), sqlc.UpdateMemberParams{WorkspaceID: wsID, UserID: target, Role: &s}); err != nil {
+				return err
+			}
+			// The base role is kept here (guest ↔ member is …/promote / PATCH): this is a
+			// no-op unless that rule ever changes, then the paid seat follows (ADR-0080).
+			if err := h.limits.Plans.SeatRoleChanged(r.Context(), q, wsID, target, uid(r), before, m.Role); err != nil {
 				return err
 			}
 		}
@@ -645,14 +662,17 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 		return nil, err
 	}
 	var closed []uuid.UUID
+	flags := map[uuid.UUID]perm.RoomFlags{}
 	for _, room := range rs {
 		if room.Restricted {
 			closed = append(closed, room.ID)
+			flags[room.ID] = perm.FlagsOf(room)
 		}
 	}
 	for _, a := range archived {
 		if a.Room.Restricted {
 			closed = append(closed, a.Room.ID)
+			flags[a.Room.ID] = perm.FlagsOf(a.Room)
 		}
 	}
 	if len(closed) > 0 {
@@ -672,7 +692,7 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 			}
 			seen := map[uuid.UUID]bool{}
 			for id, m := range members {
-				if perm.ComputeIn(m, true, ovs).Has(perm.ViewRoom) {
+				if perm.ComputeIn(m, flags[rid], ovs).Has(perm.ViewRoom) {
 					seen[id] = true
 				}
 			}

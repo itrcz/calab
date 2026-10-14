@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Button, Field, Input, Modal, PasswordInput } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
@@ -115,12 +115,21 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }): Reac
  * «Смена email» (ADR-0023): the new address gets a code and waits in `me.pendingEmail`; login
  * stays on the old one until the code is entered (step «code», also opened from the profile row
  * by «Ввести код»). `cancel` drops the pending change: the server cancels it on a change to the
- * current address, which needs the password like any change.
+ * current address, which needs the password like any change. `verify` confirms the current,
+ * unconfirmed address (profile row «Не подтверждена» · «Подтвердить», ADR-0065): a code is sent
+ * when the sheet opens.
  */
-export function ChangeEmailDialog({ onClose, mode = 'change' }: { onClose: () => void; mode?: 'change' | 'confirm' | 'cancel' }): ReactNode {
+export function ChangeEmailDialog({
+  onClose,
+  mode = 'change',
+}: {
+  onClose: () => void;
+  mode?: 'change' | 'confirm' | 'cancel' | 'verify';
+}): ReactNode {
   const currentEmail = useSession((s) => s.me?.email ?? '');
   const pending = useSession((s) => s.me?.pendingEmail ?? '');
-  const [step, setStep] = useState<'form' | 'code'>(mode === 'confirm' ? 'code' : 'form');
+  const verifyOnly = mode === 'verify';
+  const [step, setStep] = useState<'form' | 'code'>(mode === 'confirm' || verifyOnly ? 'code' : 'form');
   const [email, setEmail] = useState('');
   const [current, setCurrent] = useState('');
   const [errors, setErrors] = useState<CredentialErrors>({});
@@ -128,9 +137,16 @@ export function ChangeEmailDialog({ onClose, mode = 'change' }: { onClose: () =>
   const first = useRef<HTMLInputElement>(null);
   const noteId = useId();
   const flow = useCodeFlow(verifyEmail, resendVerification, () => {
-    toast.success(t('cred.emailDone'));
+    if (!verifyOnly) toast.success(t('cred.emailDone')); // verifyEmail says «Почта подтверждена» itself
     onClose();
   });
+  // `verify`: the code goes out once, when the sheet opens (a 429 shows inline with its timer).
+  const sent = useRef(false);
+  useEffect(() => {
+    if (!verifyOnly || sent.current) return;
+    sent.current = true;
+    flow.resend();
+  }, [verifyOnly, flow]);
   const cancel = mode === 'cancel';
 
   const submit = async (): Promise<void> => {
@@ -164,8 +180,8 @@ export function ChangeEmailDialog({ onClose, mode = 'change' }: { onClose: () =>
       <Modal
         open
         onClose={onClose}
-        title={t('mail.change.codeTitle')}
-        description={t('mail.change.codeText', { email: pending || email.trim() })}
+        title={verifyOnly ? t('mail.verify.title') : t('mail.change.codeTitle')}
+        description={verifyOnly ? t('mail.verify.text', { email: currentEmail }) : t('mail.change.codeText', { email: pending || email.trim() })}
         footer={
           <>
             <Button variant="secondary" onClick={onClose}>

@@ -147,7 +147,7 @@ func source(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, raw st
 	} else if !db.IsNotFound(err) {
 		return f, err
 	}
-	for _, used := range []func(context.Context, uuid.UUID) (bool, error){q.IsWorkspaceBadge, q.IsWorkspaceBackground, q.IsWorkspaceSound} {
+	for _, used := range []func(context.Context, uuid.UUID) (bool, error){q.IsWorkspaceBadge, q.IsWorkspaceBackground, q.IsWorkspaceSound, isAchievement(q)} {
 		if yes, err := used(ctx, id); err != nil {
 			return f, err
 		} else if yes {
@@ -477,4 +477,9 @@ func (h *Handlers) play(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.NoContent(w)
 	return nil
+}
+
+// isAchievement adapts IsWorkspaceAchievement (a nullable column) to the source checks.
+func isAchievement(q *sqlc.Queries) func(context.Context, uuid.UUID) (bool, error) {
+	return func(ctx context.Context, id uuid.UUID) (bool, error) { return q.IsWorkspaceAchievement(ctx, &id) }
 }

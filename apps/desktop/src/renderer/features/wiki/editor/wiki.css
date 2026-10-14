@@ -1,0 +1,425 @@
+/* Wiki editor (ADR-0096 §3, docs/08 «Вики: редактор»). Lives in the lazy editor chunk.
+   Colours only from theme tokens (app/styles.css); no infinite animations, no backdrop-filter. */
+
+.wiki-prose {
+  color: var(--color-fg);
+  font-size: 15px;
+  line-height: 24px;
+  outline: none;
+  overflow-wrap: anywhere;
+  padding-bottom: 0;
+  caret-color: var(--color-accent);
+}
+.wiki-prose > * + * {
+  margin-top: var(--space-2);
+}
+.wiki-prose p {
+  min-height: 24px;
+}
+.wiki-prose h1,
+.wiki-prose h2,
+.wiki-prose h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.wiki-prose h1 {
+  font-size: var(--text-large);
+  line-height: var(--text-large--line-height);
+  margin-top: var(--space-7);
+}
+.wiki-prose h2 {
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  margin-top: var(--space-6);
+}
+.wiki-prose h3 {
+  font-size: var(--text-headline);
+  line-height: var(--text-headline--line-height);
+  margin-top: var(--space-5);
+}
+.wiki-prose > :first-child {
+  margin-top: 0;
+}
+
+/* Placeholder: only on the empty line with the caret (Placeholder extension). */
+.wiki-prose .is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-label-tertiary);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Lists */
+.wiki-prose ul,
+.wiki-prose ol {
+  padding-left: 24px;
+}
+.wiki-prose ul {
+  list-style: disc;
+}
+.wiki-prose ul ul {
+  list-style: circle;
+}
+.wiki-prose ol {
+  list-style: decimal;
+}
+.wiki-prose li > p + * {
+  margin-top: var(--space-1);
+}
+.wiki-prose ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+.wiki-prose ul[data-type='taskList'] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.wiki-prose ul[data-type='taskList'] > li > label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  user-select: none;
+}
+.wiki-prose ul[data-type='taskList'] > li > label input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+}
+.wiki-prose ul[data-type='taskList'] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+.wiki-prose ul[data-type='taskList'] > li[data-checked='true'] > div {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+
+/* Phone: the check box is a 44 px target (docs/08), the row keeps its height through negative margins. */
+@media (max-width: 768px) {
+  :root.web .wiki-prose ul[data-type='taskList'] > li > label {
+    width: 44px;
+    height: 44px;
+    margin: -10px -14px -10px -14px;
+    justify-content: center;
+  }
+}
+
+/* Quote, rule */
+.wiki-prose blockquote {
+  border-left: 3px solid var(--color-separator);
+  padding-left: var(--space-3);
+  color: var(--color-label-secondary);
+}
+.wiki-prose hr {
+  border: none;
+  border-top: 1px solid var(--color-separator);
+  margin: var(--space-4) 0;
+}
+.wiki-prose hr.ProseMirror-selectednode {
+  border-top-color: var(--color-accent);
+}
+
+/* Inline marks */
+.wiki-prose code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--color-code);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.wiki-prose a.wiki-link,
+.wiki-prose a[href] {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.wiki-prose mark {
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.wiki-prose mark[data-color='yellow'],
+.wiki-swatch[data-color='yellow'] {
+  background: color-mix(in srgb, var(--color-yellow) 32%, transparent);
+}
+.wiki-prose mark[data-color='green'],
+.wiki-swatch[data-color='green'] {
+  background: color-mix(in srgb, var(--color-green) 28%, transparent);
+}
+.wiki-prose mark[data-color='blue'],
+.wiki-swatch[data-color='blue'] {
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
+}
+.wiki-prose mark[data-color='red'],
+.wiki-swatch[data-color='red'] {
+  background: color-mix(in srgb, var(--color-red) 26%, transparent);
+}
+.wiki-prose mark[data-color='purple'],
+.wiki-swatch[data-color='purple'] {
+  background: color-mix(in srgb, var(--name-6) 30%, transparent);
+}
+.wiki-swatch {
+  border: 1px solid var(--color-separator);
+}
+.wiki-swatch[data-color='none'] {
+  background: linear-gradient(135deg, transparent 46%, var(--color-red) 46% 54%, transparent 54%);
+}
+.wiki-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+.wiki-mention {
+  color: var(--color-accent-text);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+
+/* Code block: the chat's look (docs/08 «Код в сообщениях»), a language picker on hover. */
+.wiki-code {
+  position: relative;
+}
+.wiki-code pre {
+  background: var(--color-code-block);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 18px;
+  tab-size: 2;
+  white-space: pre;
+}
+.wiki-code pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  border-radius: 0;
+}
+.wiki-code-lang {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  height: 22px;
+  max-width: 140px;
+  border-radius: 9999px;
+  border: 1px solid var(--color-separator);
+  background: var(--color-bg-elevated);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  padding: 0 6px;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease-out;
+}
+.wiki-code:hover .wiki-code-lang,
+.wiki-code:focus-within .wiki-code-lang,
+.wiki-code-lang:focus-visible {
+  opacity: 1;
+}
+.wiki-code-lang:disabled {
+  display: none;
+}
+
+/* Table */
+.wiki-prose .tableWrapper {
+  overflow-x: auto;
+}
+.wiki-prose table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: var(--space-1) 0;
+}
+.wiki-prose th,
+.wiki-prose td {
+  border: 1px solid var(--color-separator);
+  padding: 6px 8px;
+  vertical-align: top;
+  min-width: 80px;
+  position: relative;
+}
+.wiki-prose th {
+  background: var(--color-fill);
+  font-weight: 600;
+  text-align: left;
+}
+.wiki-prose .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  pointer-events: none;
+}
+
+/* Callout */
+.wiki-callout {
+  display: flex;
+  gap: var(--space-2);
+  background: var(--color-fill);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+}
+.wiki-callout-side {
+  flex: none;
+}
+.wiki-callout-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  border-radius: var(--radius-icon);
+}
+.wiki-callout-btn:hover {
+  background: var(--color-fill-hover);
+}
+.wiki-callout-icon {
+  font-size: 18px;
+  line-height: 24px;
+}
+.wiki-callout-body {
+  flex: 1;
+  min-width: 0;
+}
+.wiki-callout-body > div > * + * {
+  margin-top: var(--space-2);
+}
+
+/* Toggle: the first child is the summary; folding is local (data-open on this screen). */
+.wiki-toggle {
+  position: relative;
+  padding-left: 26px;
+}
+.wiki-toggle-btn {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-icon);
+  color: var(--color-muted);
+}
+.wiki-toggle-btn::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 6px solid currentColor;
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+  transform: rotate(90deg);
+  transition: transform var(--motion-fast) ease-out;
+}
+.wiki-toggle[data-open='false'] > .wiki-toggle-btn::before {
+  transform: none;
+}
+.wiki-toggle-btn:hover {
+  background: var(--color-fill);
+}
+.wiki-toggle-body > * + * {
+  margin-top: var(--space-2);
+}
+.wiki-toggle[data-open='false'] > .wiki-toggle-body > :not(:first-child) {
+  display: none;
+}
+
+/* Images */
+.wiki-image {
+  display: flex;
+  justify-content: center;
+  border-radius: var(--radius-card);
+}
+.wiki-image-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-card);
+  background: var(--color-fill);
+}
+.wiki-image[data-selected] .wiki-image-img,
+.wiki-prose .ProseMirror-selectednode .wiki-image-img {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.wiki-upload {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-card);
+  background: var(--color-fill);
+  color: var(--color-muted);
+  font-size: var(--text-body);
+}
+.wiki-upload img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  opacity: 0.6;
+}
+
+/* Collaborators: caret + name (identity colour from the user id), their selection tinted. */
+.wiki-caret {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid var(--caret);
+  word-break: normal;
+  pointer-events: none;
+}
+.wiki-caret-label {
+  position: absolute;
+  left: -2px;
+  top: -1.35em;
+  padding: 0 4px;
+  border-radius: 4px 4px 4px 0;
+  background: var(--caret);
+  color: var(--color-on-accent);
+  font-size: var(--text-micro);
+  line-height: var(--text-micro--line-height);
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+}
+.wiki-remote-selection {
+  background: color-mix(in srgb, var(--caret) 22%, transparent);
+}
+
+/* The phone shows a counter instead of collaborators' carets (ADR-0096 §7). */
+.wiki-editor[data-phone] .wiki-caret {
+  border-left: 0;
+  margin: 0;
+}
+.wiki-editor[data-phone] .wiki-caret-label {
+  display: none;
+}
+.wiki-editor[data-phone] .wiki-remote-selection {
+  background: none;
+}
+
+/* ProseMirror internals */
+.wiki-prose .ProseMirror-gapcursor:after {
+  border-top-color: var(--color-fg);
+}
+.wiki-prose ::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wiki-code-lang,
+  .wiki-toggle-btn::before {
+    transition: none;
+  }
+}
+
+/* Phone: room under the last line for the keyboard bar and a comfortable tap target. */
+.wiki-editor[data-phone] .wiki-prose {
+  padding-bottom: var(--space-8);
+}

@@ -1,0 +1,12 @@
+{
+ "code": "424",
+ "id": "e80bbe08-85ca-43b7-8ff0-3a32de263aaa",
+ "message": "Что-то пошло не так",
+ "Errors": [
+  {
+   "errorCode": "Something going wrong",
+   "message": "Order not found",
+   "url": "https://developers.tochka.com/"
+  }
+ ]
+}

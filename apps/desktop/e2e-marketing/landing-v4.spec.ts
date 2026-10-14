@@ -3,13 +3,14 @@ import { createServer, type Server } from 'node:http';
 import { join, resolve } from 'node:path';
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { Plan, SipCallStatus, WorkspaceAppSchema, WorkspacePlanSchema } from '@calaba/protocol';
+import { InlineKeyboardSchema, Plan, SipCallStatus, WorkspaceAppSchema, WorkspacePlanSchema } from '@calaba/protocol';
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
-import { ENTERPRISE_PLAN_LIMITS } from '../e2e-support/fixtures';
+import { ENTERPRISE_PLAN_LIMITS, fileMeta } from '../e2e-support/fixtures';
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, settle } from '../e2e-visual/harness';
 import { APP_LOCALE, COPY, type Copy, type Short } from './copy';
-import { cameraPhoto, dataUrl } from './photos';
+import { appIconHtml, pageHtml, render, salesHtml, type SalesCopy } from './art';
+import { avatarPhoto, cameraPhoto, dataUrl } from './photos';
 import { drawArt, seedScene } from './seed';
 
 /**
@@ -230,18 +231,29 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
     await shoot(ctx, 'sipsettings');
   },
 
-  // A web app of the workspace open inside Calab while the call goes on.
+  // «Свои инструменты и боты внутри мессенджера» (landing 14.10): the team's sales dashboard open
+  // from its rail icon (the name in the tip), then the reporting bot's daily summary with inline
+  // buttons (ADR-0047) in «общий». Two captures: webapps-<l>@2x.png (the window) and
+  // webapps-bot-<l>@2x.png (the bot's message); scripts/assets.mjs lays the second over the first.
   async webapps(ctx) {
-    const { page, mock, short } = ctx;
-    const site = await testSite(short);
+    const { page, mock, short, c } = ctx;
+    const t = APPS[short];
+    const people = (['boris', 'vera', 'grigory', 'anna'] as const).map((k) => ({ name: c.people[k].name, avatar: dataUrl(avatarPhoto(k)) }));
+    const site = await testSite(pageHtml(t.sales.title, salesHtml(t.sales, people)));
     ctx.extra.push(site);
-    const apps: Array<[string, string]> = [
-      ['Grafana', `${site.url}/grafana`],
-      [APPS[short].wiki, `${site.url}/wiki`],
-      ['CRM', `${site.url}/crm`],
+    const apps: Array<[string, string, 'sales' | 'wiki' | 'support']> = [
+      [t.sales.title, `${site.url}/sales`, 'sales'],
+      [t.wiki, `${site.url}/wiki`, 'wiki'],
+      [t.support, `${site.url}/support`, 'support'],
     ];
-    await inCall(ctx);
-    apps.forEach(([name, url], i) => {
+    for (const [i, [name, url, kind]] of apps.entries()) {
+      const icon = await render(ctx.browser, appIconHtml(kind), 128, 128, { transparent: true });
+      const fileId = `00000000-0000-7000-8000-00000000a1${i + 1}`;
+      mock.state.files.set(fileId, {
+        meta: fileMeta(fileId, IDS.workspaces.main, U.anna, `${kind}.png`, 'image/png', icon, timestampFromMs(NOW.getTime() - 5 * 86_400_000), { width: 128, height: 128 }),
+        bytes: icon,
+        thumbnail: { bytes: icon, mime: 'image/png' },
+      });
       mock.dispatch({
         event: {
           case: 'workspaceAppUpsert',
@@ -251,6 +263,8 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
               workspaceId: IDS.workspaces.main,
               name,
               url,
+              iconFileId: fileId,
+              iconUrl: `/api/files/${fileId}`,
               position: i + 1,
               createdBy: U.anna,
               createdAt: timestampFromMs(NOW.getTime() - (i + 3) * 86_400_000),
@@ -259,57 +273,276 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
           },
         },
       });
-    });
+    }
+    await setLocale(page, short);
     const tiles = page.getByTestId('rail-app');
     await expect(tiles).toHaveCount(3, { timeout: 10_000 });
     await tiles.first().click();
     await expect(page.getByTestId('app-screen')).toBeVisible();
     const frame = page.frameLocator('[data-testid="app-screen"] iframe');
-    await expect(frame.locator('h1')).toBeVisible({ timeout: 20_000 });
-    await page.mouse.move(0, 0);
-    await speaking(page, [U.boris]);
-    await page.waitForTimeout(800);
-    await shoot(ctx, 'webapps');
+    await expect(frame.locator('table')).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => tiles.first().locator('img').evaluate((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0), { timeout: 10_000 }).toBe(true);
+    // The rail tip with the app's name.
+    // (A lazy Tip: a keyboard focus wakes it and opens it at once; shoot() would blur it, so the capture is taken here.)
+    await page.mouse.move(700, 450);
+    await page.keyboard.press('Shift+Tab');
+    await tiles.first().focus();
+    await expect(page.locator('[data-app-tooltip]').filter({ hasText: t.sales.title })).toBeVisible({ timeout: 5_000 });
+    await settle(page, true);
+    await page.waitForTimeout(400);
+    mkdirSync(OUT, { recursive: true });
+    await page.screenshot({ path: join(OUT, `webapps-${short}@2x.png`), animations: 'disabled', caret: 'hide' });
+
+    // The bot's summary in «общий»: a narrow window, the message alone.
+    const face = await render(ctx.browser, appIconHtml('bot'), 128, 128, { transparent: true });
+    mock.state.files.set(BOT_AVATAR, {
+      meta: fileMeta(BOT_AVATAR, '', IDS.bots.deploy, 'avatar.png', 'image/png', face, timestampFromMs(NOW.getTime() - 9 * 86_400_000), { width: 128, height: 128 }),
+      bytes: face,
+      thumbnail: { bytes: face, mime: 'image/png' },
+    });
+    await page.mouse.move(700, 450);
+    await page.setViewportSize({ width: 930, height: 800 });
+    await page.getByTestId('section-chats').click();
+    await aside(page).getByRole('button', { name: new RegExp(c.rooms.general) }).first().click();
+    const msg = page.locator(`[data-message-id="${BOT_MESSAGE.id}"]`);
+    await expect(msg.getByRole('button', { name: t.bot.open })).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await page.mouse.move(0, 799);
+    await settle(page, true);
+    // The row spans the feed; the clip ends at the bubble's right edge (its widest descendant short of the row).
+    const clip = await msg.evaluate((row) => {
+      const r = row.getBoundingClientRect();
+      let right = r.left;
+      for (const el of row.querySelectorAll('*')) {
+        const b = el.getBoundingClientRect();
+        if (b.width > 0 && b.width < r.width * 0.8) right = Math.max(right, b.right);
+      }
+      return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(right - r.left + 16), height: Math.round(r.height) };
+    });
+    mkdirSync(OUT, { recursive: true });
+    const path = join(OUT, `webapps-bot-${short}@2x.png`);
+    await page.screenshot({ path, clip, animations: 'disabled', caret: 'hide' });
+    console.log('webapps-bot', short, clip);
   },
 };
 
-const APPS: Record<Short, { wiki: string; title: string; sub: string; panels: string[] }> = {
-  ru: { wiki: 'Вики', title: 'Обзор сервисов', sub: 'за последние 6 часов', panels: ['Запросы в секунду', 'Задержка p95, мс', 'Ошибки 5xx', 'Очередь заданий'] },
-  en: { wiki: 'Wiki', title: 'Services overview', sub: 'last 6 hours', panels: ['Requests per second', 'Latency p95, ms', '5xx errors', 'Job queue'] },
-  es: { wiki: 'Wiki', title: 'Resumen de servicios', sub: 'últimas 6 horas', panels: ['Solicitudes por segundo', 'Latencia p95, ms', 'Errores 5xx', 'Cola de trabajos'] },
-  zh: { wiki: '维基', title: '服务概览', sub: '最近 6 小时', panels: ['每秒请求数', 'p95 延迟（毫秒）', '5xx 错误', '任务队列'] },
+/** The scene's bot message (its id is needed to find the row). */
+const BOT_MESSAGE = { id: '' };
+/** The bot's avatar file (its bytes: appIconHtml('bot'), set by the scene). */
+const BOT_AVATAR = '00000000-0000-7000-8000-00000000a1f1';
+
+interface AppsCopy {
+  wiki: string;
+  support: string;
+  sales: SalesCopy;
+  bot: { name: string; title: string; lines: string[]; open: string; remind: string };
+}
+
+/** The web apps scene in each language: the rail's apps, the dashboard page and the bot's summary. `{boris}` = his name. */
+const APPS: Record<Short, AppsCopy> = {
+  ru: {
+    wiki: 'Вики',
+    support: 'Поддержка',
+    sales: {
+      title: 'Продажи',
+      sub: 'Нордлайт · январь 2026',
+      range: ['День', 'Неделя', 'Месяц'],
+      export: 'Экспорт',
+      kpis: [
+        ['Выручка', '4,82 млн ₽', '18 %'],
+        ['Сделки', '126', '12'],
+        ['Конверсия', '24 %', '3 п. п.'],
+        ['Средний чек', '38 200 ₽', '5 %'],
+      ],
+      chart: 'Выручка по неделям',
+      plan: 'План',
+      fact: 'Факт',
+      weeks: ['24 нояб', '1 дек', '8 дек', '15 дек', '22 дек', '29 дек', '5 янв', '12 янв'],
+      funnel: 'Воронка',
+      stages: [
+        ['Заявки', '1 240'],
+        ['Квалифицированы', '486'],
+        ['Предложение', '212'],
+        ['Сделка', '126'],
+      ],
+      table: 'Крупные сделки',
+      cols: ['Клиент', 'Менеджер', 'Этап', 'Сумма'],
+      rows: [
+        ['Северстрой', 2, '1 240 000 ₽'],
+        ['Ладога Транс', 1, '860 000 ₽'],
+        ['Кедр Медиа', 0, '540 000 ₽'],
+        ['Тайга Софт', 3, '415 000 ₽'],
+      ],
+      pills: ['Переговоры', 'Предложение', 'Договор', 'Оплачено'],
+      goal: ['Цель месяца', '4,82 из 5,9 млн ₽'],
+    },
+    bot: {
+      name: 'Опса',
+      title: 'Продажи за вчера',
+      lines: ['Выручка: 412 000 ₽, +18 % к плану 📈', 'Новых сделок: 9, закрыто: 4', 'Лучший результат дня 🏆 {boris}'],
+      open: 'Открыть отчёт',
+      remind: 'Напомнить в 18:00',
+    },
+  },
+  en: {
+    wiki: 'Wiki',
+    support: 'Support',
+    sales: {
+      title: 'Sales',
+      sub: 'Northwind · January 2026',
+      range: ['Day', 'Week', 'Month'],
+      export: 'Export',
+      kpis: [
+        ['Revenue', '$482,000', '18%'],
+        ['Deals', '126', '12'],
+        ['Conversion', '24%', '3 pp'],
+        ['Average deal', '$3,820', '5%'],
+      ],
+      chart: 'Revenue by week',
+      plan: 'Plan',
+      fact: 'Actual',
+      weeks: ['Nov 24', 'Dec 1', 'Dec 8', 'Dec 15', 'Dec 22', 'Dec 29', 'Jan 5', 'Jan 12'],
+      funnel: 'Funnel',
+      stages: [
+        ['Leads', '1,240'],
+        ['Qualified', '486'],
+        ['Proposal', '212'],
+        ['Won', '126'],
+      ],
+      table: 'Top deals',
+      cols: ['Client', 'Owner', 'Stage', 'Amount'],
+      rows: [
+        ['Bluepine Builders', 2, '$124,000'],
+        ['Harborline Freight', 1, '$86,000'],
+        ['Cedar Lane Media', 0, '$54,000'],
+        ['Tundra Software', 3, '$41,500'],
+      ],
+      pills: ['Negotiation', 'Proposal', 'Contract', 'Paid'],
+      goal: ['Monthly goal', '$482K of $590K'],
+    },
+    bot: {
+      name: 'Opsy',
+      title: 'Yesterday’s sales',
+      lines: ['Revenue: $41,200, +18% vs plan 📈', 'New deals: 9, closed: 4', 'Top result of the day 🏆 {boris}'],
+      open: 'Open report',
+      remind: 'Remind me at 6 pm',
+    },
+  },
+  es: {
+    wiki: 'Wiki',
+    support: 'Soporte',
+    sales: {
+      title: 'Ventas',
+      sub: 'Brisa Labs · enero de 2026',
+      range: ['Día', 'Semana', 'Mes'],
+      export: 'Exportar',
+      kpis: [
+        ['Ingresos', '482.000 €', '18 %'],
+        ['Operaciones', '126', '12'],
+        ['Conversión', '24 %', '3 p. p.'],
+        ['Ticket medio', '3.820 €', '5 %'],
+      ],
+      chart: 'Ingresos por semana',
+      plan: 'Objetivo',
+      fact: 'Real',
+      weeks: ['24 nov', '1 dic', '8 dic', '15 dic', '22 dic', '29 dic', '5 ene', '12 ene'],
+      funnel: 'Embudo',
+      stages: [
+        ['Contactos', '1240'],
+        ['Cualificados', '486'],
+        ['Propuesta', '212'],
+        ['Ganadas', '126'],
+      ],
+      table: 'Mayores operaciones',
+      cols: ['Cliente', 'Responsable', 'Etapa', 'Importe'],
+      rows: [
+        ['Construcciones Alba', 2, '124.000 €'],
+        ['Transportes Nervión', 1, '86.000 €'],
+        ['Cedro Media', 0, '54.000 €'],
+        ['Tundra Software', 3, '41.500 €'],
+      ],
+      pills: ['Negociación', 'Propuesta', 'Contrato', 'Pagado'],
+      goal: ['Objetivo del mes', '482.000 de 590.000 €'],
+    },
+    bot: {
+      name: 'Opsy',
+      title: 'Ventas de ayer',
+      lines: ['Ingresos: 41.200 €, +18 % 📈', 'Operaciones nuevas: 9, cerradas: 4', 'Mejor resultado del día 🏆 {boris}'],
+      open: 'Abrir informe',
+      remind: 'Recordar a las 18:00',
+    },
+  },
+  zh: {
+    wiki: '维基',
+    support: '客服',
+    sales: {
+      title: '销售',
+      sub: '星河科技 · 2026 年 1 月',
+      range: ['日', '周', '月'],
+      export: '导出',
+      kpis: [
+        ['收入', '¥482 万', '18%'],
+        ['成交', '126', '12'],
+        ['转化率', '24%', '3 个百分点'],
+        ['客单价', '¥38,200', '5%'],
+      ],
+      chart: '每周收入',
+      plan: '目标',
+      fact: '实际',
+      weeks: ['11/24', '12/1', '12/8', '12/15', '12/22', '12/29', '1/5', '1/12'],
+      funnel: '销售漏斗',
+      stages: [
+        ['线索', '1,240'],
+        ['已确认', '486'],
+        ['已报价', '212'],
+        ['已成交', '126'],
+      ],
+      table: '重点交易',
+      cols: ['客户', '负责人', '阶段', '金额'],
+      rows: [
+        ['北辰建设', 2, '¥1,240,000'],
+        ['长风物流', 1, '¥860,000'],
+        ['青松传媒', 0, '¥540,000'],
+        ['雪原软件', 3, '¥415,000'],
+      ],
+      pills: ['洽谈中', '已报价', '签约中', '已付款'],
+      goal: ['本月目标', '¥482 万 / ¥590 万'],
+    },
+    bot: {
+      name: 'Opsy',
+      title: '昨日销售',
+      lines: ['收入：¥412,000，超出目标 18% 📈', '新增交易 9 笔，成交 4 笔', '今日最佳 🏆 {boris}'],
+      open: '打开报告',
+      remind: '18:00 提醒我',
+    },
+  },
 };
 
-/** A local Grafana-like dashboard page (the «site» of the web app), served on a private address. */
-async function testSite(short: Short): Promise<{ url: string; close(): Promise<void> }> {
-  const t = APPS[short];
-  const wave = (seed: number, amp: number, base: number): string => {
-    const pts: string[] = [];
-    for (let x = 0; x <= 300; x += 6) {
-      const y = base - amp * (0.5 + 0.35 * Math.sin(x / 23 + seed) + 0.15 * Math.sin(x / 7 + seed * 3));
-      pts.push(`${x},${y.toFixed(1)}`);
-    }
-    return pts.join(' ');
-  };
-  const colors = ['#73bf69', '#5794f2', '#f2495c', '#fade2a'];
-  const panel = (name: string, i: number): string => `
-    <section><h2>${name}</h2>
-      <svg viewBox="0 0 300 120" preserveAspectRatio="none">
-        <g stroke="#2c3235">${[20, 50, 80, 110].map((y) => `<line x1="0" x2="300" y1="${y}" y2="${y}"/>`).join('')}</g>
-        <polyline fill="none" stroke="${colors[i]}" stroke-width="2" points="${wave(i * 1.7, 70, 105)}"/>
-        <polyline fill="none" stroke="#b877d9" stroke-width="1.5" opacity=".7" points="${wave(i * 2.3 + 1, 40, 100)}"/>
-      </svg>
-      <p><b>${['1 284', '142', '0,02 %', '37'][i]}</b><span>${['req/s', 'ms', '', ''][i]}</span></p></section>`;
-  const html = `<!doctype html><meta charset="utf-8"><title>${t.title}</title><style>
-    *{box-sizing:border-box}body{margin:0;background:#111217;color:#ccccdc;font:14px/1.4 system-ui,sans-serif}
-    header{display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid #2c3235;background:#181b1f}
-    header i{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#f9d423,#ff4e50)}
-    h1{margin:0;font-size:18px;font-weight:600;color:#fff}header span{color:#8e8e9e}
-    main{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;padding:24px}
-    section{background:#181b1f;border:1px solid #2c3235;border-radius:4px;padding:14px 16px}
-    h2{margin:0 0 8px;font-size:14px;font-weight:500;color:#fff}svg{width:100%;height:150px;display:block}
-    p{margin:8px 0 0}b{font-size:28px;color:#fff;font-weight:500;margin-right:6px}span{color:#8e8e9e}
-  </style><header><i></i><h1>${t.title}</h1><span>${t.sub}</span></header><main>${t.panels.map(panel).join('')}</main>`;
+/** The reporting bot (the mock's «Деплой» bot renamed, a picture avatar) posts the daily summary in «общий» before sign-in. */
+function salesBot(mock: MockServer, c: Copy): void {
+  const short = (Object.keys(COPY) as Short[]).find((k) => COPY[k] === c) ?? 'ru';
+  const b = APPS[short].bot;
+  mock.seedBots();
+  const bot = mock.state.users.get(IDS.bots.deploy);
+  if (bot) bot.user.displayName = b.name;
+  if (bot) bot.user.avatarFileId = BOT_AVATAR; // the picture itself is added by the scene (drawn by Chromium) before the chat opens
+  const text = `**${b.title}**\n${b.lines.map((l) => l.replace('{boris}', c.people.boris.name)).join('\n')}`;
+  const m = mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.deploy, content: text });
+  m.createdAt = timestampFromMs(NOW.getTime() - 4 * 3600_000);
+  m.inlineKeyboard = create(InlineKeyboardSchema, {
+    rows: [{ buttons: [
+      { id: 'open', label: b.open, data: 'report:open' },
+      { id: 'remind', label: b.remind, data: 'report:remind' },
+    ] }],
+  });
+  m.keyboardRevision = 1n;
+  BOT_MESSAGE.id = m.id;
+  const last = m.id;
+  for (const reads of mock.state.readStates.values()) reads.set(IDS.rooms.general, last);
+}
+
+/** A local site of the web app (a private address) serving one page for any path. */
+async function testSite(html: string): Promise<{ url: string; close(): Promise<void> }> {
   const server: Server = createServer((_, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(html);
@@ -330,7 +563,7 @@ const SEEDS: Record<string, ((mock: MockServer, c: Copy) => void) | undefined> =
     team(mock);
   },
   sipsettings: (mock) => telephony(mock),
-  webapps: (mock) => team(mock),
+  webapps: (mock, c) => salesBot(mock, c),
 };
 
 for (const [name, run] of Object.entries(scenes)) {

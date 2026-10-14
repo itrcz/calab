@@ -88,9 +88,19 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - Filters, saved views, bulk actions; **create a task from any message**; a task link unfolds into a card in the chat.
 
 - **Approvals** — assign approvers and how many approvals are needed (all or N of M); a task can’t move on until it is approved ([ADR-0049](docs/adr/0049-task-approvals.md)).
-### 📝 Notes
+### 📚 Wiki
 
-<img src="apps/landing/public/screens/en/notes.webp" width="880" alt="Notes shelves">
+<img src="apps/landing/public/screens/en/wiki.webp" width="880" alt="Team wiki">
+
+Pages and sub-pages like Notion: a rich editor with tables, checklists, code and images, real-time co-editing with live cursors, version history with restore, access per page and public read-only links.
+
+### 🗂️ Disk
+
+<img src="apps/landing/public/screens/en/disk.webp" width="880" alt="Team drive">
+
+Folders and files of the workspace: drag & drop upload, tiles or list, access per folder (private folders are hidden even from admins), public file links, trash with auto-cleanup and a clear storage meter.
+
+### 📝 Notes
 
 Up to 20 private shelves with your own names and emoji — like Saved Messages in Telegram, only several. Drag messages and files onto a shelf, forward to it, pin and search.
 

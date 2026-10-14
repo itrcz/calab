@@ -12,6 +12,7 @@ import { useRooms } from '../stores/rooms';
 import { useMessages } from '../stores/messages';
 import { useTyping } from '../stores/typing';
 import { useReadReceipts } from '../stores/readReceipts';
+import { useRoomPreviews } from '../stores/roomPreviews';
 import { useInbox } from '../stores/inbox';
 import { useCalendar } from '../stores/calendar';
 import { useFreeBusy } from '../stores/freebusy';
@@ -27,7 +28,7 @@ import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
 import { identityPathWorkspace, identityRoomLocked, markIdentityBoundary, rememberIdentityResources } from '../lib/api/identityGate';
 import { onIdentityDenied } from '../lib/api/client';
-import { accessLocked } from '../features/identity/model';
+import { accessLocked, billingLocked } from '../features/identity/model';
 import { pruneGatewaySubscriptions } from './gateway';
 
 export function withoutKeys<T>(map: Readonly<Record<string, T>>, keys: ReadonlySet<string>): Record<string, T> {
@@ -70,7 +71,9 @@ export function applyIdentityAccess(access: WorkspaceIdentityAccess): void {
     }
   rememberIdentityResources(id, resourcePaths);
   const locked = accessLocked(access);
-  markIdentityBoundary(id, roomIds, locked);
+  // Unpaid billing (ADR-0080 §8): the content goes like on any lock, the workspace stays as a stub.
+  const billing = billingLocked(access);
+  markIdentityBoundary(id, roomIds, locked, billing);
   useIdentity.getState().setAccess(access);
   if (!locked) return;
   const ids = new Set(roomIds);
@@ -81,6 +84,7 @@ export function applyIdentityAccess(access: WorkspaceIdentityAccess): void {
   useMessages.setState((s) => ({ rooms: withoutKeys(s.rooms, ids), pins: withoutKeys(s.pins, ids) }));
   useTyping.setState((s) => ({ rooms: withoutKeys(s.rooms, ids) }));
   useReadReceipts.setState((s) => ({ byRoom: withoutKeys(s.byRoom, ids) }));
+  useRoomPreviews.getState().drop(roomIds); // last-message texts of the room list (ADR-0073 §5)
   useInbox.getState().removeRooms((r) => !ids.has(r));
   useCalendar.setState((s) => ({
     occ: Object.fromEntries(Object.entries(s.occ).filter(([, v]) => v.workspaceId !== id)),
@@ -133,11 +137,14 @@ export function applyIdentityAccess(access: WorkspaceIdentityAccess): void {
   for (const [wsId, entry] of Object.entries(useWorkspaces.getState().byId))
     if (wsId !== id) for (const userId of Object.keys(entry.members)) keepUsers.add(userId);
   for (const userId of keepUsers) removedUsers.delete(userId);
-  useWorkspaces.getState().remove(id);
+  if (billing) useWorkspaces.getState().toBillingStub(id);
+  else useWorkspaces.getState().remove(id);
   useWorkspaces.setState((s) => ({ users: withoutKeys(s.users, removedUsers), presences: withoutKeys(s.presences, removedUsers) }));
   const ui = useUi.getState();
   if (ui.activeWorkspaceId === id) {
-    ui.openDialog(null);
+    // The owner's cabinet (settings → «Тариф») stays open: that is where the debt is paid.
+    const dialog = ui.dialog;
+    if (!(billing && dialog?.kind === 'workspace-settings' && dialog.workspaceId === id && dialog.tab === 'plan')) ui.openDialog(null);
     ui.closeCalendar();
   }
 }

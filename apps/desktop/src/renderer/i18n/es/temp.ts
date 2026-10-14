@@ -20,7 +20,7 @@ export const esTemp = {
   'temp.visAll': 'Todos los miembros',
   'temp.visSelected': 'Solo seleccionados',
   'temp.visAllHint': 'Todos los miembros del espacio ven la sala.',
-  'temp.visSelectedHint': 'Solo tú, las personas elegidas y quien entre por el enlace.',
+  'temp.visSelectedHint': 'Solo tú y las personas elegidas verán la sala, ni siquiera los administradores',
   'temp.guests': 'Permitir invitados por enlace',
   'temp.guestsHint': 'Clientes y socios entran sin registrarse.',
   'temp.guestsNoRight': 'El enlace será solo para miembros del espacio: invitan a invitados quienes tienen el permiso «Invitar invitados».',

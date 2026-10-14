@@ -52,7 +52,7 @@ func (s *Service) checkFilter(r *http.Request, f *v1.TaskFilter) error {
 }
 
 func (s *Service) createView(w http.ResponseWriter, r *http.Request) error {
-	id, acc, err := pathBoard(r, false)
+	id, acc, err := fullBoard(r, false) // task-scoped members only read views (ADR-0059)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (s *Service) createView(w http.ResponseWriter, r *http.Request) error {
 // view loads a view the caller may change: their own personal view, or a shared one with
 // MANAGE_BOARD.
 func (s *Service) view(r *http.Request) (uuid.UUID, perm.BoardAccess, sqlc.BoardView, error) {
-	id, acc, err := pathBoard(r, false)
+	id, acc, err := fullBoard(r, false)
 	if err != nil {
 		return id, acc, sqlc.BoardView{}, err
 	}

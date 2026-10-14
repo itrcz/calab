@@ -1,17 +1,24 @@
 import type { Dict, Locale } from '@/i18n';
 import { localePath } from '@/i18n/locales';
-import { CONTACT_EMAIL, GPTUNNEL_URL, REPO_URL, repoFile } from '@/lib/site';
+import { CONTACT_FORM_URL, GPTUNNEL_URL, REPO_URL, repoFile } from '@/lib/site';
 import { Container } from './ui';
+import { CookieSettingsButton } from './cookie-preferences';
 
 export function Footer({ t, locale }: { t: Dict['footer']; locale: Locale }) {
   const links = [
+    { href: localePath(locale, 'legal/offer/'), label: t.offer },
+    { href: localePath(locale, 'legal/terms/'), label: t.terms },
+    { href: localePath(locale, 'legal/privacy/'), label: t.privacy },
+    { href: localePath(locale, 'legal/payments/'), label: t.payments },
+    { href: localePath(locale, 'legal/contacts/'), label: t.company },
+    { href: localePath(locale, 'legal/cookies/'), label: t.cookies },
     { href: REPO_URL, label: 'GitHub' },
     { href: localePath(locale, 'bots/'), label: t.bots },
     { href: repoFile('LICENSE'), label: t.license },
     { href: repoFile('COMMERCIAL-LICENSE.md'), label: t.commercial },
     { href: repoFile('SECURITY.md'), label: t.security },
     { href: repoFile('TRADEMARKS.md'), label: t.trademarks },
-    { href: `mailto:${CONTACT_EMAIL}`, label: CONTACT_EMAIL },
+    { href: CONTACT_FORM_URL, label: t.contact },
   ];
   return (
     <footer className="border-t border-line py-10">
@@ -25,6 +32,7 @@ export function Footer({ t, locale }: { t: Dict['footer']; locale: Locale }) {
                 </a>
               </li>
             ))}
+            <li><CookieSettingsButton>{t.cookieSettings}</CookieSettingsButton></li>
           </ul>
         </nav>
         {/* Required attribution (BSL 1.1 / NOTICE): never translated. */}
@@ -34,6 +42,16 @@ export function Footer({ t, locale }: { t: Dict['footer']; locale: Locale }) {
             Powered by GPTunneL
           </a>
         </p>
+      </Container>
+      <Container className="mt-6 space-y-1 text-[12px] leading-5 text-fg-2">
+        {locale === 'ru' ? <div lang="ru">
+          <p>ООО «Громтех» · ИНН 5027346848 · КПП 502701001 · ОГРН 1265000035420</p>
+          <p>Московская область, г. Лыткарино, ул. Набережная, д. 7, кв. 130</p>
+        </div> : <div lang="en">
+          <p>Unne L.L.C-FZ · United Arab Emirates · VAT TRN 105410888900001</p>
+          <p>Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE</p>
+        </div>}
+        <p><a href="mailto:support@calab.io" className="link">support@calab.io</a></p>
       </Container>
     </footer>
   );

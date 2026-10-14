@@ -1,0 +1,253 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/file.proto";
+import "calaba/v1/room.proto";
+
+// Wiki (ADR-0096, docs/04 «Вики»): a tree of pages of a workspace, per-page access, public
+// links, trash, version history and a journal. The content of a page is a Yjs document: it never
+// travels in these messages, only through GET /api/wiki/pages/{id}/sync (binary frames,
+// ADR-0096 §4) and the version state route.
+//
+// Access: workspace bits WIKI_VIEW (1 << 38), WIKI_WRITE (1 << 39), WIKI_MANAGE (1 << 40), then
+// the overrides of every ancestor and the page itself (wiki_permissions, VIEW / WRITE only), the
+// same tree rule as the Disk (Go perm.ComputeWikiPage over perm.ComputeTree, TS
+// wikiPagePermissions over treeItemPermissions). WIKI_WRITE on a page edits its content and
+// creates child pages; rename, icon, cover, move, trash, access and the public link need the
+// owner of the page or WIKI_MANAGE (perm.WikiStructureAllowed). No WIKI_VIEW on a page → 404.
+
+// The public link of a page (ADR-0096 §6). Anyone with the code reads the page without signing
+// in at /w/{code}: GET /api/public/wiki/{code} (PublicWikiPage).
+message WikiLink {
+  string code = 1; // 43 characters, base64url of 32 random bytes
+  bool include_children = 2; // the subpages (not restricted ones) are readable through it too
+  google.protobuf.Timestamp expires_at = 3; // unset = never
+  string created_by = 4;
+  google.protobuf.Timestamp created_at = 5;
+  uint32 views = 6;
+  string page_id = 7;
+}
+
+// A page of the Wiki.
+message WikiPage {
+  string id = 1;
+  string workspace_id = 2;
+  string parent_id = 3; // empty = a top-level page
+  string title = 4; // 0..200 characters ("" = «Без названия» in the client)
+  string icon = 5; // one emoji, "" = none
+  FileMeta cover = 6; // the cover picture, unset = none
+  string owner_id = 7; // who created it; empty after the account is gone
+  bool restricted = 8; // «Только выбранные»: the roles and the parent give no access
+  bool shared = 9; // the page has its own overrides (wiki_permissions)
+  WikiLink link = 10; // the live public link, unset when none
+  string preview = 11; // the first ≤ 200 characters of the text (from the last snapshot)
+  google.protobuf.Timestamp updated_at = 12; // the last snapshot or structural change
+  string updated_by = 13;
+  google.protobuf.Timestamp trashed_at = 14; // set while in the trash (with its subtree)
+  uint64 my_bits = 15; // the caller's wiki bits on the page (WIKI_VIEW | WIKI_WRITE | WIKI_MANAGE)
+  bool has_children = 16; // live subpages exist (visible or not: the tree expands lazily)
+  google.protobuf.Timestamp created_at = 17;
+  int32 position = 18; // the order among the siblings, ascending
+  string trashed_by = 19;
+  bool trashed_root = 20; // the page the deletion started at (the trash lists only these)
+  uint32 doc_size = 21; // bytes of the last snapshot (the client warns near 2 MiB)
+}
+
+// One override of a page (wiki_permissions): «Просмотр» = WIKI_VIEW, «Правка» = WIKI_VIEW |
+// WIKI_WRITE. A guest can be given access only as a USER target.
+message WikiPermissionEntry {
+  PermissionTargetType target_type = 1;
+  string target_id = 2; // role id or user id
+  uint64 allow = 3;
+  uint64 deny = 4;
+}
+
+// A saved version of a page (wiki_page_versions, ADR-0096 §1 / §5): at most one per 5 minutes,
+// only when the text or the title changed; ≤ 200 per page, older than 7 days thinned to one per
+// day. The Yjs state is not here: GET /api/wiki/pages/{id}/versions/{vid} returns it
+// (application/octet-stream).
+message WikiVersion {
+  string id = 1;
+  string page_id = 2;
+  string title = 3;
+  string plain_text = 4; // the text of the version (the client diffs it, lib/textDiff.ts)
+  repeated string author_ids = 5; // who edited since the previous version
+  google.protobuf.Timestamp created_at = 6;
+  uint32 size = 7; // bytes of the state
+}
+
+enum WikiActivityKind {
+  WIKI_ACTIVITY_KIND_UNSPECIFIED = 0;
+  WIKI_ACTIVITY_KIND_CREATE = 1;
+  WIKI_ACTIVITY_KIND_RENAME = 2;
+  WIKI_ACTIVITY_KIND_MOVE = 3;
+  WIKI_ACTIVITY_KIND_SHARE = 4; // overrides or restricted changed
+  WIKI_ACTIVITY_KIND_LINK_ON = 5;
+  WIKI_ACTIVITY_KIND_LINK_OFF = 6;
+  WIKI_ACTIVITY_KIND_TRASH = 7;
+  WIKI_ACTIVITY_KIND_RESTORE = 8;
+  WIKI_ACTIVITY_KIND_DELETE = 9; // deleted forever
+  WIKI_ACTIVITY_KIND_ICON = 10;
+  WIKI_ACTIVITY_KIND_COVER = 11;
+  WIKI_ACTIVITY_KIND_VERSION = 12; // a version was saved (text edits themselves are not journaled)
+}
+
+// A journal entry (wiki_activity). before / after carry snapshots (the old and new title, the
+// destination page's title, who got access).
+message WikiActivity {
+  string id = 1;
+  string workspace_id = 2;
+  string page_id = 3; // empty after the page was deleted forever
+  string actor_id = 4; // empty after the account is gone or for the trash sweeper
+  WikiActivityKind kind = 5;
+  google.protobuf.Struct before = 6;
+  google.protobuf.Struct after = 7;
+  google.protobuf.Timestamp created_at = 8;
+  string page_title = 9; // the page's title when the entry was written
+}
+
+// GET /api/workspaces/{id}/wiki/pages?parent=&trashed=&cursor= — the visible live children of a
+// page (parent empty = the top level) by position, or, with trashed=1, the trash roots the
+// caller can see, the newest deletion first. ≤ 200 per page.
+message ListWikiPagesResponse {
+  repeated WikiPage pages = 1;
+  string next_cursor = 2;
+}
+
+// POST /api/workspaces/{id}/wiki/pages (WIKI_WRITE on the parent, or on the Wiki for the top
+// level). The page goes last among its siblings; the creator owns it.
+message CreateWikiPageRequest {
+  string parent_id = 1; // empty = the top level
+  string title = 2;
+  string icon = 3;
+}
+
+// The response of create / update / trash / restore and GET /api/wiki/pages/{id}.
+message WikiPageResponse {
+  WikiPage page = 1;
+}
+
+// PATCH /api/wiki/pages/{id} (owner of the page or WIKI_MANAGE): rename, icon, cover, move
+// (parent_id set, "" = the top level; position = the index among the new siblings, the rest
+// shift) and the restricted switch.
+message UpdateWikiPageRequest {
+  optional string title = 1;
+  optional string icon = 2; // "" removes it
+  optional string cover_file_id = 3; // "" removes it; a file of this page (wiki_page_files)
+  optional string parent_id = 4;
+  optional int32 position = 5;
+  optional bool restricted = 6;
+}
+
+// GET /api/wiki/pages/{id}/path — the ancestors, the top-level page first, then the page.
+message WikiPathResponse {
+  repeated WikiPage pages = 1;
+}
+
+// POST /api/workspaces/{id}/wiki/trash/empty — deletes forever every trashed page the caller
+// may delete (their own; everything with WIKI_MANAGE).
+message EmptyWikiTrashResponse {
+  uint32 deleted = 1;
+  uint64 freed_bytes = 2; // the pages' files (pictures, covers) released from the quota
+}
+
+// GET /api/wiki/pages/{id}/permissions (owner of the page or WIKI_MANAGE).
+message WikiPermissionsResponse {
+  repeated WikiPermissionEntry entries = 1;
+  bool restricted = 2;
+}
+
+// PUT /api/wiki/pages/{id}/permissions — replaces the page's overrides (allow / deny within
+// WIKI_VIEW | WIKI_WRITE) and optionally the restricted switch.
+message UpdateWikiPermissionsRequest {
+  repeated WikiPermissionEntry entries = 1;
+  optional bool restricted = 2;
+}
+
+// POST /api/wiki/pages/{id}/link (owner of the page or WIKI_MANAGE). A live link is updated in
+// place (include_children, expires_at) and keeps its code; expires_at unset = never.
+message CreateWikiLinkRequest {
+  google.protobuf.Timestamp expires_at = 1;
+  bool include_children = 2;
+}
+
+message WikiLinkResponse {
+  WikiLink link = 1;
+  string url = 2; // the public page of the link (/w/{code})
+}
+
+// GET /api/wiki/pages/{id}/versions?cursor= (WIKI_VIEW on the page), the newest first.
+message WikiVersionsResponse {
+  repeated WikiVersion versions = 1;
+  string next_cursor = 2;
+}
+
+// GET /api/wiki/pages/{id}/activity?cursor= (WIKI_VIEW on the page) and
+// GET /api/workspaces/{id}/wiki/activity?actor=&cursor= (WIKI_MANAGE) — newest first.
+message WikiActivityPage {
+  repeated WikiActivity activities = 1;
+  string next_cursor = 2;
+}
+
+// GET / PUT /api/workspaces/{id}/wiki/settings (PUT: WIKI_MANAGE).
+message WikiSettings {
+  uint32 trash_days = 1; // automatic deletion from the trash after this many days; 0 = never
+}
+
+// A subpage in the table of contents of a public page (include_children).
+message PublicWikiPageRef {
+  string id = 1;
+  string parent_id = 2; // the linked page's id for its direct children
+  string title = 3;
+  string icon = 4;
+}
+
+// GET /api/public/wiki/{code}[?page=] — anonymous, X-Robots-Tag: noindex. 404 once the link is
+// revoked or expired, or the page is in the trash or deleted. page selects a subpage of the
+// branch (include_children only). The document comes from GET /api/public/wiki/{code}/state
+// [?page=] (application/octet-stream, the last snapshot with the updates after it merged by the
+// client); pictures from GET /api/public/wiki/{code}/files/{fileId}.
+message PublicWikiPage {
+  string id = 1;
+  string title = 2;
+  string icon = 3;
+  string cover_file_id = 4; // "" = none
+  google.protobuf.Timestamp updated_at = 5;
+  repeated PublicWikiPageRef children = 6; // the whole visible branch below the linked page
+  google.protobuf.Timestamp expires_at = 7;
+  string root_id = 8; // the linked page
+}
+
+// One level of a page's access chain (the top-level page first, the page last): what
+// perm.ComputeWikiPage reads. Server-internal routing of the WIKI_PAGE_* events, always empty
+// for clients.
+message WikiAccessLevel {
+  bool restricted = 1;
+  string owner_id = 2;
+  repeated WikiPermissionEntry overrides = 3;
+}
+
+// WIKI_PAGE_UPSERT: a page was created or changed structurally (title, icon, cover, moved,
+// shared, link, trashed, restored, a new snapshot's preview). To members with WIKI_VIEW on the
+// page; page.my_bits is the recipient's own bits (filled by the gateway). A member who saw the page
+// before the change and does not any more gets WIKI_PAGE_REMOVE instead.
+message WikiPageUpsert {
+  string workspace_id = 1;
+  WikiPage page = 2;
+  // Server-internal routing, always empty for clients: the access chain after the change and,
+  // when it changed (move, restricted, overrides), before it (empty = nobody saw it before).
+  repeated WikiAccessLevel access = 3;
+  repeated WikiAccessLevel access_before = 4;
+}
+
+// WIKI_PAGE_REMOVE: a page was deleted forever or the recipient lost access to it.
+message WikiPageRemove {
+  string workspace_id = 1;
+  string page_id = 2;
+  string parent_id = 3;
+  // Server-internal routing, always empty for clients: the access chain the page had (who saw
+  // it gets the event).
+  repeated WikiAccessLevel access = 4;
+}

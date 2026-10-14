@@ -178,17 +178,24 @@ def run(caddy, require_layer4, server):
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
-        source = (ROOT / "infra/docker/caddy/Caddyfile").read_text()
+        caddy_dir = ROOT / "infra/docker/caddy"
+        source = (caddy_dir / "Caddyfile").read_text()
         if not layer4:
             source = remove_block(source, "\tservers :443 {")
         # Production host/env values are never consulted, and no TLS/ACME listeners are opened.
         source = source.replace("{\n\tadmin off", "{\n\tauto_https off\n\tdefault_bind 127.0.0.1\n\tadmin off", 1)
-        source = source.replace("/tmp/", str(temp) + "/").replace("/srv/web", str(web))
-        source = source.replace("/srv/releases", str(temp / "releases")).replace("/srv/landing", str(temp / "landing"))
-        source = source.replace("127.0.0.1:3000", f"127.0.0.1:{upstream.server_port}")
-        source = source.replace("127.0.0.1:7880", f"127.0.0.1:{upstream.server_port}")
+
+        def local(text):
+            text = text.replace("/tmp/", str(temp) + "/").replace("/srv/web", str(web))
+            text = text.replace("/srv/releases", str(temp / "releases")).replace("/srv/landing", str(temp / "landing"))
+            text = text.replace("127.0.0.1:3000", f"127.0.0.1:{upstream.server_port}")
+            return text.replace("127.0.0.1:7880", f"127.0.0.1:{upstream.server_port}")
+
+        # Caddyfile imports sites.caddy and log.caddy relative to its own directory.
+        for imported in ("sites.caddy", "log.caddy"):
+            (temp / imported).write_text(local((caddy_dir / imported).read_text()))
         config = temp / "Caddyfile"
-        config.write_text(source)
+        config.write_text(local(source))
         env = {"PATH": os.environ["PATH"], "HOME": str(temp), "XDG_CONFIG_HOME": str(temp / "config"),
                "XDG_DATA_HOME": str(temp / "data"),
                "APP_HOSTS": f"http://identity.test:{port} http://alias.test:{port}",

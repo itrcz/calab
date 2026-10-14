@@ -21,6 +21,8 @@ export const enIdentity: DictShape<typeof ruIdentity> = {
   'identity.refresh': 'Refresh',
   'identity.unavailable': 'Corporate sign-in is unavailable. Ask the workspace owner to check configuration.',
   'identity.locked': 'Workspace locked',
+  'identity.lockedUnavailable': 'Workspace temporarily unavailable',
+  'identity.checkUnavailable': 'The server could not check access to this workspace. It comes back automatically once the connection recovers.',
   'identity.required': 'This workspace requires a fresh corporate sign-in. Other workspaces and direct messages remain available.',
   'identity.scope': 'This session is limited to the corporate workspace. Sign in locally for personal features.',
   'identity.directoryDenied': 'Your organization directory does not permit access. Contact the owner.',

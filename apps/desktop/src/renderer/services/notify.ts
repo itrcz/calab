@@ -1,6 +1,7 @@
 import { CallOutcome, PresenceStatus, levelNotifies, type Message, type Room } from '@calaba/protocol';
 import { chatSound } from '../lib/chatSound';
 import { mentionsMe } from '../lib/mentions';
+import { achievementForMe } from '../lib/achievements';
 import { playSound } from '../lib/sounds';
 import { useInbox } from '../stores/inbox';
 import { prefs } from '../stores/prefs';
@@ -15,7 +16,7 @@ import { onceAcrossTabs, type CrossTabDeps } from '../lib/crossTab';
 import { previewText } from '../features/chat/mentionText';
 import { roomLabel } from '../features/chat/roomLabel';
 import { t } from '../i18n';
-import { systemPreview } from '../lib/recording';
+import { roomIconCardOf, systemPreview } from '../lib/recording';
 import { callCardOf } from '../lib/callModel';
 
 export { mentionsMe };
@@ -80,7 +81,8 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   // Sounds (docs/09 #29, P1 #13, item 22): «Упоминание» for a mention / DM, «Новое сообщение»
   // only in rooms at «Все сообщения»; the open chat is quiet or silent.
   const sound = chatSound({
-    own: m.authorId === myId,
+    // My achievement card (ADR-0061) is authored by me, yet it is news: it sounds like a mention.
+    own: m.authorId === myId && !achievementForMe(m, myId),
     mention,
     visible,
     notify,
@@ -91,6 +93,8 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   // Badges count regardless of the notification settings (chat on screen: the read marker
   // moves when it is seen).
   if (!visible) useRooms.getState().addUnread(m.roomId, m.id, mention);
+  // The room picture changed (ADR-0092): counted, never a sound or a notification.
+  if (roomIconCardOf(m)) return;
   const system = !visible && notify && p.presence !== PresenceStatus.DND && ((mention && p.notifyMentions) || p.notifyAll);
   // A tab showing the chat claims the message even when it stays quiet, so another tab does
   // not notify about what is on screen.

@@ -10,6 +10,10 @@ import { setPresence } from './gateway';
  * `idle`; any input → back to the chosen status. Only an automatic «online» is touched: a
  * manual idle/dnd/invisible is never overridden (the server also ranks manual statuses above
  * an automatic idle from another device). Voice/audio is not affected.
+ *
+ * The session status sent here (SetPresence without until) is only ever ONLINE or IDLE: the
+ * manual status is a separate per-user value on the server, and when it is cleared the server
+ * falls back to the sessions' statuses — a session left IDLE would show the user as away.
  */
 
 /** Pure decision: which status to send now, or null to leave things as they are. */
@@ -23,6 +27,11 @@ export function afkDecision(a: { idleSec: number; thresholdMin: number; manual: 
 
 let away = false;
 let timer: number | null = null;
+
+/** Reports this session's automatic status (a new session starts ONLINE, see gateway.ts). */
+function send(): void {
+  if (useSession.getState().gateway === 'ready') setPresence(away ? PresenceStatus.IDLE : PresenceStatus.ONLINE);
+}
 
 /** This session reports AFK idle (re-sent after a gateway (re)connect: a new session starts online). */
 export function isAway(): boolean {
@@ -41,7 +50,7 @@ async function check(): Promise<void> {
   const d = afkDecision({ idleSec, thresholdMin: p.afkMinutes, manual: p.presence, away });
   if (!d) return;
   away = d === 'away';
-  if (useSession.getState().gateway === 'ready') setPresence(away ? PresenceStatus.IDLE : p.presence);
+  send();
   schedule();
 }
 
@@ -61,10 +70,11 @@ export function installAfk(): () => void {
   // A manual status change or threshold change re-evaluates at once.
   const unsub = usePrefs.subscribe((s, prev) => {
     if (s.presence === prev.presence && s.afkMinutes === prev.afkMinutes) return;
-    if (away && s.presence !== PresenceStatus.ONLINE) away = false; // the UI already sent the manual choice
-    if (away && s.afkMinutes === 0) {
+    // A manual status (chosen here or on another device) or AFK turned off ends this session's
+    // AFK idle — on the server too, or clearing the manual status later would reveal it.
+    if (away && (s.presence !== PresenceStatus.ONLINE || s.afkMinutes === 0)) {
       away = false;
-      setPresence(s.presence);
+      send();
     }
     void check();
   });

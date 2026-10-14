@@ -30,11 +30,21 @@ type Info struct {
 	Limits     Limits // effective (free when expired)
 	ValidUntil *time.Time
 	Expired    bool
+	// DisplayName / Description: a custom plan's name and description (ADR-0086 «Индивидуальный
+	// тариф»); empty = the client's localized name.
+	DisplayName, Description string
+	// Lapsed: the restricted mode of the workspace («тариф не активен», ADR-0086 amendment):
+	// a stopped billing account whose paid days ran out while the usage exceeded Free, with
+	// BILLING_ENABLED and BILLING_ENFORCEMENT_ENABLED. Limits then are Free's with RoomMembers
+	// capped at LapsedRoomMembers; what else is refused is restrictedRoutes (app) and rtc.
+	Lapsed bool
+	// billing: Workspace.billing (BILLING_ENABLED and a live billing account), else nil.
+	billing *billingInfo
 }
 
 // Proto converts the plan to the wire message (Workspace.plan).
 func (i Info) Proto() *v1.WorkspacePlan {
-	p := &v1.WorkspacePlan{Plan: i.Plan, Limits: i.Limits.Proto(), Expired: i.Expired}
+	p := &v1.WorkspacePlan{Plan: i.Plan, Limits: i.Limits.Proto(), Expired: i.Expired, DisplayName: i.DisplayName, Description: i.Description}
 	if i.ValidUntil != nil {
 		p.ValidUntil = timestamppb.New(*i.ValidUntil)
 	}
@@ -56,10 +66,13 @@ type Service struct {
 	now   func() time.Time
 	// userWorkspaces lists the workspaces a user belongs to (AllowsCalDAV).
 	userWorkspaces func(ctx context.Context, user uuid.UUID) ([]uuid.UUID, error)
+	// loadBilling reads the billing status of Workspace.billing (Billing.Enabled only).
+	loadBilling func(ctx context.Context, wsID uuid.UUID) (sqlc.GetWorkspaceBillingStatusRow, error)
 
 	mu    sync.Mutex
 	cache map[uuid.UUID]cached
-	gen   uint64 // bumped by every invalidation: a read that raced one is not cached
+	gen   uint64  // bumped by every invalidation: a read that raced one is not cached
+	bill  Billing // SetBilling
 }
 
 // New creates the service with the free / team / business limits (see Defaults).
@@ -77,7 +90,10 @@ func New(d *db.DB, r rueidis.Client, free, team, biz Limits) *Service {
 	userWS := func(ctx context.Context, user uuid.UUID) ([]uuid.UUID, error) {
 		return d.Q.ListUserWorkspaceIDs(ctx, user)
 	}
-	return &Service{load: load, userWorkspaces: userWS, redis: r, free: free, team: team, biz: biz, now: time.Now, cache: map[uuid.UUID]cached{}}
+	loadBilling := func(ctx context.Context, wsID uuid.UUID) (sqlc.GetWorkspaceBillingStatusRow, error) {
+		return d.Q.GetWorkspaceBillingStatus(ctx, wsID)
+	}
+	return &Service{load: load, userWorkspaces: userWS, loadBilling: loadBilling, redis: r, free: free, team: team, biz: biz, now: time.Now, cache: map[uuid.UUID]cached{}}
 }
 
 // Defaults parses PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS over the built-in
@@ -179,6 +195,7 @@ func (s *Service) Info(ctx context.Context, wsID uuid.UUID) (Info, error) {
 	s.mu.Lock()
 	c, ok := s.cache[wsID]
 	gen := s.gen
+	billingOn, enforced := s.bill.Enabled, s.bill.Enabled && s.bill.Enforced
 	s.mu.Unlock()
 	if ok && now.Before(c.until) {
 		return c.info, nil
@@ -187,9 +204,24 @@ func (s *Service) Info(ctx context.Context, wsID uuid.UUID) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
+	var bill *billingInfo
+	if billingOn && s.loadBilling != nil {
+		row, err := s.loadBilling(ctx, wsID)
+		if err != nil && !db.IsNotFound(err) {
+			return Info{}, err
+		}
+		bill = resolveBilling(row, enforced)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	info := s.resolveLocked(ctx, rp, now)
+	info.billing = bill
+	if bill != nil && bill.lapsed {
+		info.Lapsed = true
+		if info.Limits.RoomMembers == 0 || info.Limits.RoomMembers > LapsedRoomMembers {
+			info.Limits.RoomMembers = LapsedRoomMembers
+		}
+	}
 	until := now.Add(CacheTTL)
 	if info.ValidUntil != nil && !info.Expired && info.ValidUntil.Before(until) {
 		until = *info.ValidUntil // re-resolve the moment the plan expires
@@ -212,6 +244,9 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 		return Info{Plan: v1.Plan_PLAN_FREE, Limits: s.free}
 	}
 	info := Info{Plan: PlanFromDB(row.Plan), ValidUntil: row.ValidUntil}
+	if info.Plan == v1.Plan_PLAN_CUSTOM {
+		info.DisplayName, info.Description = row.DisplayName, row.Description
+	}
 	if row.ValidUntil != nil && !now.Before(*row.ValidUntil) {
 		info.Expired, info.Limits = true, s.free
 		return info
@@ -222,16 +257,27 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 	case v1.Plan_PLAN_ENTERPRISE:
 		info.Limits = s.biz
 	case v1.Plan_PLAN_CUSTOM:
-		l, err := ParseLimits(string(row.Limits), CustomBase)
-		if err != nil { // written by us, validated; fail safe to free if it is ever corrupt
-			slog.WarnContext(ctx, "invalid custom plan limits, using free", "workspace", row.WorkspaceID, "err", err)
-			l = s.free
-		}
-		info.Limits = l
+		info.Limits = s.customLimitsLocked(ctx, *row)
 	default:
 		info.Limits = s.free
 	}
 	return info
+}
+
+// CustomLimits are the limits a custom plan row stores (free if it is ever corrupt).
+func (s *Service) CustomLimits(ctx context.Context, row sqlc.WorkspacePlan) Limits {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.customLimitsLocked(ctx, row)
+}
+
+func (s *Service) customLimitsLocked(ctx context.Context, row sqlc.WorkspacePlan) Limits {
+	l, err := ParseLimits(string(row.Limits), CustomBase)
+	if err != nil { // written by us, validated; fail safe to free if it is ever corrupt
+		slog.WarnContext(ctx, "invalid custom plan limits, using free", "workspace", row.WorkspaceID, "err", err)
+		return s.free
+	}
+	return l
 }
 
 // Fill sets ws.plan (a workspace of the caller's view). nil-safe: a nil service fills nothing.
@@ -248,6 +294,7 @@ func (s *Service) Fill(ctx context.Context, ws *v1.Workspace) error {
 		return err
 	}
 	ws.Plan = info.Proto()
+	ws.Billing = info.billing.proto()
 	return nil
 }
 
@@ -261,7 +308,9 @@ func (s *Service) FillAll(ctx context.Context, wss []*v1.Workspace) error {
 	return nil
 }
 
-// Invalidate drops the cached plan of wsID here and on every other instance.
+// Invalidate drops the cached plan of wsID here and on every other instance. Billing calls
+// it after every change of a billing account's status / plan or of workspace_plans (the
+// cache carries Workspace.billing), after commit and before publishing WORKSPACE_UPDATE.
 func (s *Service) Invalidate(ctx context.Context, wsID uuid.UUID) {
 	s.drop(wsID)
 	if s.redis == nil {

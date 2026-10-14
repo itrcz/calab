@@ -49,7 +49,23 @@ func TestUserLimit(t *testing.T) {
 	if raw.GetCode() != v1.ErrorCode_ERROR_CODE_ROOM_FULL {
 		t.Fatalf("error code: %v", raw.GetCode())
 	}
-	o.must(200, "POST", "/api/rooms/"+small+"/join", nil, nil)   // MOVE_MEMBERS (admin) ignores the limit
+	// Owner, 07.10: only the workspace owner ignores the limit; ADMINISTRATOR and MOVE_MEMBERS do not.
+	adm := register(t, invite(t, o, ws.GetId()))
+	mod := register(t, invite(t, o, ws.GetId()))
+	rs := listRoles(t, o, ws.GetId())
+	if st, _ := setMemberRoles(o, ws.GetId(), adm.id, rs[1].GetId()); st != 200 {
+		t.Fatalf("make admin: %d", st)
+	}
+	modRole := newRole(t, o, ws.GetId(), "Mods", perm.MoveMembers)
+	if st, _ := setMemberRoles(o, ws.GetId(), mod.id, modRole.GetId()); st != 200 {
+		t.Fatalf("make moderator: %d", st)
+	}
+	for name, u := range map[string]*user{"admin": adm, "moderator": mod} {
+		if st := u.do("POST", "/api/rooms/"+small+"/join", nil, nil); st != 409 {
+			t.Fatalf("%s into a full room: %d, want 409", name, st)
+		}
+	}
+	o.must(200, "POST", "/api/rooms/"+small+"/join", nil, nil)   // the owner ignores the limit
 	bob.must(200, "POST", "/api/rooms/"+small+"/join", nil, nil) // already inside: second device is fine
 	var tr v1.CreateRoomResponse
 	o.must(422, "POST", "/api/workspaces/"+ws.GetId()+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "t", UserLimit: 2}, &tr)
@@ -133,7 +149,7 @@ func TestMoveMember(t *testing.T) {
 		t.Fatalf("bob is no longer in A: %d", st)
 	}
 
-	// A member with MOVE_MEMBERS (room overrides) is bound by the target's limit; an admin is not.
+	// A member with MOVE_MEMBERS (room overrides) is bound by the target's limit; the owner is not.
 	for _, rid := range []string{b, full} {
 		o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
 			{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: alice.id, Allow: uint64(perm.MoveMembers)},
@@ -142,8 +158,16 @@ func TestMoveMember(t *testing.T) {
 	if st := move(alice, b, bob.id, full); st != 409 {
 		t.Fatalf("mover without admin into a full room: %d", st)
 	}
+	// Owner, 07.10: an admin is bound by the limit too; only the owner moves into a full room.
+	adm := register(t, invite(t, o, wid))
+	if st, _ := setMemberRoles(o, wid, adm.id, listRoles(t, o, wid)[1].GetId()); st != 200 {
+		t.Fatalf("make admin: %d", st)
+	}
+	if st := move(adm, b, bob.id, full); st != 409 {
+		t.Fatalf("admin into a full room: %d, want 409", st)
+	}
 	if st := move(o, b, bob.id, full); st != 204 {
-		t.Fatalf("admin into a full room: %d", st)
+		t.Fatalf("owner into a full room: %d", st)
 	}
 }
 

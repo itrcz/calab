@@ -1,9 +1,10 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { RoomType, type Room } from '@calaba/protocol';
-import { Hash, Lock, Search, Timer, Volume2 } from 'lucide-react';
+import type { Room } from '@calaba/protocol';
+import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PICKER_DEBOUNCE_MS, filterItems, type PickerItem } from '../../components/picker/pickerModel';
 import { cx } from '../../components/ui';
+import { RoomIcon } from '../../components/RoomIcon';
 import { t } from '../../i18n';
 
 /** The room variant of the picker (docs/08 «Выбор участника»): «Переместить в ›» and the like. */
@@ -18,14 +19,12 @@ export const ROOM_SEARCH_MIN = 6;
 
 /** A room row: the type icon (speaker / #), the name, a lock for a private room. */
 export function RoomPickRow({ room }: { room: Room }): ReactNode {
-  const Icon = room.expiresAt ? Timer : room.type === RoomType.VOICE ? Volume2 : Hash;
   return (
     <>
-      <Icon className="size-4 shrink-0" aria-hidden />
+      <RoomIcon roomId={room.id} room={room} size={16} ring="var(--color-popover-solid)" />
       <span className="min-w-0 flex-1 truncate" title={room.name}>
         {room.name}
       </span>
-      {room.isPrivate ? <Lock className="size-3.5 shrink-0 opacity-70" aria-label={t('room.private')} /> : null}
     </>
   );
 }

@@ -21,16 +21,27 @@ export function AccessLevelPicker({
   onChange,
   disabled,
   allLocked,
+  temp = false,
 }: {
   value: AccessLevel;
   onChange: (v: AccessLevel) => void;
   disabled: boolean;
   /** «Все участники» cannot be chosen (a permanent room stays private): the reason instead of its hint. */
   allLocked?: MessageKey | undefined;
+  /**
+   * A temporary room (ADR-0078): «По списку» already hides it from admins and the owner, so its
+   * hint says so and the third level is offered only to leave it.
+   */
+  temp?: boolean | undefined;
 }): ReactNode {
+  const options = temp
+    ? OPTIONS.filter((o) => o.v !== 'restricted' || value === 'restricted').map((o) =>
+        o.v === 'list' ? { ...o, hint: 'temp.visSelectedHint' as const } : o,
+      )
+    : OPTIONS;
   return (
     <div role="radiogroup" aria-label={t('access.level')} className="flex flex-col" data-testid="access-level">
-      {OPTIONS.map((o) => {
+      {options.map((o) => {
         const reason = o.v === 'all' && value !== 'all' ? allLocked : undefined;
         const locked = reason !== undefined;
         const on = value === o.v;

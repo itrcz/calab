@@ -1,0 +1,16 @@
+{
+  "platforms": [
+    "apple"
+  ],
+  "apple": {
+    "modules": [
+      "CalabSessionActivityModule",
+      "CalabMessageNotificationsModule",
+      "CalabIncomingCallsModule"
+    ],
+    "appDelegateSubscribers": [
+      "CalabMessagePushSubscriber",
+      "CalabIncomingCallsSubscriber"
+    ]
+  }
+}

@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const openExternal = vi.fn((_url: string) => Promise.resolve());
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { openExternal: (u: string) => openExternal(u), log: () => undefined } } }));
+const shell = vi.hoisted(() => ({ ios: false }));
+vi.mock('../platform/nativeShell', () => ({ iosNativeShell: () => shell.ios }));
 vi.mock('../lib/log', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const { ApiError } = await import('../lib/api/client');
-const { reportPlanError } = await import('./plan');
+const { reportPlanError, planOffersAllowed, planContact, openPlanContact } = await import('./plan');
 const { useSession } = await import('../stores/session');
 const { useToasts } = await import('../stores/toasts');
 
@@ -16,6 +18,7 @@ const roomFull = new ApiError('ERROR_CODE_ROOM_FULL', 'full', 409, undefined, { 
 beforeEach(() => {
   useToasts.setState({ items: [] });
   openExternal.mockClear();
+  shell.ios = false;
 });
 
 describe('reportPlanError', () => {
@@ -39,5 +42,23 @@ describe('reportPlanError', () => {
     expect(reportPlanError(new ApiError('ERROR_CODE_ROOM_FULL', 'full', 409), null)).toBe(false);
     expect(reportPlanError(new Error('boom'), null)).toBe(false);
     expect(useToasts.getState().items).toHaveLength(0);
+  });
+
+  it('keeps limits but removes sales actions in the iOS shell', () => {
+    shell.ios = true;
+    useSession.getState().set({ planContact: 'mailto:it@gptunnel.ai' });
+    expect(planOffersAllowed()).toBe(false);
+    expect(planContact()).toBeNull();
+    expect(reportPlanError(roomFull, null)).toBe(true);
+    expect(useToasts.getState().items[0]).toMatchObject({ kind: 'info', text: 'В бесплатном тарифе до 5 человек в комнате' });
+    expect(useToasts.getState().items[0]?.action).toBeUndefined();
+    openPlanContact();
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('keeps website sales offers available', () => {
+    useSession.getState().set({ planContact: 'https://calab.ru/' });
+    expect(planOffersAllowed()).toBe(true);
+    expect(planContact()).toBe('https://calab.ru/');
   });
 });

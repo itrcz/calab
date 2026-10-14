@@ -1,6 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import {
+  MessageKind,
   MessageSchema,
   NotificationLevel,
   RoomNotificationSettingsSchema,
@@ -86,6 +87,21 @@ describe('new message sound (docs/09 P1 #13, item 22)', () => {
     expect(sound()).toBeNull();
     expect(sound(MENTION)).toBe('mention');
     expect(shouldNotify(msg(2), 'ws')).toEqual({ dm: false, mention: false, notify: false });
+  });
+
+  it('a room picture change (ADR-0092) counts as unread but never sounds, even at «Все сообщения»', () => {
+    level(NotificationLevel.ALL);
+    played.length = 0;
+    const m = create(MessageSchema, {
+      id: id(500),
+      roomId: 'a',
+      authorId: 'other',
+      kind: MessageKind.SYSTEM,
+      system: { payload: { case: 'roomIcon', value: { fileId: 'f' } } },
+    });
+    onIncomingMessage(m, 'ws', false);
+    expect(played).toHaveLength(0);
+    expect(useRooms.getState().unread['a']).toBe(1);
   });
 
   it('«Все сообщения» on the room, or on the workspace through «Как в пространстве», plays «Новое сообщение»', () => {

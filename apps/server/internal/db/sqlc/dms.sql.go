@@ -57,7 +57,7 @@ const createDMRoom = `-- name: CreateDMRoom :one
 INSERT INTO rooms (workspace_id, type, name, dm_key)
 VALUES (NULL, 'dm', 'dm', $1)
 ON CONFLICT (dm_key) WHERE dm_key IS NOT NULL DO NOTHING
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id
 `
 
 // No row = a concurrent request created the pair's DM first (read it with GetDMByKey).
@@ -88,13 +88,14 @@ func (q *Queries) CreateDMRoom(ctx context.Context, dmKey *string) (Room, error)
 		&i.GuestApproval,
 		&i.ExpiresAt,
 		&i.CreatedBy,
+		&i.IconFileID,
 	)
 	return i, err
 }
 
 const getDMByKey = `-- name: GetDMByKey :one
 
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by FROM rooms WHERE dm_key = $1 AND archived_at IS NULL
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by, icon_file_id FROM rooms WHERE dm_key = $1 AND archived_at IS NULL
 `
 
 // Direct messages (ADR-0020). A DM is a room with type 'dm', no workspace and two rows in
@@ -126,6 +127,7 @@ func (q *Queries) GetDMByKey(ctx context.Context, dmKey *string) (Room, error) {
 		&i.GuestApproval,
 		&i.ExpiresAt,
 		&i.CreatedBy,
+		&i.IconFileID,
 	)
 	return i, err
 }
@@ -180,7 +182,7 @@ func (q *Queries) IsAvatar(ctx context.Context, avatarFileID *uuid.UUID) (bool, 
 }
 
 const listDMCandidates = `-- name: ListDMCandidates :many
-SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days FROM users u
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots FROM users u
 WHERE u.id <> $1 AND NOT u.is_guest AND u.disabled_at IS NULL
   AND EXISTS (
     SELECT 1 FROM workspace_members a
@@ -242,6 +244,11 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 			&i.WorkStartMin,
 			&i.WorkEndMin,
 			&i.WorkDays,
+			&i.HideMessageTextInNotifications,
+			&i.Username,
+			&i.Phone,
+			&i.TaskNotifyOff,
+			&i.TaskNotifyBots,
 		); err != nil {
 			return nil, err
 		}
@@ -255,7 +262,7 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 
 const listDMs = `-- name: ListDMs :many
 SELECT r.id AS room_id, r.created_at AS room_created_at,
-       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days,
+       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots,
        rs.last_read_message_id,
        (lm.id IS NOT NULL)::boolean AS has_messages,
        coalesce(lm.id, r.id)::uuid AS last_message_id,
@@ -372,6 +379,11 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.User.WorkStartMin,
 			&i.User.WorkEndMin,
 			&i.User.WorkDays,
+			&i.User.HideMessageTextInNotifications,
+			&i.User.Username,
+			&i.User.Phone,
+			&i.User.TaskNotifyOff,
+			&i.User.TaskNotifyBots,
 			&i.LastReadMessageID,
 			&i.HasMessages,
 			&i.LastMessageID,
@@ -385,6 +397,41 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.ClearedBefore,
 			&i.PeerReadMessageID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSearchPersonalRooms = `-- name: ListSearchPersonalRooms :many
+SELECT r.id, r.type, ds.cleared_before FROM dm_members d
+JOIN rooms r ON r.id = d.room_id AND r.archived_at IS NULL AND r.type IN ('dm', 'notes')
+LEFT JOIN dm_state ds ON ds.user_id = d.user_id AND ds.room_id = r.id
+WHERE d.user_id = $1
+`
+
+type ListSearchPersonalRoomsRow struct {
+	ID            uuid.UUID
+	Type          string
+	ClearedBefore *uuid.UUID
+}
+
+// The user's live DMs and notes shelves with their «Удалить чат» mark (unified search, ADR-0062:
+// the user is a participant, as perm.ReadRoom checks for these rooms).
+func (q *Queries) ListSearchPersonalRooms(ctx context.Context, userID uuid.UUID) ([]ListSearchPersonalRoomsRow, error) {
+	rows, err := q.db.Query(ctx, listSearchPersonalRooms, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSearchPersonalRoomsRow{}
+	for rows.Next() {
+		var i ListSearchPersonalRoomsRow
+		if err := rows.Scan(&i.ID, &i.Type, &i.ClearedBefore); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

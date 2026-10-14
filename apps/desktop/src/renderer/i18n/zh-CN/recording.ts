@@ -22,6 +22,7 @@ export const zhRecording: DictShape<typeof ruRecording> = {
   'rec.stop.empty': '录制已停止：通话中 2 分钟无人',
   'rec.stop.maxDuration': '录制已停止：已达 4 小时上限',
   'rec.stop.disabled': '录制已停止：房间设置中已禁止录制',
+  'rec.stop.planInactive': '录制已停止：工作区套餐未生效',
   'rec.stop.egress': '录制已停止：通话已结束',
   'rec.stop.lost': '录制中断：录制服务无响应',
   'rec.stop.other': '录制已停止',

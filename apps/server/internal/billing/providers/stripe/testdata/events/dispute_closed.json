@@ -1,0 +1,27 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791561600,
+  "data": {
+    "object": {
+      "amount": 1000,
+      "charge": "ch_FIXTURE0002",
+      "currency": "usd",
+      "id": "dp_FIXTURE0001",
+      "livemode": false,
+      "metadata": {},
+      "object": "dispute",
+      "payment_intent": "pi_FIXTURE0003",
+      "reason": "fraudulent",
+      "status": "lost"
+    }
+  },
+  "id": "evt_FIXTURE_dispute_closed",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 1,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "charge.dispute.closed"
+}

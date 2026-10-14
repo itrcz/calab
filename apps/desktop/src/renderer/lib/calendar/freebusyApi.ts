@@ -1,10 +1,14 @@
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
+  AttendeeStatus,
   BusyKind,
   CalDavAccountResponseSchema,
   CalDavShareLevel,
   ConnectCalDavRequestSchema,
+  DeleteExternalEventRequestSchema,
+  ExternalDeleteScope,
   ExternalEventsResponseSchema,
+  RespondExternalEventRequestSchema,
   SetCalDavShareRequestSchema,
   FreeBusyResponseSchema,
   SuggestSlotsRequestSchema,
@@ -61,6 +65,8 @@ export interface CalDavAccount {
   calendars: CalDavCalendar[];
   /** What colleagues see of my external events (ADR-0045 §2). */
   shareLevel: ShareLevel;
+  /** Remind of my external events like of meetings (ADR-0045 amendment 3). */
+  remind: boolean;
 }
 
 export type ShareLevel = 'busy' | 'title' | 'details';
@@ -70,6 +76,8 @@ export interface ExternalAttendee {
   email: string;
   name: string;
   userId: string;
+  /** Their answer as the calendar has it (PARTSTAT). */
+  status: AttendeeStatus;
 }
 
 /** One of my imported external events with its details (ADR-0045 §3). */
@@ -83,8 +91,25 @@ export interface ExternalEvent {
   location: string;
   attendees: readonly ExternalAttendee[];
   organizer: string;
+  /** «Подключиться»: the conference link (ADR-0045 amendment 1); '' = none. */
   url: string;
+  /** The calendar object (what «Удалить из календаря» names); '' until the next import. */
+  href: string;
+  /** An occurrence of a series: the delete offers «only this» / «the whole series». */
+  recurring: boolean;
+  /** «Открыть в календаре»: the provider's page of the event, only when reliable; '' = no button. */
+  webUrl: string;
+  /**
+   * My answer when I am an attendee, not the organizer (ADR-0045 amendment 2): «Приму / Отклоню /
+   * Может быть» are offered; UNSPECIFIED = no answer buttons.
+   */
+  myStatus: AttendeeStatus;
 }
+
+/** The answers I can give to an external event. */
+export type ExternalAnswer = AttendeeStatus.ACCEPTED | AttendeeStatus.DECLINED | AttendeeStatus.MAYBE;
+
+export type ExternalDeleteScopeName = 'this' | 'series';
 
 export interface SuggestInit {
   users: readonly string[];
@@ -134,6 +159,7 @@ function accountOf(r: CalDavAccountResponse): CalDavAccount | null {
     lastError: a.lastError,
     calendars: a.calendars.map((c) => ({ href: c.href, name: c.name, color: c.color })),
     shareLevel: a.shareLevel === CalDavShareLevel.DETAILS ? 'details' : a.shareLevel === CalDavShareLevel.TITLE ? 'title' : 'busy',
+    remind: a.remind,
   };
 }
 
@@ -174,12 +200,43 @@ export const freebusyApi = {
         allDay: e.allDay,
         summary: e.summary,
         location: e.location,
-        attendees: e.attendees.map((a) => ({ email: a.email, name: a.name, userId: a.userId })),
+        attendees: e.attendees.map((a) => ({ email: a.email, name: a.name, userId: a.userId, status: a.status })),
         organizer: e.organizer,
         url: e.url,
+        href: e.href,
+        recurring: e.recurring,
+        webUrl: e.webUrl,
+        myStatus: e.myStatus,
       }))
       .filter((e) => e.end > e.start);
   },
+  /**
+   * DELETE /api/me/external-events (ADR-0045 amendment 1): the event (or this occurrence of its
+   * series) out of my CalDAV calendar. 409 CONFLICT — it changed there (reload); 422 — the
+   * calendar is read-only (reason CALENDAR_READ_ONLY); 404 — not mine / gone.
+   */
+  deleteExternal: (e: Pick<ExternalEvent, 'uid' | 'href' | 'start'>, scope: ExternalDeleteScopeName): Promise<void> =>
+    callEmpty(
+      'DELETE',
+      '/api/me/external-events',
+      body(DeleteExternalEventRequestSchema, {
+        uid: e.uid,
+        href: e.href,
+        start: timestampFromMs(e.start),
+        scope: scope === 'series' ? ExternalDeleteScope.SERIES : ExternalDeleteScope.THIS,
+      }),
+    ),
+  /**
+   * POST /api/me/external-events/rsvp (ADR-0045 amendment 2): my answer written into my CalDAV
+   * calendar for the whole series (the provider mails it to the organizer). 409 — it changed there
+   * (reload); 422 — the calendar is read-only (CALENDAR_READ_ONLY) or I am not an attendee.
+   */
+  respondExternal: (e: Pick<ExternalEvent, 'uid' | 'href' | 'start'>, status: ExternalAnswer): Promise<void> =>
+    callEmpty(
+      'POST',
+      '/api/me/external-events/rsvp',
+      body(RespondExternalEventRequestSchema, { uid: e.uid, href: e.href, start: timestampFromMs(e.start), status }),
+    ),
   /** PATCH /api/me {work_hours}: the updated Me. */
   saveWorkHours: (wh: WorkHours) => api.me.update({ workHours: { startMin: wh.startMin, endMin: wh.endMin, days: [...wh.days] } }),
   caldav: {
@@ -196,11 +253,18 @@ export const freebusyApi = {
     /** PATCH {share_level}: what colleagues see (ADR-0045 §2). */
     setShare: async (level: ShareLevel): Promise<CalDavAccount | null> =>
       accountOf(await call('PATCH', '/api/me/caldav', CalDavAccountResponseSchema, body(SetCalDavShareRequestSchema, { shareLevel: SHARE_WIRE[level] }))),
+    /** PATCH /api/me/caldav {remind}: reminders of my external events (ADR-0045 amendment 3). */
+    setRemind: async (remind: boolean): Promise<CalDavAccount | null> =>
+      accountOf(await call('PATCH', '/api/me/caldav', CalDavAccountResponseSchema, body(SetCalDavShareRequestSchema, { remind }))),
     remove: (): Promise<void> => callEmpty('DELETE', '/api/me/caldav'),
     /** A manual sync (≤ 1 a minute: 429). */
     sync: async (): Promise<CalDavAccount | null> => accountOf(await call('POST', '/api/me/caldav/sync', CalDavAccountResponseSchema)),
   },
 };
+
+/** The delete of an external event failed because it changed in the calendar (409) / the calendar is read-only (422). */
+export const externalChanged = (e: unknown): boolean => e instanceof ApiError && e.status === 409 && e.code === 'ERROR_CODE_CONFLICT' && e.extra.reason !== 'PLAN_LIMIT';
+export const externalReadOnly = (e: unknown): boolean => e instanceof ApiError && e.status === 422 && e.extra.reason === 'CALENDAR_READ_ONLY';
 
 /** 409 NO_COMMON_HOURS: the people's work hours never overlap (ADR-0041 §2). */
 export const noCommonHours = (e: unknown): boolean => e instanceof ApiError && (e.code === 'ERROR_CODE_NO_COMMON_HOURS' || e.reason === 'NO_COMMON_HOURS');

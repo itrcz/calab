@@ -1,5 +1,5 @@
 import * as DialogP from '@radix-ui/react-dialog';
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { useMediaUrl } from '../../components/MediaImg';
 import { CloseButton, IconButton, Spinner, cx } from '../../components/ui';
@@ -8,7 +8,18 @@ import { filePath, thumbnailPath } from '../../lib/api/endpoints';
 import { platform } from '../../platform';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
+import { dragOutAttrs, dragOutHandlers } from './imageDragOut';
 import { dimsOf, fitFrame, isTap, lightboxLayers, stepImage, type Dims, type LightboxImage, type LoadState } from '../../lib/lightbox';
+
+/** A URL image saved through the standard download path (main applies quarantine / Mark-of-the-Web). */
+function saveUrl(url: string, name: string): void {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
 
@@ -18,7 +29,7 @@ const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14
  * Name + download + close; ←/→ step through the images of the message; a click outside, a click on
  * the image itself (not the end of a drag, docs/09 #132) or Esc closes.
  */
-export function Lightbox({ images, index: start, onClose }: { images: LightboxImage[]; index: number; onClose: () => void }): ReactNode {
+export function Lightbox({ images, index: start, onClose, onShowInChat }: { images: LightboxImage[]; index: number; onClose: () => void; onShowInChat?: () => void }): ReactNode {
   const [index, setIndex] = useState(start);
   const os = useSession((s) => s.appInfo?.platform);
   // Where the press began: a drag from the image released over the backdrop is not a backdrop click
@@ -33,11 +44,16 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
   const closeOnBackdrop = (e: MouseEvent): void => {
     if (e.target === e.currentTarget && pressedOn.current === e.target) onClose();
   };
-  const download = (): void =>
+  const download = (): void => {
+    if (img.src) {
+      saveUrl(img.src, img.name);
+      return;
+    }
     void platform.files.download({ fileId: img.fileId, name: img.name }).then(
       () => toast.success(t('chat.downloaded', { name: img.name })),
       (e: unknown) => toast.fail(e, t('err.ctx.download')),
     );
+  };
   const gallery = images.length > 1;
   const electron = platform.kind === 'electron';
   const mac = electron && os === 'darwin';
@@ -78,6 +94,12 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
             </DialogP.Title>
             {gallery ? <span className="shrink-0 text-caption tabular-nums opacity-75">{`${index + 1} / ${images.length}`}</span> : null}
             <DialogP.Description className="sr-only">{img.name}</DialogP.Description>
+            {/* Opened from a search hit (ADR-0062 §4): the message carrying the file. */}
+            {onShowInChat ? (
+              <IconButton label={t('search.showInChat')} onClick={onShowInChat} className={onDark}>
+                <MessageSquare className="size-5" />
+              </IconButton>
+            ) : null}
             <IconButton label={t('lightbox.download')} onClick={download} className={onDark}>
               <Download className="size-5" />
             </IconButton>
@@ -121,8 +143,11 @@ function ImageStage({
   const [full, setFull] = useState<LoadState>('loading');
   const [thumbAspect, setThumbAspect] = useState<Dims | null>(null);
   const [natural, setNatural] = useState<Dims | null>(null);
-  const thumbSrc = useMediaUrl(thumbnailPath(img.fileId));
-  const fullSrc = useMediaUrl(filePath(img.fileId), () => setFull('error'));
+  // A ready URL (a mail attachment) has no thumbnail: the full image only.
+  const apiThumb = useMediaUrl(img.src ? null : thumbnailPath(img.fileId));
+  const apiFull = useMediaUrl(img.src ? null : filePath(img.fileId), () => setFull('error'));
+  const thumbSrc = img.src ? undefined : apiThumb;
+  const fullSrc = img.src ?? apiFull;
   const known = dimsOf(img.width, img.height) ?? natural;
   const frame = fitFrame(known ?? thumbAspect, !!known);
   const layers = lightboxLayers(thumb, full);
@@ -193,7 +218,7 @@ function ImageStage({
           />
         ) : null}
         {fullSrc && layers.full ? (
-          <img src={fullSrc} alt={img.name} draggable={false} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
+          <img src={fullSrc} alt={img.name} {...(img.src ? { draggable: false } : { ...dragOutAttrs({ id: img.fileId, name: img.name, mime: img.mime }), ...dragOutHandlers })} data-testid="lightbox-image" className="absolute inset-0 size-full object-contain" />
         ) : null}
         {layers.spinner ? (
           <span className="absolute inset-0 grid place-items-center">

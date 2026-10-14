@@ -33,6 +33,7 @@ import (
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/diskacl"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
@@ -42,6 +43,7 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/wikiacl"
 )
 
 // MaxAvatarBytes caps avatar uploads (they are user-scoped and not quota-counted). Clients
@@ -164,17 +166,19 @@ func (q quotaLimit) err(used int64) error {
 	return errQuota.WithDetails(reason, uint64(max(used, 0)), uint64(max(q.limit, 0)))
 }
 
-// quota returns the effective quota and the plan's limit for ReserveQuota (MaxInt64 = none).
-func (s *Service) quota(ctx context.Context, ws sqlc.Workspace) (quotaLimit, int64, error) {
+// quota returns the effective quota and the plan's limit for ReserveQuota (MaxInt64 = none):
+// the plan's storage plus the active storage add-ons (ADR-0094 §6). dq reads the add-ons (the
+// caller's transaction or s.db.Q).
+func (s *Service) quota(ctx context.Context, dq *sqlc.Queries, ws sqlc.Workspace) (quotaLimit, int64, error) {
 	q, planQuota := quotaLimit{limit: ws.StorageQuotaBytes}, int64(math.MaxInt64)
 	if s.plans == nil {
 		return q, planQuota, nil
 	}
-	l, err := s.plans.Effective(ctx, ws.ID)
+	b, ok, err := s.plans.EffectiveStorageBytes(ctx, dq, ws.ID)
 	if err != nil {
 		return q, planQuota, err
 	}
-	if b, ok := l.StorageBytes(); ok {
+	if ok {
 		planQuota = b
 		if b < q.limit {
 			q = quotaLimit{limit: b, byPlan: true}
@@ -439,34 +443,46 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 // UploadInto stores an upload of the caller into the workspace's quota; the caller checked that
 // they may attach files there (e.g. a task board, ADR-0042).
 func (s *Service) UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.UUID) error {
+	f, err := s.UploadWith(w, r, wsID, nil)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusCreated, &v1.UploadFileResponse{File: pbconv.File(f)})
+	return nil
+}
+
+// UploadWith is UploadInto without the response: attach (nil = none) runs in the transaction
+// that reserves the quota and inserts the files row, after both (the Disk inserts its item
+// there, ADR-0094); its error discards the upload.
+func (s *Service) UploadWith(w http.ResponseWriter, r *http.Request, wsID uuid.UUID, attach func(q *sqlc.Queries, f sqlc.File) error) (sqlc.File, error) {
 	uid := auth.MustFromContext(r.Context()).UserID
 	if s.limiter != nil {
 		if err := s.limiter.Take(r.Context(), uid.String()); err != nil {
-			return err
+			return sqlc.File{}, err
 		}
 	}
 	pending, err := s.db.Q.UnattachedBytesByUploader(r.Context(), sqlc.UnattachedBytesByUploaderParams{UploaderID: uid, WorkspaceID: &wsID})
 	if err != nil {
-		return err
+		return sqlc.File{}, err
 	}
 	if pending+max(r.ContentLength, 0) > MaxUnattachedBytes {
-		return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
+		return sqlc.File{}, httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
 			"too many uploaded files are not attached to messages yet")
 	}
 	ws, err := s.db.Q.GetWorkspace(r.Context(), wsID)
 	if err != nil {
-		return err
+		return sqlc.File{}, err
 	}
-	quota, planQuota, err := s.quota(r.Context(), ws)
+	quota, planQuota, err := s.quota(r.Context(), s.db.Q, ws)
 	if err != nil {
-		return err
+		return sqlc.File{}, err
 	}
 	if r.ContentLength > 0 && ws.StorageUsedBytes+r.ContentLength-(1<<20) > quota.limit {
-		return quota.err(ws.StorageUsedBytes) // early reject from Content-Length before reading the body
+		return sqlc.File{}, quota.err(ws.StorageUsedBytes) // early reject from Content-Length before reading the body
 	}
 	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return blob.FileKey(wsID, id) }, acceptAny)
 	if err != nil {
-		return err
+		return sqlc.File{}, err
 	}
 	var f sqlc.File
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
@@ -482,15 +498,19 @@ func (s *Service) UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.U
 			}
 			return err
 		}
-		f, err = q.InsertFile(r.Context(), s.row(st, &wsID, auth.MustFromContext(r.Context()).UserID))
-		return err
+		if f, err = q.InsertFile(r.Context(), s.row(st, &wsID, uid)); err != nil {
+			return err
+		}
+		if attach != nil {
+			return attach(q, f)
+		}
+		return nil
 	})
 	if err != nil {
 		s.discard(st)
-		return err
+		return sqlc.File{}, err
 	}
-	httpx.Write(w, http.StatusCreated, &v1.UploadFileResponse{File: pbconv.File(f)})
-	return nil
+	return f, nil
 }
 
 // uploadDM: POST /api/dms/{id}/files — an attachment for a direct message (ADR-0020). DM
@@ -578,7 +598,7 @@ func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (
 		byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
 	}
 	for _, room := range rooms {
-		if perm.ComputeIn(m, room.Restricted, pbconv.OverrideTargets(byRoom[room.ID])).Has(perm.ViewRoom | perm.AttachFiles) {
+		if perm.ComputeIn(m, perm.FlagsOf(room), pbconv.OverrideTargets(byRoom[room.ID])).Has(perm.ViewRoom | perm.AttachFiles) {
 			return true, nil
 		}
 	}
@@ -644,12 +664,13 @@ func (s *Service) UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.
 // CanRead implements the download rule:
 //   - the uploader;
 //   - an avatar (user-scoped): any authenticated user;
-//   - a workspace icon, badge picture (docs/09 #82), camera background (ADR-0035) or soundboard
-//     clip (ADR-0036): members of the workspace (guests too);
+//   - a workspace icon, badge picture (docs/09 #82), camera background (ADR-0035), soundboard
+//     clip (ADR-0036) or achievement picture (ADR-0061): members of the workspace (guests too);
 //   - a web app icon (ADR-0050): members of the workspace except guests;
 //   - a sticker (ADR-0030): members of its workspace, or VIEW_ROOM in a room where a live
 //     message shows it;
-//   - a file attached to a live message: VIEW_ROOM in that room.
+//   - a file attached to a live message: VIEW_ROOM in that room;
+//   - a file of the Disk (ADR-0094, in the trash too): DISK_VIEW on its item (perm.ComputeDiskItem).
 func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 	ctx := r.Context()
 	id := auth.MustFromContext(ctx)
@@ -715,6 +736,43 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 			}
 		}
 	} else {
+		// A file of the Disk (ADR-0094 §7), in the trash too: DISK_VIEW on its item.
+		if item, err := s.db.Q.GetDiskItemByFile(ctx, &f.ID); err == nil {
+			m, err := res.Member(ctx, item.WorkspaceID, uid)
+			if err == nil {
+				ch, err := diskacl.Load(ctx, s.db.Q, []uuid.UUID{item.ID})
+				if err != nil {
+					return false, err
+				}
+				if ch.Bits(m, &item.ID).Has(perm.DiskView) {
+					return true, nil
+				}
+			} else if err := candidate(err); err != nil {
+				return false, err
+			}
+		} else if !db.IsNotFound(err) {
+			return false, err
+		}
+		// A picture or attachment of a wiki page (ADR-0096 §1), in the trash too: WIKI_VIEW on
+		// its page.
+		if pf, err := s.db.Q.GetWikiPageFile(ctx, f.ID); err == nil {
+			ch, err := wikiacl.Load(ctx, s.db.Q, []uuid.UUID{pf.PageID})
+			if err != nil {
+				return false, err
+			}
+			if ch.Has(pf.PageID) {
+				m, err := res.Member(ctx, ch.Page(pf.PageID).WorkspaceID, uid)
+				if err == nil {
+					if ch.Bits(m, &pf.PageID).Has(perm.WikiView) {
+						return true, nil
+					}
+				} else if err := candidate(err); err != nil {
+					return false, err
+				}
+			}
+		} else if !db.IsNotFound(err) {
+			return false, err
+		}
 		icon, err := s.db.Q.IsWorkspaceIcon(ctx, &f.ID)
 		if err != nil {
 			return false, err
@@ -731,6 +789,11 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 		}
 		if !icon {
 			if icon, err = s.db.Q.IsWorkspaceSound(ctx, f.ID); err != nil {
+				return false, err
+			}
+		}
+		if !icon {
+			if icon, err = s.db.Q.IsWorkspaceAchievement(ctx, &f.ID); err != nil {
 				return false, err
 			}
 		}
@@ -836,6 +899,10 @@ func (s *Service) load(r *http.Request) (sqlc.File, error) {
 }
 
 func (s *Service) serve(w http.ResponseWriter, r *http.Request, f sqlc.File, key, contentType, etag, name string) error {
+	return s.serveWith(w, r, f, key, contentType, etag, name, "private, max-age=31536000, immutable") // content never changes for an id
+}
+
+func (s *Service) serveWith(w http.ResponseWriter, r *http.Request, f sqlc.File, key, contentType, etag, name, cacheControl string) error {
 	rc, _, err := s.store.Get(r.Context(), key)
 	if errors.Is(err, blob.ErrNotFound) {
 		return httpx.NotFound("file")
@@ -847,7 +914,7 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request, f sqlc.File, key
 	h := w.Header()
 	h.Set("Content-Type", contentType)
 	h.Set("ETag", `"`+etag+`"`)
-	h.Set("Cache-Control", "private, max-age=31536000, immutable") // content never changes for an id
+	h.Set("Cache-Control", cacheControl)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	disp := "attachment"
@@ -873,6 +940,26 @@ func (s *Service) thumbnail(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	return s.serveThumb(w, r, f, s.serve)
+}
+
+// serveFunc serves one stored object of a file.
+type serveFunc func(w http.ResponseWriter, r *http.Request, f sqlc.File, key, contentType, etag, name string) error
+
+// ServeLinked serves a file (thumbnail: its ?w= thumbnail) reached through a public link of the
+// Disk (ADR-0094 §3); the caller checked the link. Range as for GET /api/files/{id}, but never
+// kept by caches (no-store): a revoked link must stop working.
+func (s *Service) ServeLinked(w http.ResponseWriter, r *http.Request, f sqlc.File, thumbnail bool) error {
+	serve := func(w http.ResponseWriter, r *http.Request, f sqlc.File, key, contentType, etag, name string) error {
+		return s.serveWith(w, r, f, key, contentType, etag, name, "no-store")
+	}
+	if thumbnail {
+		return s.serveThumb(w, r, f, serve)
+	}
+	return serve(w, r, f, f.Key, f.Mime, f.Sha256, f.Name)
+}
+
+func (s *Service) serveThumb(w http.ResponseWriter, r *http.Request, f sqlc.File, serve serveFunc) error {
 	side, ok := ThumbWidth(r.URL.Query().Get("w"))
 	if !ok {
 		return httpx.BadRequest("w must be 512 or 1024")
@@ -889,7 +976,7 @@ func (s *Service) thumbnail(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	return s.serve(w, r, f, key, "image/webp", etag, name)
+	return serve(w, r, f, key, "image/webp", etag, name)
 }
 
 // ensureLargeThumb makes the ThumbLargeSide thumbnail on first request and keeps it in the

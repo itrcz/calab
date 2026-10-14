@@ -2,7 +2,7 @@ import { RoomType, type FileMeta, type Message, type PermissionBits } from '@cal
 import { useRooms } from '../../stores/rooms';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
@@ -15,12 +15,12 @@ import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse'
 import { platform } from '../../platform';
 import { can } from '../../lib/permissions';
 import { retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
-import { useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
+import { messageById, useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
 import { useReadReceipt } from '../../stores/readReceipts';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
@@ -32,9 +32,14 @@ import { PreviewRuns } from './PreviewRuns';
 import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
-import { birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
+import { ProfileTarget } from '../../components/ProfileTarget';
+import { automationCardOf, birthdayCardOf, recordingCardOf, roomIconCardOf, systemPreview } from '../../lib/recording';
+import { AutomationCardView } from '../boards/AutomationCard';
 import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
+import { AchievementCardView } from './AchievementCard';
+import { RoomIconLine } from './RoomIconLine';
+import { achievementCardOf } from '../../lib/achievements';
 import { CallLogRow } from '../call/CallBits';
 import { callCardOf } from '../../lib/callModel';
 import { ForwardLine, forwardSentMs } from './ForwardLine';
@@ -43,12 +48,14 @@ import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 import { VoiceAttachment } from './VoiceBubble';
 import { isVoice } from '../../lib/voiceNote';
 import { useMobile } from '../../lib/mobile';
+import { ReplySwipeIcon, useReplySwipe } from './replySwipe';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
-import { BotBadge } from '../people/MemberBits';
+import { BotBadge, FormerChip } from '../people/MemberBits';
 import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
 import { InlineKeyboardView } from './InlineKeyboard';
+import { dragOutAttrs, dragOutHandlers } from './imageDragOut';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -60,11 +67,18 @@ const IMAGE_MAX_VH = 60;
 function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; own: boolean }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const label = useMentionLabel(workspaceId, v);
-  const mine = !own && (v === me || v === 'everyone' || v === 'here');
+  const special = v === 'everyone' || v === 'here';
+  useResolveUnknown(workspaceId, special ? '' : v);
+  // A mention of someone who left (ADR-0097 §4): no notification tint, the «бывший» chip after it.
+  const former = !!useFormerInfo(workspaceId, v);
+  const mine = !own && !former && (v === me || special);
   return (
-    <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : 'bg-accent/15 text-accent-text')} data-mention={v}>
-      {label}
-    </span>
+    <ProfileTarget userId={v} name={label} workspaceId={workspaceId} className="inline text-left align-baseline">
+      <span className={cx('rounded-[4px] px-0.5 font-medium', mine ? 'bg-warn/25 text-fg' : former ? 'bg-[var(--color-fill)] text-muted' : 'bg-accent/15 text-accent-text')} data-mention={v}>
+        {label}
+      </span>
+      {former ? <FormerChip workspaceId={workspaceId} userId={v} className="ml-1 align-[1px]" /> : null}
+    </ProfileTarget>
   );
 }
 
@@ -88,6 +102,12 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
   const m = c.msg;
   const author = useWorkspaces((s) => s.users[m.authorId]);
   const name = memberName(workspaceId, m.authorId);
+  useResolveUnknown(workspaceId, m.authorId); // an author who left: the profile comes by id (ADR-0097)
+  const former = !!useFormerInfo(workspaceId, m.authorId);
+  // Phone: a left swipe replies (Telegram iOS) — whoever may reply from the menu.
+  const mobile = useMobile();
+  const reply = useCallback(() => useUi.getState().setReply(roomId, m.id), [roomId, m.id]);
+  const { ref: swipeRef, icon: swipeIcon, active: swiping, handlers: swipeHandlers } = useReplySwipe(mobile && c.status === 'sent' && can(perms, 'SEND_MESSAGES'), reply);
   return (
     // overflow-x-clip: nothing in a row widens the feed (no horizontal scroll, docs/09 #74); clip,
     // not hidden, so the action bar over a bubble's top edge still shows above the row.
@@ -95,8 +115,12 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
       {meta.day ? <DatePill date={toDate(m.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       <div
+        ref={swipeRef}
+        {...swipeHandlers}
         className={cx(
-          'flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          'relative flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          // the browser never pans the feed sideways: a horizontal move is the reply swipe's
+          mobile && 'touch-pan-y',
           // Telegram tints the message whose menu is open (Radix marks the trigger data-state=open).
           'has-[>[data-state=open]]:bg-[var(--color-bubble-highlight)] has-[>[data-state=open]]:shadow-[0_0_0_4px_var(--color-bubble-highlight)]',
           own ? 'justify-end' : 'justify-start',
@@ -104,15 +128,18 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
         )}
       >
         {!own ? (
-          <div className="w-9 shrink-0 self-end">
+          // Phone: under a bubble with inline buttons the avatar stays beside the bubble itself (top),
+          // not at the bottom of the buttons where it reads as a stray one.
+          <div className={cx('w-9 shrink-0 self-end', !!m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' && 'mobile:self-start')}>
             {meta.last ? (
               <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="rounded-full">
-                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} />
+                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} former={former} />
               </AuthorTarget>
             ) : null}
           </div>
         ) : null}
         <Bubble c={c} meta={meta} own={own} name={name} workspaceId={workspaceId} roomId={roomId} perms={perms} />
+        {swiping ? <ReplySwipeIcon icon={swipeIcon} /> : null}
       </div>
       {c.status === 'failed' ? <FailedLine c={c} workspaceId={workspaceId} roomId={roomId} /> : null}
     </div>
@@ -128,10 +155,15 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   useTimeFormat();
   const card = recordingCardOf(c.msg);
   const bday = birthdayCardOf(c.msg);
+  const ach = achievementCardOf(c.msg);
   // A DM call log line (ADR-0034): one line like Telegram, on the caller's side.
   const call = callCardOf(c.msg);
+  // A board automation's message (ADR-0060): a room (notify_room) or the task's comments.
+  const auto = automationCardOf(c.msg);
+  // The room picture changed (ADR-0092): a centred service line with the new picture.
+  const icon = roomIconCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday || call ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || ach || call || auto || icon ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -145,9 +177,21 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
         <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <BirthdayCardView authorId={c.msg.authorId} card={bday} workspaceId={workspaceId} />
         </div>
+      ) : ach ? (
+        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <AchievementCardView authorId={c.msg.authorId} card={ach} workspaceId={workspaceId} roomId={c.msg.roomId} messageId={c.msg.id} createdAt={c.msg.createdAt} />
+        </div>
       ) : call ? (
         <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <CallLogRow card={call} at={c.msg.createdAt} />
+        </div>
+      ) : auto ? (
+        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <AutomationCardView card={auto} workspaceId={workspaceId} roomId={c.msg.roomId} />
+        </div>
+      ) : icon ? (
+        <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <RoomIconLine card={icon} authorId={c.msg.authorId} workspaceId={workspaceId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />
@@ -162,13 +206,15 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
  * menu); out of the Tab order — the feed's keyboard path is the message itself.
  */
 function AuthorTarget({ workspaceId, userId, name, className, children }: { workspaceId: string; userId: string; name: string; className?: string; children: ReactNode }): ReactNode {
-  if (!workspaceId) return children;
+  // A DM has no workspace and no member menu: the profile still opens (a shared workspace's card).
+  if (!workspaceId) return <ProfileTarget userId={userId} name={name} className={className}>{children}</ProfileTarget>;
   return (
     <MemberContextMenu workspaceId={workspaceId} userId={userId}>
       <button
         type="button"
         tabIndex={-1}
         aria-label={t('people.openProfile', { name })}
+        data-inline-target
         className={cx('inline-block cursor-pointer align-bottom', className)}
         onClick={(e) => {
           e.stopPropagation();
@@ -245,6 +291,22 @@ function Bubble({
   const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((f) => !isImage(f));
+  // «Скачать картинку» in the menu: the image under the right click / long press (its press marks
+  // it — a ref, no render), else the message's only image; read once when the menu opens.
+  const pressedImage = useRef<string | null>(null);
+  const markPressedImage = useCallback((e: SyntheticEvent) => {
+    pressedImage.current = e.target instanceof Element ? (e.target.closest('[data-drag-file]')?.getAttribute('data-drag-file') ?? null) : null;
+  }, []);
+  const [menuImageId, setMenuImageId] = useState<string | null>(null);
+  const setBarMenu = bar.setMenu;
+  const onMenuOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) setMenuImageId(pressedImage.current);
+      setBarMenu(open);
+    },
+    [setBarMenu],
+  );
+  const menuImage = images.find((f) => f.id === menuImageId) ?? (images.length === 1 ? images[0] : undefined);
   // Videos are full-bleed boxes like images; audio players and other files are rows (docs/08 «Медиа в чате»).
   const videos = files.filter((f) => !isVoice(f) && mediaKind(f) === 'video');
   const rows = files.filter((f) => isVoice(f) || mediaKind(f) !== 'video');
@@ -321,6 +383,7 @@ function Bubble({
               {name}
             </AuthorTarget>
             <MemberBadge workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 inline-block align-[-3px]" />
+            <FormerChip workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 align-[1px]" />
             {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
           </div>
         ) : null}
@@ -391,7 +454,7 @@ function Bubble({
   );
 
   return (
-    <ContextMenu.Root modal={false} onOpenChange={bar.setMenu}>
+    <ContextMenu.Root modal={false} onOpenChange={onMenuOpenChange}>
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
           className={cx(
@@ -406,6 +469,8 @@ function Bubble({
           role={bar.enabled ? 'article' : undefined}
           aria-label={bar.enabled ? `${name}, ${fmt.time(toDate(m.createdAt))}` : undefined}
           {...bar.handlers}
+          onPointerDownCapture={markPressedImage}
+          onContextMenuCapture={markPressedImage}
         >
           {body}
           {m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' ? (
@@ -418,7 +483,7 @@ function Bubble({
           ) : null}
         </div>
       </ContextMenu.Trigger>
-      <MessageMenu c={c} own={own} roomId={roomId} perms={perms} />
+      <MessageMenu c={c} own={own} roomId={roomId} perms={perms} image={menuImage} />
     </ContextMenu.Root>
   );
 }
@@ -695,6 +760,7 @@ function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMe
         disabled={!canReact}
         aria-pressed={me}
         aria-label={t('chat.reactionLabel', { emoji, count })}
+        data-inline-target
         onClick={() => void toggleReaction(roomId, m, emoji)}
         className={cx(
           'inline-flex items-center gap-1 rounded-full leading-none transition-colors duration-[var(--motion-fast)]',
@@ -716,7 +782,7 @@ function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMe
 }
 
 function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string; workspaceId: string; replyToId: string; padTop: boolean }): ReactNode {
-  const target = useMessages((s) => s.rooms[roomId]?.items.find((c) => c.key === replyToId)?.msg);
+  const target = useMessages((s) => messageById(s, roomId, replyToId));
   const gone = useMessages((s) => !!s.gone[replyToId]);
   const jump = useChatView((s) => s.requestJump);
   const sys = target ? systemPreview(target) : '';
@@ -790,7 +856,9 @@ function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: bool
           key={f.id}
           type="button"
           aria-label={t('chat.openImage', { name: f.name })}
-          onClick={() => open({ kind: 'image', images: files.map((g) => ({ fileId: g.id, name: g.name, width: g.width, height: g.height })), index })}
+          onClick={() => open({ kind: 'image', images: files.map((g) => ({ fileId: g.id, name: g.name, mime: g.mime, width: g.width, height: g.height })), index })}
+          {...dragOutAttrs(f)}
+          {...dragOutHandlers}
           className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
           style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width: '100%' } : { aspectRatio: '1 / 1' }}
         >

@@ -80,6 +80,8 @@ func (Plan) EnumDescriptor() ([]byte, []int) {
 // Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
 type PlanLimits struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
+	BoardFormsDisabled    bool                   `protobuf:"varint,33,opt,name=board_forms_disabled,json=boardFormsDisabled,proto3" json:"board_forms_disabled,omitempty"`
+	BoardFormsPerBoard    uint32                 `protobuf:"varint,34,opt,name=board_forms_per_board,json=boardFormsPerBoard,proto3" json:"board_forms_per_board,omitempty"`                      // 0 = unlimited; ADR-0064
 	RoomMembers           uint32                 `protobuf:"varint,1,opt,name=room_members,json=roomMembers,proto3" json:"room_members,omitempty"`                                                // users in one voice room (guests and pending devices count)
 	StreamMaxPreset       ScreenSharePreset      `protobuf:"varint,2,opt,name=stream_max_preset,json=streamMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"stream_max_preset,omitempty"` // highest screen share preset
 	StreamMaxFps          uint32                 `protobuf:"varint,3,opt,name=stream_max_fps,json=streamMaxFps,proto3" json:"stream_max_fps,omitempty"`                                           // screen share frame rate cap
@@ -99,6 +101,7 @@ type PlanLimits struct {
 	ChecklistsDisabled    bool                   `protobuf:"varint,29,opt,name=checklists_disabled,json=checklistsDisabled,proto3" json:"checklists_disabled,omitempty"`                          // task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
 	BoardWebhooksDisabled bool                   `protobuf:"varint,30,opt,name=board_webhooks_disabled,json=boardWebhooksDisabled,proto3" json:"board_webhooks_disabled,omitempty"`               // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
 	TelephonyDisabled     bool                   `protobuf:"varint,31,opt,name=telephony_disabled,json=telephonyDisabled,proto3" json:"telephony_disabled,omitempty"`                             // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
+	AutomationsDisabled   bool                   `protobuf:"varint,32,opt,name=automations_disabled,json=automationsDisabled,proto3" json:"automations_disabled,omitempty"`                       // board automations (ADR-0060) are Team and above: new rules refused, rules and Git events do not run
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -131,6 +134,20 @@ func (x *PlanLimits) ProtoReflect() protoreflect.Message {
 // Deprecated: Use PlanLimits.ProtoReflect.Descriptor instead.
 func (*PlanLimits) Descriptor() ([]byte, []int) {
 	return file_calaba_v1_plan_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *PlanLimits) GetBoardFormsDisabled() bool {
+	if x != nil {
+		return x.BoardFormsDisabled
+	}
+	return false
+}
+
+func (x *PlanLimits) GetBoardFormsPerBoard() uint32 {
+	if x != nil {
+		return x.BoardFormsPerBoard
+	}
+	return 0
 }
 
 func (x *PlanLimits) GetRoomMembers() uint32 {
@@ -266,6 +283,13 @@ func (x *PlanLimits) GetTelephonyDisabled() bool {
 	return false
 }
 
+func (x *PlanLimits) GetAutomationsDisabled() bool {
+	if x != nil {
+		return x.AutomationsDisabled
+	}
+	return false
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state                protoimpl.MessageState         `protogen:"open.v1"`
@@ -274,8 +298,13 @@ type WorkspacePlan struct {
 	ValidUntil           *timestamppb.Timestamp         `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"` // unset = no expiry
 	IdentityEntitlements *WorkspaceIdentityEntitlements `protobuf:"bytes,5,opt,name=identity_entitlements,json=identityEntitlements,proto3" json:"identity_entitlements,omitempty"`
 	Expired              bool                           `protobuf:"varint,4,opt,name=expired,proto3" json:"expired,omitempty"` // valid_until passed: the FREE limits apply
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// PLAN_CUSTOM only (ADR-0086 «Индивидуальный тариф»): the name a superadmin gave the plan
+	// (<= 40 characters) and its short description (<= 140). Empty name = the client's localized
+	// «Индивидуальный» / «Custom». Every member sees them (no money here).
+	DisplayName   string `protobuf:"bytes,6,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description   string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorkspacePlan) Reset() {
@@ -343,13 +372,29 @@ func (x *WorkspacePlan) GetExpired() bool {
 	return false
 }
 
+func (x *WorkspacePlan) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *WorkspacePlan) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xb8\x06\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xd0\a\n" +
 	"\n" +
-	"PlanLimits\x12!\n" +
+	"PlanLimits\x120\n" +
+	"\x14board_forms_disabled\x18! \x01(\bR\x12boardFormsDisabled\x121\n" +
+	"\x15board_forms_per_board\x18\" \x01(\rR\x12boardFormsPerBoard\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
 	"\x11stream_max_preset\x18\x02 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x0fstreamMaxPreset\x12$\n" +
 	"\x0estream_max_fps\x18\x03 \x01(\rR\fstreamMaxFps\x12H\n" +
@@ -370,14 +415,17 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x11musician_disabled\x18\x1c \x01(\bR\x10musicianDisabled\x12/\n" +
 	"\x13checklists_disabled\x18\x1d \x01(\bR\x12checklistsDisabled\x126\n" +
 	"\x17board_webhooks_disabled\x18\x1e \x01(\bR\x15boardWebhooksDisabled\x12-\n" +
-	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\x99\x02\n" +
+	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabled\x121\n" +
+	"\x14automations_disabled\x18  \x01(\bR\x13automationsDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\xde\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +
 	"\vvalid_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"validUntil\x12]\n" +
 	"\x15identity_entitlements\x18\x05 \x01(\v2(.calaba.v1.WorkspaceIdentityEntitlementsR\x14identityEntitlements\x12\x18\n" +
-	"\aexpired\x18\x04 \x01(\bR\aexpired*`\n" +
+	"\aexpired\x18\x04 \x01(\bR\aexpired\x12!\n" +
+	"\fdisplay_name\x18\x06 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\a \x01(\tR\vdescription*`\n" +
 	"\x04Plan\x12\x14\n" +
 	"\x10PLAN_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tPLAN_FREE\x10\x01\x12\r\n" +

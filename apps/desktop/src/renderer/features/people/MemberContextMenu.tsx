@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowRightLeft, AtSign, Ban, MessageCircle, Phone, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, AtSign, Award, Ban, MessageCircle, Phone, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -23,6 +23,7 @@ import { startDm } from '../../services/dms';
 import { startCall } from '../../services/call';
 import { RoomSubmenuPicker } from '../workspace/RoomPicker';
 import { LocalTime } from './LocalTime';
+import { useAchievementUi } from '../../stores/achievementUi';
 
 /** What I may do with a member right now (reactive; the server re-checks every action). */
 export function useMemberActions(workspaceId: string, userId: string): MenuActions | null {
@@ -181,7 +182,7 @@ function MemberMenuContent({
   const setPrefs = usePrefs((s) => s.setPrefs);
   const hiddenVideo = usePrefs((s) => s.hiddenVideo);
   const forMe = a.volume || a.localMute || a.hideVideo;
-  const manageItems = a.rename || a.roles !== null || a.moveTargets.length > 0;
+  const manageItems = a.rename || a.roles !== null || a.grantAchievement || a.moveTargets.length > 0;
   const moderation = a.serverMute || a.serverUnmute || a.stopCamera || a.disconnect;
   const admin = a.promote || a.removeGuest || a.kick || a.ban;
   const setHidden = (on: boolean): void => {
@@ -264,6 +265,11 @@ function MemberMenuContent({
             </ContextMenu.SubContent>
           </ContextMenu.Portal>
         </ContextMenu.Sub>
+      ) : null}
+      {a.grantAchievement ? (
+        <ContextMenu.Item className={row} onSelect={() => useAchievementUi.getState().openGrant({ workspaceId, userId })} data-testid="member-grant-achievement">
+          <Award className="size-4" aria-hidden /> {t('ach.menu')}
+        </ContextMenu.Item>
       ) : null}
       {a.moveTargets.length > 0 ? (
         <ContextMenu.Sub>

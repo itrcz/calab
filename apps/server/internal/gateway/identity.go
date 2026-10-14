@@ -12,6 +12,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -181,7 +182,8 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 			return false
 		}
 		for _, snap := range ready.Workspaces {
-			if !s.workspaceLeaseAllows(parseID(snap.GetWorkspace().GetId())) {
+			ws := parseID(snap.GetWorkspace().GetId())
+			if !s.workspaceLeaseAllows(ws) && (!isBillingStub(snap) || !s.billingStubAllows(ws)) {
 				return false
 			}
 		}
@@ -193,7 +195,7 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 		return true
 	}
 	if enc.workspace != uuid.Nil {
-		return knownScopedEvent(ev) && s.workspaceLeaseAllows(enc.workspace)
+		return knownScopedEvent(ev) && (s.workspaceLeaseAllows(enc.workspace) || s.billingRecoveryEvent(ev, enc.workspace))
 	}
 	if !enc.scoped {
 		return false
@@ -203,11 +205,19 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 			if s.principal.Authority != identitypolicy.LocalAccount || !ownProfileOrPresence(s.user, ev) {
 				return false
 			}
-		} else if !s.workspaceLeaseAllows(ws) {
+		} else if !s.workspaceLeaseAllows(ws) && !s.billingRecoveryEvent(ev, ws) {
 			return false
 		}
 	}
 	return len(enc.scopes) > 0
+}
+
+// billingRecoveryEvent: BILLING_UPDATE (content-free: workspace id and revision) of ws reaches
+// its owner while a billing suspension closes the rest of the workspace (ADR-0080 §12), so the
+// paywall refreshes after a payment. Nothing else passes.
+func (s *Session) billingRecoveryEvent(ev *v1.DispatchEvent, ws uuid.UUID) bool {
+	b := ev.GetBillingUpdate()
+	return b != nil && parseID(b.GetWorkspaceId()) == ws && s.billingLeaseAllows(ws)
 }
 
 // ownProfileOrPresence: a profile/presence event without workspace attribution (user
@@ -259,6 +269,21 @@ var eventScope = map[protoreflect.Name]bool{
 	// the board's viewers).
 	"board_category_create": true, "board_category_update": true, "board_category_delete": true,
 	"task_checklist_update": true, "task_checklist_delete": true,
+	// Automations (ADR-0060): workspace channel; routed by routeBoards (the board's viewers;
+	// Git links also to the task's invitees).
+	"board_rule_update": true, "board_rule_delete": true, "task_git_links_update": true,
+	// Achievement catalogs (ADR-0061, amendment 1): workspace channel, every member.
+	"workspace_achievements_update": true,
+	// Balance billing (ADR-0080): workspace-attributed (workspace_id), published on the owner's
+	// user channel only; lease-gated by that workspace like every scoped event.
+	"billing_update": true,
+	// Task notice relay (ADR-0090): published on a bot's user channel only; bot sessions are
+	// not lease-gated, a person's session never gets it.
+	"task_notice": false,
+	// Disk (ADR-0094 §7): workspace channel; routed to the item's viewers (DISK_VIEW).
+	"disk_item_upsert": true, "disk_item_remove": true,
+	// Wiki (ADR-0096 §8): workspace channel; routed to the page's viewers (WIKI_VIEW) by routeWiki.
+	"wiki_page_upsert": true, "wiki_page_remove": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent
@@ -303,6 +328,14 @@ func (h *Hub) prepareEvent(ctx context.Context, enc *encEvent) {
 			*v1.DispatchEvent_NotesCreate, *v1.DispatchEvent_NotesUpdate, *v1.DispatchEvent_NotesDelete,
 			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
 			scopes[uuid.Nil] = true
+		case *v1.DispatchEvent_EventReminder:
+			// A reminder of the user's own imported CalDAV event (ADR-0045 amendment 3): personal,
+			// like notes. A meeting's reminder always resolves its workspace above.
+			if r := enc.ev.GetEventReminder(); r.GetEvent() == nil && r.GetExternalEvent() != nil {
+				scopes[uuid.Nil] = true
+			} else {
+				return
+			}
 		default:
 			return
 		}
@@ -412,10 +445,10 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 	}
 	cancel()
 	if err != nil {
-		ids = nil
-		s.leases.mu.Lock()
-		s.leases.workspaces = nil
-		s.leases.mu.Unlock()
+		// A failed membership read says nothing about access (incident 2026-10-05: a slow
+		// DB removed every workspace from every client). Keep the leases; they expire on
+		// their own (ReadLeaseTTL), and the next pass retries.
+		return
 	}
 	s.mu.Lock()
 	old := make(map[uuid.UUID]bool, len(s.workspaces))
@@ -434,12 +467,28 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 				delete(s.leases.workspaces, ws)
 			}
 		}
+		for ws := range s.leases.billing {
+			if !present[ws] {
+				delete(s.leases.billing, ws)
+			}
+		}
 		s.leases.mu.Unlock()
 	}
 	for ws := range old {
 		if !present[ws] {
 			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, err)
 		}
+	}
+	stubs := map[uuid.UUID]bool{} // held as billing stubs (not subscribed)
+	for _, ws := range s.billingStubs() {
+		if old[ws] {
+			continue
+		}
+		if !present[ws] {
+			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, nil)
+			continue
+		}
+		stubs[ws] = true
 	}
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	due, probes := s.dueWorkspaceChecks(ids, old)
@@ -450,7 +499,11 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		cancel()
 		if err == nil && decision.Allowed && s.workspaceLeaseAllows(ws) {
 			allowed[ws] = decision
-		} else if old[ws] {
+		} else if old[ws] && (!identityTransient(decision, err) || !s.workspaceLeaseAllows(ws)) {
+			// A transient failure keeps a still-valid lease (incident 2026-10-05).
+			h.identityRemoveWorkspace(s, ws, decision, err)
+		} else if stubs[ws] && !identityTransient(decision, err) && !billingDenied(decision, err) && !decision.Allowed {
+			// A billing stub that is now denied for another reason (left, banned, SSO): gone.
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
 	}
@@ -489,9 +542,13 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
 		}
 		snap.Workspace.IdentityAccess = access
-		h.fillLive(ctx, ws, s.user, snap)
+		if err := h.fillLive(ctx, ws, s.user, snap); err != nil {
+			continue // re-added by a later pass, with the people in its calls
+		}
 		h.joinWorkspace(s, ws)
-		h.ensureState(ctx, ws)
+		if !h.ensureState(ctx, ws) {
+			return // stateFailed made the session resync
+		}
 		// The access status first: the client may hold a stale lock for this workspace
 		// (an earlier denial) that would otherwise drop its events after the snapshot.
 		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: access}}})
@@ -558,8 +615,26 @@ func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]b
 	return due, probes
 }
 
+// identityTransient reports a failed evaluation that says nothing about access (dependency
+// failure, timeout, connection error) as opposed to a decision (4xx, a policy denial, a
+// revoked session, a missing row). The stored lease is kept and expires on its own
+// (ReadLeaseTTL), so an outage longer than the lease still fails closed; a definitive denial
+// acts at once. Incident 2026-10-05: the RTC sweep had the same shape (fixed in 2.3.4).
+func identityTransient(d identitypolicy.Decision, err error) bool {
+	if err != nil {
+		return !httpx.IsDenial(err) && !errors.Is(err, identitypolicy.ErrDenied) && !errors.Is(err, auth.ErrSessionRevoked) && !db.IsNotFound(err)
+	}
+	return d.Reason == identitypolicy.StateUnavailable
+}
+
+// identityRemoveWorkspace closes ws for the session. A billing suspension (ADR-0080 §8) sends
+// only the access status: the client drops the content and keeps the workspace as a stub
+// with the paywall; anything else removes it (WORKSPACE_DELETE) first.
 func (h *Hub) identityRemoveWorkspace(s *Session, ws uuid.UUID, d identitypolicy.Decision, err error) {
-	s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: ws.String()}}})
+	if !billingDenied(d, err) {
+		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: ws.String()}}})
+		s.dropBillingStub(ws)
+	}
 	s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: identityAccessStatus(ws, d, err, s.principal)}}})
 	h.leaveWorkspace(s, ws)
 }
@@ -662,6 +737,10 @@ func identityAccessStatus(ws uuid.UUID, d identitypolicy.Decision, err error, p 
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_DIRECTORY_DENIED
 	case identitypolicy.WorkspaceSuspended:
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED
+	case identitypolicy.BillingSuspended:
+		// Closed like SUSPENDED (ADR-0080 §12: no data, the client drops its cache), but kept as
+		// a stub: the owner's paywall reads GET /api/workspaces/{id}/billing.
+		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_BILLING_SUSPENDED
 	case identitypolicy.RecentAuthRequired:
 		reason = v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_RECENT_AUTH_REQUIRED
 	case identitypolicy.StateUnavailable:

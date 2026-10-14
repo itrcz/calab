@@ -181,6 +181,53 @@ func (q *Queries) ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]S
 	return items, nil
 }
 
+const listSessionsByIDs = `-- name: ListSessionsByIDs :many
+SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version FROM sessions WHERE id = ANY($1::uuid[])
+`
+
+func (q *Queries) ListSessionsByIDs(ctx context.Context, ids []uuid.UUID) ([]Session, error) {
+	rows, err := q.db.Query(ctx, listSessionsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RefreshTokenHash,
+			&i.PrevRefreshTokenHash,
+			&i.RotatedAt,
+			&i.DeviceName,
+			&i.Ip,
+			&i.UserAgent,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RefreshGen,
+			&i.RefreshUsedAt,
+			&i.ReplaySeal,
+			&i.RevokedReason,
+			&i.AuthorityKind,
+			&i.AuthorityWorkspaceID,
+			&i.AuthorityConnectionID,
+			&i.LocalAuthenticatedAt,
+			&i.RecoveryAuthenticatedAt,
+			&i.AuthorityVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markRefreshGenUsed = `-- name: MarkRefreshGenUsed :exec
 UPDATE sessions SET refresh_used_at = now(), replay_seal = NULL
 WHERE id = $1 AND refresh_gen = $2 AND refresh_used_at IS NULL AND revoked_at IS NULL

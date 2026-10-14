@@ -38,6 +38,15 @@ export function parseRetryAfter(v: string | null, now = Date.now()): number | un
   return Number.isNaN(t) ? undefined : Math.max(0, t - now);
 }
 
+function parseBody(text: string): unknown {
+  if (text === '') return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 /**
  * The REST API of the server (docs/05 «REST»): protojson bodies, `Authorization: Bearer <bot token>`.
  * 429 is retried after `Retry-After`; every other non-2xx becomes an `ApiError`.
@@ -69,6 +78,15 @@ export class Rest {
 
   /** Raw request: the parsed JSON body (undefined for 204). */
   async request(method: string, path: string, init: RequestInit = {}): Promise<unknown> {
+    const res = await this.response(method, path, init);
+    return parseBody(await res.text());
+  }
+
+  /**
+   * The successful Response itself, body unread (downloads). 429 is retried after `Retry-After`;
+   * any other non-2xx becomes an `ApiError`.
+   */
+  async response(method: string, path: string, init: RequestInit = {}): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       const headers: Record<string, string> = { Authorization: `Bearer ${this.token}`, Accept: 'application/json', 'User-Agent': this.userAgent };
       let body: string | FormData | undefined;
@@ -78,16 +96,8 @@ export class Rest {
         body = JSON.stringify(init.json);
       }
       const res = await this.fetchFn(this.url(path, init.query), { method, headers, ...(body !== undefined ? { body } : {}) });
-      const text = await res.text();
-      let parsed: unknown = undefined;
-      if (text !== '') {
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = text;
-        }
-      }
-      if (res.ok) return parsed;
+      if (res.ok) return res;
+      const parsed = parseBody(await res.text());
       const retryAfter = parseRetryAfter(res.headers.get('Retry-After'));
       if (res.status === 429 && attempt < this.maxRetries) {
         await this.sleep(Math.min(retryAfter ?? 1000, this.maxRetryAfterMs));

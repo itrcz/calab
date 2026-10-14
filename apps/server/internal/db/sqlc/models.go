@@ -11,6 +11,362 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Achievement struct {
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	ImageSize      int32
+	Width          int32
+	Height         int32
+	Position       int32
+	CreatedBy      *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ArchivedAt     *time.Time
+	WorkspaceID    uuid.UUID
+	FileID         *uuid.UUID
+	LegacyImageKey *string
+}
+
+type AchievementLegacyBlob struct {
+	Key string
+}
+
+type BillingAccount struct {
+	ID            uuid.UUID
+	WorkspaceID   *uuid.UUID
+	Market        string
+	Currency      string
+	Provider      string
+	Plan          string
+	Status        string
+	BalanceMinor  int64
+	EntrySeq      int64
+	NegativeSince *time.Time
+	SuspendAt     *time.Time
+	NextDueAt     *time.Time
+	HoldUntil     *time.Time
+	DisputeHold   bool
+	DiscountBps   int32
+	Revision      int64
+	CreatedBy     *uuid.UUID
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ClosedAt      *time.Time
+	LapsedAt      *time.Time
+}
+
+type BillingAllocation struct {
+	ID          uuid.UUID
+	AccountID   uuid.UUID
+	ChargeID    uuid.UUID
+	LotID       uuid.UUID
+	AmountMinor int64
+	CreatedAt   time.Time
+}
+
+type BillingAudit struct {
+	ID          uuid.UUID
+	RequestID   uuid.UUID
+	BodyHash    []byte
+	AccountID   *uuid.UUID
+	WorkspaceID *uuid.UUID
+	ActorID     *uuid.UUID
+	Action      string
+	Reason      string
+	Details     []byte
+	CreatedAt   time.Time
+}
+
+type BillingAutotopup struct {
+	AccountID      uuid.UUID
+	PmID           uuid.UUID
+	MaxMinor       int64
+	ConsentVersion int32
+	ConsentAt      time.Time
+	ConsentBy      *uuid.UUID
+	RevokedAt      *time.Time
+	RevokedReason  string
+	NotBefore      *time.Time
+	UpdatedAt      time.Time
+}
+
+type BillingAutotopupAttempt struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	PmID              uuid.UUID
+	AmountMinor       int64
+	Currency          string
+	Status            string
+	ProviderPaymentID *string
+	FailureCode       string
+	CreatedAt         time.Time
+	DispatchedAt      *time.Time
+	FinishedAt        *time.Time
+	Kind              string
+	RequestID         *uuid.UUID
+	BodyHash          []byte
+	CreatedBy         *uuid.UUID
+	ActionUrl         string
+	OrderSnapshot     []string
+}
+
+type BillingCharge struct {
+	ID               uuid.UUID
+	AccountID        uuid.UUID
+	Sku              string
+	Plan             string
+	PriceID          uuid.UUID
+	Qty              int32
+	UnitMinor        int64
+	DiscountBps      int32
+	StartsAt         time.Time
+	EndsAt           time.Time
+	AmountMinor      int64
+	UnfundedMinor    int64
+	CompensatedMinor int64
+	Reason           string
+	BusinessKey      string
+	ActorID          *uuid.UUID
+	CreatedAt        time.Time
+	CanceledQty      int32
+	CanceledSeatUs   int64
+}
+
+type BillingCheckout struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	RequestID         uuid.UUID
+	BodyHash          []byte
+	Purpose           string
+	MethodID          string
+	Provider          string
+	AmountMinor       int64
+	Currency          string
+	SaveMethod        bool
+	Status            string
+	ProviderSessionID *string
+	Url               *string
+	PayerSnapshot     []byte
+	CreatedBy         *uuid.UUID
+	ExpiresAt         *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	NextPollAt        *time.Time
+	Polls             int32
+}
+
+type BillingCustomer struct {
+	ID              uuid.UUID
+	AccountID       uuid.UUID
+	Provider        string
+	ProviderAccount string
+	Livemode        bool
+	CustomerID      string
+	CreatedAt       time.Time
+}
+
+type BillingDispute struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	PaymentID         uuid.UUID
+	ProviderDisputeID string
+	AmountMinor       int64
+	Currency          string
+	Status            string
+	Outcome           *string
+	CreatedAt         time.Time
+	ClosedAt          *time.Time
+}
+
+type BillingFundingLot struct {
+	ID            uuid.UUID
+	AccountID     uuid.UUID
+	Source        string
+	PaymentID     *uuid.UUID
+	AmountMinor   int64
+	ConsumedMinor int64
+	RefundedMinor int64
+	ActorID       *uuid.UUID
+	Reason        string
+	CreatedAt     time.Time
+}
+
+type BillingLedger struct {
+	ID           uuid.UUID
+	AccountID    uuid.UUID
+	Seq          int64
+	Kind         string
+	AmountMinor  int64
+	BalanceAfter int64
+	BusinessKey  string
+	LotID        *uuid.UUID
+	ChargeID     *uuid.UUID
+	RefundID     *uuid.UUID
+	DisputeID    *uuid.UUID
+	ActorID      *uuid.UUID
+	Reason       string
+	CreatedAt    time.Time
+}
+
+type BillingNotification struct {
+	ID        uuid.UUID
+	AccountID uuid.UUID
+	Key       string
+	Template  string
+	MailID    *uuid.UUID
+	CreatedAt time.Time
+}
+
+type BillingPayer struct {
+	AccountID  uuid.UUID
+	Type       string
+	Name       string
+	Country    string
+	Email      string
+	TaxID      *string
+	UpdatedBy  *uuid.UUID
+	UpdatedAt  time.Time
+	Requisites []byte
+	Version    int32
+}
+
+type BillingPayerVersion struct {
+	AccountID  uuid.UUID
+	Version    int32
+	Type       string
+	Name       string
+	Country    string
+	Email      string
+	TaxID      *string
+	Requisites []byte
+	CreatedBy  *uuid.UUID
+	CreatedAt  time.Time
+}
+
+type BillingPayment struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	Provider          string
+	ProviderAccount   string
+	Livemode          bool
+	ProviderPaymentID string
+	ProviderChargeID  *string
+	AmountMinor       int64
+	Currency          string
+	Status            string
+	Origin            string
+	CheckoutID        *uuid.UUID
+	AttemptID         *uuid.UUID
+	ReceiptUrl        string
+	RefundedMinor     int64
+	SucceededAt       *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type BillingPaymentMethod struct {
+	ID           uuid.UUID
+	AccountID    uuid.UUID
+	CustomerID   uuid.UUID
+	Provider     string
+	Livemode     bool
+	ProviderPmID string
+	Kind         string
+	Brand        string
+	Last4        *string
+	ExpMonth     *int16
+	ExpYear      *int16
+	CreatedAt    time.Time
+	DetachedAt   *time.Time
+}
+
+type BillingPrice struct {
+	ID            uuid.UUID
+	Market        string
+	Currency      string
+	Sku           string
+	Plan          *string
+	UnitMinor     int64
+	EffectiveFrom time.Time
+	CreatedBy     *uuid.UUID
+	CreatedAt     time.Time
+	AccountID     *uuid.UUID
+}
+
+type BillingProviderEvent struct {
+	ID              uuid.UUID
+	Provider        string
+	ProviderAccount string
+	Livemode        bool
+	EventID         string
+	Kind            string
+	ObjectID        string
+	Payload         []byte
+	ReceivedAt      time.Time
+	NextAttemptAt   time.Time
+	Attempts        int32
+	ProcessedAt     *time.Time
+	Error           string
+}
+
+type BillingProviderIssue struct {
+	ID          uuid.UUID
+	AccountID   uuid.UUID
+	PaymentID   *uuid.UUID
+	Provider    string
+	ProviderRef string
+	AmountMinor int64
+	Currency    string
+	Reason      string
+	Status      string
+	OccurredAt  *time.Time
+	CreatedAt   time.Time
+	ResolvedAt  *time.Time
+	ResolvedBy  *uuid.UUID
+}
+
+type BillingProviderSetting struct {
+	Provider  string
+	AcceptNew bool
+	UpdatedBy *uuid.UUID
+	UpdatedAt time.Time
+}
+
+type BillingRefund struct {
+	ID               uuid.UUID
+	AccountID        uuid.UUID
+	PaymentID        uuid.UUID
+	LotID            *uuid.UUID
+	AmountMinor      int64
+	Currency         string
+	Status           string
+	Origin           string
+	ProviderRefundID *string
+	IdemKey          string
+	Reason           string
+	RequestedBy      *uuid.UUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	SucceededAt      *time.Time
+	NeedsReviewAt    *time.Time
+	DispatchedAt     *time.Time
+	Reserved         bool
+}
+
+type BillingRefundRequest struct {
+	ID          uuid.UUID
+	AccountID   uuid.UUID
+	RequestID   uuid.UUID
+	AmountMinor int64
+	Reason      string
+	Status      string
+	RequestedBy *uuid.UUID
+	DecidedBy   *uuid.UUID
+	CreatedAt   time.Time
+	DecidedAt   *time.Time
+}
+
 type BirthdayGreeting struct {
 	UserID      uuid.UUID
 	WorkspaceID uuid.UUID
@@ -20,25 +376,26 @@ type BirthdayGreeting struct {
 }
 
 type Board struct {
-	ID               uuid.UUID
-	WorkspaceID      uuid.UUID
-	Name             string
-	Key              string
-	Emoji            string
-	IconFileID       *uuid.UUID
-	Description      string
-	IsPrivate        bool
-	Position         int32
-	NextNumber       int32
-	AutoArchiveDays  int32
-	DefaultViewID    *uuid.UUID
-	CreatedBy        *uuid.UUID
-	CreatedAt        time.Time
-	ArchivedAt       *time.Time
-	Restricted       bool
-	CategoryID       *uuid.UUID
-	DisabledFeatures int64
-	EstimateScale    string
+	ID                         uuid.UUID
+	WorkspaceID                uuid.UUID
+	Name                       string
+	Key                        string
+	Emoji                      string
+	IconFileID                 *uuid.UUID
+	Description                string
+	IsPrivate                  bool
+	Position                   int32
+	NextNumber                 int32
+	AutoArchiveDays            int32
+	DefaultViewID              *uuid.UUID
+	CreatedBy                  *uuid.UUID
+	CreatedAt                  time.Time
+	ArchivedAt                 *time.Time
+	Restricted                 bool
+	CategoryID                 *uuid.UUID
+	DisabledFeatures           int64
+	EstimateScale              string
+	ApprovalNotifyDelaySeconds int32
 }
 
 type BoardCategory struct {
@@ -47,6 +404,38 @@ type BoardCategory struct {
 	Name        string
 	Position    int32
 	CreatedAt   time.Time
+}
+
+type BoardForm struct {
+	ID         uuid.UUID
+	BoardID    uuid.UUID
+	Code       string
+	Definition []byte
+	Revision   int32
+	CreatedBy  *uuid.UUID
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type BoardFormSubmission struct {
+	ID          uuid.UUID
+	FormID      uuid.UUID
+	Nonce       uuid.UUID
+	RequestHash []byte
+	ActorID     *uuid.UUID
+	TaskID      *uuid.UUID
+	CreatedAt   time.Time
+}
+
+type BoardGit struct {
+	BoardID     uuid.UUID
+	Provider    string
+	SecretEnc   []byte
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	LastEventAt *time.Time
+	LastError   string
+	EventsCount int32
 }
 
 type BoardLabel struct {
@@ -73,6 +462,36 @@ type BoardPermission struct {
 	Deny       int64
 }
 
+type BoardRule struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Name        string
+	Enabled     bool
+	Position    int32
+	TriggerKind string
+	Trigger     []byte
+	Condition   []byte
+	Actions     []byte
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	RunsCount   int32
+	LastRunAt   *time.Time
+	LastError   string
+}
+
+type BoardRuleRun struct {
+	ID             uuid.UUID
+	RuleID         uuid.UUID
+	TaskID         *uuid.UUID
+	TriggerKind    string
+	Ok             bool
+	Error          string
+	ActionsApplied int16
+	SchedKey       pgtype.Date
+	CreatedAt      time.Time
+}
+
 type BoardStatus struct {
 	ID        uuid.UUID
 	BoardID   uuid.UUID
@@ -81,6 +500,7 @@ type BoardStatus struct {
 	Color     int32
 	Position  int32
 	IsDefault bool
+	Icon      string
 }
 
 type BoardView struct {
@@ -183,6 +603,7 @@ type CaldavAccount struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	ShareLevel   string
+	Remind       bool
 }
 
 type CaldavPush struct {
@@ -232,6 +653,53 @@ type DirectorySyncRun struct {
 	ObjectsSeen   int32
 	StartedAt     time.Time
 	FinishedAt    *time.Time
+}
+
+type DiskActivity struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ItemID      *uuid.UUID
+	ItemName    string
+	ActorID     *uuid.UUID
+	Kind        string
+	Before      []byte
+	After       []byte
+	CreatedAt   time.Time
+}
+
+type DiskItem struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Kind        string
+	Name        string
+	FileID      *uuid.UUID
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type DiskLink struct {
+	ID        uuid.UUID
+	ItemID    uuid.UUID
+	Code      string
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+	ExpiresAt *time.Time
+	RevokedAt *time.Time
+	Downloads int32
+}
+
+type DiskPermission struct {
+	ItemID     uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
 }
 
 type DmMember struct {
@@ -336,6 +804,18 @@ type ExternalBusy struct {
 	Attendees []byte
 	Organizer string
 	Url       string
+	Href      string
+	Etag      string
+	Recurring bool
+	WebUrl    string
+}
+
+type ExternalRemindersSent struct {
+	UserID       uuid.UUID
+	Uid          string
+	OccurrenceAt time.Time
+	Minutes      int16
+	SentAt       time.Time
 }
 
 type File struct {
@@ -415,6 +895,19 @@ type MailOutbox struct {
 	SentAt    *time.Time
 	FailedAt  *time.Time
 	Error     string
+}
+
+type MemberAchievement struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	UserID        uuid.UUID
+	AchievementID uuid.UUID
+	GrantedBy     *uuid.UUID
+	Note          string
+	MessageID     *uuid.UUID
+	GrantedAt     time.Time
+	RevokedAt     *time.Time
+	RevokedBy     *uuid.UUID
 }
 
 type MemberRole struct {
@@ -619,6 +1112,69 @@ type ProductAdminGrant struct {
 	OperatorNote string
 }
 
+type PushDelivery struct {
+	ID              uuid.UUID
+	DeviceID        uuid.UUID
+	DeviceVersion   int64
+	EventKey        string
+	Kind            int16
+	ReferenceID     uuid.UUID
+	RoomID          *uuid.UUID
+	ActorID         *uuid.UUID
+	NoticeKind      int16
+	ContextID       *uuid.UUID
+	OccurrenceAt    *time.Time
+	ReminderMinutes int16
+	ExpiresAt       time.Time
+	NotBefore       time.Time
+	Attempts        int16
+	LeaseID         *uuid.UUID
+	LeaseUntil      *time.Time
+	CreatedAt       time.Time
+	DeliveredAt     *time.Time
+}
+
+type PushDevice struct {
+	ID                   uuid.UUID
+	UserID               uuid.UUID
+	SessionID            uuid.UUID
+	InstallationID       uuid.UUID
+	Provider             int16
+	Environment          string
+	AppID                string
+	Token                string
+	TokenHash            []byte
+	Version              int64
+	NotificationsEnabled bool
+	CallsEnabled         bool
+	MentionsEnabled      bool
+	AllEnabled           bool
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ExpiresAt            time.Time
+}
+
+type PushIntent struct {
+	ID              uuid.UUID
+	RecipientID     *uuid.UUID
+	EventKey        string
+	Kind            int16
+	ReferenceID     uuid.UUID
+	RoomID          *uuid.UUID
+	ActorID         *uuid.UUID
+	NoticeKind      int16
+	ContextID       *uuid.UUID
+	OccurrenceAt    *time.Time
+	ReminderMinutes int16
+	ExpiresAt       time.Time
+	NotBefore       time.Time
+	AfterUser       uuid.UUID
+	Attempts        int16
+	LeaseID         *uuid.UUID
+	LeaseUntil      *time.Time
+	CompletedAt     *time.Time
+}
+
 type ReadState struct {
 	UserID            uuid.UUID
 	RoomID            uuid.UUID
@@ -649,6 +1205,7 @@ type Room struct {
 	GuestApproval    bool
 	ExpiresAt        *time.Time
 	CreatedBy        *uuid.UUID
+	IconFileID       *uuid.UUID
 }
 
 type RoomAdmission struct {
@@ -738,6 +1295,7 @@ type RoomRecording struct {
 	FileID          *uuid.UUID
 	DeletedAt       *time.Time
 	DeletedBy       *uuid.UUID
+	TranscriptText  *string
 }
 
 type Session struct {
@@ -866,6 +1424,7 @@ type Task struct {
 	CompletedBy      *uuid.UUID
 	ArchivedAt       *time.Time
 	ApprovalRequired int16
+	TaskMilestoneID  *uuid.UUID
 }
 
 type TaskActivity struct {
@@ -877,19 +1436,22 @@ type TaskActivity struct {
 	Before    []byte
 	After     []byte
 	CreatedAt time.Time
+	RuleID    *uuid.UUID
 }
 
 type TaskApprover struct {
-	TaskID      uuid.UUID
-	UserID      uuid.UUID
-	State       string
-	Comment     string
-	DecidedAt   *time.Time
-	AddedBy     *uuid.UUID
-	AddedAt     time.Time
-	RequestedAt time.Time
-	Reminders   int16
-	RemindedAt  *time.Time
+	TaskID       uuid.UUID
+	UserID       uuid.UUID
+	State        string
+	Comment      string
+	DecidedAt    *time.Time
+	AddedBy      *uuid.UUID
+	AddedAt      time.Time
+	RequestedAt  time.Time
+	Reminders    int16
+	RemindedAt   *time.Time
+	NotifyDueAt  *time.Time
+	NotifyReason string
 }
 
 type TaskAssignee struct {
@@ -929,9 +1491,45 @@ type TaskChecklistItem struct {
 	CreatedAt   time.Time
 }
 
+type TaskDueNotice struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+	Kind   string
+	DueOn  pgtype.Date
+	SentAt time.Time
+}
+
+type TaskGitLink struct {
+	ID        uuid.UUID
+	TaskID    uuid.UUID
+	Kind      string
+	Provider  string
+	Repo      string
+	Ref       string
+	Title     string
+	Url       string
+	State     string
+	Author    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type TaskLabel struct {
 	TaskID  uuid.UUID
 	LabelID uuid.UUID
+}
+
+type TaskMilestone struct {
+	ID          uuid.UUID
+	TaskID      uuid.UUID
+	Name        string
+	DueOn       pgtype.Date
+	Position    float64
+	CompletedAt *time.Time
+	CompletedBy *uuid.UUID
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type TaskRelation struct {
@@ -948,39 +1546,45 @@ type TaskSubscriber struct {
 	Muted      bool
 	NotifiedAt *time.Time
 	SeenAt     *time.Time
+	Watcher    bool
 }
 
 type User struct {
-	ID                uuid.UUID
-	Email             *string
-	PasswordHash      *string
-	DisplayName       string
-	AvatarFileID      *uuid.UUID
-	StatusText        string
-	Settings          []byte
-	CreatedAt         time.Time
-	DisabledAt        *time.Time
-	StatusEmoji       string
-	StatusExpiresAt   *time.Time
-	IsGuest           bool
-	GuestExpiresAt    *time.Time
-	Timezone          *string
-	EmailVerifiedAt   *time.Time
-	PendingEmail      *string
-	Locale            *string
-	PresenceStatus    *int16
-	PresenceUntil     *time.Time
-	IsBot             bool
-	BirthdayDay       *int16
-	BirthdayMonth     *int16
-	BirthdayYear      *int16
-	BirthdayHidden    bool
-	EventReminders    []int16
-	EventRemindersDnd bool
-	StorageQuotaBytes *int64
-	WorkStartMin      int16
-	WorkEndMin        int16
-	WorkDays          []int16
+	ID                             uuid.UUID
+	Email                          *string
+	PasswordHash                   *string
+	DisplayName                    string
+	AvatarFileID                   *uuid.UUID
+	StatusText                     string
+	Settings                       []byte
+	CreatedAt                      time.Time
+	DisabledAt                     *time.Time
+	StatusEmoji                    string
+	StatusExpiresAt                *time.Time
+	IsGuest                        bool
+	GuestExpiresAt                 *time.Time
+	Timezone                       *string
+	EmailVerifiedAt                *time.Time
+	PendingEmail                   *string
+	Locale                         *string
+	PresenceStatus                 *int16
+	PresenceUntil                  *time.Time
+	IsBot                          bool
+	BirthdayDay                    *int16
+	BirthdayMonth                  *int16
+	BirthdayYear                   *int16
+	BirthdayHidden                 bool
+	EventReminders                 []int16
+	EventRemindersDnd              bool
+	StorageQuotaBytes              *int64
+	WorkStartMin                   int16
+	WorkEndMin                     int16
+	WorkDays                       []int16
+	HideMessageTextInNotifications bool
+	Username                       *string
+	Phone                          *string
+	TaskNotifyOff                  []string
+	TaskNotifyBots                 []uuid.UUID
 }
 
 type UserNote struct {
@@ -995,6 +1599,113 @@ type UserStickerPack struct {
 	PackID   uuid.UUID
 	Position int32
 	AddedAt  time.Time
+}
+
+type WikiActivity struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	PageID      *uuid.UUID
+	PageTitle   string
+	ActorID     *uuid.UUID
+	Kind        string
+	Before      []byte
+	After       []byte
+	CreatedAt   time.Time
+}
+
+type WikiLink struct {
+	ID              uuid.UUID
+	PageID          uuid.UUID
+	Code            string
+	IncludeChildren bool
+	CreatedBy       *uuid.UUID
+	CreatedAt       time.Time
+	ExpiresAt       *time.Time
+	RevokedAt       *time.Time
+	Views           int32
+}
+
+type WikiPage struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Title       string
+	Icon        *string
+	CoverFileID *uuid.UUID
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	PlainText   string
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type WikiPageFile struct {
+	PageID    uuid.UUID
+	FileID    uuid.UUID
+	CreatedAt time.Time
+}
+
+type WikiPageHead struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Title       string
+	Icon        *string
+	CoverFileID *uuid.UUID
+	Position    int32
+	OwnerID     *uuid.UUID
+	Restricted  bool
+	Preview     string
+	DocSize     int32
+	NextSeq     int64
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   *time.Time
+	TrashedBy   *uuid.UUID
+	TrashedRoot bool
+}
+
+type WikiPageSnapshot struct {
+	PageID     uuid.UUID
+	State      []byte
+	ThroughSeq int64
+	SavedBy    *uuid.UUID
+	SavedAt    time.Time
+}
+
+type WikiPageUpdate struct {
+	PageID    uuid.UUID
+	Seq       int64
+	Data      []byte
+	AuthorID  *uuid.UUID
+	CreatedAt time.Time
+}
+
+type WikiPageVersion struct {
+	ID        uuid.UUID
+	PageID    uuid.UUID
+	State     []byte
+	PlainText string
+	Title     string
+	Authors   []uuid.UUID
+	CreatedAt time.Time
+}
+
+type WikiPermission struct {
+	PageID     uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
 }
 
 type Workspace struct {
@@ -1017,6 +1728,8 @@ type Workspace struct {
 	SuspendedBy             *uuid.UUID
 	TimeFormat              string
 	SipEnabled              bool
+	DiskTrashDays           *int32
+	WikiTrashDays           *int32
 }
 
 type WorkspaceAdminLog struct {
@@ -1100,6 +1813,19 @@ type WorkspaceExternalIdentity struct {
 	Status       string
 	Version      int64
 	LinkedAt     time.Time
+}
+
+type WorkspaceFormerMember struct {
+	WorkspaceID  uuid.UUID
+	UserID       uuid.UUID
+	DisplayName  string
+	AvatarFileID *uuid.UUID
+	Nickname     string
+	Role         string
+	JoinedAt     *time.Time
+	LeftAt       time.Time
+	Reason       string
+	RemovedBy    *uuid.UUID
 }
 
 type WorkspaceIdentityAccess struct {
@@ -1197,12 +1923,14 @@ type WorkspaceInvite struct {
 }
 
 type WorkspaceMember struct {
-	WorkspaceID uuid.UUID
-	UserID      uuid.UUID
-	Role        string
-	Nickname    string
-	JoinedAt    time.Time
-	BadgeID     *uuid.UUID
+	WorkspaceID      uuid.UUID
+	UserID           uuid.UUID
+	Role             string
+	Nickname         string
+	JoinedAt         time.Time
+	BadgeID          *uuid.UUID
+	AchievementCount int32
+	LastActiveAt     *time.Time
 }
 
 type WorkspaceNotificationSetting struct {
@@ -1221,6 +1949,9 @@ type WorkspacePlan struct {
 	Note        string
 	UpdatedBy   *uuid.UUID
 	UpdatedAt   time.Time
+	Source      string
+	DisplayName string
+	Description string
 }
 
 type WorkspacePlanLog struct {
@@ -1232,6 +1963,9 @@ type WorkspacePlanLog struct {
 	ValidUntil  *time.Time
 	Note        string
 	CreatedAt   time.Time
+	Source      string
+	DisplayName string
+	Description string
 }
 
 type WorkspaceRole struct {
@@ -1255,4 +1989,14 @@ type WorkspaceSound struct {
 	DurationMs  int32
 	Position    int16
 	CreatedAt   time.Time
+}
+
+type WorkspaceStorageAddon struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	SizeMb      int64
+	Sku         string
+	Active      bool
+	CreatedAt   time.Time
+	EndedAt     *time.Time
 }

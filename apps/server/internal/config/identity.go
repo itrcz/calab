@@ -29,7 +29,8 @@ func (c *Config) IdentityEntitlements() identitypolicy.EntitlementConfig {
 			ids[id] = true
 		}
 	}
-	return identitypolicy.EntitlementConfig{Edition: edition, EnterpriseWorkspaceIDs: ids}
+	return identitypolicy.EntitlementConfig{Edition: edition, EnterpriseWorkspaceIDs: ids,
+		BillingEnforcement: c.Billing.Enabled && c.Billing.EnforcementEnabled}
 }
 
 func (c *Config) validateIdentity() error {

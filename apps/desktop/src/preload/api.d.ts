@@ -4,6 +4,7 @@ import type {
   AuthSession,
   CaptureSelection,
   CaptureSource,
+  CheckoutWindowOutcome,
   DownloadArgs,
   LegalTexts,
   DownloadProgress,
@@ -27,11 +28,13 @@ import type {
   WebAppBounds,
   WebAppNavAction,
   WebAppNavState,
+  WebAppTip,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
 import type { ResumeVoice, ResumeVoiceSeat } from '../shared/resumeVoice';
 import type { MenuAction, MenuState } from '../shared/menu';
 import type { AnnotOverlayEvent, AnnotOverlayTarget } from '../shared/annot';
+import type { MailCall, MailEvent, MailReply } from '../shared/mail';
 
 type Unsubscribe = () => void;
 
@@ -88,6 +91,12 @@ export interface CalabaApi {
     networkOnline(): void;
     log(level: 'info' | 'warn' | 'error', message: string): void;
     openExternal(url: string): Promise<void>;
+    /**
+     * A provider's hosted checkout (ADR-0084): the in-app checkout window on the desktop (rejects
+     * for a URL off the provider allowlist), a new tab on the web (`external`). Resolves when the
+     * person is back; the outcome is a hint, the checkout poll is the truth.
+     */
+    openCheckout(url: string): Promise<CheckoutWindowOutcome>;
     /** LICENSE, NOTICE and THIRD-PARTY-NOTICES.txt texts («О программе»). */
     legal(): Promise<LegalTexts>;
     /** Bounce the dock / flash the taskbar when the window is not focused. */
@@ -112,6 +121,13 @@ export interface CalabaApi {
     download(args: DownloadArgs): Promise<string>;
     /** Progress of downloads started with `download` (quarantined by Chromium's download manager). */
     onProgress(cb: (p: DownloadProgress) => void): Unsubscribe;
+    /**
+     * Drag-out of a chat image (main/dragOut.ts): fetches the original (an image attachment) into
+     * the app's temp folder under its sanitized name; true once it is there. The web: false.
+     */
+    prepareDrag(args: DownloadArgs): Promise<boolean>;
+    /** Starts the OS drag of a prepared file from this window; false when it is not ready. */
+    startDrag(fileId: string): Promise<boolean>;
     /** Absolute path of a dropped/picked File (for display only). */
     pathOf(file: File): string;
     /**
@@ -203,6 +219,18 @@ export interface CalabaApi {
     /** The app was deleted: its view and this device's site data of it go. */
     forget(appId: string): Promise<void>;
     onState(cb: (s: WebAppNavState) => void): Unsubscribe;
+    /** Draw a tooltip that falls on the shown app above it (a native overlay; ADR-0053 «Поправка 1»). */
+    tipShow(tip: WebAppTip): Promise<void>;
+    tipHide(): Promise<void>;
+  };
+  /**
+   * The mail engine bridge (ADR-0088 §7), Electron only. Raw transport: the renderer uses the typed
+   * `MailApi` built over it (`platform.mail`, shared/mail.ts `createMailClient`).
+   */
+  mail?: {
+    /** One engine call; resolves with the reply (mail errors are `{ ok: false }`, never a rejection). */
+    request(call: MailCall): Promise<MailReply>;
+    onEvent(cb: (event: MailEvent) => void): Unsubscribe;
   };
 }
 

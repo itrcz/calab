@@ -1,0 +1,32 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791561600,
+  "data": {
+    "object": {
+      "amount": 1000,
+      "amount_received": 0,
+      "currency": "usd",
+      "customer": "cus_FIXTURE0004",
+      "id": "pi_FIXTURE0003",
+      "latest_charge": "ch_FIXTURE0002",
+      "livemode": false,
+      "metadata": {
+        "calab_account_id": "3ec8d17f-f6cb-4706-801f-f21d2fc8a7d0",
+        "calab_attempt_id": "9d01479d-eb6e-45d0-9f84-17b4108a786a",
+        "kind": "auto_topup"
+      },
+      "object": "payment_intent",
+      "payment_method": "pm_FIXTURE0003",
+      "status": "requires_payment_method"
+    }
+  },
+  "id": "evt_FIXTURE_payment_failed",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 1,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "payment_intent.payment_failed"
+}

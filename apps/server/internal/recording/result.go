@@ -360,13 +360,10 @@ func (s *Service) visibleRecording(r *http.Request) (sqlc.RoomRecording, error) 
 	if db.IsNotFound(err) || (err == nil && rec.DeletedAt != nil) {
 		return rec, httpx.NotFound("recording")
 	}
-	if err != nil || rec.RoomID == roomID {
+	if err != nil {
 		return rec, err
 	}
-	if rec.MessageID == nil {
-		return rec, httpx.NotFound("recording")
-	}
-	ok, err := s.db.Q.RecordingVisibleInRoom(r.Context(), sqlc.RecordingVisibleInRoomParams{MessageID: *rec.MessageID, RoomID: roomID})
+	ok, err := visibleIn(r.Context(), s.db, rec.ID, roomID) // the rule search uses too (VisibleSQL)
 	if err == nil && !ok {
 		err = httpx.NotFound("recording")
 	}
@@ -406,6 +403,20 @@ func (s *Service) transcript(w http.ResponseWriter, r *http.Request) error {
 
 func ms(sec float64) uint32 { return uint32(math.Round(finite(sec) * 1000)) } //nolint:gosec // finite() bounds it
 
+// mayDeleteOthers: whether acc may delete a recording someone else started — MANAGE_MESSAGES in
+// the room, or the owner / workspace-level MANAGE_RECORDINGS (not guests). ADR-0078: in a private
+// temporary room the owner and MANAGE_RECORDINGS (which the owner and admins hold through
+// ADMINISTRATOR) count for nothing, only the room's bits do.
+func mayDeleteOthers(acc perm.RoomAccess) bool {
+	if acc.Bits.Has(perm.ManageMessages) {
+		return true
+	}
+	if acc.PrivateTemp || acc.Role == perm.RoleGuest {
+		return false
+	}
+	return acc.Role == perm.RoleOwner || acc.Member.Workspace().Has(perm.ManageRecordings)
+}
+
 var errStillRecording = httpx.Conflict("the meeting is still being recorded: stop the recording first")
 
 // remove: DELETE /api/rooms/{id}/recordings/{rid} (docs/09 #50): who started it, the owner,
@@ -418,8 +429,7 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	}
 	me := uid(r)
 	starter := rec.StartedBy != nil && *rec.StartedBy == me
-	if !starter && acc.Role != perm.RoleOwner && !acc.Bits.Has(perm.ManageMessages) &&
-		(acc.Role == perm.RoleGuest || !acc.Member.Workspace().Has(perm.ManageRecordings)) {
+	if !starter && !mayDeleteOthers(acc) {
 		return httpx.Forbidden("only who started the recording, the owner, MANAGE_MESSAGES or MANAGE_RECORDINGS")
 	}
 	if rec.Status == "pending" || rec.Status == "recording" {

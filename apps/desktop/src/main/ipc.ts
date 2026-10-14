@@ -38,10 +38,13 @@ import { parseOverlayEvent, parseOverlayTarget } from '../shared/annot';
 import { closeOverlay, closeOverlayWith, openOverlay, refitOverlay, sendOverlay } from './annotOverlay';
 import { armSelection, listSources, requestScreenAccess, screenAccess, systemAudioSupport } from './capture';
 import { parseThumbRequest } from '../shared/captureThumb';
+import { extraStartHosts, parseCheckoutStart } from './checkoutPolicy';
+import { openCheckoutWindow } from './checkoutWindow';
 import { takePendingDeepLink } from './deeplink';
 import { fullscreenFor } from './fullscreen';
 import { systemLocales } from './systemLocales';
 import { downloadFile } from './downloads';
+import { prepareDragOut, startDragOut } from './dragOut';
 import { decodeImageNative } from './imageDecode';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
@@ -49,12 +52,15 @@ import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
 import { setMenuState } from './appMenu';
 import { parseMenuState } from '../shared/menu';
-import { checkForUpdates, downloadUpdate, installUpdate, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
+import { checkForUpdates, downloadUpdate, installUpdate, updateChannelChanged, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
-import { forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
+import { hideTip, showTip } from './tipOverlay';
+import { parseTipPayload } from './tipOverlayPolicy';
+import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
 import { getMainWindow, isOwnPage, isShown } from './windows';
+import { mailRequest } from './mail';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
@@ -127,6 +133,11 @@ function parseSettings(v: unknown): Partial<AppSettings> {
   if (r['autostart'] !== undefined) out.autostart = Boolean(r['autostart']);
   if (r['autoUpdate'] !== undefined) out.autoUpdate = Boolean(r['autoUpdate']);
   if (r['autoCheckUpdates'] !== undefined) out.autoCheckUpdates = Boolean(r['autoCheckUpdates']);
+  // A channel name only — both sources are pinned at build time (shared/updateFeed.ts).
+  if (r['updateChannel'] !== undefined) {
+    if (r['updateChannel'] !== 'github' && r['updateChannel'] !== 's3') throw new Error('updateChannel must be github or s3');
+    out.updateChannel = r['updateChannel'];
+  }
   if (r['closeToTray'] !== undefined) out.closeToTray = Boolean(r['closeToTray']);
   return out;
 }
@@ -223,8 +234,10 @@ export function registerIpc(): void {
   handle(IPC.appSetSettings, (_e, a) => {
     if (obj(a)['serverUrl'] !== undefined) invalidateSsoServer();
     const patch = parseSettings(a);
+    const channelChanged = patch.updateChannel !== undefined && patch.updateChannel !== getSettings().updateChannel;
     const next = updateSettings(patch);
     if (patch.autoUpdate !== undefined || patch.autoCheckUpdates !== undefined) updateSettingsChanged();
+    if (channelChanged) updateChannelChanged();
     reloadIfServerChanged();
     return next;
   });
@@ -248,10 +261,20 @@ export function registerIpc(): void {
     else log.info('[renderer]', msg);
   });
   handle(IPC.appOpenExternal, (_e, a) => {
-    const url = str(a, 2048);
+    const url = str(a, 2048).trim();
     // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
     if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
     return shell.openExternal(url);
+  });
+  // ADR-0084: the provider's hosted checkout in the in-app checkout window, from the main window
+  // only, and only on an allowlisted provider host (a refusal makes the renderer fall back to the
+  // system browser). Resolves with the outcome when the window closes.
+  handle(IPC.appOpenCheckout, (e, a) => {
+    const win = getMainWindow();
+    if (!win || BrowserWindow.fromWebContents(e.sender) !== win) throw new Error('checkout: main window only');
+    const url = parseCheckoutStart(a, extraStartHosts(process.env['CALABA_CHECKOUT_HOSTS']));
+    if (!url) throw new Error('checkout: not a provider checkout url');
+    return openCheckoutWindow(win, url);
   });
   handle(IPC.appLegal, (): LegalTexts => {
     // Packaged: copied into resources by electron-builder (extraResources). Dev: the repo
@@ -331,6 +354,12 @@ export function registerIpc(): void {
     const args: DownloadArgs = { fileId: str(r['fileId'], 64), name: str(r['name'], 512) };
     return downloadFile(args);
   });
+  handle(IPC.filesDragPrepare, (_e, a) => {
+    const r = obj(a);
+    return prepareDragOut(str(r['fileId'], 64), str(r['name'], 512));
+  });
+  // The drag starts from the caller's own window (the press began there), never another one.
+  handle(IPC.filesDragStart, (e, a) => startDragOut(e.sender, str(a, 64)));
   handle(IPC.filesDecodeImage, (_e, a) => decodeImageNative(a));
 
   // ---- media ----
@@ -414,6 +443,19 @@ export function registerIpc(): void {
     mainOnly(e);
     return forgetApp(parseAppId(a));
   });
+  handle(IPC.webAppTipShow, (e, a) => {
+    const win = mainOnly(e);
+    const zoom = win.webContents.getZoomFactor();
+    const p = parseTipPayload(a, zoom, win.getContentBounds());
+    if (appViewShown()) showTip(win, p, zoom);
+    else hideTip();
+  });
+  handle(IPC.webAppTipHide, (e) => {
+    mainOnly(e);
+    hideTip();
+  });
+  // ---- mail (ADR-0088 §7): validated and relayed to the engine utilityProcess ----
+  handle(IPC.mailRequest, (_e, a) => mailRequest(a));
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {
       const win: Partial<Record<PrivacyPane, string>> = { microphone: 'ms-settings:privacy-microphone', camera: 'ms-settings:privacy-webcam' };

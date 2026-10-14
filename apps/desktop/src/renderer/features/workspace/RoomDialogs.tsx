@@ -11,14 +11,16 @@ import {
   type Role,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Timer, Volume2, X } from 'lucide-react';
+import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
+import { AvatarButtons } from '../../components/AvatarPicker';
+import { RoomIcon } from '../../components/RoomIcon';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
-import { api } from '../../lib/api/endpoints';
+import { api, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { isAdminRole, mayAllowRecording, mayInviteGuestsIn, mayManageRoom, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
@@ -167,13 +169,13 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
     ...(guests ? [{ id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} manage={manage} /> }] : []),
   ];
   if (sections.length === 0) return null;
-  const Glyph = room.expiresAt ? Timer : voice ? Volume2 : Hash;
   return (
     <SettingsWindow
       title={room.name}
-      titleIcon={<Glyph className="size-4 shrink-0 text-muted" aria-hidden />}
+      titleIcon={<RoomIcon roomId={room.id} size={16} />}
       sections={sections}
-      initial={tab ?? sections[0]?.id ?? 'general'}
+      initial={tab}
+      fallback={sections[0]?.id ?? 'general'}
       onClose={onClose}
     />
   );
@@ -194,9 +196,29 @@ function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => vo
     },
   });
   if (!room) return null;
+  const textOrVoice = room.type === RoomType.TEXT || room.type === RoomType.VOICE;
   return (
     <>
       <Card title={t('card.basics')}>
+        {/* The room's picture (ADR-0092): shown instead of the type glyph everywhere; a change posts a line in the chat. */}
+        {textOrVoice ? (
+          <Row label={t('room.picture')} hint={t('room.pictureHint')}>
+            <div className="flex items-center gap-3" data-testid="room-picture">
+              <RoomIcon roomId={roomId} size={44} ring="var(--color-card)" />
+              <AvatarButtons
+                hasAvatar={!!room.iconFileId}
+                uploadLabel={t('room.pictureUpload')}
+                size="sm"
+                testId="room-picture"
+                onUpload={async (file) => {
+                  const meta = await uploadFile(uploadPath(room.workspaceId, ''), file, file.name, () => undefined).promise;
+                  await patchRoom(roomId, { iconFileId: meta.id });
+                }}
+                onRemove={() => patchRoom(roomId, { iconFileId: '' })}
+              />
+            </div>
+          </Row>
+        ) : null}
         <Row label={t('room.name')}>
           <CommitInput label={t('room.name')} value={room.name} maxLength={100} onCommit={(v) => (v ? patchRoom(roomId, { name: v }) : undefined)} />
         </Row>
@@ -501,6 +523,16 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
     save.mutate(next);
   };
 
+  // «×» of a person's row: their whole override goes (the same as every right back to neutral, but
+  // at once, and the row leaves the list). Roles are always listed (they are the workspace's), never removed.
+  const removeUser = (k: string): void => {
+    const d = drafts.find((x) => targetKey(x) === k);
+    const next = drafts.filter((x) => targetKey(x) !== k);
+    setDrafts(next);
+    if (current?.key === k) setSelected(`${PermissionTargetType.ROLE}:${memberRoleId}`);
+    if (d && (d.allow !== 0n || d.deny !== 0n)) save.mutate(next); // a row only added here was never saved
+  };
+
   const addUser = (userId: string): void => {
     const d: OverrideDraft = { targetType: PermissionTargetType.USER, targetId: userId, allow: 0n, deny: 0n };
     if (!drafts.some((x) => targetKey(x) === targetKey(d))) setDrafts([...drafts, d]);
@@ -547,32 +579,50 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
     const on = current?.key === x.key;
     const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
     const look = m ? customLook(rolesOf(entry, x.id)) : undefined;
+    const user = x.type === PermissionTargetType.USER;
     return (
-      <button
+      <div
         key={x.key}
-        type="button"
-        aria-pressed={on}
-        title={x.label}
-        onClick={() => setSelected(x.key)}
-        className={cx('flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-body', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+        className={cx('flex h-8 shrink-0 items-center rounded-[var(--radius-row)]', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+        data-testid="perm-target"
       >
-        {x.type === PermissionTargetType.USER ? (
-          <Avatar userId={x.id} name={x.label} {...(m?.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />
-        ) : x.role && isCustomRole(x.role) ? (
-          <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-            <span className="size-2.5 rounded-full" style={{ background: x.role.color ? roleColorCss(x.role.color) : 'var(--color-label-tertiary)' }} />
-          </span>
-        ) : null}
-        <span
-          className={cx('min-w-0 truncate', x.type === PermissionTargetType.USER && roleTextClass(m?.role, on ? 'inherit' : 'role', look))}
-          style={x.type === PermissionTargetType.USER ? roleTextStyle(m?.role, on ? 'inherit' : 'role', look) : undefined}
+        <button
+          type="button"
+          aria-pressed={on}
+          title={x.label}
+          onClick={() => setSelected(x.key)}
+          className={cx('flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 text-left text-body', user && 'pr-0')}
         >
-          {x.type === PermissionTargetType.ROLE ? '@' : ''}
-          {x.label}
-        </span>
-        {m ? <RoleMark role={m.role} custom={look} tone={on ? 'inherit' : 'role'} /> : null}
-        {m && isGuest(m) ? <GuestBadge /> : null}
-      </button>
+          {x.type === PermissionTargetType.USER ? (
+            <Avatar userId={x.id} name={x.label} {...(m?.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />
+          ) : x.role && isCustomRole(x.role) ? (
+            <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
+              <span className="size-2.5 rounded-full" style={{ background: x.role.color ? roleColorCss(x.role.color) : 'var(--color-label-tertiary)' }} />
+            </span>
+          ) : null}
+          <span
+            className={cx('min-w-0 truncate', x.type === PermissionTargetType.USER && roleTextClass(m?.role, on ? 'inherit' : 'role', look))}
+            style={x.type === PermissionTargetType.USER ? roleTextStyle(m?.role, on ? 'inherit' : 'role', look) : undefined}
+          >
+            {x.type === PermissionTargetType.ROLE ? '@' : ''}
+            {x.label}
+          </span>
+          {m ? <RoleMark role={m.role} custom={look} tone={on ? 'inherit' : 'role'} /> : null}
+          {m && isGuest(m) ? <GuestBadge /> : null}
+        </button>
+        {user ? (
+          <IconButton
+            size="sm"
+            label={t('perm.removeTarget', { name: x.label })}
+            className={cx('mr-0.5', on && 'text-accent-fg hover:text-accent-fg')}
+            disabled={save.isPending}
+            onClick={() => removeUser(x.key)}
+            data-testid="perm-target-remove"
+          >
+            <X className="size-3.5" aria-hidden />
+          </IconButton>
+        ) : null}
+      </div>
     );
   };
 

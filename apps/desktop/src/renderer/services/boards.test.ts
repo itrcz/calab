@@ -1,5 +1,5 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
-import { ApproverState, BoardCategorySchema, BoardSchema, TaskChecklistItemSchema, TaskChecklistSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, WorkspaceSnapshotSchema, type Task } from '@calaba/protocol';
+import { ApproverState, TaskNoticeKind, TaskNoticeSchema, TaskPriority, BoardCategorySchema, BoardSchema, TaskChecklistItemSchema, TaskChecklistSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, WorkspaceSnapshotSchema, type Task } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // services/boards.ts on the gateway events (ADR-0042 §4), with the stores it writes.
@@ -16,8 +16,11 @@ vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn(), suc
 const update = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a) } } }));
 
-const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards } = await import('./boards');
-const { useBoards } = await import('../stores/boards');
+const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards, noticeText } = await import('./boards');
+const { t } = await import('../i18n');
+const { memberName } = await import('../stores/workspaces');
+const { useBoards, workspaceBoards } = await import('../stores/boards');
+const { useBoardsUi, MY_TASKS } = await import('../stores/boardsUi');
 const { toast } = await import('../stores/toasts');
 const { ApiError } = await import('../lib/api/client');
 
@@ -57,10 +60,12 @@ describe('gateway events 75–81 → the store', () => {
     applyBoardEvent(ev({ event: { case: 'taskActivity', value: { workspaceId: 'w1', activity: create(TaskActivitySchema, { id: 'x1', taskId: 'a', kind: 'status' }) } } }));
     applyBoardEvent(ev({ event: { case: 'taskActivity', value: { workspaceId: 'w1', activity: create(TaskActivitySchema, { id: 'x1', taskId: 'a', kind: 'status' }) } } }));
     expect(useBoards.getState().activity['a']).toHaveLength(1);
-    // A task of a board never opened is not kept (only its unread mark).
+    // A task of a board never opened is kept only while unread («Непрочитанное» lists it).
     applyBoardEvent(ev({ event: { case: 'taskUpdate', value: { task: create(TaskSchema, { id: 'z', boardId: 'b9', workspaceId: 'w1', unread: true, viewerState: true }) } } }));
-    expect(useBoards.getState().tasks['z']).toBeUndefined();
+    expect(useBoards.getState().tasks['z']?.id).toBe('z');
     expect(useBoards.getState().unread['z']).toBe('w1');
+    applyBoardEvent(ev({ event: { case: 'taskUpdate', value: { task: create(TaskSchema, { id: 'q', boardId: 'b9', workspaceId: 'w1' }) } } }));
+    expect(useBoards.getState().tasks['q']).toBeUndefined();
     expect(applyBoardEvent(ev({ event: { case: 'typingStart', value: { roomId: 'r', userId: 'u' } } }))).toBe(false);
   });
 });
@@ -159,5 +164,84 @@ describe('ADR-0058: events 87–91, READY categories, FEATURE_DISABLED', () => {
     await updateTask('a', { estimate: 5 });
     expect(useBoards.getState().tasks['a']?.estimate).toBe(0);
     expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Оценка'));
+  });
+});
+
+// ADR-0059 §5: a viewer who sees a board only through his cards.
+describe('task-scoped boards in the store', () => {
+  beforeEach(() => {
+    useBoards.getState().reset();
+    useBoardsUi.setState({ taskId: null, boardOf: {}, active: false });
+  });
+  const ev = (e: Parameters<typeof create<typeof DispatchEventSchema>>[1]): ReturnType<typeof create<typeof DispatchEventSchema>>['event'] => create(DispatchEventSchema, e).event;
+  const scoped = (): void => useBoards.getState().upsertBoard(create(BoardSchema, { id: 'b1', workspaceId: 'w1', name: 'Dev', permissions: 0n, taskScoped: true }));
+
+  it('BOARD_CREATE with taskScoped shows the board in the list even with permissions 0', () => {
+    applyBoardEvent(ev({ event: { case: 'boardCreate', value: { board: create(BoardSchema, { id: 'b1', workspaceId: 'w1', name: 'Dev', permissions: 0n, taskScoped: true }) } } }));
+    expect(workspaceBoards(useBoards.getState().boards, 'w1').map((b) => b.id)).toEqual(['b1']);
+  });
+
+  it('TASK_DELETE without purged removes the card and closes its open panel on a scoped board', () => {
+    scoped();
+    useBoards.getState().setBoardTasks('b1', [task('a', 's1', 1024)]);
+    useBoardsUi.getState().openTask('a');
+    applyBoardEvent(ev({ event: { case: 'taskDelete', value: { workspaceId: 'w1', boardId: 'b1', taskId: 'a' } } }));
+    expect(useBoards.getState().tasks['a']).toBeUndefined();
+    expect(useBoardsUi.getState().taskId).toBeNull();
+  });
+
+  it('TASK_DELETE of another card leaves the open panel alone', () => {
+    scoped();
+    useBoards.getState().setBoardTasks('b1', [task('a', 's1', 1024), task('c', 's1', 2048)]);
+    useBoardsUi.getState().openTask('a');
+    applyBoardEvent(ev({ event: { case: 'taskDelete', value: { workspaceId: 'w1', boardId: 'b1', taskId: 'c' } } }));
+    expect(useBoardsUi.getState().taskId).toBe('a');
+  });
+
+  it('BOARD_DELETE closes the open board and the panel of its task', () => {
+    scoped();
+    useBoards.getState().setBoardTasks('b1', [task('a', 's1', 1024)]);
+    useBoardsUi.getState().openBoard('w1', 'b1');
+    useBoardsUi.getState().openTask('a');
+    applyBoardEvent(ev({ event: { case: 'boardDelete', value: { workspaceId: 'w1', boardId: 'b1' } } }));
+    expect(useBoards.getState().boards['b1']).toBeUndefined();
+    expect(useBoardsUi.getState().boardOf['w1']).toBe(MY_TASKS);
+    expect(useBoardsUi.getState().taskId).toBeNull();
+  });
+});
+
+
+describe('noticeText (ADR-0089 triggers)', () => {
+  const tk = task('n1', 's1', 1, { priority: TaskPriority.HIGH });
+  const text = (n: MessageInitShape<typeof TaskNoticeSchema>): string => noticeText(tk, create(TaskNoticeSchema, n));
+  const who = memberName('w1', 'u1');
+
+  it('addressed kinds name the actor; the due sweep and a rule have none', () => {
+    expect(text({ kind: TaskNoticeKind.UNASSIGNED, actorId: 'u1' })).toBe(t('boards.notice.unassigned', { name: who }));
+    expect(text({ kind: TaskNoticeKind.UNASSIGNED })).toBe(t('boards.notice.unassignedAuto'));
+    expect(text({ kind: TaskNoticeKind.WATCHER_ADDED, actorId: 'u1' })).toBe(t('boards.notice.watcherAdded', { name: who }));
+    expect(text({ kind: TaskNoticeKind.DUE_SOON, dueOn: '2030-03-11', daysLeft: 1 })).toBe(t('boards.notice.dueTomorrow'));
+    expect(text({ kind: TaskNoticeKind.DUE_SOON, dueOn: '2030-03-10', daysLeft: 0 })).toBe(t('boards.notice.dueToday'));
+    const overdue = text({ kind: TaskNoticeKind.OVERDUE, dueOn: '2030-03-09', daysLeft: -1 });
+    expect(overdue).toContain('2030');
+    expect(overdue).not.toContain(t('common.unknownUser'));
+  });
+
+  it('field changes carry their details', () => {
+    expect(text({ kind: TaskNoticeKind.DUE_CHANGED, dueOn: '' })).toBe(t('boards.notice.dueRemoved'));
+    expect(text({ kind: TaskNoticeKind.DUE_CHANGED, dueOn: '2031-01-15' })).toContain('2031');
+    expect(text({ kind: TaskNoticeKind.PRIORITY })).toBe(t('boards.notice.priority', { value: t('boards.prio.high') }));
+    expect(text({ kind: TaskNoticeKind.MILESTONE, text: 'Релиз' })).toBe(t('boards.notice.milestone', { value: 'Релиз' }));
+    expect(text({ kind: TaskNoticeKind.MILESTONE })).toBe(t('boards.notice.milestoneRemoved'));
+    expect(text({ kind: TaskNoticeKind.MOVED, text: 'Дизайн' })).toBe(t('boards.notice.moved', { value: 'Дизайн' }));
+    expect(text({ kind: TaskNoticeKind.EDITED, text: 'title' })).toBe(t('boards.notice.editedTitle'));
+    expect(text({ kind: TaskNoticeKind.EDITED, text: 'description' })).toBe(t('boards.notice.editedDescription'));
+    expect(text({ kind: TaskNoticeKind.ATTACHMENT, text: 'смета.pdf' })).toBe(t('boards.notice.attachment', { value: 'смета.pdf' }));
+    expect(text({ kind: TaskNoticeKind.ARCHIVED })).toBe(t('boards.notice.archived'));
+  });
+
+  it('status keeps its text; an unknown kind is «Задача обновлена»', () => {
+    expect(text({ kind: TaskNoticeKind.STATUS, actorId: 'u1' })).toBe(t('boards.notice.status', { name: who }));
+    expect(text({ kind: 99 as TaskNoticeKind })).toBe(t('boards.notice.updated'));
   });
 });

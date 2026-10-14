@@ -1,0 +1,224 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/file.proto";
+import "calaba/v1/room.proto";
+
+// Disk (ADR-0094, docs/04 «Диск»): folders and files of a workspace, per-item access, public
+// file links, trash and storage usage.
+//
+// Access: workspace bits DISK_VIEW (1 << 35), DISK_WRITE (1 << 36), DISK_MANAGE (1 << 37), then
+// the overrides of every ancestor and the item itself (disk_permissions, VIEW / WRITE only); a
+// restricted item drops what the roles and the ancestors gave; the item's owner always has
+// VIEW | WRITE on it; DISK_MANAGE and ADMINISTRATOR see everything. Go perm.ComputeDiskItem,
+// TS diskItemPermissions. No DISK_VIEW on an item → 404.
+
+enum DiskItemKind {
+  DISK_ITEM_KIND_UNSPECIFIED = 0;
+  DISK_ITEM_KIND_FOLDER = 1;
+  DISK_ITEM_KIND_FILE = 2;
+}
+
+// A public link of a file (ADR-0094 §3). Anyone with the code reads the file without signing
+// in: GET /api/public/disk/{code} (PublicDiskFile) and /api/public/disk/{code}/content.
+message DiskLink {
+  string code = 1; // 43 characters, base64url of 32 random bytes
+  google.protobuf.Timestamp expires_at = 2; // unset = never
+  string created_by = 3;
+  google.protobuf.Timestamp created_at = 4;
+  uint32 downloads = 5;
+  string item_id = 6;
+}
+
+// A folder or a file of the Disk.
+message DiskItem {
+  string id = 1;
+  string workspace_id = 2;
+  string parent_id = 3; // empty = the root
+  DiskItemKind kind = 4;
+  string name = 5; // 1..255 characters, unique in the folder ignoring case (not trashed)
+  FileMeta file = 6; // files only
+  string owner_id = 7; // who created it; empty after the account is gone
+  bool restricted = 8; // «Только выбранные»: the roles and the parent give no access
+  bool shared = 9; // the item has its own overrides (disk_permissions)
+  DiskLink link = 10; // the live public link (files only), unset when none
+  google.protobuf.Timestamp trashed_at = 11; // set while in the trash (with its subtree)
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  uint64 my_bits = 14; // the caller's disk bits on the item (DISK_VIEW | DISK_WRITE | DISK_MANAGE)
+  string trashed_by = 15;
+  bool trashed_root = 16; // the item the deletion started at (the trash lists only these)
+}
+
+// One override of an item (disk_permissions): «Просмотр» = DISK_VIEW, «Правка» = DISK_VIEW |
+// DISK_WRITE. A guest can be given access only as a USER target.
+message DiskPermissionEntry {
+  PermissionTargetType target_type = 1;
+  string target_id = 2; // role id or user id
+  uint64 allow = 3;
+  uint64 deny = 4;
+}
+
+// GET /api/workspaces/{id}/disk/usage (ADR-0094 §6). quota_bytes is the effective limit
+// min(storage_quota_bytes, plan + add-ons) (0 = none); used_bytes the workspace's
+// storage_used_bytes; disk_bytes includes the trash, trash_bytes is its part; other_bytes =
+// used − disk (chat and board attachments, stickers …).
+message DiskUsage {
+  uint64 quota_bytes = 1;
+  uint64 plan_bytes = 2; // the plan's storage limit, 0 = unlimited
+  uint64 addon_bytes = 3; // active storage add-ons
+  uint64 used_bytes = 4;
+  uint64 disk_bytes = 5;
+  uint64 trash_bytes = 6;
+  uint64 other_bytes = 7;
+}
+
+enum DiskActivityKind {
+  DISK_ACTIVITY_KIND_UNSPECIFIED = 0;
+  DISK_ACTIVITY_KIND_CREATE = 1; // a folder created
+  DISK_ACTIVITY_KIND_UPLOAD = 2;
+  DISK_ACTIVITY_KIND_RENAME = 3;
+  DISK_ACTIVITY_KIND_MOVE = 4;
+  DISK_ACTIVITY_KIND_SHARE = 5; // overrides or restricted changed
+  DISK_ACTIVITY_KIND_LINK_ON = 6;
+  DISK_ACTIVITY_KIND_LINK_OFF = 7;
+  DISK_ACTIVITY_KIND_TRASH = 8;
+  DISK_ACTIVITY_KIND_RESTORE = 9;
+  DISK_ACTIVITY_KIND_DELETE = 10; // deleted forever
+}
+
+// A journal entry (disk_activity). before / after carry name snapshots (the destination
+// folder's name, who got access).
+message DiskActivity {
+  string id = 1;
+  string workspace_id = 2;
+  string item_id = 3; // empty after the item was deleted forever
+  string actor_id = 4; // empty after the account is gone or for the trash sweeper
+  DiskActivityKind kind = 5;
+  google.protobuf.Struct before = 6;
+  google.protobuf.Struct after = 7;
+  google.protobuf.Timestamp created_at = 8;
+  string item_name = 9; // the item's name when the entry was written
+}
+
+// GET /api/workspaces/{id}/disk/items?parent=&trashed=&cursor=&sort= — the visible content of a
+// folder (parent empty = the root) or, with trashed=1, the trash roots the caller can see, the
+// newest deletion first. sort: name (folders first, A–Z; default) | updated (newest first) |
+// size (folders first, then the largest file first). ≤ 200 per page.
+message ListDiskItemsResponse {
+  repeated DiskItem items = 1;
+  string next_cursor = 2;
+}
+
+// POST /api/workspaces/{id}/disk/folders (DISK_WRITE on the parent, or the root).
+message CreateDiskFolderRequest {
+  string parent_id = 1; // empty = the root
+  string name = 2;
+}
+
+// The response of create / upload / update / trash / restore and GET /api/disk/items/{id}.
+message DiskItemResponse {
+  DiskItem item = 1;
+}
+
+// PATCH /api/disk/items/{id}: rename, move (parent_id set; "" = the root) and the restricted
+// switch (owner of the item or DISK_MANAGE).
+message UpdateDiskItemRequest {
+  optional string name = 1;
+  optional string parent_id = 2;
+  optional bool restricted = 3;
+}
+
+// POST /api/workspaces/{id}/disk/trash/empty — deletes forever every trashed item the caller
+// may delete (their own; everything with DISK_MANAGE).
+message EmptyDiskTrashResponse {
+  uint32 deleted = 1;
+  uint64 freed_bytes = 2;
+}
+
+// GET /api/disk/items/{id}/path — the ancestors, the root's child first, then the item.
+message DiskPathResponse {
+  repeated DiskItem items = 1;
+}
+
+// GET /api/disk/items/{id}/permissions (owner of the item or DISK_MANAGE).
+message DiskPermissionsResponse {
+  repeated DiskPermissionEntry entries = 1;
+  bool restricted = 2;
+}
+
+// PUT /api/disk/items/{id}/permissions — replaces the item's overrides (allow / deny within
+// DISK_VIEW | DISK_WRITE) and optionally the restricted switch.
+message UpdateDiskPermissionsRequest {
+  repeated DiskPermissionEntry entries = 1;
+  optional bool restricted = 2;
+}
+
+// POST /api/disk/items/{id}/link (files only; owner of the file or DISK_MANAGE). A live link is
+// returned as is; expires_at unset = never.
+message CreateDiskLinkRequest {
+  google.protobuf.Timestamp expires_at = 1;
+}
+
+message DiskLinkResponse {
+  DiskLink link = 1;
+  string url = 2; // the public page of the link
+}
+
+// GET /api/disk/items/{id}/activity?cursor= (DISK_VIEW on the item) and
+// GET /api/workspaces/{id}/disk/activity?actor=&cursor= (DISK_MANAGE) — newest first.
+message DiskActivityPage {
+  repeated DiskActivity activities = 1;
+  string next_cursor = 2;
+}
+
+// GET /api/public/disk/{code} — anonymous, X-Robots-Tag: noindex. 404 once the link is revoked,
+// expired or the file deleted forever.
+message PublicDiskFile {
+  string name = 1;
+  uint64 size = 2;
+  string mime = 3;
+  uint32 width = 4; // images only
+  uint32 height = 5; // images only
+  bool has_thumbnail = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+// GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).
+message DiskSettings {
+  uint32 trash_days = 1; // automatic deletion from the trash after this many days; 0 = never
+}
+
+// One level of an item's access chain (the topmost ancestor first, the item last): what
+// perm.ComputeDiskItem reads. Server-internal routing of the DISK_ITEM_* events, always empty
+// for clients.
+message DiskAccessLevel {
+  bool restricted = 1;
+  string owner_id = 2;
+  repeated DiskPermissionEntry overrides = 3;
+}
+
+// DISK_ITEM_UPSERT: an item was created or changed (renamed, moved, shared, trashed,
+// restored). To members with DISK_VIEW on the item; item.my_bits is 0 (per recipient bits come
+// with a refetch). A member who saw the item before the change and does not any more gets
+// DISK_ITEM_REMOVE instead. Clients refetch the open folder and the trash.
+message DiskItemUpsert {
+  string workspace_id = 1;
+  DiskItem item = 2;
+  // Server-internal routing, always empty for clients: the access chain after the change and,
+  // when it changed (move, restricted, overrides), before it (empty = nobody saw it before).
+  repeated DiskAccessLevel access = 3;
+  repeated DiskAccessLevel access_before = 4;
+}
+
+// DISK_ITEM_REMOVE: an item was deleted forever or the recipient lost access to it.
+message DiskItemRemove {
+  string workspace_id = 1;
+  string item_id = 2;
+  string parent_id = 3;
+  // Server-internal routing, always empty for clients: the access chain the item had (who saw
+  // it gets the event).
+  repeated DiskAccessLevel access = 4;
+}

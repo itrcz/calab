@@ -1,12 +1,14 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import type { Board } from '@calaba/protocol';
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
+import { BoardFeature, type Board } from '@calaba/protocol';
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, Input, Modal, Tip, cx } from '../../components/ui';
+import { Button, CountBadge, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { useLongPress } from '../../lib/longPress';
+import { useMobile } from '../../lib/mobile';
 import { mayCreateBoards } from '../../lib/permissions';
 import { boardLayout, layoutTokens } from '../../lib/boards/categories';
 import { categoryDropAt, roomDropAt, type Layout, type RoomTarget, type Section, type Slot } from '../../lib/roomOrder';
@@ -24,13 +26,16 @@ import {
   restoreBoard,
 } from '../../services/boards';
 import { DeleteBoardDialog } from './BoardSettings';
+import { BoardForms } from './BoardForms';
 import { unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
+import { GROUP_LABEL, GroupChevron, ROW_HOVER } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { RestrictedMark } from '../workspace/AccessLevel';
 import { hasBit, MANAGE_BOARD } from './model';
+import { useFeatureOn } from './useBoardView';
 
 /**
  * The room column in boards mode (ADR-0042 §5, ADR-0058 §1): «Мои задачи» on top, the
@@ -113,6 +118,8 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       else if (p.kind === 'cat') void moveBoardCategory(workspaceId, p.id, to.index);
     };
     const up = (): void => end(true);
+    // A scroll took the touch, or a long press opened a menu (lib/phoneMenus): no drag.
+    const cancel = (): void => end(false);
     const key = (e: KeyboardEvent): void => {
       if (e.key === 'Escape' && press.current?.started) {
         e.stopPropagation();
@@ -121,10 +128,12 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
     window.addEventListener('keydown', key, true);
     return () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
       window.removeEventListener('keydown', key, true);
     };
   }, [measure, workspaceId]);
@@ -136,7 +145,8 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent, id: string) => {
-      if (e.button !== 0 || (e.target as HTMLElement).closest('[data-row-menu]')) return;
+      // Touch / pen never drag (a scroll must scroll; «up / down» in the ⋯ menu reorders on a phone).
+      if (e.pointerType !== 'mouse' || e.button !== 0 || (e.target as HTMLElement).closest('[data-row-menu]')) return;
       const b = useBoards.getState().boards[id];
       if (!hasBit(b?.permissions, MANAGE_BOARD)) return;
       press.current = { kind: 'board', id, y: e.clientY, started: false, layout: layoutNow() };
@@ -145,7 +155,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   );
   const onCategoryPointerDown = useCallback(
     (e: ReactPointerEvent, id: string) => {
-      if (e.button !== 0 || !creator || (e.target as HTMLElement).closest('input, [data-row-menu]')) return;
+      if (e.pointerType !== 'mouse' || e.button !== 0 || !creator || (e.target as HTMLElement).closest('input, [data-row-menu]')) return;
       press.current = { kind: 'cat', id, y: e.clientY, started: false, layout: layoutNow() };
     },
     [creator, layoutNow],
@@ -154,8 +164,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   return (
     <div
       ref={list}
-      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pt-2"
-      style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
+      className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-1 mobile:px-0 mobile:pt-1"
       onClickCapture={(e) => {
         if (suppress.current) {
           e.stopPropagation();
@@ -165,24 +174,19 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       data-testid="boards-list"
     >
       <MyTasksRow workspaceId={workspaceId} />
-      <div className="flex h-7 items-center pl-2 pr-1 pt-2">
-        <h2 className="min-w-0 flex-1 truncate text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('boards.boards')}</h2>
+      <div className="flex h-9 items-center pl-2 pr-1 pt-2 mobile:h-11 mobile:px-3">
+        <h2 className={cx('min-w-0 flex-1 truncate', GROUP_LABEL)}>{t('boards.boards')}</h2>
         {creator ? (
           <>
             <Tip label={t('boards.cat.new')}>
-              <button type="button" aria-label={t('boards.cat.new')} onClick={() => setNewCat(true)} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-category-new">
+              <button type="button" aria-label={t('boards.cat.new')} onClick={() => setNewCat(true)} className="hidden size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg mobile:grid" data-testid="board-category-new">
                 <FolderPlus className="size-4" aria-hidden />
-              </button>
-            </Tip>
-            <Tip label={t('boards.newBoard')}>
-              <button type="button" aria-label={t('boards.newBoard')} onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-new">
-                <Plus className="size-4" aria-hidden />
               </button>
             </Tip>
           </>
         ) : null}
       </div>
-      <div className="flex flex-col gap-px pt-0.5">
+      <div className="flex flex-col gap-px pt-0.5 mobile:gap-0 mobile:pt-0">
         {tokens.map((tok) => {
           const id = tok.slice(2);
           return tok.startsWith('h:') ? (
@@ -197,7 +201,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
           <button
             type="button"
             onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })}
-            className="mt-1 flex w-full items-center gap-2.5 rounded-[var(--radius-row)] border border-dashed border-line px-2 py-2 text-left text-caption text-muted hover:bg-hover hover:text-fg"
+            className="mt-1 flex w-full items-center gap-2.5 rounded-[var(--radius-row)] border border-dashed mobile:mx-3 mobile:w-[calc(100%-1.5rem)] border-line px-2 py-2 text-left text-caption text-muted hover:bg-hover hover:text-fg"
             data-testid="boards-empty"
           >
             <Plus className="size-4 shrink-0" aria-hidden />
@@ -245,7 +249,7 @@ const CategoryHeader = memo(function CategoryHeader({
     if (await confirmAction(t('boards.cat.deleteTitle', { name }), t('boards.cat.deleteText'), t('common.delete'))) void deleteBoardCategory(id);
   };
   const header = (
-    <div data-bcat-header={id} onPointerDown={(e) => onPointerDown(e, id)} className={cx('group/bcat flex h-7 items-center pr-1 pt-1', dragging && 'opacity-40')} data-testid="board-category">
+    <div data-bcat-header={id} onPointerDown={(e) => onPointerDown(e, id)} className={cx('group/bcat flex h-7 items-center pr-1 pt-1 mobile:h-11 mobile:pr-0 mobile:pt-2', dragging && 'opacity-40')} data-testid="board-category">
       {editing ? (
         <CategoryNameInput name={name} onDone={(v) => {
           setEditing(false);
@@ -259,11 +263,13 @@ const CategoryHeader = memo(function CategoryHeader({
           aria-expanded={!collapsed}
           aria-label={collapsed ? t('shell.categoryExpand', { name }) : t('shell.categoryCollapse', { name })}
           title={name}
-          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          className={cx('flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] pl-2 text-left transition-colors duration-[var(--motion-fast)] hover:text-fg mobile:h-11 mobile:gap-1 mobile:pl-3', GROUP_LABEL)}
           data-testid="board-category-toggle"
         >
-          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          {/* Phone: the chevron first, as before; desktop (owner, 07.10): after the name, on hover. */}
+          <ChevronDown className={cx('hidden size-3 shrink-0 transition-transform duration-[var(--motion-fast)] mobile:block', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
           <span className="truncate">{name}</span>
+          <GroupChevron collapsed={collapsed} className="mobile:hidden" />
         </button>
       )}
     </div>
@@ -330,7 +336,7 @@ function CategoryNameInput({ name, onDone }: { name: string; onDone: (v: string 
 }
 
 /** «Новая категория» (CREATE_BOARDS): goes on top of the categories. */
-function NewCategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
+export function NewCategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const submit = async (): Promise<void> => {
@@ -379,12 +385,14 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
       type="button"
       onClick={() => openBoard(workspaceId, MY_TASKS)}
       aria-current={active ? 'page' : undefined}
-      className={cx('flex h-8 w-full items-center gap-2 rounded-[var(--radius-row)] px-2 text-left text-list', active ? 'bg-active font-medium text-fg' : 'text-muted hover:bg-hover hover:text-fg')}
+      className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-14 mobile:gap-3 mobile:rounded-none mobile:px-3 mobile:text-list', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
       data-testid="my-tasks"
     >
-      <Inbox className="size-[18px] shrink-0" aria-hidden />
+      <span className="grid shrink-0 place-items-center mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)]">
+        <Inbox className="size-[18px] shrink-0 mobile:size-5" aria-hidden />
+      </span>
       <span className="min-w-0 flex-1 truncate">{t('boards.myTasks')}</span>
-      {unread > 0 ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-micro font-semibold tabular-nums text-accent-fg">{unread > 99 ? '99+' : unread}</span> : null}
+      {unread > 0 ? <CountBadge count={unread} tone="accent" /> : null}
     </button>
   );
 }
@@ -396,65 +404,98 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const restricted = useBoards((s) => s.boards[id]?.restricted ?? false);
   const mine = useBoards((s) => s.boards[id]?.myOpenTasks ?? 0);
   const perms = useBoards((s) => s.boards[id]?.permissions);
+  const scoped = useBoards((s) => s.boards[id]?.taskScoped ?? false);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
   const manage = hasBit(perms, MANAGE_BOARD);
+  const [forms, setForms] = useState(false);
+  const formsOn = useFeatureOn(id, BoardFeature.FORMS);
+  // Phone: a long press on the row opens its «…» menu (the same one, docs/08 «Свайпы и долгое нажатие»).
+  const [menu, setMenu] = useState(false);
+  const longPress = useLongPress(useMobile(), () => setMenu(true));
   const archive = async (): Promise<void> => {
     if (await confirmAction(t('boards.archiveBoardTitle', { name }), t('boards.archiveBoardText'), t('boards.archiveBoard'))) void removeBoard(id, false);
   };
   return (
-    <div
-      data-board-row={id}
-      onPointerDown={(e) => onPointerDown(e, id)}
-      className={cx('group/board flex h-8 items-center rounded-[var(--radius-row)] pr-1', active ? 'bg-active' : 'hover:bg-hover', dragging && 'opacity-40')}
-      data-testid="board-row"
-    >
-      <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex h-8 min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
-        <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
-          {emoji || <SquareKanban className="size-[18px]" />}
-        </span>
-        <span className="min-w-0 flex-1 truncate">{name}</span>
-        {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
-        {restricted ? <RestrictedMark /> : null}
-        {mine > 0 ? (
-          <span className="shrink-0 text-caption tabular-nums text-muted" title={t('boards.myOpen')}>
-            {mine}
+    <>
+      {forms ? <BoardForms boardId={id} workspaceId={workspaceId} onClose={() => setForms(false)} /> : null}
+      <div
+        data-board-row={id}
+        {...longPress}
+        onPointerDown={(e) => {
+          if (!(e.target as HTMLElement).closest('[data-row-menu]')) longPress.onPointerDown?.(e);
+          onPointerDown(e, id);
+        }}
+        className={cx('group/board relative flex items-center rounded-[var(--radius-card)] pr-1 mobile:static mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
+        data-testid="board-row"
+      >
+        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-list', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+          <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:text-[22px]" aria-hidden>
+            {emoji || <SquareKanban className="size-[18px] mobile:size-5" />}
           </span>
-        ) : null}
-      </button>
-      <Dropdown.Root modal={false}>
-        <Dropdown.Trigger asChild>
-          <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
-            <Ellipsis className="size-4" aria-hidden />
-          </button>
-        </Dropdown.Trigger>
-        <Dropdown.Portal>
-          <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
-            {manage ? (
-              <>
-                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>
-                  <Settings className="size-4" aria-hidden /> {t('boards.settings')}
-                </Dropdown.Item>
-                <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
-                  <Shield className="size-4" aria-hidden /> {t('boards.access')}
-                </Dropdown.Item>
-              </>
-            ) : null}
-            {manage ? <MoveToCategory id={id} workspaceId={workspaceId} /> : null}
-            <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>
-              <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
-            </Dropdown.Item>
-            {manage ? (
-              <>
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
-                  <Archive className="size-4" aria-hidden /> {t('boards.archive')}
-                </Dropdown.Item>
-              </>
-            ) : null}
-          </Dropdown.Content>
-        </Dropdown.Portal>
-      </Dropdown.Root>
-    </div>
+          {scoped ? (
+            <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+              <span className="w-full min-w-0 truncate">{name}</span>
+              <span className="inline-flex h-5 max-w-full items-center rounded-full bg-hover px-2 text-micro font-medium text-muted" title={t('boards.scopedHint')} data-testid="board-scoped-chip">
+                <span className="truncate">{t('boards.scopedChip')}</span>
+              </span>
+            </span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+          )}
+          {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
+          {restricted ? <RestrictedMark /> : null}
+          {mine > 0 ? (
+            <span
+              className="pointer-events-none absolute right-1 top-1/2 grid h-6 min-w-6 -translate-y-1/2 place-items-center rounded-[var(--radius-icon)] bg-[var(--color-fill)] px-1.5 text-caption tabular-nums text-muted group-hover/board:opacity-0 group-has-[[data-state=open]]/board:opacity-0 mobile:pointer-events-auto mobile:static mobile:h-[22px] mobile:min-w-[22px] mobile:translate-y-0 mobile:rounded-full mobile:px-1.5 mobile:text-fg mobile:group-hover/board:opacity-100"
+              title={t('boards.myOpen')}
+            >
+              {mine}
+            </span>
+          ) : null}
+        </button>
+        <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
+          <Dropdown.Trigger asChild>
+            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 mobile:size-11 mobile:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
+              <Ellipsis className="size-4" aria-hidden />
+            </button>
+          </Dropdown.Trigger>
+          <Dropdown.Portal>
+            <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
+              {manage ? (
+                <>
+                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>
+                    <Settings className="size-4" aria-hidden /> {t('boards.settings')}
+                  </Dropdown.Item>
+                  <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId, tab: 'access' })}>
+                    <Shield className="size-4" aria-hidden /> {t('boards.access')}
+                  </Dropdown.Item>
+                </>
+              ) : null}
+              {manage ? <MoveToCategory id={id} workspaceId={workspaceId} /> : null}
+              <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>
+                <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
+              </Dropdown.Item>
+              {manage ? (
+                <>
+                  {formsOn ? (
+                    <>
+                      <Dropdown.Separator className={menuSeparator} />
+                      <Dropdown.Item className={menuItem} onSelect={() => setForms(true)}>
+                        <FileText className="size-4" aria-hidden /> {t('forms.title')}
+                      </Dropdown.Item>
+                    </>
+                  ) : null}
+                  <Dropdown.Separator className={menuSeparator} />
+                  <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
+                    <Archive className="size-4" aria-hidden /> {t('boards.archive')}
+                  </Dropdown.Item>
+                </>
+              ) : null}
+            </Dropdown.Content>
+          </Dropdown.Portal>
+        </Dropdown.Root>
+      </div>
+    </>
   );
 });
 
@@ -516,7 +557,7 @@ function ArchivedBoards({ workspaceId, live }: { workspaceId: string; live: numb
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex h-7 w-full items-center gap-1 rounded-[var(--radius-row)] pl-1 pr-2 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted hover:bg-hover hover:text-fg"
+        className={cx('flex h-7 w-full items-center gap-1 rounded-[var(--radius-row)] pl-1 pr-2 text-left hover:bg-hover hover:text-fg', GROUP_LABEL)}
         data-testid="boards-archive-toggle"
       >
         <ChevronRight className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', open && 'rotate-90')} aria-hidden />

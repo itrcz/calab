@@ -30,10 +30,17 @@ JOIN messages m ON m.id = ma.message_id AND m.deleted_at IS NULL
 WHERE ma.file_id = $1
 UNION
 SELECT t.room_id FROM task_attachments ta JOIN tasks t ON t.id = ta.task_id WHERE ta.file_id = $1
+UNION
+SELECT r.id FROM rooms r WHERE r.icon_file_id = $1
+UNION
+SELECT ri.room_id FROM messages ri
+WHERE ri.kind = 'system' AND ri.payload ? 'roomIcon' AND ri.payload -> 'roomIcon' ->> 'fileId' = $1::text
+  AND ri.deleted_at IS NULL
 `
 
-// Rooms where the file is attached to a live message, and the room of a task whose description
-// shows it (ADR-0042).
+// Rooms where the file is attached to a live message, the room of a task whose description
+// shows it (ADR-0042), and a room whose picture it is or whose live system message room_icon
+// shows it (ADR-0092; messages_room_icon_file_idx).
 func (q *Queries) FileRooms(ctx context.Context, fileID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, fileRooms, fileID)
 	if err != nil {
@@ -82,7 +89,8 @@ func (q *Queries) GetFile(ctx context.Context, id uuid.UUID) (File, error) {
 
 const getFilesWithUsage = `-- name: GetFilesWithUsage :many
 SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform, (EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
-    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id))::boolean AS attached
+    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
+    OR EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id))::boolean AS attached
 FROM files f WHERE f.id = ANY($1::uuid[])
 `
 
@@ -104,6 +112,8 @@ type GetFilesWithUsageRow struct {
 	Attached        bool
 }
 
+// attached: already in a message or a task, or a file of the Disk (ADR-0094: deleting the Disk
+// item forever deletes the file, which would silently drop it from a message).
 func (q *Queries) GetFilesWithUsage(ctx context.Context, ids []uuid.UUID) ([]GetFilesWithUsageRow, error) {
 	rows, err := q.db.Query(ctx, getFilesWithUsage, ids)
 	if err != nil {
@@ -223,12 +233,23 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM boards bi WHERE bi.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_apps wa WHERE wa.icon_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM rooms ri WHERE ri.icon_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM messages mi WHERE mi.kind = 'system' AND mi.payload ? 'roomIcon'
+                    AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text AND mi.deleted_at IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500
 `
 
 // Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82), camera background
-// (ADR-0035), soundboard clip (ADR-0036) or web app icon (ADR-0050), older than the cutoff.
+// (ADR-0035), soundboard clip (ADR-0036), web app icon (ADR-0050) or achievement picture
+// (ADR-0061), room picture or its live system message (ADR-0092; deleted messages are never
+// purged, so a deleted one must not keep the file), not a file of the Disk (ADR-0094; trashed
+// ones included: the trash counts in the quota until deleted forever), not a picture or cover of
+// a wiki page (ADR-0096; trashed pages included), older than the cutoff.
 func (q *Queries) ListOrphanFiles(ctx context.Context, createdAt time.Time) ([]File, error) {
 	rows, err := q.db.Query(ctx, listOrphanFiles, createdAt)
 	if err != nil {
@@ -373,6 +394,10 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id)
 `
 
 type UnattachedBytesByUploaderParams struct {
@@ -380,8 +405,9 @@ type UnattachedBytesByUploaderParams struct {
 	WorkspaceID *uuid.UUID
 }
 
-// Bytes a user uploaded to a workspace that are not attached to any message yet (stickers
-// are not uploads waiting for a message).
+// Bytes a user uploaded to a workspace that are not attached to any message yet (stickers,
+// files of the Disk, ADR-0094, and of wiki pages, ADR-0096, are not uploads waiting for a
+// message).
 func (q *Queries) UnattachedBytesByUploader(ctx context.Context, arg UnattachedBytesByUploaderParams) (int64, error) {
 	row := q.db.QueryRow(ctx, unattachedBytesByUploader, arg.UploaderID, arg.WorkspaceID)
 	var column_1 int64

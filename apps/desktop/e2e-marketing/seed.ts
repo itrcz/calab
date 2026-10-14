@@ -198,8 +198,19 @@ export function seedScene(mock: MockServer, c: Copy, art: Art): void {
   post(R.general, 'boris', '10:20', '', { attachments: [SCENE.files.voice] });
   const mock1 = post(R.general, 'vera', '10:32', c.chat.mockupCaption, { attachments: [SCENE.files.mockup] });
   react(mock, mock1, { '😍': ['anna', 'boris'], '👍': ['grigory'] });
-  post(R.general, 'grigory', '10:35', c.chat.reply, { replyToId: mock1.id });
-  post(R.general, 'anna', '10:36', '', { stickerId: IDS.stickers.sun });
+  // The thread's end (landing 14.10: the chat crop shows many short messages, no big sticker): a
+  // reply quote, then four people in a few words with emoji, reactions under most lines, my last
+  // one read by everybody (✓✓).
+  const reply = post(R.general, 'grigory', '10:35', c.chat.reply, { replyToId: mock1.id });
+  react(mock, reply, { '👍': ['vera', 'boris'] });
+  const [fromVera, fromBoris, fromDina, fromAnna] = c.chat.thread;
+  const lighter = post(R.general, 'vera', '10:36', fromVera);
+  react(mock, lighter, { '🙏': ['grigory'], '❤️': ['anna', 'boris'] });
+  post(R.general, 'boris', '10:38', fromBoris);
+  const phone = post(R.general, 'dina', '10:39', fromDina);
+  react(mock, phone, { '👍': ['anna', 'vera'] });
+  const decided = post(R.general, 'anna', '10:41', fromAnna);
+  react(mock, decided, { '🔥': ['boris', 'vera', 'grigory'], '🎉': ['dina'] });
 
   // ---- direct messages with Борис
   s.messages.set(IDS.dms.boris, []);

@@ -4,11 +4,34 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Badge, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { roleColorCss } from '../../lib/roles';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useFormerInfo, useWorkspaces } from '../../stores/workspaces';
 
 /** «Гость» next to a name (ADR-0016): the shared badge (11/600, sentence case, radius 4). */
 export function GuestBadge({ className }: { className?: string }): ReactNode {
   return <Badge {...(className ? { className } : {})}>{t('people.guest')}</Badge>;
+}
+
+/**
+ * «бывший» next to the name of someone who left the workspace (ADR-0097 §4): an outlined muted
+ * 11 px chip, lower case; the tooltip says since when. Renders nothing for a current member, so
+ * rows can drop it in unconditionally; it subscribes by id (a stable object), nothing else re-renders it.
+ */
+export function FormerChip({ workspaceId, userId, className }: { workspaceId: string | null | undefined; userId: string; className?: string }): ReactNode {
+  const info = useFormerInfo(workspaceId, userId);
+  if (!info) return null;
+  return <FormerChipView leftAt={info.leftAt} className={className} />;
+}
+
+export function FormerChipView({ leftAt, className }: { leftAt: number; className?: string | undefined }): ReactNode {
+  return (
+    <span
+      data-former-chip
+      title={leftAt ? t('former.since', { date: new Date(leftAt).toLocaleDateString() }) : t('former.chip')}
+      className={cx('inline-flex h-4 shrink-0 items-center rounded-[4px] border border-line px-1 text-[11px] font-medium leading-none text-muted', className)}
+    >
+      {t('former.chip')}
+    </span>
+  );
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { UpdateStatus } from '../shared/ipc';
+import { feedKey, type FeedSource } from '../shared/updateFeed';
 import { isNewerVersion } from '../shared/version';
 
 /**
@@ -8,17 +9,20 @@ import { isNewerVersion } from '../shared/version';
  * Modes, decided per check (settings and the server can change at runtime):
  * - auto   — autoDownload + autoInstallOnAppQuit: background download with progress, then
  *            «Обновление X готово — Перезапустить»; installs on restart or on quit.
- *            ONLY from the build-time feed (review pass 3 B1: an unsigned Windows / AppImage
+ *            ONLY from a pinned source (review pass 3 B1: an unsigned Windows / AppImage
  *            update is verified by nothing but the sha512 in latest*.yml, served by the same
- *            host — so the host must be the one pinned at build time, never one derived from
- *            the server or set at runtime), and only where the update can be applied: Windows;
+ *            host — so the host must be one pinned at build time, never one derived from the
+ *            server or set at runtime: the GitHub repo or the S3 feed, whichever channel the
+ *            user chose — shared/updateFeed.ts), and only where the update can be applied: Windows;
  *            Linux AppImage (electron-updater installs nothing else); macOS only when signed
  *            (Squirrel.Mac refuses unsigned updates).
  * - notify — nothing is downloaded: status 'available' + one notification per version that
- *            opens the human download page. Everything else: no build-time feed (dev /
+ *            opens the human download page. Everything else: no pinned source (dev /
  *            self-built), a runtime feed override, unsigned macOS, Linux deb/other, or
- *            «Автоматически обновлять» off.
- * - manual — notify, but the update is `installable` (build feed + a platform able to apply it;
+ *            «Автоматически обновлять» off. Also the fallback of a failed automatic download
+ *            (owner 12.10, «не предлагает обновиться»: a background download that failed used to
+ *            end in a silent 'error' — now «Доступна версия X» stays on screen with «Скачать»).
+ * - manual — notify, but the update is `installable` (pinned source + a platform able to apply it;
  *            only the setting is off): «Скачать и установить» in «О программе» calls
  *            download() — the same download / install-on-quit as auto, on the user's request.
  * Errors are logged and end in status 'error' (shown only in «О программе»); never thrown.
@@ -76,7 +80,7 @@ export interface UpdaterLike {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
   on(event: string, listener: (...args: unknown[]) => void): unknown;
-  setFeedURL(options: { provider: 'generic'; url: string }): void;
+  setFeedURL(options: FeedSource): void;
   /** Resolves null when the updater is inactive (not packaged, Linux without AppImage/package). */
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<unknown>;
@@ -99,11 +103,12 @@ export interface UpdateFlowEnv {
   /** Jitter source in [0, 1) (Math.random; fixed in tests). */
   random?: () => number;
   /**
-   * The feed pinned at build time (validated https) — the only one auto mode uses. null → no
-   * auto-install at all (dev build, self-built without MAIN_VITE_UPDATE_FEED, runtime override).
+   * The pinned source for the chosen channel (GitHub repo or S3 feed, baked in at build time; read
+   * per check — the channel can change) — the only kind auto mode uses. null → no auto-install at
+   * all (dev build, self-built without MAIN_VITE_UPDATE_FEED / _GITHUB, runtime override).
    */
-  buildFeed: string | null;
-  /** Notify-only feed used when there is no build feed (runtime override / server-derived); null → none. */
+  pinnedFeed: () => FeedSource | null;
+  /** Notify-only feed used when there is no pinned source (runtime override / server-derived); null → none. */
   notifyFeed: () => string | null;
   /** Human download page for the notification / «Скачать» (https); null → the checked feed. */
   downloadPage: () => string | null;
@@ -164,7 +169,7 @@ export interface AutoInstallInput {
   platform: string;
   signed: boolean;
   appImage: boolean;
-  /** The feed about to be checked is the build-time feed. */
+  /** The feed about to be checked is a pinned source (build time). */
   pinnedFeed: boolean;
   /** «Автоматически обновлять». */
   autoUpdate: boolean;
@@ -172,7 +177,7 @@ export interface AutoInstallInput {
 
 /**
  * Whether an update may be downloaded and installed without the user: the setting is on, the
- * feed is the build-time one, and the platform can apply it (signed, or Windows / AppImage,
+ * feed is a pinned one, and the platform can apply it (signed, or Windows / AppImage,
  * whose unsigned updates are trusted only because the https host is pinned at build time).
  */
 export function canAutoInstall(i: AutoInstallInput): boolean {
@@ -273,8 +278,10 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let installing = false;
   /** Date.now() when the last updater check started (0 = never). */
   let lastCheckAt = 0;
-  /** The feed last handed to the updater ('' before the first check). */
+  /** Key of the feed last handed to the updater ('' before the first check). */
   let feed = '';
+  /** That feed is a pinned source (may auto-install); kept per check, so a channel switch mid-download does not revoke it. */
+  let feedPinned = false;
   /** The user asked for a download («Скачать и установить»): install on quit even with auto off. */
   let requested = false;
   /** A version newer than the pending download was found: download it. */
@@ -299,25 +306,32 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   /** beforeQuit() decided not to install the stale download on this quit. */
   let skipQuitInstall = false;
 
-  const autoFor = (url: string): boolean =>
+  const autoFeed = (): boolean =>
+    feed !== '' &&
     canAutoInstall({
       platform: env.platform,
       signed: env.signed,
       appImage: env.appImage,
-      pinnedFeed: env.buildFeed !== null && url === env.buildFeed,
+      pinnedFeed: feedPinned,
       autoUpdate: env.autoUpdate(),
     });
 
-  const installableFrom = (url: string): boolean =>
+  const installableFeed = (): boolean =>
+    feed !== '' &&
     canInstall({
       platform: env.platform,
       signed: env.signed,
       appImage: env.appImage,
-      pinnedFeed: env.buildFeed !== null && url === env.buildFeed,
+      pinnedFeed: feedPinned,
     });
 
-  /** Feed for the next check: the build feed when there is one, else the notify-only feed. */
-  const nextFeed = (): string | null => env.buildFeed ?? env.notifyFeed();
+  /** Feed for the next check: the pinned source when there is one, else the notify-only feed. */
+  const nextFeed = (): { source: FeedSource; pinned: boolean } | null => {
+    const pinned = env.pinnedFeed();
+    if (pinned) return { source: pinned, pinned: true };
+    const url = env.notifyFeed();
+    return url ? { source: { provider: 'generic', url }, pinned: false } : null;
+  };
 
   /** A download is running: nothing new to learn from the feed until it ends. */
   const busy = (): boolean => status.state === 'downloading';
@@ -367,9 +381,9 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   };
 
   const applyFlags = (): void => {
-    const on = feed !== '' && autoFor(feed);
+    const on = autoFeed();
     updater.autoDownload = on;
-    installOnQuit = !skipQuitInstall && (on || (requested && feed !== '' && installableFrom(feed)));
+    installOnQuit = !skipQuitInstall && (on || (requested && installableFeed()));
     // macOS: never let MacUpdater stage at download time (the flow stages the newest itself).
     updater.autoInstallOnAppQuit = !mac && installOnQuit;
   };
@@ -398,6 +412,15 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       env.log.warn('[update] download failed', e);
     });
   };
+
+  /** Notify-only offer: 'available' with the download page (+ «Скачать и установить» when installable), one notification per version. */
+  function offer(version: string): void {
+    publish({ state: 'available', version, downloadPage: page, ...(installableFeed() ? { installable: true as const } : {}) });
+    if (notified !== version && page) {
+      notified = version;
+      env.notify(version, page);
+    }
+  }
 
   // Listeners get the event's first argument (UpdateInfo / ProgressInfo / Error in electron-updater).
   const on = (event: string, fn: (a: unknown) => void): void => {
@@ -442,11 +465,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       publish({ state: 'downloading', version, percent: 0 });
       return;
     }
-    publish({ state: 'available', version, downloadPage: page, ...(installableFrom(feed) ? { installable: true as const } : {}) });
-    if (notified !== version && page) {
-      notified = version;
-      env.notify(version, page);
-    }
+    offer(version);
   });
   on('download-progress', (a) => {
     const p = a as Partial<Progress> | undefined;
@@ -472,7 +491,19 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   on('error', (e) => {
     env.log.warn('[update] failed', e);
     // A failed download leaves nothing installable (electron-updater clears its cache).
-    if (status.state === 'downloading') downloadedVersion = '';
+    if (status.state === 'downloading') {
+      downloadedVersion = '';
+      installWhenReady = false;
+      // Never silent about a known newer version (owner 12.10): the bar offers it again —
+      // «Скачать и установить» retries the download, «Скачать» opens the page. The next check retries too.
+      const version = status.version;
+      if (version) {
+        env.log.warn('[update] download of', version, 'failed — offering it instead');
+        if (!page) page = env.downloadPage() ?? '';
+        offer(version);
+        return;
+      }
+    }
     if (status.state !== 'downloaded') installWhenReady = false;
     // A failure after the download (e.g. a later check) must not hide «Перезапустить».
     if (status.state !== 'downloaded') publish({ state: 'error', message: 'update failed' });
@@ -483,17 +514,20 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     if (busy() || staging) return status;
     // Downloaded: the check only asks whether the pending version is still the latest.
     const pending = status.state === 'downloaded';
-    const url = nextFeed();
-    if (!url) {
+    const next = nextFeed();
+    if (!next) {
       if (!pending) publish({ state: 'disabled' });
       return status;
     }
-    page = env.downloadPage() ?? url;
-    feed = url;
+    const key = feedKey(next.source);
+    page = env.downloadPage() ?? (next.source.provider === 'generic' ? next.source.url : '');
+    if (key !== feed) env.log.info('[update] feed', key, next.pinned ? '(pinned)' : '(notify-only)');
+    feed = key;
+    feedPinned = next.pinned;
     applyFlags();
     // Never re-download the pending version blindly: 'update-available' decides (newer → replace).
     if (pending) updater.autoDownload = false;
-    updater.setFeedURL({ provider: 'generic', url });
+    updater.setFeedURL(next.source);
     lastCheckAt = Date.now();
     try {
       const r = await updater.checkForUpdates();
@@ -651,7 +685,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       return installNow(true);
     },
     download() {
-      if (status.state !== 'available' || !status.installable || feed === '' || !installableFrom(feed)) return false;
+      if (status.state !== 'available' || !status.installable || !installableFeed()) return false;
       env.log.info('[update] download on request', status.version);
       requested = true;
       applyFlags();

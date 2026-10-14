@@ -60,10 +60,13 @@ func TestWebhookPayloadGolden(t *testing.T) {
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatal(err)
 	}
-	// The ADR example's fields, nothing else.
+	// The ADR example's fields and, additive in version 1, the acting rule (ADR-0060; null here).
 	if k := jsonKeys(got); !reflect.DeepEqual(k, sorted("id", "version", "type", "sequence", "occurred_at", "workspace_id", "board",
-		"actor", "task", "task_url", "changes", "comment")) {
+		"actor", "task", "task_url", "changes", "comment", "rule")) {
 		t.Fatalf("top-level keys %v", k)
+	}
+	if got["rule"] != nil {
+		t.Fatalf("rule of a person's change: %v", got["rule"])
 	}
 	if k := jsonKeys(got["board"].(map[string]any)); !reflect.DeepEqual(k, sorted("id", "key", "name")) {
 		t.Fatalf("board keys %v", k)

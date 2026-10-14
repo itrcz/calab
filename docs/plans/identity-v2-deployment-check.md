@@ -85,6 +85,7 @@ The full rotation/restore contract is [release §8](release-2.0-identity.md).
 files only. `infra/docker/web-image/Dockerfile` deliberately omits Caddyfile and
 entrypoint. A repo Caddy change or web image digest rollout therefore does **not**
 update cluster routing, logging or operator configuration.
+(Superseded: since `Caddyfile.behind-proxy` the web image carries its config — see docs/06.)
 
 Coordinator-provided read-only observation (2026-10-01): context `gptunnel`, namespace
 `calab`; web ConfigMap `calab-web-config` owns `Caddyfile`, `cluster-sites.sh`,

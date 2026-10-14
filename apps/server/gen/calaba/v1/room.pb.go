@@ -378,8 +378,12 @@ type Room struct {
 	// = MANAGE_ROOM in the room || (expires_at set && created_by == me && not a guest).
 	CreatedBy string `protobuf:"bytes,22,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	// Set only in the archive listing (GET /api/workspaces/{id}/rooms?archived=1).
-	ArchivedAt    *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=archived_at,json=archivedAt,proto3" json:"archived_at,omitempty"`
-	MessageCount  uint32                 `protobuf:"varint,24,opt,name=message_count,json=messageCount,proto3" json:"message_count,omitempty"` // the archive listing only: live messages of the room
+	ArchivedAt   *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=archived_at,json=archivedAt,proto3" json:"archived_at,omitempty"`
+	MessageCount uint32                 `protobuf:"varint,24,opt,name=message_count,json=messageCount,proto3" json:"message_count,omitempty"` // the archive listing only: live messages of the room
+	// The room's picture (ADR-0092): an image file of the workspace, shown instead of the glyph of
+	// the room type; empty = the glyph. Clients load it as /api/files/{id} (readable by everyone who
+	// sees the room). Changed with PATCH /api/rooms/{id} icon_file_id; a deleted file clears it.
+	IconFileId    string `protobuf:"bytes,25,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -580,6 +584,13 @@ func (x *Room) GetMessageCount() uint32 {
 		return x.MessageCount
 	}
 	return 0
+}
+
+func (x *Room) GetIconFileId() string {
+	if x != nil {
+		return x.IconFileId
+	}
+	return ""
 }
 
 // The caller's notification settings for one room. Rooms without a stored row use the
@@ -1619,7 +1630,12 @@ type UpdateRoomRequest struct {
 	// deny override, as a private room at creation); public = that deny is removed. Personal
 	// overrides stay. MANAGE_ROOM or the creator. Permanent rooms: 422 (their access dialog
 	// edits the overrides with PUT /api/rooms/{id}/permissions).
-	IsPrivate     *bool `protobuf:"varint,12,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
+	IsPrivate *bool `protobuf:"varint,12,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
+	// The room's picture (ADR-0092), text and voice rooms only (422 otherwise). "" removes it. Same
+	// right as the name (MANAGE_ROOM or the creator of a temporary room). An image the caller
+	// uploaded to this workspace (422 iconFileId otherwise). A change posts a system message
+	// room_icon (SystemMessage.room_icon) into the room from the caller.
+	IconFileId    *string `protobuf:"bytes,13,opt,name=icon_file_id,json=iconFileId,proto3,oneof" json:"icon_file_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1736,6 +1752,13 @@ func (x *UpdateRoomRequest) GetIsPrivate() bool {
 		return *x.IsPrivate
 	}
 	return false
+}
+
+func (x *UpdateRoomRequest) GetIconFileId() string {
+	if x != nil && x.IconFileId != nil {
+		return *x.IconFileId
+	}
+	return ""
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or
@@ -2220,7 +2243,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
 	"\f_max_streamsB\x0f\n" +
-	"\r_camera_limit\"\x92\b\n" +
+	"\r_camera_limit\"\xb4\b\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
@@ -2255,7 +2278,9 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"created_by\x18\x16 \x01(\tR\tcreatedBy\x12;\n" +
 	"\varchived_at\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"archivedAt\x12#\n" +
-	"\rmessage_count\x18\x18 \x01(\rR\fmessageCount\"\xa4\x01\n" +
+	"\rmessage_count\x18\x18 \x01(\rR\fmessageCount\x12 \n" +
+	"\ficon_file_id\x18\x19 \x01(\tR\n" +
+	"iconFileId\"\xa4\x01\n" +
 	"\x18RoomNotificationSettings\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x122\n" +
 	"\x05level\x18\x02 \x01(\x0e2\x1c.calaba.v1.NotificationLevelR\x05level\x12;\n" +
@@ -2343,7 +2368,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\"X\n" +
 	"\x0fGetRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12 \n" +
-	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\x98\x05\n" +
+	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\xd0\x05\n" +
 	"\x11UpdateRoomRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
 	"\x05topic\x18\x02 \x01(\tH\x01R\x05topic\x88\x01\x01\x12\x1f\n" +
@@ -2363,7 +2388,10 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12%\n" +
 	"\x0emake_permanent\x18\v \x01(\bR\rmakePermanent\x12\"\n" +
 	"\n" +
-	"is_private\x18\f \x01(\bH\tR\tisPrivate\x88\x01\x01B\a\n" +
+	"is_private\x18\f \x01(\bH\tR\tisPrivate\x88\x01\x01\x12%\n" +
+	"\ficon_file_id\x18\r \x01(\tH\n" +
+	"R\n" +
+	"iconFileId\x88\x01\x01B\a\n" +
 	"\x05_nameB\b\n" +
 	"\x06_topicB\v\n" +
 	"\t_positionB\x11\n" +
@@ -2373,7 +2401,8 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x10_allow_recordingB\r\n" +
 	"\v_restrictedB\x11\n" +
 	"\x0f_guest_approvalB\r\n" +
-	"\v_is_private\"2\n" +
+	"\v_is_privateB\x0f\n" +
+	"\r_icon_file_id\"2\n" +
 	"\x18UpdateVoiceStatusRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\"9\n" +
 	"\x12UpdateRoomResponse\x12#\n" +

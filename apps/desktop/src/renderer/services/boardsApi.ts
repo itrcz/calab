@@ -4,6 +4,9 @@ import {
   BoardWebhookPingResponseSchema,
   BoardWebhookResponseSchema,
   ConvertChecklistItemResponseSchema,
+  CreateTaskMilestoneRequestSchema,
+  TaskMilestoneResponseSchema,
+  UpdateTaskMilestoneRequestSchema,
   CreateBoardCategoryRequestSchema,
   CreateTaskChecklistItemRequestSchema,
   CreateTaskChecklistRequestSchema,
@@ -34,6 +37,7 @@ import {
   SetTaskApproversRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
+  SetTaskWatcherRequestSchema,
   TaskActivityPageSchema,
   TaskApprovalRequestSchema,
   TaskFilterSchema,
@@ -175,14 +179,21 @@ export const boardsApi = {
       call('PUT', `/api/tasks/${taskId}/relations`, TaskResponseSchema, body(SetTaskRelationRequestSchema, { relatedId, kind })),
     removeRelation: (taskId: string, relatedId: string, kind: TaskRelationKind) =>
       call('DELETE', `/api/tasks/${taskId}/relations${qs({ related_id: relatedId, kind })}`, TaskResponseSchema),
+    /** ADR-0076: make a member a watcher (an editor of the task; 422 guest / bot without the board). */
+    addWatcher: (taskId: string, userId: string) =>
+      call('PUT', `/api/tasks/${taskId}/watchers`, TaskResponseSchema, body(SetTaskWatcherRequestSchema, { userId })),
+    /** ADR-0076: remove a watcher (an editor, or the watcher themselves — «Перестать наблюдать»). */
+    removeWatcher: (taskId: string, userId: string) =>
+      call('DELETE', `/api/tasks/${taskId}/watchers${qs({ user_id: userId })}`, TaskResponseSchema),
     /** muted false = subscribed with notifications, true = «Отписаться». */
     setSubscription: (taskId: string, muted: boolean) =>
       call('PUT', `/api/tasks/${taskId}/subscription`, TaskResponseSchema, body(SetTaskSubscriptionRequestSchema, { muted })),
     /** Clears Task.unread (the boards badge). */
     markRead: (taskId: string) => callEmpty('PUT', `/api/tasks/${taskId}/read`),
     /** The feed: comments and journal rows, newest first; `before` = the oldest id seen. */
-    activity: (taskId: string, p: { before?: string; limit?: number } = {}, signal?: AbortSignal) =>
-      call('GET', `/api/tasks/${taskId}/activity${qs({ before: p.before, limit: p.limit })}`, TaskActivityPageSchema, undefined, signal),
+    /** only (ADR-0091 §3): `journal` — journal entries only, `comments` — messages only; a server without it sends both. */
+    activity: (taskId: string, p: { before?: string; limit?: number; only?: 'journal' | 'comments' } = {}, signal?: AbortSignal) =>
+      call('GET', `/api/tasks/${taskId}/activity${qs({ before: p.before, limit: p.limit, only: p.only })}`, TaskActivityPageSchema, undefined, signal),
     /** ⌘K: live tasks of every board the caller sees, by key and words. */
     search: (workspaceId: string, q: string, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/tasks/search${qs({ q })}`, SearchTasksResponseSchema, undefined, signal),
@@ -202,6 +213,16 @@ export const boardsApi = {
       removeItem: (itemId: string) => call('DELETE', `/api/checklist-items/${itemId}`, TaskChecklistResponseSchema),
       /** The item becomes a subtask (SUBTASKS on, the task not a subtask itself). */
       convert: (itemId: string) => call('POST', `/api/checklist-items/${itemId}/convert`, ConvertChecklistItemResponseSchema),
+    },
+    /** Milestones inside a task (ADR-0063); every write answers the milestone and the task. */
+    milestones: {
+      create: (taskId: string, init: MessageInitShape<typeof CreateTaskMilestoneRequestSchema>) =>
+        call('POST', `/api/tasks/${taskId}/milestones`, TaskMilestoneResponseSchema, body(CreateTaskMilestoneRequestSchema, init)),
+      /** name / dueOn ("" clears) / position / completed (a person's toggle: no subtasks linked). */
+      update: (milestoneId: string, init: MessageInitShape<typeof UpdateTaskMilestoneRequestSchema>) =>
+        call('PATCH', `/api/task-milestones/${milestoneId}`, TaskMilestoneResponseSchema, body(UpdateTaskMilestoneRequestSchema, init)),
+      /** Answers the task without the milestone; its subtasks lose the link. */
+      remove: (milestoneId: string) => call('DELETE', `/api/task-milestones/${milestoneId}`, TaskMilestoneResponseSchema),
     },
     mine: (workspaceId: string, scope: TaskScope, open = true, signal?: AbortSignal) =>
       call('GET', `/api/me/tasks${qs({ workspace_id: workspaceId, scope, open: open ? 1 : undefined })}`, MyTasksResponseSchema, undefined, signal),

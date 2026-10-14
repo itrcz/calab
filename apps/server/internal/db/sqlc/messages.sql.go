@@ -368,10 +368,14 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 }
 
 const lastMessages = `-- name: LastMessages :many
-SELECT r.id::uuid AS room_id, lm.id, lm.created_at
+SELECT r.id::uuid AS room_id, lm.id, lm.created_at, lm.author_id,
+       left(lm.content, 200)::text AS preview,
+       (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = lm.id)::integer AS attachments,
+       coalesce((SELECT st.emoji FROM stickers st WHERE st.id = lm.sticker_id), '')::text AS sticker_emoji,
+       (CASE WHEN lm.kind = 'system' THEN lm.payload END)::jsonb AS system_payload
 FROM unnest($1::uuid[]) AS r(id)
 CROSS JOIN LATERAL (
-    SELECT m.id, m.created_at FROM messages m
+    SELECT m.id, m.created_at, m.author_id, m.content, m.sticker_id, m.kind, m.payload FROM messages m
     WHERE m.room_id = r.id AND m.deleted_at IS NULL
     ORDER BY m.id DESC
     LIMIT 1
@@ -379,13 +383,21 @@ CROSS JOIN LATERAL (
 `
 
 type LastMessagesRow struct {
-	RoomID    uuid.UUID
-	ID        uuid.UUID
-	CreatedAt time.Time
+	RoomID        uuid.UUID
+	ID            uuid.UUID
+	CreatedAt     time.Time
+	AuthorID      uuid.UUID
+	Preview       string
+	Attachments   int32
+	StickerEmoji  string
+	SystemPayload []byte
 }
 
-// Newest live message per room: one backwards index probe per room (LATERAL … LIMIT 1),
-// independent of history size.
+// Newest live message per room with its list preview (ADR-0073 §5; the same fields and
+// 200-character cut as ListDMs): one backwards index probe per room (LATERAL … LIMIT 1),
+// independent of history size, plus a primary-key probe for the attachment count and the
+// sticker. Rooms without live messages have no row. system_payload: a system message's card
+// (DmLastMessage.system, ADR-0092), NULL for a user's message.
 func (q *Queries) LastMessages(ctx context.Context, roomIds []uuid.UUID) ([]LastMessagesRow, error) {
 	rows, err := q.db.Query(ctx, lastMessages, roomIds)
 	if err != nil {
@@ -395,7 +407,16 @@ func (q *Queries) LastMessages(ctx context.Context, roomIds []uuid.UUID) ([]Last
 	items := []LastMessagesRow{}
 	for rows.Next() {
 		var i LastMessagesRow
-		if err := rows.Scan(&i.RoomID, &i.ID, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.RoomID,
+			&i.ID,
+			&i.CreatedAt,
+			&i.AuthorID,
+			&i.Preview,
+			&i.Attachments,
+			&i.StickerEmoji,
+			&i.SystemPayload,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -456,8 +477,10 @@ func (q *Queries) ListAttachments(ctx context.Context, ids []uuid.UUID) ([]ListA
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
 SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages
-WHERE room_id = $1 AND deleted_at IS NULL AND id > $2::uuid
-ORDER BY id ASC
+WHERE deleted_at IS NULL
+  AND (room_id, id) > ($1::uuid, $2::uuid)
+  AND (room_id, id) <= ($1::uuid, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
+ORDER BY room_id, id
 LIMIT $3
 `
 
@@ -467,7 +490,9 @@ type ListMessagesAfterParams struct {
 	Lim    int32
 }
 
-// Oldest first.
+// Oldest first. The same plan-proof shape as ListMessagesBefore ("room_id = $1 AND id > $2"
+// walked messages_pkey from the cursor to the newest message of the whole table near a small
+// room's end).
 func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterParams) ([]Message, error) {
 	rows, err := q.db.Query(ctx, listMessagesAfter, arg.RoomID, arg.After, arg.Lim)
 	if err != nil {
@@ -511,10 +536,10 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
 SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages
-WHERE room_id = $1 AND deleted_at IS NULL
-  AND ($2::uuid IS NULL OR id < $2::uuid)
-  AND ($3::uuid IS NULL OR id > $3::uuid)
-ORDER BY id DESC
+WHERE deleted_at IS NULL
+  AND (room_id, id) < ($1::uuid, coalesce($2::uuid, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))
+  AND (room_id, id) > ($1::uuid, coalesce($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+ORDER BY room_id DESC, id DESC
 LIMIT $4
 `
 
@@ -527,6 +552,12 @@ type ListMessagesBeforeParams struct {
 
 // Newest first. NULL before = from the newest message; since = only after this id (a DM the
 // caller cleared, dm_state.cleared_before).
+// Plan-proof shape (docs/14 «Лента на 20 тыс. сообщений»): pgx prepares statements and
+// PostgreSQL switches to a generic plan after five runs. "$2 IS NULL OR id < $2" kept the cursor
+// as a Filter there and walked the room from its newest message (1.7-2.7 s at 1.5M rows); a
+// plain "room_id = $1 AND id < $2" lets the generic plan walk messages_pkey across all rooms
+// (the start of a small room's history: the whole table). Row comparisons bound the scan to
+// this room's slice of the (room_id, id) index on both ends; no real id equals the nil/max uuid.
 func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBeforeParams) ([]Message, error) {
 	rows, err := q.db.Query(ctx, listMessagesBefore,
 		arg.RoomID,
@@ -534,6 +565,53 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 		arg.Since,
 		arg.Lim,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.AuthorID,
+			&i.Content,
+			&i.ReplyToID,
+			&i.Nonce,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.EmbedsHidden,
+			&i.Kind,
+			&i.Payload,
+			&i.StickerID,
+			&i.ForwardedFrom,
+			&i.ForwardAuthorID,
+			&i.ForwardSentAt,
+			&i.InlineKeyboard,
+			&i.KeyboardRevision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesByIDs = `-- name: ListMessagesByIDs :many
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id DESC
+`
+
+// The live messages of ids (a search page, searchq.MessageIDs), newest first; one deleted
+// since the ids were found is left out.
+func (q *Queries) ListMessagesByIDs(ctx context.Context, ids []uuid.UUID) ([]Message, error) {
+	rows, err := q.db.Query(ctx, listMessagesByIDs, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -661,10 +739,10 @@ func (q *Queries) ListPins(ctx context.Context, roomID uuid.UUID) ([]Message, er
 }
 
 const listReactionUsers = `-- name: ListReactionUsers :many
-SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots
 FROM message_reactions mr JOIN users u ON u.id = mr.user_id
 WHERE mr.message_id = $1 AND mr.emoji = $2
-  AND ($3::uuid IS NULL OR mr.user_id > $3::uuid)
+  AND mr.user_id > coalesce($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
 ORDER BY mr.user_id
 LIMIT $4
 `
@@ -681,7 +759,8 @@ type ListReactionUsersRow struct {
 }
 
 // Who reacted with an emoji, by user id — a stable keyset for the `after` cursor (the PK
-// order, index-only for the reaction rows; ≤ lim lookups of users).
+// order, index-only for the reaction rows; ≤ lim lookups of users). The cursor is coalesced to
+// the nil uuid so a generic plan keeps it in the index condition (see ListMessagesBefore).
 func (q *Queries) ListReactionUsers(ctx context.Context, arg ListReactionUsersParams) ([]ListReactionUsersRow, error) {
 	rows, err := q.db.Query(ctx, listReactionUsers,
 		arg.MessageID,
@@ -727,6 +806,11 @@ func (q *Queries) ListReactionUsers(ctx context.Context, arg ListReactionUsersPa
 			&i.User.WorkStartMin,
 			&i.User.WorkEndMin,
 			&i.User.WorkDays,
+			&i.User.HideMessageTextInNotifications,
+			&i.User.Username,
+			&i.User.Phone,
+			&i.User.TaskNotifyOff,
+			&i.User.TaskNotifyBots,
 		); err != nil {
 			return nil, err
 		}
@@ -1003,76 +1087,6 @@ func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const searchMessages = `-- name: SearchMessages :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages
-WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
-  AND (to_tsvector('russian', content) || to_tsvector('simple', content))
-      @@ (websearch_to_tsquery('russian', $2::text) || websearch_to_tsquery('simple', $2::text))
-  AND ($3::uuid IS NULL OR id < $3::uuid)
-  AND ($4::uuid IS NULL OR author_id = $4::uuid)
-  AND ($5::uuid IS NULL OR id > $5::uuid)
-ORDER BY id DESC
-LIMIT $6
-`
-
-type SearchMessagesParams struct {
-	RoomIds  []uuid.UUID
-	Q        string
-	Before   *uuid.UUID
-	AuthorID *uuid.UUID
-	Since    *uuid.UUID
-	Lim      int32
-}
-
-// Full-text search, newest first. The tsvector expression must match messages_search_idx.
-func (q *Queries) SearchMessages(ctx context.Context, arg SearchMessagesParams) ([]Message, error) {
-	rows, err := q.db.Query(ctx, searchMessages,
-		arg.RoomIds,
-		arg.Q,
-		arg.Before,
-		arg.AuthorID,
-		arg.Since,
-		arg.Lim,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Message{}
-	for rows.Next() {
-		var i Message
-		if err := rows.Scan(
-			&i.ID,
-			&i.RoomID,
-			&i.AuthorID,
-			&i.Content,
-			&i.ReplyToID,
-			&i.Nonce,
-			&i.CreatedAt,
-			&i.EditedAt,
-			&i.DeletedAt,
-			&i.PinnedAt,
-			&i.PinnedBy,
-			&i.EmbedsHidden,
-			&i.Kind,
-			&i.Payload,
-			&i.StickerID,
-			&i.ForwardedFrom,
-			&i.ForwardAuthorID,
-			&i.ForwardSentAt,
-			&i.InlineKeyboard,
-			&i.KeyboardRevision,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const setEmbedsHidden = `-- name: SetEmbedsHidden :one

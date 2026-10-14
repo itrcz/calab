@@ -138,7 +138,13 @@ func (s *Service) checkSession(ctx context.Context, sid uuid.UUID) error {
 	liveSessions.put(sess, now)
 	if now.Sub(sess.LastSeenAt) > touchEvery {
 		// «Настройки → Сеансы» shows the last activity; refreshes alone are a day apart now.
-		if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.TouchSession(ctx, sid) }); err != nil {
+		// The same activity keeps the user's guest memberships alive (ADR-0098).
+		if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			if err := guarded.TouchSession(ctx, sid); err != nil {
+				return err
+			}
+			return guarded.TouchGuestMemberships(ctx, sess.UserID)
+		}); err != nil {
 			slog.WarnContext(ctx, "session touch failed", "session_id", sid, "err", err)
 		}
 	}

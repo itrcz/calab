@@ -1,0 +1,18 @@
+{
+  "action": "opened",
+  "number": 3,
+  "pull_request": {
+    "id": 9,
+    "number": 3,
+    "user": {"id": 1, "login": "alice", "username": "alice"},
+    "title": "Fix FNG-21",
+    "body": "",
+    "state": "open",
+    "html_url": "https://gitea.example.com/team/site/pulls/3",
+    "merged": false,
+    "head": {"ref": "fix-21"},
+    "base": {"ref": "main"}
+  },
+  "repository": {"id": 2, "full_name": "team/site", "html_url": "https://gitea.example.com/team/site"},
+  "sender": {"login": "alice"}
+}

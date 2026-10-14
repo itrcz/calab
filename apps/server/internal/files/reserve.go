@@ -24,7 +24,7 @@ func (s *Service) ReserveWorkspace(ctx context.Context, q *sqlc.Queries, wsID uu
 	if err != nil {
 		return err
 	}
-	quota, planQuota, err := s.quota(ctx, ws)
+	quota, planQuota, err := s.quota(ctx, q, ws)
 	if err != nil {
 		return err
 	}

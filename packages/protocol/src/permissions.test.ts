@@ -3,6 +3,10 @@ import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 import { WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, RoomPermissionOverrideSchema } from './gen/calaba/v1/room_pb.js';
+import { TaskApproverSchema, TaskAssigneeSchema } from './gen/calaba/v1/boards_pb.js';
+import { DiskPermissionEntrySchema } from './gen/calaba/v1/disk_pb.js';
+import { WikiPermissionEntrySchema } from './gen/calaba/v1/wiki_pb.js';
+import { TimestampSchema } from '@bufbuild/protobuf/wkt';
 import {
   ALL_PERMISSIONS,
   PERMISSION_BITS,
@@ -11,10 +15,30 @@ import {
   BOARD_ONLY_PERMISSIONS,
   ROLES_V2_PERMISSIONS,
   WORKSPACE_ONLY_PERMISSIONS,
+  taskPermissions,
   taskRoomPermissions,
   computeMemberBoardPermissions,
   computeMemberRoomPermissions,
   computePermissions,
+  billingPermissions,
+  planInactivePermissions,
+  BILLING_BITS,
+  BILLING_PERMISSIONS,
+  DISK_BITS,
+  DISK_PERMISSIONS,
+  DISK_OVERRIDE_PERMISSIONS,
+  diskItemPermissions,
+  diskLevel,
+  diskPermissions,
+  treeItemPermissions,
+  treeLevel,
+  WIKI_BITS,
+  WIKI_PERMISSIONS,
+  WIKI_OVERRIDE_PERMISSIONS,
+  wikiPagePermissions,
+  wikiPermissions,
+  wikiStructureAllowed,
+  tempRoomScope,
   computeRoomPermissions,
   memberRoles,
   workspacePermissions,
@@ -35,11 +59,33 @@ interface Vector {
   // ADR-0029: a restricted room and whether the member is the workspace owner.
   restricted?: boolean;
   owner?: boolean;
+  // ADR-0078: a private temporary room and whether the member created it.
+  privateTemp?: boolean;
+  creator?: boolean;
   // ADR-0042: a board vector.
   board?: { private: boolean; guest?: boolean; restricted?: boolean; owner?: boolean };
   // ADR-0042 / ADR-0058 §3: a task room vector (taskRoomPermissions from the board bits).
   taskRoom?: { board: number; archived: boolean; commentsOff: boolean };
+  // ADR-0087: a billing vector (billingPermissions over the roles).
+  billing?: { owner: boolean; guest: boolean };
+  // ADR-0086 amendment: a restricted-mode vector (planInactivePermissions over computed bits).
+  planInactive?: { bits: number };
+  // ADR-0094: a disk item vector (diskItemPermissions over the chain, root's child first).
+  disk?: TreeVector;
+  // ADR-0096: a wiki page vector (wikiPagePermissions over the chain, the top-level page first;
+  // structure: wikiStructureAllowed for the owner flag of the last level).
+  wiki?: TreeVector & { structure: boolean };
   expected: number;
+}
+
+interface TreeVector {
+  guest?: boolean;
+  chain: {
+    restricted?: boolean;
+    owner?: boolean;
+    roleOverrides?: Record<string, { allow: number; deny: number }>;
+    userOverride?: { allow: number; deny: number };
+  }[];
 }
 
 const roles = {
@@ -67,6 +113,65 @@ const toRoles = (rs: NonNullable<Vector['roles']>) =>
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
+      const tree = v.disk ?? v.wiki;
+      if (tree) {
+        const bits = v.disk ? DISK_BITS : WIKI_BITS;
+        const compute = v.disk ? diskItemPermissions : wikiPagePermissions;
+        const roles = toRoles(v.roles ?? []);
+        const opts = { guest: tree.guest ?? false };
+        const chain = tree.chain.map((c) => ({
+          restricted: c.restricted,
+          owner: c.owner,
+          roleOverrides: Object.fromEntries(
+            Object.entries(c.roleOverrides ?? {}).map(([id, o]) => [id, toOv(o) as OverrideBits]),
+          ),
+          userOverride: toOv(c.userOverride),
+        }));
+        const got = compute(roles, chain, opts);
+        expect(got).toBe(BigInt(v.expected));
+        expect(treeItemPermissions(bits, roles, chain, opts)).toBe(BigInt(v.expected));
+        // The stored form: entries of Disk/WikiPermissionsResponse and the node's owner.
+        const stored = tree.chain.map((c) =>
+          (v.disk ? diskLevel : treeLevel)(
+            { restricted: c.restricted ?? false, ownerId: c.owner ? 'u1' : 'u2' },
+            [
+              ...Object.entries(c.roleOverrides ?? {}).map(([id, o]) =>
+                create(v.disk ? DiskPermissionEntrySchema : WikiPermissionEntrySchema, {
+                  targetType: PermissionTargetType.ROLE,
+                  targetId: id,
+                  allow: BigInt(o.allow),
+                  deny: BigInt(o.deny),
+                }),
+              ),
+              ...(c.userOverride
+                ? [
+                    create(v.disk ? DiskPermissionEntrySchema : WikiPermissionEntrySchema, {
+                      targetType: PermissionTargetType.USER,
+                      targetId: 'u1',
+                      allow: BigInt(c.userOverride.allow),
+                      deny: BigInt(c.userOverride.deny),
+                    }),
+                  ]
+                : []),
+            ],
+            'u1',
+          ),
+        );
+        expect(compute(roles, stored, opts)).toBe(BigInt(v.expected));
+        if (v.wiki) {
+          const owner = v.wiki.chain.at(-1)?.owner ?? false;
+          expect(wikiStructureAllowed(got, owner)).toBe(v.wiki.structure);
+        }
+        return;
+      }
+      if (v.planInactive) {
+        expect(planInactivePermissions(BigInt(v.planInactive.bits))).toBe(BigInt(v.expected));
+        return;
+      }
+      if (v.billing) {
+        expect(billingPermissions(toRoles(v.roles ?? []), v.billing)).toBe(BigInt(v.expected));
+        return;
+      }
       if (v.taskRoom) {
         expect(taskRoomPermissions(BigInt(v.taskRoom.board), v.taskRoom.archived, v.taskRoom.commentsOff)).toBe(
           BigInt(v.expected),
@@ -131,6 +236,8 @@ describe('computePermissions (shared vectors)', () => {
             userOverride: toOv(v.userOverride),
             restricted: v.restricted,
             owner: v.owner,
+            privateTemp: v.privateTemp,
+            creator: v.creator,
           }),
         ).toBe(BigInt(v.expected));
         // The same through Room.permissionOverrides.
@@ -154,14 +261,16 @@ describe('computePermissions (shared vectors)', () => {
               ]
             : []),
         ];
-        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false)).toBe(
+        // A temporary room: private per the vector, created by u1 (the member) or someone else.
+        const temp = v.privateTemp !== undefined ? { private: v.privateTemp, createdBy: v.creator ? 'u1' : 'u2' } : undefined;
+        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false, temp)).toBe(
           BigInt(v.expected),
         );
         // The owner is recognized by the built-in owner role as well.
         const withBuiltin = roles.map((r) =>
           r.id === 'owner' && v.owner ? { ...r, builtin: WorkspaceRole.OWNER } : r,
         );
-        expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted)).toBe(BigInt(v.expected));
+        expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted, undefined, temp)).toBe(BigInt(v.expected));
         if (v.expectedWorkspace !== undefined) expect(workspacePermissions(roles)).toBe(BigInt(v.expectedWorkspace));
         return;
       }
@@ -244,5 +353,117 @@ describe('roles (ADR-0026)', () => {
     expect(taskRoomPermissions(VIEW_BOARD, true)).toBe(VIEW_ROOM);
     expect(taskRoomPermissions(VIEW_BOARD | EDIT_TASKS, false, true)).toBe(VIEW_ROOM | MANAGE_MESSAGES);
     expect(vectors.filter((v) => v.taskRoom).length).toBeGreaterThanOrEqual(8);
+  });
+  // ADR-0059 §2, ADR-0076 §3: the shared case table of perm.TestTaskBits in Go.
+  it('task bits for task-scoped boards (ADR-0059, ADR-0076)', () => {
+    const me = 'u1';
+    const task = (assignee: boolean, approver: boolean, watcher: boolean, archived = false) => ({
+      assignees: assignee ? [create(TaskAssigneeSchema, { userId: me })] : [create(TaskAssigneeSchema, { userId: 'u2' })],
+      approvers: approver ? [create(TaskApproverSchema, { userId: me })] : [],
+      watcherIds: watcher ? ['u3', me] : ['u3'],
+      archivedAt: archived ? create(TimestampSchema, { seconds: 1n }) : undefined,
+    });
+    const table = JSON.parse(readFileSync(new URL('../../../proto/testdata/task_bits.json', import.meta.url), 'utf8')) as {
+      cases: { name: string; bits: number; scoped: boolean; assignee: boolean; approver: boolean; watcher: boolean; want: number }[];
+    };
+    expect(table.cases.length).toBeGreaterThanOrEqual(10);
+    for (const c of table.cases) {
+      const board = { permissions: BigInt(c.bits), taskScoped: c.scoped };
+      expect(taskPermissions(board, task(c.assignee, c.approver, c.watcher), me), c.name).toBe(BigInt(c.want));
+    }
+    // An archived task: the invitation no longer counts (the server passes live flags only).
+    expect(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, true, true, true), me)).toBe(0n);
+    expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(true, false, false), me))).toBe(
+      PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES,
+    );
+    // A watcher comments and reads, never moderates.
+    expect(taskRoomPermissions(taskPermissions({ permissions: 0n, taskScoped: true }, task(false, false, true), me))).toBe(
+      PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES,
+    );
+  });
+  // ADR-0078: the room's flags from a Room; a guest is never the creator (Go: perm.ScopeOf).
+  it('private temporary rooms (ADR-0078)', () => {
+    const expiresAt = create(TimestampSchema, { seconds: 1n });
+    expect(tempRoomScope({ isPrivate: true, expiresAt, createdBy: 'u1' })).toEqual({ private: true, createdBy: 'u1' });
+    expect(tempRoomScope({ isPrivate: true, expiresAt: undefined, createdBy: 'u1' })).toBeUndefined();
+    const guest = [{ id: 'g', position: 0, permissions: ROLE_DEFAULTS[WorkspaceRole.GUEST], builtin: WorkspaceRole.GUEST }];
+    const member = [{ id: 'm', position: 1, permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER], builtin: WorkspaceRole.MEMBER }];
+    const temp = { private: true, createdBy: 'u1' };
+    expect(computeMemberRoomPermissions(guest, 'u1', [], false, false, temp)).toBe(0n);
+    expect(computeMemberRoomPermissions(member, 'u1', [], false, false, temp)).toBe(ROLE_DEFAULTS[WorkspaceRole.MEMBER]);
+    expect(computeMemberRoomPermissions(member, 'u2', [], false, false, temp)).toBe(0n);
+    // The owner's built-in role gives nothing; a public temporary room keeps the bypass.
+    const owner = [{ id: 'o', position: 1001, permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.OWNER }];
+    expect(computeMemberRoomPermissions(owner, 'u2', [], true, undefined, temp)).toBe(0n);
+    expect(computeMemberRoomPermissions(owner, 'u2', [], false, undefined, { private: false, createdBy: 'u1' })).toBe(ALL_PERMISSIONS);
+  });
+});
+
+describe('billing bits (ADR-0087)', () => {
+  it('stand apart from ALL_PERMISSIONS, overrides and the defaults', () => {
+    expect(ALL_PERMISSIONS & BILLING_PERMISSIONS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & BILLING_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & BILLING_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & BILLING_PERMISSIONS).toBe(0n);
+    expect(BILLING_PERMISSIONS).toBe(0x7n << 32n);
+  });
+  it('the owner role gives all three, a guest-only member none', () => {
+    expect(billingPermissions([{ permissions: 1024n, builtin: WorkspaceRole.OWNER }])).toBe(BILLING_PERMISSIONS);
+    expect(billingPermissions([{ permissions: BILLING_BITS.MANAGE, builtin: WorkspaceRole.GUEST }])).toBe(0n);
+    expect(billingPermissions([{ permissions: 1024n, builtin: WorkspaceRole.ADMIN }])).toBe(0n);
+  });
+});
+
+describe('disk bits (ADR-0094)', () => {
+  it('stand outside ALL_PERMISSIONS and the overrides of rooms and boards; VIEW | WRITE by default', () => {
+    expect(DISK_PERMISSIONS).toBe(0x7n << 35n);
+    expect(ALL_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(BILLING_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & DISK_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & DISK_PERMISSIONS).toBe(DISK_OVERRIDE_PERMISSIONS);
+    expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & DISK_PERMISSIONS).toBe(0n);
+    expect(vectors.filter((v) => v.disk).length).toBeGreaterThanOrEqual(25);
+  });
+  it('ADMINISTRATOR includes them, guests never, bots like members (addendum 2026-10-14)', () => {
+    expect(diskPermissions([{ permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.ADMIN }])).toBe(
+      DISK_PERMISSIONS,
+    );
+    expect(diskPermissions([{ permissions: DISK_BITS.MANAGE }])).toBe(DISK_PERMISSIONS);
+    expect(diskPermissions([{ permissions: DISK_PERMISSIONS, builtin: WorkspaceRole.GUEST }])).toBe(0n);
+    expect(diskPermissions([{ permissions: DISK_OVERRIDE_PERMISSIONS, builtin: WorkspaceRole.MEMBER }])).toBe(DISK_OVERRIDE_PERMISSIONS);
+    expect(diskPermissions([{ permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER], builtin: WorkspaceRole.MEMBER }])).toBe(
+      DISK_OVERRIDE_PERMISSIONS,
+    );
+  });
+});
+
+describe('wiki bits (ADR-0096)', () => {
+  it('stand apart like the disk bits; VIEW | WRITE by default', () => {
+    expect(WIKI_PERMISSIONS).toBe(0x7n << 38n);
+    expect(ALL_PERMISSIONS & WIKI_PERMISSIONS).toBe(0n);
+    expect((BILLING_PERMISSIONS | DISK_PERMISSIONS) & WIKI_PERMISSIONS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & WIKI_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & WIKI_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & WIKI_PERMISSIONS).toBe(WIKI_OVERRIDE_PERMISSIONS);
+    expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & WIKI_PERMISSIONS).toBe(0n);
+    expect(vectors.filter((v) => v.wiki).length).toBeGreaterThanOrEqual(20);
+  });
+  it('ADMINISTRATOR includes them, guests never, bots like members, disk bits give none', () => {
+    expect(wikiPermissions([{ permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.ADMIN }])).toBe(
+      WIKI_PERMISSIONS,
+    );
+    expect(wikiPermissions([{ permissions: WIKI_BITS.MANAGE }])).toBe(WIKI_PERMISSIONS);
+    expect(wikiPermissions([{ permissions: DISK_PERMISSIONS }])).toBe(0n);
+    expect(wikiPermissions([{ permissions: WIKI_PERMISSIONS, builtin: WorkspaceRole.GUEST }])).toBe(0n);
+    expect(wikiPermissions([{ permissions: WIKI_OVERRIDE_PERMISSIONS, builtin: WorkspaceRole.MEMBER }])).toBe(WIKI_OVERRIDE_PERMISSIONS);
+  });
+  it('the structure needs the owner or MANAGE', () => {
+    const vw = WIKI_BITS.VIEW | WIKI_BITS.WRITE;
+    expect(wikiStructureAllowed(vw, false)).toBe(false);
+    expect(wikiStructureAllowed(vw, true)).toBe(true);
+    expect(wikiStructureAllowed(WIKI_PERMISSIONS, false)).toBe(true);
+    expect(wikiStructureAllowed(0n, true)).toBe(false);
+    expect(wikiStructureAllowed(DISK_PERMISSIONS, true)).toBe(false);
   });
 });

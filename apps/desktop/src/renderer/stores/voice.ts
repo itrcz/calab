@@ -1,7 +1,7 @@
 import type { ConcreteScreenSharePreset } from '@calaba/protocol';
 import { create } from 'zustand';
 import type { MediaErrorAction } from '../lib/media/errors';
-import type { CameraPhase } from '../lib/media/cameraLogic';
+import type { CameraFacing, CameraPhase } from '../lib/media/cameraLogic';
 import type { CandidatePairInfo, InboundVideoStats, OutboundVideoLayer } from '../lib/media/stats';
 
 /** `blocked`: the app's CSP refused the LiveKit host — retrying cannot help, an update can. */
@@ -111,14 +111,18 @@ export interface VoiceStore {
   camera: CameraPhase;
   /** The camera encoder was CPU-bound: capture dropped to 360p for this session. */
   cameraCpuLimited: boolean;
+  /** Phone camera side picked with «Переключить камеру» (null = the device's default, mirrored). Reset on leave. */
+  cameraFacing: CameraFacing | null;
   /** Remote webcams of my room, in publication order. */
   cameras: RemoteCamera[];
-  /** Active speaker for video: spoke ≥ 2 s continuously, stays until someone else does (lib/activeSpeaker.ts). */
+  /** Active speaker for video: spoke ≥ 800 ms continuously, held ≥ 1.5 s, stays until someone else does (lib/activeSpeaker.ts). */
   activeSpeaker: string | null;
   /** Tile the viewer clicked in the video grid (large until clicked again). */
   focusedTile: string | null;
   /** The camera PiP over the chat (closed with ×, back from «Ещё → Показать видео»). */
   videoPip: boolean;
+  /** The gallery page on screen, 0-based (ADR-0066 §1); back to page 1 on a pin and on leave. */
+  galleryPage: number;
   muted: boolean;
   deafened: boolean;
   /** The mic before deafen went on: undeafen returns to it (lib/voiceLogic toggleDeafen, #11). */
@@ -177,10 +181,12 @@ export const useVoice = create<VoiceStore>()((set) => ({
   canVideo: false,
   camera: 'off',
   cameraCpuLimited: false,
+  cameraFacing: null,
   cameras: [],
   activeSpeaker: null,
   focusedTile: null,
   videoPip: true,
+  galleryPage: 0,
   muted: false,
   deafened: false,
   mutedBeforeDeafen: false,

@@ -1,8 +1,8 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { ApproverState, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
+import { ApproverState, BoardFeature, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { approvalBadge, approvalControls, blockedStatusIds, clampRequired, mayMoveTo, quorumChoices, quorumOf, toggleApprover, MAX_APPROVERS } from './approvals';
+import { approvalBadge, approvalTagKey, parseApprovalTag, approvalsWouldReset, decidedApprovers, approvalControls, blockedStatusIds, clampRequired, mayMoveTo, quorumChoices, quorumOf, toggleApprover, MAX_APPROVERS } from './approvals';
 
 // ADR-0049 «Контракт для клиента»: the gate mirrors the server's checkApprovalGate.
 const st = (id: string, position: number, type = BoardStatusType.UNSTARTED) => create(BoardStatusSchema, { id, position, type });
@@ -90,5 +90,42 @@ describe('approvalControls (permission gating of the section)', () => {
   it('no vote without the board, nothing editable on an archived task', () => {
     expect(approvalControls(t(), true, false, 'me').vote).toBe(false);
     expect(approvalControls(t(undefined, true), true, true, 'me')).toMatchObject({ edit: false, vote: false });
+  });
+});
+
+describe('approvalsWouldReset', () => {
+  const voted = task(TaskApprovalState.PENDING, { approvers: [ap('a', ApproverState.APPROVED), ap('b', ApproverState.PENDING)] });
+  it('is true when a vote is decided and the feature is on', () => {
+    expect(approvalsWouldReset(voted, undefined)).toBe(true);
+    expect(approvalsWouldReset(voted, [BoardFeature.ESTIMATE])).toBe(true);
+    expect(approvalsWouldReset(task(TaskApprovalState.REJECTED, { approvers: [ap('a', ApproverState.REJECTED)] }), [])).toBe(true);
+    expect(decidedApprovers(voted).map((a) => a.userId)).toEqual(['a']);
+  });
+  it('is false with no decided vote or with the feature off', () => {
+    expect(approvalsWouldReset(task(TaskApprovalState.PENDING, { approvers: [ap('a', ApproverState.PENDING)] }), undefined)).toBe(false);
+    expect(approvalsWouldReset(task(TaskApprovalState.NONE), undefined)).toBe(false);
+    expect(approvalsWouldReset(voted, [BoardFeature.APPROVALS])).toBe(false);
+  });
+});
+
+describe('approvalTagKey (the card / row tag)', () => {
+  const three = (a: ApproverState, b: ApproverState, c: ApproverState) => [ap('a', a), ap('b', b), ap('c', c, c === ApproverState.REJECTED ? 'нет' : '')];
+  it('approved «✓ 3/3», pending «2/3», rejected «✕ 1/3», nothing without approvers', () => {
+    const A = ApproverState.APPROVED;
+    const P = ApproverState.PENDING;
+    const R = ApproverState.REJECTED;
+    expect(approvalTagKey(task(TaskApprovalState.APPROVED, { approvers: three(A, A, A) }))).toBe('approved:3:3');
+    expect(approvalTagKey(task(TaskApprovalState.PENDING, { approvers: three(A, A, P) }))).toBe('pending:2:3');
+    expect(approvalTagKey(task(TaskApprovalState.REJECTED, { approvers: three(A, P, R) }))).toBe('rejected:1:3');
+    expect(approvalTagKey(task(TaskApprovalState.NONE))).toBe('');
+    expect(approvalTagKey(undefined)).toBe('');
+  });
+  it('a quorum of 2 of 3: approved shows 2/2 even when all three approved', () => {
+    const A = ApproverState.APPROVED;
+    expect(approvalTagKey(task(TaskApprovalState.APPROVED, { approvers: three(A, A, A), approvalRequired: 2 }))).toBe('approved:2:2');
+  });
+  it('parses back', () => {
+    expect(parseApprovalTag('pending:2:3')).toEqual({ kind: 'pending', n: 2, m: 3 });
+    expect(parseApprovalTag('')).toBeNull();
   });
 });

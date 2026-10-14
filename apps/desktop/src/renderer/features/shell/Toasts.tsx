@@ -154,7 +154,7 @@ function ToastItem({ toast: x, paused }: { toast: Toast; paused: boolean }): Rea
           dismiss(x.id);
         }
       }}
-      className="mat-popover anim-in pointer-events-auto flex items-center gap-2.5 rounded-[var(--radius-control)] py-2.5 pl-4 pr-2.5 text-body text-fg"
+      className="mat-popover anim-in pointer-events-auto flex items-center gap-2.5 rounded-[20px] py-2.5 pl-4 pr-2.5 text-body text-fg"
     >
       <Icon className={cx('size-[18px] shrink-0', x.kind === 'error' ? 'text-danger' : x.kind === 'success' ? 'text-ok' : 'text-accent')} aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">

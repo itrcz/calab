@@ -1,0 +1,32 @@
+{
+  "Event": {
+    "Provider": "gitea",
+    "Repo": "team/site",
+    "RepoURL": "https://gitea.example.com/team/site",
+    "Author": "alice",
+    "Push": true,
+    "Branch": "main",
+    "BranchCreated": false,
+    "Commits": [
+      {
+        "SHA": "bffeb74224043ba2feb48d137756c8a9331c449a",
+        "Message": "FNG-21 done\n",
+        "URL": "https://gitea.example.com/team/site/commit/bffeb74224043ba2feb48d137756c8a9331c449a",
+        "Author": "alice"
+      }
+    ],
+    "PR": null
+  },
+  "Links": [
+    {
+      "Number": 21,
+      "Kind": "commit",
+      "Ref": "bffeb74224043ba2feb48d137756c8a9331c449a",
+      "Title": "FNG-21 done",
+      "URL": "https://gitea.example.com/team/site/commit/bffeb74224043ba2feb48d137756c8a9331c449a",
+      "State": "",
+      "Author": "alice",
+      "Event": "COMMIT_PUSHED"
+    }
+  ]
+}

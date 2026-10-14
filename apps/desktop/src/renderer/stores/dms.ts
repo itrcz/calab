@@ -1,4 +1,4 @@
-import { RoomType, type DmLastMessage, type DmSummary, type Message, type Room } from '@calaba/protocol';
+import { MessageKind, RoomType, type DmLastMessage, type DmSummary, type Message, type Room } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { create } from 'zustand';
 import { systemPreview } from '../lib/recording';
@@ -85,8 +85,9 @@ function summaryPreview(dm: DmSummary): DmPreview | null {
 /** A list preview from DmLastMessage (DMs and notes shelves, ADR-0039); null = no messages. */
 export function lastMessagePreview(m: DmLastMessage | undefined): DmPreview | null {
   if (!m?.id) return null;
-  // A sticker (ADR-0030) previews as «😀 Стикер» (its content is empty).
-  const content = m.stickerEmoji ? stickerPreview(m.stickerEmoji) : m.content;
+  // A sticker (ADR-0030) previews as «😀 Стикер» (its content is empty); a system card of a room
+  // (DmLastMessage.system, e.g. the room picture, ADR-0092) as its one line.
+  const content = m.stickerEmoji ? stickerPreview(m.stickerEmoji) : (m.system && systemPreview({ kind: MessageKind.SYSTEM, system: m.system })) || m.content;
   return { messageId: m.id, authorId: m.authorId, content, attachments: m.attachmentCount, at: ms(m.createdAt) };
 }
 

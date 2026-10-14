@@ -8,9 +8,11 @@ import (
 	"net/mail"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // TASKS_DUE_TZ is validated here; the distroless image has no zoneinfo
 
 	"github.com/caarlos0/env/v11"
 )
@@ -22,6 +24,20 @@ type RegistrationMode string
 const (
 	RegistrationOpen   RegistrationMode = "open"
 	RegistrationInvite RegistrationMode = "invite"
+)
+
+// EmailVerificationMode controls whether an unconfirmed email address blocks actions
+// (ADR-0065).
+type EmailVerificationMode string
+
+// Email verification modes (EMAIL_VERIFICATION).
+const (
+	// EmailVerificationRequired: creating workspaces, invitations, new DMs etc. need a
+	// confirmed address (403 EMAIL_NOT_VERIFIED, ADR-0023).
+	EmailVerificationRequired EmailVerificationMode = "required"
+	// EmailVerificationOptional: nothing is gated by the confirmation; the address stays
+	// unconfirmed and is still never trusted (email invitations, OAuth claims, superadmin).
+	EmailVerificationOptional EmailVerificationMode = "optional"
 )
 
 // Config is the full server configuration. See apps/server/README.md for the list.
@@ -42,7 +58,10 @@ type Config struct {
 	// CSRF / gateway Origin checks accept these plus PUBLIC_APP_URL and PUBLIC_APP_URL_ALT;
 	// PUBLIC_APP_URL stays the primary one (links).
 	PublicAppURLs []string `env:"PUBLIC_APP_URLS" envSeparator:","`
-	LogLevel      string   `env:"LOG_LEVEL" envDefault:"info"`
+	// Origins of the marketing landing (comma-separated): only GET /api/billing/public/offers
+	// answers them with CORS (ADR-0083). Empty: same-origin only.
+	PublicLandingURLs []string `env:"PUBLIC_LANDING_URLS" envSeparator:","`
+	LogLevel          string   `env:"LOG_LEVEL" envDefault:"info"`
 
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	RedisURL    string `env:"REDIS_URL,required"`
@@ -57,8 +76,14 @@ type Config struct {
 	// recheck, auth/sessioncheck.go). Self-hosted installs may tighten both.
 	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
 	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"8760h"`
+	// GuestInactivity: guests (guest accounts and registered users' guest memberships) are
+	// removed after this long without activity (ADR-0098). 0 in a Config built in code = 48h.
+	GuestInactivity time.Duration `env:"GUEST_INACTIVITY" envDefault:"48h"`
 
 	RegistrationMode RegistrationMode `env:"REGISTRATION_MODE" envDefault:"invite"`
+	// Whether an unconfirmed address blocks actions (ADR-0065). Without SMTP addresses count
+	// as confirmed in either mode.
+	EmailVerification EmailVerificationMode `env:"EMAIL_VERIFICATION" envDefault:"required"`
 
 	// Login/register rate limit per client IP (token bucket in Redis).
 	AuthRateBurst     int     `env:"AUTH_RATE_BURST" envDefault:"10"`
@@ -84,6 +109,17 @@ type Config struct {
 	LiveKitAPIKey          string `env:"LIVEKIT_API_KEY"`
 	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
 	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
+
+	// Native push is inert unless a complete transport is explicitly configured.
+	PushVoIPEnabled           bool   `env:"PUSH_VOIP_ENABLED"`
+	PushAPNSKeyFile           string `env:"PUSH_APNS_KEY_FILE"`
+	PushAPNSKeyID             string `env:"PUSH_APNS_KEY_ID"`
+	PushAPNSTeamID            string `env:"PUSH_APNS_TEAM_ID"`
+	PushAPNSAppID             string `env:"PUSH_APNS_APP_ID"`
+	PushAPNSEnvironment       string `env:"PUSH_APNS_ENVIRONMENT" envDefault:"production"`
+	PushFCMServiceAccountFile string `env:"PUSH_FCM_SERVICE_ACCOUNT_FILE"`
+	PushFCMProjectID          string `env:"PUSH_FCM_PROJECT_ID"`
+	PushFCMAppID              string `env:"PUSH_FCM_APP_ID"`
 
 	// Link previews: extra address ranges the unfurler may fetch from although they are not
 	// public. Only for dev machines whose VPN resolves names into a fake-IP range
@@ -147,7 +183,9 @@ type Config struct {
 	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
 	// TEMP_ROOM_RETENTION_DAYS (ADR-0044): archived temporary rooms are deleted with their
 	// history this many days after they closed.
-	TempRoomRetentionDays  int    `env:"TEMP_ROOM_RETENTION_DAYS" envDefault:"90"`
+	TempRoomRetentionDays int `env:"TEMP_ROOM_RETENTION_DAYS" envDefault:"90"`
+	// TasksDueTZ: the IANA zone whose 09:00 the due notices of tasks go out at (ADR-0089).
+	TasksDueTZ             string `env:"TASKS_DUE_TZ" envDefault:"Europe/Moscow"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
@@ -162,6 +200,9 @@ type Config struct {
 	// messages per minute. 0 = the default.
 	BotRatePerSec     int `env:"BOT_RATE_PER_SEC" envDefault:"30"`
 	BotMessagesPerMin int `env:"BOT_MESSAGES_PER_MIN" envDefault:"20"`
+
+	// Balance billing (ADR-0080 v5): BILLING_* and STRIPE_* (config/billing.go).
+	Billing Billing
 }
 
 // BotLimits returns the effective bot limits (defaults for 0).
@@ -213,8 +254,18 @@ func (c *Config) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("REGISTRATION_MODE must be open or invite, got %q", c.RegistrationMode))
 	}
+	switch c.EmailVerification {
+	case "": // a Config built in code: the default, required
+		c.EmailVerification = EmailVerificationRequired
+	case EmailVerificationRequired, EmailVerificationOptional:
+	default:
+		errs = append(errs, fmt.Errorf("EMAIL_VERIFICATION must be required or optional, got %q", c.EmailVerification))
+	}
 	if c.AccessTokenTTL < time.Minute || c.RefreshTokenTTL < c.AccessTokenTTL {
 		errs = append(errs, errors.New("ACCESS_TOKEN_TTL must be >= 1m and REFRESH_TOKEN_TTL >= ACCESS_TOKEN_TTL"))
+	}
+	if c.GuestInactivity < 0 || (c.GuestInactivity > 0 && c.GuestInactivity < time.Hour) {
+		errs = append(errs, errors.New("GUEST_INACTIVITY must be >= 1h"))
 	}
 	if c.AuthRateBurst < 1 || c.AuthRatePerMinute <= 0 {
 		errs = append(errs, errors.New("AUTH_RATE_BURST must be >= 1 and AUTH_RATE_PER_MINUTE > 0"))
@@ -222,6 +273,17 @@ func (c *Config) Validate() error {
 	lk := []string{c.LiveKitURL, c.LiveKitInternalURL, c.LiveKitAPIKey, c.LiveKitAPISecret}
 	if n := countSet(lk); n != 0 && n != len(lk) {
 		errs = append(errs, errors.New("LIVEKIT_URL, LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set together"))
+	}
+	apns := []string{c.PushAPNSKeyFile, c.PushAPNSKeyID, c.PushAPNSTeamID, c.PushAPNSAppID}
+	if n := countSet(apns); n != 0 && n != len(apns) {
+		errs = append(errs, errors.New("PUSH_APNS_KEY_FILE, PUSH_APNS_KEY_ID, PUSH_APNS_TEAM_ID and PUSH_APNS_APP_ID must be set together"))
+	}
+	if countSet(apns) > 0 && c.PushAPNSEnvironment != "production" && c.PushAPNSEnvironment != "development" {
+		errs = append(errs, errors.New("PUSH_APNS_ENVIRONMENT must be production or development"))
+	}
+	fcm := []string{c.PushFCMServiceAccountFile, c.PushFCMProjectID, c.PushFCMAppID}
+	if n := countSet(fcm); n != 0 && n != len(fcm) {
+		errs = append(errs, errors.New("PUSH_FCM_SERVICE_ACCOUNT_FILE, PUSH_FCM_PROJECT_ID and PUSH_FCM_APP_ID must be set together"))
 	}
 	if c.HeartbeatInterval < 5*time.Second || c.MaxDevicesPerUser < 1 {
 		errs = append(errs, errors.New("GATEWAY_HEARTBEAT_INTERVAL must be >= 5s and GATEWAY_MAX_SESSIONS_PER_USER >= 1"))
@@ -234,6 +296,11 @@ func (c *Config) Validate() error {
 	for _, u := range c.PublicAppURLs {
 		if strings.TrimSpace(u) != "" && Origin(u) == "" {
 			errs = append(errs, fmt.Errorf("PUBLIC_APP_URLS: %q is not an absolute http(s) URL", u))
+		}
+	}
+	for _, u := range c.PublicLandingURLs {
+		if strings.TrimSpace(u) != "" && Origin(u) == "" {
+			errs = append(errs, fmt.Errorf("PUBLIC_LANDING_URLS: %q is not an absolute http(s) URL", u))
 		}
 	}
 	switch c.StorageDriver {
@@ -297,6 +364,11 @@ func (c *Config) Validate() error {
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
 	}
+	if c.TasksDueTZ != "" {
+		if _, err := time.LoadLocation(c.TasksDueTZ); err != nil || c.TasksDueTZ == "Local" {
+			errs = append(errs, fmt.Errorf("TASKS_DUE_TZ must be an IANA zone name, got %q", c.TasksDueTZ))
+		}
+	}
 	if c.TempRoomRetentionDays < 1 || c.TempRoomRetentionDays > 3650 {
 		errs = append(errs, errors.New("TEMP_ROOM_RETENTION_DAYS must be 1..3650"))
 	}
@@ -306,6 +378,9 @@ func (c *Config) Validate() error {
 	// The recordings volume shared with the egress; with s3 recordings go to the files bucket.
 	if c.StorageDriver != "s3" && (c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/")) {
 		errs = append(errs, errors.New("RECORDINGS_PATH must be set and RECORDING_EGRESS_DIR an absolute path (STORAGE_DRIVER=fs)"))
+	}
+	if err := c.Billing.validate(); err != nil {
+		errs = append(errs, err)
 	}
 	if c.BotRatePerSec < 0 || c.BotRatePerSec > 10000 || c.BotMessagesPerMin < 0 || c.BotMessagesPerMin > 100000 {
 		errs = append(errs, errors.New("BOT_RATE_PER_SEC must be 0..10000 and BOT_MESSAGES_PER_MIN 0..100000 (0 = default)"))
@@ -345,6 +420,17 @@ func (c *Config) AllowedOrigins() []string {
 	for _, u := range append([]string{c.PublicAppURL, c.PublicAppURLAlt}, c.PublicAppURLs...) {
 		if o := Origin(u); o != "" && !seen[o] {
 			seen[o] = true
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// LandingOrigins returns the normalized origins of PUBLIC_LANDING_URLS.
+func (c *Config) LandingOrigins() []string {
+	var out []string
+	for _, u := range c.PublicLandingURLs {
+		if o := Origin(u); o != "" && !slices.Contains(out, o) {
 			out = append(out, o)
 		}
 	}

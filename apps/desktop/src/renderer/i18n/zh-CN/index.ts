@@ -4,6 +4,7 @@ import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
 import { zhNotes } from './notes';
+import { zhSearch } from './search';
 import { zhCall } from './call';
 import { zhEcho } from './echo';
 import { zhMusic } from './music';
@@ -12,20 +13,33 @@ import { zhMail } from './mail';
 import { zhRecording } from './recording';
 import { zhAnnot } from './annot';
 import { zhPeople } from './people';
+import { zhFormer } from './former';
 import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
+import { zhMailbox } from './mailbox';
+import { zhDisk } from './disk';
+import { zhWiki } from './wiki';
 import { zhBoards } from './boards';
 import { zhBoards2 } from './boards2';
+import { zhHistory } from './history';
+import { zhMilestones } from './milestones';
+import { zhTaskNotify } from './taskNotify';
+import { zhAutomations } from './automations';
 import { zhPlan } from './plan';
+import { zhBilling } from './billing';
+import { zhTransitions } from './transitions';
+import { zhCustomPlan } from './customPlan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 import { zhStickers } from './stickers';
+import { zhAchievements } from './achievements';
 import { zhSounds } from './sounds';
 import { zhBots } from './bots';
 import { zhGuests } from './guests';
 import { zhTemp } from './temp';
+import { zhContacts } from './contacts';
 import { zhSip } from './sip';
 import { zhWebApps } from './webapps';
 
@@ -38,19 +52,26 @@ export const zhCN: Dict = {
   ...zhApp,
   ...zhVideo,
   ...zhStickers,
+  ...zhAchievements,
   ...zhSounds,
   ...zhBots,
   ...zhGuests,
   ...zhTemp,
+  ...zhContacts,
   ...zhSip,
   ...zhWebApps,
   ...zhDm,
   ...zhNotes,
+  ...zhSearch,
   ...zhCall,
   ...zhEcho,
   ...zhMusic,
   ...zhMedia,
   ...zhPlan,
+  ...zhBilling,
+  ...zhTransitions,
+  ...zhCustomPlan,
+  ...zhFormer,
   ...zhModeration,
   ...zhMail,
   ...zhRecording,
@@ -58,8 +79,15 @@ export const zhCN: Dict = {
   ...zhPicker,
   ...zhRoles,
   ...zhCalendar,
+  ...zhMailbox,
+  ...zhDisk,
+  ...zhWiki,
   ...zhBoards,
   ...zhBoards2,
+  ...zhHistory,
+  ...zhMilestones,
+  ...zhTaskNotify,
+  ...zhAutomations,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',
@@ -159,6 +187,7 @@ export const zhCN: Dict = {
   'ws.leaveConfirm': '退出"{name}"？只能通过邀请再次加入。',
   'ws.tabGeneral': '常规',
   'ws.tabMedia': '语音与屏幕共享',
+  'ws.tabLibrary': '资料库',
   'ws.tabInvites': '邀请',
   'ws.tabDanger': '删除',
   'ws.icon': '更换图标',
@@ -234,6 +263,14 @@ export const zhCN: Dict = {
   'room.name': '名称',
   'room.topic': '主题',
   'room.private': '私密房间',
+  'room.picture': '图片',
+  'room.pictureHint': '在房间列表和标题栏中代替图标显示',
+  'room.pictureUpload': '上传图片',
+  'room.iconChanged': '{name} 更改了房间图片',
+  'room.iconRemoved': '{name} 移除了房间图片',
+  'room.iconPreview': '更改了房间图片',
+  'room.iconRemovedPreview': '移除了房间图片',
+  'room.iconOpen': '打开房间图片',
   'room.privateHint': '仅管理员和权限中被授权的成员可见',
   'room.accessCard': '访问权限',
   'room.whoSees': '谁可以看到',
@@ -248,6 +285,9 @@ export const zhCN: Dict = {
   'room.tabPerms': '权限',
   'room.mediaText': '"跟随工作区"表示使用工作区的设置。',
   'room.markRead': '标为已读',
+  'room.swipeRead': '已读',
+  'room.swipeMute': '静音',
+  'room.swipeUnmute': '取消静音',
   'room.delete': '删除房间',
   'room.deleteConfirm': '"{name}"中的消息和文件将被删除，此操作无法撤销。',
 
@@ -306,6 +346,7 @@ export const zhCN: Dict = {
   'perm.deny': '禁止',
   'perm.inherit': '跟随角色',
   'perm.addUser': '添加角色或成员…',
+  'perm.removeTarget': '从列表中移除：{name}',
   'perm.adminNote': '所有者和管理员始终拥有全部权限，不受房间设置限制。',
 
   // chat
@@ -329,6 +370,7 @@ export const zhCN: Dict = {
   'chat.deleteTitle': '删除消息',
   'chat.deleteText': '该消息将对所有人删除。',
   'chat.download': '下载',
+  'chat.downloadImage': '下载图片',
   'chat.downloaded': '"{name}"已保存到下载文件夹',
   'chat.noSend': '你没有权限在此房间发送消息。',
 
@@ -376,6 +418,19 @@ export const zhCN: Dict = {
     '大写锁定键为切换模式：按一次开启麦克风，再按一次关闭。若要改为按住模式，请允许"输入监控"权限，或开启"大写锁定键不改变大小写"。',
   'voice.pttToggleNote': '切换模式：按一次开启麦克风，再按一次关闭。',
   'voice.pttRelease': '松开延迟',
+  'autoMute.label': '我不说话时关闭麦克风',
+  'autoMute.menu': '不说话时关闭',
+  'autoMute.hint': '适合忘记关麦的人：停顿一段时间后自动静音，与静音按钮相同。仅限语音激活模式。',
+  'autoMute.off': '关闭',
+  'autoMute.s30': '30 秒',
+  'autoMute.m1': '1 分钟',
+  'autoMute.m5': '5 分钟',
+  'autoMute.m10': '10 分钟',
+  'autoMute.toast30': '麦克风已静音：你已 30 秒未说话',
+  'autoMute.toast60': '麦克风已静音：你已 1 分钟未说话',
+  'autoMute.toast300': '麦克风已静音：你已 5 分钟未说话',
+  'autoMute.toast600': '麦克风已静音：你已 10 分钟未说话',
+  'autoMute.unmute': '取消静音',
   'voice.pttReleaseHint': '松开按键后麦克风继续保持开启的时长。',
   'voice.pttReleaseToggle': '切换模式下不使用：再次按键时麦克风立即关闭。',
   'voice.pttLastKey': '最近按键：{key} {dir}（{source}；代码 {code}，原始 {raw}）',
@@ -448,6 +503,8 @@ export const zhCN: Dict = {
   'settings.general': '常规',
   'settings.logout': '退出登录',
   'settings.theme': '主题',
+  'settings.haptics': '触感反馈',
+  'settings.hapticsHint': '轻触、开关、滑动和长按时轻微振动',
   'theme.dark': '深色',
   'theme.light': '浅色',
   'theme.system': '跟随系统',
@@ -541,6 +598,7 @@ export const zhCN: Dict = {
   'onb.micDeniedWeb': '请在浏览器设置中允许该网站使用麦克风（地址栏左侧的图标）。',
   'onb.modeTitle': '如何开启麦克风',
   'onb.modeText': '语音激活模式：说话时自动开启麦克风。按键说话模式：按住按键时开启。',
+  'onb.modeTextPhone': '语音激活模式：说话时自动开启麦克风。按键说话模式：按住按钮时开启。',
   'onb.vadText': '灵敏度可在设置中微调。',
   'onb.inputNeeded': 'macOS：窗口外使用按键需要"输入监控"权限。',
   'onb.inputOk': '输入监控权限已授予',
@@ -578,6 +636,9 @@ export const zhCN: Dict = {
   'onb.doneText': '打开左侧的房间，或加入语音房间——你的麦克风已准备就绪。',
   'onb.doneNoWs': '为你的团队创建工作区，或通过邀请加入一个。',
   'onb.doneTextNoMic': '打开左侧的房间。你可以稍后在"设置 → 语音与设备"中测试麦克风。',
+  'onb.doneTextPhone': '打开房间列表，或加入语音房间——你的麦克风已准备就绪。',
+  'onb.doneTextNoMicPhone': '打开房间列表。你可以稍后在“设置 → 语音与设备”中测试麦克风。',
+  'onb.pttPhone': '通话中会出现一个按钮：按住它即可说话。',
   'onb.doneNoWsNoMic': '为你的团队创建工作区，或通过邀请加入一个。你可以稍后在设置中测试麦克风。',
   'onb.notifDenied': '系统设置中已阻止通知，你可以稍后在那里开启。',
   'onb.notifDeniedWeb':
@@ -729,4 +790,6 @@ export const zhCN: Dict = {
   'main.webAppOpenLink': '在浏览器中打开链接',
   'main.webAppCopyLink': '复制链接地址',
   'main.webAppOpenPage': '在浏览器中打开页面',
+  'main.checkoutTitle': '付款',
+  'main.checkoutCancel': '取消',
 };

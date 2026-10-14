@@ -4,15 +4,18 @@ package app_test
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/app"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rtc"
 	"github.com/calaba/calaba/server/internal/voice"
@@ -195,5 +198,103 @@ func TestIdentityRTCJoinAndLiveReplayRecheckAfterRevocation(t *testing.T) {
 	}
 	if err := a.RTC.IdentityAccess(context.Background(), ws, rid, uuid.MustParse(owner(t).id), f.scopedSession.ID); err == nil {
 		t.Fatal("SFU device/user mismatch admitted")
+	}
+}
+
+// The sweep checks a room's devices together, reading each kind of row once; every verdict
+// must be the one the single-device check (a room of one) gives.
+func TestIdentityRTCRoomCheckMatchesSingleChecks(t *testing.T) {
+	f := identitySetup(t, "optional")
+	ra, _ := identityVoiceRooms(t, f)
+	ctx := context.Background()
+	o := owner(t)
+	b := createBot(t, o, f.a.Id, "sweep") // enforced mode would require SSO from the owner
+	wsA, wsB, rid := uuid.MustParse(f.a.Id), uuid.MustParse(f.b.Id), uuid.MustParse(ra)
+	policy, err := testDB.Q.EnsureIdentityPolicy(ctx, wsA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = testDB.Q.SetIdentityPolicy(ctx, sqlc.SetIdentityPolicyParams{WorkspaceID: wsA, Mode: "enforced", AssuranceMaxAgeSeconds: 3600, ExpectedVersion: policy.Version}); err != nil {
+		t.Fatal(err)
+	}
+	f.prove(t, f.scopedSession.ID, time.Now()) // the assurance binds the policy version
+	botID := uuid.MustParse(b.id)
+	botAuth, err := testDB.Q.GetBotAuth(ctx, botID)
+	if err != nil || botAuth.TokenID == nil {
+		t.Fatalf("bot auth: %v", err)
+	}
+	var dm v1.CreateDmResponse
+	o.must(201, "POST", "/api/dms", &v1.CreateDmRequest{UserId: f.local.id}, &dm)
+	uid, oid := uuid.MustParse(f.local.id), uuid.MustParse(o.id)
+	people := []rtc.IdentityKey{
+		{User: uid, Session: f.scopedSession.ID},
+		{User: uid, Session: uuid.MustParse(f.local.session)},
+		{User: oid, Session: uuid.MustParse(o.session)},
+		{User: oid, Session: f.scopedSession.ID},
+		{User: botID, Session: *botAuth.TokenID},
+		{User: botID, Session: uuid.New()},
+		{User: uuid.New(), Session: uuid.New()},
+	}
+	a := app.New(app.Deps{Config: testCfg, DB: testDB, Redis: testRedis, LiveKit: lkRec, Events: events.Nop{}, Blob: testStore, Mail: testMail})
+	dmID := uuid.MustParse(dm.GetDm().GetRoom().GetId())
+	check := func(stage string, ws, room uuid.UUID, admitted string) {
+		t.Helper()
+		roomCheckMatchesSingle(t, a, stage, ws, room, people, admitted)
+	}
+	check("enforced", wsA, rid, "+---+--")
+	check("dm", dmID, dmID, "-++----")
+	check("workspace mismatch", wsB, rid, "-------")
+	if _, err = testDB.Q.RevokeWorkspaceAssurances(ctx, sqlc.RevokeWorkspaceAssurancesParams{WorkspaceID: wsA, SessionID: &f.scopedSession.ID}); err != nil {
+		t.Fatal(err)
+	}
+	check("revoked", wsA, rid, "----+--")
+}
+
+// The room statements (users, sessions, identity states, room access for a list) and the
+// single-device ones they mirror give the same verdicts, user overrides of a private room included.
+func TestIdentityRTCRoomCheckMatchesSingleChecksWithOverrides(t *testing.T) {
+	ctx := context.Background()
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	var cr v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+ws.Id+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_VOICE, Name: "v", IsPrivate: true}, &cr)
+	rid := uuid.MustParse(cr.GetRoom().GetId())
+	allowed, denied, plain := register(t, invite(t, o, ws.Id)), register(t, invite(t, o, ws.Id)), register(t, invite(t, o, ws.Id))
+	outsider := register(t, invite(t, o, createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).Id)) // a member elsewhere
+	if _, err := testDB.Pool.Exec(ctx, "INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny) VALUES ($1, 'user', $2, $3, 0), ($1, 'user', $4, $5, $6)",
+		rid, allowed.id, int64(perm.ViewRoom|perm.Connect), denied.id, int64(perm.ViewRoom), int64(perm.Connect)); err != nil {
+		t.Fatal(err)
+	}
+	key := func(u *user) rtc.IdentityKey {
+		return rtc.IdentityKey{User: uuid.MustParse(u.id), Session: uuid.MustParse(u.session)}
+	}
+	people := []rtc.IdentityKey{key(o), key(allowed), key(denied), key(plain), key(outsider)}
+	a := app.New(app.Deps{Config: testCfg, DB: testDB, Redis: testRedis, LiveKit: lkRec, Events: events.Nop{}, Blob: testStore, Mail: testMail})
+	roomCheckMatchesSingle(t, a, "overrides", uuid.MustParse(ws.Id), rid, people, "++---")
+}
+
+// roomCheckMatchesSingle: IdentityAccessRoom gives every device the verdict IdentityAccess gives
+// it alone, and admitted is the resulting pattern (+ admitted, - denied) in people order.
+func roomCheckMatchesSingle(t *testing.T, a *app.App, stage string, ws, room uuid.UUID, people []rtc.IdentityKey, admitted string) {
+	t.Helper()
+	ctx := context.Background()
+	got := a.RTC.IdentityAccessRoom(ctx, ws, room, people)
+	if len(got) != len(people) {
+		t.Fatalf("%s: %d verdicts for %d people", stage, len(got), len(people))
+	}
+	pattern := ""
+	for i, p := range people {
+		one := a.RTC.IdentityAccess(ctx, ws, room, p.User, p.Session)
+		if fmt.Sprint(got[i]) != fmt.Sprint(one) {
+			t.Fatalf("%s person %d: room check %v, single check %v", stage, i, got[i], one)
+		}
+		if one == nil {
+			pattern += "+"
+		} else {
+			pattern += "-"
+		}
+	}
+	if pattern != admitted {
+		t.Fatalf("%s: admitted %s, want %s", stage, pattern, admitted)
 	}
 }

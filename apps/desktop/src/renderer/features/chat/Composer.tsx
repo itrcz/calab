@@ -1,4 +1,4 @@
-import { RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/protocol';
+import { BillingState, RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
@@ -11,13 +11,14 @@ import { can } from '../../lib/permissions';
 import { systemPreview } from '../../lib/recording';
 import { autoFocusAllowed, useMobile } from '../../lib/mobile';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
-import { useMessages } from '../../stores/messages';
+import { messageById, useMessages } from '../../stores/messages';
 import { myUserId, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useDms } from '../../stores/dms';
 import { sendSticker } from '../../services/stickers';
 import type { StickerPlace } from '../../lib/stickers';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { useBillingState } from '../workspace/billing/BillingPaywall';
 import { EmojiPicker } from './EmojiPicker';
 import { StickerButton } from './stickers/StickerPicker';
 import { StickerSuggest, type StickerSuggestHandle } from './stickers/StickerSuggest';
@@ -43,6 +44,8 @@ import { loadDraft, saveDraft } from './drafts';
 const NO_MENTIONS: ReadonlyMap<string, string> = new Map();
 /** Field grows up to 6 lines (15 px text on a 20 px line — integer line boxes keep layout pixel-exact). */
 const MAX_FIELD_H = 6 * 20 + 16;
+/** Phone: the field is taller than this (one 44 px line + slack) → the multiline layout. */
+const MULTILINE_PX = 52;
 
 export function toOutgoing(f: File): OutgoingFile {
   const name = f.name || `image-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
@@ -73,6 +76,7 @@ export function Composer({
   const imageInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const mobile = useMobile();
+  const [multi, setMulti] = useState(false);
   const pendingCaret = useRef<number | null>(null);
   // docs/09 #149: a file staged from outside the field (drag-and-drop above all) leaves it
   // unfocused — Enter then does nothing until a click. `files` only grows on staging, never on
@@ -82,12 +86,14 @@ export function Composer({
   const setReply = useUi((s) => s.setReply);
   const editing = useUi((s) => s.editing);
   const setEditing = useUi((s) => s.setEditing);
-  const replyMsg = useMessages((s) => (replyTo ? s.rooms[room.id]?.items.find((c) => c.key === replyTo)?.msg : undefined));
-  const editMsg = useMessages((s) => (editing ? s.rooms[room.id]?.items.find((c) => c.key === editing)?.msg : undefined));
+  const replyMsg = useMessages((s) => (replyTo ? messageById(s, room.id, replyTo) : undefined));
+  const editMsg = useMessages((s) => (editing ? messageById(s, room.id, editing) : undefined));
   const me = useSession((s) => s.me?.user?.id ?? '');
   const canSend = can(perms, 'SEND_MESSAGES');
   // A suspended workspace is read-only (docs/09 #32): the server refuses, the field explains.
   const suspended = useWorkspaces((s) => !!workspaceId && !!s.byId[workspaceId]?.ws.suspension);
+  // «Тариф не активен» (ADR-0086 amendment): the server refuses writing; the field says why.
+  const planInactive = useBillingState(workspaceId) === BillingState.LAPSED;
   const canAttach = can(perms, 'ATTACH_FILES');
   // Edit mode uses the same field: the draft is kept aside and comes back afterwards
   // (derived during render when the edited message changes — no effect cascade).
@@ -241,9 +247,14 @@ export function Composer({
       el.setSelectionRange(pendingCaret.current, pendingCaret.current);
       pendingCaret.current = null;
     }
+    // Empty: exactly the one-line min-height — a native placeholder that wraps (a long room name)
+    // must not inflate the field; the visible placeholder is the one-line stand-in below.
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, MAX_FIELD_H)}px`;
-  }, [text]);
+    el.style.height = text === '' ? '0px' : `${Math.min(el.scrollHeight, MAX_FIELD_H)}px`;
+    // Phone: a second line moves the text to a row of its own above the buttons. Sticky until the
+    // field is empty again: at the full width the same text may fit one line, and that must not flip back.
+    if (mobile) setMulti((was) => (text === '' ? false : was || el.scrollHeight > MULTILINE_PX));
+  }, [text, mobile, multi]);
 
   const cancelEdit = (): void => setEditing(null);
 
@@ -407,6 +418,13 @@ export function Composer({
       </div>
     );
   }
+  if (planInactive) {
+    return (
+      <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-body text-muted" data-testid="composer-plan-inactive">
+        {t('billing.lapsed.composer')}
+      </div>
+    );
+  }
   if (!canSend) {
     return <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-body text-muted">{t('chat.noSend')}</div>;
   }
@@ -439,7 +457,7 @@ export function Composer({
   ) : null;
 
   return (
-    <div className="px-4 pb-3 pt-2 mobile:px-2 mobile:pb-2">
+    <div className="px-4 pb-3 pt-2 mobile:px-2 mobile:pb-2 mobile:pt-3">
       {bar}
       {files.length > 0 && !editMsg ? <AttachmentGrid files={files} setFiles={setFiles} /> : null}
       <div className="relative flex items-end gap-2">
@@ -454,7 +472,11 @@ export function Composer({
         <div
           data-focus-box
           className={cx(
-            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-focus',
+            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 mobile:rounded-[22px] shadow-[var(--shadow-card)] focus-within:border-focus',
+            // Phone: one grid, [attach | text | sticker emoji]; a second line puts the text on its own row above them.
+            'mobile:grid mobile:min-h-11 mobile:grid-cols-[auto_minmax(0,1fr)_auto] mobile:items-center mobile:px-0',
+            // Phone, two lines and more: a large radius that still reads as round (no corners).
+            multi && 'mobile:rounded-[26px]',
             voice.active && 'hidden',
           )}
         >
@@ -462,7 +484,7 @@ export function Composer({
             <Dropdown.Root modal={false}>
               <Tip label={t('chat.attach')}>
                 <Dropdown.Trigger asChild>
-                  <IconButton tip={false} label={t('chat.attach')} className="mb-1 rounded-full" disabled={files.length >= MAX_ATTACHMENTS}>
+                  <IconButton tip={false} label={t('chat.attach')} className={cx('mb-1 rounded-full mobile:mb-0 mobile:size-11', multi && 'mobile:row-start-2')} disabled={files.length >= MAX_ATTACHMENTS}>
                     <Paperclip className="size-5" />
                   </IconButton>
                 </Dropdown.Trigger>
@@ -485,7 +507,7 @@ export function Composer({
               </Dropdown.Portal>
             </Dropdown.Root>
           ) : (
-            <span className="w-2" />
+            <span className="w-2 mobile:hidden" />
           )}
           <input
             ref={fileInput}
@@ -522,11 +544,15 @@ export function Composer({
               e.target.value = '';
             }}
           />
+          {/* Desktop: a wrapper for the field and its placeholder (a span: the layout invariants look for the field's closest div); phone: `contents`, the grid places them. */}
+          <span className="relative flex min-w-0 flex-1 items-end mobile:contents">
           <textarea
             ref={ref}
             value={text}
             rows={1}
             maxLength={MAX_CONTENT}
+            // The visible placeholder is drawn below (a native one wraps and inflates the field); this one
+            // stays for assistive tech and tests, transparent.
             placeholder={placeholder}
             onChange={(e) => {
               setText(e.target.value);
@@ -554,15 +580,29 @@ export function Composer({
             onKeyDown={onKey}
             onPaste={onPaste}
             aria-label={placeholder}
-            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint"
+            className={cx(
+              'selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-transparent',
+              'mobile:min-h-11 mobile:py-3 mobile:row-start-1',
+              mobile && multi ? 'mobile:col-span-3 mobile:col-start-1 mobile:px-3 mobile:pb-1' : 'mobile:col-start-2',
+            )}
             style={{ maxHeight: MAX_FIELD_H }}
           />
-          {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
-          <EmojiPicker onPick={insert} label={t('chat.emoji')}>
-            <IconButton tip={false} label={t('chat.emoji')} className="mb-1 rounded-full">
-              <Smile className="size-5" />
-            </IconButton>
-          </EmojiPicker>
+          {!text ? (
+            // The placeholder of a textarea wraps (a long room name made it four lines): a one-line,
+            // ellipsised stand-in over the field (phone: in the same grid cell), transparent to touches.
+            <span aria-hidden className="pointer-events-none absolute inset-x-0 top-[9px] min-w-0 truncate px-1.5 text-list leading-5 text-faint mobile:static mobile:col-start-2 mobile:row-start-1">
+              {placeholder}
+            </span>
+          ) : null}
+          </span>
+          <div className={cx('contents mobile:col-start-3 mobile:flex mobile:items-center', multi ? 'mobile:row-start-2' : 'mobile:row-start-1')}>
+            {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
+            <EmojiPicker onPick={insert} label={t('chat.emoji')}>
+              <IconButton tip={false} label={t('chat.emoji')} className="mb-1 rounded-full mobile:mb-0 mobile:size-11">
+                <Smile className="size-5" />
+              </IconButton>
+            </EmojiPicker>
+          </div>
         </div>
         {showMic ? (
           voice.button
@@ -572,7 +612,7 @@ export function Composer({
               type="button"
               onClick={send}
               aria-label={editMsg ? t('common.save') : t('chat.send')}
-              className="anim-pop mb-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-accent-strong text-accent-fg shadow-[var(--shadow-card)] hover:brightness-110 active:brightness-95"
+              className="anim-pop mb-0.5 grid size-9 shrink-0 mobile:mb-0 mobile:size-11 place-items-center rounded-full bg-accent-strong text-accent-fg shadow-[var(--shadow-card)] hover:brightness-110 active:brightness-95"
             >
               {editMsg ? <Check className="size-5" strokeWidth={2.25} /> : <ArrowUp className="size-5" strokeWidth={2.25} />}
             </button>
@@ -596,7 +636,7 @@ function snippet(workspaceId: string, content: string, empty = ''): ReactNode {
 /** Reply / edit strip above the field (accent bar, title, snippet, ×). */
 function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: string; text: ReactNode; onClose: () => void }): ReactNode {
   return (
-    <div className="mb-2 flex items-center gap-3 pl-2">
+    <div className="mb-2 flex items-center gap-3 pl-2" data-testid="composer-context">
       <span className="text-accent-text">{icon}</span>
       <div className="min-w-0 flex-1 border-l-2 border-accent pl-2">
         <div className="truncate text-body font-semibold text-accent-text">{title}</div>

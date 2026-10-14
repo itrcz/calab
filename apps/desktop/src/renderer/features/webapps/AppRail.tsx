@@ -34,12 +34,17 @@ function useManageApps(wsId: string): boolean {
  * and a small «+» (24 px, muted) for MANAGE_INTEGRATIONS. Subscribes by workspace id, so switching
  * workspaces re-renders two columns, not the rail.
  */
-export function WorkspaceAppsColumn({ wsId }: { wsId: string }): ReactNode {
+export function WorkspaceAppsColumn({ wsId, lead }: { wsId: string; lead?: ReactNode }): ReactNode {
   const active = useUi((s) => s.activeWorkspaceId === wsId);
   const ids = useWorkspaceAppIds(wsId);
   const manage = useManageApps(wsId);
   if (!active || (!ids.length && !manage)) return null;
-  return <AppList wsId={wsId} ids={ids} manage={manage} />;
+  return (
+    <>
+      {lead}
+      <AppList wsId={wsId} ids={ids} manage={manage} />
+    </>
+  );
 }
 
 function AppList({ wsId, ids, manage }: { wsId: string; ids: string[]; manage: boolean }): ReactNode {
@@ -91,18 +96,22 @@ function AppList({ wsId, ids, manage }: { wsId: string; ids: string[]; manage: b
           <div aria-hidden className="pointer-events-none absolute left-1/2 z-10 h-0.5 w-8 -translate-x-1/2 rounded-full bg-accent" style={{ top: line - 1 }} data-testid="rail-apps-drop-line" />
         ) : null}
         {manage ? (
-          <Tip label={ids.length >= 20 ? t('wapp.limit') : t('wapp.add')} side="right">
-            <button
-              type="button"
-              aria-label={t('wapp.add')}
-              disabled={ids.length >= 20}
-              onClick={() => open({ kind: 'web-app', workspaceId: wsId })}
-              className="grid size-6 place-items-center rounded-[8px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg disabled:opacity-40"
-              data-testid="rail-app-add"
-            >
-              <Plus className="size-4" strokeWidth={2} />
-            </button>
-          </Tip>
+          // A list item itself (axe: a role=list holds only listitems).
+          // Same 40 px plate and 20 px icon as the section tabs (owner, 07.10), quiet.
+          <div role="listitem" className="flex">
+            <Tip label={ids.length >= 20 ? t('wapp.limit') : t('wapp.add')} side="right">
+              <button
+                type="button"
+                aria-label={t('wapp.add')}
+                disabled={ids.length >= 20}
+                onClick={() => open({ kind: 'web-app', workspaceId: wsId })}
+                className="grid size-10 place-items-center rounded-[10px] text-muted transition-[background-color,color] duration-[var(--motion-fast)] ease-out hover:bg-active hover:text-fg disabled:opacity-40"
+                data-testid="rail-app-add"
+              >
+                <Plus className="size-5" strokeWidth={1.75} aria-hidden />
+              </button>
+            </Tip>
+          </div>
         ) : null}
       </div>
       {createPortal(

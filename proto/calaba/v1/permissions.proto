@@ -76,7 +76,29 @@ enum Permission {
   // 1 << 31: delete recordings of any room the holder can see, the recording consent of rooms
   // (Room.allow_recording). Proto enums are int32: the value is bit 31 as a signed number
   // (0x80000000); read it as unsigned (TS: BigInt.asUintN(32, …)). Bits from 1 << 32 on cannot be
-  // enum values: they will be listed as constants in this comment block and in docs/04.
+  // enum values: they are listed as constants in this comment block and in docs/04.
+  // Billing bits (ADR-0087), workspace-level, outside ADMINISTRATOR (it does not include them),
+  // never in overrides, granted and assigned by the workspace owner only; the owner always has
+  // all three, guests and bots never (TS BILLING_BITS, Go perm.BillingView …):
+  // 1 << 32 BILLING_VIEW: the badge state and «Тариф»: balance, history, plan, receipts.
+  // 1 << 33 BILLING_TOPUP: manual top-up through a hosted payment page; implies VIEW.
+  // 1 << 34 BILLING_MANAGE: plan changes, one-click top-up, auto-topup, saved methods, payer,
+  // refund requests, the market before the first payment; implies VIEW and TOPUP.
+  // Disk bits (ADR-0094), workspace-level, in ADMINISTRATOR (unlike billing), never for guests
+  // and bots through roles (only an explicit per-item user allow); per-item overrides
+  // (disk_permissions) touch VIEW and WRITE only (TS DISK_BITS, Go perm.DiskView …):
+  // 1 << 35 DISK_VIEW: see the Disk and every item that is not restricted (member default).
+  // 1 << 36 DISK_WRITE: create folders, upload; rename, move, trash one's own items (member default).
+  // 1 << 37 DISK_MANAGE: any item, the trash retention, empty the whole trash, remove anyone's
+  // public link; implies VIEW and WRITE.
+  // Wiki bits (ADR-0096), the same rules as the disk bits (in ADMINISTRATOR, never for guests and
+  // bots through roles, per-page overrides in wiki_permissions touch VIEW and WRITE only; TS
+  // WIKI_BITS, Go perm.WikiView …):
+  // 1 << 38 WIKI_VIEW: see the Wiki and every page that is not restricted (member default).
+  // 1 << 39 WIKI_WRITE: create pages and subpages, edit the content of any page one can write
+  // (member default); rename, move, trash and share one's own pages.
+  // 1 << 40 WIKI_MANAGE: the structure of any page, the trash retention, empty the whole trash,
+  // anyone's public link; implies VIEW and WRITE.
   PERMISSION_MANAGE_RECORDINGS = -2147483648;
 }
 

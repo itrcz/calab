@@ -276,6 +276,7 @@ func TestTaskLifecycle(t *testing.T) {
 	if moved.GetCompletedAt() == nil || moved.GetCompletedBy() != bob.id {
 		t.Fatalf("completed: %v", moved)
 	}
+	ageActivity(t, t1.GetId()) // else the moves merge into nothing (back to todo, ADR-0081)
 	moved = patchTask(t, bob, t1.GetId(), &v1.UpdateTaskRequest{StatusId: &todo}, 200)
 	if moved.GetCompletedAt() != nil || moved.GetStartedAt() == nil {
 		t.Fatalf("reopened: %v", moved)

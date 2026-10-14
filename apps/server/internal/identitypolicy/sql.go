@@ -19,7 +19,7 @@ type SQLLoader struct {
 
 // NewSQLLoader copies trusted edition configuration and binds generated queries.
 func NewSQLLoader(q *sqlc.Queries, config EntitlementConfig) *SQLLoader {
-	copied := EntitlementConfig{Edition: config.Edition, EnterpriseWorkspaceIDs: map[uuid.UUID]bool{}}
+	copied := EntitlementConfig{Edition: config.Edition, EnterpriseWorkspaceIDs: map[uuid.UUID]bool{}, BillingEnforcement: config.BillingEnforcement}
 	for id, enabled := range config.EnterpriseWorkspaceIDs {
 		copied.EnterpriseWorkspaceIDs[id] = enabled
 	}
@@ -49,6 +49,42 @@ func (l *SQLLoader) LoadIdentityState(ctx context.Context, sessionID, userID, wo
 	}
 	return l.state(row), nil
 }
+
+// SessionKey is an exact session/user pair.
+type SessionKey struct{ SessionID, UserID uuid.UUID }
+
+// LoadIdentityStates is LoadIdentityState for several pairs of one workspace in one statement
+// and one snapshot, mapped the same way; a pair LoadIdentityState would report as
+// pgx.ErrNoRows is absent from the map.
+func (l *SQLLoader) LoadIdentityStates(ctx context.Context, workspaceID uuid.UUID, keys []SessionKey) (map[SessionKey]State, error) {
+	if l == nil || l.Q == nil {
+		return nil, errors.New("identity database is unavailable")
+	}
+	if len(keys) == 1 { // the single statement's plan is cached; the list one is planned on every call
+		state, err := l.LoadIdentityState(ctx, keys[0].SessionID, keys[0].UserID, workspaceID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return map[SessionKey]State{}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return map[SessionKey]State{keys[0]: state}, nil
+	}
+	arg := sqlc.GetIdentityGateStatesParams{WorkspaceID: workspaceID, SessionIds: make([]uuid.UUID, len(keys)), UserIds: make([]uuid.UUID, len(keys))}
+	for i, k := range keys {
+		arg.SessionIds[i], arg.UserIds[i] = k.SessionID, k.UserID
+	}
+	rows, err := l.Q.GetIdentityGateStates(ctx, arg)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[SessionKey]State, len(rows))
+	for _, row := range rows {
+		state := l.state(sqlc.GetIdentityGateStateRow(row)) // same columns: a column change in one query breaks this
+		out[SessionKey{SessionID: state.Principal.SessionID, UserID: state.Principal.UserID}] = state
+	}
+	return out, nil
+}
 func (l *SQLLoader) state(row sqlc.GetIdentityGateStateRow) State {
 	session := row.Session
 	s := State{
@@ -63,6 +99,7 @@ func (l *SQLLoader) state(row sqlc.GetIdentityGateStateRow) State {
 		Identity:      Identity{ID: row.IdentityID, ConnectionID: row.ConnectionID, Version: row.IdentityVersion, Active: row.IdentityActive},
 		Directory:     Directory{Required: row.DirectoryRequired, Active: row.DirectoryActive, Enabled: row.DirectoryEnabled, ValidUntil: row.DirectoryValidUntil},
 		RecoveryReady: row.RecoveryReady, ProductAdminGranted: row.ProductAdminGranted, Grants: map[Feature]Grant{},
+		BillingSuspended: row.BillingSuspended && l.Config.BillingEnforcement, BillingPayer: row.BillingPayer,
 	}
 	add := func(feature Feature, enabled *bool, source *string, expiry, revoked *time.Time, version int64) {
 		if enabled == nil || source == nil {

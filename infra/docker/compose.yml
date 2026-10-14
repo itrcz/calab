@@ -173,6 +173,8 @@ services:
       - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://${DOMAIN_ALT}}   # empty when no alias host
       # every browser origin of the web client (server: PUBLIC_APP_URLS, comma-separated); empty parts skipped
       - PUBLIC_APP_URLS=https://${APP_HOST:-${DOMAIN}}${DOMAIN_ALT:+,https://${DOMAIN_ALT}}${DOMAIN_LEGACY:+,https://${DOMAIN_LEGACY}}
+      # landing origin: may read GET /api/billing/public/offers cross-origin (no credentials); empty = none
+      - PUBLIC_LANDING_URLS=${LANDING_HOST:+https://${LANDING_HOST}}
       - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
       - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-}   # key/channel namespace for a shared Valkey (docs/06); empty = none
@@ -190,6 +192,7 @@ services:
       - IDENTITY_ENTERPRISE_WORKSPACE_IDS=${IDENTITY_ENTERPRISE_WORKSPACE_IDS:-}
       - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-24h}      # access JWT; revocation is instant regardless (docs/04 «Auth»)
       - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL:-8760h}  # session (sliding): 1 year without use ends it
+      - GUEST_INACTIVITY=${GUEST_INACTIVITY:-48h}  # guests leave after this long without activity (ADR-0098)
       # the rtc. host clients get; after a domain move keep the old one while older desktop builds are in use
       # (their CSP allows only the old family — docs/06 «Домены»)
       - LIVEKIT_URL=wss://${RTC_PUBLIC_HOST:-rtc.${DOMAIN}}
@@ -201,6 +204,7 @@ services:
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
       - STORAGE_MAX_TOTAL_BYTES=${STORAGE_MAX_TOTAL_BYTES:-53687091200}   # 50 GiB for all uploads (shared host disk)
       - REGISTRATION_MODE=${REGISTRATION_MODE:-invite}
+      - EMAIL_VERIFICATION=${EMAIL_VERIFICATION:-required}   # required | optional (ADR-0065)
       # mail (ADR-0023): values only in the stand's .env (never in the repo); empty = mail disabled
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-465}
@@ -224,6 +228,8 @@ services:
       # Bot API limits per bot (ADR-0031)
       - BOT_RATE_PER_SEC=${BOT_RATE_PER_SEC:-30}
       - BOT_MESSAGES_PER_MIN=${BOT_MESSAGES_PER_MIN:-20}
+      # due notices of tasks at 09:00 of this IANA zone (ADR-0089)
+      - TASKS_DUE_TZ=${TASKS_DUE_TZ:-Europe/Moscow}
     <<: *hardening                 # distroless nonroot (65532); writes only to /data/files, /data/recordings
     tmpfs: [/tmp]
     volumes:

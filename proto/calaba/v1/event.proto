@@ -301,8 +301,9 @@ message SuggestSlotsResponse {
 // chosen calendar.
 // PUT /api/me/caldav UpdateCalDavRequest → the account; 404 without one; 422 for a calendar
 // not in calendars.
-// PATCH /api/me/caldav SetCalDavShareRequest → the account; 404 without one; 422 for UNSPECIFIED
-// (ADR-0045 §2: what colleagues see of the imported events in free / busy).
+// PATCH /api/me/caldav SetCalDavShareRequest → the account; 404 without one; 422 when neither
+// share_level (ADR-0045 §2: what colleagues see of the imported events in free / busy) nor
+// remind (ADR-0045 amendment 3) is given.
 // DELETE /api/me/caldav → 204; the imported busy time is removed.
 // POST /api/me/caldav/sync → the account after an import now; 422 without a calendar or with
 // import off; once per minute.
@@ -325,6 +326,9 @@ message CalDavAccount {
   string last_error = 7; // of the last import or push; empty = fine
   repeated CalDavCalendar calendars = 8; // event calendars found at connection
   CalDavShareLevel share_level = 9; // what colleagues see (ADR-0045 §2); BUSY by default
+  // Remind of the imported events (ADR-0045 amendment 3) like of meetings: the user's
+  // event_reminders, EVENT_REMINDER with external_event; not all-day or declined ones. Default false.
+  bool remind = 10;
 }
 
 // What colleagues see of the imported events in free / busy (ADR-0045 §2, §4).
@@ -335,8 +339,10 @@ enum CalDavShareLevel {
   CAL_DAV_SHARE_LEVEL_DETAILS = 3; // the title and the attendees who are members of the workspace
 }
 
+// Changes what is given: share_level UNSPECIFIED and remind unset leave them as they are.
 message SetCalDavShareRequest {
   CalDavShareLevel share_level = 1;
+  optional bool remind = 2; // CalDavAccount.remind
 }
 
 message CalDavAccountResponse {
@@ -367,6 +373,9 @@ message ExternalAttendee {
   string email = 1; // lower case
   string name = 2;  // CN; may be empty
   string user_id = 3; // a member of the asked workspace with this confirmed address; else empty
+  // The attendee's answer as the calendar has it (PARTSTAT): ACCEPTED, DECLINED, TENTATIVE = MAYBE;
+  // NEEDS-ACTION, none or another value = PENDING.
+  AttendeeStatus status = 4;
 }
 
 message ExternalEvent {
@@ -378,11 +387,61 @@ message ExternalEvent {
   string location = 6; // ≤ 200 characters
   repeated ExternalAttendee attendees = 7; // ≤ 50
   string organizer = 8; // e-mail, lower case
-  string url = 9; // http(s) link of the event (URL, or the first https:// of its description)
+  // The conference link («Подключиться», ADR-0045 amendment 1): X-GOOGLE-CONFERENCE /
+  // X-MICROSOFT-SKYPETEAMSMEETINGURL, else URL (unless it is the provider's page of the event),
+  // else the first https:// of LOCATION, else of DESCRIPTION; empty = none.
+  string url = 9;
+  string href = 10; // the calendar object (absolute URL) — what DELETE names; empty until the next import
+  bool recurring = 11; // an occurrence of a series (DELETE offers THIS or SERIES)
+  // The provider's web page of the event («Открыть в календаре»), only when it is reliable
+  // (Yandex: its URL property; Nextcloud: the calendar app's link of the object); else empty.
+  string web_url = 12;
+  // My answer when I am an attendee and not the organizer (my addresses: my Calab e-mail and the
+  // CalDAV login when it is an address): «Принять / Отклонить / Может быть» are offered
+  // (POST /api/me/external-events/rsvp). UNSPECIFIED = not an attendee, or the organizer.
+  AttendeeStatus my_status = 13;
 }
 
 message ExternalEventsResponse {
   repeated ExternalEvent events = 1; // earliest first
+}
+
+// DELETE /api/me/external-events DeleteExternalEventRequest → 204 (ADR-0045 amendment 1): deletes
+// my imported event from my CalDAV calendar. SERIES (or an event without repeats) — a CalDAV
+// DELETE of the object with If-Match: its ETag; THIS of a series — a PUT of the object with an
+// added EXDATE (a changed occurrence is removed too), also with If-Match. The local rows go at
+// once; the next import confirms. 404 — no such event of mine (or no account); 409 CONFLICT — the
+// event changed in the calendar (the provider answered 412, or it was not imported with an href
+// yet): reload; 422 — the calendar is read-only (403 / 405 from the provider); 30 per minute.
+// People only: guests and bots → 403. The account's password never leaves the server.
+
+enum ExternalDeleteScope {
+  EXTERNAL_DELETE_SCOPE_UNSPECIFIED = 0;
+  EXTERNAL_DELETE_SCOPE_THIS = 1;   // only this occurrence (the whole event when it has no repeats)
+  EXTERNAL_DELETE_SCOPE_SERIES = 2; // the whole series
+}
+
+message DeleteExternalEventRequest {
+  string uid = 1; // ExternalEvent.uid
+  string href = 2; // ExternalEvent.href
+  google.protobuf.Timestamp start = 3; // ExternalEvent.starts_at of the occurrence
+  ExternalDeleteScope scope = 4;
+}
+
+// POST /api/me/external-events/rsvp RespondExternalEventRequest → 204 (ADR-0045 amendment 2): my
+// answer to an imported event, written into my CalDAV calendar — the object read again (it must
+// still be the imported version), PARTSTAT of my ATTENDEE set in every VEVENT of the uid (the whole
+// series, like Calab's own answers), a PUT with If-Match. The provider mails the reply to the
+// organizer (RFC 6638 implicit scheduling). The server imports again at once, so the next GET has
+// the new answer. 404 — no such event of mine (or no account); 409 CONFLICT — the event changed in
+// the calendar (EVENT_CHANGED): reload; 422 — status not ACCEPTED / DECLINED / MAYBE, I am not an
+// attendee (reason NOT_AN_ATTENDEE) or the calendar is read-only (CALENDAR_READ_ONLY); shares the
+// 30 per minute of the delete. People only: guests and bots → 403.
+message RespondExternalEventRequest {
+  string uid = 1; // ExternalEvent.uid
+  string href = 2; // ExternalEvent.href
+  google.protobuf.Timestamp start = 3; // ExternalEvent.starts_at of the occurrence
+  AttendeeStatus status = 4; // ACCEPTED, DECLINED or MAYBE
 }
 
 // ---- gateway (docs/05) ----
@@ -414,10 +473,13 @@ message CalendarEventRsvp {
 
 // EVENT_REMINDER: to one attendee's devices (user channel), `minutes` before the occurrence
 // (one of the user's event_reminders). The client shows a system notification.
+// Either event (a Calab meeting) or external_event (an imported CalDAV event of the user,
+// ADR-0045 amendment 3) is set.
 message CalendarEventReminder {
   CalendarEvent event = 1; // the occurrence (occurrence_at set)
   google.protobuf.Timestamp occurrence_at = 2;
   uint32 minutes = 3;
+  ExternalEvent external_event = 4; // the occurrence as GET /api/me/external-events has it
 }
 
 // ROOM_EVENT_ACTIVE: 15 minutes before an occurrence with a room starts (and at once for one

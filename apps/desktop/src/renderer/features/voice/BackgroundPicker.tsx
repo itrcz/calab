@@ -1,7 +1,7 @@
 import { Loader2, Plus, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { MediaImg } from '../../components/MediaImg';
-import { Segmented, Tip, cx } from '../../components/ui';
+import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { BUILTIN_BACKGROUNDS, addCustomBackground, listCustomBackgrounds, prepareUpload, removeCustomBackground } from '../../lib/media/background/images';
 import { MAX_CUSTOM_BACKGROUNDS, SEG_FPS_OPTIONS, normalizeSegFps, type SegFpsOption, UPLOAD_TYPES, uploadProblem, workspaceImageId, type BackgroundKind, type CameraBackground } from '../../lib/media/background/logic';
@@ -14,6 +14,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useBackgroundList } from '../../stores/workspaces';
 import { backgroundBlocked, blockedText } from '../../services/cameraBackground';
+import { Choice } from '../../components/Choice';
 
 /** The user's pictures as thumbnail object URLs (revoked on change / unmount). */
 export function useCustomBackgrounds(): { list: { id: string; url: string }[]; reload: () => void } {
@@ -102,7 +103,7 @@ export function BackgroundPicker(): ReactNode {
         {t('video.bg.title')}
       </h3>
       <fieldset disabled={blocked !== null} aria-describedby={blocked ? 'camera-bg-blocked' : undefined} className={cx('m-0 min-w-0 border-0 p-0', blocked && 'opacity-50')} data-testid="camera-bg-choices">
-        <Segmented<BackgroundKind>
+        <Choice<BackgroundKind>
           label={t('video.bg.title')}
           value={kind}
           onChange={(k) => choose({ kind: k })}
@@ -183,7 +184,7 @@ export function BackgroundSmoothness({ hint = false }: { hint?: boolean }): Reac
     <div className={hint ? 'mt-3' : undefined} data-testid="camera-bg-fps">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {hint ? <span className="text-footnote text-muted">{t('video.bg.fps')}</span> : null}
-        <Segmented<string> label={t('video.bg.fps')} value={String(fps)} onChange={onChange} options={SEG_FPS_OPTIONS.map((o: SegFpsOption) => ({ value: String(o), label: String(o) }))} />
+        <Choice<string> label={t('video.bg.fps')} value={String(fps)} onChange={onChange} options={SEG_FPS_OPTIONS.map((o: SegFpsOption) => ({ value: String(o), label: String(o) }))} />
         <span className="text-caption text-muted">{t('video.bg.fpsUnit')}</span>
       </div>
       {hint ? <p className="mt-1.5 text-caption text-muted">{t('video.bg.fpsHint')}</p> : null}

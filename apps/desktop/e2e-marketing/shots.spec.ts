@@ -225,9 +225,9 @@ test('marketing mobile', async () => {
     await page.getByLabel('Пароль', { exact: true }).fill('password123');
     await page.getByRole('button', { name: 'Войти', exact: true }).tap();
     await expect(page.getByTestId('mobile-shell')).toBeVisible();
-    await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-    await page.getByTestId('mobile-nav').getByRole('button', { name: /^общий/ }).first().tap();
-    await expect(page.getByTestId('mobile-nav')).toHaveCount(0);
+    // ADR-0073: the app opens on the room list; the row opens the room.
+    await page.getByTestId('phone-room-list').getByRole('button', { name: /^общий/ }).first().tap();
+    await expect(page.getByTestId('phone-tabbar')).toHaveCount(0);
     await expect(page.locator('[data-message-id]').first()).toBeVisible();
     await page.waitForTimeout(1000);
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());

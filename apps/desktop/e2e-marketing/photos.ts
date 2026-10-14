@@ -30,3 +30,9 @@ export const cameraPhoto = (k: CameraPerson): Buffer => read(`${k}-camera.jpg`);
 
 /** A data: URL with the picture's real type (JPEG or PNG). */
 export const dataUrl = (b: Buffer): string => `data:${b[0] === 0xff && b[1] === 0xd8 ? 'image/jpeg' : 'image/png'};base64,${b.toString('base64')}`;
+
+/**
+ * The hero's screen share: the owner's screenshot (a node canvas in the browser, 14.10), cropped to
+ * the page content (no menu bar, toolbar, desktop, Dock) and resized to the stream's 1280×720, JPEG q86.
+ */
+export const heroStream = (): Buffer => read('hero-stream.jpg');

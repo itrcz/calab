@@ -21,6 +21,8 @@ export const esIdentity: DictShape<typeof ruIdentity> = {
   'identity.refresh': 'Actualizar',
   'identity.unavailable': 'El acceso corporativo no está disponible. Pide al propietario que revise la configuración.',
   'identity.locked': 'Espacio bloqueado',
+  'identity.lockedUnavailable': 'Espacio no disponible temporalmente',
+  'identity.checkUnavailable': 'El servidor no pudo comprobar el acceso a este espacio. Volverá automáticamente cuando se restablezca la conexión.',
   'identity.required': 'Este espacio requiere un nuevo acceso corporativo. Los demás espacios y mensajes directos siguen disponibles.',
   'identity.scope': 'Esta sesión se limita al espacio corporativo. Entra en tu cuenta local para funciones personales.',
   'identity.directoryDenied': 'El directorio no permite el acceso. Contacta al propietario.',

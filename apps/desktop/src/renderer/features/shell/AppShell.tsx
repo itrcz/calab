@@ -1,7 +1,7 @@
 import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceLock, LockedWorkspacePicker } from '../identity/WorkspaceLock';
 import { useIdentity } from '../../stores/identity';
-import { accessLocked, localAuthority } from '../identity/model';
+import { localAuthority, lockScreen } from '../identity/model';
 import { Compass, Plus } from 'lucide-react';
 import { MessagesSquare } from 'lucide-react';
 import { WorkspaceRole } from '@calaba/protocol';
@@ -15,6 +15,7 @@ import { installHotkeys } from '../../services/hotkeys';
 import { installEmail } from '../../services/email';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { BillingBanner, BillingPaywall, useBillingSuspended } from '../workspace/billing/BillingPaywall';
 import { UpdateBar } from './UpdateBar';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
@@ -36,17 +37,26 @@ import { DayView } from '../calendar/DayView';
 import { BoardsView } from '../boards/BoardsView';
 import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
+import { useDiskUi } from '../../stores/diskUi';
+import { DiskScreen } from '../disk/DiskScreen';
+import { useWikiUi } from '../../stores/wikiUi';
+import { WikiScreen } from '../wiki/WikiScreen';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
+import { WindowVibrancy } from './WindowVibrancy';
 import { Sidebar } from './Sidebar';
 import { ArchivedChat } from '../chat/ArchivedChat';
 import { useArchiveView } from '../../stores/archiveView';
 import { TitleBar } from './TitleBar';
-import { WorkspaceRail } from './WorkspaceRail';
+import { SectionRail } from './SectionRail';
 import { AppScreen } from '../webapps/AppScreen';
 import { installWebApps } from '../../services/webApps';
 import { useOpenApp } from '../../stores/webApps';
 import { StreamPopout } from '../voice/StreamArea';
+import { SearchResultsPanel } from '../search/SearchResultsPanel';
+import { useSearchPanel } from '../../stores/searchPanel';
+import { useMailUi } from '../../stores/mailUi';
+import { MAIL_ENABLED, MailScreenLazy, startMail } from '../mail/boot';
 
 export function AppShell(): ReactNode {
   return (
@@ -67,9 +77,11 @@ function ShellLayout(): ReactNode {
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
   const local = useSession((s) => localAuthority(s.authority));
-  const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
+  const locked = useIdentity((s) => !!wsId && lockScreen(s.access[wsId]));
   const home = wsId === HOME && local;
   const hasWs = useWorkspaces((s) => (wsId && !home ? !!s.byId[wsId] : false));
+  // Balance billing (ADR-0080 §8): a workspace closed for unpaid billing shows the paywall.
+  const billingClosed = useBillingSuspended(home ? null : wsId);
   const roomId = useActiveRoom(home ? null : wsId);
   const dmId = useActiveDm();
   // ≥ 1200 px: a column next to the chat; narrower: a floating panel over it (docs/08, Layout).
@@ -85,10 +97,20 @@ function ShellLayout(): ReactNode {
   // Boards mode (ADR-0042 §5): the column lists boards, the centre shows one; guests have none.
   const guestWs = useWorkspaces((s) => (wsId ? s.byId[wsId]?.role === WorkspaceRole.GUEST : false));
   const boards = useBoardsUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Диск» (ADR-0094 §8): one panel in place of the column and the centre; guests have none.
+  const disk = useDiskUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Вики» (ADR-0096 §9): the same, exclusive with the Disk; guests have none.
+  const wiki = useWikiUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
   // A web app of this workspace (ADR-0050 §3) replaces the room column and the chat.
   const appId = useOpenApp(home ? null : wsId);
+  // «Результаты поиска» (ADR-0062 §4): the right panel in place of the members list.
+  const searchOpen = useSearchPanel((s) => s.open);
+  const searchSeq = useSearchPanel((s) => s.seq);
+  // «Почта» (ADR-0088 §8): personal and local — it covers the column and the centre whatever the
+  // workspace, and does not wait for the Calab server (the mail engine is on this computer).
+  const mailOn = useMailUi((s) => s.active) && MAIL_ENABLED;
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -101,74 +123,49 @@ function ShellLayout(): ReactNode {
   useEffect(() => installPresenceTimer(), []);
   useEffect(() => installEmail(), []);
   useEffect(() => installWebApps(), []);
+  useEffect(() => startMail(), []);
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   useEffect(() => (ready ? whenIdle(() => preloadWindows(superadmin)) : undefined), [ready, superadmin]);
 
   if (!onboarded && local) return <OnboardingLazy.Component />;
   if (mobile) {
-    // Phone layout (ADR-0021): one column — the chat full screen, the rail + rooms and the members
-    // list in drawers, the voice strip at the bottom.
-    // «Личные» (ADR-0020): the DM list in the drawer, the open DM full screen.
-    const ws = home ? HOME : (hasWs || locked) && wsId ? wsId : null;
+    // Phone layout (ADR-0073): tabs and a stack of screens; the shell decides what is on screen.
     return (
-      <MobileShell workspaceId={ws} roomId={home ? dmId : ws ? roomId : undefined} showReconnect={showReconnect}>
-        {!ready ? (
-          <div className="grid flex-1 place-items-center">
-            <div className="flex flex-col items-center gap-3 text-body text-muted">
-              <Spinner className="size-6" />
-              {t('gateway.connecting')}
+      <>
+        <MobileShell
+          showReconnect={showReconnect}
+          welcome={
+            <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
+              <LockedWorkspacePicker />
+              <Welcome />
             </div>
-          </div>
-        ) : locked && wsId ? (
-          <WorkspaceLock workspaceId={wsId} />
-        ) : home ? (
-          dmId ? (
-            <ChatPane key={dmId} workspaceId="" roomId={dmId} />
-          ) : (
-            <DmPick />
-          )
-        ) : ws ? (
-          boards ? (
-            <BoardsView workspaceId={ws} wide={false} mobile />
-          ) : calDay ? (
-            // Calendar on a phone (ADR-0038 §7): the day full screen, a meeting full screen over it.
-            calEvent ? (
-              <EventPanel occ={calEvent} page />
-            ) : (
-              <DayView workspaceId={ws} />
-            )
-          ) : archived ? (
-            <ArchivedChat key={archived.id} workspaceId={ws} room={archived} />
-          ) : roomId ? (
-            <ChatPane key={roomId} workspaceId={ws} roomId={roomId} />
-          ) : (
-            <NoRoom workspaceId={ws} />
-          )
-        ) : (
-          <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
-            <LockedWorkspacePicker />
-            <Welcome />
-          </div>
-        )}
+          }
+        />
         {ready ? <CreateTaskDialog /> : null}
-      </MobileShell>
+      </>
     );
   }
 
   return (
     <div className="flex h-full flex-col" style={{ ['--sidebar-width' as string]: `${width}px` }}>
+      <WindowVibrancy />
       <TitleBar />
       {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
       <VerifyBanner />
       <SuspendedBanner />
+      <BillingBanner />
       {showReconnect ? <ReconnectBanner /> : null}
       {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
       <UpdateBar />
       {/* The rail sits on the window layer (same material as the title bar); the room column and
-          the chat are one «island» with a 12 px top-left corner and a hairline edge (docs/09 v0.2). */}
+          the chat are one inset panel with a 12 px top-left corner and a quiet edge (docs/08
+          «Слои окна», owner 07.10). The bottom island (me + the call) floats over the foot of the
+          rail and the column. */}
       <div className="mat-rail relative flex min-h-0 flex-1">
-        <WorkspaceRail />
-        {!ready ? (
+        <SectionRail />
+        {mailOn ? (
+          <MailScreenLazy.Component />
+        ) : !ready ? (
           <div className="mat-content grid flex-1 place-items-center mobile:px-6">
             <div className="flex flex-col items-center gap-3 text-body text-muted">
               <Spinner className="size-6" />
@@ -177,19 +174,30 @@ function ShellLayout(): ReactNode {
           </div>
         ) : locked && wsId ? (
           <WorkspaceLock workspaceId={wsId} />
+        ) : billingClosed && hasWs && wsId ? (
+          <BillingPaywall workspaceId={wsId} />
         ) : home ? (
           // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <DmSidebar />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
               {dmId ? <ChatPane key={dmId} workspaceId="" roomId={dmId} /> : <DmPick />}
+              {searchOpen ? <SearchResultsPanel key={searchSeq} floating={!wide} /> : null}
             </div>
           </div>
         ) : hasWs && wsId && appId ? (
           <AppScreen key={appId} appId={appId} />
+        ) : hasWs && wsId && disk ? (
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+            <DiskScreen key={wsId} workspaceId={wsId} />
+          </div>
+        ) : hasWs && wsId && wiki ? (
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
+            <WikiScreen key={wsId} workspaceId={wsId} />
+          </div>
         ) : hasWs && wsId ? (
-          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-[var(--color-panel-edge)]" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
@@ -212,8 +220,14 @@ function ShellLayout(): ReactNode {
               ) : (
                 <>
                   {roomId ? <ChatPane key={roomId} workspaceId={wsId} roomId={roomId} /> : <NoRoom workspaceId={wsId} />}
-                  {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
-                  {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
+                  {searchOpen ? (
+                    <SearchResultsPanel key={searchSeq} floating={!wide} />
+                  ) : (
+                    <>
+                      {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
+                      {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -224,7 +238,7 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || (calDay !== null && !guestWs)} /> : null}
+        {ready && !mailOn && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || disk || wiki || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
