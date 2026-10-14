@@ -103,3 +103,61 @@ func TestEmailVerificationMode(t *testing.T) {
 		}
 	}
 }
+
+// MAILHOST_* (ADR-0100): off by default, all-or-nothing, domains and bot names normalized.
+func TestMailHost(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x@localhost/x")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.MailHostEnabled() {
+		t.Fatal("enabled by default")
+	}
+	t.Setenv("MAILHOST_ADMIN_URL", "https://mail.example.com")
+	t.Setenv("MAILHOST_ADMIN_TOKEN", "s3cret")
+	t.Setenv("MAILHOST_DOMAINS", "Mail.Calab.io, calab.ru ,")
+	t.Setenv("MAILHOST_RESET_BOTS", "tunka_bot,HelpBot")
+	if c, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if !c.MailHostEnabled() || c.MailHostAdminToken != "s3cret" {
+		t.Fatalf("enabled: %+v", c.MailHostAdminURL)
+	}
+	if strings.Join(c.MailHostDomains, ",") != "mail.calab.io,calab.ru" {
+		t.Fatalf("domains: %v", c.MailHostDomains)
+	}
+	if strings.Join(c.MailHostResetBots, ",") != "tunka_bot,helpbot" {
+		t.Fatalf("reset bots: %v", c.MailHostResetBots)
+	}
+	for name, tc := range map[string]struct {
+		url, token, domains, bots, want string
+	}{
+		"no token":     {"https://mail.example.com", "", "calab.io", "", "MAILHOST_ADMIN_TOKEN"},
+		"no domains":   {"https://mail.example.com", "s", "", "", "MAILHOST_DOMAINS"},
+		"relative url": {"mail.example.com", "s", "calab.io", "", "MAILHOST_ADMIN_URL"},
+		"bad domain":   {"https://mail.example.com", "s", "calab, x.io", "", "MAILHOST_DOMAINS"},
+		"domainless":   {"https://mail.example.com", "s", "calab", "", "MAILHOST_DOMAINS"},
+		"space in bot": {"https://mail.example.com", "s", "calab.io", "tunka bot", "MAILHOST_RESET_BOTS"},
+		"short bot":    {"https://mail.example.com", "s", "calab.io", "ab", "MAILHOST_RESET_BOTS"},
+		"digit bot":    {"https://mail.example.com", "s", "calab.io", "1tunka", "MAILHOST_RESET_BOTS"},
+		"bots may off": {"https://mail.example.com", "s", "calab.io", "", ""},
+	} {
+		t.Setenv("MAILHOST_ADMIN_URL", tc.url)
+		t.Setenv("MAILHOST_ADMIN_TOKEN", tc.token)
+		t.Setenv("MAILHOST_DOMAINS", tc.domains)
+		t.Setenv("MAILHOST_RESET_BOTS", tc.bots)
+		_, err := Load()
+		if tc.want == "" {
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -173,6 +174,14 @@ type Config struct {
 	SMTPUser     string `env:"SMTP_USER"`                      // empty = no AUTH
 	SMTPPassword string `env:"SMTP_PASSWORD"`                  //
 	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.io>"
+	// Mail hosting (ADR-0100): bot-driven password recovery for mailboxes on our hosting.
+	// MAILHOST_ADMIN_URL empty = the feature is off (the /api/mailbox/* routes answer 404).
+	// The admin token and the hosted domain list are required together with the URL.
+	// MAILHOST_RESET_BOTS: the only bot usernames allowed to reset (empty = nobody).
+	MailHostAdminURL   string   `env:"MAILHOST_ADMIN_URL"`
+	MailHostAdminToken string   `env:"MAILHOST_ADMIN_TOKEN"`
+	MailHostDomains    []string `env:"MAILHOST_DOMAINS" envSeparator:","`
+	MailHostResetBots  []string `env:"MAILHOST_RESET_BOTS" envSeparator:","`
 	// Meeting recording (ADR-0025). Needs LiveKit and the egress service; the recordings
 	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container. With
 	// STORAGE_DRIVER=s3 there is no such volume: the egress uploads into the files bucket.
@@ -349,6 +358,27 @@ func (c *Config) Validate() error {
 			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR, MAIL_EVENTS_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
 		}
 	}
+	// Mail hosting (ADR-0100): all-or-nothing, domains lowercased and checked here once.
+	if c.MailHostAdminURL != "" {
+		if Origin(c.MailHostAdminURL) == "" {
+			errs = append(errs, fmt.Errorf("MAILHOST_ADMIN_URL must be an absolute http(s) URL, got %q", c.MailHostAdminURL))
+		}
+		if strings.TrimSpace(c.MailHostAdminToken) == "" || len(c.MailHostDomains) == 0 {
+			errs = append(errs, errors.New("MAILHOST_ADMIN_TOKEN and MAILHOST_DOMAINS are required when MAILHOST_ADMIN_URL is set"))
+		}
+	}
+	c.MailHostDomains = normalizeDomains(c.MailHostDomains)
+	for _, d := range c.MailHostDomains {
+		if !validMailHostDomain(d) {
+			errs = append(errs, fmt.Errorf("MAILHOST_DOMAINS: %q is not a domain name", d))
+		}
+	}
+	c.MailHostResetBots = normalizeDomains(c.MailHostResetBots)
+	for _, b := range c.MailHostResetBots {
+		if !usernameRe.MatchString(b) {
+			errs = append(errs, fmt.Errorf("MAILHOST_RESET_BOTS: %q is not a bot username (3..32 of a-z, 0-9, _, starting with a letter)", b))
+		}
+	}
 	if Origin(c.GPTunnelAPIURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_API_URL must be an absolute http(s) URL, got %q", c.GPTunnelAPIURL))
 	}
@@ -384,6 +414,25 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+// usernameRe: a Calab username (users/contacts.go validates user input with the same shape;
+// here it only checks the MAILHOST_RESET_BOTS allowlist).
+var usernameRe = regexp.MustCompile(`^[a-z][a-z0-9_]{2,31}$`)
+
+// normalizeDomains trims, drops empties and lowercases a comma-separated env list.
+func normalizeDomains(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, d := range in {
+		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+var mailHostDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+func validMailHostDomain(d string) bool { return len(d) <= 253 && mailHostDomainRe.MatchString(d) }
 
 // validKeyPrefix: REDIS_KEY_PREFIX is empty or a plain name ending with ':'. No glob characters
 // (the gateway PSUBSCRIBEs to "<prefix>*", the ACL user gets ~<prefix>*), and the final ':'
@@ -442,6 +491,9 @@ func Origin(raw string) string {
 
 // MailEnabled reports whether SMTP is configured.
 func (c *Config) MailEnabled() bool { return c.SMTPHost != "" }
+
+// MailHostEnabled reports whether the mail-hosting password recovery is configured (ADR-0100).
+func (c *Config) MailHostEnabled() bool { return c.MailHostAdminURL != "" }
 
 // LiveKitEnabled reports whether voice is configured.
 func (c *Config) LiveKitEnabled() bool { return c.LiveKitAPIKey != "" }
