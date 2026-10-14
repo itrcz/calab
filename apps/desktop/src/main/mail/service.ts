@@ -35,7 +35,7 @@ import {
   mailMethods,
 } from '../../shared/mail';
 import { appPasswordUrl, discover, domainOf, providerByDomain, resolveLogin, STEP_TIMEOUT_MS, type DiscoverNet } from './discover';
-import { classify, invalid, mailError, notFound } from './errors';
+import { classify, errorDetail, invalid, mailError, notFound } from './errors';
 import { accountOf, ATTACHMENT_ID_RE, folderId, parseFolderId, parseMessageId, parseSeqId } from './ids';
 import type { MailTls } from './net';
 import { buildBodies, compose, newMessageIdHeader, Outbox, type QuotedOriginal } from './send';
@@ -386,11 +386,21 @@ export class MailEngine {
       v = { provider, imap: serverOf(s.imap), smtp: serverOf(s.smtp), login: s.login };
       disc = { imap: v.imap, smtp: v.smtp, source: 'manual', provider, loginTemplate: s.login, appPasswordUrl: appPasswordUrl(provider) };
     } else {
-      disc = await discover(email, this.deps.discoverNet, this.now);
+      try {
+        disc = await discover(email, this.deps.discoverNet, this.now);
+      } catch (e) {
+        // Support diagnostics (14.10.2026 incident): every failed add-account attempt leaves exactly
+        // one 'mail: verify failed' line in the engine log (stderr → main's main.log). errorDetail
+        // carries the classified code and the library/server fields, never the password.
+        this.log('mail: verify failed', { email, domain: domainOf(email), ...errorDetail(e) });
+        throw e;
+      }
       v = { provider: disc.provider, imap: serverOf(disc.imap), smtp: serverOf(disc.smtp), login: resolveLogin(disc.loginTemplate, email) };
     }
     const fail = async (e: unknown, kind: 'imap' | 'smtp'): Promise<never> => {
       const c = classify(e);
+      const srv = disc[kind];
+      this.log('mail: verify failed', { email, step: kind, server: `${srv.host}:${String(srv.port)}`, security: srv.security, ...errorDetail(e) });
       if (c.cert) {
         // The trust prompt (§4): this server's certificate, and — when IMAP failed first — whether
         // SMTP has the same problem (a probe: no login), so both are asked about at once.
