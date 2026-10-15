@@ -150,6 +150,47 @@ for (const theme of THEMES) {
 }
 
 /**
+ * The one-time mailbox password page (ADR-0100): /mail-reset/<token> — the link the reset bot
+ * sends. One anonymous POST redeems the token (the server deletes it in that very request) and
+ * the new hosting password shows once: mono, selectable, «Скопировать», «Открыть в Calab»
+ * (calab://mail/<payload>, ADR-0088 §8). A used link says so and points back to the bot. Locally
+ * dark 960 only; the full matrix and the «used» shot with CALABA_VISUAL_ALL=1 (nightly).
+ */
+for (const theme of THEMES) {
+  for (const viewport of VIEWPORTS) {
+    test(`web mail-reset: ${theme} ${viewport.width}`, async ({ page }) => {
+      test.skip(!ALL && (theme !== 'dark' || viewport.width !== 960), 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
+      expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+      let mock: MockServer | undefined;
+      try {
+        mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+        await page.setViewportSize(viewport);
+        await page.clock.setFixedTime(NOW);
+        await page.goto(`${mock.url}/?visual-test`);
+        await page.evaluate((t) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true, locale: 'ru' }, version: 1 })), theme);
+        await page.goto(`${mock.url}/mail-reset/visual-reset-token?visual-test`);
+        const card = page.getByTestId('mail-reset');
+        await expect(card.getByRole('heading', { name: 'Пароль ящика' })).toBeVisible();
+        await expect(card.getByText('boris@calab.test')).toBeVisible();
+        await expect(card.getByTestId('mail-reset-password')).toHaveText('correct horse battery staple');
+        await expect(card.getByRole('button', { name: 'Скопировать' })).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Открыть в Calab' })).toBeVisible();
+        const s: Shot = { page, theme, viewport };
+        await checkpoint(s, 'web-mail-reset');
+        // The used/expired link: 410 → «Ссылка уже использована или истекла» and back to the bot
+        // (the mock answers 410 for tokens that start with «used»).
+        await page.goto(`${mock.url}/mail-reset/used-token?visual-test`);
+        await expect(card.getByRole('heading', { name: 'Ссылка уже использована или истекла' })).toBeVisible();
+        await expect(card.getByText('Попросите бота прислать новую.')).toBeVisible();
+        if (ALL) await checkpoint(s, 'web-mail-reset-used');
+      } finally {
+        await mock?.close();
+      }
+    });
+  }
+}
+
+/**
  * The public meeting page of an invited address (ADR-0038 «Диплинки для приглашённых»): no account,
  * the card with the time in the viewer's zone, the organizer's, the room, the description, the
  * answers and «Присоединиться к встрече» — not active yet (15 minutes before the start). Dark 960.

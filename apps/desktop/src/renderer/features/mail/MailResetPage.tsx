@@ -1,9 +1,8 @@
 import { Copy } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
-import { Button, cx } from '../../components/ui';
+import { Button } from '../../components/ui';
 import { t } from '../../i18n';
-import { useMobile } from '../../lib/mobile';
 import { log } from '../../lib/log';
 import { ApiError } from '../../lib/api/client';
 import { fireDeepLink } from '../auth/LinkLanding';
@@ -22,33 +21,33 @@ import { encodeAddPayload } from './mailLink';
  * bot. Solid materials only (docs/08; no backdrop-filter).
  */
 
-type State = { loading: true } | { data: MailReset } | { used: true } | { failed: true };
+type State = { kind: 'loading' } | { kind: 'data'; data: MailReset } | { kind: 'used' } | { kind: 'failed' };
 
 export function MailResetPage({ token }: { token: string }): ReactNode {
-  const [state, setState] = useState<State>({ loading: true });
+  const [state, setState] = useState<State>({ kind: 'loading' });
   // One POST ever: the token is single-use, so no retry, no StrictMode double-fire.
   const fired = useRef(false);
-  const mobile = useMobile();
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
 
   useEffect(() => {
     if (fired.current) return;
     fired.current = true;
     redeemMailReset(token)
-      .then((data) => setState({ data }))
+      .then((data) => setState({ kind: 'data', data }))
       .catch((err: unknown) => {
-        if (err instanceof ApiError && (err.status === 410 || err.status === 404)) setState({ used: true });
+        if (err instanceof ApiError && (err.status === 410 || err.status === 404)) setState({ kind: 'used' });
         else {
           log.warn('mail reset redeem', err);
-          setState({ failed: true });
+          setState({ kind: 'failed' });
         }
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per token
   }, [token]);
 
+  const data: MailReset | null = state.kind === 'data' ? state.data : null;
+
   const copy = (): void => {
-    if (state.data?.password === undefined) return;
-    void navigator.clipboard.writeText(state.data.password).then(
+    if (!data) return;
+    void navigator.clipboard.writeText(data.password).then(
       () => toast.success(t('mailReset.copied')),
       (e: unknown) => {
         log.warn('copy password', e);
@@ -58,8 +57,8 @@ export function MailResetPage({ token }: { token: string }): ReactNode {
   };
 
   const openInApp = (): void => {
-    if (!state.data || visualTest) return;
-    fireDeepLink(`calab://mail/${encodeAddPayload(state.data.email, state.data.password)}`);
+    if (!data || visualTest) return;
+    fireDeepLink(`calab://mail/${encodeAddPayload(data.email, data.password)}`);
   };
 
   return (
@@ -69,14 +68,14 @@ export function MailResetPage({ token }: { token: string }): ReactNode {
           <Logo size={56} alt="Calab" />
         </div>
         <div className="mat-popover flex flex-col gap-5 rounded-[var(--radius-panel)] p-6">
-          {state.loading ? (
+          {state.kind === 'loading' ? (
             <h1 className="text-center text-title font-semibold">{t('mailReset.loading')}</h1>
-          ) : 'used' in state ? (
+          ) : state.kind === 'used' ? (
             <div className="flex flex-col items-center gap-1 text-center" role="alert">
               <h1 className="text-title font-semibold">{t('mailReset.used')}</h1>
               <p className="text-body text-muted">{t('mailReset.usedHint')}</p>
             </div>
-          ) : 'failed' in state ? (
+          ) : state.kind === 'failed' ? (
             <div className="flex flex-col items-center gap-1 text-center" role="alert">
               <h1 className="text-title font-semibold">{t('mailReset.error')}</h1>
               <p className="text-body text-muted">{t('mailReset.usedHint')}</p>
@@ -92,12 +91,12 @@ export function MailResetPage({ token }: { token: string }): ReactNode {
               <div className="flex flex-col gap-2">
                 <p className="sr-only">{t('mailReset.password')}</p>
                 <p
-                  className="selectable rounded-[var(--radius-control)] bg-fill px-3 py-2.5 text-center font-mono text-body [overflow-wrap:anywhere]"
+                  className="selectable rounded-[var(--radius-control)] border border-line bg-[var(--color-code)] px-3 py-2.5 text-center font-mono text-body [overflow-wrap:anywhere]"
                   data-testid="mail-reset-password"
                 >
                   {state.data.password}
                 </p>
-                <Button variant="secondary" className={cx('h-9 w-full text-body', mobile && 'tap-h')} onClick={copy} autoFocus>
+                <Button variant="secondary" className="h-9 w-full text-body" onClick={copy} autoFocus>
                   <Copy className="size-4" aria-hidden />
                   {t('mailReset.copy')}
                 </Button>

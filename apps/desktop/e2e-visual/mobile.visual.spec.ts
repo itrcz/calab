@@ -311,6 +311,15 @@ test('m-join', async ({ page }) => {
   await checkpoint(page, 'm-join');
 });
 
+// The one-time mailbox password page (ADR-0100): the bot's reset link on the phone — the hosting
+// password once, mono and selectable, «Скопировать» / «Открыть в Calab» at 44 px (Button's
+// mobile:tap-h); nothing else leaks into the shot.
+test('m-mail-reset', async ({ page }) => {
+  await open(page, '/mail-reset/visual-reset-token');
+  await expect(page.getByTestId('mail-reset').getByTestId('mail-reset-password')).toHaveText('correct horse battery staple');
+  await checkpoint(page, 'm-mail-reset');
+});
+
 // Guest admission (ADR-0040): a room with approval — the guest's waiting screen on the phone.
 test('m-guest-waiting', async ({ page }) => {
   mock.setGuestApproval(IDS.rooms.call, true);
