@@ -7706,7 +7706,8 @@ class MockImpl {
     // starts with "used" answers 410 (the expired state of the page); anything else shows the
     // fixed password once (the mock does not enforce single use).
     this.route('POST', '/api/mailbox/password/redeem', (c) => {
-      const token = String((c.raw.length ? JSON.parse(c.raw.toString('utf8')) : {})['token'] ?? '');
+      const body = (c.raw.length ? JSON.parse(c.raw.toString('utf8')) : {}) as { token?: string };
+      const token = body.token ?? '';
       if (token.startsWith('used')) throw new HttpError(410, ErrorCode.CODE_EXPIRED, 'the link has already been used or has expired');
       if (!token) throw invalid('token', 'token must be 1..128 characters');
       send(c.res, 200, JSON.stringify({ email: 'boris@calab.test', password: 'correct horse battery staple' }), 'application/json');
