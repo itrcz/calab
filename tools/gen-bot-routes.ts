@@ -32,6 +32,7 @@ const GROUP_RULES: [RegExp, string][] = [
   [/\/search$|^\/api\/me\/mentions$/, 'search'],
   [/^\/api\/(?:events|event-rsvp)(?:\/|$)|\/events(?:\/|$)|\/freebusy|\/caldav|\/external-events/, 'calendar'],
   [/^\/api\/dms(?:\/|$)/, 'dm'],
+  [/^\/api\/mailbox(?:\/|$)/, 'mailbox'],
   [/\/messages(?:\/|$)|^\/api\/messages\/|\/pins$|^\/api\/unfurl|\/rooms\/\{[^}]+\}\/read$|\/transcript$/, 'messages'],
   [/\/voice|^\/api\/rooms\/\{[^}]+\}\/join$|\/stream\/|\/camera\/|\/sounds(?:\/|$)|\/recording|\/admissions|\/calls(?:\/|$)|^\/api\/rtc\/|\/rooms(?:\/|$)|^\/api\/rooms\/|\/categories(?:\/|$)|^\/api\/categories\//, 'rooms'],
   [/\/files(?:\/|$)|^\/api\/files\//, 'files'],

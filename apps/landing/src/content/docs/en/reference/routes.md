@@ -307,6 +307,17 @@ Details: [Bot profile](../bots/rest-profile).
 | `GET` | `/api/rooms/{id}/bot-commands` | by role permissions |
 <!-- /routes -->
 
+### Mailbox
+
+Details: [Mailbox](../bots/rest-mailbox).
+
+<!-- routes:allow:mailbox -->
+| Method | Path | What it does |
+|---|---|---|
+| `POST` | `/api/mailbox/hosting-check` | operator-listed bots only |
+| `POST` | `/api/mailbox/password-reset` | operator-listed bots only |
+<!-- /routes -->
+
 
 ## Public routes
 

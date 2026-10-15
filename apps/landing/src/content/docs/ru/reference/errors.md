@@ -48,6 +48,7 @@ order: 3
 | `ERROR_CODE_NO_COMMON_HOURS` | 409 | у людей не пересекаются рабочие часы в окне подбора времени |
 | `ERROR_CODE_TEMP_ROOM_LIMIT` | 409 | предел временных комнат (20 на пространство или 5 на создателя, `reason: "PER_USER"`) |
 | `ERROR_CODE_ROOM_ARCHIVED` | 410 | временная комната в архиве: читать можно, писать нельзя |
+| `ERROR_CODE_CODE_EXPIRED` | 410 | одноразовая ссылка на пароль ящика уже использована или истекла |
 | `ERROR_CODE_SIP_DISABLED` | 409 | телефония выключена в пространстве |
 | `ERROR_CODE_SIP_CALL_ACTIVE` | 409 | в комнате уже идёт телефонный звонок |
 | `ERROR_CODE_SIP_NUMBER_NOT_ALLOWED` | 422 | номер вне разрешённых префиксов (`field: "number"`) |

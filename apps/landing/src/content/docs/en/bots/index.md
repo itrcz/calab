@@ -19,6 +19,7 @@ A Calab bot is a **user** with the `isBot` flag. It belongs to workspaces, holds
 | Administer a workspace: rooms, roles, invites, badges | REST, by role permissions | [Workspace and members](./rest-members) |
 | Upload files and stickers, search | REST | [Files](./rest-files), [Stickers](./rest-stickers), [Search](./rest-search) |
 | Receive a person's task notifications | The `taskNotice` event | [Task notifications](./task-notices) |
+| Reset a hosted mailbox password (on servers with mail hosting) | REST `/api/mailbox/…` | [Mailbox](./rest-mailbox) |
 
 ## How it fits together
 

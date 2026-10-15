@@ -48,6 +48,7 @@ OAuth protocol errors (`invalid_grant`, `invalid_client` and others) use the RFC
 | `ERROR_CODE_NO_COMMON_HOURS` | 409 | people's working hours don't overlap in the search window |
 | `ERROR_CODE_TEMP_ROOM_LIMIT` | 409 | the temporary room cap (20 per workspace, or 5 per creator with `reason: "PER_USER"`) |
 | `ERROR_CODE_ROOM_ARCHIVED` | 410 | an archived temporary room: reading works, writing doesn't |
+| `ERROR_CODE_CODE_EXPIRED` | 410 | the one-time mailbox password link is already used or expired |
 | `ERROR_CODE_SIP_DISABLED` | 409 | telephony is off in the workspace |
 | `ERROR_CODE_SIP_CALL_ACTIVE` | 409 | the room already has a phone call |
 | `ERROR_CODE_SIP_NUMBER_NOT_ALLOWED` | 422 | the number is outside the allowed prefixes (`field: "number"`) |

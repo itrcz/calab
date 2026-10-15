@@ -14,6 +14,7 @@ Hitting a rate limit returns `429 ERROR_CODE_RATE_LIMITED` with a `Retry-After` 
 | Bot messages | 20 per minute across all rooms and DMs (`BOT_MESSAGES_PER_MIN`) |
 | Messages to one room | 5 per 5 seconds — a common limit for everyone |
 | New DMs | 10 at once, 30 per hour |
+| Mailbox password resets | 3 per hour per person, 10 per hour per bot |
 | File uploads | 30 at once, 120 per hour |
 | Sticker uploads | 10 batches at once, 60 per hour |
 | Email invitations | 20 at once, 30 per hour; one address at most once a day |

@@ -57,6 +57,7 @@ The full code list is in [Error codes](../reference/errors).
 | Bot requests | 30 per second (burst 30) |
 | Bot messages | 20 per minute across all rooms and DMs, plus the common 5 messages per 5 s per room |
 | New DMs | 10 at once, 30 per hour |
+| Mailbox password resets | 3 per hour per person, 10 per hour per bot |
 | File uploads | 30 at once, 120 per hour; size and quota by plan |
 | A message | up to 4000 characters, up to 20 attachments, `nonce` up to 64 characters |
 | Commands | up to 100, name up to 32 characters, description up to 256 |

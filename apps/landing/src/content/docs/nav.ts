@@ -48,6 +48,7 @@ export const nav: DocsNavSection[] = [
       { slug: 'commands-buttons', ru: 'Команды и кнопки', en: 'Commands and buttons' },
       { slug: 'webhooks', ru: 'Вебхуки', en: 'Webhooks' },
       { slug: 'task-notices', ru: 'Уведомления о задачах', en: 'Task notifications' },
+      { slug: 'rest-mailbox', ru: 'Почтовый ящик', en: 'Mailbox' },
       { slug: 'sdk', ru: 'SDK для Node.js', en: 'Node.js SDK' },
       { slug: 'errors-limits', ru: 'Ошибки и лимиты', en: 'Errors and limits' },
       { slug: 'changelog', ru: 'Журнал изменений', en: 'Changelog' },

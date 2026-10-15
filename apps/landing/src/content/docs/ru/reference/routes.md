@@ -307,6 +307,17 @@ order: 1
 | `GET` | `/api/rooms/{id}/bot-commands` | по правам ролей |
 <!-- /routes -->
 
+### Почтовый ящик
+
+Подробно — [Почтовый ящик](../bots/rest-mailbox).
+
+<!-- routes:allow:mailbox -->
+| Метод | Путь | Что делает |
+|---|---|---|
+| `POST` | `/api/mailbox/hosting-check` | только боты из списка оператора |
+| `POST` | `/api/mailbox/password-reset` | только боты из списка оператора |
+<!-- /routes -->
+
 
 ## Публичные маршруты
 
