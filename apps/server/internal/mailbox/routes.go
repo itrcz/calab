@@ -1,4 +1,4 @@
-// Package mailbox implements ADR-0100: the Bot API routes that let a support bot recover
+// Package mailbox implements ADR-0101: the Bot API routes that let a support bot recover
 // the password of a user's mailbox on our mail hosting, and the public one-time redemption
 // route behind the /mail-reset/<token> page. The server is only a conduit: the hosting
 // generates the password, it lives in Redis under a one-time token (10 minutes) and is
@@ -29,7 +29,7 @@ import (
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
-// Limits (ADR-0100): per reset target and per bot, per hour.
+// Limits (ADR-0101): per reset target and per bot, per hour.
 const (
 	TargetResetsPerHour = 3
 	BotResetsPerHour    = 10
@@ -63,7 +63,7 @@ func New(d *db.DB, r rueidis.Client, hosting *Hosting, log *slog.Logger) *Servic
 }
 
 // Routes registers the two Bot API routes (behind wrap, like every private route) and the
-// public redemption route: the token itself is the credential, no session (ADR-0100 §4).
+// public redemption route: the token itself is the credential, no session (ADR-0101 §4).
 func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	private := func(pattern string, f httpx.HandlerFunc) { mux.Handle(pattern, wrap(f)) }
 	private("POST /api/mailbox/hosting-check", s.hostingCheck)
@@ -71,7 +71,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("POST /api/mailbox/password/redeem", httpx.HandlerFunc(s.redeem))
 }
 
-// off is the feature-off answer (ADR-0100: MAILHOST_ADMIN_URL empty = 404, as if the
+// off is the feature-off answer (ADR-0101: MAILHOST_ADMIN_URL empty = 404, as if the
 // routes did not exist).
 func (s *Service) off() error {
 	if s.Enabled {
@@ -110,7 +110,7 @@ type hostingCheckRequest struct {
 }
 
 // HostingCheckResponse tells the bot what it may do with the person's mailbox without ever
-// revealing the address (ADR-0100 §3): hosted = the domain is on our hosting, verified =
+// revealing the address (ADR-0101 §3): hosted = the domain is on our hosting, verified =
 // the user's address is confirmed (an unconfirmed one cannot be recovered).
 type HostingCheckResponse struct {
 	Hosted   bool   `json:"hosted"`
@@ -166,7 +166,7 @@ type PasswordResetResponse struct {
 }
 
 // passwordReset: POST /api/mailbox/password-reset {userId} → {token, redeemUrl, expiresAt}.
-// Check order (ADR-0100 §3): feature → bot → allowlist → target exists → not a guest or a
+// Check order (ADR-0101 §3): feature → bot → allowlist → target exists → not a guest or a
 // bot → shared workspace → address verified → domain hosted → limits → the hosting itself.
 func (s *Service) passwordReset(w http.ResponseWriter, r *http.Request) error {
 	if err := s.off(); err != nil {
@@ -227,7 +227,7 @@ func (s *Service) passwordReset(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Unavailable(err)
 	}
-	// Audit (ADR-0100): who asked, whose mailbox, when. Never the address, never the password.
+	// Audit (ADR-0101): who asked, whose mailbox, when. Never the address, never the password.
 	s.log.InfoContext(r.Context(), "mailbox password reset",
 		"bot_id", bot.UserID, "bot_owner", bot.OwnerUserID, "target_user_id", uid, "domain", domain)
 	expires := time.Now().Add(ResetTTL)
@@ -300,7 +300,7 @@ func (s *Service) redeem(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// ---- plain JSON (these routes are not in the proto contract; ADR-0100 §2) ----
+// ---- plain JSON (these routes are not in the proto contract; ADR-0101 §2) ----
 
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, httpx.MaxJSONBody))

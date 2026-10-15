@@ -1,6 +1,6 @@
 package mailbox
 
-// The mail-hosting admin API client (ADR-0100): one call — reset the password of a mailbox.
+// The mail-hosting admin API client (ADR-0101): one call — reset the password of a mailbox.
 // The hosting generates the new password (≥ 16 chars) and revokes the old one immediately;
 // the answer carries the password in plain JSON over the admin token's TLS connection.
 // Errors are distinguishable: 401 (bad admin token), 404 (no such mailbox), 429 (the
@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// HostingCallTimeout is the per-call timeout (ADR-0100: ~10 s; a stuck hosting must not hold
+// HostingCallTimeout is the per-call timeout (ADR-0101: ~10 s; a stuck hosting must not hold
 // the bot's request).
 const HostingCallTimeout = 10 * time.Second
 
@@ -66,7 +66,7 @@ func NewHosting(baseURL, token string) *Hosting {
 	return &Hosting{base: strings.TrimRight(baseURL, "/"), token: token, hc: &http.Client{}, CallTimeout: HostingCallTimeout}
 }
 
-// minHostingPassword is the shortest password the hosting may answer with (ADR-0100).
+// minHostingPassword is the shortest password the hosting may answer with (ADR-0101).
 const minHostingPassword = 16
 
 // ResetPassword asks for a new password of the mailbox: the old one stops working on the

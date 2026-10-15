@@ -17,7 +17,7 @@ describe('calab://mail/<payload> (ADR-0088 §12)', () => {
     expect(parseAddPayload(payload)).toEqual({ email: 'k@x.ru', password: 'пароль✓' });
   });
 
-  it('encodes the add payload back (ADR-0100: the reset page builds the link)', () => {
+  it('encodes the add payload back (ADR-0101: the reset page builds the link)', () => {
     const payload = encodeAddPayload('boris@calab.io', 'pa:ss:word✓');
     expect(payload).toBe(b64url('boris@calab.io:pa:ss:word✓'));
     expect(parseAddPayload(payload)).toEqual({ email: 'boris@calab.io', password: 'pa:ss:word✓' });

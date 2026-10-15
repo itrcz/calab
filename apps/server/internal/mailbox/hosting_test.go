@@ -1,6 +1,6 @@
 package mailbox
 
-// The hosting client's contract (ADR-0100 §2): one POST with the Bearer admin token, the
+// The hosting client's contract (ADR-0101 §2): one POST with the Bearer admin token, the
 // answer's password, distinguishable failures. Plain unit tests against httptest.
 
 import (

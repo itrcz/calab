@@ -199,7 +199,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'landing.notFoundHint': 'Continue in the browser or install Calab.',
   'landing.inBrowser': 'Open in browser',
   'landing.invalid': 'The link is invalid or has expired.',
-  // One-time mailbox password page /mail-reset/<token> (ADR-0100)
+  // One-time mailbox password page /mail-reset/<token> (ADR-0101)
   'mailReset.title': 'Mailbox password',
   'mailReset.password': 'Password',
   'mailReset.copy': 'Copy',

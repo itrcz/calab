@@ -1,6 +1,6 @@
 package mailbox
 
-// One-time reset tokens (ADR-0100): the new password from the hosting lives in Redis for
+// One-time reset tokens (ADR-0101): the new password from the hosting lives in Redis for
 // 10 minutes under an unguessable 128-bit token; redemption deletes the key (GETDEL), so a
 // link works exactly once. The password never reaches Postgres or the logs.
 
@@ -18,7 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
-// ResetTTL is how long a reset link lives (ADR-0100: 10 minutes).
+// ResetTTL is how long a reset link lives (ADR-0101: 10 minutes).
 const ResetTTL = 10 * time.Minute
 
 // MaxTokenLen bounds a token from a client before it becomes a Redis key.

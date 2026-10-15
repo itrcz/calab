@@ -105,7 +105,7 @@ export function App(): ReactNode {
   // Web /w/<code>: a shared wiki page, read-only, signed in or not (ADR-0096 §6).
   else if (wikiCode) screen = <WikiPublicPage code={wikiCode} />;
   else if (eventPage) screen = <EventPublicPage page={eventPage} />;
-  // Web /mail-reset/<token>: the one-time mailbox password of a bot reset (ADR-0100). The
+  // Web /mail-reset/<token>: the one-time mailbox password of a bot reset (ADR-0101). The
   // check runs once; the page owns its token.
   else if (platform.kind === 'web' && mailResetToken()) screen = <MailResetPage token={mailResetToken() as string} />;
   // Web /join/<code>, /r/<code>: the link card first, signed in or not (docs/09 #53).

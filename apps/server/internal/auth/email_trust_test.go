@@ -61,7 +61,7 @@ func TestEmailTrustInventory(t *testing.T) {
 		"../calendar/mailer.go":           {"u.EmailVerifiedAt == nil", "org.EmailVerifiedAt != nil"},
 		"../calendar/public.go":           {"u.EmailVerifiedAt != nil"},
 		"../db/queries/email_invites.sql": {"WHERE email = $1 AND email_verified_at IS NOT NULL"}, // LookupInvitee
-		// ADR-0100: the mailbox password reset hands the hosting a confirmed address only.
+		// ADR-0101: the mailbox password reset hands the hosting a confirmed address only.
 		"../mailbox/routes.go": {"u.Email == nil || u.EmailVerifiedAt == nil"},
 	}
 	for file, needles := range trust {

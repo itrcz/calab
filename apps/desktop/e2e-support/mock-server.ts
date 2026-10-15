@@ -7702,7 +7702,7 @@ class MockImpl {
       }
     };
     this.route('GET', '/api/public/wiki/:code', pub((c) => sendMsg(c.res, 200, PublicWikiPageSchema, w().publicMeta(p0(c), q(c, 'page')))));
-    // One-time mailbox password redemption (ADR-0100): plain JSON, no session. Any token that
+    // One-time mailbox password redemption (ADR-0101): plain JSON, no session. Any token that
     // starts with "used" answers 410 (the expired state of the page); anything else shows the
     // fixed password once (the mock does not enforce single use).
     this.route('POST', '/api/mailbox/password/redeem', (c) => {

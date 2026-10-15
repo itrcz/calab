@@ -8,7 +8,7 @@ The bot API only grows: new routes, fields and events are added, existing ones k
 
 | Server version | Date | What's new |
 |---|---|---|
-| 3.5.0 | 2026-10-15 | Resetting a hosted mailbox password through a bot: `POST /api/mailbox/hosting-check`, `POST /api/mailbox/password-reset` and a one-time link with the new password — see [Mailbox](./rest-mailbox) |
+| 3.6.0 | 2026-10-15 | Resetting a hosted mailbox password through a bot: `POST /api/mailbox/hosting-check`, `POST /api/mailbox/password-reset` and a one-time link with the new password — see [Mailbox](./rest-mailbox) |
 | 3.2.0 | 2026-10-12 | Forwarding task notifications to a chosen bot: the `taskNotice` event on the gateway and webhook — see [Task notifications](./task-notices) |
 | 3.0.0 | 2026-10-07 | Task watchers: `PUT` / `DELETE /api/tasks/{id}/watchers` |
 | 2.3.1 | 2026-10-04 | Board forms: create, edit, preview and submit over the API — see [Board forms](./rest-forms) |

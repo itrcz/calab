@@ -187,7 +187,7 @@ func run(m *testing.M) int {
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,
 		RecordingEgressDir:     "/out",
-		// Mail hosting (ADR-0100): the fake admin API of mailbox_integration_test; the reset
+		// Mail hosting (ADR-0101): the fake admin API of mailbox_integration_test; the reset
 		// allowlist stays empty there (each test points it at its own bot).
 		MailHostAdminURL:   mailHostFakeSrv.url(),
 		MailHostAdminToken: "it-hosting-token",

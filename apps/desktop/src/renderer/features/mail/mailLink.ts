@@ -55,7 +55,7 @@ export function encodeBase64Url(s: string): string {
 
 /**
  * The payload of `calab://mail/<payload>` for the add-account form (ADR-0088 §8): the same
- * shape parseAddPayload reads. The reset page (ADR-0100) builds it from the one-time password
+ * shape parseAddPayload reads. The reset page (ADR-0101) builds it from the one-time password
  * it has just shown; the URL carries the password, so it is never logged.
  */
 export function encodeAddPayload(email: string, password: string): string {

@@ -2,7 +2,7 @@ import { ApiError, toApiError } from '../lib/api/client';
 import { platform } from '../platform';
 
 /**
- * The one-time mailbox password page `/mail-reset/{token}` (ADR-0100): an anonymous POST to
+ * The one-time mailbox password page `/mail-reset/{token}` (ADR-0101): an anonymous POST to
  * `/api/mailbox/password/redeem` — the server deletes the token in that very request, so the
  * password is shown once and only here. Not part of the proto contract: plain JSON.
  */

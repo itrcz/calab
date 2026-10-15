@@ -104,7 +104,7 @@ func TestEmailVerificationMode(t *testing.T) {
 	}
 }
 
-// MAILHOST_* (ADR-0100): off by default, all-or-nothing, domains and bot names normalized.
+// MAILHOST_* (ADR-0101): off by default, all-or-nothing, domains and bot names normalized.
 func TestMailHost(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://x@localhost/x")
 	t.Setenv("REDIS_URL", "redis://localhost:6379/0")

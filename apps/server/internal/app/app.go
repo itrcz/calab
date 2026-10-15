@@ -153,7 +153,7 @@ type App struct {
 	Wiki *wiki.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
 	SIP *sip.Service
-	// Mailbox: the bot-driven mailbox password recovery (ADR-0100).
+	// Mailbox: the bot-driven mailbox password recovery (ADR-0101).
 	Mailbox    *mailbox.Service
 	billing    *billingRuntime
 	redis      rueidis.Client
@@ -489,7 +489,7 @@ func New(d Deps) *App {
 	unfurlSvc.Routes(mux, private)
 	recSvc.Routes(mux, private)
 	botSvc.Routes(mux, private)
-	// Mailbox password recovery through a bot (ADR-0100): off unless MAILHOST_ADMIN_URL is
+	// Mailbox password recovery through a bot (ADR-0101): off unless MAILHOST_ADMIN_URL is
 	// set (the routes then answer 404). The two Bot API routes go through the private gate;
 	// the redemption route is public — the one-time token is the credential.
 	mailboxSvc := mailbox.New(d.DB, d.Redis, mailbox.NewHosting(d.Config.MailHostAdminURL, d.Config.MailHostAdminToken), slog.Default())

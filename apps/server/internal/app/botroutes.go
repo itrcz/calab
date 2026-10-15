@@ -159,7 +159,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/auth/verify":              botDeny,
 	"GET /api/me":                        botAllow,
 	"PATCH /api/me":                      botAllow, // display name and avatar only (users.update)
-	// Mailbox password recovery (ADR-0100): only the MAILHOST_RESET_BOTS allowlist passes the
+	// Mailbox password recovery (ADR-0101): only the MAILHOST_RESET_BOTS allowlist passes the
 	// handlers' own check; the redemption route is public (the token is the credential).
 	"POST /api/mailbox/hosting-check":                      botAllow,
 	"POST /api/mailbox/password-reset":                     botAllow,
@@ -575,7 +575,7 @@ var botAudited = map[string]bool{
 	"DELETE /api/workspaces/{id}/invites/{inviteId}":       true,
 	"POST /api/workspaces/{id}/invites/email":              true,
 	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": true,
-	"POST /api/mailbox/password-reset":                     true, // ADR-0100: with the target in the handler's own audit line
+	"POST /api/mailbox/password-reset":                     true, // ADR-0101: with the target in the handler's own audit line
 	"POST /api/workspaces/{id}/badges":                     true,
 	"PATCH /api/workspaces/{id}/badges/{badgeId}":          true,
 	"DELETE /api/workspaces/{id}/badges/{badgeId}":         true,

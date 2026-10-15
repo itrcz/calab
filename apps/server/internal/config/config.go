@@ -174,7 +174,7 @@ type Config struct {
 	SMTPUser     string `env:"SMTP_USER"`                      // empty = no AUTH
 	SMTPPassword string `env:"SMTP_PASSWORD"`                  //
 	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.io>"
-	// Mail hosting (ADR-0100): bot-driven password recovery for mailboxes on our hosting.
+	// Mail hosting (ADR-0101): bot-driven password recovery for mailboxes on our hosting.
 	// MAILHOST_ADMIN_URL empty = the feature is off (the /api/mailbox/* routes answer 404).
 	// The admin token and the hosted domain list are required together with the URL.
 	// MAILHOST_RESET_BOTS: the only bot usernames allowed to reset (empty = nobody).
@@ -358,7 +358,7 @@ func (c *Config) Validate() error {
 			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR, MAIL_EVENTS_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
 		}
 	}
-	// Mail hosting (ADR-0100): all-or-nothing, domains lowercased and checked here once.
+	// Mail hosting (ADR-0101): all-or-nothing, domains lowercased and checked here once.
 	if c.MailHostAdminURL != "" {
 		if Origin(c.MailHostAdminURL) == "" {
 			errs = append(errs, fmt.Errorf("MAILHOST_ADMIN_URL must be an absolute http(s) URL, got %q", c.MailHostAdminURL))
@@ -492,7 +492,7 @@ func Origin(raw string) string {
 // MailEnabled reports whether SMTP is configured.
 func (c *Config) MailEnabled() bool { return c.SMTPHost != "" }
 
-// MailHostEnabled reports whether the mail-hosting password recovery is configured (ADR-0100).
+// MailHostEnabled reports whether the mail-hosting password recovery is configured (ADR-0101).
 func (c *Config) MailHostEnabled() bool { return c.MailHostAdminURL != "" }
 
 // LiveKitEnabled reports whether voice is configured.

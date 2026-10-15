@@ -1,6 +1,6 @@
 //go:build integration
 
-// Mailbox password recovery through a bot (ADR-0100): the two Bot API routes, the checks
+// Mailbox password recovery through a bot (ADR-0101): the two Bot API routes, the checks
 // behind them, the limits and the public one-time redemption. The mail hosting is a fake
 // admin API (mailHostFake, alive for the whole run; TestMain points MAILHOST_ADMIN_URL at
 // it); the per-test allowlist names each test's own bot.
@@ -88,7 +88,7 @@ func (f *mailHostFake) lastAuth() string {
 var mailHostFakeSrv = newMailHostFake()
 
 // postJSON is client.do for the plain-JSON mailbox routes (they are not in the proto
-// contract, ADR-0100 §2). c == nil: no Authorization header (the public redeem route).
+// contract, ADR-0101 §2). c == nil: no Authorization header (the public redeem route).
 func postJSON(t *testing.T, c *client, path string, in, out any) int {
 	t.Helper()
 	var body io.Reader

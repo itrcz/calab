@@ -13,7 +13,7 @@ import { redeemMailReset, type MailReset } from '../../services/mailReset';
 import { encodeAddPayload } from './mailLink';
 
 /**
- * The one-time mailbox password page `/mail-reset/{token}` (ADR-0100): the bot's reset link
+ * The one-time mailbox password page `/mail-reset/{token}` (ADR-0101): the bot's reset link
  * opens here, the token is redeemed in the page's single POST (the server deletes it there),
  * the new password is shown once — mono, selectable, with «Скопировать» — and «Открыть в
  * Calab» hands the prefilled add-account form to the app (`calab://mail/<payload>`,

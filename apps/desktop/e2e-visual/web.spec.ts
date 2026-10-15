@@ -150,7 +150,7 @@ for (const theme of THEMES) {
 }
 
 /**
- * The one-time mailbox password page (ADR-0100): /mail-reset/<token> — the link the reset bot
+ * The one-time mailbox password page (ADR-0101): /mail-reset/<token> — the link the reset bot
  * sends. One anonymous POST redeems the token (the server deletes it in that very request) and
  * the new hosting password shows once: mono, selectable, «Скопировать», «Открыть в Calab»
  * (calab://mail/<payload>, ADR-0088 §8). A used link says so and points back to the bot. Locally

@@ -311,7 +311,7 @@ test('m-join', async ({ page }) => {
   await checkpoint(page, 'm-join');
 });
 
-// The one-time mailbox password page (ADR-0100): the bot's reset link on the phone — the hosting
+// The one-time mailbox password page (ADR-0101): the bot's reset link on the phone — the hosting
 // password once, mono and selectable, «Скопировать» / «Открыть в Calab» at 44 px (Button's
 // mobile:tap-h); nothing else leaks into the shot.
 test('m-mail-reset', async ({ page }) => {
