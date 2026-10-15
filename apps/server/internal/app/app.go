@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"time"
@@ -39,6 +40,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/mailbox"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/notes"
@@ -150,7 +152,9 @@ type App struct {
 	// Wiki: the workspace Wiki (ADR-0096) with its sync socket and the hourly trash sweeper.
 	Wiki *wiki.Service
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
-	SIP        *sip.Service
+	SIP *sip.Service
+	// Mailbox: the bot-driven mailbox password recovery (ADR-0100).
+	Mailbox    *mailbox.Service
 	billing    *billingRuntime
 	redis      rueidis.Client
 	identityDB *db.DB
@@ -485,6 +489,15 @@ func New(d Deps) *App {
 	unfurlSvc.Routes(mux, private)
 	recSvc.Routes(mux, private)
 	botSvc.Routes(mux, private)
+	// Mailbox password recovery through a bot (ADR-0100): off unless MAILHOST_ADMIN_URL is
+	// set (the routes then answer 404). The two Bot API routes go through the private gate;
+	// the redemption route is public — the one-time token is the credential.
+	mailboxSvc := mailbox.New(d.DB, d.Redis, mailbox.NewHosting(d.Config.MailHostAdminURL, d.Config.MailHostAdminToken), slog.Default())
+	mailboxSvc.Enabled = d.Config.MailHostEnabled()
+	mailboxSvc.Domains = d.Config.MailHostDomains
+	mailboxSvc.ResetBots = d.Config.MailHostResetBots
+	mailboxSvc.PublicURL = d.Config.PublicAppURL
+	mailboxSvc.Routes(mux, private)
 	bdSvc := birthdays.New(d.DB, pub)
 	bdSvc.Routes(mux, private)
 	callSvc.Routes(mux, private)
@@ -554,7 +567,7 @@ func New(d Deps) *App {
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
 		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Rooms: roomHandlers, SIP: sipSvc, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
-		dueTZ: boards.DueZone(d.Config.TasksDueTZ)}
+		dueTZ: boards.DueZone(d.Config.TasksDueTZ), Mailbox: mailboxSvc}
 }
 
 // SetBilling switches billing admission and enforcement at run time (tests; the startup values

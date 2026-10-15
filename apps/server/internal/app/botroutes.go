@@ -135,31 +135,36 @@ var botRoutes = map[string]botAccess{
 	"GET /api/billing/public/offers":                                          botPublic,
 	"GET /api/billing/return":                                                 botPublic,
 	// outside /api and public
-	"GET /healthz":                                         botPublic,
-	"GET /readyz":                                          botPublic,
-	"GET /metrics":                                         botPublic,
-	"GET /gateway":                                         botPublic, // IDENTIFY with the bot token
-	"GET /api/version":                                     botPublic,
-	"/api/":                                                botPublic, // 404 for unknown API paths
-	"POST /api/auth/register":                              botPublic,
-	"POST /api/auth/login":                                 botPublic,
-	"POST /api/auth/refresh":                               botPublic,
-	"POST /api/auth/logout":                                botPublic,
-	"POST /api/auth/password/forgot":                       botPublic,
-	"POST /api/auth/password/reset":                        botPublic,
-	"GET /api/invites/{code}":                              botPublic,
-	"GET /api/room-invites/{code}":                         botPublic,
-	"POST /api/room-invites/{code}/join":                   botPublic, // refuses bot tokens: no guest links for bots
-	"POST /api/rtc/webhook":                                botPublic, // LiveKit only (signed)
-	"GET /api/me/sessions":                                 botDeny,
-	"DELETE /api/me/sessions/{id}":                         botDeny,
-	"PATCH /api/me/password":                               botDeny,
-	"PATCH /api/me/email":                                  botDeny,
-	"POST /api/auth/verify/send":                           botDeny,
-	"POST /api/auth/verify":                                botDeny,
-	"GET /api/me":                                          botAllow,
-	"PATCH /api/me":                                        botAllow, // display name and avatar only (users.update)
-	"GET /api/usernames/{name}/available":                  botDeny,  // people's nicknames (ADR-0077)
+	"GET /healthz":                       botPublic,
+	"GET /readyz":                        botPublic,
+	"GET /metrics":                       botPublic,
+	"GET /gateway":                       botPublic, // IDENTIFY with the bot token
+	"GET /api/version":                   botPublic,
+	"/api/":                              botPublic, // 404 for unknown API paths
+	"POST /api/auth/register":            botPublic,
+	"POST /api/auth/login":               botPublic,
+	"POST /api/auth/refresh":             botPublic,
+	"POST /api/auth/logout":              botPublic,
+	"POST /api/auth/password/forgot":     botPublic,
+	"POST /api/auth/password/reset":      botPublic,
+	"GET /api/invites/{code}":            botPublic,
+	"GET /api/room-invites/{code}":       botPublic,
+	"POST /api/room-invites/{code}/join": botPublic, // refuses bot tokens: no guest links for bots
+	"POST /api/rtc/webhook":              botPublic, // LiveKit only (signed)
+	"GET /api/me/sessions":               botDeny,
+	"DELETE /api/me/sessions/{id}":       botDeny,
+	"PATCH /api/me/password":             botDeny,
+	"PATCH /api/me/email":                botDeny,
+	"POST /api/auth/verify/send":         botDeny,
+	"POST /api/auth/verify":              botDeny,
+	"GET /api/me":                        botAllow,
+	"PATCH /api/me":                      botAllow, // display name and avatar only (users.update)
+	// Mailbox password recovery (ADR-0100): only the MAILHOST_RESET_BOTS allowlist passes the
+	// handlers' own check; the redemption route is public (the token is the credential).
+	"POST /api/mailbox/hosting-check":                      botAllow,
+	"POST /api/mailbox/password-reset":                     botAllow,
+	"POST /api/mailbox/password/redeem":                    botPublic,
+	"GET /api/usernames/{name}/available":                  botDeny, // people's nicknames (ADR-0077)
 	"PATCH /api/me/status":                                 botDeny,
 	"POST /api/me/avatar":                                  botAllow,
 	"GET /api/users/{id}/note":                             botDeny,
@@ -570,6 +575,7 @@ var botAudited = map[string]bool{
 	"DELETE /api/workspaces/{id}/invites/{inviteId}":       true,
 	"POST /api/workspaces/{id}/invites/email":              true,
 	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": true,
+	"POST /api/mailbox/password-reset":                     true, // ADR-0100: with the target in the handler's own audit line
 	"POST /api/workspaces/{id}/badges":                     true,
 	"PATCH /api/workspaces/{id}/badges/{badgeId}":          true,
 	"DELETE /api/workspaces/{id}/badges/{badgeId}":         true,
