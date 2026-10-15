@@ -318,6 +318,9 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/event-rsvp":                                                scopeCapability,
 	"POST /api/files/convert":                                             scopeGlobal,
 	"POST /api/invites/{code}/join":                                       scopeAdmission,
+	"POST /api/mailbox/hosting-check":                                     scopeMachine, // ADR-0101: bot asks, server checks
+	"POST /api/mailbox/password-reset":                                    scopeMachine, // ADR-0101: bot asks, server resets
+	"POST /api/mailbox/password/redeem":                                   scopePublic,  // ADR-0101: the one-time token is the credential
 	"POST /api/me/avatar":                                                 scopeGlobal,
 	"POST /api/me/blocked-bots/{id}":                                      scopeGlobal,
 	"POST /api/me/caldav":                                                 scopeGlobal,

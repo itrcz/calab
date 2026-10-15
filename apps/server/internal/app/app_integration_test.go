@@ -187,6 +187,11 @@ func run(m *testing.M) int {
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,
 		RecordingEgressDir:     "/out",
+		// Mail hosting (ADR-0100): the fake admin API of mailbox_integration_test; the reset
+		// allowlist stays empty there (each test points it at its own bot).
+		MailHostAdminURL:   mailHostFakeSrv.url(),
+		MailHostAdminToken: "it-hosting-token",
+		MailHostDomains:    []string{"example.com"},
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {
