@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeBase64Url, parseAddPayload, parseAddressList, parseMailLink } from './mailLink';
+import { decodeBase64Url, encodeAddPayload, parseAddPayload, parseAddressList, parseMailLink } from './mailLink';
 
 const b64url = (s: string): string => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -15,6 +15,12 @@ describe('calab://mail/<payload> (ADR-0088 §12)', () => {
   it('keeps unicode passwords and accepts padding', () => {
     const payload = Buffer.from('k@x.ru:пароль✓', 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
     expect(parseAddPayload(payload)).toEqual({ email: 'k@x.ru', password: 'пароль✓' });
+  });
+
+  it('encodes the add payload back (ADR-0100: the reset page builds the link)', () => {
+    const payload = encodeAddPayload('boris@calab.io', 'pa:ss:word✓');
+    expect(payload).toBe(b64url('boris@calab.io:pa:ss:word✓'));
+    expect(parseAddPayload(payload)).toEqual({ email: 'boris@calab.io', password: 'pa:ss:word✓' });
   });
 
   it('rejects damaged payloads', () => {

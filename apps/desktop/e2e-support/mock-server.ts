@@ -7702,6 +7702,15 @@ class MockImpl {
       }
     };
     this.route('GET', '/api/public/wiki/:code', pub((c) => sendMsg(c.res, 200, PublicWikiPageSchema, w().publicMeta(p0(c), q(c, 'page')))));
+    // One-time mailbox password redemption (ADR-0100): plain JSON, no session. Any token that
+    // starts with "used" answers 410 (the expired state of the page); anything else shows the
+    // fixed password once (the mock does not enforce single use).
+    this.route('POST', '/api/mailbox/password/redeem', (c) => {
+      const token = String((c.raw.length ? JSON.parse(c.raw.toString('utf8')) : {})['token'] ?? '');
+      if (token.startsWith('used')) throw new HttpError(410, ErrorCode.CODE_EXPIRED, 'the link has already been used or has expired');
+      if (!token) throw invalid('token', 'token must be 1..128 characters');
+      send(c.res, 200, JSON.stringify({ email: 'boris@calab.test', password: 'correct horse battery staple' }), 'application/json');
+    });
     this.route(
       'GET',
       '/api/public/wiki/:code/state',

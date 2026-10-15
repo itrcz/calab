@@ -24,7 +24,7 @@ import { ApprovalNote } from '../guests/ApprovalNote';
  */
 
 /** Fires the deep link without leaving the page (see `launchMethod`). */
-function fireDeepLink(url: string): void {
+export function fireDeepLink(url: string): void {
   if (launchMethod(navigator.userAgent) === 'iframe') {
     const f = document.createElement('iframe');
     f.style.display = 'none';

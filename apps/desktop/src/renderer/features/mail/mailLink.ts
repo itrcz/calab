@@ -45,6 +45,23 @@ export function parseAddPayload(payload: string): { email: string; password: str
   return isEmail(email) ? { email, password } : null;
 }
 
+/** base64url without padding (the mirror of decodeBase64Url). */
+export function encodeBase64Url(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * The payload of `calab://mail/<payload>` for the add-account form (ADR-0088 §8): the same
+ * shape parseAddPayload reads. The reset page (ADR-0100) builds it from the one-time password
+ * it has just shown; the URL carries the password, so it is never logged.
+ */
+export function encodeAddPayload(email: string, password: string): string {
+  return encodeBase64Url(`${email}:${password}`);
+}
+
 /** «Имя <a@b>, c@d» → addresses (bad ones dropped). */
 export function parseAddressList(s: string): MailAddress[] {
   const out: MailAddress[] = [];
