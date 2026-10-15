@@ -2,8 +2,9 @@
  * MIME helpers of the engine: body-structure inspection and list snippets (header sync), and the
  * full body parse with mailparser on `messages.get` (§5).
  */
-import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
+import { simpleParser, type AddressObject, type ParsedMail, type SimpleParserOptions } from 'mailparser';
 import type { MailAddress, MailAttachment } from '../../shared/mail';
+import { sniffCharset, SniffingIconv } from './charset';
 import type { StoredBody } from './store';
 
 /** The subset of imapflow's MessageStructureObject we read. */
@@ -73,11 +74,7 @@ function decodeQp(s: string): Buffer {
 }
 
 export function decodeCharset(buf: Uint8Array, charset: string): string {
-  try {
-    return new TextDecoder(charset.trim().toLowerCase() || 'utf-8').decode(buf);
-  } catch {
-    return new TextDecoder('utf-8').decode(buf);
-  }
+  return new TextDecoder(sniffCharset(buf, charset)).decode(buf);
 }
 
 /** Decodes a (possibly truncated) transfer-encoded part to text. */
@@ -153,9 +150,65 @@ function addresses(a: AddressObject | AddressObject[] | undefined): MailAddress[
   return out;
 }
 
+const REPLACEMENT = '�';
+
+/** mailparser news this class up per charset stream (`new Iconv(from, 'UTF-8//TRANSLIT//IGNORE')`); @types/mailparser types the option as an iconv-lite decoder instance instead of its constructor. */
+const PARSER_OPTIONS = {
+  keepCidLinks: true,
+  skipImageLinks: true,
+  skipTextToHtml: true,
+  skipTextLinks: true,
+  Iconv: SniffingIconv,
+} as unknown as SimpleParserOptions;
+
+function dirtyCount(s: string | null | undefined): number {
+  if (!s) return 0;
+  let n = 0;
+  for (const ch of s) if (ch === REPLACEMENT) n++;
+  return n;
+}
+
+/**
+ * Relabel text/plain and text/html parts that mailparser would decode as utf-8 no matter what
+ * (no charset, or a utf-8/ascii one): mailparser only consults `Iconv` for other labels, so a
+ * single-byte cyrillic body there is destroyed before any sniffing can happen. The bogus label
+ * routes those parts through SniffingIconv, which sniffs the bytes. Only single-line
+ * Content-Type headers are touched, and only after a first parse came out dirty.
+ */
+export function retagTextCharsets(source: Buffer): Buffer | null {
+  let changed = false;
+  const out = source
+    .toString('latin1')
+    .replace(/^(content-type[ \t]*:[ \t]*text\/(?:plain|html)\b[^\r\n]*)/gim, (line: string) => {
+      if (/charset[ \t]*=/i.test(line)) {
+        const retagged = line.replace(/(charset[ \t]*=[ \t]*"?)((?:utf-?8)|(?:us-?ascii)|(?:ansi_x3\.4-?1968)|(?:ascii))("?)(?=[ \t]*(?:;|$))/gi, (_m, q1: string, _label: string, q2: string) => `${q1}x-calaba-sniff${q2}`);
+        changed ||= retagged !== line;
+        return retagged;
+      }
+      changed = true;
+      const trimmed = line.replace(/[ \t;]+$/, '');
+      return `${trimmed}; charset=x-calaba-sniff`;
+    });
+  return changed ? Buffer.from(out, 'latin1') : null;
+}
+
 /** Full parse of an RFC 822 source (mailparser): raw HTML (cid: links kept), text, attachments. */
 export async function parseBody(source: Buffer): Promise<ParsedBody> {
-  const p: ParsedMail = await simpleParser(source, { keepCidLinks: true, skipImageLinks: true, skipTextToHtml: true, skipTextLinks: true });
+  const p: ParsedMail = await simpleParser(source, PARSER_OPTIONS);
+  const dirty = dirtyCount(p.text) + dirtyCount(typeof p.html === 'string' ? p.html : null);
+  if (dirty > 0) {
+    // Mojibake survivors: parts mailparser decoded as utf-8 without asking. Re-parse with the
+    // sniffing label injected and keep whichever reading has fewer replacement characters.
+    const retagged = retagTextCharsets(source);
+    if (retagged) {
+      const p2: ParsedMail = await simpleParser(retagged, PARSER_OPTIONS);
+      if (dirtyCount(p2.text) + dirtyCount(typeof p2.html === 'string' ? p2.html : null) < dirty) return toParsed(p2);
+    }
+  }
+  return toParsed(p);
+}
+
+function toParsed(p: ParsedMail): ParsedBody {
   const html = typeof p.html === 'string' ? p.html : null;
   const text = p.text ?? (html ? htmlToText(html).replace(/[ \t]+/g, ' ').trim() : null);
   const attachments = p.attachments.map((a, i) => {
