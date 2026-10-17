@@ -33,7 +33,7 @@
     "yjs": "13.6.33"
   },
   "devDependencies": {
-    "@types/node": "^22.20.4",
+    "@types/node": "^26.6.5",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
   },
