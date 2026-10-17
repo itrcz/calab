@@ -72,7 +72,7 @@ services:
   # для egress — это сам LiveKit. Файлы — в apps/server/data/recordings (RECORDINGS_PATH API
   # на хосте по умолчанию), внутри контейнера /out.
   egress:
-    image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce
+    image: livekit/egress:v1.15.0@sha256:ac244a40268ce1dd1510fbff6eb529609ec68aceff1602343f79be8ca08c355b
     network_mode: "service:livekit"
     environment:
       EGRESS_CONFIG_BODY: |
@@ -94,7 +94,7 @@ services:
   # движок проверяет сертификат строго), затем `docker compose -f infra/docker/compose.dev.yml
   # --profile mail up -d greenmail`. Пользователи alice / bob, пароль secret.
   greenmail:
-    image: greenmail/standalone:2.1.13@sha256:3df66b7edd01c8a301343ca5e3601d8674760d4708655573560c24745e624fb2
+    image: greenmail/standalone:2.1.14@sha256:1ef95a966418cd09b7ea91d504d8c0826bbe7a2f6e679a75c601a831587c1626
     profiles: [mail]
     environment:
       GREENMAIL_OPTS: >-

@@ -82,7 +82,7 @@ services:
   # (GPTunneL takes ≤ 4 h); the egress ends a file at 3 h 59 min by itself as a safety net. Not read-only: PulseAudio and the handler
   # write under /home/egress; no capabilities (the Chrome sandbox is not used).
   egress:
-    image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce   # works with livekit-server 1.13
+    image: livekit/egress:v1.15.0@sha256:ac244a40268ce1dd1510fbff6eb529609ec68aceff1602343f79be8ca08c355b   # works with livekit-server 1.13
     network_mode: host
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
