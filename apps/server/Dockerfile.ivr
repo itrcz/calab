@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ivr ./cmd/ivr
 # The ringback tone (425 Hz, 1 s on / 4 s off, the Russian ringing signal) as Ogg/Opus 48 kHz
 # mono, made once at build time by the same static ffmpeg the API image carries: the worker
 # itself has no encoder and no shell.
-FROM mwader/static-ffmpeg:8.0@sha256:415a41fa3167b890b9703d20bd0f00bf1e9dab8a4b6c27fef1445b2bf5f1ab4a AS tones
+FROM mwader/static-ffmpeg:9.0@sha256:b90574a4e2ae62b763c39c384526689e7eb435da6398f4fb3f6c3f1c6a14ce33 AS tones
 RUN ["/ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=425:duration=1:sample_rate=48000", \
      "-af", "apad=whole_dur=5,volume=0.5", "-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "24k", "-application", "voip", \
      "-frame_duration", "20", "-page_duration", "20000", "-f", "ogg", "/ringback.ogg"]
