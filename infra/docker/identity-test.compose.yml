@@ -60,7 +60,7 @@ services:
     ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_ENFORCEMENT_PORT}:6379"]
   oidc:
     profiles: [oidc]
-    image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
     command: [start-dev, --import-realm, --http-enabled=false]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: fixture-admin
@@ -83,7 +83,7 @@ services:
       start_period: 20s
   rtc:
     profiles: [rtc]
-    image: livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    image: livekit/livekit-server:v1.13@sha256:89ca9ce0791e18d6e03bf6e2c49ceb27e1c754eae8bd50c989386c1a5963791a
     command: [--dev, --bind, 0.0.0.0]
     ports:
       - "127.0.0.1:${IDENTITY_TEST_RTC_PORT}:7880"
