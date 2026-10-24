@@ -16,7 +16,7 @@
     "export:check": "expo export --output-dir dist --platform ios --platform android"
   },
   "dependencies": {
-    "expo": "57.0.26",
+    "expo": "58.0.16",
     "expo-build-properties": "57.0.22",
     "react": "19.3.1",
     "react-dom": "19.3.1",
