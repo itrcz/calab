@@ -30,16 +30,20 @@ Secret-only значения reconciler удаляет. Не дублирова�
 | `PUSH_APNS_KEY_ID` | ID действующего APNs key, через Secret |
 | `PUSH_APNS_TEAM_ID` | Apple team согласованной APS-enabled сборки, через Secret |
 | `PUSH_APNS_APP_ID` | Точный bundle ID приложения, через Secret |
-| `PUSH_APNS_ENVIRONMENT` | `development` для подготовленной новой локальной development-сборки |
+| `PUSH_APNS_ENVIRONMENT` | `production` для TestFlight/App Store; `development` только для сборки с development-подписью |
 | `PUSH_VOIP_ENABLED` | `true` только для согласованной проверки PushKit/CallKit; default `false` |
 
 Можно использовать действующий `.p8` или replacement key: он должен принадлежать
 **той же Apple team** и быть разрешён для того же приложения/topic. Другой team/app
 не исправляется сменой server env: потребуется новая согласованная подпись и сборка.
-Перед device test требуется согласованная установка новой APS-enabled сборки;
-старое приложение на телефоне не подтверждает эту готовность. Фактический APS entitlement
-установленной для теста сборки определяет sandbox (`development`) или production endpoint;
-перед тестом оператор сверяет entitlement, App ID и capability ответа API.
+Перед device test проверить фактический `aps-environment` в подписи установленной
+APS-enabled сборки: он определяет sandbox (`development`) или production endpoint.
+TestFlight, включая публичные тестовые группы, использует `production`
+([Apple: APS Environment](https://developer.apple.com/documentation/bundleresources/entitlements/aps-environment)).
+Сверить его с `CalabMessagePushEnvironment` в native host, App ID и capability ответа
+API. Имя Debug/Release или успешная локальная установка не заменяют эту проверку.
+Если установленная сборка уже подписана правильно, смена server env не требует
+новой сборки или переустановки.
 Ключевые байты, Apple IDs, device tokens и signing credentials не помещать в git/логи.
 
 Пример фрагмента Pod spec, который оператор адаптирует к своему Secret и манифестам:
@@ -61,7 +65,7 @@ spec:
           valueFrom: {secretKeyRef: {name: calab-push-config, key: apns-team-id}}
         - name: PUSH_APNS_APP_ID
           valueFrom: {secretKeyRef: {name: calab-push-config, key: apns-app-id}}
-        - {name: PUSH_APNS_ENVIRONMENT, value: development}
+        - {name: PUSH_APNS_ENVIRONMENT, value: production}
         - {name: PUSH_VOIP_ENABLED, value: "true"}
       volumeMounts:
         - {name: apns-key, mountPath: /run/calab-push, readOnly: true}
@@ -85,6 +89,48 @@ spec:
 Compose overlay `infra/docker/compose.push.yml` остаётся вариантом self-host/стенда,
 проверка его структуры: `docker compose -f compose.yml -f compose.push.yml config --quiet`.
 Он не изменяет манифесты Kubernetes.
+
+## TestFlight: переключение APNs с development на production
+
+Признак несовпадения: установленная TestFlight-сборка имеет `aps-environment=production`,
+а аутентифицированный `GET /api/me/push-capabilities` объявляет `development`.
+Общий клиент сравнивает `appId` и `environment` с native state и при несовпадении
+не регистрирует endpoint. Проверку не обходить: production-токен не подходит sandbox.
+Кнопка Test notification / Show проверяет локальное уведомление, а не доставку APNs.
+
+**Merge этого документа или обычный релиз API/web не переключает Vault.** Оператор
+отдельно применяет следующий config-only change в действующем источнике конфигурации:
+
+```diff
+-PUSH_APNS_ENVIRONMENT=development
++PUSH_APNS_ENVIRONMENT=production
+```
+
+1. Сохранить предыдущую версию конфигурации. Изменить только это значение в Vault
+   `kv/app/calab`, сохранив остальные поля; не заменять весь map неполным набором.
+   Сохранить согласованные `PUSH_APNS_APP_ID`, team и key; отдельно проверить, что
+   действующий APNs key разрешён для production и нужного topic. Не печатать ключи
+   или токены в логах/PR. Несовпадение team/app требует отдельного исправления.
+2. Дождаться env-sync в `calab-env` и применить обычный rollout API. Проверить
+   readiness и новое значение на всех API-репликах, чтобы не осталось смешанных
+   сред. Новый image/tag, миграция БД или iOS-билд для этой смены не нужны.
+3. В local-account сессии на точном origin телефона проверить живой
+   `GET /api/me/push-capabilities`: APNs должен объявлять правильный `appId` и
+   `production`; VoIP при включённом `PUSH_VOIP_ENABLED` использует ту же среду.
+   Успешный env-sync или rollout без этой проверки не подтверждает конфигурацию API.
+4. Полностью закрыть и снова открыть установленный Calab из TestFlight, чтобы
+   повторить регистрацию. Проверить успешную регистрацию APNs, затем свернуть
+   приложение и заблокировать телефон. Отправить новое личное сообщение с другого
+   аккаунта или существующего тестового бота. Подтвердить уведомление на этом iPhone
+   и переход в нужную личку. HTTP 200 отправки сообщения и локальный Show не являются
+   доказательством доставки. До этого результата восстановление остаётся непроверенным.
+
+Сервер выбирает **одну среду** для APNs и VoIP: development-установки после переключения
+больше не совпадают с capability. Для их проверки использовать отдельный sandbox-стенд,
+не переключать production обратно во время публичного тестирования.
+Откат конфигурации: восстановить предыдущее значение в источнике, дождаться env-sync,
+повторить rollout и проверку capabilities. Это вернёт sandbox и остановит TestFlight
+push; откат БД или приложения для такой смены не требуется.
 
 ## Миграция, проверка, откат
 
