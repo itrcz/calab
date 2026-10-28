@@ -1,3 +1,4 @@
+import type { HostCalendarWidgetCapability } from '../../shared/hostCalendarWidget';
 import type { HostCallsCapability } from '../../shared/hostCalls';
 import type { HostMediaPermissionsCapability } from '../../shared/hostPermissions';
 import type { CalabaApi } from '../../preload/api';
@@ -27,6 +28,7 @@ export interface Platform extends Omit<CalabaApi, 'mail'> {
   /** Optional status-only phone host capability; absent in ordinary browsers/older hosts. */
   sessionActivity?: SessionActivityCapability;
   notifications?: HostNotificationsCapability;
+  calendarWidget?: HostCalendarWidgetCapability;
   mediaPermissions?: HostMediaPermissionsCapability;
   incomingCalls?: HostCallsCapability;
   kind: 'electron' | 'web';

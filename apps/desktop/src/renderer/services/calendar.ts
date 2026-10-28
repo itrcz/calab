@@ -395,8 +395,11 @@ export function openEventOccurrence(id: string, at: number): Promise<void> {
 }
 
 async function showEventById(id: string, at?: number): Promise<void> {
+  const sessionId = useSession.getState().sessionId;
+  const current = () => useSession.getState().sessionId === sessionId && useSession.getState().ready;
   try {
     const r = await api.calendar.get(id);
+    if (!current()) return;
     const series = r.event;
     if (!series || series.cancelledAt) throw new ApiError('ERROR_CODE_NOT_FOUND', 'cancelled', 404);
     if (!calendarAvailable(series.workspaceId)) {
@@ -420,8 +423,9 @@ async function showEventById(id: string, at?: number): Promise<void> {
       const list = await api.calendar.list(series.workspaceId, new Date(now - 86_400_000), new Date(now + 61 * 86_400_000)).catch(() => null);
       target = list?.events.find((e) => e.id === id && eventSpan(e).end > now) ?? series;
     }
-    openEvent(target);
+    if (current()) openEvent(target);
   } catch (e) {
+    if (!current()) return;
     if (e instanceof ApiError && (e.status === 404 || e.status === 403)) toast.info(t('cal.notFound'));
     else toast.fail(e, t('cal.notFound'));
   }

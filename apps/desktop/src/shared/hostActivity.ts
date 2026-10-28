@@ -1,4 +1,5 @@
 import { parseCallsOperation, type HostCallsOperation } from './hostCalls';
+import { parseCalendarWidgetOperation, type CalendarWidgetOperation } from './hostCalendarWidget';
 import { parseMediaPermissionsOperation, type MediaPermissionsOperation } from './hostPermissions';
 /** Local, optional host capability (ADR-0056), not a server/auth protocol. No product identifiers. */
 export interface SessionActivitySnapshot {
@@ -14,6 +15,7 @@ export interface SessionActivityCapability {
 }
 
 export type HostActivityMessage =
+  | ({ v: 1; type: 'calendarWidget'; host: number; document: string; seq: number; request: number } & CalendarWidgetOperation)
   | ({ v: 1; type: 'permissions'; host: number; document: string; seq: number; request: number } & MediaPermissionsOperation)
   | ({ v:1; type:'calls'; host:number; document:string; seq:number; request:number } & HostCallsOperation)
   | { v: 1; type: 'hello'; host: number; document: string }
@@ -57,6 +59,10 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
   if (value.type === 'permissions' && counter(value.request) && value.request > 0) {
     const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
     return parseMediaPermissionsOperation(fields) ? value as unknown as HostActivityMessage : null;
+  }
+  if (value.type === 'calendarWidget' && counter(value.request) && value.request > 0) {
+    const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
+    return parseCalendarWidgetOperation(fields) ? value as unknown as HostActivityMessage : null;
   }
   if (value.type === 'calls' && counter(value.request) && value.request > 0) {
     const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));

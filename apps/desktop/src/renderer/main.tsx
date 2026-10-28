@@ -1,3 +1,4 @@
+import { installCalendarWidgets } from './services/calendarWidget';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
@@ -53,6 +54,7 @@ installSipOutbound();
 // After a restart for an update: back into the same room / call (docs/09 #126).
 installResumeVoice();
 installHostActivity();
+installCalendarWidgets();
 installHostNotifications();
 installHostIncomingCalls();
 
