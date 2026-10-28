@@ -12,7 +12,7 @@ test('invite link: card → continue in the browser → registration with the co
   await expect(card.getByRole('heading', { name: 'Вас пригласили в пространство' })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Открыть в Calab' })).toBeVisible();
   await expect(card.getByRole('link', { name: 'Скачать приложение' })).toHaveAttribute('href', '/download/');
-  await expect(card.getByRole('checkbox', { name: 'Всегда открывать в приложении' })).not.toBeChecked();
+  await expect(card.getByRole('checkbox', { name: 'Запомнить выбор' })).not.toBeChecked();
   expect(new URL(page.url()).pathname).toBe('/join/e2e-link-card-0000'); // kept while the card is shown
 
   await card.getByRole('button', { name: 'Продолжить в браузере' }).click();

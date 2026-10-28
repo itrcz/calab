@@ -109,14 +109,14 @@ for (const theme of THEMES) {
         const browser = card.getByRole('button', { name: 'Продолжить в браузере' });
         const download = card.getByRole('link', { name: 'Скачать приложение' });
         await expect(download).toHaveAttribute('href', '/download/');
-        // Focus order: open → browser → download → «always in the app».
+        // Focus order: open → browser → download → «remember choice».
         await open.focus();
         await page.keyboard.press('Tab');
         await expect(browser).toBeFocused();
         await page.keyboard.press('Tab');
         await expect(download).toBeFocused();
         await page.keyboard.press('Tab');
-        await expect(card.getByRole('checkbox', { name: 'Всегда открывать в приложении' })).toBeFocused();
+        await expect(card.getByRole('checkbox', { name: 'Запомнить выбор' })).toBeFocused();
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
         const s: Shot = { page, theme, viewport };
@@ -130,7 +130,7 @@ for (const theme of THEMES) {
         await expect(card.getByRole('button', { name: 'Продолжить в браузере' })).toBeFocused();
         await expect(card.getByRole('link', { name: 'Скачать приложение' })).toBeVisible();
         await expect(card.getByRole('button', { name: 'Открыть в Calab ещё раз' })).toBeVisible();
-        // «Всегда открывать в приложении» contradicts «не найдено»: hidden in this state.
+        // «Запомнить выбор» contradicts «не найдено»: hidden in this state.
         await expect(card.getByRole('checkbox')).toHaveCount(0);
         if (ALL) await checkpoint(s, 'web-join-card-not-found');
 
@@ -218,7 +218,7 @@ test('calendar-public: dark 960', async ({ page }) => {
   }
 });
 
-test('web link card: room preview, «always in the app», signed in', async ({ page }) => {
+test('web link card: room preview, «remember choice» → app, signed in', async ({ page }) => {
   test.skip(!ALL, 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
   expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
   let mock: MockServer | undefined;
@@ -233,17 +233,21 @@ test('web link card: room preview, «always in the app», signed in', async ({ p
     await expect(card.getByRole('heading', { name: /Созвон/ })).toBeVisible();
     await expect(card.getByText('в «Команда Calab»')).toBeVisible();
 
-    // «Всегда открывать в приложении»: remembered; on arrival the app is tried right away, with
-    // a visible way back to the browser.
-    await card.getByRole('checkbox', { name: 'Всегда открывать в приложении' }).check();
+    // «Запомнить выбор» + «Открыть в Calab»: remembered only once that primary action is pressed
+    // (DEV-4947) — checking the box alone does nothing yet.
+    await card.getByRole('checkbox', { name: 'Запомнить выбор' }).check();
+    await card.getByRole('button', { name: 'Открыть в Calab' }).click();
+    await expect(card.getByRole('status')).toContainText('Приложение не найдено', { timeout: 5000 });
+    // Remembered now: on arrival the app is tried right away, with a visible way back to the browser.
     await page.reload();
     await expect(card.getByRole('status')).toContainText('Открываем Calab');
     await expect(card.getByRole('status').getByRole('button', { name: 'Открыть в браузере' })).toBeVisible();
     await expect(card.getByRole('status')).toContainText('Приложение не найдено', { timeout: 5000 });
-    await expect(card.getByRole('checkbox', { name: 'Всегда открывать в приложении' })).toBeChecked();
-    await card.getByRole('checkbox', { name: 'Всегда открывать в приложении' }).uncheck();
+    await expect(card.getByRole('checkbox', { name: 'Запомнить выбор' })).toBeChecked();
+    await card.getByRole('checkbox', { name: 'Запомнить выбор' }).uncheck();
 
-    // Signed in: the card is still shown (no jump), now with the workspace name.
+    // Signed in, choice forgotten (unchecked, then a primary action pressed): the card is still
+    // shown (no jump), now with the workspace name.
     await card.getByRole('button', { name: 'Продолжить в браузере' }).click();
     await page.getByRole('button', { name: 'Войти', exact: true }).click(); // guest screen → login
     await page.getByLabel('Email').fill('owner@calaba.test');
