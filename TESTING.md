@@ -2356,3 +2356,9 @@ A Document Server per docs/ops/office-onlyoffice-deploy.md, `OFFICE_ENABLED=true
 6. Close a tab with unsaved changes → the three-button dialog. Hide the window for 5 minutes, show it → the editor opens again.
 7. Phone: «Создать → Документ» → the file is in the list with the note «Править его можно на компьютере»; opening it views only.
 8. `OFFICE_ENABLED=false` + rollout: after a reconnect the office items and the editor are gone, xlsx opens its card as before.
+
+### CalDAV source DATE preservation (ADR-0144)
+
+- Unit: `go test -race ./internal/caldav` covers calendar-date preservation, recurrence across DST and batch encoding.
+- PG17: `go test -race -tags integration -run '^TestCalDAVDatePersistence$' ./internal/app` imports a DATE event, changes the profile timezone, checks persisted dates and legacy-column defaults.
+- Migration 00133 is additive; previously imported rows acquire original dates on their next successful normal sync.

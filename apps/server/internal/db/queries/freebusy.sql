@@ -52,12 +52,14 @@ DELETE FROM external_busy WHERE user_id = $1;
 
 -- name: InsertExternalBusy :exec
 INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url,
-    href, etag, recurring, web_url)
+    href, etag, recurring, web_url, start_date, end_date)
 SELECT sqlc.arg('user_id')::uuid, unnest(sqlc.arg('uids')::text[]), unnest(sqlc.arg('starts')::timestamptz[]),
     unnest(sqlc.arg('ends')::timestamptz[]), unnest(sqlc.arg('all_days')::boolean[]), unnest(sqlc.arg('summaries')::text[]),
     unnest(sqlc.arg('locations')::text[]), unnest(sqlc.arg('attendees')::text[])::jsonb, unnest(sqlc.arg('organizers')::text[]),
     unnest(sqlc.arg('urls')::text[]), unnest(sqlc.arg('hrefs')::text[]), unnest(sqlc.arg('etags')::text[]),
-    unnest(sqlc.arg('recurrings')::boolean[]), unnest(sqlc.arg('web_urls')::text[]);
+    unnest(sqlc.arg('recurrings')::boolean[]), unnest(sqlc.arg('web_urls')::text[]),
+    unnest(CASE WHEN coalesce(cardinality(sqlc.arg('start_dates')::text[]), 0) = 0 THEN array_fill(''::text, ARRAY[cardinality(sqlc.arg('uids')::text[])]) ELSE sqlc.arg('start_dates')::text[] END),
+    unnest(CASE WHEN coalesce(cardinality(sqlc.arg('end_dates')::text[]), 0) = 0 THEN array_fill(''::text, ARRAY[cardinality(sqlc.arg('uids')::text[])]) ELSE sqlc.arg('end_dates')::text[] END);
 
 -- name: GetMyExternalEvent :one
 -- One imported occurrence of the caller (ADR-0045, amendment 1): a delete names it by uid, start and href.

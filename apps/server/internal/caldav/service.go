@@ -523,6 +523,7 @@ func insertParams(user uuid.UUID, busy []Busy) (sqlc.InsertExternalBusyParams, e
 			enc[d] = att
 		}
 		p.Uids, p.Starts, p.Ends, p.AllDays = append(p.Uids, b.UID), append(p.Starts, b.Start), append(p.Ends, b.End), append(p.AllDays, b.AllDay)
+		p.StartDates, p.EndDates = append(p.StartDates, b.StartDate), append(p.EndDates, b.EndDate)
 		p.Summaries, p.Locations, p.Attendees = append(p.Summaries, d.Summary), append(p.Locations, d.Location), append(p.Attendees, att)
 		p.Organizers, p.Urls = append(p.Organizers, d.Organizer), append(p.Urls, d.URL)
 		p.Hrefs, p.Etags, p.Recurrings, p.WebUrls = append(p.Hrefs, b.Href), append(p.Etags, b.ETag), append(p.Recurrings, b.Recurring), append(p.WebUrls, b.WebURL)

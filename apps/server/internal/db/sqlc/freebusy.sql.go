@@ -188,7 +188,7 @@ func (q *Queries) GetCalDavAccount(ctx context.Context, userID uuid.UUID) (Calda
 }
 
 const getMyExternalEvent = `-- name: GetMyExternalEvent :one
-SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url FROM external_busy
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url, start_date, end_date FROM external_busy
 WHERE user_id = $1 AND uid = $2 AND starts_at = $3 AND href = $4::text
 LIMIT 1
 `
@@ -224,18 +224,22 @@ func (q *Queries) GetMyExternalEvent(ctx context.Context, arg GetMyExternalEvent
 		&i.Etag,
 		&i.Recurring,
 		&i.WebUrl,
+		&i.StartDate,
+		&i.EndDate,
 	)
 	return i, err
 }
 
 const insertExternalBusy = `-- name: InsertExternalBusy :exec
 INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url,
-    href, etag, recurring, web_url)
+    href, etag, recurring, web_url, start_date, end_date)
 SELECT $1::uuid, unnest($2::text[]), unnest($3::timestamptz[]),
     unnest($4::timestamptz[]), unnest($5::boolean[]), unnest($6::text[]),
     unnest($7::text[]), unnest($8::text[])::jsonb, unnest($9::text[]),
     unnest($10::text[]), unnest($11::text[]), unnest($12::text[]),
-    unnest($13::boolean[]), unnest($14::text[])
+    unnest($13::boolean[]), unnest($14::text[]),
+    unnest(CASE WHEN coalesce(cardinality($15::text[]), 0) = 0 THEN array_fill(''::text, ARRAY[cardinality($2::text[])]) ELSE $15::text[] END),
+    unnest(CASE WHEN coalesce(cardinality($16::text[]), 0) = 0 THEN array_fill(''::text, ARRAY[cardinality($2::text[])]) ELSE $16::text[] END)
 `
 
 type InsertExternalBusyParams struct {
@@ -253,6 +257,8 @@ type InsertExternalBusyParams struct {
 	Etags      []string
 	Recurrings []bool
 	WebUrls    []string
+	StartDates []string
+	EndDates   []string
 }
 
 func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusyParams) error {
@@ -271,6 +277,8 @@ func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusy
 		arg.Etags,
 		arg.Recurrings,
 		arg.WebUrls,
+		arg.StartDates,
+		arg.EndDates,
 	)
 	return err
 }
@@ -443,7 +451,7 @@ func (q *Queries) ListDueExternalReminders(ctx context.Context, arg ListDueExter
 }
 
 const listExternalBusy = `-- name: ListExternalBusy :many
-SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.all_day, b.summary, b.location, b.attendees, b.organizer, b.url, b.href, b.etag, b.recurring, b.web_url, coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
+SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.all_day, b.summary, b.location, b.attendees, b.organizer, b.url, b.href, b.etag, b.recurring, b.web_url, b.start_date, b.end_date, coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
 LEFT JOIN caldav_accounts a ON a.user_id = b.user_id
 WHERE b.user_id = ANY($1::uuid[]) AND b.starts_at < $2 AND b.ends_at > $3
 ORDER BY b.user_id, b.starts_at
@@ -485,6 +493,8 @@ func (q *Queries) ListExternalBusy(ctx context.Context, arg ListExternalBusyPara
 			&i.ExternalBusy.Etag,
 			&i.ExternalBusy.Recurring,
 			&i.ExternalBusy.WebUrl,
+			&i.ExternalBusy.StartDate,
+			&i.ExternalBusy.EndDate,
 			&i.ShareLevel,
 		); err != nil {
 			return nil, err
@@ -545,7 +555,7 @@ func (q *Queries) ListFreeBusyMembers(ctx context.Context, arg ListFreeBusyMembe
 }
 
 const listMyExternalEvents = `-- name: ListMyExternalEvents :many
-SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url FROM external_busy
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url, start_date, end_date FROM external_busy
 WHERE user_id = $1 AND starts_at < $2 AND ends_at > $3
 ORDER BY starts_at, ends_at, uid
 `
@@ -580,6 +590,8 @@ func (q *Queries) ListMyExternalEvents(ctx context.Context, arg ListMyExternalEv
 			&i.Etag,
 			&i.Recurring,
 			&i.WebUrl,
+			&i.StartDate,
+			&i.EndDate,
 		); err != nil {
 			return nil, err
 		}

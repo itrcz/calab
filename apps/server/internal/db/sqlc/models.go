@@ -993,6 +993,8 @@ type ExternalBusy struct {
 	Etag      string
 	Recurring bool
 	WebUrl    string
+	StartDate string
+	EndDate   string
 }
 
 type ExternalRemindersSent struct {

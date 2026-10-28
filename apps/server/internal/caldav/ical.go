@@ -33,13 +33,14 @@ import (
 
 // Busy is one imported busy interval.
 type Busy struct {
-	UID        string // hash of the VEVENT UID
-	Start, End time.Time
-	AllDay     bool
-	Recurring  bool   // an occurrence of a series (RRULE or RECURRENCE-ID)
-	WebURL     string // the provider's web page of the event, when reliable; else ""
-	Href, ETag string // the calendar object (set by the import, not by BusyFromICS)
-	*Details          // shared by the occurrences of a series; never nil from BusyFromICS
+	UID                string // hash of the VEVENT UID
+	Start, End         time.Time
+	AllDay             bool
+	StartDate, EndDate string // DATE values before conversion to UTC; exclusive end.
+	Recurring          bool   // an occurrence of a series (RRULE or RECURRENCE-ID)
+	WebURL             string // the provider's web page of the event, when reliable; else ""
+	Href, ETag         string // the calendar object (set by the import, not by BusyFromICS)
+	*Details                  // shared by the occurrences of a series; never nil from BusyFromICS
 }
 
 // Attendee is one ATTENDEE of an event.
@@ -702,7 +703,11 @@ func (ev vevent) occurrences(from, to time.Time) []Busy {
 	emit := func(s time.Time) {
 		st, en := span(s)
 		if en.After(from) && st.Before(to) {
-			out = append(out, Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay, Recurring: recurring, WebURL: web, Details: &det})
+			b := Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay, Recurring: recurring, WebURL: web, Details: &det}
+			if allDay {
+				b.StartDate, b.EndDate = st.Format(time.DateOnly), en.Format(time.DateOnly)
+			}
+			out = append(out, b)
 		}
 	}
 	excluded := map[int64]bool{}
