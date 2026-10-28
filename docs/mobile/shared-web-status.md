@@ -1,5 +1,17 @@
 # Телефон: общий веб в оболочке — статус
 
+## 2026-10-28: links open the app (DEV-4947, ADR-0140)
+
+https `/t/<KEY>`, `/join/<code>`, `/r/<code>` of the hosts in `EXPO_PUBLIC_CALAB_LINK_HOSTS`
+(default: the host of `EXPO_PUBLIC_CALAB_URL`) and `calab://` / `calaba://` open the app: iOS
+associated domains, Android `autoVerify` app links, `scheme` for both. `src/links.ts` maps the
+incoming URL to the app's own origin; a cold start loads that route directly, a running iOS page
+with a completed handshake gets `calab-host-link` and opens it in place (the ack now carries
+`links: 1`), everything else (Android, loading, error screen) remounts the WebView on the route.
+Checked: unit tests, `config:check`, `expo prebuild` (entitlements, `CFBundleURLTypes`,
+AndroidManifest filters). Not checked on a device; needs the `/.well-known` files from the Caddy
+branch and a signing profile with Associated Domains.
+
 ## 2026-10-26: desktop catch-up (local, not published)
 
 The shared web host remains the supported mobile architecture; Mail is excluded
