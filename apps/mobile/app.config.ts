@@ -1,5 +1,5 @@
 import type { ExpoConfig } from 'expo/config';
-import { parseWebOrigin, parseReleaseIdentity } from './src/config';
+import { parseWebOrigin, parseLinkHosts, parseReleaseIdentity } from './src/config';
 
 /**
  * Phone host (ADR-0067). Hosts, identifiers and the EAS link come from env only — a local,
@@ -8,7 +8,19 @@ import { parseWebOrigin, parseReleaseIdentity } from './src/config';
  * cannot: `expo export` reads this file once before it loads `.env`; the app then shows a
  * configuration error instead of loading anything.
  */
-if (process.env.EXPO_PUBLIC_CALAB_URL !== undefined) parseWebOrigin(process.env.EXPO_PUBLIC_CALAB_URL);
+const webOrigin = process.env.EXPO_PUBLIC_CALAB_URL !== undefined ? parseWebOrigin(process.env.EXPO_PUBLIC_CALAB_URL) : null;
+
+/**
+ * Links that open the app (ADR-0140): the product scheme (like desktop `PROTOCOLS`, main/deeplink.ts;
+ * `calaba` is the alias from before the rename) and https links of the web hosts —
+ * `EXPO_PUBLIC_CALAB_LINK_HOSTS`, else the host of the web origin. The hosts serve
+ * `/.well-known/apple-app-site-association` and `assetlinks.json` (Caddy, from env); only the
+ * routes App.tsx accepts are claimed, everything else on those hosts stays in the browser.
+ */
+const SCHEME = 'calab';
+const LEGACY_SCHEME = 'calaba';
+const LINK_PATHS = ['/t/', '/join/', '/r/'];
+const linkHosts = parseLinkHosts(process.env.EXPO_PUBLIC_CALAB_LINK_HOSTS, webOrigin);
 
 const env = (name: string): string | undefined => process.env[name]?.trim() || undefined;
 const iosBundleId = env('CALAB_IOS_BUNDLE_ID');
@@ -27,6 +39,7 @@ const identity = parseReleaseIdentity(process.env.CALAB_APP_VERSION, process.env
 const config: ExpoConfig = {
   name: 'Calab',
   slug: 'calab',
+  scheme: [SCHEME, LEGACY_SCHEME],
   ...(owner ? { owner } : {}),
   version: identity.version,
   platforms: ['ios', 'android'],
@@ -39,6 +52,7 @@ const config: ExpoConfig = {
     buildNumber: identity.buildNumber,
     supportsTablet: false,
     ...(iosBundleId ? { bundleIdentifier: iosBundleId } : {}),
+    ...(linkHosts.length ? { associatedDomains: linkHosts.map((host) => `applinks:${host}`) } : {}),
     // Explicit opt-in only; requires a matching APNs-capable profile. Default local builds request no APS grant.
     ...(pushEnvironment ? { entitlements: { 'aps-environment': pushEnvironment } } : {}),
     infoPlist: {
@@ -60,6 +74,16 @@ const config: ExpoConfig = {
     ...(androidPackage ? { package: androidPackage } : {}),
     // The WebView grants getUserMedia only for permissions the app declares.
     permissions: ['RECORD_AUDIO', 'MODIFY_AUDIO_SETTINGS', 'CAMERA'],
+    intentFilters: [
+      ...(linkHosts.length ? [{
+        action: 'VIEW',
+        // Verified against each host's assetlinks.json at install; unverified, Android shows a chooser.
+        autoVerify: true,
+        category: ['BROWSABLE', 'DEFAULT'],
+        data: linkHosts.flatMap((host) => LINK_PATHS.map((pathPrefix) => ({ scheme: 'https', host, pathPrefix }))),
+      }] : []),
+      // The plain `calab://` / `calaba://` filter (no verification) comes from `scheme` above.
+    ],
   },
   plugins: [
     './plugins/withSessionActivity',

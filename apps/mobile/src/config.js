@@ -32,6 +32,29 @@ function parseWebOrigin(raw) {
   return url.origin;
 }
 
+/** A DNS hostname as `URL.hostname` prints it: lowercase LDH labels, a letter in the last one (no IPs). */
+const HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?=[a-z0-9-]*[a-z])[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * The hosts whose https links open the app (ADR-0140): universal links on iOS, verified app links
+ * on Android, and the hosts the app accepts an incoming https link from. `raw` is the
+ * space-separated `EXPO_PUBLIC_CALAB_LINK_HOSTS` (read by app.config.ts for the native config and
+ * inlined into the bundle for App.tsx); absent or blank, it is the host of `origin` alone, or no
+ * hosts at all without an origin. Every entry must be a bare lowercase hostname — no scheme, port,
+ * path, wildcard or IP — otherwise this throws, so a typo fails the build.
+ * @param {string | undefined} raw
+ * @param {string | null} [origin]
+ * @returns {string[]}
+ */
+function parseLinkHosts(raw, origin = null) {
+  const names = (raw ?? '').split(/[ \t\n]+/).filter(Boolean);
+  if (names.length === 0) return origin ? [new URL(origin).hostname] : [];
+  for (const name of names) {
+    if (!HOSTNAME.test(name)) throw new Error(`EXPO_PUBLIC_CALAB_LINK_HOSTS: ${JSON.stringify(name)} is not a lowercase hostname`);
+  }
+  return [...new Set(names)];
+}
+
 /** Local defaults; store uploads must supply an identity checked against distribution history. */
 function parseReleaseIdentity(version = '0.1.0', buildNumber = '1') {
   if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) || version.trim() !== version) {
@@ -43,4 +66,4 @@ function parseReleaseIdentity(version = '0.1.0', buildNumber = '1') {
   return { version, buildNumber };
 }
 
-module.exports = { WebOriginError, parseWebOrigin, parseReleaseIdentity };
+module.exports = { WebOriginError, parseWebOrigin, parseLinkHosts, parseReleaseIdentity };

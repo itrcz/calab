@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WebOriginError, parseWebOrigin, parseReleaseIdentity } from './config';
+import { WebOriginError, parseWebOrigin, parseLinkHosts, parseReleaseIdentity } from './config';
 
 describe('parseWebOrigin', () => {
   it('accepts a bare https origin, with or without the trailing slash or a port', () => {
@@ -34,6 +34,29 @@ describe('parseWebOrigin', () => {
     'https://calab.exa\tmple.com',
   ])('rejects %j that the URL parser would rewrite or truncate', (raw) => {
     expect(() => parseWebOrigin(raw)).toThrow('bare origin');
+  });
+});
+
+describe('parseLinkHosts', () => {
+  it('defaults to the host of the web origin, without its port, or to none', () => {
+    expect(parseLinkHosts(undefined, 'https://calab.example.com')).toEqual(['calab.example.com']);
+    expect(parseLinkHosts('  ', 'https://calab.example.com:8443')).toEqual(['calab.example.com']);
+    expect(parseLinkHosts(undefined)).toEqual([]);
+  });
+
+  it('takes space-separated hostnames as given, once each, instead of the default', () => {
+    expect(parseLinkHosts(' calab.example.com  alias.example.ru\tcalab.example.com ', 'https://other.example.com'))
+      .toEqual(['calab.example.com', 'alias.example.ru']);
+    expect(parseLinkHosts('xn--80ak6aa92e.example.com')).toEqual(['xn--80ak6aa92e.example.com']);
+  });
+
+  it.each([
+    'Calab.example.com', 'calab.example.com:443', 'https://calab.example.com', 'calab.example.com/', 'calab.example.com/t/',
+    '*.example.com', 'localhost', '127.0.0.1', 'calab..example.com', '-calab.example.com', 'calab-.example.com',
+    'calab_x.example.com', 'calab.example.com.', 'user@calab.example.com', 'calab.example.com,alias.example.com',
+    `${'a'.repeat(64)}.example.com`, 'calab.example.com\\x', 'кала.example.com',
+  ])('rejects %j', (raw) => {
+    expect(() => parseLinkHosts(`calab.example.com ${raw}`, 'https://calab.example.com')).toThrow('EXPO_PUBLIC_CALAB_LINK_HOSTS');
   });
 });
 
