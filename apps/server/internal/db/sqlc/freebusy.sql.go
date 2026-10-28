@@ -657,6 +657,56 @@ func (q *Queries) ListRoomBusyEvents(ctx context.Context, arg ListRoomBusyEvents
 	return items, nil
 }
 
+const listWidgetExternalEvents = `-- name: ListWidgetExternalEvents :many
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url, href, etag, recurring, web_url, start_date, end_date FROM external_busy
+WHERE user_id = $1 AND starts_at < $2 AND ends_at > $3
+ORDER BY starts_at, ends_at, uid
+LIMIT 1001
+`
+
+type ListWidgetExternalEventsParams struct {
+	UserID uuid.UUID
+	To     time.Time
+	From   time.Time
+}
+
+func (q *Queries) ListWidgetExternalEvents(ctx context.Context, arg ListWidgetExternalEventsParams) ([]ExternalBusy, error) {
+	rows, err := q.db.Query(ctx, listWidgetExternalEvents, arg.UserID, arg.To, arg.From)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExternalBusy{}
+	for rows.Next() {
+		var i ExternalBusy
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Uid,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Summary,
+			&i.Location,
+			&i.Attendees,
+			&i.Organizer,
+			&i.Url,
+			&i.Href,
+			&i.Etag,
+			&i.Recurring,
+			&i.WebUrl,
+			&i.StartDate,
+			&i.EndDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockCalDavAccount = `-- name: LockCalDavAccount :one
 SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level, remind FROM caldav_accounts WHERE user_id = $1 FOR UPDATE
 `

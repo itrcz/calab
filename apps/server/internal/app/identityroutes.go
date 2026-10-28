@@ -77,6 +77,8 @@ var billingRecoveryRoutes = map[string]bool{
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
 // always requires an explicit authority and resource classification.
 var identityRoutes = map[string]identityScope{
+	"POST /api/me/calendar-widget": scopeAggregate,
+	"GET /api/calendar-widget":     scopePublic, // ADR-0145: purpose-specific grant and fresh session/policy checks.
 	// Native endpoint management uses independent local-account authority. Delivery and
 	// resolve additionally recheck the exact persisted session against the target policy.
 	"GET /api/me/push-capabilities":                                                     scopeGlobal,

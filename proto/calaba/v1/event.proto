@@ -584,3 +584,39 @@ message CalendarEventCommentDelete {
   string organizer_id = 6;
   repeated string attendee_ids = 7;
 }
+
+// Native personal calendar capability, never accepted as a normal API access token (ADR-0145).
+message CalendarWidgetGrant {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// Minimized occurrence for native widgets. All-day dates are inclusive/exclusive calendar dates.
+message CalendarWidgetEvent {
+  string key = 1;
+  string event_id = 2;
+  string external_uid = 3;
+  string workspace_id = 4;
+  string title = 5;
+  google.protobuf.Timestamp starts_at = 6;
+  google.protobuf.Timestamp ends_at = 7;
+  bool all_day = 8;
+  string start_date = 9;
+  string end_date = 10;
+  string color = 11;
+  string source = 12;
+  // Original occurrence instant for details, before all-day projection to the device zone.
+  google.protobuf.Timestamp occurrence_at = 13;
+}
+
+message CalendarWidgetAgenda {
+  uint32 version = 1;
+  google.protobuf.Timestamp generated_at = 2;
+  google.protobuf.Timestamp valid_until = 3;
+  google.protobuf.Timestamp from = 4;
+  google.protobuf.Timestamp to = 5;
+  string timezone = 6;
+  repeated CalendarWidgetEvent events = 7;
+  // Earlier than to when the bounded response omits later events. Do not show those days as empty.
+  google.protobuf.Timestamp complete_until = 8;
+}

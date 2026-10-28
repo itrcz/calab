@@ -92,6 +92,9 @@ var botRouteGroups = []botRouteGroup{
 	{access: botPublic, why: "the SIP registration agent (ADR-0121): its own bearer token (SIPREG_AGENT_TOKEN), never a user's or a bot's", routes: []string{
 		"GET /api/internal/sipreg-agent",
 	}},
+	{access: botPublic, why: "calendar widgets (ADR-0145): the handler accepts only a purpose-bound widget grant for a live human session, never a user's access token or a bot token", routes: []string{
+		"GET /api/calendar-widget",
+	}},
 	{access: botPublic, why: "signed deliveries of LiveKit, the payment providers and the repository hosting; public offers and the checkout return page", routes: []string{
 		"POST /api/rtc/webhook",
 		"POST /api/billing/stripe/webhook",
@@ -693,6 +696,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/workspaces/{id}/members/birthdays",
 		"PATCH /api/workspaces/{id}/members/{userId}/birthday",
 		"GET /api/me/events/today",
+		"POST /api/me/calendar-widget",
 		"GET /api/me/caldav",
 		"POST /api/me/caldav",
 		"PUT /api/me/caldav",

@@ -39,6 +39,12 @@ SELECT * FROM external_busy
 WHERE user_id = $1 AND starts_at < sqlc.arg('to') AND ends_at > sqlc.arg('from')
 ORDER BY starts_at, ends_at, uid;
 
+-- name: ListWidgetExternalEvents :many
+SELECT * FROM external_busy
+WHERE user_id = $1 AND starts_at < sqlc.arg('to') AND ends_at > sqlc.arg('from')
+ORDER BY starts_at, ends_at, uid
+LIMIT 1001;
+
 -- name: MatchMemberEmails :many
 -- Members of the workspace (people, not guests; enabled) whose confirmed e-mail is one of emails
 -- (lower case) — attendees of external events (ADR-0045 §3, §4).

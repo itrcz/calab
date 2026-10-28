@@ -602,6 +602,9 @@ func New(d Deps) *App {
 	calSvc.ExternalReminders = cdSvc.DueReminders                                        // ADR-0045 amendment 3: one sweep, one EVENT_REMINDER
 	cdSvc.AllowsCalDAV, calSvc.AllowsCalDAV = planSvc.AllowsCalDAV, planSvc.AllowsCalDAV // Free has no CalDAV (ADR-0024)
 	cdSvc.Routes(mux, private)
+	calSvc.WidgetRoutes(mux, private, authSvc,
+		redisx.NewRateLimiter(d.Redis, "rl:calendar-widget-issue:", 10, 1),
+		redisx.NewRateLimiter(d.Redis, "rl:calendar-widget-read:", 12, 2), cdSvc.WidgetEvents)
 	// Telephony (ADR-0046): phone lines join rooms through the LiveKit SIP API.
 	var lkSIP rtc.SIP
 	var lkRooms rtc.LiveKit

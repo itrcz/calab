@@ -44,6 +44,20 @@ WHERE e.cancelled_at IS NULL
        OR EXISTS (SELECT 1 FROM event_attendees a WHERE a.event_id = e.id AND a.user_id = sqlc.arg('user_id')))
 ORDER BY e.starts_at, e.id;
 
+-- name: ListWidgetEvents :many
+-- Live events the user organizes or attends in workspaces where they are a member (not a
+-- guest), possibly overlapping [from, to).
+SELECT e.* FROM events e
+JOIN workspace_members m ON m.workspace_id = e.workspace_id AND m.user_id = sqlc.arg('user_id') AND m.role <> 'guest'
+WHERE e.cancelled_at IS NULL
+  AND e.starts_at < sqlc.arg('to')
+  AND ((e.rrule IS NULL AND e.ends_at > sqlc.arg('from'))
+       OR (e.rrule IS NOT NULL AND (e.until_at IS NULL OR e.until_at > sqlc.arg('from'))))
+  AND (e.organizer_id = sqlc.arg('user_id')
+       OR EXISTS (SELECT 1 FROM event_attendees a WHERE a.event_id = e.id AND a.user_id = sqlc.arg('user_id')))
+ORDER BY e.starts_at, e.id
+LIMIT 1001;
+
 -- name: ListRoomEventsNear :many
 -- Live events with a room in the workspaces that may have an occurrence around now (the room
 -- badge of the snapshots of a READY, ADR-0038 §6).
