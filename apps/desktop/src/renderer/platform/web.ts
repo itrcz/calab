@@ -489,7 +489,7 @@ export function createWebPlatform(): Platform {
   // ADR-0135: the landing's campaign params (utm_*, yclid, ym_cid) of the first open, sent
   // once with a registration; removed from the address bar before the router reads it.
   captureFromLocation();
-  const hostCapabilities = createHostCapabilities();
+  const { onHostLink, ...hostCapabilities } = createHostCapabilities();
   clearHostSession = () => hostCapabilities.sessionActivity?.clear('logout');
   return {
     ...hostCapabilities,
@@ -639,7 +639,8 @@ export function createWebPlatform(): Platform {
       getSettings: () => Promise.resolve(settings()),
       setSettings: () => Promise.resolve(settings()),
       takeDeepLink,
-      onDeepLink: noop,
+      // Phone host links of a running page (ADR-0140); a plain browser has none.
+      onDeepLink: onHostLink ?? noop,
       onPower: (cb: (e: PowerEvent) => void) => {
         const online = (): void => cb('resume');
         window.addEventListener('online', online);

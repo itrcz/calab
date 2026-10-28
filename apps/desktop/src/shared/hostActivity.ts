@@ -75,6 +75,16 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
   return value as unknown as HostActivityMessage;
 }
 
+/**
+ * Routes the phone host may hand to an already running page (ADR-0140): a task, a workspace
+ * invite or a room link — the same code rule as the web's `takeDeepLink`. Returns the canonical
+ * `/<kind>/<code>` (no trailing slash) or null. Runs in the native JS host too: no URL parsing.
+ */
+export function hostLinkRoute(path: string): string | null {
+  const m = /^\/(t|join|r)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(path);
+  return m?.[1] && m[2] ? `/${m[1]}/${m[2]}` : null;
+}
+
 export type HostNotificationPermission = 'unsupported' | 'default' | 'denied' | 'granted';
 export type HostNotificationTestResult = 'scheduled' | 'denied' | 'unsupported' | 'failed';
 export function parseNotificationTestResult(value: unknown): HostNotificationTestResult | null {

@@ -1,6 +1,6 @@
 import { parseCallsState, type HostCallsCapability, type HostCallsOperation, type HostCallsState } from '../../shared/hostCalls';
 import { parseMediaPermissionsState, unavailableMediaPermissions, type HostMediaPermissionsCapability, type MediaPermissionsOperation, type MediaPermissionsReply, type MediaPermissionsState } from '../../shared/hostPermissions';
-import { parseNotificationState, parseNotificationTestResult, type HostNotificationTestResult, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
+import { hostLinkRoute, parseNotificationState, parseNotificationTestResult, type HostNotificationTestResult, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
 export interface HostActivityBridge {
   mediaPermissionsVersion?: number;
@@ -15,8 +15,20 @@ declare global { interface Window { CalabHostActivity?: HostActivityBridge } }
 const AUDIO_CONNECT_TIMEOUT_MS = 30_000;
 const CALLS_REQUEST_TIMEOUT_MS = 10_000;
 
+/** `url` is exactly this page's origin plus a host link route, in canonical form; else null. */
+function hostLinkUrl(url: unknown, origin: string): string | null {
+  if (typeof url !== 'string' || !url.startsWith(`${origin}/`)) return null;
+  const path = url.slice(origin.length);
+  return hostLinkRoute(path) === path ? url : null;
+}
+
 /** One document/sequence authority for both optional capabilities; old hosts keep v1 activity. */
 export function createHostCapabilities(win: Window = window): {
+  /**
+   * Links the phone host received while this page runs (ADR-0140); web.ts serves it as
+   * `platform.app.onDeepLink`, so they reach `services/links.handleDeepLink` like the desktop's.
+   */
+  onHostLink?: (listener: (url: string) => void) => () => void;
   mediaPermissions?: HostMediaPermissionsCapability;
   sessionActivity?: SessionActivityCapability; notifications?: HostNotificationsCapability; incomingCalls?: HostCallsCapability;
 } {
@@ -26,12 +38,14 @@ export function createHostCapabilities(win: Window = window): {
   let pendingLogout = false;
   let activityEnabled = false;
   let permissionsEnabled = false;
+  let linksEnabled = false;
   let sequence = 0;
   let requestId = 0;
   let latest: SessionActivitySnapshot | null = null;
   const callListeners = new Set<(state:HostCallsState)=>void>();
   const callsPending = new Map<number,{operation:HostCallsOperation;resolve:(value:{state:HostCallsState;bound?:boolean})=>void;timer:ReturnType<typeof setTimeout>}>();
   const listeners = new Set<(state: HostNotificationState) => void>();
+  const linkListeners = new Set<(url: string) => void>();
   const pending = new Map<number, { operation: 'status' | 'request'; resolve: (state: HostNotificationState) => void; timer: ReturnType<typeof setTimeout> }>();
   const tests = new Map<number, { body: string; resolve: (result: HostNotificationTestResult) => void; timer: ReturnType<typeof setTimeout> }>();
   const permissions = new Map<number, { operation: MediaPermissionsOperation; resolve: (reply: MediaPermissionsReply) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -65,6 +79,7 @@ export function createHostCapabilities(win: Window = window): {
     ready = false;
     activityEnabled = false;
     permissionsEnabled = false;
+    linksEnabled = false;
     settle();
   };
   win.addEventListener('calab-host-activity-ready', (event) => {
@@ -76,6 +91,7 @@ export function createHostCapabilities(win: Window = window): {
     ready = true;
     activityEnabled = a.capability === 'sessionActivity';
     permissionsEnabled = a.permissions === 1;
+    linksEnabled = a.links === 1;
     if (pendingLogout) { pendingLogout = false; revoke('logout'); return; }
     if (latest && activityEnabled) send('activity', { snapshot: latest });
     if (a.notifications === 1) for (const [request, p] of pending) send('notifications', { request, operation: p.operation });
@@ -97,6 +113,16 @@ export function createHostCapabilities(win: Window = window): {
     const p = pending.get(Number(e.request));
     if (p) { clearTimeout(p.timer); pending.delete(Number(e.request)); p.resolve(state); }
     if (p || e.request === 0) for (const listener of listeners) listener(state);
+  });
+  // An incoming phone link (ADR-0140). No authority: only a same-origin route this page could
+  // navigate to itself, from the current host/document after a handshake that offered links.
+  win.addEventListener('calab-host-link', (event) => {
+    const raw: unknown = (event as CustomEvent<unknown>).detail;
+    if (!ready || !linksEnabled || !raw || typeof raw !== 'object') return;
+    const e = raw as Record<string, unknown>;
+    if (Object.keys(e).length !== 4 || e.v !== 1 || e.document !== bridge.document || e.host !== bridge.host) return;
+    const url = hostLinkUrl(e.url, win.location.origin);
+    if (url) for (const listener of linkListeners) listener(url);
   });
   win.addEventListener('calab-host-notification-test', event => {
     const raw: unknown = (event as CustomEvent<unknown>).detail;
@@ -143,6 +169,7 @@ export function createHostCapabilities(win: Window = window): {
     if (ready) send('permissions', { request, ...operation }); else send('hello');
   });
   return {
+    onHostLink(listener) { linkListeners.add(listener); return () => linkListeners.delete(listener); },
     ...(bridge.mediaPermissionsVersion === 1 ? { mediaPermissions: {
       state: async () => (await requestPermissions({ operation: 'status' })).state,
       request: async kind => (await requestPermissions({ operation: 'request', kind })).state,

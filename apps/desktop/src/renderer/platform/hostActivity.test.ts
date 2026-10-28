@@ -182,3 +182,49 @@ describe('native audio connect timeout', () => {
   } finally {vi.useRealTimers();}
  });
 });
+
+describe('phone host links (ADR-0140)', () => {
+  function setup(origin = 'https://calab.example.com') {
+    const handlers = new Map<string, (event: CustomEvent<unknown>) => void>();
+    const bridge = { version: 1, notificationsVersion: 1, host: 2, document: 'doc', send: vi.fn(),
+      rotateDocument: () => { bridge.document = 'rotated'; } };
+    const caps = createHostCapabilities({ CalabHostActivity: bridge, location: { origin },
+      addEventListener: (name: string, cb: (event: CustomEvent<unknown>) => void) => handlers.set(name, cb),
+    } as unknown as Window);
+    const opened = vi.fn();
+    caps.onHostLink?.(opened);
+    const emit = (name: string, detail: unknown) => handlers.get(name)?.({ detail } as CustomEvent<unknown>);
+    const ready = (extra: object = { links: 1 }) => emit('calab-host-activity-ready', { v: 1, host: 2, document: bridge.document, capability: 'notifications', ...extra });
+    const link = (url: unknown, extra: object = {}) => emit('calab-host-link', { v: 1, host: 2, document: bridge.document, url, ...extra });
+    return { caps, opened, ready, link, bridge };
+  }
+  const task = 'https://calab.example.com/t/INV-820';
+
+  it('is absent in plain browsers', () => {
+    expect(createHostCapabilities({} as Window).onHostLink).toBeUndefined();
+  });
+  it('opens a same-origin task, invite or room route only after a handshake that offered links', () => {
+    const h = setup();
+    h.link(task); expect(h.opened).not.toHaveBeenCalled();
+    h.ready({}); h.link(task); expect(h.opened).not.toHaveBeenCalled();
+    h.ready();
+    for (const url of [task, 'https://calab.example.com/join/AbC123xYz', 'https://calab.example.com/r/room_code-1']) h.link(url);
+    expect(h.opened.mock.calls).toEqual([[task], ['https://calab.example.com/join/AbC123xYz'], ['https://calab.example.com/r/room_code-1']]);
+  });
+  it('rejects foreign documents/hosts, extra fields and anything but a canonical own route', () => {
+    const h = setup(); h.ready();
+    h.link(task, { document: 'other' }); h.link(task, { host: 3 }); h.link(task, { v: 2 }); h.link(task, { extra: 1 });
+    for (const url of [null, 1, '', 'https://evil.example.com/t/INV-820', 'https://calab.example.com.evil.test/t/INV-820',
+      'https://calab.example.com@evil.test/t/INV-820', 'http://calab.example.com/t/INV-820', 'https://calab.example.com/t/INV-820/',
+      'https://calab.example.com/t/INV-820?x=1', 'https://calab.example.com/t/INV-820#x', 'https://calab.example.com/b/BOARD1',
+      'https://calab.example.com/plans?plan=team', 'https://calab.example.com/t/abc', 'https://calab.example.com//t/INV-820',
+      'https://calab.example.com/t/INV-820\n', 'calab://t/INV-820', 'javascript:alert(1)//https://calab.example.com/t/INV-820']) h.link(url);
+    h.link(task); expect(h.opened.mock.calls).toEqual([[task]]);
+  });
+  it('stops after revocation until a new handshake of the rotated document', () => {
+    const h = setup(); h.ready();
+    h.caps.sessionActivity?.clear('logout');
+    h.link(task); h.link(task, { document: 'doc' }); expect(h.opened).not.toHaveBeenCalled();
+    h.ready(); h.link(task); expect(h.opened).toHaveBeenCalledOnce();
+  });
+});
