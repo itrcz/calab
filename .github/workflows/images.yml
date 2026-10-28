@@ -171,6 +171,16 @@ jobs:
             -e RELEASES_HOST=releases.calab.test -e RELEASES_HOST_ALIASES=releases.calab2.test \
             -e S3_PUBLIC_URL=https://storage.example.test/bucket -e API_UPSTREAM=api:3000 \
             "$REGISTRY/web:$SHA" caddy validate --config /etc/caddy/Caddyfile
+          # Same config, but with APP_LINKS_IOS/APP_LINKS_ANDROID set (DEV-4947 review follow-up):
+          # entrypoint.sh then splices the universal-link JSON `respond` blocks in, which the run
+          # above never exercises — parse those in CI too, not first against prod.
+          docker run --rm -e DOMAIN=calab.test -e APP_HOST=app.calab.test -e LANDING_HOST=calab.test \
+            -e LANDING_HOST_ALIASES=www.calab.test -e LANDING_HOST_MIRRORS=calab2.test \
+            -e RELEASES_HOST=releases.calab.test -e RELEASES_HOST_ALIASES=releases.calab2.test \
+            -e S3_PUBLIC_URL=https://storage.example.test/bucket -e API_UPSTREAM=api:3000 \
+            -e APP_LINKS_IOS="ABCDE12345.test.calab" \
+            -e APP_LINKS_ANDROID="test.calab:$(printf 'AA:%.0s' $(seq 1 31))AA" \
+            "$REGISTRY/web:$SHA" caddy validate --config /etc/caddy/Caddyfile
 
       - name: registry login (OIDC → Yandex Cloud IAM)
         run: |
