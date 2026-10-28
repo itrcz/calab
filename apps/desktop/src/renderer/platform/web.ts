@@ -639,7 +639,7 @@ export function createWebPlatform(): Platform {
       getSettings: () => Promise.resolve(settings()),
       setSettings: () => Promise.resolve(settings()),
       takeDeepLink,
-      // Phone host links of a running page (ADR-0140); a plain browser has none.
+      // Phone host links of a running page (ADR-0142); a plain browser has none.
       onDeepLink: onHostLink ?? noop,
       onPower: (cb: (e: PowerEvent) => void) => {
         const online = (): void => cb('resume');

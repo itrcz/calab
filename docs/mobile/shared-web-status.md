@@ -1,6 +1,6 @@
 # Телефон: общий веб в оболочке — статус
 
-## 2026-10-28: links open the app (DEV-4947, ADR-0140)
+## 2026-10-28: links open the app (DEV-4947, ADR-0142)
 
 https `/t/<KEY>`, `/join/<code>`, `/r/<code>` of the hosts in `EXPO_PUBLIC_CALAB_LINK_HOSTS`
 (default: the host of `EXPO_PUBLIC_CALAB_URL`) and `calab://` / `calaba://` open the app: iOS

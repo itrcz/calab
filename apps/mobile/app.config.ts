@@ -11,7 +11,7 @@ import { parseWebOrigin, parseLinkHosts, parseReleaseIdentity } from './src/conf
 const webOrigin = process.env.EXPO_PUBLIC_CALAB_URL !== undefined ? parseWebOrigin(process.env.EXPO_PUBLIC_CALAB_URL) : null;
 
 /**
- * Links that open the app (ADR-0140): the product scheme (like desktop `PROTOCOLS`, main/deeplink.ts;
+ * Links that open the app (ADR-0142): the product scheme (like desktop `PROTOCOLS`, main/deeplink.ts;
  * `calaba` is the alias from before the rename) and https links of the web hosts —
  * `EXPO_PUBLIC_CALAB_LINK_HOSTS`, else the host of the web origin. The hosts serve
  * `/.well-known/apple-app-site-association` and `assetlinks.json` (Caddy, from env); only the

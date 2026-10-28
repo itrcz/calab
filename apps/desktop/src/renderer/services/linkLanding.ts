@@ -9,7 +9,7 @@ import { handleDeepLink, parseBoardLink, parseInviteCode, parseRoomInviteCode } 
  * gets the same card, but only for a visitor without a web session (see `skipsLanding`). Web only: the desktop app handles `calab://` and pasted https links directly.
  *
  * Two cases skip the card and hand the link straight to `handleDeepLink` (DEV-4947): inside a
- * native phone shell (`nativeShell()`, ADR-0140) the shell already is the app — «Открыть в Calab»
+ * native phone shell (`nativeShell()`, ADR-0142) the shell already is the app — «Открыть в Calab»
  * offering to open the app it is running in is wrong; and a visitor who last pressed «Продолжить в
  * браузере» with «Запомнить выбор» checked (`rememberedChoice() === 'browser'`, expires after 30
  * days) gets the browser flow again without being asked.

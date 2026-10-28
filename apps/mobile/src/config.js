@@ -36,7 +36,7 @@ function parseWebOrigin(raw) {
 const HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?=[a-z0-9-]*[a-z])[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /**
- * The hosts whose https links open the app (ADR-0140): universal links on iOS, verified app links
+ * The hosts whose https links open the app (ADR-0142): universal links on iOS, verified app links
  * on Android, and the hosts the app accepts an incoming https link from. `raw` is the
  * space-separated `EXPO_PUBLIC_CALAB_LINK_HOSTS` (read by app.config.ts for the native config and
  * inlined into the bundle for App.tsx); absent or blank, it is the host of `origin` alone, or no

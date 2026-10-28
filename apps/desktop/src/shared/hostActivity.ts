@@ -76,7 +76,7 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
 }
 
 /**
- * Routes the phone host may hand to an already running page (ADR-0140): a task, a workspace
+ * Routes the phone host may hand to an already running page (ADR-0142): a task, a workspace
  * invite or a room link — the same code rule as the web's `takeDeepLink`. Returns the canonical
  * `/<kind>/<code>` (no trailing slash) or null. Runs in the native JS host too: no URL parsing.
  */

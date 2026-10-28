@@ -25,7 +25,7 @@ function hostLinkUrl(url: unknown, origin: string): string | null {
 /** One document/sequence authority for both optional capabilities; old hosts keep v1 activity. */
 export function createHostCapabilities(win: Window = window): {
   /**
-   * Links the phone host received while this page runs (ADR-0140); web.ts serves it as
+   * Links the phone host received while this page runs (ADR-0142); web.ts serves it as
    * `platform.app.onDeepLink`, so they reach `services/links.handleDeepLink` like the desktop's.
    */
   onHostLink?: (listener: (url: string) => void) => () => void;
@@ -114,7 +114,7 @@ export function createHostCapabilities(win: Window = window): {
     if (p) { clearTimeout(p.timer); pending.delete(Number(e.request)); p.resolve(state); }
     if (p || e.request === 0) for (const listener of listeners) listener(state);
   });
-  // An incoming phone link (ADR-0140). No authority: only a same-origin route this page could
+  // An incoming phone link (ADR-0142). No authority: only a same-origin route this page could
   // navigate to itself, from the current host/document after a handshake that offered links.
   win.addEventListener('calab-host-link', (event) => {
     const raw: unknown = (event as CustomEvent<unknown>).detail;

@@ -1,7 +1,7 @@
 import { hostLinkRoute } from '../../desktop/src/shared/hostActivity';
 
 /**
- * Incoming links (ADR-0140): what the OS hands the app through `Linking` — a universal link / app
+ * Incoming links (ADR-0142): what the OS hands the app through `Linking` — a universal link / app
  * link of a web host, or the product scheme — mapped to the web client's own URL for the same
  * route, `${origin}/<kind>/<code>`. Only a task, a workspace invite and a room link are accepted;
  * everything else (other paths, hosts, ports, credentials, encodings) is null and the app ignores it.

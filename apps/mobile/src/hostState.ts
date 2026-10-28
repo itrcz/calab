@@ -5,7 +5,7 @@
  * (`generation` is its key) over the same persistent session.
  *
  * `entry` is the URL the WebView opens (null: the web origin). An incoming link the running page
- * cannot take (ADR-0140) remounts the WebView on it; a retry keeps it, a crash of a running app
+ * cannot take (ADR-0142) remounts the WebView on it; a retry keeps it, a crash of a running app
  * goes back to the origin rather than to an old link.
  */
 

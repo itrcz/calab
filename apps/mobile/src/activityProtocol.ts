@@ -71,7 +71,7 @@ export function activityReady(host: number, document: string, activity = true): 
 }
 
 /**
- * An incoming link for the running page (ADR-0140): `url` is an app URL from links.ts — the web
+ * An incoming link for the running page (ADR-0142): `url` is an app URL from links.ts — the web
  * origin plus a task / invite / room route — that the page opens in place, as it would a click.
  * Carries no authority: the page accepts only its own origin and routes it could navigate to.
  */

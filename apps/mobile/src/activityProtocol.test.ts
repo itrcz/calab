@@ -96,7 +96,7 @@ it('validates optional microphone sync and bounded native mute actions under the
  expect(parseCallsState({supported:true,actions:[{...action,muted:'yes'}]})).toBeNull();
 });
 
-describe('host link event (ADR-0140)', () => {
+describe('host link event (ADR-0142)', () => {
   it('advertises links in the ack and dispatches the exact detail the page checks', () => {
     expect(activityReady(0, document)).toContain('"links":1');
     const dispatchEvent = vi.fn();

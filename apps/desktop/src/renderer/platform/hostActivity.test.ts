@@ -183,7 +183,7 @@ describe('native audio connect timeout', () => {
  });
 });
 
-describe('phone host links (ADR-0140)', () => {
+describe('phone host links (ADR-0142)', () => {
   function setup(origin = 'https://calab.example.com') {
     const handlers = new Map<string, (event: CustomEvent<unknown>) => void>();
     const bridge = { version: 1, notificationsVersion: 1, host: 2, document: 'doc', send: vi.fn(),

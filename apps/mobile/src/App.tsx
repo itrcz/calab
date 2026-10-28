@@ -27,7 +27,7 @@ import { permissionsOperation, permissionsReply, subscribePermissions } from './
  * is offered on iOS after a native main-frame/origin/current-document handshake. File hand-off is iOS-native (ADR-0068): the web's
  * `<a download>` of its own blob: from the app's main frame goes to the share sheet, decided in the
  * react-native-webview patch without JS or page input. Incoming universal / app / `calab://` links
- * (ADR-0140) open the same route of the web client. The WebView is edge to edge; the web client applies
+ * (ADR-0142) open the same route of the web client. The WebView is edge to edge; the web client applies
  * the safe areas itself (`viewport-fit=cover` + `env(safe-area-inset-*)`), so the host adds none.
  */
 
@@ -46,7 +46,7 @@ const ORIGIN = (() => {
   }
 })();
 
-/** The hosts whose https links the app takes (ADR-0140), the same env the native config claims. */
+/** The hosts whose https links the app takes (ADR-0142), the same env the native config claims. */
 const LINK_HOSTS = (() => {
   try {
     return ORIGIN ? parseLinkHosts(process.env.EXPO_PUBLIC_CALAB_LINK_HOSTS, ORIGIN) : [];
@@ -137,7 +137,7 @@ function Host({ origin }: { origin: string }) {
   }, [state.phase]);
 
   /**
-   * An incoming link (ADR-0140). A running page with the host channel takes it in place, as a click
+   * An incoming link (ADR-0142). A running page with the host channel takes it in place, as a click
    * on the same link would (`calab-host-link`): no reload, an ongoing call stays. Otherwise — cold
    * start, still loading, error screen, no channel (Android) or no handshake yet — the WebView
    * remounts on the app URL and the web's `takeDeepLink` reads it from `location.pathname`.
