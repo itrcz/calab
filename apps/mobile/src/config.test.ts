@@ -44,6 +44,11 @@ describe('parseLinkHosts', () => {
     expect(parseLinkHosts(undefined)).toEqual([]);
   });
 
+  it('rejects an origin whose host is an IP or localhost, same as an explicit host (review follow-up)', () => {
+    expect(() => parseLinkHosts(undefined, 'https://127.0.0.1:8443')).toThrow('EXPO_PUBLIC_CALAB_URL');
+    expect(() => parseLinkHosts('  ', 'https://localhost:8443')).toThrow('EXPO_PUBLIC_CALAB_URL');
+  });
+
   it('takes space-separated hostnames as given, once each, instead of the default', () => {
     expect(parseLinkHosts(' calab.example.com  alias.example.ru\tcalab.example.com ', 'https://other.example.com'))
       .toEqual(['calab.example.com', 'alias.example.ru']);

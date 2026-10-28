@@ -48,7 +48,14 @@ const HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?=[a
  */
 function parseLinkHosts(raw, origin = null) {
   const names = (raw ?? '').split(/[ \t\n]+/).filter(Boolean);
-  if (names.length === 0) return origin ? [new URL(origin).hostname] : [];
+  if (names.length === 0) {
+    if (!origin) return [];
+    const hostname = new URL(origin).hostname;
+    // The same check as an explicit host: an IP or a non-DNS origin (`parseWebOrigin` does not
+    // reject those) must fail the build too, not reach native config unvalidated (review follow-up).
+    if (!HOSTNAME.test(hostname)) throw new Error(`EXPO_PUBLIC_CALAB_URL: ${JSON.stringify(hostname)} is not a lowercase hostname`);
+    return [hostname];
+  }
   for (const name of names) {
     if (!HOSTNAME.test(name)) throw new Error(`EXPO_PUBLIC_CALAB_LINK_HOSTS: ${JSON.stringify(name)} is not a lowercase hostname`);
   }
