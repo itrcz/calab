@@ -1,19 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resetNativeShellForTests } from '../platform/nativeShell';
 
 const handled = vi.hoisted(() => [] as string[]);
 vi.mock('../stores/session', () => ({ useSession: { getState: () => ({ status: 'anon', settings: null }) } }));
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined }) } }));
 vi.mock('../features/people/roomLink', () => ({ openRoomLink: (c: string) => handled.push(`room:${c}`) }));
 
-const { alwaysOpenInApp, continueInBrowser, landingFor, setAlwaysOpenInApp, showLinkLanding, skipsLanding, useLinkLanding } = await import('./linkLanding');
+const { continueInBrowser, landingFor, rememberedChoice, setRememberedChoice, showLinkLanding, skipsLanding, useLinkLanding } = await import('./linkLanding');
+
+/** A fake localStorage, same shape as the real one (see `nativeShell.test.ts` for the bridge pattern). */
+function fakeStorage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
+  const store = new Map<string, string>();
+  return {
+    getItem: (k) => store.get(k) ?? null,
+    setItem: (k, v) => store.set(k, v),
+    removeItem: (k) => store.delete(k),
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  resetNativeShellForTests();
+  useLinkLanding.setState({ link: null });
+  handled.length = 0;
+});
 
 describe('link landing (docs/09 #53)', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    useLinkLanding.setState({ link: null });
-    handled.length = 0;
-  });
-
   it('recognises web /join and /r links only', () => {
     expect(landingFor('https://app.calab.io/join/calaba-team-2026')).toEqual({ kind: 'join', code: 'calaba-team-2026', url: 'https://app.calab.io/join/calaba-team-2026' });
     expect(landingFor('https://app.calab.io/r/call-guest-link')).toMatchObject({ kind: 'r', code: 'call-guest-link' });
@@ -31,26 +44,86 @@ describe('link landing (docs/09 #53)', () => {
     expect(replaceState).toHaveBeenCalledWith(null, '', '/');
     expect(handled).toEqual(['room:call-guest-link']);
   });
+});
 
-  it('«always open in the app» persists and survives blocked storage', () => {
+describe('no card inside a native phone shell (DEV-4947)', () => {
+  it('a shell bridge makes showLinkLanding defer to handleDeepLink (handled by the caller)', () => {
+    vi.stubGlobal('window', { CalabHostActivity: { version: 1, platform: 'ios' } });
+    vi.stubGlobal(
+      'navigator',
+      { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148' },
+    );
+    resetNativeShellForTests(); // the bridge is read once and cached: reset before and after stubbing it
+    expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(false);
+    expect(useLinkLanding.getState().link).toBeNull();
+  });
+
+  it('no bridge: the card shows as usual', () => {
+    resetNativeShellForTests();
+    expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(true);
+  });
+});
+
+describe('«запомнить выбор» (DEV-4947)', () => {
+  it('the two keys are mutually exclusive and survive blocked storage', () => {
     const store = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => store.set(k, v),
-      removeItem: (k: string) => store.delete(k),
-    });
-    expect(alwaysOpenInApp()).toBe(false);
-    setAlwaysOpenInApp(true);
-    expect(alwaysOpenInApp()).toBe(true);
-    setAlwaysOpenInApp(false);
-    expect(alwaysOpenInApp()).toBe(false);
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) });
+    expect(rememberedChoice()).toBeNull();
+
+    setRememberedChoice('app');
+    expect(rememberedChoice()).toBe('app');
+    expect(store.has('calab-open-links-in-browser')).toBe(false);
+
+    setRememberedChoice('browser'); // setting one clears the other
+    expect(rememberedChoice()).toBe('browser');
+    expect(store.has('calab-open-links-in-app')).toBe(false);
+
+    setRememberedChoice('app');
+    expect(rememberedChoice()).toBe('app');
+    expect(store.has('calab-open-links-in-browser')).toBe(false);
+
+    setRememberedChoice(null);
+    expect(rememberedChoice()).toBeNull();
+    expect(store.size).toBe(0);
 
     const boom = (): never => {
       throw new Error('SecurityError');
     };
     vi.stubGlobal('localStorage', { getItem: boom, setItem: boom, removeItem: boom });
-    expect(alwaysOpenInApp()).toBe(false);
-    expect(() => setAlwaysOpenInApp(true)).not.toThrow();
+    expect(rememberedChoice()).toBeNull();
+    expect(() => setRememberedChoice('app')).not.toThrow();
+  });
+
+  it('a remembered browser choice expires after 30 days and is cleaned up', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) });
+    setRememberedChoice('browser');
+    expect(rememberedChoice()).toBe('browser');
+
+    vi.setSystemTime(new Date('2026-01-30T23:59:59Z')); // just under 30 days
+    expect(rememberedChoice()).toBe('browser');
+    expect(store.has('calab-open-links-in-browser')).toBe(true);
+
+    vi.setSystemTime(new Date('2026-01-31T00:00:01Z')); // just over 30 days
+    expect(rememberedChoice()).toBeNull(); // expired
+    expect(store.has('calab-open-links-in-browser')).toBe(false); // and cleaned up
+  });
+
+  it('a remembered browser choice skips the card outright, same as skipsLanding', () => {
+    resetNativeShellForTests();
+    vi.stubGlobal('localStorage', fakeStorage());
+    setRememberedChoice('browser');
+    expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(false);
+    expect(useLinkLanding.getState().link).toBeNull();
+  });
+
+  it('a remembered app choice still shows the card (the screen auto-tries the app on arrival)', () => {
+    resetNativeShellForTests();
+    vi.stubGlobal('localStorage', fakeStorage());
+    setRememberedChoice('app');
+    expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(true);
   });
 });
 
