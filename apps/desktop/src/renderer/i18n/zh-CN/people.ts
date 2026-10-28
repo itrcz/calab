@@ -203,7 +203,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'landing.retry': '再次尝试在 Calab 中打开',
   'landing.browser': '继续在浏览器中使用',
   'landing.download': '下载应用',
-  'landing.always': '始终在应用中打开',
+  'landing.remember': '记住我的选择',
   'landing.trying': '正在打开 Calab…',
   'landing.opened': '链接已发送至 Calab 应用。',
   'landing.notFound': '未找到应用',

@@ -10,7 +10,7 @@ import { ApiError } from '../../lib/api/client';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { bindLaunchSignals, createLaunchProbe, deepLinkFor, launchMethod, type LaunchProbe, type LaunchState } from '../../lib/appLaunch';
 import { workspaceInitials } from '../../lib/initials';
-import { alwaysOpenInApp, continueInBrowser, setAlwaysOpenInApp, type LinkLanding } from '../../services/linkLanding';
+import { continueInBrowser, rememberedChoice, setRememberedChoice, type LinkLanding } from '../../services/linkLanding';
 import { useSession } from '../../stores/session';
 import { AuthLegalFooter } from '../legal/Legal';
 import { roomLinkError } from '../people/roomLink';
@@ -44,7 +44,9 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
   // Visual tests exercise the states without handing a link to the OS.
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
   const [state, setState] = useState<LaunchState>('idle');
-  const [always, setAlways] = useState(alwaysOpenInApp);
+  // «Запомнить выбор» (DEV-4947): a UI toggle only — it takes effect when a primary action below
+  // is then pressed (`setRememberedChoice`), not on its own `onChange`.
+  const [remember, setRemember] = useState(() => rememberedChoice() !== null);
   const probe = useRef<LaunchProbe | null>(null);
   const autoTried = useRef(false);
 
@@ -60,25 +62,32 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
   }, []);
 
   const open = (): void => {
+    setRememberedChoice(remember ? 'app' : null);
     probe.current?.start();
     if (!visualTest) fireDeepLink(deepLinkFor(link.kind, link.code));
   };
 
-  // «Всегда открывать в приложении»: try the app right away (once, StrictMode-safe).
+  const browser = (): void => {
+    setRememberedChoice(remember ? 'browser' : null);
+    continueInBrowser();
+  };
+
+  // Remembered «app»: try the app right away (once, StrictMode-safe). A remembered «browser»
+  // never reaches this screen — `showLinkLanding` skips the card for it (DEV-4947).
   useEffect(() => {
-    if (autoTried.current || !alwaysOpenInApp()) return;
+    if (autoTried.current || rememberedChoice() !== 'app') return;
     autoTried.current = true;
     open();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once on arrival
   }, []);
 
   const notFound = state === 'not-found';
-  // Whether «всегда в приложении» was on when the app turned out missing: then the box stays so it
+  // Whether «запомнить выбор» was on when the app turned out missing: then the box stays so it
   // can be turned off; otherwise it is hidden in that state (it would contradict «не найдено»).
-  const [alwaysAtNotFound, setAlwaysAtNotFound] = useState<boolean | null>(null);
-  if (notFound && alwaysAtNotFound === null) setAlwaysAtNotFound(always);
-  if (!notFound && alwaysAtNotFound !== null) setAlwaysAtNotFound(null);
-  const hideAlways = notFound && alwaysAtNotFound === false;
+  const [rememberAtNotFound, setRememberAtNotFound] = useState<boolean | null>(null);
+  if (notFound && rememberAtNotFound === null) setRememberAtNotFound(remember);
+  if (!notFound && rememberAtNotFound !== null) setRememberAtNotFound(null);
+  const hideRemember = notFound && rememberAtNotFound === false;
 
   return (
     <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+24px)] mobile:pt-[calc(var(--safe-top)+16px)]" data-testid="link-landing">
@@ -118,7 +127,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
               // The app did not answer: the browser and the download become the obvious ways on.
               // Focus moves to the new primary action (the focused «Открыть» button is gone).
               <>
-                <Button autoFocus className={cx(btn, 'font-semibold')} onClick={continueInBrowser}>
+                <Button autoFocus className={cx(btn, 'font-semibold')} onClick={browser}>
                   {t('landing.browser')}
                 </Button>
                 <a
@@ -136,7 +145,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
                 <Button className={cx(btn, 'font-semibold')} onClick={open}>
                   {t('landing.open')}
                 </Button>
-                <Button variant="secondary" className={btn} onClick={continueInBrowser}>
+                <Button variant="secondary" className={btn} onClick={browser}>
                   {t('landing.browser')}
                 </Button>
                 <a href="/download/" className="mt-1 inline-flex self-center items-center mobile:tap-min-h rounded-[var(--radius-control)] px-1 text-body text-accent-text hover:underline">
@@ -146,18 +155,15 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
             )}
           </div>
 
-          {hideAlways ? null : (
+          {hideRemember ? null : (
             <label className="flex cursor-default items-center justify-center gap-2 text-body text-muted mobile:min-h-11">
             <input
               type="checkbox"
-              checked={always}
-              onChange={(e) => {
-                setAlways(e.target.checked);
-                setAlwaysOpenInApp(e.target.checked);
-              }}
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
               className="size-3.5 accent-[var(--color-accent)] mobile:size-5"
             />
-            {t('landing.always')}
+            {t('landing.remember')}
             </label>
           )}
         </div>

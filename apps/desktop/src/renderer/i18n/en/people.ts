@@ -203,7 +203,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'landing.retry': 'Open in Calab again',
   'landing.browser': 'Continue in browser',
   'landing.download': 'Download the app',
-  'landing.always': 'Always open in the app',
+  'landing.remember': 'Remember my choice',
   'landing.trying': 'Opening Calab…',
   'landing.opened': 'The link was sent to the Calab app.',
   'landing.notFound': 'App not found',
