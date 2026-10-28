@@ -5,8 +5,10 @@
  * (`generation` is its key) over the same persistent session.
  *
  * `entry` is the URL the WebView opens (null: the web origin). An incoming link the running page
- * cannot take (ADR-0142) remounts the WebView on it; a retry keeps it, a crash of a running app
- * goes back to the origin rather than to an old link.
+ * cannot take (ADR-0142) remounts the WebView on it; `entry` is cleared as soon as that load
+ * finishes (`loaded`), so a retry or a crash of a running app goes back to the origin rather than
+ * to an old link — only a link that never finished loading (a failure while it was still loading)
+ * survives a retry.
  */
 
 export type HostError = 'network' | 'server' | 'blocked' | 'crashed';
@@ -36,7 +38,9 @@ export function hostReducer(state: HostState, event: HostEvent): HostState {
       // An error stays until the user retries: the WebView is unmounted then, nothing loads.
       return state.phase === 'ready' ? { ...state, phase: 'loading' } : state;
     case 'loaded':
-      return state.phase === 'loading' ? { ...state, phase: 'ready' } : state;
+      // A link that made it this far was taken (or the running page's own routing handled it):
+      // a later retry must not re-open it, only go back to the origin (review follow-up).
+      return state.phase === 'loading' ? { ...state, phase: 'ready', entry: null } : state;
     case 'failed':
       return { ...state, phase: 'error', error: event.error };
     case 'retry':

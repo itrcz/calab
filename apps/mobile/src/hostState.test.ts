@@ -56,4 +56,10 @@ describe('hostReducer', () => {
     expect(hostReducer(failed, { type: 'retry' })).toMatchObject({ generation: 2, entry: url });
     expect(run({ type: 'open', url }, { type: 'loaded' }, { type: 'processGone' })).toMatchObject({ generation: 2, entry: null });
   });
+
+  it('drops the link on retry once it already loaded, instead of re-opening it (review follow-up)', () => {
+    const url = 'https://calab.example.com/t/INV-820';
+    const loadedThenFailed = run({ type: 'open', url }, { type: 'loaded' }, { type: 'failed', error: 'network' });
+    expect(hostReducer(loadedThenFailed, { type: 'retry' })).toMatchObject({ generation: 2, entry: null });
+  });
 });
