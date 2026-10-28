@@ -22,6 +22,9 @@ export class ActivityProtocol {
 
   isCurrent(document: string): boolean { return this.document === document; }
 
+  /** The main document that completed the handshake, or null before it / after a revocation. */
+  current(): string | null { return this.document; }
+
   reset(): void { this.document = null; this.sequence = 0; this.generation = 0; }
 
   accept(raw: string): ActivityAction | null {
@@ -63,6 +66,16 @@ export function activityBootstrap(host: number, nativeAudio = false, platform: '
 }
 
 export function activityReady(host: number, document: string, activity = true): string {
-  const detail = JSON.stringify({ v: 1, host, document, capability: activity ? 'sessionActivity' : 'notifications', notifications: 1, calls: 1, permissions: 1 });
+  const detail = JSON.stringify({ v: 1, host, document, capability: activity ? 'sessionActivity' : 'notifications', notifications: 1, calls: 1, permissions: 1, links: 1 });
   return `window.dispatchEvent(new CustomEvent('calab-host-activity-ready', {detail: ${detail}})); true;`;
+}
+
+/**
+ * An incoming link for the running page (ADR-0140): `url` is an app URL from links.ts — the web
+ * origin plus a task / invite / room route — that the page opens in place, as it would a click.
+ * Carries no authority: the page accepts only its own origin and routes it could navigate to.
+ */
+export function linkEvent(host: number, document: string, url: string): string {
+  const detail = JSON.stringify({ v: 1, host, document, url });
+  return `window.dispatchEvent(new CustomEvent('calab-host-link', {detail: ${detail}})); true;`;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Linking, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type {
@@ -10,12 +10,13 @@ import type {
   WebViewOpenWindowEvent,
   WebViewMessageEvent,
 } from 'react-native-webview/lib/WebViewTypes';
-import { parseWebOrigin } from './config';
+import { parseLinkHosts, parseWebOrigin } from './config';
 import { hostReducer, initialHostState } from './hostState';
 import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './navigation';
 import { strings } from './strings';
 import { callsOperation, callsReply, subscribeCalls, callAudioEnabled } from './incomingCalls';
-import { ActivityProtocol, activityBootstrap, activityReady } from './activityProtocol';
+import { ActivityProtocol, activityBootstrap, activityReady, linkEvent } from './activityProtocol';
+import { appUrlForLink } from './links';
 import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, subscribeNotifications, testNotification, notificationTestReply } from './notifications';
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
 import { permissionsOperation, permissionsReply, subscribePermissions } from './mediaPermissions';
@@ -25,7 +26,8 @@ import { permissionsOperation, permissionsReply, subscribePermissions } from './
  * MobileShell as in a browser — plus a load error surface. A status-only capability (ADR-0069)
  * is offered on iOS after a native main-frame/origin/current-document handshake. File hand-off is iOS-native (ADR-0068): the web's
  * `<a download>` of its own blob: from the app's main frame goes to the share sheet, decided in the
- * react-native-webview patch without JS or page input. The WebView is edge to edge; the web client applies
+ * react-native-webview patch without JS or page input. Incoming universal / app / `calab://` links
+ * (ADR-0140) open the same route of the web client. The WebView is edge to edge; the web client applies
  * the safe areas itself (`viewport-fit=cover` + `env(safe-area-inset-*)`), so the host adds none.
  */
 
@@ -41,6 +43,15 @@ const ORIGIN = (() => {
     return parseWebOrigin(process.env.EXPO_PUBLIC_CALAB_URL);
   } catch {
     return null;
+  }
+})();
+
+/** The hosts whose https links the app takes (ADR-0140), the same env the native config claims. */
+const LINK_HOSTS = (() => {
+  try {
+    return ORIGIN ? parseLinkHosts(process.env.EXPO_PUBLIC_CALAB_LINK_HOSTS, ORIGIN) : [];
+  } catch {
+    return [];
   }
 })();
 
@@ -124,6 +135,34 @@ function Host({ origin }: { origin: string }) {
   useEffect(() => {
     loaded.current = state.phase === 'ready';
   }, [state.phase]);
+
+  /**
+   * An incoming link (ADR-0140). A running page with the host channel takes it in place, as a click
+   * on the same link would (`calab-host-link`): no reload, an ongoing call stays. Otherwise — cold
+   * start, still loading, error screen, no channel (Android) or no handshake yet — the WebView
+   * remounts on the app URL and the web's `takeDeepLink` reads it from `location.pathname`.
+   */
+  const deliverLink = useRef<(raw: string) => void>(() => undefined);
+  useEffect(() => {
+    deliverLink.current = (raw) => {
+      const url = appUrlForLink(raw, origin, LINK_HOSTS);
+      if (!url) return;
+      const document = activity.current.belongsTo(state.generation) ? activity.current.current() : null;
+      if (hostChannelEnabled && loaded.current && document) web.current?.injectJavaScript(linkEvent(state.generation, document, url));
+      else dispatch({ type: 'open', url });
+    };
+  }, [origin, state.generation]);
+  // The launch link is read before the WebView mounts, so a cold start loads the page once.
+  const [started, setStarted] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const sub = Linking.addEventListener('url', ({ url }) => deliverLink.current(url));
+    Linking.getInitialURL()
+      .then((url) => { if (live && url) deliverLink.current(url); })
+      .catch(() => undefined)
+      .finally(() => { if (live) setStarted(true); });
+    return () => { live = false; sub.remove(); };
+  }, []);
 
   // Android back walks the WebView history; with none left the system handles it (leaves the app).
   useEffect(() => {
@@ -224,10 +263,10 @@ function Host({ origin }: { origin: string }) {
 
   return (
     <>
-      <WebView
+      {started && <WebView
         key={state.generation}
         ref={web}
-        source={{ uri: origin }}
+        source={{ uri: state.entry ?? origin }}
         style={styles.web}
         originWhitelist={ANY_ORIGIN}
         onShouldStartLoadWithRequest={onShouldStart}
@@ -263,7 +302,7 @@ function Host({ origin }: { origin: string }) {
         bounces={false}
         overScrollMode="never"
         webviewDebuggingEnabled={__DEV__}
-      />
+      />}
       {state.phase === 'loading' && (
         <View style={[StyleSheet.absoluteFill, styles.center]}>
           <ActivityIndicator color={LABEL_SECONDARY} />

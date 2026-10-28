@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import { parseHostActivityMessage } from '../../desktop/src/shared/hostActivity';
 import { parseCallsState } from '../../desktop/src/shared/hostCalls';
-import { ActivityProtocol, activityBootstrap } from './activityProtocol';
+import { ActivityProtocol, activityBootstrap, activityReady, linkEvent } from './activityProtocol';
 
 const document = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -94,4 +94,25 @@ it('validates optional microphone sync and bounded native mute actions under the
  const action={binding:document,eventId:other,expiresAt:Date.now()+10000,actionId:document,action:'mute'};
  expect(parseCallsState({supported:true,actions:[action]})).toMatchObject({actions:[action]});
  expect(parseCallsState({supported:true,actions:[{...action,muted:'yes'}]})).toBeNull();
+});
+
+describe('host link event (ADR-0140)', () => {
+  it('advertises links in the ack and dispatches the exact detail the page checks', () => {
+    expect(activityReady(0, document)).toContain('"links":1');
+    const dispatchEvent = vi.fn();
+    class CustomEvent { constructor(readonly type: string, readonly init: { detail: unknown }) {} }
+    runInNewContext(linkEvent(3, document, 'https://calab.example.com/t/INV-820'), { window: { dispatchEvent }, CustomEvent });
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    const event = dispatchEvent.mock.calls[0]?.[0] as CustomEvent;
+    expect(event.type).toBe('calab-host-link');
+    expect(event.init.detail).toEqual({ v: 1, host: 3, document, url: 'https://calab.example.com/t/INV-820' });
+  });
+  it('exposes the handshaken document only between hello and revocation', () => {
+    const protocol = new ActivityProtocol(0);
+    expect(protocol.current()).toBeNull();
+    protocol.accept(hello());
+    expect(protocol.current()).toBe(document);
+    protocol.accept(JSON.stringify({ v: 1, type: 'revoke', host: 0, document, seq: 1 }));
+    expect(protocol.current()).toBeNull();
+  });
 });
