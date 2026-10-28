@@ -180,6 +180,13 @@
 		reverse_proxy {$API_UPSTREAM:127.0.0.1:3000}
 	}
 
+	# Universal links (iOS) / App Links (Android), DEV-4947: AASA/assetlinks.json as JSON, generated
+	# by entrypoint.sh from APP_LINKS_IOS/APP_LINKS_ANDROID (404 when unset). Must precede the SPA
+	# fallback below (`@sensitive_spa` and the catch-all `handle {}` would otherwise serve index.html
+	# for these paths); Caddy also sorts `handle` blocks by path specificity, so this literal path
+	# wins regardless, but the explicit order keeps intent clear.
+	import /tmp/wellknown.caddy
+
 	import releases
 
 	# Web client SPA (ADR-0015): static files from /srv/web (pushed by sync.sh).

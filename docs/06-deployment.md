@@ -361,13 +361,29 @@ Deployment `calab-prod` с digest обоих образов в payload: API и �
   открытых логах не нужны.
 - Конфиг Caddy едет в образе веба: `Caddyfile.behind-proxy` (TLS снимает прокси перед ним, HTTP на
   `BEHIND_PROXY_PORT`, по умолчанию 8080; API — `API_UPSTREAM`; без `rtc.`/`turn.`) и общий с `Caddyfile` стенда
-  `sites.caddy`. Правка `infra/docker/caddy/` попадает в прод с релизом; хосты и адреса — env кластера.
+  `sites.caddy`. Правка `infra/docker/caddy/` попадает в прод с релизом; хосты и адреса — env кластера:
+  `DOMAIN`/`APP_HOST`/`LANDING_HOST`/`DOMAIN_ALT`/`DOMAIN_LEGACY`/`DOMAIN_ALIASES`/`*_HOST_ALIASES`/`RELEASES_HOST`/
+  `S3_PUBLIC_URL`, и, для universal links / App Links (DEV-4947, ниже), `APP_LINKS_IOS`/`APP_LINKS_ANDROID`.
   `images` проверяет конфиг в собранном образе (`caddy validate` на тестовых хостах) до пуша.
 - Прогоны идут строго по одному (`concurrency`), поэтому заявки создаются в порядке коммитов.
 - Агенты входящих — job `agents` того же workflow: `apps/server/Dockerfile.sipreg` и `Dockerfile.ivr` →
   `<YC_REGISTRY>/sipreg:<sha>` и `<YC_REGISTRY>/ivr:<sha>` (и копии `cr.shds.io/calab/sipreg|ivr:<sha>`), digest — в
   summary прогона. В заявку `calab-prod` не входят и релиз не держат: девопс выкатывает их сам (одна реплика
   каждого, по digest), см. п. 6–7 «Телефония» выше.
+
+### Universal links / App Links (DEV-4947)
+
+`APP_LINKS_IOS`/`APP_LINKS_ANDROID` на `APP_HOST` (`infra/docker/.env.example`): пусто = оба пути
+404, без них https-ссылки `/t/…`, `/join/…`, `/r/…` не открывают установленное приложение напрямую.
+Team ID и bundle id — developer.apple.com → Membership и App ID приложения; package name и
+SHA-256-отпечаток(и) сертификата подписи — Play Console → Настройки → Целостность приложения, либо
+`keytool -list -v` на upload keystore. Проверка после деплоя:
+`curl -sI https://app.calab.io/.well-known/apple-app-site-association` — `200` и
+`Content-Type: application/json`; Apple CDN забирает свою копию —
+`https://app-site-association.cdn-apple.com/a/v1/app.calab.io`; Google —
+`https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://app.calab.io&relation=delegate_permission/common.handle_all_urls`.
+Редирект через ops-консоль для бот-ссылок остаётся включённым, пока universal links не подтверждены
+этими проверками на проде.
 
 ### Identity 2.0: настройка и приёмка
 

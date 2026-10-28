@@ -22,6 +22,8 @@
 #                  listing redirect to the landing's #download (when LANDING_HOST is set).
 #   BEHIND_PROXY_PORT  set only with Caddyfile.behind-proxy (TLS terminated by a proxy in front): every site
 #                  address becomes http://<host>:<port>, so Caddy serves plain HTTP there and requests no certificates
+#   APP_LINKS_IOS, APP_LINKS_ANDROID  universal links / App Links on the app hosts (optional; empty = the
+#                  matching /.well-known/* path 404s). See the Universal links section below for the formats.
 # Caddy substitutes {$VAR} before parsing, so a list expands into several site addresses / SNI values.
 # The landing site is generated into /tmp/landing.caddy (imported by the Caddyfile; empty when unset),
 # because a site block with an empty address would not parse.
@@ -147,6 +149,77 @@ $RELEASES_LISTING
 EOF_S3
 else
 	printf '%s{\n\timport releases_host_headers\n%s\n\timport releases_files\n}\n' "$RELEASES_SITE" "$RELEASES_LISTING" > /tmp/releases.caddy
+fi
+
+# Universal links (iOS) / App Links (Android), DEV-4947, docs/06 "Universal links / App Links":
+# /.well-known/apple-app-site-association and /.well-known/assetlinks.json on the app hosts, served
+# as JSON (never the SPA's index.html, or iOS/Android verification never succeeds). Generated into
+# /tmp/wellknown.caddy, imported by sites.caddy before the SPA fallback. Each path responds 404 when
+# its own variable is unset (the two platforms are independent).
+#   APP_LINKS_IOS      space-separated Apple app IDs "TEAMID.bundle.id" (TEAMID: the 10-character
+#                      uppercase alphanumeric Team ID from developer.apple.com's membership page);
+#                      several apps may share the app host.
+#   APP_LINKS_ANDROID  space-separated "package:SHA256[,SHA256...]" — the package name, then one or
+#                      more SHA-256 signing-certificate fingerprints exactly as Play Console prints
+#                      them (Settings -> App integrity), or `keytool -list -v` on the upload
+#                      keystore: uppercase hex pairs joined by colons.
+# Validated strictly: these values are spliced into a Caddyfile and a JSON body, so anything outside
+# the allowed charset (quotes, braces, backslashes, whitespace inside one entry) is rejected rather
+# than risk breaking the generated config or smuggling a directive.
+IOS_APP_ID_RE='^[A-Z0-9]{10}\.[A-Za-z0-9]+(-[A-Za-z0-9]+|\.[A-Za-z0-9]+)*$'
+ANDROID_ENTRY_RE='^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+:([0-9A-F]{2}:){31}[0-9A-F]{2}(,([0-9A-F]{2}:){31}[0-9A-F]{2})*$'
+
+: > /tmp/wellknown.caddy
+if [ -n "${APP_LINKS_IOS:-}" ]; then
+	IOS_IDS=""
+	for id in $APP_LINKS_IOS; do
+		printf '%s' "$id" | grep -Eq "$IOS_APP_ID_RE" || {
+			echo "entrypoint: invalid APP_LINKS_IOS entry: $id" >&2
+			exit 1
+		}
+		IOS_IDS="${IOS_IDS:+$IOS_IDS,}\"$id\""
+	done
+	# Modern AASA (iOS >= 13): "appIDs" + "components". The legacy single-"appID"+"paths" form Apple
+	# documented pre-2019 is not included: iOS 13 shipped in 2019 and is long out of support, so every
+	# iOS version this app can run on already understands "appIDs"/"components".
+	AASA_BODY="{\"applinks\":{\"details\":[{\"appIDs\":[$IOS_IDS],\"components\":[{\"/\":\"/t/*\"},{\"/\":\"/join/*\"},{\"/\":\"/r/*\"}]}]},\"webcredentials\":{\"apps\":[$IOS_IDS]}}"
+	{
+		printf 'handle /.well-known/apple-app-site-association {\n'
+		printf '\theader Content-Type application/json\n'
+		printf '\theader Cache-Control "public, max-age=3600"\n'
+		printf '\theader X-Content-Type-Options nosniff\n'
+		printf '\trespond `%s` 200\n' "$AASA_BODY"
+		printf '}\n'
+	} >> /tmp/wellknown.caddy
+else
+	printf 'handle /.well-known/apple-app-site-association {\n\trespond 404\n}\n' >> /tmp/wellknown.caddy
+fi
+if [ -n "${APP_LINKS_ANDROID:-}" ]; then
+	STATEMENTS=""
+	for entry in $APP_LINKS_ANDROID; do
+		printf '%s' "$entry" | grep -Eq "$ANDROID_ENTRY_RE" || {
+			echo "entrypoint: invalid APP_LINKS_ANDROID entry: $entry" >&2
+			exit 1
+		}
+		pkg="${entry%%:*}"
+		fps="${entry#*:}"
+		FP_IDS="" old_ifs="$IFS"
+		IFS=,
+		for fp in $fps; do FP_IDS="${FP_IDS:+$FP_IDS,}\"$fp\""; done
+		IFS="$old_ifs"
+		STATEMENTS="${STATEMENTS:+$STATEMENTS,}{\"relation\":[\"delegate_permission/common.handle_all_urls\"],\"target\":{\"namespace\":\"android_app\",\"package_name\":\"$pkg\",\"sha256_cert_fingerprints\":[$FP_IDS]}}"
+	done
+	ASSETLINKS_BODY="[$STATEMENTS]"
+	{
+		printf 'handle /.well-known/assetlinks.json {\n'
+		printf '\theader Content-Type application/json\n'
+		printf '\theader Cache-Control "public, max-age=3600"\n'
+		printf '\theader X-Content-Type-Options nosniff\n'
+		printf '\trespond `%s` 200\n' "$ASSETLINKS_BODY"
+		printf '}\n'
+	} >> /tmp/wellknown.caddy
+else
+	printf 'handle /.well-known/assetlinks.json {\n\trespond 404\n}\n' >> /tmp/wellknown.caddy
 fi
 
 # The landing reads RELEASES_HOST/latest/VERSION (its CSP connect-src).
