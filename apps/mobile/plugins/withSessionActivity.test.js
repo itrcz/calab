@@ -28,10 +28,10 @@ function fixture(t) {
   return { ios, projectPath };
 }
 
-async function applyPlugin({ ios, projectPath }, version = '0.1.0', buildNumber = '1', bundleIdentifier = 'test.calab') {
+async function applyPlugin({ ios, projectPath }, version = '0.1.0', buildNumber = '1', bundleIdentifier = 'test.calab', calendar) {
   const project = xcode.project(path.join(projectPath, 'project.pbxproj'));
   project.parseSync();
-  const config = withSessionActivity({ name: 'Calab', slug: 'calab', version, ios: { buildNumber, bundleIdentifier } });
+  const config = withSessionActivity({ name: 'Calab', slug: 'calab', version, ios: { buildNumber, bundleIdentifier } }, { calendar });
   await config.mods.ios.xcodeproj({
     ...config,
     modResults: project,
@@ -109,5 +109,38 @@ test('extension identity follows changed app configuration across prebuilds', as
       assert.equal(unquote(settings.MARKETING_VERSION), version);
       assert.equal(unquote(settings.CURRENT_PROJECT_VERSION), buildNumber);
     }
+  }
+});
+
+
+test('calendar extension is opted in with shared groups and survives enabling on an existing target', async (t) => {
+  const native = fixture(t);
+  await applyPlugin(native);
+  for (let i = 0; i < 2; i++) {
+    const project = await applyPlugin(native, '0.1.0', '22', 'test.calab', { group: 'group.test.calab', origin: 'https://calab.example.com', scheme: 'calab-test' });
+    const [, target] = entries(project.pbxNativeTargetSection()).find(([, value]) => unquote(value.name) === 'CalabVoiceActivity');
+    const list = project.hash.project.objects.XCConfigurationList[target.buildConfigurationList];
+    for (const { value } of list.buildConfigurations) {
+      const settings = project.pbxXCBuildConfigurationSection()[value].buildSettings;
+      assert.match(unquote(settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS), /CALAB_CALENDAR_WIDGETS/);
+      assert.ok(fs.existsSync(path.join(native.ios, unquote(settings.CODE_SIGN_ENTITLEMENTS))));
+    }
+    const sources = target.buildPhases.map(({ value }) => project.hash.project.objects.PBXSourcesBuildPhase[value]).filter(Boolean)[0];
+    assert.equal(sources.files.length, 6, 'all shared/widget sources, no duplicates');
+    const info = fs.readFileSync(path.join(native.ios, 'CalabVoiceActivity/CalabVoiceActivity-Info.plist'), 'utf8');
+    assert.match(info, /https:\/\/calab.example.com/);
+  }
+});
+
+test('host retains its private default Keychain group across repeated calendar opt-in', async (t) => {
+  const native = fixture(t);
+  const calendar = { group: 'group.test.calab', origin: 'https://calab.example.com', scheme: 'calab-test' };
+  for (const previous of [[], ['$(AppIdentifierPrefix)test.calab.calendar']]) {
+    const config = withSessionActivity({ name: 'Calab', slug: 'calab', ios: { bundleIdentifier: 'test.calab' } }, { calendar });
+    const result = await config.mods.ios.entitlements({
+      ...config, modResults: { 'keychain-access-groups': previous },
+      modRequest: { projectRoot: mobileRoot, platformProjectRoot: native.ios, platform: 'ios', modName: 'entitlements' },
+    });
+    assert.deepEqual(result.modResults['keychain-access-groups'], ['$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)', '$(AppIdentifierPrefix)test.calab.calendar']);
   }
 });
