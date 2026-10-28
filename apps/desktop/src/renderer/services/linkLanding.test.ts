@@ -47,15 +47,19 @@ describe('link landing (docs/09 #53)', () => {
 });
 
 describe('no card inside a native phone shell (DEV-4947)', () => {
-  it('a shell bridge makes showLinkLanding defer to handleDeepLink (handled by the caller)', () => {
+  it('a shell bridge makes showLinkLanding defer to handleDeepLink (handled by the caller), and clears the address bar', () => {
+    const replaceState = vi.fn();
     vi.stubGlobal('window', { CalabHostActivity: { version: 1, platform: 'ios' } });
     vi.stubGlobal(
       'navigator',
       { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148' },
     );
+    vi.stubGlobal('history', { replaceState });
     resetNativeShellForTests(); // the bridge is read once and cached: reset before and after stubbing it
     expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(false);
     expect(useLinkLanding.getState().link).toBeNull();
+    // Review follow-up (DEV-4947): a reload must not re-run the same skip from a stale address bar.
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/');
   });
 
   it('no bridge: the card shows as usual', () => {
@@ -66,25 +70,26 @@ describe('no card inside a native phone shell (DEV-4947)', () => {
 
 describe('«запомнить выбор» (DEV-4947)', () => {
   it('the two keys are mutually exclusive and survive blocked storage', () => {
-    const store = new Map<string, string>();
-    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) });
+    const storage = fakeStorage();
+    vi.stubGlobal('localStorage', storage);
     expect(rememberedChoice()).toBeNull();
 
     setRememberedChoice('app');
     expect(rememberedChoice()).toBe('app');
-    expect(store.has('calab-open-links-in-browser')).toBe(false);
+    expect(storage.getItem('calab-open-links-in-browser')).toBeNull();
 
     setRememberedChoice('browser'); // setting one clears the other
     expect(rememberedChoice()).toBe('browser');
-    expect(store.has('calab-open-links-in-app')).toBe(false);
+    expect(storage.getItem('calab-open-links-in-app')).toBeNull();
 
     setRememberedChoice('app');
     expect(rememberedChoice()).toBe('app');
-    expect(store.has('calab-open-links-in-browser')).toBe(false);
+    expect(storage.getItem('calab-open-links-in-browser')).toBeNull();
 
     setRememberedChoice(null);
     expect(rememberedChoice()).toBeNull();
-    expect(store.size).toBe(0);
+    expect(storage.getItem('calab-open-links-in-app')).toBeNull();
+    expect(storage.getItem('calab-open-links-in-browser')).toBeNull();
 
     const boom = (): never => {
       throw new Error('SecurityError');
@@ -97,26 +102,29 @@ describe('«запомнить выбор» (DEV-4947)', () => {
   it('a remembered browser choice expires after 30 days and is cleaned up', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    const store = new Map<string, string>();
-    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) });
+    const storage = fakeStorage();
+    vi.stubGlobal('localStorage', storage);
     setRememberedChoice('browser');
     expect(rememberedChoice()).toBe('browser');
 
     vi.setSystemTime(new Date('2026-01-30T23:59:59Z')); // just under 30 days
     expect(rememberedChoice()).toBe('browser');
-    expect(store.has('calab-open-links-in-browser')).toBe(true);
+    expect(storage.getItem('calab-open-links-in-browser')).not.toBeNull();
 
     vi.setSystemTime(new Date('2026-01-31T00:00:01Z')); // just over 30 days
     expect(rememberedChoice()).toBeNull(); // expired
-    expect(store.has('calab-open-links-in-browser')).toBe(false); // and cleaned up
+    expect(storage.getItem('calab-open-links-in-browser')).toBeNull(); // and cleaned up
   });
 
-  it('a remembered browser choice skips the card outright, same as skipsLanding', () => {
+  it('a remembered browser choice skips the card outright, same as skipsLanding, and clears the address bar', () => {
+    const replaceState = vi.fn();
     resetNativeShellForTests();
     vi.stubGlobal('localStorage', fakeStorage());
+    vi.stubGlobal('history', { replaceState });
     setRememberedChoice('browser');
     expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(false);
     expect(useLinkLanding.getState().link).toBeNull();
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/');
   });
 
   it('a remembered app choice still shows the card (the screen auto-tries the app on arrival)', () => {

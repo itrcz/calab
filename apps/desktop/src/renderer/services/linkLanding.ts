@@ -46,14 +46,30 @@ export function skipsLanding(link: LinkLanding, signedIn: boolean): boolean {
 }
 
 /**
+ * The address bar keeps /join/<code>, /r/<code> or /t/<KEY> while a link is being handed to
+ * `handleDeepLink` without the card — a reload must not re-run the same thing again (review
+ * follow-up, DEV-4947).
+ */
+function clearLinkAddressBar(): void {
+  try {
+    history.replaceState(null, '', '/');
+  } catch {
+    // not fatal
+  }
+}
+
+/**
  * Shows the card for a web link; false = not a link, or one of the two skip cases above (the
- * caller handles the url as before — `handleDeepLink`).
+ * caller hands the url to `handleDeepLink` as before — the address bar is cleared first so a
+ * reload does not re-trigger the same skip).
  */
 export function showLinkLanding(url: string): boolean {
-  if (nativeShell()) return false;
   const link = landingFor(url);
   if (!link) return false;
-  if (rememberedChoice() === 'browser') return false;
+  if (nativeShell() || rememberedChoice() === 'browser') {
+    clearLinkAddressBar();
+    return false;
+  }
   useLinkLanding.setState({ link });
   return true;
 }
@@ -63,12 +79,7 @@ export function continueInBrowser(): void {
   const link = useLinkLanding.getState().link;
   if (!link) return;
   useLinkLanding.setState({ link: null });
-  // The address bar keeps /join/<code> while the card is shown (a reload shows it again).
-  try {
-    history.replaceState(null, '', '/');
-  } catch {
-    // not fatal
-  }
+  clearLinkAddressBar();
   handleDeepLink(link.url);
 }
 

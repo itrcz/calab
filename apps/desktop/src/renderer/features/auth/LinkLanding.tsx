@@ -108,7 +108,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
             {state === 'trying' ? (
               <p className="text-muted">
                 {t('landing.trying')}{' '}
-                <button type="button" className="rounded-[var(--radius-control)] text-accent-text hover:underline" onClick={continueInBrowser}>
+                <button type="button" className="rounded-[var(--radius-control)] text-accent-text hover:underline" onClick={browser}>
                   {t('landing.inBrowser')}
                 </button>
               </p>
