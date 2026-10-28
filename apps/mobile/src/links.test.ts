@@ -39,6 +39,7 @@ describe('appUrlForLink', () => {
     'https://calab.example.com/t/abc',
     `https://calab.example.com/t/${'a'.repeat(65)}`,
     'https://calab.example.com/t/INV-820/x',
+    'https://calab.example.com/t/slug-not-a-task-key', // valid invite-code slug, not a task key (review follow-up)
     'https://calab.example.com/t//INV-820',
     'https://calab.example.com/T/INV-820',
     'https://calab.example.com/t/INV%2D820',

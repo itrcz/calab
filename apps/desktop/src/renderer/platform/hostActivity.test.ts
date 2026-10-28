@@ -218,6 +218,7 @@ describe('phone host links (ADR-0142)', () => {
       'https://calab.example.com@evil.test/t/INV-820', 'http://calab.example.com/t/INV-820', 'https://calab.example.com/t/INV-820/',
       'https://calab.example.com/t/INV-820?x=1', 'https://calab.example.com/t/INV-820#x', 'https://calab.example.com/b/BOARD1',
       'https://calab.example.com/plans?plan=team', 'https://calab.example.com/t/abc', 'https://calab.example.com//t/INV-820',
+      'https://calab.example.com/t/slug-not-a-task-key', // valid invite-code slug, not a task key (review follow-up)
       'https://calab.example.com/t/INV-820\n', 'calab://t/INV-820', 'javascript:alert(1)//https://calab.example.com/t/INV-820']) h.link(url);
     h.link(task); expect(h.opened.mock.calls).toEqual([[task]]);
   });
