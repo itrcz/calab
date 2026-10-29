@@ -29,6 +29,17 @@ The feed contains up to 100 events across seven local calendar days. An explicit
 
 For physical acceptance, use a separate bundle ID, App Group, URL scheme and app name, a trusted HTTPS test origin, and isolated synthetic server data. Keep the working TestFlight app installed. Do not commit credentials, temporary tunnel URLs, device identifiers or user screenshots.
 
+### Repeating the EAS iOS build matrix
+
+The `qa-ios` profile produces simulator artifacts through EAS; it does not validate distribution signing. Supply the Expo project owner/ID and a synthetic HTTPS origin in the environment. `EXPO_NO_DOTENV=1` prevents a local `.env` from silently enabling the OFF variant. From `apps/mobile`:
+
+```sh
+EXPO_NO_DOTENV=1 CALAB_IOS_APP_GROUP= eas build --platform ios --profile qa-ios --local --non-interactive --output /tmp/calab-widgets-off.tar.gz
+EXPO_NO_DOTENV=1 CALAB_IOS_APP_GROUP="$QA_APP_GROUP" CALAB_IOS_URL_SCHEME=calab eas build --platform ios --profile qa-ios --local --non-interactive --output /tmp/calab-widgets-on.tar.gz
+```
+
+Set `QA_APP_GROUP` to the registered QA group before the ON command. Both variants use the same source revision and `react-native.config.js` pod linking. Inspect the ON extension and signed physical app separately; simulator success alone is not an App Group/Keychain or TestFlight acceptance result. For the production-route acceptance only, the isolated physical QA binary temporarily uses `calab` as its URL scheme; actual widget taps must open its containing QA app. Keep its app, group and credentials separate from TestFlight.
+
 ## Refresh behavior
 
 The app refreshes after sign-in, relevant calendar changes and foreground transitions. The extension schedules local start/end/midnight/expiry transitions in advance and requests network timelines about every 30 minutes, with jitter. Empty/error states request a retry after five minutes. Network requests are coalesced across processes and respect a minimum cooldown.

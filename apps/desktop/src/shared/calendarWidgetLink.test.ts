@@ -8,6 +8,8 @@ describe('calendar widget destinations', () => {
     vi.stubGlobal('URLSearchParams', undefined);
     const url = 'calab://calendar?kind=event&day=2026-11-01&event=11111111-1111-4111-8111-111111111111&workspace=22222222-2222-4222-8222-222222222222&start=2026-11-01T09%3A00%3A00Z';
     expect(parseCalendarWidgetLink(url, 'calab')).toEqual({ kind: 'event', day: '2026-11-01', event: '11111111-1111-4111-8111-111111111111', workspace: '22222222-2222-4222-8222-222222222222', start: '2026-11-01T09:00:00Z' });
+    // URLComponents leaves timestamp colons unescaped in native widget links.
+    expect(parseCalendarWidgetLink(url.replaceAll('%3A', ':'), 'calab')).toEqual(parseCalendarWidgetLink(url, 'calab'));
     for (const bad of [url + '&%64ay=2026-11-02', url + '&__proto__=x', url + '&', url.replace('%3A', '%ZZ'), url.replace('//calendar', '//user@calendar'), url.replace('//calendar', '//calendar:80'), url.replace('//calendar', '//calendar/extra'), url + '\n']) expect(parseCalendarWidgetLink(bad, 'calab')).toBeNull();
   });
   it('keeps the occurrence and day, and rejects foreign origins or ambiguous queries', () => {

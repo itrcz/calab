@@ -2426,6 +2426,7 @@ Expected: the task / board / room / wiki / Disk / meeting opens in the app (anot
 
 - Task tabs (#104, #105): open a task, ⌘-click two others (three tabs), click a fourth card plainly — the three stay and a fourth tab appears; another plain click replaces only that fourth one.
 - Open the Mail section and click any task tab (also one of another workspace): the task opens over the mail, no click is lost.
+
 ### Native iPhone calendar widgets (ADR-0148)
 
 - The four native system surfaces consume the separate ADR-0145 read-only feed; app screens/editing stay in the shared web client (ADR-0067).
