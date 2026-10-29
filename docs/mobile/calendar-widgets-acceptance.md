@@ -2,6 +2,25 @@
 
 Pre-split reviewed code: `88d62cbdfe662cd9e2db54f19588217387c62a4b`, integrated with `origin/main` at `5e71164edfb8bd85cc920194746eec1d1b1b29c3`. Physical build: `9757702c5e2132f68342398ebc628086db77f7df`; native widget code is unchanged by the integration apart from an ADR comment. Plan/spec: `7e26f7d1`; server contract: `d2e5aa10`. Status: implementation and source review complete, core physical scenarios passed; extended device and distribution gates remain. No production rollout or merge.
 
+## Maintainer follow-up, 2026-10-29
+
+Current runtime source: `2bb59b1f8ac67c635b15d3eaa5abef1148e5e47e`, based on main `2f574cf9e99f2b21022797b91a01e9a698f96527`. This section supersedes readiness claims for the earlier builds. PR #253 stays open; there is no merge, deployment or TestFlight upload.
+
+| Maintainer request | Current evidence |
+| --- | --- |
+| Lock Screen / StandBy privacy | Implemented the conservative option: Lock Screen and background-free contexts render generic Meeting/Встреча plus time, never the title. Both independent Opus 5.5 reviews found no remaining code blocker/major. A fresh locked-phone/StandBy screenshot is still pending. |
+| EAS with widgets OFF and ON | Both real `eas build --local --platform ios --profile qa-ios` simulator builds succeeded. OFF had `CALAB_IOS_APP_GROUP` absent; ON had a registered QA group and scheme `calab`. Artifact inspection confirms no `CalabCalendar*` Info.plist keys in OFF app/extension and matching group/keychain/origin/scheme keys in ON. These builds test pod linking, not App Store signing. |
+| ADR / plan location | Calendar ADR is now 0148; 0146 remains the existing avatar-island ADR. The plan is in `docs/plans/2026-10-26-ios-calendar-widgets.md`; feature links and `.env.example` were updated. |
+| Production-scheme widget tap under Hermes | Replaced WHATWG URL/searchParams with strict bounded route/component parsing; tests cover missing URL globals, native unescaped timestamp colons, invalid encoding and duplicate keys. The signed QA binary uses scheme `calab`; a fresh physical widget tap to the correct occurrence is still pending. |
+
+Automated evidence on this revision or the identical runtime before the final type-narrowing guard: 236 mobile tests plus 10 plugin tests, focused shared-web/widget tests, desktop/mobile typechecks, production shared-web build, Swift typecheck targeting arm64 iOS 16.4, and `make gen` without generated-code drift. Both actual `claude-opus-5-5` review sessions confirmed no unresolved blocker/major at `2bb59b1`; they did not perform physical acceptance.
+
+Root `make lint` passed server vet/golangci, mobile, landing and SDK. Desktop reported the seven existing marketing errors plus one new non-null assertion in the parser. The parser was corrected to narrow the capture explicitly; its focused tests and affected-file lint then passed. The unrelated marketing baseline remains, so local root lint is not all-green. Current-head CI is recorded in the PR.
+
+The signed arm64 development build succeeds. App and extension share the resolved dedicated Keychain group and App Group, with the host private Keychain group first. The isolated QA profile predates Associated Domains, so only the generated ignored QA entitlement was omitted for that capability. This build does not validate universal links or distribution signing. The production TestFlight app remains installed separately.
+
+A new QA build was installed and the sign-in screen was observed on the physical iPhone. The owner then confirmed sign-in. Native computer-use subsequently stopped initializing, despite the device still being connected; repeated attempts and a tool reset did not restore screen access. This is **not** evidence that current widget taps, locked rendering or StandBy passed. Earlier physical results below remain limited to their named older build. Resume those device checks before calling this release-ready; normal background latency, locale/timezone/first-unlock and production signing remain separate gates.
+
 ## Review split, 2026-10-28
 
 The original implementation was rebased onto main `da3438bc8` and split for maintainer review: CalDAV DATE persistence (migration `00133`, ADR-0144), the session-bound feed/grant (ADR-0145), and native widgets/shared-web integration (ADR-0148). Swift widget/store runtime is unchanged from the device-tested implementation. The host now integrates main's phone links (ADR-0142): one initial/live URL path, both READY capabilities, and isolated custom-scheme configuration. These host integration changes require fresh checks and are not claimed as physically verified by the earlier build. The integration with the newer ONLYOFFICE migration history needs fresh checks; earlier physical observations below remain observations of the explicitly named development build.
