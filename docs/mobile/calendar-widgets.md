@@ -48,6 +48,8 @@ WidgetKit decides when requests run. Low Power Mode, device usage and system bud
 
 ## Acceptance evidence and remaining gates
 
+The current maintainer-follow-up runtime at `2bb59b1f8ac67c635b15d3eaa5abef1148e5e47e` has two actual Claude Opus 5.5 delta confirmations with no unresolved code blocker/major. EAS OFF/ON builds succeeded; fresh physical widget taps and privacy rendering remain pending as detailed in the acceptance report. Historical evidence follows.
+
 The implementation was reviewed by two fresh Claude Opus 5.5 sessions after the plan review. Important findings were fixed and reviewed again: cold-start cache retention, binding during grant issuance, Keychain group order, lost refresh requests, deep-link acknowledgement and duplicate imported event keys. The final integration and route/test-delta reviews identify code commit `88d62cbdfe662cd9e2db54f19588217387c62a4b` and report no unresolved blocker/major. The actual model identifier in the CLI results is `claude-opus-5-5`; acceptance-document edits do not change the reviewed code.
 
 Focused checks include PG17 HTTP integration with race detection, token-purpose confusion, exact-session/SSO revocation, membership exclusions, bounded feeds, CalDAV DATE and duplicate imports; bridge/document/renewal/deep-link regressions; Swift date/DST/expiry and cross-process cache fencing; plugin idempotence; mobile and desktop typechecks; generation drift; and a signed arm64 Release build.
