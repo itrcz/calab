@@ -62,6 +62,17 @@ describe('no card inside a native phone shell (DEV-4947)', () => {
     resetNativeShellForTests();
     expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(true);
   });
+
+  it('an Android shell UA marker (no bridge) also defers to handleDeepLink', () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal(
+      'navigator',
+      { userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 CalabShell/1' },
+    );
+    resetNativeShellForTests();
+    expect(showLinkLanding('https://app.calab.io/join/calaba-team-2026')).toBe(false);
+    expect(useLinkLanding.getState().link).toBeNull();
+  });
 });
 
 describe('«запомнить выбор» (DEV-4947)', () => {

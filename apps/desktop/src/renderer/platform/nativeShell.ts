@@ -4,13 +4,20 @@
  * money actions hide there; the Android shell, every browser (Safari on an iPhone included) and
  * the desktop keep them (owner, 2026-10-10).
  *
- * The signal: the native host bridge `window.CalabHostActivity` (declared only by the shell, main
- * frame only) and its `platform` field (Platform.OS, added 2026-10-10). Fail closed on iOS: a
- * shell is Android only when its user agent says Android too and the bridge does not say iOS — an
- * older binary without the field, a newer bridge version, an iPad with a desktop user agent,
- * anything unproven is iOS.
+ * Two independent signals, either is enough:
+ *  1. the native host bridge `window.CalabHostActivity` (declared only by the shell, main frame
+ *     only) and its `platform` field (Platform.OS, added 2026-10-10). Fail closed on iOS: a shell
+ *     is Android only when its user agent says Android too and the bridge does not say iOS — an
+ *     older binary without the field, a newer bridge version, an iPad with a desktop user agent,
+ *     anything unproven is iOS.
+ *  2. the UA marker `SHELL_UA_MARKER` the shell's WebView appends to its user agent (DEV-4947):
+ *     the bridge is iOS-only (`hostChannelEnabled`, apps/mobile/src/notifications.ts), so Android
+ *     has no other signal. With the marker and no bridge, the user agent alone decides Android vs.
+ *     iOS. With both present, the bridge's iOS rule above still wins (fail closed on iOS).
  * No new binary is needed for either platform: the user agent tells Android shells apart.
  */
+
+import { shellFromUserAgent } from '../../shared/nativeShell';
 
 export type NativeShell = 'ios' | 'android' | null;
 
@@ -20,8 +27,8 @@ interface ShellBridge {
 }
 
 export function detectNativeShell(bridge: ShellBridge | undefined, userAgent: string): NativeShell {
+  if (bridge == null) return shellFromUserAgent(userAgent);
   // Any bridge is a shell, whatever its version: a newer handshake must not show payments in iOS.
-  if (bridge == null) return null;
   const androidUa = /\bAndroid\b/i.test(userAgent);
   if (androidUa && bridge.platform !== 'ios') return 'android';
   return 'ios';
