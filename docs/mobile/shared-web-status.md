@@ -1,5 +1,19 @@
 # Телефон: общий веб в оболочке — статус
 
+## 2026-10-29: Android entry link dropped right after loading (regression from #263, DEV-4947)
+
+Found on a real Android phone (Play internal testing build 1.0.0 (2)): a task/room link opened
+the app, briefly loaded the linked route, then fell back to the home screen. Cause: PR #263 made
+the `loaded` event clear `entry` in `apps/mobile/src/hostState.ts` so a later `retry` would go
+back to the origin — but `entry` is also what the mounted WebView renders as
+`source={{ uri: state.entry ?? origin }}` in `App.tsx` (same `key={state.generation}`), and
+react-native-webview reloads whenever `source.uri` changes. Clearing `entry` on `loaded` made the
+WebView navigate away from the link right after it finished loading. Android hits this on every
+link (no host channel); iOS only on a cold start or a fallback case, and build 22 predates #263.
+Fix: `entry` now never changes while its generation stays mounted; a new `entryLoaded` flag
+(reset by `open`/`retry`/`processGone`) tracks whether it loaded, and `retry` drops `entry` only
+when `entryLoaded` is true. Needs a new Android build (1.0.0 (3)) to pick up the fix.
+
 ## 2026-10-29: Android shell recognized by a UA marker (DEV-4947)
 
 The web client's `nativeShell()` previously relied only on the host bridge
