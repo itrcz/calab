@@ -1,7 +1,7 @@
 # Calendar subscriptions: local acceptance
 
 2026-10-29. Base: `2f574cf9e`. Scope and API: [ADR-0147](../adr/0147-calendar-export-subscription.md).
-Status: implemented locally, suitable for a draft PR review, not deployed.
+Status: [draft PR #274](https://github.com/itrcz/calab/pull/274) opened, not deployed.
 Release gates remain open below.
 
 QR codes contain an ordinary HTTPS connection URL and can be scanned on Android
@@ -54,8 +54,10 @@ system-calendar subscription has not been verified on a physical device.
 - Two independent security/protocol reviews required by AGENTS.md have not run.
   The current owner instruction prohibits spawning agents without a new request.
   Author review and automated checks are not independent reviews.
-- Full merge CI/integration matrix, fresh migration-number conflict check and
-  shipping approval remain necessary. No push, PR, merge or deployment occurred.
+- Full merge CI/integration matrix and shipping approval remain necessary.
+  Main was refreshed before opening PR #274: no divergence or migration/ADR
+  collision. CI is running on implementation commit `cebe2689616c`; no merge or
+  deployment has occurred. Recheck conflicts if main advances before merge.
 - Physical iPhone acceptance: QR scan, Apple subscription confirmation, HTTPS transport of the resulting subscription,
   update and cancellation after Apple's refresh, revoked/rotated URL refusal. WebKit
   is engine-level UI evidence, not an iPhone/system-calendar result.
