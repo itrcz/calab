@@ -13,6 +13,10 @@
 Источник по-прежнему содержит только Claude; работа Codex над документами и публикацией
 в эту статистику не входит, её стоимость и токены не измерены.
 
+Подготовка 4.10.0 (29.10.2026): выполнен `python3 tools/usage-stats.py --no-write`.
+Агрегаты прошлых срезов сохранены: этот источник не измеряет текущую работу Codex
+и два независимых ревью календарных подписок. Их токены и стоимость неизвестны.
+
 Обновлено: 2026-10-29 08:14 UTC · коммитов: 3262 · период: 2026-09-25 18:07 → 2026-10-29 08:14 UTC (806.1 ч)
 Машины (срезы): Awesomes-MacBook-Air.local — 8919 отв., MacBook-Air-Maxim-2.local — 1241 отв., MacBook-Pro-Maksim.local — 746 отв., Macbooks-Virtual-Machine.local — 2547 отв., Macbooks-Virtual-Machine.local-clade-team — 11809 отв., Macbooks-Virtual-Machine.local-clade-team-1013 — 3737 отв., Macbooks-Virtual-Machine.local-clade-team-1014 — 2251 отв., Macbooks-Virtual-Machine.local-post360 — 580 отв., codex-ios-release — 620 отв., mac — 675 отв., mac-orca-3110 — 13076 отв., previous — 69643 отв.
 

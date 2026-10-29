@@ -705,7 +705,7 @@ authority/policy. Не отключать enforcement автоматически
 - Перенос базы с PostgreSQL 18 на 17 (ADR-0037): `pg_dump` пишет `DEFAULT uuidv7()` без схемы при пустом `search_path`, и на 17 такой дамп не восстанавливается (`function uuidv7() does not exist`). В пустой базе на 17 сначала выполнить `apps/server/internal/db/uuidv7.sql`, затем восстановить дамп со схемой в DEFAULT: `pg_restore -f - calaba.dump | sed 's/DEFAULT uuidv7()/DEFAULT public.uuidv7()/' | psql -v ON_ERROR_STOP=1 -d <база>`. Проверено 2026-09-28 (18.6 → 17.11): данные и `goose_db_version` на месте, `server migrate` ничего не применяет, новые id — v7.
 
 
-### Calendar subscriptions (ADR-0147, unreleased)
+### Calendar subscriptions (ADR-0147, 4.10.0)
 
 Deploy migration 00138 with the server before the new renderer. Existing clients
 continue to work; the new menu requires the new API. `PUBLIC_APP_URL` must be the

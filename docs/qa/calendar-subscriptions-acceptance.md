@@ -1,8 +1,8 @@
 # Calendar subscriptions: local acceptance
 
 2026-10-29. Base: `2f574cf9e`. Scope and API: [ADR-0147](../adr/0147-calendar-export-subscription.md).
-Status: [draft PR #274](https://github.com/itrcz/calab/pull/274) opened, not deployed.
-Release gates remain open below.
+Pre-release evidence for [PR #274](https://github.com/itrcz/calab/pull/274).
+Deployment and physical-device acceptance are separate from these checks.
 
 QR codes contain an ordinary HTTPS connection URL and can be scanned on Android
 as well as iPhone. The caption names a phone camera, not a specific platform.
@@ -46,18 +46,24 @@ system-calendar subscription has not been verified on a physical device.
 
 ## Remaining release gates
 
-- Full workspace lint is blocked by seven existing errors in unchanged
-  `apps/desktop/e2e-marketing/copy4.ts`, `landing-v6.spec.ts` and `v6-kit.ts`.
-  They concern an unused type, floating promises and a meaningless void operator.
-  New-file errors found in the first run were fixed; the final changed-file lint
-  passed. No marketing fixture changes are included here.
-- Two independent security/protocol reviews required by AGENTS.md have not run.
-  The current owner instruction prohibits spawning agents without a new request.
-  Author review and automated checks are not independent reviews.
-- Full merge CI/integration matrix and shipping approval remain necessary.
-  Main was refreshed before opening PR #274: no divergence or migration/ADR
-  collision. CI is running on implementation commit `cebe2689616c`; no merge or
-  deployment has occurred. Recheck conflicts if main advances before merge.
+- Seven pre-existing workspace lint errors in marketing fixtures were corrected:
+  remove unused declarations and retain the synchronous seed functions' actual
+  return types. Targeted ESLint and node TypeScript passed; full `make lint` must
+  also pass before release.
+- Two independent security/protocol reviews ran at `092bd7e535d6`. They identified
+  three release blockers, fixed in `58824184926c`: fixed-offset recurring dates,
+  workspace guest demotion retaining a public feed, and unbounded timezone work
+  for unsupported export years. Regression tests reproduced the failures first.
+  The final targeted PG17/Redis race tests passed, including demotion, date bounds,
+  cancellation/deadline and Moscow/Tokyo local recurrence tests. Both independent
+  reviewers rechecked `58824184926c`: no remaining blocker/major. The protocol
+  reviewer independently expanded the exported Moscow monthly and Tokyo weekday
+  recurrence and confirmed that their local dates stay correct.
+- The full PR CI/integration matrix passed on `092bd7e535d6`, including all
+  PostgreSQL 17 integration shards. The corrected release candidate must pass CI
+  again. The owner authorized release after independent reviews and green checks.
+  Main was refreshed: no divergence or migration/ADR collision. Recheck before
+  merge if main advances. Production and device acceptance are not implied by CI.
 - Physical iPhone acceptance: QR scan, Apple subscription confirmation, HTTPS transport of the resulting subscription,
   update and cancellation after Apple's refresh, revoked/rotated URL refusal. WebKit
   is engine-level UI evidence, not an iPhone/system-calendar result.
