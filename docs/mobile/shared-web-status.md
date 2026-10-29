@@ -1,5 +1,20 @@
 # Телефон: общий веб в оболочке — статус
 
+## 2026-10-29: Android shell recognized by a UA marker (DEV-4947)
+
+The web client's `nativeShell()` previously relied only on the host bridge
+`window.CalabHostActivity`, which the shell injects only on iOS
+(`hostChannelEnabled`, apps/mobile/src/notifications.ts). On Android there was
+no bridge and no other signal, so the web treated an Android shell like an
+ordinary browser: a task/invite/room link showed the "open in the app" card,
+and its `calab://` was then blocked by the shell's own navigation policy.
+Fix: the WebView now sets `applicationNameForUserAgent` to a shared marker
+(`apps/desktop/src/shared/nativeShell.ts`, `SHELL_UA_MARKER`), and
+`detectNativeShell` recognizes it when no bridge is present (Android UA →
+`'android'`, else `'ios'`); a bridge, where present, still decides (fail
+closed on iOS). **Needs a new Android build** to carry the marker; the
+existing iOS build 22 is unaffected and keeps working through the bridge.
+
 ## 2026-10-28: links open the app (DEV-4947, ADR-0142)
 
 https `/t/<KEY>`, `/join/<code>`, `/r/<code>` of the hosts in `EXPO_PUBLIC_CALAB_LINK_HOSTS`
