@@ -33,13 +33,21 @@ const nativeCallAudio = env('CALAB_IOS_NATIVE_CALL_AUDIO') === '1';
 if (nativeCallAudio && !incomingCalls) throw new Error('CALAB_IOS_NATIVE_CALL_AUDIO requires incoming calls');
 const owner = env('CALAB_EXPO_OWNER');
 const projectId = env('CALAB_EAS_PROJECT_ID');
+const calendarGroup = env('CALAB_IOS_APP_GROUP');
+const calendarScheme = env('CALAB_IOS_URL_SCHEME') ?? 'calab';
+if (calendarGroup && !env('CALAB_IOS_URL_SCHEME')) throw new Error('Calendar widgets require an explicit CALAB_IOS_URL_SCHEME');
+if (calendarGroup && !/^group\.[a-zA-Z0-9.-]+$/.test(calendarGroup)) throw new Error('CALAB_IOS_APP_GROUP must be an App Group identifier');
+if (!/^[a-z][a-z0-9-]{2,63}$/.test(calendarScheme)) throw new Error('CALAB_IOS_URL_SCHEME must be a URL scheme');
+const calendarOrigin = calendarGroup ? parseWebOrigin(process.env.EXPO_PUBLIC_CALAB_URL) : null;
+if (calendarGroup && !calendarOrigin) throw new Error('Calendar widgets require EXPO_PUBLIC_CALAB_URL');
 
 const identity = parseReleaseIdentity(process.env.CALAB_APP_VERSION, process.env.CALAB_IOS_BUILD_NUMBER, process.env.CALAB_ANDROID_VERSION_CODE);
 
 const config: ExpoConfig = {
-  name: 'Calab',
+  name: env('CALAB_APP_NAME') ?? 'Calab',
   slug: 'calab',
-  scheme: [SCHEME, LEGACY_SCHEME],
+  // An isolated widget QA install must not claim the production app's custom schemes.
+  scheme: calendarGroup && calendarScheme !== SCHEME ? [calendarScheme] : [SCHEME, LEGACY_SCHEME],
   ...(owner ? { owner } : {}),
   version: identity.version,
   platforms: ['ios', 'android'],
@@ -89,7 +97,7 @@ const config: ExpoConfig = {
     ],
   },
   plugins: [
-    './plugins/withSessionActivity',
+    ['./plugins/withSessionActivity', calendarGroup ? { calendar: { group: calendarGroup, origin: calendarOrigin, scheme: calendarScheme } } : {}],
     './plugins/withCallAudio',
     './plugins/withCommunicationNotifications',
     // iOS 27 SDK apps without the UIKit scene lifecycle trap at launch. Expo's supported SDK 57

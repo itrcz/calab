@@ -64,6 +64,14 @@ describe('bounded host activity contract', () => {
       expect(top.CalabHostActivity).toMatchObject({ version: 1, host: 3, platform });
     }
   });
+  it('offers regular links and calendar navigation together without enabling widgets in old hosts', () => {
+    const dispatchEvent = vi.fn();
+    class CustomEvent { constructor(readonly type: string, readonly init: { detail: unknown }) {} }
+    runInNewContext(activityReady(3, document, false, true), { window: { dispatchEvent }, CustomEvent });
+    const event = dispatchEvent.mock.calls[0]?.[0] as CustomEvent;
+    expect(event.init.detail).toMatchObject({ host: 3, document, links: 1, calendarWidget: 1 });
+    expect(activityReady(3, document)).not.toContain('"calendarWidget"');
+  });
 });
 
 it('accepts calls only in the current document and rejects credentials/unknown actions', () => {

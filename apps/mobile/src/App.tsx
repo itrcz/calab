@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { parseCalendarWidgetLink, type CalendarWidgetAction } from '../../desktop/src/shared/calendarWidgetLink';
 import { ActivityIndicator, BackHandler, Linking, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type {
@@ -21,6 +22,7 @@ import { acknowledgeNotification, hostChannelEnabled, notificationReply, notific
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
 import { permissionsOperation, permissionsReply, subscribePermissions } from './mediaPermissions';
 import { SHELL_UA_MARKER } from '../../desktop/src/shared/nativeShell';
+import { calendarWidgetEnabled, calendarWidgetScheme, calendarWidgetOpen, calendarWidgetOperation, calendarWidgetReply } from './calendarWidget';
 
 /**
  * The phone host (ADR-0067): one full-screen WebView with the web client — the same DOM, router and
@@ -76,6 +78,8 @@ function Host({ origin }: { origin: string }) {
   const [state, dispatch] = useReducer(hostReducer, initialHostState);
   const web = useRef<WebView>(null);
   const canGoBack = useRef(false);
+  const calendarTap = useRef(0);
+  const pendingCalendar = useRef<{ action: CalendarWidgetAction; tap: number } | null>(null);
   const loaded = useRef(false);
   const activity = useRef(new ActivityProtocol(state.generation));
   const resetActivity = useCallback(() => {
@@ -86,11 +90,26 @@ function Host({ origin }: { origin: string }) {
     activity.current = new ActivityProtocol(state.generation);
     return resetActivity;
   }, [state.generation, resetActivity]);
+  const deliverCalendar = useCallback(() => {
+    const document = activity.current.currentDocument();
+    if (!document || !pendingCalendar.current || !activity.current.belongsTo(state.generation)) return;
+    web.current?.injectJavaScript(calendarWidgetOpen(state.generation, document, pendingCalendar.current.action, pendingCalendar.current.tap));
+  }, [state.generation]);
   const onMessage = useCallback(({ nativeEvent }: WebViewMessageEvent) => {
     const action = activity.current.accept(nativeEvent.data);
     if (action?.type === 'ready') {
       endSessionActivity();
-      web.current?.injectJavaScript(activityReady(state.generation, action.document, sessionActivityEnabled));
+      web.current?.injectJavaScript(activityReady(state.generation, action.document, sessionActivityEnabled, calendarWidgetEnabled));
+      deliverCalendar();
+    } else if (action?.type === 'calendarWidget') {
+      if (action.operation === 'opened') {
+        if (pendingCalendar.current?.tap === action.tap) pendingCalendar.current = null;
+        return;
+      }
+      void calendarWidgetOperation(action.document, action).then(ok => {
+        if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
+          web.current?.injectJavaScript(calendarWidgetReply(state.generation, action.document, action.request, ok));
+      });
     } else if (action?.type === 'calls') {
       void callsOperation(action.document, action).then(value => {
         if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
@@ -116,7 +135,7 @@ function Host({ origin }: { origin: string }) {
           web.current?.injectJavaScript(notificationReply(state.generation, action.document, action.request, value));
       });
     }
-  }, [state.generation]);
+  }, [state.generation, deliverCalendar]);
 
   useEffect(() => subscribeNotifications((document, value) => {
     if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
@@ -146,20 +165,27 @@ function Host({ origin }: { origin: string }) {
   const deliverLink = useRef<(raw: string) => void>(() => undefined);
   useEffect(() => {
     deliverLink.current = (raw) => {
+      const calendar = calendarWidgetEnabled ? parseCalendarWidgetLink(raw, calendarWidgetScheme) : null;
+      if (calendar) {
+        pendingCalendar.current = { action: calendar, tap: ++calendarTap.current };
+        deliverCalendar();
+        return;
+      }
       const url = appUrlForLink(raw, origin, LINK_HOSTS);
       if (!url) return;
+      pendingCalendar.current = null; // A newer regular link supersedes an undelivered widget tap.
       const document = activity.current.belongsTo(state.generation) ? activity.current.current() : null;
       if (hostChannelEnabled && loaded.current && document) web.current?.injectJavaScript(linkEvent(state.generation, document, url));
       else dispatch({ type: 'open', url });
     };
-  }, [origin, state.generation]);
+  }, [origin, state.generation, deliverCalendar]);
   // The launch link is read before the WebView mounts, so a cold start loads the page once.
   const [started, setStarted] = useState(false);
   useEffect(() => {
-    let live = true;
-    const sub = Linking.addEventListener('url', ({ url }) => deliverLink.current(url));
+    let live = true, received = false;
+    const sub = Linking.addEventListener('url', ({ url }) => { received = true; deliverLink.current(url); });
     Linking.getInitialURL()
-      .then((url) => { if (live && url) deliverLink.current(url); })
+      .then((url) => { if (live && url && !received) deliverLink.current(url); })
       .catch(() => undefined)
       .finally(() => { if (live) setStarted(true); });
     return () => { live = false; sub.remove(); };
@@ -283,7 +309,7 @@ function Host({ origin }: { origin: string }) {
         onRenderProcessGone={onProcessGone}
         {...(hostChannelEnabled ? {
           onMessage,
-          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled, Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null),
+          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled, Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null, calendarWidgetEnabled),
           injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true,
         } : {})}
         // Persistent session: the default (non-incognito) website data store keeps the HttpOnly cookie.

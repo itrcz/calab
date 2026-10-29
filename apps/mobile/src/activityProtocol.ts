@@ -1,8 +1,10 @@
 import type { HostCallsOperation } from '../../desktop/src/shared/hostCalls';
+import type { CalendarWidgetOperation } from '../../desktop/src/shared/hostCalendarWidget';
 import type { MediaPermissionsOperation } from '../../desktop/src/shared/hostPermissions';
 import { parseHostActivityMessage, type SessionActivitySnapshot } from '../../desktop/src/shared/hostActivity';
 
 export type ActivityAction =
+  | ({ type: 'calendarWidget'; document: string; request: number } & CalendarWidgetOperation)
   | ({ type: 'permissions'; document: string; request: number } & MediaPermissionsOperation)
   | ({ type:'calls'; document:string; request:number } & HostCallsOperation)
   | { type: 'ready'; document: string }
@@ -19,6 +21,8 @@ export class ActivityProtocol {
   constructor(private readonly host: number) {}
 
   belongsTo(host: number): boolean { return this.host === host; }
+
+  currentDocument(): string | null { return this.document; }
 
   isCurrent(document: string): boolean { return this.document === document; }
 
@@ -40,6 +44,7 @@ export class ActivityProtocol {
     this.sequence = message.seq;
     if (message.type === 'revoke') { this.reset(); return { type: 'end' }; }
     if (message.type === 'calls') return { ...message, type:'calls' };
+    if (message.type === 'calendarWidget') return { ...message, type: 'calendarWidget' };
     if (message.type === 'permissions') return { ...message, type: 'permissions' };
     if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}), ...(message.body ? { body: message.body } : {}) };
     if (message.snapshot.generation < this.generation) return null;
@@ -54,19 +59,19 @@ export class ActivityProtocol {
  * UI in the iOS shell); additive — an older binary without it is treated as iOS unless its
  * user agent is Android (apps/desktop platform/nativeShell.ts).
  */
-export function activityBootstrap(host: number, nativeAudio = false, platform: 'ios' | 'android' | null = null): string {
+export function activityBootstrap(host: number, nativeAudio = false, platform: 'ios' | 'android' | null = null, calendarWidget = false): string {
   return `(() => {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
     let documentId = crypto.randomUUID();
     Object.defineProperty(window, 'CalabHostActivity', { configurable: false, writable: false,
-      value: Object.freeze({version: 1, notificationsVersion: 1, notificationsTestVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''} ${platform ? `platform: '${platform}',` : ''} host: ${String(host)}, get document() { return documentId; },
+      value: Object.freeze({version: 1, ${calendarWidget ? 'calendarWidgetVersion: 1,' : ''} notificationsVersion: 1, notificationsTestVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''} ${platform ? `platform: '${platform}',` : ''} host: ${String(host)}, get document() { return documentId; },
         rotateDocument: () => { documentId = crypto.randomUUID(); },
         send: (data) => window.ReactNativeWebView.postMessage(data)}) });
   })(); true;`;
 }
 
-export function activityReady(host: number, document: string, activity = true): string {
-  const detail = JSON.stringify({ v: 1, host, document, capability: activity ? 'sessionActivity' : 'notifications', notifications: 1, calls: 1, permissions: 1, links: 1 });
+export function activityReady(host: number, document: string, activity = true, calendarWidget = false): string {
+  const detail = JSON.stringify({ v: 1, host, document, capability: activity ? 'sessionActivity' : 'notifications', notifications: 1, calls: 1, permissions: 1, links: 1, ...(calendarWidget ? { calendarWidget: 1 } : {}) });
   return `window.dispatchEvent(new CustomEvent('calab-host-activity-ready', {detail: ${detail}})); true;`;
 }
 

@@ -5,12 +5,14 @@
   "apple": {
     "modules": [
       "CalabSessionActivityModule",
+      "CalabCalendarWidgetModule",
       "CalabMessageNotificationsModule",
       "CalabIncomingCallsModule"
     ],
     "appDelegateSubscribers": [
       "CalabMessagePushSubscriber",
       "CalabIncomingCallsSubscriber"
-    ]
+    ],
+    "podspecPath": "ios/CalabSessionActivity.podspec"
   }
 }

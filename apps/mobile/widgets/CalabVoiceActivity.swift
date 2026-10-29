@@ -41,5 +41,13 @@ struct CalabVoiceActivity: Widget {
 
 @main
 struct CalabVoiceActivityBundle: WidgetBundle {
-  var body: some Widget { CalabVoiceActivity() }
+  var body: some Widget {
+    #if CALAB_CALENDAR_WIDGETS
+    CalabTodayTomorrowWidget()
+    CalabNextEventWidget()
+    CalabAgendaWidget()
+    CalabLockCalendarWidget()
+    #endif
+    CalabVoiceActivity()
+  }
 }
