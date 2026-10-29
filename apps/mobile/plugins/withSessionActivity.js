@@ -1,4 +1,4 @@
-// ActivityKit plus opt-in calendar WidgetKit surfaces (ADR-0146).
+// ActivityKit plus opt-in calendar WidgetKit surfaces (ADR-0148).
 const fs = require('node:fs');
 const path = require('node:path');
 const { withInfoPlist, withXcodeProject, withEntitlementsPlist } = require('expo/config-plugins');
