@@ -88,6 +88,7 @@ struct CalabLockCalendarWidget: Widget {
 }
 
 private struct CalabCalendarView: View {
+  @Environment(\.showsWidgetContainerBackground) private var showsBackground
   let entry: CalabCalendarEntry
   let kind: CalabCalendarKind
   private var scheme: String { Bundle.main.object(forInfoDictionaryKey: "CalabCalendarScheme") as? String ?? "calab" }
@@ -101,6 +102,12 @@ private struct CalabCalendarView: View {
   private var next: CalabCalendarEvent? {
     let events = entry.agenda?.events.filter { $0.endsAt > entry.date }.sorted { $0.startsAt < $1.startsAt } ?? []
     return events.first(where: { !$0.allDay }) ?? events.first
+  }
+  private func title(_ event: CalabCalendarEvent) -> String {
+    // Lock Screen and background-free contexts (including StandBy) never render
+    // the real title, even when the user's OS privacy setting allows it.
+    if kind == .lock || !showsBackground { return CalendarWords.text("Meeting", "Встреча") }
+    return event.title.isEmpty ? CalendarWords.text("Event", "Событие") : event.title
   }
   private func link(_ day: Date, kind: String = "day") -> URL {
     let key = entry.agenda?.dayKey(day) ?? dateString(day, "yyyy-MM-dd")
@@ -220,7 +227,7 @@ private struct CalabCalendarView: View {
       RoundedRectangle(cornerRadius: 2).frame(width: 3)
       VStack(alignment: .leading, spacing: 2) {
         if let next {
-          Text(next.title.isEmpty ? CalendarWords.text("Event", "Событие") : next.title).font(.headline).lineLimit(1)
+          Text(title(next)).font(.headline).lineLimit(1)
           timeLabel(next).font(.caption)
           if !calendar.isDate(next.startsAt, inSameDayAs: day) { Text(dateString(next.startsAt, "EEEdMMM")).font(.caption2).lineLimit(1) }
         } else { Text("Calab").font(.headline); Text(emptyText).font(.caption) }
@@ -254,7 +261,7 @@ private struct CalabCalendarView: View {
     HStack(alignment: .top, spacing: 7) {
       RoundedRectangle(cornerRadius: 2).fill(color(event.color)).frame(width: 3).widgetAccentable()
       VStack(alignment: .leading, spacing: 2) {
-        Text(event.title.isEmpty ? CalendarWords.text("Event", "Событие") : event.title)
+        Text(title(event))
           .font(compact && kind != .agenda ? .system(size: 13, weight: .semibold) : .subheadline.weight(.semibold)).lineLimit(1)
         timeLabel(event).font(compact ? .system(size: 12) : .caption).foregroundStyle(.secondary).lineLimit(1)
       }.frame(maxWidth: .infinity, alignment: .leading)

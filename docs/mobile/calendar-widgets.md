@@ -1,6 +1,6 @@
 # Native iOS calendar widgets
 
-Contract: [ADR-0146](../adr/0146-ios-calendar-widgets.md). These are native WidgetKit views; their actions open the existing shared-web calendar.
+Contract: [ADR-0148](../adr/0148-ios-calendar-widgets.md). These are native WidgetKit views; their actions open the existing shared-web calendar.
 
 | Variant | iOS family | Content |
 | --- | --- | --- |
@@ -13,13 +13,15 @@ Contract: [ADR-0146](../adr/0146-ios-calendar-widgets.md). These are native Widg
 
 The app provisions a separate, read-only, exact-session-bound calendar grant after sign-in. The extension fetches the minimized agenda directly, including imported CalDAV events already available to that account. It never receives the login JWT, refresh token, provider credentials, descriptions, attendees or meeting URLs. Existing workspace identity policies, membership, SSO scope and CalDAV entitlement are checked on the server for every read.
 
+Lock Screen and StandBy show Meeting plus the event time instead of meeting titles, regardless of the OS privacy setting. Home Screen widgets retain their event titles.
+
 The grant lives in a dedicated shared Keychain group. Display data lives in a protected, backup-excluded App Group file. File locking and generation checks fence writes from old sessions and extension processes. Logout clears the grant and agenda before the web document is revoked. A missing installation marker removes surviving Keychain credentials after reinstall. A remote session revocation takes effect when the extension next contacts the server; cached displays cannot be remotely erased instantly.
 
 The feed contains up to 100 events across seven local calendar days. An explicit completeness boundary avoids presenting truncated data as an empty calendar. Imported all-day dates retain their source DATE values across timezone changes. Expired or incompatible-timezone data is hidden; offline data remains usable within its validity and is labelled stale after two hours.
 
 ## Build and rollout
 
-1. Merge the CalDAV DATE preservation change first (ADR-0144, migration `00133`), then the feed/grant (ADR-0145), then the native/shared-web integration (ADR-0146). Each dependent PR is based on its prerequisite branch and must be retargeted to main after that prerequisite merges. Deploy the compatible server and shared-web bridge. Existing clients continue to work; a new client with an older server has no widget feed.
+1. Merge the CalDAV DATE preservation change first (ADR-0144, migration `00133`), then the feed/grant (ADR-0145), then the native/shared-web integration (ADR-0148). Each dependent PR is based on its prerequisite branch and must be retargeted to main after that prerequisite merges. Deploy the compatible server and shared-web bridge. Existing clients continue to work; a new client with an older server has no widget feed.
 2. Register one App Group for the iOS app and its existing `.voiceactivity` extension. Set `CALAB_IOS_APP_GROUP` and an explicit `CALAB_IOS_URL_SCHEME`, alongside the existing HTTPS `EXPO_PUBLIC_CALAB_URL` and bundle ID. Production builds must use `CALAB_IOS_URL_SCHEME=calab` to retain both production custom-link aliases; a different scheme is for an isolated QA bundle only. Verify this value before signing.
 3. Run Expo prebuild and install pods. When disabling calendar support on a previously generated target, use a clean prebuild to remove its old source references. The config plugin copies the canonical Swift sources, adds the four configurations to the existing WidgetKit bundle, and generates App Group and dedicated Keychain entitlements for both targets. Keep the app's private Keychain group first.
 4. Refresh both provisioning profiles. Inspect the signed app and extension entitlements and resolved `CalabCalendarKeychainGroup`; an unresolved or incorrect AppIdentifierPrefix must block distribution.

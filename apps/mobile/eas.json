@@ -7,6 +7,10 @@
     "preview": {
       "distribution": "internal"
     },
+    "qa-ios": {
+      "extends": "preview",
+      "ios": { "simulator": true }
+    },
     "production": {}
   }
 }

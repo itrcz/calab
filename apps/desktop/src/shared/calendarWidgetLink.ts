@@ -20,12 +20,21 @@ export function parseCalendarWidgetAction(value: unknown): CalendarWidgetAction 
   return v as CalendarWidgetAction;
 }
 export function parseCalendarWidgetLink(raw: string, scheme: string): CalendarWidgetAction | null {
-  if (raw.length > 1024) return null;
+  if (raw.length > 1024 || !/^[a-z][a-z0-9-]{2,63}$/.test(scheme)) return null;
+  // Hermes does not provide WHATWG URL/searchParams. Accept only the exact native
+  // widget route, then decode each component with the same rules on every host.
+  const match = /^([a-z][a-z0-9-]{2,63}):\/\/calendar\/?\?([^#\s]+)$/.exec(raw);
+  if (!match || match[0] !== raw || match[1] !== scheme) return null;
   try {
-    const u = new URL(raw);
-    if (u.protocol !== scheme + ':' || u.hostname !== 'calendar' || u.port || u.username || u.password || u.hash || (u.pathname !== '' && u.pathname !== '/')) return null;
     const value: Record<string, string> = {};
-    for (const [key, v] of u.searchParams) { if (Object.hasOwn(value, key)) return null; value[key] = v; }
+    for (const pair of match[2]!.split('&')) {
+      const at = pair.indexOf('=');
+      if (at < 1) return null;
+      const key = decodeURIComponent(pair.slice(0, at).replace(/\+/g, ' '));
+      const v = decodeURIComponent(pair.slice(at + 1).replace(/\+/g, ' '));
+      if (!['kind', 'day', 'event', 'workspace', 'start', 'uid'].includes(key) || Object.hasOwn(value, key)) return null;
+      value[key] = v;
+    }
     return parseCalendarWidgetAction(value);
   } catch { return null; }
 }
