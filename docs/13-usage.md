@@ -13,8 +13,8 @@
 Источник по-прежнему содержит только Claude; работа Codex над документами и публикацией
 в эту статистику не входит, её стоимость и токены не измерены.
 
-Обновлено: 2026-10-28 09:23 UTC · коммитов: 3186 · период: 2026-09-25 18:07 → 2026-10-28 09:23 UTC (783.3 ч)
-Машины (срезы): Awesomes-MacBook-Air.local — 8919 отв., MacBook-Air-Maxim-2.local — 1241 отв., MacBook-Pro-Maksim.local — 342 отв., Macbooks-Virtual-Machine.local — 2547 отв., Macbooks-Virtual-Machine.local-clade-team — 11809 отв., Macbooks-Virtual-Machine.local-clade-team-1013 — 3737 отв., Macbooks-Virtual-Machine.local-clade-team-1014 — 2251 отв., Macbooks-Virtual-Machine.local-post360 — 580 отв., codex-ios-release — 620 отв., mac — 675 отв., mac-orca-3110 — 13076 отв., previous — 69643 отв.
+Обновлено: 2026-10-29 08:14 UTC · коммитов: 3262 · период: 2026-09-25 18:07 → 2026-10-29 08:14 UTC (806.1 ч)
+Машины (срезы): Awesomes-MacBook-Air.local — 8919 отв., MacBook-Air-Maxim-2.local — 1241 отв., MacBook-Pro-Maksim.local — 746 отв., Macbooks-Virtual-Machine.local — 2547 отв., Macbooks-Virtual-Machine.local-clade-team — 11809 отв., Macbooks-Virtual-Machine.local-clade-team-1013 — 3737 отв., Macbooks-Virtual-Machine.local-clade-team-1014 — 2251 отв., Macbooks-Virtual-Machine.local-post360 — 580 отв., codex-ios-release — 620 отв., mac — 675 отв., mac-orca-3110 — 13076 отв., previous — 69643 отв.
 
 Токены в миллионах. `cache_r` — чтение кэша (основная статья при долгоживущих агентах), `out` — вывод.
 
@@ -22,20 +22,20 @@
 
 | Ответов | in | cache_r | cache_w | out |
 |---|---|---|---|---|
-| 115440 | 2.85 | 28113 | 414.6 | 54.66 |
+| 115844 | 2.85 | 28191 | 416.5 | 54.74 |
 
 ## По моделям
 
 | Модель | Ответов | in | cache_r | cache_w | out |
 |---|---|---|---|---|---|
 | claude-opus-5-5 | 89106 | 0.19 | 21105 | 322.5 | 42.13 |
-| claude-fable-5-1 | 10106 | 0.21 | 4495 | 34.4 | 8.46 |
-| claude-sonnet-5 | 6019 | 0.01 | 1180 | 20.5 | 1.69 |
+| claude-fable-5-1 | 10236 | 0.21 | 4540 | 35.4 | 8.54 |
+| claude-sonnet-5 | 6292 | 0.01 | 1213 | 21.3 | 1.69 |
 | claude-sonnet-5-5 | 7724 | 0.01 | 879 | 31.9 | 1.50 |
 | claude-haiku-5-5 | 737 | 0.00 | 339 | 5.3 | 0.43 |
 | glm-5.3 | 1485 | 2.30 | 110 | 0.0 | 0.43 |
 | glm-5.3-flash | 234 | 0.12 | 6 | 0.0 | 0.02 |
-| <synthetic> | 29 | 0.00 | 0 | 0.0 | 0.00 |
+| <synthetic> | 30 | 0.00 | 0 | 0.0 | 0.00 |
 
 ## По дням (UTC)
 
@@ -69,6 +69,7 @@
 | 2026-10-24 | 230 | 0.00 | 39 | 0.4 | 0.09 |
 | 2026-10-26 | 650 | 0.00 | 78 | 2.5 | 0.44 |
 | 2026-10-27 | 577 | 0.00 | 88 | 3.6 | 0.33 |
-| 2026-10-28 | 342 | 0.00 | 54 | 0.8 | 0.09 |
+| 2026-10-28 | 599 | 0.01 | 102 | 2.1 | 0.15 |
+| 2026-10-29 | 147 | 0.00 | 30 | 0.6 | 0.02 |
 
 Скрипт: `python3 tools/usage-stats.py [--project DIR] [--machine NAME]` (локальные транскрипты Claude Code; срезы машин — в `docs/13-usage.data.json`, перезаписывается только срез запускающей машины).
