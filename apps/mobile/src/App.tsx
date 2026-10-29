@@ -20,6 +20,7 @@ import { appUrlForLink } from './links';
 import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, subscribeNotifications, testNotification, notificationTestReply } from './notifications';
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
 import { permissionsOperation, permissionsReply, subscribePermissions } from './mediaPermissions';
+import { SHELL_UA_MARKER } from '../../desktop/src/shared/nativeShell';
 
 /**
  * The phone host (ADR-0067): one full-screen WebView with the web client — the same DOM, router and
@@ -268,6 +269,8 @@ function Host({ origin }: { origin: string }) {
         ref={web}
         source={{ uri: state.entry ?? origin }}
         style={styles.web}
+        // The web client's nativeShell() reads this marker where no bridge exists (Android, DEV-4947).
+        applicationNameForUserAgent={SHELL_UA_MARKER}
         originWhitelist={ANY_ORIGIN}
         onShouldStartLoadWithRequest={onShouldStart}
         onOpenWindow={onOpenWindow}
