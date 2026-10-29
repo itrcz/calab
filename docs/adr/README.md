@@ -152,3 +152,4 @@ Latest local device proof: [0079: iOS native call audio](0079-phone-call-audio-d
 | [0144](0144-caldav-date-preservation.md) | Preserve imported CalDAV DATE intervals before timezone conversion; additive storage and legacy-writer compatibility | proposed |
 | [0145](0145-calendar-widget-feed.md) | Session-bound read-only calendar grant and minimized feed; existing calendar policy and revocation | proposed |
 | [0146](0146-island-folds-into-avatar.md) | Нижний островок вне «Команды» свёрнут в мой аватар на рейле (те же пиксели, что у аватара полного островка, метка звонка), при наведении / Enter — полный островок поверх контента; места под себя не резервирует (`--island-height` не публикуется); настройка «Островок: сворачивать в аватар» | принято |
+| [0147](0147-calendar-export-subscription.md) | Personal .ics downloads and revocable read-only subscriptions; Apple button and local QR code | local implementation, unreleased |

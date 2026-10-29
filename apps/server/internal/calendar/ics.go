@@ -47,7 +47,6 @@ const icsDate, icsUTC, icsLocal = "20060102", "20060102T150405Z", "20060102T1504
 func BuildICS(e ICSEvent) string {
 	var b strings.Builder
 	line := func(s string) { b.WriteString(fold(s)) }
-	s := e.Series
 	line("BEGIN:VCALENDAR")
 	line("VERSION:2.0")
 	line("PRODID:-//Calab//Calendar//EN")
@@ -55,13 +54,79 @@ func BuildICS(e ICSEvent) string {
 	if e.Method != "" { // a CalDAV object resource has no METHOD (RFC 4791 §4.1)
 		line("METHOD:" + e.Method)
 	}
+	appendICSEvent(&b, e, map[string]bool{})
+	line("END:VCALENDAR")
+	return b.String()
+}
+
+// buildCalendarICS writes a subscription, not an invitation. Time zones are shared by
+// all events and included once; event UIDs and sequences remain the source's identity.
+func buildCalendarICS(name string, events []ICSEvent, at time.Time) string {
+	var b strings.Builder
+	b.WriteString("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Calab//Calendar//EN\r\nCALSCALE:GREGORIAN\r\n")
+	b.WriteString(fold("X-WR-CALNAME:" + icsText(name)))
+	zones := map[string]bool{}
+	type zoneSpan struct {
+		loc         *time.Location
+		first, last time.Time
+	}
+	spans := map[string]zoneSpan{}
+	for _, e := range events {
+		s := e.Series
+		if s.AllDay || s.Rule.Repeat == 0 {
+			continue
+		}
+		name := s.Loc.String()
+		z, ok := spans[name]
+		if !ok {
+			z = zoneSpan{s.Loc, s.Start, at}
+		}
+		if s.Start.Before(z.first) {
+			z.first = s.Start
+		}
+		if s.Start.After(z.last) {
+			z.last = s.Start
+		}
+		spans[name] = z
+	}
+	names := make([]string, 0, len(spans))
+	for name := range spans {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		z := spans[name]
+		lines, ok := vtimezoneBetween(z.loc, z.first, z.last.AddDate(10, 0, 0))
+		zones[name] = ok
+		for _, line := range lines {
+			b.WriteString(fold(line))
+		}
+	}
+	for _, e := range events {
+		e.Method, e.Organizer, e.Attendees = "", ICSPerson{}, nil
+		appendICSEvent(&b, e, zones)
+	}
+	b.WriteString("END:VCALENDAR\r\n")
+	return b.String()
+}
+
+func appendICSEvent(b *strings.Builder, e ICSEvent, zones map[string]bool) {
+	line := func(s string) { b.WriteString(fold(s)) }
+	s := e.Series
 	var tzid string
 	if !s.AllDay && s.Rule.Repeat != 0 {
-		if vtz, ok := vtimezone(s.Loc, s.Start); ok {
-			tzid = s.Loc.String()
+		name := s.Loc.String()
+		enabled, cached := zones[name]
+		if !cached {
+			vtz, ok := vtimezone(s.Loc, s.Start)
+			enabled = ok
+			zones[name] = ok
 			for _, l := range vtz {
 				line(l)
 			}
+		}
+		if enabled {
+			tzid = name
 		}
 	}
 	line("BEGIN:VEVENT")
@@ -143,8 +208,6 @@ func BuildICS(e ICSEvent) string {
 		line("ATTENDEE" + cn + ";ROLE=" + role + ";PARTSTAT=" + ps + ";RSVP=TRUE:mailto:" + a.Email)
 	}
 	line("END:VEVENT")
-	line("END:VCALENDAR")
-	return b.String()
 }
 
 // PartStat maps an attendee status to iCalendar PARTSTAT.
@@ -205,6 +268,10 @@ func fold(s string) string {
 // vtimezone describes loc's UTC offset changes from a year before start to ten years after it
 // (STANDARD / DAYLIGHT with RDATEs); false = the offset never changes there (UTC is enough).
 func vtimezone(loc *time.Location, start time.Time) ([]string, bool) {
+	return vtimezoneBetween(loc, start, start.AddDate(10, 0, 0))
+}
+
+func vtimezoneBetween(loc *time.Location, start, end time.Time) ([]string, bool) {
 	type change struct {
 		at       time.Time // the instant of the change
 		from, to int       // offsets in seconds
@@ -212,7 +279,6 @@ func vtimezone(loc *time.Location, start time.Time) ([]string, bool) {
 	}
 	var changes []change
 	t := start.AddDate(-1, 0, 0).UTC().Truncate(24 * time.Hour)
-	end := start.AddDate(10, 0, 0)
 	_, prev := t.In(loc).Zone()
 	for ; t.Before(end); t = t.Add(24 * time.Hour) {
 		next := t.Add(24 * time.Hour)

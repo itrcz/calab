@@ -95,6 +95,7 @@ Instead of seven services in seven tabs (messenger, video calls, task tracker, w
 
 - A day view with meetings side by side, the meeting card with attendees and answers, the room with a “Go” button, recurring meetings, reminders.
 - **Invitations by email** with `invite.ics` — the meeting lands in Apple, Google, Outlook or Yandex calendars; external attendees answer by link and join as guests.
+- **Calendar export and subscriptions** (unreleased) — download your meetings as `.ics`, subscribe in Apple Calendar with a button, or scan a QR code from your computer. Personal, read-only links can be replaced or revoked; external apps control refresh timing. [Details](docs/adr/0147-calendar-export-subscription.md).
 - **Find a time** — colleagues’ busy columns, shared free windows and the nearest slots within everyone’s work hours.
 - **CalDAV** — connect Yandex, iCloud, Fastmail or Nextcloud: your busy time counts, Calab meetings appear there by themselves.
 

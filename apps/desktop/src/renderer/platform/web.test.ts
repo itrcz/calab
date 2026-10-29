@@ -230,6 +230,13 @@ describe('web media cache (review M10)', () => {
 });
 
 describe('web openExternal (ADR-0045 amendment 1: «Подключиться» of an external event)', () => {
+  it('hands only the current server calendar capability to the system calendar', async () => {
+    const link = 'webcal://app.example.com/api/calendar-feed.ics?t=12345678-1234-4234-8234-123456789abc.' + 'a'.repeat(43);
+    await platform.app.openExternal(link);
+    expect(location.href).toBe(link);
+    await platform.app.openExternal(link.replace('app.example.com', 'evil.test'));
+    expect(location.href).toBe(link);
+  });
   it('opens http(s) links whatever the case of the scheme, refuses other schemes', async () => {
     const opened: string[] = [];
     vi.stubGlobal('open', (u: string) => {

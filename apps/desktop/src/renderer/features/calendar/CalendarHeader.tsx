@@ -9,6 +9,7 @@ import { useFreeBusy } from '../../stores/freebusy';
 import { useUi, type CalView } from '../../stores/ui';
 import { startFind } from './actions';
 import { PeopleBar } from './PeopleBar';
+import { CalendarExportControl } from './CalendarExport';
 
 /*
  * The desktop header of the calendar (ADR-0038 §7; the week — bug board #6, Yandex Calendar), one
@@ -68,6 +69,7 @@ export function CalendarHeader({
         </Tip>
       ) : null}
       <ViewSwitch view={view} />
+      <CalendarExportControl key={workspaceId} workspaceId={workspaceId} />
     </Bar>
   );
 }

@@ -3,6 +3,18 @@ import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './na
 
 const ORIGIN = 'https://app.example.com';
 
+it('opens only this server calendar subscription in the OS, never from an iframe', () => {
+  const token = '12345678-1234-4234-8234-123456789abc.' + 'a'.repeat(43);
+  const link = `webcal://app.example.com/api/calendar-feed.ics?t=${token}`;
+  expect(decideNavigation({ url: link, isTopFrame: true }, ORIGIN)).toBe('external');
+  expect(decideNewWindow(link, ORIGIN)).toBe('external');
+  expect(decideNavigation({ url: link, isTopFrame: false, mainDocumentURL: ORIGIN }, ORIGIN)).toBe('block');
+  for (const bad of [link.replace('app.example.com', 'evil.test'), link.replace('calendar-feed.ics', 'admin'), link + '&redirect=evil', link.replace('webcal://', 'webcal://user@'), link + '#fragment']) {
+    expect(decideNavigation({ url: bad }, ORIGIN)).toBe('block');
+    expect(decideNewWindow(bad, ORIGIN)).toBe('block');
+  }
+});
+
 /** Lookalikes of ORIGIN that a prefix or suffix match would let in. Ones with credentials go nowhere. */
 const LOOKALIKES = [
   'https://app.example.com.evil.test/',

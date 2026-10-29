@@ -1,3 +1,4 @@
+import { isCalendarLink } from '../shared/calendarLink';
 import { readFileSync } from 'node:fs';
 import { cpus, hostname } from 'node:os';
 import { join } from 'node:path';
@@ -282,6 +283,7 @@ export function registerIpc(): void {
   });
   handle(IPC.appOpenExternal, (_e, a) => {
     const url = str(a, 2048).trim();
+    if (isCalendarLink(url, currentServerUrl())) return shell.openExternal(url);
     // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
     if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
     // Our own in-app routes (/t/KEY …) open in the app, not the browser (CBF-63).

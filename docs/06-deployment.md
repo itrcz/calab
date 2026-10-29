@@ -703,3 +703,22 @@ authority/policy. Не отключать enforcement автоматически
     Переменную можно убрать при следующем деплое. Ручные пополнения и webhook пауза не трогает.
 - Основной `rsync` в `sync.sh` каталог `/backups/` не трогает (иначе `--delete` стёр бы копии).
 - Перенос базы с PostgreSQL 18 на 17 (ADR-0037): `pg_dump` пишет `DEFAULT uuidv7()` без схемы при пустом `search_path`, и на 17 такой дамп не восстанавливается (`function uuidv7() does not exist`). В пустой базе на 17 сначала выполнить `apps/server/internal/db/uuidv7.sql`, затем восстановить дамп со схемой в DEFAULT: `pg_restore -f - calaba.dump | sed 's/DEFAULT uuidv7()/DEFAULT public.uuidv7()/' | psql -v ON_ERROR_STOP=1 -d <база>`. Проверено 2026-09-28 (18.6 → 17.11): данные и `goose_db_version` на месте, `server migrate` ничего не применяет, новые id — v7.
+
+
+### Calendar subscriptions (ADR-0147, unreleased)
+
+Deploy migration 00138 with the server before the new renderer. Existing clients
+continue to work; the new menu requires the new API. `PUBLIC_APP_URL` must be the
+public HTTPS origin. QR codes use that origin, and `.ics` feeds must remain
+reachable by Apple/Google calendar fetchers without a browser session. Never
+log the `t` query parameter at a proxy, CDN or analytics collector. The bundled
+Caddy access-log filter already drops the request URI; keep that rule.
+
+Web Safari can connect after the web deployment. Connecting from inside the iOS
+WebView additionally requires the host update allowing this server's exact
+`webcal` feed URL. Desktop requires the rebuilt Electron shell for the same
+allowlist. Rotating `JWT_SECRET` invalidates subscription links; users reconnect.
+Required-SSO workspaces reject subscriptions; authenticated downloads remain
+subject to their normal policy. Test on a physical iPhone: connect once, change
+a meeting in Calab, observe a later refresh, cancel, replace/revoke the link.
+Apple controls refresh timing; cached/imported copies cannot be remotely erased.

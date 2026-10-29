@@ -579,6 +579,8 @@ func New(d Deps) *App {
 	calSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:event-comment:", 20, 20) // ADR-0104: 20 at once, 20 per minute
 	calSvc.Presence = hub.Statuses
 	calSvc.EmailGate = authSvc.EmailGate()
+	calSvc.CheckBillingOpen = authSvc.CheckBillingOpen
+	calSvc.SubscriptionReads = redisx.NewRateLimiter(d.Redis, "rl:calendar-feed:", 30, 30)
 	// CalDAV push and meeting mails leave Calab without a request: the workspace identity
 	// policy decides per user (ADR-0054).
 	calSvc.Identity = &identitypolicy.Delivery{Loader: identitypolicy.NewSQLLoader(d.DB.Q, d.Config.IdentityEntitlements())}

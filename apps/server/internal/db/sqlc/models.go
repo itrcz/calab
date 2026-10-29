@@ -684,6 +684,13 @@ type CaldavPush struct {
 	CreatedAt time.Time
 }
 
+type CalendarSubscription struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	CreatedAt   time.Time
+}
+
 type CanvasActivity struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID

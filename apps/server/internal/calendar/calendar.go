@@ -87,6 +87,10 @@ type Service struct {
 	// without a request (ADR-0054): the CalDAV push and the meeting mails. nil fails closed —
 	// nothing is pushed and mails carry no meeting details; the app always sets it.
 	Identity IdentityGate
+	// CheckBillingOpen applies the live billing enforcement switch to public feed reads.
+	CheckBillingOpen func(context.Context, *sqlc.Queries, uuid.UUID) error
+	// SubscriptionReads limits a verified capability before any database read.
+	SubscriptionReads *redisx.RateLimiter
 	// EmailGate: whether adding outside attendees needs a confirmed address (ADR-0023,
 	// EMAIL_VERIFICATION, ADR-0065). The zero value requires one.
 	EmailGate auth.EmailGate
@@ -112,6 +116,13 @@ func New(cfg Config, d *db.DB, ev events.Publisher, m *mail.Service, writes, pub
 // Routes registers the routes; wrap applies auth + the permission resolver. The signed RSVP
 // routes are public.
 func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
+	mux.Handle("GET /api/workspaces/{id}/calendar.ics", wrap(httpx.HandlerFunc(s.downloadCalendar)))
+	mux.Handle("GET /api/events/{id}/calendar.ics", wrap(httpx.HandlerFunc(s.downloadEvent)))
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
+		mux.Handle(method+" /api/workspaces/{id}/calendar-subscription", wrap(httpx.HandlerFunc(s.manageSubscription)))
+	}
+	mux.Handle("GET /api/calendar-feed.ics", httpx.HandlerFunc(s.calendarFeed))
+	mux.Handle("GET /api/calendar-connect", httpx.HandlerFunc(s.calendarConnect))
 	mux.Handle("GET /api/workspaces/{id}/events", wrap(httpx.HandlerFunc(s.list)))
 	mux.Handle("POST /api/workspaces/{id}/events", wrap(httpx.HandlerFunc(s.create)))
 	mux.Handle("GET /api/events/{id}", wrap(httpx.HandlerFunc(s.get)))

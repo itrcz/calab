@@ -3618,6 +3618,68 @@ func (x *CalendarEventCommentDelete) GetAttendeeIds() []string {
 }
 
 // Native personal calendar capability, never accepted as a normal API access token (ADR-0145).
+// Personal read-only subscription. Empty URLs mean disabled. URLs contain a private
+// capability and must never be logged or sent to a third-party QR service.
+type CalendarSubscription struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FeedUrl       string                 `protobuf:"bytes,1,opt,name=feed_url,json=feedUrl,proto3" json:"feed_url,omitempty"`
+	ConnectUrl    string                 `protobuf:"bytes,2,opt,name=connect_url,json=connectUrl,proto3" json:"connect_url,omitempty"`
+	WebcalUrl     string                 `protobuf:"bytes,3,opt,name=webcal_url,json=webcalUrl,proto3" json:"webcal_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CalendarSubscription) Reset() {
+	*x = CalendarSubscription{}
+	mi := &file_calaba_v1_event_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CalendarSubscription) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CalendarSubscription) ProtoMessage() {}
+
+func (x *CalendarSubscription) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_event_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CalendarSubscription.ProtoReflect.Descriptor instead.
+func (*CalendarSubscription) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *CalendarSubscription) GetFeedUrl() string {
+	if x != nil {
+		return x.FeedUrl
+	}
+	return ""
+}
+
+func (x *CalendarSubscription) GetConnectUrl() string {
+	if x != nil {
+		return x.ConnectUrl
+	}
+	return ""
+}
+
+func (x *CalendarSubscription) GetWebcalUrl() string {
+	if x != nil {
+		return x.WebcalUrl
+	}
+	return ""
+}
+
 type CalendarWidgetGrant struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
@@ -3628,7 +3690,7 @@ type CalendarWidgetGrant struct {
 
 func (x *CalendarWidgetGrant) Reset() {
 	*x = CalendarWidgetGrant{}
-	mi := &file_calaba_v1_event_proto_msgTypes[42]
+	mi := &file_calaba_v1_event_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3640,7 +3702,7 @@ func (x *CalendarWidgetGrant) String() string {
 func (*CalendarWidgetGrant) ProtoMessage() {}
 
 func (x *CalendarWidgetGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[42]
+	mi := &file_calaba_v1_event_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3653,7 +3715,7 @@ func (x *CalendarWidgetGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarWidgetGrant.ProtoReflect.Descriptor instead.
 func (*CalendarWidgetGrant) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{42}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CalendarWidgetGrant) GetToken() string {
@@ -3693,7 +3755,7 @@ type CalendarWidgetEvent struct {
 
 func (x *CalendarWidgetEvent) Reset() {
 	*x = CalendarWidgetEvent{}
-	mi := &file_calaba_v1_event_proto_msgTypes[43]
+	mi := &file_calaba_v1_event_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3705,7 +3767,7 @@ func (x *CalendarWidgetEvent) String() string {
 func (*CalendarWidgetEvent) ProtoMessage() {}
 
 func (x *CalendarWidgetEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[43]
+	mi := &file_calaba_v1_event_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3718,7 +3780,7 @@ func (x *CalendarWidgetEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarWidgetEvent.ProtoReflect.Descriptor instead.
 func (*CalendarWidgetEvent) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{43}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CalendarWidgetEvent) GetKey() string {
@@ -3829,7 +3891,7 @@ type CalendarWidgetAgenda struct {
 
 func (x *CalendarWidgetAgenda) Reset() {
 	*x = CalendarWidgetAgenda{}
-	mi := &file_calaba_v1_event_proto_msgTypes[44]
+	mi := &file_calaba_v1_event_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3841,7 +3903,7 @@ func (x *CalendarWidgetAgenda) String() string {
 func (*CalendarWidgetAgenda) ProtoMessage() {}
 
 func (x *CalendarWidgetAgenda) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[44]
+	mi := &file_calaba_v1_event_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3854,7 +3916,7 @@ func (x *CalendarWidgetAgenda) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarWidgetAgenda.ProtoReflect.Descriptor instead.
 func (*CalendarWidgetAgenda) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{44}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CalendarWidgetAgenda) GetVersion() uint32 {
@@ -4201,7 +4263,13 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\bcomments\x18\x04 \x01(\rR\bcomments\x12\x17\n" +
 	"\aroom_id\x18\x05 \x01(\tR\x06roomId\x12!\n" +
 	"\forganizer_id\x18\x06 \x01(\tR\vorganizerId\x12!\n" +
-	"\fattendee_ids\x18\a \x03(\tR\vattendeeIds\"f\n" +
+	"\fattendee_ids\x18\a \x03(\tR\vattendeeIds\"q\n" +
+	"\x14CalendarSubscription\x12\x19\n" +
+	"\bfeed_url\x18\x01 \x01(\tR\afeedUrl\x12\x1f\n" +
+	"\vconnect_url\x18\x02 \x01(\tR\n" +
+	"connectUrl\x12\x1d\n" +
+	"\n" +
+	"webcal_url\x18\x03 \x01(\tR\twebcalUrl\"f\n" +
 	"\x13CalendarWidgetGrant\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
 	"\n" +
@@ -4275,7 +4343,7 @@ func file_calaba_v1_event_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_event_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_calaba_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_calaba_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_calaba_v1_event_proto_goTypes = []any{
 	(AttendeeStatus)(0),                       // 0: calaba.v1.AttendeeStatus
 	(EventRepeat)(0),                          // 1: calaba.v1.EventRepeat
@@ -4324,77 +4392,78 @@ var file_calaba_v1_event_proto_goTypes = []any{
 	(*RoomEventEnded)(nil),                    // 44: calaba.v1.RoomEventEnded
 	(*CalendarEventCommentUpsert)(nil),        // 45: calaba.v1.CalendarEventCommentUpsert
 	(*CalendarEventCommentDelete)(nil),        // 46: calaba.v1.CalendarEventCommentDelete
-	(*CalendarWidgetGrant)(nil),               // 47: calaba.v1.CalendarWidgetGrant
-	(*CalendarWidgetEvent)(nil),               // 48: calaba.v1.CalendarWidgetEvent
-	(*CalendarWidgetAgenda)(nil),              // 49: calaba.v1.CalendarWidgetAgenda
-	(*timestamppb.Timestamp)(nil),             // 50: google.protobuf.Timestamp
-	(*WorkHours)(nil),                         // 51: calaba.v1.WorkHours
+	(*CalendarSubscription)(nil),              // 47: calaba.v1.CalendarSubscription
+	(*CalendarWidgetGrant)(nil),               // 48: calaba.v1.CalendarWidgetGrant
+	(*CalendarWidgetEvent)(nil),               // 49: calaba.v1.CalendarWidgetEvent
+	(*CalendarWidgetAgenda)(nil),              // 50: calaba.v1.CalendarWidgetAgenda
+	(*timestamppb.Timestamp)(nil),             // 51: google.protobuf.Timestamp
+	(*WorkHours)(nil),                         // 52: calaba.v1.WorkHours
 }
 var file_calaba_v1_event_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.CalendarEventAttendee.status:type_name -> calaba.v1.AttendeeStatus
-	50, // 1: calaba.v1.CalendarEventAttendee.responded_at:type_name -> google.protobuf.Timestamp
-	50, // 2: calaba.v1.CalendarEvent.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 3: calaba.v1.CalendarEvent.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 1: calaba.v1.CalendarEventAttendee.responded_at:type_name -> google.protobuf.Timestamp
+	51, // 2: calaba.v1.CalendarEvent.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 3: calaba.v1.CalendarEvent.ends_at:type_name -> google.protobuf.Timestamp
 	1,  // 4: calaba.v1.CalendarEvent.repeat:type_name -> calaba.v1.EventRepeat
-	50, // 5: calaba.v1.CalendarEvent.repeat_until:type_name -> google.protobuf.Timestamp
-	50, // 6: calaba.v1.CalendarEvent.occurrence_at:type_name -> google.protobuf.Timestamp
-	50, // 7: calaba.v1.CalendarEvent.cancelled_at:type_name -> google.protobuf.Timestamp
+	51, // 5: calaba.v1.CalendarEvent.repeat_until:type_name -> google.protobuf.Timestamp
+	51, // 6: calaba.v1.CalendarEvent.occurrence_at:type_name -> google.protobuf.Timestamp
+	51, // 7: calaba.v1.CalendarEvent.cancelled_at:type_name -> google.protobuf.Timestamp
 	0,  // 8: calaba.v1.CalendarEvent.my_status:type_name -> calaba.v1.AttendeeStatus
 	6,  // 9: calaba.v1.CalendarEvent.counts:type_name -> calaba.v1.CalendarEventCounts
 	5,  // 10: calaba.v1.CalendarEvent.attendees:type_name -> calaba.v1.CalendarEventAttendee
-	50, // 11: calaba.v1.CalendarEvent.cancelled_occurrences:type_name -> google.protobuf.Timestamp
-	50, // 12: calaba.v1.CalendarEvent.created_at:type_name -> google.protobuf.Timestamp
-	50, // 13: calaba.v1.CalendarEvent.updated_at:type_name -> google.protobuf.Timestamp
+	51, // 11: calaba.v1.CalendarEvent.cancelled_occurrences:type_name -> google.protobuf.Timestamp
+	51, // 12: calaba.v1.CalendarEvent.created_at:type_name -> google.protobuf.Timestamp
+	51, // 13: calaba.v1.CalendarEvent.updated_at:type_name -> google.protobuf.Timestamp
 	7,  // 14: calaba.v1.ListCalendarEventsResponse.events:type_name -> calaba.v1.CalendarEvent
-	50, // 15: calaba.v1.CreateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 16: calaba.v1.CreateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 15: calaba.v1.CreateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 16: calaba.v1.CreateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
 	1,  // 17: calaba.v1.CreateCalendarEventRequest.repeat:type_name -> calaba.v1.EventRepeat
-	50, // 18: calaba.v1.CreateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
+	51, // 18: calaba.v1.CreateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
 	8,  // 19: calaba.v1.CreateCalendarEventRequest.attendees:type_name -> calaba.v1.CalendarEventAttendeeInput
-	50, // 20: calaba.v1.UpdateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 21: calaba.v1.UpdateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 20: calaba.v1.UpdateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 21: calaba.v1.UpdateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
 	1,  // 22: calaba.v1.UpdateCalendarEventRequest.repeat:type_name -> calaba.v1.EventRepeat
-	50, // 23: calaba.v1.UpdateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
+	51, // 23: calaba.v1.UpdateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
 	8,  // 24: calaba.v1.UpdateCalendarEventRequest.attendees:type_name -> calaba.v1.CalendarEventAttendeeInput
 	7,  // 25: calaba.v1.CalendarEventResponse.event:type_name -> calaba.v1.CalendarEvent
 	0,  // 26: calaba.v1.RsvpCalendarEventRequest.status:type_name -> calaba.v1.AttendeeStatus
 	7,  // 27: calaba.v1.TodayCalendarEventsResponse.events:type_name -> calaba.v1.CalendarEvent
-	50, // 28: calaba.v1.EventRsvpTokenResponse.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 29: calaba.v1.EventRsvpTokenResponse.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 28: calaba.v1.EventRsvpTokenResponse.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 29: calaba.v1.EventRsvpTokenResponse.ends_at:type_name -> google.protobuf.Timestamp
 	0,  // 30: calaba.v1.EventRsvpTokenResponse.status:type_name -> calaba.v1.AttendeeStatus
 	0,  // 31: calaba.v1.EventRsvpTokenResponse.my_status:type_name -> calaba.v1.AttendeeStatus
-	50, // 32: calaba.v1.EventRsvpTokenResponse.guest_from:type_name -> google.protobuf.Timestamp
-	50, // 33: calaba.v1.EventRsvpTokenResponse.guest_until:type_name -> google.protobuf.Timestamp
+	51, // 32: calaba.v1.EventRsvpTokenResponse.guest_from:type_name -> google.protobuf.Timestamp
+	51, // 33: calaba.v1.EventRsvpTokenResponse.guest_until:type_name -> google.protobuf.Timestamp
 	1,  // 34: calaba.v1.EventRsvpTokenResponse.repeat:type_name -> calaba.v1.EventRepeat
-	50, // 35: calaba.v1.EventRsvpTokenResponse.repeat_until:type_name -> google.protobuf.Timestamp
-	50, // 36: calaba.v1.BusyInterval.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 37: calaba.v1.BusyInterval.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 35: calaba.v1.EventRsvpTokenResponse.repeat_until:type_name -> google.protobuf.Timestamp
+	51, // 36: calaba.v1.BusyInterval.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 37: calaba.v1.BusyInterval.ends_at:type_name -> google.protobuf.Timestamp
 	2,  // 38: calaba.v1.BusyInterval.kind:type_name -> calaba.v1.BusyKind
-	51, // 39: calaba.v1.FreeBusyUser.work_hours:type_name -> calaba.v1.WorkHours
+	52, // 39: calaba.v1.FreeBusyUser.work_hours:type_name -> calaba.v1.WorkHours
 	17, // 40: calaba.v1.FreeBusyUser.busy:type_name -> calaba.v1.BusyInterval
 	18, // 41: calaba.v1.FreeBusyResponse.users:type_name -> calaba.v1.FreeBusyUser
-	50, // 42: calaba.v1.SuggestSlotsRequest.from:type_name -> google.protobuf.Timestamp
-	50, // 43: calaba.v1.SuggestSlotsRequest.to:type_name -> google.protobuf.Timestamp
-	50, // 44: calaba.v1.Slot.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 45: calaba.v1.Slot.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 42: calaba.v1.SuggestSlotsRequest.from:type_name -> google.protobuf.Timestamp
+	51, // 43: calaba.v1.SuggestSlotsRequest.to:type_name -> google.protobuf.Timestamp
+	51, // 44: calaba.v1.Slot.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 45: calaba.v1.Slot.ends_at:type_name -> google.protobuf.Timestamp
 	21, // 46: calaba.v1.SuggestSlotsResponse.slots:type_name -> calaba.v1.Slot
-	50, // 47: calaba.v1.CalDavAccount.last_sync_at:type_name -> google.protobuf.Timestamp
+	51, // 47: calaba.v1.CalDavAccount.last_sync_at:type_name -> google.protobuf.Timestamp
 	23, // 48: calaba.v1.CalDavAccount.calendars:type_name -> calaba.v1.CalDavCalendar
 	3,  // 49: calaba.v1.CalDavAccount.share_level:type_name -> calaba.v1.CalDavShareLevel
 	3,  // 50: calaba.v1.SetCalDavShareRequest.share_level:type_name -> calaba.v1.CalDavShareLevel
 	24, // 51: calaba.v1.CalDavAccountResponse.account:type_name -> calaba.v1.CalDavAccount
 	0,  // 52: calaba.v1.ExternalAttendee.status:type_name -> calaba.v1.AttendeeStatus
-	50, // 53: calaba.v1.ExternalEvent.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 54: calaba.v1.ExternalEvent.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 53: calaba.v1.ExternalEvent.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 54: calaba.v1.ExternalEvent.ends_at:type_name -> google.protobuf.Timestamp
 	29, // 55: calaba.v1.ExternalEvent.attendees:type_name -> calaba.v1.ExternalAttendee
 	0,  // 56: calaba.v1.ExternalEvent.my_status:type_name -> calaba.v1.AttendeeStatus
 	30, // 57: calaba.v1.ExternalEventsResponse.events:type_name -> calaba.v1.ExternalEvent
-	50, // 58: calaba.v1.DeleteExternalEventRequest.start:type_name -> google.protobuf.Timestamp
+	51, // 58: calaba.v1.DeleteExternalEventRequest.start:type_name -> google.protobuf.Timestamp
 	4,  // 59: calaba.v1.DeleteExternalEventRequest.scope:type_name -> calaba.v1.ExternalDeleteScope
-	50, // 60: calaba.v1.RespondExternalEventRequest.start:type_name -> google.protobuf.Timestamp
+	51, // 60: calaba.v1.RespondExternalEventRequest.start:type_name -> google.protobuf.Timestamp
 	0,  // 61: calaba.v1.RespondExternalEventRequest.status:type_name -> calaba.v1.AttendeeStatus
-	50, // 62: calaba.v1.CalendarEventComment.created_at:type_name -> google.protobuf.Timestamp
-	50, // 63: calaba.v1.CalendarEventComment.edited_at:type_name -> google.protobuf.Timestamp
+	51, // 62: calaba.v1.CalendarEventComment.created_at:type_name -> google.protobuf.Timestamp
+	51, // 63: calaba.v1.CalendarEventComment.edited_at:type_name -> google.protobuf.Timestamp
 	34, // 64: calaba.v1.ListCalendarEventCommentsResponse.comments:type_name -> calaba.v1.CalendarEventComment
 	34, // 65: calaba.v1.CalendarEventCommentResponse.comment:type_name -> calaba.v1.CalendarEventComment
 	7,  // 66: calaba.v1.CalendarEventCreate.event:type_name -> calaba.v1.CalendarEvent
@@ -4404,21 +4473,21 @@ var file_calaba_v1_event_proto_depIdxs = []int32{
 	6,  // 70: calaba.v1.CalendarEventRsvp.counts:type_name -> calaba.v1.CalendarEventCounts
 	7,  // 71: calaba.v1.CalendarEventRsvp.event:type_name -> calaba.v1.CalendarEvent
 	7,  // 72: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
-	50, // 73: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
+	51, // 73: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
 	30, // 74: calaba.v1.CalendarEventReminder.external_event:type_name -> calaba.v1.ExternalEvent
 	7,  // 75: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
-	50, // 76: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
+	51, // 76: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
 	34, // 77: calaba.v1.CalendarEventCommentUpsert.comment:type_name -> calaba.v1.CalendarEventComment
-	50, // 78: calaba.v1.CalendarWidgetGrant.expires_at:type_name -> google.protobuf.Timestamp
-	50, // 79: calaba.v1.CalendarWidgetEvent.starts_at:type_name -> google.protobuf.Timestamp
-	50, // 80: calaba.v1.CalendarWidgetEvent.ends_at:type_name -> google.protobuf.Timestamp
-	50, // 81: calaba.v1.CalendarWidgetEvent.occurrence_at:type_name -> google.protobuf.Timestamp
-	50, // 82: calaba.v1.CalendarWidgetAgenda.generated_at:type_name -> google.protobuf.Timestamp
-	50, // 83: calaba.v1.CalendarWidgetAgenda.valid_until:type_name -> google.protobuf.Timestamp
-	50, // 84: calaba.v1.CalendarWidgetAgenda.from:type_name -> google.protobuf.Timestamp
-	50, // 85: calaba.v1.CalendarWidgetAgenda.to:type_name -> google.protobuf.Timestamp
-	48, // 86: calaba.v1.CalendarWidgetAgenda.events:type_name -> calaba.v1.CalendarWidgetEvent
-	50, // 87: calaba.v1.CalendarWidgetAgenda.complete_until:type_name -> google.protobuf.Timestamp
+	51, // 78: calaba.v1.CalendarWidgetGrant.expires_at:type_name -> google.protobuf.Timestamp
+	51, // 79: calaba.v1.CalendarWidgetEvent.starts_at:type_name -> google.protobuf.Timestamp
+	51, // 80: calaba.v1.CalendarWidgetEvent.ends_at:type_name -> google.protobuf.Timestamp
+	51, // 81: calaba.v1.CalendarWidgetEvent.occurrence_at:type_name -> google.protobuf.Timestamp
+	51, // 82: calaba.v1.CalendarWidgetAgenda.generated_at:type_name -> google.protobuf.Timestamp
+	51, // 83: calaba.v1.CalendarWidgetAgenda.valid_until:type_name -> google.protobuf.Timestamp
+	51, // 84: calaba.v1.CalendarWidgetAgenda.from:type_name -> google.protobuf.Timestamp
+	51, // 85: calaba.v1.CalendarWidgetAgenda.to:type_name -> google.protobuf.Timestamp
+	49, // 86: calaba.v1.CalendarWidgetAgenda.events:type_name -> calaba.v1.CalendarWidgetEvent
+	51, // 87: calaba.v1.CalendarWidgetAgenda.complete_until:type_name -> google.protobuf.Timestamp
 	88, // [88:88] is the sub-list for method output_type
 	88, // [88:88] is the sub-list for method input_type
 	88, // [88:88] is the sub-list for extension type_name
@@ -4440,7 +4509,7 @@ func file_calaba_v1_event_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_event_proto_rawDesc), len(file_calaba_v1_event_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   45,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

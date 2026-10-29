@@ -1,3 +1,4 @@
+import { isCalendarLink } from '../../desktop/src/shared/calendarLink';
 /**
  * What the phone host lets the WebView load (ADR-0067). Only the exact web origin may become app
  * content; third-party iframes (workspace web apps, embeds) keep loading inside their frame, as in a
@@ -76,7 +77,7 @@ export function decideNavigation(req: NavigationRequest, origin: string): Decisi
   if (isAppUrl(req.url, origin)) return 'load';
   const url = parse(req.url);
   if (url === null) return 'block';
-  if (!isAppSubframe(req, origin)) return isExternal(url) ? 'external' : 'block';
+  if (!isAppSubframe(req, origin)) return isExternal(url) || isCalendarLink(req.url, origin) ? 'external' : 'block';
   if (BLANK_FRAMES.has(url.href)) return 'load';
   return url.protocol === 'https:' && !url.username && !url.password ? 'load' : 'block';
 }
@@ -91,5 +92,5 @@ export function decideNavigation(req: NavigationRequest, origin: string): Decisi
 export function decideNewWindow(raw: string, origin: string): Decision {
   if (isAppUrl(raw, origin)) return 'block';
   const url = parse(raw);
-  return url !== null && isExternal(url) ? 'external' : 'block';
+  return url !== null && (isExternal(url) || isCalendarLink(raw, origin)) ? 'external' : 'block';
 }

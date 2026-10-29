@@ -3,7 +3,7 @@ import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
 import { Bar, BAR_GROUP } from '../../components/Bar';
 import { HeaderIcon, PhoneBack } from '../../components/PhoneHeader';
-import { CalendarDays, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
+import { Download, CalendarDays, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ProfileTarget } from '../../components/ProfileTarget';
@@ -24,6 +24,8 @@ import { menuBox, menuItem } from '../shell/menu';
 import { cancelWithConfirm, duplicateEvent, editEvent } from './actions';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
 import { EventComments } from './EventComments';
+import { downloadCalendarEvent } from '../../lib/calendar/subscriptionApi';
+import { toast } from '../../stores/toasts';
 
 const RecordingTranscript = lazy(() => import('../chat/RecordingTranscript'));
 
@@ -214,7 +216,12 @@ export function EventCard({
 
         <Attendees ev={ev} guest={guest} />
         {ev.roomId && externals.length > 0 && !ev.guestLinks && !guest ? <p className="mt-2 text-caption text-muted">{t('cal.noGuestLinks')}</p> : null}
-        {guest ? null : <EventComments ev={ev} moderate={editable} />}
+        {guest ? null : <>
+          <Button size="sm" variant="secondary" className="mt-3" onClick={() => void downloadCalendarEvent(ev.id).catch(() => toast.error(t('cal.export.failed')))}>
+            <Download className="size-3.5" aria-hidden />{t('cal.export.download')}
+          </Button>
+          <EventComments ev={ev} moderate={editable} />
+        </>}
       </div>
       {editable ? (
         <div className={cx('flex shrink-0 flex-wrap items-center gap-2 border-t border-line mobile:grid mobile:grid-cols-2 mobile:pb-[calc(var(--safe-bottom)+12px)]', variant === 'popover' ? 'px-3 py-2' : 'px-4 py-3')}>

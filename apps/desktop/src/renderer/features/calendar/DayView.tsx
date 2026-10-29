@@ -20,6 +20,7 @@ import { CreateSlot, NavButton, PhoneSearchButton } from '../../components/Phone
 import { defaultDraft, newEvent, startFind } from './actions';
 import { AllDayChip, BusyBlock, BusyChip, DragGhost, DropCursor, EventBlock, type BlockDown } from './blocks';
 import { CalendarHeader, ConnectControl, FilterRow } from './CalendarHeader';
+import { CalendarExportDialog, CalendarExportItems, type CalendarExportMode } from './CalendarExport';
 import { isBusyKey, useCalendarDays } from './calendarData';
 import { gridScrollTarget } from '../../lib/calendar/scrollTarget';
 import { useSession } from '../../stores/session';
@@ -209,6 +210,7 @@ function DatePickCard({ day, today, title, onPick }: { day: string; today: strin
 function PhoneDayHeader({ workspaceId, day, today, creatable, people }: { workspaceId: string; day: string; today: string; creatable: boolean; people: number }): ReactNode {
   const open = useUi((s) => s.openCalendarDay);
   const [sheet, setSheet] = useState(false);
+  const [exportMode, setExportMode] = useState<CalendarExportMode | null>(null);
   const title = dateTimeFormat({ weekday: 'short', day: 'numeric', month: 'short' }).format(dayStart(day));
   return (
     <Bar>
@@ -244,6 +246,7 @@ function PhoneDayHeader({ workspaceId, day, today, creatable, people }: { worksp
                 <Dropdown.Item className={menuItem} onSelect={() => startFind(workspaceId)} data-testid="day-find">
                   <CalendarSearch className="size-4" aria-hidden /> {t('fb.find')}
                 </Dropdown.Item>
+                <CalendarExportItems onSelect={setExportMode} />
               </>
             ) : null}
           </Dropdown.Content>
@@ -252,6 +255,7 @@ function PhoneDayHeader({ workspaceId, day, today, creatable, people }: { worksp
       <PhoneSearchButton />
       {creatable ? <CreateButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" /> : <CreateSlot />}
       {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
+      {exportMode ? <CalendarExportDialog key={`${workspaceId}:${exportMode}`} workspaceId={workspaceId} mode={exportMode} onClose={() => setExportMode(null)} /> : null}
     </Bar>
   );
 }

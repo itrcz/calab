@@ -586,6 +586,14 @@ message CalendarEventCommentDelete {
 }
 
 // Native personal calendar capability, never accepted as a normal API access token (ADR-0145).
+// Personal read-only subscription. Empty URLs mean disabled. URLs contain a private
+// capability and must never be logged or sent to a third-party QR service.
+message CalendarSubscription {
+  string feed_url = 1;
+  string connect_url = 2;
+  string webcal_url = 3;
+}
+
 message CalendarWidgetGrant {
   string token = 1;
   google.protobuf.Timestamp expires_at = 2;

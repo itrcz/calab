@@ -46,6 +46,18 @@ type botRouteGroup struct {
 // decision; an unlisted pattern is denied to bots at run time. tools/gen-bot-routes.ts reads
 // this table for the docs (_routes.json): keep one route per line.
 var botRouteGroups = []botRouteGroup{
+	{access: botPublic, why: "calendar subscriptions: a revocable purpose-bound capability with fresh owner and workspace checks", routes: []string{
+		"GET /api/calendar-feed.ics",
+		"GET /api/calendar-connect",
+	}},
+	{access: botDeny, why: "personal calendar export and subscription credentials require a human session", routes: []string{
+		"GET /api/workspaces/{id}/calendar.ics",
+		"GET /api/events/{id}/calendar.ics",
+		"GET /api/workspaces/{id}/calendar-subscription",
+		"POST /api/workspaces/{id}/calendar-subscription",
+		"PUT /api/workspaces/{id}/calendar-subscription",
+		"DELETE /api/workspaces/{id}/calendar-subscription",
+	}},
 	// ---------------------------------------------------------------- public
 	{access: botPublic, why: "outside the API or before authentication; /gateway takes IDENTIFY with the bot token", routes: []string{
 		"GET /healthz",

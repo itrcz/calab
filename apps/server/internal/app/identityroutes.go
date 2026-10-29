@@ -77,8 +77,16 @@ var billingRecoveryRoutes = map[string]bool{
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
 // always requires an explicit authority and resource classification.
 var identityRoutes = map[string]identityScope{
-	"POST /api/me/calendar-widget": scopeAggregate,
-	"GET /api/calendar-widget":     scopePublic, // ADR-0145: purpose-specific grant and fresh session/policy checks.
+	"GET /api/workspaces/{id}/calendar.ics":             scopeWorkspace,
+	"GET /api/events/{id}/calendar.ics":                 scopeEvent,
+	"GET /api/workspaces/{id}/calendar-subscription":    scopeWorkspace,
+	"POST /api/workspaces/{id}/calendar-subscription":   scopeWorkspace,
+	"PUT /api/workspaces/{id}/calendar-subscription":    scopeWorkspace,
+	"DELETE /api/workspaces/{id}/calendar-subscription": scopeWorkspace,
+	"GET /api/calendar-feed.ics":                        scopePublic,
+	"GET /api/calendar-connect":                         scopePublic,
+	"POST /api/me/calendar-widget":                      scopeAggregate,
+	"GET /api/calendar-widget":                          scopePublic, // ADR-0145: purpose-specific grant and fresh session/policy checks.
 	// Native endpoint management uses independent local-account authority. Delivery and
 	// resolve additionally recheck the exact persisted session against the target policy.
 	"GET /api/me/push-capabilities":                                                     scopeGlobal,

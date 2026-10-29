@@ -30,7 +30,7 @@ const GROUP_RULES: [RegExp, string][] = [
   [/^\/api\/notes(?:\/|$)/, 'notes'],
   [/^\/api\/(?:tasks|t|checklists|checklist-items|task-milestones|boards|board-categories|rules|git)\/|^\/api\/me\/tasks$|\/tasks\/search$|\/boards(?:\/order)?$|\/board-categories$/, 'boards'],
   [/\/search$|^\/api\/me\/mentions$/, 'search'],
-  [/^\/api\/(?:events|event-rsvp)(?:\/|$)|\/events(?:\/|$)|\/freebusy|\/caldav|\/external-events/, 'calendar'],
+  [/^\/api\/(?:events|event-rsvp)(?:\/|$)|\/events(?:\/|$)|\/freebusy|\/caldav|\/external-events|\/calendar(?:\.ics|-subscription|-feed\.ics|-connect)$/, 'calendar'],
   [/^\/api\/dms(?:\/|$)/, 'dm'],
   [/^\/api\/mailbox(?:\/|$)/, 'mailbox'],
   [/\/messages(?:\/|$)|^\/api\/messages\/|\/pins$|^\/api\/unfurl|\/rooms\/\{[^}]+\}\/read$|\/transcript$/, 'messages'],

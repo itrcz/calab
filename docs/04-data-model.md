@@ -640,3 +640,13 @@ Business false/20, Custom/on-prem false/0 по умолчанию. Подроб�
 - `GET /api/workspaces/{id}/former-members?guests=0|1&q=&cursor=` (`MANAGE_MEMBERS`) → `FormerMember[]` (новые сверху, по 50, курсор `(left_at, user_id)`); бывшие гости (роль `guest` или гостевой аккаунт) — только с `guests=1`; `open_tasks` — открытые задачи живых досок пространства, где он исполнитель.
 - `WORKSPACE_MEMBER_REMOVE.former {left_at, reason}` — клиент помечает профиль бывшим, а не выкидывает; `WORKSPACE_MEMBER_ADD` снимает пометку.
 - Миграция 00089: бэкфилл авторов сообщений и участников задач (автор, действие в журнале, исполнитель) без членства → `removed`, `left_at` = их последний след в пространстве; `guest_expires_at = least(текущее, now + 48h)`; `last_active_at` гостевых членств — последняя активность сессий пользователя.
+
+
+### Calendar subscriptions (ADR-0147)
+
+Migration 00138 adds `calendar_subscriptions`: random UUID primary key,
+`workspace_id`, `user_id`, `created_at`; unique membership pair, composite
+foreign key to `workspace_members` with cascade delete. Only the subscription ID
+is stored. A domain-separated HMAC creates the read-only capability. Rotation
+updates the primary key; revocation deletes the row. No account tokens or URLs
+are stored. Every feed read checks current membership and delivery policy.
