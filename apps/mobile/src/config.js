@@ -62,15 +62,28 @@ function parseLinkHosts(raw, origin = null) {
   return [...new Set(names)];
 }
 
-/** Local defaults; store uploads must supply an identity checked against distribution history. */
-function parseReleaseIdentity(version = '0.1.0', buildNumber = '1') {
+/**
+ * Local defaults; store uploads must supply an identity checked against distribution history.
+ * `androidVersionCode` (CALAB_ANDROID_VERSION_CODE) defaults to `buildNumber`, so one env number
+ * drives both stores unless Android needs to move ahead on its own (Play rejects a re-upload of
+ * the same versionCode).
+ * @param {string} [version]
+ * @param {string} [buildNumber]
+ * @param {string} [androidVersionCode]
+ * @returns {{ version: string; buildNumber: string; versionCode: number }}
+ */
+function parseReleaseIdentity(version = '0.1.0', buildNumber = '1', androidVersionCode) {
   if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) || version.trim() !== version) {
     throw new Error('CALAB_APP_VERSION must be three non-negative integers (for example 1.2.3)');
   }
   if (!/^[1-9][0-9]{0,3}$/.test(buildNumber) || buildNumber.trim() !== buildNumber) {
     throw new Error('CALAB_IOS_BUILD_NUMBER must be an integer from 1 to 9999');
   }
-  return { version, buildNumber };
+  const versionCodeRaw = androidVersionCode === undefined || androidVersionCode === '' ? buildNumber : androidVersionCode;
+  if (!/^[1-9][0-9]{0,9}$/.test(versionCodeRaw) || versionCodeRaw.trim() !== versionCodeRaw || Number(versionCodeRaw) > 2100000000) {
+    throw new Error('CALAB_ANDROID_VERSION_CODE must be an integer from 1 to 2100000000');
+  }
+  return { version, buildNumber, versionCode: Number(versionCodeRaw) };
 }
 
 module.exports = { WebOriginError, parseWebOrigin, parseLinkHosts, parseReleaseIdentity };

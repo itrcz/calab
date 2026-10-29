@@ -34,7 +34,7 @@ if (nativeCallAudio && !incomingCalls) throw new Error('CALAB_IOS_NATIVE_CALL_AU
 const owner = env('CALAB_EXPO_OWNER');
 const projectId = env('CALAB_EAS_PROJECT_ID');
 
-const identity = parseReleaseIdentity(process.env.CALAB_APP_VERSION, process.env.CALAB_IOS_BUILD_NUMBER);
+const identity = parseReleaseIdentity(process.env.CALAB_APP_VERSION, process.env.CALAB_IOS_BUILD_NUMBER, process.env.CALAB_ANDROID_VERSION_CODE);
 
 const config: ExpoConfig = {
   name: 'Calab',
@@ -72,6 +72,9 @@ const config: ExpoConfig = {
   },
   android: {
     ...(androidPackage ? { package: androidPackage } : {}),
+    // Defaults to the iOS build number (CALAB_ANDROID_VERSION_CODE) so one env number drives both
+    // stores unless Android needs its own, higher value (Play rejects a re-upload of the same code).
+    versionCode: identity.versionCode,
     // The WebView grants getUserMedia only for permissions the app declares.
     permissions: ['RECORD_AUDIO', 'MODIFY_AUDIO_SETTINGS', 'CAMERA'],
     intentFilters: [

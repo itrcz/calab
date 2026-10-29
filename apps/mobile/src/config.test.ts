@@ -67,13 +67,25 @@ describe('parseLinkHosts', () => {
 
 describe('parseReleaseIdentity', () => {
   it('defaults locally and preserves explicit distribution identity', () => {
-    expect(parseReleaseIdentity()).toEqual({ version: '0.1.0', buildNumber: '1' });
-    expect(parseReleaseIdentity('4.2.3', '21')).toEqual({ version: '4.2.3', buildNumber: '21' });
+    expect(parseReleaseIdentity()).toEqual({ version: '0.1.0', buildNumber: '1', versionCode: 1 });
+    expect(parseReleaseIdentity('4.2.3', '21')).toEqual({ version: '4.2.3', buildNumber: '21', versionCode: 21 });
   });
   it.each(['', '1.2', 'v1.2.3', '1.2.3-beta', '1.2.3.4', '01.2.3', '1.2.3\n'])('rejects malformed version %j', (version) => {
     expect(() => parseReleaseIdentity(version, '21')).toThrow('CALAB_APP_VERSION');
   });
   it.each(['', '0', '-1', '01', '1.2', '1e3', '10000', '21\n'])('rejects malformed build %j', (build) => {
     expect(() => parseReleaseIdentity('1.2.3', build)).toThrow('CALAB_IOS_BUILD_NUMBER');
+  });
+
+  it('CALAB_ANDROID_VERSION_CODE defaults to the iOS build number when unset or blank', () => {
+    expect(parseReleaseIdentity('1.2.3', '21')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 21 });
+    expect(parseReleaseIdentity('1.2.3', '21', '')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 21 });
+  });
+  it('accepts an explicit CALAB_ANDROID_VERSION_CODE that differs from the build number', () => {
+    expect(parseReleaseIdentity('1.2.3', '21', '2100000000')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 2100000000 });
+    expect(parseReleaseIdentity('1.2.3', '21', '1')).toEqual({ version: '1.2.3', buildNumber: '21', versionCode: 1 });
+  });
+  it.each(['0', '-1', '01', '1.2', '1e3', '2100000001', '21\n'])('rejects malformed CALAB_ANDROID_VERSION_CODE %j', (versionCode) => {
+    expect(() => parseReleaseIdentity('1.2.3', '21', versionCode)).toThrow('CALAB_ANDROID_VERSION_CODE');
   });
 });
