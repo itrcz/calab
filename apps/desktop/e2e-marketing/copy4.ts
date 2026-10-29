@@ -7,8 +7,6 @@ import type { PersonKey, Short } from './copy';
  * comes from the app's own dictionaries. People, rooms and the board are those of copy.ts (by key).
  */
 
-type Color = 'yellow' | 'green' | 'blue' | 'pink';
-
 export interface Copy4 {
   /** The thread of «общий» (chat-full / chat-focus / story-message). */
   chat: {

@@ -1,6 +1,8 @@
 package calendar
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -42,8 +44,8 @@ type ICSEvent struct {
 const icsDate, icsUTC, icsLocal = "20060102", "20060102T150405Z", "20060102T150405"
 
 // BuildICS renders a VCALENDAR with one VEVENT (CRLF lines folded at 75 octets). Times are UTC,
-// except a repeating timed series in a zone with DST: its DTSTART / DTEND carry the TZID with a
-// VTIMEZONE (the transitions of ten years), so calendars keep its wall-clock time.
+// except a repeating timed series outside UTC: its DTSTART / DTEND carry the TZID with a
+// VTIMEZONE, so recurrence keeps its local clock time, weekday and month date.
 func BuildICS(e ICSEvent) string {
 	var b strings.Builder
 	line := func(s string) { b.WriteString(fold(s)) }
@@ -61,7 +63,10 @@ func BuildICS(e ICSEvent) string {
 
 // buildCalendarICS writes a subscription, not an invitation. Time zones are shared by
 // all events and included once; event UIDs and sequences remain the source's identity.
-func buildCalendarICS(name string, events []ICSEvent, at time.Time) string {
+func buildCalendarICS(ctx context.Context, name string, events []ICSEvent, at time.Time) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	b.WriteString("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Calab//Calendar//EN\r\nCALSCALE:GREGORIAN\r\n")
 	b.WriteString(fold("X-WR-CALNAME:" + icsText(name)))
@@ -96,18 +101,30 @@ func buildCalendarICS(name string, events []ICSEvent, at time.Time) string {
 	slices.Sort(names)
 	for _, name := range names {
 		z := spans[name]
-		lines, ok := vtimezoneBetween(z.loc, z.first, z.last.AddDate(10, 0, 0))
+		lines, ok, err := vtimezoneBetween(ctx, z.loc, z.first, z.last.AddDate(10, 0, 0))
+		if err != nil {
+			return "", err
+		}
 		zones[name] = ok
 		for _, line := range lines {
 			b.WriteString(fold(line))
 		}
+		if b.Len() > 8<<20 {
+			return "", errors.New("calendar export size limit")
+		}
 	}
 	for _, e := range events {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		e.Method, e.Organizer, e.Attendees = "", ICSPerson{}, nil
 		appendICSEvent(&b, e, zones)
+		if b.Len() > 8<<20 {
+			return "", errors.New("calendar export size limit")
+		}
 	}
 	b.WriteString("END:VCALENDAR\r\n")
-	return b.String()
+	return b.String(), nil
 }
 
 func appendICSEvent(b *strings.Builder, e ICSEvent, zones map[string]bool) {
@@ -266,12 +283,16 @@ func fold(s string) string {
 }
 
 // vtimezone describes loc's UTC offset changes from a year before start to ten years after it
-// (STANDARD / DAYLIGHT with RDATEs); false = the offset never changes there (UTC is enough).
+// (STANDARD / DAYLIGHT with RDATEs); false = the offset stays zero (UTC is enough).
 func vtimezone(loc *time.Location, start time.Time) ([]string, bool) {
-	return vtimezoneBetween(loc, start, start.AddDate(10, 0, 0))
+	lines, enabled, _ := vtimezoneBetween(context.Background(), loc, start, start.AddDate(10, 0, 0))
+	return lines, enabled
 }
 
-func vtimezoneBetween(loc *time.Location, start, end time.Time) ([]string, bool) {
+func vtimezoneBetween(ctx context.Context, loc *time.Location, start, end time.Time) ([]string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	type change struct {
 		at       time.Time // the instant of the change
 		from, to int       // offsets in seconds
@@ -281,6 +302,9 @@ func vtimezoneBetween(loc *time.Location, start, end time.Time) ([]string, bool)
 	t := start.AddDate(-1, 0, 0).UTC().Truncate(24 * time.Hour)
 	_, prev := t.In(loc).Zone()
 	for ; t.Before(end); t = t.Add(24 * time.Hour) {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		next := t.Add(24 * time.Hour)
 		name, off := next.In(loc).Zone()
 		if off == prev {
@@ -298,14 +322,6 @@ func vtimezoneBetween(loc *time.Location, start, end time.Time) ([]string, bool)
 		changes = append(changes, change{hi, prev, off, name})
 		prev = off
 	}
-	if len(changes) == 0 {
-		return nil, false
-	}
-	// The larger offset of a pair is daylight time.
-	maxOff := changes[0].to
-	for _, c := range changes {
-		maxOff = max(maxOff, c.to, c.from)
-	}
 	offset := func(sec int) string {
 		sign := "+"
 		if sec < 0 {
@@ -313,6 +329,25 @@ func vtimezoneBetween(loc *time.Location, start, end time.Time) ([]string, bool)
 		}
 		return fmt.Sprintf("%s%02d%02d", sign, sec/3600, sec%3600/60)
 	}
+
+	if len(changes) == 0 {
+		name, off := start.In(loc).Zone()
+		if off == 0 {
+			return nil, false, nil
+		}
+		// Even without DST, UTC conversion would change the weekday or month date
+		// used by a local RRULE. Preserve that rule with a fixed-offset zone.
+		return []string{"BEGIN:VTIMEZONE", "TZID:" + loc.String(), "BEGIN:STANDARD",
+			"DTSTART:" + start.AddDate(-1, 0, 0).In(loc).Format(icsLocal),
+			"TZOFFSETFROM:" + offset(off), "TZOFFSETTO:" + offset(off), "TZNAME:" + name,
+			"END:STANDARD", "END:VTIMEZONE"}, true, nil
+	}
+	// The larger offset of a pair is daylight time.
+	maxOff := changes[0].to
+	for _, c := range changes {
+		maxOff = max(maxOff, c.to, c.from)
+	}
+
 	out := []string{"BEGIN:VTIMEZONE", "TZID:" + loc.String()}
 	for _, kind := range []string{"DAYLIGHT", "STANDARD"} {
 		var group []change
@@ -333,7 +368,7 @@ func vtimezoneBetween(loc *time.Location, start, end time.Time) ([]string, bool)
 		}
 		out = append(out, "END:"+kind)
 	}
-	return append(out, "END:VTIMEZONE"), true
+	return append(out, "END:VTIMEZONE"), true, nil
 }
 
 // holidayDates are the occurrence starts that a working-days series on the Russian calendar

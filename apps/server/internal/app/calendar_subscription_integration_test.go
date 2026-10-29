@@ -137,6 +137,15 @@ func TestCalendarExportPermissions(t *testing.T) {
 	if code, _, _ := calendarHTTP(t, c.bob.token, "GET", base+"/calendar.ics?from=invalid&to=invalid"); code != 422 {
 		t.Fatalf("range validation: %d", code)
 	}
+	for _, query := range []string{
+		"from=1999-01-01T00:00:00Z&to=1999-02-01T00:00:00Z",
+		"from=2201-01-01T00:00:00Z&to=2201-02-01T00:00:00Z",
+		"from=9998-01-01T00:00:00Z&to=9999-01-01T00:00:00Z",
+	} {
+		if code, _, _ := calendarHTTP(t, c.bob.token, "GET", base+"/calendar.ics?"+query); code != 422 {
+			t.Errorf("unsupported export year accepted: %s status=%d", query, code)
+		}
+	}
 	if code, _, raw := calendarHTTP(t, c.bob.token, "GET", "/api/events/"+one.Id+"/calendar.ics"); code != 200 || !strings.Contains(raw, "My export") {
 		t.Fatalf("single export: %d", code)
 	}
@@ -147,6 +156,18 @@ func TestCalendarExportPermissions(t *testing.T) {
 	bot.must(403, "GET", base+"/calendar.ics"+query, nil, nil)
 	c.carol.must(404, "GET", "/api/events/"+one.Id+"/calendar.ics", nil, nil)
 	feed := subscriptionPath(t, c.bob.token, "POST", base+"/calendar-subscription")
+	// Membership demotion differs from users.is_guest; public links must recheck both.
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE workspace_members SET role='guest' WHERE workspace_id=$1 AND user_id=$2", c.ws.Id, c.bob.id); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{feed, strings.Replace(feed, "calendar-feed.ics", "calendar-connect", 1)} {
+		if code, _, raw := calendarHTTP(t, "", "GET", path); code != 404 || strings.Contains(raw, "My export") {
+			t.Errorf("demoted guest kept public access: %d", code)
+		}
+	}
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE workspace_members SET role='member' WHERE workspace_id=$1 AND user_id=$2", c.ws.Id, c.bob.id); err != nil {
+		t.Fatal(err)
+	}
 	// Disabled users and departed members cannot keep reading an old link.
 	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE users SET disabled_at=now() WHERE id=$1", c.bob.id); err != nil {
 		t.Fatal(err)

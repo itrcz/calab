@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/google/uuid"
 )
 
@@ -87,6 +88,13 @@ func (s *Service) exportAllowed(ctx context.Context, user, ws uuid.UUID, public 
 		return err
 	}
 	if !ok {
+		return httpx.NotFound("calendar")
+	}
+	member, err := s.db.Q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: ws, UserID: user})
+	if err != nil {
+		return err
+	}
+	if member.Role == string(perm.RoleGuest) {
 		return httpx.NotFound("calendar")
 	}
 	space, err := s.db.Q.GetWorkspace(ctx, ws)
@@ -234,8 +242,9 @@ func (s *Service) downloadCalendar(w http.ResponseWriter, r *http.Request) error
 	}
 	from, e1 := time.Parse(time.RFC3339, r.URL.Query().Get("from"))
 	to, e2 := time.Parse(time.RFC3339, r.URL.Query().Get("to"))
-	if e1 != nil || e2 != nil || !to.After(from) || to.Sub(from) > 400*24*time.Hour {
-		return httpx.Validation("from", "choose a valid range of at most 400 days")
+	if e1 != nil || e2 != nil || !to.After(from) || to.Sub(from) > 400*24*time.Hour ||
+		from.Before(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)) || to.After(time.Date(2201, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		return httpx.Validation("from", "choose a range within 2000–2200 of at most 400 days")
 	}
 	contents, err := s.calendarContents(ctx, id.UserID, ws, from, to)
 	if err != nil {
@@ -263,7 +272,11 @@ func (s *Service) downloadEvent(w http.ResponseWriter, r *http.Request) error {
 	if err = s.exportAllowed(r.Context(), id.UserID, b.ev.WorkspaceID, false); err != nil {
 		return err
 	}
-	return writeCalendar(w, buildCalendarICS(b.ev.Title, []ICSEvent{s.exportEvent(b)}, s.Now()), true)
+	contents, err := buildCalendarICS(ctx, b.ev.Title, []ICSEvent{s.exportEvent(b)}, s.Now())
+	if err != nil {
+		return err
+	}
+	return writeCalendar(w, contents, true)
 }
 
 func (s *Service) exportEvent(b *bundle) ICSEvent {
@@ -293,7 +306,10 @@ func (s *Service) calendarContents(ctx context.Context, user, ws uuid.UUID, from
 	if err != nil {
 		return "", err
 	}
-	result := buildCalendarICS("Calab · "+space.Name, events, to)
+	result, err := buildCalendarICS(ctx, "Calab · "+space.Name, events, to)
+	if err != nil {
+		return "", httpx.Unavailable(err)
+	}
 	if len(result) > 8<<20 {
 		return "", httpx.Unavailable(errors.New("calendar export size limit"))
 	}

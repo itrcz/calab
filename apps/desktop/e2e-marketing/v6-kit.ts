@@ -257,7 +257,7 @@ export function seedStoryBoard(mock: MockServer, c: Copy, c4: Copy4): { id: stri
 }
 
 /** «общий» of the story day: the pinned note, Вера's request, a reply with a quote, a voice note, a sticker, the regression, the task card, the review. */
-export function seedStoryChat(mock: MockServer, c: Copy, c4: Copy4, key: string, compact = false): void {
+export function seedStoryChat(mock: MockServer, _c: Copy, c4: Copy4, key: string, compact = false): void {
   const s = mock.state;
   s.messages.set(R.general, []);
   const post = (k: PersonKey, hhmm: string, content: string, extra: { replyToId?: string; attachments?: string[]; stickerId?: string } = {}) => {
@@ -287,5 +287,4 @@ export function seedStoryChat(mock: MockServer, c: Copy, c4: Copy4, key: string,
   }
   const last = (rid: string): string => s.messages.get(rid)?.at(-1)?.id ?? '';
   for (const k of ['anna', 'boris', 'vera', 'grigory', 'dina'] as const) s.readStates.get(U[k])?.set(R.general, last(R.general));
-  void c;
 }

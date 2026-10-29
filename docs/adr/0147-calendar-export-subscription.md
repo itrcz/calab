@@ -12,7 +12,8 @@ imported CalDAV events, attendee addresses, comments or recordings.
 ## Contract
 
 - GET /api/workspaces/{id}/calendar.ics?from&to downloads the caller's meetings.
-  RFC3339 half-open window, at most 400 days; UI dates include the final day.
+  RFC3339 half-open window, at most 400 days within supported years 2000–2200;
+  UI dates include the final day.
   Include series that have an occurrence in the window, preserving the complete
   recurrence and exceptions. The UI explains that recurring series are included
   in full. GET /api/events/{id}/calendar.ics downloads one visible live series.
@@ -33,7 +34,8 @@ imported CalDAV events, attendee addresses, comments or recordings.
   No automatic expiry: explicit disconnect, membership removal or secret rotation
   ends the subscription. Signing key rotation requires reconnecting.
 - Every content request checks the current identity delivery policy, including
-  disabled/banned/suspended users, directory freshness, workspace suspension and enforced billing suspension.
+  disabled/banned/suspended users, current workspace guest role, directory freshness,
+  workspace suspension and enforced billing suspension.
   Required-SSO workspaces cannot issue or use a public subscription, even with
   an active SSO session; authenticated .ics export still follows request policy.
   Subscription policy refusals use FORBIDDEN/CALENDAR_SUBSCRIPTION_SSO, not
@@ -41,7 +43,8 @@ imported CalDAV events, attendee addresses, comments or recordings.
   policy and viewer resolution. Machines and guests cannot manage subscriptions
   or export calendars. Declined/cancelled/removed meetings disappear from feeds.
 - Fail closed on database/policy failures. Cap candidates at 1000 and output at
-  8 MiB, with a 10 second request deadline. Never return a successful partial feed.
+  8 MiB, with a 10 second request deadline honored during timezone serialization.
+  Never return a successful partial feed.
   Verified public capabilities are rate-limited per ID before database access
   (30 burst / 30 per minute, independently of RSVP links). No-store, no-referrer and
   noindex on all capability responses. Secrets live in query parameters, which
@@ -49,7 +52,9 @@ imported CalDAV events, attendee addresses, comments or recordings.
 - A feed has one VCALENDAR, deduplicated VTIMEZONE definitions and stable event
   UIDs/sequence numbers. No METHOD/ORGANIZER/ATTENDEE fields, to avoid sending
   invitations when a calendar application imports it. Preserve DST, all-day
-  dates, workday rules and EXDATE/RDATE via the existing ICS serializer.
+  dates, workday rules and EXDATE/RDATE via the existing ICS serializer. Repeating
+  meetings outside UTC retain TZID even without DST, using a fixed-offset VTIMEZONE
+  so monthly dates and weekdays do not shift when converted to UTC.
 
 ## Interface and platforms
 

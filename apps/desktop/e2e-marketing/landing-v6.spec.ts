@@ -77,14 +77,14 @@ interface Scene {
 const tag = (name: string, focus: boolean): string => (focus ? `${name}-focus` : name);
 
 /** The story's board + chat (the task key is APP-7 whatever the language). */
-const storySeed: Seed = (mock, c, c4) => {
+const storySeed = ((mock, c, c4) => {
   const { key } = seedStoryBoard(mock, c, c4);
   seedStoryChat(mock, c, c4, key);
-};
-const storyCompact: Seed = (mock, c, c4) => {
+}) satisfies Seed;
+const storyCompact = ((mock, c, c4) => {
   const { key } = seedStoryBoard(mock, c, c4);
   seedStoryChat(mock, c, c4, key, true);
-};
+}) satisfies Seed;
 
 /** Boards mode on «Продукт» (desktop). */
 async function storyWikiScene(ctx: Ctx): Promise<void> {
