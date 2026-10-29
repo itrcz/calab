@@ -24,10 +24,10 @@ export function parseCalendarWidgetLink(raw: string, scheme: string): CalendarWi
   // Hermes does not provide WHATWG URL/searchParams. Accept only the exact native
   // widget route, then decode each component with the same rules on every host.
   const match = /^([a-z][a-z0-9-]{2,63}):\/\/calendar\/?\?([^#\s]+)$/.exec(raw);
-  if (!match || match[0] !== raw || match[1] !== scheme) return null;
+  if (!match || match[0] !== raw || match[1] !== scheme || !match[2]) return null;
   try {
     const value: Record<string, string> = {};
-    for (const pair of match[2]!.split('&')) {
+    for (const pair of match[2].split('&')) {
       const at = pair.indexOf('=');
       if (at < 1) return null;
       const key = decodeURIComponent(pair.slice(0, at).replace(/\+/g, ' '));

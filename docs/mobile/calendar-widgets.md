@@ -31,7 +31,7 @@ For physical acceptance, use a separate bundle ID, App Group, URL scheme and app
 
 ### Repeating the EAS iOS build matrix
 
-The `qa-ios` profile produces simulator artifacts through EAS; it does not validate distribution signing. Supply the Expo project owner/ID and a synthetic HTTPS origin in the environment. `EXPO_NO_DOTENV=1` prevents a local `.env` from silently enabling the OFF variant. From `apps/mobile`:
+The `qa-ios` profile produces simulator artifacts through EAS; it does not validate distribution signing. Supply the Expo project owner/ID and a synthetic HTTPS origin in the environment. `EXPO_NO_DOTENV=1` prevents a local `.env` from silently enabling widgets in the OFF variant. From `apps/mobile`:
 
 ```sh
 EXPO_NO_DOTENV=1 CALAB_IOS_APP_GROUP= eas build --platform ios --profile qa-ios --local --non-interactive --output /tmp/calab-widgets-off.tar.gz
