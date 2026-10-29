@@ -15,7 +15,7 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   "cal.export.subscribeHint": "将 Calab 会议添加到您的日历，随时查看计划。",
   "cal.export.private": "链接和二维码可访问您在此工作区中的会议，请勿分享。不包含外部日历和已拒绝的会议。",
   "cal.export.apple": "添加到 Apple 日历",
-  "cal.export.qr": "使用 iPhone 相机扫描，然后点击连接按钮",
+  "cal.export.qr": "使用手机相机扫描二维码，打开日历连接页面",
   "cal.export.link": "订阅链接",
   "cal.export.copy": "复制",
   "cal.export.google": "Google 日历：在电脑上打开其他日历 → + → 通过网址，粘贴此链接。使用同一账户的手机也会显示此日历。",

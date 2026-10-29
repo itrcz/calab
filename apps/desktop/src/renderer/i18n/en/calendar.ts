@@ -15,7 +15,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   "cal.export.subscribeHint": "Keep your plans with you by adding Calab meetings to your calendar.",
   "cal.export.private": "The link and QR code give access to your meetings in this workspace. Keep them private. External calendars and declined meetings are excluded.",
   "cal.export.apple": "Add to Apple Calendar",
-  "cal.export.qr": "Scan with your iPhone camera and tap the connect button",
+  "cal.export.qr": "Scan the QR code with your phone camera to open the calendar connection page",
   "cal.export.link": "Subscription link",
   "cal.export.copy": "Copy",
   "cal.export.google": "Google Calendar: on a computer, open Other calendars → + → From URL and paste the link. It will also appear on your phone using the same account.",

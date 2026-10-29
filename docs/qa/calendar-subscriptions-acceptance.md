@@ -1,7 +1,14 @@
 # Calendar subscriptions: local acceptance
 
 2026-10-29. Base: `2f574cf9e`. Scope and API: [ADR-0147](../adr/0147-calendar-export-subscription.md).
-Status: implemented locally, not deployed. Release gates remain open below.
+Status: implemented locally, suitable for a draft PR review, not deployed.
+Release gates remain open below.
+
+QR codes contain an ordinary HTTPS connection URL and can be scanned on Android
+as well as iPhone. The caption names a phone camera, not a specific platform.
+Apple Calendar has the direct subscription action; Google Calendar URL setup
+uses its computer web UI before the calendar appears on the phone. Android
+system-calendar subscription has not been verified on a physical device.
 
 ## Verified
 

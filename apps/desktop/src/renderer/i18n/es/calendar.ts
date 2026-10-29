@@ -15,7 +15,7 @@ export const esCalendar: DictShape<typeof ruCalendar> = {
   "cal.export.subscribeHint": "Lleva tus planes contigo añadiendo las reuniones de Calab a tu calendario.",
   "cal.export.private": "El enlace y el código QR dan acceso a tus reuniones en este espacio. No los compartas. Se excluyen los calendarios externos y las reuniones rechazadas.",
   "cal.export.apple": "Añadir a Calendario de Apple",
-  "cal.export.qr": "Escanea con la cámara del iPhone y pulsa el botón para conectar",
+  "cal.export.qr": "Escanea el código QR con la cámara de tu teléfono para abrir la página de conexión del calendario",
   "cal.export.link": "Enlace de suscripción",
   "cal.export.copy": "Copiar",
   "cal.export.google": "Google Calendar: en un ordenador, abre Otros calendarios → + → Desde URL y pega el enlace. Aparecerá en tu teléfono con la misma cuenta.",

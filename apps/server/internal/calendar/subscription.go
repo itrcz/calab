@@ -339,7 +339,7 @@ func (s *Service) calendarConnect(w http.ResponseWriter, r *http.Request) error 
 		page.Lang = "ru"
 		page.Title = "Календарь Calab"
 		page.Intro = "Ваши встречи Calab в календаре телефона. Изменения появляются автоматически; скорость обновления зависит от приложения календаря."
-		page.Button = "Добавить в календарь iPhone"
+		page.Button = "Добавить в Apple Календарь"
 		page.Other = "Для Google Календаря добавьте ссылку на компьютере: Другие календари → Добавить по URL."
 		page.Link = "Ссылка календаря"
 		page.Private = "Ссылка даёт доступ к вашим встречам. Отключить её можно в Calab. Редактируйте встречи в Calab."
