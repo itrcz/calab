@@ -154,3 +154,13 @@ Business logic lives in `services/` and `stores/`; components only render and ca
 ## Packaging and signing
 
 `electron-builder.yml`: `mac.identity: null` (unsigned until the Developer ID arrives), hardened runtime and entitlements (`build/entitlements.mac.plist`) are ready. `protocols: calab://` (+ the pre-rename alias `calaba://`) is registered in Info.plist. The icon is the default Electron one (artwork TBD).
+
+## Store screenshots (App Store / Google Play, board #111)
+
+`pnpm -F @calaba/desktop screenshots:store` — capture → compose → validate (WebKit/Chromium only, no Electron; builds `dist-web` first).
+
+- **Capture** (`e2e-marketing/store-shots.spec.ts`): the web client on an iPhone 14 viewport at 3x against the marketing mock, ru + en, dark; raw 1170×2532 shots go to `apps/mobile/store/raw/` (git-ignored). `CALABA_STORE_SCENES=tasks,calendar` captures only some scenes.
+- **Scenes** live in one list, `e2e-marketing/store/scenes.ts`: `id`, headline ru/en, `run` (how to reach the screen). Adding a screen = adding an entry; shared mock data is in `store/harness.ts`.
+- **Compose** (`store/compose.ts`): Chromium renders the HTML template `store/template.ts` — gradient, font, headline size, phone frame/shadow and status bar are all tweaked there (brand colors from docs/10-branding.md; the app's system font stack). No Figma needed in phase 1: the background and frame assets are this template.
+- **Output** (committed) in `apps/mobile/store/`: `ios/{ru,en}/NN-<id>.png` 1206×2622, `android/{ru,en}/NN-<id>.png` 1080×1920, `icons/icon-1024.png` (no alpha, from `apps/mobile/assets/icon-1024.png`), `icons/icon-512.png` (alpha), `feature/{ru,en}/feature-graphic.png` 1024×500.
+- **Validate** (`store/validate.ts`): exact sizes, no alpha where forbidden, icon-512 ≤ 1 MB; exits 1 listing the problems.

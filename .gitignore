@@ -24,3 +24,6 @@ apps/desktop/dist-release/
 
 # raw landing/README captures (apps/desktop/e2e-marketing/landing.spec.ts), cropped into public/screens
 apps/landing/shots/
+
+# raw store captures (apps/desktop/e2e-marketing/store-shots.spec.ts); the composed cards in apps/mobile/store are committed
+apps/mobile/store/raw/
