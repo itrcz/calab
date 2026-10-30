@@ -32,7 +32,7 @@ describe('billingCaps', () => {
     expect(billingCaps(VIEW | TOPUP, true)).toEqual({ view: true, topup: true, manage: false });
     expect(billingCaps(BILLING_PERMISSIONS, true)).toEqual({ view: true, topup: true, manage: true });
   });
-  it('the iOS shell keeps read-only VIEW and no actions', () => {
+  it('a native shell keeps read-only VIEW and no actions', () => {
     expect(billingCaps(BILLING_PERMISSIONS, false)).toEqual({ view: true, topup: false, manage: false });
     expect(billingCaps(0n, false)).toEqual({ view: false, topup: false, manage: false });
   });

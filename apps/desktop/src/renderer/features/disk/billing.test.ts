@@ -14,8 +14,8 @@ vi.mock('../workspace/billing/access', () => ({ useBillingBits: () => BILLING_BI
 beforeAll(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; });
 afterEach(() => { delete window.CalabHostActivity; });
 
-describe('Disk purchase surfaces follow iOS billing policy', () => {
-  it.each([true, false])('iOS shell = %s: usage remains readable, packs and quota CTA follow policy', (ios) => {
+describe('Disk purchase surfaces follow native-shell billing policy (ADR-0148)', () => {
+  it.each([true, false])('native shell = %s: usage remains readable, packs and quota CTA follow policy', (ios) => {
     resetNativeShellForTests();
     if (ios) Object.defineProperty(window, 'CalabHostActivity', { value: { version: 1, platform: 'ios' }, configurable: true });
     const host = document.createElement('div'); document.body.append(host);
