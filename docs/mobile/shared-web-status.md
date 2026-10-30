@@ -151,20 +151,23 @@ full-bleed background and no pre-rounded corners. It is derived from the shared
 `apps/desktop/build/icons/src/icon_other.svg`; the glyph is unchanged; the gradient is blue (#3660FC → #404498) since 2026-10-13.
 The icon is packaged into a new iOS build and reaches TestFlight through that build.
 
-## Native mobile commercial UI (2026-10-08; iOS-only since 2026-10-10, ADR-0087 §10)
+## Native mobile commercial UI (2026-10-08; iOS-only since 2026-10-10, every native shell since 2026-10-30, ADR-0087 §10, ADR-0148)
 
-**Current rule (2026-10-10, App Store until IAP):** payment UI is hidden only in the **iOS**
-shell; the Android shell, every browser (Safari on an iPhone too) and the desktop keep it.
-Detection — `apps/desktop/src/renderer/platform/nativeShell.ts`: the host bridge
-`window.CalabHostActivity` plus its new `platform` field (`activityBootstrap(…, Platform.OS)`,
-additive). Fail closed: no field, an iPad desktop UA, or a contradiction → iOS; Android is
-recognized by its user agent, so neither platform needs a new binary. Hidden in iOS: top-up,
-«Оплатить», plan purchase / change / «Сменить тариф», prices and CTAs, auto-topup and saved cards,
-the payer form, the plan step after creating a workspace, sales contacts / pricing links. Shown:
-plan name and status (outline badge), limits, balance and history read-only for `BILLING_VIEW`,
-and a neutral «Управление оплатой доступно в веб-версии и на компьютере» — no link, no button.
-Server unchanged. Tests: `platform/nativeShell.test.ts` (matrix: iOS old/new handshake, Android
-old/new, iPhone Safari, desktop), `services/plan.test.ts`, visual `billing-cabinet-ios` (390).
+**Current rule (2026-10-30, ADR-0148):** payment UI is hidden in **every native shell**, iOS and
+Android alike; every browser (Safari on an iPhone too), the PWA and the desktop keep it. Before
+2026-10-30 the rule (App Store until IAP) hid it only in the iOS shell; the Android shell behaved
+like a browser. Detection — `apps/desktop/src/renderer/platform/nativeShell.ts`: the host bridge
+`window.CalabHostActivity` plus its `platform` field (`activityBootstrap(…, Platform.OS)`,
+additive), or the UA marker `SHELL_UA_MARKER`. Fail closed on iOS: no field, an iPad desktop UA, or
+a contradiction → iOS; Android is recognized by its user agent, so neither platform needs a new
+binary. Hidden in a native shell: top-up, «Оплатить», plan purchase / change / «Сменить тариф»,
+prices and CTAs, auto-topup and saved cards, the payer form, the plan step after creating a
+workspace, sales contacts / pricing links. Shown: plan name and status (outline badge), limits,
+balance and history read-only for `BILLING_VIEW`, and a neutral «Управление оплатой доступно в
+веб-версии и на компьютере» — no link, no button. Server unchanged. Tests:
+`platform/nativeShell.test.ts` (matrix: iOS old/new handshake, Android old/new, iPhone Safari,
+desktop), `services/plan.test.ts` (iOS shell, Android shell, plain Android browser), visual
+`billing-cabinet-ios` and `billing-cabinet-android` (390).
 
 Earlier (2026-10-08) text, superseded for Android:
 
@@ -178,12 +181,13 @@ it does not require a new iPhone binary.
 
 ## Checkout and SBP (2026-10-10, ADR-0084)
 
-iOS keeps purchases hidden (above). On Android the hosted checkout opens in the
-system browser; Tochka's page offers the bank chooser and `qr.nspk.ru` / `bankNNN://`
-links open the bank app. The host now hands `bankNNN://` links to the OS instead of
-blocking them. Back in Calab, the dialog polls on `visibilitychange`. Custom Tabs /
-SFSafariViewController (`expo-web-browser`) is a follow-up: it needs a new native
-dependency and binary, and a return to the app from an https URL needs App Links.
+iOS and the Android shell keep purchases hidden (above, ADR-0148). Outside the shell, on
+Android the hosted checkout opens in the system browser; Tochka's page offers the bank
+chooser and `qr.nspk.ru` / `bankNNN://` links open the bank app. The host now hands
+`bankNNN://` links to the OS instead of blocking them. Back in Calab, the dialog polls on
+`visibilitychange`. Custom Tabs / SFSafariViewController (`expo-web-browser`) is a follow-up:
+it needs a new native dependency and binary, and a return to the app from an https URL needs
+App Links.
 
 ## R19 final polish: bounded connecting cue
 
