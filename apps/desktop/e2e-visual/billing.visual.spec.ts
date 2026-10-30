@@ -79,6 +79,8 @@ interface Boot {
   admin?: boolean;
   /** The iOS native shell (apps/mobile): its host bridge declared before the page loads (owner 10.10: no payment UI there). */
   iosShell?: boolean;
+  /** The Android native shell (apps/mobile, DEV-4947): no bridge, just the UA marker (owner 30.10, ADR-0148: no payment UI there either). */
+  androidShellUa?: boolean;
 }
 
 /** One page load: the billing scenario, the theme, the sign-in, the workspace's main screen. */
@@ -91,6 +93,15 @@ async function boot(page: Page, o: Boot): Promise<Shot> {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'CalabHostActivity', {
         value: Object.freeze({ version: 1, host: 1, platform: 'ios', document: 'visual', rotateDocument: () => undefined, send: () => undefined }),
+      });
+    });
+  }
+  if (o.androidShellUa) {
+    // No bridge, as on an Android shell before DEV-5033: the UA marker alone decides (platform/nativeShell, ADR-0148).
+    await page.addInitScript(() => {
+      Object.defineProperty(window.navigator, 'userAgent', {
+        value: 'Mozilla/5.0 (Linux; Android 15; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 CalabShell/1',
+        configurable: true,
       });
     });
   }
@@ -767,8 +778,8 @@ test('billing-member-topup: a member with «Пополнять баланс»', 
   await checkpoint(s, 'billing-topup-member');
 });
 
-test('billing-ios-shell: the plan tab without payment UI', async ({ page }) => {
-  test.skip(!isPhone(), 'the iOS shell: iPhone 14 only');
+test('billing-ios-shell: the plan tab without payment UI (iOS and Android shells, ADR-0148)', async ({ page }) => {
+  test.skip(!isPhone(), 'native shells: iPhone 14 only');
   const s = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', iosShell: true });
   const settings = await openPlanTab(page);
   await expect(settings.getByTestId('billing-cabinet')).toBeVisible();
@@ -781,4 +792,21 @@ test('billing-ios-shell: the plan tab without payment UI', async ({ page }) => {
   await expect(settings.getByTestId('disk-buy')).toHaveCount(0);
   await expect(settings.getByTestId('disk-pack')).toHaveCount(0);
   await checkpoint(s, 'billing-cabinet-ios');
+
+  // ADR-0148 (owner, 30.10): the Android shell hides payment UI the same way, via the UA marker
+  // alone (DEV-4947) — no host bridge. A fresh session: the refresh cookie from the first login
+  // would otherwise skip the sign-in screen boot() expects.
+  await page.context().clearCookies();
+  const s2 = await boot(page, { scenario: 'normal', plan: 'PLAN_TEAM', androidShellUa: true });
+  const settings2 = await openPlanTab(page);
+  await expect(settings2.getByTestId('billing-cabinet')).toBeVisible();
+  await expect(settings2.getByTestId('billing-payments-elsewhere')).toBeVisible();
+  await expect(settings2.getByTestId('billing-topup-open')).toHaveCount(0);
+  await expect(settings2.getByTestId('plan-switch')).toHaveCount(0);
+  await expect(settings2.getByTestId('billing-payer-edit')).toHaveCount(0);
+  await settings2.getByTestId('billing-payments-elsewhere').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await expect(settings2.getByTestId('disk-meter')).toBeVisible();
+  await expect(settings2.getByTestId('disk-buy')).toHaveCount(0);
+  await expect(settings2.getByTestId('disk-pack')).toHaveCount(0);
+  await checkpoint(s2, 'billing-cabinet-android');
 });
