@@ -1,0 +1,40 @@
+# Mirrors the web client behaviour of the Caddyfile (docs/06-deployment.md, "Web client", ADR-0015).
+# Rendered by the official nginx image's envsubst: only ${DOMAIN} is substituted.
+
+# /assets/* (hashed Vite files) are immutable; everything else (index.html, SPA routes) is no-cache.
+# add_header without "always" is not applied to 404, so a missing asset is never cached.
+map $uri $calab_cache_control {
+    default     "no-cache";
+    ~^/assets/  "public, max-age=31536000, immutable";
+}
+
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    server_tokens off;
+
+    gzip on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_types text/css text/javascript application/javascript application/json
+               application/manifest+json image/svg+xml application/wasm text/plain;
+
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' wss://rtc.${DOMAIN} https://rtc.${DOMAIN}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Cache-Control $calab_cache_control;
+
+    # a missing asset is a real 404, not index.html
+    location /assets/ {
+        try_files $uri =404;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri /index.html;
+    }
+}
