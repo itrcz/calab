@@ -6,7 +6,7 @@ import { BILLING_BITS, BILLING_PERMISSIONS, WorkspaceRole, billingPermissions, t
  * workspace owner has all three. The client only hides UI — every route checks its bit.
  */
 
-/** What the billing UI offers me. `payHere`: this client may show payment UI at all (not the iOS shell). */
+/** What the billing UI offers me. `payHere`: this client may show payment UI at all (not a native shell). */
 export interface BillingCaps {
   /** Balance, history, plan, receipts, payer and saved methods read-only. */
   view: boolean;
@@ -27,7 +27,7 @@ export function myBillingBits(myRole: WorkspaceRole | undefined, myRoles: readon
 
 /**
  * The caps for bits on a client that may (`payHere`) or may not show payment UI: without it
- * (the iOS shell, App Store rules) only VIEW is left — read-only amounts, no actions.
+ * (a native shell, iOS or Android — docs/adr/0148) only VIEW is left — read-only amounts, no actions.
  */
 export function billingCaps(bits: PermissionBits, payHere: boolean): BillingCaps {
   const has = (b: PermissionBits): boolean => (bits & b) === b;

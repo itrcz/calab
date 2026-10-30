@@ -3,7 +3,7 @@ import { t } from '../i18n';
 import { log } from '../lib/log';
 import { contactHref, planErrorNotice, planKind } from '../lib/plan';
 import { platform } from '../platform';
-import { iosNativeShell } from '../platform/nativeShell';
+import { inNativeShell } from '../platform/nativeShell';
 import { useSession } from '../stores/session';
 import { useToasts, type ToastAction } from '../stores/toasts';
 import { useWorkspaces } from '../stores/workspaces';
@@ -19,11 +19,11 @@ export function workspacePlan(workspaceId: string | null | undefined): Workspace
 }
 
 /**
- * Purchases, prices and sales offers: everywhere but the iOS shell (App Store rules, owner
- * 2026-10-10; platform/nativeShell). The Android shell, browsers and the desktop keep them.
+ * Purchases, prices and sales offers: everywhere but a native shell, iOS or Android (owner
+ * 2026-10-30, docs/adr/0148; platform/nativeShell). Browsers, the PWA and the desktop keep them.
  */
 export function planOffersAllowed(): boolean {
-  return !iosNativeShell();
+  return !inNativeShell();
 }
 
 /** «Связаться для покупки» target (READY.plan_contact), or null when the server gave none usable. */

@@ -146,7 +146,7 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
  * «Сменить тариф» (owner, 10.10): the plans comparison opens over settings from here — the plan
  * badge leads to this tab. A plan a superadmin assigned is not changed by self-serve (ADR-0086):
  * the note with «Написать в поддержку» instead. BILLING_MANAGE only (ADR-0087; the owner has it),
- * never in the iOS shell (App Store rules); primitive selectors.
+ * never in a native shell, iOS or Android (docs/adr/0148); primitive selectors.
  */
 function PlanSwitch({ workspaceId }: { workspaceId: string }): ReactNode {
   const owner = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n && billingPaymentsAllowed();

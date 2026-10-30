@@ -103,8 +103,8 @@ export function PlansDialog({
   onClose: () => void;
 }): ReactNode {
   const toCabinet = useCallback(() => (inSettings ? onClose() : openCabinet(workspaceId)), [inSettings, onClose, workspaceId]);
-  // ADR-0087: plan changes are BILLING_MANAGE (the owner has it); in the iOS shell nobody sees
-  // prices or pay paths (App Store rules) — the read-only view with a neutral line instead.
+  // ADR-0087: plan changes are BILLING_MANAGE (the owner has it); in a native shell, iOS or Android,
+  // nobody sees prices or pay paths (docs/adr/0148) — the read-only view with a neutral line instead.
   const manage = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n;
   const payHere = billingPaymentsAllowed();
   const owner = manage && payHere;
@@ -225,8 +225,8 @@ export function PlansDialog({
 
 /**
  * Without BILLING_MANAGE: the plan and the state, «управляет владелец или тот, кому он дал право»,
- * the limits in settings. `elsewhere`: a MANAGE holder in the iOS shell — the neutral «Управление
- * оплатой доступно в веб-версии и на компьютере», no link (App Store anti-steering).
+ * the limits in settings. `elsewhere`: a MANAGE holder in a native shell, iOS or Android — the neutral
+ * «Управление оплатой доступно в веб-версии и на компьютере», no link (docs/adr/0148, anti-steering).
  */
 function MemberView({ workspaceId, state, elsewhere, onClose }: { workspaceId: string; state: BillingState; elsewhere: boolean; onClose: () => void }): ReactNode {
   const plan = useWorkspaces((s) => workspacePlanName(s.byId[workspaceId]?.ws.plan));

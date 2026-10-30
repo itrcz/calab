@@ -20,7 +20,7 @@ import { Countdown, MoneyText } from './parts';
  * for BILLING_VIEW holders (the owner has every billing bit), «Оплатить» for TOPUP holders; the
  * suspension — TOPUP holders (they keep the billing routes under it) get what to pay and the
  * buttons, everyone else «Пространство приостановлено. Обратитесь к владельцу». No pay buttons in
- * the iOS shell (App Store rules). State comes from Workspace.billing (every member, no amounts);
+ * a native shell, iOS or Android (docs/adr/0148). State comes from Workspace.billing (every member, no amounts);
  * the amounts from GET …/billing. Selectors are primitives (no re-render on a presence / voice
  * change); the countdown is its own leaf.
  */
@@ -61,7 +61,7 @@ export function BillingBanner(): ReactNode {
 /**
  * The restricted mode «тариф не активен» (ADR-0086 amendment, owner 10.10): the same line for
  * everyone; a BILLING_MANAGE holder gets «Подключить тариф» (the plans) and «Перейти на Free»
- * (the quote, which lists what does not fit Free). No pay buttons in the iOS shell (App Store rules).
+ * (the quote, which lists what does not fit Free). No pay buttons in a native shell, iOS or Android (docs/adr/0148).
  */
 function LapsedBanner({ workspaceId }: { workspaceId: string }): ReactNode {
   const manage = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n;
@@ -146,7 +146,7 @@ function DebtBanner({ id }: { id: string | null }): ReactNode {
 /**
  * The desktop shell's content while the workspace is closed for unpaid billing (instead of the
  * rooms and the chat, which the server refuses anyway): TOPUP holders (the owner included) — the
- * debt, «Пополнить» and the cabinet (a neutral line instead in the iOS shell); members — a short note.
+ * debt, «Пополнить» and the cabinet (a neutral line instead in a native shell, iOS or Android — docs/adr/0148); members — a short note.
  */
 export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactNode {
   const bits = useBillingBits(workspaceId);
@@ -195,7 +195,7 @@ export function BillingPaywall({ workspaceId }: { workspaceId: string }): ReactN
                 <p className="text-caption text-faint">{t('billing.paywall.after')}</p>
               </>
             ) : (
-              // The iOS shell (App Store rules): a neutral line, no button and no link.
+              // A native shell, iOS or Android (docs/adr/0148): a neutral line, no button and no link.
               <p className="text-caption text-muted" data-testid="billing-payments-elsewhere">
                 {t('billing.paymentsElsewhere')}
               </p>

@@ -1,8 +1,10 @@
 /*
- * Which native phone shell hosts this web client (apps/mobile, ADR-0067), if any. The App Store
- * forbids payment UI that bypasses in-app purchase in the iOS shell, so purchases, prices and
- * money actions hide there; the Android shell, every browser (Safari on an iPhone included) and
- * the desktop keep them (owner, 2026-10-10).
+ * Which native phone shell hosts this web client (apps/mobile, ADR-0067), if any, and whether any
+ * native shell hosts it at all (`inNativeShell`). Purchases, prices and money actions hide in
+ * every native shell, iOS and Android alike (owner, 2026-10-30, docs/adr/0148: the App Store rule
+ * against payment UI that bypasses in-app purchase started it for iOS; Android gets the same
+ * treatment until store billing there is decided). Every browser (Safari on an iPhone included),
+ * the PWA and the desktop keep purchases, prices and money actions.
  *
  * Two independent signals, either is enough:
  *  1. the native host bridge `window.CalabHostActivity` (declared only by the shell, main frame
@@ -29,7 +31,7 @@ interface ShellBridge {
 
 export function detectNativeShell(bridge: ShellBridge | undefined, userAgent: string): NativeShell {
   if (bridge == null) return shellFromUserAgent(userAgent);
-  // Any bridge is a shell, whatever its version: a newer handshake must not show payments in iOS.
+  // Any bridge is a shell, whatever its version: a newer handshake must not show payments (ADR-0148).
   const androidUa = /\bAndroid\b/i.test(userAgent);
   if (androidUa && bridge.platform !== 'ios') return 'android';
   return 'ios';
@@ -48,8 +50,8 @@ export function nativeShell(): NativeShell {
   return cached;
 }
 
-/** The iOS shell: no payment UI, no prices, no links to pay elsewhere (anti-steering). */
-export const iosNativeShell = (): boolean => nativeShell() === 'ios';
+/** Any native shell, iOS or Android: no payment UI, no prices, no links to pay elsewhere (ADR-0148). */
+export const inNativeShell = (): boolean => nativeShell() !== null;
 
 /** Tests only. */
 export function resetNativeShellForTests(): void {

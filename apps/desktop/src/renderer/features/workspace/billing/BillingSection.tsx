@@ -20,7 +20,7 @@ import { Note } from './parts';
  * Balance billing in workspace settings → «Тариф» (ADR-0080 v5 §13, ADR-0087). Money is seen by
  * BILLING_VIEW (the owner has all three bits): the cabinet — balance, plan, payer, history — with
  * the actions of the bits held: «Пополнить» for TOPUP, plan changes / auto-topup / saved cards /
- * payer / refund requests for MANAGE; none of them in the iOS shell (App Store rules). Members
+ * payer / refund requests for MANAGE; none of them in a native shell, iOS or Android (docs/adr/0148). Members
  * without VIEW see a stub without amounts (the server sends no summary). 501 (billing off) and 404
  * (no billing account) render nothing and are not retried by events — the plan tab stays as it was.
  */
@@ -38,7 +38,7 @@ export function BillingCabinet({ workspaceId, summary, state }: { workspaceId: s
   return (
     <div className="flex flex-col gap-6" data-testid="billing-cabinet">
       <BalanceCard workspaceId={workspaceId} summary={summary} state={state} payments={payments} topup={topup} manage={manage} onTopup={onTopup} onQuote={onQuote} />
-      {/* The iOS shell: no auto-topup or saved-card management, no payer form (App Store rules). */}
+      {/* A native shell, iOS or Android: no auto-topup or saved-card management, no payer form (docs/adr/0148). */}
       {payments && summary.methods.some((m) => m.autoTopupCapable) ? <AutoTopupCard workspaceId={workspaceId} summary={summary} payments={manage} /> : null}
       {payments ? <PayerCard workspaceId={workspaceId} payer={summary.payer} market={summary.market} payments={manage} /> : null}
       <HistoryCard workspaceId={workspaceId} currency={currencyOf(summary)} payments={manage} />

@@ -47,7 +47,7 @@ export function BalanceCard({
   workspaceId: string;
   summary: BillingSummary;
   state: BillingState;
-  /** Payment UI offered on this client (not in the iOS shell). */
+  /** Payment UI offered on this client (not in a native shell). */
   payments: boolean;
   /** BILLING_TOPUP here: «Пополнить» (ADR-0087). */
   topup: boolean;
@@ -63,7 +63,7 @@ export function BalanceCard({
   const plan = billingPlan(s.plan);
   // ADR-0086 «Индивидуальный тариф»: its own name and price; a plan a superadmin assigned is not
   // changed or stopped here (top-ups and a paid resume after a debt still are). Its price rows are
-  // not shown in the iOS shell (ADR-0087 §10: name and status only).
+  // not shown in a native shell (ADR-0087 §10, docs/adr/0148: name and status only).
   const custom = s.plan === Plan.CUSTOM;
   const customName = useWorkspaces((st) => (custom ? (st.byId[workspaceId]?.ws.plan?.displayName ?? '') : ''));
   const assigned = useBilling((st) => !!st.byWs[workspaceId]?.data?.adminAssigned);
