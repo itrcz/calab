@@ -15,7 +15,7 @@ x-pg: &pg
   cpus: 0.5
 
 x-valkey: &valkey
-  image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+  image: valkey/valkey:9-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
   command: [valkey-server, --save, '', --appendonly, 'no']
   healthcheck:
     test: [CMD, valkey-cli, ping]
@@ -29,13 +29,13 @@ services:
   pg18:
     <<: *pg
     profiles: [core]
-    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     ports: ["127.0.0.1:${IDENTITY_TEST_PG18_PORT}:5432"]
     volumes: [pg18:/var/lib/postgresql]
   pg17:
     <<: *pg
     profiles: [pg17]
-    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     ports: ["127.0.0.1:${IDENTITY_TEST_PG17_PORT}:5432"]
     volumes: [pg17:/var/lib/postgresql/data]
   valkey-qa:
@@ -83,7 +83,7 @@ services:
       start_period: 20s
   rtc:
     profiles: [rtc]
-    image: livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    image: livekit/livekit-server:v1.13@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
     command: [--dev, --bind, 0.0.0.0]
     ports:
       - "127.0.0.1:${IDENTITY_TEST_RTC_PORT}:7880"
