@@ -6,9 +6,11 @@
 
 **Tech stack:** Go/sqlc/protobuf, TypeScript React/Expo, SwiftUI/WidgetKit/Keychain.
 
-**Spec:** `docs/adr/0145-ios-calendar-widgets.md`.
+**Spec:** [ADR-0152](../adr/0152-ios-calendar-widgets.md).
 
-**Base:** origin/main 6dc586f0; isolated existing worktree, branch codex/ios-calendar-widgets-20261026. Preserve unrelated .gitignore edit. Integration refreshed to origin/main `5e71164e` on October 27; unreleased migration/ADR moved to `00131`/`0138`.
+**Current integration:** main `8b8a591ac3bb7cda0b298b243c14887f52e02257`, refreshed on 2026-10-31; ADR-0152 is the native-widget contract. Server prerequisites #261/#262 are already in main.
+
+**Historical base:** origin/main 6dc586f0; isolated existing worktree, branch codex/ios-calendar-widgets-20261026. Preserve unrelated .gitignore edit. Integration refreshed to origin/main `5e71164e` on October 27; unreleased migration/ADR moved to `00131`/`0138`.
 
 ## Global constraints
 

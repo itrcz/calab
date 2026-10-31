@@ -2,15 +2,25 @@
 
 Pre-split reviewed code: `88d62cbdfe662cd9e2db54f19588217387c62a4b`, integrated with `origin/main` at `5e71164edfb8bd85cc920194746eec1d1b1b29c3`. Physical build: `9757702c5e2132f68342398ebc628086db77f7df`; native widget code is unchanged by the integration apart from an ADR comment. Plan/spec: `7e26f7d1`; server contract: `d2e5aa10`. Status: implementation and source review complete, core physical scenarios passed; extended device and distribution gates remain. No production rollout or merge.
 
+## Rebase and ADR follow-up, 2026-10-31
+
+PR #253 is rebased onto main `8b8a591ac3bb7cda0b298b243c14887f52e02257`. The native-widget contract is now [ADR-0152](../adr/0152-ios-calendar-widgets.md); references in the plan, acceptance, rollout, backlog, plugin, environment example, testing guide and ADR index use that identifier. ADRs 0148–0151 from main are preserved.
+
+The rebase preserves main's Android notification module, document/logout handling, and notification/link-only capability announcement. iOS advertises the calendar capability separately. The host protocol regressions check both platforms with the widget flag enabled. The WebView patch retains main's Android origin guard and adds only the existing iOS widget message type; its lockfile patch hash was regenerated without changing upstream dependency versions or platform metadata.
+
+Fresh local checks passed: 248 mobile unit tests; all 17 plugin tests, including the Java origin guard with JDK 17; 32 focused shared-web/widget/notification tests; mobile and desktop typechecks; Swift DATE/DST/expiry and cross-process cache tests; iOS 16.4 Swift source typecheck; `make gen` with no generated-code drift. Final lint, build and exact-head CI results are recorded in the PR.
+
+The widget Swift sources are byte-for-byte unchanged from the previously tested PR head. Historical device/build/review results below apply only to their named revisions; the rebased host integration has no new physical-device or distribution-signing acceptance. Existing cold-start, StandBy, background-refresh, locale/timezone/first-unlock and signing limits remain. No merge, deployment or TestFlight upload is part of this follow-up.
+
 ## Maintainer follow-up, 2026-10-29
 
-Current runtime source: `2bb59b1f8ac67c635b15d3eaa5abef1148e5e47e`, based on main `2f574cf9e99f2b21022797b91a01e9a698f96527`. This section supersedes readiness claims for the earlier builds. PR #253 stays open; there is no merge, deployment or TestFlight upload.
+Runtime source for the October 29 evidence: `2bb59b1f8ac67c635b15d3eaa5abef1148e5e47e`, based on main `2f574cf9e99f2b21022797b91a01e9a698f96527`. This section supersedes readiness claims for the earlier builds, but does not validate the October 31 host integration. PR #253 stays open; there is no merge, deployment or TestFlight upload.
 
 | Maintainer request | Current evidence |
 | --- | --- |
 | Lock Screen / StandBy privacy | Implemented the conservative option: Lock Screen and background-free contexts render generic Meeting/Встреча plus time, never the title. Passed on the current physical build: the saved rectangular widget showed Meeting and 16:27–19:27 while the phone displayed the closed padlock; the private title was absent. Both independent Opus 5.5 reviews found no remaining code blocker/major. StandBy itself was not physically observed. |
 | EAS with widgets OFF and ON | Both real `eas build --local --platform ios --profile qa-ios` simulator builds succeeded. OFF had `CALAB_IOS_APP_GROUP` absent; ON had a registered QA group and scheme `calab`. Artifact inspection confirms no `CalabCalendar*` Info.plist keys in OFF app/extension and matching group/keychain/origin/scheme keys in ON. These builds test pod linking, not App Store signing. |
-| ADR / plan location | Calendar ADR is now 0148; 0146 remains the existing avatar-island ADR. The plan is in `docs/plans/2026-10-26-ios-calendar-widgets.md`; feature links and `.env.example` were updated. |
+| ADR / plan location | Calendar ADR is now 0152; 0146 remains the existing avatar-island ADR. The plan is in `docs/plans/2026-10-26-ios-calendar-widgets.md`; feature links and `.env.example` were updated. |
 | Production-scheme widget tap under Hermes | Passed on the current signed Release build 23 (`2bb59b1`): actual Today & Tomorrow widget taps opened the correct synthetic meetings on October 29 and October 30, with matching titles and 16:27–19:27 device-local times. The host/extension use scheme `calab`; the second tap exercised an already-running app. Replaced WHATWG URL/searchParams with strict bounded route/component parsing; tests cover missing URL globals, native unescaped timestamp colons, invalid encoding and duplicate keys. |
 
 Automated evidence on this revision or the identical runtime before the final type-narrowing guard: 236 mobile tests plus 10 plugin tests, focused shared-web/widget tests, desktop/mobile typechecks, production shared-web build, Swift typecheck targeting arm64 iOS 16.4, and `make gen` without generated-code drift. Both actual `claude-opus-5-5` review sessions confirmed no unresolved blocker/major at `2bb59b1`; they did not perform physical acceptance.
@@ -23,7 +33,7 @@ A new QA build was installed and the owner signed in. After an interruption, nat
 
 ## Review split, 2026-10-28
 
-The original implementation was rebased onto main `da3438bc8` and split for maintainer review: CalDAV DATE persistence (migration `00133`, ADR-0144), the session-bound feed/grant (ADR-0145), and native widgets/shared-web integration (ADR-0148). Swift widget/store runtime is unchanged from the device-tested implementation. The host now integrates main's phone links (ADR-0142): one initial/live URL path, both READY capabilities, and isolated custom-scheme configuration. These host integration changes require fresh checks and are not claimed as physically verified by the earlier build. The integration with the newer ONLYOFFICE migration history needs fresh checks; earlier physical observations below remain observations of the explicitly named development build.
+The original implementation was rebased onto main `da3438bc8` and split for maintainer review: CalDAV DATE persistence (migration `00133`, ADR-0144), the session-bound feed/grant (ADR-0145), and native widgets/shared-web integration (ADR-0152). Swift widget/store runtime is unchanged from the device-tested implementation. The host now integrates main's phone links (ADR-0142): one initial/live URL path, both READY capabilities, and isolated custom-scheme configuration. These host integration changes require fresh checks and are not claimed as physically verified by the earlier build. The integration with the newer ONLYOFFICE migration history needs fresh checks; earlier physical observations below remain observations of the explicitly named development build.
 
 The separate DATE change adds independent unit and PG17 import/storage tests. The server feed keeps its full HTTP permission/revocation/recurrence/date coverage. The PR descriptions carry current exact heads, check results and independent review confirmations. No production activation, new physical build or TestFlight upload is implied by this split.
 

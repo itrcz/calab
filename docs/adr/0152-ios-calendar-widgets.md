@@ -1,4 +1,4 @@
-# ADR-0148: Native iOS calendar widgets
+# ADR-0152: Native iOS calendar widgets
 
 Status: accepted for local implementation after Opus 5.5 plan review, 2026-10-26. Owner requested all four widgets, Opus 5.5 plan and implementation reviews, physical iPhone acceptance, and no autonomous merge.
 
