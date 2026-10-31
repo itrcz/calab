@@ -599,7 +599,7 @@ diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 +  }
 +  if (![_calabBridgeDocument isEqualToString:document]) return;
 +  if ([type isEqualToString:@"revoke"]) { if ([body[@"reason"] isEqual:@"logout"]) [NSNotificationCenter.defaultCenter postNotificationName:@"CalabHostSessionCleared" object:self]; [self calabRevokeAuthority]; [self calabForwardMessage:message]; }
-+  else if ([type isEqualToString:@"activity"] || [type isEqualToString:@"notifications"] || [type isEqualToString:@"calls"] || [type isEqualToString:@"permissions"]) [self calabForwardMessage:message];
++  else if ([type isEqualToString:@"activity"] || [type isEqualToString:@"notifications"] || [type isEqualToString:@"calls"] || [type isEqualToString:@"roomAudio"] || [type isEqualToString:@"permissions"]) [self calabForwardMessage:message];
 +}
 +#endif
 +

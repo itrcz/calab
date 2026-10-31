@@ -102,6 +102,8 @@ owner's iPhone and a desktop peer.
   `tests/VoiceGateTests.swift` (2-frame open, 400 ms hangover, ptt, open), `tests/ReconnectScheduleTests.swift`
   (worst-case delays + socket/transport timeouts < VOICE_LOST_GRACE 60 s; the SDK default does not
   fit), `plugins/withCallAudio.test.js` (flag on/off, no stale pod line).
+- Bridge: gate on the document natively as `CalabIncomingCallsModule.swift` `audioOperation` does,
+  serialize connect and disconnect, rate-limit operations, never force-unwrap the URL.
 - iPhone: G6, G8, G14 with a local web preview of R4 (no silent web deploy); G7 and G9 in stage 2.
 
 ### R4. Web voice service
@@ -114,6 +116,7 @@ owner's iPhone and a desktop peer.
   `renderer/lib/voiceLogic.ts` only if gate mapping needs it.
 - Tests: `lib/media/hostRoomAudio.test.ts`, `services/voice.test.ts` (one owner per join, no web
   capture, recovery paths skipped, fallback only before capture, state mapping, rejoin on `lost`).
+- Controls: clamp `userVolumes` to 1 as `nativeControls()` does for calls; one value above 1 drops the whole control.
 - Visual: one QA pass of the voice island and settings on iPhone width (hidden controls, reasons).
 
 ### R5. Server companion identity
@@ -141,6 +144,8 @@ owner's iPhone and a desktop peer.
 
 - Files: `ios/CalabSessionActivityModule.swift`, `ios/CalabVoiceAttributes.swift`, widget extension
   intent under `widgets/`, `plugins/withSessionActivity.js`; ADR-0069 status line points to 0149.
+- A thawed page's stale `muted:false` must not undo a native mute; if that needs a revision in the
+  contract, it comes with a capability bump here.
 - Tests: Swift merge rule (native phase/mute vs newer web snapshot), plugin test for the intent.
 - iPhone: G12, G13.
 

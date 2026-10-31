@@ -96,6 +96,46 @@ it('validates optional microphone sync and bounded native mute actions under the
  expect(parseCallsState({supported:true,actions:[{...action,muted:'yes'}]})).toBeNull();
 });
 
+describe('native room audio bridge (ADR-0149)', () => {
+  const connectionId = '33333333-3333-4333-8333-333333333333';
+  const value = { v: 1, type: 'roomAudio', host: 0, document, seq: 1, request: 2, operation: 'disconnect', connectionId };
+  const send = (protocol: ActivityProtocol, change: object = {}) => protocol.accept(JSON.stringify({ ...value, ...change }));
+  it('accepts only the current document in sequence and hands native the operation alone', () => {
+    const p = new ActivityProtocol(0);
+    expect(send(p)).toBeNull();
+    p.accept(hello());
+    expect(send(p)).toEqual({ type: 'roomAudio', document, request: 2, operation: { operation: 'disconnect', connectionId } });
+    expect(send(p)).toBeNull();
+    expect(send(p, { seq: 2, document: other })).toBeNull();
+    expect(send(p, { seq: 2, host: 1 })).toBeNull();
+    expect(send(p, { seq: 2, request: 0 })).toBeNull();
+    expect(send(p, { seq: 2, token: 'secret' })).toBeNull();
+    expect(send(p, { seq: 2, operation: 'nativeLogin' })).toBeNull();
+    expect(send(p, { seq: 2 })?.type).toBe('roomAudio');
+    expect(p.accept(JSON.stringify({ v: 1, type: 'revoke', host: 0, document, seq: 3 }))).toEqual({ type: 'end' });
+    expect(send(p, { seq: 4 })).toBeNull();
+  });
+  it('advertises the capability only when iOS native reports support', () => {
+    const bridge = (nativeAudio: boolean, platform: 'ios' | 'android', roomAudio?: boolean) => {
+      const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
+      top.top = top;
+      runInNewContext(activityBootstrap(3, nativeAudio, platform, roomAudio), { window: top, crypto: top.crypto });
+      return top.CalabHostActivity as Record<string, unknown>;
+    };
+    expect(bridge(true, 'ios').roomAudioVersion).toBeUndefined();
+    expect(bridge(true, 'ios', false).roomAudioVersion).toBeUndefined();
+    expect(bridge(false, 'ios', true).roomAudioVersion).toBe(1);
+    expect(bridge(false, 'android', true).roomAudioVersion).toBeUndefined();
+    expect(activityBootstrap(3)).not.toContain('roomAudioVersion');
+  });
+  it('leaves the bootstrap of a build without room audio byte-identical', () => {
+    const line = (calls: string) => `value: Object.freeze({version: 1, notificationsVersion: 1, notificationsTestVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${calls} platform: 'ios', host: 3, get document() { return documentId; },`;
+    expect(activityBootstrap(3, false, 'ios')).toContain(line(''));
+    expect(activityBootstrap(3, true, 'ios')).toContain(line('callsAudioVersion: 1,'));
+    expect(activityBootstrap(3, true, 'ios', true)).toContain(line('callsAudioVersion: 1, roomAudioVersion: 1,'));
+  });
+});
+
 describe('host link event (ADR-0142)', () => {
   it('advertises links in the ack and dispatches the exact detail the page checks', () => {
     expect(activityReady(0, document)).toContain('"links":1');
