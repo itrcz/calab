@@ -97,8 +97,9 @@ activate before enabling the engine, deactivate with `.notifyOthersOnDeactivatio
 - Interruption began: `interrupted`, track muted (others see muted, not frozen), engine off; with a
   phone call (`CXCallObserver`) web sets `on_phone` (ADR-0133). Ended: reactivate even without
   `.shouldResume` (we are mixable); the mic stays muted after a call, else the intent returns.
-- Route change: re-read the route kind; `.categoryChange` while we own the session re-applies our
-  configuration and is counted (WebKit or the SDK changed it). Media-services reset: rebuild
+- Route change: re-read the route kind; `.categoryChange` that left the session different from our
+  configuration re-applies it and is counted (WebKit or the SDK changed it). Our own `setCategory`
+  posts the same event, so a matching session is left alone. Media-services reset: rebuild
   session, engine and publication, else `failed(audio)` and web rejoins. Foreground: verify
   category, activation and engine. Unmuted capture without frames for 3 s restarts the engine once.
 - One engine owner (`CalabAudioOwner`): `AudioManager.shared` (engine, mute mode, ducking, delegate)
