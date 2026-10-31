@@ -1,10 +1,12 @@
 import type { HostCallsOperation } from '../../desktop/src/shared/hostCalls';
 import type { MediaPermissionsOperation } from '../../desktop/src/shared/hostPermissions';
+import type { HostRoomAudioOperation } from '../../desktop/src/shared/hostRoomAudio';
 import { parseHostActivityMessage, type SessionActivitySnapshot } from '../../desktop/src/shared/hostActivity';
 
 export type ActivityAction =
   | ({ type: 'permissions'; document: string; request: number } & MediaPermissionsOperation)
   | ({ type:'calls'; document:string; request:number } & HostCallsOperation)
+  | { type: 'roomAudio'; document: string; request: number; operation: HostRoomAudioOperation }
   | { type: 'ready'; document: string }
   | { type: 'publish'; document: string; snapshot: SessionActivitySnapshot }
   | { type: 'end'; reason?: 'logout' }
@@ -44,6 +46,11 @@ export class ActivityProtocol {
     this.sequence = message.seq;
     if (message.type === 'revoke') { this.reset(); return message.reason === 'logout' ? { type: 'end', reason: 'logout' } : { type: 'end' }; }
     if (message.type === 'calls') return { ...message, type:'calls' };
+    if (message.type === 'roomAudio') {
+      // Native rejects unknown fields: it gets the operation without the envelope.
+      const { v, type, host, seq, document, request, ...operation } = message;
+      return { type, document, request, operation };
+    }
     if (message.type === 'permissions') return { ...message, type: 'permissions' };
     if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}), ...(message.body ? { body: message.body } : {}) };
     if (message.snapshot.generation < this.generation) return null;
@@ -59,10 +66,11 @@ export class ActivityProtocol {
  * user agent is Android (apps/desktop platform/nativeShell.ts). The Android host implements
  * notifications and links only: it does not advertise media permissions or calls, so the web
  * keeps its browser paths for those instead of waiting for replies (ADR-0070, Android).
+ * `roomAudio` is what the iOS native module reports (ADR-0149): without it rooms stay on the web path.
  */
-export function activityBootstrap(host: number, nativeAudio = false, platform: 'ios' | 'android' | null = null): string {
+export function activityBootstrap(host: number, nativeAudio = false, platform: 'ios' | 'android' | null = null, roomAudio = false): string {
   const ios = platform !== 'android';
-  const capabilities = ios ? `mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}` : '';
+  const capabilities = ios ? `mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}${roomAudio ? ' roomAudioVersion: 1,' : ''}` : '';
   return `(() => {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
     let documentId = crypto.randomUUID();

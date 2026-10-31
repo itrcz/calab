@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { ROOM_AUDIO_CUES } from '../../shared/hostRoomAudio';
+import manifest from '../assets/sounds/manifest.json';
 import { FILE_SOUNDS, SAMPLE_RATE, SOUNDS, SOUND_EVENTS, createGate, durationMs, synth } from './sounds';
 
 describe('event sounds', () => {
@@ -7,6 +9,10 @@ describe('event sounds', () => {
       expect(SOUNDS[name].length).toBeGreaterThan(0);
       expect(durationMs(name)).toBeLessThanOrEqual(300);
     }
+  });
+
+  it('names every event and built-in clip in the native room audio cues (ADR-0149)', () => {
+    expect([...ROOM_AUDIO_CUES].sort()).toEqual([...SOUND_EVENTS, ...manifest.sounds.map(s => `builtin:${s.id}`)].sort());
   });
 
   it('synthesises click-free PCM within the headroom', () => {
