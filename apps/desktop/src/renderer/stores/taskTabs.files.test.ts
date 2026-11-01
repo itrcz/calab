@@ -18,7 +18,7 @@ describe('file tabs share the strip with the task tabs (ADR-0143)', () => {
 
   it('a plain task open never replaces a file tab', () => {
     const s = reduceActivate({ tabs: [file('x'), task('a')], cur: 'f:x' }, task('b'));
-    expect(ids(s)).toEqual(['f:x', 'a', 'b']);
+    expect(ids(s)).toEqual(['f:x', 'a']);
   });
 
   it('holds at most MAX_TABS in total; the oldest other tab goes quietly', () => {

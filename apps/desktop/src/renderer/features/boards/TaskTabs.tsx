@@ -42,7 +42,7 @@ export function tabClick(id: string, e: Pick<MouseEvent, 'metaKey' | 'ctrlKey' |
 /**
  * The open tasks and office files (ADR-0143) as browser tabs in ONE strip in the title bar (desktop only; #93 follow-up): they stay in
  * every section (Disk, Calendar, chats…), so a task is one click away for a demo. Follows the open
- * task: a plain open replaces the current tab (stores/taskTabs.ts). Renders nothing without tabs —
+ * task: a plain open of a task without a tab creates none (#137; stores/taskTabs.ts). Renders nothing without tabs —
  * no empty bar. Each tab is a leaf with its own subscriptions; no timers.
  */
 export const TaskTabs = memo(function TaskTabs(): ReactNode {
