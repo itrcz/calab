@@ -117,6 +117,10 @@ DEV-5031/DEV-5033. Канал host включён и на Android; сообще�
   `notificationsTestVersion`, `platform: 'android'`; ack — `notifications: 1, links: 1`.
   `mediaPermissionsVersion` и `calls*` не объявляются, поэтому веб сразу идёт обычными путями
   браузера, без таймаутов. Live Activity на Android нет (capability `notifications`).
+  С 2026-11-01 (доска #141) Android также объявляет `mediaSessionVersion` / ack `mediaSession: 1`:
+  веб сообщает `media` (`room`/`call`/`none`), хост держит foreground service типа microphone,
+  действие уведомления возвращается событием `calab-host-media` (`leave`). Полномочий у него нет:
+  страница лишь выходит из своей голосовой сессии. Подробности — shared-web-status.md.
 - **Ссылки.** `calab-host-link` работает и на Android: ссылка в уже открытую страницу
   открывается на месте, без remount и обрыва звонка. Remount остаётся до handshake
   (ограничение ADR-0142 для Android снято).
