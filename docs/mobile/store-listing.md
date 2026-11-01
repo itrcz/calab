@@ -356,7 +356,7 @@ Contact: support@calab.io, <OWNER_PHONE>
 ### 4.5 Разрешения
 
 Из `app.config.ts`:
-`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `CAMERA`, `POST_NOTIFICATIONS`; из модуля `calab-session-activity/android/src/main/AndroidManifest.xml`: `POST_NOTIFICATIONS` (дубль). Foreground service и `USE_FULL_SCREEN_INTENT` нигде не объявлены (поиск по `apps/mobile`).
+`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `CAMERA`, `POST_NOTIFICATIONS`; из модуля `calab-session-activity/android/src/main/AndroidManifest.xml`: `POST_NOTIFICATIONS` (дубль), `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE` и сервис `CalabMediaSessionService` с `foregroundServiceType="microphone"` (доска #141). `FOREGROUND_SERVICE_PHONE_CALL` и `USE_FULL_SCREEN_INTENT` не объявлены: Telecom/ConnectionService нет.
 
 | Разрешение | Зачем (текст для Play и пользователя) | Декларация в Play Console | Основание |
 |------------|----------------------------------------|---------------------------|-----------|
@@ -364,8 +364,28 @@ Contact: support@calab.io, <OWNER_PHONE>
 | `CAMERA` | Видео в звонках и фото для сообщений | форма не нужна | [код] |
 | `MODIFY_AUDIO_SETTINGS` | Маршрутизация аудио в звонке (динамик/гарнитура) | обычное разрешение, форма не нужна | [код] |
 | `POST_NOTIFICATIONS` | Android 13+: уведомления о сообщениях и звонках; запрашивается только через запрос веб-клиента | форма не нужна | [код] `CalabPush.kt` (`SDK_INT < 33` отсекает) |
-| Foreground service (`FOREGROUND_SERVICE_MICROPHONE`, `…_PHONE_CALL`) | **не объявлены**. Идущий звонок на Android в фоне без foreground service ОС может заглушить микрофон; на iOS это решено `UIBackgroundModes audio`. | Если добавим FGS — Play потребует декларацию типа и видео-демонстрацию | [код: нет в manifest] [?] функциональный риск, не блокер листинга; отдельная задача «Android: foreground service для идущего звонка» |
-| Прочие из шаблона Expo (`READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `SYSTEM_ALERT_WINDOW`, `VIBRATE`) | В итоговый manifest могут попасть из шаблона/библиотек. Приложение их не использует | `READ_EXTERNAL_STORAGE`/`SYSTEM_ALERT_WINDOW` вызывают вопросы ревью | [?] проверить итоговый manifest сборки (`aapt2 dump permissions app-release.aab`/`bundletool`) и убрать лишние через `android.blockedPermissions` в `app.config.ts` |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE` | Микрофон остаётся у приложения, пока пользователь в голосовой комнате или звонке и приложение свёрнуто. Сервис стартует только при входе (приложение на экране), показывает постоянное уведомление и останавливается при выходе | **Да**: Play Console → App content → Foreground service permissions, тип Microphone (текст и видео ниже) | [код] `CalabMediaSession.kt`, доска #141 |
+| `FOREGROUND_SERVICE_PHONE_CALL` | не объявлен: нет Telecom/ConnectionService (ADR-0071 Android, v2) | — | [код] |
+| `VIBRATE` (из шаблона Expo) | Тактильный отклик веб-клиента (`navigator.vibrate`) | форма не нужна | [код] `lib/haptics.ts` |
+| `WRITE_EXTERNAL_STORAGE` (шаблон, `maxSdkVersion=32`) | Только Android ≤ 9: скачивание файла из чата (react-native-webview просит его на ≤ API 28) | форма не нужна | [код] библиотека WebView |
+| `READ_EXTERNAL_STORAGE`, `SYSTEM_ALERT_WINDOW` (шаблон Expo) | **Убраны** `android.blockedPermissions` (`tools:node="remove"`): загрузка файлов идёт через системный выбор, поверх других приложений ничего не рисуем | — | [код] `app.config.ts`; [?] сверить итоговый manifest сборки (`aapt2 dump permissions`/`bundletool dump manifest`) |
+
+**Декларация foreground service для Play Console (тип Microphone, черновик, en).**
+
+- *Feature:* «Voice rooms and one-to-one calls. While the user is in a voice room or a call and
+  switches to another app or locks the screen, Calab keeps capturing the microphone so the
+  conversation continues.»
+- *Why it must start immediately and cannot be paused or deferred:* «The user is in a live
+  conversation; stopping capture would mute them for the other participants. The service runs only
+  between joining and leaving, starts only when the user joins while the app is on screen, shows an
+  ongoing notification («You are in a voice room» / «Call in progress») with a Leave/End action, and
+  stops on leave, sign-out or when the app is closed.»
+- *User impact if deferred or interrupted by the system:* «Other participants stop hearing the user
+  mid-conversation without any indication.»
+- *Video (≤ 30 s, unlisted YouTube link):* войти демо-аккаунтом → открыть голосовую комнату →
+  нажать «Войти» (разрешить микрофон) → свернуть приложение: видно уведомление «Calab — вы в
+  голосовой комнате» → второе устройство слышит говорящего → «Выйти» в уведомлении → уведомление
+  исчезло, участник вышел. Снимать после проверки по чек-листу shared-web-status.md (доска #141).
 
 ### 4.6 Target SDK
 
