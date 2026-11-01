@@ -2,12 +2,12 @@ import { parseCalendarWidgetAction, type CalendarWidgetAction } from '../../shar
 import { parseCalendarWidgetOperation, type CalendarWidgetOperation, type HostCalendarWidgetCapability } from '../../shared/hostCalendarWidget';
 import { parseCallsState, type HostCallsCapability, type HostCallsOperation, type HostCallsState } from '../../shared/hostCalls';
 import { parseMediaPermissionsState, unavailableMediaPermissions, type HostMediaPermissionsCapability, type MediaPermissionsOperation, type MediaPermissionsReply, type MediaPermissionsState } from '../../shared/hostPermissions';
-import { hostLinkRoute, parseNotificationState, parseNotificationTestResult, type HostNotificationTestResult, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
+import { hostLinkRoute, parseNotificationState, parseNotificationTestResult, type HostMediaSession, type HostMediaSessionCapability, type HostNotificationTestResult, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
 export interface HostActivityBridge {
   calendarWidgetVersion?: number;
   mediaPermissionsVersion?: number;
-  version: number; host: number; document: string; platform?: string; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
+  version: number; host: number; document: string; platform?: string; mediaSessionVersion?: number; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
   rotateDocument(): void;
   send(data: string): void;
 }
@@ -35,6 +35,7 @@ export function createHostCapabilities(win: Window = window): {
   calendarWidget?: HostCalendarWidgetCapability;
   mediaPermissions?: HostMediaPermissionsCapability;
   sessionActivity?: SessionActivityCapability; notifications?: HostNotificationsCapability; incomingCalls?: HostCallsCapability;
+  mediaSession?: HostMediaSessionCapability;
 } {
   const bridge = win.CalabHostActivity;
   if (!bridge || bridge.version !== 1) return {};
@@ -44,6 +45,10 @@ export function createHostCapabilities(win: Window = window): {
   let permissionsEnabled = false;
   let linksEnabled = false;
   let calendarEnabled = false;
+  let mediaEnabled = false;
+  // The page's voice session outlives a document rotation: the next handshake re-sends it.
+  let media: { session: HostMediaSession; language: 'ru' | 'en' } | null = null;
+  const leaveListeners = new Set<() => void>();
   let calendarTap = 0;
   let calendarOpen: CalendarWidgetAction | null = null;
   const calendarOpenListeners = new Set<(action: CalendarWidgetAction) => void>();
@@ -59,7 +64,7 @@ export function createHostCapabilities(win: Window = window): {
   const permissions = new Map<number, { operation: MediaPermissionsOperation; resolve: (reply: MediaPermissionsReply) => void; timer: ReturnType<typeof setTimeout> }>();
   const permissionListeners = new Set<(state: MediaPermissionsState) => void>();
   const calendarPending = new Map<number, { operation: CalendarWidgetOperation; resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
-  const send = (type: 'calendarWidget' | 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls' | 'permissions', fields: object = {}) => {
+  const send = (type: 'calendarWidget' | 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls' | 'permissions' | 'media', fields: object = {}) => {
     const base = { v: 1, type, host: bridge.host, document: bridge.document };
     bridge.send(JSON.stringify(type === 'hello' ? base : { ...base, seq: ++sequence, ...fields }));
   };
@@ -92,6 +97,7 @@ export function createHostCapabilities(win: Window = window): {
     permissionsEnabled = false;
     linksEnabled = false;
     calendarEnabled = false;
+    mediaEnabled = false;
     settle();
   };
   win.addEventListener('calab-host-activity-ready', (event) => {
@@ -105,10 +111,12 @@ export function createHostCapabilities(win: Window = window): {
     permissionsEnabled = a.permissions === 1;
     linksEnabled = a.links === 1;
     calendarEnabled = a.calendarWidget === 1;
+    mediaEnabled = a.mediaSession === 1;
     if (pendingLogout) { pendingLogout = false; revoke('logout'); return; }
     if (a.calendarWidget === 1) for (const [request, p] of calendarPending) send('calendarWidget', { request, ...p.operation });
     else { for (const p of calendarPending.values()) { clearTimeout(p.timer); p.resolve(false); } calendarPending.clear(); }
     if (latest && activityEnabled) send('activity', { snapshot: latest });
+    if (media && media.session !== 'none' && mediaEnabled) send('media', media);
     if (a.notifications === 1) for (const [request, p] of pending) send('notifications', { request, operation: p.operation });
     else { for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ permission: 'unsupported' }); } pending.clear(); }
     if (a.notifications === 1) for (const [request, p] of tests) send('notifications', { request, operation: 'test', body: p.body });
@@ -117,6 +125,15 @@ export function createHostCapabilities(win: Window = window): {
     else { for (const p of permissions.values()) { clearTimeout(p.timer); p.resolve({ state: unavailableMediaPermissions() }); } permissions.clear(); }
     if(a.calls===1)for(const [request,p] of callsPending)send('calls',{request,...p.operation});
     else { for(const p of callsPending.values()){clearTimeout(p.timer);p.resolve({state:{supported:false}});} callsPending.clear(); }
+  });
+  // «Выйти» / «Завершить» on the Android host's ongoing notification (board #141). No authority:
+  // the page only leaves its own voice session, as its own hang-up button would.
+  win.addEventListener('calab-host-media', event => {
+    const raw: unknown = (event as CustomEvent<unknown>).detail;
+    if (!ready || !mediaEnabled || !raw || typeof raw !== 'object') return;
+    const e = raw as Record<string, unknown>;
+    if (Object.keys(e).length !== 4 || e.v !== 1 || e.host !== bridge.host || e.document !== bridge.document || e.action !== 'leave') return;
+    for (const listener of leaveListeners) listener();
   });
   win.addEventListener('calab-host-calendar-open', event => {
     const v = (event as CustomEvent<unknown>).detail;
@@ -242,6 +259,14 @@ export function createHostCapabilities(win: Window = window): {
       refresh: () => requestCalendar({ operation: 'refresh' }),
       clear: () => requestCalendar({ operation: 'clear' }),
     } satisfies HostCalendarWidgetCapability } : {}),
+    ...(bridge.mediaSessionVersion === 1 ? { mediaSession: {
+      set(session, language) {
+        media = { session, language };
+        if (ready) { if (mediaEnabled) send('media', media); }
+        else if (session !== 'none') send('hello');
+      },
+      onLeave(listener) { leaveListeners.add(listener); return () => { leaveListeners.delete(listener); }; },
+    } satisfies HostMediaSessionCapability } : {}),
     sessionActivity: {
       publish(snapshot) {
         latest = snapshot;
