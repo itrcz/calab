@@ -40,6 +40,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { ChangeEmailDialog, ChangePasswordDialog } from './CredentialDialogs';
+import { DeleteAccountDialog } from './DeleteAccountDialog';
 import { LicenseCard } from '../legal/Legal';
 import { HotkeyRow } from './HotkeyRow';
 import { SettingsFooter } from './SettingsFooter';
@@ -216,6 +217,24 @@ function ProfileTab(): ReactNode {
       <AfkCard />
       {/* Guest accounts do not install sticker packs (ADR-0030 §4). */}
       {u.isGuest ? null : <MyStickersCard />}
+      {/* ADR-0153: last on the page; a guest account has no password and expires by itself. */}
+      {u.isGuest ? null : <DeleteAccountCard />}
+    </>
+  );
+}
+
+function DeleteAccountCard(): ReactNode {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Card title={t('account.delete.card')}>
+        <Row label={t('account.delete.row')} hint={t('account.delete.rowHint')}>
+          <Button variant="destructive" aria-label={t('account.delete.row')} onClick={() => setOpen(true)} data-testid="delete-account">
+            {t('account.delete.open')}
+          </Button>
+        </Row>
+      </Card>
+      {open ? <DeleteAccountDialog onClose={() => setOpen(false)} /> : null}
     </>
   );
 }

@@ -227,6 +227,17 @@ message ChangePasswordRequest {
   string new_password = 2; // 8..256 characters
 }
 
+// POST /api/me/delete → 204 (ADR-0153): deletes the caller's own account at once and for good.
+// The account becomes an anonymous tombstone ("Удалённый пользователь"): profile, sessions, push
+// devices, notes and identity links are erased; messages and files in workspaces and DMs stay with
+// that author. Local-account session only (like a password change); bots, guests and on-behalf
+// requests get 403. 403 INVALID_CREDENTIALS: wrong current password (the 5 / 15 min bucket of
+// password checks); 409 CONFLICT reason "OWNS_WORKSPACES": the caller owns workspaces, which must
+// be deleted first.
+message DeleteAccountRequest {
+  string current_password = 1;
+}
+
 // PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices).
 // ADR-0023: the address does not change yet — a 6-digit code goes to the new address and
 // me.pending_email is set; POST /api/auth/verify {code} makes it the login email (verified).

@@ -52,7 +52,8 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
    * "CHECKLIST_LIMIT", "CHECKLIST_ITEM_LIMIT" = CONFLICT on the 51st board category, the 11th
    * checklist of a task, the 101st item of a checklist (ADR-0058); "IDENTITY_NOT_CONFIGURED" =
    * CONFLICT on an SSO / directory / OAuth provider route of a server without the identity
-   * operator configuration (ADR-0054: IDENTITY_PUBLIC_ORIGIN and keyrings). Absent otherwise.
+   * operator configuration (ADR-0054: IDENTITY_PUBLIC_ORIGIN and keyrings); "OWNS_WORKSPACES" =
+   * CONFLICT on POST /api/me/delete while the caller owns a workspace (ADR-0153). Absent otherwise.
    *
    * @generated from field: optional string reason = 4;
    */

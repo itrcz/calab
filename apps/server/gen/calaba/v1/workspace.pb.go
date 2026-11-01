@@ -192,6 +192,7 @@ const (
 	FormerMemberReason_FORMER_MEMBER_REASON_BANNED             FormerMemberReason = 3
 	FormerMemberReason_FORMER_MEMBER_REASON_GUEST_EXPIRED      FormerMemberReason = 4 // a guest inactive for GUEST_INACTIVITY (ADR-0098)
 	FormerMemberReason_FORMER_MEMBER_REASON_DIRECTORY_DISABLED FormerMemberReason = 5 // disabled in the workspace directory
+	FormerMemberReason_FORMER_MEMBER_REASON_ACCOUNT_DELETED    FormerMemberReason = 6 // the user deleted their account (ADR-0153)
 )
 
 // Enum value maps for FormerMemberReason.
@@ -203,6 +204,7 @@ var (
 		3: "FORMER_MEMBER_REASON_BANNED",
 		4: "FORMER_MEMBER_REASON_GUEST_EXPIRED",
 		5: "FORMER_MEMBER_REASON_DIRECTORY_DISABLED",
+		6: "FORMER_MEMBER_REASON_ACCOUNT_DELETED",
 	}
 	FormerMemberReason_value = map[string]int32{
 		"FORMER_MEMBER_REASON_UNSPECIFIED":        0,
@@ -211,6 +213,7 @@ var (
 		"FORMER_MEMBER_REASON_BANNED":             3,
 		"FORMER_MEMBER_REASON_GUEST_EXPIRED":      4,
 		"FORMER_MEMBER_REASON_DIRECTORY_DISABLED": 5,
+		"FORMER_MEMBER_REASON_ACCOUNT_DELETED":    6,
 	}
 )
 
@@ -4800,14 +4803,15 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	" WORKSPACE_AUDIT_KIND_UNSPECIFIED\x10\x00\x12.\n" +
 	"*WORKSPACE_AUDIT_KIND_OWNER_SEES_PRIVATE_ON\x10\x01\x12/\n" +
 	"+WORKSPACE_AUDIT_KIND_OWNER_SEES_PRIVATE_OFF\x10\x02\x12\"\n" +
-	"\x1eWORKSPACE_AUDIT_KIND_TAKE_OVER\x10\x03*\xf1\x01\n" +
+	"\x1eWORKSPACE_AUDIT_KIND_TAKE_OVER\x10\x03*\x9b\x02\n" +
 	"\x12FormerMemberReason\x12$\n" +
 	" FORMER_MEMBER_REASON_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19FORMER_MEMBER_REASON_LEFT\x10\x01\x12 \n" +
 	"\x1cFORMER_MEMBER_REASON_REMOVED\x10\x02\x12\x1f\n" +
 	"\x1bFORMER_MEMBER_REASON_BANNED\x10\x03\x12&\n" +
 	"\"FORMER_MEMBER_REASON_GUEST_EXPIRED\x10\x04\x12+\n" +
-	"'FORMER_MEMBER_REASON_DIRECTORY_DISABLED\x10\x05B\x9c\x01\n" +
+	"'FORMER_MEMBER_REASON_DIRECTORY_DISABLED\x10\x05\x12(\n" +
+	"$FORMER_MEMBER_REASON_ACCOUNT_DELETED\x10\x06B\x9c\x01\n" +
 	"\rcom.calaba.v1B\x0eWorkspaceProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

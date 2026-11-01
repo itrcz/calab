@@ -534,6 +534,7 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/me/sessions/{id}",
 		"PATCH /api/me/password",
 		"PATCH /api/me/email",
+		"POST /api/me/delete",
 		"POST /api/auth/verify/send",
 		"POST /api/auth/verify",
 		"GET /api/me/push-capabilities",

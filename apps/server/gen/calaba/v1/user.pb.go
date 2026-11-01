@@ -1289,6 +1289,57 @@ func (x *ChangePasswordRequest) GetNewPassword() string {
 	return ""
 }
 
+// POST /api/me/delete → 204 (ADR-0153): deletes the caller's own account at once and for good.
+// The account becomes an anonymous tombstone ("Удалённый пользователь"): profile, sessions, push
+// devices, notes and identity links are erased; messages and files in workspaces and DMs stay with
+// that author. Local-account session only (like a password change); bots, guests and on-behalf
+// requests get 403. 403 INVALID_CREDENTIALS: wrong current password (the 5 / 15 min bucket of
+// password checks); 409 CONFLICT reason "OWNS_WORKSPACES": the caller owns workspaces, which must
+// be deleted first.
+type DeleteAccountRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DeleteAccountRequest) Reset() {
+	*x = DeleteAccountRequest{}
+	mi := &file_calaba_v1_user_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAccountRequest) ProtoMessage() {}
+
+func (x *DeleteAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAccountRequest.ProtoReflect.Descriptor instead.
+func (*DeleteAccountRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *DeleteAccountRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
 // PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices).
 // ADR-0023: the address does not change yet — a 6-digit code goes to the new address and
 // me.pending_email is set; POST /api/auth/verify {code} makes it the login email (verified).
@@ -1304,7 +1355,7 @@ type ChangeEmailRequest struct {
 
 func (x *ChangeEmailRequest) Reset() {
 	*x = ChangeEmailRequest{}
-	mi := &file_calaba_v1_user_proto_msgTypes[15]
+	mi := &file_calaba_v1_user_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1316,7 +1367,7 @@ func (x *ChangeEmailRequest) String() string {
 func (*ChangeEmailRequest) ProtoMessage() {}
 
 func (x *ChangeEmailRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[15]
+	mi := &file_calaba_v1_user_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1329,7 +1380,7 @@ func (x *ChangeEmailRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeEmailRequest.ProtoReflect.Descriptor instead.
 func (*ChangeEmailRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{15}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ChangeEmailRequest) GetNewEmail() string {
@@ -1359,7 +1410,7 @@ type UpdateStatusRequest struct {
 
 func (x *UpdateStatusRequest) Reset() {
 	*x = UpdateStatusRequest{}
-	mi := &file_calaba_v1_user_proto_msgTypes[16]
+	mi := &file_calaba_v1_user_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1371,7 +1422,7 @@ func (x *UpdateStatusRequest) String() string {
 func (*UpdateStatusRequest) ProtoMessage() {}
 
 func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[16]
+	mi := &file_calaba_v1_user_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1384,7 +1435,7 @@ func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{16}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdateStatusRequest) GetText() string {
@@ -1426,7 +1477,7 @@ type UserNote struct {
 
 func (x *UserNote) Reset() {
 	*x = UserNote{}
-	mi := &file_calaba_v1_user_proto_msgTypes[17]
+	mi := &file_calaba_v1_user_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1438,7 +1489,7 @@ func (x *UserNote) String() string {
 func (*UserNote) ProtoMessage() {}
 
 func (x *UserNote) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[17]
+	mi := &file_calaba_v1_user_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1451,7 +1502,7 @@ func (x *UserNote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserNote.ProtoReflect.Descriptor instead.
 func (*UserNote) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{17}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *UserNote) GetSubjectId() string {
@@ -1484,7 +1535,7 @@ type PutUserNoteRequest struct {
 
 func (x *PutUserNoteRequest) Reset() {
 	*x = PutUserNoteRequest{}
-	mi := &file_calaba_v1_user_proto_msgTypes[18]
+	mi := &file_calaba_v1_user_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1496,7 +1547,7 @@ func (x *PutUserNoteRequest) String() string {
 func (*PutUserNoteRequest) ProtoMessage() {}
 
 func (x *PutUserNoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[18]
+	mi := &file_calaba_v1_user_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1509,7 +1560,7 @@ func (x *PutUserNoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutUserNoteRequest.ProtoReflect.Descriptor instead.
 func (*PutUserNoteRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{18}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PutUserNoteRequest) GetText() string {
@@ -1528,7 +1579,7 @@ type UserNoteResponse struct {
 
 func (x *UserNoteResponse) Reset() {
 	*x = UserNoteResponse{}
-	mi := &file_calaba_v1_user_proto_msgTypes[19]
+	mi := &file_calaba_v1_user_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1540,7 +1591,7 @@ func (x *UserNoteResponse) String() string {
 func (*UserNoteResponse) ProtoMessage() {}
 
 func (x *UserNoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[19]
+	mi := &file_calaba_v1_user_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1553,7 +1604,7 @@ func (x *UserNoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserNoteResponse.ProtoReflect.Descriptor instead.
 func (*UserNoteResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{19}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UserNoteResponse) GetNote() *UserNote {
@@ -1575,7 +1626,7 @@ type ListBirthdaysResponse struct {
 
 func (x *ListBirthdaysResponse) Reset() {
 	*x = ListBirthdaysResponse{}
-	mi := &file_calaba_v1_user_proto_msgTypes[20]
+	mi := &file_calaba_v1_user_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1587,7 +1638,7 @@ func (x *ListBirthdaysResponse) String() string {
 func (*ListBirthdaysResponse) ProtoMessage() {}
 
 func (x *ListBirthdaysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[20]
+	mi := &file_calaba_v1_user_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1600,7 +1651,7 @@ func (x *ListBirthdaysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBirthdaysResponse.ProtoReflect.Descriptor instead.
 func (*ListBirthdaysResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{20}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListBirthdaysResponse) GetBirthdays() []*UpcomingBirthday {
@@ -1621,7 +1672,7 @@ type UpcomingBirthday struct {
 
 func (x *UpcomingBirthday) Reset() {
 	*x = UpcomingBirthday{}
-	mi := &file_calaba_v1_user_proto_msgTypes[21]
+	mi := &file_calaba_v1_user_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1633,7 +1684,7 @@ func (x *UpcomingBirthday) String() string {
 func (*UpcomingBirthday) ProtoMessage() {}
 
 func (x *UpcomingBirthday) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[21]
+	mi := &file_calaba_v1_user_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1646,7 +1697,7 @@ func (x *UpcomingBirthday) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpcomingBirthday.ProtoReflect.Descriptor instead.
 func (*UpcomingBirthday) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{21}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UpcomingBirthday) GetUserId() string {
@@ -1686,7 +1737,7 @@ type UpdateMemberBirthdayRequest struct {
 
 func (x *UpdateMemberBirthdayRequest) Reset() {
 	*x = UpdateMemberBirthdayRequest{}
-	mi := &file_calaba_v1_user_proto_msgTypes[22]
+	mi := &file_calaba_v1_user_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1698,7 +1749,7 @@ func (x *UpdateMemberBirthdayRequest) String() string {
 func (*UpdateMemberBirthdayRequest) ProtoMessage() {}
 
 func (x *UpdateMemberBirthdayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[22]
+	mi := &file_calaba_v1_user_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1711,7 +1762,7 @@ func (x *UpdateMemberBirthdayRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMemberBirthdayRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMemberBirthdayRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{22}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UpdateMemberBirthdayRequest) GetBirthday() *Birthday {
@@ -1730,7 +1781,7 @@ type UpdateMemberBirthdayResponse struct {
 
 func (x *UpdateMemberBirthdayResponse) Reset() {
 	*x = UpdateMemberBirthdayResponse{}
-	mi := &file_calaba_v1_user_proto_msgTypes[23]
+	mi := &file_calaba_v1_user_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1742,7 +1793,7 @@ func (x *UpdateMemberBirthdayResponse) String() string {
 func (*UpdateMemberBirthdayResponse) ProtoMessage() {}
 
 func (x *UpdateMemberBirthdayResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[23]
+	mi := &file_calaba_v1_user_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1755,7 +1806,7 @@ func (x *UpdateMemberBirthdayResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMemberBirthdayResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMemberBirthdayResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{23}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *UpdateMemberBirthdayResponse) GetBirthday() *MemberBirthday {
@@ -1777,7 +1828,7 @@ type MemberBirthday struct {
 
 func (x *MemberBirthday) Reset() {
 	*x = MemberBirthday{}
-	mi := &file_calaba_v1_user_proto_msgTypes[24]
+	mi := &file_calaba_v1_user_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +1840,7 @@ func (x *MemberBirthday) String() string {
 func (*MemberBirthday) ProtoMessage() {}
 
 func (x *MemberBirthday) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[24]
+	mi := &file_calaba_v1_user_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +1853,7 @@ func (x *MemberBirthday) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MemberBirthday.ProtoReflect.Descriptor instead.
 func (*MemberBirthday) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{24}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *MemberBirthday) GetUserId() string {
@@ -1838,7 +1889,7 @@ type ListMemberBirthdaysResponse struct {
 
 func (x *ListMemberBirthdaysResponse) Reset() {
 	*x = ListMemberBirthdaysResponse{}
-	mi := &file_calaba_v1_user_proto_msgTypes[25]
+	mi := &file_calaba_v1_user_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1850,7 +1901,7 @@ func (x *ListMemberBirthdaysResponse) String() string {
 func (*ListMemberBirthdaysResponse) ProtoMessage() {}
 
 func (x *ListMemberBirthdaysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[25]
+	mi := &file_calaba_v1_user_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1863,7 +1914,7 @@ func (x *ListMemberBirthdaysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMemberBirthdaysResponse.ProtoReflect.Descriptor instead.
 func (*ListMemberBirthdaysResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{25}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListMemberBirthdaysResponse) GetBirthdays() []*MemberBirthday {
@@ -1986,7 +2037,9 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"e\n" +
 	"\x15ChangePasswordRequest\x12)\n" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
-	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"\\\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"A\n" +
+	"\x14DeleteAccountRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\"\\\n" +
 	"\x12ChangeEmailRequest\x12\x1b\n" +
 	"\tnew_email\x18\x01 \x01(\tR\bnewEmail\x12)\n" +
 	"\x10current_password\x18\x02 \x01(\tR\x0fcurrentPassword\"m\n" +
@@ -2040,7 +2093,7 @@ func file_calaba_v1_user_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_calaba_v1_user_proto_goTypes = []any{
 	(MicMode)(0),                         // 0: calaba.v1.MicMode
 	(*User)(nil),                         // 1: calaba.v1.User
@@ -2058,23 +2111,24 @@ var file_calaba_v1_user_proto_goTypes = []any{
 	(*UsernameAvailabilityResponse)(nil), // 13: calaba.v1.UsernameAvailabilityResponse
 	(*UpdateMeResponse)(nil),             // 14: calaba.v1.UpdateMeResponse
 	(*ChangePasswordRequest)(nil),        // 15: calaba.v1.ChangePasswordRequest
-	(*ChangeEmailRequest)(nil),           // 16: calaba.v1.ChangeEmailRequest
-	(*UpdateStatusRequest)(nil),          // 17: calaba.v1.UpdateStatusRequest
-	(*UserNote)(nil),                     // 18: calaba.v1.UserNote
-	(*PutUserNoteRequest)(nil),           // 19: calaba.v1.PutUserNoteRequest
-	(*UserNoteResponse)(nil),             // 20: calaba.v1.UserNoteResponse
-	(*ListBirthdaysResponse)(nil),        // 21: calaba.v1.ListBirthdaysResponse
-	(*UpcomingBirthday)(nil),             // 22: calaba.v1.UpcomingBirthday
-	(*UpdateMemberBirthdayRequest)(nil),  // 23: calaba.v1.UpdateMemberBirthdayRequest
-	(*UpdateMemberBirthdayResponse)(nil), // 24: calaba.v1.UpdateMemberBirthdayResponse
-	(*MemberBirthday)(nil),               // 25: calaba.v1.MemberBirthday
-	(*ListMemberBirthdaysResponse)(nil),  // 26: calaba.v1.ListMemberBirthdaysResponse
-	(*timestamppb.Timestamp)(nil),        // 27: google.protobuf.Timestamp
-	(ErrorCode)(0),                       // 28: calaba.v1.ErrorCode
+	(*DeleteAccountRequest)(nil),         // 16: calaba.v1.DeleteAccountRequest
+	(*ChangeEmailRequest)(nil),           // 17: calaba.v1.ChangeEmailRequest
+	(*UpdateStatusRequest)(nil),          // 18: calaba.v1.UpdateStatusRequest
+	(*UserNote)(nil),                     // 19: calaba.v1.UserNote
+	(*PutUserNoteRequest)(nil),           // 20: calaba.v1.PutUserNoteRequest
+	(*UserNoteResponse)(nil),             // 21: calaba.v1.UserNoteResponse
+	(*ListBirthdaysResponse)(nil),        // 22: calaba.v1.ListBirthdaysResponse
+	(*UpcomingBirthday)(nil),             // 23: calaba.v1.UpcomingBirthday
+	(*UpdateMemberBirthdayRequest)(nil),  // 24: calaba.v1.UpdateMemberBirthdayRequest
+	(*UpdateMemberBirthdayResponse)(nil), // 25: calaba.v1.UpdateMemberBirthdayResponse
+	(*MemberBirthday)(nil),               // 26: calaba.v1.MemberBirthday
+	(*ListMemberBirthdaysResponse)(nil),  // 27: calaba.v1.ListMemberBirthdaysResponse
+	(*timestamppb.Timestamp)(nil),        // 28: google.protobuf.Timestamp
+	(ErrorCode)(0),                       // 29: calaba.v1.ErrorCode
 }
 var file_calaba_v1_user_proto_depIdxs = []int32{
-	27, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	27, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
+	28, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	28, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 2: calaba.v1.User.birthday:type_name -> calaba.v1.Birthday
 	0,  // 3: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
 	6,  // 4: calaba.v1.UserSettings.work_hours:type_name -> calaba.v1.WorkHours
@@ -2090,16 +2144,16 @@ var file_calaba_v1_user_proto_depIdxs = []int32{
 	8,  // 14: calaba.v1.UpdateMeRequest.task_notify_off:type_name -> calaba.v1.TaskNotifyOff
 	9,  // 15: calaba.v1.UpdateMeRequest.task_notify_bots:type_name -> calaba.v1.TaskNotifyBots
 	5,  // 16: calaba.v1.UpdateMeRequest.calendar_zones:type_name -> calaba.v1.CalendarZones
-	28, // 17: calaba.v1.UsernameAvailabilityResponse.reason:type_name -> calaba.v1.ErrorCode
+	29, // 17: calaba.v1.UsernameAvailabilityResponse.reason:type_name -> calaba.v1.ErrorCode
 	10, // 18: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
-	27, // 19: calaba.v1.UserNote.updated_at:type_name -> google.protobuf.Timestamp
-	18, // 20: calaba.v1.UserNoteResponse.note:type_name -> calaba.v1.UserNote
-	22, // 21: calaba.v1.ListBirthdaysResponse.birthdays:type_name -> calaba.v1.UpcomingBirthday
+	28, // 19: calaba.v1.UserNote.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 20: calaba.v1.UserNoteResponse.note:type_name -> calaba.v1.UserNote
+	23, // 21: calaba.v1.ListBirthdaysResponse.birthdays:type_name -> calaba.v1.UpcomingBirthday
 	2,  // 22: calaba.v1.UpcomingBirthday.birthday:type_name -> calaba.v1.Birthday
 	2,  // 23: calaba.v1.UpdateMemberBirthdayRequest.birthday:type_name -> calaba.v1.Birthday
-	25, // 24: calaba.v1.UpdateMemberBirthdayResponse.birthday:type_name -> calaba.v1.MemberBirthday
+	26, // 24: calaba.v1.UpdateMemberBirthdayResponse.birthday:type_name -> calaba.v1.MemberBirthday
 	2,  // 25: calaba.v1.MemberBirthday.birthday:type_name -> calaba.v1.Birthday
-	25, // 26: calaba.v1.ListMemberBirthdaysResponse.birthdays:type_name -> calaba.v1.MemberBirthday
+	26, // 26: calaba.v1.ListMemberBirthdaysResponse.birthdays:type_name -> calaba.v1.MemberBirthday
 	27, // [27:27] is the sub-list for method output_type
 	27, // [27:27] is the sub-list for method input_type
 	27, // [27:27] is the sub-list for extension type_name
@@ -2122,7 +2176,7 @@ func file_calaba_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_user_proto_rawDesc), len(file_calaba_v1_user_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   26,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

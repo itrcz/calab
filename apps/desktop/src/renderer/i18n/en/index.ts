@@ -14,6 +14,7 @@ import { enRecording } from './recording';
 import { enAnnot } from './annot';
 import { enPeople } from './people';
 import { enFormer } from './former';
+import { enAccount } from './account';
 import { enPrivacy } from './privacy';
 import { enModeration } from './moderation';
 import { enReport } from './report';
@@ -93,6 +94,7 @@ export const en: Dict = {
   ...enTransitions,
   ...enCustomPlan,
   ...enFormer,
+  ...enAccount,
   ...enPrivacy,
   ...enModeration,
   ...enReport,

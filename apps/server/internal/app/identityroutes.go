@@ -307,6 +307,7 @@ var identityRoutes = map[string]identityScope{
 	"PATCH /api/me/caldav":                                                scopeGlobal,
 	"PATCH /api/me/email":                                                 scopeGlobal,
 	"PATCH /api/me/password":                                              scopeGlobal,
+	"POST /api/me/delete":                                                 scopeGlobal, // ADR-0153: local-account session, password in the body
 	"PATCH /api/me/status":                                                scopeGlobal,
 	"PATCH /api/messages/{id}":                                            scopeMessage,
 	"PATCH /api/notes/{id}":                                               scopeGlobal,
