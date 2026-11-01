@@ -8,6 +8,7 @@ const REASON_KEY: Record<FormerMemberReason, MessageKey> = {
   [FormerMemberReason.BANNED]: 'former.reason.banned',
   [FormerMemberReason.GUEST_EXPIRED]: 'former.reason.guestExpired',
   [FormerMemberReason.DIRECTORY_DISABLED]: 'former.reason.directory',
+  [FormerMemberReason.ACCOUNT_DELETED]: 'former.reason.accountDeleted',
 };
 
 /** «ушёл» / «удалён» / «забанен» / «гостевой доступ истёк» (ADR-0097 §4). */

@@ -13,6 +13,7 @@ import { ruRecording } from './recording';
 import { ruAnnot } from './annot';
 import { ruPeople } from './people';
 import { ruFormer } from './former';
+import { ruAccount } from './account';
 import { ruPrivacy } from './privacy';
 import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
@@ -91,6 +92,7 @@ export const ru = {
   ...ruTransitions,
   ...ruCustomPlan,
   ...ruFormer,
+  ...ruAccount,
   ...ruPrivacy,
   ...ruModeration,
   ...ruMail,

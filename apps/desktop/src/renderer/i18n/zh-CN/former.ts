@@ -12,6 +12,7 @@ export const zhFormer: DictShape<typeof ruFormer> = {
   'former.reason.banned': '已封禁',
   'former.reason.guestExpired': '访客权限已过期',
   'former.reason.directory': '已在目录中停用',
+  'former.reason.accountDeleted': '账号已删除',
   'former.tab': '前成员',
   'former.card': '前成员 — {n}',
   'former.none': '没有前成员',
