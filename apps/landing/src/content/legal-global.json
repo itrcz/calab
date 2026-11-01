@@ -137,7 +137,7 @@
       {
         "title": "8. Ending use and getting your data",
         "paragraphs": [
-          "You can stop using Calab, delete your account in the app (Settings → Account → Delete account) or request deletion and end paid service under the Paid service terms. Stopping use alone does not cancel a paid plan. We may terminate for a material breach that is not remedied after reasonable notice, or where immediate action is legally required or necessary to prevent serious harm.",
+          "You can stop using Calab and delete your account in the app (Settings → Profile → Delete account; immediate and irreversible, with your password) or on request to support@calab.io (handled within 30 days); what is deleted and what is kept is described in the Privacy Policy and at calab.io/en/account-deletion/. A workspace owner must first delete the workspace or contact support. Messages, tasks and files in workspaces and direct messages stay with their members, shown as “Deleted user”; payment records are kept as long as the law requires. A workspace owner may request termination of workspace service and receipt of its data within their rights.",
           "Before closing a workspace, use available export or download functions or contact support for assistance obtaining available data you are entitled to receive. Suspension or termination does not mean immediate erasure; retention and deletion follow the Privacy Policy and applicable obligations. Shared records and legally required records may be handled separately."
         ]
       },
@@ -232,7 +232,7 @@
           "Notifications are delivered through Apple Push Notification service (including VoIP for incoming calls) and Firebase Cloud Messaging (Google). They receive the device token and the notification text (sender name and message preview). You can turn previews off in notification settings. On iOS, incoming calls use the system call interface (CallKit).",
           "Calendar widgets and Live Activities keep a short agenda on your device in protected app storage (meeting titles on the Home Screen; the Lock Screen shows “Meeting” and the time). Signing out removes this data.",
           "The Calab mobile apps contain no third-party advertising or analytics SDKs, show no ads and do not send crash reports to third parties. Apple and Google may collect crash diagnostics under their own platform settings if you enable them.",
-          "Yandex Metrika runs only on the website, with your consent, and is not built into the apps. If you consented on the website and then followed a link to the app, registration and payment events may be reported to Metrika with the visitor identifier as described in sections 3 and 6; without consent there is no identifier and nothing is reported.",
+          "Yandex Metrika is not built into the apps: they contain no advertising or analytics SDKs. Metrika runs on the website with your consent. In addition, if you consented to analytics on the website and then registered, our server sends Yandex LLC “registration” (signup) and “purchase” events through Metrika’s Measurement Protocol to measure advertising effectiveness: the Metrika visitor identifier (ClientID), the goal name, the event time and, for a payment, the amount, currency, plan and payment number. Names, email addresses, IP addresses, UTM tags and workspace content are not sent; without consent there is no identifier and nothing is sent. You can withdraw consent in the website cookie settings.",
           "The push token is deleted when you sign out or the session ends."
         ]
       },
@@ -240,7 +240,7 @@
         "title": "10. Age and account deletion",
         "paragraphs": [
           "The service is not intended for people under 18. We do not knowingly collect data from minors; if you know of such an account, write to support@calab.io.",
-          "You can delete your account in the app (Settings → Account → Delete account), on the public account deletion page at calab.io, or by writing to support@calab.io. We delete account data within 30 days, except records we must keep by law (for example payment records) and content in other members' workspaces, where your name is replaced with “Deleted user”. Questions about your data and its deletion: support@calab.io."
+          "You can delete your account in the app: Settings → Profile → Delete account (instructions: calab.io/en/account-deletion/), or by writing to support@calab.io from the account’s address (handled within 30 days). Deletion in the app is immediate and irreversible and requires your password: your profile (name, email address, password, avatar, phone, username, birthday, settings), sessions, notification tokens, personal notes and connected calendars are erased; backups drop them within 30 days. Messages, tasks and files you left in workspaces and direct messages stay with their members, shown as “Deleted user”. We keep workspace payment records for as long as the law requires. A workspace owner must first delete the workspace or contact support. Questions about your data and its deletion: support@calab.io."
         ]
       },
       {
