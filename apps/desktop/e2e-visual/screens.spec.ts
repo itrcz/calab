@@ -4647,6 +4647,8 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await win.getByTestId('task-search-row').first().click();
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId('panel-crumb-search')).toContainText('эхо');
+  // #137: a plain open never adds a tab (here the strip keeps its three ⌘-tabs).
+  await expect(tabs).toHaveCount(3);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'boards-task-from-search');
   await panel.getByTestId('task-close').click();
