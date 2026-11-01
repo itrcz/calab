@@ -57,7 +57,7 @@ services:
     logging: *logging
 
   livekit:
-    image: livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    image: livekit/livekit-server:v1.13@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
     network_mode: host
     restart: unless-stopped
     command: --config /etc/livekit.yaml
@@ -197,7 +197,7 @@ services:
   # Reuses the Valkey image (already pulled) for its shell. FOWNER: from the second deploy on,
   # /out belongs to 65532 and root may chmod it only with this capability.
   recordings-init:
-    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    image: valkey/valkey:9-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
     network_mode: none
     restart: "no"
     user: "0:0"
@@ -309,7 +309,7 @@ services:
     logging: *logging
 
   postgres:
-    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873   # PG 18: built-in uuidv7()
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5   # PG 18: built-in uuidv7()
     restart: unless-stopped
     <<: *hardening
     user: "70:70"                  # run as postgres directly: no gosu, no capabilities needed
@@ -338,7 +338,7 @@ services:
   # field TTL (HEXPIRE) for presence; the API checks the version at startup. Clients still
   # speak the Redis protocol (REDIS_URL, rueidis).
   valkey:
-    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    image: valkey/valkey:9-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
     restart: unless-stopped
     <<: *hardening
     user: "999:1000"               # valkey
