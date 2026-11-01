@@ -20,6 +20,16 @@ func TestAccountDeletion(t *testing.T) {
 	o.must(201, "POST", "/api/workspaces/"+ws.GetId()+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "chat"}, &tr)
 	room := tr.GetRoom().GetId()
 	msg := send(t, bob, room, "hello from bob", uniq("n"))
+	// An avatar may be any image bob uploaded, here one attached to his message: deleting the
+	// account must not take the attachment away from the room.
+	st, pic, _ := upload(t, bob, "/api/workspaces/"+ws.GetId()+"/files", "pic.png", pngBytes(64, 64))
+	if st != 201 {
+		t.Fatalf("upload: %d", st)
+	}
+	var withPic v1.CreateMessageResponse
+	bob.must(201, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{Content: "pic", AttachmentIds: []string{pic.GetId()}, Nonce: uniq("n")}, &withPic)
+	avatar := pic.GetId()
+	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{AvatarFileId: &avatar}, nil)
 	var note v1.CreateNotesResponse
 	bob.must(201, "POST", "/api/notes", &v1.CreateNotesRequest{Name: "Мои"}, &note)
 
@@ -83,14 +93,17 @@ func TestAccountDeletion(t *testing.T) {
 	})
 	var hist v1.ListMessagesResponse
 	o.must(200, "GET", "/api/rooms/"+room+"/messages", nil, &hist)
-	found := false
+	found, attached := false, false
 	for _, m := range hist.GetMessages() {
 		if m.GetId() == msg.GetId() {
 			found = m.GetAuthorId() == bob.id && m.GetContent() == "hello from bob"
 		}
+		if m.GetId() == withPic.GetMessage().GetId() {
+			attached = len(m.GetAttachments()) == 1 && m.GetAttachments()[0].GetId() == pic.GetId()
+		}
 	}
-	if !found {
-		t.Fatal("bob's message is gone from the room history")
+	if !found || !attached {
+		t.Fatalf("bob's history in the room: message %v, attachment that was his avatar %v", found, attached)
 	}
 	var refs v1.ListWorkspaceUsersResponse
 	o.must(200, "GET", "/api/workspaces/"+ws.GetId()+"/users?ids="+bob.id, nil, &refs)

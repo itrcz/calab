@@ -14,7 +14,6 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
-	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -37,13 +36,12 @@ type Service struct {
 	auth   *auth.Service
 	creds  *auth.Handlers // the shared bucket of password checks
 	events events.Publisher
-	store  blob.Store // nil: no file bytes to remove
 	plans  *plans.Service
 }
 
 // New creates the service.
-func New(d *db.DB, a *auth.Service, creds *auth.Handlers, ev events.Publisher, store blob.Store, pl *plans.Service) *Service {
-	return &Service{db: d, auth: a, creds: creds, events: ev, store: store, plans: pl}
+func New(d *db.DB, a *auth.Service, creds *auth.Handlers, ev events.Publisher, pl *plans.Service) *Service {
+	return &Service{db: d, auth: a, creds: creds, events: ev, plans: pl}
 }
 
 // Routes registers POST /api/me/delete; wrap must apply authentication and the identity gate.
@@ -79,7 +77,6 @@ type removal struct {
 	workspaces []uuid.UUID
 	formers    []sqlc.WorkspaceFormerMember
 	sessions   []uuid.UUID
-	files      []sqlc.File
 }
 
 // Delete re-authenticates userID with password and deletes the account (ADR-0153). Refused with
@@ -156,19 +153,10 @@ func (s *Service) remove(ctx context.Context, q *sqlc.Queries, uid uuid.UUID) (o
 	if err = q.ScrubUserSessions(ctx, uid); err != nil {
 		return out, err
 	}
-	if u.AvatarFileID != nil {
-		f, err := q.GetFile(ctx, *u.AvatarFileID)
-		switch {
-		case err == nil:
-			if n, err := q.DeleteFile(ctx, f.ID); err != nil {
-				return out, err
-			} else if n > 0 {
-				out.files = append(out.files, f)
-			}
-		case !db.IsNotFound(err):
-			return out, err
-		}
-	}
+	// The avatar file is not deleted here: an avatar may be any image the user uploaded, also one
+	// attached to a message, a Disk item or a wiki page (or forwarded by someone else), and
+	// deleting the row would cascade into other people's history. With avatar_file_id cleared
+	// below, the orphan cleanup (files.CleanupOrphans) removes it once nothing references it.
 	if out.user, err = q.AnonymizeDeletedUser(ctx, uid); err != nil {
 		return out, err
 	}
@@ -176,20 +164,12 @@ func (s *Service) remove(ctx context.Context, q *sqlc.Queries, uid uuid.UUID) (o
 }
 
 // after runs the post-commit steps: the revocation (access tokens die now, the gateway closes the
-// sockets 4010), file bytes, the anonymous profile and the removals to the workspaces.
+// sockets 4010), the anonymous profile and the removals to the workspaces.
 func (s *Service) after(ctx context.Context, out removal) {
 	ctx = context.WithoutCancel(ctx)
 	// Revocation first, before the identity invalidation of the memberships can ask the sockets
 	// to resync (4000; their next IDENTIFY gets 4010 then).
 	s.auth.MarkRevoked(ctx, auth.RevokeAccountDeleted, out.sessions...)
-	if s.store != nil {
-		for _, f := range out.files {
-			if err := s.store.Delete(ctx, f.Key); err != nil {
-				slog.WarnContext(ctx, "delete avatar blob", "err", err)
-			}
-			blob.DeleteThumbs(ctx, s.store, f.Key, f.ThumbnailKey)
-		}
-	}
 	if len(out.workspaces) > 0 {
 		s.events.Workspaces(ctx, out.workspaces, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{
 			UserUpdate: &v1.UserUpdate{User: pbconv.UserEvent(out.user)},
