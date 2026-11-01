@@ -136,8 +136,8 @@ const (
 	// 409: POST /api/workspaces/{id}/sip/calls — the caller is in another call (a one-to-one call,
 	// an inbound call that rings them or that they took, another personal call) (ADR-0137 §3).
 	ErrorCode_ERROR_CODE_SIP_BUSY ErrorCode = 73
-	// 403: a new DM, a DM message or forward, or a one-to-one call between two people when either
-	// blocked the other (ADR-0154); the same text for both sides.
+	// 403: a new DM, a DM message, forward, edit or reaction, or a one-to-one call between two
+	// people when either blocked the other (ADR-0154); the same text for both sides.
 	ErrorCode_ERROR_CODE_USER_UNAVAILABLE ErrorCode = 80
 )
 

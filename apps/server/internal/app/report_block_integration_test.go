@@ -3,6 +3,7 @@
 package app_test
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func TestBlockUsers(t *testing.T) {
 	a, b, c, wsID := callTeam(t)
 	general := textRoom(t, owner(t), wsID, uniq("general"), false)
 	dm := openDM(t, a.user, b.id, 201).GetRoom().GetId()
-	send(t, b.user, dm, "hello before", "")
+	before := send(t, b.user, dm, "hello before", "")
 
 	// Validation: not oneself, not a bot, not a stranger (404, as POST /api/dms).
 	a.must(422, "POST", "/api/me/blocked-users/"+a.id, nil, nil)
@@ -54,6 +55,13 @@ func TestBlockUsers(t *testing.T) {
 		}
 	}
 	openDM(t, b.user, a.id, 200)
+	// Nor an edit of an old DM message or a reaction in the DM.
+	if st := b.do("PATCH", "/api/messages/"+before.GetId(), &v1.UpdateMessageRequest{Content: "edited"}, nil); st != 403 || apiErr(b.client).GetCode() != errUnavailable {
+		t.Fatalf("DM edit with a block: %d %s", st, b.lastBody)
+	}
+	if code := errCode(t, a.user, "PUT", "/api/messages/"+before.GetId()+"/reactions/"+url.PathEscape("👍")); code != errUnavailable {
+		t.Fatalf("DM reaction with a block: %v", code)
+	}
 	// A forward into the DM is refused too.
 	m := send(t, b.user, general, "shared room message", "")
 	if st := b.do("POST", "/api/rooms/"+general+"/messages/"+m.GetId()+"/forward", &v1.ForwardMessageRequest{ToRoomId: dm}, nil); st != 403 {

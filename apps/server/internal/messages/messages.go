@@ -646,6 +646,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if m.ForwardSentAt != nil {
 		return errNotEditable
 	}
+	if err := h.personSend(r.Context(), uid(r), acc); err != nil { // ADR-0154: no edits in a blocked DM
+		return err
+	}
 	var req v1.UpdateMessageRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err

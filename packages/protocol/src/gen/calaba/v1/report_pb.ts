@@ -19,8 +19,8 @@ export const file_calaba_v1_report: GenFile = /*@__PURE__*/
 /**
  * GET /api/me/blocked-users; POST / DELETE /api/me/blocked-users/{id} → 204 (people only; a bot
  * target is 422, use /api/me/blocked-bots). A block in either direction refuses a new DM, a DM
- * message or forward and a one-to-one call with 403 USER_UNAVAILABLE to both sides; message
- * pushes from a blocked author are not sent. Shared workspace rooms are not filtered: the client
+ * message, forward, edit or reaction and a one-to-one call with 403 USER_UNAVAILABLE to both
+ * sides; DM typing is not relayed; message pushes from a blocked author are not sent. Shared workspace rooms are not filtered: the client
  * collapses the blocked author's messages. USER_BLOCKS_UPDATE goes to the blocker's own sessions.
  *
  * @generated from message calaba.v1.ListBlockedUsersResponse

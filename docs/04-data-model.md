@@ -139,7 +139,7 @@ bot_webhook_deliveries id (uuidv7 приложения = id в теле), bot_us
                     next_at, created_at, delivered_at?, failed_at?, error          — outbox webhook-ов ботов
 bot_blocks          user_id, bot_user_id, created_at   PK (user_id, bot_user_id) — человек заблокировал бота
 user_blocks         user_id, blocked_user_id, created_at   PK (user_id, blocked_user_id) — человек заблокировал
-                    человека (ADR-0154): DM и звонки — 403 USER_UNAVAILABLE в обе стороны
+                    человека (ADR-0154): DM (новый, сообщения, правки, реакции) и звонки — 403 USER_UNAVAILABLE в обе стороны
 user_reports        id (uuidv7), workspace_id → CASCADE, reporter_id?/target_user_id?/resolved_by? (SET NULL),
                     message_id?, room_id?, message_text (≤ 2000), reason (ReportReason), comment (≤ 1000),
                     created_at, resolved_at? — жалобы (ADR-0154), видят MANAGE_MEMBERS; 10 в час на автора

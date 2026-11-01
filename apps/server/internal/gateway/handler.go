@@ -979,6 +979,10 @@ func (h *Hub) typing(s *Session, roomIDStr string) {
 		RoomId: rid.String(), UserId: s.user.String(), Timestamp: nowTS(),
 	}}}
 	if peer != uuid.Nil {
+		// ADR-0154: no typing indicator between two people when either blocked the other.
+		if blocked, err := h.db.Q.IsBlockedEitherWay(ctx, sqlc.IsBlockedEitherWayParams{A: s.user, B: peer}); err != nil || blocked {
+			return
+		}
 		h.pub.User(ctx, peer, ev) // routeUser delivers it to the peer's sessions subscribed to the DM
 		return
 	}

@@ -733,8 +733,8 @@ export enum ErrorCode {
   SIP_BUSY = 73,
 
   /**
-   * 403: a new DM, a DM message or forward, or a one-to-one call between two people when either
-   * blocked the other (ADR-0154); the same text for both sides.
+   * 403: a new DM, a DM message, forward, edit or reaction, or a one-to-one call between two
+   * people when either blocked the other (ADR-0154); the same text for both sides.
    *
    * @generated from enum value: ERROR_CODE_USER_UNAVAILABLE = 80;
    */
