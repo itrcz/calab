@@ -64,6 +64,18 @@ describe('bounded host activity contract', () => {
       expect(top.CalabHostActivity).toMatchObject({ version: 1, host: 3, platform });
     }
   });
+  it('offers regular links and calendar navigation together without enabling widgets in old hosts', () => {
+    const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
+    top.top = top;
+    runInNewContext(activityBootstrap(3, true, 'ios', true), { window: top, crypto: top.crypto });
+    expect(top.CalabHostActivity).toMatchObject({ calendarWidgetVersion: 1, callsAudioVersion: 1, mediaPermissionsVersion: 1, platform: 'ios' });
+    const dispatchEvent = vi.fn();
+    class CustomEvent { constructor(readonly type: string, readonly init: { detail: unknown }) {} }
+    runInNewContext(activityReady(3, document, false, false, true), { window: { dispatchEvent }, CustomEvent });
+    const event = dispatchEvent.mock.calls[0]?.[0] as CustomEvent;
+    expect(event.init.detail).toMatchObject({ host: 3, document, links: 1, calendarWidget: 1 });
+    expect(activityReady(3, document)).not.toContain('"calendarWidget"');
+  });
 });
 
 it('accepts calls only in the current document and rejects credentials/unknown actions', () => {
@@ -130,14 +142,15 @@ describe('Android host channel (DEV-5033, ADR-0070 Android)', () => {
   it('advertises only notifications and links, so the web keeps its own permission and call paths', () => {
     const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
     top.top = top;
-    runInNewContext(activityBootstrap(3, true, 'android'), { window: top, crypto: top.crypto });
+    runInNewContext(activityBootstrap(3, true, 'android', true), { window: top, crypto: top.crypto });
     const bridge = top.CalabHostActivity as Record<string, unknown>;
     expect(bridge).toMatchObject({ version: 1, notificationsVersion: 1, notificationsTestVersion: 1, platform: 'android' });
-    for (const key of ['mediaPermissionsVersion', 'callsVersion', 'callsMuteVersion', 'callsAnswerVersion', 'callsAudioVersion']) expect(bridge[key]).toBeUndefined();
+    for (const key of ['mediaPermissionsVersion', 'callsVersion', 'callsMuteVersion', 'callsAnswerVersion', 'callsAudioVersion', 'calendarWidgetVersion']) expect(bridge[key]).toBeUndefined();
     expect(activityBootstrap(3)).toContain('callsVersion: 1');
-    const ready = activityReady(3, document, false, true);
+    const ready = activityReady(3, document, false, true, true);
     expect(ready).toContain('"links":1');
     expect(ready).not.toContain('"calls"');
     expect(ready).not.toContain('"permissions"');
+    expect(ready).not.toContain('"calendarWidget"');
   });
 });

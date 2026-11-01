@@ -14,5 +14,5 @@ Pod::Spec.new do |s|
   s.dependency 'CalabLiveKit', '= 2.17.0' if ENV['CALAB_IOS_NATIVE_CALL_AUDIO'] == '1'
   s.source_files = '*.swift'
   s.resources = ['*.lproj/*.strings'] + (ENV['CALAB_IOS_NATIVE_CALL_AUDIO'] == '1' ? ['*.LICENSE'] : [])
-  s.frameworks = 'ActivityKit', 'UserNotifications', 'PushKit', 'CallKit', 'AVFAudio', 'Intents', 'ImageIO'
+  s.frameworks = 'ActivityKit', 'UserNotifications', 'PushKit', 'CallKit', 'AVFAudio', 'Intents', 'ImageIO', 'WidgetKit', 'Security', 'CryptoKit'
 end

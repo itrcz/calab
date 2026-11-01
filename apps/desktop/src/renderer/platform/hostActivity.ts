@@ -1,8 +1,11 @@
+import { parseCalendarWidgetAction, type CalendarWidgetAction } from '../../shared/calendarWidgetLink';
+import { parseCalendarWidgetOperation, type CalendarWidgetOperation, type HostCalendarWidgetCapability } from '../../shared/hostCalendarWidget';
 import { parseCallsState, type HostCallsCapability, type HostCallsOperation, type HostCallsState } from '../../shared/hostCalls';
 import { parseMediaPermissionsState, unavailableMediaPermissions, type HostMediaPermissionsCapability, type MediaPermissionsOperation, type MediaPermissionsReply, type MediaPermissionsState } from '../../shared/hostPermissions';
 import { hostLinkRoute, parseNotificationState, parseNotificationTestResult, type HostNotificationTestResult, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
 export interface HostActivityBridge {
+  calendarWidgetVersion?: number;
   mediaPermissionsVersion?: number;
   version: number; host: number; document: string; platform?: string; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
   rotateDocument(): void;
@@ -29,6 +32,7 @@ export function createHostCapabilities(win: Window = window): {
    * `platform.app.onDeepLink`, so they reach `services/links.handleDeepLink` like the desktop's.
    */
   onHostLink?: (listener: (url: string) => void) => () => void;
+  calendarWidget?: HostCalendarWidgetCapability;
   mediaPermissions?: HostMediaPermissionsCapability;
   sessionActivity?: SessionActivityCapability; notifications?: HostNotificationsCapability; incomingCalls?: HostCallsCapability;
 } {
@@ -39,6 +43,10 @@ export function createHostCapabilities(win: Window = window): {
   let activityEnabled = false;
   let permissionsEnabled = false;
   let linksEnabled = false;
+  let calendarEnabled = false;
+  let calendarTap = 0;
+  let calendarOpen: CalendarWidgetAction | null = null;
+  const calendarOpenListeners = new Set<(action: CalendarWidgetAction) => void>();
   let sequence = 0;
   let requestId = 0;
   let latest: SessionActivitySnapshot | null = null;
@@ -50,11 +58,14 @@ export function createHostCapabilities(win: Window = window): {
   const tests = new Map<number, { body: string; resolve: (result: HostNotificationTestResult) => void; timer: ReturnType<typeof setTimeout> }>();
   const permissions = new Map<number, { operation: MediaPermissionsOperation; resolve: (reply: MediaPermissionsReply) => void; timer: ReturnType<typeof setTimeout> }>();
   const permissionListeners = new Set<(state: MediaPermissionsState) => void>();
-  const send = (type: 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls' | 'permissions', fields: object = {}) => {
+  const calendarPending = new Map<number, { operation: CalendarWidgetOperation; resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
+  const send = (type: 'calendarWidget' | 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls' | 'permissions', fields: object = {}) => {
     const base = { v: 1, type, host: bridge.host, document: bridge.document };
     bridge.send(JSON.stringify(type === 'hello' ? base : { ...base, seq: ++sequence, ...fields }));
   };
   const settle = () => {
+    for (const p of calendarPending.values()) { clearTimeout(p.timer); p.resolve(false); }
+    calendarPending.clear();
     for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ permission: 'unsupported' }); }
     pending.clear();
     for (const p of tests.values()) { clearTimeout(p.timer); p.resolve('unsupported'); }
@@ -80,6 +91,7 @@ export function createHostCapabilities(win: Window = window): {
     activityEnabled = false;
     permissionsEnabled = false;
     linksEnabled = false;
+    calendarEnabled = false;
     settle();
   };
   win.addEventListener('calab-host-activity-ready', (event) => {
@@ -92,7 +104,10 @@ export function createHostCapabilities(win: Window = window): {
     activityEnabled = a.capability === 'sessionActivity';
     permissionsEnabled = a.permissions === 1;
     linksEnabled = a.links === 1;
+    calendarEnabled = a.calendarWidget === 1;
     if (pendingLogout) { pendingLogout = false; revoke('logout'); return; }
+    if (a.calendarWidget === 1) for (const [request, p] of calendarPending) send('calendarWidget', { request, ...p.operation });
+    else { for (const p of calendarPending.values()) { clearTimeout(p.timer); p.resolve(false); } calendarPending.clear(); }
     if (latest && activityEnabled) send('activity', { snapshot: latest });
     if (a.notifications === 1) for (const [request, p] of pending) send('notifications', { request, operation: p.operation });
     else { for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ permission: 'unsupported' }); } pending.clear(); }
@@ -102,6 +117,34 @@ export function createHostCapabilities(win: Window = window): {
     else { for (const p of permissions.values()) { clearTimeout(p.timer); p.resolve({ state: unavailableMediaPermissions() }); } permissions.clear(); }
     if(a.calls===1)for(const [request,p] of callsPending)send('calls',{request,...p.operation});
     else { for(const p of callsPending.values()){clearTimeout(p.timer);p.resolve({state:{supported:false}});} callsPending.clear(); }
+  });
+  win.addEventListener('calab-host-calendar-open', event => {
+    const v = (event as CustomEvent<unknown>).detail;
+    if (!ready || !calendarEnabled || !v || typeof v !== 'object') return;
+    const e = v as Record<string, unknown>;
+    if (e.v !== 1 || e.host !== bridge.host || e.document !== bridge.document) return;
+    const action = parseCalendarWidgetAction(e.action);
+    if (!action || typeof e.tap !== 'number' || !Number.isSafeInteger(e.tap) || e.tap < 1) return;
+    send('calendarWidget', { request: ++requestId, operation: 'opened', tap: e.tap });
+    if (e.tap <= calendarTap) return;
+    calendarTap = e.tap;
+    if (calendarOpenListeners.size) for (const listener of calendarOpenListeners) listener(action);
+    else calendarOpen = action;
+  });
+  win.addEventListener('calab-host-calendar-widget', (event) => {
+    const value: unknown = (event as CustomEvent<unknown>).detail;
+    if (!value || typeof value !== 'object') return;
+    const reply = value as Record<string, unknown>;
+    if (!ready || reply.v !== 1 || reply.host !== bridge.host || reply.document !== bridge.document || typeof reply.request !== 'number' || typeof reply.ok !== 'boolean') return;
+    const p = calendarPending.get(reply.request);
+    if (p) { clearTimeout(p.timer); calendarPending.delete(reply.request); p.resolve(reply.ok); }
+  });
+  const requestCalendar = (operation: CalendarWidgetOperation): Promise<boolean> => new Promise(resolve => {
+    if ((ready && !calendarEnabled) || !parseCalendarWidgetOperation(operation)) { resolve(false); return; }
+    const request = ++requestId;
+    const timer = setTimeout(() => { calendarPending.delete(request); resolve(false); }, 25_000);
+    calendarPending.set(request, { operation, resolve, timer });
+    if (ready) send('calendarWidget', { request, ...operation }); else send('hello');
   });
   win.addEventListener('calab-host-notifications', (event) => {
     const raw: unknown = (event as CustomEvent<unknown>).detail;
@@ -192,6 +235,13 @@ export function createHostCapabilities(win: Window = window): {
       ...(bridge.callsMuteVersion===1 ? {syncMuted(eventId:string,muted:boolean){if(ready)send('calls',{request:++requestId,operation:'sync',eventId,phase:muted?'muted':'unmuted'});}} : {}),
       clear:revoke,
     } satisfies HostCallsCapability}: {}),
+    ...(bridge.calendarWidgetVersion === 1 ? { calendarWidget: {
+      onOpen: listener => { calendarOpenListeners.add(listener); if (calendarOpen) { const action = calendarOpen; calendarOpen = null; listener(action); } return () => { calendarOpenListeners.delete(listener); }; },
+      bind: (binding: string) => requestCalendar({ operation: 'bind', binding }),
+      configure: (token: string, expiresAt: string) => requestCalendar({ operation: 'configure', token, expiresAt }),
+      refresh: () => requestCalendar({ operation: 'refresh' }),
+      clear: () => requestCalendar({ operation: 'clear' }),
+    } satisfies HostCalendarWidgetCapability } : {}),
     sessionActivity: {
       publish(snapshot) {
         latest = snapshot;
