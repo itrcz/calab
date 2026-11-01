@@ -19,6 +19,9 @@ export const esApp: DictShape<typeof enApp> = {
   'legal.thirdPartyTitle': 'Licencias de terceros',
   'legal.unavailable': 'El texto no está disponible en esta versión.',
   'legal.footerLicense': 'Licencia: Business Source License 1.1',
+  'legal.privacy': 'Política de privacidad',
+  'legal.termsOfUse': 'Condiciones de uso',
+  'legal.docsCard': 'Documentos',
   // rebindable in-window shortcuts
   'hotkeys.change': 'Cambiar',
   'hotkeys.reset': 'Restablecer',

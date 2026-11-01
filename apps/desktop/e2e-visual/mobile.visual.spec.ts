@@ -921,6 +921,11 @@ test('m-settings-profile', async ({ page }) => {
   await settings.getByTestId('username-input').fill('boris_p');
   await expect(settings.getByTestId('username-hint')).toHaveText('Этот ник уже занят');
   await checkpoint(page, 'm-settings-profile', { snapshot: false });
+  // «О программе»: the privacy policy / terms links (#139) above the licence card. Review shot only.
+  await page.getByTestId('phone-back').tap();
+  await page.getByTestId('phone-profile-about').tap();
+  await expect(settings.getByText('Политика конфиденциальности')).toBeVisible();
+  await checkpoint(page, 'm-settings-about', { snapshot: false });
 });
 
 // ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the

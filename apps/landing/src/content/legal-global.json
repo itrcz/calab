@@ -82,8 +82,10 @@
         "title": "1. Who provides Calab",
         "paragraphs": [
           "Unne L.L.C-FZ, a Limited Liability Company (Free Zone) registered in Dubai, United Arab Emirates. Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE. Contact: support@calab.io. VAT TRN: 105410888900001.",
+          "For the Calab mobile apps distributed through the App Store and Google Play and for users outside the Russian Federation, the provider and the party to this agreement is ScriptHeads LLP (TOO «ScriptHeads»), Republic of Kazakhstan, BIN 241040009193. Registered office: 15 Syganak Street, apt. 84, Nura district, Astana, Kazakhstan, postal code 010000. Contact: support@calab.io.",
           "This End User Licence Agreement (EULA) governs the Global hosted Calab service and clients used to connect to it. You accept it when it is presented for acceptance at registration or another relevant step. Merely publishing a revised document does not replace consent where it is required. Paid service terms apply when you buy a paid plan; the Privacy Policy explains data handling.",
-          "You must be an adult with capacity to enter this agreement. If you act for an organisation, you must be authorised to do so. A separately operated self-hosted server has its own operator; its data practices are not automatically ours."
+          "You must be an adult with capacity to enter this agreement. If you act for an organisation, you must be authorised to do so. A separately operated self-hosted server has its own operator; its data practices are not automatically ours.",
+          "The mobile apps are governed by this same agreement. Apple and Google are not parties to it and are not responsible for the app or its support."
         ]
       },
       {
@@ -105,7 +107,8 @@
         "title": "4. Your content stays yours",
         "paragraphs": [
           "You retain your rights in messages, files and other content. You permit us to store, process, transmit and display it only as needed to provide and secure the functions you choose, to authorised recipients. This permission does not allow us to sell your content or use it in advertising without a separate lawful basis.",
-          "You must have the rights and legal basis to upload and share other people’s content and personal data. Do not post unlawful material, infringe intellectual property, distribute malware or spam, attempt unauthorised access, evade access controls or deliberately disrupt the service. Do not use Calab to process information whose handling is prohibited by requirements applicable to you."
+          "You must have the rights and legal basis to upload and share other people’s content and personal data. Do not post unlawful material, infringe intellectual property, distribute malware or spam, attempt unauthorised access, evade access controls or deliberately disrupt the service. Do not use Calab to process information whose handling is prohibited by requirements applicable to you.",
+          "Do not post abusive or defamatory material or harass other users. You can report a violation to support@calab.io; violating content may be removed and the account restricted."
         ]
       },
       {
@@ -134,7 +137,7 @@
       {
         "title": "8. Ending use and getting your data",
         "paragraphs": [
-          "You can stop using Calab, request account deletion and end paid service under the Paid service terms. Stopping use alone does not cancel a paid plan. We may terminate for a material breach that is not remedied after reasonable notice, or where immediate action is legally required or necessary to prevent serious harm.",
+          "You can stop using Calab, delete your account in the app (Settings → Account → Delete account) or request deletion and end paid service under the Paid service terms. Stopping use alone does not cancel a paid plan. We may terminate for a material breach that is not remedied after reasonable notice, or where immediate action is legally required or necessary to prevent serious harm.",
           "Before closing a workspace, use available export or download functions or contact support for assistance obtaining available data you are entitled to receive. Suspension or termination does not mean immediate erasure; retention and deletion follow the Privacy Policy and applicable obligations. Shared records and legally required records may be handled separately."
         ]
       },
@@ -155,6 +158,7 @@
         "title": "1. Responsibility and scope",
         "paragraphs": [
           "Unne L.L.C-FZ, a Limited Liability Company (Free Zone) registered in Dubai, United Arab Emirates. Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE. Contact: support@calab.io. VAT TRN: 105410888900001.",
+          "The Calab mobile apps for iOS and Android distributed through the App Store and Google Play are published and operated by ScriptHeads LLP (TOO «ScriptHeads»), Republic of Kazakhstan, BIN 241040009193. Registered office: 15 Syganak Street, apt. 84, Nura district, Astana, Kazakhstan, postal code 010000. Contact: support@calab.io. For these apps and for users outside the Russian Federation ScriptHeads LLP is the seller, the controller of personal data and the party to the Terms. Unne L.L.C-FZ remains the supplier for Global web accounts and orders placed with it, as shown in the order. Privacy requests go to one address, support@calab.io; the applicable entity is the one with which your account or order was made.",
           "Unne is responsible for personal information used for its website, account administration, billing, support and service security. This policy covers visitors, account holders, workspace members, guests, customer representatives and people who contact us. It describes processing; it is not a request for universal consent.",
           "A business customer determines the purposes of personal data it places in its workspace. We process that content to provide the customer’s chosen functions on its instructions. For such requests, contact the workspace owner or us so we can route and assist with them. Independently operated self-hosted servers are governed by their operators’ policies."
         ]
@@ -222,7 +226,25 @@
         ]
       },
       {
-        "title": "9. Updates",
+        "title": "9. Mobile apps",
+        "paragraphs": [
+          "The Calab apps for iOS and Android ask for device permissions only for features you use: microphone for voice rooms, calls and voice messages; camera for video and photos in messages; notifications for messages, mentions and calls. Only photos and files you choose or choose to save are handled. The apps do not read your contacts, call history, location or your whole photo library. You can revoke permissions in the phone settings.",
+          "Notifications are delivered through Apple Push Notification service (including VoIP for incoming calls) and Firebase Cloud Messaging (Google). They receive the device token and the notification text (sender name and message preview). You can turn previews off in notification settings. On iOS, incoming calls use the system call interface (CallKit).",
+          "Calendar widgets and Live Activities keep a short agenda on your device in protected app storage (meeting titles on the Home Screen; the Lock Screen shows “Meeting” and the time). Signing out removes this data.",
+          "The Calab mobile apps contain no third-party advertising or analytics SDKs, show no ads and do not send crash reports to third parties. Apple and Google may collect crash diagnostics under their own platform settings if you enable them.",
+          "Yandex Metrika runs only on the website, with your consent, and is not built into the apps. If you consented on the website and then followed a link to the app, registration and payment events may be reported to Metrika with the visitor identifier as described in sections 3 and 6; without consent there is no identifier and nothing is reported.",
+          "The push token is deleted when you sign out or the session ends."
+        ]
+      },
+      {
+        "title": "10. Age and account deletion",
+        "paragraphs": [
+          "The service is not intended for people under 18. We do not knowingly collect data from minors; if you know of such an account, write to support@calab.io.",
+          "You can delete your account in the app (Settings → Account → Delete account), on the public account deletion page at calab.io, or by writing to support@calab.io. We delete account data within 30 days, except records we must keep by law (for example payment records) and content in other members' workspaces, where your name is replaced with “Deleted user”. Questions about your data and its deletion: support@calab.io."
+        ]
+      },
+      {
+        "title": "11. Updates",
         "paragraphs": [
           "We publish a dated version and notify users of material changes through available service channels. A revised policy does not retroactively expand processing purposes or create consent. Ask support for an earlier version or further details about your information."
         ]
@@ -274,7 +296,8 @@
           "Legal name: Unne L.L.C-FZ.",
           "Company type: Limited Liability Company (Free Zone). Jurisdiction: Dubai, United Arab Emirates.",
           "Registered office: Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, UAE.",
-          "VAT TRN: 105410888900001."
+          "VAT TRN: 105410888900001.",
+          "App stores and users outside the Russian Federation: the seller and operator of the Calab mobile apps is ScriptHeads LLP (TOO «ScriptHeads»), Republic of Kazakhstan, BIN 241040009193. Registered office: 15 Syganak Street, apt. 84, Nura district, Astana, Kazakhstan, postal code 010000. Contact: support@calab.io."
         ]
       },
       {

@@ -16,6 +16,9 @@ export const ruApp = {
   'legal.thirdPartyTitle': 'Лицензии сторонних компонентов',
   'legal.unavailable': 'Текст недоступен в этой сборке.',
   'legal.footerLicense': 'Лицензия: Business Source License 1.1',
+  'legal.privacy': 'Политика конфиденциальности',
+  'legal.termsOfUse': 'Условия использования',
+  'legal.docsCard': 'Документы',
   // rebindable in-window shortcuts
   'hotkeys.change': 'Изменить',
   'hotkeys.reset': 'Сбросить',
