@@ -9,6 +9,7 @@ export const ruFormer = {
   'former.reason.banned': 'забанен',
   'former.reason.guestExpired': 'гостевой доступ истёк',
   'former.reason.directory': 'отключён в каталоге',
+  'former.reason.accountDeleted': 'аккаунт удалён',
   'former.tab': 'Бывшие',
   'former.card': 'Бывшие участники — {n}',
   'former.none': 'Бывших участников нет',

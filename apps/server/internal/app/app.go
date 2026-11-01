@@ -14,6 +14,7 @@ import (
 	"github.com/redis/rueidis"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/account"
 	"github.com/calaba/calaba/server/internal/achievements"
 	"github.com/calaba/calaba/server/internal/ai"
 	"github.com/calaba/calaba/server/internal/aifiles"
@@ -438,6 +439,7 @@ func New(d Deps) *App {
 	ah.Public(mux)
 	ah.Private(mux, private)
 	pushSvc.Routes(mux, private)
+	account.New(d.DB, authSvc, ah, pub, planSvc).Routes(mux, private) // ADR-0153
 	userHandlers := users.NewHandlers(d.DB, pub, hub)
 	// ADR-0090: the bots' cache of users with a task notice relay reloads on PATCH /api/me.
 	userHandlers.TaskRelaysChanged = botSvc.InvalidateTaskRelays

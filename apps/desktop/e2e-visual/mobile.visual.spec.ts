@@ -921,6 +921,13 @@ test('m-settings-profile', async ({ page }) => {
   await settings.getByTestId('username-input').fill('boris_p');
   await expect(settings.getByTestId('username-hint')).toHaveText('Этот ник уже занят');
   await checkpoint(page, 'm-settings-profile', { snapshot: false });
+  // ADR-0153: the last card «Удаление аккаунта» and its dialog (Anna owns a workspace: the blocker).
+  const entry = settings.getByTestId('delete-account');
+  await entry.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-settings-delete-entry', { snapshot: false });
+  await entry.tap();
+  await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' }).getByTestId('delete-account-blocked')).toBeVisible();
+  await checkpoint(page, 'm-settings-delete', { snapshot: false });
 });
 
 // ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the

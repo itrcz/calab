@@ -12,6 +12,7 @@ export const enFormer: DictShape<typeof ruFormer> = {
   'former.reason.banned': 'banned',
   'former.reason.guestExpired': 'guest access expired',
   'former.reason.directory': 'disabled in the directory',
+  'former.reason.accountDeleted': 'account deleted',
   'former.tab': 'Former',
   'former.card': 'Former members — {n}',
   'former.none': 'No former members',

@@ -86,6 +86,7 @@ import {
   UserNoteResponseSchema,
   ChangeEmailRequestSchema,
   ChangePasswordRequestSchema,
+  DeleteAccountRequestSchema,
   CreateCategoryRequestSchema,
   CreateCategoryResponseSchema,
   CreateInviteRequestSchema,
@@ -297,6 +298,9 @@ export const api = {
       callEmpty('PATCH', '/api/me/password', body(ChangePasswordRequestSchema, init)),
     changeEmail: (init: MessageInitShape<typeof ChangeEmailRequestSchema>) =>
       call('PATCH', '/api/me/email', UpdateMeResponseSchema, body(ChangeEmailRequestSchema, init)),
+    /** ADR-0153: 204, the account is gone and every session revoked. 403 INVALID_CREDENTIALS = wrong password; 409 OWNS_WORKSPACES. */
+    deleteAccount: (init: MessageInitShape<typeof DeleteAccountRequestSchema>) =>
+      callEmpty('POST', '/api/me/delete', body(DeleteAccountRequestSchema, init)),
     /** Custom status (text + emoji, optional expiry); empty text and emoji clear it. */
     setStatus: (init: MessageInitShape<typeof UpdateStatusRequestSchema>) =>
       call('PATCH', '/api/me/status', UpdateMeResponseSchema, body(UpdateStatusRequestSchema, init)),

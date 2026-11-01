@@ -99,6 +99,7 @@ const KEY = new Set([
   'members-menu',
   'members-profile-switch',
   'profile-dialog',
+  'settings-profile-delete', // ADR-0153: account deletion (entry, blocker, password step)
   'profile-menu',
   'profile-birthday',
   'chat-birthday-card',
@@ -2232,6 +2233,28 @@ test('settings-profile-password', async ({ open, win, mock, shot }) => {
   await win.getByRole('button', { name: 'Изменить пароль…' }).click();
   await expect(win.getByRole('dialog', { name: 'Смена пароля' })).toBeVisible();
   await checkpoint(shot, 'settings-profile-password');
+});
+
+test('settings-profile-delete', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  // ADR-0153: Profile → «Удаление аккаунта» (the last card) → the dialog. Anna owns «Команда Calab»:
+  // first the blocker, then (the workspace handed to Вера) the password step.
+  await openSettingsTab(win, openAppSettings(win), appTab('profile'));
+  const entry = win.getByTestId('delete-account');
+  await entry.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'settings-profile-delete-entry');
+  await entry.click();
+  const dialog = win.getByRole('dialog', { name: 'Удалить аккаунт?' });
+  await expect(dialog.getByTestId('delete-account-blocked')).toContainText('Команда Calab');
+  await expect(dialog.getByRole('button', { name: 'Удалить навсегда' })).toBeDisabled();
+  await checkpoint(shot, 'settings-profile-delete-blocked');
+  const ws = mock.state.workspaces.get(IDS.workspaces.main);
+  if (!ws) throw new Error('no main workspace');
+  ws.ownerId = IDS.users.vera;
+  mock.dispatch({ event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+  await expect(dialog.getByLabel('Текущий пароль')).toBeVisible();
+  await checkpoint(shot, 'settings-profile-delete');
 });
 
 /** The pop-up button itself (owner bug: chevron flush right): a long value ends with «…» before the ↕. */
