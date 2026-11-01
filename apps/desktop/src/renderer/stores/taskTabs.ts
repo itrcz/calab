@@ -23,7 +23,7 @@ export interface TaskTab {
   fileId?: string;
   /**
    * A task tab opened with Ctrl/⌘-click or «Открыть в новой вкладке» (#105): held for its task until
-   * closed, a plain open never replaces it. Only an explicit false is the «preview» tab a plain open reuses; absent counts as pinned.
+   * closed. Every task tab is pinned now (#137); an explicit false is a legacy «preview» tab, dropped on restore.
    */
   pinned?: boolean;
   /** When it was last the open task (ms): the oldest one is dropped past {@link MAX_TABS}. */
@@ -32,7 +32,7 @@ export interface TaskTab {
 
 export interface TabsState {
   tabs: TaskTab[];
-  /** The tab a plain open replaces (the last one that was open); null = none yet. */
+  /** The tab of the open task; null = the open task has no tab (or none is open). */
   cur: string | null;
 }
 
@@ -53,21 +53,14 @@ function fit(tabs: TaskTab[], keep: string): TaskTab[] {
 }
 
 /**
- * A task became the open one (a plain open): an existing tab just becomes current; otherwise it
- * replaces the unpinned «preview» tab in place (browser: the current tab navigates; the current
- * one when it is unpinned) or, when every task tab is pinned (#105), is appended as the new preview.
- * With no tabs at all nothing is created — a single task needs no strip. File tabs are never replaced.
+ * A task became the open one (a plain open): an existing tab just becomes current; a task without a
+ * tab gets none (#137: tabs come only from ⌘-click / «Открыть в новой вкладке») and no tab is current.
+ * Pinned tabs are never replaced (#105); file tabs are never touched.
  */
 export function reduceActivate(s: TabsState, entry: TaskTab): TabsState {
   const have = s.tabs.findIndex((x) => x.id === entry.id);
   if (have >= 0) return { tabs: s.tabs.map((x, i) => (i === have ? { ...x, at: entry.at } : x)), cur: entry.id };
-  if (s.tabs.length === 0) return s.cur === null ? s : { tabs: s.tabs, cur: null };
-  const preview = (x: TaskTab): boolean => x.kind !== 'file' && x.pinned === false;
-  let at = s.tabs.findIndex((x) => x.id === s.cur && preview(x));
-  if (at < 0) at = s.tabs.findIndex(preview);
-  const fresh = { ...entry, pinned: false };
-  if (at >= 0) return { tabs: s.tabs.map((x, i) => (i === at ? fresh : x)), cur: entry.id };
-  return { tabs: fit([...s.tabs, fresh], entry.id), cur: entry.id };
+  return s.cur === null ? s : { tabs: s.tabs, cur: null };
 }
 
 /**
@@ -125,8 +118,10 @@ export function sanitizeTabs(raw: unknown): TabsState {
       else if (typeof v.fileId === 'string' && v.fileId) tabs.push({ ...base, kind: 'file', fileId: v.fileId });
       continue;
     }
-    // Stored before the flag existed: every such tab was opened with ⌘, so it stays pinned.
-    tabs.push({ ...base, pinned: v.pinned !== false });
+    // A «preview» tab stored by an older build (#137: plain opens no longer make tabs) is dropped;
+    // a tab stored before the flag existed was opened with ⌘, so it stays pinned.
+    if (v.pinned === false) continue;
+    tabs.push({ ...base, pinned: true });
   }
   const cur = typeof o.cur === 'string' && tabs.some((x) => x.id === o.cur) ? o.cur : null;
   return { tabs: fit(tabs, ''), cur };

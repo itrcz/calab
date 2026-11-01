@@ -17,27 +17,16 @@ describe('reduceActivate', () => {
     expect(s.cur).toBe('b');
     expect(s.tabs[1]?.at).toBe(9);
   });
-  it('replaces the current preview tab in place on a plain open', () => {
-    const s = reduceActivate({ tabs: [pin('a'), pv('b'), pin('c')], cur: 'b' }, tab('x'));
-    expect(ids(s)).toEqual(['a', 'x', 'c']);
-    expect(s.cur).toBe('x');
+  it('a task without a tab gets none: the strip stays, nothing is current (#137)', () => {
+    const s = reduceActivate({ tabs: [pin('a'), pin('b')], cur: 'a' }, tab('x'));
+    expect(ids(s)).toEqual(['a', 'b']);
+    expect(s.cur).toBeNull();
   });
-  it('appends when there is no current tab and no preview tab', () => {
-    const s = reduceActivate({ tabs: [tab('a'), tab('b')], cur: null }, tab('x'));
-    expect(ids(s)).toEqual(['a', 'b', 'x']);
-    expect(s.tabs[2]?.pinned).toBe(false);
-  });
-  it('never replaces pinned tabs: both stay, the new one is added (#105)', () => {
+  it('two tabs via add, then a plain open of a third: two tabs, cur null (#137)', () => {
     const s = reduceActivate(reduceAdd(reduceAdd(empty, tab('a')), tab('b')), tab('c'));
-    expect(ids(s)).toEqual(['a', 'b', 'c']);
-    const s2 = reduceActivate({ ...s, cur: 'a' }, tab('d'));
-    expect(s2.tabs.filter((x) => x.pinned).map((x) => x.id)).toEqual(['a', 'b']);
-  });
-  it('replaces the only unpinned preview tab, wherever it is', () => {
-    const s = reduceActivate({ tabs: [pin('a'), pv('p'), pin('b')], cur: 'a' }, tab('x'));
-    expect(ids(s)).toEqual(['a', 'x', 'b']);
-    expect(s.cur).toBe('x');
-    expect(s.tabs[1]?.pinned).toBe(false);
+    expect(ids(s)).toEqual(['a', 'b']);
+    expect(s.cur).toBeNull();
+    expect(s.tabs.every((x) => x.pinned)).toBe(true);
   });
   it('a plain click on a pinned task just switches to it', () => {
     const s = reduceActivate({ tabs: [pin('a'), pin('b')], cur: 'a' }, tab('b', 9));
@@ -46,12 +35,12 @@ describe('reduceActivate', () => {
   });
   it('never replaces a file tab', () => {
     const f: TaskTab = { ...tab('f:1'), kind: 'file', itemId: 'i' };
-    expect(ids(reduceActivate({ tabs: [f, pin('a')], cur: 'f:1' }, tab('x')))).toEqual(['f:1', 'a', 'x']);
+    expect(ids(reduceActivate({ tabs: [f, pin('a')], cur: 'f:1' }, tab('x')))).toEqual(['f:1', 'a']);
   });
   it('a tab of another workspace is pinned and kept like any other', () => {
     const other: TaskTab = { ...tab('o'), ws: 'w2', board: 'b2' };
     const s = reduceActivate(reduceAdd({ tabs: [pin('a')], cur: 'a' }, other), tab('x'));
-    expect(ids(s)).toEqual(['a', 'o', 'x']);
+    expect(ids(s)).toEqual(['a', 'o']);
     expect(s.tabs[1]).toMatchObject({ ws: 'w2', pinned: true });
   });
 });
@@ -74,10 +63,6 @@ describe('reduceAdd', () => {
   });
   it('with every tab pinned, past the limit the oldest non-open one closes quietly', () => {
     const many = Array.from({ length: MAX_TABS }, (_, i) => pin(`t${i}`, 100 + i));
-    const s = reduceActivate({ tabs: many, cur: 't9' }, tab('new', 500));
-    expect(s.tabs).toHaveLength(MAX_TABS);
-    expect(ids(s)).not.toContain('t0');
-    expect(ids(s)).toContain('new');
     const a = reduceAdd({ tabs: many, cur: 't9' }, tab('n2', 600), tab('t0', 100));
     expect(a.tabs).toHaveLength(MAX_TABS);
     expect(ids(a)).toContain('t0');
@@ -113,9 +98,9 @@ describe('reduceSync / sanitizeTabs', () => {
     expect(reduceSync(s, 'a', 'K-a', 'Task a')).toBe(s);
     expect(reduceSync(s, 'a', 'K-a', 'Renamed').tabs[0]?.title).toBe('Renamed');
   });
-  it('migrates tabs stored without the flag as pinned, keeps an explicit false', () => {
+  it('migrates tabs stored without the flag as pinned, drops a legacy preview tab (#137)', () => {
     const s = sanitizeTabs({ tabs: [{ id: 'a', ws: 'w', board: 'b' }, { id: 'p', ws: 'w', board: 'b', pinned: false }, { id: 'c', ws: 'w', board: 'b', pinned: true }] });
-    expect(s.tabs.map((x) => x.pinned)).toEqual([true, false, true]);
+    expect(s.tabs.map((x) => x.pinned)).toEqual([true, true]);
   });
   it('survives garbage from storage', () => {
     expect(sanitizeTabs(null)).toEqual(empty);
