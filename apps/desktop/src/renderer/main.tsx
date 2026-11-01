@@ -21,6 +21,7 @@ import { bootstrap } from './services/session';
 import { installHostIncomingCalls } from './services/hostIncomingCalls';
 import { installHostNotifications } from './services/hostNotifications';
 import { installHostActivity } from './services/hostActivity';
+import { installHostMediaSession } from './services/hostMediaSession';
 import './app/styles.css';
 
 window.addEventListener('error', (e) => {
@@ -57,6 +58,8 @@ installHostActivity();
 installCalendarWidgets();
 installHostNotifications();
 installHostIncomingCalls();
+// Android phone host: a microphone foreground service while in voice (board #141).
+installHostMediaSession();
 
 // The clock format follows the current workspace (docs/09 #73): `fmt` reads it at call time.
 installTimeFormat();
