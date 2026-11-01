@@ -136,6 +136,9 @@ const (
 	// 409: POST /api/workspaces/{id}/sip/calls — the caller is in another call (a one-to-one call,
 	// an inbound call that rings them or that they took, another personal call) (ADR-0137 §3).
 	ErrorCode_ERROR_CODE_SIP_BUSY ErrorCode = 73
+	// 403: a new DM, a DM message or forward, or a one-to-one call between two people when either
+	// blocked the other (ADR-0154); the same text for both sides.
+	ErrorCode_ERROR_CODE_USER_UNAVAILABLE ErrorCode = 80
 )
 
 // Enum value maps for ErrorCode.
@@ -201,6 +204,7 @@ var (
 		71: "ERROR_CODE_SIP_REGISTRATION_TAKEN",
 		72: "ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN",
 		73: "ERROR_CODE_SIP_BUSY",
+		80: "ERROR_CODE_USER_UNAVAILABLE",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":                     0,
@@ -263,6 +267,7 @@ var (
 		"ERROR_CODE_SIP_REGISTRATION_TAKEN":          71,
 		"ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN":        72,
 		"ERROR_CODE_SIP_BUSY":                        73,
+		"ERROR_CODE_USER_UNAVAILABLE":                80,
 	}
 )
 
@@ -922,7 +927,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\x82\x0f\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xa3\x0f\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -984,7 +989,8 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x1eERROR_CODE_SIP_EXTENSION_TAKEN\x10F\x12%\n" +
 	"!ERROR_CODE_SIP_REGISTRATION_TAKEN\x10G\x12'\n" +
 	"#ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN\x10H\x12\x17\n" +
-	"\x13ERROR_CODE_SIP_BUSY\x10I*\xe8\x03\n" +
+	"\x13ERROR_CODE_SIP_BUSY\x10I\x12\x1f\n" +
+	"\x1bERROR_CODE_USER_UNAVAILABLE\x10P*\xe8\x03\n" +
 	"\rPlanLimitKind\x12\x1f\n" +
 	"\x1bPLAN_LIMIT_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17PLAN_LIMIT_KIND_MEMBERS\x10\x01\x12\x18\n" +

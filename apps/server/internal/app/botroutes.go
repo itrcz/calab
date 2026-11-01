@@ -679,6 +679,14 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/me/blocked-bots/{id}",
 		"DELETE /api/me/blocked-bots/{id}",
 	}},
+	{access: botDeny, why: "ADR-0154: blocking people, reporting people and reviewing reports are a person's own judgement — a bot neither blocks, reports nor reads the reports of a workspace", routes: []string{
+		"GET /api/me/blocked-users",
+		"POST /api/me/blocked-users/{id}",
+		"DELETE /api/me/blocked-users/{id}",
+		"POST /api/reports",
+		"GET /api/workspaces/{id}/reports",
+		"POST /api/workspaces/{id}/reports/{reportId}/resolve",
+	}},
 	{access: botDeny, why: "ADR-0111: a consent to act on someone's behalf is that person's own decision (giving, revoking, declining or cancelling an invitation)", routes: []string{
 		"PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
 		"DELETE /api/workspaces/{id}/bots/{botId}/delegations/{userId}",

@@ -204,7 +204,7 @@ func (s *Service) mayCall(ctx context.Context, me, peerID uuid.UUID) error {
 	if !shared {
 		return httpx.Forbidden("you share no workspace with this user any more")
 	}
-	return nil
+	return dms.CheckPersonDM(ctx, s.db.Q, me, peerID) // ADR-0154
 }
 
 // action serves POST /api/calls/{id}/{accept|decline|cancel|hangup}.

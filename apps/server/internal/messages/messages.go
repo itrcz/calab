@@ -477,6 +477,8 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		if err := h.botSend(r.Context(), uid(r), acc); err != nil {
 			return err
 		}
+	} else if err := h.personSend(r.Context(), uid(r), acc); err != nil {
+		return err
 	}
 	via := auth.ViaBot(r.Context()) // ADR-0106: the owner's message, on the bot's message limit
 	if err := h.botOnBehalf(r.Context(), via); err != nil {

@@ -114,6 +114,9 @@ enum ErrorCode {
   // 409: POST /api/workspaces/{id}/sip/calls — the caller is in another call (a one-to-one call,
   // an inbound call that rings them or that they took, another personal call) (ADR-0137 §3).
   ERROR_CODE_SIP_BUSY = 73;
+  // 403: a new DM, a DM message or forward, or a one-to-one call between two people when either
+  // blocked the other (ADR-0154); the same text for both sides.
+  ERROR_CODE_USER_UNAVAILABLE = 80;
 }
 
 // Error body of every non-2xx REST response.
