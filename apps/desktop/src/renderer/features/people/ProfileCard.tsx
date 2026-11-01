@@ -1,5 +1,4 @@
 import { PresenceStatus, WorkspaceRole } from '@calaba/protocol';
-import { selectBlocked, useBlocks } from '../../stores/blocks';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { MessageCircle, MonitorUp, Pencil, Phone, UserRound, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -67,9 +66,7 @@ export function ProfileCard({
   const actions = useMemberActions(workspaceId, userId);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const canDm = useCanDm(workspaceId, userId);
-  // ADR-0154: no calling a person I blocked (the server refuses it too).
-  const blocked = useBlocks(selectBlocked(userId));
-  const canCall = useCanCall(userId, workspaceId) && !blocked;
+  const canCall = useCanCall(userId, workspaceId);
   const onCall = useOnCall(userId);
   // Speaking ring while they talk in my call (docs/08 «Индикация речи»).
   const speaking = useVoice((st) => st.speaking[userId] ?? false);

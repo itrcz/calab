@@ -355,3 +355,5 @@
 - 2026-10-28 · CalDAV migration 00133, rebase-review minor: consider an explicit lock timeout before ALTER TABLE to avoid waiting indefinitely behind a long reader. The acceptance runbook covers recreating disposable QA databases with earlier unreleased widget migration numbers; verify number availability again before merge.
 
 - 2026-10-29 · Calendar widget integration with the landed session read limiter: a rate-limited revoked grant returns 429 before the principal lookup, so the client retains only its still-valid cached agenda until a later successful revocation check or cache expiry. Document and test this timing together with normal WidgetKit background refresh; 401/403 still clear the grant and cache immediately when received. Minor, no grant scope or revocation bypass.
+
+- 2026-11-01 · Report and block users (ADR-0154, #140), minimal-version gaps: `user_reports` has no retention/export; blocks do not cover workspace telephony (internal-number calls, ADR-0117) or reactions in an existing DM; the report rate limit counts without a per-reporter lock (a burst may pass 10 by a few); hidden-message «Показать» is per session only.

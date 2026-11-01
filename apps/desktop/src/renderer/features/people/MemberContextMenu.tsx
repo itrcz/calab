@@ -263,6 +263,18 @@ function MemberMenuContent({
           <span className="truncate text-micro leading-[13px] opacity-75">{t('people.menu.addNoteHint')}</span>
         </span>
       </ContextMenu.Item>
+      {/* Personal safety (ADR-0154): report to the moderators, block for me — high in the menu: its
+          bottom may fall below a 600 px window. */}
+      {!self ? (
+        <ContextMenu.Item className={row} onSelect={() => openReport(userId, workspaceId)} data-testid="member-report">
+          <Flag className="size-4" aria-hidden /> {t('report.action')}
+        </ContextMenu.Item>
+      ) : null}
+      {!self && !isBot ? (
+        <ContextMenu.Item className={cx(row, !blocked && danger)} onSelect={() => void (blocked ? setUserBlocked(userId, false) : confirmBlockUser(userId, name))} data-testid="member-block">
+          {blocked ? <ShieldCheck className="size-4" aria-hidden /> : <Ban className="size-4" aria-hidden />} {t(blocked ? 'block.unblock' : 'block.action')}
+        </ContextMenu.Item>
+      ) : null}
 
       {/* For me only (local, prefs): volume, «Заглушить», «Не слышать», «Не показывать видео». */}
       {forMe ? <ContextMenu.Separator className={menuSeparator} /> : null}
@@ -364,19 +376,6 @@ function MemberMenuContent({
       {a.ban ? (
         <ContextMenu.Item className={cx(row, danger)} onSelect={() => void banMember(workspaceId, userId)} data-testid="member-ban">
           <Ban className="size-4" aria-hidden /> {t('ban.menu')}
-        </ContextMenu.Item>
-      ) : null}
-
-      {/* Personal safety (ADR-0154): report to the moderators, block for me. */}
-      {!self ? <ContextMenu.Separator className={menuSeparator} /> : null}
-      {!self ? (
-        <ContextMenu.Item className={row} onSelect={() => openReport(userId, workspaceId)} data-testid="member-report">
-          <Flag className="size-4" aria-hidden /> {t('report.action')}
-        </ContextMenu.Item>
-      ) : null}
-      {!self && !isBot ? (
-        <ContextMenu.Item className={cx(row, !blocked && danger)} onSelect={() => void (blocked ? setUserBlocked(userId, false) : confirmBlockUser(userId, name))} data-testid="member-block">
-          {blocked ? <ShieldCheck className="size-4" aria-hidden /> : <Ban className="size-4" aria-hidden />} {t(blocked ? 'block.unblock' : 'block.action')}
         </ContextMenu.Item>
       ) : null}
 
