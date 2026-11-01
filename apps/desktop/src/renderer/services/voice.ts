@@ -1800,6 +1800,12 @@ class VoiceEngine {
       .on(RoomEvent.TrackUnmuted, (pub, p) => {
         if (p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
       })
+      // A full reconnect republishes my stream under a new track sid (issue #102): viewers,
+      // annotations and my stream's entry follow it. The first publish is not this: `this.screen`
+      // is set only after it.
+      .on(RoomEvent.LocalTrackPublished, (pub) => {
+        if (this.room === room && pub.source === Track.Source.ScreenShare && this.screen && pub.track === this.screen.video) this.screenRepublished(pub.trackSid);
+      })
       .on(RoomEvent.LocalTrackUnpublished, (pub) => {
         // Unpublished by the server (camera grant withdrawn) rather than by us.
         if (pub.source === Track.Source.Camera && pub.track === this.camera.localTrack) this.camera.onGrantLost();
@@ -3405,6 +3411,19 @@ class VoiceEngine {
       captured?.stream.getTracks().forEach((t) => t.stop());
       setVoice({ streamBusy: false });
     }
+  }
+
+  /** My stream got a new track sid (republished after a full reconnect): re-key what hangs on it. */
+  private screenRepublished(sid: string): void {
+    // One entry (my one stream); its viewers stay, so their re-announcements play no cue.
+    const seen = new Set<string>();
+    for (const set of this.viewers.values()) for (const id of set) seen.add(id);
+    this.viewers.clear();
+    this.viewers.set(sid, seen);
+    log.info('voice: my stream was republished', { sid });
+    annot.republished(sid);
+    this.refreshStreams();
+    this.publishViewers();
   }
 
   /** The server updates our LiveKit grant after /stream/request; wait until it arrives. */

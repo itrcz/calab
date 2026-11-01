@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BrowserWindow, screen } from 'electron';
 import log from 'electron-log/main';
-import { ANNOT_OVERLAY_CHANNEL, displayBoundsFor, overlaySupported, type AnnotOverlayEvent, type AnnotOverlayMessage, type AnnotOverlayTarget } from '../shared/annot';
+import { ANNOT_OVERLAY_CHANNEL, displayBoundsFor, overlayRaiseDue, overlaySupported, type AnnotOverlayEvent, type AnnotOverlayMessage, type AnnotOverlayTarget } from '../shared/annot';
 
 /**
  * Presenter's annotation overlay (ADR-0028): a transparent, click-through, always-on-top window
@@ -106,8 +106,16 @@ function post(msg: AnnotOverlayMessage): void {
   });
 }
 
+let raisedAt = 0;
+
 export function sendOverlay(ev: AnnotOverlayEvent): void {
   post({ type: 'event', ev });
+  const o = overlay;
+  const now = Date.now();
+  if (!o || o.win.isDestroyed() || !o.win.isVisible() || !overlayRaiseDue(process.platform, now, raisedAt)) return;
+  raisedAt = now;
+  // SWP_NOACTIVATE: back to the top of the topmost band without taking the focus.
+  o.win.moveTop();
 }
 
 export function closeOverlay(): void {
