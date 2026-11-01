@@ -18,7 +18,8 @@
   },
   "android": {
     "modules": [
-      "io.calab.host.CalabMessageNotificationsModule"
+      "io.calab.host.CalabMessageNotificationsModule",
+      "io.calab.host.CalabMediaSessionModule"
     ]
   }
 }

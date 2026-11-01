@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <!-- Android 13+: runtime permission, requested only by the shared web client's prompt (ADR-0070). -->
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <!-- Board #141: a microphone foreground service while in a voice room or a call. No phoneCall
+       type: there is no Telecom/ConnectionService (ADR-0071 Android, v2). -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
   <application>
     <!-- Data-only FCM messages (ADR-0070/0071, Android). Not exported: only Firebase delivers here. -->
@@ -18,5 +22,10 @@
       android:excludeFromRecents="true"
       android:noHistory="true"
       android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    <!-- Started only by CalabMediaSession while the app is in the foreground; not exported. -->
+    <service
+      android:name="io.calab.host.CalabMediaSessionService"
+      android:exported="false"
+      android:foregroundServiceType="microphone" />
   </application>
 </manifest>
