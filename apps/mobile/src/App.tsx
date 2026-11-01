@@ -16,7 +16,8 @@ import { hostReducer, initialHostState } from './hostState';
 import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './navigation';
 import { strings } from './strings';
 import { callsOperation, callsReply, subscribeCalls, callAudioEnabled } from './incomingCalls';
-import { ActivityProtocol, activityBootstrap, activityReady, linkEvent } from './activityProtocol';
+import { ActivityProtocol, activityBootstrap, activityReady, linkEvent, mediaSessionEvent } from './activityProtocol';
+import { clearMediaSession, mediaSessionEnabled, setMediaSession, subscribeMediaSession } from './mediaSession';
 import { appUrlForLink } from './links';
 import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, setNotificationsDocument, subscribeNotifications, testNotification, notificationTestReply } from './notifications';
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
@@ -28,7 +29,7 @@ import { calendarWidgetEnabled, calendarWidgetScheme, calendarWidgetOpen, calend
  * The phone host (ADR-0067): one full-screen WebView with the web client — the same DOM, router and
  * MobileShell as in a browser — plus a load error surface. The host channel (ADR-0069/0070) is
  * offered after a native main-frame/origin handshake in the WebView patch (iOS also checks the
- * current document); Android offers notifications and links only. File hand-off is iOS-native (ADR-0068): the web's
+ * current document); Android offers notifications, links and the media session (board #141). File hand-off is iOS-native (ADR-0068): the web's
  * `<a download>` of its own blob: from the app's main frame goes to the share sheet, decided in the
  * react-native-webview patch without JS or page input. Incoming universal / app / `calab://` links
  * (ADR-0142) open the same route of the web client. The WebView is edge to edge; the web client applies
@@ -89,6 +90,7 @@ function Host({ origin }: { origin: string }) {
   const resetActivity = useCallback(() => {
     activity.current.reset();
     endSessionActivity();
+    clearMediaSession();
     setNotificationsDocument(null, false);
   }, []);
   useEffect(() => {
@@ -104,8 +106,10 @@ function Host({ origin }: { origin: string }) {
     const action = activity.current.accept(nativeEvent.data);
     if (action?.type === 'ready') {
       endSessionActivity();
+      // A new document: the web re-sends its voice session right after this handshake.
+      clearMediaSession();
       setNotificationsDocument(action.document, false);
-      web.current?.injectJavaScript(activityReady(state.generation, action.document, sessionActivityEnabled, ANDROID, calendarWidgetEnabled));
+      web.current?.injectJavaScript(activityReady(state.generation, action.document, sessionActivityEnabled, ANDROID, calendarWidgetEnabled, ANDROID && mediaSessionEnabled));
       deliverCalendar();
     } else if (action?.type === 'calendarWidget') {
       if (action.operation === 'opened') {
@@ -127,7 +131,8 @@ function Host({ origin }: { origin: string }) {
           web.current?.injectJavaScript(permissionsReply(state.generation, action.document, action.request, reply));
       });
     } else if (action?.type === 'publish') publishSessionActivity(action.document, action.snapshot);
-    else if (action?.type === 'end') { endSessionActivity(); setNotificationsDocument(null, action.reason === 'logout'); }
+    else if (action?.type === 'media') setMediaSession(action.document, action.session, action.language);
+    else if (action?.type === 'end') { endSessionActivity(); clearMediaSession(); setNotificationsDocument(null, action.reason === 'logout'); }
     else if (action?.type === 'notifications' && action.operation === 'ack' && action.eventId) acknowledgeNotification(action.document, action.eventId);
     else if (action?.type === 'notifications' && action.operation === 'test' && action.body) {
       void testNotification(action.document, action.body).then(result => {
@@ -146,6 +151,11 @@ function Host({ origin }: { origin: string }) {
   useEffect(() => subscribeNotifications((document, value) => {
     if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
       web.current?.injectJavaScript(notificationReply(state.generation, document, 0, value));
+  }), [state.generation]);
+
+  useEffect(() => subscribeMediaSession((document) => {
+    if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
+      web.current?.injectJavaScript(mediaSessionEvent(state.generation, document));
   }), [state.generation]);
 
   useEffect(() => subscribePermissions((document, value) => {
@@ -317,7 +327,7 @@ function Host({ origin }: { origin: string }) {
         onRenderProcessGone={onProcessGone}
         {...(hostChannelEnabled ? {
           onMessage,
-          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled, Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null, calendarWidgetEnabled),
+          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled, Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null, calendarWidgetEnabled, mediaSessionEnabled),
           injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true,
         } : {})}
         // Persistent session: the default (non-incognito) website data store keeps the HttpOnly cookie.

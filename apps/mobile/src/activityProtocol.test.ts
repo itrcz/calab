@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import { parseHostActivityMessage } from '../../desktop/src/shared/hostActivity';
 import { parseCallsState } from '../../desktop/src/shared/hostCalls';
-import { ActivityProtocol, activityBootstrap, activityReady, linkEvent } from './activityProtocol';
+import { ActivityProtocol, activityBootstrap, activityReady, linkEvent, mediaSessionEvent } from './activityProtocol';
 
 const document = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -152,5 +152,42 @@ describe('Android host channel (DEV-5033, ADR-0070 Android)', () => {
     expect(ready).not.toContain('"calls"');
     expect(ready).not.toContain('"permissions"');
     expect(ready).not.toContain('"calendarWidget"');
+    expect(ready).not.toContain('"mediaSession"');
+    expect(bridge.mediaSessionVersion).toBeUndefined();
+  });
+});
+
+describe('Android media session (board #141)', () => {
+  const media = (fields: Record<string, unknown> = {}, seq = 1) => JSON.stringify({ v: 1, type: 'media', host: 0, document, seq, session: 'room', language: 'ru', ...fields });
+  it('parses room/call/none strictly: no unknown fields, sessions or languages', () => {
+    for (const session of ['room', 'call', 'none']) expect(parseHostActivityMessage(media({ session }))).toMatchObject({ type: 'media', session });
+    for (const raw of [media({ session: 'stream' }), media({ language: 'de' }), media({ roomId: 'private' }), media({ seq: 0 }),
+      JSON.stringify({ v: 1, type: 'media', host: 0, document, seq: 1, session: 'room' })]) expect(parseHostActivityMessage(raw)).toBeNull();
+  });
+  it('only for the current document, in order, after the handshake', () => {
+    const p = new ActivityProtocol(0);
+    expect(p.accept(media())).toBeNull();
+    p.accept(hello());
+    expect(p.accept(media({ session: 'call' }))).toEqual({ type: 'media', document, session: 'call', language: 'ru' });
+    expect(p.accept(media({ session: 'none' }, 1))).toBeNull();
+    expect(p.accept(media({ document: other }, 2))).toBeNull();
+    expect(p.accept(media({ session: 'none' }, 2))).toEqual({ type: 'media', document, session: 'none', language: 'ru' });
+  });
+  it('is advertised by the Android host with the module only, never by iOS', () => {
+    const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
+    top.top = top;
+    runInNewContext(activityBootstrap(3, false, 'android', false, true), { window: top, crypto: top.crypto });
+    expect((top.CalabHostActivity as Record<string, unknown>).mediaSessionVersion).toBe(1);
+    expect(activityBootstrap(3, true, 'ios', true, true)).not.toContain('mediaSessionVersion');
+    expect(activityReady(3, document, false, true, false, true)).toContain('"mediaSession":1');
+    expect(activityReady(3, document, true, false, true, true)).not.toContain('"mediaSession"');
+  });
+  it('the leave event names the current host and document only', () => {
+    const dispatchEvent = vi.fn();
+    class Event { constructor(readonly type: string, readonly init: { detail: unknown }) {} }
+    runInNewContext(mediaSessionEvent(3, document), { window: { dispatchEvent }, CustomEvent: Event });
+    const event = dispatchEvent.mock.calls[0]?.[0] as Event;
+    expect(event.type).toBe('calab-host-media');
+    expect(event.init.detail).toEqual({ v: 1, host: 3, document, action: 'leave' });
   });
 });

@@ -97,6 +97,12 @@ const config: ExpoConfig = {
     // The WebView grants getUserMedia only for permissions the app declares. POST_NOTIFICATIONS is
     // the Android 13+ runtime permission for push, asked only through the web client's prompt.
     permissions: ['RECORD_AUDIO', 'MODIFY_AUDIO_SETTINGS', 'CAMERA', 'POST_NOTIFICATIONS'],
+    // Expo template permissions the app never uses (board #141), removed from the merged manifest
+    // with tools:node="remove": uploads go through the system picker (no storage read), nothing
+    // draws over other apps. Kept: VIBRATE (the WebView's navigator.vibrate, lib/haptics.ts) and
+    // WRITE_EXTERNAL_STORAGE ≤ API 32 (react-native-webview asks for it to download on Android ≤ 9).
+    // The microphone foreground service and its permissions come from the module's manifest.
+    blockedPermissions: ['android.permission.READ_EXTERNAL_STORAGE', 'android.permission.SYSTEM_ALERT_WINDOW'],
     intentFilters: [
       ...(linkHosts.length ? [{
         action: 'VIEW',

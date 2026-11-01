@@ -6,4 +6,5 @@
   <string name="calab_push_incoming_call">Входящий звонок</string>
   <string name="calab_push_answer">Ответить</string>
   <string name="calab_push_decline">Отклонить</string>
+  <string name="calab_media_channel">Голосовые комнаты и звонки</string>
 </resources>
