@@ -10,8 +10,8 @@ Apple Guideline 1.2 (контент пользователей) требует �
 ### 1. Блокировка — на уровне аккаунта, не пространства
 `user_blocks (user_id, blocked_user_id, created_at)`, PK `(user_id, blocked_user_id)` (миграция 00140).
 `GET /api/me/blocked-users` → `ListBlockedUsersResponse{user_ids}`; `POST` / `DELETE
-/api/me/blocked-users/{id}` → 204. Только люди (боты — 403), не себя, не бота (боты — прежний
-`/api/me/blocked-bots`, ADR-0031), неизвестный или чужой пользователь — 404 (как `POST /api/dms`:
+/api/me/blocked-users/{id}` → 204. Только люди (вызов ботом — 403), не себя (422), не бота (422, боты —
+прежний `/api/me/blocked-bots`, ADR-0031), неизвестный или чужой пользователь — 404 (как `POST /api/dms`:
 блокировать можно того, с кем есть общее пространство или DM). Повторный POST/DELETE идемпотентны.
 
 Почему аккаунт, а не пространство: личные сообщения и звонки один на один принадлежат аккаунтам, не

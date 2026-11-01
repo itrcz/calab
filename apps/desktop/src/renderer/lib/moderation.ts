@@ -46,3 +46,6 @@ export function suspensionChange(current: boolean, next: boolean, reason: string
 
 /** react-query key of a workspace's bans; WORKSPACE_BAN_ADD / _REMOVE invalidate it (services/dispatch). */
 export const bansKey = (workspaceId: string) => ['bans', workspaceId] as const;
+
+/** react-query key of a workspace's reports (ADR-0154); WORKSPACE_REPORT_* invalidate it. */
+export const reportsKey = (workspaceId: string) => ['reports', workspaceId] as const;

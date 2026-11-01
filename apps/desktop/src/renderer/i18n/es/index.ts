@@ -16,6 +16,7 @@ import { esPeople } from './people';
 import { esFormer } from './former';
 import { esPrivacy } from './privacy';
 import { esModeration } from './moderation';
+import { esReport } from './report';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
 import { esCalendar } from './calendar';
@@ -94,6 +95,7 @@ export const es: Dict = {
   ...esFormer,
   ...esPrivacy,
   ...esModeration,
+  ...esReport,
   ...esMail,
   ...esRecording,
   ...esAnnot,

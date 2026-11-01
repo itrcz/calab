@@ -13,7 +13,7 @@
 |---|-----|--------------|--------|
 | B1 | **Нет удаления аккаунта в приложении** и нет URL удаления. Регистрация есть (`POST /api/auth/register`), а `DELETE /api/me`/аналога нет, в i18n нет «Удалить аккаунт» (поиск по `apps/server/internal`, `apps/desktop/src/renderer/i18n`). | Apple 5.1.1(v): приложение с созданием аккаунта обязано давать удаление внутри приложения. Google Play: то же + обязательный «URL удаления аккаунта» в Data safety. Вероятный отказ в обоих магазинах. | [код] нужна задача: экран «Настройки → Аккаунт → Удалить аккаунт» + эндпоинт + страница-инструкция для Play |
 | B2 | **В приложении нет ссылок на Политику конфиденциальности и Условия.** `AuthLegalFooter` (`apps/desktop/src/renderer/features/legal/Legal.tsx`) показывает только «© GPTunneL · Powered by», «Лицензия» (BUSL) и «Сторонние компоненты» — модальные окна с лицензионным текстом. | Apple 5.1.1(i) и Play: ссылка на политику внутри приложения и в карточке магазина. | [код] добавить две ссылки в футер входа и в «Настройки → О программе» (см. §2.4) |
-| B3 | **Нет пользовательской жалобы/блокировки пользователя.** Блокировка есть только для ботов (`DELETE /api/me/blocked-bots/{id}`), «пожаловаться» нет. | Apple 1.2 (UGC): механизм жалобы, блокировка, контакт. Для закрытых рабочих пространств ревьюер может принять объяснение, но при открытой регистрации (`REGISTRATION_MODE=open`) это риск. | [?] решить: объяснение в Review Notes или минимальная «Пожаловаться» → письмо на support@ |
+| B3 | ~~**Нет пользовательской жалобы/блокировки пользователя.**~~ Сделано (ADR-0154, #140): «Пожаловаться» на сообщение и человека → администраторам пространства (вкладка «Жалобы»), блокировка человека (DM и звонки запрещены, сообщения скрыты), «Заблокированные» в настройках. | Apple 1.2 (UGC): механизм жалобы, блокировка, контакт. Для закрытых рабочих пространств ревьюер может принять объяснение, но при открытой регистрации (`REGISTRATION_MODE=open`) это риск. | [?] решить: объяснение в Review Notes или минимальная «Пожаловаться» → письмо на support@ |
 | B4 | **Android: платёжный UI скрыт** (ADR-0148), но если когда-нибудь вернётся — Play требует Play Billing для цифровых услуг. Пока скрыто — риска нет. | Play Payments policy | [код] `apps/desktop/src/renderer/platform/nativeShell.ts`, `services/plan.ts` |
 | B5 | Android: FCM-push и звонки **не проверены на устройстве**, нужен Firebase-проект и `PUSH_FCM_*` на сервере. В описании Play не обещаем звонки на Android. | Честность листинга | [код] shared-web-status 2026-10-30 |
 
@@ -241,7 +241,7 @@ iPad-скриншоты не нужны: `supportsTablet: false` [код: `app.c
 | Насилие, секс, нагота, азартные игры, лутбоксы, алкоголь/табак/наркотики, ужасы, медицинские темы | Нет / None | [код] у приложения нет такого собственного контента |
 | Неограниченный веб-доступ | Нет: WebView открывает только `app.calab.io`, остальные ссылки уходят в системный браузер (`navigation.ts`) | [код] |
 | Пользовательский контент и общение (messaging/chat, user-generated content) | **Да** | [код] чаты, файлы |
-| Модерация/жалобы | Пользовательской жалобы нет (B3) | [код] |
+| Модерация/жалобы | Есть: жалоба на сообщение/человека и блокировка (ADR-0154) | [код] |
 | Родительский контроль, возрастные ограничения | Нет | — |
 
 Ожидание из задачи — 4+. [?] Реальный итог считает сама консоль: из-за пункта «пользовательский контент/чат» Apple может выставить выше 4+ (чаще 13+ или 16+). Условия Calab — для совершеннолетних (п. 1 Terms), поэтому допустим осознанный выбор 17+/18+ вместо подбора минимума. Подтвердить после заполнения анкеты.
@@ -289,7 +289,11 @@ GUIDELINE NOTES
 - 5.1.1(v) (account deletion): <describe the delete-account path once it exists: Settings >
   Account > Delete account>.
 - 1.2 (user-generated content): content is created inside private team workspaces by invited
-  members; <describe report/block mechanism once it exists>. Contact: support@calab.io.
+  members. Any message or person can be reported (message menu / member menu > Report: reason +
+  comment); reports go to the workspace admins (Workspace settings > Reports) and are logged.
+  Any person can be blocked (member menu / chat menu > Block): they can no longer message or
+  call you and their messages in shared rooms are hidden; unblock in Settings > Blocked users.
+  Contact: support@calab.io.
 
 Contact: support@calab.io, <OWNER_PHONE>
 ```

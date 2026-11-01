@@ -26,6 +26,7 @@ import { PinnedBar, SearchPanel } from './RoomPanels';
 import { MiniPlayer } from './MediaPlayer';
 import { roomLabel } from './roomLabel';
 import { useFileDrop } from './useFileDrop';
+import { BlockedComposer, useDmBlockedPeer } from '../dm/BlockedComposer';
 
 export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
@@ -88,6 +89,8 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
     [canAttach],
   );
   const [dragging, dropHandlers] = useFileDrop(canAttach, addFiles);
+  // ADR-0154: a DM with a person I blocked shows why I cannot write instead of the composer.
+  const blockedPeer = useDmBlockedPeer(roomId);
 
   if (!room) return <div className="mat-content flex-1" />;
 
@@ -120,7 +123,11 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       </div>
       {/* Phone layout: the bottom safe-area inset when nothing is below the composer (MobileShell). */}
       <div ref={composerRef} data-testid="composer" className="shrink-0 bg-feed mobile:pb-[var(--composer-safe,0px)]">
-        <Composer workspaceId={workspaceId} room={room} perms={perms} files={files} setFiles={setFiles} addFiles={addFiles} />
+        {blockedPeer ? (
+          <BlockedComposer peerId={blockedPeer} />
+        ) : (
+          <Composer workspaceId={workspaceId} room={room} perms={perms} files={files} setFiles={setFiles} addFiles={addFiles} />
+        )}
       </div>
 
       {dragging ? (

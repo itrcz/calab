@@ -16,6 +16,7 @@ import { zhPeople } from './people';
 import { zhFormer } from './former';
 import { zhPrivacy } from './privacy';
 import { zhModeration } from './moderation';
+import { zhReport } from './report';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
@@ -94,6 +95,7 @@ export const zhCN: Dict = {
   ...zhFormer,
   ...zhPrivacy,
   ...zhModeration,
+  ...zhReport,
   ...zhMail,
   ...zhRecording,
   ...zhAnnot,
