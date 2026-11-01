@@ -58,6 +58,7 @@ import (
 	"github.com/calaba/calaba/server/internal/push"
 	"github.com/calaba/calaba/server/internal/recording"
 	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/reports"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/rtc"
 	"github.com/calaba/calaba/server/internal/search"
@@ -493,6 +494,8 @@ func New(d Deps) *App {
 	dmHandlers := dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)) // 10 at once, 30 per hour
 	dmHandlers.EmailGate = authSvc.EmailGate()
 	dmHandlers.Routes(mux, private)
+	dmHandlers.BlockRoutes(mux, private)                // ADR-0154
+	reports.NewHandlers(d.DB, pub).Routes(mux, private) // ADR-0154
 	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
 	diskSvc := disk.New(d.DB, pub, filesSvc, planSvc)

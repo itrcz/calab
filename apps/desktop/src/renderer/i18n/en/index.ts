@@ -17,6 +17,7 @@ import { enFormer } from './former';
 import { enAccount } from './account';
 import { enPrivacy } from './privacy';
 import { enModeration } from './moderation';
+import { enReport } from './report';
 import { enPicker } from './picker';
 import { enRoles } from './roles';
 import { enCalendar } from './calendar';
@@ -96,6 +97,7 @@ export const en: Dict = {
   ...enAccount,
   ...enPrivacy,
   ...enModeration,
+  ...enReport,
   ...enMail,
   ...enRecording,
   ...enAnnot,

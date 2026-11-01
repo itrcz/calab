@@ -27,7 +27,7 @@ UPDATE sessions SET ip = '', user_agent = '', device_name = '' WHERE user_id = $
 
 -- name: DeleteAccountPersonalData :exec
 -- Rows that only describe the user (no one else's history): codes, attribution, calendars,
--- sticker installs, bot blocks and shares, task subscriptions, product admin, identity links,
+-- sticker installs, bot blocks, the people the user blocked (ADR-0154) and bot shares, task subscriptions, product admin, identity links,
 -- OAuth consents, bot delegations, push devices, notes about
 -- people (by and about the user).
 WITH
@@ -39,6 +39,7 @@ WITH
     ext_reminders AS (DELETE FROM external_reminders_sent WHERE external_reminders_sent.user_id = sqlc.arg('user_id')::uuid),
     packs AS (DELETE FROM user_sticker_packs WHERE user_sticker_packs.user_id = sqlc.arg('user_id')::uuid),
     blocks AS (DELETE FROM bot_blocks WHERE bot_blocks.user_id = sqlc.arg('user_id')::uuid),
+    user_blocks_by AS (DELETE FROM user_blocks WHERE user_blocks.user_id = sqlc.arg('user_id')::uuid),
     shares AS (DELETE FROM bot_contact_shares WHERE bot_contact_shares.user_id = sqlc.arg('user_id')::uuid),
     subs AS (DELETE FROM task_subscribers WHERE task_subscribers.user_id = sqlc.arg('user_id')::uuid),
     admin AS (DELETE FROM product_admin_grants WHERE product_admin_grants.user_id = sqlc.arg('user_id')::uuid),

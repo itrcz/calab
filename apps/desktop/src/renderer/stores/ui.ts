@@ -47,6 +47,8 @@ export type Dialog =
   | { kind: 'new-dm' }
   /** «Переслать…» (ADR-0033): pick people / rooms to copy the message `messageId` of `roomId` into. */
   | { kind: 'forward'; roomId: string; messageId: string }
+  /** «Пожаловаться» (ADR-0154): on a person, or on their message `messageId`; `workspaceId` '' = pick a shared one. */
+  | { kind: 'report'; userId: string; workspaceId: string; messageId: string }
   /** «Отправить в чат…» of a wiki page (owner 14.10): the forward picker sends the page's address (+ a comment). */
   | { kind: 'wiki-send'; pageId: string }
   /** «Отправить в чат…» of a canvas (owner 23.10): the same picker, the canvas' address (+ a comment). */

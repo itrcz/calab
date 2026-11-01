@@ -1,6 +1,6 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowRightLeft, AtSign, Award, Ban, MessageCircle, Phone, Check, ChevronRight, IdCard, KeyRound, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, AtSign, Award, Ban, Flag, ShieldCheck, MessageCircle, Phone, Check, ChevronRight, IdCard, KeyRound, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -25,6 +25,9 @@ import { startCall } from '../../services/call';
 import { RoomSubmenuPicker } from '../workspace/RoomPicker';
 import { LocalTime } from './LocalTime';
 import { useAchievementUi } from '../../stores/achievementUi';
+import { selectBlocked, useBlocks } from '../../stores/blocks';
+import { confirmBlockUser, setUserBlocked } from '../../services/blocks';
+import { openReport } from './ReportDialog';
 
 /** What I may do with a member right now (reactive; the server re-checks every action). */
 export function useMemberActions(workspaceId: string, userId: string): MenuActions | null {
@@ -201,6 +204,8 @@ function MemberMenuContent({
     const e = s.byId[workspaceId];
     return !!e?.members[userId]?.user?.isBot && e.role !== WorkspaceRole.GUEST;
   });
+  const isBot = useWorkspaces((s) => !!s.byId[workspaceId]?.members[userId]?.user?.isBot);
+  const blocked = useBlocks(selectBlocked(userId));
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const localDeaf = usePrefs((s) => !!s.deafUsers[userId]);
   const videoHidden = usePrefs((s) => !!s.hiddenVideo[userId]);
@@ -258,6 +263,18 @@ function MemberMenuContent({
           <span className="truncate text-micro leading-[13px] opacity-75">{t('people.menu.addNoteHint')}</span>
         </span>
       </ContextMenu.Item>
+      {/* Personal safety (ADR-0154): report to the moderators, block for me — high in the menu: its
+          bottom may fall below a 600 px window. */}
+      {!self ? (
+        <ContextMenu.Item className={row} onSelect={() => openReport(userId, workspaceId)} data-testid="member-report">
+          <Flag className="size-4" aria-hidden /> {t('report.action')}
+        </ContextMenu.Item>
+      ) : null}
+      {!self && !isBot ? (
+        <ContextMenu.Item className={cx(row, !blocked && danger)} onSelect={() => void (blocked ? setUserBlocked(userId, false) : confirmBlockUser(userId, name))} data-testid="member-block">
+          {blocked ? <ShieldCheck className="size-4" aria-hidden /> : <Ban className="size-4" aria-hidden />} {t(blocked ? 'block.unblock' : 'block.action')}
+        </ContextMenu.Item>
+      ) : null}
 
       {/* For me only (local, prefs): volume, «Заглушить», «Не слышать», «Не показывать видео». */}
       {forMe ? <ContextMenu.Separator className={menuSeparator} /> : null}

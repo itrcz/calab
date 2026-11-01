@@ -2071,11 +2071,32 @@ type UserAttribution struct {
 	CreatedAt   time.Time
 }
 
+type UserBlock struct {
+	UserID        uuid.UUID
+	BlockedUserID uuid.UUID
+	CreatedAt     time.Time
+}
+
 type UserNote struct {
 	AuthorID  uuid.UUID
 	SubjectID uuid.UUID
 	Text      string
 	UpdatedAt time.Time
+}
+
+type UserReport struct {
+	ID           uuid.UUID
+	WorkspaceID  uuid.UUID
+	ReporterID   *uuid.UUID
+	TargetUserID *uuid.UUID
+	MessageID    *uuid.UUID
+	RoomID       *uuid.UUID
+	MessageText  string
+	Reason       int16
+	Comment      string
+	CreatedAt    time.Time
+	ResolvedAt   *time.Time
+	ResolvedBy   *uuid.UUID
 }
 
 type UserStickerPack struct {

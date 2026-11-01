@@ -16,6 +16,7 @@ import { ruFormer } from './former';
 import { ruAccount } from './account';
 import { ruPrivacy } from './privacy';
 import { ruModeration } from './moderation';
+import { ruReport } from './report';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
@@ -95,6 +96,7 @@ export const ru = {
   ...ruAccount,
   ...ruPrivacy,
   ...ruModeration,
+  ...ruReport,
   ...ruMail,
   ...ruRecording,
   ...ruAnnot,

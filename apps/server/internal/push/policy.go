@@ -61,6 +61,10 @@ func (s *Service) allowedPolicy(ctx context.Context, q *sqlc.Queries, u sqlc.Use
 		if msg.DeletedAt != nil || msg.AuthorID == u.ID || job.RoomID == nil || msg.RoomID != *job.RoomID {
 			return false, false, nil
 		}
+		// ADR-0154: nothing from an author the recipient blocked, in shared rooms too.
+		if blocked, err := q.IsUserBlocked(ctx, sqlc.IsUserBlockedParams{UserID: u.ID, BlockedUserID: msg.AuthorID}); err != nil || blocked {
+			return false, false, err
+		}
 
 		if !resolving && msg.Kind == "system" {
 			system, err := messageSystem(msg)

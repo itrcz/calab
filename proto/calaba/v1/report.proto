@@ -1,0 +1,85 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/user.proto";
+
+// Report and block users (ADR-0154).
+
+// ---- Blocking (account-level). ----
+
+// GET /api/me/blocked-users; POST / DELETE /api/me/blocked-users/{id} → 204 (people only; a bot
+// target is 422, use /api/me/blocked-bots). A block in either direction refuses a new DM, a DM
+// message, forward, edit or reaction and a one-to-one call with 403 USER_UNAVAILABLE to both
+// sides; DM typing is not relayed; message pushes from a blocked author are not sent. Shared workspace rooms are not filtered: the client
+// collapses the blocked author's messages. USER_BLOCKS_UPDATE goes to the blocker's own sessions.
+message ListBlockedUsersResponse {
+  repeated string user_ids = 1;
+}
+
+// USER_BLOCKS_UPDATE: the caller blocked or unblocked a user on another device (user channel,
+// the blocker only; never sent to the blocked person).
+message UserBlocksUpdate {
+  string user_id = 1;
+  bool blocked = 2;
+}
+
+// ---- Reports. ----
+
+enum ReportReason {
+  REPORT_REASON_UNSPECIFIED = 0;
+  REPORT_REASON_SPAM = 1;
+  REPORT_REASON_HARASSMENT = 2; // insults, bullying
+  REPORT_REASON_VIOLENCE = 3;   // threats, violence, hate
+  REPORT_REASON_SEXUAL = 4;
+  REPORT_REASON_ILLEGAL = 5;
+  REPORT_REASON_OTHER = 6;
+}
+
+// POST /api/reports → 201 CreateReportResponse. With message_id the target is the message's
+// author (user_id must match) and the caller needs VIEW_ROOM in its room; the workspace is the
+// room's, for a DM workspace_id where both people are members. Without message_id both are
+// members of workspace_id. 404 not a member / unknown message; 422 VALIDATION (reason, comment
+// over 1000 characters, oneself); 429 RATE_LIMITED over 10 reports per hour.
+message CreateReportRequest {
+  string workspace_id = 1;
+  string user_id = 2;
+  string message_id = 3; // optional
+  ReportReason reason = 4;
+  string comment = 5; // optional, ≤ 1000 characters
+}
+
+message CreateReportResponse {
+  string id = 1;
+}
+
+// A report as the workspace's moderators (MANAGE_MEMBERS, not guests) see it.
+message UserReport {
+  string id = 1;
+  string workspace_id = 2;
+  User reporter = 3; // unset = account deleted
+  User target = 4;   // unset = account deleted
+  string message_id = 5; // empty = a report about the person
+  string room_id = 6;
+  string message_text = 7; // the message text when it was reported (≤ 2000 characters)
+  ReportReason reason = 8;
+  string comment = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp resolved_at = 11; // unset = open
+  string resolved_by = 12;
+}
+
+// GET /api/workspaces/{id}/reports?before=<id>&limit=<1..100, default 50> (MANAGE_MEMBERS):
+// newest first. POST /api/workspaces/{id}/reports/{reportId}/resolve → 204.
+message ListReportsResponse {
+  repeated UserReport reports = 1;
+}
+
+// WORKSPACE_REPORT_CREATE / WORKSPACE_REPORT_UPDATE (resolved): to MANAGE_MEMBERS, not guests.
+message WorkspaceReportCreate {
+  UserReport report = 1;
+}
+
+message WorkspaceReportUpdate {
+  UserReport report = 1;
+}

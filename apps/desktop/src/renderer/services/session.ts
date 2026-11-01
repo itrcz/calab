@@ -12,6 +12,7 @@ import { useNotes } from '../stores/notes';
 import { useRoomPreviews } from '../stores/roomPreviews';
 import { useStickers } from '../stores/stickers';
 import { useBots } from '../stores/bots';
+import { useBlocks } from '../stores/blocks';
 import { useCalendar } from '../stores/calendar';
 import { useEventComments } from '../stores/eventComments';
 import { useFreeBusy } from '../stores/freebusy';
@@ -236,6 +237,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useRoomPreviews.getState().reset();
   useStickers.getState().reset();
   useBots.getState().reset();
+  useBlocks.getState().reset();
   useCalendar.getState().reset();
   useEventComments.getState().reset();
   useFreeBusy.getState().reset();

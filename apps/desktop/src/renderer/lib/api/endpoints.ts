@@ -241,6 +241,11 @@ import {
   CreateBotResponseSchema,
   GetBotMeResponseSchema,
   ListBlockedBotsResponseSchema,
+  ListBlockedUsersResponseSchema,
+  CreateReportRequestSchema,
+  CreateReportResponseSchema,
+  ListReportsResponseSchema,
+  type ReportReason,
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
@@ -723,6 +728,22 @@ export const api = {
     /** My own state of a DM (docs/09 #51): archive / «Удалить чат» (for me only); 404 not a participant. */
     setState: (roomId: string, state: { archived?: boolean; cleared?: boolean }) =>
       call('PATCH', `/api/dms/${roomId}/state`, UpdateDmStateResponseSchema, body(UpdateDmStateRequestSchema, state)),
+  },
+  /**
+   * Report and block users (ADR-0154). Blocks are account-level: a block in either direction
+   * refuses a new DM, DM messages and calls (403 USER_UNAVAILABLE); shared rooms are hidden in
+   * the client. Reports go to the workspace's MANAGE_MEMBERS (429 over 10 per hour).
+   */
+  blocks: {
+    list: () => call('GET', '/api/me/blocked-users', ListBlockedUsersResponseSchema),
+    block: (userId: string) => callEmpty('POST', `/api/me/blocked-users/${userId}`),
+    unblock: (userId: string) => callEmpty('DELETE', `/api/me/blocked-users/${userId}`),
+  },
+  reports: {
+    create: (r: { workspaceId: string; userId: string; messageId: string; reason: ReportReason; comment: string }) =>
+      call('POST', '/api/reports', CreateReportResponseSchema, body(CreateReportRequestSchema, r)),
+    list: (workspaceId: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${workspaceId}/reports`, ListReportsResponseSchema, undefined, signal),
+    resolve: (workspaceId: string, reportId: string) => callEmpty('POST', `/api/workspaces/${workspaceId}/reports/${reportId}/resolve`),
   },
   /**
    * Notes shelves (ADR-0039): personal rooms; messages use the room endpoints, uploads go to

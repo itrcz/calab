@@ -84,6 +84,7 @@ WITH
     ext_reminders AS (DELETE FROM external_reminders_sent WHERE external_reminders_sent.user_id = $1::uuid),
     packs AS (DELETE FROM user_sticker_packs WHERE user_sticker_packs.user_id = $1::uuid),
     blocks AS (DELETE FROM bot_blocks WHERE bot_blocks.user_id = $1::uuid),
+    user_blocks_by AS (DELETE FROM user_blocks WHERE user_blocks.user_id = $1::uuid),
     shares AS (DELETE FROM bot_contact_shares WHERE bot_contact_shares.user_id = $1::uuid),
     subs AS (DELETE FROM task_subscribers WHERE task_subscribers.user_id = $1::uuid),
     admin AS (DELETE FROM product_admin_grants WHERE product_admin_grants.user_id = $1::uuid),
@@ -99,7 +100,7 @@ SELECT 1
 `
 
 // Rows that only describe the user (no one else's history): codes, attribution, calendars,
-// sticker installs, bot blocks and shares, task subscriptions, product admin, identity links,
+// sticker installs, bot blocks, the people the user blocked (ADR-0154) and bot shares, task subscriptions, product admin, identity links,
 // OAuth consents, bot delegations, push devices, notes about
 // people (by and about the user).
 func (q *Queries) DeleteAccountPersonalData(ctx context.Context, userID uuid.UUID) error {

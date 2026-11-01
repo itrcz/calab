@@ -1,4 +1,5 @@
 import { WorkspaceRole, type User, type WorkspaceMember } from '@calaba/protocol';
+import { isBlocked, selectBlocked, useBlocks } from '../../stores/blocks';
 import { useSession } from '../../stores/session';
 import { useWorkspaces } from '../../stores/workspaces';
 
@@ -36,6 +37,7 @@ export function canCallWith(me: User | undefined, myRole: WorkspaceRole | undefi
 
 /** canCallWith in any of my workspaces (or in `workspaceId`), at the moment of the action. */
 export function canCallNow(userId: string, workspaceId?: string): boolean {
+  if (isBlocked(userId)) return false; // ADR-0154: no calls with a person I blocked
   const me = useSession.getState().me?.user;
   const byId = useWorkspaces.getState().byId;
   const entries = workspaceId ? [byId[workspaceId]] : Object.values(byId);
@@ -45,8 +47,10 @@ export function canCallNow(userId: string, workspaceId?: string): boolean {
 /** canCallNow, reactive: a boolean selector (re-renders only when the answer flips). */
 export function useCanCall(userId: string, workspaceId?: string): boolean {
   const me = useSession((s) => s.me?.user);
-  return useWorkspaces((s) => {
+  const blocked = useBlocks(selectBlocked(userId)); // ADR-0154: no calls with a person I blocked
+  const can = useWorkspaces((s) => {
     const entries = workspaceId ? [s.byId[workspaceId]] : Object.values(s.byId);
     return entries.some((e) => e !== undefined && canCallWith(me, e.role, e.members[userId]));
   });
+  return can && !blocked;
 }

@@ -208,6 +208,9 @@ func (h *Handlers) addReaction(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Bits.Has(perm.SendMessages) {
 		return httpx.Forbidden("SEND_MESSAGES required")
 	}
+	if err := h.personSend(r.Context(), uid(r), acc); err != nil { // ADR-0154: no reactions in a blocked DM
+		return err
+	}
 	var n int64
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		// The message row lock serializes concurrent adds, so the caps below hold.

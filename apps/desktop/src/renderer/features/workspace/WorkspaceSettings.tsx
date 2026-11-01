@@ -10,7 +10,7 @@ import { CanvasSettingsTab } from '../canvas/CanvasSettings';
 import { audioTierKbps, type ConcreteScreenSharePreset, CANVAS_BITS, canvasPermissions, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, Copy, Gem, HardDrive, KeyRound, BookOpen, Shapes, AppWindow, Library, Lock, Search, Settings2, Shield, Sparkles, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, DoorOpen, Flag, Bot as BotIcon, Cake, Copy, Gem, HardDrive, KeyRound, BookOpen, Shapes, AppWindow, Library, Lock, Search, Settings2, Shield, Sparkles, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -49,6 +49,7 @@ import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat'
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
+import { ReportsTab } from './ReportsTab';
 import { FormerTab } from './FormerTab';
 import { loadedOpenTasksOf } from '../../services/formerTasks';
 import { RolesTab } from './RolesTab';
@@ -209,6 +210,8 @@ export function WorkspaceSettingsDialog({
     // «Бывшие» (ADR-0097 §3): the same right as «Забаненные».
     ...(access.members ? [{ id: 'former', label: t('former.tab'), icon: UserMinus, content: <FormerTab workspaceId={workspaceId} /> }] : []),
     ...(access.members ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
+    // «Жалобы» (ADR-0154): reports go to those who may act on them (MANAGE_MEMBERS, as bans).
+    ...(access.members ? [{ id: 'reports', label: t('reports.tab'), icon: Flag, content: <ReportsTab workspaceId={workspaceId} /> }] : []),
     ...(owner
       ? [{ id: 'danger', label: t('ws.tabDanger'), icon: TriangleAlert, destructive: true, content: <DangerTab workspaceId={workspaceId} onDone={onClose} /> }]
       : []),
