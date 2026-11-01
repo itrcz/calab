@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"github.com/calaba/calaba/server/internal/account"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -438,6 +439,7 @@ func New(d Deps) *App {
 	ah.Public(mux)
 	ah.Private(mux, private)
 	pushSvc.Routes(mux, private)
+	account.New(d.DB, authSvc, ah, pub, d.Blob, planSvc).Routes(mux, private) // ADR-0153
 	userHandlers := users.NewHandlers(d.DB, pub, hub)
 	// ADR-0090: the bots' cache of users with a task notice relay reloads on PATCH /api/me.
 	userHandlers.TaskRelaysChanged = botSvc.InvalidateTaskRelays

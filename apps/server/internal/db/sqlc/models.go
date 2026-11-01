@@ -2056,6 +2056,7 @@ type User struct {
 	TaskNotifyOff                  []string
 	TaskNotifyBots                 []uuid.UUID
 	CalendarZones                  []byte
+	DeletedAt                      *time.Time
 }
 
 type UserAttribution struct {
