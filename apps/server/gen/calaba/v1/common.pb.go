@@ -414,6 +414,7 @@ type ApiError struct {
 	Reason *string `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
 	// The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
 	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;
+	// FILE_TOO_LARGE — the per-file limit in bytes (used = 0);
 	// REACTION_LIMIT — the caller's different emojis on the message and the per-user cap (3).
 	// ADMISSION_QUEUE_FULL — the waiting guests and the cap (50). NOTES_LIMIT — the caller's
 	// shelves and the cap (20).

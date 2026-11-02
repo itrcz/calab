@@ -60,8 +60,19 @@ const (
 	VoiceMime          = "audio/ogg"
 )
 
-// uploadDeadline replaces the server's ReadTimeout for upload requests.
+// uploadDeadline replaces the server's ReadTimeout for upload requests (and bounds a download's
+// writes): at least 15 min, more for a large limit so that a file at the limit still makes it
+// at minUploadRate.
 const uploadDeadline = 15 * time.Minute
+
+// minUploadRate (512 KiB/s ≈ 4 Mbit/s) is the slowest link a file at the size limit must fit
+// through: 1 GiB gets ~34 min, the 4 GiB cap ~2.3 h.
+const minUploadRate = 512 << 10
+
+// deadlineFor is the read / write deadline of moving up to n bytes.
+func deadlineFor(n int64) time.Duration {
+	return max(uploadDeadline, time.Duration(n/minUploadRate)*time.Second)
+}
 
 // Service handles file storage.
 type Service struct {
@@ -70,10 +81,12 @@ type Service struct {
 	events   events.Publisher
 	maxBytes int64
 	maxTotal int64               // server-wide cap on stored bytes (STORAGE_MAX_TOTAL_BYTES)
-	limiter  *redisx.RateLimiter // uploads per user
-	plans    *plans.Service      // workspace plan storage limit (ADR-0024); nil = none
-	conv     *Converter          // HEIC → JPEG (POST /api/files/convert); nil = 501
-	personal int64               // DEFAULT_PERSONAL_QUOTA_BYTES: notes shelves' personal quota (ADR-0039)
+	limiter  *redisx.RateLimiter // uploads per user (UPLOAD_RATE_BURST / _PER_HOUR); nil = none
+	burst    int                 // the limiter's defaults, for a workspace that overrides one of them
+	perHour  int
+	plans    *plans.Service // workspace plan storage limit (ADR-0024); nil = none
+	conv     *Converter     // HEIC → JPEG (POST /api/files/convert); nil = 501
+	personal int64          // DEFAULT_PERSONAL_QUOTA_BYTES: notes shelves' personal quota (ADR-0039)
 }
 
 // SetPersonalQuota sets the default personal quota of uploads into notes shelves (ADR-0039 §5).
@@ -82,12 +95,46 @@ func (s *Service) SetPersonalQuota(bytes int64) { s.personal = bytes }
 // SetPlans sets the plan resolver (storage_mb caps the workspace quota).
 func (s *Service) SetPlans(p *plans.Service) { s.plans = p }
 
-// MaxUnattachedBytes caps what one user may keep uploaded-but-not-attached in a workspace,
-// so that nobody (e.g. a guest) can occupy the quota with orphans until the 24 h cleanup.
-const MaxUnattachedBytes = 1 << 30
+// unattachedCap caps what one user may keep uploaded-but-not-attached in a workspace (or in
+// DMs), so that nobody (e.g. a guest) can occupy the quota with orphans until the 24 h cleanup.
+// It follows the file size limit maxFile in force (ADR-0155): 1 GiB, or room for two files at
+// the limit when that is more — the one being sent and the one before it not attached yet.
+func unattachedCap(maxFile int64) int64 { return max(1<<30, 2*maxFile+2<<20) }
 
-// SetLimiter sets the per-user upload rate limiter.
-func (s *Service) SetLimiter(l *redisx.RateLimiter) { s.limiter = l }
+// SetLimiter sets the per-user upload rate limiter, created with burst and perHour (a workspace's
+// override of one of them takes the other from here, ADR-0155).
+func (s *Service) SetLimiter(l *redisx.RateLimiter, burst, perHour int) {
+	s.limiter, s.burst, s.perHour = l, burst, perHour
+}
+
+// maxFileBytes is the size limit of one file uploaded into ws: its superadmin override or
+// MAX_FILE_SIZE_MB (ADR-0155).
+func (s *Service) maxFileBytes(ws sqlc.Workspace) int64 {
+	if ws.MaxFileMb != nil && *ws.MaxFileMb > 0 {
+		return int64(*ws.MaxFileMb) << 20
+	}
+	return s.maxBytes
+}
+
+// takeUpload takes one upload of uid from the rate limiter: the user's bucket shared by every
+// workspace and DM, or — in a workspace with overridden limits (ws non-nil) — a bucket of the
+// user in that workspace, so an override neither drains nor is drained by the default one.
+func (s *Service) takeUpload(ctx context.Context, uid uuid.UUID, ws *sqlc.Workspace) error {
+	if s.limiter == nil {
+		return nil
+	}
+	if ws == nil || (ws.UploadBurst == nil && ws.UploadPerHour == nil) {
+		return s.limiter.Take(ctx, uid.String())
+	}
+	burst, perHour := s.burst, s.perHour
+	if ws.UploadBurst != nil {
+		burst = int(*ws.UploadBurst)
+	}
+	if ws.UploadPerHour != nil {
+		perHour = int(*ws.UploadPerHour)
+	}
+	return s.limiter.TakeWith(ctx, uid.String()+":"+ws.ID.String(), burst, perHour)
+}
 
 // NewService creates the files service; maxBytes is MAX_FILE_SIZE_MB in bytes, maxTotal the
 // server-wide storage cap.
@@ -192,7 +239,9 @@ func tooLarge(limit int64) error {
 	if limit < 1<<20 {
 		size = fmt.Sprintf("%d KB", limit>>10)
 	}
-	return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_TOO_LARGE, "file exceeds "+size)
+	// ApiError.limit carries the limit, so the client can name it in its own language.
+	return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_TOO_LARGE, "file exceeds "+size).
+		WithDetails("", 0, uint64(max(limit, 0)))
 }
 
 // limitHash counts and hashes bytes and fails once more than limit bytes were read.
@@ -332,7 +381,7 @@ func (s *Service) receiveChecked(w http.ResponseWriter, r *http.Request, limit i
 			kind = acceptVoice
 		}
 	}
-	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadDeadline))
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(deadlineFor(limit)))
 	r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20) // multipart overhead
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -472,22 +521,26 @@ func (s *Service) UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.U
 // there, ADR-0094); its error discards the upload.
 func (s *Service) UploadWith(w http.ResponseWriter, r *http.Request, wsID uuid.UUID, attach func(q *sqlc.Queries, f sqlc.File) error) (sqlc.File, error) {
 	uid := auth.MustFromContext(r.Context()).UserID
-	if s.limiter != nil {
-		if err := s.limiter.Take(r.Context(), uid.String()); err != nil {
-			return sqlc.File{}, err
-		}
+	ws, err := s.db.Q.GetWorkspace(r.Context(), wsID)
+	if err != nil {
+		return sqlc.File{}, err
+	}
+	// The workspace's limits (ADR-0155) are read with the row on every upload: an override
+	// applies to the next request.
+	if err := s.takeUpload(r.Context(), uid, &ws); err != nil {
+		return sqlc.File{}, err
+	}
+	maxFile := s.maxFileBytes(ws)
+	if r.ContentLength > maxFile+1<<20 { // the multipart overhead receive allows
+		return sqlc.File{}, tooLarge(maxFile) // early, before reading the body
 	}
 	pending, err := s.db.Q.UnattachedBytesByUploader(r.Context(), sqlc.UnattachedBytesByUploaderParams{UploaderID: &uid, WorkspaceID: &wsID})
 	if err != nil {
 		return sqlc.File{}, err
 	}
-	if pending+max(r.ContentLength, 0) > MaxUnattachedBytes {
+	if pending+max(r.ContentLength, 0) > unattachedCap(maxFile) {
 		return sqlc.File{}, httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
 			"too many uploaded files are not attached to messages yet")
-	}
-	ws, err := s.db.Q.GetWorkspace(r.Context(), wsID)
-	if err != nil {
-		return sqlc.File{}, err
 	}
 	quota, planQuota, err := s.quota(r.Context(), s.db.Q, ws)
 	if err != nil {
@@ -496,7 +549,7 @@ func (s *Service) UploadWith(w http.ResponseWriter, r *http.Request, wsID uuid.U
 	if r.ContentLength > 0 && ws.StorageUsedBytes+r.ContentLength-(1<<20) > quota.limit {
 		return sqlc.File{}, quota.err(ws.StorageUsedBytes) // early reject from Content-Length before reading the body
 	}
-	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return blob.FileKey(wsID, id) }, acceptAny)
+	st, err := s.receive(w, r, maxFile, func(id uuid.UUID) string { return blob.FileKey(wsID, id) }, acceptAny)
 	if err != nil {
 		return sqlc.File{}, err
 	}
@@ -549,16 +602,14 @@ func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Bits.Has(perm.AttachFiles) {
 		return httpx.Forbidden("ATTACH_FILES required")
 	}
-	if s.limiter != nil {
-		if err := s.limiter.Take(r.Context(), uid.String()); err != nil {
-			return err
-		}
+	if err := s.takeUpload(r.Context(), uid, nil); err != nil {
+		return err
 	}
 	pending, err := s.db.Q.UnattachedUserBytes(r.Context(), &uid)
 	if err != nil {
 		return err
 	}
-	if pending+max(r.ContentLength, 0) > MaxUnattachedBytes {
+	if pending+max(r.ContentLength, 0) > unattachedCap(s.maxBytes) {
 		return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
 			"too many uploaded files are not attached to messages yet")
 	}
@@ -971,7 +1022,7 @@ func (s *Service) serveWith(w http.ResponseWriter, r *http.Request, f sqlc.File,
 		disp = "inline"
 	}
 	h.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": name}))
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(uploadDeadline))
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deadlineFor(f.Size)))
 	http.ServeContent(w, r, "", f.CreatedAt, rc) // Range, If-None-Match, If-Range
 	return nil
 }

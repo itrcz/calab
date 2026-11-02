@@ -646,6 +646,7 @@ var botRouteGroups = []botRouteGroup{
 		"PUT /api/admin/workspaces/{id}/plan",
 		"GET /api/admin/workspaces/{id}/plan/log",
 		"PUT /api/admin/workspaces/{id}/suspension",
+		"PUT /api/admin/workspaces/{id}/upload-limits",
 		"GET /api/admin/users/{id}/storage-quota",
 		"PUT /api/admin/users/{id}/storage-quota",
 	}},

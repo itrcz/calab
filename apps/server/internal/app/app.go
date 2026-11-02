@@ -384,7 +384,10 @@ func New(d Deps) *App {
 	accountLimiter := redisx.NewRateLimiter(d.Redis, "rl:login-acct:", d.Config.LoginAccountBurst, float64(d.Config.LoginAccountBurst)/15) // N per 15 min
 	msgLimiter := redisx.NewRateLimiter(d.Redis, "rl:msg:", 5, 60)                                                                         // 5 per 5 s per room and user
 	filesSvc := files.NewService(d.DB, d.Blob, pub, d.Config.MaxFileSizeMB<<20, d.Config.StorageMaxTotalBytes)
-	filesSvc.SetLimiter(redisx.NewRateLimiter(d.Redis, "rl:upload:", 30, 2)) // 30 at once, 120 per hour
+	// UPLOAD_RATE_BURST at once, refilled at UPLOAD_RATE_PER_HOUR; a superadmin overrides both
+	// per workspace (ADR-0155).
+	filesSvc.SetLimiter(redisx.NewRateLimiter(d.Redis, "rl:upload:", d.Config.UploadRateBurst, float64(d.Config.UploadRatePerHour)/60),
+		d.Config.UploadRateBurst, d.Config.UploadRatePerHour)
 	filesSvc.SetPlans(planSvc)
 	filesSvc.SetPersonalQuota(d.Config.DefaultPersonalQuotaBytes)
 	filesSvc.SetConverter(files.NewConverter(context.Background(), d.Config.FFmpegPath, d.Config.FFprobePath))
@@ -549,6 +552,7 @@ func New(d Deps) *App {
 	guestSvc.Present = hub.Present // the guest-membership sweep skips connected users (ADR-0098)
 	guestSvc.Routes(mux, private)
 	admin := plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)) // 60 per minute
+	admin.UploadDefaults = plans.UploadDefaults{Burst: d.Config.UploadRateBurst, PerHour: d.Config.UploadRatePerHour, MaxFileMB: int(d.Config.MaxFileSizeMB)}
 	admin.StorageQuota = func(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (*v1.UserStorageQuota, error) {
 		qt, err := notes.PersonalQuota(ctx, q, userID, d.Config.DefaultPersonalQuotaBytes)
 		return qt.Proto(), err

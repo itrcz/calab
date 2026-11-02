@@ -243,7 +243,7 @@ SET suspended_at     = $1,
     suspended_reason = $2,
     suspended_by     = $3
 WHERE id = $4
-RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max, upload_burst, upload_per_hour, max_file_mb
 `
 
 type SetWorkspaceSuspensionParams struct {
@@ -288,6 +288,67 @@ func (q *Queries) SetWorkspaceSuspension(ctx context.Context, arg SetWorkspaceSu
 		&i.OwnerSeesPrivate,
 		&i.CanvasTrashDays,
 		&i.DefaultJoinLeaveSoundMax,
+		&i.UploadBurst,
+		&i.UploadPerHour,
+		&i.MaxFileMb,
+	)
+	return i, err
+}
+
+const setWorkspaceUploadLimits = `-- name: SetWorkspaceUploadLimits :one
+UPDATE workspaces
+SET upload_burst    = $1,
+    upload_per_hour = $2,
+    max_file_mb     = $3
+WHERE id = $4
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max, upload_burst, upload_per_hour, max_file_mb
+`
+
+type SetWorkspaceUploadLimitsParams struct {
+	Burst     *int32
+	PerHour   *int32
+	MaxFileMb *int32
+	ID        uuid.UUID
+}
+
+// The superadmin's upload limits of a workspace (ADR-0155); NULL = the server default.
+func (q *Queries) SetWorkspaceUploadLimits(ctx context.Context, arg SetWorkspaceUploadLimitsParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, setWorkspaceUploadLimits,
+		arg.Burst,
+		arg.PerHour,
+		arg.MaxFileMb,
+		arg.ID,
+	)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.IconFileID,
+		&i.Visibility,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.DefaultAudioBitrateKbps,
+		&i.DefaultMaxStreamPreset,
+		&i.DefaultMaxStreams,
+		&i.StorageQuotaBytes,
+		&i.StorageUsedBytes,
+		&i.AllowSelfNickname,
+		&i.DefaultCameraLimit,
+		&i.SuspendedAt,
+		&i.SuspendedReason,
+		&i.SuspendedBy,
+		&i.TimeFormat,
+		&i.SipEnabled,
+		&i.DiskTrashDays,
+		&i.WikiTrashDays,
+		&i.TempArchiveDays,
+		&i.OwnerSeesPrivate,
+		&i.CanvasTrashDays,
+		&i.DefaultJoinLeaveSoundMax,
+		&i.UploadBurst,
+		&i.UploadPerHour,
+		&i.MaxFileMb,
 	)
 	return i, err
 }

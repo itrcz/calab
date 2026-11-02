@@ -604,6 +604,7 @@ These answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"`. For the
 | `PUT` | `/api/admin/workspaces/{id}/plan` | Superadmin |
 | `GET` | `/api/admin/workspaces/{id}/plan/log` | Superadmin |
 | `PUT` | `/api/admin/workspaces/{id}/suspension` | Superadmin |
+| `PUT` | `/api/admin/workspaces/{id}/upload-limits` | Superadmin |
 | `GET` | `/api/workspaces/{id}/bot-contact-shares` | Journals |
 | `POST` | `/api/invites/{code}/join` | Workspaces and invites |
 | `POST` | `/api/workspaces` | Workspaces and invites |
