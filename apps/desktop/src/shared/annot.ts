@@ -156,6 +156,18 @@ export function resolveScreenDisplays(sources: readonly ScreenSourceInfo[], disp
   return out;
 }
 
+/** Windows re-raises the overlay at most this often while annotations come (issue #102). */
+export const OVERLAY_RAISE_MS = 2000;
+
+/**
+ * Windows keeps every topmost window in one band: one shown after the overlay (a slide show,
+ * another app's «always on top» window) covers it until the stream ends. While annotations come,
+ * the overlay goes back to the top of the band — at most every OVERLAY_RAISE_MS, never when idle.
+ */
+export function overlayRaiseDue(platform: string, now: number, last: number): boolean {
+  return platform === 'win32' && now - last >= OVERLAY_RAISE_MS;
+}
+
 /** Content protection keeps the window out of screen capture: macOS and Windows 10 2004+. */
 export function overlaySupported(platform: string): boolean {
   return platform === 'darwin' || platform === 'win32';

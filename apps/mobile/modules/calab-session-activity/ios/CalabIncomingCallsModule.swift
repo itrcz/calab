@@ -39,7 +39,12 @@ private var calabCallAudioEnabled: Bool {
 
 /** Register before a React scene exists; cold Host startup stays Expo's responsibility. */
 public class CalabIncomingCallsSubscriber: ExpoAppDelegateSubscriber {
-  public func subscriberDidRegister() { CalabIncomingCalls.shared.install() }
+  public func subscriberDidRegister() {
+    CalabIncomingCalls.shared.install()
+    #if DEBUG && (canImport(LiveKitClient) || canImport(LiveKit))
+    CalabAudioProbe.startIfRequested()
+    #endif
+  }
 }
 
 private final class CallCompletion {

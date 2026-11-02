@@ -10,6 +10,7 @@ import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
+import { ReportDialog } from '../people/ReportDialog';
 import { sendCanvasToChats } from '../../services/canvasLink';
 import { sendPageToChats } from '../../services/wiki';
 import { isFolder } from '../../lib/disk';
@@ -97,6 +98,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'forward':
         node = <ForwardDialog roomId={d.roomId} messageId={d.messageId} onClose={close} />;
+        break;
+      case 'report':
+        node = <ReportDialog key={d.userId + d.messageId} userId={d.userId} workspaceId={d.workspaceId} messageId={d.messageId} onClose={close} />;
         break;
       case 'wiki-send':
         node = (

@@ -307,6 +307,7 @@ var identityRoutes = map[string]identityScope{
 	"PATCH /api/me/caldav":                                                scopeGlobal,
 	"PATCH /api/me/email":                                                 scopeGlobal,
 	"PATCH /api/me/password":                                              scopeGlobal,
+	"POST /api/me/delete":                                                 scopeGlobal, // ADR-0153: local-account session, password in the body
 	"PATCH /api/me/status":                                                scopeGlobal,
 	"PATCH /api/messages/{id}":                                            scopeMessage,
 	"PATCH /api/notes/{id}":                                               scopeGlobal,
@@ -695,6 +696,14 @@ var identityRoutes = map[string]identityScope{
 	// MCP for bots (CBF-48): the endpoint itself reads and writes nothing; every tool's REST
 	// call goes through this gate again with its own route and scope.
 	"/api/mcp": scopePublic,
+	// Report and block users (ADR-0154): blocks are the account's own; a report names its
+	// workspace in the body (the handler checks it through the resolver, like POST /api/dms).
+	"GET /api/me/blocked-users":                            scopeGlobal,
+	"POST /api/me/blocked-users/{id}":                      scopeGlobal,
+	"DELETE /api/me/blocked-users/{id}":                    scopeGlobal,
+	"POST /api/reports":                                    scopeGlobal,
+	"GET /api/workspaces/{id}/reports":                     scopeWorkspace,
+	"POST /api/workspaces/{id}/reports/{reportId}/resolve": scopeWorkspace,
 }
 
 // identityGate classifies and checks every private route. planActive refuses the routes of

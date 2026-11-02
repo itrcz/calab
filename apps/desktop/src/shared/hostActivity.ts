@@ -1,4 +1,5 @@
 import { parseCallsOperation, type HostCallsOperation } from './hostCalls';
+import { parseCalendarWidgetOperation, type CalendarWidgetOperation } from './hostCalendarWidget';
 import { parseMediaPermissionsOperation, type MediaPermissionsOperation } from './hostPermissions';
 import { parseRoomAudioOperation, type HostRoomAudioOperation } from './hostRoomAudio';
 /** Local, optional host capability (ADR-0056), not a server/auth protocol. No product identifiers. */
@@ -14,14 +15,30 @@ export interface SessionActivityCapability {
   clear: (reason?: 'logout') => void;
 }
 
+/**
+ * The voice session the shared web client is in, for the Android host's foreground service
+ * (board #141): a room, a call (one-to-one or phone) or none. No room, call or session identifiers.
+ */
+export type HostMediaSession = 'room' | 'call' | 'none';
+
+/** Android host only (`mediaSessionVersion`): keeps the microphone while the app is in the background. */
+export interface HostMediaSessionCapability {
+  /** The current voice session; `none` stops the host's foreground service. Sent on change only. */
+  set(session: HostMediaSession, language: 'ru' | 'en'): void;
+  /** «Выйти» / «Завершить» on the host's ongoing notification. */
+  onLeave(listener: () => void): () => void;
+}
+
 export type HostActivityMessage =
+  | ({ v: 1; type: 'calendarWidget'; host: number; document: string; seq: number; request: number } & CalendarWidgetOperation)
   | ({ v: 1; type: 'permissions'; host: number; document: string; seq: number; request: number } & MediaPermissionsOperation)
   | ({ v:1; type:'calls'; host:number; document:string; seq:number; request:number } & HostCallsOperation)
   | ({ v: 1; type: 'roomAudio'; host: number; document: string; seq: number; request: number } & HostRoomAudioOperation)
   | { v: 1; type: 'hello'; host: number; document: string }
   | { v: 1; type: 'revoke'; host: number; document: string; seq: number; reason?: 'logout' }
   | { v: 1; type: 'notifications'; host: number; document: string; seq: number; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test'; eventId?: string; body?: string }
-  | { v: 1; type: 'activity'; host: number; document: string; seq: number; snapshot: SessionActivitySnapshot };
+  | { v: 1; type: 'activity'; host: number; document: string; seq: number; snapshot: SessionActivitySnapshot }
+  | { v: 1; type: 'media'; host: number; document: string; seq: number; session: HostMediaSession; language: 'ru' | 'en' };
 
 export const HOST_ACTIVITY_MAX_LENGTH = 8192;
 export const HOST_ACTIVITY_HEARTBEAT_MS = 30_000;
@@ -60,6 +77,10 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
     const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
     return parseMediaPermissionsOperation(fields) ? value as unknown as HostActivityMessage : null;
   }
+  if (value.type === 'calendarWidget' && counter(value.request) && value.request > 0) {
+    const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
+    return parseCalendarWidgetOperation(fields) ? value as unknown as HostActivityMessage : null;
+  }
   if (value.type === 'calls' && counter(value.request) && value.request > 0) {
     const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
     if (parseCallsOperation(fields)) return value as unknown as HostActivityMessage;
@@ -73,6 +94,8 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
   if (value.type === 'notifications' && value.operation === 'test' && keys(value, [...base, 'seq', 'request', 'operation', 'body']) && counter(value.request) && value.request > 0 && typeof value.body === 'string' && value.body.trim().length > 0 && value.body.length <= 512) return value as unknown as HostActivityMessage;
   if (value.type === 'notifications' && keys(value, [...base, 'seq', 'request', 'operation']) && counter(value.request) && value.request > 0 &&
       ['status', 'request', 'clear'].includes(String(value.operation))) return value as unknown as HostActivityMessage;
+  if (value.type === 'media') return keys(value, [...base, 'seq', 'session', 'language']) && ['room', 'call', 'none'].includes(String(value.session)) &&
+    (value.language === 'ru' || value.language === 'en') ? value as unknown as HostActivityMessage : null;
   if (value.type !== 'activity' || !keys(value, [...base, 'seq', 'snapshot']) || !record(value.snapshot)) return null;
   const s = value.snapshot;
   if (!keys(s, ['generation', 'status', 'muted', 'language']) || !counter(s.generation) ||

@@ -385,6 +385,7 @@ enum FormerMemberReason {
   FORMER_MEMBER_REASON_BANNED = 3;
   FORMER_MEMBER_REASON_GUEST_EXPIRED = 4;      // a guest inactive for GUEST_INACTIVITY (ADR-0098)
   FORMER_MEMBER_REASON_DIRECTORY_DISABLED = 5; // disabled in the workspace directory
+  FORMER_MEMBER_REASON_ACCOUNT_DELETED = 6;    // the user deleted their account (ADR-0153)
 }
 
 // When and why a member left (WORKSPACE_MEMBER_REMOVE.former, UserRef).

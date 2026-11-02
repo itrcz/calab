@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs, type Timestamp } from '@bufbuild/protobuf/wkt';
+import type { UserReport } from '@calaba/protocol';
 import {
   FileMetaSchema,
   VoiceInfoSchema,
@@ -491,6 +492,9 @@ export interface MockState {
   bots: Map<string, BotRec>;
   /** userId → bots they blocked. */
   blockedBots: Map<string, Set<string>>;
+  /** ADR-0154: people a user blocked; reports by workspace (newest first). */
+  blockedUsers: Map<string, Set<string>>;
+  reports: Map<string, UserReport[]>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -872,6 +876,8 @@ export function buildState(scenario: Scenario): MockState {
     userStickerPacks: new Map(),
     bots: new Map(),
     blockedBots: new Map(),
+    blockedUsers: new Map(),
+    reports: new Map(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100, sound: 0x100, event: 0x100 },
     clock: 0,
   };

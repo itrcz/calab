@@ -66,6 +66,18 @@ describe('presenter fallback (issue #102)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('follows my stream republished under a new sid after a full reconnect', () => {
+    annot.republished('TR_new');
+    // The old sid is no longer mine: dropped like any stream that is not live.
+    point();
+    expect(useAnnot.getState().mineActivity).toBeNull();
+    const bytes = encodeAnnot({ streamSid: 'TR_new', kind: 'pointer', color: 0xff0000, points: [0.5, 0.5], seq: ++seq, strokeId: 0, strokeEnd: false, allow: false });
+    if (!bytes) throw new Error('encode');
+    annot.onData(bytes, viewer);
+    expect(useAnnot.getState().mineActivity?.kind).toBe('pointer');
+    expect(open).toHaveBeenCalledWith({ sourceId: 'screen:0:0', displayId: '' });
+  });
+
   it('the presenter forbidding annotations clears the indicator', () => {
     point();
     annot.setAllowMine(false);

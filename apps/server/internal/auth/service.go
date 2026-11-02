@@ -45,6 +45,8 @@ const (
 	RevokePasswordChanged = "PASSWORD_CHANGED"
 	RevokeAccountDisabled = "ACCOUNT_DISABLED"
 	RevokeGuestExpired    = "GUEST_EXPIRED"
+	// RevokeAccountDeleted: the user deleted their account (ADR-0153).
+	RevokeAccountDeleted = "ACCOUNT_DELETED"
 	// revokeBotToken: a replaced bot token (only the Redis marker, no session row).
 	revokeBotToken = "BOT_TOKEN"
 )

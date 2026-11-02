@@ -12,6 +12,7 @@ export const esFormer: DictShape<typeof ruFormer> = {
   'former.reason.banned': 'vetado',
   'former.reason.guestExpired': 'acceso de invitado caducado',
   'former.reason.directory': 'desactivado en el directorio',
+  'former.reason.accountDeleted': 'cuenta eliminada',
   'former.tab': 'Antiguos',
   'former.card': 'Antiguos miembros — {n}',
   'former.none': 'No hay antiguos miembros',

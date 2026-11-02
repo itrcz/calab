@@ -229,3 +229,49 @@ describe('phone host links (ADR-0142)', () => {
     h.ready(); h.link(task); expect(h.opened).toHaveBeenCalledOnce();
   });
 });
+
+describe('Android media session capability (board #141)', () => {
+  function setup(version?: number) {
+    const handlers = new Map<string, (event: CustomEvent<unknown>) => void>();
+    const send = vi.fn();
+    const bridge = { version: 1, mediaSessionVersion: version, host: 3, document: 'doc', send, rotateDocument: () => { bridge.document = 'next'; } };
+    const caps = createHostCapabilities({ CalabHostActivity: bridge,
+      addEventListener: (name: string, cb: (event: CustomEvent<unknown>) => void) => handlers.set(name, cb) } as unknown as Window);
+    const emit = (name: string, detail: object) => handlers.get(name)?.({ detail } as CustomEvent<unknown>);
+    const ready = (media = true) => emit('calab-host-activity-ready', { v: 1, host: 3, document: bridge.document, capability: 'notifications', notifications: 1, links: 1, ...(media ? { mediaSession: 1 } : {}) });
+    const sent = () => send.mock.calls.map(([raw]) => JSON.parse(String(raw)) as Record<string, unknown>);
+    return { caps, emit, ready, sent, bridge };
+  }
+  it('is offered only by a host that declares it (Android), never by iOS or a browser', () => {
+    expect(setup().caps.mediaSession).toBeUndefined();
+    expect(createHostCapabilities({} as Window).mediaSession).toBeUndefined();
+    expect(setup(1).caps.mediaSession).toBeDefined();
+  });
+  it('waits for the handshake, re-sends the live session after it, and sends none only to a handshaken host', () => {
+    const h = setup(1);
+    h.caps.mediaSession?.set('none', 'ru');
+    expect(h.sent()).toEqual([]);
+    h.caps.mediaSession?.set('call', 'ru');
+    expect(h.sent().at(-1)).toMatchObject({ type: 'hello' });
+    h.ready();
+    expect(h.sent().at(-1)).toEqual({ v: 1, type: 'media', host: 3, document: 'doc', seq: 1, session: 'call', language: 'ru' });
+    h.caps.mediaSession?.set('none', 'ru');
+    expect(h.sent().at(-1)).toMatchObject({ type: 'media', session: 'none', seq: 2 });
+  });
+  it('a host without the ack gets nothing', () => {
+    const h = setup(1); h.ready(false);
+    h.caps.mediaSession?.set('room', 'en');
+    expect(h.sent().filter((m) => m.type === 'media')).toEqual([]);
+  });
+  it('the leave action needs the current host/document, the exact shape and a handshake', () => {
+    const h = setup(1); const left = vi.fn(); h.caps.mediaSession?.onLeave(left);
+    const leave = (extra: object = {}) => h.emit('calab-host-media', { v: 1, host: 3, document: h.bridge.document, action: 'leave', ...extra });
+    leave(); expect(left).not.toHaveBeenCalled();
+    h.ready();
+    leave({ document: 'foreign' }); leave({ host: 4 }); leave({ action: 'mute' }); leave({ extra: 1 });
+    expect(left).not.toHaveBeenCalled();
+    leave(); expect(left).toHaveBeenCalledOnce();
+    h.caps.sessionActivity?.clear('logout');
+    leave({ document: 'doc' }); leave(); expect(left).toHaveBeenCalledOnce();
+  });
+});

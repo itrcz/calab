@@ -31,6 +31,8 @@ const (
 	// ReasonDirectoryDisabled is reserved: a directory-disabled member is suspended, not
 	// removed (internal/directory keeps the membership), so nothing writes it yet.
 	ReasonDirectoryDisabled = "directory_disabled"
+	// ReasonAccountDeleted: the user deleted their account (ADR-0153).
+	ReasonAccountDeleted = "account_deleted"
 )
 
 const (
@@ -45,6 +47,7 @@ var reasonPB = map[string]v1.FormerMemberReason{
 	ReasonBanned:            v1.FormerMemberReason_FORMER_MEMBER_REASON_BANNED,
 	ReasonGuestExpired:      v1.FormerMemberReason_FORMER_MEMBER_REASON_GUEST_EXPIRED,
 	ReasonDirectoryDisabled: v1.FormerMemberReason_FORMER_MEMBER_REASON_DIRECTORY_DISABLED,
+	ReasonAccountDeleted:    v1.FormerMemberReason_FORMER_MEMBER_REASON_ACCOUNT_DELETED,
 }
 
 // FormerInfo is the WORKSPACE_MEMBER_REMOVE.former of a former-member row.

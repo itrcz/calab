@@ -110,6 +110,20 @@ class AnnotService {
     if (sid && !useAnnot.getState().allowMine) this.sendPolicy(sid, false);
   }
 
+  /**
+   * LiveKit republished my stream under a new track sid (a full reconnect: livekit-client
+   * `republishAllTracks`). Viewers annotate the new sid from now on; without this the presenter
+   * dropped every annotation as «not a live stream» for the rest of the stream (issue #102).
+   * The source, the overlay and the policy stay.
+   */
+  republished(sid: string): void {
+    const mine = this.mine;
+    if (!mine || mine.sid === sid) return;
+    this.dropScene(mine.sid);
+    this.mine = { ...mine, sid };
+    if (!useAnnot.getState().allowMine) this.sendPolicy(sid, false);
+  }
+
   // ---------------------------------------------------------------- receive
 
   onData(payload: Uint8Array, from: Participant): void {

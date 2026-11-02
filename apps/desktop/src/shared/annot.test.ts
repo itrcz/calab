@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayBoundsFor, overlaySupported, parseOverlayEvent, parseOverlayTarget, resolveScreenDisplays } from './annot';
+import { displayBoundsFor, OVERLAY_RAISE_MS, overlayRaiseDue, overlaySupported, parseOverlayEvent, parseOverlayTarget, resolveScreenDisplays } from './annot';
 
 const ok = { from: 'u:s', name: 'Анна', kind: 'stroke', color: 0xff0000, points: [0.1, 0.2], strokeId: 3, strokeEnd: false, owner: false };
 
@@ -69,5 +69,14 @@ describe('annot overlay IPC', () => {
     expect(overlaySupported('darwin')).toBe(true);
     expect(overlaySupported('win32')).toBe(true);
     expect(overlaySupported('linux')).toBe(false);
+  });
+});
+
+describe('overlay re-raise (issue #102)', () => {
+  it('only on Windows, at most every OVERLAY_RAISE_MS', () => {
+    expect(overlayRaiseDue('win32', 10_000, 0)).toBe(true);
+    expect(overlayRaiseDue('win32', 10_000, 10_000 - OVERLAY_RAISE_MS + 1)).toBe(false);
+    expect(overlayRaiseDue('win32', 10_000, 10_000 - OVERLAY_RAISE_MS)).toBe(true);
+    expect(overlayRaiseDue('darwin', 10_000, 0)).toBe(false);
   });
 });

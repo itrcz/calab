@@ -2,7 +2,7 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole } from '@calaba/protocol';
+import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, settle } from './harness';
@@ -921,6 +921,13 @@ test('m-settings-profile', async ({ page }) => {
   await settings.getByTestId('username-input').fill('boris_p');
   await expect(settings.getByTestId('username-hint')).toHaveText('Этот ник уже занят');
   await checkpoint(page, 'm-settings-profile', { snapshot: false });
+  // ADR-0153: the last card «Удаление аккаунта» and its dialog (Anna owns a workspace: the blocker).
+  const entry = settings.getByTestId('delete-account');
+  await entry.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-settings-delete-entry', { snapshot: false });
+  await entry.tap();
+  await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' }).getByTestId('delete-account-blocked')).toBeVisible();
+  await checkpoint(page, 'm-settings-delete', { snapshot: false });
 });
 
 // ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the
@@ -1526,6 +1533,15 @@ test('m-menu', async ({ page }) => {
   await page.getByTestId('message-read-by').tap();
   await expect(page.getByRole('menu').getByTestId('read-by-row')).toHaveCount(2);
   await checkpoint(page, 'm-message-read-by');
+  // ADR-0154: «Пожаловаться…» on someone else's message → the report dialog as a centred card.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await page.getByText('Готово, выдал.').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
+  await page.getByTestId('message-report').tap();
+  const report = page.getByTestId('report-dialog');
+  await expect(report).toBeVisible();
+  await report.getByTestId(`report-reason-${ReportReason.SPAM}`).tap();
+  await checkpoint(page, 'm-report-dialog');
 });
 
 // Owner 07.10: a sub-level («+» → «Создать задачу ▸») opens by a tap only — never on hover — as a
@@ -1808,6 +1824,14 @@ test('m-dm-chat', async ({ page }) => {
   await expectNoFieldFocus(page, 'dm open');
   await feedToBottom(page);
   await checkpoint(page, 'm-dm-chat', { main: true });
+  // ADR-0154: «⋯» → «Заблокировать» → the DM shows the unblock note instead of the composer and
+  // Борис's messages collapse.
+  await page.getByTestId('dm-actions').tap();
+  await page.getByTestId('dm-user-block').tap();
+  await page.getByRole('button', { name: 'Заблокировать', exact: true }).tap();
+  await expect(page.getByTestId('composer-blocked')).toBeVisible();
+  await expect(page.getByTestId('message-hidden').first()).toBeVisible();
+  await checkpoint(page, 'm-dm-blocked');
 });
 
 test('m-call-incoming', async ({ page }) => {

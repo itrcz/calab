@@ -114,6 +114,9 @@ enum ErrorCode {
   // 409: POST /api/workspaces/{id}/sip/calls — the caller is in another call (a one-to-one call,
   // an inbound call that rings them or that they took, another personal call) (ADR-0137 §3).
   ERROR_CODE_SIP_BUSY = 73;
+  // 403: a new DM, a DM message, forward, edit or reaction, or a one-to-one call between two
+  // people when either blocked the other (ADR-0154); the same text for both sides.
+  ERROR_CODE_USER_UNAVAILABLE = 80;
 }
 
 // Error body of every non-2xx REST response.
@@ -138,7 +141,8 @@ message ApiError {
   // "CHECKLIST_LIMIT", "CHECKLIST_ITEM_LIMIT" = CONFLICT on the 51st board category, the 11th
   // checklist of a task, the 101st item of a checklist (ADR-0058); "IDENTITY_NOT_CONFIGURED" =
   // CONFLICT on an SSO / directory / OAuth provider route of a server without the identity
-  // operator configuration (ADR-0054: IDENTITY_PUBLIC_ORIGIN and keyrings). Absent otherwise.
+  // operator configuration (ADR-0054: IDENTITY_PUBLIC_ORIGIN and keyrings); "OWNS_WORKSPACES" =
+  // CONFLICT on POST /api/me/delete while the caller owns a workspace (ADR-0153). Absent otherwise.
   optional string reason = 4;
   // The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
   // the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;

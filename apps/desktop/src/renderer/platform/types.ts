@@ -1,9 +1,10 @@
+import type { HostCalendarWidgetCapability } from '../../shared/hostCalendarWidget';
 import type { HostCallsCapability } from '../../shared/hostCalls';
 import type { HostMediaPermissionsCapability } from '../../shared/hostPermissions';
 import type { CalabaApi } from '../../preload/api';
 import type { AuthSession, IpcResult } from '../../shared/ipc';
 import type { MailApi } from '../../shared/mail';
-import type { SessionActivityCapability, HostNotificationsCapability } from '../../shared/hostActivity';
+import type { SessionActivityCapability, HostMediaSessionCapability, HostNotificationsCapability } from '../../shared/hostActivity';
 
 /** Result of a guest sign-in by a room link (ADR-0016). */
 export interface GuestJoin {
@@ -27,8 +28,11 @@ export interface Platform extends Omit<CalabaApi, 'mail'> {
   /** Optional status-only phone host capability; absent in ordinary browsers/older hosts. */
   sessionActivity?: SessionActivityCapability;
   notifications?: HostNotificationsCapability;
+  calendarWidget?: HostCalendarWidgetCapability;
   mediaPermissions?: HostMediaPermissionsCapability;
   incomingCalls?: HostCallsCapability;
+  /** Android phone host: foreground service while in a voice room or call (board #141). */
+  mediaSession?: HostMediaSessionCapability;
   kind: 'electron' | 'web';
   finishSso?(): Promise<import('../../shared/ipc').IpcResult<import('../../shared/ipc').SsoResult>>;
   /** Prefix for API paths (`calaba-api://api` in Electron, '' on the web = same origin). */

@@ -17,6 +17,7 @@ import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
 import "calaba/v1/recording.proto";
+import "calaba/v1/report.proto";
 import "calaba/v1/sip.proto";
 import "calaba/v1/room.proto";
 import "calaba/v1/sound.proto";
@@ -329,6 +330,10 @@ message DispatchEvent {
     SipJournalChange sip_journal_entry = 113;
     // The member's missed calls badge changed: their user channel only.
     SipMissedChanged sip_missed_changed = 114;
+    // Report and block users (ADR-0154).
+    WorkspaceReportCreate workspace_report_create = 120;
+    WorkspaceReportUpdate workspace_report_update = 121;
+    UserBlocksUpdate user_blocks_update = 122;
   }
 }
 

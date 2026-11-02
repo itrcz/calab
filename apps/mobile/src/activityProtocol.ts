@@ -1,15 +1,18 @@
 import type { HostCallsOperation } from '../../desktop/src/shared/hostCalls';
+import type { CalendarWidgetOperation } from '../../desktop/src/shared/hostCalendarWidget';
 import type { MediaPermissionsOperation } from '../../desktop/src/shared/hostPermissions';
 import type { HostRoomAudioOperation } from '../../desktop/src/shared/hostRoomAudio';
-import { parseHostActivityMessage, type SessionActivitySnapshot } from '../../desktop/src/shared/hostActivity';
+import { parseHostActivityMessage, type HostMediaSession, type SessionActivitySnapshot } from '../../desktop/src/shared/hostActivity';
 
 export type ActivityAction =
+  | ({ type: 'calendarWidget'; document: string; request: number } & CalendarWidgetOperation)
   | ({ type: 'permissions'; document: string; request: number } & MediaPermissionsOperation)
   | ({ type:'calls'; document:string; request:number } & HostCallsOperation)
   | { type: 'roomAudio'; document: string; request: number; operation: HostRoomAudioOperation }
   | { type: 'ready'; document: string }
   | { type: 'publish'; document: string; snapshot: SessionActivitySnapshot }
   | { type: 'end'; reason?: 'logout' }
+  | { type: 'media'; document: string; session: HostMediaSession; language: 'ru' | 'en' }
   | { type: 'notifications'; document: string; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test'; eventId?: string; body?: string };
 
 /**
@@ -25,6 +28,8 @@ export class ActivityProtocol {
   constructor(private readonly host: number) {}
 
   belongsTo(host: number): boolean { return this.host === host; }
+
+  currentDocument(): string | null { return this.document; }
 
   isCurrent(document: string): boolean { return this.document === document; }
 
@@ -45,12 +50,14 @@ export class ActivityProtocol {
     if (message.document !== this.document || message.seq <= this.sequence) return null;
     this.sequence = message.seq;
     if (message.type === 'revoke') { this.reset(); return message.reason === 'logout' ? { type: 'end', reason: 'logout' } : { type: 'end' }; }
+    if (message.type === 'media') return { type: 'media', document: message.document, session: message.session, language: message.language };
     if (message.type === 'calls') return { ...message, type:'calls' };
     if (message.type === 'roomAudio') {
       // Native rejects unknown fields: it gets the operation without the envelope.
       const { v, type, host, seq, document, request, ...operation } = message;
       return { type, document, request, operation };
     }
+    if (message.type === 'calendarWidget') return { ...message, type: 'calendarWidget' };
     if (message.type === 'permissions') return { ...message, type: 'permissions' };
     if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}), ...(message.body ? { body: message.body } : {}) };
     if (message.snapshot.generation < this.generation) return null;
@@ -64,27 +71,37 @@ export class ActivityProtocol {
  * `platform` (Platform.OS) tells the web client which store rules apply (App Store: no payment
  * UI in the iOS shell); additive — an older binary without it is treated as iOS unless its
  * user agent is Android (apps/desktop platform/nativeShell.ts). The Android host implements
- * notifications and links only: it does not advertise media permissions or calls, so the web
- * keeps its browser paths for those instead of waiting for replies (ADR-0070, Android).
+ * notifications, links and the media session (board #141) only: it does not advertise media
+ * permissions or calls, so the web keeps its browser paths for those instead of waiting for
+ * replies (ADR-0070, Android). `mediaSession` is Android-only: the foreground-service module.
  * `roomAudio` is what the iOS native module reports (ADR-0149): without it rooms stay on the web path.
  */
-export function activityBootstrap(host: number, nativeAudio = false, platform: 'ios' | 'android' | null = null, roomAudio = false): string {
+export interface ActivityBootstrapOptions {
+  platform?: 'ios' | 'android' | null;
+  nativeAudio?: boolean;
+  calendarWidget?: boolean;
+  mediaSession?: boolean;
+  roomAudio?: boolean;
+}
+
+export function activityBootstrap(host: number, { platform = null, nativeAudio = false, calendarWidget = false, mediaSession = false, roomAudio = false }: ActivityBootstrapOptions = {}): string {
   const ios = platform !== 'android';
-  const capabilities = ios ? `mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}${roomAudio ? ' roomAudioVersion: 1,' : ''}` : '';
+  const capabilities = ios ? `mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}${roomAudio ? ' roomAudioVersion: 1,' : ''}`
+    : mediaSession ? 'mediaSessionVersion: 1,' : '';
   return `(() => {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
     let documentId = crypto.randomUUID();
     Object.defineProperty(window, 'CalabHostActivity', { configurable: false, writable: false,
-      value: Object.freeze({version: 1, notificationsVersion: 1, notificationsTestVersion: 1, ${capabilities} ${platform ? `platform: '${platform}',` : ''} host: ${String(host)}, get document() { return documentId; },
+      value: Object.freeze({version: 1, ${ios && calendarWidget ? 'calendarWidgetVersion: 1,' : ''} notificationsVersion: 1, notificationsTestVersion: 1, ${capabilities} ${platform ? `platform: '${platform}',` : ''} host: ${String(host)}, get document() { return documentId; },
         rotateDocument: () => { documentId = crypto.randomUUID(); },
         send: (data) => window.ReactNativeWebView.postMessage(data)}) });
   })(); true;`;
 }
 
-export function activityReady(host: number, document: string, activity = true, android = false): string {
+export function activityReady(host: number, document: string, activity = true, android = false, calendarWidget = false, mediaSession = false): string {
   const capability = activity ? 'sessionActivity' : 'notifications';
-  const detail = JSON.stringify(android ? { v: 1, host, document, capability, notifications: 1, links: 1 }
-    : { v: 1, host, document, capability, notifications: 1, calls: 1, permissions: 1, links: 1 });
+  const detail = JSON.stringify(android ? { v: 1, host, document, capability, notifications: 1, links: 1, ...(mediaSession ? { mediaSession: 1 } : {}) }
+    : { v: 1, host, document, capability, notifications: 1, calls: 1, permissions: 1, links: 1, ...(calendarWidget ? { calendarWidget: 1 } : {}) });
   return `window.dispatchEvent(new CustomEvent('calab-host-activity-ready', {detail: ${detail}})); true;`;
 }
 
@@ -93,6 +110,12 @@ export function activityReady(host: number, document: string, activity = true, a
  * origin plus a task / invite / room route — that the page opens in place, as it would a click.
  * Carries no authority: the page accepts only its own origin and routes it could navigate to.
  */
+/** «Выйти» / «Завершить» on the Android foreground-service notification (board #141), for the current document. */
+export function mediaSessionEvent(host: number, document: string): string {
+  const detail = JSON.stringify({ v: 1, host, document, action: 'leave' });
+  return `window.dispatchEvent(new CustomEvent('calab-host-media', {detail: ${detail}})); true;`;
+}
+
 export function linkEvent(host: number, document: string, url: string): string {
   const detail = JSON.stringify({ v: 1, host, document, url });
   return `window.dispatchEvent(new CustomEvent('calab-host-link', {detail: ${detail}})); true;`;

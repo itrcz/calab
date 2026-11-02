@@ -1,6 +1,6 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { NotificationLevel } from '@calaba/protocol';
-import { Archive, ArchiveRestore, Ban, Bell, BellOff, Ellipsis, ShieldCheck, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Ban, Bell, BellOff, Ellipsis, Flag, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -13,16 +13,27 @@ import { roomNotify, useRooms } from '../../stores/rooms';
 import { setRoomNotifications } from '../../services/mentions';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { confirmDeleteDm } from './dmActions';
+import { selectBlocked, useBlocks } from '../../stores/blocks';
+import { confirmBlockUser, setUserBlocked } from '../../services/blocks';
+import { openReport } from '../people/ReportDialog';
 
 /**
  * «⋯» in the DM header (docs/09 #51): «В архив» / «Вернуть из архива» and «Удалить чат»; with a
- * bot also «Заблокировать бота» / «Разблокировать» (ADR-0031: it can no longer write to me).
+ * bot also «Заблокировать бота» / «Разблокировать» (ADR-0031: it can no longer write to me); with
+ * a person «Пожаловаться» and «Заблокировать» / «Разблокировать» (ADR-0154).
  */
 export function DmActionsMenu({ roomId, className, notify = false }: { roomId: string; className?: string | undefined; notify?: boolean }): ReactNode {
   const archived = useDms((s) => (s.byRoom[roomId]?.archivedAt ?? 0) > 0);
   const peerId = useDms((s) => s.byRoom[roomId]?.peerId ?? '');
   const bot = useWorkspaces((s) => !!peerId && (s.users[peerId]?.isBot ?? false));
   const blocked = useBots((s) => (s.blocked ? !!s.blocked[peerId] : null));
+  // ADR-0154: a person can be reported and blocked from here too.
+  const person = useWorkspaces((s) => {
+    const u = peerId ? s.users[peerId] : undefined;
+    return !!u && !u.isBot;
+  });
+  const peerName = useWorkspaces((s) => s.users[peerId]?.displayName ?? '');
+  const userBlocked = useBlocks(selectBlocked(peerId));
   const [open, setOpen] = useState(false);
   // Phone (ADR-0073 §1): the bell's two choices as one item — a DM notifies every message or nothing.
   const quiet = useRooms((s) => {
@@ -59,6 +70,22 @@ export function DmActionsMenu({ roomId, className, notify = false }: { roomId: s
               {blocked ? <ShieldCheck className="size-4" aria-hidden /> : <Ban className="size-4" aria-hidden />}
               {t(blocked ? 'bots.unblock' : 'bots.block')}
             </Dropdown.Item>
+          ) : null}
+          {person ? (
+            <>
+              <Dropdown.Item className={menuItem} onSelect={() => openReport(peerId, '')} data-testid="dm-report">
+                <Flag className="size-4" aria-hidden />
+                {t('report.action')}
+              </Dropdown.Item>
+              <Dropdown.Item
+                className={cx(menuItem, !userBlocked && 'text-danger-text')}
+                onSelect={() => void (userBlocked ? setUserBlocked(peerId, false) : confirmBlockUser(peerId, peerName))}
+                data-testid="dm-user-block"
+              >
+                {userBlocked ? <ShieldCheck className="size-4" aria-hidden /> : <Ban className="size-4" aria-hidden />}
+                {t(userBlocked ? 'block.unblock' : 'block.action')}
+              </Dropdown.Item>
+            </>
           ) : null}
           <Dropdown.Separator className={menuSeparator} />
           <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void confirmDeleteDm(roomId)}>

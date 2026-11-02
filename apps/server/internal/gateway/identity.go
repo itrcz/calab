@@ -309,6 +309,11 @@ var eventScope = map[protoreflect.Name]bool{
 	// call's room visible) and the call's parties; the missed badge on the member's user channel,
 	// lease-gated by its workspace like every scoped event.
 	"sip_journal_entry": true, "sip_missed_changed": true,
+	// Reports (ADR-0154): workspace channel, routed to MANAGE_MEMBERS (not guests) like bans.
+	"workspace_report_create": true, "workspace_report_update": true,
+	// The caller's own block list changed on another device (ADR-0154): their user channel
+	// only, personal like notes.
+	"user_blocks_update": false,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent
@@ -351,7 +356,8 @@ func (h *Hub) prepareEvent(ctx context.Context, enc *encEvent) {
 		case *v1.DispatchEvent_UserUpdate, *v1.DispatchEvent_PresenceUpdate,
 			*v1.DispatchEvent_CallRing, *v1.DispatchEvent_CallState,
 			*v1.DispatchEvent_NotesCreate, *v1.DispatchEvent_NotesUpdate, *v1.DispatchEvent_NotesDelete,
-			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
+			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete,
+			*v1.DispatchEvent_UserBlocksUpdate:
 			scopes[uuid.Nil] = true
 		case *v1.DispatchEvent_EventReminder:
 			// A reminder of the user's own imported CalDAV event (ADR-0045 amendment 3): personal,

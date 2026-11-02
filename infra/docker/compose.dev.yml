@@ -20,7 +20,7 @@ services:
     volumes: [pg_dev:/var/lib/postgresql]
 
   valkey:
-    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11   # ≥ 9.0: HEXPIRE for presence
+    image: valkey/valkey:9-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b   # ≥ 9.0: HEXPIRE for presence
     ports: ["56379:6379"]   # 6379 is often taken by a native Redis
 
   # Mail catcher (ADR-0023): the API sends to SMTP localhost:1025 (SMTP_TLS=none),
@@ -126,7 +126,7 @@ services:
   # движок проверяет сертификат строго), затем `docker compose -f infra/docker/compose.dev.yml
   # --profile mail up -d greenmail`. Пользователи alice / bob, пароль secret.
   greenmail:
-    image: greenmail/standalone:2.1.14@sha256:1ef95a966418cd09b7ea91d504d8c0826bbe7a2f6e679a75c601a831587c1626
+    image: greenmail/standalone:2.1.15@sha256:309ba544ea482e5d4265d09921cdab07c8dad2cc4481d715c9b8ff5d3f0a149f
     profiles: [mail]
     environment:
       GREENMAIL_OPTS: >-

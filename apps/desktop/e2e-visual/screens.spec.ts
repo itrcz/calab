@@ -1,7 +1,7 @@
 import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
-import { AiState, FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
+import { AiState, FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, ReportReason, RoomPermissionOverrideSchema, UserReportSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
@@ -99,6 +99,7 @@ const KEY = new Set([
   'members-menu',
   'members-profile-switch',
   'profile-dialog',
+  'settings-profile-delete', // ADR-0153: account deletion (entry, blocker, password step)
   'profile-menu',
   'profile-birthday',
   'chat-birthday-card',
@@ -1052,6 +1053,34 @@ test('members-menu', async ({ open, win, mock, shot }) => {
   await expect(roles.getByRole('menuitemcheckbox')).toHaveCount(3);
   await expect(roles.getByRole('menuitemcheckbox', { name: 'Администратор' })).toBeChecked();
   await checkpoint(shot, 'members-menu', { keepPointer: true });
+  // ADR-0154: «Пожаловаться…» → the report dialog (reason picked, a comment).
+  await win.keyboard.press('Escape');
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('menu')).toHaveCount(0);
+  const people = await membersList(win); // a second Escape may close the floating members panel
+  await people.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
+  await win.getByTestId('member-report').click();
+  const report = win.getByTestId('report-dialog');
+  await expect(report).toBeVisible();
+  await report.getByTestId(`report-reason-${ReportReason.HARASSMENT}`).check();
+  await report.getByTestId('report-comment').fill('Грубит в общем канале');
+  await checkpoint(shot, 'report-dialog');
+  await win.getByTestId('report-send').click();
+  await expect(report).toHaveCount(0);
+  // «Заблокировать» → the confirmation; then Борис's messages in «общий» collapse.
+  await (await membersList(win)).getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
+  await win.getByTestId('member-block').click();
+  await expect(win.getByRole('alertdialog').or(win.getByRole('dialog'))).toContainText('Заблокировать пользователя Борис');
+  await checkpoint(shot, 'block-confirm');
+  await win.getByRole('button', { name: 'Заблокировать', exact: true }).click();
+  await expect(win.getByTestId('message-hidden').first()).toBeVisible();
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await checkpoint(shot, 'message-hidden');
+  // Settings → «Заблокированные»: Борис with «Разблокировать».
+  await openAppSettings(win)();
+  await win.getByRole('dialog').getByRole('tab', { name: 'Заблокированные' }).click();
+  await expect(win.getByTestId('blocked-row')).toHaveCount(1);
+  await checkpoint(shot, 'settings-blocked');
 });
 
 /**
@@ -2040,6 +2069,36 @@ test('settings-bans', async ({ open, win, mock, shot }) => {
   await win.getByRole('dialog').getByRole('tab', { name: 'Забаненные' }).click();
   await expect(win.getByTestId('ws-ban-row')).toHaveCount(1);
   await checkpoint(shot, 'settings-bans');
+  // «Жалобы» (ADR-0154): an open report about a message and a resolved one about a person.
+  const boris = mock.state.users.get(IDS.users.boris);
+  if (!boris) throw new Error('no user');
+  mock.state.reports.set(IDS.workspaces.main, [
+    create(UserReportSchema, {
+      id: '00000000-0000-7000-8fff-000000000002',
+      workspaceId: IDS.workspaces.main,
+      reporter: vera.user,
+      target: boris.user,
+      messageId: '00000000-0000-7000-8fff-0000000000aa',
+      roomId: IDS.rooms.general,
+      messageText: 'Кто опять сломал сборку? Руки бы оторвать.',
+      reason: ReportReason.HARASSMENT,
+      comment: 'Уже второй раз за неделю',
+      createdAt: ts('2026-01-14T11:20:00Z'),
+    }),
+    create(UserReportSchema, {
+      id: '00000000-0000-7000-8fff-000000000001',
+      workspaceId: IDS.workspaces.main,
+      reporter: boris.user,
+      target: vera.user,
+      reason: ReportReason.SPAM,
+      createdAt: ts('2026-01-12T09:00:00Z'),
+      resolvedAt: ts('2026-01-12T10:00:00Z'),
+      resolvedBy: IDS.users.anna,
+    }),
+  ]);
+  await win.getByRole('dialog').getByRole('tab', { name: 'Жалобы' }).click();
+  await expect(win.getByTestId('ws-report-row')).toHaveCount(2);
+  await checkpoint(shot, 'settings-reports');
 });
 
 /** Вера left the main workspace (ADR-0097): she keeps her messages, tasks and comments, but is no member. */
@@ -2232,6 +2291,28 @@ test('settings-profile-password', async ({ open, win, mock, shot }) => {
   await win.getByRole('button', { name: 'Изменить пароль…' }).click();
   await expect(win.getByRole('dialog', { name: 'Смена пароля' })).toBeVisible();
   await checkpoint(shot, 'settings-profile-password');
+});
+
+test('settings-profile-delete', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  // ADR-0153: Profile → «Удаление аккаунта» (the last card) → the dialog. Anna owns «Команда Calab»:
+  // first the blocker, then (the workspace handed to Вера) the password step.
+  await openSettingsTab(win, openAppSettings(win), appTab('profile'));
+  const entry = win.getByTestId('delete-account');
+  await entry.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'settings-profile-delete-entry');
+  await entry.click();
+  const dialog = win.getByRole('dialog', { name: 'Удалить аккаунт?' });
+  await expect(dialog.getByTestId('delete-account-blocked')).toContainText('Команда Calab');
+  await expect(dialog.getByRole('button', { name: 'Удалить навсегда' })).toBeDisabled();
+  await checkpoint(shot, 'settings-profile-delete-blocked');
+  const ws = mock.state.workspaces.get(IDS.workspaces.main);
+  if (!ws) throw new Error('no main workspace');
+  ws.ownerId = IDS.users.vera;
+  mock.dispatch({ event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+  await expect(dialog.getByLabel('Текущий пароль')).toBeVisible();
+  await checkpoint(shot, 'settings-profile-delete');
 });
 
 /** The pop-up button itself (owner bug: chevron flush right): a long value ends with «…» before the ↕. */
@@ -4647,6 +4728,8 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await win.getByTestId('task-search-row').first().click();
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId('panel-crumb-search')).toContainText('эхо');
+  // #137: a plain open never adds a tab (here the strip keeps its three ⌘-tabs).
+  await expect(tabs).toHaveCount(3);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'boards-task-from-search');
   await panel.getByTestId('task-close').click();

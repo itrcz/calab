@@ -11,6 +11,7 @@ const PAGES = [
   { page: '', priority: 1 },
   { page: 'features/', priority: 0.8 },
   { page: 'developers/', priority: 0.6 },
+  { page: 'account-deletion/', priority: 0.3 }, // ADR-0153: the Google Play account deletion URL
 ] as const;
 
 // Each entry lists every language version of its page (hreflang).

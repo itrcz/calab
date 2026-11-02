@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { parseCalendarWidgetLink, type CalendarWidgetAction } from '../../desktop/src/shared/calendarWidgetLink';
 import { ActivityIndicator, BackHandler, Linking, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type {
@@ -16,18 +17,20 @@ import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './na
 import { strings } from './strings';
 import { callsOperation, callsReply, subscribeCalls, callAudioEnabled } from './incomingCalls';
 import { roomAudioEnabled, roomAudioOperation, roomAudioReply, subscribeRoomAudio } from './roomAudio';
-import { ActivityProtocol, activityBootstrap, activityReady, linkEvent } from './activityProtocol';
+import { ActivityProtocol, activityBootstrap, activityReady, linkEvent, mediaSessionEvent } from './activityProtocol';
+import { clearMediaSession, mediaSessionEnabled, setMediaSession, subscribeMediaSession } from './mediaSession';
 import { appUrlForLink } from './links';
 import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, setNotificationsDocument, subscribeNotifications, testNotification, notificationTestReply } from './notifications';
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
 import { permissionsOperation, permissionsReply, subscribePermissions } from './mediaPermissions';
 import { SHELL_UA_MARKER } from '../../desktop/src/shared/nativeShell';
+import { calendarWidgetEnabled, calendarWidgetScheme, calendarWidgetOpen, calendarWidgetOperation, calendarWidgetReply } from './calendarWidget';
 
 /**
  * The phone host (ADR-0067): one full-screen WebView with the web client — the same DOM, router and
  * MobileShell as in a browser — plus a load error surface. The host channel (ADR-0069/0070) is
  * offered after a native main-frame/origin handshake in the WebView patch (iOS also checks the
- * current document); Android offers notifications and links only. File hand-off is iOS-native (ADR-0068): the web's
+ * current document); Android offers notifications, links and the media session (board #141). File hand-off is iOS-native (ADR-0068): the web's
  * `<a download>` of its own blob: from the app's main frame goes to the share sheet, decided in the
  * react-native-webview patch without JS or page input. Incoming universal / app / `calab://` links
  * (ADR-0142) open the same route of the web client. The WebView is edge to edge; the web client applies
@@ -81,23 +84,43 @@ function Host({ origin }: { origin: string }) {
   const [state, dispatch] = useReducer(hostReducer, initialHostState);
   const web = useRef<WebView>(null);
   const canGoBack = useRef(false);
+  const calendarTap = useRef(0);
+  const pendingCalendar = useRef<{ action: CalendarWidgetAction; tap: number } | null>(null);
   const loaded = useRef(false);
   const activity = useRef(new ActivityProtocol(state.generation));
   const resetActivity = useCallback(() => {
     activity.current.reset();
     endSessionActivity();
+    clearMediaSession();
     setNotificationsDocument(null, false);
   }, []);
   useEffect(() => {
     activity.current = new ActivityProtocol(state.generation);
     return resetActivity;
   }, [state.generation, resetActivity]);
+  const deliverCalendar = useCallback(() => {
+    const document = activity.current.currentDocument();
+    if (!document || !pendingCalendar.current || !activity.current.belongsTo(state.generation)) return;
+    web.current?.injectJavaScript(calendarWidgetOpen(state.generation, document, pendingCalendar.current.action, pendingCalendar.current.tap));
+  }, [state.generation]);
   const onMessage = useCallback(({ nativeEvent }: WebViewMessageEvent) => {
     const action = activity.current.accept(nativeEvent.data);
     if (action?.type === 'ready') {
       endSessionActivity();
+      // A new document: the web re-sends its voice session right after this handshake.
+      clearMediaSession();
       setNotificationsDocument(action.document, false);
-      web.current?.injectJavaScript(activityReady(state.generation, action.document, sessionActivityEnabled, ANDROID));
+      web.current?.injectJavaScript(activityReady(state.generation, action.document, sessionActivityEnabled, ANDROID, calendarWidgetEnabled, ANDROID && mediaSessionEnabled));
+      deliverCalendar();
+    } else if (action?.type === 'calendarWidget') {
+      if (action.operation === 'opened') {
+        if (pendingCalendar.current?.tap === action.tap) pendingCalendar.current = null;
+        return;
+      }
+      void calendarWidgetOperation(action.document, action).then(ok => {
+        if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
+          web.current?.injectJavaScript(calendarWidgetReply(state.generation, action.document, action.request, ok));
+      });
     } else if (action?.type === 'calls') {
       void callsOperation(action.document, action).then(value => {
         if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
@@ -114,7 +137,8 @@ function Host({ origin }: { origin: string }) {
           web.current?.injectJavaScript(permissionsReply(state.generation, action.document, action.request, reply));
       });
     } else if (action?.type === 'publish') publishSessionActivity(action.document, action.snapshot);
-    else if (action?.type === 'end') { endSessionActivity(); setNotificationsDocument(null, action.reason === 'logout'); }
+    else if (action?.type === 'media') setMediaSession(action.document, action.session, action.language);
+    else if (action?.type === 'end') { endSessionActivity(); clearMediaSession(); setNotificationsDocument(null, action.reason === 'logout'); }
     else if (action?.type === 'notifications' && action.operation === 'ack' && action.eventId) acknowledgeNotification(action.document, action.eventId);
     else if (action?.type === 'notifications' && action.operation === 'test' && action.body) {
       void testNotification(action.document, action.body).then(result => {
@@ -128,11 +152,16 @@ function Host({ origin }: { origin: string }) {
           web.current?.injectJavaScript(notificationReply(state.generation, action.document, action.request, value));
       });
     }
-  }, [state.generation]);
+  }, [state.generation, deliverCalendar]);
 
   useEffect(() => subscribeNotifications((document, value) => {
     if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
       web.current?.injectJavaScript(notificationReply(state.generation, document, 0, value));
+  }), [state.generation]);
+
+  useEffect(() => subscribeMediaSession((document) => {
+    if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
+      web.current?.injectJavaScript(mediaSessionEvent(state.generation, document));
   }), [state.generation]);
 
   useEffect(() => subscribePermissions((document, value) => {
@@ -163,20 +192,27 @@ function Host({ origin }: { origin: string }) {
   const deliverLink = useRef<(raw: string) => void>(() => undefined);
   useEffect(() => {
     deliverLink.current = (raw) => {
+      const calendar = calendarWidgetEnabled ? parseCalendarWidgetLink(raw, calendarWidgetScheme) : null;
+      if (calendar) {
+        pendingCalendar.current = { action: calendar, tap: ++calendarTap.current };
+        deliverCalendar();
+        return;
+      }
       const url = appUrlForLink(raw, origin, LINK_HOSTS);
       if (!url) return;
+      pendingCalendar.current = null; // A newer regular link supersedes an undelivered widget tap.
       const document = activity.current.belongsTo(state.generation) ? activity.current.current() : null;
       if (hostChannelEnabled && loaded.current && document) web.current?.injectJavaScript(linkEvent(state.generation, document, url));
       else dispatch({ type: 'open', url });
     };
-  }, [origin, state.generation]);
+  }, [origin, state.generation, deliverCalendar]);
   // The launch link is read before the WebView mounts, so a cold start loads the page once.
   const [started, setStarted] = useState(false);
   useEffect(() => {
-    let live = true;
-    const sub = Linking.addEventListener('url', ({ url }) => deliverLink.current(url));
+    let live = true, received = false;
+    const sub = Linking.addEventListener('url', ({ url }) => { received = true; deliverLink.current(url); });
     Linking.getInitialURL()
-      .then((url) => { if (live && url) deliverLink.current(url); })
+      .then((url) => { if (live && url && !received) deliverLink.current(url); })
       .catch(() => undefined)
       .finally(() => { if (live) setStarted(true); });
     return () => { live = false; sub.remove(); };
@@ -302,7 +338,10 @@ function Host({ origin }: { origin: string }) {
         onRenderProcessGone={onProcessGone}
         {...(hostChannelEnabled ? {
           onMessage,
-          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled, Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null, roomAudioEnabled),
+          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, {
+            platform: Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null,
+            nativeAudio: callAudioEnabled, calendarWidget: calendarWidgetEnabled, mediaSession: mediaSessionEnabled, roomAudio: roomAudioEnabled,
+          }),
           injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true,
         } : {})}
         // Persistent session: the default (non-incognito) website data store keeps the HttpOnly cookie.

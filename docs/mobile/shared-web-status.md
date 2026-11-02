@@ -2,6 +2,50 @@
 
 Как собрать и выпустить `apps/mobile` в TestFlight/Play — [release.md](release.md).
 
+## 2026-11-01: Android microphone foreground service and manifest trim (board #141)
+
+In the background Android may take the microphone from an app without a foreground service, so
+voice rooms and calls went silent. Now, while the shared web client is in a voice room or a call:
+
+- **Web** (`services/hostMediaSession.ts`): only when the host offers `mediaSessionVersion: 1`
+  (the Android host with the module; iOS and browsers install nothing) it sends
+  `{type:'media', session:'room'|'call'|'none', language}` on change only — no timers; a call is
+  the active one-to-one call's DM room or a phone (SIP) room. Strict parser in
+  `shared/hostActivity.ts` (unknown fields rejected), current document and sequence only
+  (`ActivityProtocol`), ack `mediaSession: 1`.
+- **Host** (`src/mediaSession.ts`, Kotlin `CalabMediaSession.kt`): `CalabMediaSessionService`,
+  `foregroundServiceType="microphone"` (`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`;
+  no `phoneCall` — there is no Telecom/ConnectionService). Started only while the app is in the
+  foreground and `RECORD_AUDIO` is granted, i.e. on joining; never restarted from the background
+  (`START_NOT_STICKY`). Ongoing low-importance notification «Calab — вы в голосовой комнате» /
+  «Идёт звонок» (web language), tap opens the app, «Выйти» / «Завершить» stops the service and
+  sends `calab-host-media {action:'leave'}` to the page, which calls `voice.leave()` (leaving a
+  call's session hangs it up). Stops on `none`, page navigation/reload/crash/remount, revoke and
+  logout, JS teardown, and when the app is swiped away. Capture and playback stay in the WebView
+  (docs/02 echo rules untouched).
+- **Manifest**: `android.blockedPermissions` removes `READ_EXTERNAL_STORAGE` and
+  `SYSTEM_ALERT_WINDOW` (`tools:node="remove"`); kept `VIBRATE` (`navigator.vibrate`, haptics) and
+  `WRITE_EXTERNAL_STORAGE` ≤ API 32 (react-native-webview downloads on Android ≤ 9).
+
+Checked: unit tests (parser, protocol, bridge capability, web service, manifest declarations),
+`expo prebuild --platform android` app manifest. **Not compiled** (no JDK/Android SDK on this
+machine): run `assembleDebug` and check the merged manifest (`aapt2 dump permissions`) before the
+next Android build. Needs a new Android build.
+
+### Device checklist (Android phone, release build, FCM configured)
+
+1. Push, app swiped away: a message, a @mention and an incoming call each arrive; tap opens the
+   right chat; «Ответить»/«Отклонить» on the call work; a call cancelled by the caller disappears.
+2. Join a voice room, lock the phone / switch apps for 3+ min: others still hear you, you hear them;
+   the notification «Calab — вы в голосовой комнате» is shown.
+3. Same for a one-to-one call: the notification says «Идёт звонок» / «Завершить».
+4. «Выйти» / «Завершить» from the notification: you leave the room / the call ends for the peer;
+   the notification disappears. Tap on the notification opens the app in the room.
+5. Leave from the app, sign out, pull-to-reload / kill the WebView: the notification disappears.
+6. Android 14+: deny the microphone, join (listen only): no crash, no notification.
+7. Android 13+: with notifications denied, step 2 still keeps the microphone.
+8. Settings → Apps → Calab → Permissions: no storage or «display over other apps».
+
 ## 2026-10-30: Android host channel and FCM push (DEV-5031, DEV-5033)
 
 The host channel is on for Android too (`hostChannelEnabled`). Its boundary is native, as on
@@ -166,7 +210,7 @@ The icon is packaged into a new iOS build and reaches TestFlight through that bu
 Android alike; every browser (Safari on an iPhone too), the PWA and the desktop keep it. Before
 2026-10-30 the rule (App Store until IAP) hid it only in the iOS shell; the Android shell behaved
 like a browser. Detection — `apps/desktop/src/renderer/platform/nativeShell.ts`: the host bridge
-`window.CalabHostActivity` plus its `platform` field (`activityBootstrap(…, Platform.OS)`,
+`window.CalabHostActivity` plus its `platform` field (`activityBootstrap(…, { platform: Platform.OS })`,
 additive), or the UA marker `SHELL_UA_MARKER`. Fail closed on iOS: no field, an iPad desktop UA, or
 a contradiction → iOS; Android is recognized by its user agent, so neither platform needs a new
 binary. Hidden in a native shell: top-up, «Оплатить», plan purchase / change / «Сменить тариф»,
