@@ -1,4 +1,5 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
+import { BlockedGate } from './BlockedRow';
 import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
 import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
@@ -186,7 +187,9 @@ const FeedRow = memo(function FeedRow({
         {c.msg.kind === MessageKind.SYSTEM ? (
           <SystemRow c={c} meta={meta} workspaceId={workspaceId} perms={perms} highlighted={highlighted} />
         ) : (
-          <MessageRow c={c} meta={meta} own={own} workspaceId={workspaceId} roomId={roomId} perms={perms} highlighted={highlighted} />
+          <BlockedGate authorId={own ? '' : c.msg.authorId} msgKey={c.key}>
+            <MessageRow c={c} meta={meta} own={own} workspaceId={workspaceId} roomId={roomId} perms={perms} highlighted={highlighted} />
+          </BlockedGate>
         )}
       </DisclosureScope.Provider>
     </RowBoundary>

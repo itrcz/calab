@@ -95,6 +95,8 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 		if err := h.botSend(ctx, me, dst); err != nil {
 			return err
 		}
+	} else if err := h.personSend(ctx, me, dst); err != nil {
+		return err
 	}
 	via := auth.ViaBot(ctx) // ADR-0106
 	if err := h.botOnBehalf(ctx, via); err != nil {
@@ -201,6 +203,21 @@ func (h *Handlers) botOnBehalf(ctx context.Context, via *uuid.UUID) error {
 		return nil
 	}
 	return h.BotLimiter.Take(ctx, via.String())
+}
+
+// personSend refuses a person writing into a DM when either side blocked the other (ADR-0154).
+func (h *Handlers) personSend(ctx context.Context, me uuid.UUID, acc perm.RoomAccess) error {
+	if !acc.DM {
+		return nil
+	}
+	for _, u := range acc.Members {
+		if u != me {
+			if err := dms.CheckPersonDM(ctx, h.db.Q, me, u); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Handlers) botSend(ctx context.Context, bot uuid.UUID, acc perm.RoomAccess) error {

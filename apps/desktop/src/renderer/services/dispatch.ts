@@ -32,6 +32,9 @@ import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
 import { queryClient } from '../lib/queryClient';
 import './users';
 import { bansKey } from '../lib/moderation';
+import { isBlocked, useBlocks } from '../stores/blocks';
+import { loadBlockedUsers } from './blocks';
+import { onReportEvent } from './reports';
 import { applyDm, applyDmState, refreshDmPreview, refreshDms, refreshRoomPreview } from './dms';
 import { applyShelf, applyShelves, dropShelf } from './notes';
 import { useNotes } from '../stores/notes';
@@ -232,6 +235,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         Object.fromEntries(Object.entries(m).filter(([id]) => id in alive && !listed.has(id)));
       useRooms.setState((st) => ({ unread: { ...carry(prevUnread), ...st.unread }, mentions: { ...carry(prevMentions), ...st.mentions } }));
       void loadMentions(); // the inbox list: mentions missed while disconnected
+      void loadBlockedUsers(); // ADR-0154: blocks made on another device while away
       const msgs = useMessages.getState();
       // The history of an archived temporary room (ADR-0044) is read outside the live store: it
       // stays open and is resynced like any loaded window (#48).
@@ -488,6 +492,14 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId, e.value.former);
       void queryClient.invalidateQueries({ queryKey: ['former-members', e.value.workspaceId] });
+      return;
+    // Report and block users (ADR-0154).
+    case 'userBlocksUpdate':
+      useBlocks.getState().setOne(e.value.userId, e.value.blocked);
+      return;
+    case 'workspaceReportCreate':
+    case 'workspaceReportUpdate':
+      if (e.value.report) onReportEvent(e.value.report, e.case === 'workspaceReportCreate');
       return;
     case 'workspaceBanAdd':
     case 'workspaceBanRemove': {
@@ -756,6 +768,8 @@ function onMessage(m: Message, workspaceId: string): void {
     rooms.setRead(m.roomId, m.id);
     return;
   }
+  // ADR-0154: a person I blocked makes no badge, sound or notification (the row is collapsed).
+  if (isBlocked(m.authorId)) return;
   // The open room counts as on screen only when its feed is: the stream stage / stream full
   // screen covering it hides new messages — they stay unread (issue #35).
   const covered = streamCoversChat(useVoice.getState(), m.roomId, useStreamFullscreen.getState().on);

@@ -1,6 +1,6 @@
 import { RoomType, type FileMeta, type PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '../../components/radix/context-menu';
-import { CheckCheck, ChevronDown, Copy, CornerUpLeft, Download, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { CheckCheck, ChevronDown, Copy, CornerUpLeft, Download, Flag, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { TICKS_READ, useReadReceipt } from '../../stores/readReceipts';
 import { ReadersList } from './ReadReceipts';
@@ -23,6 +23,7 @@ import { useUi } from '../../stores/ui';
 import { useChatView } from './chatView';
 import { QUICK_REACTIONS } from './emoji';
 import { canToggleReaction } from './reactionLimit';
+import { openReport } from '../people/ReportDialog';
 
 /** macOS menu look (opaque popover, 28 px rows, accent highlight). */
 export const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-56 rounded-[var(--radius-card)] p-1';
@@ -143,6 +144,11 @@ export function MessageMenu({ c, own, roomId, workspaceId, perms, image }: { c: 
         {own && !m.sticker && !m.forward ? (
           <ContextMenu.Item className={menuItem} onSelect={() => useUi.getState().setEditing(c.key)}>
             <Pencil className="size-4" aria-hidden /> {t('chat.edit')}
+          </ContextMenu.Item>
+        ) : null}
+        {!own && m.authorId && !m.system && c.status === 'sent' ? (
+          <ContextMenu.Item className={menuItem} onSelect={() => openReport(m.authorId, useRooms.getState().byId[roomId]?.workspaceId ?? '', m.id)} data-testid="message-report">
+            <Flag className="size-4" aria-hidden /> {t('report.action')}
           </ContextMenu.Item>
         ) : null}
         {canDelete ? (

@@ -188,6 +188,11 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if !shared {
 		return httpx.NotFound("user") // do not reveal users outside the caller's workspaces
 	}
+	// ADR-0154: no new DM while either blocked the other; an existing one still opens (its
+	// history), writing into it is refused by POST /api/rooms/{id}/messages.
+	if err := CheckPersonDM(r.Context(), h.db.Q, me, peerID); err != nil {
+		return err
+	}
 	// Starting a new DM needs a verified email (ADR-0023) unless EMAIL_VERIFICATION=optional
 	// (ADR-0065); existing DMs stay reachable.
 	if _, err := h.EmailGate.User(r.Context(), h.db.Q, me); err != nil {

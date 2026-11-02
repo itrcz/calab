@@ -86,6 +86,7 @@ import {
   UserNoteResponseSchema,
   ChangeEmailRequestSchema,
   ChangePasswordRequestSchema,
+  DeleteAccountRequestSchema,
   CreateCategoryRequestSchema,
   CreateCategoryResponseSchema,
   CreateInviteRequestSchema,
@@ -240,6 +241,11 @@ import {
   CreateBotResponseSchema,
   GetBotMeResponseSchema,
   ListBlockedBotsResponseSchema,
+  ListBlockedUsersResponseSchema,
+  CreateReportRequestSchema,
+  CreateReportResponseSchema,
+  ListReportsResponseSchema,
+  type ReportReason,
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
@@ -297,6 +303,9 @@ export const api = {
       callEmpty('PATCH', '/api/me/password', body(ChangePasswordRequestSchema, init)),
     changeEmail: (init: MessageInitShape<typeof ChangeEmailRequestSchema>) =>
       call('PATCH', '/api/me/email', UpdateMeResponseSchema, body(ChangeEmailRequestSchema, init)),
+    /** ADR-0153: 204, the account is gone and every session revoked. 403 INVALID_CREDENTIALS = wrong password; 409 OWNS_WORKSPACES. */
+    deleteAccount: (init: MessageInitShape<typeof DeleteAccountRequestSchema>) =>
+      callEmpty('POST', '/api/me/delete', body(DeleteAccountRequestSchema, init)),
     /** Custom status (text + emoji, optional expiry); empty text and emoji clear it. */
     setStatus: (init: MessageInitShape<typeof UpdateStatusRequestSchema>) =>
       call('PATCH', '/api/me/status', UpdateMeResponseSchema, body(UpdateStatusRequestSchema, init)),
@@ -719,6 +728,22 @@ export const api = {
     /** My own state of a DM (docs/09 #51): archive / «Удалить чат» (for me only); 404 not a participant. */
     setState: (roomId: string, state: { archived?: boolean; cleared?: boolean }) =>
       call('PATCH', `/api/dms/${roomId}/state`, UpdateDmStateResponseSchema, body(UpdateDmStateRequestSchema, state)),
+  },
+  /**
+   * Report and block users (ADR-0154). Blocks are account-level: a block in either direction
+   * refuses a new DM, DM messages and calls (403 USER_UNAVAILABLE); shared rooms are hidden in
+   * the client. Reports go to the workspace's MANAGE_MEMBERS (429 over 10 per hour).
+   */
+  blocks: {
+    list: () => call('GET', '/api/me/blocked-users', ListBlockedUsersResponseSchema),
+    block: (userId: string) => callEmpty('POST', `/api/me/blocked-users/${userId}`),
+    unblock: (userId: string) => callEmpty('DELETE', `/api/me/blocked-users/${userId}`),
+  },
+  reports: {
+    create: (r: { workspaceId: string; userId: string; messageId: string; reason: ReportReason; comment: string }) =>
+      call('POST', '/api/reports', CreateReportResponseSchema, body(CreateReportRequestSchema, r)),
+    list: (workspaceId: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${workspaceId}/reports`, ListReportsResponseSchema, undefined, signal),
+    resolve: (workspaceId: string, reportId: string) => callEmpty('POST', `/api/workspaces/${workspaceId}/reports/${reportId}/resolve`),
   },
   /**
    * Notes shelves (ADR-0039): personal rooms; messages use the room endpoints, uploads go to

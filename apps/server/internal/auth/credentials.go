@@ -39,6 +39,13 @@ func (s *Service) checkCurrent(ctx context.Context, userID uuid.UUID, password s
 	return u, nil
 }
 
+// CheckPassword verifies the caller's current password (403 INVALID_CREDENTIALS when wrong, 403 for
+// a guest account, which has none): the re-authentication of account deletion (ADR-0153).
+func (s *Service) CheckPassword(ctx context.Context, userID uuid.UUID, password string) error {
+	_, err := s.checkCurrent(ctx, userID, password)
+	return err
+}
+
 func validateNewPassword(p string) error {
 	if n := utf8.RuneCountInString(p); n < 8 || n > 256 {
 		return httpx.Validation("newPassword", "password must be 8..256 characters")
@@ -140,6 +147,12 @@ func (s *Service) ChangeEmail(ctx context.Context, id Identity, email, current s
 // are rejected before it and do not use the budget.
 func (h *Handlers) credentialLimit(r *http.Request, userID uuid.UUID) error {
 	return h.cred.Take(r.Context(), userID.String())
+}
+
+// CredentialLimit takes one password check from the caller's bucket shared with password and
+// email changes (5 per 15 minutes; ADR-0153 account deletion uses it too).
+func (h *Handlers) CredentialLimit(r *http.Request, userID uuid.UUID) error {
+	return h.credentialLimit(r, userID)
 }
 
 func (h *Handlers) changePassword(w http.ResponseWriter, r *http.Request) error {

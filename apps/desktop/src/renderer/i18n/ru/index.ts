@@ -13,8 +13,10 @@ import { ruRecording } from './recording';
 import { ruAnnot } from './annot';
 import { ruPeople } from './people';
 import { ruFormer } from './former';
+import { ruAccount } from './account';
 import { ruPrivacy } from './privacy';
 import { ruModeration } from './moderation';
+import { ruReport } from './report';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
@@ -91,8 +93,10 @@ export const ru = {
   ...ruTransitions,
   ...ruCustomPlan,
   ...ruFormer,
+  ...ruAccount,
   ...ruPrivacy,
   ...ruModeration,
+  ...ruReport,
   ...ruMail,
   ...ruRecording,
   ...ruAnnot,

@@ -5,7 +5,7 @@ import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { AppWindow, Ban, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import type { UpdateChannel } from '../../../shared/updateFeed';
@@ -40,6 +40,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { ChangeEmailDialog, ChangePasswordDialog } from './CredentialDialogs';
+import { DeleteAccountDialog } from './DeleteAccountDialog';
 import { LicenseCard } from '../legal/Legal';
 import { HotkeyRow } from './HotkeyRow';
 import { SettingsFooter } from './SettingsFooter';
@@ -67,6 +68,7 @@ import { CalendarTab } from './CalendarSettings';
 import { MailTab } from './MailSettings';
 import { MAIL_ENABLED } from '../mail/boot';
 import { TaskNotifyCard } from './TaskNotifyCard';
+import { BlockedTab } from './BlockedTab';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -89,6 +91,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     ...(MAIL_ENABLED ? [{ id: 'mail', label: t('mbox.section'), icon: Mail, content: <MailTab />, keywords: t('mbox.settings.keywords') }] : []),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
+    // «Заблокированные» (ADR-0154): the people I blocked; unblock here.
+    { id: 'blocked', label: t('block.settingsTab'), icon: Ban, content: <BlockedTab />, keywords: t('block.keywords') },
     // «OAuth-приложения» (ADR-0054): near the end — rarely needed; Business only (PlanLock).
     { id: 'authorized-apps', label: t('identity.grants'), icon: AppWindow, locked: !oauthApps, content: <AuthorizedApps /> },
     // «О программе» always last (owner, 03.10).
@@ -213,6 +217,24 @@ function ProfileTab(): ReactNode {
       <AfkCard />
       {/* Guest accounts do not install sticker packs (ADR-0030 §4). */}
       {u.isGuest ? null : <MyStickersCard />}
+      {/* ADR-0153: last on the page; a guest account has no password and expires by itself. */}
+      {u.isGuest ? null : <DeleteAccountCard />}
+    </>
+  );
+}
+
+function DeleteAccountCard(): ReactNode {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Card title={t('account.delete.card')}>
+        <Row label={t('account.delete.row')} hint={t('account.delete.rowHint')}>
+          <Button variant="destructive" aria-label={t('account.delete.row')} onClick={() => setOpen(true)} data-testid="delete-account">
+            {t('account.delete.open')}
+          </Button>
+        </Row>
+      </Card>
+      {open ? <DeleteAccountDialog onClose={() => setOpen(false)} /> : null}
     </>
   );
 }

@@ -344,6 +344,11 @@ import {
   GetBotResponseSchema,
   InviteBotDelegationRequestSchema,
   ListBlockedBotsResponseSchema,
+  ListBlockedUsersResponseSchema,
+  CreateReportRequestSchema,
+  CreateReportResponseSchema,
+  ListReportsResponseSchema,
+  UserReportSchema,
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
@@ -5343,6 +5348,72 @@ class MockImpl {
     });
     this.route('DELETE', '/api/me/blocked-bots/:id', (c) => {
       s().blockedBots.get(this.uid(c))?.delete(c.params[0] ?? '');
+      noContent(c.res);
+    });
+
+    // ---------------- report and block users (ADR-0154)
+    this.route('GET', '/api/me/blocked-users', (c) => {
+      sendMsg(c.res, 200, ListBlockedUsersResponseSchema, { userIds: [...(s().blockedUsers.get(this.uid(c)) ?? [])] });
+    });
+    this.route('POST', '/api/me/blocked-users/:id', (c) => {
+      const me = this.uid(c);
+      const id = c.params[0] ?? '';
+      const u = s().users.get(id);
+      if (!u) throw notFound('user not found');
+      if (id === me || u.user.isBot) throw invalid('id', 'cannot block this user');
+      const set = s().blockedUsers.get(me) ?? new Set<string>();
+      set.add(id);
+      s().blockedUsers.set(me, set);
+      this.toUser(me, { event: { case: 'userBlocksUpdate', value: { userId: id, blocked: true } } });
+      noContent(c.res);
+    });
+    this.route('DELETE', '/api/me/blocked-users/:id', (c) => {
+      const me = this.uid(c);
+      const id = c.params[0] ?? '';
+      s().blockedUsers.get(me)?.delete(id);
+      this.toUser(me, { event: { case: 'userBlocksUpdate', value: { userId: id, blocked: false } } });
+      noContent(c.res);
+    });
+    this.route('POST', '/api/reports', (c) => {
+      const me = this.uid(c);
+      const b = parseBody(c, CreateReportRequestSchema);
+      const found = b.messageId ? this.findMessage(b.messageId) : undefined;
+      const msg = found?.list[found.index];
+      const room = found?.room;
+      const wsId = room?.workspaceId || b.workspaceId;
+      if (!this.member(wsId, me)) throw notFound('workspace not found');
+      const target = s().users.get(b.userId);
+      if (!target) throw notFound('user not found');
+      const report = create(UserReportSchema, {
+        id: `00000000-0000-7000-8fff-${String((s().reports.get(b.workspaceId)?.length ?? 0) + 1).padStart(12, '0')}`,
+        workspaceId: wsId,
+        reporter: s().users.get(me)?.user,
+        target: target.user,
+        messageId: b.messageId,
+        roomId: msg?.roomId ?? '',
+        messageText: msg?.content.slice(0, 2000) ?? '',
+        reason: b.reason,
+        comment: b.comment.trim(),
+        createdAt: tick(s()),
+      });
+      s().reports.set(wsId, [report, ...(s().reports.get(wsId) ?? [])]);
+      this.toWorkspace(wsId, { event: { case: 'workspaceReportCreate', value: { report } } });
+      sendMsg(c.res, 201, CreateReportResponseSchema, { id: report.id });
+    });
+    this.route('GET', '/api/workspaces/:id/reports', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
+      sendMsg(c.res, 200, ListReportsResponseSchema, { reports: s().reports.get(ws.id) ?? [] });
+    });
+    this.route('POST', '/api/workspaces/:id/reports/:rid/resolve', (c) => {
+      const me = this.uid(c);
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
+      const r = (s().reports.get(ws.id) ?? []).find((x) => x.id === c.params[1]);
+      if (!r) throw notFound('report not found');
+      r.resolvedAt ??= tick(s());
+      r.resolvedBy ||= me;
+      this.toWorkspace(ws.id, { event: { case: 'workspaceReportUpdate', value: { report: r } } });
       noContent(c.res);
     });
 

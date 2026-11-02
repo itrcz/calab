@@ -65,6 +65,7 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_SIP_CONTACT_NUMBER_TAKEN: { key: 'telc.err.numberTaken' },
   ERROR_CODE_SIP_BUSY: { key: 'telc.err.busy' },
   ERROR_CODE_USERNAME_INVALID: { key: 'profile.username.invalid' },
+  ERROR_CODE_USER_UNAVAILABLE: { key: 'err.userUnavailable' },
 };
 
 const IMAGE_ERR: Record<ImageError['reason'], MessageKey> = {
