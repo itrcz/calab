@@ -537,11 +537,23 @@ func createTask(ctx context.Context, c *api, a args) (any, error) {
 		return nil, err
 	}
 	t := tr.GetTask()
-	out := map[string]any{"id": t.GetId(), "key": t.GetKey(), "room": t.GetRoomId()}
+	out := where(map[string]any{"id": t.GetId(), "key": t.GetKey(), "room": t.GetRoomId()}, t, board)
 	if board != nil {
 		out["status"] = statusName(board, t.GetStatusId())
 	}
 	return out, nil
+}
+
+// where adds to a write tool's answer the workspace and board the write landed in (ADR-0156):
+// a key may repeat across workspaces, and the agent and the person must see where it went.
+func where(out map[string]any, t *v1.Task, b *v1.Board) map[string]any {
+	out["workspace"] = t.GetWorkspaceId()
+	board := t.GetBoardId()
+	if b != nil && b.GetId() == board {
+		board = b.GetName() + " (" + b.GetKey() + ")"
+	}
+	out["board"] = board
+	return compact(out)
 }
 
 func commentTask(ctx context.Context, c *api, a args) (any, error) {
@@ -552,7 +564,13 @@ func commentTask(ctx context.Context, c *api, a args) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "")
+	out, err := send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "")
+	if err != nil {
+		return nil, err
+	}
+	m := out.(map[string]any)
+	m["task"] = tr.GetTask().GetKey()
+	return where(m, tr.GetTask(), tr.GetBoard()), nil
 }
 
 func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
@@ -571,7 +589,7 @@ func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
 	if err := c.call(ctx, http.MethodPatch, "/api/tasks/"+seg(tr.GetTask().GetId()), nil, &v1.UpdateTaskRequest{StatusId: &sid}, &out); err != nil {
 		return nil, err
 	}
-	return map[string]any{"key": out.GetTask().GetKey(), "status": statusName(board, out.GetTask().GetStatusId())}, nil
+	return where(map[string]any{"key": out.GetTask().GetKey(), "status": statusName(board, out.GetTask().GetStatusId())}, out.GetTask(), board), nil
 }
 
 func sendMessage(ctx context.Context, c *api, a args) (any, error) {

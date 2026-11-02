@@ -83,7 +83,7 @@ func TestMCPOnBehalfVia(t *testing.T) {
 
 	// On behalf of bob: the task is bob's, through his bot, via MCP.
 	text := mustTool(t, bt, "owner", "create_task", map[string]any{"board": "mvi", "title": "из агента"})
-	if !strings.Contains(text, `"key":"MVI-1"`) {
+	if !strings.Contains(text, `"key":"MVI-1"`) || !strings.Contains(text, `"workspace":"`+wid+`"`) {
 		t.Fatalf("create_task by board key: %s", text)
 	}
 	var created struct{ ID, Key string }
@@ -255,8 +255,15 @@ func TestMCPOnBehalfOfMemberStaysInTheConsent(t *testing.T) {
 	}
 
 	// She revokes her consent: the next MCP call on her behalf is refused at once.
+	o.must(200, "GET", "/api/tasks/"+created.ID, nil, &tr)
+	comments := tr.GetTask().GetCommentCount()
 	carol.must(200, "DELETE", "/api/workspaces/"+wa+"/bots/"+bt.id+"/delegations/"+carol.id, nil, nil)
-	if st, text, isErr := mcpToolAs(t, bt, carol.id, "comment_task", map[string]any{"task": created.ID, "text": "после отзыва"}); st < 400 && !isErr {
-		t.Fatalf("after revoke: %d %s", st, text)
+	if st, text, _ := mcpToolAs(t, bt, carol.id, "comment_task", map[string]any{"task": created.ID, "text": "после отзыва"}); (st != http.StatusUnauthorized && st != http.StatusForbidden) ||
+		(st == http.StatusForbidden && !strings.Contains(text, "ON_BEHALF_NO_CONSENT")) {
+		t.Fatalf("after revoke: %d %s; want 401 revoked or 403 ON_BEHALF_NO_CONSENT", st, text)
+	}
+	o.must(200, "GET", "/api/tasks/"+created.ID, nil, &tr)
+	if tr.GetTask().GetCommentCount() != comments {
+		t.Fatalf("a comment after the revocation: %d → %d", comments, tr.GetTask().GetCommentCount())
 	}
 }

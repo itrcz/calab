@@ -339,7 +339,11 @@ func updateTask(ctx context.Context, c *api, a args) (any, error) {
 	if a.Parent != nil {
 		p := ""
 		if ref := strings.TrimSpace(*a.Parent); ref != "" {
-			pt, err := taskByRef(ctx, c, ref, a.Workspace)
+			ws := a.Workspace
+			if ws == "" {
+				ws = t.GetWorkspaceId() // a parent lives in the task's own workspace
+			}
+			pt, err := taskByRef(ctx, c, ref, ws)
 			if err != nil {
 				return nil, err
 			}
@@ -378,9 +382,9 @@ func updateTask(ctx context.Context, c *api, a args) (any, error) {
 		return nil, err
 	}
 	n := out.GetTask()
-	return compact(map[string]any{"key": n.GetKey(), "title": n.GetTitle(), "status": statusName(board, n.GetStatusId()),
+	return where(map[string]any{"key": n.GetKey(), "title": n.GetTitle(), "status": statusName(board, n.GetStatusId()),
 		"priority": enum(n.GetPriority().String(), "TASK_PRIORITY_"), "labels": labelNames(board, n.GetLabelIds()),
-		"due": n.GetDueOn(), "start": n.GetStartOn(), "parent": n.GetParentId()}), nil
+		"due": n.GetDueOn(), "start": n.GetStartOn(), "parent": n.GetParentId()}, n, board), nil
 }
 
 // ---- assign ----
@@ -478,7 +482,7 @@ func assign(ctx context.Context, c *api, a args) (any, error) {
 	for _, x := range out.GetTask().GetAssignees() {
 		now = append(now, x.GetUserId())
 	}
-	return compact(map[string]any{"key": out.GetTask().GetKey(), "assignees": now, "lead": lead}), nil
+	return where(map[string]any{"key": out.GetTask().GetKey(), "assignees": now, "lead": lead}, out.GetTask(), tr.GetBoard()), nil
 }
 
 // ---- read: Git and releases ----

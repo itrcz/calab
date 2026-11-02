@@ -168,8 +168,8 @@ func TestUpdateTask(t *testing.T) {
 	h.API = fa
 
 	text, isErr := call(t, h, "update_task", `{"task":"DEV-7","priority":"High","due":"","add_labels":["UI"],"remove_labels":["bug"]}`)
-	if isErr || !strings.Contains(text, `"labels":["UI"]`) {
-		t.Fatalf("update_task: %v %s", isErr, text)
+	if isErr || !strings.Contains(text, `"labels":["UI"]`) || !strings.Contains(text, `"workspace":"`+f.ws+`"`) || !strings.Contains(text, `"board":"Develop (DEV)"`) {
+		t.Fatalf("update_task (and where it landed): %v %s", isErr, text)
 	}
 	if patch.GetPriority() != v1.TaskPriority_TASK_PRIORITY_HIGH || patch.DueOn == nil || patch.GetDueOn() != "" ||
 		!patch.GetSetLabels() || strings.Join(patch.GetLabelIds(), ",") != f.ui || patch.Title != nil || patch.StatusId != nil {
@@ -231,7 +231,7 @@ func TestAssign(t *testing.T) {
 	}
 
 	// add me: Anna stays the lead with her note.
-	if text, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["me"]}`); isErr || got() != f.ann+"*(backend),"+f.me {
+	if text, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["me"]}`); isErr || got() != f.ann+"*(backend),"+f.me || !strings.Contains(text, `"workspace":"`+f.ws+`"`) {
 		t.Fatalf("add me: %v %s %s", isErr, text, got())
 	}
 	// add by nickname and make them the lead.
