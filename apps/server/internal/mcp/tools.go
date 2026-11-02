@@ -80,6 +80,9 @@ func def(name, desc string, input map[string]any) map[string]any {
 
 var taskArg = str("task id or key (ABC-12)")
 
+// wsArg narrows a task key to one workspace (a key may repeat across workspaces).
+var wsArg = str("workspace id, when a task key is in several workspaces")
+
 var toolDefs = []tool{
 	{def("find", "Find tasks, messages, rooms or boards the bot can see. Returns ids for the other tools.", schema(nil, map[string]any{
 		"q":         str("words; for rooms/boards a name part, empty = all"),
@@ -88,11 +91,12 @@ var toolDefs = []tool{
 		"limit":     map[string]any{"type": "integer", "description": "per kind, 1-20, default 10"},
 	})), find},
 	{def("read", "Read a task (with its board's statuses, labels, Git links and releases) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
-		"task":   taskArg,
-		"room":   str("room id (a task's comments: its room)"),
-		"limit":  map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
-		"before": str("message id: older history"),
-		"full":   map[string]any{"type": "boolean", "description": "the full API object"},
+		"task":      taskArg,
+		"workspace": wsArg,
+		"room":      str("room id (a task's comments: its room)"),
+		"limit":     map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
+		"before":    str("message id: older history"),
+		"full":      map[string]any{"type": "boolean", "description": "the full API object"},
 	})), read},
 	{def("create_task", "Create a task on a board.", schema([]string{"board", "title"}, map[string]any{
 		"board":       str("board id or key (DEV)"),
@@ -101,12 +105,14 @@ var toolDefs = []tool{
 		"status":      str("status name or id; default the board's"),
 	})), createTask},
 	{def("comment_task", "Comment on a task.", schema([]string{"task", "text"}, map[string]any{
-		"task": taskArg,
-		"text": str("comment, markdown"),
+		"task":      taskArg,
+		"workspace": wsArg,
+		"text":      str("comment, markdown"),
 	})), commentTask},
 	{def("set_task_status", "Move a task to another status of its board.", schema([]string{"task", "status"}, map[string]any{
-		"task":   taskArg,
-		"status": str("status name or id"),
+		"task":      taskArg,
+		"workspace": wsArg,
+		"status":    str("status name or id"),
 	})), setTaskStatus},
 	{def("send_message", "Send a message to a room or DM.", schema([]string{"room", "text"}, map[string]any{
 		"room":     str("room id"),
@@ -129,6 +135,7 @@ var toolDefs = []tool{
 	})), listTasks},
 	{def("update_task", "Change fields of a task; only given fields change.", schema([]string{"task"}, map[string]any{
 		"task":          taskArg,
+		"workspace":     wsArg,
 		"title":         str("1-200 chars"),
 		"description":   str("markdown; replaces the description"),
 		"priority":      map[string]any{"type": "string", "enum": []string{"none", "low", "medium", "high", "urgent"}},
@@ -141,10 +148,11 @@ var toolDefs = []tool{
 		"remove_labels": strs("label names to remove"),
 	})), updateTask},
 	{def("assign", "Set who works on a task: add (default), remove or replace assignees; one is the lead.", schema([]string{"task", "users"}, map[string]any{
-		"task":  taskArg,
-		"users": strs("me, user ids, names or nicknames"),
-		"mode":  map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "default add"},
-		"lead":  str("the lead among the assignees (me, id, name); default: kept, else the first"),
+		"task":      taskArg,
+		"workspace": wsArg,
+		"users":     strs("me, user ids, names or nicknames"),
+		"mode":      map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "default add"},
+		"lead":      str("the lead among the assignees (me, id, name); default: kept, else the first"),
 	})), assign},
 }
 
@@ -318,7 +326,7 @@ func workspaceIDs(ctx context.Context, c *api, ws string) ([]string, error) {
 func read(ctx context.Context, c *api, a args) (any, error) {
 	switch {
 	case strings.TrimSpace(a.Task) != "":
-		tr, board, err := loadTask(ctx, c, a.Task)
+		tr, board, err := loadTask(ctx, c, a.Task, a.Workspace)
 		if err != nil {
 			return nil, err
 		}
@@ -407,26 +415,62 @@ func message(m *v1.Message) map[string]any {
 		"reply_to": m.GetReplyToId(), "files": files, "read_by": readBy})
 }
 
-// taskByRef reads a task by id or by key (GET /api/t/{key} over the bot's workspaces).
-func taskByRef(ctx context.Context, c *api, ref string) (*v1.TaskResponse, error) {
+// taskByRef reads a task by id, or by key (GET /api/t/{key}) in workspace ws. A key is unique
+// only within a workspace (ADR-0156): without ws it is looked up in each of the caller's
+// workspaces and must be found in exactly one — never the first match, a write must not land
+// in another workspace's task.
+func taskByRef(ctx context.Context, c *api, ref, ws string) (*v1.TaskResponse, error) {
 	ref = strings.TrimSpace(ref)
-	var tr v1.TaskResponse
-	path := "/api/tasks/" + seg(ref)
-	if _, err := uuid.Parse(ref); err != nil {
-		path = "/api/t/" + seg(strings.ToUpper(ref))
+	if _, err := uuid.Parse(ref); err == nil {
+		var tr v1.TaskResponse
+		if err := c.call(ctx, http.MethodGet, "/api/tasks/"+seg(ref), nil, nil, &tr); err != nil {
+			return nil, err
+		}
+		if tr.GetTask() == nil {
+			return nil, errors.New("task not found")
+		}
+		return &tr, nil
 	}
-	if err := c.call(ctx, http.MethodGet, path, nil, nil, &tr); err != nil {
+	path := "/api/t/" + seg(strings.ToUpper(ref))
+	wss, err := workspaceIDs(ctx, c, ws)
+	if err != nil {
 		return nil, err
 	}
-	if tr.GetTask() == nil {
-		return nil, errors.New("task not found")
+	var found []*v1.TaskResponse
+	var miss error
+	for _, w := range wss {
+		var tr v1.TaskResponse
+		if err := c.call(ctx, http.MethodGet, path, url.Values{"workspace_id": {w}}, nil, &tr); err != nil {
+			var ae *apiError
+			if errors.As(err, &ae) && (ae.status == http.StatusNotFound || ae.status == http.StatusForbidden) && len(wss) > 1 {
+				miss = err
+				continue
+			}
+			return nil, err
+		}
+		if tr.GetTask() != nil {
+			found = append(found, &tr)
+		}
 	}
-	return &tr, nil
+	switch len(found) {
+	case 0:
+		if miss != nil {
+			return nil, miss
+		}
+		return nil, errors.New("task not found")
+	case 1:
+		return found[0], nil
+	}
+	names := make([]string, 0, len(found))
+	for _, tr := range found {
+		names = append(names, tr.GetTask().GetKey()+" "+strconv.Quote(tr.GetTask().GetTitle())+" (id "+tr.GetTask().GetId()+", workspace "+tr.GetTask().GetWorkspaceId()+")")
+	}
+	return nil, errors.New("task key " + strconv.Quote(strings.ToUpper(ref)) + " is in several workspaces, give the task id or workspace: " + strings.Join(names, "; "))
 }
 
-// loadTask reads a task by id or key with its board (statuses).
-func loadTask(ctx context.Context, c *api, ref string) (*v1.TaskResponse, *v1.Board, error) {
-	tr, err := taskByRef(ctx, c, ref)
+// loadTask reads a task by id or key (in workspace ws) with its board (statuses).
+func loadTask(ctx context.Context, c *api, ref, ws string) (*v1.TaskResponse, *v1.Board, error) {
+	tr, err := taskByRef(ctx, c, ref, ws)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -504,7 +548,7 @@ func commentTask(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("task", a.Task), need("text", a.Text)); err != nil {
 		return nil, err
 	}
-	tr, err := taskByRef(ctx, c, a.Task)
+	tr, err := taskByRef(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +559,7 @@ func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("task", a.Task), need("status", a.Status)); err != nil {
 		return nil, err
 	}
-	tr, board, err := loadTask(ctx, c, a.Task)
+	tr, board, err := loadTask(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}

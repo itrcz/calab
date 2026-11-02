@@ -122,6 +122,8 @@ func TestToolsCallRESTAsTheBot(t *testing.T) {
 	f := &fakeAPI{}
 	f.reply = func(r *http.Request) (int, proto.Message) {
 		switch r.Method + " " + r.URL.Path {
+		case "GET /api/workspaces":
+			return 200, &v1.ListWorkspacesResponse{Workspaces: []*v1.Workspace{{Id: "ws-1"}}}
 		case "GET /api/t/OPS-1":
 			return 200, &v1.TaskResponse{Task: &v1.Task{Id: taskID, Key: "OPS-1", BoardId: boardID, RoomId: "room-1"}, Board: board}
 		case "PATCH /api/tasks/" + taskID:
@@ -139,8 +141,14 @@ func TestToolsCallRESTAsTheBot(t *testing.T) {
 	if isErr || !strings.Contains(text, `"status":"Done"`) {
 		t.Fatalf("set_task_status: %v %s", isErr, text)
 	}
-	if !strings.Contains(f.body[1], statusDone) {
-		t.Fatalf("PATCH body %s", f.body[1])
+	patched := ""
+	for i, r := range f.calls {
+		if r.Method == http.MethodPatch {
+			patched = f.body[i]
+		}
+	}
+	if !strings.Contains(patched, statusDone) {
+		t.Fatalf("PATCH body %s", patched)
 	}
 	for _, r := range f.calls {
 		if r.Header.Get("Authorization") != "Bearer calab_bot_x_secret" || r.Header.Get(auth.OnBehalfHeader) != "owner" {

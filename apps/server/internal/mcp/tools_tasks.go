@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -26,35 +27,23 @@ func listTasks(ctx context.Context, c *api, a args) (any, error) {
 		if !a.Mine {
 			return nil, errors.New("give board, workspace or mine=true")
 		}
-		// The API pages by 200; our cursor is "<offset in the API page>:<API cursor>".
-		offset, apiCursor := 0, ""
-		if a.Cursor != "" {
-			o, rest, ok := strings.Cut(a.Cursor, ":")
-			n, err := strconv.Atoi(o)
-			if !ok || err != nil || n < 0 {
-				return nil, errors.New("invalid cursor")
-			}
-			offset, apiCursor = n, rest
-		}
+		// The API pages by 200 with a keyset cursor «<updated_at>_<id>» of the last task shown, so
+		// a page cut to limit continues right after its last task even if the list changed.
 		qs := url.Values{"scope": {"assigned"}, "open": {"1"}}
-		if apiCursor != "" {
-			qs.Set("cursor", apiCursor)
+		if a.Cursor != "" {
+			qs.Set("cursor", a.Cursor)
 		}
 		var r v1.MyTasksResponse
 		if err := c.call(ctx, http.MethodGet, "/api/me/tasks", qs, nil, &r); err != nil {
 			return nil, err
 		}
-		tasks := r.GetTasks()
-		offset = min(offset, len(tasks))
-		end := min(offset+limit, len(tasks))
-		next := ""
-		switch {
-		case end < len(tasks):
-			next = strconv.Itoa(end) + ":" + apiCursor
-		case r.GetNextCursor() != "":
-			next = "0:" + r.GetNextCursor()
+		tasks, next := r.GetTasks(), r.GetNextCursor()
+		if len(tasks) > limit {
+			tasks = tasks[:limit]
+			last := tasks[len(tasks)-1]
+			next = last.GetUpdatedAt().AsTime().UTC().Format(time.RFC3339Nano) + "_" + last.GetId()
 		}
-		return taskList(ctx, c, tasks[offset:end], next)
+		return taskList(ctx, c, tasks, next)
 	}
 	var board *v1.Board
 	ws := strings.TrimSpace(a.Workspace)
@@ -136,8 +125,9 @@ func listTasks(ctx context.Context, c *api, a args) (any, error) {
 		return nil, err
 	}
 	tasks := r.GetTasks()
-	// The task whose key q spells, whatever its state and the filters (done, archived): first.
-	if k := r.GetKeyTask(); k != nil && a.Cursor == "" {
+	// The task whose key q spells, whatever its state (done, archived): first — on the first page,
+	// without other filters (the server looks it up regardless of them), on the board asked for.
+	if k := r.GetKeyTask(); k != nil && a.Cursor == "" && len(conds) == 0 && (board == nil || k.GetBoardId() == board.GetId()) {
 		tasks = append([]*v1.Task{k}, slices.DeleteFunc(slices.Clone(tasks), func(t *v1.Task) bool { return t.GetId() == k.GetId() })...)
 	}
 	return taskList(ctx, c, tasks, r.GetNextCursor())
@@ -166,7 +156,7 @@ func taskList(ctx context.Context, c *api, tasks []*v1.Task, next string) (any, 
 			"assignees": assignees, "labels": labelNames(b, t.GetLabelIds()), "due": t.GetDueOn(), "updated": ts(t.GetUpdatedAt())}))
 	}
 	if len(list) == 0 {
-		return map[string]any{"found": 0}, nil
+		return compact(map[string]any{"found": 0, "next": next}), nil
 	}
 	return compact(map[string]any{"tasks": list, "next": next}), nil
 }
@@ -311,7 +301,7 @@ func updateTask(ctx context.Context, c *api, a args) (any, error) {
 	if err := need("task", a.Task); err != nil {
 		return nil, err
 	}
-	tr, board, err := loadTask(ctx, c, a.Task)
+	tr, board, err := loadTask(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +339,7 @@ func updateTask(ctx context.Context, c *api, a args) (any, error) {
 	if a.Parent != nil {
 		p := ""
 		if ref := strings.TrimSpace(*a.Parent); ref != "" {
-			pt, err := taskByRef(ctx, c, ref)
+			pt, err := taskByRef(ctx, c, ref, a.Workspace)
 			if err != nil {
 				return nil, err
 			}
@@ -409,7 +399,7 @@ func assign(ctx context.Context, c *api, a args) (any, error) {
 	if mode != "add" && mode != "remove" && mode != "set" {
 		return nil, errors.New("mode must be add, remove or set")
 	}
-	tr, err := taskByRef(ctx, c, a.Task)
+	tr, err := taskByRef(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}

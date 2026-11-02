@@ -216,9 +216,47 @@ func TestMCPOnBehalfOfMemberStaysInTheConsent(t *testing.T) {
 			t.Errorf("%s %v: %d %v %s; want %s", c.name, c.args, st, isErr, text, c.want)
 		}
 	}
+	roomB := textRoom(t, o, wb, "mcp-b", false)
+	var dm v1.CreateDmResponse
+	o.must(201, "POST", "/api/dms", &v1.CreateDmRequest{UserId: carol.id}, &dm)
+	dmRoom := dm.GetDm().GetRoom().GetId()
+	for _, c := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"set_task_status", map[string]any{"task": taskB.GetId(), "status": "Done"}, "ON_BEHALF_NO_CONSENT"},
+		{"send_message", map[string]any{"room": roomB, "text": "x"}, "ON_BEHALF_NO_CONSENT"},
+		{"read", map[string]any{"room": roomB}, "ON_BEHALF_NO_CONSENT"},
+		{"send_message", map[string]any{"room": dmRoom, "text": "x"}, "ON_BEHALF_ROUTE"}, // her DM: no workspace of the consent
+		{"create_task", map[string]any{"board": "MCA", "title": "x"}, "ON_BEHALF_ROUTE"}, // a board key needs the workspace list
+	} {
+		if st, text, isErr := mcpToolAs(t, bt, carol.id, c.name, c.args); st != 200 || !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s %v: %d %v %s; want %s", c.name, c.args, st, isErr, text, c.want)
+		}
+	}
+	// By id the task of A is hers to comment on (workspace narrows keys only).
+	mustTool(t, bt, carol.id, "comment_task", map[string]any{"task": created.ID, "text": "по id"})
+	// The write gate itself (not only the read before it): a direct PATCH on behalf in B.
+	oc := asMember(bt, carol.id)
+	title := "x"
+	wantReason(t, oc, oc.do("PATCH", "/api/tasks/"+taskB.GetId(), &v1.UpdateTaskRequest{Title: &title}, nil), 403, "ON_BEHALF_NO_CONSENT")
+
 	var got v1.TaskResponse
 	o.must(200, "GET", "/api/tasks/"+taskB.GetId(), nil, &got)
-	if got.GetTask().GetTitle() != "в чужом пространстве" || len(got.GetTask().GetAssignees()) != 0 || got.GetTask().GetCommentCount() != 0 {
+	if got.GetTask().GetTitle() != "в чужом пространстве" || len(got.GetTask().GetAssignees()) != 0 || got.GetTask().GetCommentCount() != 0 ||
+		got.GetTask().GetStatusId() != taskB.GetStatusId() {
 		t.Fatalf("task in B changed: %v", got.GetTask())
+	}
+	var ms v1.ListMessagesResponse
+	o.must(200, "GET", "/api/rooms/"+roomB+"/messages", nil, &ms)
+	if len(ms.GetMessages()) != 0 {
+		t.Fatalf("room in B got %d messages", len(ms.GetMessages()))
+	}
+
+	// She revokes her consent: the next MCP call on her behalf is refused at once.
+	carol.must(200, "DELETE", "/api/workspaces/"+wa+"/bots/"+bt.id+"/delegations/"+carol.id, nil, nil)
+	if st, text, isErr := mcpToolAs(t, bt, carol.id, "comment_task", map[string]any{"task": created.ID, "text": "после отзыва"}); st < 400 && !isErr {
+		t.Fatalf("after revoke: %d %s", st, text)
 	}
 }

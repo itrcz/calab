@@ -3,12 +3,15 @@ package mcp
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
@@ -280,29 +283,39 @@ func TestReadTaskGit(t *testing.T) {
 	}
 }
 
-// mine pages the API's 200-task page by the caller's limit: nothing past the limit is lost.
+// mine cuts the API's 200-task page by the caller's limit and continues after the last task
+// shown (the API's keyset cursor): nothing is lost, also when tasks close between pages.
 func TestListTasksMinePaging(t *testing.T) {
 	f := newTaskFixture()
-	var page []*v1.Task
+	base := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	var open []*v1.Task // newest update first, as the API orders them
 	for i := range 45 {
-		page = append(page, &v1.Task{Id: uuid.NewString(), Key: "DEV-" + strconv.Itoa(100+i), BoardId: f.boardID, StatusId: f.todo})
+		open = append(open, &v1.Task{Id: uuid.NewString(), Key: "DEV-" + strconv.Itoa(100+i), BoardId: f.boardID, StatusId: f.todo,
+			UpdatedAt: timestamppb.New(base.Add(-time.Duration(i) * time.Minute))})
 	}
-	var cursors []string
 	fa := f.api(t, func(r *http.Request, _ string) (int, proto.Message, bool) {
-		if r.URL.Path == "/api/me/tasks" {
-			cursors = append(cursors, r.URL.Query().Get("cursor"))
-			if r.URL.Query().Get("cursor") == "api2" {
-				return 200, &v1.MyTasksResponse{Tasks: page[:1]}, true
-			}
-			return 200, &v1.MyTasksResponse{Tasks: page[1:], NextCursor: "api2"}, true
+		if r.URL.Path != "/api/me/tasks" {
+			return 0, nil, false
 		}
-		return 0, nil, false
+		page := open
+		if c := r.URL.Query().Get("cursor"); c != "" {
+			ts, id, _ := strings.Cut(c, "_")
+			at, err := time.Parse(time.RFC3339Nano, ts)
+			if err != nil {
+				t.Fatalf("cursor %q", c)
+			}
+			page = slices.DeleteFunc(slices.Clone(open), func(x *v1.Task) bool {
+				u := x.GetUpdatedAt().AsTime()
+				return u.After(at) || (u.Equal(at) && x.GetId() >= id)
+			})
+		}
+		return 200, &v1.MyTasksResponse{Tasks: page}, true
 	})
 	h := New("test")
 	h.API = fa
 	var keys []string
 	cursor := ""
-	for range 10 {
+	for page := 0; page < 10; page++ {
 		args := `{"mine":true,"limit":20}`
 		if cursor != "" {
 			args = `{"mine":true,"limit":20,"cursor":"` + cursor + `"}`
@@ -318,15 +331,51 @@ func TestListTasksMinePaging(t *testing.T) {
 		for _, x := range out.Tasks {
 			keys = append(keys, x.Key)
 		}
+		if page == 0 { // the agent closes 6 tasks of the first page before asking for the next
+			open = open[6:]
+		}
 		if cursor = out.Next; cursor == "" {
 			break
 		}
 	}
-	if len(keys) != 45 || keys[0] != "DEV-101" || keys[43] != "DEV-144" || keys[44] != "DEV-100" {
-		t.Fatalf("got %d tasks %v (API cursors %v)", len(keys), keys, cursors)
+	if len(keys) != 45 || keys[0] != "DEV-100" || keys[44] != "DEV-144" {
+		t.Fatalf("got %d tasks %v", len(keys), keys)
 	}
-	if _, isErr := call(t, h, "list_tasks", `{"mine":true,"cursor":"x"}`); !isErr {
-		t.Fatal("invalid cursor")
+}
+
+// A task key in two workspaces is an error naming both, never the first match; with workspace
+// the key is looked up there only.
+func TestTaskKeyInTwoWorkspaces(t *testing.T) {
+	f := newTaskFixture()
+	ws2 := uuid.NewString()
+	other := &v1.Task{Id: uuid.NewString(), Key: "DEV-7", Title: "чужая", BoardId: "b2", WorkspaceId: ws2, RoomId: "room-x"}
+	var asked []string
+	fa := f.api(t, func(r *http.Request, _ string) (int, proto.Message, bool) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/workspaces":
+			return 200, &v1.ListWorkspacesResponse{Workspaces: []*v1.Workspace{{Id: f.ws}, {Id: ws2}, {Id: "nobot"}}}, true
+		case "GET /api/t/DEV-7":
+			w := r.URL.Query().Get("workspace_id")
+			asked = append(asked, w)
+			switch w {
+			case ws2:
+				return 200, &v1.TaskResponse{Task: other, Board: &v1.Board{Id: "b2"}}, true
+			case "nobot":
+				return 404, &v1.ApiError{Code: v1.ErrorCode_ERROR_CODE_NOT_FOUND, Message: "not found"}, true
+			}
+		case "POST /api/rooms/room-7/messages", "POST /api/rooms/room-x/messages":
+			t.Fatalf("commented on a guessed task: %s", r.URL.Path)
+		}
+		return 0, nil, false
+	})
+	h := New("test")
+	h.API = fa
+	if text, isErr := call(t, h, "comment_task", `{"task":"dev-7","text":"x"}`); !isErr || !strings.Contains(text, "several workspaces") || !strings.Contains(text, ws2) {
+		t.Fatalf("ambiguous key: %v %s", isErr, text)
+	}
+	asked = nil
+	if text, isErr := call(t, h, "read", `{"task":"DEV-7","workspace":"`+f.ws+`"}`); isErr || !strings.Contains(text, f.taskID) || strings.Join(asked, ",") != f.ws {
+		t.Fatalf("with workspace: %v %s %v", isErr, text, asked)
 	}
 }
 
