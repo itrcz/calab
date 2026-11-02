@@ -36,7 +36,7 @@ func (q *Queries) GetInteraction(ctx context.Context, arg GetInteractionParams) 
 }
 
 const getMessageForInteraction = `-- name: GetMessageForInteraction :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
 `
 
 // Text/keyboard edits and soft deletion take the same row lock.
@@ -65,6 +65,7 @@ func (q *Queries) GetMessageForInteraction(ctx context.Context, id uuid.UUID) (M
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }

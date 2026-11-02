@@ -36,6 +36,23 @@ type args struct {
 	Before      string `json:"before"`
 	Limit       int    `json:"limit"`
 	Full        bool   `json:"full"`
+	// update_task, assign, list_tasks (ADR-0156)
+	Priority     string   `json:"priority"`
+	Due          *string  `json:"due"`
+	Start        *string  `json:"start"`
+	Estimate     *int     `json:"estimate"`
+	Parent       *string  `json:"parent"`
+	Labels       []string `json:"labels"`
+	AddLabels    []string `json:"add_labels"`
+	RemoveLabels []string `json:"remove_labels"`
+	Users        []string `json:"users"`
+	Mode         string   `json:"mode"`
+	Lead         string   `json:"lead"`
+	Assignee     string   `json:"assignee"`
+	State        string   `json:"state"`
+	Sort         string   `json:"sort"`
+	Cursor       string   `json:"cursor"`
+	Mine         bool     `json:"mine"`
 }
 
 type tool struct {
@@ -44,6 +61,10 @@ type tool struct {
 }
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+func strs(desc string) map[string]any {
+	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+}
 
 func schema(required []string, props map[string]any) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
@@ -66,7 +87,7 @@ var toolDefs = []tool{
 		"workspace": str("workspace id; default all"),
 		"limit":     map[string]any{"type": "integer", "description": "per kind, 1-20, default 10"},
 	})), find},
-	{def("read", "Read a task (with its board's statuses) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
+	{def("read", "Read a task (with its board's statuses, labels, Git links and releases) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
 		"task":   taskArg,
 		"room":   str("room id (a task's comments: its room)"),
 		"limit":  map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
@@ -74,7 +95,7 @@ var toolDefs = []tool{
 		"full":   map[string]any{"type": "boolean", "description": "the full API object"},
 	})), read},
 	{def("create_task", "Create a task on a board.", schema([]string{"board", "title"}, map[string]any{
-		"board":       str("board id"),
+		"board":       str("board id or key (DEV)"),
 		"title":       str("1-200 chars"),
 		"description": str("markdown"),
 		"status":      str("status name or id; default the board's"),
@@ -92,6 +113,39 @@ var toolDefs = []tool{
 		"text":     str("markdown, up to 4000 chars"),
 		"reply_to": str("message id"),
 	})), sendMessage},
+	// ADR-0156: the tools a developer's agent needs on a task besides the ones above.
+	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true without board/workspace: my open tasks everywhere.", schema(nil, map[string]any{
+		"board":     str("board id or key (DEV)"),
+		"workspace": str("workspace id (when no board)"),
+		"q":         str("words or a key; empty = filters only"),
+		"status":    str("status names or ids, comma-separated"),
+		"assignee":  str("me, a user id, a name or a nickname"),
+		"labels":    strs("label names (any of them)"),
+		"state":     map[string]any{"type": "string", "enum": []string{"open", "done", "all"}, "description": "default open"},
+		"sort":      str("updated (default) | created | key | priority | due; - for descending"),
+		"mine":      map[string]any{"type": "boolean", "description": "my open tasks on every board (ignores the other filters)"},
+		"limit":     map[string]any{"type": "integer", "description": "1-50, default 20"},
+		"cursor":    str("next page"),
+	})), listTasks},
+	{def("update_task", "Change fields of a task; only given fields change.", schema([]string{"task"}, map[string]any{
+		"task":          taskArg,
+		"title":         str("1-200 chars"),
+		"description":   str("markdown; replaces the description"),
+		"priority":      map[string]any{"type": "string", "enum": []string{"none", "low", "medium", "high", "urgent"}},
+		"due":           str("YYYY-MM-DD, empty = none"),
+		"start":         str("YYYY-MM-DD, empty = none"),
+		"estimate":      map[string]any{"type": "integer", "description": "0 = none"},
+		"parent":        str("parent task id or key, empty = none"),
+		"labels":        strs("label names: the whole set"),
+		"add_labels":    strs("label names to add"),
+		"remove_labels": strs("label names to remove"),
+	})), updateTask},
+	{def("assign", "Set who works on a task: add (default), remove or replace assignees; one is the lead.", schema([]string{"task", "users"}, map[string]any{
+		"task":  taskArg,
+		"users": strs("me, user ids, names or nicknames"),
+		"mode":  map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "default add"},
+		"lead":  str("the lead among the assignees (me, id, name); default: kept, else the first"),
+	})), assign},
 }
 
 var (
@@ -273,8 +327,12 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 		}
 		t := tr.GetTask()
 		var assignees []string
+		lead := ""
 		for _, x := range t.GetAssignees() {
 			assignees = append(assignees, x.GetUserId())
+			if x.GetIsLead() {
+				lead = x.GetUserId()
+			}
 		}
 		var subs []map[string]any
 		for _, s := range tr.GetSubtasks() {
@@ -287,10 +345,12 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 		out := map[string]any{
 			"id": t.GetId(), "key": t.GetKey(), "title": t.GetTitle(), "description": t.GetDescription(),
 			"status": statusName(board, t.GetStatusId()), "statuses": statuses,
-			"priority": enum(t.GetPriority().String(), "TASK_PRIORITY_"), "assignees": assignees,
-			"start": t.GetStartOn(), "due": t.GetDueOn(), "board": compact(map[string]any{"id": board.GetId(), "name": board.GetName()}),
+			"priority": enum(t.GetPriority().String(), "TASK_PRIORITY_"), "assignees": assignees, "lead": lead,
+			"labels": labelNames(board, t.GetLabelIds()),
+			"start":  t.GetStartOn(), "due": t.GetDueOn(), "board": compact(map[string]any{"id": board.GetId(), "key": board.GetKey(), "name": board.GetName()}),
 			"workspace": t.GetWorkspaceId(), "room": t.GetRoomId(), "comments": t.GetCommentCount(), "subtasks": subs,
 			"created_by": t.GetCreatedBy(), "updated": ts(t.GetUpdatedAt()),
+			"git": gitLinks(t), "releases": releases(t), // ADR-0156
 		}
 		if p := tr.GetParent(); p != nil {
 			out["parent"] = compact(map[string]any{"id": p.GetId(), "key": p.GetKey(), "title": p.GetTitle()})
@@ -414,19 +474,22 @@ func createTask(ctx context.Context, c *api, a args) (any, error) {
 		return nil, err
 	}
 	req := &v1.CreateTaskRequest{Title: a.Title, Description: a.Description}
+	boardID := strings.TrimSpace(a.Board)
 	var board *v1.Board
-	if a.Status != "" {
-		b, err := loadBoard(ctx, c, a.Board)
+	if _, err := uuid.Parse(boardID); a.Status != "" || err != nil { // a status by name, or a board by key (ADR-0156)
+		b, err := resolveBoard(ctx, c, boardID, a.Workspace)
 		if err != nil {
 			return nil, err
 		}
-		if req.StatusId, err = statusID(b, a.Status); err != nil {
-			return nil, err
+		if a.Status != "" {
+			if req.StatusId, err = statusID(b, a.Status); err != nil {
+				return nil, err
+			}
 		}
-		board = b
+		board, boardID = b, b.GetId()
 	}
 	var tr v1.TaskResponse
-	if err := c.call(ctx, http.MethodPost, "/api/boards/"+seg(a.Board)+"/tasks", nil, req, &tr); err != nil {
+	if err := c.call(ctx, http.MethodPost, "/api/boards/"+seg(boardID)+"/tasks", nil, req, &tr); err != nil {
 		return nil, err
 	}
 	t := tr.GetTask()

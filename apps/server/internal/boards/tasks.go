@@ -78,16 +78,18 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 	b, a := enc(before), enc(after)
 	// ADR-0106: the request's own actor acting through a bot on its behalf is marked; other
 	// actors of the transaction (a rule, the server) are not.
+	// ADR-0156: so is the channel (MCP) of the request's own actor.
 	var via *uuid.UUID
-	if v := auth.ViaBot(ctx); v != nil && actor != nil && rule == nil {
+	var channel *string
+	if actor != nil && rule == nil {
 		if id, ok := auth.FromContext(ctx); ok && id.UserID == *actor {
-			via = v
+			via, channel = auth.ViaBot(ctx), auth.Channel(ctx)
 		}
 	}
 	// A repeated change of the field by the same user merges into his recent entry (ADR-0081):
 	// the journal keeps the first before and the last after; c.acts — rules, webhooks,
 	// notifications — still gets this change as it is.
-	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, via, kind, after)
+	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, via, channel, kind, after)
 	if err != nil {
 		return err
 	}
@@ -97,13 +99,13 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 		if noOp(kind, first, a) { // back to where it was: no entry at all
 			c.journal = append(c.journal, journalEntry{task: t.ID, board: t.BoardID, replaced: replaced})
 			c.acts = append(c.acts, sqlc.TaskActivity{ID: replaced, TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind,
-				Before: b, After: a, CreatedAt: time.Now(), ViaBotID: via})
+				Before: b, After: a, CreatedAt: time.Now(), ViaBotID: via, Via: channel})
 			return nil
 		}
 	}
 	row, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
 		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: stored, After: a, RuleID: rule,
-		ViaBotID: via,
+		ViaBotID: via, Via: channel,
 	})
 	if err != nil {
 		return err

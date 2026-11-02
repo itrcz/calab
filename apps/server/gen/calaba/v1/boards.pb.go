@@ -3109,7 +3109,10 @@ type TaskActivity struct {
 	BoardId   string                 `protobuf:"bytes,8,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
 	RuleId    string                 `protobuf:"bytes,9,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"` // the automation rule that made the change (ADR-0060); empty otherwise
 	// ADR-0106: the bot that made the change on behalf of actor_id (its owner); empty otherwise.
-	ViaBotId      string `protobuf:"bytes,10,opt,name=via_bot_id,json=viaBotId,proto3" json:"via_bot_id,omitempty"`
+	ViaBotId string `protobuf:"bytes,10,opt,name=via_bot_id,json=viaBotId,proto3" json:"via_bot_id,omitempty"`
+	// ADR-0156: the channel of the change, "mcp" when actor_id (a bot, or a person through via_bot_id)
+	// made it through the MCP endpoint; clients show «via MCP». Empty otherwise.
+	Via           string `protobuf:"bytes,11,opt,name=via,proto3" json:"via,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3210,6 +3213,13 @@ func (x *TaskActivity) GetRuleId() string {
 func (x *TaskActivity) GetViaBotId() string {
 	if x != nil {
 		return x.ViaBotId
+	}
+	return ""
+}
+
+func (x *TaskActivity) GetVia() string {
+	if x != nil {
+		return x.Via
 	}
 	return ""
 }
@@ -9856,7 +9866,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x11task_milestone_id\x18. \x01(\tR\x0ftaskMilestoneId\x12\x1f\n" +
 	"\vwatcher_ids\x18/ \x03(\tR\n" +
 	"watcherIds\x122\n" +
-	"\breleases\x180 \x03(\v2\x16.calaba.v1.TaskReleaseR\breleases\"\xd3\x02\n" +
+	"\breleases\x180 \x03(\v2\x16.calaba.v1.TaskReleaseR\breleases\"\xe5\x02\n" +
 	"\fTaskActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x19\n" +
@@ -9870,7 +9880,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\arule_id\x18\t \x01(\tR\x06ruleId\x12\x1c\n" +
 	"\n" +
 	"via_bot_id\x18\n" +
-	" \x01(\tR\bviaBotId\"\x81\x01\n" +
+	" \x01(\tR\bviaBotId\x12\x10\n" +
+	"\x03via\x18\v \x01(\tR\x03via\"\x81\x01\n" +
 	"\x10TaskActivityItem\x12.\n" +
 	"\amessage\x18\x01 \x01(\v2\x12.calaba.v1.MessageH\x00R\amessage\x125\n" +
 	"\bactivity\x18\x02 \x01(\v2\x17.calaba.v1.TaskActivityH\x00R\bactivityB\x06\n" +

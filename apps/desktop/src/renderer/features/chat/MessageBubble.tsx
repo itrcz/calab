@@ -205,7 +205,7 @@ export function RowAvatar({ workspaceId, userId, name, fileId, former, show, cla
 }
 
 /** The author line on the first bubble of someone else's group: coloured name, badges, «через бота». */
-export function AuthorLine({ workspaceId, userId, name, bot, via }: { workspaceId: string; userId: string; name: string; bot: boolean; via?: string | undefined }): ReactNode {
+export function AuthorLine({ workspaceId, userId, name, bot, via, mcp = false }: { workspaceId: string; userId: string; name: string; bot: boolean; via?: string | undefined; mcp?: boolean }): ReactNode {
   return (
     <div className="truncate px-3 pt-1.5 text-body font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(userId) + 1})` }} title={name}>
       <AuthorTarget workspaceId={workspaceId} userId={userId} name={name} className="max-w-full truncate hover:underline">
@@ -214,7 +214,7 @@ export function AuthorLine({ workspaceId, userId, name, bot, via }: { workspaceI
       <MemberBadge workspaceId={workspaceId} userId={userId} className="ml-1.5 inline-block align-[-3px]" />
       <FormerChip workspaceId={workspaceId} userId={userId} className="ml-1.5 align-[1px]" />
       {bot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
-      {via ? <ViaBot botId={via} className="ml-1.5 text-caption text-[color:var(--bubble-meta)]" /> : null}
+      {via || mcp ? <ViaBot botId={via} mcp={mcp} className="ml-1.5 text-caption text-[color:var(--bubble-meta)]" /> : null}
     </div>
   );
 }
@@ -418,9 +418,10 @@ function Bubble({
   const fwd = m.forward;
   const sticker = hasText && !fwd && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
   // ADR-0106: a message the author's bot wrote on their behalf keeps its header in my own
-  // bubbles too, as «через бота X» alone.
+  // bubbles too, as «через бота X» alone; so does one written through MCP (ADR-0156).
   const via = m.viaBotId;
-  const showName = (!own || !!via) && meta.first && !sticker;
+  const mcp = m.via === 'mcp';
+  const showName = (!own || !!via || mcp) && meta.first && !sticker;
   const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !fwd && !m.reactions.length;
   // A lone voice message carries the time in its own last line (Telegram).
   const voiceOnly = rows.length === 1 && !!rows[0] && isVoice(rows[0]) && c.status === 'sent' && !hasText && !images.length && !videos.length && !m.reactions.length;
@@ -476,10 +477,10 @@ function Bubble({
       <div className="overflow-hidden" style={radius}>
         {showName && own ? (
           <div className="truncate px-3 pt-1.5 text-caption leading-[18px] text-[color:var(--bubble-meta)]">
-            <ViaBot botId={via} bare />
+            <ViaBot botId={via} mcp={mcp} bare />
           </div>
         ) : showName ? (
-          <AuthorLine workspaceId={workspaceId} userId={m.authorId} name={name} bot={authorBot} via={via} />
+          <AuthorLine workspaceId={workspaceId} userId={m.authorId} name={name} bot={authorBot} via={via} mcp={mcp} />
         ) : null}
         {fwd ? (
           <ForwardLine

@@ -1,0 +1,268 @@
+package mcp
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+)
+
+// taskFixture is a board DEV with two statuses and two labels, task DEV-7 on it and three
+// members, one of them the caller (members/@me).
+type taskFixture struct {
+	ws, boardID, taskID, todo, review, bug, ui, me, ann, bob string
+	board                                                    *v1.Board
+	task                                                     *v1.Task
+}
+
+func newTaskFixture() *taskFixture {
+	f := &taskFixture{ws: uuid.NewString(), boardID: uuid.NewString(), taskID: uuid.NewString(), todo: uuid.NewString(),
+		review: uuid.NewString(), bug: uuid.NewString(), ui: uuid.NewString(), me: uuid.NewString(), ann: uuid.NewString(), bob: uuid.NewString()}
+	f.board = &v1.Board{Id: f.boardID, Key: "DEV", Name: "Develop", WorkspaceId: f.ws,
+		Statuses: []*v1.BoardStatus{{Id: f.todo, Name: "Todo"}, {Id: f.review, Name: "In Review"}},
+		Labels:   []*v1.BoardLabel{{Id: f.bug, Name: "Bug"}, {Id: f.ui, Name: "UI"}}}
+	f.task = &v1.Task{Id: f.taskID, Key: "DEV-7", BoardId: f.boardID, WorkspaceId: f.ws, StatusId: f.todo, RoomId: "room-7",
+		LabelIds:  []string{f.bug},
+		Assignees: []*v1.TaskAssignee{{UserId: f.ann, IsLead: true, Note: "backend"}},
+		GitLinks: []*v1.TaskGitLink{
+			{Kind: v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_PR, Repo: "gptunnel/gpt", Ref: "689", Title: "DEV-7 player", Url: "https://git/mr/689", State: v1.TaskGitLinkState_TASK_GIT_LINK_STATE_MERGED},
+			{Kind: v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_BRANCH, Repo: "gptunnel/gpt", Ref: "DEV-7-player"},
+			{Kind: v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_COMMIT, Repo: "gptunnel/gpt", Ref: strings.Repeat("a", 40)},
+		},
+		Releases: []*v1.TaskRelease{{Name: "1290", Environment: "prod"}}}
+	return f
+}
+
+func (f *taskFixture) member(id, name, nick string) *v1.WorkspaceMember {
+	return &v1.WorkspaceMember{WorkspaceId: f.ws, User: &v1.User{Id: id, DisplayName: name}, Nickname: nick}
+}
+
+// api answers the routes the task tools call; extra handles the route under test.
+func (f *taskFixture) api(t *testing.T, extra func(r *http.Request, body string) (int, proto.Message, bool)) *fakeAPI {
+	fa := &fakeAPI{}
+	fa.reply = func(r *http.Request) (int, proto.Message) {
+		if st, m, ok := extra(r, fa.body[len(fa.body)-1]); ok {
+			return st, m
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/t/DEV-7", "GET /api/tasks/" + f.taskID:
+			return 200, &v1.TaskResponse{Task: proto.Clone(f.task).(*v1.Task), Board: f.board}
+		case "GET /api/boards/" + f.boardID:
+			return 200, &v1.BoardResponse{Board: f.board}
+		case "GET /api/workspaces":
+			return 200, &v1.ListWorkspacesResponse{Workspaces: []*v1.Workspace{{Id: f.ws}}}
+		case "GET /api/workspaces/" + f.ws + "/boards":
+			return 200, &v1.ListBoardsResponse{Boards: []*v1.Board{{Id: f.boardID, Key: "DEV"}}}
+		case "GET /api/workspaces/" + f.ws + "/members/@me":
+			return 200, &v1.GetMemberResponse{Member: f.member(f.me, "Тимофей Шмаков", "tim")}
+		case "GET /api/workspaces/" + f.ws + "/members":
+			return 200, &v1.ListMembersResponse{Members: []*v1.WorkspaceMember{
+				f.member(f.me, "Тимофей Шмаков", "tim"), f.member(f.ann, "Анна Петрова", "ann"), f.member(f.bob, "Борис Петров", "bob")}}
+		}
+		t.Fatalf("unexpected %s %s", r.Method, r.URL)
+		return 0, nil
+	}
+	return fa
+}
+
+func TestListTasks(t *testing.T) {
+	f := newTaskFixture()
+	var query map[string][]string
+	fa := f.api(t, func(r *http.Request, _ string) (int, proto.Message, bool) {
+		if r.URL.Path == "/api/workspaces/"+f.ws+"/tasks/search" {
+			query = r.URL.Query()
+			return 200, &v1.SearchTasksResponse{Tasks: []*v1.Task{f.task}, NextCursor: "c2"}, true
+		}
+		if r.URL.Path == "/api/me/tasks" {
+			query = r.URL.Query()
+			return 200, &v1.MyTasksResponse{Tasks: []*v1.Task{f.task}}, true
+		}
+		return 0, nil, false
+	})
+	h := New("test")
+	h.API = fa
+
+	text, isErr := call(t, h, "list_tasks", `{"board":"dev","status":"todo, In Review","assignee":"me","labels":["ui"]}`)
+	if isErr || !strings.Contains(text, `"key":"DEV-7"`) || !strings.Contains(text, `"status":"Todo"`) ||
+		!strings.Contains(text, `"labels":["Bug"]`) || !strings.Contains(text, `"next":"c2"`) {
+		t.Fatalf("list_tasks: %v %s", isErr, text)
+	}
+	var filter v1.TaskFilter
+	if err := unmarshal.Unmarshal([]byte(query["filter"][0]), &filter); err != nil {
+		t.Fatalf("filter %q: %v", query["filter"], err)
+	}
+	want := map[v1.TaskField]string{
+		v1.TaskField_TASK_FIELD_STATUS:   f.todo + "," + f.review,
+		v1.TaskField_TASK_FIELD_ASSIGNEE: "me", // the server's own «me»: the person the bot acts for
+		v1.TaskField_TASK_FIELD_LABEL:    f.ui,
+	}
+	for _, c := range filter.GetConditions() {
+		if want[c.GetField()] != strings.Join(c.GetValues(), ",") || c.GetOp() != v1.TaskOp_TASK_OP_ANY_OF {
+			t.Fatalf("condition %v", c)
+		}
+		delete(want, c.GetField())
+	}
+	if len(want) != 0 || query["board_id"][0] != f.boardID || query["state"][0] != "open" || query["limit"][0] != "20" {
+		t.Fatalf("query %v, missing %v", query, want)
+	}
+
+	// A person by name.
+	if _, isErr = call(t, h, "list_tasks", `{"board":"`+f.boardID+`","assignee":"Анна"}`); isErr {
+		t.Fatal("assignee by name")
+	}
+	if err := unmarshal.Unmarshal([]byte(query["filter"][0]), &filter); err != nil || filter.GetConditions()[0].GetValues()[0] != f.ann {
+		t.Fatalf("assignee filter %v", query["filter"])
+	}
+
+	// My open tasks everywhere.
+	if text, isErr = call(t, h, "list_tasks", `{"mine":true}`); isErr || !strings.Contains(text, "DEV-7") ||
+		query["scope"][0] != "assigned" || query["open"][0] != "1" {
+		t.Fatalf("mine: %v %s %v", isErr, text, query)
+	}
+
+	for _, c := range []struct{ args, want string }{
+		{`{}`, "give board, workspace or mine"},
+		{`{"workspace":"` + f.ws + `","status":"Todo"}`, "status needs board"},
+		{`{"board":"DEV","status":"Nope"}`, "Todo, In Review"},
+		{`{"board":"DEV","labels":["Nope"]}`, "labels: Bug, UI"},
+		{`{"board":"DEV","assignee":"Петров"}`, "several members match"},
+		{`{"board":"DEV","state":"later"}`, "state must be"},
+		{`{"board":"OPS"}`, `no board "OPS"`},
+	} {
+		if text, isErr := call(t, h, "list_tasks", c.args); !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s: %v %s", c.args, isErr, text)
+		}
+	}
+}
+
+func TestUpdateTask(t *testing.T) {
+	f := newTaskFixture()
+	var patch v1.UpdateTaskRequest
+	var raw string
+	fa := f.api(t, func(r *http.Request, body string) (int, proto.Message, bool) {
+		if r.Method == http.MethodPatch && r.URL.Path == "/api/tasks/"+f.taskID {
+			raw = body
+			patch.Reset()
+			if err := unmarshal.Unmarshal([]byte(body), &patch); err != nil {
+				t.Fatalf("PATCH body %s: %v", body, err)
+			}
+			n := proto.Clone(f.task).(*v1.Task)
+			n.LabelIds = patch.GetLabelIds()
+			return 200, &v1.TaskResponse{Task: n}, true
+		}
+		return 0, nil, false
+	})
+	h := New("test")
+	h.API = fa
+
+	text, isErr := call(t, h, "update_task", `{"task":"DEV-7","priority":"High","due":"","add_labels":["UI"],"remove_labels":["bug"]}`)
+	if isErr || !strings.Contains(text, `"labels":["UI"]`) {
+		t.Fatalf("update_task: %v %s", isErr, text)
+	}
+	if patch.GetPriority() != v1.TaskPriority_TASK_PRIORITY_HIGH || patch.DueOn == nil || patch.GetDueOn() != "" ||
+		!patch.GetSetLabels() || strings.Join(patch.GetLabelIds(), ",") != f.ui || patch.Title != nil || patch.StatusId != nil {
+		t.Fatalf("PATCH %s", raw)
+	}
+	// Only given fields: a title alone sends no labels.
+	if _, isErr = call(t, h, "update_task", `{"task":"DEV-7","title":"New"}`); isErr || patch.GetTitle() != "New" || patch.GetSetLabels() || patch.Priority != nil {
+		t.Fatalf("title only: %s", raw)
+	}
+	for _, c := range []struct{ args, want string }{
+		{`{"task":"DEV-7"}`, "nothing to change"},
+		{`{"task":"DEV-7","priority":"p1"}`, "priority must be"},
+		{`{"task":"DEV-7","labels":["Nope"]}`, "no label"},
+		{`{"task":"DEV-7","estimate":-1}`, "estimate must be"},
+	} {
+		if text, isErr := call(t, h, "update_task", c.args); !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s: %v %s", c.args, isErr, text)
+		}
+	}
+}
+
+func TestAssign(t *testing.T) {
+	f := newTaskFixture()
+	var put v1.SetAssigneesRequest
+	fa := f.api(t, func(r *http.Request, body string) (int, proto.Message, bool) {
+		if r.Method == http.MethodPut && r.URL.Path == "/api/tasks/"+f.taskID+"/assignees" {
+			put.Reset()
+			if err := unmarshal.Unmarshal([]byte(body), &put); err != nil {
+				t.Fatalf("PUT body %s: %v", body, err)
+			}
+			n := proto.Clone(f.task).(*v1.Task)
+			n.Assignees = nil
+			for _, a := range put.GetAssignees() {
+				n.Assignees = append(n.Assignees, &v1.TaskAssignee{UserId: a.GetUserId(), IsLead: a.GetIsLead(), Note: a.GetNote()})
+			}
+			return 200, &v1.TaskResponse{Task: n}, true
+		}
+		return 0, nil, false
+	})
+	h := New("test")
+	h.API = fa
+	got := func() string {
+		var parts []string
+		for _, a := range put.GetAssignees() {
+			p := a.GetUserId()
+			if a.GetIsLead() {
+				p += "*"
+			}
+			if a.GetNote() != "" {
+				p += "(" + a.GetNote() + ")"
+			}
+			parts = append(parts, p)
+		}
+		return strings.Join(parts, ",")
+	}
+
+	// add me: Anna stays the lead with her note.
+	if text, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["me"]}`); isErr || got() != f.ann+"*(backend),"+f.me {
+		t.Fatalf("add me: %v %s %s", isErr, text, got())
+	}
+	// add by nickname and make them the lead.
+	if _, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["@bob"],"lead":"bob"}`); isErr || got() != f.ann+"(backend),"+f.bob+"*" {
+		t.Fatalf("lead: %s", got())
+	}
+	// set replaces; the first becomes the lead.
+	if _, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["me","Борис Петров"],"mode":"set"}`); isErr || got() != f.me+"*,"+f.bob {
+		t.Fatalf("set: %s", got())
+	}
+	// remove the only assignee: empty list, no lead.
+	if _, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["`+f.ann+`"],"mode":"remove"}`); isErr || got() != "" {
+		t.Fatalf("remove: %s", got())
+	}
+	for _, c := range []struct{ args, want string }{
+		{`{"task":"DEV-7"}`, "users is required"},
+		{`{"task":"DEV-7","users":["me"],"mode":"swap"}`, "mode must be"},
+		{`{"task":"DEV-7","users":["me"],"lead":"bob"}`, "lead must be one of"},
+		{`{"task":"DEV-7","users":["nobody"]}`, `no member "nobody"`},
+	} {
+		if text, isErr := call(t, h, "assign", c.args); !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s: %v %s", c.args, isErr, text)
+		}
+	}
+}
+
+// read shows labels, the lead, Git links (commits only counted) and releases.
+func TestReadTaskGit(t *testing.T) {
+	f := newTaskFixture()
+	h := New("test")
+	h.API = f.api(t, func(*http.Request, string) (int, proto.Message, bool) { return 0, nil, false })
+	text, isErr := call(t, h, "read", `{"task":"DEV-7"}`)
+	var out map[string]any
+	if isErr || json.Unmarshal([]byte(text), &out) != nil {
+		t.Fatalf("read: %v %s", isErr, text)
+	}
+	git, _ := out["git"].(map[string]any)
+	prs, _ := git["prs"].([]any)
+	if out["lead"] != f.ann || out["labels"].([]any)[0] != "Bug" || len(prs) != 1 ||
+		prs[0].(map[string]any)["ref"] != "gptunnel/gpt!689" || prs[0].(map[string]any)["state"] != "merged" ||
+		git["commits"].(float64) != 1 || len(git["branches"].([]any)) != 1 ||
+		out["releases"].([]any)[0].(map[string]any)["env"] != "prod" {
+		t.Fatalf("read: %s", text)
+	}
+}

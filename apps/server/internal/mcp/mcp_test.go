@@ -72,8 +72,9 @@ func TestRefusesWithoutBotToken(t *testing.T) {
 	if st, _ := post(t, h, &person, init); st != http.StatusForbidden {
 		t.Fatalf("a person: %d", st)
 	}
+	// ADR-0156: a bot on behalf of its owner (or of a consenting member) is a bot token.
 	onBehalf := auth.Identity{UserID: uuid.New(), ViaBot: uuid.New()}
-	if st, _ := post(t, h, &onBehalf, init); st != http.StatusForbidden {
+	if st, _ := post(t, h, &onBehalf, init); st != http.StatusOK {
 		t.Fatalf("on behalf of the owner: %d", st)
 	}
 	w := httptest.NewRecorder()
@@ -95,12 +96,12 @@ func TestProtocol(t *testing.T) {
 	}
 	_, out = post(t, h, &botID, `{"jsonrpc":"2.0","id":"a","method":"tools/list"}`)
 	list := out["result"].(map[string]any)["tools"].([]any)
-	want := []string{"find", "read", "create_task", "comment_task", "set_task_status", "send_message"}
+	want := []string{"find", "read", "create_task", "comment_task", "set_task_status", "send_message", "list_tasks", "update_task", "assign"}
 	if len(list) != len(want) || strings.Join(ToolNames(), ",") != strings.Join(want, ",") {
 		t.Fatalf("tools: %v", ToolNames())
 	}
 	// Token economy: the whole tool list stays small.
-	if b, _ := json.Marshal(list); len(b) > 3000 {
+	if b, _ := json.Marshal(list); len(b) > 6000 {
 		t.Fatalf("tools/list is %d bytes", len(b))
 	}
 	_, out = post(t, h, &botID, `{"jsonrpc":"2.0","id":2,"method":"nope"}`)
@@ -112,8 +113,9 @@ func TestProtocol(t *testing.T) {
 	}
 }
 
-// A tool is a REST call with the caller's token (never the on-behalf header); a REST refusal is
-// a tool error the model reads, not more rights.
+// A tool is a REST call with the caller's token and its on-behalf header (ADR-0156: the inner
+// call is checked on behalf again), marked as the MCP channel; a REST refusal is a tool error
+// the model reads, not more rights.
 func TestToolsCallRESTAsTheBot(t *testing.T) {
 	boardID, taskID, statusDone := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	board := &v1.Board{Id: boardID, Name: "Ops", Statuses: []*v1.BoardStatus{{Id: uuid.NewString(), Name: "Todo"}, {Id: statusDone, Name: "Done"}}}
@@ -141,8 +143,14 @@ func TestToolsCallRESTAsTheBot(t *testing.T) {
 		t.Fatalf("PATCH body %s", f.body[1])
 	}
 	for _, r := range f.calls {
-		if r.Header.Get("Authorization") != "Bearer calab_bot_x_secret" || r.Header.Get(auth.OnBehalfHeader) != "" {
+		if r.Header.Get("Authorization") != "Bearer calab_bot_x_secret" || r.Header.Get(auth.OnBehalfHeader) != "owner" {
 			t.Fatalf("headers of %s: %v", r.URL, r.Header)
+		}
+		if c := auth.Channel(r.Context()); c == nil || *c != auth.ChannelMCP {
+			t.Fatalf("channel of %s: %v", r.URL, c)
+		}
+		if _, ok := auth.FromContext(r.Context()); ok {
+			t.Fatalf("the outer identity leaked into %s", r.URL)
 		}
 	}
 

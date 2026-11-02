@@ -523,8 +523,9 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/events/{id}/comments/{comment_id}",
 	}},
 
-	// MCP for bots (CBF-48), closed on behalf: the endpoint is the bot itself.
-	{access: botAllow, onBehalf: onBehalfClosed, why: "MCP for bots (CBF-48): bot tokens only (the handler refuses people); every tool calls a REST route of this table in process with the same token, so it has exactly the bot's rights", routes: []string{
+	// MCP for bots (CBF-48); on behalf of the owner or a consenting member too (ADR-0156): each
+	// tool's REST call is then checked on behalf like any other (onBehalfRoutes).
+	{access: botAllow, why: "MCP for bots (CBF-48, ADR-0156): bot tokens only (the handler refuses people's sessions); every tool calls a REST route of this table in process with the same token and Calab-On-Behalf, so it has exactly the rights of the bot, or of the person it acts for", routes: []string{
 		"/api/mcp",
 	}},
 

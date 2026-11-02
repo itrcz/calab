@@ -68,6 +68,8 @@ export const ruBots = {
   // ADR-0106: a bot acting on behalf of its owner
   'bots.via': 'через бота {bot}',
   'bots.viaUnknown': 'через бота',
+  // ADR-0156: an action made through the MCP endpoint
+  'bots.viaMcp': 'через MCP',
   'bots.actsAsOwnerHint': 'Бот сможет делать то же, что и вы: писать, менять задачи, голосовать в согласовании. Утечка токена — это действия от вашего имени. Всё помечается «через бота».',
   'bots.actsAsOwnerOn': 'Действует от имени владельца',
   'bots.actsAsOwnerConfirmTitle': 'Разрешить «{name}» действовать от вашего имени?',

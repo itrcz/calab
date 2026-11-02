@@ -8,6 +8,7 @@ The bot API only grows: new routes, fields and events are added, existing ones k
 
 | Server version | Date | What's new |
 |---|---|---|
+| next | — | MCP on behalf of a person: `Calab-On-Behalf` on `/api/mcp`; the tools `list_tasks`, `update_task`, `assign`, Git links and releases in `read`, a board key in `create_task`; the field `via` (`"mcp"`) of `Message` and `TaskActivity` — see [MCP server](./mcp#on-behalf-of-a-person) |
 | next | — | Inbound telephony: `offHours` and `viaFallback` in the call of `SIP_INBOUND_RING` / `SIP_CALL_UPDATE` (why the call rings the bot: off hours or a group's fallback), the reason `off_hours`, `PUT /api/workspaces/{id}/sip/schedule` (working hours of inbound calls, `MANAGE_INTEGRATIONS`) — see [Telephony](../telephony#bots-and-telephony) |
 | next | — | A bot acts on behalf of a member who allowed it: the `Calab-On-Behalf: <user id>` header, `GET /api/workspaces/{id}/bots/{botId}` → `onBehalfUserIds` — see [Token and permissions](./auth#on-behalf-of-a-member) |
 | 3.9.0 | — | A bot with the permissions can do whatever a person with the same permissions can: board automations (create, edit, test, delete), the board's Git and webhook, board access, web apps, camera backgrounds, GPTunneL, telephony and the call journal, achievements, meeting comments, recordings — without the bit the ordinary `403`, not `BOT_NOT_ALLOWED`; closed on behalf of the owner. See [Token and permissions](./auth#always-closed-to-bots) |

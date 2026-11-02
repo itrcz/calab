@@ -56,3 +56,14 @@ export function viaBotText(botName: string): string {
 }
 
 export const viaBotSuffix = (botName: string): string => `(${viaBotText(botName)})`;
+
+/**
+ * The mark of an action's way (ADR-0106 + ADR-0156): «через бота X», «через MCP», or both
+ * («через бота X · MCP») when a person's bot acted for them through the MCP endpoint; "" when
+ * neither. `botName` is used only with `bot`.
+ */
+export function viaText(bot: boolean, botName: string, mcp: boolean): string {
+  if (bot && mcp) return `${viaBotText(botName)} · MCP`;
+  if (bot) return viaBotText(botName);
+  return mcp ? t('bots.viaMcp') : '';
+}
