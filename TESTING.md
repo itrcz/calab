@@ -2353,7 +2353,7 @@ are not current phone evidence. Visual suites remain disabled.
 
 ## MCP on behalf of a person and «via MCP» (ADR-0156)
 
-1. Automated: `go test ./internal/mcp/` (tools, names → ids, the header and the channel of inner calls) and `make test-integration` → `TestMCPOnBehalfVia` (the task, comment, assignees, priority and labels are the owner's with `viaBotId` and `via = "mcp"`; the bot's own MCP comment has `via = "mcp"`, REST and the app none; no merge with an app edit; switch off → 403).
+1. Automated: `go test ./internal/mcp/` (tools, names → ids, the header and the channel of inner calls, paging, ambiguous keys) and `make test-integration` → `TestMCPOnBehalfVia`, `TestMCPOnBehalfOfMemberStaysInTheConsent` (the task, comment, assignees, priority and labels are the owner's with `viaBotId` and `via = "mcp"`; the bot's own MCP comment has `via = "mcp"`, REST and the app none; no merge with an app edit; switch off → 403).
 2. Manual: your own bot (creating one needs `MANAGE_BOTS`), «Действовать от моего имени» on; an MCP client with `Authorization: Bearer <token>` and `Calab-On-Behalf: owner`.
 3. `list_tasks {"mine": true}` — my open tasks; `list_tasks {"board": "DEV", "assignee": "me", "status": "In Progress"}`.
 4. `create_task {"board": "DEV", "title": …}`, `assign {"task": key, "users": ["me"]}`, `update_task {"task": key, "priority": "high", "add_labels": [...]}`, `comment_task`. In the app: the task's creator, assignee and comment author are you, «(через бота X · MCP)» after the name in the comment and in «История»; `read` shows `git` (MR, branches) and `releases`.

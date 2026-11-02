@@ -147,7 +147,7 @@ func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
 	out := &v1.BoardActivityResponse{Activities: make([]*v1.TaskActivity, len(rows))}
 	for i, a := range rows {
 		out.Activities[i] = activity(sqlc.TaskActivity{ID: a.ID, TaskID: a.TaskID, BoardID: a.BoardID, ActorID: a.ActorID,
-			Kind: a.Kind, Before: a.Before, After: a.After, CreatedAt: a.CreatedAt, RuleID: a.RuleID})
+			Kind: a.Kind, Before: a.Before, After: a.After, CreatedAt: a.CreatedAt, RuleID: a.RuleID, ViaBotID: a.ViaBotID, Via: a.Via})
 	}
 	if len(rows) == exportPage {
 		out.NextCursor = rows[len(rows)-1].ID.String()

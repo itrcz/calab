@@ -20,6 +20,8 @@ Every tool calls the ordinary REST routes of the server with the **same token**,
 
 For an agent that works on tasks **as you** (you are the author of its comments, the assignee, the creator of its tasks), create your own bot, turn on “Act on my behalf” ([Token and permissions](./auth#on-behalf-of-the-owner)) and add a second header to the client, `Calab-On-Behalf: owner`. For a member who allowed the bot to act for them, `Calab-On-Behalf: <user id>` ([On behalf of a member](./auth#on-behalf-of-a-member)). Each tool call is checked on behalf exactly like a REST request: what is closed on behalf in REST is closed here too; a switch turned off or a consent revoked gives `403` at once.
 
+On behalf of a member only the tasks and boards **of the workspace where they consented** work: pass task or board ids (`board` + `workspace`); a task key lookup, `find` and `list_tasks` with `mine` span all workspaces and are closed on behalf of a member (`403 ON_BEHALF_ROUTE`). A board key such as `DEV` is unique only within a workspace: if several of your workspaces have it, the tool returns an error listing them — give `workspace` or the board id.
+
 Actions through MCP are marked: messages and task journal entries carry `via` = `"mcp"`, and the app shows “(via bot X · MCP)” after the name, or “(via MCP)” for the bot itself. `me` in the tools is you (or the bot itself without the header).
 
 ```json

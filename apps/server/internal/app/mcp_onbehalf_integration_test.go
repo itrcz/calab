@@ -166,3 +166,59 @@ func TestMCPOnBehalfVia(t *testing.T) {
 		t.Fatalf("after off: %d %s", st, text)
 	}
 }
+
+// TestMCPOnBehalfOfMemberStaysInTheConsent (ADR-0111 through MCP, ADR-0156): a member who
+// consented in workspace A is acted for there only; the bot in B with the same member gets
+// ON_BEHALF_NO_CONSENT, and the aggregate routes (task by key, my tasks, search, workspaces)
+// stay closed on behalf of a member.
+func TestMCPOnBehalfOfMemberStaysInTheConsent(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	wa := ws.GetId()
+	carol := register(t, invite(t, o, wa))
+	bt := createBot(t, o, wa, "mcpdeleg")
+	boardA := createBoard(t, o, wa, &v1.CreateBoardRequest{Name: "A", Key: "MCA"}, 201)
+	wb := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	carol.must(200, "POST", "/api/invites/"+invite(t, o, wb)+"/join", nil, nil)
+	o.must(201, "POST", "/api/workspaces/"+wb+"/bots/add", &v1.AddBotRequest{BotUserId: bt.id}, nil)
+	boardB := createBoard(t, o, wb, &v1.CreateBoardRequest{Name: "B", Key: "MCB"}, 201)
+	taskB := createTask(t, o, boardB.GetId(), &v1.CreateTaskRequest{Title: "в чужом пространстве"}, 201)
+
+	// carol consents in A only.
+	o.must(200, "POST", "/api/workspaces/"+wa+"/bots/"+bt.id+"/delegation-invites", &v1.InviteBotDelegationRequest{UserIds: []string{carol.id}}, nil)
+	if s := press(carol, inviteMessage(t, carol, bt.id), "delegation_accept", "c"); s != 200 {
+		t.Fatalf("accept: %d %s", s, carol.lastBody)
+	}
+
+	text := mustTool(t, bt, carol.id, "create_task", map[string]any{"board": boardA.GetId(), "title": "за carol"})
+	var created struct{ ID string }
+	_ = json.Unmarshal([]byte(text), &created)
+	var tr v1.TaskResponse
+	o.must(200, "GET", "/api/tasks/"+created.ID, nil, &tr)
+	if tr.GetTask().GetCreatedBy() != carol.id {
+		t.Fatalf("created_by %s, want carol", tr.GetTask().GetCreatedBy())
+	}
+	for _, c := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"read", map[string]any{"task": taskB.GetId()}, "ON_BEHALF_NO_CONSENT"},
+		{"comment_task", map[string]any{"task": taskB.GetId(), "text": "x"}, "ON_BEHALF_NO_CONSENT"},
+		{"update_task", map[string]any{"task": taskB.GetId(), "title": "x"}, "ON_BEHALF_NO_CONSENT"},
+		{"assign", map[string]any{"task": taskB.GetId(), "users": []string{"me"}}, "ON_BEHALF_NO_CONSENT"},
+		{"create_task", map[string]any{"board": boardB.GetId(), "title": "x"}, "ON_BEHALF_NO_CONSENT"},
+		{"list_tasks", map[string]any{"board": boardB.GetId()}, "ON_BEHALF_NO_CONSENT"},
+		{"read", map[string]any{"task": taskB.GetKey()}, "ON_BEHALF_ROUTE"},
+		{"list_tasks", map[string]any{"mine": true}, "ON_BEHALF_ROUTE"},
+		{"find", map[string]any{"q": "чужом"}, "ON_BEHALF_ROUTE"},
+	} {
+		if st, text, isErr := mcpToolAs(t, bt, carol.id, c.name, c.args); st != 200 || !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s %v: %d %v %s; want %s", c.name, c.args, st, isErr, text, c.want)
+		}
+	}
+	var got v1.TaskResponse
+	o.must(200, "GET", "/api/tasks/"+taskB.GetId(), nil, &got)
+	if got.GetTask().GetTitle() != "в чужом пространстве" || len(got.GetTask().GetAssignees()) != 0 || got.GetTask().GetCommentCount() != 0 {
+		t.Fatalf("task in B changed: %v", got.GetTask())
+	}
+}

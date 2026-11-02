@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -30,7 +31,7 @@ func newTaskFixture() *taskFixture {
 		LabelIds:  []string{f.bug},
 		Assignees: []*v1.TaskAssignee{{UserId: f.ann, IsLead: true, Note: "backend"}},
 		GitLinks: []*v1.TaskGitLink{
-			{Kind: v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_PR, Repo: "gptunnel/gpt", Ref: "689", Title: "DEV-7 player", Url: "https://git/mr/689", State: v1.TaskGitLinkState_TASK_GIT_LINK_STATE_MERGED},
+			{Kind: v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_PR, Provider: v1.GitProvider_GIT_PROVIDER_GITLAB, Repo: "gptunnel/gpt", Ref: "689", Title: "DEV-7 player", Url: "https://git/mr/689", State: v1.TaskGitLinkState_TASK_GIT_LINK_STATE_MERGED},
 			{Kind: v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_BRANCH, Repo: "gptunnel/gpt", Ref: "DEV-7-player"},
 			{Kind: v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_COMMIT, Repo: "gptunnel/gpt", Ref: strings.Repeat("a", 40)},
 		},
@@ -107,8 +108,8 @@ func TestListTasks(t *testing.T) {
 		}
 		delete(want, c.GetField())
 	}
-	if len(want) != 0 || query["board_id"][0] != f.boardID || query["state"][0] != "open" || query["limit"][0] != "20" {
-		t.Fatalf("query %v, missing %v", query, want)
+	if len(want) != 0 || query["board_id"][0] != f.boardID || query["state"][0] != "open" || query["limit"][0] != "20" || query["sort"] != nil {
+		t.Fatalf("query %v, missing %v (no sort: the server's newest first)", query, want)
 	}
 
 	// A person by name.
@@ -123,6 +124,9 @@ func TestListTasks(t *testing.T) {
 	if text, isErr = call(t, h, "list_tasks", `{"mine":true}`); isErr || !strings.Contains(text, "DEV-7") ||
 		query["scope"][0] != "assigned" || query["open"][0] != "1" {
 		t.Fatalf("mine: %v %s %v", isErr, text, query)
+	}
+	if _, isErr = call(t, h, "list_tasks", `{"board":"DEV","sort":"-due"}`); isErr || query["sort"][0] != "-due" {
+		t.Fatalf("sort given: %v", query)
 	}
 
 	for _, c := range []struct{ args, want string }{
@@ -167,6 +171,10 @@ func TestUpdateTask(t *testing.T) {
 	if patch.GetPriority() != v1.TaskPriority_TASK_PRIORITY_HIGH || patch.DueOn == nil || patch.GetDueOn() != "" ||
 		!patch.GetSetLabels() || strings.Join(patch.GetLabelIds(), ",") != f.ui || patch.Title != nil || patch.StatusId != nil {
 		t.Fatalf("PATCH %s", raw)
+	}
+	// An empty description clears it.
+	if _, isErr = call(t, h, "update_task", `{"task":"DEV-7","description":""}`); isErr || patch.Description == nil || patch.GetDescription() != "" {
+		t.Fatalf("clear description: %s", raw)
 	}
 	// Only given fields: a title alone sends no labels.
 	if _, isErr = call(t, h, "update_task", `{"task":"DEV-7","title":"New"}`); isErr || patch.GetTitle() != "New" || patch.GetSetLabels() || patch.Priority != nil {
@@ -235,6 +243,11 @@ func TestAssign(t *testing.T) {
 	if _, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["`+f.ann+`"],"mode":"remove"}`); isErr || got() != "" {
 		t.Fatalf("remove: %s", got())
 	}
+	// Already assigned (Anna is the lead): no PUT, no journal entry.
+	put.Reset()
+	if text, isErr := call(t, h, "assign", `{"task":"DEV-7","users":["Анна"]}`); isErr || !strings.Contains(text, `"unchanged":true`) || len(put.GetAssignees()) != 0 {
+		t.Fatalf("no-op: %v %s", isErr, text)
+	}
 	for _, c := range []struct{ args, want string }{
 		{`{"task":"DEV-7"}`, "users is required"},
 		{`{"task":"DEV-7","users":["me"],"mode":"swap"}`, "mode must be"},
@@ -264,5 +277,112 @@ func TestReadTaskGit(t *testing.T) {
 		git["commits"].(float64) != 1 || len(git["branches"].([]any)) != 1 ||
 		out["releases"].([]any)[0].(map[string]any)["env"] != "prod" {
 		t.Fatalf("read: %s", text)
+	}
+}
+
+// mine pages the API's 200-task page by the caller's limit: nothing past the limit is lost.
+func TestListTasksMinePaging(t *testing.T) {
+	f := newTaskFixture()
+	var page []*v1.Task
+	for i := range 45 {
+		page = append(page, &v1.Task{Id: uuid.NewString(), Key: "DEV-" + strconv.Itoa(100+i), BoardId: f.boardID, StatusId: f.todo})
+	}
+	var cursors []string
+	fa := f.api(t, func(r *http.Request, _ string) (int, proto.Message, bool) {
+		if r.URL.Path == "/api/me/tasks" {
+			cursors = append(cursors, r.URL.Query().Get("cursor"))
+			if r.URL.Query().Get("cursor") == "api2" {
+				return 200, &v1.MyTasksResponse{Tasks: page[:1]}, true
+			}
+			return 200, &v1.MyTasksResponse{Tasks: page[1:], NextCursor: "api2"}, true
+		}
+		return 0, nil, false
+	})
+	h := New("test")
+	h.API = fa
+	var keys []string
+	cursor := ""
+	for range 10 {
+		args := `{"mine":true,"limit":20}`
+		if cursor != "" {
+			args = `{"mine":true,"limit":20,"cursor":"` + cursor + `"}`
+		}
+		text, isErr := call(t, h, "list_tasks", args)
+		var out struct {
+			Tasks []struct{ Key string }
+			Next  string
+		}
+		if isErr || json.Unmarshal([]byte(text), &out) != nil {
+			t.Fatalf("mine page: %v %s", isErr, text)
+		}
+		for _, x := range out.Tasks {
+			keys = append(keys, x.Key)
+		}
+		if cursor = out.Next; cursor == "" {
+			break
+		}
+	}
+	if len(keys) != 45 || keys[0] != "DEV-101" || keys[43] != "DEV-144" || keys[44] != "DEV-100" {
+		t.Fatalf("got %d tasks %v (API cursors %v)", len(keys), keys, cursors)
+	}
+	if _, isErr := call(t, h, "list_tasks", `{"mine":true,"cursor":"x"}`); !isErr {
+		t.Fatal("invalid cursor")
+	}
+}
+
+// A key that spells a done task comes first; a board that cannot be read keeps the ids.
+func TestListTasksKeyTaskAndUnreadableBoard(t *testing.T) {
+	f := newTaskFixture()
+	other := &v1.Task{Id: uuid.NewString(), Key: "OPS-1", BoardId: "hidden", StatusId: "s-1"}
+	done := &v1.Task{Id: uuid.NewString(), Key: "DEV-12", BoardId: f.boardID, StatusId: f.review}
+	fa := f.api(t, func(r *http.Request, _ string) (int, proto.Message, bool) {
+		switch r.URL.Path {
+		case "/api/workspaces/" + f.ws + "/tasks/search":
+			return 200, &v1.SearchTasksResponse{Tasks: []*v1.Task{other}, KeyTask: done}, true
+		case "/api/boards/hidden":
+			return 429, &v1.ApiError{Code: v1.ErrorCode_ERROR_CODE_RATE_LIMITED, Message: "slow down"}, true
+		}
+		return 0, nil, false
+	})
+	h := New("test")
+	h.API = fa
+	text, isErr := call(t, h, "list_tasks", `{"workspace":"`+f.ws+`","q":"DEV-12"}`)
+	if isErr || strings.Index(text, "DEV-12") > strings.Index(text, "OPS-1") || !strings.Contains(text, `"status":"In Review"`) || !strings.Contains(text, `"status":"s-1"`) {
+		t.Fatalf("key task / unreadable board: %v %s", isErr, text)
+	}
+}
+
+// A board key in two workspaces is an error naming both, never the first match.
+func TestBoardKeyInTwoWorkspaces(t *testing.T) {
+	f := newTaskFixture()
+	ws2, b2 := uuid.NewString(), uuid.NewString()
+	fa := f.api(t, func(r *http.Request, _ string) (int, proto.Message, bool) {
+		switch r.URL.Path {
+		case "/api/workspaces":
+			return 200, &v1.ListWorkspacesResponse{Workspaces: []*v1.Workspace{{Id: f.ws}, {Id: ws2}, {Id: "nobot"}}}, true
+		case "/api/workspaces/" + ws2 + "/boards":
+			return 200, &v1.ListBoardsResponse{Boards: []*v1.Board{{Id: b2, Key: "DEV", WorkspaceId: ws2}}}, true
+		case "/api/workspaces/nobot/boards": // on behalf: a workspace of the person without the bot
+			return 404, &v1.ApiError{Code: v1.ErrorCode_ERROR_CODE_NOT_FOUND, Message: "not found"}, true
+		case "/api/boards/" + f.boardID + "/tasks":
+			t.Fatal("created on a guessed board")
+		case "/api/boards/" + b2:
+			return 200, &v1.BoardResponse{Board: &v1.Board{Id: b2, Key: "DEV", WorkspaceId: ws2}}, true
+		case "/api/workspaces/" + ws2 + "/tasks/search":
+			if r.URL.Query().Get("board_id") != b2 {
+				t.Fatalf("searched board %s", r.URL.Query().Get("board_id"))
+			}
+			return 200, &v1.SearchTasksResponse{}, true
+		}
+		return 0, nil, false
+	})
+	h := New("test")
+	h.API = fa
+	if text, isErr := call(t, h, "create_task", `{"board":"DEV","title":"x"}`); !isErr || !strings.Contains(text, "several workspaces") || !strings.Contains(text, ws2) {
+		t.Fatalf("ambiguous key: %v %s", isErr, text)
+	}
+	// With the workspace the key is that workspace's board.
+	if text, isErr := call(t, h, "list_tasks", `{"board":"DEV","workspace":"`+ws2+`"}`); isErr || !strings.Contains(text, `"found":0`) {
+		t.Fatalf("workspace given: %v %s", isErr, text)
 	}
 }

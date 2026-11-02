@@ -22,20 +22,20 @@ import (
 
 // args is the union of the tools' arguments (JSON names as in the schemas).
 type args struct {
-	Q           string `json:"q"`
-	Kind        string `json:"kind"`
-	Workspace   string `json:"workspace"`
-	Task        string `json:"task"`
-	Room        string `json:"room"`
-	Board       string `json:"board"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Text        string `json:"text"`
-	ReplyTo     string `json:"reply_to"`
-	Before      string `json:"before"`
-	Limit       int    `json:"limit"`
-	Full        bool   `json:"full"`
+	Q           string  `json:"q"`
+	Kind        string  `json:"kind"`
+	Workspace   string  `json:"workspace"`
+	Task        string  `json:"task"`
+	Room        string  `json:"room"`
+	Board       string  `json:"board"`
+	Title       string  `json:"title"`
+	Description *string `json:"description"` // nil = not given; update_task: "" clears
+	Status      string  `json:"status"`
+	Text        string  `json:"text"`
+	ReplyTo     string  `json:"reply_to"`
+	Before      string  `json:"before"`
+	Limit       int     `json:"limit"`
+	Full        bool    `json:"full"`
 	// update_task, assign, list_tasks (ADR-0156)
 	Priority     string   `json:"priority"`
 	Due          *string  `json:"due"`
@@ -114,7 +114,7 @@ var toolDefs = []tool{
 		"reply_to": str("message id"),
 	})), sendMessage},
 	// ADR-0156: the tools a developer's agent needs on a task besides the ones above.
-	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true without board/workspace: my open tasks everywhere.", schema(nil, map[string]any{
+	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true: my tasks (without board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
 		"board":     str("board id or key (DEV)"),
 		"workspace": str("workspace id (when no board)"),
 		"q":         str("words or a key; empty = filters only"),
@@ -122,8 +122,8 @@ var toolDefs = []tool{
 		"assignee":  str("me, a user id, a name or a nickname"),
 		"labels":    strs("label names (any of them)"),
 		"state":     map[string]any{"type": "string", "enum": []string{"open", "done", "all"}, "description": "default open"},
-		"sort":      str("updated (default) | created | key | priority | due; - for descending"),
-		"mine":      map[string]any{"type": "boolean", "description": "my open tasks on every board (ignores the other filters)"},
+		"sort":      str("default newest update first (relevance with q); updated | created | key | priority | due, -updated etc. for descending"),
+		"mine":      map[string]any{"type": "boolean", "description": "assignee me; without board/workspace: my open tasks on every board, other filters ignored"},
 		"limit":     map[string]any{"type": "integer", "description": "1-50, default 20"},
 		"cursor":    str("next page"),
 	})), listTasks},
@@ -473,7 +473,7 @@ func createTask(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("board", a.Board), need("title", a.Title)); err != nil {
 		return nil, err
 	}
-	req := &v1.CreateTaskRequest{Title: a.Title, Description: a.Description}
+	req := &v1.CreateTaskRequest{Title: a.Title, Description: deref(a.Description)}
 	boardID := strings.TrimSpace(a.Board)
 	var board *v1.Board
 	if _, err := uuid.Parse(boardID); a.Status != "" || err != nil { // a status by name, or a board by key (ADR-0156)
@@ -609,4 +609,12 @@ func ts(t *timestamppb.Timestamp) string {
 		return ""
 	}
 	return t.AsTime().UTC().Format("2006-01-02T15:04Z")
+}
+
+// deref is the value of an optional string argument, "" when not given.
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

@@ -26,20 +26,35 @@ func listTasks(ctx context.Context, c *api, a args) (any, error) {
 		if !a.Mine {
 			return nil, errors.New("give board, workspace or mine=true")
 		}
-		qs := url.Values{"scope": {"assigned"}, "open": {"1"}}
+		// The API pages by 200; our cursor is "<offset in the API page>:<API cursor>".
+		offset, apiCursor := 0, ""
 		if a.Cursor != "" {
-			qs.Set("cursor", a.Cursor)
+			o, rest, ok := strings.Cut(a.Cursor, ":")
+			n, err := strconv.Atoi(o)
+			if !ok || err != nil || n < 0 {
+				return nil, errors.New("invalid cursor")
+			}
+			offset, apiCursor = n, rest
+		}
+		qs := url.Values{"scope": {"assigned"}, "open": {"1"}}
+		if apiCursor != "" {
+			qs.Set("cursor", apiCursor)
 		}
 		var r v1.MyTasksResponse
 		if err := c.call(ctx, http.MethodGet, "/api/me/tasks", qs, nil, &r); err != nil {
 			return nil, err
 		}
 		tasks := r.GetTasks()
-		next := r.GetNextCursor()
-		if len(tasks) > limit {
-			tasks, next = tasks[:limit], "" // the API pages by 200; a shorter page has no cursor of its own
+		offset = min(offset, len(tasks))
+		end := min(offset+limit, len(tasks))
+		next := ""
+		switch {
+		case end < len(tasks):
+			next = strconv.Itoa(end) + ":" + apiCursor
+		case r.GetNextCursor() != "":
+			next = "0:" + r.GetNextCursor()
 		}
-		return taskList(ctx, c, tasks, next)
+		return taskList(ctx, c, tasks[offset:end], next)
 	}
 	var board *v1.Board
 	ws := strings.TrimSpace(a.Workspace)
@@ -96,7 +111,7 @@ func listTasks(ctx context.Context, c *api, a args) (any, error) {
 	default:
 		return nil, errors.New("state must be open, done or all")
 	}
-	qs := url.Values{"state": {state}, "limit": {strconv.Itoa(limit)}, "sort": {"updated"}}
+	qs := url.Values{"state": {state}, "limit": {strconv.Itoa(limit)}} // no sort: the server's -updated, or relevance with q
 	if q := strings.TrimSpace(a.Q); q != "" {
 		qs.Set("q", q)
 	}
@@ -120,7 +135,12 @@ func listTasks(ctx context.Context, c *api, a args) (any, error) {
 	if err := c.call(ctx, http.MethodGet, "/api/workspaces/"+seg(ws)+"/tasks/search", qs, nil, &r); err != nil {
 		return nil, err
 	}
-	return taskList(ctx, c, r.GetTasks(), r.GetNextCursor())
+	tasks := r.GetTasks()
+	// The task whose key q spells, whatever its state and the filters (done, archived): first.
+	if k := r.GetKeyTask(); k != nil && a.Cursor == "" {
+		tasks = append([]*v1.Task{k}, slices.DeleteFunc(slices.Clone(tasks), func(t *v1.Task) bool { return t.GetId() == k.GetId() })...)
+	}
+	return taskList(ctx, c, tasks, r.GetNextCursor())
 }
 
 // taskList is a compact list of tasks with their status names (boards read once each).
@@ -130,9 +150,10 @@ func taskList(ctx context.Context, c *api, tasks []*v1.Task, next string) (any, 
 	for _, t := range tasks {
 		b, ok := boards[t.GetBoardId()]
 		if !ok {
-			var err error
-			if b, err = loadBoard(ctx, c, t.GetBoardId()); err != nil {
-				return nil, err
+			// A board that cannot be read (a limit, a refusal) only loses its names: ids stay.
+			b, _ = loadBoard(ctx, c, t.GetBoardId())
+			if b == nil {
+				b = &v1.Board{Id: t.GetBoardId()}
 			}
 			boards[t.GetBoardId()] = b
 		}
@@ -151,6 +172,8 @@ func taskList(ctx context.Context, c *api, tasks []*v1.Task, next string) (any, 
 }
 
 // resolveBoard finds a board by id, or by key in workspace ws (empty: the caller's workspaces).
+// A key is unique only within a workspace: the same key in two of them is an error naming them,
+// never a guess (a write must not land in another workspace).
 func resolveBoard(ctx context.Context, c *api, ref, ws string) (*v1.Board, error) {
 	ref = strings.TrimSpace(ref)
 	if _, err := uuid.Parse(ref); err == nil {
@@ -160,22 +183,34 @@ func resolveBoard(ctx context.Context, c *api, ref, ws string) (*v1.Board, error
 	if err != nil {
 		return nil, err
 	}
+	var found []*v1.Board
 	for _, w := range wss {
 		var r v1.ListBoardsResponse
 		if err := c.call(ctx, http.MethodGet, "/api/workspaces/"+seg(w)+"/boards", nil, nil, &r); err != nil {
+			// a workspace without boards for the caller (403), or one the bot is not in on behalf (404)
 			var ae *apiError
-			if errors.As(err, &ae) && ae.status == http.StatusForbidden {
+			if errors.As(err, &ae) && (ae.status == http.StatusForbidden || ae.status == http.StatusNotFound) {
 				continue
 			}
 			return nil, err
 		}
 		for _, b := range r.GetBoards() {
 			if strings.EqualFold(b.GetKey(), ref) {
-				return loadBoard(ctx, c, b.GetId()) // the list has no statuses and labels
+				found = append(found, b)
 			}
 		}
 	}
-	return nil, errors.New("no board " + strconv.Quote(ref))
+	switch len(found) {
+	case 0:
+		return nil, errors.New("no board " + strconv.Quote(ref))
+	case 1:
+		return loadBoard(ctx, c, found[0].GetId()) // the list has no statuses and labels
+	}
+	names := make([]string, 0, len(found))
+	for _, b := range found {
+		names = append(names, b.GetName()+" (board "+b.GetId()+", workspace "+b.GetWorkspaceId()+")")
+	}
+	return nil, errors.New("board key " + strconv.Quote(ref) + " is in several workspaces, give board id or workspace: " + strings.Join(names, ", "))
 }
 
 // resolveUser turns me, a user id, a nickname or a display name into a user id of workspace ws.
@@ -286,8 +321,8 @@ func updateTask(ctx context.Context, c *api, a args) (any, error) {
 	if a.Title != "" {
 		req.Title, changed = &a.Title, true
 	}
-	if a.Description != "" {
-		req.Description, changed = &a.Description, true
+	if a.Description != nil {
+		req.Description, changed = a.Description, true
 	}
 	if a.Priority != "" {
 		p, ok := priorities[strings.ToLower(a.Priority)]
@@ -432,6 +467,19 @@ func assign(ctx context.Context, c *api, a args) (any, error) {
 	for _, x := range list {
 		x.IsLead = x.GetUserId() == lead
 	}
+	// Nothing changes (already assigned, removing someone who is not): no PUT, no journal entry.
+	same := len(list) == len(t.GetAssignees())
+	for i := 0; same && i < len(list); i++ {
+		cur := t.GetAssignees()[i]
+		same = list[i].GetUserId() == cur.GetUserId() && list[i].GetIsLead() == cur.GetIsLead()
+	}
+	if same {
+		var now []string
+		for _, x := range list {
+			now = append(now, x.GetUserId())
+		}
+		return compact(map[string]any{"key": t.GetKey(), "assignees": now, "lead": lead, "unchanged": true}), nil
+	}
 	var out v1.TaskResponse
 	if err := c.call(ctx, http.MethodPut, "/api/tasks/"+seg(t.GetId())+"/assignees", nil, &v1.SetAssigneesRequest{Assignees: list}, &out); err != nil {
 		return nil, err
@@ -453,7 +501,11 @@ func gitLinks(t *v1.Task) map[string]any {
 	for _, l := range t.GetGitLinks() {
 		switch l.GetKind() {
 		case v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_PR:
-			prs = append(prs, compact(map[string]any{"ref": l.GetRepo() + "!" + l.GetRef(), "title": l.GetTitle(), "url": l.GetUrl(),
+			sep := "#" // GitHub / Gitea pull requests
+			if l.GetProvider() == v1.GitProvider_GIT_PROVIDER_GITLAB {
+				sep = "!" // GitLab merge requests
+			}
+			prs = append(prs, compact(map[string]any{"ref": l.GetRepo() + sep + l.GetRef(), "title": l.GetTitle(), "url": l.GetUrl(),
 				"state": enum(l.GetState().String(), "TASK_GIT_LINK_STATE_"), "author": l.GetAuthor()}))
 		case v1.TaskGitLinkKind_TASK_GIT_LINK_KIND_BRANCH:
 			branches = append(branches, compact(map[string]any{"name": l.GetRef(), "repo": l.GetRepo(), "url": l.GetUrl()}))
