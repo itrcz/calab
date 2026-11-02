@@ -4,6 +4,7 @@ import type { LegalTexts } from '../../../shared/ipc';
 import { Button, Card, Modal, Row, Spinner, cx } from '../../components/ui';
 import { getLocale, t, useLocale } from '../../i18n';
 import { platform } from '../../platform';
+import { inNativeShell } from '../../platform/nativeShell';
 
 /**
  * Licence attribution (LICENSE: Business Source License 1.1; NOTICE requires the
@@ -14,8 +15,19 @@ export const VENDOR = 'GPTunneL';
 export const VENDOR_URL = 'https://gptunnel.ai';
 export const LICENSE_EMAIL = 'support@calab.io';
 
-/** «© 2026 GPTunneL · Powered by GPTunneL» — the vendor name opens the site. */
+/**
+ * «© 2026 GPTunneL · Powered by GPTunneL» — the vendor name opens the site. In a native shell
+ * (ADR-0148) the vendor sells subscriptions on that site, so the name is plain text there, not a
+ * link (#139): a reviewer must not reach it in one tap.
+ */
 export function Attribution({ className }: { className?: string }): ReactNode {
+  if (inNativeShell()) {
+    return (
+      <p className={cx('text-caption text-muted', className)}>
+        © 2026 {VENDOR} · {t('legal.poweredBy')} {VENDOR}
+      </p>
+    );
+  }
   const open = (): void => void platform.app.openExternal(VENDOR_URL);
   return (
     <p className={cx('text-caption text-muted', className)}>
@@ -29,10 +41,17 @@ export function Attribution({ className }: { className?: string }): ReactNode {
 
 const LANDING_LOCALE = { ru: 'ru', en: 'en', es: 'es', 'zh-CN': 'zh' } as const;
 
-/** Landing legal page (`<VITE_LEGAL_URL>/<locale>/legal/<page>/`) in the UI language; null when the origin is not configured. */
+/**
+ * Landing legal page (`<VITE_LEGAL_URL>/<locale>/legal/<page>/`) in the UI language; null when the
+ * origin is not configured. In a native shell (ADR-0148, #139) this is the app-mode page instead
+ * (`.../legal/app/<page>/`): no landing header/footer, no links to pricing, the public offer or
+ * payments — a reviewer must not reach prices in one or two taps from the login screen.
+ */
 export function legalPageUrl(page: 'privacy' | 'terms', locale: keyof typeof LANDING_LOCALE = getLocale()): string | null {
   const origin = import.meta.env.VITE_LEGAL_URL?.replace(/\/+$/, '');
-  return origin ? `${origin}/${LANDING_LOCALE[locale]}/legal/${page}/` : null;
+  if (!origin) return null;
+  const mode = inNativeShell() ? 'app/' : '';
+  return `${origin}/${LANDING_LOCALE[locale]}/legal/${mode}${page}/`;
 }
 
 /** Privacy policy / terms of use: the system browser in the shell and in Electron (platform.app.openExternal). */
