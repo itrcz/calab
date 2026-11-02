@@ -28,7 +28,8 @@ vi.mock('./chat', () => ({ clearChatRooms: vi.fn(), resyncLoadedRooms: vi.fn(() 
 vi.mock('./mentions', () => ({ loadMentions: () => Promise.resolve() }));
 vi.mock('./notify', () => ({ onIncomingMessage: vi.fn(), mentionsMe: () => false }));
 vi.mock('./profile', () => ({ applyUserSettings: vi.fn() }));
-vi.mock('./gateway', () => ({ pruneGatewaySubscriptions: vi.fn() }));
+const { resyncGateway } = vi.hoisted(() => ({ resyncGateway: vi.fn() }));
+vi.mock('./gateway', () => ({ pruneGatewaySubscriptions: vi.fn(), resyncGateway }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined }, clearProtectedMedia: vi.fn() } }));
 
@@ -97,13 +98,21 @@ describe('a workspace READY lists as pending (board #145)', () => {
     expect(active()).toBe(B);
   });
 
-  it('is given up after the bound, falling back to the workspaces READY had', () => {
-    ready([B], [A]);
+  it('asks for a fresh READY after the bound, never giving the workspace up', () => {
+    resyncGateway.mockClear();
+    ready([], [A]); // the only workspace: giving it up would show Welcome
     vi.advanceTimersByTime(PENDING_WORKSPACE_MAX_MS - 1);
-    expect(active()).toBe(A);
+    expect(resyncGateway).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(useWorkspaces.getState().pending).toEqual({});
-    expect(active()).toBe(B);
+    expect(resyncGateway).toHaveBeenCalledTimes(1);
+    expect(useWorkspaces.getState().pending[A]).toBe(A);
+    expect(active()).toBe(A);
+    // Settled meanwhile: no resync.
+    resyncGateway.mockClear();
+    ready([B], [A]);
+    applyDispatch(ev({ case: 'workspaceCreate', value: create(WorkspaceCreateSchema, { snapshot: snap(A) }) }));
+    vi.advanceTimersByTime(PENDING_WORKSPACE_MAX_MS);
+    expect(resyncGateway).not.toHaveBeenCalled();
   });
 
   it('a workspace READY leaves out without listing it pending is gone, as before', () => {

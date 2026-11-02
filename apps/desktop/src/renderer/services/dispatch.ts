@@ -29,6 +29,7 @@ import { streamCoversChat, useVoice } from '../stores/voice';
 import { useStreamFullscreen } from '../features/voice/fullscreen';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
+import { resyncGateway } from './gateway';
 import { queryClient } from '../lib/queryClient';
 import './users';
 import { bansKey } from '../lib/moderation';
@@ -802,27 +803,27 @@ function applySnapshotExtras(snap: WorkspaceSnapshot): void {
   if (snap.workspace) useRooms.getState().setCategories(snap.workspace.id, snap.categories);
 }
 
-/** Keeps a valid workspace selected after READY / membership changes. */
 /**
  * The server settles a pending workspace within a few identity passes (5 s each): WORKSPACE_CREATE,
- * a lock or WORKSPACE_DELETE. Past this, stop waiting (a lost event, an older server) and fall back
- * to what the workspaces we have say.
+ * a lock or WORKSPACE_DELETE. Past this (a session moved to another server instance forgets what it
+ * left out), ask for a fresh READY rather than give the workspace up: dropping it would show
+ * «create a workspace» while it is still mine (board #145). Still pending there → armed again.
  */
 export const PENDING_WORKSPACE_MAX_MS = 60_000;
 let pendingTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Arms (or clears) the one-shot give-up of READY's pending workspaces. */
+/** Arms (or clears) the one-shot fresh READY for READY's pending workspaces. */
 function holdPending(on: boolean): void {
   if (pendingTimer !== undefined) clearTimeout(pendingTimer);
   pendingTimer = undefined;
   if (!on) return;
   pendingTimer = setTimeout(() => {
     pendingTimer = undefined;
-    useWorkspaces.getState().settlePending();
-    ensureActiveWorkspace();
+    if (Object.keys(useWorkspaces.getState().pending).length > 0) resyncGateway('pending workspace not settled');
   }, PENDING_WORKSPACE_MAX_MS);
 }
 
+/** Keeps a valid workspace selected after READY / membership changes. */
 export function ensureActiveWorkspace(): void {
   const ui = useUi.getState();
   const { byId, order, pending } = useWorkspaces.getState();

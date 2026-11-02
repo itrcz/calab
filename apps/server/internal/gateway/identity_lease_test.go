@@ -451,8 +451,9 @@ func TestIdentityOmittedWorkspaceEventsDropped(t *testing.T) {
 }
 
 // Board #145: a workspace READY listed as pending is resolved by the sweep, so the client never
-// waits on it forever: a transient check says nothing, a denial and a lost membership end the
-// omission with WORKSPACE_DELETE and the access status.
+// waits on it forever: a transient check says nothing, a lost membership ends the omission with
+// WORKSPACE_DELETE and the access status, a denial with the access status alone (the client
+// never had it: it stays selected on the lock screen).
 func TestIdentitySweepResolvesPendingWorkspace(t *testing.T) {
 	ctx := context.Background()
 	h := leaseTestHub()
@@ -490,8 +491,8 @@ func TestIdentitySweepResolvesPendingWorkspace(t *testing.T) {
 	deny.Store(true)
 	h.enforceIdentitySession(ctx, s)
 	evs = queuedEvents(t, s)
-	if len(evs) != 2 || evs[0].GetWorkspaceDelete().GetWorkspaceId() != denied.String() ||
-		evs[1].GetWorkspaceIdentityAccessUpdate().GetAccess().GetReason() != v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SSO_REQUIRED {
+	if len(evs) != 1 || evs[0].GetWorkspaceIdentityAccessUpdate().GetAccess().GetWorkspaceId() != denied.String() ||
+		evs[0].GetWorkspaceIdentityAccessUpdate().GetAccess().GetReason() != v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SSO_REQUIRED {
 		t.Fatalf("denial: %v", evs)
 	}
 	if got := s.omittedWorkspaces(); len(got) != 0 {

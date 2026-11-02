@@ -3800,11 +3800,12 @@ type Ready struct {
 	// as BOT_CREATE with owner_user_id = the recipient; a deleted one may stay until the next READY
 	// (the server decides anyway).
 	MyBotIds []string `protobuf:"bytes,19,rep,name=my_bot_ids,json=myBotIds,proto3" json:"my_bot_ids,omitempty"`
-	// Board #145: the user's workspaces left out of this READY while their access lease is
-	// still pending (allowed, but invalidations kept racing the evaluation). Not a removal: the
-	// identity sweep later sends WORKSPACE_CREATE (leased), the access status (denied) or
-	// WORKSPACE_DELETE (no longer a member). The client keeps such a workspace selected and
-	// shows it as connecting meanwhile; empty from servers before #145.
+	// Board #145: the user's workspaces left out of this READY without a verdict yet (the
+	// access check or the member read failed transiently, or invalidations kept racing the
+	// evaluation). Not a removal and no data: the identity sweep later sends WORKSPACE_CREATE
+	// (leased), the access status (denied), WORKSPACE_DELETE (no longer a member) or makes the
+	// session resync. The client keeps such a workspace selected and shows it as connecting
+	// meanwhile; empty from servers before #145.
 	PendingWorkspaceIds []string `protobuf:"bytes,20,rep,name=pending_workspace_ids,json=pendingWorkspaceIds,proto3" json:"pending_workspace_ids,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache

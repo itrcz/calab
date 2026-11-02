@@ -23,8 +23,8 @@ func TestMain(m *testing.M) { os.Exit(dbtest.Run(m)) }
 
 // Board #145: READY must not drop a workspace the user still has because of a transient
 // failure («I got disconnected, it threw me to the create-workspace page, then everything
-// came back»). A failed check fails READY ("try again"); a pending lease is listed as pending;
-// only a real "not a member" leaves the workspace out silently.
+// came back»). A failed check or a pending lease lists the workspace as pending (only that one);
+// a denial still closes it; only a real "not a member" leaves the workspace out silently.
 func TestReadyTransientFailureIsNotNoWorkspace(t *testing.T) {
 	ctx := context.Background()
 	d := dbtest.Connect(t)
@@ -88,13 +88,14 @@ func TestReadyTransientFailureIsNotNoWorkspace(t *testing.T) {
 		t.Fatalf("baseline: err %v, workspaces %d, pending %v", err, len(r.GetWorkspaces()), r.GetPendingWorkspaceIds())
 	}
 
-	// (b) The access check times out: READY fails (the client retries the connect and keeps
-	// its state) instead of carrying a DEPENDENCY_UNAVAILABLE lock without the snapshot.
+	// (b) The access check times out: the workspace is pending (listed, no data, no lock), not
+	// the whole READY failed: one workspace's broken check must not lock the user out of all.
 	timeout := func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error) {
 		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, time.Time{}, context.DeadlineExceeded
 	}
-	if _, r, err := build(timeout); err == nil {
-		t.Fatalf("transient access check: READY built (workspaces %d, access %v)", len(r.GetWorkspaces()), r.GetIdentityAccess())
+	if s, r, err := build(timeout); err != nil || len(r.GetWorkspaces()) != 0 || len(r.GetIdentityAccess()) != 0 ||
+		len(r.GetPendingWorkspaceIds()) != 1 || r.GetPendingWorkspaceIds()[0] != ws.String() || len(s.omittedWorkspaces()) != 1 {
+		t.Fatalf("transient access check: err %v, ready %v", err, r)
 	}
 	// A definitive denial still closes the workspace in READY (not weakened).
 	denied := func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error) {
@@ -105,12 +106,12 @@ func TestReadyTransientFailureIsNotNoWorkspace(t *testing.T) {
 		t.Fatalf("denial: err %v, ready %v", err, r)
 	}
 
-	// (c) The member read times out: READY fails, not "not a member".
+	// (c) The member read times out: pending, not "not a member".
 	h.readyMember = func(context.Context, uuid.UUID, uuid.UUID) (perm.Member, error) {
 		return perm.Member{}, fmt.Errorf("perm: load member: %w", context.DeadlineExceeded)
 	}
-	if _, r, err := build(allow); err == nil {
-		t.Fatalf("transient member read: READY built (workspaces %d)", len(r.GetWorkspaces()))
+	if s, r, err := build(allow); err != nil || len(r.GetWorkspaces()) != 0 || len(r.GetPendingWorkspaceIds()) != 1 || len(s.omittedWorkspaces()) != 1 {
+		t.Fatalf("transient member read: err %v, ready %v", err, r)
 	}
 	// Really not a member (left since the list): left out, as before.
 	h.readyMember = func(context.Context, uuid.UUID, uuid.UUID) (perm.Member, error) {
@@ -138,5 +139,24 @@ func TestReadyTransientFailureIsNotNoWorkspace(t *testing.T) {
 	}
 	if got := s.omittedWorkspaces(); len(got) != 1 || got[0] != ws {
 		t.Fatalf("pending workspace not omitted: %v", got)
+	}
+	// One workspace's check keeps failing: only that one is pending, the others load.
+	other := uuid.New()
+	if _, err := d.Pool.Exec(ctx, `INSERT INTO workspaces(id,slug,name,owner_id)VALUES($1,$2,'Ready 2',$3)`, other, "ready-"+other.String()[:12], uid); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = d.Pool.Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, other) })
+	if _, err := d.Pool.Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role)VALUES($1,$2,'owner')`, other, uid); err != nil {
+		t.Fatal(err)
+	}
+	_, r, err = build(func(ctx context.Context, id auth.Identity, w uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		if w == other {
+			return timeout(ctx, id, w)
+		}
+		return allow(ctx, id, w)
+	})
+	if err != nil || len(r.GetWorkspaces()) != 1 || r.GetWorkspaces()[0].GetWorkspace().GetId() != ws.String() ||
+		len(r.GetPendingWorkspaceIds()) != 1 || r.GetPendingWorkspaceIds()[0] != other.String() {
+		t.Fatalf("one broken workspace: err %v, ready %v", err, r)
 	}
 }
