@@ -3,6 +3,13 @@
 // its links to the app. The first open keeps them here and removes them from the address bar;
 // the registration sends them once (RegisterRequest.attribution) and forgets them.
 // No third party is contacted from the app: the server reports the conversion.
+//
+// ADR-0135 addendum (2026-11-02): the native phone shell (apps/mobile, ADR-0067) never captures,
+// stores or sends this attribution, so the store privacy forms can answer "Tracking: No"
+// (docs/mobile/store-listing.md) — a registration from the shell must never be able to produce
+// a Metrika conversion, whatever link it was opened from.
+
+import { inNativeShell } from '../platform/nativeShell';
 
 const KEY = 'calab-attribution';
 /** A stored campaign older than this is replaced by a newer one (and ignored at sign-up). */
@@ -81,8 +88,12 @@ export function captureAttribution(href: string, s: Storage | null = storage(), 
   return url.toString();
 }
 
-/** The stored campaign to send with a registration, if any. */
+/**
+ * The stored campaign to send with a registration, if any. Never returns one in the native
+ * shell (ADR-0135 addendum), even leftover data a pre-fix client version captured there.
+ */
 export function storedAttribution(s: Storage | null = storage(), now = Date.now()): SignupAttribution | undefined {
+  if (inNativeShell()) return undefined;
   return (s && read(s, now)) || undefined;
 }
 
@@ -97,6 +108,7 @@ export function clearAttribution(s: Storage | null = storage()): void {
 
 /** Capture from the current page and clean the address bar (web client start). */
 export function captureFromLocation(): void {
+  if (inNativeShell()) return; // ADR-0135 addendum: no attribution is ever captured there
   try {
     const clean = captureAttribution(window.location.href);
     if (clean && clean !== window.location.href) window.history.replaceState(window.history.state, '', clean);
