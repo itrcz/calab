@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/admin.proto.
  */
 export const file_calaba_v1_admin: GenFile = /*@__PURE__*/
-  fileDesc("ChVjYWxhYmEvdjEvYWRtaW4ucHJvdG8SCWNhbGFiYS52MSKzAQoOV29ya3NwYWNlVXNhZ2USDwoHbWVtYmVycxgBIAEoDRINCgVyb29tcxgCIAEoDRISCgpzdG9yYWdlX21iGAMgASgEEhUKDXN0b3JhZ2VfYnl0ZXMYBCABKAQSMQoNbGFzdF9hY3Rpdml0eRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEYm90cxgGIAEoDRIVCg1zdGlja2VyX3BhY2tzGAcgASgNIqsCCg5BZG1pbldvcmtzcGFjZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEh4KBW93bmVyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXISEwoLb3duZXJfZW1haWwYAyABKAkSKAoFdXNhZ2UYBCABKAsyGS5jYWxhYmEudjEuV29ya3NwYWNlVXNhZ2USEQoJcGxhbl9ub3RlGAUgASgJEhcKD3BsYW5fdXBkYXRlZF9ieRgGIAEoCRIzCg9wbGFuX3VwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHN1c3BlbmRlZF9ieRgIIAEoCRIaChJzdXNwZW5kZWRfYnlfZW1haWwYCSABKAkiTgodQWRtaW5TZWFyY2hXb3Jrc3BhY2VzUmVzcG9uc2USLQoKd29ya3NwYWNlcxgBIAMoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSJJChlBZG1pbkdldFdvcmtzcGFjZVJlc3BvbnNlEiwKCXdvcmtzcGFjZRgBIAEoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSLeAQoTQWRtaW5TZXRQbGFuUmVxdWVzdBIdCgRwbGFuGAEgASgOMg8uY2FsYWJhLnYxLlBsYW4SJQoGbGltaXRzGAIgASgLMhUuY2FsYWJhLnYxLlBsYW5MaW1pdHMSLwoLdmFsaWRfdW50aWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBG5vdGUYBCABKAkSFwoPb3ZlcnJpZGVfbGltaXRzGAUgASgIEhQKDGRpc3BsYXlfbmFtZRgGIAEoCRITCgtkZXNjcmlwdGlvbhgHIAEoCSJEChRBZG1pblNldFBsYW5SZXNwb25zZRIsCgl3b3Jrc3BhY2UYASABKAsyGS5jYWxhYmEudjEuQWRtaW5Xb3Jrc3BhY2UitwIKDFBsYW5Mb2dFbnRyeRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSEwoLYWN0b3JfZW1haWwYBCABKAkSHQoEcGxhbhgFIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgGIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIMCgRub3RlGAggASgJEi4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGRpc3BsYXlfbmFtZRgKIAEoCRITCgtkZXNjcmlwdGlvbhgLIAEoCSJAChRBZG1pblBsYW5Mb2dSZXNwb25zZRIoCgdlbnRyaWVzGAEgAygLMhcuY2FsYWJhLnYxLlBsYW5Mb2dFbnRyeSI+ChlBZG1pblNldFN1c3BlbnNpb25SZXF1ZXN0EhEKCXN1c3BlbmRlZBgBIAEoCBIOCgZyZWFzb24YAiABKAkiSgoaQWRtaW5TZXRTdXNwZW5zaW9uUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlQpgBCg1jb20uY2FsYWJhLnYxQgpBZG1pblByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_plan, file_calaba_v1_user, file_calaba_v1_workspace]);
+  fileDesc("ChVjYWxhYmEvdjEvYWRtaW4ucHJvdG8SCWNhbGFiYS52MSKzAQoOV29ya3NwYWNlVXNhZ2USDwoHbWVtYmVycxgBIAEoDRINCgVyb29tcxgCIAEoDRISCgpzdG9yYWdlX21iGAMgASgEEhUKDXN0b3JhZ2VfYnl0ZXMYBCABKAQSMQoNbGFzdF9hY3Rpdml0eRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEYm90cxgGIAEoDRIVCg1zdGlja2VyX3BhY2tzGAcgASgNIqYDCg5BZG1pbldvcmtzcGFjZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEh4KBW93bmVyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXISEwoLb3duZXJfZW1haWwYAyABKAkSKAoFdXNhZ2UYBCABKAsyGS5jYWxhYmEudjEuV29ya3NwYWNlVXNhZ2USEQoJcGxhbl9ub3RlGAUgASgJEhcKD3BsYW5fdXBkYXRlZF9ieRgGIAEoCRIzCg9wbGFuX3VwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHN1c3BlbmRlZF9ieRgIIAEoCRIaChJzdXNwZW5kZWRfYnlfZW1haWwYCSABKAkSLgoNdXBsb2FkX2xpbWl0cxgKIAEoCzIXLmNhbGFiYS52MS5VcGxvYWRMaW1pdHMSMAoPdXBsb2FkX2RlZmF1bHRzGAsgASgLMhcuY2FsYWJhLnYxLlVwbG9hZExpbWl0cxIXCg9tYXhfZmlsZV9tYl9jYXAYDCABKA0iegoMVXBsb2FkTGltaXRzEhIKBWJ1cnN0GAEgASgNSACIAQESFQoIcGVyX2hvdXIYAiABKA1IAYgBARIYCgttYXhfZmlsZV9tYhgDIAEoDUgCiAEBQggKBl9idXJzdEILCglfcGVyX2hvdXJCDgoMX21heF9maWxlX21iIk4KHUFkbWluU2VhcmNoV29ya3NwYWNlc1Jlc3BvbnNlEi0KCndvcmtzcGFjZXMYASADKAsyGS5jYWxhYmEudjEuQWRtaW5Xb3Jrc3BhY2UiSQoZQWRtaW5HZXRXb3Jrc3BhY2VSZXNwb25zZRIsCgl3b3Jrc3BhY2UYASABKAsyGS5jYWxhYmEudjEuQWRtaW5Xb3Jrc3BhY2Ui3gEKE0FkbWluU2V0UGxhblJlcXVlc3QSHQoEcGxhbhgBIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgCIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIMCgRub3RlGAQgASgJEhcKD292ZXJyaWRlX2xpbWl0cxgFIAEoCBIUCgxkaXNwbGF5X25hbWUYBiABKAkSEwoLZGVzY3JpcHRpb24YByABKAkiRAoUQWRtaW5TZXRQbGFuUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlIrcCCgxQbGFuTG9nRW50cnkSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhMKC2FjdG9yX2VtYWlsGAQgASgJEh0KBHBsYW4YBSABKA4yDy5jYWxhYmEudjEuUGxhbhIlCgZsaW1pdHMYBiABKAsyFS5jYWxhYmEudjEuUGxhbkxpbWl0cxIvCgt2YWxpZF91bnRpbBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEbm90ZRgIIAEoCRIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxkaXNwbGF5X25hbWUYCiABKAkSEwoLZGVzY3JpcHRpb24YCyABKAkiQAoUQWRtaW5QbGFuTG9nUmVzcG9uc2USKAoHZW50cmllcxgBIAMoCzIXLmNhbGFiYS52MS5QbGFuTG9nRW50cnkiPgoZQWRtaW5TZXRTdXNwZW5zaW9uUmVxdWVzdBIRCglzdXNwZW5kZWQYASABKAgSDgoGcmVhc29uGAIgASgJIkoKGkFkbWluU2V0U3VzcGVuc2lvblJlc3BvbnNlEiwKCXdvcmtzcGFjZRgBIAEoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSJGChtBZG1pblNldFVwbG9hZExpbWl0c1JlcXVlc3QSJwoGbGltaXRzGAEgASgLMhcuY2FsYWJhLnYxLlVwbG9hZExpbWl0cyJMChxBZG1pblNldFVwbG9hZExpbWl0c1Jlc3BvbnNlEiwKCXdvcmtzcGFjZRgBIAEoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZUKYAQoNY29tLmNhbGFiYS52MUIKQWRtaW5Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_plan, file_calaba_v1_user, file_calaba_v1_workspace]);
 
 /**
  * Usage of a workspace (admin API).
@@ -139,6 +139,26 @@ export type AdminWorkspace = Message<"calaba.v1.AdminWorkspace"> & {
    * @generated from field: string suspended_by_email = 9;
    */
   suspendedByEmail: string;
+
+  /**
+   * Upload limits of the workspace's members (ADR-0155): the superadmin's overrides (an unset
+   * field = the server default) and the server defaults with the hard cap of max_file_mb.
+   *
+   * @generated from field: calaba.v1.UploadLimits upload_limits = 10;
+   */
+  uploadLimits?: UploadLimits | undefined;
+
+  /**
+   * UPLOAD_RATE_BURST, UPLOAD_RATE_PER_HOUR, MAX_FILE_SIZE_MB
+   *
+   * @generated from field: calaba.v1.UploadLimits upload_defaults = 11;
+   */
+  uploadDefaults?: UploadLimits | undefined;
+
+  /**
+   * @generated from field: uint32 max_file_mb_cap = 12;
+   */
+  maxFileMbCap: number;
 };
 
 /**
@@ -147,6 +167,43 @@ export type AdminWorkspace = Message<"calaba.v1.AdminWorkspace"> & {
  */
 export const AdminWorkspaceSchema: GenMessage<AdminWorkspace> = /*@__PURE__*/
   messageDesc(file_calaba_v1_admin, 1);
+
+/**
+ * Upload limits per member of a workspace (ADR-0155): burst = uploads at once, per_hour = the
+ * refill of that bucket, max_file_mb = the size of one file. They apply to every workspace
+ * upload (chat attachments, the Disk, boards, wiki); DM and notes uploads keep the defaults.
+ *
+ * @generated from message calaba.v1.UploadLimits
+ */
+export type UploadLimits = Message<"calaba.v1.UploadLimits"> & {
+  /**
+   * 1..10000
+   *
+   * @generated from field: optional uint32 burst = 1;
+   */
+  burst?: number | undefined;
+
+  /**
+   * 1..100000
+   *
+   * @generated from field: optional uint32 per_hour = 2;
+   */
+  perHour?: number | undefined;
+
+  /**
+   * 1..max_file_mb_cap
+   *
+   * @generated from field: optional uint32 max_file_mb = 3;
+   */
+  maxFileMb?: number | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UploadLimits.
+ * Use `create(UploadLimitsSchema)` to create a new message.
+ */
+export const UploadLimitsSchema: GenMessage<UploadLimits> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_admin, 2);
 
 /**
  * GET /api/admin/workspaces?q= (superadmin; others get 404). q matches name, slug or the
@@ -166,7 +223,7 @@ export type AdminSearchWorkspacesResponse = Message<"calaba.v1.AdminSearchWorksp
  * Use `create(AdminSearchWorkspacesResponseSchema)` to create a new message.
  */
 export const AdminSearchWorkspacesResponseSchema: GenMessage<AdminSearchWorkspacesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 2);
+  messageDesc(file_calaba_v1_admin, 3);
 
 /**
  * GET /api/admin/workspaces/{id}
@@ -185,7 +242,7 @@ export type AdminGetWorkspaceResponse = Message<"calaba.v1.AdminGetWorkspaceResp
  * Use `create(AdminGetWorkspaceResponseSchema)` to create a new message.
  */
 export const AdminGetWorkspaceResponseSchema: GenMessage<AdminGetWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 3);
+  messageDesc(file_calaba_v1_admin, 4);
 
 /**
  * PUT /api/admin/workspaces/{id}/plan. limits: required with PLAN_CUSTOM (stored as written,
@@ -248,7 +305,7 @@ export type AdminSetPlanRequest = Message<"calaba.v1.AdminSetPlanRequest"> & {
  * Use `create(AdminSetPlanRequestSchema)` to create a new message.
  */
 export const AdminSetPlanRequestSchema: GenMessage<AdminSetPlanRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 4);
+  messageDesc(file_calaba_v1_admin, 5);
 
 /**
  * @generated from message calaba.v1.AdminSetPlanResponse
@@ -265,7 +322,7 @@ export type AdminSetPlanResponse = Message<"calaba.v1.AdminSetPlanResponse"> & {
  * Use `create(AdminSetPlanResponseSchema)` to create a new message.
  */
 export const AdminSetPlanResponseSchema: GenMessage<AdminSetPlanResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 5);
+  messageDesc(file_calaba_v1_admin, 6);
 
 /**
  * One plan change (GET /api/admin/workspaces/{id}/plan/log, newest first, ≤ 100).
@@ -338,7 +395,7 @@ export type PlanLogEntry = Message<"calaba.v1.PlanLogEntry"> & {
  * Use `create(PlanLogEntrySchema)` to create a new message.
  */
 export const PlanLogEntrySchema: GenMessage<PlanLogEntry> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 6);
+  messageDesc(file_calaba_v1_admin, 7);
 
 /**
  * @generated from message calaba.v1.AdminPlanLogResponse
@@ -355,7 +412,7 @@ export type AdminPlanLogResponse = Message<"calaba.v1.AdminPlanLogResponse"> & {
  * Use `create(AdminPlanLogResponseSchema)` to create a new message.
  */
 export const AdminPlanLogResponseSchema: GenMessage<AdminPlanLogResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 7);
+  messageDesc(file_calaba_v1_admin, 8);
 
 /**
  * PUT /api/admin/workspaces/{id}/suspension. suspended=true needs a reason (1..500 characters;
@@ -382,7 +439,7 @@ export type AdminSetSuspensionRequest = Message<"calaba.v1.AdminSetSuspensionReq
  * Use `create(AdminSetSuspensionRequestSchema)` to create a new message.
  */
 export const AdminSetSuspensionRequestSchema: GenMessage<AdminSetSuspensionRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 8);
+  messageDesc(file_calaba_v1_admin, 9);
 
 /**
  * @generated from message calaba.v1.AdminSetSuspensionResponse
@@ -399,5 +456,43 @@ export type AdminSetSuspensionResponse = Message<"calaba.v1.AdminSetSuspensionRe
  * Use `create(AdminSetSuspensionResponseSchema)` to create a new message.
  */
 export const AdminSetSuspensionResponseSchema: GenMessage<AdminSetSuspensionResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_admin, 9);
+  messageDesc(file_calaba_v1_admin, 10);
+
+/**
+ * PUT /api/admin/workspaces/{id}/upload-limits (ADR-0155): replaces the overrides (an unset
+ * field = back to the server default); out of range = 422 VALIDATION with the field. Applies to
+ * the next upload, no restart; every change is written to the workspace's admin log.
+ *
+ * @generated from message calaba.v1.AdminSetUploadLimitsRequest
+ */
+export type AdminSetUploadLimitsRequest = Message<"calaba.v1.AdminSetUploadLimitsRequest"> & {
+  /**
+   * @generated from field: calaba.v1.UploadLimits limits = 1;
+   */
+  limits?: UploadLimits | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.AdminSetUploadLimitsRequest.
+ * Use `create(AdminSetUploadLimitsRequestSchema)` to create a new message.
+ */
+export const AdminSetUploadLimitsRequestSchema: GenMessage<AdminSetUploadLimitsRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_admin, 11);
+
+/**
+ * @generated from message calaba.v1.AdminSetUploadLimitsResponse
+ */
+export type AdminSetUploadLimitsResponse = Message<"calaba.v1.AdminSetUploadLimitsResponse"> & {
+  /**
+   * @generated from field: calaba.v1.AdminWorkspace workspace = 1;
+   */
+  workspace?: AdminWorkspace | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.AdminSetUploadLimitsResponse.
+ * Use `create(AdminSetUploadLimitsResponseSchema)` to create a new message.
+ */
+export const AdminSetUploadLimitsResponseSchema: GenMessage<AdminSetUploadLimitsResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_admin, 12);
 

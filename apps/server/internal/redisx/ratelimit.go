@@ -72,11 +72,19 @@ func (l *RateLimiter) Take(ctx context.Context, key string) error {
 	return nil
 }
 
+// TakeWith is Take with the bucket's size and refill given per call — limits an admin sets per
+// workspace (ADR-0155): burst requests at once, refilled at perHour an hour. As with TakeHourly,
+// a smaller burst applies to a fuller bucket at once; callers keep overridden buckets under
+// their own keys so they never share one with the default limits.
+func (l *RateLimiter) TakeWith(ctx context.Context, key string, burst, perHour int) error {
+	h := *l
+	h.burst, h.perMs = max(burst, 1), float64(max(perHour, 1))/3_600_000
+	return h.Take(ctx, key)
+}
+
 // TakeHourly is Take with the bucket's size given per call — a limit an admin sets: perHour
 // requests at once, refilled at perHour an hour. A smaller limit applies to a fuller bucket at
 // once (the stored tokens are capped by the new size).
 func (l *RateLimiter) TakeHourly(ctx context.Context, key string, perHour int) error {
-	h := *l
-	h.burst, h.perMs = max(perHour, 1), float64(max(perHour, 1))/3_600_000
-	return h.Take(ctx, key)
+	return l.TakeWith(ctx, key, perHour, perHour)
 }

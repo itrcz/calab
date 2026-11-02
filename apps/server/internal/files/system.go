@@ -28,16 +28,21 @@ func (s *Service) Open(ctx context.Context, f sqlc.File) (io.ReadCloser, int64, 
 	return rc, f.Size, nil
 }
 
-// MaxUploadBytes is MAX_FILE_SIZE_MB in bytes: what a person may put into a workspace at once.
+// MaxUploadBytes is MAX_FILE_SIZE_MB in bytes: what a person may put into a workspace at once
+// unless the workspace overrides it (ADR-0155).
 func (s *Service) MaxUploadBytes() int64 { return s.maxBytes }
 
 // CopyInto stores a copy of f (a file the caller may read) as a new file of workspace ws
 // uploaded by uploader, named name ("" = f's name): a new id, its own blob and quota (the Disk
 // deletes its files rows with its items, so two owners never share one row). Not attached yet,
-// as StoreSystemFile. 413 above MAX_FILE_SIZE_MB or the quota.
+// as StoreSystemFile. 413 above the workspace's file size limit (ADR-0155) or the quota.
 func (s *Service) CopyInto(ctx context.Context, ws, uploader uuid.UUID, f sqlc.File, name string) (sqlc.File, error) {
-	if s.maxBytes > 0 && f.Size > s.maxBytes {
-		return sqlc.File{}, tooLarge(s.maxBytes)
+	w, err := s.db.Q.GetWorkspace(ctx, ws)
+	if err != nil {
+		return sqlc.File{}, err
+	}
+	if limit := s.maxFileBytes(w); limit > 0 && f.Size > limit {
+		return sqlc.File{}, tooLarge(limit)
 	}
 	rc, _, err := s.Open(ctx, f)
 	if err != nil {

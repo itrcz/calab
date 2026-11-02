@@ -128,8 +128,13 @@ type AdminWorkspace struct {
 	// Suspension (workspace.suspension has when / why): who suspended it.
 	SuspendedBy      string `protobuf:"bytes,8,opt,name=suspended_by,json=suspendedBy,proto3" json:"suspended_by,omitempty"` // user id
 	SuspendedByEmail string `protobuf:"bytes,9,opt,name=suspended_by_email,json=suspendedByEmail,proto3" json:"suspended_by_email,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Upload limits of the workspace's members (ADR-0155): the superadmin's overrides (an unset
+	// field = the server default) and the server defaults with the hard cap of max_file_mb.
+	UploadLimits   *UploadLimits `protobuf:"bytes,10,opt,name=upload_limits,json=uploadLimits,proto3" json:"upload_limits,omitempty"`
+	UploadDefaults *UploadLimits `protobuf:"bytes,11,opt,name=upload_defaults,json=uploadDefaults,proto3" json:"upload_defaults,omitempty"` // UPLOAD_RATE_BURST, UPLOAD_RATE_PER_HOUR, MAX_FILE_SIZE_MB
+	MaxFileMbCap   uint32        `protobuf:"varint,12,opt,name=max_file_mb_cap,json=maxFileMbCap,proto3" json:"max_file_mb_cap,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AdminWorkspace) Reset() {
@@ -225,6 +230,90 @@ func (x *AdminWorkspace) GetSuspendedByEmail() string {
 	return ""
 }
 
+func (x *AdminWorkspace) GetUploadLimits() *UploadLimits {
+	if x != nil {
+		return x.UploadLimits
+	}
+	return nil
+}
+
+func (x *AdminWorkspace) GetUploadDefaults() *UploadLimits {
+	if x != nil {
+		return x.UploadDefaults
+	}
+	return nil
+}
+
+func (x *AdminWorkspace) GetMaxFileMbCap() uint32 {
+	if x != nil {
+		return x.MaxFileMbCap
+	}
+	return 0
+}
+
+// Upload limits per member of a workspace (ADR-0155): burst = uploads at once, per_hour = the
+// refill of that bucket, max_file_mb = the size of one file. They apply to every workspace
+// upload (chat attachments, the Disk, boards, wiki); DM and notes uploads keep the defaults.
+type UploadLimits struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Burst         *uint32                `protobuf:"varint,1,opt,name=burst,proto3,oneof" json:"burst,omitempty"`                            // 1..10000
+	PerHour       *uint32                `protobuf:"varint,2,opt,name=per_hour,json=perHour,proto3,oneof" json:"per_hour,omitempty"`         // 1..100000
+	MaxFileMb     *uint32                `protobuf:"varint,3,opt,name=max_file_mb,json=maxFileMb,proto3,oneof" json:"max_file_mb,omitempty"` // 1..max_file_mb_cap
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadLimits) Reset() {
+	*x = UploadLimits{}
+	mi := &file_calaba_v1_admin_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadLimits) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadLimits) ProtoMessage() {}
+
+func (x *UploadLimits) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_admin_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadLimits.ProtoReflect.Descriptor instead.
+func (*UploadLimits) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *UploadLimits) GetBurst() uint32 {
+	if x != nil && x.Burst != nil {
+		return *x.Burst
+	}
+	return 0
+}
+
+func (x *UploadLimits) GetPerHour() uint32 {
+	if x != nil && x.PerHour != nil {
+		return *x.PerHour
+	}
+	return 0
+}
+
+func (x *UploadLimits) GetMaxFileMb() uint32 {
+	if x != nil && x.MaxFileMb != nil {
+		return *x.MaxFileMb
+	}
+	return 0
+}
+
 // GET /api/admin/workspaces?q= (superadmin; others get 404). q matches name, slug or the
 // owner's email (substring, case-insensitive); empty = newest workspaces. At most 50.
 type AdminSearchWorkspacesResponse struct {
@@ -236,7 +325,7 @@ type AdminSearchWorkspacesResponse struct {
 
 func (x *AdminSearchWorkspacesResponse) Reset() {
 	*x = AdminSearchWorkspacesResponse{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[2]
+	mi := &file_calaba_v1_admin_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -248,7 +337,7 @@ func (x *AdminSearchWorkspacesResponse) String() string {
 func (*AdminSearchWorkspacesResponse) ProtoMessage() {}
 
 func (x *AdminSearchWorkspacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[2]
+	mi := &file_calaba_v1_admin_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -261,7 +350,7 @@ func (x *AdminSearchWorkspacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSearchWorkspacesResponse.ProtoReflect.Descriptor instead.
 func (*AdminSearchWorkspacesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AdminSearchWorkspacesResponse) GetWorkspaces() []*AdminWorkspace {
@@ -281,7 +370,7 @@ type AdminGetWorkspaceResponse struct {
 
 func (x *AdminGetWorkspaceResponse) Reset() {
 	*x = AdminGetWorkspaceResponse{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[3]
+	mi := &file_calaba_v1_admin_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -293,7 +382,7 @@ func (x *AdminGetWorkspaceResponse) String() string {
 func (*AdminGetWorkspaceResponse) ProtoMessage() {}
 
 func (x *AdminGetWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[3]
+	mi := &file_calaba_v1_admin_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -306,7 +395,7 @@ func (x *AdminGetWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminGetWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*AdminGetWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *AdminGetWorkspaceResponse) GetWorkspace() *AdminWorkspace {
@@ -342,7 +431,7 @@ type AdminSetPlanRequest struct {
 
 func (x *AdminSetPlanRequest) Reset() {
 	*x = AdminSetPlanRequest{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[4]
+	mi := &file_calaba_v1_admin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -354,7 +443,7 @@ func (x *AdminSetPlanRequest) String() string {
 func (*AdminSetPlanRequest) ProtoMessage() {}
 
 func (x *AdminSetPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[4]
+	mi := &file_calaba_v1_admin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -367,7 +456,7 @@ func (x *AdminSetPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSetPlanRequest.ProtoReflect.Descriptor instead.
 func (*AdminSetPlanRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AdminSetPlanRequest) GetPlan() Plan {
@@ -428,7 +517,7 @@ type AdminSetPlanResponse struct {
 
 func (x *AdminSetPlanResponse) Reset() {
 	*x = AdminSetPlanResponse{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[5]
+	mi := &file_calaba_v1_admin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -440,7 +529,7 @@ func (x *AdminSetPlanResponse) String() string {
 func (*AdminSetPlanResponse) ProtoMessage() {}
 
 func (x *AdminSetPlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[5]
+	mi := &file_calaba_v1_admin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -453,7 +542,7 @@ func (x *AdminSetPlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSetPlanResponse.ProtoReflect.Descriptor instead.
 func (*AdminSetPlanResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AdminSetPlanResponse) GetWorkspace() *AdminWorkspace {
@@ -483,7 +572,7 @@ type PlanLogEntry struct {
 
 func (x *PlanLogEntry) Reset() {
 	*x = PlanLogEntry{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[6]
+	mi := &file_calaba_v1_admin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -495,7 +584,7 @@ func (x *PlanLogEntry) String() string {
 func (*PlanLogEntry) ProtoMessage() {}
 
 func (x *PlanLogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[6]
+	mi := &file_calaba_v1_admin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,7 +597,7 @@ func (x *PlanLogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanLogEntry.ProtoReflect.Descriptor instead.
 func (*PlanLogEntry) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PlanLogEntry) GetId() string {
@@ -597,7 +686,7 @@ type AdminPlanLogResponse struct {
 
 func (x *AdminPlanLogResponse) Reset() {
 	*x = AdminPlanLogResponse{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[7]
+	mi := &file_calaba_v1_admin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -609,7 +698,7 @@ func (x *AdminPlanLogResponse) String() string {
 func (*AdminPlanLogResponse) ProtoMessage() {}
 
 func (x *AdminPlanLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[7]
+	mi := &file_calaba_v1_admin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -622,7 +711,7 @@ func (x *AdminPlanLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminPlanLogResponse.ProtoReflect.Descriptor instead.
 func (*AdminPlanLogResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AdminPlanLogResponse) GetEntries() []*PlanLogEntry {
@@ -646,7 +735,7 @@ type AdminSetSuspensionRequest struct {
 
 func (x *AdminSetSuspensionRequest) Reset() {
 	*x = AdminSetSuspensionRequest{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[8]
+	mi := &file_calaba_v1_admin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +747,7 @@ func (x *AdminSetSuspensionRequest) String() string {
 func (*AdminSetSuspensionRequest) ProtoMessage() {}
 
 func (x *AdminSetSuspensionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[8]
+	mi := &file_calaba_v1_admin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +760,7 @@ func (x *AdminSetSuspensionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSetSuspensionRequest.ProtoReflect.Descriptor instead.
 func (*AdminSetSuspensionRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AdminSetSuspensionRequest) GetSuspended() bool {
@@ -697,7 +786,7 @@ type AdminSetSuspensionResponse struct {
 
 func (x *AdminSetSuspensionResponse) Reset() {
 	*x = AdminSetSuspensionResponse{}
-	mi := &file_calaba_v1_admin_proto_msgTypes[9]
+	mi := &file_calaba_v1_admin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +798,7 @@ func (x *AdminSetSuspensionResponse) String() string {
 func (*AdminSetSuspensionResponse) ProtoMessage() {}
 
 func (x *AdminSetSuspensionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_admin_proto_msgTypes[9]
+	mi := &file_calaba_v1_admin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,10 +811,101 @@ func (x *AdminSetSuspensionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminSetSuspensionResponse.ProtoReflect.Descriptor instead.
 func (*AdminSetSuspensionResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AdminSetSuspensionResponse) GetWorkspace() *AdminWorkspace {
+	if x != nil {
+		return x.Workspace
+	}
+	return nil
+}
+
+// PUT /api/admin/workspaces/{id}/upload-limits (ADR-0155): replaces the overrides (an unset
+// field = back to the server default); out of range = 422 VALIDATION with the field. Applies to
+// the next upload, no restart; every change is written to the workspace's admin log.
+type AdminSetUploadLimitsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limits        *UploadLimits          `protobuf:"bytes,1,opt,name=limits,proto3" json:"limits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminSetUploadLimitsRequest) Reset() {
+	*x = AdminSetUploadLimitsRequest{}
+	mi := &file_calaba_v1_admin_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminSetUploadLimitsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminSetUploadLimitsRequest) ProtoMessage() {}
+
+func (x *AdminSetUploadLimitsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_admin_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminSetUploadLimitsRequest.ProtoReflect.Descriptor instead.
+func (*AdminSetUploadLimitsRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AdminSetUploadLimitsRequest) GetLimits() *UploadLimits {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+type AdminSetUploadLimitsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Workspace     *AdminWorkspace        `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminSetUploadLimitsResponse) Reset() {
+	*x = AdminSetUploadLimitsResponse{}
+	mi := &file_calaba_v1_admin_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminSetUploadLimitsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminSetUploadLimitsResponse) ProtoMessage() {}
+
+func (x *AdminSetUploadLimitsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_admin_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminSetUploadLimitsResponse.ProtoReflect.Descriptor instead.
+func (*AdminSetUploadLimitsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *AdminSetUploadLimitsResponse) GetWorkspace() *AdminWorkspace {
 	if x != nil {
 		return x.Workspace
 	}
@@ -745,7 +925,7 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\rstorage_bytes\x18\x04 \x01(\x04R\fstorageBytes\x12?\n" +
 	"\rlast_activity\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\flastActivity\x12\x12\n" +
 	"\x04bots\x18\x06 \x01(\rR\x04bots\x12#\n" +
-	"\rsticker_packs\x18\a \x01(\rR\fstickerPacks\"\x97\x03\n" +
+	"\rsticker_packs\x18\a \x01(\rR\fstickerPacks\"\xbe\x04\n" +
 	"\x0eAdminWorkspace\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12%\n" +
 	"\x05owner\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x05owner\x12\x1f\n" +
@@ -756,7 +936,18 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\x0fplan_updated_by\x18\x06 \x01(\tR\rplanUpdatedBy\x12B\n" +
 	"\x0fplan_updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\rplanUpdatedAt\x12!\n" +
 	"\fsuspended_by\x18\b \x01(\tR\vsuspendedBy\x12,\n" +
-	"\x12suspended_by_email\x18\t \x01(\tR\x10suspendedByEmail\"Z\n" +
+	"\x12suspended_by_email\x18\t \x01(\tR\x10suspendedByEmail\x12<\n" +
+	"\rupload_limits\x18\n" +
+	" \x01(\v2\x17.calaba.v1.UploadLimitsR\fuploadLimits\x12@\n" +
+	"\x0fupload_defaults\x18\v \x01(\v2\x17.calaba.v1.UploadLimitsR\x0euploadDefaults\x12%\n" +
+	"\x0fmax_file_mb_cap\x18\f \x01(\rR\fmaxFileMbCap\"\x95\x01\n" +
+	"\fUploadLimits\x12\x19\n" +
+	"\x05burst\x18\x01 \x01(\rH\x00R\x05burst\x88\x01\x01\x12\x1e\n" +
+	"\bper_hour\x18\x02 \x01(\rH\x01R\aperHour\x88\x01\x01\x12#\n" +
+	"\vmax_file_mb\x18\x03 \x01(\rH\x02R\tmaxFileMb\x88\x01\x01B\b\n" +
+	"\x06_burstB\v\n" +
+	"\t_per_hourB\x0e\n" +
+	"\f_max_file_mb\"Z\n" +
 	"\x1dAdminSearchWorkspacesResponse\x129\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x19.calaba.v1.AdminWorkspaceR\n" +
@@ -796,6 +987,10 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\tsuspended\x18\x01 \x01(\bR\tsuspended\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"U\n" +
 	"\x1aAdminSetSuspensionResponse\x127\n" +
+	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspace\"N\n" +
+	"\x1bAdminSetUploadLimitsRequest\x12/\n" +
+	"\x06limits\x18\x01 \x01(\v2\x17.calaba.v1.UploadLimitsR\x06limits\"W\n" +
+	"\x1cAdminSetUploadLimitsResponse\x127\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspaceB\x98\x01\n" +
 	"\rcom.calaba.v1B\n" +
 	"AdminProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
@@ -813,47 +1008,54 @@ func file_calaba_v1_admin_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_admin_proto_rawDescData
 }
 
-var file_calaba_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_calaba_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_calaba_v1_admin_proto_goTypes = []any{
 	(*WorkspaceUsage)(nil),                // 0: calaba.v1.WorkspaceUsage
 	(*AdminWorkspace)(nil),                // 1: calaba.v1.AdminWorkspace
-	(*AdminSearchWorkspacesResponse)(nil), // 2: calaba.v1.AdminSearchWorkspacesResponse
-	(*AdminGetWorkspaceResponse)(nil),     // 3: calaba.v1.AdminGetWorkspaceResponse
-	(*AdminSetPlanRequest)(nil),           // 4: calaba.v1.AdminSetPlanRequest
-	(*AdminSetPlanResponse)(nil),          // 5: calaba.v1.AdminSetPlanResponse
-	(*PlanLogEntry)(nil),                  // 6: calaba.v1.PlanLogEntry
-	(*AdminPlanLogResponse)(nil),          // 7: calaba.v1.AdminPlanLogResponse
-	(*AdminSetSuspensionRequest)(nil),     // 8: calaba.v1.AdminSetSuspensionRequest
-	(*AdminSetSuspensionResponse)(nil),    // 9: calaba.v1.AdminSetSuspensionResponse
-	(*timestamppb.Timestamp)(nil),         // 10: google.protobuf.Timestamp
-	(*Workspace)(nil),                     // 11: calaba.v1.Workspace
-	(*User)(nil),                          // 12: calaba.v1.User
-	(Plan)(0),                             // 13: calaba.v1.Plan
-	(*PlanLimits)(nil),                    // 14: calaba.v1.PlanLimits
+	(*UploadLimits)(nil),                  // 2: calaba.v1.UploadLimits
+	(*AdminSearchWorkspacesResponse)(nil), // 3: calaba.v1.AdminSearchWorkspacesResponse
+	(*AdminGetWorkspaceResponse)(nil),     // 4: calaba.v1.AdminGetWorkspaceResponse
+	(*AdminSetPlanRequest)(nil),           // 5: calaba.v1.AdminSetPlanRequest
+	(*AdminSetPlanResponse)(nil),          // 6: calaba.v1.AdminSetPlanResponse
+	(*PlanLogEntry)(nil),                  // 7: calaba.v1.PlanLogEntry
+	(*AdminPlanLogResponse)(nil),          // 8: calaba.v1.AdminPlanLogResponse
+	(*AdminSetSuspensionRequest)(nil),     // 9: calaba.v1.AdminSetSuspensionRequest
+	(*AdminSetSuspensionResponse)(nil),    // 10: calaba.v1.AdminSetSuspensionResponse
+	(*AdminSetUploadLimitsRequest)(nil),   // 11: calaba.v1.AdminSetUploadLimitsRequest
+	(*AdminSetUploadLimitsResponse)(nil),  // 12: calaba.v1.AdminSetUploadLimitsResponse
+	(*timestamppb.Timestamp)(nil),         // 13: google.protobuf.Timestamp
+	(*Workspace)(nil),                     // 14: calaba.v1.Workspace
+	(*User)(nil),                          // 15: calaba.v1.User
+	(Plan)(0),                             // 16: calaba.v1.Plan
+	(*PlanLimits)(nil),                    // 17: calaba.v1.PlanLimits
 }
 var file_calaba_v1_admin_proto_depIdxs = []int32{
-	10, // 0: calaba.v1.WorkspaceUsage.last_activity:type_name -> google.protobuf.Timestamp
-	11, // 1: calaba.v1.AdminWorkspace.workspace:type_name -> calaba.v1.Workspace
-	12, // 2: calaba.v1.AdminWorkspace.owner:type_name -> calaba.v1.User
+	13, // 0: calaba.v1.WorkspaceUsage.last_activity:type_name -> google.protobuf.Timestamp
+	14, // 1: calaba.v1.AdminWorkspace.workspace:type_name -> calaba.v1.Workspace
+	15, // 2: calaba.v1.AdminWorkspace.owner:type_name -> calaba.v1.User
 	0,  // 3: calaba.v1.AdminWorkspace.usage:type_name -> calaba.v1.WorkspaceUsage
-	10, // 4: calaba.v1.AdminWorkspace.plan_updated_at:type_name -> google.protobuf.Timestamp
-	1,  // 5: calaba.v1.AdminSearchWorkspacesResponse.workspaces:type_name -> calaba.v1.AdminWorkspace
-	1,  // 6: calaba.v1.AdminGetWorkspaceResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	13, // 7: calaba.v1.AdminSetPlanRequest.plan:type_name -> calaba.v1.Plan
-	14, // 8: calaba.v1.AdminSetPlanRequest.limits:type_name -> calaba.v1.PlanLimits
-	10, // 9: calaba.v1.AdminSetPlanRequest.valid_until:type_name -> google.protobuf.Timestamp
-	1,  // 10: calaba.v1.AdminSetPlanResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	13, // 11: calaba.v1.PlanLogEntry.plan:type_name -> calaba.v1.Plan
-	14, // 12: calaba.v1.PlanLogEntry.limits:type_name -> calaba.v1.PlanLimits
-	10, // 13: calaba.v1.PlanLogEntry.valid_until:type_name -> google.protobuf.Timestamp
-	10, // 14: calaba.v1.PlanLogEntry.created_at:type_name -> google.protobuf.Timestamp
-	6,  // 15: calaba.v1.AdminPlanLogResponse.entries:type_name -> calaba.v1.PlanLogEntry
-	1,  // 16: calaba.v1.AdminSetSuspensionResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	13, // 4: calaba.v1.AdminWorkspace.plan_updated_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: calaba.v1.AdminWorkspace.upload_limits:type_name -> calaba.v1.UploadLimits
+	2,  // 6: calaba.v1.AdminWorkspace.upload_defaults:type_name -> calaba.v1.UploadLimits
+	1,  // 7: calaba.v1.AdminSearchWorkspacesResponse.workspaces:type_name -> calaba.v1.AdminWorkspace
+	1,  // 8: calaba.v1.AdminGetWorkspaceResponse.workspace:type_name -> calaba.v1.AdminWorkspace
+	16, // 9: calaba.v1.AdminSetPlanRequest.plan:type_name -> calaba.v1.Plan
+	17, // 10: calaba.v1.AdminSetPlanRequest.limits:type_name -> calaba.v1.PlanLimits
+	13, // 11: calaba.v1.AdminSetPlanRequest.valid_until:type_name -> google.protobuf.Timestamp
+	1,  // 12: calaba.v1.AdminSetPlanResponse.workspace:type_name -> calaba.v1.AdminWorkspace
+	16, // 13: calaba.v1.PlanLogEntry.plan:type_name -> calaba.v1.Plan
+	17, // 14: calaba.v1.PlanLogEntry.limits:type_name -> calaba.v1.PlanLimits
+	13, // 15: calaba.v1.PlanLogEntry.valid_until:type_name -> google.protobuf.Timestamp
+	13, // 16: calaba.v1.PlanLogEntry.created_at:type_name -> google.protobuf.Timestamp
+	7,  // 17: calaba.v1.AdminPlanLogResponse.entries:type_name -> calaba.v1.PlanLogEntry
+	1,  // 18: calaba.v1.AdminSetSuspensionResponse.workspace:type_name -> calaba.v1.AdminWorkspace
+	2,  // 19: calaba.v1.AdminSetUploadLimitsRequest.limits:type_name -> calaba.v1.UploadLimits
+	1,  // 20: calaba.v1.AdminSetUploadLimitsResponse.workspace:type_name -> calaba.v1.AdminWorkspace
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_admin_proto_init() }
@@ -864,13 +1066,14 @@ func file_calaba_v1_admin_proto_init() {
 	file_calaba_v1_plan_proto_init()
 	file_calaba_v1_user_proto_init()
 	file_calaba_v1_workspace_proto_init()
+	file_calaba_v1_admin_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_admin_proto_rawDesc), len(file_calaba_v1_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -49,6 +49,8 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.dropHere': 'Suelta para subir',
   'disk.uploads': 'Subidas',
   'disk.uploading': 'Subiendo: {n}',
+  'disk.upload.waiting': 'Esperando el límite de subidas…',
+  'disk.upload.tooLarge': 'Supera el límite de {size} por archivo',
   'disk.sweeper': 'Limpieza automática',
   'disk.owner': 'Propietario',
   'disk.guest': 'invitado',

@@ -63,3 +63,12 @@ ORDER BY b.created_at DESC, b.user_id;
 DELETE FROM workspace_invites i
 USING email_invites e
 WHERE e.invite_id = i.id AND e.workspace_id = $1 AND e.email = $2 AND e.accepted_at IS NULL;
+
+-- name: SetWorkspaceUploadLimits :one
+-- The superadmin's upload limits of a workspace (ADR-0155); NULL = the server default.
+UPDATE workspaces
+SET upload_burst    = sqlc.narg('burst'),
+    upload_per_hour = sqlc.narg('per_hour'),
+    max_file_mb     = sqlc.narg('max_file_mb')
+WHERE id = sqlc.arg('id')
+RETURNING *;

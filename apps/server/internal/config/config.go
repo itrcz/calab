@@ -41,6 +41,12 @@ const (
 	EmailVerificationOptional EmailVerificationMode = "optional"
 )
 
+// MaxFileSizeCapMB is the hard cap of one file (ADR-0155): MAX_FILE_SIZE_MB and a superadmin's
+// per-workspace override cannot exceed it. An upload is one streamed request without resume —
+// a 4 GiB file already holds a connection for ~35 min at 2 MB/s and starts over from zero after
+// a drop; larger files need resumable uploads first.
+const MaxFileSizeCapMB = 4096
+
 // Config is the full server configuration. See apps/server/README.md for the list.
 type Config struct {
 	IdentityPublicOrigin           string   `env:"IDENTITY_PUBLIC_ORIGIN"`
@@ -160,7 +166,11 @@ type Config struct {
 	// File bytes (ADR-0011): fs = local directory; s3 = S3-compatible bucket (below).
 	StorageDriver string `env:"STORAGE_DRIVER" envDefault:"fs"`
 	StoragePath   string `env:"STORAGE_PATH" envDefault:"./data/files"`
-	MaxFileSizeMB int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
+	// One file's size and the uploads per user (ADR-0155): the defaults, a superadmin overrides
+	// them per workspace (max file size up to files.MaxFileSizeCapMB).
+	MaxFileSizeMB     int64 `env:"MAX_FILE_SIZE_MB" envDefault:"1024"`
+	UploadRateBurst   int   `env:"UPLOAD_RATE_BURST" envDefault:"50"`
+	UploadRatePerHour int   `env:"UPLOAD_RATE_PER_HOUR" envDefault:"500"`
 	// HEIC → JPEG for clients without a HEIF decoder (POST /api/files/convert); ffmpeg ≥ 7.1.
 	// Not found → the endpoint answers 501 and the client says HEIC is not supported.
 	FFmpegPath     string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
@@ -379,8 +389,11 @@ func (c *Config) Validate() error {
 	if c.TempRoomMaxTTLDays < 1 || c.TempRoomsPerWorkspace < 1 {
 		errs = append(errs, errors.New("TEMP_ROOM_MAX_TTL_DAYS, TEMP_ROOMS_PER_WORKSPACE must be >= 1"))
 	}
-	if c.MaxFileSizeMB < 1 {
-		errs = append(errs, errors.New("MAX_FILE_SIZE_MB must be >= 1"))
+	if c.MaxFileSizeMB < 1 || c.MaxFileSizeMB > MaxFileSizeCapMB {
+		errs = append(errs, fmt.Errorf("MAX_FILE_SIZE_MB must be 1..%d", MaxFileSizeCapMB))
+	}
+	if c.UploadRateBurst < 1 || c.UploadRateBurst > 10000 || c.UploadRatePerHour < 1 || c.UploadRatePerHour > 100000 {
+		errs = append(errs, errors.New("UPLOAD_RATE_BURST must be 1..10000 and UPLOAD_RATE_PER_HOUR 1..100000"))
 	}
 	if c.SMTPHost != "" {
 		switch c.SMTPTLS {

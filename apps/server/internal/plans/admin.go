@@ -35,6 +35,8 @@ type Admin struct {
 	// StorageQuota returns a user's personal quota and usage (ADR-0039 §5; set by the app:
 	// the notes package depends on this one).
 	StorageQuota func(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (*v1.UserStorageQuota, error)
+	// UploadDefaults are shown next to a workspace's upload limit overrides (ADR-0155).
+	UploadDefaults UploadDefaults
 }
 
 // NewAdmin creates the admin handlers.
@@ -50,6 +52,7 @@ func (a *Admin) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	handle("PUT /api/admin/workspaces/{id}/plan", a.setPlan)
 	handle("GET /api/admin/workspaces/{id}/plan/log", a.log)
 	handle("PUT /api/admin/workspaces/{id}/suspension", a.setSuspension)
+	handle("PUT /api/admin/workspaces/{id}/upload-limits", a.setUploadLimits)
 	handle("GET /api/admin/users/{id}/storage-quota", a.storageQuota)
 	handle("PUT /api/admin/users/{id}/storage-quota", a.setStorageQuota)
 }
@@ -212,6 +215,7 @@ func (a *Admin) adminWorkspace(ctx context.Context, row sqlc.AdminWorkspaceDetai
 	if row.SuspendedByEmail != nil {
 		aw.SuspendedByEmail = *row.SuspendedByEmail
 	}
+	a.uploadLimits(aw, row.Workspace)
 	return aw, nil
 }
 

@@ -2008,6 +2008,16 @@ test('admin-workspaces', async ({ open, win, mock, shot }) => {
   await expect(admin.getByTestId('admin-detail')).toBeVisible();
   await expect(admin.getByTestId('admin-log')).toBeAttached();
   await checkpoint(shot, 'admin-workspaces');
+  // «Загрузка файлов» (ADR-0155): the server defaults as placeholders; an edit shows «Сохранить».
+  const perHour = admin.getByTestId('admin-upload-perHour');
+  await expect(perHour).toHaveAttribute('placeholder', '500');
+  await perHour.fill('2000');
+  await admin.getByRole('heading', { name: 'Загрузка файлов', exact: true }).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await expect(admin.getByTestId('admin-upload-save')).toBeVisible();
+  await checkpoint(shot, 'admin-uploads');
+  await admin.getByTestId('admin-upload-save').click();
+  await expect(admin.getByTestId('admin-upload-save')).toBeHidden();
+  await expect(perHour).toHaveValue('2000');
 });
 
 /** The plan form on «Индивидуальный» (Custom): the limits, the term, the note. */

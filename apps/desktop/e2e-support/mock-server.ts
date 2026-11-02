@@ -197,6 +197,8 @@ import {
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
   AdminSetSuspensionRequestSchema,
+  AdminSetUploadLimitsRequestSchema,
+  AdminSetUploadLimitsResponseSchema,
   AdminSetSuspensionResponseSchema,
   CreateBanRequestSchema,
   CreateBanResponseSchema,
@@ -1181,6 +1183,12 @@ class HttpError extends Error {
 
 /** Plan contact of the mock (READY.plan_contact; the server's default). */
 export const MOCK_PLAN_CONTACT = 'mailto:support@calab.io';
+
+/** The server's upload defaults (ADR-0155): MAX_FILE_SIZE_MB and the hard cap of an override. */
+const MOCK_MAX_FILE_MB = 1024;
+const MOCK_MAX_FILE_CAP_MB = 4096;
+/** A Disk upload whose name starts with this answers 429 (Retry-After 600 s). */
+export const MOCK_UPLOAD_RATE_LIMITED = 'rate-limited';
 
 /** 429 with Retry-After (seconds), like the server's limits. */
 const tooMany = (what: string, seconds: number): HttpError =>
@@ -6032,6 +6040,24 @@ class MockImpl {
       this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
       sendMsg(c.res, 200, AdminSetSuspensionResponseSchema, { workspace: this.adminOut(ws) });
     });
+    this.route('PUT', '/api/admin/workspaces/:id/upload-limits', (c) => {
+      this.requireSuperadmin(c);
+      const ws = s().workspaces.get(c.params[0] ?? '');
+      if (!ws) throw notFound('workspace not found');
+      const l = parseBody(c, AdminSetUploadLimitsRequestSchema).limits;
+      const check = (v: number | undefined, field: string, max: number): void => {
+        if (v !== undefined && (v < 1 || v > max)) throw invalid(`limits.${field}`, `must be 1..${max}`);
+      };
+      check(l?.burst, 'burst', 10000);
+      check(l?.perHour, 'perHour', 100000);
+      check(l?.maxFileMb, 'maxFileMb', MOCK_MAX_FILE_CAP_MB);
+      s().uploadLimits.set(ws.id, {
+        ...(l?.burst !== undefined ? { burst: l.burst } : {}),
+        ...(l?.perHour !== undefined ? { perHour: l.perHour } : {}),
+        ...(l?.maxFileMb !== undefined ? { maxFileMb: l.maxFileMb } : {}),
+      });
+      sendMsg(c.res, 200, AdminSetUploadLimitsResponseSchema, { workspace: this.adminOut(ws) });
+    });
     this.route('GET', '/api/admin/workspaces/:id/plan/log', (c) => {
       this.requireSuperadmin(c);
       const ws = s().workspaces.get(c.params[0] ?? '');
@@ -9146,7 +9172,10 @@ class MockImpl {
       const wsId = p0(c);
       this.workspaceFor(wsId, me);
       const f = await parseMultipartFile(c);
-      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      // The upload rate limit (ADR-0155): a file named «rate-limited…» is always refused with a long wait.
+      if (f.name.startsWith(MOCK_UPLOAD_RATE_LIMITED)) throw tooMany('too many uploads', 600);
+      const limitMb = BigInt(this.state.uploadLimits.get(wsId)?.maxFileMb ?? MOCK_MAX_FILE_MB);
+      if (BigInt(f.bytes.length) > limitMb << 20n) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, `file exceeds ${limitMb} MB`, '', { used: 0n, limit: limitMb << 20n });
       const id = this.storeFile(wsId, me, f);
       const meta = this.state.files.get(id)?.meta;
       if (!meta) throw notFound();
@@ -9926,6 +9955,9 @@ class MockImpl {
       ...(meta?.updatedAt ? { planUpdatedAt: meta.updatedAt } : {}),
       suspendedBy: this.state.suspendedBy.get(ws.id) ?? '',
       suspendedByEmail: this.state.users.get(this.state.suspendedBy.get(ws.id) ?? '')?.email ?? '',
+      uploadLimits: this.state.uploadLimits.get(ws.id) ?? {},
+      uploadDefaults: { burst: 50, perHour: 500, maxFileMb: MOCK_MAX_FILE_MB },
+      maxFileMbCap: MOCK_MAX_FILE_CAP_MB,
     });
   }
 

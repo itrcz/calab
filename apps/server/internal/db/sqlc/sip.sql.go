@@ -2163,7 +2163,7 @@ func (q *Queries) SetSipScheduleNotice(ctx context.Context, arg SetSipScheduleNo
 }
 
 const setWorkspaceSipEnabled = `-- name: SetWorkspaceSipEnabled :one
-UPDATE workspaces SET sip_enabled = $2 WHERE id = $1 RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max
+UPDATE workspaces SET sip_enabled = $2 WHERE id = $1 RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max, upload_burst, upload_per_hour, max_file_mb
 `
 
 type SetWorkspaceSipEnabledParams struct {
@@ -2200,6 +2200,9 @@ func (q *Queries) SetWorkspaceSipEnabled(ctx context.Context, arg SetWorkspaceSi
 		&i.OwnerSeesPrivate,
 		&i.CanvasTrashDays,
 		&i.DefaultJoinLeaveSoundMax,
+		&i.UploadBurst,
+		&i.UploadPerHour,
+		&i.MaxFileMb,
 	)
 	return i, err
 }

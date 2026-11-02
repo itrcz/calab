@@ -69,6 +69,8 @@ export interface DiskUpload {
   /** 0…1. */
   progress: number;
   error: string | null;
+  /** The server's upload rate limit answered 429: the file goes up again after its Retry-After (ADR-0155). */
+  waiting?: boolean;
   abort: () => void;
 }
 
@@ -79,6 +81,8 @@ interface UploadsState {
   /** Progress is written at whole percents only (a row re-renders ≤ 100 times per file). */
   progress: (id: string, fraction: number) => void;
   fail: (id: string, error: string) => void;
+  /** «Ждёт лимита загрузок» on / off (off also restarts the progress). */
+  wait: (id: string, on: boolean) => void;
   done: (id: string) => void;
 }
 
@@ -97,6 +101,11 @@ export const useDiskUploads = create<UploadsState>()((set) => ({
     set((s) => {
       const u = s.byId[id];
       return u ? { byId: { ...s.byId, [id]: { ...u, error } } } : s;
+    }),
+  wait: (id, on) =>
+    set((s) => {
+      const u = s.byId[id];
+      return !u || !!u.waiting === on ? s : { byId: { ...s.byId, [id]: { ...u, waiting: on, progress: 0 } } };
     }),
   done: (id) =>
     set((s) => {

@@ -32,6 +32,20 @@ message AdminWorkspace {
   // Suspension (workspace.suspension has when / why): who suspended it.
   string suspended_by = 8;       // user id
   string suspended_by_email = 9;
+  // Upload limits of the workspace's members (ADR-0155): the superadmin's overrides (an unset
+  // field = the server default) and the server defaults with the hard cap of max_file_mb.
+  UploadLimits upload_limits = 10;
+  UploadLimits upload_defaults = 11; // UPLOAD_RATE_BURST, UPLOAD_RATE_PER_HOUR, MAX_FILE_SIZE_MB
+  uint32 max_file_mb_cap = 12;
+}
+
+// Upload limits per member of a workspace (ADR-0155): burst = uploads at once, per_hour = the
+// refill of that bucket, max_file_mb = the size of one file. They apply to every workspace
+// upload (chat attachments, the Disk, boards, wiki); DM and notes uploads keep the defaults.
+message UploadLimits {
+  optional uint32 burst = 1;       // 1..10000
+  optional uint32 per_hour = 2;    // 1..100000
+  optional uint32 max_file_mb = 3; // 1..max_file_mb_cap
 }
 
 // GET /api/admin/workspaces?q= (superadmin; others get 404). q matches name, slug or the
@@ -99,5 +113,16 @@ message AdminSetSuspensionRequest {
 }
 
 message AdminSetSuspensionResponse {
+  AdminWorkspace workspace = 1;
+}
+
+// PUT /api/admin/workspaces/{id}/upload-limits (ADR-0155): replaces the overrides (an unset
+// field = back to the server default); out of range = 422 VALIDATION with the field. Applies to
+// the next upload, no restart; every change is written to the workspace's admin log.
+message AdminSetUploadLimitsRequest {
+  UploadLimits limits = 1;
+}
+
+message AdminSetUploadLimitsResponse {
   AdminWorkspace workspace = 1;
 }

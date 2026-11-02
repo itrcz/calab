@@ -1943,7 +1943,7 @@ func (q *Queries) GetRecentIdentityConnectionTest(ctx context.Context, arg GetRe
 }
 
 const getSSOWorkspaceBySlug = `-- name: GetSSOWorkspaceBySlug :one
-SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max FROM workspaces WHERE slug=$1
+SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max, upload_burst, upload_per_hour, max_file_mb FROM workspaces WHERE slug=$1
 `
 
 func (q *Queries) GetSSOWorkspaceBySlug(ctx context.Context, slug string) (Workspace, error) {
@@ -1975,6 +1975,9 @@ func (q *Queries) GetSSOWorkspaceBySlug(ctx context.Context, slug string) (Works
 		&i.OwnerSeesPrivate,
 		&i.CanvasTrashDays,
 		&i.DefaultJoinLeaveSoundMax,
+		&i.UploadBurst,
+		&i.UploadPerHour,
+		&i.MaxFileMb,
 	)
 	return i, err
 }

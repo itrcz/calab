@@ -36,6 +36,7 @@
 {"method":"PUT","path":"/api/admin/workspaces/{id}/plan","decision":"deny","group":"admin"},
 {"method":"GET","path":"/api/admin/workspaces/{id}/plan/log","decision":"deny","group":"admin"},
 {"method":"PUT","path":"/api/admin/workspaces/{id}/suspension","decision":"deny","group":"admin"},
+{"method":"PUT","path":"/api/admin/workspaces/{id}/upload-limits","decision":"deny","group":"admin"},
 {"method":"POST","path":"/api/auth/local/reauth","decision":"deny","group":"auth"},
 {"method":"POST","path":"/api/auth/login","decision":"public","group":"auth"},
 {"method":"POST","path":"/api/auth/logout","decision":"public","group":"auth"},

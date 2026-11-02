@@ -1,6 +1,6 @@
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import { DISK_BITS, diskPermissions, WorkspaceRole } from '@calaba/protocol';
-import { CircleAlert, Upload, X } from 'lucide-react';
+import { CircleAlert, Clock, Upload, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
@@ -166,12 +166,17 @@ export const UploadRow = memo(function UploadRow({ id }: { id: string }): ReactN
           <span className="truncate" title={u.name}>
             {u.name}
           </span>
-          {u.error ? null : <span className="shrink-0 tabular-nums text-muted">{pct}%</span>}
+          {u.error || u.waiting ? null : <span className="shrink-0 tabular-nums text-muted">{pct}%</span>}
         </div>
         {u.error ? (
           <p className="flex items-center gap-1 truncate text-caption text-danger-text" title={u.error}>
             <CircleAlert className="size-3 shrink-0" aria-hidden />
             {u.error}
+          </p>
+        ) : u.waiting ? (
+          <p className="flex items-center gap-1 truncate text-caption text-muted" data-testid="disk-upload-waiting">
+            <Clock className="size-3 shrink-0" aria-hidden />
+            {t('disk.upload.waiting')}
           </p>
         ) : (
           <div className="mt-1 h-1 overflow-hidden rounded-full bg-[var(--color-fill-hover)]">

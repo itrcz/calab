@@ -601,6 +601,7 @@ order: 1
 | `PUT` | `/api/admin/workspaces/{id}/plan` | Суперадминка |
 | `GET` | `/api/admin/workspaces/{id}/plan/log` | Суперадминка |
 | `PUT` | `/api/admin/workspaces/{id}/suspension` | Суперадминка |
+| `PUT` | `/api/admin/workspaces/{id}/upload-limits` | Суперадминка |
 | `GET` | `/api/workspaces/{id}/bot-contact-shares` | Журналы |
 | `GET` | `/api/bots/{ref}` | Управление ботами |
 | `GET` | `/api/workspaces/{id}/bots` | Управление ботами |

@@ -49,6 +49,8 @@ export const enDisk: DictShape<typeof ruDisk> = {
   'disk.dropHere': 'Drop to upload',
   'disk.uploads': 'Uploads',
   'disk.uploading': 'Uploading: {n}',
+  'disk.upload.waiting': 'Waiting for the upload limit…',
+  'disk.upload.tooLarge': 'Larger than the {size} per-file limit',
   'disk.sweeper': 'Auto-cleanup',
   'disk.owner': 'Owner',
   'disk.guest': 'guest',

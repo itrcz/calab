@@ -2240,6 +2240,9 @@ type Workspace struct {
 	OwnerSeesPrivate         bool
 	CanvasTrashDays          *int32
 	DefaultJoinLeaveSoundMax int32
+	UploadBurst              *int32
+	UploadPerHour            *int32
+	MaxFileMb                *int32
 }
 
 type WorkspaceAdminLog struct {

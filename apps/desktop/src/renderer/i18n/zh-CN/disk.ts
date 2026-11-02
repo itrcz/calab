@@ -49,6 +49,8 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.dropHere': '松开即可上传',
   'disk.uploads': '上传',
   'disk.uploading': '正在上传：{n}',
+  'disk.upload.waiting': '等待上传限额…',
+  'disk.upload.tooLarge': '超过单个文件 {size} 的限制',
   'disk.sweeper': '自动清理',
   'disk.owner': '所有者',
   'disk.guest': '访客',

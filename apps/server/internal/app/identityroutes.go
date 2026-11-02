@@ -437,6 +437,7 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/admin/users/{id}/storage-quota":                             scopeAdmin,
 	"PUT /api/admin/workspaces/{id}/plan":                                 scopeAdmin,
 	"PUT /api/admin/workspaces/{id}/suspension":                           scopeAdmin,
+	"PUT /api/admin/workspaces/{id}/upload-limits":                        scopeAdmin,
 	"PUT /api/boards/{id}/permissions":                                    scopeBoard,
 	"POST /api/boards/{id}/take-over":                                     scopeBoard,
 	"PUT /api/boards/{id}/position":                                       scopeBoard,

@@ -162,7 +162,9 @@ func run(m *testing.M) int {
 		PublicAppURLs:              []string{"https://app.example.com", "https://alias.example.org"},
 		AuthRateBurst:              5,
 		AuthRatePerMinute:          1,
-		MaxFileSizeMB:              1,        // small, so the size limit is testable
+		MaxFileSizeMB:              1,  // small, so the size limit is testable
+		UploadRateBurst:            30, // the literal skips envDefault; 30 at once, 120/h as before ADR-0155
+		UploadRatePerHour:          120,
 		FFmpegPath:                 "ffmpeg", // HEIC conversion: tested when ffmpeg ≥ 7.1 is on PATH
 		FFprobePath:                "ffprobe",
 		StorageDriver:              "fs",

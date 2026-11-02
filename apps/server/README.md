@@ -78,7 +78,8 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error`, JSON в stdout |
 | `MIGRATE_ON_START` | `true` | применять миграции при `serve` |
 | `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011): `fs` — каталог, `s3` — бакет S3 (`STORAGE_S3_*`, docs/06 «Файлы в S3») |
-| `MAX_FILE_SIZE_MB` | `50` | лимит файла; поток обрывается при превышении → 413 |
+| `MAX_FILE_SIZE_MB` | `1024` | лимит файла (1..4096 — жёсткий потолок `config.MaxFileSizeCapMB`); поток обрывается при превышении → 413 `FILE_TOO_LARGE` с `limit` в байтах; суперадмин переопределяет на пространство (ADR-0155) |
+| `UPLOAD_RATE_BURST` / `UPLOAD_RATE_PER_HOUR` | `50` / `500` | загрузок файлов на пользователя сразу / пополнение в час (429 + `Retry-After`); суперадмин переопределяет на пространство (ADR-0155), DM и заметки — всегда эти |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | `ffmpeg` / `ffprobe` (образ: статическая сборка 8.0 в `/usr/local/bin`) | HEIC → JPEG (`POST /api/files/convert`, нужен ffmpeg ≥ 7.1); не найдены → 501, клиент говорит «HEIC не поддерживается» |
 | `LIVEKIT_URL` | — | URL для клиентов (`wss://rtc.<domain>`, dev `ws://localhost:7880`) |
 | `LIVEKIT_INTERNAL_URL` | — | URL для API (`http://127.0.0.1:7880`) |
