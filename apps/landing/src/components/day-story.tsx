@@ -3,6 +3,7 @@ import type { Locale } from '@/i18n';
 import { getHome } from '@/i18n/home';
 import { StoryScroller } from './story-scroller';
 import { nb, Section, Shot } from './ui';
+import { SectionCta } from './section-cta';
 
 /**
  * «Один день команды» (§4.3): the steps of one day across chat, board, calendar, recording, wiki, disk, canvas.
@@ -29,6 +30,7 @@ export function DayStory({ locale }: { locale: Locale }) {
           </li>
         ))}
       </StoryScroller>
+      <SectionCta locale={locale} />
     </Section>
   );
 }

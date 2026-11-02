@@ -2,6 +2,7 @@ import { Bot, Hash, HardDrive, ListTree, Phone, PhoneForwarded, Users, type Luci
 import { localePath, type Locale } from '@/i18n';
 import { getHome } from '@/i18n/home';
 import { Button, Card, FactCards, nb, Section, SectionHeading, Shot } from './ui';
+import { SectionCta } from './section-cta';
 
 /** One icon per fact, in the order of `telephony.points` (all languages): number, extensions, IVR, groups, transfer, recording. */
 const POINT_ICONS: LucideIcon[] = [Phone, Hash, ListTree, Users, PhoneForwarded, HardDrive];
@@ -44,6 +45,7 @@ export function TelephonySection({ locale }: { locale: Locale }) {
         </Card>
       </div>
       <FactCards id="telephony" className="telephony-points" items={p.points.map((text, i) => ({ icon: POINT_ICONS[i] ?? Phone, text }))} />
+      <SectionCta locale={locale} />
     </Section>
   );
 }

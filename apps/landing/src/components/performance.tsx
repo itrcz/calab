@@ -2,6 +2,7 @@ import type { Dict, Locale } from '@/i18n';
 import { LOCALE_INFO } from '@/i18n/locales';
 import { repoFile } from '@/lib/site';
 import { Section, SectionHeading, cx } from './ui';
+import { SectionCta } from './section-cta';
 
 type T = Dict['perf'];
 
@@ -103,6 +104,7 @@ export function Performance({ t, locale }: { t: T; locale: Locale }) {
           </a>
         </p>
       </div>
+      <SectionCta locale={locale} />
     </Section>
   );
 }

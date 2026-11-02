@@ -8,7 +8,7 @@ import { SiteMenu } from './site-menu';
 import { Container } from './ui';
 
 /**
- * A 72 px row without a backing that scrolls away whole, logo and buttons too (owner, 24.10).
+ * A 72 px row, sticky on a solid backing (owner, #142; was «scrolls away», 24.10).
  * `page`: '' on the home page, 'developers/' etc. elsewhere — section links then lead back to the home page.
  */
 export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Locale; page?: string }) {

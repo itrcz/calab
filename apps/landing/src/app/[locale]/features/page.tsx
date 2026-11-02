@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { Features } from '@/components/features';
+import { ScrollProgress } from '@/components/scroll-progress';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { Performance } from '@/components/performance';
@@ -15,6 +16,7 @@ export default async function FeaturesPage({ params }: { params: Promise<{ local
   const s = getStory(locale);
   return (
     <>
+      <ScrollProgress />
       <Header t={t.header} locale={locale} page="features/" />
       <main id="main" className="site">
         <section className="section page-hero" aria-labelledby="features-page-title">
