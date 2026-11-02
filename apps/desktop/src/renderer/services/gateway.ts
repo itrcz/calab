@@ -103,6 +103,11 @@ export function reconnectGateway(): void {
   client?.forceReconnect();
 }
 
+/** Reconnect now with a fresh IDENTIFY → READY (a workspace READY listed as pending did not settle). */
+export function resyncGateway(reason: string): void {
+  client?.resync(reason);
+}
+
 /** Reconnect now only if the socket is gone or dead (screen unlock, window shown, back online). */
 export function wakeGateway(reason: 'visibility' | 'incoming-call' = 'visibility'): void {
   client?.wake(reason);

@@ -90,6 +90,9 @@ function ShellLayout(): ReactNode {
   const locked = useIdentity((s) => !!wsId && lockScreen(s.access[wsId]));
   const home = wsId === HOME && local;
   const hasWs = useWorkspaces((s) => (wsId && !home ? !!s.byId[wsId] : false));
+  // Board #145: READY left the selected workspace out while its access was pending — still mine,
+  // so «connecting» in its place, never «create a workspace».
+  const wsPending = useWorkspaces((s) => (wsId && !home ? !s.byId[wsId] && !!s.pending[wsId] : false));
   // Balance billing (ADR-0080 §8): a workspace closed for unpaid billing shows the paywall.
   const billingClosed = useBillingSuspended(home ? null : wsId);
   const roomId = useActiveRoom(home ? null : wsId);
@@ -170,10 +173,14 @@ function ShellLayout(): ReactNode {
         <MobileShell
           showReconnect={showReconnect}
           welcome={
-            <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
-              <LockedWorkspacePicker />
-              <Welcome />
-            </div>
+            wsPending ? (
+              <Connecting />
+            ) : (
+              <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
+                <LockedWorkspacePicker />
+                <Welcome />
+              </div>
+            )
           }
         />
         {ready ? <CreateTaskDialog /> : null}
@@ -205,13 +212,8 @@ function ShellLayout(): ReactNode {
         {fileMounted ? <OfficeScreenLazy.Component /> : null}
         {fileShown ? null : mailOn ? (
           <MailScreenLazy.Component />
-        ) : !ready ? (
-          <div className="mat-content grid flex-1 place-items-center mobile:px-6">
-            <div className="flex flex-col items-center gap-3 text-body text-muted">
-              <Spinner className="size-6" />
-              {t('gateway.connecting')}
-            </div>
-          </div>
+        ) : !ready || wsPending ? (
+          <Connecting />
         ) : locked && wsId ? (
           <WorkspaceLock workspaceId={wsId} />
         ) : billingClosed && hasWs && wsId ? (
@@ -300,6 +302,18 @@ function ShellLayout(): ReactNode {
         {island !== 'none' ? <BottomIsland mode={island} column={fileShown ? 'sidebar' : mailOn ? 'mail' : wiki ? 'wiki' : canvas ? 'canvas' : 'sidebar'} /> : null}
         {ready ? <CreateTaskDialog /> : null}
         {ready ? <SmartTaskDialog /> : null}
+      </div>
+    </div>
+  );
+}
+
+/** «Подключение…» in the content slot: before the first READY, or for a pending workspace (board #145). */
+function Connecting(): ReactNode {
+  return (
+    <div className="mat-content grid flex-1 place-items-center mobile:px-6" data-testid="shell-connecting">
+      <div className="flex flex-col items-center gap-3 text-body text-muted">
+        <Spinner className="size-6" />
+        {t('gateway.connecting')}
       </div>
     </div>
   );

@@ -450,6 +450,61 @@ func TestIdentityOmittedWorkspaceEventsDropped(t *testing.T) {
 	}
 }
 
+// Board #145: a workspace READY listed as pending is resolved by the sweep, so the client never
+// waits on it forever: a transient check says nothing, a lost membership ends the omission with
+// WORKSPACE_DELETE and the access status, a denial with the access status alone (the client
+// never had it: it stays selected on the lock screen).
+func TestIdentitySweepResolvesPendingWorkspace(t *testing.T) {
+	ctx := context.Background()
+	h := leaseTestHub()
+	a, denied, left := uuid.New(), uuid.New(), uuid.New()
+	h.states[a] = &wsState{}
+	s := leasedSession(h, a)
+	s.omitWorkspace(denied)
+	s.omitWorkspace(left)
+	allow := h.checkWorkspace
+	var deny atomic.Bool
+	h.checkWorkspace = func(ctx context.Context, id auth.Identity, ws uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		switch {
+		case ws == a:
+			return allow(ctx, id, ws)
+		case ws == denied && deny.Load():
+			return identitypolicy.Decision{Reason: identitypolicy.SSORequired}, time.Now(), identitypolicy.ErrDenied
+		default:
+			return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, time.Time{}, context.DeadlineExceeded
+		}
+	}
+	members := []uuid.UUID{a, denied, left}
+	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return append([]uuid.UUID{}, members...), nil }
+	_ = drain(s)
+
+	h.enforceIdentitySession(ctx, s)
+	if evs := queuedEvents(t, s); len(evs) != 0 {
+		t.Fatalf("transient check / still a member: %v", evs)
+	}
+	members = []uuid.UUID{a, denied}
+	h.enforceIdentitySession(ctx, s)
+	evs := queuedEvents(t, s)
+	if len(evs) != 2 || evs[0].GetWorkspaceDelete().GetWorkspaceId() != left.String() || evs[1].GetWorkspaceIdentityAccessUpdate().GetAccess().GetWorkspaceId() != left.String() {
+		t.Fatalf("lost membership: %v", evs)
+	}
+	deny.Store(true)
+	h.enforceIdentitySession(ctx, s)
+	evs = queuedEvents(t, s)
+	if len(evs) != 1 || evs[0].GetWorkspaceIdentityAccessUpdate().GetAccess().GetWorkspaceId() != denied.String() ||
+		evs[0].GetWorkspaceIdentityAccessUpdate().GetAccess().GetReason() != v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SSO_REQUIRED {
+		t.Fatalf("denial: %v", evs)
+	}
+	if got := s.omittedWorkspaces(); len(got) != 0 {
+		t.Fatalf("still omitted: %v", got)
+	}
+	// Resolved once: later passes say nothing more.
+	h.enforceIdentitySession(ctx, s)
+	if evs := queuedEvents(t, s); len(evs) != 0 {
+		t.Fatalf("repeated pass: %v", evs)
+	}
+}
+
 // Access versions are per (workspace, user): removing member A (A's version 1 → 2)
 // must not tombstone member B's lease at version 2, which B's own durable version (1)
 // could never satisfy again — B's READY/events were closed with "identity resync

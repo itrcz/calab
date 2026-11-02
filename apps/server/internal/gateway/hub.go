@@ -74,6 +74,7 @@ type Hub struct {
 	identityWorkspaces   func(context.Context, uuid.UUID) ([]uuid.UUID, error)
 	checkPrincipal       func(context.Context, auth.Identity) (identitypolicy.Principal, time.Time, error)
 	checkAdmissionPolicy func(context.Context, uuid.UUID) (int64, error)
+	readyMember          func(context.Context, uuid.UUID, uuid.UUID) (perm.Member, error) // tests: READY's member read
 	closing              atomic.Bool
 	nSockets             atomic.Int64
 	// botSeen: when a bot's REST activity was last recorded here (TouchBot throttle).

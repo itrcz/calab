@@ -197,6 +197,14 @@ export class GatewayClient {
     this.reconnectNow(reason, true);
   }
 
+  /** Immediate reconnect with a fresh IDENTIFY: the next READY replaces the whole state (board #145). */
+  resync(reason = 'resync'): void {
+    if (this.stopped) return;
+    this.sessionId = '';
+    this.seq = 0n;
+    this.reconnectNow(reason, true);
+  }
+
   private reconnectNow(reason: string, resetAttempts: boolean): void {
     if (this.stopped) return;
     this.log(reason);

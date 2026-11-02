@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -377,6 +378,18 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 	return s
 }
 
+// pendWorkspace leaves ws out of READY as pending (board #145): unsubscribed, its events
+// queued while READY was built dropped (omitWorkspace), no access entry (the client does not
+// lock it or drop its drafts), listed in pending_workspace_ids so the client keeps it selected
+// as connecting rather than "no workspace". The identity sweep probes it and settles it:
+// WORKSPACE_CREATE once leased, the access status on a denial, WORKSPACE_DELETE when no longer
+// a member (enforceIdentitySession).
+func (h *Hub) pendWorkspace(s *Session, ready *v1.Ready, ws uuid.UUID) {
+	h.leaveWorkspace(s, ws)
+	s.omitWorkspace(ws)
+	ready.PendingWorkspaceIds = append(ready.PendingWorkspaceIds, ws.String())
+}
+
 func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Ready, error) {
 	u, err := h.db.Q.GetUser(ctx, uid)
 	if err != nil {
@@ -419,15 +432,14 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				continue
 			}
 			decision, err := s.refreshWorkspaceLease(ctx, w.ID)
-			if err == nil && decision.Allowed && !s.workspaceLeaseAllows(w.ID) {
-				// Allowed but not leased (invalidations kept racing the evaluation): READY
-				// filtering would close the fresh connection. Leave the workspace out and
-				// unsubscribe; the identity sweep re-adds it with an access update and
-				// WORKSPACE_CREATE once leased. It is pending, not denied: no access entry,
-				// so the client does not lock it as "unavailable" meanwhile, and its events
-				// queued while READY was built are dropped (omitWorkspace).
-				h.leaveWorkspace(s, w.ID)
-				s.omitWorkspace(w.ID)
+			if identityTransient(decision, err) || (err == nil && decision.Allowed && !s.workspaceLeaseAllows(w.ID)) {
+				// No verdict on this workspace yet: its check failed (a timeout says nothing
+				// about access, board #145, incident 2026-10-05), or it was allowed but
+				// invalidations kept racing the evaluation (READY filtering would close the
+				// fresh connection). Pending, not denied and not gone, and not the whole READY
+				// either (one workspace's broken check must not lock the user out of the
+				// others): see pendWorkspace.
+				h.pendWorkspace(s, ready, w.ID)
 				continue
 			}
 			access = identityAccessStatus(w.ID, decision, err, s.principal)
@@ -449,8 +461,21 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				continue
 			}
 		}
-		me, err := res.Member(ctx, w.ID, uid)
+		member := res.Member
+		if h.readyMember != nil {
+			member = h.readyMember
+		}
+		me, err := member(ctx, w.ID, uid)
 		if err != nil {
+			if errors.Is(err, perm.ErrNotMember) || !identityTransient(identitypolicy.Decision{}, err) {
+				continue // left (or denied) since ListUserWorkspaces: not theirs
+			}
+			// A DB timeout is not "not a member" (board #145). A person's session: pending,
+			// the identity sweep re-adds it; a bot has no sweep: try again.
+			if s.bot {
+				return nil, fmt.Errorf("workspace %s member: %w", w.ID, err)
+			}
+			h.pendWorkspace(s, ready, w.ID)
 			continue
 		}
 		snap, err := workspaces.Snapshot(ctx, h.db.Q, h.cfg.Plans, w, uid, me)
