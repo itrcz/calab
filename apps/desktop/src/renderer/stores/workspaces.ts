@@ -59,9 +59,20 @@ interface WorkspacesState {
   users: Record<string, User>;
   /** `formerKey(ws, user)` → who left this workspace; the profile itself stays in `users` (ADR-0097 §5). */
   former: Record<string, FormerInfo>;
+  /**
+   * Board #145: my workspaces READY left out while their access lease was pending
+   * (`Ready.pending_workspace_ids`): still mine, shown as connecting until WORKSPACE_CREATE, a
+   * lock (access update) or WORKSPACE_DELETE settles them (or `settlePending` gives up). The
+   * value: its last known name ('' if none), for the title while it connects.
+   */
+  pending: Record<string, string>;
   reset: () => void;
   applySnapshot: (s: WorkspaceSnapshot) => void;
   remove: (workspaceId: string) => void;
+  /** READY: the workspaces it lists as pending, id → last known name (replaces the previous set). */
+  setPending: (pending: Record<string, string>) => void;
+  /** One pending workspace settled (or all of them, without an id). */
+  settlePending: (workspaceId?: string) => void;
   /**
    * The workspace was closed for unpaid billing (ADR-0080 §8): keep who it is and my role (the
    * paywall / the notice), drop everything of its content.
@@ -133,13 +144,20 @@ const withEntry = (
   return e ? { byId: { ...s.byId, [id]: fn(e) } } : {};
 };
 
+const withoutPending = (pending: Record<string, string>, id: string): Record<string, string> => {
+  const next = { ...pending };
+  delete next[id];
+  return next;
+};
+
 export const useWorkspaces = create<WorkspacesState>()((set) => ({
   byId: {},
   order: [],
   presences: {},
   users: {},
   former: {},
-  reset: () => set({ byId: {}, order: [], presences: {}, users: {}, former: {} }),
+  pending: {},
+  reset: () => set({ byId: {}, order: [], presences: {}, users: {}, former: {}, pending: {} }),
   applySnapshot: (snap) =>
     set((s) => {
       const ws = snap.workspace;
@@ -168,14 +186,18 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       for (const b of snap.badges) badges[b.id] = b;
       const backgrounds: Record<string, WorkspaceBackground> = {};
       for (const b of snap.backgrounds) backgrounds[b.id] = b;
-      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, badges, backgrounds, voice } }, order, presences, users, former };
+      const pending = ws.id in s.pending ? withoutPending(s.pending, ws.id) : s.pending;
+      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, badges, backgrounds, voice } }, order, presences, users, former, pending };
     }),
   remove: (id) =>
     set((s) => {
       const byId = { ...s.byId };
       delete byId[id];
-      return { byId, order: s.order.filter((x) => x !== id) };
+      return { byId, order: s.order.filter((x) => x !== id), pending: id in s.pending ? withoutPending(s.pending, id) : s.pending };
     }),
+  setPending: (pending) => set({ pending }),
+  settlePending: (id) =>
+    set((s) => (id === undefined ? (Object.keys(s.pending).length ? { pending: {} } : {}) : id in s.pending ? { pending: withoutPending(s.pending, id) } : {})),
   toBillingStub: (id) =>
     set((s) =>
       withEntry(s, id, (e) => ({

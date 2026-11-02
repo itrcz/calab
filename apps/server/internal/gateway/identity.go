@@ -510,6 +510,13 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, err)
 		}
 	}
+	// A workspace left out of READY as pending (board #145) whose membership ended: the client
+	// keeps it as connecting until told.
+	for _, ws := range s.omittedWorkspaces() {
+		if !present[ws] && s.endOmission(ws) {
+			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, nil)
+		}
+	}
 	stubs := map[uuid.UUID]bool{} // held as billing stubs (not subscribed)
 	for _, ws := range s.billingStubs() {
 		if old[ws] {
@@ -535,6 +542,10 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		} else if stubs[ws] && !identityTransient(decision, err) && !billingDenied(decision, err) && !decision.Allowed {
 			// A billing stub that is now denied for another reason (left, banned, SSO): gone.
+			h.identityRemoveWorkspace(s, ws, decision, err)
+		} else if !identityTransient(decision, err) && (err != nil || !decision.Allowed) && s.endOmission(ws) {
+			// Left out of READY as pending (board #145) and now denied: the client stops
+			// showing it as connecting and gets the denial like a removed workspace.
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
 	}

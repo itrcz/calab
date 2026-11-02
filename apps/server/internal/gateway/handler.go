@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -377,6 +378,9 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 	return s
 }
 
+// errAccessUnavailable: a workspace check that could not decide (StateUnavailable) fails READY.
+var errAccessUnavailable = errors.New("workspace access check unavailable")
+
 func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Ready, error) {
 	u, err := h.db.Q.GetUser(ctx, uid)
 	if err != nil {
@@ -419,15 +423,27 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				continue
 			}
 			decision, err := s.refreshWorkspaceLease(ctx, w.ID)
+			if identityTransient(decision, err) {
+				// A failed check says nothing about access (board #145, incident
+				// 2026-10-05): "try again" like any other read of READY, not a READY that
+				// shows the workspace locked or gone — the client keeps its state meanwhile.
+				if err == nil {
+					err = errAccessUnavailable
+				}
+				return nil, fmt.Errorf("workspace %s access: %w", w.ID, err)
+			}
 			if err == nil && decision.Allowed && !s.workspaceLeaseAllows(w.ID) {
 				// Allowed but not leased (invalidations kept racing the evaluation): READY
 				// filtering would close the fresh connection. Leave the workspace out and
 				// unsubscribe; the identity sweep re-adds it with an access update and
-				// WORKSPACE_CREATE once leased. It is pending, not denied: no access entry,
-				// so the client does not lock it as "unavailable" meanwhile, and its events
-				// queued while READY was built are dropped (omitWorkspace).
+				// WORKSPACE_CREATE once leased (or reports a denial / lost membership). It is
+				// pending, not denied: no access entry, so the client does not lock it, and
+				// pending_workspace_ids keeps it selected as connecting rather than "no
+				// workspace" (board #145). Its events queued while READY was built are dropped
+				// (omitWorkspace).
 				h.leaveWorkspace(s, w.ID)
 				s.omitWorkspace(w.ID)
+				ready.PendingWorkspaceIds = append(ready.PendingWorkspaceIds, w.ID.String())
 				continue
 			}
 			access = identityAccessStatus(w.ID, decision, err, s.principal)
@@ -449,9 +465,17 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				continue
 			}
 		}
-		me, err := res.Member(ctx, w.ID, uid)
+		member := res.Member
+		if h.readyMember != nil {
+			member = h.readyMember
+		}
+		me, err := member(ctx, w.ID, uid)
 		if err != nil {
-			continue
+			if errors.Is(err, perm.ErrNotMember) || !identityTransient(identitypolicy.Decision{}, err) {
+				continue // left (or denied) since ListUserWorkspaces: not theirs
+			}
+			// A DB timeout is not "not a member" (board #145): try again.
+			return nil, fmt.Errorf("workspace %s member: %w", w.ID, err)
 		}
 		snap, err := workspaces.Snapshot(ctx, h.db.Q, h.cfg.Plans, w, uid, me)
 		if err != nil {

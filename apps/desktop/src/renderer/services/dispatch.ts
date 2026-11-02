@@ -170,7 +170,12 @@ export function applyDispatch(ev: DispatchEvent): void {
   }
   switch (e.case) {
     case 'workspaceIdentityAccessUpdate': {
-      if (e.value.sessionId === useSession.getState().sessionId && e.value.access) applyIdentityAccess(e.value.access);
+      if (e.value.sessionId === useSession.getState().sessionId && e.value.access) {
+        applyIdentityAccess(e.value.access);
+        // A pending workspace (board #145) that turned out locked: the lock screen, not «connecting».
+        // An ALLOWED update is followed by its WORKSPACE_CREATE, which settles it.
+        if (accessLocked(e.value.access)) useWorkspaces.getState().settlePending(e.value.access.workspaceId);
+      }
       break;
     }
     case 'ready': {
@@ -186,6 +191,10 @@ export function applyDispatch(ev: DispatchEvent): void {
       const prevMentions = rooms.mentions;
       for (const access of r.identityAccess) applyIdentityAccess(access);
       ws.reset();
+      // Board #145: left out of this READY while their lease was pending — still mine, kept
+      // selected (under the name we knew) and shown as connecting until the server settles them.
+      ws.setPending(Object.fromEntries(r.pendingWorkspaceIds.map((id) => [id, ws.byId[id]?.ws.name ?? ''])));
+      holdPending(r.pendingWorkspaceIds.length > 0);
       rooms.reset();
       useSounds.getState().reset();
       useWebApps.getState().reset();
@@ -794,13 +803,33 @@ function applySnapshotExtras(snap: WorkspaceSnapshot): void {
 }
 
 /** Keeps a valid workspace selected after READY / membership changes. */
+/**
+ * The server settles a pending workspace within a few identity passes (5 s each): WORKSPACE_CREATE,
+ * a lock or WORKSPACE_DELETE. Past this, stop waiting (a lost event, an older server) and fall back
+ * to what the workspaces we have say.
+ */
+export const PENDING_WORKSPACE_MAX_MS = 60_000;
+let pendingTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Arms (or clears) the one-shot give-up of READY's pending workspaces. */
+function holdPending(on: boolean): void {
+  if (pendingTimer !== undefined) clearTimeout(pendingTimer);
+  pendingTimer = undefined;
+  if (!on) return;
+  pendingTimer = setTimeout(() => {
+    pendingTimer = undefined;
+    useWorkspaces.getState().settlePending();
+    ensureActiveWorkspace();
+  }, PENDING_WORKSPACE_MAX_MS);
+}
+
 export function ensureActiveWorkspace(): void {
   const ui = useUi.getState();
-  const { byId, order } = useWorkspaces.getState();
+  const { byId, order, pending } = useWorkspaces.getState();
   if (
     (ui.activeWorkspaceId && useIdentity.getState().access[ui.activeWorkspaceId]) ||
     ui.activeWorkspaceId === HOME ||
-    (ui.activeWorkspaceId && byId[ui.activeWorkspaceId])
+    (ui.activeWorkspaceId && (byId[ui.activeWorkspaceId] || pending[ui.activeWorkspaceId]))
   )
     return;
   ui.setWorkspace(order[0] ?? null);

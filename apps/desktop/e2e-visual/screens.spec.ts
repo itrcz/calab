@@ -644,6 +644,11 @@ test('main-chat', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await checkpoint(shot, 'main-chat');
+  // Board #145: READY leaves the open workspace out while its access lease is pending — «Подключение…»
+  // in its place (the other workspaces stay on the rail), never «Создать пространство».
+  mock.readyPending(IDS.workspaces.main);
+  await expect(win.getByTestId('shell-connecting')).toBeVisible();
+  await checkpoint(shot, 'workspace-pending');
 });
 
 /**

@@ -29,8 +29,13 @@ import { WorkspaceMenuItems } from './WorkspaceMenu';
  * At rest the trigger reads the name and one primitive badge; the rows mount only while it is open.
  */
 export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; phone?: boolean }): ReactNode {
-  const ws = useContextWorkspace();
-  const name = useWorkspaces((s) => (ws ? s.byId[ws]?.ws.name : undefined));
+  const context = useContextWorkspace();
+  // Board #145: the selected workspace is pending (READY left it out for now): its own name, not
+  // another workspace's, while «Подключение…» stands in its place.
+  const active = useUi((s) => s.activeWorkspaceId);
+  const pendingName = useWorkspaces((s) => (active && !s.byId[active] ? s.pending[active] : undefined));
+  const ws = pendingName !== undefined ? active : context;
+  const name = useWorkspaces((s) => (ws ? (s.byId[ws]?.ws.name ?? (pendingName || undefined)) : undefined));
   const iconFileId = useWorkspaces((s) => (ws ? (s.byId[ws]?.ws.iconFileId ?? '') : ''));
   // A guest sees one workspace: nothing to switch, no menu (ADR-0073, owner 07.10).
   const single = useWorkspaces((s) => phone && s.order.length <= 1 && (ws ? s.byId[ws]?.role === WorkspaceRole.GUEST : false));

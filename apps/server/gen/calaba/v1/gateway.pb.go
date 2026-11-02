@@ -3799,9 +3799,15 @@ type Ready struct {
 	// archive with CREATE_TASKS, create-only visibility). A bot the recipient creates later comes
 	// as BOT_CREATE with owner_user_id = the recipient; a deleted one may stay until the next READY
 	// (the server decides anyway).
-	MyBotIds      []string `protobuf:"bytes,19,rep,name=my_bot_ids,json=myBotIds,proto3" json:"my_bot_ids,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	MyBotIds []string `protobuf:"bytes,19,rep,name=my_bot_ids,json=myBotIds,proto3" json:"my_bot_ids,omitempty"`
+	// Board #145: the user's workspaces left out of this READY while their access lease is
+	// still pending (allowed, but invalidations kept racing the evaluation). Not a removal: the
+	// identity sweep later sends WORKSPACE_CREATE (leased), the access status (denied) or
+	// WORKSPACE_DELETE (no longer a member). The client keeps such a workspace selected and
+	// shows it as connecting meanwhile; empty from servers before #145.
+	PendingWorkspaceIds []string `protobuf:"bytes,20,rep,name=pending_workspace_ids,json=pendingWorkspaceIds,proto3" json:"pending_workspace_ids,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Ready) Reset() {
@@ -3963,6 +3969,13 @@ func (x *Ready) GetReadReceiptsFrom() string {
 func (x *Ready) GetMyBotIds() []string {
 	if x != nil {
 		return x.MyBotIds
+	}
+	return nil
+}
+
+func (x *Ready) GetPendingWorkspaceIds() []string {
+	if x != nil {
+		return x.PendingWorkspaceIds
 	}
 	return nil
 }
@@ -7779,7 +7792,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1a]\n" +
 	"\x15RoomLastMessagesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12.\n" +
-	"\x05value\x18\x02 \x01(\v2\x18.calaba.v1.DmLastMessageR\x05value:\x028\x01\"\x8a\b\n" +
+	"\x05value\x18\x02 \x01(\v2\x18.calaba.v1.DmLastMessageR\x05value:\x028\x01\"\xbe\b\n" +
 	"\x05Ready\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -7806,7 +7819,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x12billing_self_serve\x18\x11 \x01(\bR\x10billingSelfServe\x12,\n" +
 	"\x12read_receipts_from\x18\x12 \x01(\tR\x10readReceiptsFrom\x12\x1c\n" +
 	"\n" +
-	"my_bot_ids\x18\x13 \x03(\tR\bmyBotIds\"N\n" +
+	"my_bot_ids\x18\x13 \x03(\tR\bmyBotIds\x122\n" +
+	"\x15pending_workspace_ids\x18\x14 \x03(\tR\x13pendingWorkspaceIds\"N\n" +
 	"\x14RoomAdmissionRequest\x126\n" +
 	"\tadmission\x18\x01 \x01(\v2\x18.calaba.v1.RoomAdmissionR\tadmission\"N\n" +
 	"\x14RoomAdmissionDecided\x126\n" +

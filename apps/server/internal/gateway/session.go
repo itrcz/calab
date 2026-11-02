@@ -298,6 +298,29 @@ func (s *Session) omitWorkspace(ws uuid.UUID) {
 	s.omitted[ws] = true
 }
 
+// omittedWorkspaces lists the workspaces still omitted from READY (see omitted).
+func (s *Session) omittedWorkspaces() []uuid.UUID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]uuid.UUID, 0, len(s.omitted))
+	for ws := range s.omitted {
+		out = append(out, ws)
+	}
+	return out
+}
+
+// endOmission ends the omission of ws without its WORKSPACE_CREATE (denied, or no longer a
+// member); false if ws was not omitted.
+func (s *Session) endOmission(ws uuid.UUID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.omitted[ws] {
+		return false
+	}
+	delete(s.omitted, ws)
+	return true
+}
+
 // omittedEventLocked reports an event of a workspace omitted from READY, emitted before
 // that workspace's WORKSPACE_CREATE (which ends the omission); s.mu must be held. The client
 // has no state for it and the snapshot supersedes it, so it is dropped rather than closing

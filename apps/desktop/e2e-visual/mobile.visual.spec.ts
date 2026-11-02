@@ -1910,6 +1910,13 @@ test('m-ws-switcher', async ({ page }) => {
   await expect(menu.getByRole('menuitem', { name: 'Найти пространство' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Настройки', exact: true })).toBeVisible();
   await checkpoint(page, 'm-ws-switcher');
+  // Board #145: READY leaves the open workspace out while its access lease is pending — «Подключение…»
+  // on the tab root, never «Создать пространство».
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  mock.readyPending(IDS.workspaces.main);
+  await expect(page.getByTestId('shell-connecting')).toBeVisible();
+  await checkpoint(page, 'm-ws-pending');
 });
 
 test('m-dialog', async ({ page }) => {

@@ -729,6 +729,11 @@ export interface MockServer {
   dispatch(event: DispatchEvent | EventInit): void;
   /** Rebuilds the fixtures (optionally another scenario) and drops gateway sessions (clients re-IDENTIFY). */
   reset(scenario?: Scenario): void;
+  /**
+   * Board #145: a fresh READY to every identified session that leaves `workspaceId` out and lists
+   * it in `pending_workspace_ids` (its access lease was still pending on the server).
+   */
+  readyPending(workspaceId: string): void;
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
   injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message;
@@ -1031,6 +1036,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     close: () => impl.close(),
     dispatch: (e) => impl.broadcast(create(DispatchEventSchema, e)),
     reset: (sc) => impl.reset(sc ?? impl.state.scenario),
+    readyPending: (w) => impl.readyPending(w),
     injectMessage: (a) => impl.injectMessage(a),
     markRead: (u, roomId, messageId) => impl.markRead(u, roomId, messageId),
     setDmState: (u, roomId, patch) => impl.setDmState(u, roomId, patch),
@@ -2048,6 +2054,19 @@ class MockImpl {
       return users.includes(me) || (everyone && !!room && this.mayMentionAll(room, m.authorId));
     });
     return { unreadCount: Math.min(after.length, 999), mentionCount: Math.min(mentions.length, 99) };
+  }
+
+  readyPending(workspaceId: string): void {
+    for (const c of this.conns) {
+      const u = c.userId ? this.state.users.get(c.userId) : undefined;
+      if (!u) continue;
+      const ev = this.ready(c, u);
+      if (ev.event.case !== 'ready') continue;
+      const r = ev.event.value;
+      r.workspaces = r.workspaces.filter((w) => w.workspace?.id !== workspaceId);
+      r.pendingWorkspaceIds = [workspaceId];
+      this.sendDispatch(c, ev);
+    }
   }
 
   private ready(conn: Conn, u: UserRec): DispatchEvent {
