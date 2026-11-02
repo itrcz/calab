@@ -49,6 +49,8 @@ export const ruDisk = {
   'disk.dropHere': 'Отпустите, чтобы загрузить',
   'disk.uploads': 'Загрузки',
   'disk.uploading': 'Загрузка: {n}',
+  'disk.upload.waiting': 'Ждёт лимита загрузок…',
+  'disk.upload.tooLarge': 'Больше лимита {size} на файл',
   'disk.sweeper': 'Автоочистка',
   'disk.owner': 'Владелец',
   'disk.guest': 'гость',

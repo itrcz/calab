@@ -1,4 +1,5 @@
 import { expect, test } from './app';
+import { IDS, MOCK_UPLOAD_RATE_LIMITED } from '../e2e-support/mock-server';
 import { checkpoint, expectToolbarHeights, joinVoice } from './harness';
 
 /**
@@ -179,4 +180,24 @@ test('disk-share', async ({ open, win, shot }) => {
   await expect(card.getByTestId('disk-folder-card-name')).toHaveText('Проекты');
   await expect(card.getByTestId('disk-folder-card-summary')).toContainText('папка');
   await checkpoint(shot, 'disk-folder-card');
+});
+
+/**
+ * The upload rows (ADR-0155): a file held by the upload rate limit waits («Ждёт лимита загрузок»,
+ * Retry-After 600 s in the mock), a file over the workspace's limit (1 MB here) names the limit.
+ */
+test('disk-uploads', async ({ open, win, mock, shot }) => {
+  await open();
+  mock.state.uploadLimits.set(IDS.workspaces.main, { maxFileMb: 1 });
+  await win.getByTestId('section-disk').click();
+  await expect(win.getByTestId('disk-tile')).toHaveCount(9);
+  await win.getByTestId('disk-file-input').setInputFiles([
+    { name: `${MOCK_UPLOAD_RATE_LIMITED}-Смета.xlsx`, mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024, 1) },
+    { name: 'Видео с презентации.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2 * 1024 * 1024, 1) },
+  ]);
+  const rows = win.getByTestId('disk-upload-row');
+  await expect(rows).toHaveCount(2);
+  await expect(win.getByTestId('disk-upload-waiting')).toHaveText('Ждёт лимита загрузок…');
+  await expect(rows.nth(1)).toContainText(/Больше лимита 1[,.]0+ МБ на файл/);
+  await checkpoint(shot, 'disk-uploads');
 });

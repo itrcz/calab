@@ -17,6 +17,13 @@ export const ruModeration = {
   'err.banned': 'Вход в это пространство для вас закрыт',
   // «Администрирование» → карточка пространства
   'admin.card.suspension': 'Приостановка',
+  'admin.card.uploads': 'Загрузка файлов',
+  'admin.uploads.burst': 'Загрузок подряд',
+  'admin.uploads.perHour': 'Загрузок в час',
+  'admin.uploads.maxFile': 'Файл до, МБ',
+  'admin.uploads.hint': 'На каждого участника, применяется сразу. Пусто — значение сервера (серым в поле). Файл — не больше {cap} МБ; чаты в личке и заметки — всегда по умолчанию.',
+  'admin.uploads.saved': 'Лимиты загрузки сохранены',
+  'admin.uploads.range': '{field}: от 1 до {max}',
   'admin.suspend.toggle': 'Приостановить пространство',
   'admin.suspend.hint': 'Сообщения, голос, стримы, приглашения и запись станут недоступны. Чтение останется.',
   'admin.suspend.reason': 'Причина',

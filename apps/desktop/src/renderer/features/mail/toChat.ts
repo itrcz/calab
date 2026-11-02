@@ -14,8 +14,11 @@ import { rolesOf, useWorkspaces } from '../../stores/workspaces';
 import type { ForwardItem } from '../chat/forwardModel';
 import { chatAttachments, chatText, planAttachments } from './chatText';
 
-/** The chat's file upload limit per file (server `MAX_FILE_SIZE_MB`, default 50). */
-const UPLOAD_MAX = 50 * 1024 * 1024;
+/**
+ * The chat's file upload limit per file (server `MAX_FILE_SIZE_MB`, default 1024; a workspace may
+ * override it, ADR-0155 — the server's 413 stays the authority).
+ */
+const UPLOAD_MAX = 1024 * 1024 * 1024;
 
 /**
  * «Отправить в чат…» (owner 12.10, fixed 14.10): one chat message per picked chat — a short header

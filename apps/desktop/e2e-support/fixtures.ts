@@ -445,6 +445,8 @@ export interface MockState {
   planLog: Map<string, PlanLogEntry[]>;
   /** Who suspended a workspace (docs/09 #32; Workspace.suspension has when / why). */
   suspendedBy: Map<string, string>;
+  /** workspaceId → the superadmin's upload limits (ADR-0155); absent = the server defaults. */
+  uploadLimits: Map<string, { burst?: number; perHour?: number; maxFileMb?: number }>;
   /** workspaceId → bans, newest first (docs/09 #32). */
   bans: Map<string, WorkspaceBan[]>;
   /** workspaceId → former members, newest first (ADR-0097); served by …/former-members and …/users?ids=. */
@@ -854,6 +856,7 @@ export function buildState(scenario: Scenario): MockState {
     planMeta: new Map(),
     planLog: new Map(),
     suspendedBy: new Map(),
+    uploadLimits: new Map(),
     bans: new Map(),
     formerMembers: new Map(),
     roles: new Map(),

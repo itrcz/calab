@@ -75,6 +75,9 @@ import {
   AdminSetPlanResponseSchema,
   AdminSetSuspensionRequestSchema,
   AdminSetSuspensionResponseSchema,
+  AdminSetUploadLimitsRequestSchema,
+  AdminSetUploadLimitsResponseSchema,
+  UploadLimitsSchema,
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
@@ -972,6 +975,9 @@ export const adminApi = {
       AdminSetSuspensionResponseSchema,
       body(AdminSetSuspensionRequestSchema, { suspended, reason }),
     ),
+  /** Upload limits of the workspace (ADR-0155): an unset field = the server default. */
+  setUploadLimits: (id: string, limits: MessageInitShape<typeof UploadLimitsSchema>) =>
+    call('PUT', `/api/admin/workspaces/${id}/upload-limits`, AdminSetUploadLimitsResponseSchema, body(AdminSetUploadLimitsRequestSchema, { limits })),
 };
 
 export interface UploadHandle {
@@ -1013,7 +1019,9 @@ export function uploadInto<S extends DescMessage, R>(
       if (e.lengthComputable) onProgress(e.loaded / e.total);
     };
     xhr.onload = () => {
-      const res = new Response(xhr.responseText, { status: xhr.status });
+      // Retry-After rides along: a 429's wait drives the Disk's upload queue (ADR-0155).
+      const retryAfter = xhr.getResponseHeader('Retry-After');
+      const res = new Response(xhr.responseText, { status: xhr.status, headers: retryAfter ? { 'Retry-After': retryAfter } : {} });
       if (xhr.status >= 200 && xhr.status < 300) {
         // A throw inside onload would leave the promise (and the message) pending forever (review L6).
         let out: R | undefined;

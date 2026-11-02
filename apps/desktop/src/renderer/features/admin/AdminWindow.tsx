@@ -29,6 +29,7 @@ import { platform } from '../../platform';
 import { toast } from '../../stores/toasts';
 import { ExpiredBadge, PlanPill } from '../workspace/PlanTab';
 import { SuspendedBadge, SuspendedMark, SuspensionCard } from './SuspensionCard';
+import { UploadLimitsCard } from './UploadLimitsCard';
 import { LocalReauth } from '../identity/SignIn';
 import { AdminBillingPane, AdminBillingSide, AdminBillingWorkspaceCard, AdminSectionSwitch, type AdminSection, type BillingView } from './billing/AdminBilling';
 import { billingStateOf } from '../../lib/billing/model';
@@ -469,6 +470,8 @@ function AdminDetail({ id, onClose, notice, onOpenBilling }: { id: string; onClo
           <PlanLog entries={entries} loading={log.isLoading} />
 
           <SuspensionCard a={a} onSaved={(next) => qc.setQueryData(KEY.ws(id), { workspace: next })} />
+
+          <UploadLimitsCard key={w.id} a={a} onSaved={(next) => qc.setQueryData(KEY.ws(id), { workspace: next })} />
 
           <AdminBillingWorkspaceCard workspaceId={w.id} name={w.name} state={billingStateOf(w.billing)} onOpen={() => onOpenBilling(null)} />
         </div>

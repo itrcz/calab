@@ -297,9 +297,30 @@ function release(): void {
   else running--;
 }
 
+/** A 429 without Retry-After waits this long; a longer Retry-After is capped (seconds). */
+const LIMIT_WAIT_S = 30;
+const LIMIT_WAIT_MAX_S = 3600;
+
+/** How long to wait after a 429 of the upload rate limit (ADR-0155), with a little spread so the parallel slots do not all knock at once. */
+export function limitWaitMs(retryAfterS: number | undefined, jitter = Math.random()): number {
+  const s = Math.min(Math.max(retryAfterS ?? LIMIT_WAIT_S, 1), LIMIT_WAIT_MAX_S);
+  return s * 1000 + Math.round(jitter * 500);
+}
+
+/** The row's text for a refused upload: 413 FILE_TOO_LARGE names the limit (ApiError.limit, bytes). */
+export function uploadErrorText(e: unknown): string {
+  if (e instanceof ApiError && (e.code === 'ERROR_CODE_FILE_TOO_LARGE' || (e.status === 413 && e.code !== 'ERROR_CODE_FILE_QUOTA_EXCEEDED'))) {
+    const limit = e.extra.limit;
+    return limit ? t('disk.upload.tooLarge', { size: fmt.size(limit) }) : t('err.fileTooLarge');
+  }
+  return errorText(e);
+}
+
 /**
  * Uploads files into a folder (drag & drop from the system, «Загрузить файлы»), each with its own
- * progress row. A full storage (413) stops the rest and opens «Место» with «Докупить место».
+ * progress row. A full storage (413) stops the rest and opens «Место» with «Докупить место». The
+ * upload rate limit (429) does not fail a file: the row says «Ждёт лимита загрузок» and the file
+ * goes up again after Retry-After, holding its slot so the queue behind it waits too (ADR-0155).
  */
 export function uploadFiles(ws: string, parentId: string, files: readonly File[]): void {
   const ups = useDiskUploads.getState();
@@ -307,6 +328,7 @@ export function uploadFiles(ws: string, parentId: string, files: readonly File[]
   for (const f of files) {
     const id = `up${++uploadSeq}`;
     let handle: { abort(): void } | null = null;
+    let wake: (() => void) | null = null;
     let aborted = false;
     ups.add({
       id,
@@ -318,15 +340,13 @@ export function uploadFiles(ws: string, parentId: string, files: readonly File[]
       abort: () => {
         aborted = true;
         handle?.abort();
+        wake?.();
         useDiskUploads.getState().done(id);
       },
     });
-    void slot().then(async () => {
-      try {
-        if (aborted || full) {
-          useDiskUploads.getState().done(id);
-          return;
-        }
+    const send = async (): Promise<DiskItem | null> => {
+      for (;;) {
+        if (aborted || full) return null;
         const up = uploadInto(
           `${W(ws)}/upload${qs({ parent: parentId || undefined })}`,
           DiskItemResponseSchema,
@@ -336,8 +356,28 @@ export function uploadFiles(ws: string, parentId: string, files: readonly File[]
           (p) => useDiskUploads.getState().progress(id, p),
         );
         handle = up;
-        const item = await up.promise;
+        try {
+          return await up.promise;
+        } catch (e) {
+          if (!(e instanceof ApiError && e.status === 429)) throw e;
+          useDiskUploads.getState().wait(id, true);
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, limitWaitMs(e.retryAfter));
+            wake = () => {
+              clearTimeout(timer);
+              resolve();
+            };
+          });
+          wake = null;
+          useDiskUploads.getState().wait(id, false);
+        }
+      }
+    };
+    void slot().then(async () => {
+      try {
+        const item = await send();
         useDiskUploads.getState().done(id);
+        if (!item) return;
         useDisk.getState().upsert(item);
         void loadUsage(ws);
       } catch (e) {
@@ -351,7 +391,7 @@ export function uploadFiles(ws: string, parentId: string, files: readonly File[]
           }
           return;
         }
-        useDiskUploads.getState().fail(id, errorText(e));
+        useDiskUploads.getState().fail(id, uploadErrorText(e));
       } finally {
         release();
       }
