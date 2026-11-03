@@ -47,7 +47,7 @@ func TestIPKeyAndDisplayName(t *testing.T) {
 	if k := ipKey("::ffff:192.0.2.7"); k != "192.0.2.7" {
 		t.Fatalf("mapped IPv4: %q", k)
 	}
-	if n := displayName("  Claude‮ edoC ​\n\tCode\x00 "); n != "Claude edoC Code" {
+	if n := displayName("  Claude\u202e edoC \u200b\n\tCode\x00 "); n != "Claude edoC Code" {
 		t.Fatalf("displayName: %q", n)
 	}
 }

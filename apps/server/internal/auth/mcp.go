@@ -27,11 +27,12 @@ const MCPPath = "/api/mcp"
 // ReasonMCPToken marks a route refused to an MCP token (403).
 const ReasonMCPToken = "MCP_TOKEN"
 
-// RevokeMCPCodeReuse: the authorization code that created the session was presented again
-// (RFC 6749 §4.1.2): the session is revoked.
+// RevokeMCPCodeReuse is the revocation reason when the authorization code that created the
+// session was presented again (RFC 6749 §4.1.2).
 const RevokeMCPCodeReuse = "MCP_CODE_REUSE"
 
-// RevokeMCPReplaced: a newer consent of the same person for the same client replaced the session.
+// RevokeMCPReplaced is the revocation reason when a newer consent of the same person for the same
+// client replaced the session.
 const RevokeMCPReplaced = "MCP_REPLACED"
 
 // errMCPToken answers an MCP token anywhere but the MCP endpoint and its tools.

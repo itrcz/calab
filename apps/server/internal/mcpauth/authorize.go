@@ -129,7 +129,9 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	issuer, state := s.origin(r), f.Get("state")
 	fail := func(code, desc string) {
-		http.Redirect(w, r, redirectWith(redirect, state, issuer, map[string]string{"error": code, "error_description": desc}), http.StatusFound)
+		// The redirect URI is one the client registered (redirectMatches above): loopback or an
+		// exact allowed https callback, never a value taken from the request alone.
+		http.Redirect(w, r, redirectWith(redirect, state, issuer, map[string]string{"error": code, "error_description": desc}), http.StatusFound) //nolint:gosec // G710: see above
 	}
 	switch {
 	case f.Get("response_type") != "code":

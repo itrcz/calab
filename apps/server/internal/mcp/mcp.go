@@ -85,7 +85,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, ok := auth.FromContext(r.Context())
-	if !ok || !(id.Machine() || id.MCP) {
+	if !ok || (!id.Machine() && !id.MCP) {
 		httpx.WriteError(w, r, ErrNotBot)
 		return
 	}
