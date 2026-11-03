@@ -74,6 +74,14 @@ export interface ViewRect {
   height: number;
 }
 
+/**
+ * An overlay of our page; `band` stretches it to the view's full width before cutting, so the site
+ * only loses height (its left edge and width stay) — the open bottom island (ADR-0146).
+ */
+export interface Overlay extends ViewRect {
+  band?: boolean;
+}
+
 /** Below this the site is not worth showing: the view is hidden while the overlays last. */
 export const MIN_VIEW_WIDTH = 240;
 export const MIN_VIEW_HEIGHT = 160;
@@ -84,13 +92,15 @@ export const OVERLAY_GAP = 8;
  * The part of the view's placeholder the native view may take while overlays of our page that
  * must stay visible are shown (toasts, knock cards, the calling strip — `[data-app-occluder]`):
  * the native view is drawn above the whole page, so it steps aside instead of hiding them. Each
- * overlay that intersects the view cuts it from the side that keeps the most area; null = too
+ * overlay that intersects the view cuts it from the side that keeps the most area (a `band` one
+ * always from above/below); null = too
  * little is left, the view is hidden meanwhile. Empty overlays (an empty toast stack) are ignored.
  */
-export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], gap = OVERLAY_GAP): ViewRect | null {
+export function visibleViewRect(view: ViewRect, overlays: readonly Overlay[], gap = OVERLAY_GAP): ViewRect | null {
   let r = { ...view };
-  for (const o of overlays) {
-    if (o.width <= 0 || o.height <= 0) continue;
+  for (const ov of overlays) {
+    if (ov.width <= 0 || ov.height <= 0) continue;
+    const o = ov.band ? { ...ov, x: r.x, width: r.width } : ov;
     const right = r.x + r.width;
     const bottom = r.y + r.height;
     const oRight = o.x + o.width;
