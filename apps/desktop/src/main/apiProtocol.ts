@@ -145,8 +145,17 @@ export const IDLE_TIMEOUT_MS = 30_000;
 export const SLOW_REQUEST_MS = 75_000;
 const SLOW_PATHS = [/^\/api\/workspaces\/[^/]+\/sip\/test$/, /^\/api\/workspaces\/[^/]+\/sip\/ivr(\/[^/]+)?$/];
 
+/**
+ * A smart task (ADR-0118, `POST /api/workspaces/{id}/smart-tasks`) waits for the workspace's model:
+ * up to three calls within the server's SmartBudget of 100 s, then the task's creation. A slow
+ * provider route pushed one past 20 s and the app cut it while the server was still working.
+ */
+export const SMART_TASK_REQUEST_MS = 110_000;
+const SMART_TASK_PATH = /^\/api\/workspaces\/[^/]+\/smart-tasks$/;
+
 /** The headers / idle deadline of a request to `pathname`. */
 export function deadlinesFor(pathname: string): { headers: number; idle: number } {
+  if (SMART_TASK_PATH.test(pathname)) return { headers: SMART_TASK_REQUEST_MS, idle: SMART_TASK_REQUEST_MS };
   return SLOW_PATHS.some((re) => re.test(pathname)) ? { headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS } : { headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS };
 }
 

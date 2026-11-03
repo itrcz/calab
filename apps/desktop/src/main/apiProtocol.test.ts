@@ -33,7 +33,7 @@ const warn = vi.fn();
 vi.mock('./logging', () => ({ log: { warn, info: vi.fn(), error: vi.fn() } }));
 
 // Imported after the mocks above (docs/12 "net.fetch has no timeout").
-const { handleApiScheme, deadlinesFor, HEADERS_TIMEOUT_MS, IDLE_TIMEOUT_MS, SLOW_REQUEST_MS } = await import('./apiProtocol');
+const { handleApiScheme, deadlinesFor, HEADERS_TIMEOUT_MS, IDLE_TIMEOUT_MS, SLOW_REQUEST_MS, SMART_TASK_REQUEST_MS } = await import('./apiProtocol');
 
 function apiRequest(path: string, init?: RequestInit): Request {
   return new Request(`calaba-api://api${path}`, init);
@@ -207,5 +207,11 @@ describe('deadlines', () => {
     expect(deadlinesFor('/api/workspaces/w1/sip/ivr')).toEqual({ headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS });
     expect(deadlinesFor('/api/workspaces/w1/sip/ivr/m1')).toEqual({ headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS });
     expect(SLOW_REQUEST_MS).toBeGreaterThan(60_000);
+  });
+
+  it('a smart task outlasts the server budget of its model calls (100 s)', () => {
+    expect(deadlinesFor('/api/workspaces/w1/smart-tasks')).toEqual({ headers: SMART_TASK_REQUEST_MS, idle: SMART_TASK_REQUEST_MS });
+    expect(SMART_TASK_REQUEST_MS).toBeGreaterThan(100_000);
+    expect(deadlinesFor('/api/workspaces/w1/smart-tasks/x')).toEqual({ headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS });
   });
 });
