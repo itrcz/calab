@@ -10,6 +10,12 @@ export interface PromptField {
   maxLength?: number;
 }
 
+/** One answer of a choice (chooseAction); the first one is the main button. */
+export interface Choice<T extends string> {
+  value: T;
+  label: string;
+}
+
 interface ConfirmState {
   req: {
     title: string;
@@ -17,6 +23,8 @@ interface ConfirmState {
     action: string;
     tone: 'destructive' | 'primary';
     field?: PromptField | undefined;
+    /** chooseAction: the answers instead of the one action; `value` is the chosen one. */
+    choices?: readonly Choice<string>[] | undefined;
     resolve: (ok: boolean, value: string) => void;
   } | null;
 }
@@ -35,18 +43,46 @@ export function confirmAction(title: string, text: string, action: string, tone:
 
 /** A confirmation with one text field: resolves to the trimmed text, or null when cancelled. */
 export function promptAction(title: string, text: string, action: string, field: PromptField, tone: 'destructive' | 'primary' = 'destructive'): Promise<string | null> {
-  return new Promise((resolve) => ask({ title, text, action, tone, field, resolve: (ok, value) => resolve(ok ? value.trim() : null) }));
+  return new Promise((resolve) =>
+    ask({
+      title,
+      text,
+      action,
+      tone,
+      field,
+      resolve: (ok, value) => resolve(ok ? value.trim() : null),
+    }),
+  );
+}
+
+/**
+ * A question with a few answers (e.g. «Только эту» / «Всю серию» of a repeating meeting): resolves
+ * to the chosen value, or null when cancelled (Esc, «Отмена», a click outside).
+ */
+export function chooseAction<T extends string>(title: string, text: string, choices: readonly Choice<T>[], tone: 'destructive' | 'primary' = 'primary'): Promise<T | null> {
+  return new Promise((resolve) =>
+    ask({
+      title,
+      text,
+      action: '',
+      tone,
+      choices,
+      resolve: (ok, value) => resolve(ok ? (value as T) : null),
+    }),
+  );
 }
 
 export function ConfirmHost(): ReactNode {
   const req = useConfirm((s) => s.req);
   const [value, setValue] = useState('');
   const fieldId = useId();
-  const close = (ok: boolean): void => {
-    req?.resolve(ok, value);
+  const close = (ok: boolean, chosen?: string): void => {
+    req?.resolve(ok, chosen ?? value);
     useConfirm.setState({ req: null });
     setValue('');
   };
+  const choices = req?.choices;
+  const main = req?.tone === 'primary' ? 'primary' : 'destructive';
   return (
     <Modal
       open={req !== null}
@@ -59,9 +95,23 @@ export function ConfirmHost(): ReactNode {
           <Button variant="secondary" onClick={() => close(false)} autoFocus={req?.tone === 'primary' && !req.field}>
             {t('common.cancel')}
           </Button>
-          <Button variant={req?.tone === 'primary' ? 'primary' : 'destructive'} onClick={() => close(true)} autoFocus={req?.tone !== 'primary' && !req?.field}>
-            {req?.action}
-          </Button>
+          {choices ? (
+            // The main answer last (rightmost), as the single action of a confirmation.
+            [...choices].reverse().map((c, i) => (
+              <Button
+                key={c.value}
+                variant={i === choices.length - 1 ? main : 'secondary'}
+                onClick={() => close(true, c.value)}
+                data-testid={`choice-${c.value}`}
+              >
+                {c.label}
+              </Button>
+            ))
+          ) : (
+            <Button variant={req?.tone === 'primary' ? 'primary' : 'destructive'} onClick={() => close(true)} autoFocus={req?.tone !== 'primary' && !req?.field}>
+              {req?.action}
+            </Button>
+          )}
         </>
       }
     >

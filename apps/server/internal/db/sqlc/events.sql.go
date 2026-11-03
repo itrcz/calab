@@ -13,7 +13,7 @@ import (
 )
 
 const bumpEventSequence = `-- name: BumpEventSequence :one
-UPDATE events SET sequence = sequence + 1, updated_at = now() WHERE id = $1 RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at
+UPDATE events SET sequence = sequence + 1, updated_at = now() WHERE id = $1 RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
 `
 
 func (q *Queries) BumpEventSequence(ctx context.Context, id uuid.UUID) (Event, error) {
@@ -39,6 +39,8 @@ func (q *Queries) BumpEventSequence(ctx context.Context, id uuid.UUID) (Event, e
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }
@@ -46,7 +48,7 @@ func (q *Queries) BumpEventSequence(ctx context.Context, id uuid.UUID) (Event, e
 const cancelEvent = `-- name: CancelEvent :one
 UPDATE events SET cancelled_at = now(), sequence = sequence + 1, updated_at = now()
 WHERE id = $1 AND cancelled_at IS NULL
-RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
 `
 
 func (q *Queries) CancelEvent(ctx context.Context, id uuid.UUID) (Event, error) {
@@ -72,8 +74,65 @@ func (q *Queries) CancelEvent(ctx context.Context, id uuid.UUID) (Event, error) 
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
+}
+
+const cancelSeriesOverrides = `-- name: CancelSeriesOverrides :many
+UPDATE events SET cancelled_at = now(), sequence = sequence + 1, updated_at = now()
+WHERE series_id = $1 AND cancelled_at IS NULL
+  AND ($2::timestamptz IS NULL OR recurrence_at >= $2)
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
+`
+
+type CancelSeriesOverridesParams struct {
+	SeriesID *uuid.UUID
+	From     *time.Time
+}
+
+// The series (from `from` on, or all) is cancelled: so are its overrides of those occurrences.
+func (q *Queries) CancelSeriesOverrides(ctx context.Context, arg CancelSeriesOverridesParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, cancelSeriesOverrides, arg.SeriesID, arg.From)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Tz,
+			&i.OrganizerID,
+			&i.Record,
+			&i.Rrule,
+			&i.UntilAt,
+			&i.Sequence,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CancelledAt,
+			&i.TempRoom,
+			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const claimEventReminder = `-- name: ClaimEventReminder :execrows
@@ -121,7 +180,7 @@ func (q *Queries) ClaimEventRoomSignal(ctx context.Context, arg ClaimEventRoomSi
 }
 
 const claimEventTempRoom = `-- name: ClaimEventTempRoom :one
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
 WHERE temp_room AND room_id IS NULL AND cancelled_at IS NULL
   AND starts_at <= $1 AND ends_at > $2
   AND (temp_room_retry_at IS NULL OR temp_room_retry_at <= $2)
@@ -163,6 +222,8 @@ func (q *Queries) ClaimEventTempRoom(ctx context.Context, arg ClaimEventTempRoom
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }
@@ -282,6 +343,22 @@ func (q *Queries) DeleteEventAttendee(ctx context.Context, arg DeleteEventAttend
 	return err
 }
 
+const deleteEventExceptions = `-- name: DeleteEventExceptions :exec
+DELETE FROM event_exceptions
+WHERE event_id = $1 AND ($2::timestamptz IS NULL OR occurrence_at >= $2)
+`
+
+type DeleteEventExceptionsParams struct {
+	EventID uuid.UUID
+	From    *time.Time
+}
+
+// Cancelled occurrences of the event from `from` on (all with NULL).
+func (q *Queries) DeleteEventExceptions(ctx context.Context, arg DeleteEventExceptionsParams) error {
+	_, err := q.db.Exec(ctx, deleteEventExceptions, arg.EventID, arg.From)
+	return err
+}
+
 const deleteExternalAttendee = `-- name: DeleteExternalAttendee :exec
 DELETE FROM event_attendees WHERE event_id = $1 AND email = $2
 `
@@ -310,7 +387,7 @@ func (q *Queries) DeleteOldEventSignals(ctx context.Context, before time.Time) e
 const endEventAt = `-- name: EndEventAt :one
 UPDATE events SET ends_at = $1, sequence = sequence + 1, updated_at = now()
 WHERE id = $2 AND cancelled_at IS NULL AND starts_at < $1 AND ends_at > $1
-RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
 `
 
 type EndEventAtParams struct {
@@ -342,6 +419,8 @@ func (q *Queries) EndEventAt(ctx context.Context, arg EndEventAtParams) (Event, 
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }
@@ -350,7 +429,7 @@ const followRoomExpiryEvents = `-- name: FollowRoomExpiryEvents :many
 UPDATE events SET ends_at = $1, sequence = sequence + 1, updated_at = now()
 WHERE room_id = $2 AND cancelled_at IS NULL AND rrule IS NULL
   AND ends_at = $3 AND starts_at < $1
-RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
 `
 
 type FollowRoomExpiryEventsParams struct {
@@ -390,6 +469,8 @@ func (q *Queries) FollowRoomExpiryEvents(ctx context.Context, arg FollowRoomExpi
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -402,7 +483,7 @@ func (q *Queries) FollowRoomExpiryEvents(ctx context.Context, arg FollowRoomExpi
 }
 
 const getEvent = `-- name: GetEvent :one
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events WHERE id = $1
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events WHERE id = $1
 `
 
 func (q *Queries) GetEvent(ctx context.Context, id uuid.UUID) (Event, error) {
@@ -428,12 +509,14 @@ func (q *Queries) GetEvent(ctx context.Context, id uuid.UUID) (Event, error) {
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }
 
 const getEventForUpdate = `-- name: GetEventForUpdate :one
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events WHERE id = $1 AND cancelled_at IS NULL FOR UPDATE
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events WHERE id = $1 AND cancelled_at IS NULL FOR UPDATE
 `
 
 func (q *Queries) GetEventForUpdate(ctx context.Context, id uuid.UUID) (Event, error) {
@@ -459,6 +542,8 @@ func (q *Queries) GetEventForUpdate(ctx context.Context, id uuid.UUID) (Event, e
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }
@@ -511,7 +596,7 @@ const insertEvent = `-- name: InsertEvent :one
 
 INSERT INTO events (workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, temp_room)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
 `
 
 type InsertEventParams struct {
@@ -568,6 +653,8 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (Event
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }
@@ -615,6 +702,76 @@ func (q *Queries) InsertEventException(ctx context.Context, arg InsertEventExcep
 	return result.RowsAffected(), nil
 }
 
+const insertEventOverride = `-- name: InsertEventOverride :one
+INSERT INTO events (workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record,
+                    until_at, sequence, series_id, recurrence_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
+`
+
+type InsertEventOverrideParams struct {
+	WorkspaceID  uuid.UUID
+	RoomID       *uuid.UUID
+	Title        string
+	Description  string
+	StartsAt     time.Time
+	EndsAt       time.Time
+	AllDay       bool
+	Tz           string
+	OrganizerID  uuid.UUID
+	Record       bool
+	UntilAt      *time.Time
+	Sequence     int32
+	SeriesID     *uuid.UUID
+	RecurrenceAt *time.Time
+}
+
+// One occurrence of a series changed on its own (ADR-0157): a one-off meeting naming its series
+// and the occurrence it replaces (RECURRENCE-ID).
+func (q *Queries) InsertEventOverride(ctx context.Context, arg InsertEventOverrideParams) (Event, error) {
+	row := q.db.QueryRow(ctx, insertEventOverride,
+		arg.WorkspaceID,
+		arg.RoomID,
+		arg.Title,
+		arg.Description,
+		arg.StartsAt,
+		arg.EndsAt,
+		arg.AllDay,
+		arg.Tz,
+		arg.OrganizerID,
+		arg.Record,
+		arg.UntilAt,
+		arg.Sequence,
+		arg.SeriesID,
+		arg.RecurrenceAt,
+	)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RoomID,
+		&i.Title,
+		&i.Description,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.AllDay,
+		&i.Tz,
+		&i.OrganizerID,
+		&i.Record,
+		&i.Rrule,
+		&i.UntilAt,
+		&i.Sequence,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CancelledAt,
+		&i.TempRoom,
+		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
+	)
+	return i, err
+}
+
 const insertEventRecording = `-- name: InsertEventRecording :execrows
 INSERT INTO event_recordings (event_id, occurrence_at, recording_id) VALUES ($1, $2, $3)
 ON CONFLICT DO NOTHING
@@ -635,7 +792,7 @@ func (q *Queries) InsertEventRecording(ctx context.Context, arg InsertEventRecor
 }
 
 const listDueEvents = `-- name: ListDueEvents :many
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
 WHERE cancelled_at IS NULL AND starts_at < $1 AND (until_at IS NULL OR until_at > $2)
 ORDER BY starts_at, id
 LIMIT 5000
@@ -676,6 +833,8 @@ func (q *Queries) ListDueEvents(ctx context.Context, arg ListDueEventsParams) ([
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -734,6 +893,55 @@ func (q *Queries) ListEventExceptions(ctx context.Context, eventIds []uuid.UUID)
 	for rows.Next() {
 		var i EventException
 		if err := rows.Scan(&i.EventID, &i.OccurrenceAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventOverrides = `-- name: ListEventOverrides :many
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
+WHERE series_id = ANY($1::uuid[]) AND cancelled_at IS NULL
+ORDER BY series_id, recurrence_at
+`
+
+// Live overrides of the series (ADR-0157), by the occurrence they replace.
+func (q *Queries) ListEventOverrides(ctx context.Context, seriesIds []uuid.UUID) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEventOverrides, seriesIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Tz,
+			&i.OrganizerID,
+			&i.Record,
+			&i.Rrule,
+			&i.UntilAt,
+			&i.Sequence,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CancelledAt,
+			&i.TempRoom,
+			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -815,7 +1023,7 @@ func (q *Queries) ListEventUsers(ctx context.Context, ids []uuid.UUID) ([]ListEv
 }
 
 const listEventsByIDs = `-- name: ListEventsByIDs :many
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events WHERE id = ANY($1::uuid[])
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events WHERE id = ANY($1::uuid[])
 `
 
 // Events of a search page (unified search, ADR-0062); the caller keeps its own order.
@@ -848,6 +1056,8 @@ func (q *Queries) ListEventsByIDs(ctx context.Context, ids []uuid.UUID) ([]Event
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -860,7 +1070,7 @@ func (q *Queries) ListEventsByIDs(ctx context.Context, ids []uuid.UUID) ([]Event
 }
 
 const listEventsForRecording = `-- name: ListEventsForRecording :many
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
 WHERE room_id = $1 AND organizer_id = $2 AND cancelled_at IS NULL
   AND starts_at < $3 AND (until_at IS NULL OR until_at > $4)
 `
@@ -907,6 +1117,8 @@ func (q *Queries) ListEventsForRecording(ctx context.Context, arg ListEventsForR
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -966,7 +1178,7 @@ func (q *Queries) ListReminderTargets(ctx context.Context, eventIds []uuid.UUID)
 }
 
 const listRoomEventsNear = `-- name: ListRoomEventsNear :many
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
 WHERE workspace_id = ANY($1::uuid[]) AND cancelled_at IS NULL AND room_id IS NOT NULL
   AND starts_at < $2 AND (until_at IS NULL OR until_at > $3)
 ORDER BY starts_at, id
@@ -1009,6 +1221,8 @@ func (q *Queries) ListRoomEventsNear(ctx context.Context, arg ListRoomEventsNear
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1021,7 +1235,7 @@ func (q *Queries) ListRoomEventsNear(ctx context.Context, arg ListRoomEventsNear
 }
 
 const listRoomLiveEvents = `-- name: ListRoomLiveEvents :many
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
 WHERE room_id = $1 AND cancelled_at IS NULL AND rrule IS NULL AND ends_at > $2
 ORDER BY starts_at
 FOR UPDATE
@@ -1063,6 +1277,8 @@ func (q *Queries) ListRoomLiveEvents(ctx context.Context, arg ListRoomLiveEvents
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1075,7 +1291,7 @@ func (q *Queries) ListRoomLiveEvents(ctx context.Context, arg ListRoomLiveEvents
 }
 
 const listUserEvents = `-- name: ListUserEvents :many
-SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at FROM events e
+SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at, e.series_id, e.recurrence_at FROM events e
 JOIN workspace_members m ON m.workspace_id = e.workspace_id AND m.user_id = $1 AND m.role <> 'guest'
 WHERE e.cancelled_at IS NULL
   AND e.starts_at < $2 AND (e.until_at IS NULL OR e.until_at > $3)
@@ -1121,6 +1337,8 @@ func (q *Queries) ListUserEvents(ctx context.Context, arg ListUserEventsParams) 
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1133,7 +1351,7 @@ func (q *Queries) ListUserEvents(ctx context.Context, arg ListUserEventsParams) 
 }
 
 const listWidgetEvents = `-- name: ListWidgetEvents :many
-SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at FROM events e
+SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at, e.series_id, e.recurrence_at FROM events e
 JOIN workspace_members m ON m.workspace_id = e.workspace_id AND m.user_id = $1 AND m.role <> 'guest'
 WHERE e.cancelled_at IS NULL
   AND e.starts_at < $2
@@ -1182,6 +1400,8 @@ func (q *Queries) ListWidgetEvents(ctx context.Context, arg ListWidgetEventsPara
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1194,7 +1414,7 @@ func (q *Queries) ListWidgetEvents(ctx context.Context, arg ListWidgetEventsPara
 }
 
 const listWorkspaceEvents = `-- name: ListWorkspaceEvents :many
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
 WHERE workspace_id = $1 AND cancelled_at IS NULL
   AND starts_at < $2 AND (until_at IS NULL OR until_at > $3)
 ORDER BY starts_at, id
@@ -1236,6 +1456,8 @@ func (q *Queries) ListWorkspaceEvents(ctx context.Context, arg ListWorkspaceEven
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1322,10 +1544,28 @@ func (q *Queries) SetEventAttendeeStatus(ctx context.Context, arg SetEventAttend
 	return i, err
 }
 
+const setEventOverrideOf = `-- name: SetEventOverrideOf :exec
+UPDATE events SET series_id = $1, recurrence_at = $2, updated_at = now()
+WHERE id = $3
+`
+
+type SetEventOverrideOfParams struct {
+	SeriesID     *uuid.UUID
+	RecurrenceAt *time.Time
+	ID           uuid.UUID
+}
+
+// An override follows its occurrence to another series or start (a split, a moved series), or
+// becomes a meeting of its own (both NULL).
+func (q *Queries) SetEventOverrideOf(ctx context.Context, arg SetEventOverrideOfParams) error {
+	_, err := q.db.Exec(ctx, setEventOverrideOf, arg.SeriesID, arg.RecurrenceAt, arg.ID)
+	return err
+}
+
 const setEventTempRoom = `-- name: SetEventTempRoom :one
 UPDATE events SET room_id = $1, updated_at = now()
 WHERE id = $2 AND temp_room AND room_id IS NULL AND cancelled_at IS NULL
-RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
 `
 
 type SetEventTempRoomParams struct {
@@ -1357,6 +1597,8 @@ func (q *Queries) SetEventTempRoom(ctx context.Context, arg SetEventTempRoomPara
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }
@@ -1449,7 +1691,7 @@ UPDATE events SET room_id = $2, title = $3, description = $4, starts_at = $5, en
     tz = $8, record = $9, rrule = $10, until_at = $11, temp_room = $12,
     sequence = sequence + $13::integer, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at
 `
 
 type UpdateEventParams struct {
@@ -1505,6 +1747,8 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 		&i.CancelledAt,
 		&i.TempRoom,
 		&i.TempRoomRetryAt,
+		&i.SeriesID,
+		&i.RecurrenceAt,
 	)
 	return i, err
 }

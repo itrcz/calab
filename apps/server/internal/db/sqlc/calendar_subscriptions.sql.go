@@ -88,7 +88,7 @@ func (q *Queries) GetCalendarSubscriptionByID(ctx context.Context, id uuid.UUID)
 }
 
 const listCalendarExportEvents = `-- name: ListCalendarExportEvents :many
-SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at FROM events e
+SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at, e.series_id, e.recurrence_at FROM events e
 WHERE e.workspace_id = $1 AND e.cancelled_at IS NULL
   AND e.starts_at < $2
   AND ((e.rrule IS NULL AND e.ends_at > $3)
@@ -140,6 +140,8 @@ func (q *Queries) ListCalendarExportEvents(ctx context.Context, arg ListCalendar
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}

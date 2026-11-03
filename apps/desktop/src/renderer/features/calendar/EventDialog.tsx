@@ -20,6 +20,7 @@ import {
   addMembers,
   copyDraft,
   draftDirty,
+  draftSpan,
   draftOf,
   fieldOf,
   newDraft,
@@ -32,7 +33,8 @@ import {
 import { dayKey, dayStart, eventSpan, formatMinutes, viewerZone } from '../../lib/calendar/time';
 import { useMobile } from '../../lib/mobile';
 import { mayCreateTempRooms } from '../../lib/permissions';
-import { createEvent, ensureHolidayCalendar, eventOf, updateEvent } from '../../services/calendar';
+import { asksScope, touchesRepeat, type SeriesScope } from '../../lib/calendar/scope';
+import { createEvent, ensureHolidayCalendar, eventOf, updateEvent, updateOccurrence } from '../../services/calendar';
 import { useCalendar } from '../../stores/calendar';
 import { roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
@@ -50,6 +52,7 @@ import { dragKind, dragPayload, useRoomDropHover } from './dragState';
 import { AvailabilityStrip } from './AvailabilityStrip';
 import { ZoneSpan } from './ZoneAxis';
 import { FindTimeDialog } from './FindTime';
+import { askSeriesScope } from './actions';
 
 const REPEATS = [EventRepeat.UNSPECIFIED, EventRepeat.DAILY, EventRepeat.WORKDAYS, EventRepeat.WEEKLY, EventRepeat.BIWEEKLY, EventRepeat.MONTHLY] as const;
 /** 00:00 … 23:45. */
@@ -83,7 +86,7 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
   // meeting); once the server made it, the room field shows it with a note instead.
   const mayTemp = useWorkspaces((st) => mayCreateTempRooms(rolesOf(st.byId[workspaceId], meId)));
   const ownRoom = initial.tempRoom && !!initial.roomId && d.tempRoom && d.roomId === initial.roomId;
-  const offerTemp = mayTemp && !ownRoom && d.repeat === EventRepeat.UNSPECIFIED && (!editing || editing.organizerId === meId);
+  const offerTemp = mayTemp && !ownRoom && d.repeat === EventRepeat.UNSPECIFIED && !editing?.seriesId && (!editing || editing.organizerId === meId);
   // Member attendees as a stable list (the availability strip's people).
   const memberKey = d.attendees.map((a) => a.userId).filter(Boolean).join(',');
   const memberIds = useMemo(() => (memberKey ? memberKey.split(',') : []), [memberKey]);
@@ -95,10 +98,12 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
   const titleRef = useRef<HTMLInputElement>(null);
   const asking = useRef(false);
   const zone = viewerZone();
-  // A series is changed as a whole: its first start, to shift by the occurrence's move.
+  // An occurrence of a series is changed «Только эту / Всю серию» (ADR-0157), asked on saving; a
+  // series opened without an occurrence changes as a whole: its first start, to shift by the move.
+  const scoped = asksScope(editing);
   const [seriesStart, setSeriesStart] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (!editing || editing.repeat === EventRepeat.UNSPECIFIED) return;
+    if (!editing || editing.repeat === EventRepeat.UNSPECIFIED || scoped) return;
     let live = true;
     void api.calendar.get(editing.id).then(
       (r) => live && r.event && setSeriesStart(eventSpan(r.event).start),
@@ -119,7 +124,7 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
   }, [workdays, workspaceId]);
 
   // A series' first start is needed to move it by the occurrence's shift: saving waits for it.
-  const seriesPending = !!editing && editing.repeat !== EventRepeat.UNSPECIFIED && seriesStart === undefined;
+  const seriesPending = !!editing && editing.repeat !== EventRepeat.UNSPECIFIED && !scoped && seriesStart === undefined;
 
   const set = (patch: Partial<EventDraft>): void => {
     setD((x) => ({ ...x, ...patch }));
@@ -151,11 +156,18 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
       if (errs.title) titleRef.current?.focus();
       return;
     }
+    const patch = editing && eventKey ? toUpdate(d, initial, zone, scoped ? undefined : seriesStart) : null;
+    let scope: SeriesScope | null = null;
+    if (patch && scoped && Object.keys(patch).length) {
+      // A new repeat is the series' from this occurrence on: nothing to ask.
+      scope = touchesRepeat(patch) ? 'following' : await askSeriesScope('edit', draftSpan(initial).start);
+      if (!scope) return; // back to the form
+    }
     setBusy(true);
     try {
-      if (editing && eventKey) {
-        const patch = toUpdate(d, initial, zone, seriesStart);
-        if (Object.keys(patch).length) await updateEvent(eventKey, patch);
+      if (editing && eventKey && patch) {
+        if (scope) await updateOccurrence(eventKey, patch, scope);
+        else if (Object.keys(patch).length) await updateEvent(eventKey, patch);
         toast.success(t('cal.saved'));
       } else {
         await createEvent(workspaceId, toCreate(d, zone));
@@ -305,31 +317,34 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
             className="min-h-[72px]"
           />
         </Field>
-        {/* A phone stacks the repeat and its end: «В рабочие дни» and its hint need the full width. */}
-        <div className={mobile ? 'grid gap-3' : 'grid grid-cols-2 gap-3'}>
-          <Field label={t('cal.f.repeat')} hint={workdays && holidays !== undefined ? t(holidays === 'ru' ? 'cal.repeat.workdaysRu' : 'cal.repeat.workdaysWeek') : undefined}>
-            <Select
-              value={d.repeat}
-              onChange={(e) => {
-                const repeat: EventRepeat = Number(e.target.value);
-                // A series has no own temporary room (ADR-0112): a room made already stays as an ordinary one.
-                set(repeat === EventRepeat.UNSPECIFIED ? { repeat } : { repeat, tempRoom: false });
-              }}
-              data-testid="event-repeat"
-            >
-              {REPEATS.map((r) => (
-                <option key={r} value={r}>
-                  {t(REPEAT_LABEL[r])}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {d.repeat !== EventRepeat.UNSPECIFIED ? (
-            <Field label={t('cal.f.until')} hint={d.until ? undefined : t('cal.f.untilNone')} error={err('until')}>
-              <Input type="date" value={d.until} min={d.day} onChange={(e) => set({ until: e.target.value })} data-testid="event-until" />
+        {/* A phone stacks the repeat and its end: «В рабочие дни» and its hint need the full width. A
+            changed occurrence of a series (ADR-0157) does not repeat: no repeat fields. */}
+        {editing?.seriesId ? null : (
+          <div className={mobile ? 'grid gap-3' : 'grid grid-cols-2 gap-3'}>
+            <Field label={t('cal.f.repeat')} hint={workdays && holidays !== undefined ? t(holidays === 'ru' ? 'cal.repeat.workdaysRu' : 'cal.repeat.workdaysWeek') : undefined}>
+              <Select
+                value={d.repeat}
+                onChange={(e) => {
+                  const repeat: EventRepeat = Number(e.target.value);
+                  // A series has no own temporary room (ADR-0112): a room made already stays as an ordinary one.
+                  set(repeat === EventRepeat.UNSPECIFIED ? { repeat } : { repeat, tempRoom: false });
+                }}
+                data-testid="event-repeat"
+              >
+                {REPEATS.map((r) => (
+                  <option key={r} value={r}>
+                    {t(REPEAT_LABEL[r])}
+                  </option>
+                ))}
+              </Select>
             </Field>
-          ) : null}
-        </div>
+            {d.repeat !== EventRepeat.UNSPECIFIED ? (
+              <Field label={t('cal.f.until')} hint={d.until ? undefined : t('cal.f.untilNone')} error={err('until')}>
+                <Input type="date" value={d.until} min={d.day} onChange={(e) => set({ until: e.target.value })} data-testid="event-until" />
+              </Field>
+            ) : null}
+          </div>
+        )}
         <Switch label={t('cal.f.record')} hint={t('cal.f.recordHint')} checked={d.record} onChange={(record) => set({ record })} />
         {general ? (
           <p role="alert" className="text-caption text-danger-text">

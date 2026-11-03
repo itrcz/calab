@@ -1,4 +1,3 @@
-import * as Dropdown from '../../components/radix/dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
 import { Bar, BAR_GROUP } from '../../components/Bar';
@@ -20,7 +19,6 @@ import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useFormerInfo, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { FormerChip } from '../people/MemberBits';
-import { menuBox, menuItem } from '../shell/menu';
 import { cancelWithConfirm, duplicateEvent, editEvent } from './actions';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
 import { EventComments } from './EventComments';
@@ -229,7 +227,7 @@ export function EventCard({
             <Pencil className="size-3.5" aria-hidden />
             {t('cal.edit')}
           </Button>
-          <CancelButton ev={ev} occ={key} />
+          <CancelButton occ={key} />
         </div>
       ) : null}
       {drop.over ? (
@@ -367,37 +365,14 @@ function AttendeeRow({ workspaceId, a, organizer }: { workspaceId: string; a: Ca
   );
 }
 
-/** «Отменить встречу»; a series offers this occurrence or all of them. */
-function CancelButton({ ev, occ }: { ev: CalendarEvent; occ: string }): ReactNode {
-  if (ev.repeat === EventRepeat.UNSPECIFIED) {
-    return (
-      <Button size="sm" variant="destructive" className="mobile:h-11 mobile:w-full" onClick={() => void cancelWithConfirm(occ)} data-testid="event-cancel">
-        {/* Trash2 draws lighter than Pencil at the same box: one step larger matches the pair optically. */}
-        <Trash2 className="size-4" aria-hidden />
-        {t('cal.cancel')}
-      </Button>
-    );
-  }
+/** «Отменить встречу»; an occurrence of a series asks «Только эту / Всю серию» (ADR-0157). */
+function CancelButton({ occ }: { occ: string }): ReactNode {
   return (
-    <Dropdown.Root modal={false}>
-      <Dropdown.Trigger asChild>
-        <Button size="sm" variant="destructive" className="mobile:h-11 mobile:w-full" data-testid="event-cancel">
-          {/* Trash2 draws lighter than Pencil at the same box: one step larger matches the pair optically. */}
-        <Trash2 className="size-4" aria-hidden />
-          {t('cal.cancel')}
-        </Button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="start" collisionPadding={16}>
-          <Dropdown.Item className={menuItem} onSelect={() => void cancelWithConfirm(occ)}>
-            {t('cal.cancelOne')}
-          </Dropdown.Item>
-          <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void cancelWithConfirm(occ, true)}>
-            {t('cal.cancelAll')}
-          </Dropdown.Item>
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
+    <Button size="sm" variant="destructive" className="mobile:h-11 mobile:w-full" onClick={() => void cancelWithConfirm(occ)} data-testid="event-cancel">
+      {/* Trash2 draws lighter than Pencil at the same box: one step larger matches the pair optically. */}
+      <Trash2 className="size-4" aria-hidden />
+      {t('cal.cancel')}
+    </Button>
   );
 }
 

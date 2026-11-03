@@ -41,6 +41,14 @@ enum EventRepeat {
   EVENT_REPEAT_WORKDAYS = 5;
 }
 
+// Which occurrences a change or a cancellation of a series reaches (ADR-0157). Past
+// occurrences never change with FOLLOWING; FOLLOWING from the first occurrence is the whole series.
+enum EventScope {
+  EVENT_SCOPE_UNSPECIFIED = 0; // the whole series (no occurrence named)
+  EVENT_SCOPE_THIS = 1; // that occurrence only: it becomes an override of the series
+  EVENT_SCOPE_FOLLOWING = 2; // that occurrence and the following ones: the series is split there
+}
+
 // One attendee: a member of the workspace (user_id) or an external address (email,
 // ADR-0038 «Дополнение»). Exactly one of the two is set.
 message CalendarEventAttendee {
@@ -110,6 +118,11 @@ message CalendarEvent {
   // EVENT_REPEAT_WORKDAYS only: the holiday calendar the series follows, fixed by the server
   // when the repeat was chosen (ADR-0136): "ru" = the Russian production calendar, "" = Mon–Fri.
   string holiday_calendar = 27;
+  // An override (ADR-0157): this one-off meeting replaces the occurrence of the series series_id
+  // that started at recurrence_at (iCalendar RECURRENCE-ID; exports write it under the series'
+  // UID). The series skips that occurrence. Empty / unset for other meetings.
+  string series_id = 28;
+  google.protobuf.Timestamp recurrence_at = 29;
 }
 
 // Attendee as sent by the client: a member (user_id) or an external address (email).
@@ -153,7 +166,12 @@ message CreateCalendarEventRequest {
 // PATCH /api/events/{id} → CalendarEventResponse. Unset fields are unchanged; `attendees`,
 // when `set_attendees` is true, replaces the list (kept answers of those who stay). A change
 // of time, room, title, description or repeat mails the attendees again (SEQUENCE + 1).
-// Editing a series changes every occurrence (v1).
+// Without scope a series changes as a whole. With scope and occurrence_at (an occurrence of the
+// series, not cancelled or overridden; 422 otherwise) starts_at / ends_at are that occurrence's
+// new times (ADR-0157): THIS makes it an override (repeat ignored, temp_room refused; the answer
+// is the override, only its attendees are mailed, about it alone); FOLLOWING ends the series
+// before it and starts a new series there with the change (the answer is the new series;
+// cancelled and overridden occurrences after it go with it). An override takes no repeat.
 message UpdateCalendarEventRequest {
   optional string room_id = 1; // "" = no room
   optional string title = 2;
@@ -172,6 +190,8 @@ message UpdateCalendarEventRequest {
   // a room chosen in room_id wins over it); false drops the request, a room already created
   // stays the meeting's room as an ordinary one.
   optional bool temp_room = 14;
+  google.protobuf.Timestamp occurrence_at = 15; // with scope: the occurrence's original start
+  EventScope scope = 16;
 }
 
 // POST, GET /api/events/{id}, PATCH. A guest of the workspace (ADR-0016) gets GET only for
@@ -183,7 +203,9 @@ message CalendarEventResponse {
 
 // DELETE /api/events/{id} → 204: cancels the event (EVENT_DELETE, CANCEL mail).
 // DELETE /api/events/{id}?occurrence=<RFC 3339 start> cancels that occurrence of a series only
-// (EVENT_UPDATE with it in cancelled_occurrences, the attendees get the updated invitation).
+// (EVENT_UPDATE with it in cancelled_occurrences; the attendees get a CANCEL of that occurrence,
+// RECURRENCE-ID). …&scope=following cancels it and the following ones (the series ends before
+// it; from the first occurrence: the whole series). DELETE of an override cancels that occurrence.
 
 // PUT /api/events/{id}/rsvp → CalendarEventResponse. The caller must be an attendee.
 message RsvpCalendarEventRequest {

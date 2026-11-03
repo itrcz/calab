@@ -489,7 +489,9 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateCalendarEventRequestSchema>) =>
       call('PATCH', `/api/events/${id}`, CalendarEventResponseSchema, body(UpdateCalendarEventRequestSchema, init)),
     /** 204: cancels the meeting (EVENT_DELETE), or with `occurrence` (its start) that occurrence of a series only. */
-    cancel: (id: string, occurrence?: Date) => callEmpty('DELETE', `/api/events/${id}${qs({ occurrence: occurrence?.toISOString() })}`),
+    /** The meeting; an occurrence of a series only; with `following` it and the following ones (ADR-0157). */
+    cancel: (id: string, occurrence?: Date, following = false) =>
+      callEmpty('DELETE', `/api/events/${id}${qs({ occurrence: occurrence?.toISOString(), scope: following ? 'following' : undefined })}`),
     rsvp: (id: string, status: AttendeeStatus) =>
       call('PUT', `/api/events/${id}/rsvp`, CalendarEventResponseSchema, body(RsvpCalendarEventRequestSchema, { status })),
     /** Comments on a meeting (ADR-0104): the newest `limit` before `before`, oldest first; 404 hidden, 403 guest. */

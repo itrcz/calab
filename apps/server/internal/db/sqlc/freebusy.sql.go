@@ -284,7 +284,7 @@ func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusy
 }
 
 const listBusyEvents = `-- name: ListBusyEvents :many
-SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at FROM events e
+SELECT e.id, e.workspace_id, e.room_id, e.title, e.description, e.starts_at, e.ends_at, e.all_day, e.tz, e.organizer_id, e.record, e.rrule, e.until_at, e.sequence, e.created_at, e.updated_at, e.cancelled_at, e.temp_room, e.temp_room_retry_at, e.series_id, e.recurrence_at FROM events e
 WHERE e.cancelled_at IS NULL
   AND e.starts_at < $1 AND (e.until_at IS NULL OR e.until_at > $2)
   AND (e.organizer_id = ANY($3::uuid[])
@@ -328,6 +328,8 @@ func (q *Queries) ListBusyEvents(ctx context.Context, arg ListBusyEventsParams) 
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}
@@ -604,7 +606,7 @@ func (q *Queries) ListMyExternalEvents(ctx context.Context, arg ListMyExternalEv
 }
 
 const listRoomBusyEvents = `-- name: ListRoomBusyEvents :many
-SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at FROM events
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at, temp_room, temp_room_retry_at, series_id, recurrence_at FROM events
 WHERE room_id = $1 AND cancelled_at IS NULL
   AND starts_at < $2 AND (until_at IS NULL OR until_at > $3)
 ORDER BY starts_at, id
@@ -646,6 +648,8 @@ func (q *Queries) ListRoomBusyEvents(ctx context.Context, arg ListRoomBusyEvents
 			&i.CancelledAt,
 			&i.TempRoom,
 			&i.TempRoomRetryAt,
+			&i.SeriesID,
+			&i.RecurrenceAt,
 		); err != nil {
 			return nil, err
 		}

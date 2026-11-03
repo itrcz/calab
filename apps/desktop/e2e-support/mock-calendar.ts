@@ -23,6 +23,8 @@ export interface CalEventRec {
   ev: CalendarEvent;
   /** Cancelled occurrence starts (ms). */
   exceptions: Set<number>;
+  /** Occurrence starts (ms) an override replaces (ADR-0157): skipped, not cancelled. */
+  moved?: Set<number>;
   /** Recording of an occurrence: start (ms) → recording id. */
   recordings: Map<number, string>;
   /** Guest links of external attendees made by `eventGuestLink`: email → room invite id. */
@@ -78,7 +80,7 @@ export function occurrences(rec: CalEventRec, fromMs: number, toMs: number): Occ
       continue;
     }
     if (s >= toMs || s > until) break;
-    if (s + dur > fromMs && !rec.exceptions.has(s)) out.push({ startMs: s, endMs: s + dur });
+    if (s + dur > fromMs && !rec.exceptions.has(s) && !rec.moved?.has(s)) out.push({ startMs: s, endMs: s + dur });
   }
   return out;
 }

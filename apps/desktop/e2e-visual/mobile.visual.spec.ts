@@ -1063,6 +1063,14 @@ test('m-calendar-day', async ({ page }) => {
   await longPress(page.getByTestId('event-block').filter({ hasText: 'Планёрка' }));
   await expectMenuCard(page, 'm-calendar-event-menu');
   await expect(page.getByTestId('event-panel')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  // ADR-0157: cancelling an occurrence of a series asks «Только эту / Всю серию».
+  await page.getByTestId('event-block').filter({ hasText: 'Стендап' }).first().tap();
+  await page.getByTestId('event-panel').getByTestId('event-cancel').tap();
+  await expect(page.getByTestId('choice-following')).toBeVisible();
+  await checkpoint(page, 'm-calendar-series-scope', { snapshot: false });
+  await page.getByRole('button', { name: 'Отмена' }).tap();
+  await expect(page.getByTestId('choice-following')).toHaveCount(0);
 });
 
 // Board #85: two extra zones as narrow muted columns left of the day's scale (compact offsets),

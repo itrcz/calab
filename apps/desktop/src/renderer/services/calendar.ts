@@ -35,6 +35,7 @@ import {
   type Applied,
 } from '../lib/calendar/events';
 import { externalReminderText, reminderText, remindNow } from '../lib/calendar/reminders';
+import { asksScope, scopedUpdate, type SeriesScope } from '../lib/calendar/scope';
 import { dayKey, eventSpan, formatWhen, gridWindow, monthOf, occurrenceMs, viewerZone } from '../lib/calendar/time';
 import { can, mayManageEvents, roomPerms } from '../lib/permissions';
 import { log } from '../lib/log';
@@ -108,7 +109,10 @@ export function ensureHolidayCalendar(workspaceId: string): void {
   const p = api.calendar
     .list(workspaceId, new Date(now), new Date(now + 60_000))
     .then(
-      (r) => useCalendar.setState((s) => ({ holidays: { ...s.holidays, [workspaceId]: r.holidayCalendar } })),
+      (r) =>
+        useCalendar.setState((s) => ({
+          holidays: { ...s.holidays, [workspaceId]: r.holidayCalendar },
+        })),
       (e: unknown) => log.warn('calendar: holiday calendar failed', e),
     )
     .finally(() => inflight.delete(workspaceId));
@@ -177,7 +181,10 @@ export function onCalendarReady(snaps: readonly WorkspaceSnapshot[]): void {
   const alive = new Set(snaps.map((s) => s.workspace?.id ?? ''));
   const months: Record<string, true> = {};
   for (const id of Object.keys(cal().months)) if (alive.has(id.split('|')[0] ?? '')) months[id] = true;
-  useCalendar.setState((s) => ({ months, occ: Object.fromEntries(Object.entries(s.occ).filter(([, ev]) => alive.has(ev.workspaceId))) }));
+  useCalendar.setState((s) => ({
+    months,
+    occ: Object.fromEntries(Object.entries(s.occ).filter(([, ev]) => alive.has(ev.workspaceId))),
+  }));
   for (const ws of alive) if (ws) refetchWorkspace(ws);
   void loadToday();
   takePendingEvent();
@@ -207,10 +214,27 @@ function applied(workspaceId: string, r: Applied): void {
   if (r.refetch) refetchWorkspace(workspaceId);
 }
 
+/**
+ * An override (ADR-0157) replaces an occurrence of its series: that occurrence leaves at once
+ * (the series' EVENT_UPDATE lists the window again, which drops it too).
+ */
+function withoutReplaced(occ: Record<string, CalendarEvent>, ev: CalendarEvent): Record<string, CalendarEvent> {
+  if (!ev.seriesId || !ev.recurrenceAt) return occ;
+  const k = occKey({
+    id: ev.seriesId,
+    occurrenceAt: ev.recurrenceAt,
+    startsAt: ev.recurrenceAt,
+  });
+  if (!occ[k]) return occ;
+  const next = { ...occ };
+  delete next[k];
+  return next;
+}
+
 const involvesMe = (ev: CalendarEvent): boolean => ev.organizerId === myUserId() || ev.attendees.some((a) => a.userId === myUserId());
 
 export function onEventCreate(ev: CalendarEvent): void {
-  applied(ev.workspaceId, applyCreate(cal().occ, ev));
+  applied(ev.workspaceId, applyCreate(withoutReplaced(cal().occ, ev), ev));
   invalidateBusy(ev.workspaceId);
   if (involvesMe(ev)) refreshToday();
 }
@@ -226,7 +250,16 @@ export function onEventUpdate(ev: CalendarEvent): void {
     const active: Record<string, readonly CalendarEvent[]> = {};
     for (const [room, list] of Object.entries(s.active)) {
       active[room] = list.map((e) =>
-        e.id === ev.id ? { ...ev, startsAt: e.startsAt, endsAt: e.endsAt, occurrenceAt: e.occurrenceAt, recordingId: e.recordingId, canEdit: e.canEdit } : e,
+        e.id === ev.id
+          ? {
+              ...ev,
+              startsAt: e.startsAt,
+              endsAt: e.endsAt,
+              occurrenceAt: e.occurrenceAt,
+              recordingId: e.recordingId,
+              canEdit: e.canEdit,
+            }
+          : e,
       );
     }
     return { active };
@@ -273,7 +306,9 @@ export function onRoomEventActive(v: RoomEventActive): void {
 }
 
 export function onRoomEventEnded(v: RoomEventEnded): void {
-  useCalendar.setState((s) => ({ active: withoutActive(s.active, v.roomId, v.eventId, v.occurrenceAt ? timestampMs(v.occurrenceAt) : null) }));
+  useCalendar.setState((s) => ({
+    active: withoutActive(s.active, v.roomId, v.eventId, v.occurrenceAt ? timestampMs(v.occurrenceAt) : null),
+  }));
   refreshToday();
 }
 
@@ -407,7 +442,10 @@ async function showEventById(id: string, at?: number): Promise<void> {
       // meeting card open on the badge (the server answers only while the meeting is active).
       if (!series.roomId) throw new ApiError('ERROR_CODE_NOT_FOUND', 'no room', 404);
       const roomId = series.roomId;
-      useCalendar.setState((s) => ({ active: withActive(s.active, roomId, series), badgeOpen: roomId }));
+      useCalendar.setState((s) => ({
+        active: withActive(s.active, roomId, series),
+        badgeOpen: roomId,
+      }));
       useUi.getState().openRoom(series.workspaceId, roomId);
       return;
     }
@@ -473,12 +511,16 @@ export async function answer(ev: CalendarEvent, status: AttendeeStatus): Promise
   if (!mine) return;
   const before = mine.status;
   const optimistic = { ...mine, status };
-  useCalendar.setState((s) => ({ occ: applyRsvp(s.occ, ev.id, optimistic, undefined) }));
+  useCalendar.setState((s) => ({
+    occ: applyRsvp(s.occ, ev.id, optimistic, undefined),
+  }));
   try {
     await api.calendar.rsvp(ev.id, status);
     refreshToday();
   } catch (e) {
-    useCalendar.setState((s) => ({ occ: applyRsvp(s.occ, ev.id, { ...mine, status: before }, undefined) }));
+    useCalendar.setState((s) => ({
+      occ: applyRsvp(s.occ, ev.id, { ...mine, status: before }, undefined),
+    }));
     toast.fail(e, t('cal.rsvp.failed'));
   }
 }
@@ -515,20 +557,26 @@ export async function updateEvent(key: string, init: UpdateInit): Promise<Calend
   return held;
 }
 
-/** Cancels the meeting, or (`one`) that occurrence of a series only. */
-export async function cancelEvent(ev: CalendarEvent, one: boolean): Promise<void> {
+/**
+ * Cancels the meeting; with a scope (an occurrence of a series, ADR-0157) that occurrence only, or
+ * it and the following ones.
+ */
+export async function cancelEvent(ev: CalendarEvent, scope?: SeriesScope): Promise<void> {
   try {
-    if (one) await api.calendar.cancel(ev.id, new Date(occurrenceMs(ev)));
+    const at = occurrenceMs(ev);
+    if (scope && ev.occurrenceAt) await api.calendar.cancel(ev.id, new Date(at), scope === 'following');
     else await api.calendar.cancel(ev.id);
-    if (one) {
-      const k = occKey(ev);
+    if (scope) {
       useCalendar.setState((s) => {
         const occ = { ...s.occ };
-        delete occ[k];
+        for (const [k, o] of Object.entries(occ)) if (o.id === ev.id && (scope === 'following' ? occurrenceMs(o) >= at : occurrenceMs(o) === at)) delete occ[k];
         return { occ };
       });
+      if (scope === 'following') refetchWorkspace(ev.workspaceId);
     } else onEventDelete(ev);
     if (useUi.getState().calEvent === occKey(ev)) useUi.getState().selectCalEvent(null);
+    invalidateBusy(ev.workspaceId);
+    refreshToday();
     toast.info(t('cal.cancelled'));
   } catch (e) {
     toast.fail(e, t('cal.err.save'));
@@ -536,17 +584,51 @@ export async function cancelEvent(ev: CalendarEvent, one: boolean): Promise<void
 }
 
 /**
- * A block dropped (the day view's drag): the occurrence moves at once (the store is written once,
- * here), PATCH follows; an error puts it back. A series moves as a whole (v1): its first start
- * shifts by the same amount.
+ * The answer of a scoped change takes the changed occurrence's place: the override (a meeting of
+ * its own) or the new series, whose first occurrence it is. The window is listed again.
  */
-export async function moveOccurrence(key: string, start: number, end: number, allDay?: boolean): Promise<boolean> {
+function placeScoped(key: string, ev: CalendarEvent): void {
+  const one = { ...ev, occurrenceAt: ev.startsAt };
+  const nk = occKey(one);
+  useCalendar.setState((s) => {
+    const occ = { ...s.occ };
+    delete occ[key];
+    occ[nk] = one;
+    return { occ };
+  });
+  if (useUi.getState().calEvent === key) useUi.getState().selectCalEvent(nk);
+  refetchWorkspace(ev.workspaceId);
+  invalidateBusy(ev.workspaceId);
+  refreshToday();
+}
+
+/** Changes the occurrence of `key` only, or it and the following ones (the event dialog). */
+export async function updateOccurrence(key: string, init: UpdateInit, scope: SeriesScope): Promise<void> {
+  const ev = eventOf(key);
+  if (!ev) return;
+  const r = await api.calendar.update(ev.id, scopedUpdate(init, ev, scope));
+  if (r.event) placeScoped(key, r.event);
+}
+
+/**
+ * A block dropped (the day view's drag): the occurrence moves at once (the store is written once,
+ * here), PATCH follows; an error puts it back. An occurrence of a series asks `askScope` first
+ * («Только эту / Всю серию», ADR-0157; cancelled = back in place); a series without an occurrence
+ * moves as a whole: its first start shifts by the same amount.
+ */
+export async function moveOccurrence(key: string, start: number, end: number, allDay?: boolean, askScope?: () => Promise<SeriesScope | null>): Promise<boolean> {
   const ev = eventOf(key);
   if (!ev) return false;
   const span = eventSpan(ev);
   const delta = start - span.start;
   const nextAllDay = allDay ?? ev.allDay;
-  const moved = { ...ev, startsAt: timestampFromMs(start), endsAt: timestampFromMs(end), occurrenceAt: timestampFromMs(start), allDay: nextAllDay };
+  const moved = {
+    ...ev,
+    startsAt: timestampFromMs(start),
+    endsAt: timestampFromMs(end),
+    occurrenceAt: timestampFromMs(start),
+    allDay: nextAllDay,
+  };
   const nk = occKey(moved);
   const before = cal().occ;
   useCalendar.setState((s) => {
@@ -556,14 +638,38 @@ export async function moveOccurrence(key: string, start: number, end: number, al
     return { occ };
   });
   if (useUi.getState().calEvent === key) useUi.getState().selectCalEvent(nk);
+  const back = (): void => {
+    useCalendar.setState({ occ: before });
+    if (useUi.getState().calEvent === nk) useUi.getState().selectCalEvent(key);
+  };
   try {
-    let init: UpdateInit = { startsAt: timestampFromMs(start), endsAt: timestampFromMs(end), ...(allDay !== undefined && allDay !== ev.allDay ? { allDay } : {}) };
+    let init: UpdateInit = {
+      startsAt: timestampFromMs(start),
+      endsAt: timestampFromMs(end),
+      ...(allDay !== undefined && allDay !== ev.allDay ? { allDay } : {}),
+    };
+    if (asksScope(ev) && askScope) {
+      const scope = await askScope();
+      if (!scope) {
+        back();
+        return false;
+      }
+      if (nextAllDay && !ev.allDay) init.tz = viewerZone();
+      const r = await api.calendar.update(ev.id, scopedUpdate(init, ev, scope));
+      if (r.event) placeScoped(nk, r.event);
+      toast.info(t('cal.moved', { when: formatWhen(moved) }));
+      return true;
+    }
     if (ev.repeat !== EventRepeat.UNSPECIFIED) {
       const series = (await api.calendar.get(ev.id)).event;
       if (!series) throw new ApiError('ERROR_CODE_NOT_FOUND', 'gone', 404);
       const s = eventSpan(series);
       const dur = end - start;
-      init = { ...init, startsAt: timestampFromMs(s.start + delta), endsAt: timestampFromMs(s.start + delta + dur) };
+      init = {
+        ...init,
+        startsAt: timestampFromMs(s.start + delta),
+        endsAt: timestampFromMs(s.start + delta + dur),
+      };
     }
     if (nextAllDay && !ev.allDay) init.tz = viewerZone();
     const r = await api.calendar.update(ev.id, init);
@@ -571,8 +677,7 @@ export async function moveOccurrence(key: string, start: number, end: number, al
     toast.info(t('cal.moved', { when: formatWhen(moved) }));
     return true;
   } catch (e) {
-    useCalendar.setState({ occ: before });
-    if (useUi.getState().calEvent === nk) useUi.getState().selectCalEvent(key);
+    back();
     toast.fail(e, t('cal.moveFailed'));
     return false;
   }
@@ -580,14 +685,22 @@ export async function moveOccurrence(key: string, start: number, end: number, al
 
 type AttendeeInit = MessageInitShape<typeof CalendarEventAttendeeInputSchema>;
 
-const attendeeInputs = (ev: CalendarEvent): AttendeeInit[] => ev.attendees.map((a) => ({ userId: a.userId, email: a.email, required: a.required }));
+const attendeeInputs = (ev: CalendarEvent): AttendeeInit[] =>
+  ev.attendees.map((a) => ({
+    userId: a.userId,
+    email: a.email,
+    required: a.required,
+  }));
 
 /** A member dropped on the card: added as a required attendee. */
 export async function addAttendee(key: string, userId: string): Promise<void> {
   const ev = eventOf(key);
   if (!ev || ev.attendees.some((a) => a.userId === userId)) return;
   try {
-    await updateEvent(key, { setAttendees: true, attendees: [...attendeeInputs(ev), { userId, email: '', required: true }] });
+    await updateEvent(key, {
+      setAttendees: true,
+      attendees: [...attendeeInputs(ev), { userId, email: '', required: true }],
+    });
     const name = useWorkspaces.getState().byId[ev.workspaceId]?.members[userId]?.user?.displayName ?? '';
     toast.info(t('cal.addedAttendee', { name }));
   } catch (e) {

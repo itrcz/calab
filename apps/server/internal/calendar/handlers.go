@@ -335,7 +335,33 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if err := s.writes.Take(ctx, me.String()); err != nil {
 		return err
 	}
+	// One occurrence, or it and the following ones (ADR-0157): the fields start from the
+	// occurrence; FOLLOWING from the first occurrence is the series as a whole.
+	scope := req.GetScope()
+	var occ Occurrence
+	switch scope {
+	case v1.EventScope_EVENT_SCOPE_UNSPECIFIED:
+	case v1.EventScope_EVENT_SCOPE_THIS, v1.EventScope_EVENT_SCOPE_FOLLOWING:
+		var ok bool
+		if occ, ok = before.liveOccurrence(tsTime(req.GetOccurrenceAt())); !ok {
+			return errNotOccurrence
+		}
+		if scope == v1.EventScope_EVENT_SCOPE_FOLLOWING && occ.Start.Equal(before.ev.StartsAt) {
+			scope = v1.EventScope_EVENT_SCOPE_UNSPECIFIED
+		}
+	default:
+		return httpx.Validation("scope", "unknown scope")
+	}
+	if before.ev.SeriesID != nil && req.Repeat != nil && req.GetRepeat() != v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED {
+		return httpx.Validation("repeat", "a changed occurrence of a series does not repeat")
+	}
 	f := fromFields(before.ev)
+	if scope != v1.EventScope_EVENT_SCOPE_UNSPECIFIED {
+		f.start, f.end = occ.Start, occ.End
+		if scope == v1.EventScope_EVENT_SCOPE_THIS {
+			f.rule = Rule{}
+		}
+	}
 	if req.Title != nil {
 		f.title = req.GetTitle()
 	}
@@ -357,7 +383,8 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if req.Record != nil {
 		f.record = req.GetRecord()
 	}
-	if req.Repeat != nil && req.GetRepeat() != f.rule.Repeat {
+	this := scope == v1.EventScope_EVENT_SCOPE_THIS // an override does not repeat
+	if req.Repeat != nil && req.GetRepeat() != f.rule.Repeat && !this {
 		// A new repeat: a working-days series takes the workspace's calendar of now; an
 		// unchanged one keeps the calendar it was created with (ADR-0136).
 		f.rule.Repeat, f.rule.Holidays = req.GetRepeat(), ""
@@ -367,11 +394,11 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
-	if req.GetRepeatUntil() != nil {
+	if req.GetRepeatUntil() != nil && !this {
 		t := tsTime(req.GetRepeatUntil())
 		f.rule.Until = &t
 	}
-	if req.GetClearRepeatUntil() {
+	if req.GetClearRepeatUntil() && !this {
 		f.rule.Until = nil
 	}
 	if err := f.normalize(); err != nil {
@@ -409,6 +436,16 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	if scope != v1.EventScope_EVENT_SCOPE_UNSPECIFIED {
+		if req.GetTempRoom() {
+			return errTempOneOff
+		}
+		c := scopedChange{scope: scope, occ: occ, f: f, att: attendeeChange{set: req.GetSetAttendees(), want: want}}
+		if scope == v1.EventScope_EVENT_SCOPE_THIS {
+			return s.updateOccurrence(w, r, before, v, c)
+		}
+		return s.splitSeries(w, r, before, v, c)
+	}
 	old := fromFields(before.ev)
 	roomChanged := !sameRoom(old.room, f.room)
 	timeChanged := !old.start.Equal(f.start) || !old.end.Equal(f.end) || old.allDay != f.allDay || old.tz != f.tz ||
@@ -428,7 +465,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		temp = true
 	}
-	if temp && f.rule.Repeat != v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED {
+	if temp && (f.rule.Repeat != v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED || before.ev.SeriesID != nil) {
 		return errTempOneOff
 	}
 	var roomPublish, accessPublish func(context.Context)
@@ -436,6 +473,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 
 	var added, removed []sqlc.EventAttendee
 	var after *bundle
+	var moved []uuid.UUID // overrides that followed the series' new times
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		cur, err := q.GetEventForUpdate(ctx, before.ev.ID)
 		if db.IsNotFound(err) {
@@ -512,6 +550,11 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if timeChanged {
+			if moved, err = followOverrides(ctx, q, curB, f); err != nil {
+				return err
+			}
+		}
 		switch {
 		case ownRoom(ev) && !roomChanged && timeChanged && s.TempRooms != nil: // the room follows the meeting
 			if roomPublish, err = s.TempRooms.MoveMeetingRoom(ctx, q, *ev.RoomID, ev.OrganizerID, ev.EndsAt.Add(TempRoomAfter)); err != nil {
@@ -578,6 +621,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventDelete{EventDelete: &v1.CalendarEventDelete{Event: before.proto(nil, nil)}}})
 	}
 	s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: after.proto(nil, nil)}}})
+	s.publishMoved(ctx, moved)
 	s.roomSignals(ctx, before, after)
 	if significant {
 		s.sendMails(ctx, after, mail.TemplateEventUpdate, MethodRequest, without(after.att, added))
@@ -649,43 +693,44 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	}
 	wsID := before.ev.WorkspaceID
 	if occStr := r.URL.Query().Get("occurrence"); occStr != "" {
-		occ, err := time.Parse(time.RFC3339, occStr)
-		if err != nil || before.series.Rule.Repeat == v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED || !before.series.IsOccurrence(occ.UTC()) {
-			return httpx.Validation("occurrence", "not an occurrence of this series")
+		at, err := time.Parse(time.RFC3339, occStr)
+		if err != nil || before.series.Rule.Repeat == v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED || !before.series.IsOccurrence(at.UTC()) {
+			return errNotOccurrence
 		}
-		var after *bundle
-		err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
-			if _, err := q.GetEventForUpdate(ctx, before.ev.ID); err != nil {
-				if db.IsNotFound(err) {
-					return httpx.NotFound("event")
+		at = at.UTC()
+		occ := Occurrence{Start: at, End: at.Add(before.ev.EndsAt.Sub(before.ev.StartsAt))}
+		// ADR-0157: «Всю серию» from an occurrence ends the series before it (past occurrences
+		// stay); from the first one it is the whole series, cancelled below.
+		if scopeOf(r) == v1.EventScope_EVENT_SCOPE_THIS {
+			if before.series.Moved[at.Unix()] {
+				return errNotOccurrence // an override is cancelled by its own id
+			}
+			if !before.series.Except[at.Unix()] { // cancelled already: nothing to do (idempotent)
+				if err := s.removeOccurrence(ctx, before, occ); err != nil {
+					return err
 				}
-				return err
 			}
-			n, err := q.InsertEventException(ctx, sqlc.InsertEventExceptionParams{EventID: before.ev.ID, OccurrenceAt: occ.UTC()})
-			if err != nil || n == 0 {
-				return err
-			}
-			ev, err := q.BumpEventSequence(ctx, before.ev.ID)
-			if err != nil {
-				return err
-			}
-			after, err = loadOne(ctx, q, ev)
-			return err
-		})
-		if err != nil {
-			return err
+			httpx.NoContent(w)
+			return nil
 		}
-		if after != nil {
-			s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: after.proto(nil, nil)}}})
-			s.roomSignals(ctx, before, after)
-			s.sendMails(ctx, after, mail.TemplateEventUpdate, MethodRequest, after.att)
-			s.changed(ctx, after)
+		if !occ.Start.Equal(before.ev.StartsAt) {
+			if err := s.removeFollowing(ctx, before, occ); err != nil {
+				return err
+			}
+			httpx.NoContent(w)
+			return nil
 		}
-		httpx.NoContent(w)
-		return nil
 	}
-	var after *bundle
+	var after, series *bundle
+	var gone []sqlc.Event
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if before.ev.SeriesID != nil {
+			// The series first, as every change of a series' occurrences does: a move of the
+			// series (followOverrides) and this cancellation then see each other's rows.
+			if _, err := q.GetEventForUpdate(ctx, *before.ev.SeriesID); err != nil && !db.IsNotFound(err) {
+				return err
+			}
+		}
 		ev, err := q.CancelEvent(ctx, before.ev.ID)
 		if db.IsNotFound(err) {
 			return httpx.NotFound("event")
@@ -696,16 +741,45 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 		if err := q.RevokeEventRoomInvites(ctx, sqlc.RevokeEventRoomInvitesParams{EventID: &ev.ID}); err != nil {
 			return err
 		}
+		switch {
+		case ev.SeriesID != nil && ev.RecurrenceAt != nil:
+			// An override cancelled: its occurrence stays out of the series, as cancelled.
+			if _, err := q.InsertEventException(ctx, sqlc.InsertEventExceptionParams{EventID: *ev.SeriesID, OccurrenceAt: *ev.RecurrenceAt}); err != nil {
+				return err
+			}
+			master, err := q.GetEvent(ctx, *ev.SeriesID)
+			if err != nil {
+				return err
+			}
+			if series, err = loadOne(ctx, q, master); err != nil {
+				return err
+			}
+		case ev.Rrule != nil:
+			// The series' overrides go with it (its CANCEL covers them in mail calendars).
+			if gone, err = q.CancelSeriesOverrides(ctx, sqlc.CancelSeriesOverridesParams{SeriesID: &ev.ID}); err != nil {
+				return err
+			}
+			for _, g := range gone {
+				if err := q.RevokeEventRoomInvites(ctx, sqlc.RevokeEventRoomInvitesParams{EventID: &g.ID}); err != nil {
+					return err
+				}
+			}
+		}
 		after, err = loadOne(ctx, q, ev)
 		return err
 	})
 	if err != nil {
 		return err
 	}
+	goneB := s.publishCancelled(ctx, gone)
 	s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventDelete{EventDelete: &v1.CalendarEventDelete{Event: after.proto(nil, nil)}}})
+	if series != nil {
+		s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: series.proto(nil, nil)}}})
+	}
 	s.roomSignals(ctx, before, nil)
 	s.sendMails(ctx, after, mail.TemplateEventCancel, MethodCancel, after.att)
-	s.changed(ctx, after)
+	s.mailOverrideOnly(ctx, after, goneB)
+	s.changed(ctx, append([]*bundle{after}, goneB...)...)
 	// ADR-0112: the room made for the meeting closes with it (archived, as its creator's
 	// DELETE would); a request not served yet just ends with the meeting. The cancelled row,
 	// not `before`: the sweep may have made the room in between.
@@ -753,7 +827,7 @@ func (s *Service) rsvp(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.publishRSVP(ctx, b, a)
 	if (prev.Status == StatusDeclined) != (status == StatusDeclined) && s.Changed != nil {
-		s.Changed(ctx, b.ev.ID, []uuid.UUID{me}) // a declined meeting leaves the user's calendar
+		s.Changed(ctx, pushID(b.ev), []uuid.UUID{me}) // a declined meeting leaves the user's calendar
 	}
 	httpx.Write(w, http.StatusOK, &v1.CalendarEventResponse{Event: b.proto(nil, v)})
 	return nil

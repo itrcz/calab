@@ -248,3 +248,35 @@ SELECT COALESCE((SELECT a.market FROM billing_accounts a
        COALESCE(u.locale, '')::text AS owner_locale
 FROM workspaces w JOIN users u ON u.id = w.owner_id
 WHERE w.id = $1;
+
+-- name: InsertEventOverride :one
+-- One occurrence of a series changed on its own (ADR-0157): a one-off meeting naming its series
+-- and the occurrence it replaces (RECURRENCE-ID).
+INSERT INTO events (workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record,
+                    until_at, sequence, series_id, recurrence_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, sqlc.arg('sequence'), sqlc.arg('series_id'), sqlc.arg('recurrence_at'))
+RETURNING *;
+
+-- name: ListEventOverrides :many
+-- Live overrides of the series (ADR-0157), by the occurrence they replace.
+SELECT * FROM events
+WHERE series_id = ANY(sqlc.arg('series_ids')::uuid[]) AND cancelled_at IS NULL
+ORDER BY series_id, recurrence_at;
+
+-- name: CancelSeriesOverrides :many
+-- The series (from `from` on, or all) is cancelled: so are its overrides of those occurrences.
+UPDATE events SET cancelled_at = now(), sequence = sequence + 1, updated_at = now()
+WHERE series_id = sqlc.arg('series_id') AND cancelled_at IS NULL
+  AND (sqlc.narg('from')::timestamptz IS NULL OR recurrence_at >= sqlc.narg('from'))
+RETURNING *;
+
+-- name: SetEventOverrideOf :exec
+-- An override follows its occurrence to another series or start (a split, a moved series), or
+-- becomes a meeting of its own (both NULL).
+UPDATE events SET series_id = sqlc.narg('series_id'), recurrence_at = sqlc.narg('recurrence_at'), updated_at = now()
+WHERE id = sqlc.arg('id');
+
+-- name: DeleteEventExceptions :exec
+-- Cancelled occurrences of the event from `from` on (all with NULL).
+DELETE FROM event_exceptions
+WHERE event_id = sqlc.arg('event_id') AND (sqlc.narg('from')::timestamptz IS NULL OR occurrence_at >= sqlc.narg('from'));

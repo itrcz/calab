@@ -4245,6 +4245,30 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await comments.getByTestId('event-comment').last().hover();
   await checkpoint(shot, 'calendar-comments', { keepPointer: true });
+
+  // ADR-0157: a repeating meeting dragged asks «Только эту / Всю серию»; «Только эту» moves that
+  // occurrence alone (the series keeps its 10:00 on the other days).
+  const standup = win.getByTestId('event-block').filter({ hasText: 'Стендап' });
+  await standup.scrollIntoViewIfNeeded();
+  const box = await standup.boundingBox();
+  if (!box) throw new Error('no stand-up block');
+  const x = box.x + 40; // the block's left part: the meeting card floats over its right side
+  await win.mouse.move(x, box.y + 4);
+  await win.mouse.down();
+  const ghostAt = (): Promise<string> => win.evaluate(() => document.querySelector('[data-testid="drag-ghost"]')?.textContent ?? '');
+  for (let i = 1; i <= 60 && !(await ghostAt()).startsWith('12:00'); i++) await win.mouse.move(x, box.y + 4 + i * 4);
+  await expect(win.getByTestId('drag-ghost')).toContainText('12:00 – 12:15');
+  await win.mouse.up();
+  await expect(win.getByTestId('choice-this')).toBeVisible();
+  await checkpoint(shot, 'calendar-series-scope');
+  await win.getByTestId('choice-this').click();
+  await expect(win.getByTestId('choice-this')).toHaveCount(0);
+  await expect(win.getByTestId('event-block').filter({ hasText: 'Стендап' })).toContainText('12:00');
+  // The card closed: the moved occurrence at 12:00 next to «Обед с командой», nothing left at 10:00.
+  await win.getByTestId('event-panel').getByRole('button', { name: 'Закрыть встречу' }).click();
+  await expect(win.getByTestId('event-panel')).toHaveCount(0);
+  await win.mouse.move(1, 1);
+  await checkpoint(shot, 'calendar-series-moved');
 });
 
 /**

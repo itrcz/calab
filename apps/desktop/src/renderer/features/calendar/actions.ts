@@ -1,10 +1,10 @@
-import { EventRepeat } from '@calaba/protocol';
-import { confirmAction } from '../../components/Confirm';
+import { chooseAction, confirmAction } from '../../components/Confirm';
 import { t } from '../../i18n';
 import { deletePrompt } from '../../lib/calendar/external';
 import type { ExternalDeleteScopeName, ExternalEvent } from '../../lib/calendar/freebusyApi';
 import { CLICK_DURATION } from '../../lib/calendar/drag';
 import { addPeople } from '../../lib/calendar/people';
+import { asksScope, type SeriesScope } from '../../lib/calendar/scope';
 import { atMinutes, dayKey, eventSpan, formatLongDay } from '../../lib/calendar/time';
 import { cancelEvent, canEditEvent, eventOf } from '../../services/calendar';
 import { deleteExternalEvent } from '../../services/freebusy';
@@ -53,21 +53,45 @@ export function duplicateEvent(key: string): void {
   const ev = eventOf(key);
   if (!ev) return;
   const { start, end } = eventSpan(ev);
-  newEvent(ev.workspaceId, { copyOf: key, start, end, allDay: ev.allDay, roomId: ev.roomId });
+  newEvent(ev.workspaceId, {
+    copyOf: key,
+    start,
+    end,
+    allDay: ev.allDay,
+    roomId: ev.roomId,
+  });
 }
 
 /**
- * «Отменить» (Delete in the day view): a confirmation first; a series asks «this occurrence» (the
- * menu's first choice) — «all» goes through the card's second button.
+ * «Только эту / Всю серию» for a change of an occurrence of a repeating meeting (ADR-0157): «Всю
+ * серию» is this occurrence and the following ones. null = cancelled (Esc, «Отмена»).
  */
-export async function cancelWithConfirm(key: string, all = false): Promise<void> {
+export function askSeriesScope(kind: 'edit' | 'move' | 'cancel', start: number): Promise<SeriesScope | null> {
+  const date = formatLongDay(start);
+  return chooseAction<SeriesScope>(
+    t(`cal.scope.${kind}Title`),
+    kind === 'cancel' ? t('cal.scope.cancelText', { date }) : t('cal.scope.text', { date }),
+    [
+      { value: 'this', label: t('cal.scope.this') },
+      { value: 'following', label: t('cal.scope.following') },
+    ],
+    kind === 'cancel' ? 'destructive' : 'primary',
+  );
+}
+
+/**
+ * «Отменить» (the card, the block's menu, Delete in the day view): an occurrence of a series asks
+ * «Только эту / Всю серию» (the question is the confirmation), anything else is confirmed first.
+ */
+export async function cancelWithConfirm(key: string): Promise<void> {
   const ev = eventOf(key);
   if (!ev || !canEditEvent(ev)) return;
-  const series = ev.repeat !== EventRepeat.UNSPECIFIED && !all;
-  const ok = series
-    ? await confirmAction(t('cal.cancelOneTitle', { date: formatLongDay(eventSpan(ev).start) }), t('cal.cancelOneText'), t('cal.cancelOne'))
-    : await confirmAction(t('cal.cancelTitle', { title: ev.title }), t('cal.cancelText'), t('cal.cancel'));
-  if (ok) await cancelEvent(ev, series);
+  if (asksScope(ev)) {
+    const scope = await askSeriesScope('cancel', eventSpan(ev).start);
+    if (scope) await cancelEvent(ev, scope);
+    return;
+  }
+  if (await confirmAction(t('cal.cancelTitle', { title: ev.title }), t('cal.cancelText'), t('cal.cancel'))) await cancelEvent(ev);
 }
 
 /**

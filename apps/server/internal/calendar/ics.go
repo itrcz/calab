@@ -39,6 +39,14 @@ type ICSEvent struct {
 	Organizer   ICSPerson
 	Attendees   []ICSPerson
 	Stamp       time.Time
+	// Instance is the original start of the series occurrence this VEVENT replaces
+	// (RECURRENCE-ID, ADR-0157; UID is then the series'); zero = none. InstanceAllDay and
+	// InstanceLoc give it the value type of the series' DTSTART (a DATE in that zone, else UTC).
+	Instance       time.Time
+	InstanceAllDay bool
+	InstanceLoc    *time.Location
+	// Overrides follow this VEVENT under the same UID (a series with its changed occurrences).
+	Overrides []ICSEvent
 }
 
 const icsDate, icsUTC, icsLocal = "20060102", "20060102T150405Z", "20060102T150405"
@@ -150,6 +158,13 @@ func appendICSEvent(b *strings.Builder, e ICSEvent, zones map[string]bool) {
 	line("UID:" + e.UID)
 	line("SEQUENCE:" + fmt.Sprint(e.Sequence))
 	line("DTSTAMP:" + e.Stamp.UTC().Format(icsUTC))
+	if !e.Instance.IsZero() {
+		if e.InstanceAllDay && e.InstanceLoc != nil {
+			line("RECURRENCE-ID;VALUE=DATE:" + e.Instance.In(e.InstanceLoc).Format(icsDate))
+		} else {
+			line("RECURRENCE-ID:" + e.Instance.UTC().Format(icsUTC))
+		}
+	}
 	switch {
 	case s.AllDay:
 		line("DTSTART;VALUE=DATE:" + s.Start.In(s.Loc).Format(icsDate))
@@ -175,7 +190,9 @@ func appendICSEvent(b *strings.Builder, e ICSEvent, zones map[string]bool) {
 		}
 		ex := make([]int64, 0, len(s.Except))
 		for k := range s.Except {
-			ex = append(ex, k)
+			if !s.Moved[k] { // an override replaces it (RECURRENCE-ID), not an EXDATE
+				ex = append(ex, k)
+			}
 		}
 		off, working := s.holidayDates()
 		for _, t := range off {
@@ -225,6 +242,13 @@ func appendICSEvent(b *strings.Builder, e ICSEvent, zones map[string]bool) {
 		line("ATTENDEE" + cn + ";ROLE=" + role + ";PARTSTAT=" + ps + ";RSVP=TRUE:mailto:" + a.Email)
 	}
 	line("END:VEVENT")
+	for _, o := range e.Overrides {
+		o.Method, o.Overrides = e.Method, nil
+		if e.Organizer.Email == "" { // a subscription / CalDAV object: no scheduling lines
+			o.Organizer, o.Attendees = ICSPerson{}, nil
+		}
+		appendICSEvent(b, o, zones)
+	}
 }
 
 // PartStat maps an attendee status to iCalendar PARTSTAT.

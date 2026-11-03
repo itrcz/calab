@@ -54,6 +54,7 @@
 - Unit: C.10–C.11 `TestExpandDailyWeeklyUntil`, `TestExpandMonthlySkipsShortMonths`, `TestExpandAcrossDST` (Europe/Berlin, 29.03 и 25.10.2026); C.16 (формат) `TestBuildICS` (минимальный RFC 5545-парсер: складка строк ≤ 75 октетов, BEGIN/END, экранирование, `VTIMEZONE` для серии в DST-зоне, `VALUE=DATE`); C.5 `TestRSVPToken`; C.18 `TestInputLimits` (120/4000, 101 участник, 21 внешний, дубли, синтаксис адреса); письмо `TestEventInviteMIME` (multipart/mixed, inline `text/calendar; method=REQUEST`, `invite.ics`, Reply-To, длинные подписанные ссылки не обрезаются).
 
 - `TestEventDeepLinks` — C.19, C.20 («Диплинки для приглашённых»).
+- `TestEventSeriesOccurrenceScopes` — ADR-0157: «Только эту» (override, письмо с `RECURRENCE-ID` только участникам вхождения, серия не меняется, экспорт одним UID), отмена одного вхождения (`CANCEL` с `RECURRENCE-ID`), сдвиг серии двигает отмены и override, «Всю серию» — разрез (отмены и override переходят), отмена «этой и следующих», отмена override; unit `TestShiftOccurrence`, `TestSeriesExportICS`, `TestLiveOccurrence`.
 
 Прогон: `go test -tags integration -run 'Event' ./internal/app/` (+ `go test ./internal/calendar/ ./internal/mail/`).
 
