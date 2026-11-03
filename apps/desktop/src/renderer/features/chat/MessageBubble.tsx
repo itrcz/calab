@@ -9,6 +9,8 @@ import { thumbnailPath } from '../../lib/api/endpoints';
 import { THUMB_LARGE, thumbWidthPath, wantsLargeThumb } from '../../lib/thumbs';
 import { fmt, toDate, useTimeFormat } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
+import { hasTable } from '../../lib/markdown/table';
+import { RichBody } from './RichBody';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
 import { filePreview } from '../../lib/filePreview';
 import { officeOpens } from '../disk/office/bridge';
@@ -372,6 +374,7 @@ function Bubble({
   const nodes = useMemo(() => parseMarkdown(m.content), [m.content]);
   // A leading bot command (ADR-0031) reads as inline code; the message stays ordinary text.
   const shown = useMemo(() => highlightCommand(m.content), [m.content]);
+  const tabled = useMemo(() => hasTable(m.content), [m.content]);
   const authorBot = useWorkspaces((s) => s.users[m.authorId]?.isBot ?? false);
   // In-room search: 0 = not a hit, 1 = hit, 2 = the current hit (primitive → no extra renders).
   const hit = useChatView((s) => (s.searchHits?.roomId === roomId && s.searchHits.ids.has(m.id) ? (s.searchHits.current === m.id ? 2 : 1) : 0));
@@ -505,7 +508,7 @@ function Bubble({
         {uploads.length ? <Uploads uploads={uploads} /> : null}
         {hasText ? (
           <div className={cx(BUBBLE_TEXT, fwd ? 'pt-0.5' : 'pt-1.5')}>
-            <Markdown text={shown} mention={mention} highlight={highlight} />
+            {tabled ? <RichBody workspaceId={workspaceId} text={m.content} /> : <Markdown text={shown} mention={mention} highlight={highlight} />}
             {!link && !files.length && !m.reactions.length ? (
               // Reserve room for the time on the last line (it is drawn absolutely, Telegram-style).
               <span className="invisible ml-2 inline-flex select-none" aria-hidden>

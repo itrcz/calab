@@ -470,6 +470,20 @@ export function seedViaMcp(mock: MockServer): void {
 }
 
 /**
+ * Board #148: CAL-3's comments with a picture and pipe tables (a narrow one, a wide one that must scroll
+ * sideways inside the bubble). Returns the wide table's author text marker for the spec to find it.
+ */
+export function seedRichComments(mock: MockServer): void {
+  const t = mock.boards.taskByKey('CAL-3');
+  if (!t) throw new Error('no CAL-3');
+  const room = t.task.roomId;
+  mock.injectMessage({ roomId: room, authorId: IDS.users.vera, content: 'Скриншот ошибки', attachments: [IDS.files.portrait] });
+  mock.injectMessage({ roomId: room, authorId: IDS.users.anna, content: 'Итоги замеров:\n\n| Сборка | CPU, % | Эхо |\n| --- | --- | --- |\n| 3.2.1 | 4.8 | да |\n| 3.2.2 | 2.1 | нет |' });
+  const wide = ['Окружение', 'Версия клиента', 'Версия ОС', 'Процессор', 'Память, ГБ', 'Сеть', 'Комментарий'];
+  mock.injectMessage({ roomId: room, authorId: IDS.users.boris, content: `Широкая таблица:\n\n| ${wide.join(' | ')} |\n| ${wide.map(() => '---').join(' | ')} |\n| ${wide.map((w) => `${w} — значение`).join(' | ')} |` });
+}
+
+/**
  * Board #117: every visible control of a toolbar (buttons, fields, segmented controls) is one
  * height - `--control-h-bar` - within 0.5 px, and sits centred on the toolbar's midline.
  */
