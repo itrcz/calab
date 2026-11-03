@@ -33,7 +33,7 @@ const warn = vi.fn();
 vi.mock('./logging', () => ({ log: { warn, info: vi.fn(), error: vi.fn() } }));
 
 // Imported after the mocks above (docs/12 "net.fetch has no timeout").
-const { handleApiScheme, deadlinesFor, HEADERS_TIMEOUT_MS, IDLE_TIMEOUT_MS, SLOW_REQUEST_MS } = await import('./apiProtocol');
+const { handleApiScheme, deadlinesFor, AI_REQUEST_MS, HEADERS_TIMEOUT_MS, IDLE_TIMEOUT_MS, SLOW_REQUEST_MS } = await import('./apiProtocol');
 
 function apiRequest(path: string, init?: RequestInit): Request {
   return new Request(`calaba-api://api${path}`, init);
@@ -69,7 +69,11 @@ describe('handleApiScheme deadlines', () => {
     const res = await pending;
     expect(res?.status).toBe(504);
     expect(((await res?.json()) as { code?: string }).code).toBe('ERROR_CODE_UNAVAILABLE');
-    expect(warn).toHaveBeenCalledWith('api request timeout GET /api/messages');
+    // The 504 names the request id the server got, so a person can report it (bug #152).
+    const sent = new Headers(fetchMock.mock.calls[0]?.[1].headers).get('X-Request-ID');
+    expect(sent).toMatch(/^[0-9a-f]{32}$/);
+    expect(res?.headers.get('X-Request-ID')).toBe(sent);
+    expect(warn).toHaveBeenCalledWith(`api request timeout GET /api/messages request_id=${sent}`);
   });
 
   it('a body that stalls mid-stream is aborted with 504 after the idle timeout', async () => {
@@ -84,7 +88,7 @@ describe('handleApiScheme deadlines', () => {
     await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS);
     const res = await pending;
     expect(res?.status).toBe(504);
-    expect(warn).toHaveBeenCalledWith('api request timeout GET /api/messages');
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^api request timeout GET \/api\/messages request_id=[0-9a-f]{32}$/));
   });
 
   it('a normal response passes through unchanged', async () => {
@@ -207,5 +211,11 @@ describe('deadlines', () => {
     expect(deadlinesFor('/api/workspaces/w1/sip/ivr')).toEqual({ headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS });
     expect(deadlinesFor('/api/workspaces/w1/sip/ivr/m1')).toEqual({ headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS });
     expect(SLOW_REQUEST_MS).toBeGreaterThan(60_000);
+  });
+
+  it('a smart task outlives the server SmartBudget (100 s) — the 20 s deadline cut it (bug #152)', () => {
+    expect(deadlinesFor('/api/workspaces/w1/smart-tasks')).toEqual({ headers: AI_REQUEST_MS, idle: AI_REQUEST_MS });
+    expect(AI_REQUEST_MS).toBeGreaterThan(100_000);
+    expect(deadlinesFor('/api/workspaces/w1/smart-tasks/x')).toEqual({ headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS });
   });
 });

@@ -8821,6 +8821,13 @@ class MockImpl {
       if ((this.aiState.get(ws) ?? AiState.NO_KEY) !== AiState.READY) throw conflictReason('AI_NOT_READY', 'the AI integration is not connected or not checked');
       const board = b().listBoards(ws, me, false).find((x) => (x.permissions & CREATE_TASKS_BIT) !== 0n);
       if (!board) throw conflictReason('NO_BOARDS', 'no board where you may create tasks');
+      // Bug #152: a text with «таймаут» — no answer in time (the desktop's / proxy's 504), with the
+      // request id the server logged it under; fixed, so the screenshot is stable.
+      if (text.includes('таймаут')) {
+        c.res.writeHead(504, { 'Content-Type': 'application/json', 'X-Request-ID': '7f3c9a1e5b2d4c6f8a0b1c2d' });
+        c.res.end(JSON.stringify({ code: 'ERROR_CODE_UNAVAILABLE', message: 'request timed out' }));
+        return;
+      }
       // CBF-75: a text with «дубль» is declined as a duplicate of CAL-3 (the model's refusal).
       if (text.includes('дубль')) {
         sendMsg(c.res, 200, CreateSmartTaskResponseSchema, { refusal: { reason: 'Похоже на дубль задачи CAL-3: там уже есть оплата этого счёта. Уточните, чем новая задача отличается.', duplicateKey: 'CAL-3' } });

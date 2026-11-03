@@ -134,10 +134,16 @@ export function smartOffKey(state: AiState | undefined, planAI = true): MessageK
   }
 }
 
-/** A refused smart task (ApiError status / reason / field / message) → its text and the reason's. */
-export function smartErrorText(e: { status: number; reason?: string | undefined; field?: string | undefined; message: string }): { key: MessageKey; reason?: MessageKey } {
+/**
+ * A refused smart task (ApiError status / reason / field / message) → its text and the reason's;
+ * null when nothing smart-specific is known — the dialog then names the generic cause (network,
+ * 5xx, 403, 413, … — errorText), never a bare «Не удалось сохранить» (bug #152).
+ */
+export function smartErrorText(e: { status: number; reason?: string | undefined; field?: string | undefined; message: string }): { key: MessageKey; reason?: MessageKey } | null {
   if (e.status === 429) return { key: 'smart.err.rate' };
   if (e.status === 422 && e.field === 'text') return { key: 'smart.err.text' };
+  // No answer in time (the desktop's own deadline or the proxy's): the server may still have filed it.
+  if (e.status === 504) return { key: 'smart.err.timeout' };
   switch (e.reason) {
     case 'AI_NOT_READY':
       return { key: 'smart.err.notReady' };
@@ -150,6 +156,15 @@ export function smartErrorText(e: { status: number; reason?: string | undefined;
     case 'AI_FAILED':
       return { key: 'smart.err.failed', reason: reasonKey(e.message) };
     default:
-      return { key: 'boards.err.save' };
+      return null;
   }
+}
+
+/**
+ * What a person quotes when reporting a failed smart task: the error code, the HTTP status and
+ * the request id the server logged it under («UNAVAILABLE · 504 · 9f…»); "" when nothing is known.
+ */
+export function smartErrorRef(e: { code?: string | undefined; status?: number | undefined; requestId?: string | undefined }): string {
+  const code = e.code && e.code !== 'ERROR_CODE_UNSPECIFIED' ? e.code.replace(/^ERROR_CODE_/, '') : '';
+  return [code, e.status ? String(e.status) : '', e.requestId ?? ''].filter(Boolean).join(' · ');
 }

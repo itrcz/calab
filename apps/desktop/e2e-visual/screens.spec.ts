@@ -4567,7 +4567,14 @@ test('boards-smart-task', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('smart-task-duplicate')).toHaveText('Открыть CAL-3');
   await expect(text).toHaveValue('Оплатить счёт поставщика — похоже, дубль\nСумма 120 000 ₽.');
   await checkpoint(shot, 'boards-smart-refused');
+  // Bug #152: no answer in time — the cause in words and the code / status / request id to quote.
+  await text.fill('Оплатить счёт поставщика — таймаут\nСумма 120 000 ₽.');
+  await win.getByTestId('smart-task-submit').click();
+  await expect(dialog.getByTestId('smart-task-error')).toContainText('Сервер не ответил вовремя');
+  await expect(dialog.getByTestId('smart-task-error-ref')).toHaveText('Для поддержки: UNAVAILABLE · 504 · 7f3c9a1e5b2d4c6f8a0b1c2d');
+  await checkpoint(shot, 'boards-smart-error');
   await text.fill('Оплатить счёт поставщика до пятницы\nСумма 120 000 ₽, реквизиты в письме бухгалтерии.');
+  await expect(dialog.getByTestId('smart-task-error')).toHaveCount(0);
   await expect(dialog.getByTestId('smart-task-refusal')).toHaveCount(0);
   await win.getByTestId('smart-task-submit').click();
   await expect(dialog).toHaveCount(0);

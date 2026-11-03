@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { AiProvider, AiSettingsSchema, AiState } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_AI_MODEL, draftError, draftOf, fieldErrorKey, keyApplies, normalizeBaseUrl, reasonKey, requestOf, smartErrorText, smartOffKey, tabOf, validBaseUrl } from './ai';
+import { DEFAULT_AI_MODEL, draftError, draftOf, fieldErrorKey, keyApplies, normalizeBaseUrl, reasonKey, requestOf, smartErrorRef, smartErrorText, smartOffKey, tabOf, validBaseUrl } from './ai';
 
 describe('smart task (CBF-68)', () => {
   it('is on only when READY, with the reason otherwise', () => {
@@ -16,15 +16,26 @@ describe('smart task (CBF-68)', () => {
     for (const st of [AiState.READY, AiState.NO_KEY, AiState.FAILED, undefined]) expect(smartOffKey(st, false)).toBe('smart.off.plan');
     expect(smartOffKey(AiState.READY, true)).toBeNull();
     expect(smartOffKey(AiState.UNCHECKED, true)).toBe('smart.off.unchecked');
-    expect(smartErrorText({ status: 409, reason: 'AI_PLAN_REQUIRED', message: '' }).key).toBe('smart.off.plan');
+    expect(smartErrorText({ status: 409, reason: 'AI_PLAN_REQUIRED', message: '' })?.key).toBe('smart.off.plan');
   });
   it('explains a refusal', () => {
-    expect(smartErrorText({ status: 409, reason: 'AI_BAD_ANSWER', message: '' }).key).toBe('smart.err.badAnswer');
+    expect(smartErrorText({ status: 409, reason: 'AI_BAD_ANSWER', message: '' })?.key).toBe('smart.err.badAnswer');
     expect(smartErrorText({ status: 409, reason: 'AI_FAILED', message: 'insufficient_balance' })).toEqual({ key: 'smart.err.failed', reason: 'ai.reason.insufficient_balance' });
-    expect(smartErrorText({ status: 409, reason: 'NO_BOARDS', message: '' }).key).toBe('smart.err.noBoards');
-    expect(smartErrorText({ status: 409, reason: 'AI_NOT_READY', message: '' }).key).toBe('smart.err.notReady');
-    expect(smartErrorText({ status: 429, message: '' }).key).toBe('smart.err.rate');
-    expect(smartErrorText({ status: 422, field: 'text', message: '' }).key).toBe('smart.err.text');
+    expect(smartErrorText({ status: 409, reason: 'NO_BOARDS', message: '' })?.key).toBe('smart.err.noBoards');
+    expect(smartErrorText({ status: 409, reason: 'AI_NOT_READY', message: '' })?.key).toBe('smart.err.notReady');
+    expect(smartErrorText({ status: 429, message: '' })?.key).toBe('smart.err.rate');
+    expect(smartErrorText({ status: 422, field: 'text', message: '' })?.key).toBe('smart.err.text');
+  });
+  it('bug #152: a timeout says the task may exist; other failures fall back to the generic cause', () => {
+    expect(smartErrorText({ status: 504, message: 'request timed out' })?.key).toBe('smart.err.timeout');
+    for (const status of [0, 403, 413, 500, 502, 503]) expect(smartErrorText({ status, message: '' })).toBeNull();
+    expect(smartErrorText({ status: 409, reason: 'SOMETHING_NEW', message: '' })).toBeNull();
+  });
+  it('bug #152: the reference a person reports — code, status, request id', () => {
+    expect(smartErrorRef({ code: 'ERROR_CODE_UNAVAILABLE', status: 504, requestId: 'abc123' })).toBe('UNAVAILABLE · 504 · abc123');
+    expect(smartErrorRef({ code: 'ERROR_CODE_UNSPECIFIED', status: 502 })).toBe('502');
+    expect(smartErrorRef({ code: 'ERROR_CODE_UNAVAILABLE', status: 0 })).toBe('UNAVAILABLE');
+    expect(smartErrorRef({})).toBe('');
   });
 });
 

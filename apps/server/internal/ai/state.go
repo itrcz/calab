@@ -146,7 +146,7 @@ func (s *Service) Complete(ctx context.Context, wsID uuid.UUID, purpose string, 
 		chat, base = s.trusted, s.gptunnelURL
 	}
 	res := chat.Send(ctx, base, cur.key, cur.row.Model, msgs)
-	slog.InfoContext(ctx, "ai: call", "workspace", wsID, "purpose", purpose, "provider", cur.row.Provider, "model", cur.row.Model,
+	slog.InfoContext(ctx, "ai: call", "request_id", httpx.RequestID(ctx), "workspace", wsID, "purpose", purpose, "provider", cur.row.Provider, "model", cur.row.Model,
 		"ok", res.OK, "error", res.Error, "status", res.Status, "latency_ms", res.Latency.Milliseconds(), "answer_chars", len([]rune(res.Reply)))
 	if !res.OK {
 		return "", &CallError{Code: res.Error}
