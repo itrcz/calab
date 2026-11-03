@@ -41,6 +41,9 @@ const STABLE: Array<[string, string]> = [
   ['table between text', 'Поля:\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nИтого две.'],
   ['table with escaped pipe', '| a | b |\n| --- | --- |\n| x \\| y | 2 |'],
   ['mixed list and text', '**Контекст**\nКлиент жалуется.\n\n**Что сделать**\n- [ ] воспроизвести\n- [ ] починить\nСрок — пятница.'],
+  ['one typed empty line', 'Абзац один.\n\n\nАбзац два.'],
+  ['three typed empty lines', 'a\n\n\n\n\nb'],
+  ['empty lines around a list and a heading', '# Цель\n\n\nТекст\n\n\n- a\n- b\n\n\nКонец'],
   ['link in list', '- [макет](https://figma.com/file/x)\n- https://example.com'],
 ];
 
@@ -49,7 +52,6 @@ const NORMALIZED: Array<[string, string, string]> = [
   ['blank line before a list', 'Текст\n\n- a\n- b', 'Текст\n- a\n- b'],
   ['underscore emphasis', '__жирный__ и _курсив_', '**жирный** и *курсив*'],
   ['ordered with parens', '1) раз\n2) два', '1. раз\n2. два'],
-  ['three blank lines', 'a\n\n\n\nb', 'a\n\nb'],
   ['link to itself', '[https://x.io/a](https://x.io/a)', 'https://x.io/a'],
 ];
 
@@ -101,6 +103,19 @@ describe('task description ↔ editor doc', () => {
       ],
     });
     expect(md).toBe(`[https://x.io/a](https://x.io/a)/b и https://y.io, всё\n![a  1 .png](calaba-file:${FILE})\n*итог*`);
+  });
+
+  it('writes the empty paragraphs the user typed between blocks (board #150)', () => {
+    const p = (text?: string) => ({ type: 'paragraph', ...(text ? { content: [{ type: 'text', text }] } : {}) });
+    expect(docToDescription({ type: 'doc', content: [p('a'), p(), p('b')] })).toBe('a\n\n\nb');
+    expect(docToDescription({ type: 'doc', content: [p('a'), p(), p(), p('b')] })).toBe('a\n\n\n\nb');
+    // Leading and trailing empty lines are nothing.
+    expect(docToDescription({ type: 'doc', content: [p(), p('a'), p()] })).toBe('a');
+    const doc = descriptionToDoc('a\n\n\nb');
+    expect(doc.content?.map((n) => n.type)).toEqual(['paragraph', 'paragraph', 'paragraph']);
+    expect(doc.content?.[1]?.content).toBeUndefined();
+    // One blank line (what bots and the API write) stays a plain gap.
+    expect(descriptionToDoc('a\n\nb').content).toHaveLength(2);
   });
 
   it('an empty doc is an empty description', () => {

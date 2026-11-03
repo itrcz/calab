@@ -4676,6 +4676,8 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await win.keyboard.type('# Итоги звонка');
   await win.keyboard.press('Enter');
   await win.keyboard.type('Эхо пропало после правки 🎉 подробности на https://calab.io/docs ');
+  // Board #150: Enter twice leaves an empty line between paragraphs; it must survive «Готово» and keep its height.
+  await win.keyboard.press('Enter');
   await win.keyboard.press('Enter');
   await win.keyboard.type('Второй абзац с **жирным** словом.');
   await win.keyboard.press('Enter');
@@ -4706,6 +4708,7 @@ test('boards-task', async ({ open, win, mock, shot }) => {
     }
     return out;
   };
+  await expect(read.locator('p').nth(1)).toHaveText('');
   const readBoxes = await boxes(read);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'boards-task-desc-read');
