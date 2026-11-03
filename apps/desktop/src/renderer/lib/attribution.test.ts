@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { captureAttribution, clearAttribution, storedAttribution } from './attribution';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { captureAttribution, captureFromLocation, clearAttribution, storedAttribution } from './attribution';
+import { resetNativeShellForTests } from '../platform/nativeShell';
 
 function memory(): Storage {
   const m = new Map<string, string>();
@@ -64,5 +66,39 @@ describe('attribution', () => {
   it('survives blocked storage', () => {
     expect(captureAttribution('https://app.calab.io/?utm_source=x', null)).toBe('https://app.calab.io/');
     expect(storedAttribution(null)).toBeUndefined();
+  });
+});
+
+// ADR-0135 addendum (2026-11-02): no attribution capture or send inside the native phone shell.
+describe('attribution: native shell', () => {
+  beforeEach(() => {
+    resetNativeShellForTests();
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    delete window.CalabHostActivity;
+    resetNativeShellForTests();
+    window.localStorage.clear();
+  });
+
+  it('does not capture or store ym_cid from the opening link', () => {
+    Object.defineProperty(window, 'CalabHostActivity', { value: { version: 1, platform: 'ios' }, configurable: true });
+    window.history.pushState({}, '', '/?ym_cid=1710232430899999999&utm_source=yandex');
+    captureFromLocation();
+    expect(window.location.search).toBe('?ym_cid=1710232430899999999&utm_source=yandex'); // address bar untouched
+    expect(storedAttribution(window.localStorage)).toBeUndefined();
+  });
+
+  it('never sends attribution, even leftover data a pre-fix client version stored', () => {
+    window.localStorage.setItem('calab-attribution', JSON.stringify({ at: Date.now(), a: { ymClientId: '5' } }));
+    Object.defineProperty(window, 'CalabHostActivity', { value: { version: 1, platform: 'ios' }, configurable: true });
+    expect(storedAttribution()).toBeUndefined();
+  });
+
+  it('still captures and sends outside the native shell', () => {
+    window.history.pushState({}, '', '/?ym_cid=42');
+    captureFromLocation();
+    expect(window.location.search).toBe('');
+    expect(storedAttribution(window.localStorage)).toEqual({ ymClientId: '42' });
   });
 });

@@ -135,6 +135,17 @@ type Client struct {
 	Locale     string // supported mail locale from Accept-Language ("" = none)
 }
 
+// shellUAMarker is the marker the native phone shell's WebView appends to its user agent
+// (apps/desktop/src/shared/nativeShell.ts SHELL_UA_MARKER, apps/mobile/src/App.tsx, DEV-4947).
+const shellUAMarker = "CalabShell/1"
+
+// fromNativeShell reports whether a request's user agent carries the phone shell's marker
+// (ADR-0135 addendum, 2026-11-02): the server drops ad attribution independently of the client
+// — an old client version or a forged request must not be able to produce a Metrika
+// conversion, which is what lets the store privacy forms answer "Tracking: No"
+// (docs/mobile/store-listing.md).
+func fromNativeShell(userAgent string) bool { return strings.Contains(userAgent, shellUAMarker) }
+
 func clip(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if len(s) <= n {
@@ -423,7 +434,9 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		}
 		// First-touch ad attribution and the sign-up conversion (ADR-0135): the account is
 		// usable at once (email confirmation is not the activation point), so creation counts.
-		if attr, ok := metrika.Attribution(req.GetAttribution()); ok {
+		// Never for the native shell (ADR-0135 addendum): no row, no conversion, whatever the
+		// request body carries.
+		if attr, ok := metrika.Attribution(req.GetAttribution()); ok && !fromNativeShell(c.UserAgent) {
 			attr.UserID = user.ID
 			if err := q.InsertUserAttribution(ctx, attr); err != nil {
 				return err
