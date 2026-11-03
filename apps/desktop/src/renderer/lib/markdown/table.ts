@@ -9,6 +9,17 @@ const SEP_RE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 
 const isRow = (line: string | undefined): boolean => !!line && line.includes('|') && !!line.trim();
 
+/** Cells of a pipe row (escaped `\|` stays inside a cell). */
+const cellCount = (line: string): number => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).length;
+
+/**
+ * A header + separator pair as GFM reads it: the separator has a pipe and as many columns as the
+ * header. Stricter than the description parser on purpose: an ordinary chat line with a stray `|`
+ * followed by `---` stays chat text.
+ */
+const isTableHead = (head: string | undefined, sep: string | undefined): boolean =>
+  isRow(head) && !!sep && sep.includes('|') && sep.includes('-') && SEP_RE.test(sep) && cellCount(sep) === cellCount(head ?? '');
+
 /** Start line indexes of the tables in `text` (a header row followed by a separator row), outside code fences. */
 function tableStarts(text: string): number[] {
   const lines = text.split('\n');
@@ -17,7 +28,7 @@ function tableStarts(text: string): number[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
     if (/^\s*```/.test(line)) fence = !fence;
-    if (!fence && isRow(line) && SEP_RE.test(lines[i + 1] ?? '') && (lines[i + 1] ?? '').includes('-')) out.push(i);
+    if (!fence && isTableHead(line, lines[i + 1])) out.push(i);
   }
   return out;
 }
@@ -34,18 +45,45 @@ const cellText = (el: Element): string =>
     .trim()
     .replace(/\|/g, '\\|');
 
-/** A pasted HTML table as a GFM pipe table (null: no table, or one a pipe table cannot hold). Needs a DOM. */
-export function htmlTableToMarkdown(html: string): string | null {
-  if (!/<table[\s>]/i.test(html)) return null;
+/** Larger clipboard HTML is not parsed: the plain-text paste takes over (a whole sheet is not a message). */
+const MAX_HTML = 512 * 1024;
+const MAX_ROWS = 200;
+
+/**
+ * A pasted HTML table as a GFM pipe table (null: no table, or one a pipe table should not hold).
+ * Only when the clipboard is exactly one table with more than one cell: a single copied cell, a page
+ * fragment with text around the table, or several tables paste as plain text, nothing is dropped.
+ * The HTML goes into an inert DOMParser document (no scripts run, nothing is fetched, nothing is
+ * attached to the page); only cell text is read. `max`: the result's length limit (the field's).
+ */
+export function htmlTableToMarkdown(html: string, max = Infinity): string | null {
+  if (!html || html.length > MAX_HTML || !/<table[\s>]/i.test(html)) return null;
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const table = doc.querySelector('table');
-  if (!table) return null;
-  const rows = [...table.querySelectorAll('tr')].map((tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH').map(cellText));
+  // Sheets put their CSS in the body (Google Sheets: <style> before the table): not text.
+  for (const el of doc.querySelectorAll('style, script, template, noscript, title')) el.remove();
+  const tables = [...doc.querySelectorAll('table')].filter((el) => !el.parentElement?.closest('table'));
+  const table = tables[0];
+  if (tables.length !== 1 || !table) return null;
+  // Text outside the table (a paragraph copied along with it) would be lost: plain paste then.
+  if (doc.body.textContent.replace(table.textContent, '').trim()) return null;
+  const trs = [...table.rows];
+  if (trs.length > MAX_ROWS) return null;
+  const rows = trs.map((tr) => [...tr.cells].map(cellText));
   const width = Math.max(0, ...rows.map((r) => r.length));
-  if (rows.length === 0 || width === 0) return null;
+  if (rows.length === 0 || width === 0 || rows.length * width < 2) return null;
   const line = (r: string[]): string => `| ${Array.from({ length: width }, (_, i) => r[i] ?? '').join(' | ')} |`;
   const [head = [], ...body] = rows;
-  return [line(head), `| ${Array.from({ length: width }, () => '---').join(' | ')} |`, ...body.map(line)].join('\n');
+  const md = [line(head), `| ${Array.from({ length: width }, () => '---').join(' | ')} |`, ...body.map(line)].join('\n');
+  return md.length > max ? null : md;
+}
+
+/** `md` (a table) to insert at `caret` of `text`: on lines of its own, so neighbouring text does not join its rows. */
+export function asBlock(md: string, text: string, caret: number): string {
+  const before = text.slice(0, caret);
+  const after = text.slice(caret);
+  const lead = !before || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+  const tail = !after ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+  return `${lead}${md}${tail}`;
 }
 
 /** A table message in one line for previews: rows joined by « · », cells by « | »; the separator row goes. */

@@ -3,7 +3,7 @@ import * as Dropdown from '../../components/radix/dropdown-menu';
 import { Camera, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { CLOSE_HIT, IconButton, Tip, cx } from '../../components/ui';
-import { htmlTableToMarkdown } from '../../lib/markdown/table';
+import { asBlock, htmlTableToMarkdown } from '../../lib/markdown/table';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { MENTION_EVENT, takeMention, type MentionRequest } from './mentionRequest';
@@ -412,10 +412,10 @@ export function Composer({
 
   const onPaste = (e: ClipboardEvent): void => {
     // A table copied from a sheet or a page comes as text and a picture of it: the text (a pipe table) wins (board #148).
-    const table = htmlTableToMarkdown(e.clipboardData.getData('text/html'));
+    const table = htmlTableToMarkdown(e.clipboardData.getData('text/html'), MAX_CONTENT - text.length);
     if (table) {
       e.preventDefault();
-      insert(table);
+      insert(asBlock(table, text, ref.current?.selectionStart ?? text.length));
       return;
     }
     const imgs = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'));
