@@ -3,8 +3,9 @@ import { Bot, Paperclip, Sparkles } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Button, Modal, MOD, TextArea, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { smartErrorText } from '../../lib/ai';
+import { smartErrorRef, smartErrorText } from '../../lib/ai';
 import { ApiError } from '../../lib/api/client';
+import { errorText } from '../../lib/api/errors';
 import { isUploading, readyIds, roomLeft } from '../../lib/boards/pendingFiles';
 import { openBoardLink, openTaskAnywhere } from '../../services/boards';
 import { boardsApi } from '../../services/boardsApi';
@@ -36,7 +37,7 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
   const [text, setText] = useState('');
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.NONE);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ text: string; ref: string } | null>(null);
   const [refusal, setRefusal] = useState<{ reason: string; duplicateKey: string } | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -47,7 +48,7 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
   const submit = async (): Promise<void> => {
     if (!ready) return;
     setBusy(true);
-    setError('');
+    setError(null);
     setRefusal(null);
     try {
       const r = await boardsApi.createSmart(workspaceId, { text: text.trim(), priority, attachmentIds: readyIds(files.items) });
@@ -65,10 +66,13 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
       close();
       openTaskAnywhere(task);
     } catch (e) {
-      if (e instanceof ApiError) {
-        const m = smartErrorText({ status: e.status, reason: e.reason, field: e.field, message: e.message });
-        setError(t(m.key, m.reason ? { reason: t(m.reason) } : undefined));
-      } else setError(t('boards.err.save'));
+      // Never a bare «Не удалось сохранить» (bug #152): the cause in words, and the code, status
+      // and request id to quote — the server logs the request under that id.
+      const m = e instanceof ApiError ? smartErrorText({ status: e.status, reason: e.reason, field: e.field, message: e.message }) : null;
+      setError({
+        text: m ? t(m.key, m.reason ? { reason: t(m.reason) } : undefined) : errorText(e, t('smart.err.notCreated')),
+        ref: e instanceof ApiError ? smartErrorRef(e) : e instanceof Error ? e.name : '',
+      });
     } finally {
       setBusy(false);
     }
@@ -129,7 +133,7 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
           disabled={busy}
           onChange={(e) => {
             setText(e.target.value);
-            if (error) setError('');
+            if (error) setError(null);
             if (refusal) setRefusal(null);
           }}
           onPaste={(e) => {
@@ -193,9 +197,14 @@ function Dialog({ workspaceId }: { workspaceId: string }): ReactNode {
           </div>
         ) : null}
         {error ? (
-          <p className="text-caption text-danger-text" role="alert" data-testid="smart-task-error">
-            {error}
-          </p>
+          <div className="flex flex-col gap-0.5" role="alert" data-testid="smart-task-error">
+            <p className="text-caption text-danger-text">{error.text}</p>
+            {error.ref ? (
+              <p className="select-text break-all text-caption text-muted" data-testid="smart-task-error-ref">
+                {t('smart.err.ref', { ref: error.ref })}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </form>
     </Modal>

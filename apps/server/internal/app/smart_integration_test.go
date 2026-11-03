@@ -3,13 +3,19 @@
 package app_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -26,6 +32,9 @@ var (
 	smartDupRE      = regexp.MustCompile(`DUP=([A-Z0-9]+-[0-9]+)`)
 )
 
+// smartSlowDelay: how long the fake model thinks over a «SLOW» request.
+const smartSlowDelay = 1500 * time.Millisecond
+
 // CBF-75 additions: «REFUSE» declines at the board step; «NOIMAGES» answers 400 to a call with
 // images (a model without vision); the duplicate check answers a duplicate of «DUP=KEY-N».
 func smartFakeAnswer(w http.ResponseWriter, system, user string, images int) {
@@ -37,6 +46,9 @@ func smartFakeAnswer(w http.ResponseWriter, system, user string, images int) {
 		Request string `json:"request"`
 	}
 	_ = json.Unmarshal([]byte(user), &data)
+	if strings.Contains(data.Request, "SLOW") { // a model slower than the server's ReadTimeout (bug #152)
+		time.Sleep(smartSlowDelay)
+	}
 	if images > 0 && strings.Contains(data.Request, "NOIMAGES") {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = io.WriteString(w, `{"error":{"message":"image input is not supported","type":"invalid_request_error"}}`)
@@ -250,5 +262,50 @@ func TestSmartTasks(t *testing.T) {
 	o.must(200, "PUT", base, &v1.PutAiSettingsRequest{Provider: gpt, Model: "gpt-6-other"}, nil)
 	if st := state(bob); st != v1.AiState_AI_STATE_UNCHECKED {
 		t.Fatalf("after a model change: %v", st)
+	}
+}
+
+// TestSmartTaskOutlivesReadTimeout (bug #152): a model that thinks longer than the server's
+// ReadTimeout (30 s in cmd/server; 1 s here) still files the task, with and without a file —
+// the server side of «Не удалось сохранить» ruled out (the desktop's 20 s deadline was the cut).
+func TestSmartTaskOutlivesReadTimeout(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	base := "/api/workspaces/" + wid + "/ai"
+	key := aiFakeKey
+	gpt := v1.AiProvider_AI_PROVIDER_GPTUNNEL
+	o.must(200, "PUT", base, &v1.PutAiSettingsRequest{Provider: gpt, Model: "gpt-6-astra", ApiKey: &key}, nil)
+	o.must(200, "POST", base+"/check", &v1.CheckAiRequest{Provider: gpt, Model: "gpt-6-astra"}, nil)
+	dev := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Разработка", Key: "DEV"}, 201)
+
+	slow := httptest.NewUnstartedServer(testApp.Handler)
+	slow.Config.ReadTimeout = time.Second // < smartSlowDelay, as 30 s < a slow model in production
+	slow.Start()
+	defer slow.Close()
+	post := func(req *v1.CreateSmartTaskRequest) (int, []byte) {
+		t.Helper()
+		b, _ := protojson.Marshal(req)
+		r, _ := http.NewRequestWithContext(context.Background(), "POST", slow.URL+"/api/workspaces/"+wid+"/smart-tasks", bytes.NewReader(b))
+		r.Header.Set("Authorization", "Bearer "+o.token)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, raw
+	}
+	if st, raw := post(&v1.CreateSmartTaskRequest{Text: "ROUTE=DEV SLOW without files"}); st != 201 {
+		t.Fatalf("slow model: %d %s", st, raw)
+	}
+	stf, f := uploadAs(t, o, "/api/workspaces/"+wid+"/files", "notes.txt", "text/plain", []byte("счёт"))
+	if stf != 201 && stf != 200 {
+		t.Fatalf("upload: %d", stf)
+	}
+	st, raw := post(&v1.CreateSmartTaskRequest{Text: "ROUTE=DEV SLOW with a file", AttachmentIds: []string{f.GetId()}})
+	var res v1.CreateSmartTaskResponse
+	if st != 201 || protojson.Unmarshal(raw, &res) != nil || res.GetTask().GetBoardId() != dev.GetId() || res.GetTask().GetAttachmentCount() != 1 {
+		t.Fatalf("slow model with a file: %d %s", st, raw)
 	}
 }

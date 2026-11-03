@@ -1297,6 +1297,11 @@ test('m-boards-smart', async ({ page }) => {
   await expect(page.getByTestId('smart-task-refusal')).toContainText('Похоже на дубль задачи CAL-3');
   await expect(page.getByTestId('smart-task-text')).toHaveValue('Оплатить счёт поставщика — похоже, дубль');
   await checkpoint(page, 'm-boards-smart-refused', { keyboard: true });
+  // Bug #152: no answer in time — the cause and the code / status / request id to quote.
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика — таймаут');
+  await page.getByTestId('smart-task-submit').tap();
+  await expect(page.getByTestId('smart-task-error-ref')).toHaveText('Для поддержки: UNAVAILABLE · 504 · 7f3c9a1e5b2d4c6f8a0b1c2d');
+  await checkpoint(page, 'm-boards-smart-error', { keyboard: true });
 });
 
 test('m-boards-task', async ({ page }) => {

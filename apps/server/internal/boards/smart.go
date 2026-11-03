@@ -561,8 +561,25 @@ func refused(w http.ResponseWriter, ref *refusal, unseen bool) error {
 	return nil
 }
 
-// createSmartTask: POST /api/workspaces/{id}/smart-tasks.
+// createSmartTask: POST /api/workspaces/{id}/smart-tasks. A failure is logged with the request
+// id the client shows the person (bug #152: «Не удалось сохранить» with no trace): the status,
+// code, reason, cause, how long it took and whether the client had gone away. No request text,
+// files, model answers or keys — only codes and the server's own error texts.
 func (s *Service) createSmartTask(w http.ResponseWriter, r *http.Request) error {
+	start := time.Now()
+	err := s.smartTask(w, r)
+	if err != nil {
+		ctx := r.Context()
+		e := httpx.AsError(err)
+		slog.WarnContext(ctx, "boards: smart task failed", "request_id", httpx.RequestID(ctx), "path", r.URL.Path,
+			"status", e.Status, "code", e.Code.String(), "reason", e.Reason, "err", err,
+			"elapsed_ms", time.Since(start).Milliseconds(), "client_gone", ctx.Err() != nil)
+	}
+	return err
+}
+
+// smartTask is createSmartTask's work.
+func (s *Service) smartTask(w http.ResponseWriter, r *http.Request) error {
 	if isBot(r) {
 		return auth.ErrBotNotAllowed
 	}

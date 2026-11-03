@@ -21,9 +21,19 @@ export class ApiError extends Error {
      * Why, when a code has several causes (ApiError.reason): "PLAN_LIMIT" = a limit of the
      * workspace plan (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED). `used` / `limit`: the counter
      * that was hit (ROOM_FULL — users; FILE_QUOTA_EXCEEDED — bytes). `retryAfter`: seconds from
-     * a 429's `Retry-After` header (ADR-0023: code resend, mail limits).
+     * a 429's `Retry-After` header (ADR-0023: code resend, mail limits). `requestId`: the
+     * response's X-Request-ID — what the server logged the request under (bug #152).
      */
-    readonly extra: { reason?: string; used?: number; limit?: number; retryAfter?: number; planViolations?: readonly PlanLimitViolation[]; conflictId?: string; conflictName?: string } = {},
+    readonly extra: {
+      reason?: string;
+      used?: number;
+      limit?: number;
+      retryAfter?: number;
+      planViolations?: readonly PlanLimitViolation[];
+      conflictId?: string;
+      conflictName?: string;
+      requestId?: string;
+    } = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -35,6 +45,10 @@ export class ApiError extends Error {
 
   get retryAfter(): number | undefined {
     return this.extra.retryAfter;
+  }
+
+  get requestId(): string | undefined {
+    return this.extra.requestId;
   }
 
   is(code: string): boolean {
@@ -50,6 +64,7 @@ export function retryAfterSeconds(res: Response): number | undefined {
 
 export async function toApiError(res: Response): Promise<ApiError> {
   const retry = retryAfterSeconds(res);
+  const requestId = res.headers.get('X-Request-ID') ?? undefined;
   try {
     const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown; planLimitsExceeded?: unknown; conflictId?: string; conflictName?: string };
     // protojson: uint64 as a string.
@@ -64,6 +79,7 @@ export async function toApiError(res: Response): Promise<ApiError> {
       ...(used !== undefined ? { used } : {}),
       ...(limit !== undefined ? { limit } : {}),
       ...(retry !== undefined ? { retryAfter: retry } : {}),
+      ...(requestId ? { requestId } : {}),
       // SIP_CONTACT_NUMBER_TAKEN (ADR-0137 §2): the contact that already has the number.
       ...(b.conflictId ? { conflictId: b.conflictId } : {}),
       ...(b.conflictName !== undefined && b.conflictId ? { conflictName: b.conflictName } : {}),
@@ -72,7 +88,10 @@ export async function toApiError(res: Response): Promise<ApiError> {
     for (const h of errorHooks) h(err);
     return err;
   } catch {
-    return new ApiError('ERROR_CODE_UNSPECIFIED', res.statusText || `HTTP ${res.status}`, res.status, undefined, retry !== undefined ? { retryAfter: retry } : {});
+    return new ApiError('ERROR_CODE_UNSPECIFIED', res.statusText || `HTTP ${res.status}`, res.status, undefined, {
+      ...(retry !== undefined ? { retryAfter: retry } : {}),
+      ...(requestId ? { requestId } : {}),
+    });
   }
 }
 

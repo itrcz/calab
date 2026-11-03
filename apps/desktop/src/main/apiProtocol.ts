@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { protocol } from 'electron';
 import { readBodyUpTo } from '../shared/bodyBuffer';
 import { identityOriginPath } from '../shared/identityOrigin';
@@ -60,7 +61,8 @@ function corsHeaders(origin: string | null): Record<string, string> {
     Vary: 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
-    'Access-Control-Expose-Headers': 'Content-Length, Content-Type, Content-Disposition, Retry-After',
+    // X-Request-ID: an error names the request so a person can report it (bug #152).
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Type, Content-Disposition, Retry-After, X-Request-ID',
     'Access-Control-Max-Age': '600',
   };
 }
@@ -83,10 +85,12 @@ async function forward(
   token: string | null,
   body: ReadableStream | Uint8Array | null,
   signal: AbortSignal,
+  requestId: string,
 ): Promise<Response> {
   const headers = new Headers(req.headers);
   headers.delete('origin');
   headers.delete('referer');
+  headers.set('X-Request-ID', requestId); // the server logs it and answers with it (httpx.WithRequestID)
   if (identityOriginPath(new URL(target).pathname)) headers.set('Origin', new URL(currentServerUrl()).origin);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const init: RequestInit & { duplex?: 'half' } = { method: req.method, headers, redirect: 'manual', signal };
@@ -143,11 +147,31 @@ export const IDLE_TIMEOUT_MS = 30_000;
  * 60 s. Both deadlines stretch to this for them (the fixed 20 s headers deadline would cut them).
  */
 export const SLOW_REQUEST_MS = 75_000;
-const SLOW_PATHS = [/^\/api\/workspaces\/[^/]+\/sip\/test$/, /^\/api\/workspaces\/[^/]+\/sip\/ivr(\/[^/]+)?$/];
+
+/**
+ * A smart task (ADR-0118, ADR-0123: `POST /api/workspaces/{id}/smart-tasks`) answers within the
+ * server's SmartBudget (100 s: files, then up to three model calls) plus the task's creation. The
+ * 20 s headers deadline cut every smart task whose model thought longer — «Не удалось сохранить»
+ * while the server was still working (bug #152).
+ */
+export const AI_REQUEST_MS = 130_000;
+
+const SLOW_PATHS: ReadonlyArray<readonly [RegExp, number]> = [
+  [/^\/api\/workspaces\/[^/]+\/sip\/test$/, SLOW_REQUEST_MS],
+  [/^\/api\/workspaces\/[^/]+\/sip\/ivr(\/[^/]+)?$/, SLOW_REQUEST_MS],
+  [/^\/api\/workspaces\/[^/]+\/smart-tasks$/, AI_REQUEST_MS],
+];
 
 /** The headers / idle deadline of a request to `pathname`. */
 export function deadlinesFor(pathname: string): { headers: number; idle: number } {
-  return SLOW_PATHS.some((re) => re.test(pathname)) ? { headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS } : { headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS };
+  const slow = SLOW_PATHS.find(([re]) => re.test(pathname))?.[1];
+  return slow ? { headers: slow, idle: slow } : { headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS };
+}
+
+/** The id of a request (X-Request-ID): the renderer's own or a new one. */
+function requestIdOf(req: Request): string {
+  const own = req.headers.get('x-request-id');
+  return own && /^[\x21-\x7e]{1,64}$/.test(own) ? own : randomUUID().replaceAll('-', '');
 }
 
 function timeoutError(message: string): DOMException {
@@ -218,6 +242,7 @@ export function handleApiScheme(): void {
     const target = `${base}${url.pathname}${url.search}`;
     const idempotent = req.method === 'GET' || req.method === 'HEAD';
     const deadline = deadlinesFor(url.pathname);
+    const requestId = requestIdOf(req);
 
     const idleController = new AbortController();
     const headersController = new AbortController();
@@ -268,12 +293,12 @@ export function handleApiScheme(): void {
       // upload is already covered end to end by the idle timer above.
       if (!streamed) headersTimer = setTimeout(() => headersController.abort(timeoutError('connect/headers timeout')), deadline.headers);
 
-      let res = await forward(req, target, await identityAccessToken(new URL(target).pathname), body, fetchSignal);
+      let res = await forward(req, target, await identityAccessToken(new URL(target).pathname), body, fetchSignal, requestId);
       if (res.status === 401 && replayable) {
         const t = await forceRefresh();
         if (t) {
           await discard(res);
-          res = await forward(req, target, t, body, fetchSignal);
+          res = await forward(req, target, t, body, fetchSignal, requestId);
         }
       }
       stall.answered(stallId);
@@ -305,16 +330,17 @@ export function handleApiScheme(): void {
     } catch (err) {
       disarmAll();
       if (err instanceof DOMException && err.name === 'TimeoutError') {
-        log.warn(`api request timeout ${req.method} ${url.pathname.replace(/^(\/api\/(?:public\/)?forms)\/[^/]+/, '$1/{code}')}`);
+        log.warn(`api request timeout ${req.method} ${url.pathname.replace(/^(\/api\/(?:public\/)?forms)\/[^/]+/, '$1/{code}')} request_id=${requestId}`);
         // Several of these at once = the connection, not the request (apiStall.ts).
         const reason = stall.timedOut(stallId);
         if (reason) void resetApiTransport(reason);
-        return withCors(Response.json({ code: 'ERROR_CODE_UNAVAILABLE', message: 'request timed out' }, { status: 504 }), origin);
+        // The same id the server got: its log tells whether it was still working (bug #152).
+        return withCors(Response.json({ code: 'ERROR_CODE_UNAVAILABLE', message: 'request timed out' }, { status: 504, headers: { 'X-Request-ID': requestId } }), origin);
       }
       return withCors(
         Response.json(
           { code: 'ERROR_CODE_UNAVAILABLE', message: err instanceof Error ? err.message : String(err) },
-          { status: 503 },
+          { status: 503, headers: { 'X-Request-ID': requestId } },
         ),
         origin,
       );
