@@ -19,6 +19,9 @@ export const zhApp: DictShape<typeof enApp> = {
   'legal.thirdPartyTitle': '第三方许可证',
   'legal.unavailable': '此版本不提供许可证全文。',
   'legal.footerLicense': '许可证：Business Source License 1.1',
+  'legal.privacy': '隐私政策',
+  'legal.termsOfUse': '使用条款',
+  'legal.docsCard': '文档',
   // rebindable in-window shortcuts
   'hotkeys.change': '更改',
   'hotkeys.reset': '重置',

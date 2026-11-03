@@ -306,6 +306,17 @@ test('m-login', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
   await expectNoFieldFocus(page, 'login');
   await checkpoint(page, 'm-login');
+  // Native shell (#139, ADR-0148): the footer's privacy/terms links go to the landing's app-mode
+  // page and «Powered by GPTunneL» is plain text, not a link (no vendor subscription site in one
+  // tap). Same host bridge apps/mobile declares (platform/nativeShell); review shot only.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'CalabHostActivity', {
+      value: Object.freeze({ version: 1, host: 1, platform: 'ios', document: 'visual', rotateDocument: () => undefined, send: () => undefined }),
+    });
+  });
+  await open(page, '/');
+  await expect(page.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
+  await checkpoint(page, 'm-login-shell', { snapshot: false });
 });
 
 test('m-join', async ({ page }) => {
@@ -928,6 +939,12 @@ test('m-settings-profile', async ({ page }) => {
   await entry.tap();
   await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' }).getByTestId('delete-account-blocked')).toBeVisible();
   await checkpoint(page, 'm-settings-delete', { snapshot: false });
+  await page.keyboard.press('Escape'); // close the delete-account dialog (Radix)
+  // «О программе»: the privacy policy / terms links (#139) above the licence card. Review shot only.
+  await page.getByTestId('phone-back').tap();
+  await page.getByTestId('phone-profile-about').tap();
+  await expect(settings.getByText('Политика конфиденциальности')).toBeVisible();
+  await checkpoint(page, 'm-settings-about', { snapshot: false });
 });
 
 // ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the

@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import type { LegalTexts } from '../../../shared/ipc';
 import { Button, Card, Modal, Row, Spinner, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { getLocale, t, useLocale } from '../../i18n';
 import { platform } from '../../platform';
+import { inNativeShell } from '../../platform/nativeShell';
 
 /**
  * Licence attribution (LICENSE: Business Source License 1.1; NOTICE requires the
@@ -14,8 +15,19 @@ export const VENDOR = 'GPTunneL';
 export const VENDOR_URL = 'https://gptunnel.ai';
 export const LICENSE_EMAIL = 'support@calab.io';
 
-/** «© 2026 GPTunneL · Powered by GPTunneL» — the vendor name opens the site. */
+/**
+ * «© 2026 GPTunneL · Powered by GPTunneL» — the vendor name opens the site. In a native shell
+ * (ADR-0148) the vendor sells subscriptions on that site, so the name is plain text there, not a
+ * link (#139): a reviewer must not reach it in one tap.
+ */
 export function Attribution({ className }: { className?: string }): ReactNode {
+  if (inNativeShell()) {
+    return (
+      <p className={cx('text-caption text-muted', className)}>
+        © 2026 {VENDOR} · {t('legal.poweredBy')} {VENDOR}
+      </p>
+    );
+  }
   const open = (): void => void platform.app.openExternal(VENDOR_URL);
   return (
     <p className={cx('text-caption text-muted', className)}>
@@ -24,6 +36,33 @@ export function Attribution({ className }: { className?: string }): ReactNode {
         {VENDOR}
       </button>
     </p>
+  );
+}
+
+const LANDING_LOCALE = { ru: 'ru', en: 'en', es: 'es', 'zh-CN': 'zh' } as const;
+
+/**
+ * Landing legal page (`<VITE_LEGAL_URL>/<locale>/legal/<page>/`) in the UI language; null when the
+ * origin is not configured. In a native shell (ADR-0148, #139) this is the app-mode page instead
+ * (`.../legal/app/<page>/`): no landing header/footer, no links to pricing, the public offer or
+ * payments — a reviewer must not reach prices in one or two taps from the login screen.
+ */
+export function legalPageUrl(page: 'privacy' | 'terms', locale: keyof typeof LANDING_LOCALE = getLocale()): string | null {
+  const origin = import.meta.env.VITE_LEGAL_URL?.replace(/\/+$/, '');
+  if (!origin) return null;
+  const mode = inNativeShell() ? 'app/' : '';
+  return `${origin}/${LANDING_LOCALE[locale]}/legal/${mode}${page}/`;
+}
+
+/** Privacy policy / terms of use: the system browser in the shell and in Electron (platform.app.openExternal). */
+function LegalLinkButton({ page, className }: { page: 'privacy' | 'terms'; className?: string }): ReactNode {
+  useLocale();
+  const url = legalPageUrl(page);
+  if (!url) return null;
+  return (
+    <button type="button" onClick={() => void platform.app.openExternal(url)} className={className}>
+      {t(page === 'privacy' ? 'legal.privacy' : 'legal.termsOfUse')}
+    </button>
   );
 }
 
@@ -62,9 +101,21 @@ export function LegalViewer({ doc, onClose }: { doc: Doc; onClose: () => void })
 
 /** «О программе» → «Лицензия» card. */
 export function LicenseCard(): ReactNode {
+  useLocale();
   const [doc, setDoc] = useState<Doc | null>(null);
   return (
     <>
+      {legalPageUrl('privacy') ? (
+        <Card title={t('legal.docsCard')}>
+          {(['privacy', 'terms'] as const).map((page) => (
+            <Row key={page} label={t(page === 'privacy' ? 'legal.privacy' : 'legal.termsOfUse')}>
+              <Button variant="secondary" onClick={() => void platform.app.openExternal(legalPageUrl(page) ?? '')}>
+                {t('legal.open')}
+              </Button>
+            </Row>
+          ))}
+        </Card>
+      ) : null}
       <Card title={t('legal.card')}>
         <Row label={t('legal.busl')} hint={t('legal.buslHint')}>
           <Button variant="secondary" onClick={() => setDoc('license')}>
@@ -94,6 +145,15 @@ export function AuthLegalFooter({ className }: { className?: string } = {}): Rea
   return (
     <footer className={cx("flex flex-col items-center gap-0.5 text-center", className)}>
       <Attribution />
+      {legalPageUrl('privacy') ? (
+        <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-caption text-muted mobile:flex-col mobile:gap-0">
+          <LegalLinkButton page="privacy" className="hover:text-fg hover:underline mobile:py-0.5" />
+          <span aria-hidden className="mobile:hidden">
+            ·
+          </span>
+          <LegalLinkButton page="terms" className="hover:text-fg hover:underline mobile:py-0.5" />
+        </p>
+      ) : null}
       <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-caption text-muted mobile:flex-col mobile:gap-0">
         <button type="button" onClick={() => setDoc('license')} className="hover:text-fg hover:underline mobile:py-0.5">
           {t('legal.footerLicense')}
