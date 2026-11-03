@@ -267,3 +267,98 @@ func TestMCPOnBehalfOfMemberStaysInTheConsent(t *testing.T) {
 		t.Fatalf("a comment after the revocation: %d → %d", comments, tr.GetTask().GetCommentCount())
 	}
 }
+
+// TestMCPOnBehalfOfOwnerStaysInBotWorkspaces (second review of ADR-0156): on behalf of the
+// owner, MCP reaches only the workspaces where the bot is a member and the owner's own sign-in
+// is not required — the aggregate tools (list_tasks mine, find, a task key across workspaces)
+// never show or touch the owner's tasks elsewhere; a person's own session gets no MCP, header
+// or not; the owner's REST call through the bot is not marked «via MCP».
+func TestMCPOnBehalfOfOwnerStaysInBotWorkspaces(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	wa := ws.GetId()
+	bt := createBot(t, o, wa, "mcpowner")
+	if st, _ := setActsAsOwner(o, wa, bt.id, true); st != 200 {
+		t.Fatalf("acts_as_owner: %d", st)
+	}
+	mine := func(wsID, key, title string) *v1.Task {
+		b := createBoard(t, o, wsID, &v1.CreateBoardRequest{Name: key, Key: key}, 201)
+		tk := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: title}, 201)
+		o.must(200, "PUT", "/api/tasks/"+tk.GetId()+"/assignees", &v1.SetAssigneesRequest{Assignees: []*v1.TaskAssigneeInput{{UserId: o.id}}}, nil)
+		return tk
+	}
+	ta := mine(wa, "MOA", "видно агенту")
+	// X: the owner's workspace without the bot. S: with the bot, but enforced SSO.
+	wx := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	tx := mine(wx, "MOX", "секрет без бота")
+	wsS := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	o.must(201, "POST", "/api/workspaces/"+wsS+"/bots/add", &v1.AddBotRequest{BotUserId: bt.id}, nil)
+	ts := mine(wsS, "MOS", "секрет под SSO")
+	if _, err := testDB.Pool.Exec(context.Background(), `INSERT INTO workspace_identity_policies (workspace_id, mode) VALUES ($1, 'enforced')
+		ON CONFLICT (workspace_id) DO UPDATE SET mode = 'enforced'`, wsS); err != nil {
+		t.Fatal(err)
+	}
+
+	text := mustTool(t, bt, "owner", "list_tasks", map[string]any{"mine": true})
+	if !strings.Contains(text, ta.GetKey()) || strings.Contains(text, tx.GetId()) || strings.Contains(text, ts.GetId()) {
+		t.Fatalf("list_tasks mine on behalf: %s", text)
+	}
+	text = mustTool(t, bt, "owner", "find", map[string]any{"q": "секрет"})
+	if strings.Contains(text, tx.GetId()) || strings.Contains(text, ts.GetId()) {
+		t.Fatalf("find on behalf leaks: %s", text)
+	}
+	for _, c := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"read", map[string]any{"task": tx.GetKey()}},
+		{"read", map[string]any{"task": tx.GetId()}},
+		{"read", map[string]any{"task": ts.GetKey()}},
+		{"read", map[string]any{"task": ts.GetId()}},
+		{"comment_task", map[string]any{"task": ts.GetId(), "text": "x"}},
+		{"assign", map[string]any{"task": tx.GetKey(), "users": []string{"me"}, "mode": "remove"}},
+		{"update_task", map[string]any{"task": ts.GetKey(), "title": "x"}},
+		{"list_tasks", map[string]any{"workspace": wx}},
+		{"list_tasks", map[string]any{"board": "MOS"}},
+		{"create_task", map[string]any{"board": "MOX", "title": "x"}},
+	} {
+		if st, text, isErr := mcpToolAs(t, bt, "owner", c.name, c.args); st != 200 || !isErr || strings.Contains(text, "секрет") {
+			t.Errorf("%s %v on behalf: %d %v %s; want a tool error", c.name, c.args, st, isErr, text)
+		}
+	}
+	if _, err := testDB.Pool.Exec(context.Background(), `UPDATE workspace_identity_policies SET mode = 'off' WHERE workspace_id = $1`, wsS); err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range []*v1.Task{tx, ts} {
+		var got v1.TaskResponse
+		o.must(200, "GET", "/api/tasks/"+tk.GetId(), nil, &got)
+		if got.GetTask().GetTitle() != tk.GetTitle() || got.GetTask().GetCommentCount() != 0 || len(got.GetTask().GetAssignees()) != 1 {
+			t.Fatalf("task outside the bot's reach changed: %v", got.GetTask())
+		}
+	}
+
+	// A person's own session: no MCP, with the header or without.
+	for _, who := range []string{"", "owner"} {
+		if st, text, _ := mcpToolAs(t, &bot{client: o.client, id: o.id}, who, "list_tasks", map[string]any{"mine": true}); st != http.StatusForbidden {
+			t.Fatalf("a person's session with %q: %d %s", who, st, text)
+		}
+	}
+
+	// The owner through the bot over REST: via_bot_id, but not «via MCP».
+	ob := asOwner(bt)
+	var tr v1.TaskResponse
+	o.must(200, "GET", "/api/tasks/"+ta.GetId(), nil, &tr)
+	var cm v1.CreateMessageResponse
+	ob.must(201, "POST", "/api/rooms/"+tr.GetTask().GetRoomId()+"/messages", &v1.CreateMessageRequest{Content: "через REST от имени"}, &cm)
+	if m := cm.GetMessage(); m.GetViaBotId() != bt.id || m.GetVia() != "" {
+		t.Fatalf("REST on behalf: via bot %q via %q", m.GetViaBotId(), m.GetVia())
+	}
+	high := v1.TaskPriority_TASK_PRIORITY_HIGH
+	ob.must(200, "PATCH", "/api/tasks/"+ta.GetId(), &v1.UpdateTaskRequest{Priority: &high}, nil)
+	var page v1.TaskActivityPage
+	o.must(200, "GET", "/api/tasks/"+ta.GetId()+"/activity?limit=100", nil, &page)
+	for _, it := range page.GetItems() {
+		if a := it.GetActivity(); a != nil && a.GetVia() != "" {
+			t.Errorf("journal %q marked via %q without MCP", a.GetKind(), a.GetVia())
+		}
+	}
+}

@@ -738,7 +738,8 @@ export interface MockServer {
   readyPending(workspaceId: string): void;
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
-  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message;
+  /** `viaBotId` / `via` (ADR-0106 / ADR-0156): the message written through a bot or through MCP. */
+  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward; viaBotId?: string; via?: string }): Message;
   /** ADR-0057: registers the global built-in «Calab Stikers» pack (workspace-less, `builtin`, usable everywhere); pictures come from the client bundle. */
   addBuiltinStickerPack(manifest: { id: string; name: string; stickers: { id: string; name: string; emoji: string }[] }): StickerPack;
   /**
@@ -3048,6 +3049,7 @@ class MockImpl {
     attachmentIds: string[],
     sticker?: Sticker,
     forward?: MockForward,
+    via: { viaBotId: string; via: string } = { viaBotId: '', via: '' },
   ): Message {
     const attachments = attachmentIds.map((id) => {
       const f = this.state.files.get(id);
@@ -3067,6 +3069,7 @@ class MockImpl {
       createdAt: tick(this.state),
       ...(sticker ? { sticker } : {}),
       ...(forward ? { forward: forwardOf(forward) } : {}),
+      ...via,
     });
     list.push(msg);
     this.state.messages.set(room.id, list);
@@ -3122,11 +3125,11 @@ class MockImpl {
     return true;
   }
 
-  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message {
+  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward; viaBotId?: string; via?: string }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
     const sticker = a.stickerId ? (this.findSticker(a.stickerId)?.sticker ?? this.state.deletedStickers.get(a.stickerId)) : undefined;
-    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker, a.forward);
+    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker, a.forward, { viaBotId: a.viaBotId ?? '', via: a.via ?? '' });
   }
 
   // ------------------------------------------------ sticker packs (ADR-0030)

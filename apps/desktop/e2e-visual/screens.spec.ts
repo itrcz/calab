@@ -7,7 +7,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/f
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { NOW, checkpoint, expectAssigneeStacks, expectToolbarHeights, joinVoice, login, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, settle } from './harness';
+import { NOW, checkpoint, expectAssigneeStacks, expectToolbarHeights, joinVoice, login, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedViaMcp, settle } from './harness';
 import { DAY, seedDay } from './calendarWeb';
 import { startPublisher } from './publisher';
 
@@ -4810,6 +4810,22 @@ test('boards-task-history', async ({ open, win, mock, shot }) => {
   await expect(section.getByTestId('history-diff')).toBeVisible();
   await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await checkpoint(shot, 'boards-task-history');
+  // ADR-0156: through MCP — «(через бота Погода · MCP)» after a person, «(через MCP)» after a bot's
+  // own change, in the history and on the comments (the panel reopened to reload both).
+  mock.seedBots(); // open() reset the mock: the bots again, now known to the app by their events
+  seedViaMcp(mock);
+  await win.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  await section.getByRole('radio', { name: 'История' }).click();
+  await expect(section.locator('[data-via-mcp]')).toHaveCount(2);
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(shot, 'boards-task-via-mcp');
+  await section.getByRole('radio', { name: 'Комментарии' }).click();
+  const viaMcp = panel.locator('[data-message-id]').filter({ hasText: 'Взял в работу' });
+  await expect(panel.locator('[data-message-id] [data-via-mcp]')).toHaveCount(3);
+  await viaMcp.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'boards-task-comments-via-mcp');
 });
 
 /** The list grouped by status, two rows selected: the bulk actions bar. */
