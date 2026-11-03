@@ -826,6 +826,18 @@ test('m-home', async ({ page }) => {
   await checkpoint(page, 'm-voice-recovery-unheard');
 });
 
+// Bug #146: a room with an unread @mention carries the count badge, a plainly unread one only the bold name.
+test('m-home-mentions', async ({ page }) => {
+  await signedIn(page);
+  const list = page.getByTestId('phone-room-list');
+  await expect(list.getByTestId('phone-room-row').first()).toBeVisible();
+  mock.injectMessage({ roomId: IDS.rooms.call, authorId: IDS.users.vera, content: 'Обычное непрочитанное' });
+  mock.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.vera, content: `@${IDS.users.anna} посмотришь макет?` });
+  await expect(page.getByTestId('phone-room-row').filter({ hasText: 'разработка' }).locator('[data-count-badge]')).toBeVisible();
+  await page.mouse.move(0, 0);
+  await checkpoint(page, 'm-home-mentions');
+});
+
 // ADR-0073 §4: people in the room's voice, I am not — the banner under the header with «Присоединиться».
 test('m-room-voice-banner', async ({ page }) => {
   seedCall();

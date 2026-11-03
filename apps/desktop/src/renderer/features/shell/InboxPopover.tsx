@@ -13,7 +13,7 @@ import { noticeText, openTaskAnywhere } from '../../services/boards';
 import { loadMentions } from '../../services/mentions';
 import { useBoards } from '../../stores/boards';
 import { useInbox } from '../../stores/inbox';
-import { inboxBadgeCount, inboxRows, unreadInboxItems } from '../../stores/inboxUnread';
+import { inboxBadgeCount, inboxRows, unreadInboxItems, unreadNoticeTasks } from '../../stores/inboxUnread';
 import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
@@ -32,9 +32,9 @@ function markReadUpTo(roomId: string, messageId: string): void {
 /**
  * Mentions inbox (docs/09 #1, ADR-0141): chat mentions (GET /api/me/mentions, all workspaces) and
  * task notices (GET /api/me/task-notices), merged with the live ones, newest first. Read items
- * stay listed; unread ones carry a dot. The badge counts unread mentions: «read» is the room's
- * read marker being at or after the mention (stores/inboxUnread.ts); unread tasks are counted by
- * the boards' «Непрочитанное».
+ * stay listed; unread ones carry a dot. The badge counts unread mentions («read» is the room's
+ * read marker being at or after the mention, stores/inboxUnread.ts) plus the tasks with an unread
+ * notice here (the boards' unread set, one per task).
  */
 export function InboxButton(): ReactNode {
   const ready = useSession((s) => s.ready);
@@ -75,7 +75,11 @@ function InboxBadge(): ReactNode {
   const items = useInbox((s) => s.items);
   const loaded = useInbox((s) => s.loaded);
   const hasMore = useInbox((s) => s.hasMore);
-  const total = useRooms((s) => inboxBadgeCount({ items, loaded, hasMore }, s.readState, s.mentions, s.byId));
+  const notices = useInbox((s) => s.notices);
+  const chats = useRooms((s) => inboxBadgeCount({ items, loaded, hasMore }, s.readState, s.mentions, s.byId));
+  // Unread task notices count like mentions (bug #146): the badge is the whole inbox's unread.
+  const tasks = useBoards((s) => unreadNoticeTasks(notices, s.unread));
+  const total = chats + tasks;
   if (total <= 0) return null;
   return (
     <CountBadge count={total} data-testid="inbox-badge" role="status" aria-label={`${t('shell.inbox')}: ${total}`} className="absolute -right-1 -top-1" />

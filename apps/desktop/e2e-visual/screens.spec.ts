@@ -59,6 +59,7 @@ const KEY = new Set([
   'chat-context-menu',
   'room-notify-menu',
   'inbox-popover',
+  'inbox-badge-rooms',
   'dm-list',
   'nav-badges',
   'dm-archive',
@@ -1481,6 +1482,21 @@ test('inbox-popover', async ({ open, win, mock, shot }) => {
   await expect(pop.getByText(/разработка · /).first()).toBeVisible();
   await settle(win);
   await checkpoint(shot, 'inbox-popover');
+});
+
+// Bug #146: a room with an unread @mention looks different from plain unread (the count badge), and the
+// title-bar inbox badge adds the unread task notice (CAL-3) to the chat mention.
+test('inbox-badge-rooms', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const task = mock.boards.taskByKey('CAL-3');
+  if (!task) throw new Error('CAL-3 is not seeded');
+  mock.injectMessage({ roomId: IDS.rooms.call, authorId: IDS.users.vera, content: 'Обычное непрочитанное' });
+  mock.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.vera, content: `@${IDS.users.anna} посмотришь макет?` });
+  mock.injectMessage({ roomId: task.task.roomId, authorId: IDS.users.vera, content: `@${IDS.users.anna} проверишь на Mac?` });
+  await expect(win.getByTestId('inbox-badge')).toBeVisible();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'inbox-badge-rooms');
 });
 
 test('shell-shortcuts', async ({ open, win, mock, shot }) => {

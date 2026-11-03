@@ -72,3 +72,13 @@ export function inboxRows(mentions: ReadonlyArray<Message>, notices: ReadonlyArr
   }
   return rows.sort((x, y) => (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
 }
+
+/**
+ * Unread task notices for the title badge (bug #146): the tasks with a notice in the inbox that are
+ * still unread (the boards' unread set: opening the task clears it), one per task like the row dot.
+ */
+export function unreadNoticeTasks(notices: ReadonlyArray<{ taskId: string }>, unread: Readonly<Record<string, string>>): number {
+  const seen = new Set<string>();
+  for (const e of notices) if (unread[e.taskId] !== undefined) seen.add(e.taskId);
+  return seen.size;
+}
