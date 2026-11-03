@@ -82,6 +82,7 @@ test('office-entry-points', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('office-view')).toHaveAttribute('data-state', 'saved');
   // An attachment views only (config ?file=): «Сохранить в Диск» makes an editable copy.
   await expect(win.getByTestId('office-attachment-notice')).toBeVisible();
+  await expect(win.getByTestId('office-attachment-notice').getByTestId('office-download')).toBeVisible();
   await checkpoint(shot, 'office-attachment');
   // The editor's own «Открыть расположение файла» goes back to the task; the editor is gone, the tab stays.
   await win.frameLocator('[data-testid="office-frame"]').getByTestId('stub-goback').click();
@@ -108,8 +109,8 @@ test('office-file-view', async ({ open, win, mock, shot }) => {
   await expect(view).toHaveAttribute('data-mode', 'edit');
   await expect(win.getByTestId('file-tab')).toHaveCount(1);
   // «Редактирует Вера» on the row being edited elsewhere is in the Disk under the view (checked in office-create).
-  // «Скачать» in the view's own bar.
-  await expect(win.getByTestId('office-download')).toBeVisible();
+  // A file edited in place has no bar over the editor (docs/08): «Скачать» is the editor's own.
+  await expect(win.getByTestId('office-download')).toHaveCount(0);
   await checkpoint(shot, 'office-file-view');
 
   // In a call the island is folded into my avatar on the rail (ADR-0146): no strip under the

@@ -298,10 +298,11 @@ function OfficeView({ tab }: { tab: TaskTab }): ReactNode {
           </span>
         </div>
       ) : null}
-      {/* A legacy format or an attachment: view only, with the way to an editable copy. */}
-      {!phone || convert || attachment ? (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-1.5 text-caption text-muted" data-testid={convert ? 'office-convert-notice' : attachment ? 'office-attachment-notice' : 'office-bar'}>
-          <span className="min-w-0 truncate" title={convert || attachment ? undefined : name}>{convert ? t('office.convert', { ext: convert }) : attachment ? t('office.attachment') : name}</span>
+      {/* A legacy format or an attachment: view only, with the way to an editable copy and «Скачать».
+          A file edited in place has no bar of ours (docs/08): the editor's «Файл → Скачать как» saves it. */}
+      {convert || attachment ? (
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-1.5 text-caption text-muted" data-testid={convert ? 'office-convert-notice' : 'office-attachment-notice'}>
+          <span className="min-w-0">{convert ? t('office.convert', { ext: convert }) : t('office.attachment')}</span>
           <span className="flex shrink-0 gap-2">
             {phone ? null : (
               <Button variant="secondary" size="sm" onClick={download} data-testid="office-download">
