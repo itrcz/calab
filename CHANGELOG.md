@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Добавлено
+- MCP без бота: агент (Claude Code, Codex, Cursor) подключается к Calab под вашим аккаунтом — адрес сервера, вход в браузере, «Разрешить». Подключение видно и отключается в «Настройки → Сеансы», действия помечены «через MCP» (ADR-0158).
+
+### Для администраторов
+- Миграция 00145 (клиенты и запросы MCP OAuth, `sessions.scope`, `sessions.mcp_client_id`) — применяется при старте API. Caddy отдаёт API `/.well-known/oauth-protected-resource` и `/.well-known/oauth-authorization-server`. Новая переменная `MCP_OAUTH_REDIRECT_HOSTS` (по умолчанию `claude.ai,claude.com`).
+
 ## [4.14.0] — 2026-11-03
 
 ### Коротко
