@@ -106,7 +106,8 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 	if !ok {
 		occ = Occurrence{b.series.Start, b.series.End}
 	}
-	ics := BuildICS(s.icsEvent(b, method, users, icsOrg, roomName, "", s.eventURL(b.ev.ID)))
+	id := s.identity(ctx, b)
+	ics := BuildICS(s.icsEvent(b, id, method, users, icsOrg, roomName, "", s.eventURL(b.ev.ID)))
 	var names, members []string
 	for _, a := range b.att {
 		if a.UserID != nil {
@@ -149,7 +150,7 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 			own := deref(a.Email)
 			attendees = strings.Join(append(slices.Clone(members), own), ", ")
 			link = s.viewURL(b, own)
-			invite = BuildICS(s.icsEvent(b, method, users, icsOrg, roomName, own, link))
+			invite = BuildICS(s.icsEvent(b, id, method, users, icsOrg, roomName, own, link))
 		}
 		date, when := formatWhen(locale, occ, b.ev.AllDay, loc)
 		if free {
@@ -205,11 +206,12 @@ func (s *Service) tokenExpiry(b *bundle) time.Time {
 	return s.Now().Add(365 * 24 * time.Hour)
 }
 
-// icsEvent describes b for invite.ics with the meeting link; only != "" keeps that external
-// attendee's line alone.
-func (s *Service) icsEvent(b *bundle, method string, users map[uuid.UUID]sqlc.ListEventUsersRow, org sqlc.ListEventUsersRow, roomName, only, link string) ICSEvent {
+// icsEvent describes b for invite.ics (as id names it) with the meeting link; only != "" keeps
+// that external attendee's line alone.
+func (s *Service) icsEvent(b *bundle, id icsIdentity, method string, users map[uuid.UUID]sqlc.ListEventUsersRow, org sqlc.ListEventUsersRow, roomName, only, link string) ICSEvent {
 	e := ICSEvent{
-		UID: b.ev.ID.String() + "@calab", Sequence: int(b.ev.Sequence), Method: method, Series: b.series,
+		UID: id.uid, Instance: id.instance, InstanceAllDay: id.allDay, InstanceLoc: id.loc,
+		Sequence: int(b.ev.Sequence), Method: method, Series: b.series,
 		Title: b.ev.Title, Description: b.ev.Description, URL: link, Stamp: s.Now(),
 		Organizer: ICSPerson{Name: org.DisplayName, Email: s.organizerAddress(org)},
 	}

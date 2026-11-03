@@ -1235,7 +1235,7 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('task-search-save-menu')).toHaveCount(0);
   await win.keyboard.press('Escape');
   await expect(win.getByTestId('quick-switcher')).toHaveCount(0);
-  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть встречу' }).click();
   await win.getByTestId('section-boards').click();
   await win.getByTestId('saved-search').filter({ hasText: 'Доски в разработке' }).click();
   await expect(win.getByTestId('task-search-page')).toBeVisible();
@@ -1600,7 +1600,7 @@ test('self-mic-menu', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('toast')).toHaveCount(1); // still only the sound prompt
   await checkpoint(shot, 'voice-audio-recovery-unheard');
   // Outside «Команда» the island is folded (ADR-0146): the avatar's mark carries the state.
-  await win.getByTestId('toast').getByRole('button', { name: 'Закрыть' }).click();
+  await win.getByTestId('toast').getByRole('button', { name: 'Закрыть встречу' }).click();
   await win.getByTestId('section-calendar').click();
   const mark = win.getByTestId('island-call-mark');
   await expect(mark).toHaveAttribute('data-trouble', 'unheard');
@@ -4244,6 +4244,30 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await comments.getByTestId('event-comment').last().hover();
   await checkpoint(shot, 'calendar-comments', { keepPointer: true });
+
+  // ADR-0157: a repeating meeting dragged asks «Только эту / Всю серию»; «Только эту» moves that
+  // occurrence alone (the series keeps its 10:00 on the other days).
+  const standup = win.getByTestId('event-block').filter({ hasText: 'Стендап' });
+  await standup.scrollIntoViewIfNeeded();
+  const box = await standup.boundingBox();
+  if (!box) throw new Error('no stand-up block');
+  const x = box.x + 40; // the block's left part: the meeting card floats over its right side
+  await win.mouse.move(x, box.y + 4);
+  await win.mouse.down();
+  const ghostAt = (): Promise<string> => win.evaluate(() => document.querySelector('[data-testid="drag-ghost"]')?.textContent ?? '');
+  for (let i = 1; i <= 60 && !(await ghostAt()).startsWith('12:00'); i++) await win.mouse.move(x, box.y + 4 + i * 4);
+  await expect(win.getByTestId('drag-ghost')).toContainText('12:00 – 12:15');
+  await win.mouse.up();
+  await expect(win.getByTestId('choice-this')).toBeVisible();
+  await checkpoint(shot, 'calendar-series-scope');
+  await win.getByTestId('choice-this').click();
+  await expect(win.getByTestId('choice-this')).toHaveCount(0);
+  await expect(win.getByTestId('event-block').filter({ hasText: 'Стендап' })).toContainText('12:00');
+  // The card closed: the moved occurrence at 12:00 next to «Обед с командой», nothing left at 10:00.
+  await win.getByTestId('event-panel').getByRole('button', { name: 'Закрыть встречу' }).click();
+  await expect(win.getByTestId('event-panel')).toHaveCount(0);
+  await win.mouse.move(1, 1);
+  await checkpoint(shot, 'calendar-series-moved');
 });
 
 /**
@@ -4865,7 +4889,7 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await expect(archived).toHaveCount(2);
   await expect(win.getByTestId('archive-title')).toHaveText('Архив · 2');
   // The «в архиве» toasts (with «Отменить») stay: close them.
-  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть встречу' }).click();
   await archived.first().hover();
   await checkpoint(shot, 'boards-archive');
   await archived.filter({ hasText: 'CAL-2' }).click();
@@ -4887,7 +4911,7 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('Escape');
   await expect(win.getByTestId('list-group').first()).toContainText('stage · 1288');
   await expect(win.getByTestId('list-group').last()).toContainText('Без релиза');
-  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть встречу' }).click();
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'boards-list-release');

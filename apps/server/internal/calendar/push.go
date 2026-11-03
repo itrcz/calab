@@ -100,7 +100,7 @@ func (s *Service) changed(ctx context.Context, states ...*bundle) {
 		if b == nil {
 			continue
 		}
-		id = b.ev.ID
+		id = pushID(b.ev)
 		add(b.ev.OrganizerID)
 		for _, a := range b.att {
 			if a.UserID != nil {
@@ -125,14 +125,24 @@ func (s *Service) EventForCalDAV(ctx context.Context, eventID, user uuid.UUID) (
 	if err != nil {
 		return "", false, err
 	}
-	if ev.CancelledAt != nil {
+	if ev.CancelledAt != nil || ev.SeriesID != nil { // an override lives in its series' resource
 		return "", false, nil
 	}
 	b, err := loadOne(ctx, s.db.Q, ev)
 	if err != nil {
 		return "", false, err
 	}
-	if !busyIn(b, user) {
+	ovs, err := loadOverrides(ctx, s.db.Q, []uuid.UUID{ev.ID})
+	if err != nil {
+		return "", false, err
+	}
+	var mine []*bundle
+	for _, o := range ovs[ev.ID] {
+		if busyIn(o, user) {
+			mine = append(mine, o)
+		}
+	}
+	if !busyIn(b, user) && len(mine) == 0 {
 		return "", false, nil
 	}
 	members, err := s.db.Q.ListFreeBusyMembers(ctx, sqlc.ListFreeBusyMembersParams{WorkspaceID: ev.WorkspaceID, Ids: []uuid.UUID{user}})
@@ -147,13 +157,25 @@ func (s *Service) EventForCalDAV(ctx context.Context, eventID, user uuid.UUID) (
 	} else if !ok {
 		return "", false, ErrWithheld
 	}
-	e := ICSEvent{UID: ev.ID.String() + "@calab", Sequence: int(ev.Sequence), Series: b.series, Title: ev.Title,
-		Description: ev.Description, URL: s.eventURL(ev.ID), Stamp: s.Now()}
-	if ev.RoomID != nil {
-		if r, err := s.db.Q.GetRoom(ctx, *ev.RoomID); err == nil {
-			e.Location = "Calab: " + r.Name
+	rooms := map[uuid.UUID]string{}
+	conv := func(m *bundle) ICSEvent {
+		e := ICSEvent{UID: m.ev.ID.String() + "@calab", Sequence: int(m.ev.Sequence), Series: m.series, Title: m.ev.Title,
+			Description: m.ev.Description, URL: s.eventURL(m.ev.ID), Stamp: s.Now()}
+		if m.ev.RoomID != nil {
+			name, ok := rooms[*m.ev.RoomID]
+			if !ok {
+				if r, err := s.db.Q.GetRoom(ctx, *m.ev.RoomID); err == nil {
+					name = r.Name
+				}
+				rooms[*m.ev.RoomID] = name
+			}
+			if name != "" {
+				e.Location = "Calab: " + name
+			}
 		}
+		return e
 	}
+	e, _ := seriesExport(b, busyIn(b, user), mine, conv)
 	return BuildICS(e), true, nil
 }
 
@@ -172,8 +194,10 @@ func (s *Service) UserEventIDs(ctx context.Context, user uuid.UUID) ([]uuid.UUID
 	}
 	var out []uuid.UUID
 	allowed := map[uuid.UUID]bool{} // per workspace, decided once
+	listed := map[uuid.UUID]bool{}
 	for _, b := range bs {
-		if !busyIn(b, user) {
+		id := pushID(b.ev) // an override is pushed in its series' resource (ADR-0157)
+		if !busyIn(b, user) || listed[id] {
 			continue
 		}
 		ok, seen := allowed[b.ev.WorkspaceID]
@@ -184,7 +208,8 @@ func (s *Service) UserEventIDs(ctx context.Context, user uuid.UUID) ([]uuid.UUID
 			allowed[b.ev.WorkspaceID] = ok
 		}
 		if ok {
-			out = append(out, b.ev.ID)
+			listed[id] = true
+			out = append(out, id)
 		}
 	}
 	return out, nil

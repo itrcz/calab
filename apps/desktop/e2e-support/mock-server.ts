@@ -551,6 +551,7 @@ import {
   CalendarEventSchema,
   CreateCalendarEventRequestSchema,
   EventRepeat,
+  EventScope,
   EventRsvpTokenRequestSchema,
   EventRsvpTokenResponseSchema,
   ListCalendarEventsResponseSchema,
@@ -9708,6 +9709,32 @@ class MockImpl {
       if (!canEdit) throw forbidden('only the organizer or a room manager may change the meeting');
       const b = parseBody(c, UpdateCalendarEventRequestSchema);
       const ev = rec.ev;
+      // ADR-0157 (simplified): «Только эту» — an override (a one-off meeting naming the series); «Всю
+      // серию» from a later occurrence — the series ends before it, a new one starts there.
+      if (b.scope !== EventScope.UNSPECIFIED && b.occurrenceAt) {
+        const at = ms(b.occurrenceAt);
+        const occ = ev.repeat === EventRepeat.UNSPECIFIED ? undefined : occurrences(rec, at, at + 1).find((o) => o.startMs === at);
+        if (!occ) throw invalid('occurrenceAt', 'not a live occurrence of this series');
+        if (b.scope === EventScope.THIS || at !== ms(ev.startsAt)) {
+          const one = b.scope === EventScope.THIS;
+          const created = this.addEvent({
+            workspaceId: ev.workspaceId, organizerId: ev.organizerId, title: b.title ?? ev.title, description: b.description ?? ev.description,
+            startMs: b.startsAt ? ms(b.startsAt) : occ.startMs, endMs: b.endsAt ? ms(b.endsAt) : occ.endMs, allDay: b.allDay ?? ev.allDay, tz: b.tz ?? ev.tz,
+            record: b.record ?? ev.record, roomId: b.roomId ?? ev.roomId, repeat: one ? EventRepeat.UNSPECIFIED : (b.repeat ?? ev.repeat),
+            repeatUntilMs: one ? 0 : ms(ev.repeatUntil),
+            attendees: (b.setAttendees ? b.attendees : ev.attendees).map((x) => ({ userId: x.userId, email: x.email, required: x.required, ...('status' in x ? { status: x.status } : {}) })),
+          });
+          const made = this.calEvents.get(created.id);
+          if (!made) throw notFound('event not found');
+          if (one) {
+            (rec.moved ??= new Set()).add(at);
+            Object.assign(made.ev, { seriesId: ev.id, recurrenceAt: timestampFromMs(at) });
+          } else ev.repeatUntil = timestampFromMs(at - 1000);
+          this.calPublish(rec, 'eventUpdate');
+          sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(made, null, 'full', me, true) });
+          return;
+        }
+      }
       const next = {
         title: b.title ?? ev.title, description: b.description ?? ev.description,
         startMs: b.startsAt ? ms(b.startsAt) : ms(ev.startsAt), endMs: b.endsAt ? ms(b.endsAt) : ms(ev.endsAt),
@@ -9769,6 +9796,12 @@ class MockImpl {
         const at = Date.parse(occStr);
         const all = rec.ev.repeat === EventRepeat.UNSPECIFIED ? [] : occurrences({ ...rec, exceptions: new Set() }, at, at + 1);
         if (Number.isNaN(at) || !all.some((o) => o.startMs === at)) throw invalid('occurrence', 'not an occurrence of this series');
+        if (c.url.searchParams.get('scope') === 'following' && at !== ms(rec.ev.startsAt)) {
+          rec.ev.repeatUntil = timestampFromMs(at - 1000); // ADR-0157: the series ends before it
+          this.calPublish(rec, 'eventUpdate');
+          noContent(c.res);
+          return;
+        }
         if (!rec.exceptions.has(at)) {
           rec.exceptions.add(at);
           rec.ev.sequence += 1;

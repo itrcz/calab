@@ -274,8 +274,8 @@ REST и коды ошибок — `proto/calaba/v1/sip.proto` и ADR-0046 «Ко
 GET    /api/workspaces/{id}/events?from=&to=   RFC 3339, окно ≤ 62 дня → ListCalendarEventsResponse { events: вхождения по началу }
 POST   /api/workspaces/{id}/events             CreateCalendarEventRequest → 201 CalendarEventResponse (не гость, не бот)
 GET    /api/events/{id}                        серия (отменённая — с cancelled_at, для ссылки /e/<id>); не видна — 404; гость — текущее вхождение активной встречи видимой комнаты без участников, иначе 404
-PATCH  /api/events/{id}                        UpdateCalendarEventRequest → CalendarEventResponse (организатор / MANAGE_ROOM / MANAGE_WORKSPACE)
-DELETE /api/events/{id}[?occurrence=<RFC 3339>] 204: отмена встречи (письмо CANCEL) или одного вхождения серии (EVENT_UPDATE, письмо с EXDATE)
+PATCH  /api/events/{id}                        UpdateCalendarEventRequest → CalendarEventResponse (организатор / MANAGE_ROOM / MANAGE_WORKSPACE); scope THIS/FOLLOWING + occurrence_at — одно вхождение (override) или это и следующие (разрез серии), ADR-0157
+DELETE /api/events/{id}[?occurrence=<RFC 3339>[&scope=following]] 204: отмена встречи (письмо CANCEL), одного вхождения серии (EVENT_UPDATE, CANCEL с RECURRENCE-ID) или этого и следующих (серия кончается перед ним)
 PUT    /api/events/{id}/rsvp                   { status: ACCEPTED | DECLINED | MAYBE } → CalendarEventResponse (только участник)
 GET    /api/events/{id}/comments?before=&limit= комментарии к встрече (ADR-0104), новейшие ≤ 100 по возрастанию → { comments, has_more }; видящие встречу, гость — 403, бот — 403
 POST   /api/events/{id}/comments               { body } → 201 { comment }; PATCH …/comments/{comment_id} — автор; DELETE — автор или canEdit встречи → 204

@@ -272,7 +272,15 @@ func (s *Service) downloadEvent(w http.ResponseWriter, r *http.Request) error {
 	if err = s.exportAllowed(r.Context(), id.UserID, b.ev.WorkspaceID, false); err != nil {
 		return err
 	}
-	contents, err := buildCalendarICS(ctx, b.ev.Title, []ICSEvent{s.exportEvent(b)}, s.Now())
+	e := s.exportEvent(b) // an override alone: a meeting of its own
+	if b.ev.Rrule != nil {
+		ovs, err := loadOverrides(ctx, s.db.Q, []uuid.UUID{b.ev.ID})
+		if err != nil {
+			return err
+		}
+		e, _ = seriesExport(b, true, ovs[b.ev.ID], s.exportEvent)
+	}
+	contents, err := buildCalendarICS(ctx, b.ev.Title, []ICSEvent{e}, s.Now())
 	if err != nil {
 		return err
 	}
@@ -295,12 +303,59 @@ func (s *Service) calendarContents(ctx context.Context, user, ws uuid.UUID, from
 	if err != nil {
 		return "", err
 	}
+	// Overrides go under their series' UID (ADR-0157): with the series when it is exported,
+	// else alone (the reader is on that occurrence only, or the series has nothing in range).
+	var series []uuid.UUID
+	for _, b := range bundles {
+		if b.ev.Rrule != nil {
+			series = append(series, b.ev.ID)
+		}
+	}
+	ovs, err := loadOverrides(ctx, s.db.Q, series)
+	if err != nil {
+		return "", err
+	}
+	inRange := func(b *bundle) bool { return busyIn(b, user) && len(b.series.Between(from, to)) > 0 }
+	done := map[uuid.UUID]bool{}
+	orphans := map[uuid.UUID][]*bundle{}
+	var orphanOrder []uuid.UUID
 	events := make([]ICSEvent, 0, len(bundles))
 	for _, b := range bundles {
-		if !busyIn(b, user) || len(b.series.Between(from, to)) == 0 {
+		switch {
+		case b.ev.SeriesID != nil:
 			continue
+		case b.ev.Rrule != nil:
+			var mine []*bundle
+			for _, o := range ovs[b.ev.ID] {
+				if busyIn(o, user) && (inRange(b) || inRange(o)) {
+					mine = append(mine, o)
+					done[o.ev.ID] = true
+				}
+			}
+			if e, ok := seriesExport(b, inRange(b), mine, s.exportEvent); ok {
+				events = append(events, e)
+			}
+		case inRange(b):
+			events = append(events, s.exportEvent(b))
 		}
-		events = append(events, s.exportEvent(b))
+	}
+	for _, b := range bundles {
+		if b.ev.SeriesID != nil && !done[b.ev.ID] && inRange(b) {
+			if _, ok := orphans[*b.ev.SeriesID]; !ok {
+				orphanOrder = append(orphanOrder, *b.ev.SeriesID)
+			}
+			orphans[*b.ev.SeriesID] = append(orphans[*b.ev.SeriesID], b)
+		}
+	}
+	for _, id := range orphanOrder {
+		list := orphans[id]
+		master := &bundle{ev: sqlc.Event{ID: id, AllDay: list[0].ev.AllDay}, series: Series{Loc: list[0].series.Loc}}
+		if m, err := s.db.Q.GetEvent(ctx, id); err == nil {
+			master.ev, master.series = m, seriesOf(m, nil, nil)
+		}
+		if e, ok := seriesExport(master, false, list, s.exportEvent); ok {
+			events = append(events, e)
+		}
 	}
 	space, err := s.db.Q.GetWorkspace(ctx, ws)
 	if err != nil {

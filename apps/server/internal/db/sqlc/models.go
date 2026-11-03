@@ -957,6 +957,8 @@ type Event struct {
 	CancelledAt     *time.Time
 	TempRoom        bool
 	TempRoomRetryAt *time.Time
+	SeriesID        *uuid.UUID
+	RecurrenceAt    *time.Time
 }
 
 type EventAttendee struct {

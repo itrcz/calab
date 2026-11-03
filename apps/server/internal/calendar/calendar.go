@@ -150,6 +150,8 @@ type bundle struct {
 	recs   map[int64]uuid.UUID // occurrence start (Unix s) → recording
 	// comments: how many comments the event has (ADR-0104).
 	comments int32
+	// inst names one occurrence of a series mailed alone (ADR-0157); nil = as the row says.
+	inst *icsIdentity
 }
 
 func loadZone(tz string) *time.Location {
@@ -159,13 +161,22 @@ func loadZone(tz string) *time.Location {
 	return time.UTC
 }
 
-func seriesOf(ev sqlc.Event, except []time.Time) Series {
+// seriesOf is the timing of ev without the cancelled occurrences (except) and those that
+// overrides replace (moved, ADR-0157).
+func seriesOf(ev sqlc.Event, except, moved []time.Time) Series {
 	rule, _ := ParseRule(deref(ev.Rrule)) // written by the server only
 	s := Series{Start: ev.StartsAt, End: ev.EndsAt, AllDay: ev.AllDay, Loc: loadZone(ev.Tz), Rule: rule}
-	if len(except) > 0 {
-		s.Except = make(map[int64]bool, len(except))
+	if len(except)+len(moved) > 0 {
+		s.Except = make(map[int64]bool, len(except)+len(moved))
 		for _, t := range except {
 			s.Except[t.Unix()] = true
+		}
+	}
+	if len(moved) > 0 {
+		s.Moved = make(map[int64]bool, len(moved))
+		for _, t := range moved {
+			s.Except[t.Unix()] = true
+			s.Moved[t.Unix()] = true
 		}
 	}
 	return s
@@ -178,7 +189,7 @@ func deref(p *string) string {
 	return *p
 }
 
-// load builds the bundles of evs (three queries whatever their number).
+// load builds the bundles of evs (a fixed number of queries whatever their number).
 func load(ctx context.Context, q *sqlc.Queries, evs []sqlc.Event) ([]*bundle, error) {
 	if len(evs) == 0 {
 		return nil, nil
@@ -198,6 +209,22 @@ func load(ctx context.Context, q *sqlc.Queries, evs []sqlc.Event) ([]*bundle, er
 	recs, err := q.ListEventRecordings(ctx, ids)
 	if err != nil {
 		return nil, err
+	}
+	var series []uuid.UUID
+	for _, e := range evs {
+		if e.Rrule != nil {
+			series = append(series, e.ID)
+		}
+	}
+	byMoved := map[uuid.UUID][]time.Time{}
+	if len(series) > 0 {
+		ovs, err := q.ListEventOverrides(ctx, series)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range ovs {
+			byMoved[*o.SeriesID] = append(byMoved[*o.SeriesID], *o.RecurrenceAt)
+		}
 	}
 	ncom, err := q.CountEventComments(ctx, ids)
 	if err != nil {
@@ -224,7 +251,7 @@ func load(ctx context.Context, q *sqlc.Queries, evs []sqlc.Event) ([]*bundle, er
 	}
 	out := make([]*bundle, len(evs))
 	for i, e := range evs {
-		out[i] = &bundle{ev: e, series: seriesOf(e, byExc[e.ID]), att: byAtt[e.ID], recs: byRec[e.ID], comments: byCom[e.ID]}
+		out[i] = &bundle{ev: e, series: seriesOf(e, byExc[e.ID], byMoved[e.ID]), att: byAtt[e.ID], recs: byRec[e.ID], comments: byCom[e.ID]}
 	}
 	return out, nil
 }
@@ -420,7 +447,13 @@ func (b *bundle) proto(occ *Occurrence, v *viewer) *v1.CalendarEvent {
 			out.RecordingId = rid.String()
 		}
 	}
+	if e.SeriesID != nil && e.RecurrenceAt != nil {
+		out.SeriesId, out.RecurrenceAt = e.SeriesID.String(), timestamppb.New(*e.RecurrenceAt)
+	}
 	for k := range b.series.Except {
+		if b.series.Moved[k] {
+			continue
+		}
 		out.CancelledOccurrences = append(out.CancelledOccurrences, timestamppb.New(time.Unix(k, 0)))
 	}
 	sortTimestamps(out.CancelledOccurrences)

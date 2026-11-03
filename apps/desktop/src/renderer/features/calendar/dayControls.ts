@@ -4,7 +4,7 @@ import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan } from '../../l
 import type { ScrollTarget } from '../../lib/calendar/scrollTarget';
 import { canEditEvent, eventOf, moveOccurrence } from '../../services/calendar';
 import { useUi } from '../../stores/ui';
-import { cancelWithConfirm, defaultDraft, newEvent } from './actions';
+import { askSeriesScope, cancelWithConfirm, defaultDraft, newEvent } from './actions';
 import type { BlockDown } from './blocks';
 import { useDayDrag } from './dragState';
 import { PX_PER_MIN } from './gridParts';
@@ -267,7 +267,7 @@ export function useDragController({
       end = atMinutes(target, range.end).getTime();
     } else return;
     if (start === span.start && end === span.end && nextAllDay === ev.allDay) return;
-    void moveOccurrence(p.key, start, end, nextAllDay !== ev.allDay ? nextAllDay : undefined);
+    void moveOccurrence(p.key, start, end, nextAllDay !== ev.allDay ? nextAllDay : undefined, () => askSeriesScope('move', span.start));
   }, [creatable, workspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function detach(): void {

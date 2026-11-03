@@ -164,7 +164,7 @@ function BlockMenu({ occKey, editable, children }: { occKey: string; editable: b
             <>
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void cancelWithConfirm(occKey)}>
-                <Trash2 className="size-4" aria-hidden /> {ev && ev.repeat !== EventRepeat.UNSPECIFIED ? t('cal.cancelOne') : t('cal.cancelItem')}
+                <Trash2 className="size-4" aria-hidden /> {t('cal.cancelItem')}
               </ContextMenu.Item>
             </>
           ) : null}

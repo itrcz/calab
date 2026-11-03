@@ -142,7 +142,10 @@ type Series struct {
 	AllDay     bool
 	Loc        *time.Location
 	Rule       Rule
-	Except     map[int64]bool // cancelled occurrence starts (Unix seconds)
+	Except     map[int64]bool // skipped occurrence starts (Unix seconds): cancelled or moved
+	// Moved: the occurrences among Except that an override replaces (ADR-0157). They are no
+	// EXDATE in exports (the override's RECURRENCE-ID replaces them) and no cancellation.
+	Moved map[int64]bool
 }
 
 // maxOccurrences bounds one expansion (a 62-day window of a daily series has 62).
