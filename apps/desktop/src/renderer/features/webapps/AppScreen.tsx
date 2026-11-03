@@ -3,7 +3,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } fr
 import type { WebAppBounds } from '../../../shared/ipc';
 import { Button } from '../../components/ui';
 import { t } from '../../i18n';
-import { coversContent, visibleViewRect } from '../../lib/webApps';
+import { coversContent, visibleViewRect, type Overlay } from '../../lib/webApps';
 import { platform } from '../../platform';
 import { setAppViewRect } from '../../services/webAppTip';
 import { openAppInBrowser } from '../../services/webApps';
@@ -85,10 +85,11 @@ function viewRect(el: HTMLElement): WebAppBounds {
 }
 
 /** Rectangles of the overlays that must stay visible over the site (`[data-app-occluder]`). */
-function occluderRects(): WebAppBounds[] {
+function occluderRects(): Overlay[] {
   return Array.from(document.querySelectorAll<HTMLElement>(OCCLUDERS), (o) => {
     const r = o.getBoundingClientRect();
-    return { x: r.left, y: r.top, width: r.width, height: r.height };
+    // `data-app-occluder="band"`: the site keeps its x and width, only its height shrinks.
+    return { x: r.left, y: r.top, width: r.width, height: r.height, band: o.dataset.appOccluder === 'band' };
   });
 }
 

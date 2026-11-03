@@ -92,6 +92,16 @@ describe('visibleViewRect (toasts, knock cards, the calling strip stay visible)'
     const toast = { x: 282, y: 620, width: 480, height: 50 };
     expect(visibleViewRect(view, [strip, toast])).toEqual({ x: 72, y: 104, width: 900, height: 620 - 8 - 104 });
   });
+  it('a band occluder (the open island, bottom left): same x and width, only the height shrinks', () => {
+    const big = { x: 0, y: 0, width: 1917, height: 1059 };
+    const island = { x: 8, y: 1059 - 8 - 195, width: 415, height: 195, band: true };
+    expect(visibleViewRect(big, [island])).toEqual({ x: 0, y: 0, width: 1917, height: island.y - 8 });
+    // a shorter view (title bar, rail): without the hint the «right» slice wins and the site jumps
+    const short = { x: 72, y: 40, width: 1000, height: 500 };
+    const isl = { x: 80, y: 250, width: 415, height: 240 };
+    expect(visibleViewRect(short, [isl])?.x).toBeGreaterThan(72);
+    expect(visibleViewRect(short, [{ ...isl, band: true }])).toEqual({ x: 72, y: 40, width: 1000, height: 250 - 8 - 40 });
+  });
   it('too little left: hidden (null)', () => {
     expect(visibleViewRect(view, [{ x: 0, y: 0, width: 2000, height: 2000 }])).toBeNull();
     expect(visibleViewRect({ x: 0, y: 0, width: 400, height: 200 }, [{ x: 50, y: 60, width: 300, height: 100 }])).toBeNull();
