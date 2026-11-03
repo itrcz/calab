@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 import { stripAlpha } from './png';
 import { LOCALES, SCENES } from './scenes';
-import { cardHtml, featureHtml, LAYOUTS } from './template';
+import { cardHtml, featureHtml, LAYOUTS, PALETTES, type Palette } from './template';
 
 /**
  * Builds the store assets from the raw captures (store-shots.spec.ts) with Chromium rendering the HTML
@@ -16,7 +16,10 @@ const RAW = join(STORE, 'raw');
 
 /** The app icon (apps/mobile/assets, docs/10-branding.md) and the feature graphic's tagline. */
 const ICON = join(MOBILE, 'assets/icon-1024.png');
-const TAGLINE = { ru: 'Голос и чат для команды', en: 'Voice and chat for your team' };
+const TAGLINE = {
+  ru: 'Голос и чат для команды',
+  en: 'Voice and chat for your team',
+};
 
 const png = (p: string): string => `data:image/png;base64,${readFileSync(p).toString('base64')}`;
 
@@ -29,7 +32,11 @@ async function main(): Promise<void> {
       await page.setViewportSize({ width: w, height: h });
       await page.setContent(html, { waitUntil: 'load' });
       await page.evaluate(() => document.fonts.ready);
-      const buf = await page.screenshot({ type: 'png', omitBackground: alpha, clip: { x: 0, y: 0, width: w, height: h } });
+      const buf = await page.screenshot({
+        type: 'png',
+        omitBackground: alpha,
+        clip: { x: 0, y: 0, width: w, height: h },
+      });
       mkdirSync(join(path, '..'), { recursive: true });
       writeFileSync(path, alpha ? buf : stripAlpha(buf));
       console.log('store', path.slice(STORE.length + 1));
@@ -38,8 +45,13 @@ async function main(): Promise<void> {
     for (const lang of LOCALES as ('ru' | 'en')[]) {
       for (const [i, scene] of SCENES.entries()) {
         const name = `${String(i + 1).padStart(2, '0')}-${scene.id}.png`;
-        const shot = png(join(RAW, lang, name));
-        for (const [os, l] of Object.entries(LAYOUTS)) await render(cardHtml(l, scene.headline[lang], shot), l.w, l.h, join(STORE, os, lang, name));
+        for (const [os, l] of Object.entries(LAYOUTS))
+          await render(
+            cardHtml(l, scene.headline[lang], scene.subtitle[lang], png(join(RAW, l.frame === 'android' ? 'android' : 'ios', lang, name)), PALETTES[i % PALETTES.length] as Palette),
+            l.w,
+            l.h,
+            join(STORE, os, lang, name),
+          );
       }
       await render(featureHtml(1024, 500, 'Calab', TAGLINE[lang], png(ICON)), 1024, 500, join(STORE, 'feature', lang, 'feature-graphic.png'));
     }

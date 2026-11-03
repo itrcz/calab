@@ -127,9 +127,9 @@ Calab собирает рабочий день команды в одном пр
 
 | Площадка | Размер | Где готово (ветка #111) |
 |----------|--------|-------------------------|
-| iPhone 6.7" | 1290×2796 | `apps/mobile/store/ios/{en,ru}/` |
-| iPhone 6.5" | 1284×2778 | [?] проверить, что пайплайн #111 делает оба размера (в дереве один каталог `ios/`) |
-| Android phone | 1080×1920 и выше (16:9..9:16, стороны 320–3840) | `apps/mobile/store/android/{en,ru}/` |
+| iPhone 6.9" (обязателен) | 1320×2868 | `apps/mobile/store/ios-6.9/{en,ru}/` |
+| iPhone 6.5" | 1284×2778 | `apps/mobile/store/ios-6.5/{en,ru}/` |
+| Android phone | 1080×1920 (в рамке Android, снято в Chromium на Pixel 7) | `apps/mobile/store/android/{en,ru}/` |
 | Play feature graphic | 1024×500 | `apps/mobile/store/feature/{en,ru}/feature-graphic.png` |
 | Play icon | 512×512 | `apps/mobile/store/icons/icon-512.png` (из `apps/mobile/assets/icon-1024.png`) |
 | App Store icon | 1024×1024 без прозрачности | `apps/mobile/assets/icon-1024.png` [код: `app.config.ts`, «full-bleed RGB»] |
