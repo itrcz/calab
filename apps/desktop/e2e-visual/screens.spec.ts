@@ -1236,7 +1236,7 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('task-search-save-menu')).toHaveCount(0);
   await win.keyboard.press('Escape');
   await expect(win.getByTestId('quick-switcher')).toHaveCount(0);
-  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть встречу' }).click();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
   await win.getByTestId('section-boards').click();
   await win.getByTestId('saved-search').filter({ hasText: 'Доски в разработке' }).click();
   await expect(win.getByTestId('task-search-page')).toBeVisible();
@@ -1601,7 +1601,7 @@ test('self-mic-menu', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('toast')).toHaveCount(1); // still only the sound prompt
   await checkpoint(shot, 'voice-audio-recovery-unheard');
   // Outside «Команда» the island is folded (ADR-0146): the avatar's mark carries the state.
-  await win.getByTestId('toast').getByRole('button', { name: 'Закрыть встречу' }).click();
+  await win.getByTestId('toast').getByRole('button', { name: 'Закрыть' }).click();
   await win.getByTestId('section-calendar').click();
   const mark = win.getByTestId('island-call-mark');
   await expect(mark).toHaveAttribute('data-trouble', 'unheard');
@@ -4911,7 +4911,7 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await expect(archived).toHaveCount(2);
   await expect(win.getByTestId('archive-title')).toHaveText('Архив · 2');
   // The «в архиве» toasts (with «Отменить») stay: close them.
-  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть встречу' }).click();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
   await archived.first().hover();
   await checkpoint(shot, 'boards-archive');
   await archived.filter({ hasText: 'CAL-2' }).click();
@@ -4933,7 +4933,7 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('Escape');
   await expect(win.getByTestId('list-group').first()).toContainText('stage · 1288');
   await expect(win.getByTestId('list-group').last()).toContainText('Без релиза');
-  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть встречу' }).click();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'boards-list-release');

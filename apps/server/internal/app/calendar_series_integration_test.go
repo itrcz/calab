@@ -104,8 +104,17 @@ func TestEventSeriesOccurrenceScopes(t *testing.T) {
 		!strings.Contains(ics, "RECURRENCE-ID:"+o(4).UTC().Format("20060102T150405Z")) || strings.Contains(ics, "RRULE") {
 		t.Errorf("occurrence cancel:\n%s", ics)
 	}
+	// Cancelling it again changes nothing (idempotent, as before ADR-0157); an overridden
+	// occurrence is cancelled by the override's own id.
+	c.o.must(204, "DELETE", "/api/events/"+ev.GetId()+"?occurrence="+url.QueryEscape(o(4).UTC().Format(time.RFC3339)), nil, nil)
+	c.o.must(422, "DELETE", "/api/events/"+ev.GetId()+"?occurrence="+url.QueryEscape(o(1).UTC().Format(time.RFC3339)), nil, nil)
 	special := "Special"
-	ov3 := patch(c.o, ev.GetId(), &v1.UpdateCalendarEventRequest{Scope: this, OccurrenceAt: ts(o(3)), Title: &special})
+	ov3 := patch(c.o, ev.GetId(), &v1.UpdateCalendarEventRequest{Scope: this, OccurrenceAt: ts(o(3)), Title: &special,
+		SetAttendees: true, Attendees: []*v1.CalendarEventAttendeeInput{att(c.bob.id, true), att(c.carol.id, false), ext(partner)}})
+	if attendeeOf(ov3, c.carol.id, "") == nil || attendeeOf(sr.GetEvent(), c.carol.id, "") != nil {
+		t.Fatalf("carol is on the occurrence only: %v", ov3)
+	}
+	waitMail(t, c.carol.email, mail.TemplateEventInvite, 1)
 	c.o.must(422, "PATCH", "/api/events/"+ev.GetId(), &v1.UpdateCalendarEventRequest{Scope: this, OccurrenceAt: ts(o(3))}, nil) // overridden already
 
 	// The whole series one hour later: the cancellation and the overrides follow their occurrences.
@@ -158,5 +167,17 @@ func TestEventSeriesOccurrenceScopes(t *testing.T) {
 	whole := patch(c.o, ev.GetId(), &v1.UpdateCalendarEventRequest{Scope: following, OccurrenceAt: ts(start.Add(h)), Title: &first})
 	if whole.GetId() != ev.GetId() || whole.GetTitle() != first {
 		t.Fatalf("from the first occurrence: %v", whole)
+	}
+
+	// Cancelling a series cancels its overrides: whoever is on an override only (carol, o3) gets a
+	// CANCEL of that occurrence (RECURRENCE-ID); the series' attendees one CANCEL of the series.
+	// (Bob's hourly budget of meeting mail is spent by now, so only carol's mail is asserted.)
+	c.o.must(204, "DELETE", "/api/events/"+next.GetId(), nil, nil)
+	if ics := unfoldICS(waitMail(t, c.carol.email, mail.TemplateEventCancel, 1).Calendar); !strings.Contains(ics, "UID:"+next.GetId()+"@calab") ||
+		!strings.Contains(ics, "RECURRENCE-ID:"+o(3).Add(h).UTC().Format("20060102T150405Z")) || strings.Contains(ics, "RRULE") {
+		t.Errorf("override-only attendee's cancel:\n%s", ics)
+	}
+	if got = listed(); len(got) != 1 || got[at(start.Add(h))].title != first {
+		t.Fatalf("after cancelling the new series: %v", got)
 	}
 }

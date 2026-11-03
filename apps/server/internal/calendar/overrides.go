@@ -552,28 +552,40 @@ func (s *Service) removeFollowing(ctx context.Context, before *bundle, occ Occur
 		return err
 	}
 	wsID := after.ev.WorkspaceID
-	s.publishCancelled(ctx, gone)
+	goneB := s.publishCancelled(ctx, gone)
 	s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: after.proto(nil, nil)}}})
 	s.roomSignals(ctx, before, after)
 	s.sendMails(ctx, after, mail.TemplateEventUpdate, MethodRequest, after.att)
-	s.changed(ctx, before, after)
+	s.mailOverrideOnly(ctx, after, goneB)
+	s.changed(ctx, append([]*bundle{before, after}, goneB...)...)
 	return nil
 }
 
-// publishCancelled sends EVENT_DELETE of cancelled overrides (with their series: the mails
-// of the series cover them).
-func (s *Service) publishCancelled(ctx context.Context, evs []sqlc.Event) {
+// publishCancelled sends EVENT_DELETE of overrides cancelled with their series (or its end) and
+// returns their bundles: the series' mail covers them for its attendees, mailOverrideOnly the rest.
+func (s *Service) publishCancelled(ctx context.Context, evs []sqlc.Event) []*bundle {
 	if len(evs) == 0 {
-		return
+		return nil
 	}
 	bs, err := load(ctx, s.db.Q, evs)
 	if err != nil {
 		logErr(ctx, "overrides: cancelled", err)
-		return
+		return nil
 	}
 	for _, b := range bs {
 		s.ev.Workspace(ctx, b.ev.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventDelete{EventDelete: &v1.CalendarEventDelete{Event: b.proto(nil, nil)}}})
 		s.roomSignals(ctx, b, nil)
+	}
+	return bs
+}
+
+// mailOverrideOnly: the series' CANCEL / REQUEST reaches its attendees, not those invited to an
+// override alone — they get a CANCEL of that occurrence (RECURRENCE-ID) instead.
+func (s *Service) mailOverrideOnly(ctx context.Context, series *bundle, gone []*bundle) {
+	for _, g := range gone {
+		if only := without(g.att, series.att); len(only) > 0 {
+			s.sendMails(ctx, g, mail.TemplateEventCancel, MethodCancel, only)
+		}
 	}
 }
 

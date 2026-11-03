@@ -694,18 +694,21 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	wsID := before.ev.WorkspaceID
 	if occStr := r.URL.Query().Get("occurrence"); occStr != "" {
 		at, err := time.Parse(time.RFC3339, occStr)
-		if err != nil {
+		if err != nil || before.series.Rule.Repeat == v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED || !before.series.IsOccurrence(at.UTC()) {
 			return errNotOccurrence
 		}
-		occ, ok := before.liveOccurrence(at.UTC())
-		if !ok {
-			return errNotOccurrence
-		}
+		at = at.UTC()
+		occ := Occurrence{Start: at, End: at.Add(before.ev.EndsAt.Sub(before.ev.StartsAt))}
 		// ADR-0157: «Всю серию» from an occurrence ends the series before it (past occurrences
 		// stay); from the first one it is the whole series, cancelled below.
 		if scopeOf(r) == v1.EventScope_EVENT_SCOPE_THIS {
-			if err := s.removeOccurrence(ctx, before, occ); err != nil {
-				return err
+			if before.series.Moved[at.Unix()] {
+				return errNotOccurrence // an override is cancelled by its own id
+			}
+			if !before.series.Except[at.Unix()] { // cancelled already: nothing to do (idempotent)
+				if err := s.removeOccurrence(ctx, before, occ); err != nil {
+					return err
+				}
 			}
 			httpx.NoContent(w)
 			return nil
@@ -721,6 +724,13 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	var after, series *bundle
 	var gone []sqlc.Event
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if before.ev.SeriesID != nil {
+			// The series first, as every change of a series' occurrences does: a move of the
+			// series (followOverrides) and this cancellation then see each other's rows.
+			if _, err := q.GetEventForUpdate(ctx, *before.ev.SeriesID); err != nil && !db.IsNotFound(err) {
+				return err
+			}
+		}
 		ev, err := q.CancelEvent(ctx, before.ev.ID)
 		if db.IsNotFound(err) {
 			return httpx.NotFound("event")
@@ -761,14 +771,15 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	s.publishCancelled(ctx, gone)
+	goneB := s.publishCancelled(ctx, gone)
 	s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventDelete{EventDelete: &v1.CalendarEventDelete{Event: after.proto(nil, nil)}}})
 	if series != nil {
 		s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: series.proto(nil, nil)}}})
 	}
 	s.roomSignals(ctx, before, nil)
 	s.sendMails(ctx, after, mail.TemplateEventCancel, MethodCancel, after.att)
-	s.changed(ctx, after)
+	s.mailOverrideOnly(ctx, after, goneB)
+	s.changed(ctx, append([]*bundle{after}, goneB...)...)
 	// ADR-0112: the room made for the meeting closes with it (archived, as its creator's
 	// DELETE would); a request not served yet just ends with the meeting. The cancelled row,
 	// not `before`: the sweep may have made the room in between.
