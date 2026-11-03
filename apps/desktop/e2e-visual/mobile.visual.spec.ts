@@ -5,7 +5,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
-import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, settle } from './harness';
+import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedViaMcp, settle } from './harness';
 import { seedDay } from './calendarWeb';
 
 /**
@@ -1383,7 +1383,7 @@ test('m-boards-task-history', async ({ page }) => {
   await tab(page, 'boards');
   const nav = page.getByTestId('phone-boards');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
-  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap(); // the title: the row's centre is the due date
   const section = page.getByTestId('task-panel').getByTestId('task-activity');
   await section.getByRole('radio', { name: 'История' }).tap();
   const rows = section.getByTestId('history-row');
@@ -1392,6 +1392,20 @@ test('m-boards-task-history', async ({ page }) => {
   await expect(section.getByTestId('history-diff')).toBeVisible();
   await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await checkpoint(page, 'm-boards-task-history');
+  // ADR-0156: «(через бота Погода · MCP)» / «(через MCP)» in the history and on the comments.
+  seedViaMcp(mock);
+  await page.getByTestId('task-panel').getByTestId('phone-back').tap();
+  await expect(page.getByTestId('task-panel')).toHaveCount(0);
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap();
+  await section.getByRole('radio', { name: 'История' }).tap();
+  await expect(section.locator('[data-via-mcp]')).toHaveCount(2);
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(page, 'm-boards-task-via-mcp');
+  await section.getByRole('radio', { name: 'Комментарии' }).tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.locator('[data-message-id] [data-via-mcp]')).toHaveCount(3);
+  await panel.locator('[data-message-id]').filter({ hasText: 'Взял в работу' }).scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-boards-task-comments-via-mcp');
 });
 
 // The kanban on a phone: columns a screen wide, swiped horizontally with snap (ADR-0042 §5).

@@ -11,7 +11,7 @@
 - `apps/landing/src/content/docs/{ru,en}/reference/*.md` — маршруты, события gateway, коды ошибок, лимиты, токены, версия;
 - `apps/landing/src/content/docs/nav.ts` — навигация.
 
-Для LLM-клиентов есть MCP-сервер `POST /api/mcp` на том же токене бота (ADR-0114): главы `.../bots/mcp.md`
+Для LLM-клиентов есть MCP-сервер `POST /api/mcp` на том же токене бота (ADR-0114; «от имени» и пометка «через MCP» — ADR-0156): главы `.../bots/mcp.md`
 (`/ru/docs/bots/mcp`); Node.js SDK — `.../bots/sdk.md`; проверка MCP — `tools/mcp-smoke.sh` и `TESTING.md`.
 
 Источник правды по-прежнему код: `apps/server/internal/app/botroutes.go` (решение для ботов по каждому маршруту) и

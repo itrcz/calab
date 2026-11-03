@@ -22,20 +22,37 @@ import (
 
 // args is the union of the tools' arguments (JSON names as in the schemas).
 type args struct {
-	Q           string `json:"q"`
-	Kind        string `json:"kind"`
-	Workspace   string `json:"workspace"`
-	Task        string `json:"task"`
-	Room        string `json:"room"`
-	Board       string `json:"board"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Text        string `json:"text"`
-	ReplyTo     string `json:"reply_to"`
-	Before      string `json:"before"`
-	Limit       int    `json:"limit"`
-	Full        bool   `json:"full"`
+	Q           string  `json:"q"`
+	Kind        string  `json:"kind"`
+	Workspace   string  `json:"workspace"`
+	Task        string  `json:"task"`
+	Room        string  `json:"room"`
+	Board       string  `json:"board"`
+	Title       string  `json:"title"`
+	Description *string `json:"description"` // nil = not given; update_task: "" clears
+	Status      string  `json:"status"`
+	Text        string  `json:"text"`
+	ReplyTo     string  `json:"reply_to"`
+	Before      string  `json:"before"`
+	Limit       int     `json:"limit"`
+	Full        bool    `json:"full"`
+	// update_task, assign, list_tasks (ADR-0156)
+	Priority     string   `json:"priority"`
+	Due          *string  `json:"due"`
+	Start        *string  `json:"start"`
+	Estimate     *int     `json:"estimate"`
+	Parent       *string  `json:"parent"`
+	Labels       []string `json:"labels"`
+	AddLabels    []string `json:"add_labels"`
+	RemoveLabels []string `json:"remove_labels"`
+	Users        []string `json:"users"`
+	Mode         string   `json:"mode"`
+	Lead         string   `json:"lead"`
+	Assignee     string   `json:"assignee"`
+	State        string   `json:"state"`
+	Sort         string   `json:"sort"`
+	Cursor       string   `json:"cursor"`
+	Mine         bool     `json:"mine"`
 }
 
 type tool struct {
@@ -44,6 +61,10 @@ type tool struct {
 }
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+func strs(desc string) map[string]any {
+	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+}
 
 func schema(required []string, props map[string]any) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
@@ -59,6 +80,9 @@ func def(name, desc string, input map[string]any) map[string]any {
 
 var taskArg = str("task id or key (ABC-12)")
 
+// wsArg narrows a task key to one workspace (a key may repeat across workspaces).
+var wsArg = str("workspace id, when a task key is in several workspaces")
+
 var toolDefs = []tool{
 	{def("find", "Find tasks, messages, rooms or boards the bot can see. Returns ids for the other tools.", schema(nil, map[string]any{
 		"q":         str("words; for rooms/boards a name part, empty = all"),
@@ -66,32 +90,70 @@ var toolDefs = []tool{
 		"workspace": str("workspace id; default all"),
 		"limit":     map[string]any{"type": "integer", "description": "per kind, 1-20, default 10"},
 	})), find},
-	{def("read", "Read a task (with its board's statuses) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
-		"task":   taskArg,
-		"room":   str("room id (a task's comments: its room)"),
-		"limit":  map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
-		"before": str("message id: older history"),
-		"full":   map[string]any{"type": "boolean", "description": "the full API object"},
+	{def("read", "Read a task (with its board's statuses, labels, Git links and releases) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"room":      str("room id (a task's comments: its room)"),
+		"limit":     map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
+		"before":    str("message id: older history"),
+		"full":      map[string]any{"type": "boolean", "description": "the full API object"},
 	})), read},
 	{def("create_task", "Create a task on a board.", schema([]string{"board", "title"}, map[string]any{
-		"board":       str("board id"),
+		"board":       str("board id or key (DEV)"),
 		"title":       str("1-200 chars"),
 		"description": str("markdown"),
 		"status":      str("status name or id; default the board's"),
 	})), createTask},
 	{def("comment_task", "Comment on a task.", schema([]string{"task", "text"}, map[string]any{
-		"task": taskArg,
-		"text": str("comment, markdown"),
+		"task":      taskArg,
+		"workspace": wsArg,
+		"text":      str("comment, markdown"),
 	})), commentTask},
 	{def("set_task_status", "Move a task to another status of its board.", schema([]string{"task", "status"}, map[string]any{
-		"task":   taskArg,
-		"status": str("status name or id"),
+		"task":      taskArg,
+		"workspace": wsArg,
+		"status":    str("status name or id"),
 	})), setTaskStatus},
 	{def("send_message", "Send a message to a room or DM.", schema([]string{"room", "text"}, map[string]any{
 		"room":     str("room id"),
 		"text":     str("markdown, up to 4000 chars"),
 		"reply_to": str("message id"),
 	})), sendMessage},
+	// ADR-0156: the tools a developer's agent needs on a task besides the ones above.
+	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true: my tasks (without board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
+		"board":     str("board id or key (DEV)"),
+		"workspace": str("workspace id (when no board)"),
+		"q":         str("words or a key; empty = filters only"),
+		"status":    str("status names or ids, comma-separated"),
+		"assignee":  str("me, a user id, a name or a nickname"),
+		"labels":    strs("label names (any of them)"),
+		"state":     map[string]any{"type": "string", "enum": []string{"open", "done", "all"}, "description": "default open"},
+		"sort":      str("default newest update first (relevance with q); updated | created | key | priority | due, -updated etc. for descending"),
+		"mine":      map[string]any{"type": "boolean", "description": "assignee me; without board/workspace: my open tasks on every board, other filters ignored"},
+		"limit":     map[string]any{"type": "integer", "description": "1-50, default 20"},
+		"cursor":    str("next page"),
+	})), listTasks},
+	{def("update_task", "Change fields of a task; only given fields change.", schema([]string{"task"}, map[string]any{
+		"task":          taskArg,
+		"workspace":     wsArg,
+		"title":         str("1-200 chars"),
+		"description":   str("markdown; replaces the description"),
+		"priority":      map[string]any{"type": "string", "enum": []string{"none", "low", "medium", "high", "urgent"}},
+		"due":           str("YYYY-MM-DD, empty = none"),
+		"start":         str("YYYY-MM-DD, empty = none"),
+		"estimate":      map[string]any{"type": "integer", "description": "0 = none"},
+		"parent":        str("parent task id or key, empty = none"),
+		"labels":        strs("label names: the whole set"),
+		"add_labels":    strs("label names to add"),
+		"remove_labels": strs("label names to remove"),
+	})), updateTask},
+	{def("assign", "Set who works on a task: add (default), remove or replace assignees; one is the lead.", schema([]string{"task", "users"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"users":     strs("me, user ids, names or nicknames"),
+		"mode":      map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "default add"},
+		"lead":      str("the lead among the assignees (me, id, name); default: kept, else the first"),
+	})), assign},
 }
 
 var (
@@ -264,7 +326,7 @@ func workspaceIDs(ctx context.Context, c *api, ws string) ([]string, error) {
 func read(ctx context.Context, c *api, a args) (any, error) {
 	switch {
 	case strings.TrimSpace(a.Task) != "":
-		tr, board, err := loadTask(ctx, c, a.Task)
+		tr, board, err := loadTask(ctx, c, a.Task, a.Workspace)
 		if err != nil {
 			return nil, err
 		}
@@ -273,8 +335,12 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 		}
 		t := tr.GetTask()
 		var assignees []string
+		lead := ""
 		for _, x := range t.GetAssignees() {
 			assignees = append(assignees, x.GetUserId())
+			if x.GetIsLead() {
+				lead = x.GetUserId()
+			}
 		}
 		var subs []map[string]any
 		for _, s := range tr.GetSubtasks() {
@@ -287,10 +353,12 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 		out := map[string]any{
 			"id": t.GetId(), "key": t.GetKey(), "title": t.GetTitle(), "description": t.GetDescription(),
 			"status": statusName(board, t.GetStatusId()), "statuses": statuses,
-			"priority": enum(t.GetPriority().String(), "TASK_PRIORITY_"), "assignees": assignees,
-			"start": t.GetStartOn(), "due": t.GetDueOn(), "board": compact(map[string]any{"id": board.GetId(), "name": board.GetName()}),
+			"priority": enum(t.GetPriority().String(), "TASK_PRIORITY_"), "assignees": assignees, "lead": lead,
+			"labels": labelNames(board, t.GetLabelIds()),
+			"start":  t.GetStartOn(), "due": t.GetDueOn(), "board": compact(map[string]any{"id": board.GetId(), "key": board.GetKey(), "name": board.GetName()}),
 			"workspace": t.GetWorkspaceId(), "room": t.GetRoomId(), "comments": t.GetCommentCount(), "subtasks": subs,
 			"created_by": t.GetCreatedBy(), "updated": ts(t.GetUpdatedAt()),
+			"git": gitLinks(t), "releases": releases(t), // ADR-0156
 		}
 		if p := tr.GetParent(); p != nil {
 			out["parent"] = compact(map[string]any{"id": p.GetId(), "key": p.GetKey(), "title": p.GetTitle()})
@@ -347,26 +415,62 @@ func message(m *v1.Message) map[string]any {
 		"reply_to": m.GetReplyToId(), "files": files, "read_by": readBy})
 }
 
-// taskByRef reads a task by id or by key (GET /api/t/{key} over the bot's workspaces).
-func taskByRef(ctx context.Context, c *api, ref string) (*v1.TaskResponse, error) {
+// taskByRef reads a task by id, or by key (GET /api/t/{key}) in workspace ws. A key is unique
+// only within a workspace (ADR-0156): without ws it is looked up in each of the caller's
+// workspaces and must be found in exactly one — never the first match, a write must not land
+// in another workspace's task.
+func taskByRef(ctx context.Context, c *api, ref, ws string) (*v1.TaskResponse, error) {
 	ref = strings.TrimSpace(ref)
-	var tr v1.TaskResponse
-	path := "/api/tasks/" + seg(ref)
-	if _, err := uuid.Parse(ref); err != nil {
-		path = "/api/t/" + seg(strings.ToUpper(ref))
+	if _, err := uuid.Parse(ref); err == nil {
+		var tr v1.TaskResponse
+		if err := c.call(ctx, http.MethodGet, "/api/tasks/"+seg(ref), nil, nil, &tr); err != nil {
+			return nil, err
+		}
+		if tr.GetTask() == nil {
+			return nil, errors.New("task not found")
+		}
+		return &tr, nil
 	}
-	if err := c.call(ctx, http.MethodGet, path, nil, nil, &tr); err != nil {
+	path := "/api/t/" + seg(strings.ToUpper(ref))
+	wss, err := workspaceIDs(ctx, c, ws)
+	if err != nil {
 		return nil, err
 	}
-	if tr.GetTask() == nil {
-		return nil, errors.New("task not found")
+	var found []*v1.TaskResponse
+	var miss error
+	for _, w := range wss {
+		var tr v1.TaskResponse
+		if err := c.call(ctx, http.MethodGet, path, url.Values{"workspace_id": {w}}, nil, &tr); err != nil {
+			var ae *apiError
+			if errors.As(err, &ae) && (ae.status == http.StatusNotFound || ae.status == http.StatusForbidden) && len(wss) > 1 {
+				miss = err
+				continue
+			}
+			return nil, err
+		}
+		if tr.GetTask() != nil {
+			found = append(found, &tr)
+		}
 	}
-	return &tr, nil
+	switch len(found) {
+	case 0:
+		if miss != nil {
+			return nil, miss
+		}
+		return nil, errors.New("task not found")
+	case 1:
+		return found[0], nil
+	}
+	names := make([]string, 0, len(found))
+	for _, tr := range found {
+		names = append(names, tr.GetTask().GetKey()+" "+strconv.Quote(tr.GetTask().GetTitle())+" (id "+tr.GetTask().GetId()+", workspace "+tr.GetTask().GetWorkspaceId()+")")
+	}
+	return nil, errors.New("task key " + strconv.Quote(strings.ToUpper(ref)) + " is in several workspaces, give the task id or workspace: " + strings.Join(names, "; "))
 }
 
-// loadTask reads a task by id or key with its board (statuses).
-func loadTask(ctx context.Context, c *api, ref string) (*v1.TaskResponse, *v1.Board, error) {
-	tr, err := taskByRef(ctx, c, ref)
+// loadTask reads a task by id or key (in workspace ws) with its board (statuses).
+func loadTask(ctx context.Context, c *api, ref, ws string) (*v1.TaskResponse, *v1.Board, error) {
+	tr, err := taskByRef(ctx, c, ref, ws)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -413,46 +517,67 @@ func createTask(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("board", a.Board), need("title", a.Title)); err != nil {
 		return nil, err
 	}
-	req := &v1.CreateTaskRequest{Title: a.Title, Description: a.Description}
+	req := &v1.CreateTaskRequest{Title: a.Title, Description: deref(a.Description)}
+	boardID := strings.TrimSpace(a.Board)
 	var board *v1.Board
-	if a.Status != "" {
-		b, err := loadBoard(ctx, c, a.Board)
+	if _, err := uuid.Parse(boardID); a.Status != "" || err != nil { // a status by name, or a board by key (ADR-0156)
+		b, err := resolveBoard(ctx, c, boardID, a.Workspace)
 		if err != nil {
 			return nil, err
 		}
-		if req.StatusId, err = statusID(b, a.Status); err != nil {
-			return nil, err
+		if a.Status != "" {
+			if req.StatusId, err = statusID(b, a.Status); err != nil {
+				return nil, err
+			}
 		}
-		board = b
+		board, boardID = b, b.GetId()
 	}
 	var tr v1.TaskResponse
-	if err := c.call(ctx, http.MethodPost, "/api/boards/"+seg(a.Board)+"/tasks", nil, req, &tr); err != nil {
+	if err := c.call(ctx, http.MethodPost, "/api/boards/"+seg(boardID)+"/tasks", nil, req, &tr); err != nil {
 		return nil, err
 	}
 	t := tr.GetTask()
-	out := map[string]any{"id": t.GetId(), "key": t.GetKey(), "room": t.GetRoomId()}
+	out := where(map[string]any{"id": t.GetId(), "key": t.GetKey(), "room": t.GetRoomId()}, t, board)
 	if board != nil {
 		out["status"] = statusName(board, t.GetStatusId())
 	}
 	return out, nil
 }
 
+// where adds to a write tool's answer the workspace and board the write landed in (ADR-0156):
+// a key may repeat across workspaces, and the agent and the person must see where it went.
+func where(out map[string]any, t *v1.Task, b *v1.Board) map[string]any {
+	out["workspace"] = t.GetWorkspaceId()
+	board := t.GetBoardId()
+	if b != nil && b.GetId() == board {
+		board = b.GetName() + " (" + b.GetKey() + ")"
+	}
+	out["board"] = board
+	return compact(out)
+}
+
 func commentTask(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("task", a.Task), need("text", a.Text)); err != nil {
 		return nil, err
 	}
-	tr, err := taskByRef(ctx, c, a.Task)
+	tr, err := taskByRef(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	return send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "")
+	out, err := send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "")
+	if err != nil {
+		return nil, err
+	}
+	m := out.(map[string]any)
+	m["task"] = tr.GetTask().GetKey()
+	return where(m, tr.GetTask(), tr.GetBoard()), nil
 }
 
 func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("task", a.Task), need("status", a.Status)); err != nil {
 		return nil, err
 	}
-	tr, board, err := loadTask(ctx, c, a.Task)
+	tr, board, err := loadTask(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +589,7 @@ func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
 	if err := c.call(ctx, http.MethodPatch, "/api/tasks/"+seg(tr.GetTask().GetId()), nil, &v1.UpdateTaskRequest{StatusId: &sid}, &out); err != nil {
 		return nil, err
 	}
-	return map[string]any{"key": out.GetTask().GetKey(), "status": statusName(board, out.GetTask().GetStatusId())}, nil
+	return where(map[string]any{"key": out.GetTask().GetKey(), "status": statusName(board, out.GetTask().GetStatusId())}, out.GetTask(), board), nil
 }
 
 func sendMessage(ctx context.Context, c *api, a args) (any, error) {
@@ -546,4 +671,12 @@ func ts(t *timestamppb.Timestamp) string {
 		return ""
 	}
 	return t.AsTime().UTC().Format("2006-01-02T15:04Z")
+}
+
+// deref is the value of an optional string argument, "" when not given.
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

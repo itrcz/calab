@@ -30,6 +30,13 @@ describe('grouping (Telegram: same author within 5 min)', () => {
     expect(items.map((_, i) => flags(rowMeta(items, i, '', 'me')))).toEqual(['DFL', 'FL', 'FL']);
   });
 
+  it('a message written through MCP (ADR-0156) opens its own group', () => {
+    const mcp = m('02', 'a', at(1));
+    mcp.msg.via = 'mcp';
+    const items = [m('01', 'a', at(0)), mcp, m('03', 'a', at(2))];
+    expect(items.map((_, i) => flags(rowMeta(items, i, '', 'me')))).toEqual(['DFL', 'FL', 'FL']);
+  });
+
   it('a system card (ADR-0025) breaks the group of its author', () => {
     const sys = m('02', 'a', at(1));
     sys.msg.kind = MessageKind.SYSTEM;

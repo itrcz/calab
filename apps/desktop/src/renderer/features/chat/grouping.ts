@@ -47,6 +47,8 @@ export function continues(c: ChatMessage, prev: ChatMessage | undefined, newMark
   // A message the author's bot wrote on their behalf (ADR-0106) opens its own group: its header
   // carries «(через бота X)».
   if (prev.msg.viaBotId !== c.msg.viaBotId) return false;
+  // So does one written through MCP (ADR-0156): «(через MCP)».
+  if (prev.msg.via !== c.msg.via) return false;
   // A system card (ADR-0025) stands alone: it neither joins nor continues a group of bubbles.
   if (prev.msg.kind === MessageKind.SYSTEM || c.msg.kind === MessageKind.SYSTEM) return false;
   if (dayKey(prev) !== dayKey(c) || startsNew(c, prev, newMarker, me)) return false;

@@ -577,15 +577,16 @@ LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_
 
 -- name: InsertTaskActivity :one
 -- via_bot_id: the actor's bot made the change on the actor's behalf (ADR-0106).
-INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id, via_bot_id)
-VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('rule_id'), sqlc.narg('via_bot_id'))
+-- via: the channel, 'mcp' through the MCP endpoint (ADR-0156); NULL otherwise.
+INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id, via_bot_id, via)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('rule_id'), sqlc.narg('via_bot_id'), sqlc.narg('via'))
 RETURNING *;
 
 -- name: LastTaskActivityOfKind :one
 -- The newest journal entry of a kind of the task and whether it is younger than the window: the
 -- candidate a repeated change of the same field by the same user is merged into (ADR-0081).
 -- message_id: a kind with a merge key (comment_edit, ADR-0091) — only entries of that comment.
-SELECT id, board_id, actor_id, rule_id, via_bot_id, before,
+SELECT id, board_id, actor_id, rule_id, via_bot_id, via, before,
     (created_at > now() - make_interval(secs => sqlc.arg('window_secs')::float8))::boolean AS recent
 FROM task_activity WHERE task_id = sqlc.arg('task_id') AND kind = sqlc.arg('kind')
   AND (sqlc.narg('message_id')::text IS NULL OR after->>'message_id' = sqlc.narg('message_id')::text)

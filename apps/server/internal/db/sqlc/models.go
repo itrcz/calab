@@ -1156,6 +1156,7 @@ type Message struct {
 	InlineKeyboard   []byte
 	KeyboardRevision int64
 	ViaBotID         *uuid.UUID
+	Via              *string
 }
 
 type MessageAttachment struct {
@@ -1870,6 +1871,7 @@ type TaskActivity struct {
 	CreatedAt time.Time
 	RuleID    *uuid.UUID
 	ViaBotID  *uuid.UUID
+	Via       *string
 }
 
 type TaskApprover struct {

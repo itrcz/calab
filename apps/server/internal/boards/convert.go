@@ -514,6 +514,7 @@ func activity(a sqlc.TaskActivity) *v1.TaskActivity {
 		Id: a.ID.String(), TaskId: a.TaskID.String(), BoardId: a.BoardID.String(), ActorId: idp(a.ActorID), Kind: a.Kind,
 		Before: jsonStruct(a.Before), After: jsonStruct(a.After), CreatedAt: timestamppb.New(a.CreatedAt), RuleId: idp(a.RuleID),
 		ViaBotId: idp(a.ViaBotID), // ADR-0106
+		Via:      deref(a.Via),    // ADR-0156
 	}
 }
 

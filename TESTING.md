@@ -2345,11 +2345,20 @@ are not current phone evidence. Visual suites remain disabled.
 ## MCP endpoint for bots (ADR-0114)
 
 1. Take a bot token (workspace settings → Bots) into `CALAB_BOT_TOKEN`; the bot needs a role with a board or a room. Not run here: there is no real server in this environment, so only `bash -n tools/mcp-smoke.sh` was checked.
-2. `CALAB_BOT_TOKEN=… tools/mcp-smoke.sh https://<host>` — three calls: `initialize` (`serverInfo.name` = `calab`), `tools/list` (six tools: find, read, create_task, comment_task, set_task_status, send_message), `tools/call` find (`boards`). The token is not printed.
+2. `CALAB_BOT_TOKEN=… tools/mcp-smoke.sh https://<host>` — three calls: `initialize` (`serverInfo.name` = `calab`), `tools/list` (nine tools: find, read, create_task, comment_task, set_task_status, send_message, list_tasks, update_task, assign), `tools/call` find (`boards`). The token is not printed.
 3. `read` a task by key from `find`, then `comment_task` and `set_task_status` with a status name of its board; both appear in the task (as the bot). A wrong status name returns `isError` with the board's statuses.
 4. `send_message` to a room the bot is not in or a private board task: `isError` with `404`/`403`, nothing is created.
 5. No header: `401`. A person's token or session: `403`. `GET /api/mcp`: `405`. A JSON array body: `400`.
-6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists six tools. Guide: `/ru/docs/bots/mcp`.
+6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists nine tools. Guide: `/ru/docs/bots/mcp`.
+
+## MCP on behalf of a person and «via MCP» (ADR-0156)
+
+1. Automated: `go test ./internal/mcp/` (tools, names → ids, the header and the channel of inner calls, paging, ambiguous keys) and `make test-integration` → `TestMCPOnBehalfVia`, `TestMCPOnBehalfOfMemberStaysInTheConsent` (the task, comment, assignees, priority and labels are the owner's with `viaBotId` and `via = "mcp"`; the bot's own MCP comment has `via = "mcp"`, REST and the app none; no merge with an app edit; switch off → 403).
+2. Manual: your own bot (creating one needs `MANAGE_BOTS`), «Действовать от моего имени» on; an MCP client with `Authorization: Bearer <token>` and `Calab-On-Behalf: owner`.
+3. `list_tasks {"mine": true}` — my open tasks; `list_tasks {"board": "DEV", "assignee": "me", "status": "In Progress"}`.
+4. `create_task {"board": "DEV", "title": …}`, `assign {"task": key, "users": ["me"]}`, `update_task {"task": key, "priority": "high", "add_labels": [...]}`, `comment_task`. In the app: the task's creator, assignee and comment author are you, «(через бота X · MCP)» after the name in the comment and in «История»; `read` shows `git` (MR, branches) and `releases`.
+5. Without the header the same calls are the bot's, marked «(через MCP)»; a comment written in the app has no mark.
+6. Turn «Действовать от моего имени» off: the next call with the header is `403 ON_BEHALF_DISABLED`; a member's id without their consent: `403 ON_BEHALF_NO_CONSENT`.
 
 ## SIP inbound over a registration (ADR-0121)
 

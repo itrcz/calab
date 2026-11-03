@@ -459,6 +459,9 @@ message TaskActivity {
   string rule_id = 9; // the automation rule that made the change (ADR-0060); empty otherwise
   // ADR-0106: the bot that made the change on behalf of actor_id (its owner); empty otherwise.
   string via_bot_id = 10;
+  // ADR-0156: the channel of the change, "mcp" when actor_id (a bot, or a person through via_bot_id)
+  // made it through the MCP endpoint; clients show «via MCP». Empty otherwise.
+  string via = 11;
 }
 
 // The task feed: comments (messages of the task room) and journal entries in one timeline.

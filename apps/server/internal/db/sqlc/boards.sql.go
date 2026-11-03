@@ -1565,9 +1565,9 @@ func (q *Queries) InsertTask(ctx context.Context, arg InsertTaskParams) (uuid.UU
 
 const insertTaskActivity = `-- name: InsertTaskActivity :one
 
-INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id, via_bot_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id, via_bot_id
+INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after, rule_id, via_bot_id, via)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id, via_bot_id, via
 `
 
 type InsertTaskActivityParams struct {
@@ -1579,10 +1579,12 @@ type InsertTaskActivityParams struct {
 	After    []byte
 	RuleID   *uuid.UUID
 	ViaBotID *uuid.UUID
+	Via      *string
 }
 
 // ---- activity ----
 // via_bot_id: the actor's bot made the change on the actor's behalf (ADR-0106).
+// via: the channel, 'mcp' through the MCP endpoint (ADR-0156); NULL otherwise.
 func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivityParams) (TaskActivity, error) {
 	row := q.db.QueryRow(ctx, insertTaskActivity,
 		arg.TaskID,
@@ -1593,6 +1595,7 @@ func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivity
 		arg.After,
 		arg.RuleID,
 		arg.ViaBotID,
+		arg.Via,
 	)
 	var i TaskActivity
 	err := row.Scan(
@@ -1606,6 +1609,7 @@ func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivity
 		&i.CreatedAt,
 		&i.RuleID,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
@@ -1708,7 +1712,7 @@ func (q *Queries) InsertTaskRelation(ctx context.Context, arg InsertTaskRelation
 }
 
 const lastTaskActivityOfKind = `-- name: LastTaskActivityOfKind :one
-SELECT id, board_id, actor_id, rule_id, via_bot_id, before,
+SELECT id, board_id, actor_id, rule_id, via_bot_id, via, before,
     (created_at > now() - make_interval(secs => $1::float8))::boolean AS recent
 FROM task_activity WHERE task_id = $2 AND kind = $3
   AND ($4::text IS NULL OR after->>'message_id' = $4::text)
@@ -1728,6 +1732,7 @@ type LastTaskActivityOfKindRow struct {
 	ActorID  *uuid.UUID
 	RuleID   *uuid.UUID
 	ViaBotID *uuid.UUID
+	Via      *string
 	Before   []byte
 	Recent   bool
 }
@@ -1749,6 +1754,7 @@ func (q *Queries) LastTaskActivityOfKind(ctx context.Context, arg LastTaskActivi
 		&i.ActorID,
 		&i.RuleID,
 		&i.ViaBotID,
+		&i.Via,
 		&i.Before,
 		&i.Recent,
 	)
@@ -1756,7 +1762,7 @@ func (q *Queries) LastTaskActivityOfKind(ctx context.Context, arg LastTaskActivi
 }
 
 const listBoardActivity = `-- name: ListBoardActivity :many
-SELECT a.id, a.task_id, a.board_id, a.actor_id, a.kind, a.before, a.after, a.created_at, a.rule_id, a.via_bot_id, b.key AS board_key, t.number AS task_number FROM task_activity a
+SELECT a.id, a.task_id, a.board_id, a.actor_id, a.kind, a.before, a.after, a.created_at, a.rule_id, a.via_bot_id, a.via, b.key AS board_key, t.number AS task_number FROM task_activity a
 JOIN tasks t ON t.id = a.task_id
 JOIN boards b ON b.id = t.board_id
 WHERE a.board_id = $1
@@ -1790,6 +1796,7 @@ type ListBoardActivityRow struct {
 	CreatedAt  time.Time
 	RuleID     *uuid.UUID
 	ViaBotID   *uuid.UUID
+	Via        *string
 	BoardKey   string
 	TaskNumber int32
 }
@@ -1822,6 +1829,7 @@ func (q *Queries) ListBoardActivity(ctx context.Context, arg ListBoardActivityPa
 			&i.CreatedAt,
 			&i.RuleID,
 			&i.ViaBotID,
+			&i.Via,
 			&i.BoardKey,
 			&i.TaskNumber,
 		); err != nil {
@@ -2141,7 +2149,7 @@ func (q *Queries) ListInvitedTasks(ctx context.Context, arg ListInvitedTasksPara
 }
 
 const listTaskActivity = `-- name: ListTaskActivity :many
-SELECT id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id, via_bot_id FROM task_activity WHERE task_id = $1
+SELECT id, task_id, board_id, actor_id, kind, before, after, created_at, rule_id, via_bot_id, via FROM task_activity WHERE task_id = $1
   AND ($2::uuid IS NULL OR id < $2::uuid)
   AND ($3::text IS NULL OR kind <> $3::text)
 ORDER BY id DESC LIMIT $4
@@ -2180,6 +2188,7 @@ func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityPara
 			&i.CreatedAt,
 			&i.RuleID,
 			&i.ViaBotID,
+			&i.Via,
 		); err != nil {
 			return nil, err
 		}
@@ -2395,7 +2404,7 @@ func (q *Queries) ListTaskRelations(ctx context.Context, taskIds []uuid.UUID) ([
 }
 
 const listTaskRoomMessages = `-- name: ListTaskRoomMessages :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages WHERE room_id = $1 AND deleted_at IS NULL
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages WHERE room_id = $1 AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC LIMIT $3
 `
@@ -2437,6 +2446,7 @@ func (q *Queries) ListTaskRoomMessages(ctx context.Context, arg ListTaskRoomMess
 			&i.InlineKeyboard,
 			&i.KeyboardRevision,
 			&i.ViaBotID,
+			&i.Via,
 		); err != nil {
 			return nil, err
 		}

@@ -65,6 +65,8 @@ export const esBots = {
   // ADR-0106: a bot acting on behalf of its owner
   'bots.via': 'a través del bot {bot}',
   'bots.viaUnknown': 'a través de un bot',
+  // ADR-0156: an action made through the MCP endpoint
+  'bots.viaMcp': 'a través de MCP',
   'bots.actsAsOwnerHint': 'El bot podrá hacer lo mismo que tú: escribir, cambiar tareas, votar en aprobaciones. Si se filtra el token, actuará como tú. Todo se marca «a través del bot».',
   'bots.actsAsOwnerOn': 'Actúa en nombre de su propietario',
   'bots.actsAsOwnerConfirmTitle': '¿Permitir que «{name}» actúe en tu nombre?',

@@ -3,7 +3,7 @@ import { Crown, ShieldCheck, UserCheck } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Badge, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
-import { viaBotSuffix, viaBotText } from '../../lib/bots';
+import { viaText } from '../../lib/bots';
 import { roleColorCss } from '../../lib/roles';
 import { useFormerInfo, useWorkspaces } from '../../stores/workspaces';
 
@@ -37,14 +37,18 @@ export function FormerChipView({ leftAt, className }: { leftAt: number; classNam
 
 /**
  * «(через бота X)» after an author's name (ADR-0106): the owner's message or task change made by
- * their bot. A small muted suffix in the caller's text style; `bare` drops the parentheses (a
- * line of its own, e.g. above my own bubble). Subscribes to the bot's name only.
+ * their bot; with `mcp` (ADR-0156) the way is the MCP endpoint — «(через бота X · MCP)», or
+ * «(через MCP)» for a bot's own action. A small muted suffix in the caller's text style; `bare`
+ * drops the parentheses (a line of its own, e.g. above my own bubble). Subscribes to the bot's
+ * name only. Nothing when neither is set.
  */
-export function ViaBot({ botId, bare = false, className }: { botId: string; bare?: boolean; className?: string }): ReactNode {
-  const name = useWorkspaces((s) => s.users[botId]?.displayName ?? '');
+export function ViaBot({ botId = '', mcp = false, bare = false, className }: { botId?: string | undefined; mcp?: boolean; bare?: boolean; className?: string }): ReactNode {
+  const name = useWorkspaces((s) => (botId ? (s.users[botId]?.displayName ?? '') : ''));
+  const text = viaText(!!botId, name, mcp);
+  if (!text) return null;
   return (
-    <span data-via-bot className={cx('font-normal', className)} data-testid="via-bot">
-      {bare ? viaBotText(name) : viaBotSuffix(name)}
+    <span data-via-bot data-via-mcp={mcp ? '' : undefined} className={cx('font-normal', className)} data-testid="via-bot">
+      {bare ? text : `(${text})`}
     </span>
   );
 }

@@ -152,7 +152,7 @@ const HistoryRow = memo(function HistoryRow({ a, workspaceId, boardId }: { a: Ta
               </ProfileTarget>
               {bot ? <BotBadge className="ml-1 align-[1px]" /> : null}
               <FormerChip workspaceId={workspaceId} userId={a.actorId} className="ml-1 align-[1px]" />
-              {a.viaBotId ? <ViaBot botId={a.viaBotId} className="ml-1 text-faint" /> : null}{' '}
+              {a.viaBotId || a.via ? <ViaBot botId={a.viaBotId} mcp={a.via === 'mcp'} className="ml-1 text-faint" /> : null}{' '}
             </>
           )}
           <span data-testid="history-text">{e.text}</span>

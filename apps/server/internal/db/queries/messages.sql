@@ -1,8 +1,9 @@
 -- name: InsertMessage :one
 -- Idempotent by (author_id, nonce): no row = a message with this nonce already exists.
 -- via_bot_id: the bot that wrote it on behalf of its owner, the author (ADR-0106).
-INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision, via_bot_id)
-VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('inline_keyboard')::jsonb, CASE WHEN sqlc.narg('inline_keyboard')::jsonb IS NULL THEN 0 ELSE 1 END, sqlc.narg('via_bot_id'))
+-- via: the channel, 'mcp' through the MCP endpoint (ADR-0156); NULL otherwise.
+INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision, via_bot_id, via)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('inline_keyboard')::jsonb, CASE WHEN sqlc.narg('inline_keyboard')::jsonb IS NULL THEN 0 ELSE 1 END, sqlc.narg('via_bot_id'), sqlc.narg('via'))
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
 RETURNING *;
 

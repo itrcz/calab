@@ -73,8 +73,8 @@ func TestMCPBotTools(t *testing.T) {
 	if st, _ := mcpPost(t, o.token, init); st != http.StatusForbidden {
 		t.Fatalf("a person: %d", st)
 	}
-	// The bot cannot turn the endpoint into its owner's or a member's: the route is closed on
-	// behalf (ADR-0106 / ADR-0111), whatever the header names.
+	// On behalf needs the owner's switch or a member's consent (ADR-0106 / ADR-0111, ADR-0156):
+	// neither is given here, so the header is refused whatever it names.
 	for _, who := range []string{"owner", o.id} {
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/api/mcp", strings.NewReader(init))
 		req.Header.Set("Authorization", "Bearer "+bt.token)

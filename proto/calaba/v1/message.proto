@@ -48,6 +48,9 @@ message Message {
   // ADR-0106: the bot that wrote the message on behalf of its owner, the author (author_id);
   // clients show «Name (via bot X)». Empty for everything else.
   string via_bot_id = 20;
+  // ADR-0156: the channel, "mcp" when the author (a bot, or a person through via_bot_id) wrote the
+  // message through the MCP endpoint; clients show «via MCP». Empty otherwise.
+  string via = 22;
   // ADR-0140: who saw the message on screen and when — people only (bots and the author never),
   // oldest first. Set only in REST answers to the author (GET /api/rooms/{id}/messages/{messageId};
   // in GET /api/rooms/{id}/messages for bot callers), never in events. Empty before the feature

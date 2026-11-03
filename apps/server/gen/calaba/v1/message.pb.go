@@ -209,6 +209,9 @@ type Message struct {
 	// ADR-0106: the bot that wrote the message on behalf of its owner, the author (author_id);
 	// clients show «Name (via bot X)». Empty for everything else.
 	ViaBotId string `protobuf:"bytes,20,opt,name=via_bot_id,json=viaBotId,proto3" json:"via_bot_id,omitempty"`
+	// ADR-0156: the channel, "mcp" when the author (a bot, or a person through via_bot_id) wrote the
+	// message through the MCP endpoint; clients show «via MCP». Empty otherwise.
+	Via string `protobuf:"bytes,22,opt,name=via,proto3" json:"via,omitempty"`
 	// ADR-0140: who saw the message on screen and when — people only (bots and the author never),
 	// oldest first. Set only in REST answers to the author (GET /api/rooms/{id}/messages/{messageId};
 	// in GET /api/rooms/{id}/messages for bot callers), never in events. Empty before the feature
@@ -391,6 +394,13 @@ func (x *Message) GetKeyboardRevision() uint64 {
 func (x *Message) GetViaBotId() string {
 	if x != nil {
 		return x.ViaBotId
+	}
+	return ""
+}
+
+func (x *Message) GetVia() string {
+	if x != nil {
+		return x.Via
 	}
 	return ""
 }
@@ -2511,7 +2521,7 @@ var File_calaba_v1_message_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_message_proto_rawDesc = "" +
 	"\n" +
-	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/call.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\x1a\x14calaba/v1/user.proto\"\xa9\a\n" +
+	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/call.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\x1a\x14calaba/v1/user.proto\"\xbb\a\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -2536,7 +2546,8 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\x0finline_keyboard\x18\x12 \x01(\v2\x19.calaba.v1.InlineKeyboardR\x0einlineKeyboard\x12+\n" +
 	"\x11keyboard_revision\x18\x13 \x01(\x04R\x10keyboardRevision\x12\x1c\n" +
 	"\n" +
-	"via_bot_id\x18\x14 \x01(\tR\bviaBotId\x121\n" +
+	"via_bot_id\x18\x14 \x01(\tR\bviaBotId\x12\x10\n" +
+	"\x03via\x18\x16 \x01(\tR\x03via\x121\n" +
 	"\aread_by\x18\x15 \x03(\v2\x18.calaba.v1.MessageReaderR\x06readBy\"]\n" +
 	"\rMessageReader\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x123\n" +

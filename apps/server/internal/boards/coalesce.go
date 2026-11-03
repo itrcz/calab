@@ -90,7 +90,7 @@ func (j journalEntry) event(ws uuid.UUID) *v1.DispatchEvent {
 // entry of that kind of the task (with a merge key: of the same value of it in after), by the
 // same actor (not a rule), within CoalesceWindow, on the task's current board. The task row is locked by the caller's write; the delete re-checks that
 // no concurrent writer merged it first. Returns the removed entry's id and its before.
-func mergeTarget(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID, rule *uuid.UUID, via *uuid.UUID, kind string, after map[string]any) (uuid.UUID, []byte, bool, error) {
+func mergeTarget(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UUID, rule *uuid.UUID, via *uuid.UUID, channel *string, kind string, after map[string]any) (uuid.UUID, []byte, bool, error) {
 	if _, ok := coalescable[kind]; !ok || actor == nil || rule != nil {
 		return uuid.Nil, nil, false, nil
 	}
@@ -110,8 +110,10 @@ func mergeTarget(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UU
 		return uuid.Nil, nil, false, err
 	}
 	// Another board: the task moved since (moved_board), its statuses and labels are not comparable.
-	// A change through the actor's bot (ADR-0106) and the actor's own are not merged.
-	if !prev.Recent || prev.RuleID != nil || prev.ActorID == nil || *prev.ActorID != *actor || prev.BoardID != t.BoardID || !sameVia(prev.ViaBotID, via) {
+	// A change through the actor's bot (ADR-0106) and the actor's own are not merged, nor changes
+	// through different channels (ADR-0156: the app and MCP).
+	if !prev.Recent || prev.RuleID != nil || prev.ActorID == nil || *prev.ActorID != *actor || prev.BoardID != t.BoardID ||
+		!sameVia(prev.ViaBotID, via) || !sameChannel(prev.Via, channel) {
 		return uuid.Nil, nil, false, nil
 	}
 	if _, err := q.DeleteTaskActivity(ctx, prev.ID); errors.Is(err, pgx.ErrNoRows) {
@@ -124,6 +126,14 @@ func mergeTarget(ctx context.Context, q *sqlc.Queries, t taskRow, actor *uuid.UU
 
 // sameVia: both entries were made directly, or both through the same bot.
 func sameVia(a, b *uuid.UUID) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+// sameChannel: both entries came through the same channel (ADR-0156), or both directly.
+func sameChannel(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}

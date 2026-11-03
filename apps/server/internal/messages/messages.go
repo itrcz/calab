@@ -536,7 +536,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		var err error
 		params := sqlc.InsertMessageParams{
 			RoomID: roomID, AuthorID: uid(r), Content: content, ReplyToID: replyTo, Nonce: nonce, InlineKeyboard: keyboard,
-			ViaBotID: via,
+			ViaBotID: via, Via: auth.Channel(r.Context()), // ADR-0156: «via MCP»
 		}
 		if sticker != nil {
 			params.StickerID = &sticker.Sticker.ID

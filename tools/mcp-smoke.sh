@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test of the MCP endpoint (ADR-0114): initialize -> tools/list -> tools/call find.
+# Smoke test of the MCP endpoint (ADR-0114, ADR-0156): initialize -> tools/list -> tools/call find.
 # Usage: CALAB_BOT_TOKEN=calab_bot_... tools/mcp-smoke.sh [base-url]   (default https://app.calab.io)
 # The token is read from the environment and is never printed.
 set -euo pipefail

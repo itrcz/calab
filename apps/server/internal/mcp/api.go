@@ -72,7 +72,8 @@ func (a *api) call(ctx context.Context, method, path string, query url.Values, b
 	// A fresh context, cancelled with the MCP request: none of the outer request's values (its
 	// identity, mutation boundary, publish budget) leak into the inner one, which the chain
 	// builds itself like for any REST call.
-	inner, cancel := context.WithCancel(context.Background())
+	// The one value it carries is the channel (ADR-0156): what the call writes is marked «via MCP».
+	inner, cancel := context.WithCancel(auth.WithChannel(context.Background(), auth.ChannelMCP))
 	defer cancel()
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
@@ -80,15 +81,14 @@ func (a *api) call(ctx context.Context, method, path string, query url.Values, b
 	if err != nil {
 		return err
 	}
-	// Only what identifies the caller: the token and the client address headers (the chain
-	// recomputes the client IP from RemoteAddr and the trusted proxies). Calab-On-Behalf is
-	// not carried: the MCP endpoint is the bot itself.
-	for _, k := range []string{"Authorization", "X-Forwarded-For", "X-Real-Ip", "User-Agent", "Accept-Language"} {
+	// Only what identifies the caller: the token, Calab-On-Behalf (ADR-0156: the inner call is
+	// checked on behalf again, route by route) and the client address headers (the chain
+	// recomputes the client IP from RemoteAddr and the trusted proxies).
+	for _, k := range []string{"Authorization", auth.OnBehalfHeader, "X-Forwarded-For", "X-Real-Ip", "User-Agent", "Accept-Language"} {
 		if v := a.outer.Header.Values(k); len(v) > 0 {
 			req.Header[k] = v
 		}
 	}
-	req.Header.Del(auth.OnBehalfHeader)
 	req.RemoteAddr, req.Host = a.outer.RemoteAddr, a.outer.Host
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

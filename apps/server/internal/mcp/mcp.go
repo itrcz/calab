@@ -32,9 +32,10 @@ const maxBody = 1 << 20
 var protocolVersions = []string{"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}
 
 // instructions is sent once in initialize: kept short, the tools describe themselves.
-const instructions = "Calab as this bot: find ids with find, then read / act. Rights are the bot's roles; a refusal is final."
+const instructions = "Calab as this bot, or as the person it acts for (Calab-On-Behalf): find ids with find or list_tasks, then read / act; \"me\" is that identity. Rights are its roles; a refusal is final."
 
-// ErrNotBot answers a request without a bot token (a person's session included).
+// ErrNotBot answers a request without a bot token (a person's session included). A bot on behalf
+// of its owner or of a consenting member (Calab-On-Behalf, ADR-0156) is a bot token.
 var ErrNotBot = httpx.Forbidden("the MCP endpoint needs a bot token")
 
 // Handler serves Path. It must run inside auth.Require (the private route wrapper).
@@ -84,7 +85,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, ok := auth.FromContext(r.Context())
-	if !ok || !id.IsBot {
+	if !ok || !id.Machine() {
 		httpx.WriteError(w, r, ErrNotBot)
 		return
 	}

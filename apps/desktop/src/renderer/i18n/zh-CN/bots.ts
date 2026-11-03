@@ -65,6 +65,8 @@ export const zhBots = {
   // ADR-0106: a bot acting on behalf of its owner
   'bots.via': '通过机器人 {bot}',
   'bots.viaUnknown': '通过机器人',
+  // ADR-0156: an action made through the MCP endpoint
+  'bots.viaMcp': '通过 MCP',
   'bots.actsAsOwnerHint': '机器人可以做你能做的事：发消息、修改任务、参与审批投票。令牌泄露即等于以你的身份操作。所有操作都会标注“通过机器人”。',
   'bots.actsAsOwnerOn': '以所有者身份操作',
   'bots.actsAsOwnerConfirmTitle': '允许“{name}”以你的身份操作？',
