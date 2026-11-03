@@ -80,7 +80,8 @@ function blocks(nodes: readonly PmNode[] | undefined, c: Ctx, k: string): ReactN
 function block(n: PmNode, c: Ctx, k: string): ReactNode {
   switch (n.type) {
     case 'paragraph':
-      return <p key={k}>{inline(n.content, c.ws, k)}</p>;
+      // An empty paragraph keeps its line like the editor's trailing break does (the blank lines the user typed).
+      return <p key={k}>{n.content?.length ? inline(n.content, c.ws, k) : <br />}</p>;
     case 'heading': {
       const H = `h${Math.min(3, Math.max(1, Number(n.attrs?.['level']) || 1))}` as 'h1' | 'h2' | 'h3';
       return <H key={k}>{inline(n.content, c.ws, k)}</H>;

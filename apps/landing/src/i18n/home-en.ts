@@ -5,7 +5,8 @@ export const en: Home = {
   hero: {
     title: 'Your team’s whole workday in one window',
     accent: 'in one window',
-    lead: 'Voice rooms, chat, meetings, tasks, wiki, canvas, files, mail and phone calls — connected to each other, in the cloud or on your own server.',
+    list: ['Video meetings', 'Chat', 'Voice rooms', 'Tasks, wiki, canvas, files, mail and phone calls'],
+    lead: 'Everything is connected and works in the cloud or on your own server.',
     download: 'Download',
     startFree: 'Start for free',
     platforms: 'macOS · Windows · Linux · Web · iOS · Android',

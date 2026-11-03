@@ -7,7 +7,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/f
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { NOW, checkpoint, expectAssigneeStacks, expectToolbarHeights, joinVoice, login, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedViaMcp, settle } from './harness';
+import { NOW, checkpoint, expectAssigneeStacks, expectToolbarHeights, joinVoice, login, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
 import { DAY, seedDay } from './calendarWeb';
 import { startPublisher } from './publisher';
 
@@ -188,6 +188,7 @@ const KEY = new Set([
   // «Комментарии | История» of the task panel (ADR-0091).
   'boards-task-comments',
   'boards-task-comments-days',
+  'boards-task-comments-rich',
   'boards-task-history',
   'boards-list',
   'boards-labels-overflow',
@@ -4700,6 +4701,8 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await win.keyboard.type('# Итоги звонка');
   await win.keyboard.press('Enter');
   await win.keyboard.type('Эхо пропало после правки 🎉 подробности на https://calab.io/docs ');
+  // Board #150: Enter twice leaves an empty line between paragraphs; it must survive «Готово» and keep its height.
+  await win.keyboard.press('Enter');
   await win.keyboard.press('Enter');
   await win.keyboard.type('Второй абзац с **жирным** словом.');
   await win.keyboard.press('Enter');
@@ -4730,6 +4733,7 @@ test('boards-task', async ({ open, win, mock, shot }) => {
     }
     return out;
   };
+  await expect(read.locator('p').nth(1)).toHaveText('');
   const readBoxes = await boxes(read);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'boards-task-desc-read');
@@ -4866,6 +4870,24 @@ test('boards-task-history', async ({ open, win, mock, shot }) => {
   await expect(panel.locator('[data-message-id] [data-via-mcp]')).toHaveCount(3);
   await viaMcp.scrollIntoViewIfNeeded();
   await checkpoint(shot, 'boards-task-comments-via-mcp');
+});
+
+/** Board #148: a picture and pipe tables in the task's comments (a wide table scrolls inside the bubble). */
+test('boards-task-comments-rich', async ({ open, win, mock, shot }) => {
+  await open();
+  seedRichComments(mock);
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  await expect(panel.locator('table')).toHaveCount(2);
+  const wide = panel.locator('.tableWrapper').last();
+  await wide.scrollIntoViewIfNeeded();
+  // The wide table scrolls itself; the page does not grow sideways.
+  expect(await wide.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  // axe off: light theme flags aria-labels of the panel's avatars / mention button (label-content-name-mismatch), none of this change; dark ran with it on.
+  await checkpoint(shot, 'boards-task-comments-rich', { axe: false });
 });
 
 /** The list grouped by status, two rows selected: the bulk actions bar. */

@@ -110,9 +110,9 @@ details[open] .chevron { transform: rotate(180deg); }
 .section { padding-block: var(--section-y); }
 .section-quiet { padding-block: 128px; }
 @media (max-width: 639px) { .section-quiet { padding-block: 80px; } }
-.anchor-alias { display: block; position: relative; top: -72px; visibility: hidden; height: 0; }
-/* A section anchor: its 96 / 64 px top padding is enough air under the floating logo, so it lands 24 px into it. */
-.section[id], section[id] { scroll-margin-top: calc(72px - var(--section-y)); }
+.anchor-alias { display: block; position: relative; top: calc(var(--section-y) - var(--header-h) - 16px); visibility: hidden; height: 0; }
+/* A section anchor: the heading (after the section's 96 / 64 px top padding) lands 16 px under the sticky header. */
+.section[id], section[id] { scroll-margin-top: calc(var(--header-h) - var(--section-y) + 16px); }
 .surface-alt { background: var(--color-bg-alt); }
 
 /* ---------- Type ---------- */
@@ -221,9 +221,9 @@ details[open] .chevron { transform: rotate(180deg); }
 @media (max-width: 639px) { .shot-phone { border-radius: 8px; } }
 
 /* ---------- Header ---------- */
-/* No bar and no backing (owner, 24.10): the whole header — logo (left), nav (middle), language / menu / web buttons
-   (right) — scrolls away with the page; nothing sticks (owner, 24.10). No backdrop-filter. */
-.site-header { position: relative; z-index: 40; }
+/* Sticky (owner, #142, replacing «scrolls away», 24.10): logo (left), nav (middle), language / menu / web buttons
+   (right) stay pinned on a solid backing with a hairline. Opaque, no backdrop-filter. */
+.site-header { position: sticky; top: 0; z-index: 40; background: var(--color-bg) var(--grain) repeat; box-shadow: 0 1px 0 var(--hairline); }
 .site-header-row { display: flex; align-items: center; justify-content: center; height: var(--header-h); }
 .site-brand, .site-header-actions { position: absolute; top: calc((var(--header-h) - 42px) / 2); z-index: 40; }
 .site-brand { z-index: 41; }
@@ -612,3 +612,24 @@ body:has(#site-cookie-panel) #chatdeck-widget { display: none; }
 /* CJK headings fall back to the system sans: a little more weight and air. */
 :lang(zh-CN) .h1, :lang(zh-CN) .h2 { line-height: 1.2; font-weight: 600; letter-spacing: 0; }
 :lang(zh-CN) .accent { font-style: normal; white-space: nowrap; }
+
+/* ---------- Section CTA (components/section-cta.tsx): the compact pair at the end of a block ---------- */
+.section-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 40px; }
+.section-cta-center { justify-content: center; }
+@media (max-width: 639px) { .section-cta { margin-top: 28px; } .section-cta .btn { flex: 1 1 auto; } }
+
+/* ---------- Hero list ---------- */
+.hero-list { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; padding: 0; font-size: 19px; line-height: 1.4; color: var(--color-text); }
+.hero-list li { position: relative; padding-left: 22px; text-wrap: pretty; }
+.hero-list li::before { content: ''; position: absolute; left: 0; top: .62em; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
+@media (min-width: 1024px) { .hero-list { font-size: 21px; } }
+.hero-note { max-width: 620px; margin-top: -4px; font-size: 16px; line-height: 1.5; font-style: italic; color: var(--color-text-secondary); text-wrap: pretty; }
+
+/* ---------- Scroll progress (components/scroll-progress.tsx): a thin bar on the right edge ---------- */
+.scroll-progress { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: 3px; background: rgb(255 255 255 / .08); pointer-events: none; }
+.scroll-progress i { display: block; width: 100%; height: 100%; background: var(--color-accent); transform: scaleY(var(--p, 0)); transform-origin: top; will-change: transform; }
+@supports (animation-timeline: scroll()) {
+  @keyframes scroll-progress-fill { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  .scroll-progress i { animation: scroll-progress-fill linear both; animation-timeline: scroll(root block); }
+}
+@media (max-width: 479px) { .scroll-progress { width: 2px; } }

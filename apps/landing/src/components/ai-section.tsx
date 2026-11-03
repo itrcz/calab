@@ -1,6 +1,7 @@
 import type { Locale } from '@/i18n';
 import { getHome } from '@/i18n/home';
 import { nb, Section, SectionHeading, Tile } from './ui';
+import { SectionCta } from './section-cta';
 
 /** The three-line MCP snippet of the third AI tile (§4.6): address and header, nothing else (docs: bots/mcp). */
 export function McpSnippet({ inline }: { inline?: boolean | undefined }) {
@@ -38,6 +39,7 @@ export function AiSection({ locale }: { locale: Locale }) {
         ))}
       </ul>
       <p className="caption section-note">{nb(a.plan)}</p>
+      <SectionCta locale={locale} />
     </Section>
   );
 }
