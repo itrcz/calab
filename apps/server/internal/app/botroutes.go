@@ -589,7 +589,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/me/oauth-grants",
 		"DELETE /api/me/oauth-grants/{grant}",
 	}},
-	{access: botDeny, why: "MCP without a bot (ADR-0158): the OAuth server through which a person connects an MCP client — a bot has its token and needs no consent", routes: []string{
+	{access: botPublic, why: "MCP without a bot (ADR-0158): the OAuth server's metadata, client registration, authorize, token and revocation read no user or bot token — a bot is anonymous there", routes: []string{
 		"GET /.well-known/oauth-protected-resource",
 		"GET /.well-known/oauth-protected-resource/api/mcp",
 		"GET /.well-known/oauth-authorization-server",
@@ -603,6 +603,8 @@ var botRouteGroups = []botRouteGroup{
 		"OPTIONS /api/mcp/oauth/token",
 		"POST /api/mcp/oauth/revoke",
 		"OPTIONS /api/mcp/oauth/revoke",
+	}},
+	{access: botDeny, why: "MCP without a bot (ADR-0158): the consent is a person's — a bot has its own token and needs none", routes: []string{
 		"POST /api/mcp/oauth/requests/{request}/bind",
 		"POST /api/mcp/oauth/requests/{request}/decision",
 	}},
