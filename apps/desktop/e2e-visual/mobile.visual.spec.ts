@@ -1334,7 +1334,7 @@ test('m-boards-task', async ({ page }) => {
 test('m-boards-task-desc-wysiwyg', async ({ page }) => {
   mock.setClock(NOW.getTime());
   const cal4 = mock.boards.taskByKey('CAL-4');
-  if (cal4) cal4.task.description = 'Эхо пропало после правки 🎉 подробности на https://calab.io/docs\n\nВторой абзац.\n\n- первый **жирный** пункт\n- второй пункт\n\n| Поле | Тип | Обязательное | Описание |\n| --- | --- | --- | --- |\n| id | **uuid** | да | первичный ключ задачи |\n| имя | text | | |';
+  if (cal4) cal4.task.description = 'Эхо пропало после правки 🎉 подробности на https://calab.io/docs\n\n\nВторой абзац.\n\n- первый **жирный** пункт\n- второй пункт\n\n| Поле | Тип | Обязательное | Описание |\n| --- | --- | --- | --- |\n| id | **uuid** | да | первичный ключ задачи |\n| имя | text | | |';
   // Board #134: a table is drawn in read mode like in the editor; a wide one scrolls inside the description.
   await signedIn(page);
   await tab(page, 'boards');

@@ -14,6 +14,7 @@ export function descriptionToDoc(md: string, mentionLabel?: (id: string) => stri
   return fromMarkdown(md, {
     imageFileId: (url) => FILE_URL_RE.exec(url)?.[1] ?? null,
     pageLinks: false,
+    emptyParagraphs: true,
     ...(mentionLabel ? { mentionLabel } : {}),
   });
 }

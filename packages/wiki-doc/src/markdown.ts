@@ -283,13 +283,22 @@ function looseBetween(a: PmNode, b: PmNode): boolean {
   return [a.type, b.type].some((t) => t === 'table' || t === 'callout' || t === 'toggle');
 }
 
-function blocksMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>, sep?: string): string {
+const isEmptyParagraph = (n: PmNode): boolean => n.type === 'paragraph' && !(n.content ?? []).some((c) => c.type !== 'text' || c.text);
+
+function blocksMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>, sep?: string, topLite = false): string {
   let out = '';
   let prev: PmNode | null = null;
+  let empties = 0;
   for (const n of nodes ?? []) {
+    // markdown-lite, top level: an empty paragraph between blocks is one more blank line (fromMarkdown reads it back).
+    if (topLite && isEmptyParagraph(n)) {
+      empties++;
+      continue;
+    }
     const s = blockMd(n, o);
     if (s === '') continue;
-    if (prev) out += sep ?? (o.lite && !looseBetween(prev, n) ? '\n' : '\n\n');
+    if (prev) out += empties ? '\n'.repeat(empties + 2) : (sep ?? (o.lite && !looseBetween(prev, n) ? '\n' : '\n\n'));
+    empties = 0;
     out += s;
     prev = n;
   }
@@ -307,7 +316,7 @@ export function toMarkdown(doc: PmNode, opts: ToMarkdownOptions & { title?: stri
     lite,
   };
   // markdown-lite: blank lines inside code stay as they are (no collapsing); no trailing newline.
-  if (lite) return blocksMd(doc.content, o).replace(/^\n+|\s+$/g, '');
+  if (lite) return blocksMd(doc.content, o, undefined, true).replace(/^\n+|\s+$/g, '');
   const body = blocksMd(doc.content, o).replace(/\n{3,}/g, '\n\n').trim();
   const title = opts.title?.trim();
   return `${title ? `# ${title}\n\n` : ''}${body}\n`;
@@ -325,6 +334,8 @@ export interface FromMarkdownOptions {
   imageFileId?: (url: string) => string | null;
   /** Wiki page addresses become page links (default true; false keeps them plain links). */
   pageLinks?: boolean;
+  /** markdown-lite: k (≥ 2) blank lines between top-level blocks read as k-1 empty paragraphs (the lite writer's counterpart). */
+  emptyParagraphs?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -421,7 +432,12 @@ function parseBlocks(lines: string[], o: FromMarkdownOptions, depth: number): Pm
     const line = lines[i] ?? '';
     if (!line.trim()) {
       flush();
-      i++;
+      let j = i;
+      while (j < lines.length && !(lines[j] ?? '').trim()) j++;
+      // markdown-lite (task descriptions): k blank lines between two blocks are k-1 empty paragraphs the user typed
+      // (one blank line is the plain paragraph gap); leading and trailing runs are nothing.
+      if (o.emptyParagraphs && depth === 0 && out.length && j < lines.length) for (let n = j - i; n > 1; n--) out.push({ type: 'paragraph' });
+      i = j;
       continue;
     }
     const fence = FENCE_RE.exec(line);
