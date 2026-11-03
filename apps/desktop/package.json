@@ -23,6 +23,7 @@
     "preview:web": "vite preview --config vite.web.config.ts --mode web",
     "e2e:web": "playwright test --config playwright.web.config.ts",
     "e2e:visual": "pnpm build:app && pnpm build:web && playwright test --config playwright.visual.config.ts",
+    "screenshots:store": "pnpm build:web && playwright test --config playwright.marketing.config.ts store-shots && tsx e2e-marketing/store/compose.ts && tsx e2e-marketing/store/validate.ts",
     "screenshots:marketing": "playwright test --config playwright.marketing.config.ts",
     "e2e:media": "playwright test --config playwright.media.config.ts",
     "e2e:visual:mail": "CALABA_MAIL_MOCK=1 pnpm build:app && playwright test --config playwright.visual.config.ts --project mail-dark-960",
