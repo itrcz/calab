@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Locale } from '@/i18n';
 import { fitCardShift } from '@/lib/card-viewport';
 import { CardStickers } from './card-stickers';
@@ -15,7 +15,7 @@ const copy = {
   zh: { title: '一个团队，多种协作方式。', accent: '多种协作方式。', note: 'Calab，适合每一种工作场景。', places: ['团队会议', '学习培训', '设计评审', '客户支持', '项目规划', '新人入职', '远程办公', '结对协作'], details: ['讨论计划与决策', '演示、讲解与学习', '一起审阅设计', '通过语音和共享屏幕提供帮助', '从想法到任务', '帮助新同事融入团队', '随时随地保持联系', '一起解决难题'] },
 };
 
-export function ConferenceStrip({ locale }: { locale: Locale }) {
+export function ConferenceStrip({ locale, cta }: { locale: Locale; cta?: ReactNode }) {
   const t = copy[locale];
   const viewport = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
@@ -91,5 +91,6 @@ export function ConferenceStrip({ locale }: { locale: Locale }) {
         </button>)}
       </div>
     </div>
+    {cta && <div className="wrap">{cta}</div>}
   </section>;
 }

@@ -45,6 +45,9 @@ export type Home = {
     title: string;
     /** The tail of the title set in the italic accent (chatdeck-style); must end the title. */
     accent: string;
+    /** The hero list: the main things, one line each. */
+    list: Tuple<string, 4>;
+    /** The muted italic line under the list. */
     lead: string;
     download: string;
     /** The second hero button: the web app, free plan. */
@@ -124,7 +127,8 @@ export const ru: Home = {
   hero: {
     title: 'Вся работа команды — в одном окне',
     accent: 'в одном окне',
-    lead: 'Голосовые комнаты, чат, встречи, задачи, вики, холст, диск, почта и телефония. Всё связано между собой и работает в облаке или на вашем сервере.',
+    list: ['Видеовстречи', 'Чат', 'Голосовые комнаты', 'Задачи, вики, холст, диск, почта и телефония'],
+    lead: 'Всё связано между собой и работает в облаке или на вашем сервере.',
     download: 'Скачать',
     startFree: 'Начать бесплатно',
     platforms: 'macOS · Windows · Linux · Web · iOS · Android',

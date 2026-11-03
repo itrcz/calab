@@ -5,7 +5,8 @@ export const zh: Home = {
   hero: {
     title: '团队的全部工作，一个窗口搞定',
     accent: '一个窗口搞定',
-    lead: '语音房间、聊天、会议、任务、维基、画布、网盘、邮件和电话，彼此打通，可用云端，也可部署在自己的服务器上。',
+    list: ['视频会议', '聊天', '语音房间', '任务、维基、画布、网盘、邮件和电话'],
+    lead: '一切彼此打通，可用云端，也可部署在自己的服务器上。',
     download: '下载',
     startFree: '免费开始',
     platforms: 'macOS · Windows · Linux · 网页 · iOS · Android',

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { DevelopersPage } from '@/components/developers';
+import { ScrollProgress } from '@/components/scroll-progress';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { getPageCopy } from '@/i18n/pages';
@@ -39,6 +40,7 @@ export default async function Developers({ params }: { params: Params }) {
   const t = getDict(locale);
   return (
     <>
+      <ScrollProgress />
       <Header t={t.header} locale={locale} page={PAGE} />
       <main id="main" className="site">
         <DevelopersPage locale={locale} bots={t.bots} />

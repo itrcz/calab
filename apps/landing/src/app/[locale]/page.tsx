@@ -10,6 +10,8 @@ import { Header } from '@/components/header';
 import { Hero } from '@/components/hero';
 import { MailLinkCard } from '@/components/mail-link-card';
 import { PhoneSection } from '@/components/phone-section';
+import { ScrollProgress } from '@/components/scroll-progress';
+import { SectionCta } from '@/components/section-cta';
 import { Pricing } from '@/components/pricing';
 import { ReplaceStrip } from '@/components/replace-strip';
 import { StickerFinale } from '@/components/sticker-finale';
@@ -52,6 +54,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(locale) }} />
       <StoryMotion />
       <MailLinkCard t={t.mailLink} />
+      <ScrollProgress />
       <Header t={t.header} locale={locale} />
       <main id="main" className="site">
         <Hero locale={locale} />
@@ -60,7 +63,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
         <TelephonySection locale={locale} />
         <AiSection locale={locale} />
         <PhoneSection locale={locale} />
-        <ConferenceStrip locale={locale} />
+        <ConferenceStrip locale={locale} cta={<SectionCta locale={locale} className="section-cta-center" />} />
         <section id="control" className="section control-section" aria-labelledby="control-title">
           <Container>
             <ControlInfographic locale={locale} />

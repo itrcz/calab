@@ -21,6 +21,7 @@ import { BotCode } from './bot-code';
 import { getCatalog } from '@/i18n/catalog';
 import { getHome } from '@/i18n/home';
 import { getPageCopy } from '@/i18n/pages';
+import { SectionCta } from './section-cta';
 import { Container, nb, Shot, cx } from './ui';
 
 type T = Dict['features'];
@@ -51,12 +52,13 @@ function Points({ items, className }: { items: string[]; className?: string }) {
 }
 
 /** Text beside a screenshot (40 / 60), stacked on phones; `flip` puts the picture first on wide screens. */
-function Split({ id, flip, alt, text, shot }: { id: string; flip?: boolean; alt?: boolean; text: ReactNode; shot: ReactNode }) {
+function Split({ id, locale, flip, alt, text, shot }: { id: string; locale: Locale; flip?: boolean; alt?: boolean; text: ReactNode; shot: ReactNode }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className={cx('section', alt && 'surface-alt')}>
       <Container className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
         <div className={cx('min-w-0 lg:col-span-5', flip && 'lg:order-2')}>{text}</div>
         <div className={cx('min-w-0 lg:col-span-7', flip && 'lg:order-1')}>{shot}</div>
+        <SectionCta locale={locale} className="lg:col-span-12 lg:order-3" />
       </Container>
     </section>
   );
@@ -123,6 +125,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
   return (
     <div id="features">
       <Split
+        locale={locale}
         id="voice"
         text={
           <>
@@ -135,6 +138,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="sound"
         alt
         flip
@@ -173,10 +177,12 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
             {figure('sipsettings', locale, t.sip.settingsAlt, t.sip.settingsTitle, '(min-width: 1232px) 564px, (min-width: 768px) 48vw, calc(100vw - 32px)')}
             {figure('siplog', locale, t.sip.logAlt, t.sip.logTitle, '(min-width: 1232px) 564px, (min-width: 768px) 48vw, calc(100vw - 32px)')}
           </div>
+          <SectionCta locale={locale} />
         </Container>
       </section>
 
       <Split
+        locale={locale}
         id="chat"
         alt
         flip
@@ -190,6 +196,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="canvas"
         flip
         text={
@@ -202,6 +209,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="recording"
         alt
         text={
@@ -225,6 +233,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
             {shot('calendar', locale, t.calendar.alt, '(min-width: 1232px) 564px, (min-width: 768px) 48vw, calc(100vw - 32px)')}
             {shot('findtime', locale, t.calendar.findAlt, '(min-width: 1232px) 564px, (min-width: 768px) 48vw, calc(100vw - 32px)')}
           </div>
+          <SectionCta locale={locale} />
         </Container>
       </section>
 
@@ -246,10 +255,12 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
             {shot('task', locale, t.boards.taskAlt, '(min-width: 1232px) 360px, (min-width: 768px) 30vw, calc(100vw - 32px)')}
           </div>
           <div className="mt-6">{figure('taskhistory', locale, t.boards.historyAlt, t.boards.historyTitle, '(min-width: 1232px) 1152px, calc(100vw - 32px)')}</div>
+          <SectionCta locale={locale} />
         </Container>
       </section>
 
       <Split
+        locale={locale}
         id="mail"
         text={
           <>
@@ -262,6 +273,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="search"
         alt
         flip
@@ -279,6 +291,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="wiki"
         text={
           <>
@@ -290,6 +303,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="disk"
         alt
         flip
@@ -303,6 +317,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="guests"
         text={
           <>
@@ -321,6 +336,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="webapps"
         alt
         flip
@@ -334,6 +350,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="notifications"
         text={
           <>
@@ -345,6 +362,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="ai"
         alt
         flip
@@ -358,6 +376,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        locale={locale}
         id="bots"
         text={
           <>
@@ -413,6 +432,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
             <Card icon={Globe} {...t.selfhost.security.network} />
             <Card icon={KeyRound} {...t.selfhost.security.roles} />
           </ul>
+          <SectionCta locale={locale} />
         </Container>
       </section>
     </div>

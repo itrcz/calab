@@ -5,7 +5,8 @@ export const es: Home = {
   hero: {
     title: 'Todo el trabajo del equipo, en una sola ventana',
     accent: 'en una sola ventana',
-    lead: 'Salas de voz, chat, reuniones, tareas, wiki, lienzo, archivos, correo y llamadas telefónicas, todo conectado, en la nube o en tu propio servidor.',
+    list: ['Videorreuniones', 'Chat', 'Salas de voz', 'Tareas, wiki, lienzo, archivos, correo y telefonía'],
+    lead: 'Todo está conectado y funciona en la nube o en tu propio servidor.',
     download: 'Descargar',
     startFree: 'Empezar gratis',
     platforms: 'macOS · Windows · Linux · Web · iOS · Android',

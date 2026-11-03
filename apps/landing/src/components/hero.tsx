@@ -42,7 +42,12 @@ export function Hero({ locale }: { locale: Locale }) {
               <h1 id="hero-title" className="h1">
                 {accented(h.title, h.accent)}
               </h1>
-              <p className="lead hero-lead">{nb(h.lead)}</p>
+              <ul className="hero-list">
+                {h.list.map((item) => (
+                  <li key={item}>{nb(item)}</li>
+                ))}
+              </ul>
+              <p className="hero-note">{nb(h.lead)}</p>
               <div className="hero-actions">
                 <div className="hero-buttons">
                   <Button href="#download">{h.download}</Button>

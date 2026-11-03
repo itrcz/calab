@@ -3,6 +3,7 @@ import { getHome } from '@/i18n/home';
 import { ControlConnections } from './control-connections';
 import { Code, Gauge, KeyRound, MapPin, Server, type LucideIcon } from 'lucide-react';
 import { FactCards, SectionHeading } from './ui';
+import { SectionCta } from './section-cta';
 
 /** One icon per fact, in the order of `trust.facts`: server, data location, SSO, source, CPU. */
 const FACT_ICONS: LucideIcon[] = [Server, MapPin, KeyRound, Code, Gauge];
@@ -36,5 +37,6 @@ export function ControlInfographic({ locale }: { locale: Locale }) {
     </div>
     <FactCards id="control" className="control-facts" items={trust.facts.map((text, i) => ({ icon: FACT_ICONS[i] ?? Server, text }))} />
     <div className="control-foundations"><div><span>{t.source}</span><strong>BSL 1.1</strong></div><div><span>{t.transport}</span><strong>HTTPS · WSS · DTLS-SRTP</strong></div></div>
+    <SectionCta locale={locale} />
   </div>;
 }

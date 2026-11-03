@@ -7,6 +7,7 @@ import { BOT_EXAMPLES_URL, BOT_SDK_URL } from '@/lib/site';
 import { BotCode } from './bot-code';
 import { McpSnippet } from './ai-section';
 import { getPageCopy } from '@/i18n/pages';
+import { SectionCta } from './section-cta';
 import { Button, Card, Container, Section, SectionHeading } from './ui';
 
 type CardId = keyof Dict['bots']['cards'];
@@ -82,6 +83,7 @@ export function DevelopersPage({ locale, bots }: { locale: Locale; bots: Dict['b
             {bots.ctaTitle}
           </Button>
         </div>
+        <SectionCta locale={locale} className="section-cta-center" />
       </Section>
 
       <Section id="mcp" labelledBy="mcp-title">
@@ -113,6 +115,7 @@ export function DevelopersPage({ locale, bots }: { locale: Locale; bots: Dict['b
             {mcp.docs}
           </Button>
         </div>
+        <SectionCta locale={locale} className="section-cta-center" />
       </Section>
 
       <Section id="sdk" labelledBy="sdk-title">
@@ -142,6 +145,7 @@ export function DevelopersPage({ locale, bots }: { locale: Locale; bots: Dict['b
             {bots.sdk}
           </Button>
         </div>
+        <SectionCta locale={locale} className="section-cta-center" />
       </Section>
 
       <Section id="webhooks" labelledBy="webhooks-title">
@@ -156,6 +160,7 @@ export function DevelopersPage({ locale, bots }: { locale: Locale; bots: Dict['b
             </div>
           </Card>
         </div>
+        <SectionCta locale={locale} className="section-cta-center" />
       </Section>
 
       <Section id="oauth" labelledBy="oauth-title">
@@ -170,6 +175,7 @@ export function DevelopersPage({ locale, bots }: { locale: Locale; bots: Dict['b
             </div>
           </Card>
         </div>
+        <SectionCta locale={locale} className="section-cta-center" />
       </Section>
     </>
   );
