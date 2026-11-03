@@ -9,6 +9,7 @@ import {
   ApproverState,
   BoardStatusType,
   BoardViewKind,
+  NotificationLevel,
   Permission,
   PresenceStatus,
   TaskApproverSchema,
@@ -63,7 +64,11 @@ import { checklistsOf, unreadIds, useBoards, workspaceBoards, workspaceCategorie
 import { leaveMail } from '../stores/mailUi';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
-import { useRooms } from '../stores/rooms';
+import { useRooms, workspaceNotify } from '../stores/rooms';
+import { taskNoticeSound } from '../lib/chatSound';
+import { playSound } from '../lib/sounds';
+import { onceAcrossTabs } from '../lib/crossTab';
+import { tabs } from './notify';
 import { myUserId, useSession } from '../stores/session';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
@@ -314,8 +319,18 @@ function notifyTask(u: TaskUpdate): void {
   const task = u.task;
   const n = u.notice;
   if (!task || !n || n.actorId === myUserId()) return;
-  if (prefs().presence === PresenceStatus.DND) return;
+  const p = prefs();
+  if (p.presence === PresenceStatus.DND) return;
   const visible = document.hasFocus() && useBoardsUi.getState().taskId === task.id;
+  // Addressed to me by the server: a sound like a mention (bug #146), unless the workspace is quiet.
+  const ws = workspaceNotify(useRooms.getState().wsNotify[task.workspaceId]);
+  const sound = taskNoticeSound({
+    visible,
+    workspaceQuiet: ws.mutedUntil !== null || ws.level === NotificationLevel.NONE,
+    dnd: false,
+    openChat: p.messageSoundOpenChat,
+  });
+  if (sound) onceAcrossTabs(`task:${n.id || `${task.id}:${n.kind}`}`, tabs, () => playSound(sound.name, { volume: sound.volume }));
   if (visible) return;
   const what = noticeText(task, n);
   try {

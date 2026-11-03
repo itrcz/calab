@@ -37,12 +37,14 @@ availability, a capture post-processing delegate, `SoundPlayer`, token refresh a
 names in events or logs. Capability `roomAudioVersion: 1` only from a flagged build on iOS 17+. New
 message type `roomAudio` (no CallKit event binds a room); parsers in `shared/hostRoomAudio.ts`,
 mirrored in Swift with shared fixtures:
-- `connect`: connectionId (fresh per attempt), roomId, `wss` URL (≤1024, no credentials/fragment),
-  JWT (≤4096), relayOnly, bitrate 8–64 kbps, red, canSpeak, controls. `disconnect`: connectionId.
-- `control`: complete controls: muted, deafened, volume, userVolumes (≤64), gate {mode voice|ptt|
-  open, thresholdDb, pttOpen}, watched stream publishers (≤4), levels on/off. `cue`: a fixed name.
+- `connect`: connectionId (fresh per attempt), roomId, `wss` URL (≤1024: host, port, plain path),
+  JWT (≤4096), relayOnly, red, canSpeak, controls. `disconnect`: connectionId. `status`: no fields.
+- `control`: complete controls: muted, deafened, volume, userVolumes (≤64), bitrate 8–64 kbps, gate
+  {mode voice|ptt|open, thresholdDb, pttOpen}, watched stream publishers with their volume (≤4),
+  levels on/off. `cue`: a fixed name and its volume.
+- Reply: `failed` means native state is unknown, so the page must not fall back until a drained `ended`.
 - State: phase (connecting, connected, reconnecting, lost, interrupted, ended, failed),
-  microphoneReady, muted + origin (web, system, server), canSpeak, speaking (own gate), speakers
+  microphoneReady, muted + origin (web, system, server, native), canSpeak, speaking (own gate), speakers
   (≤64 user UUIDs), route kind, phoneCall, error code, levels (0–20) only when asked. Native keeps
   one latest snapshot, emits it ≥100 ms apart and queues nothing for a frozen page.
 

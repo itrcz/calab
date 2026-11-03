@@ -89,6 +89,21 @@ func TestRefreshTokenFormat(t *testing.T) {
 	}
 }
 
+// ADR-0135 addendum (2026-11-02): the server's own attribution defence keys only on the shell's
+// UA marker (apps/desktop/src/shared/nativeShell.ts SHELL_UA_MARKER).
+func TestFromNativeShell(t *testing.T) {
+	for ua, want := range map[string]bool{
+		"": false,
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Calab/3.0.6 Chrome/130.0.0.0 Electron/33.0.0 Safari/537.36":  false,
+		"Mozilla/5.0 (Linux; Android 15; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 CalabShell/1": true,
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 CalabShell/1":                         true,
+	} {
+		if got := fromNativeShell(ua); got != want {
+			t.Errorf("fromNativeShell(%q) = %v, want %v", ua, got, want)
+		}
+	}
+}
+
 func TestPassword(t *testing.T) {
 	ctx := context.Background()
 	h, err := HashPassword(ctx, "correct horse")

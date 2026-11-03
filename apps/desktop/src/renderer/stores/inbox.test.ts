@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { MessageSchema, TaskNoticeEntrySchema } from '@calaba/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useInbox } from './inbox';
-import { inboxRows } from './inboxUnread';
+import { inboxRows, unreadNoticeTasks } from './inboxUnread';
 
 const mention = (id: string) => create(MessageSchema, { id, roomId: 'a' });
 const notice = (id: string, taskId: string) => create(TaskNoticeEntrySchema, { id, taskId });
@@ -43,5 +43,13 @@ describe('useInbox task notices (ADR-0141)', () => {
     expect(useInbox.getState().notices.map((e) => e.taskId)).toEqual(['t2']);
     useInbox.getState().reset();
     expect(useInbox.getState().notices).toEqual([]);
+  });
+});
+
+describe('unreadNoticeTasks (bug #146)', () => {
+  it('counts the tasks with a notice that are still unread, once per task', () => {
+    const notices = [{ taskId: 't1' }, { taskId: 't1' }, { taskId: 't2' }, { taskId: 't3' }];
+    expect(unreadNoticeTasks(notices, { t1: 'w', t3: 'w', t9: 'w' })).toBe(2);
+    expect(unreadNoticeTasks(notices, {})).toBe(0);
   });
 });

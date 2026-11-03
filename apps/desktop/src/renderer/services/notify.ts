@@ -26,7 +26,7 @@ import { callCardOf } from '../lib/callModel';
 export { mentionsMe };
 
 /** Web: browser tabs share the auth session and all get the message (#40) — notify in one. */
-const tabs: CrossTabDeps = {
+export const tabs: CrossTabDeps = {
   get locks() {
     // Web Locks exist only in secure contexts (https, localhost).
     return platform.kind === 'web' && typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : null;

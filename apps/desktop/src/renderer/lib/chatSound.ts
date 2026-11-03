@@ -38,3 +38,21 @@ export function chatSound(f: ChatSoundFacts): ChatSound | null {
   if (f.visible) return f.openChat === 'quiet' ? { name, volume: OPEN_CHAT_QUIET_VOLUME } : null;
   return { name, volume: 1 };
 }
+
+export interface TaskNoticeSoundFacts {
+  /** The task is open on screen (window focused). */
+  visible: boolean;
+  /** The task's workspace is muted or at level NONE (stores/rooms.ts workspaceNotify). */
+  workspaceQuiet: boolean;
+  dnd: boolean;
+  openChat: OpenChatSound;
+}
+
+/**
+ * A task notice (ADR-0089) is addressed to me by the server (assignee, mention, approval, ...),
+ * so it sounds like a mention — unless «Не беспокоить», a muted workspace, or the task is open.
+ * Never for my own actions: the caller drops those before.
+ */
+export function taskNoticeSound(f: TaskNoticeSoundFacts): ChatSound | null {
+  return chatSound({ own: false, mention: true, visible: f.visible, notify: !f.workspaceQuiet, dnd: f.dnd, openChat: f.openChat });
+}
