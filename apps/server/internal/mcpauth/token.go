@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -20,6 +21,9 @@ import (
 
 var verifierShape = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 
+// maxForm caps the token and revocation request bodies.
+const maxForm = 8 << 10
+
 // errGrant is an invalid_grant (code unknown, used, expired, for another client or redirect, a
 // wrong verifier; a refresh token that is not this client's live MCP session).
 var errGrant = errors.New("invalid_grant")
@@ -27,6 +31,10 @@ var errGrant = errors.New("invalid_grant")
 // token is the token endpoint (form-encoded, public clients: client_id identifies, PKCE proves).
 func (s *Service) token(w http.ResponseWriter, r *http.Request) {
 	cors(w)
+	if limited(w, r, s.c.TokenLimit) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxForm)
 	if err := r.ParseForm(); err != nil || r.PostForm == nil {
 		oauthError(w, http.StatusBadRequest, "invalid_request", "the body must be application/x-www-form-urlencoded")
 		return
@@ -54,6 +62,9 @@ func (s *Service) token(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var he *httpx.Error
 		switch {
+		case errors.As(err, &he) && he.Status == http.StatusConflict:
+			// Two refreshes raced (the session lives): retry, do not drop the tokens.
+			oauthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "the refresh token was just rotated; retry")
 		case errors.Is(err, errGrant), errors.As(err, &he) && he.Status < 500:
 			oauthError(w, http.StatusBadRequest, "invalid_grant", "the code or refresh token is invalid, expired or was already used")
 		default:
@@ -81,8 +92,9 @@ func (s *Service) exchange(r *http.Request, c auth.Client) (*v1.AuthTokens, erro
 		return nil, errGrant
 	}
 	var (
-		tokens *v1.AuthTokens
-		replay *uuid.UUID
+		tokens   *v1.AuthTokens
+		replay   *uuid.UUID
+		replaced []uuid.UUID
 	)
 	err := s.c.DB.Tx(ctx, func(q *sqlc.Queries) error {
 		req, err := q.GetMCPRequestByCodeForUpdate(ctx, hash(code))
@@ -103,7 +115,16 @@ func (s *Service) exchange(r *http.Request, c auth.Client) (*v1.AuthTokens, erro
 		if ru := f.Get("redirect_uri"); ru != "" && ru != req.RedirectUri {
 			return errGrant
 		}
-		if res := f.Get("resource"); res != "" && req.Resource != "" && res != req.Resource {
+		if res := strings.TrimSuffix(f.Get("resource"), "/"); req.Resource != s.resource(r) || (res != "" && res != req.Resource) {
+			return errGrant
+		}
+		// The consent's session must still be live: «выйти везде» during the code's minute wins.
+		if req.BoundSession == nil {
+			return errGrant
+		}
+		if live, err := q.IsSessionLive(ctx, *req.BoundSession); err != nil {
+			return err
+		} else if !live {
 			return errGrant
 		}
 		sum := sha256.Sum256([]byte(verifier))
@@ -114,10 +135,11 @@ func (s *Service) exchange(r *http.Request, c auth.Client) (*v1.AuthTokens, erro
 		if err != nil {
 			return err
 		}
-		t, sid, err := s.c.Auth.MCPSessionTokens(ctx, q, *req.UserID, cl.ID, cl.Name, c)
+		t, sid, rep, err := s.c.Auth.MCPSessionTokens(ctx, q, *req.UserID, cl.ID, cl.Name, c)
 		if err != nil {
 			return err
 		}
+		replaced = rep
 		if err := q.UseMCPCode(ctx, sqlc.UseMCPCodeParams{ID: req.ID, SessionID: &sid}); err != nil {
 			return err
 		}
@@ -130,6 +152,7 @@ func (s *Service) exchange(r *http.Request, c auth.Client) (*v1.AuthTokens, erro
 	if err != nil {
 		return nil, err
 	}
+	s.c.Auth.RevokeMCPReplaced(ctx, replaced)
 	if replay != nil || tokens == nil {
 		if replay != nil {
 			slog.WarnContext(ctx, "mcp oauth: authorization code replayed, session revoked", "session_id", *replay)
@@ -145,6 +168,10 @@ func (s *Service) exchange(r *http.Request, c auth.Client) (*v1.AuthTokens, erro
 // revoke is RFC 7009: the refresh token's MCP session ends. Always 200 (unknown tokens too).
 func (s *Service) revoke(w http.ResponseWriter, r *http.Request) {
 	cors(w)
+	if limited(w, r, s.c.TokenLimit) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxForm)
 	if err := r.ParseForm(); err != nil {
 		oauthError(w, http.StatusBadRequest, "invalid_request", "form body expected")
 		return

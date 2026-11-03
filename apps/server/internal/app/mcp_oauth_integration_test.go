@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"testing"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // MCP without a bot (ADR-0158): OAuth 2.1 for a person's MCP client.
@@ -34,6 +36,10 @@ func oaDo(t *testing.T, method, path string, body io.Reader, header http.Header)
 	req, _ := http.NewRequestWithContext(context.Background(), method, srv.URL+path, body)
 	for k, v := range header {
 		req.Header[k] = v
+	}
+	if req.Header.Get("X-Forwarded-For") == "" {
+		seq++
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.58.%d.%d", seq/250, seq%250+1)) // own per-IP limit bucket
 	}
 	resp, err := oaNoFollow.Do(req)
 	if err != nil {
@@ -160,6 +166,15 @@ func mcpCall(t *testing.T, access, method string, params any) (int, map[string]a
 	h := http.Header{"Content-Type": {"application/json"}}
 	if access != "" {
 		h.Set("Authorization", "Bearer "+access)
+		// The connection's request limit (BOT_RATE_PER_SEC per session): tests call back to back.
+		if parts := strings.Split(access, "."); len(parts) == 3 {
+			raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
+			var c struct {
+				Sid string `json:"sid"`
+			}
+			_ = json.Unmarshal(raw, &c)
+			_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:bot:req:mcp:"+c.Sid)).Build()).Error()
+		}
 	}
 	r := oaDo(t, "POST", "/api/mcp", bytes.NewReader(b), h)
 	var m map[string]any
@@ -269,6 +284,17 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 		}
 	}
 
+	// Every tool works through the connection (the inner routes are an allowlist, ADR-0158).
+	room := textRoom(t, o, ws.GetId(), uniq("mcp-oauth-"), false)
+	mcpToolText(t, access, "send_message", map[string]any{"room": room, "text": "привет из MCP"})
+	mcpToolText(t, access, "read", map[string]any{"room": room})
+	mcpToolText(t, access, "find", map[string]any{"q": "OAuth", "kind": "tasks"})
+	mcpToolText(t, access, "update_task", map[string]any{"task": created.Key, "priority": "high", "description": "из MCP"})
+	mcpToolText(t, access, "set_task_status", map[string]any{"task": created.Key, "status": "Backlog"})
+	if text = mcpToolText(t, access, "list_tasks", map[string]any{"board": "MOA", "assignee": "me"}); !strings.Contains(text, created.Key) {
+		t.Fatalf("list_tasks board: %s", text)
+	}
+
 	// The MCP token is for the MCP endpoint only: REST and the app's refresh refuse it.
 	mc := &client{t: t, token: access}
 	if st := mc.do("GET", "/api/me", nil, nil); st != 403 || !strings.Contains(string(mc.lastBody), "MCP_TOKEN") {
@@ -278,9 +304,22 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 		t.Fatalf("REST list with the MCP token: %d", st)
 	}
 	anon := &client{t: t}
+	if !strings.HasPrefix(refresh, "mcp.") {
+		t.Fatalf("MCP refresh token format: %q", refresh[:8])
+	}
 	if st := anon.do("POST", "/api/auth/refresh", &v1.RefreshRequest{RefreshToken: refresh}, nil); st < 400 {
 		t.Fatalf("app refresh took the MCP refresh token: %d", st)
 	}
+	// Nor logs it the person out (of everything): only the MCP revocation ends an MCP session.
+	if st := anon.do("POST", "/api/auth/logout", &v1.LogoutRequest{RefreshToken: refresh, AllSessions: true}, nil); st < 400 {
+		t.Fatalf("logout with the MCP refresh token: %d", st)
+	}
+	bob.must(200, "GET", "/api/me", nil, nil)
+	// And the MCP revocation without a client never touches an app session.
+	if r := oaDo(t, "POST", "/api/mcp/oauth/revoke", strings.NewReader(url.Values{"token": {bob.refresh}}.Encode()), http.Header{"Content-Type": {"application/x-www-form-urlencoded"}}); r.status != 200 {
+		t.Fatalf("revoke without client: %d", r.status)
+	}
+	bob.must(200, "GET", "/api/me", nil, nil)
 	// Nor does the MCP token endpoint take the app's refresh token, or another client's.
 	if st, _ := mcpTokenCall(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {bob.refresh}, "client_id": {cid}}); st != 400 {
 		t.Fatalf("MCP refresh took an app refresh token: %d", st)
@@ -312,6 +351,27 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 		t.Fatalf("after refresh reuse: %d", st)
 	}
 
+	// A consent from another site is refused; an unknown scope goes back as invalid_scope.
+	fx := mcpAuthorize(t, cid)
+	h := http.Header{"Authorization": {"Bearer " + bob.token}, "Content-Type": {"application/json"}, "Cookie": {fx.cookie}, "Sec-Fetch-Site": {"cross-site"}}
+	if r := oaDo(t, "POST", "/api/mcp/oauth/requests/"+fx.handle+"/bind", strings.NewReader("{}"), h); r.status != 403 {
+		t.Fatalf("cross-site bind: %d %s", r.status, r.body)
+	}
+	_, ch := oaPKCE()
+	if r := oaDo(t, "GET", "/api/mcp/oauth/authorize?"+url.Values{"response_type": {"code"}, "client_id": {cid}, "redirect_uri": {mcpTestRedirect}, "code_challenge": {ch}, "code_challenge_method": {"S256"}, "scope": {"admin"}}.Encode(), nil, nil); !strings.Contains(r.header.Get("Location"), "error=invalid_scope") {
+		t.Fatalf("scope admin: %s", r.header.Get("Location"))
+	}
+	// https: only the exact allowed callbacks.
+	for _, u := range []string{"https://claude.ai/other", "https://claude.ai:8443/api/mcp/auth_callback"} {
+		b, _ := json.Marshal(map[string]any{"client_name": "x", "redirect_uris": []string{u}})
+		if r := oaDo(t, "POST", "/api/mcp/oauth/register", bytes.NewReader(b), nil); r.status != 400 {
+			t.Fatalf("https %q registered: %d", u, r.status)
+		}
+	}
+	if c := mcpRegister(t, "https://claude.ai/api/mcp/auth_callback"); c == "" {
+		t.Fatal("claude.ai callback refused")
+	}
+
 	// A code presented again revokes the session it made.
 	f2 := mcpAuthorize(t, cid)
 	code2 := codeOf(t, f2.consent(t, bob.token, f2.cookie, true, 200))
@@ -323,6 +383,18 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 		t.Fatalf("after code replay: %d", st)
 	}
 	_ = refresh3
+
+	// A new consent of the same person for the same client replaces the earlier session.
+	fa := mcpAuthorize(t, cid)
+	accessA, _ := mcpExchange(t, fa, codeOf(t, fa.consent(t, bob.token, fa.cookie, true, 200)))
+	fb := mcpAuthorize(t, cid)
+	accessB, _ := mcpExchange(t, fb, codeOf(t, fb.consent(t, bob.token, fb.cookie, true, 200)))
+	if st, _, _ := mcpCall(t, accessA, "tools/list", map[string]any{}); st != 401 {
+		t.Fatalf("replaced session still works: %d", st)
+	}
+	if st, _, _ := mcpCall(t, accessB, "tools/list", map[string]any{}); st != 200 {
+		t.Fatalf("new session: %d", st)
+	}
 
 	// Deny: access_denied back to the client; revoke ends a session.
 	f3 := mcpAuthorize(t, cid)

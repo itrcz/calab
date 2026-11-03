@@ -33,17 +33,6 @@ func (q *Queries) BindMCPRequest(ctx context.Context, arg BindMCPRequestParams) 
 	return err
 }
 
-const countMCPClientsFromIP = `-- name: CountMCPClientsFromIP :one
-SELECT count(*) FROM mcp_oauth_clients WHERE created_ip = $1 AND created_at > now() - interval '1 hour'
-`
-
-func (q *Queries) CountMCPClientsFromIP(ctx context.Context, createdIp string) (int64, error) {
-	row := q.db.QueryRow(ctx, countMCPClientsFromIP, createdIp)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countMCPRequestsFromIP = `-- name: CountMCPRequestsFromIP :one
 SELECT count(*) FROM mcp_oauth_requests WHERE created_ip = $1 AND expires_at > now() AND decided_at IS NULL
 `
@@ -217,10 +206,15 @@ func (q *Queries) DecideMCPRequest(ctx context.Context, arg DecideMCPRequestPara
 
 const deleteExpiredMCPRequests = `-- name: DeleteExpiredMCPRequests :exec
 DELETE FROM mcp_oauth_requests
-WHERE id IN (SELECT id FROM mcp_oauth_requests WHERE expires_at < now() - interval '1 day' LIMIT 500)
+WHERE id IN (
+    SELECT id FROM mcp_oauth_requests
+    WHERE (code_used_at IS NULL AND expires_at < now()) OR expires_at < now() - interval '1 day'
+    LIMIT 500
+)
 `
 
-// Codes live 60 s, requests 10 min; a used code is kept a day so its replay can revoke its session.
+// Requests live 10 min and codes 60 s: an expired request without a used code goes at once; a
+// used code is kept a day so that its replay can still revoke the session it made.
 func (q *Queries) DeleteExpiredMCPRequests(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteExpiredMCPRequests)
 	return err
@@ -239,13 +233,13 @@ const deleteUnusedMCPClients = `-- name: DeleteUnusedMCPClients :exec
 DELETE FROM mcp_oauth_clients
 WHERE id IN (
     SELECT c.id FROM mcp_oauth_clients c
-    WHERE c.last_used_at IS NULL AND c.created_at < now() - interval '7 days'
-      AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.mcp_client_id = c.id)
+    WHERE c.last_used_at IS NULL AND c.created_at < now() - interval '1 day'
     LIMIT 200
 )
 `
 
-// Clients that never got a session, older than 7 days (registration is public). Bounded per call.
+// Clients that never got a session (last_used_at is set in the transaction that creates the
+// first one), older than a day: registration is public. Bounded per call.
 func (q *Queries) DeleteUnusedMCPClients(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteUnusedMCPClients)
 	return err
@@ -329,6 +323,61 @@ func (q *Queries) GetMCPRequestForUpdate(ctx context.Context, handleHash []byte)
 		&i.SessionID,
 	)
 	return i, err
+}
+
+const isSessionLive = `-- name: IsSessionLive :one
+SELECT EXISTS (SELECT 1 FROM sessions WHERE id = $1 AND revoked_at IS NULL AND expires_at > now())
+`
+
+func (q *Queries) IsSessionLive(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isSessionLive, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const revokeReplacedMCPSessions = `-- name: RevokeReplacedMCPSessions :many
+UPDATE sessions AS t SET revoked_at = now(), revoked_reason = $1::text, replay_seal = NULL
+WHERE t.user_id = $2::uuid AND t.scope = 'mcp' AND t.revoked_at IS NULL AND t.id <> $3::uuid
+  AND (t.mcp_client_id = $4::text OR t.id NOT IN (
+      SELECT s.id FROM sessions s
+      WHERE s.user_id = $2::uuid AND s.scope = 'mcp' AND s.revoked_at IS NULL
+      ORDER BY s.created_at DESC LIMIT 10))
+RETURNING t.id
+`
+
+type RevokeReplacedMCPSessionsParams struct {
+	Reason      string
+	UserID      uuid.UUID
+	ID          uuid.UUID
+	McpClientID string
+}
+
+// A new consent replaces the person's earlier live sessions of the same client, and keeps at most
+// 10 live MCP sessions per person (the oldest go).
+func (q *Queries) RevokeReplacedMCPSessions(ctx context.Context, arg RevokeReplacedMCPSessionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, revokeReplacedMCPSessions,
+		arg.Reason,
+		arg.UserID,
+		arg.ID,
+		arg.McpClientID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const touchMCPClient = `-- name: TouchMCPClient :exec

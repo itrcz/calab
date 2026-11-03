@@ -31,6 +31,9 @@ const ReasonMCPToken = "MCP_TOKEN"
 // (RFC 6749 §4.1.2): the session is revoked.
 const RevokeMCPCodeReuse = "MCP_CODE_REUSE"
 
+// RevokeMCPReplaced: a newer consent of the same person for the same client replaced the session.
+const RevokeMCPReplaced = "MCP_REPLACED"
+
 // errMCPToken answers an MCP token anywhere but the MCP endpoint and its tools.
 var errMCPToken = httpx.Forbidden("this token is valid only for the MCP endpoint").WithDetails(ReasonMCPToken, 0, 0)
 
@@ -45,9 +48,16 @@ func mcpSessionOf(sess sqlc.Session, client string) bool {
 // mcpRequest admits an MCP identity on the MCP endpoint (POST only, the transport) and in the
 // tools' in-process calls (the channel is a server-only context value: no header or token sets
 // it), and applies the per-session request limit (BOT_RATE_PER_SEC, like a bot).
+//
+// The tools' calls are further confined to the routes the tools use (MCPInnerRoutes, the patterns
+// of the route table): the session is the person's, so a route no tool calls stays closed to it
+// even if a tool were to build a wrong path.
 func (s *Service) mcpRequest(r *http.Request, id Identity) error {
 	inner := Channel(r.Context())
-	if !(r.URL.Path == MCPPath || (inner != nil && *inner == ChannelMCP)) {
+	switch {
+	case r.Pattern == MCPPath && r.URL.Path == MCPPath && inner == nil:
+	case inner != nil && *inner == ChannelMCP && s.MCPInnerRoutes[r.Pattern]:
+	default:
 		return errMCPToken
 	}
 	if s.BotLimiter != nil {
@@ -61,17 +71,20 @@ func (s *Service) mcpRequest(r *http.Request, id Identity) error {
 // MCPSessionTokens creates the MCP session of userID for an OAuth client (inside the token
 // exchange's transaction) and returns its first token pair. The session is local_account without
 // local_authenticated_at: routes that ask for a fresh password stay closed to it.
-func (s *Service) MCPSessionTokens(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, clientID, clientName string, c Client) (*v1.AuthTokens, uuid.UUID, error) {
+//
+// replaced are the person's earlier live MCP sessions of this client, revoked in the same
+// transaction (RevokeMCPReplaced makes it effective after the commit).
+func (s *Service) MCPSessionTokens(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, clientID, clientName string, c Client) (t *v1.AuthTokens, sid uuid.UUID, replaced []uuid.UUID, err error) {
 	u, err := q.GetUser(ctx, userID)
 	if err != nil {
-		return nil, uuid.Nil, err
+		return nil, uuid.Nil, nil, err
 	}
 	if u.IsBot || u.IsGuest || u.DisabledAt != nil {
-		return nil, uuid.Nil, errInvalidRefresh
+		return nil, uuid.Nil, nil, errInvalidRefresh
 	}
 	secret, hash, err := NewRefreshSecret()
 	if err != nil {
-		return nil, uuid.Nil, err
+		return nil, uuid.Nil, nil, err
 	}
 	cid := clientID
 	sess, err := q.CreateMCPSession(ctx, sqlc.CreateMCPSessionParams{
@@ -84,10 +97,13 @@ func (s *Service) MCPSessionTokens(ctx context.Context, q *sqlc.Queries, userID 
 		McpClientID:      &cid,
 	})
 	if err != nil {
-		return nil, uuid.Nil, fmt.Errorf("create MCP session: %w", err)
+		return nil, uuid.Nil, nil, fmt.Errorf("create MCP session: %w", err)
 	}
-	t, err := s.tokenPair(sess, secret)
-	return t, sess.ID, err
+	if replaced, err = q.RevokeReplacedMCPSessions(ctx, sqlc.RevokeReplacedMCPSessionsParams{UserID: userID, McpClientID: cid, ID: sess.ID, Reason: RevokeMCPReplaced}); err != nil {
+		return nil, uuid.Nil, nil, err
+	}
+	t, err = s.tokenPair(sess, secret)
+	return t, sess.ID, replaced, err
 }
 
 // RefreshMCP rotates an MCP session of clientID (the token endpoint's refresh_token grant): the
@@ -108,7 +124,10 @@ func (s *Service) RefreshMCP(ctx context.Context, refreshToken, clientID string,
 // the current token, or the previous one while the current is unused. Anything else is a no-op
 // (the endpoint answers 200 either way).
 func (s *Service) RevokeMCPRefresh(ctx context.Context, token, clientID string) error {
-	sid, secret, ok := ParseRefreshToken(token)
+	if clientID == "" {
+		return nil // "" would mean an app session (mcpSessionOf): never through this endpoint
+	}
+	sid, secret, ok := parseMCPRefreshToken(token)
 	if !ok {
 		return nil
 	}
@@ -129,6 +148,14 @@ func (s *Service) RevokeMCPRefresh(ctx context.Context, token, clientID string) 
 		return nil
 	}
 	return s.Logout(ctx, Identity{UserID: sess.UserID, SessionID: sess.ID}, false)
+}
+
+// RevokeMCPReplaced revokes the person's earlier MCP sessions of the same client: a new consent
+// replaces them (the client lost or dropped its tokens). Call after the creating transaction.
+func (s *Service) RevokeMCPReplaced(ctx context.Context, ids []uuid.UUID) {
+	if len(ids) > 0 {
+		s.afterRevokeMany(ctx, ids, RevokeMCPReplaced)
+	}
 }
 
 // RevokeMCPSession revokes an MCP session created from a replayed authorization code.

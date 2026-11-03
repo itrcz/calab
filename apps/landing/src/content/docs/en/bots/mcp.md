@@ -33,7 +33,7 @@ The agent works **as you**: the author of tasks and comments, the assignee, `me`
 
 - The token of an MCP connection works only on `/api/mcp`: plain REST, the gateway and the app's session refresh refuse it (`403 MCP_TOKEN`).
 - Only a personal account with a password can connect; a workspace with enforced SSO does not admit such a connection.
-- The client registers itself (RFC 7591); the code goes back to `http://localhost` / `127.0.0.1` / `[::1]` (any port) or to `https://claude.ai`, `https://claude.com` (web connectors; the host list is `MCP_OAUTH_REDIRECT_HOSTS`).
+- The client registers itself (RFC 7591); the code goes back to `http://localhost` / `127.0.0.1` / `[::1]` (any port) or to the web connectors' callbacks `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback` (the exact list is `MCP_OAUTH_REDIRECT_URIS`).
 - Metadata for clients: `/.well-known/oauth-protected-resource/api/mcp` and `/.well-known/oauth-authorization-server`; the endpoint's `401` carries `WWW-Authenticate` pointing to them.
 
 ## Connecting through a bot

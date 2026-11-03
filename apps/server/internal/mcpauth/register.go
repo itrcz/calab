@@ -18,23 +18,22 @@ import (
 // (Claude Code, Codex) receive the code.
 var loopbackHosts = []string{"localhost", "127.0.0.1", "::1"}
 
-// redirectKind checks a redirect URI: loopback http (any port), or https on an allowed host.
-// No fragment, no credentials. ok=false: refused.
+// maxRedirectLen caps one redirect URI.
+const maxRedirectLen = 512
+
+// redirectKind checks a redirect URI: loopback http (any port and path), or exactly one of the
+// allowed https URIs (MCP_OAUTH_REDIRECT_URIS) — never a whole https host, whose other paths the
+// code could leak through. No fragment, no credentials. ok=false: refused.
 func (s *Service) redirectKind(raw string) (loopback, ok bool) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Fragment != "" || u.User != nil || u.Opaque != "" || u.Host == "" || len(raw) > 2000 {
+	if err != nil || u.Fragment != "" || u.User != nil || u.Opaque != "" || u.Host == "" || len(raw) > maxRedirectLen {
 		return false, false
 	}
-	host := strings.ToLower(u.Hostname())
 	switch u.Scheme {
 	case "http":
-		return true, slices.Contains(loopbackHosts, host)
+		return true, slices.Contains(loopbackHosts, strings.ToLower(u.Hostname()))
 	case "https":
-		for _, h := range s.c.RedirectHosts {
-			if strings.EqualFold(strings.TrimSpace(h), host) {
-				return false, true
-			}
-		}
+		return false, slices.Contains(s.c.RedirectURIs, raw)
 	}
 	return false, false
 }
@@ -70,6 +69,9 @@ type registration struct {
 // token_endpoint_auth_method "none" and no secret (§3.2.1 lets the server override metadata).
 func (s *Service) register(w http.ResponseWriter, r *http.Request) {
 	cors(w)
+	if limited(w, r, s.c.RegisterLimit) {
+		return
+	}
 	var in registration
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
 		oauthError(w, http.StatusBadRequest, "invalid_client_metadata", "the body must be a JSON object")
@@ -81,7 +83,7 @@ func (s *Service) register(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, u := range in.RedirectURIs {
 		if _, ok := s.redirectKind(u); !ok {
-			oauthError(w, http.StatusBadRequest, "invalid_redirect_uri", "redirect_uris must be http://localhost, http://127.0.0.1 or http://[::1] (any port), or https on an allowed host: "+u)
+			oauthError(w, http.StatusBadRequest, "invalid_redirect_uri", "redirect_uris must be http://localhost, http://127.0.0.1 or http://[::1] (any port), or an allowed https callback")
 			return
 		}
 	}
@@ -97,22 +99,12 @@ func (s *Service) register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	name := clip(in.ClientName, 100)
+	name := displayName(in.ClientName)
 	if name == "" {
 		name = "MCP client"
 	}
 	ctx := r.Context()
 	ip := httpx.ClientIP(ctx)
-	n, err := s.c.DB.Q.CountMCPClientsFromIP(ctx, ip)
-	if err != nil {
-		oauthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "try again")
-		return
-	}
-	if n >= registrationsPerHour {
-		w.Header().Set("Retry-After", "3600")
-		oauthError(w, http.StatusTooManyRequests, "temporarily_unavailable", "too many registrations from this address")
-		return
-	}
 	if err := db.GuardExec(ctx, s.c.DB, func(q *sqlc.Queries) error { return q.DeleteUnusedMCPClients(ctx) }); err != nil {
 		slog.WarnContext(ctx, "mcp oauth: client cleanup failed", "err", err)
 	}

@@ -50,9 +50,13 @@ ALTER TABLE sessions ADD COLUMN scope text;
 ALTER TABLE sessions ADD CONSTRAINT sessions_scope_check CHECK (scope = 'mcp') NOT VALID;
 ALTER TABLE sessions ADD COLUMN mcp_client_id text;
 ALTER TABLE sessions ADD CONSTRAINT sessions_mcp_scope_client_check CHECK ((scope IS NULL) = (mcp_client_id IS NULL)) NOT VALID;
+-- An MCP session is a local account's, never freshly password-authenticated (no reauth windows).
+ALTER TABLE sessions ADD CONSTRAINT sessions_mcp_authority_check CHECK (scope IS NULL OR (authority_kind = 'local_account' AND local_authenticated_at IS NULL)) NOT VALID;
 ALTER TABLE sessions ADD CONSTRAINT sessions_mcp_client_fk FOREIGN KEY (mcp_client_id) REFERENCES mcp_oauth_clients (id) ON DELETE RESTRICT NOT VALID;
 
 -- +goose Down
+-- Without the columns an MCP session would look like an app session: end them first.
+UPDATE sessions SET revoked_at = now(), revoked_reason = 'MCP_ROLLBACK', replay_seal = NULL WHERE scope = 'mcp' AND revoked_at IS NULL;
 ALTER TABLE sessions DROP COLUMN mcp_client_id;
 ALTER TABLE sessions DROP COLUMN scope;
 DROP TABLE mcp_oauth_requests;

@@ -3,8 +3,8 @@
 /** The request handle of `/mcp/connect#<handle>` (the server's authorize redirect), or null. */
 export function mcpConnectHandle(url: string): string | null {
   const parsed = new URL(url);
-  if (parsed.pathname !== "/mcp/connect") return null;
-  const handle = parsed.hash.replace(/^#/, "");
+  if (parsed.pathname !== '/mcp/connect') return null;
+  const handle = parsed.hash.replace(/^#/, '');
   return /^calab_mr_[A-Za-z0-9_-]{43}$/.test(handle) ? handle : null;
 }
 
@@ -15,17 +15,16 @@ export type McpConsent = {
   loopback: boolean;
   displayName: string;
   email: string;
+  createdAt: string;
   expiresAt: string;
   csrfToken: string;
 };
 
 /** Where the code goes back: «this computer, port N» for loopback, else the host. */
-export function mcpReturnTarget(
-  c: Pick<McpConsent, "redirectUri" | "loopback">,
-): { local: boolean; where: string } {
+export function mcpReturnTarget(c: Pick<McpConsent, 'redirectUri' | 'loopback'>): { local: boolean; where: string } {
   try {
     const u = new URL(c.redirectUri);
-    if (c.loopback) return { local: true, where: u.port || "80" };
+    if (c.loopback) return { local: true, where: u.port || '80' };
     return { local: false, where: u.host };
   } catch {
     return { local: false, where: c.redirectUri };

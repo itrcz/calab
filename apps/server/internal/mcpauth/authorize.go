@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -105,6 +106,9 @@ func badRequest(w http.ResponseWriter, msg string) {
 // to the web app's consent page.
 func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if limited(w, r, s.c.AuthorizeLimit) {
+		return
+	}
 	f := r.URL.Query()
 	c, err := s.c.DB.Q.GetMCPClient(ctx, f.Get("client_id"))
 	if err != nil {
@@ -142,6 +146,12 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 		fail("invalid_target", "resource must be "+s.resource(r))
 		return
 	}
+	for _, sc := range strings.Fields(f.Get("scope")) {
+		if sc != auth.ScopeMCP && sc != "offline_access" {
+			fail("invalid_scope", "the only scope is "+auth.ScopeMCP)
+			return
+		}
+	}
 	ip := httpx.ClientIP(ctx)
 	if n, err := s.c.DB.Q.CountMCPRequestsFromIP(ctx, clip(ip, 64)); err != nil || n >= pendingPerIP {
 		fail("temporarily_unavailable", "too many pending requests from this address")
@@ -154,7 +164,9 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	if _, err := db.GuardValue(ctx, s.c.DB, func(q *sqlc.Queries) (sqlc.McpOauthRequest, error) {
 		return q.CreateMCPRequest(ctx, sqlc.CreateMCPRequestParams{
 			HandleHash: hash(handle), BrowserHash: hash(browser), ClientID: c.ID, RedirectUri: redirect,
-			CodeChallenge: f.Get("code_challenge"), State: state, Resource: f.Get("resource"), CreatedIp: clip(ip, 64),
+			// The resource is always this endpoint of this origin: the token exchange checks it is the
+			// same (a code issued at one app origin is not exchanged at another).
+			CodeChallenge: f.Get("code_challenge"), State: state, Resource: s.resource(r), CreatedIp: clip(ip, 64),
 			ExpiresAt: s.now().Add(requestTTL),
 		})
 	}); err != nil {
@@ -184,11 +196,25 @@ var (
 	errExpired      = httpx.Coded(http.StatusGone, v1.ErrorCode_ERROR_CODE_NOT_FOUND, "the request expired or was already answered; start the connection in the MCP client again").WithDetails("MCP_REQUEST_EXPIRED", 0, 0)
 	errOtherBrowser = httpx.Forbidden("open the link in the browser that the MCP client opened").WithDetails("MCP_OTHER_BROWSER", 0, 0)
 	errLocalOnly    = httpx.Forbidden("sign in with your Calab password to connect an MCP client").WithDetails("MCP_LOCAL_ONLY", 0, 0)
+	errCrossOrigin  = httpx.Forbidden("the consent is answered from the Calab app only")
 )
+
+// sameOrigin: the consent routes are called by the app's own page — a cross-site request (or one
+// from an origin that is not the app's) is refused, as the OAuth provider does (ADR-0102 §3).
+func (s *Service) sameOrigin(r *http.Request) bool {
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		return false
+	}
+	o := r.Header.Get("Origin")
+	return o == "" || slices.Contains(s.c.Origins, o)
+}
 
 // person authenticates the consent page's session: a person's app session with local authority
 // (never a bot, a bot on behalf, an MCP session, a workspace SSO or recovery session).
 func (s *Service) person(r *http.Request) (auth.Identity, error) {
+	if !s.sameOrigin(r) {
+		return auth.Identity{}, errCrossOrigin
+	}
 	id, err := s.c.Auth.Authenticate(r)
 	if err != nil {
 		return auth.Identity{}, err
@@ -232,6 +258,7 @@ type consentSnapshot struct {
 	Loopback    bool      `json:"loopback"`
 	DisplayName string    `json:"displayName"`
 	Email       string    `json:"email"`
+	CreatedAt   time.Time `json:"createdAt"`
 	ExpiresAt   time.Time `json:"expiresAt"`
 	CsrfToken   string    `json:"csrfToken"`
 }
@@ -251,10 +278,16 @@ func (s *Service) bind(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		c, err := q.GetMCPClient(ctx, req.ClientID)
+		if db.IsNotFound(err) {
+			return errExpired
+		}
 		if err != nil {
 			return err
 		}
 		u, err := q.GetUser(ctx, id.UserID)
+		if db.IsNotFound(err) {
+			return errExpired
+		}
 		if err != nil {
 			return err
 		}
@@ -268,7 +301,7 @@ func (s *Service) bind(w http.ResponseWriter, r *http.Request) {
 		if u.Email != nil {
 			email = *u.Email
 		}
-		out = consentSnapshot{ClientName: c.Name, RedirectURI: req.RedirectUri, Loopback: loop, DisplayName: u.DisplayName, Email: email, ExpiresAt: req.ExpiresAt, CsrfToken: csrf}
+		out = consentSnapshot{ClientName: c.Name, RedirectURI: req.RedirectUri, Loopback: loop, DisplayName: u.DisplayName, Email: email, CreatedAt: req.CreatedAt, ExpiresAt: req.ExpiresAt, CsrfToken: csrf}
 		return nil
 	})
 	if err != nil {

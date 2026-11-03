@@ -15,6 +15,15 @@ import (
 
 const issuer = "calaba"
 
+// issuerMCP signs the access tokens of MCP sessions (ADR-0158): a server without MCP OAuth
+// (a rollback, an old instance in a rolling deploy) checks the issuer and refuses them, so it can
+// never take an MCP token for an app session.
+const issuerMCP = "calaba-mcp"
+
+// mcpRefreshPrefix marks an MCP session's refresh token ("mcp.<session id>.<secret>"): a server
+// without MCP OAuth fails to parse it, and the app's refresh, logout and cookie paths refuse it.
+const mcpRefreshPrefix = "mcp."
+
 // Claims of the access JWT: sub = user id, sid = session id, rg = the session's refresh
 // generation the token was minted for (replay.go; absent in tokens from before migration 00040).
 type Claims struct {
@@ -61,12 +70,16 @@ func (t *Tokens) issue(userID, sessionID uuid.UUID, refreshGen int64, deadline t
 	if !now.Before(exp) {
 		return "", exp, ErrInvalidToken
 	}
+	iss := issuer
+	if scope == ScopeMCP {
+		iss = issuerMCP
+	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
 		SessionID:  sessionID.String(),
 		RefreshGen: refreshGen,
 		Scope:      scope,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
+			Issuer:    iss,
 			Subject:   userID.String(),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(exp),
@@ -119,7 +132,6 @@ func (t *Tokens) Parse(token string) (Identity, error) {
 	var c Claims
 	_, err := jwt.ParseWithClaims(token, &c, func(*jwt.Token) (any, error) { return t.secret, nil },
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
-		jwt.WithIssuer(issuer),
 		jwt.WithExpirationRequired(),
 		jwt.WithIssuedAt(),
 		jwt.WithLeeway(5*time.Second),
@@ -133,8 +145,9 @@ func (t *Tokens) Parse(token string) (Identity, error) {
 	if err1 != nil || err2 != nil {
 		return Identity{}, ErrInvalidToken
 	}
-	switch c.Scope {
-	case "", ScopeMCP:
+	switch {
+	case c.Issuer == issuer && c.Scope == "":
+	case c.Issuer == issuerMCP && c.Scope == ScopeMCP:
 	default:
 		return Identity{}, ErrInvalidToken
 	}
@@ -168,7 +181,21 @@ func FormatRefreshToken(sessionID uuid.UUID, secret string) string {
 	return sessionID.String() + "." + secret
 }
 
-// ParseRefreshToken splits a refresh token; ok=false if malformed.
+// formatMCPRefreshToken is FormatRefreshToken of an MCP session.
+func formatMCPRefreshToken(sessionID uuid.UUID, secret string) string {
+	return mcpRefreshPrefix + FormatRefreshToken(sessionID, secret)
+}
+
+// parseMCPRefreshToken splits an MCP session's refresh token; an app's token is malformed here.
+func parseMCPRefreshToken(tok string) (sessionID uuid.UUID, secret string, ok bool) {
+	rest, found := strings.CutPrefix(tok, mcpRefreshPrefix)
+	if !found {
+		return uuid.Nil, "", false
+	}
+	return ParseRefreshToken(rest)
+}
+
+// ParseRefreshToken splits a refresh token; ok=false if malformed (an MCP session's token too).
 func ParseRefreshToken(tok string) (sessionID uuid.UUID, secret string, ok bool) {
 	sid, sec, found := strings.Cut(tok, ".")
 	if !found || len(sec) != 43 { // 32 bytes base64url without padding

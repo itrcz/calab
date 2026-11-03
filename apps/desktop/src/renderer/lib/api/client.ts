@@ -1,18 +1,7 @@
-import { identityRequestBlocked, identityRequestVersion } from "./identityGate";
-import {
-  create,
-  fromJson,
-  toJson,
-  type DescMessage,
-  type JsonValue,
-  type MessageInitShape,
-  type MessageShape,
-} from "@bufbuild/protobuf";
-import {
-  PlanLimitViolationsSchema,
-  type PlanLimitViolation,
-} from "@calaba/protocol";
-import { platform } from "../../platform";
+import { identityRequestBlocked, identityRequestVersion } from './identityGate';
+import { create, fromJson, toJson, type DescMessage, type JsonValue, type MessageInitShape, type MessageShape } from '@bufbuild/protobuf';
+import { PlanLimitViolationsSchema, type PlanLimitViolation } from '@calaba/protocol';
+import { platform } from '../../platform';
 
 /**
  * Typed REST client. Bodies are protojson (lowerCamelCase, enum names,
@@ -47,7 +36,7 @@ export class ApiError extends Error {
     } = {},
   ) {
     super(message);
-    this.name = "ApiError";
+    this.name = 'ApiError';
   }
 
   get reason(): string | undefined {
@@ -69,39 +58,21 @@ export class ApiError extends Error {
 
 /** `Retry-After` in seconds (delta form only, as the server sends it); undefined when absent. */
 export function retryAfterSeconds(res: Response): number | undefined {
-  const v = Number(res.headers.get("Retry-After") ?? "");
+  const v = Number(res.headers.get('Retry-After') ?? '');
   return Number.isFinite(v) && v > 0 ? Math.ceil(v) : undefined;
 }
 
 export async function toApiError(res: Response): Promise<ApiError> {
   const retry = retryAfterSeconds(res);
-  const requestId = res.headers.get("X-Request-ID") ?? undefined;
+  const requestId = res.headers.get('X-Request-ID') ?? undefined;
   try {
-    const b = (await res.json()) as {
-      code?: string;
-      message?: string;
-      field?: string;
-      reason?: string;
-      used?: unknown;
-      limit?: unknown;
-      planLimitsExceeded?: unknown;
-      conflictId?: string;
-      conflictName?: string;
-    };
+    const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown; planLimitsExceeded?: unknown; conflictId?: string; conflictName?: string };
     // protojson: uint64 as a string.
-    const num = (v: unknown): number | undefined =>
-      (typeof v === "string" || typeof v === "number") &&
-      Number.isFinite(Number(v))
-        ? Number(v)
-        : undefined;
+    const num = (v: unknown): number | undefined => (typeof v === 'string' || typeof v === 'number') && Number.isFinite(Number(v)) ? Number(v) : undefined;
     const used = num(b.used);
     const limit = num(b.limit);
     // PLAN_LIMITS_EXCEEDED (ADR-0086): what the target plan would exceed, through the generated schema.
-    const planViolations = b.planLimitsExceeded
-      ? fromJson(PlanLimitViolationsSchema, b.planLimitsExceeded as JsonValue, {
-          ignoreUnknownFields: true,
-        }).violations
-      : undefined;
+    const planViolations = b.planLimitsExceeded ? fromJson(PlanLimitViolationsSchema, b.planLimitsExceeded as JsonValue, { ignoreUnknownFields: true }).violations : undefined;
     const extra = {
       ...(planViolations ? { planViolations } : {}),
       ...(b.reason ? { reason: b.reason } : {}),
@@ -111,30 +82,16 @@ export async function toApiError(res: Response): Promise<ApiError> {
       ...(requestId ? { requestId } : {}),
       // SIP_CONTACT_NUMBER_TAKEN (ADR-0137 §2): the contact that already has the number.
       ...(b.conflictId ? { conflictId: b.conflictId } : {}),
-      ...(b.conflictName !== undefined && b.conflictId
-        ? { conflictName: b.conflictName }
-        : {}),
+      ...(b.conflictName !== undefined && b.conflictId ? { conflictName: b.conflictName } : {}),
     };
-    const err = new ApiError(
-      b.code ?? "ERROR_CODE_UNSPECIFIED",
-      b.message ?? res.statusText,
-      res.status,
-      b.field || undefined,
-      extra,
-    );
+    const err = new ApiError(b.code ?? 'ERROR_CODE_UNSPECIFIED', b.message ?? res.statusText, res.status, b.field || undefined, extra);
     for (const h of errorHooks) h(err);
     return err;
   } catch {
-    return new ApiError(
-      "ERROR_CODE_UNSPECIFIED",
-      res.statusText || `HTTP ${res.status}`,
-      res.status,
-      undefined,
-      {
-        ...(retry !== undefined ? { retryAfter: retry } : {}),
-        ...(requestId ? { requestId } : {}),
-      },
-    );
+    return new ApiError('ERROR_CODE_UNSPECIFIED', res.statusText || `HTTP ${res.status}`, res.status, undefined, {
+      ...(retry !== undefined ? { retryAfter: retry } : {}),
+      ...(requestId ? { requestId } : {}),
+    });
   }
 }
 
@@ -152,54 +109,37 @@ export function onApiError(h: (e: ApiError) => void): () => void {
 /** Absolute URL of an API path for the current platform (Electron: calaba-api://, web: same origin). */
 export const apiUrl = (path: string): string => `${platform.apiBase}${path}`;
 
-type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 const JSON_OPTS = { ignoreUnknownFields: true } as const;
 
-async function send(
-  method: Method,
-  path: string,
-  body?: JsonValue,
-  signal?: AbortSignal,
-): Promise<Response> {
+async function send(method: Method, path: string, body?: JsonValue, signal?: AbortSignal): Promise<Response> {
   const version = identityRequestVersion(path);
-  if (identityRequestBlocked(path))
-    throw new ApiError("ERROR_CODE_SSO_REQUIRED", "", 403);
+  if (identityRequestBlocked(path)) throw new ApiError('ERROR_CODE_SSO_REQUIRED', '', 403);
   let res: Response;
   try {
     res = await platform.apiFetch(path, {
       method,
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       ...(signal ? { signal } : {}),
     });
   } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") throw err;
-    throw new ApiError(
-      "ERROR_CODE_UNAVAILABLE",
-      err instanceof Error ? err.message : String(err),
-      0,
-    );
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    throw new ApiError('ERROR_CODE_UNAVAILABLE', err instanceof Error ? err.message : String(err), 0);
   }
   if (!res.ok) {
     const err = await toApiError(res);
-    if (
-      [
-        "ERROR_CODE_SSO_REQUIRED",
-        "ERROR_CODE_DIRECTORY_ACCESS_DENIED",
-        "ERROR_CODE_RECOVERY_ONLY",
-      ].includes(err.code)
-    )
+    if (['ERROR_CODE_SSO_REQUIRED', 'ERROR_CODE_DIRECTORY_ACCESS_DENIED', 'ERROR_CODE_RECOVERY_ONLY'].includes(err.code))
       for (const h of identityDenials) h(err, path);
     // ADR-0044: a room closed meanwhile answers 410 ROOM_ARCHIVED to anything but its history.
-    if (err.code === "ERROR_CODE_ROOM_ARCHIVED") {
+    if (err.code === 'ERROR_CODE_ROOM_ARCHIVED') {
       const id = archivedRoomOf(path);
       if (id) for (const h of archivedHooks) h(id);
     }
     throw err;
   }
-  if (identityRequestBlocked(path, version))
-    throw new ApiError("ERROR_CODE_SSO_REQUIRED", "", 403);
+  if (identityRequestBlocked(path, version)) throw new ApiError('ERROR_CODE_SSO_REQUIRED', '', 403);
   return res;
 }
 
@@ -232,56 +172,37 @@ export async function call<Res extends DescMessage>(
   // An older server may still answer 204 for an endpoint that grew a body (e.g. password/forgot).
   if (res.status === 204) return create(resSchema);
   const json = (await res.json()) as JsonValue;
-  if (identityRequestBlocked(path, version))
-    throw new ApiError("ERROR_CODE_SSO_REQUIRED", "", 403);
+  if (identityRequestBlocked(path, version)) throw new ApiError('ERROR_CODE_SSO_REQUIRED', '', 403);
   return fromJson(resSchema, json, JSON_OPTS);
 }
 
 /** Request with a plain JSON answer (routes outside the protobuf contract, e.g. MCP OAuth, ADR-0158). */
-export async function callJson<T>(
-  method: Method,
-  path: string,
-  body?: JsonValue,
-  signal?: AbortSignal,
-): Promise<T> {
+export async function callJson<T>(method: Method, path: string, body?: JsonValue, signal?: AbortSignal): Promise<T> {
   const res = await send(method, path, body, signal);
   return (await res.json()) as T;
 }
 
 /** Request without a response body (204). */
-export async function callEmpty(
-  method: Method,
-  path: string,
-  body?: JsonValue,
-): Promise<void> {
+export async function callEmpty(method: Method, path: string, body?: JsonValue): Promise<void> {
   await send(method, path, body);
 }
 
 /** GET of a binary body (application/octet-stream: a wiki version's Yjs state, ADR-0096 §5). */
-export async function callBytes(
-  path: string,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  const res = await send("GET", path, undefined, signal);
+export async function callBytes(path: string, signal?: AbortSignal): Promise<Uint8Array> {
+  const res = await send('GET', path, undefined, signal);
   return new Uint8Array(await res.arrayBuffer());
 }
 
 /** Serialises a request message (unset optional fields are omitted → "leave unchanged"). */
-export function body<Req extends DescMessage>(
-  schema: Req,
-  init: MessageInitShape<Req>,
-): JsonValue {
+export function body<Req extends DescMessage>(schema: Req, init: MessageInitShape<Req>): JsonValue {
   return toJson(schema, create(schema, init));
 }
 
-export function qs(
-  params: Record<string, string | number | undefined>,
-): string {
+export function qs(params: Record<string, string | number | undefined>): string {
   const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(params))
-    if (v !== undefined && v !== "") p.set(k, String(v));
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') p.set(k, String(v));
   const s = p.toString();
-  return s ? `?${s}` : "";
+  return s ? `?${s}` : '';
 }
 
 const identityDenials = new Set<(e: ApiError, path: string) => void>();

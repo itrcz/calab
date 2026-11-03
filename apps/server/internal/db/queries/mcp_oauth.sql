@@ -8,16 +8,13 @@ RETURNING *;
 -- name: GetMCPClient :one
 SELECT * FROM mcp_oauth_clients WHERE id = $1;
 
--- name: CountMCPClientsFromIP :one
-SELECT count(*) FROM mcp_oauth_clients WHERE created_ip = $1 AND created_at > now() - interval '1 hour';
-
 -- name: DeleteUnusedMCPClients :exec
--- Clients that never got a session, older than 7 days (registration is public). Bounded per call.
+-- Clients that never got a session (last_used_at is set in the transaction that creates the
+-- first one), older than a day: registration is public. Bounded per call.
 DELETE FROM mcp_oauth_clients
 WHERE id IN (
     SELECT c.id FROM mcp_oauth_clients c
-    WHERE c.last_used_at IS NULL AND c.created_at < now() - interval '7 days'
-      AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.mcp_client_id = c.id)
+    WHERE c.last_used_at IS NULL AND c.created_at < now() - interval '1 day'
     LIMIT 200
 );
 
@@ -51,11 +48,30 @@ UPDATE mcp_oauth_requests SET code_used_at = now(), session_id = $2 WHERE id = $
 DELETE FROM mcp_oauth_requests WHERE browser_hash = ANY(sqlc.arg('hashes')::bytea[]) AND decided_at IS NULL;
 
 -- name: DeleteExpiredMCPRequests :exec
--- Codes live 60 s, requests 10 min; a used code is kept a day so its replay can revoke its session.
+-- Requests live 10 min and codes 60 s: an expired request without a used code goes at once; a
+-- used code is kept a day so that its replay can still revoke the session it made.
 DELETE FROM mcp_oauth_requests
-WHERE id IN (SELECT id FROM mcp_oauth_requests WHERE expires_at < now() - interval '1 day' LIMIT 500);
+WHERE id IN (
+    SELECT id FROM mcp_oauth_requests
+    WHERE (code_used_at IS NULL AND expires_at < now()) OR expires_at < now() - interval '1 day'
+    LIMIT 500
+);
 
 -- name: CreateMCPSession :one
 INSERT INTO sessions (user_id, refresh_token_hash, device_name, ip, user_agent, expires_at, scope, mcp_client_id)
 VALUES ($1, $2, $3, $4, $5, $6, 'mcp', $7)
 RETURNING *;
+
+-- name: RevokeReplacedMCPSessions :many
+-- A new consent replaces the person's earlier live sessions of the same client, and keeps at most
+-- 10 live MCP sessions per person (the oldest go).
+UPDATE sessions AS t SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text, replay_seal = NULL
+WHERE t.user_id = sqlc.arg(user_id)::uuid AND t.scope = 'mcp' AND t.revoked_at IS NULL AND t.id <> sqlc.arg(id)::uuid
+  AND (t.mcp_client_id = sqlc.arg(mcp_client_id)::text OR t.id NOT IN (
+      SELECT s.id FROM sessions s
+      WHERE s.user_id = sqlc.arg(user_id)::uuid AND s.scope = 'mcp' AND s.revoked_at IS NULL
+      ORDER BY s.created_at DESC LIMIT 10))
+RETURNING t.id;
+
+-- name: IsSessionLive :one
+SELECT EXISTS (SELECT 1 FROM sessions WHERE id = $1 AND revoked_at IS NULL AND expires_at > now());

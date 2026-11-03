@@ -149,8 +149,9 @@ func run(m *testing.M) int {
 		AccessTokenTTL:     24 * time.Hour, // the defaults (config.go): revocation must not lean on expiry
 		RefreshTokenTTL:    8760 * time.Hour,
 		TempRoomMaxTTLDays: 30, TempRoomsPerWorkspace: 50, // the defaults (config.go); the literal skips envDefault
-		RegistrationMode: config.RegistrationInvite,
-		PublicAppURL:     "https://app.example.com",
+		RegistrationMode:     config.RegistrationInvite,
+		PublicAppURL:         "https://app.example.com",
+		MCPOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
 		// Abuse limits are exercised separately (TestAbuseLimits) with small values.
 		LoginAccountBurst:          1000,
 		MaxWorkspacesPerUser:       1000,

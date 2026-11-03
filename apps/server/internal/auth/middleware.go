@@ -127,8 +127,9 @@ func (s *Service) authenticateToken(ctx context.Context, tok string, allowMCP bo
 	}
 	liveSessions.mu.Lock()
 	p := liveSessions.principals[id.SessionID]
+	mcpSession := liveSessions.mcp[id.SessionID]
 	liveSessions.mu.Unlock()
-	if p.UserID != id.UserID || !identitypolicy.CheckSession(s.now(), p).Allowed {
+	if p.UserID != id.UserID || mcpSession != id.MCP || !identitypolicy.CheckSession(s.now(), p).Allowed {
 		return Identity{}, ErrInvalidToken
 	}
 	id.Principal = p

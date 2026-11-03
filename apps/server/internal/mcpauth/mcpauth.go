@@ -18,13 +18,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 const (
@@ -32,8 +37,6 @@ const (
 	requestTTL = 10 * time.Minute
 	// codeTTL: an authorization code is exchanged at once by the client.
 	codeTTL = 60 * time.Second
-	// registrationsPerHour caps client registrations from one IP (registration is public).
-	registrationsPerHour = 20
 	// pendingPerIP caps live, undecided authorization requests from one IP.
 	pendingPerIP = 100
 	// maxRedirects per client (RFC 7591 redirect_uris).
@@ -47,9 +50,11 @@ type Config struct {
 	// Origins are the web app's origins (config.AllowedOrigins: PUBLIC_APP_URL first). The issuer
 	// and the resource are the origin the request came to, the first one otherwise.
 	Origins []string
-	// RedirectHosts are the https hosts a client may redirect to besides loopback
-	// (MCP_OAUTH_REDIRECT_HOSTS, e.g. claude.ai for the web connectors).
-	RedirectHosts []string
+	// RedirectURIs are the exact https redirect URIs a client may register besides loopback
+	// (MCP_OAUTH_REDIRECT_URIS: the callbacks of the claude.ai / claude.com web connectors).
+	RedirectURIs []string
+	// Per-IP limits (an IPv6 address counts by its /64); nil = none.
+	RegisterLimit, AuthorizeLimit, TokenLimit *redisx.RateLimiter
 	// Now is the clock (tests); nil = time.Now.
 	Now func() time.Time
 }
@@ -212,6 +217,60 @@ func opaque(prefix string, n int) string {
 		panic(err) // crypto/rand never fails on supported platforms
 	}
 	return prefix + base64.RawURLEncoding.EncodeToString(b)
+}
+
+// ipKey is the rate-limit key of a client address: an IPv6 address by its /64 (one host usually
+// owns the whole prefix), IPv4 as is.
+func ipKey(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	if a.Is4() || a.Is4In6() {
+		return a.Unmap().String()
+	}
+	p, _ := a.Prefix(64)
+	return p.String()
+}
+
+// limited takes a token of l for the request's address; false = answered 429.
+func limited(w http.ResponseWriter, r *http.Request, l *redisx.RateLimiter) bool {
+	if l == nil {
+		return false
+	}
+	ok, wait, err := l.Allow(r.Context(), ipKey(httpx.ClientIP(r.Context())))
+	if err != nil {
+		oauthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "try again")
+		return true
+	}
+	if !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
+		oauthError(w, http.StatusTooManyRequests, "temporarily_unavailable", "too many requests from this address")
+		return true
+	}
+	return false
+}
+
+// displayName cleans a client's self-declared name for the consent page and «Сеансы»: no control,
+// format (bidi overrides, zero-width) or line-breaking characters; runs of spaces collapse.
+func displayName(s string) string {
+	var b strings.Builder
+	space := false
+	for _, r := range s {
+		switch {
+		case unicode.IsSpace(r):
+			space = b.Len() > 0
+			continue
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), unicode.Is(unicode.Co, r), r == utf8.RuneError:
+			continue
+		}
+		if space {
+			b.WriteByte(' ')
+			space = false
+		}
+		b.WriteRune(r)
+	}
+	return clip(b.String(), 100)
 }
 
 func clip(s string, n int) string {

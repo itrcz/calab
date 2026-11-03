@@ -33,7 +33,7 @@ order: 21
 
 - Токен MCP-подключения действует только на `/api/mcp`: обычный REST, gateway и обновление сессии приложения его не принимают (`403 MCP_TOKEN`).
 - Подключать можно только из личного аккаунта с паролем; пространство с обязательным SSO такое подключение не пускает.
-- Клиент регистрируется сам (RFC 7591); возврат кода — на `http://localhost` / `127.0.0.1` / `[::1]` (любой порт) или на `https://claude.ai`, `https://claude.com` (веб-коннекторы; список хостов — `MCP_OAUTH_REDIRECT_HOSTS`).
+- Клиент регистрируется сам (RFC 7591); возврат кода — на `http://localhost` / `127.0.0.1` / `[::1]` (любой порт) или на callback веб-коннекторов `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback` (точный список — `MCP_OAUTH_REDIRECT_URIS`).
 - Метаданные для клиентов: `/.well-known/oauth-protected-resource/api/mcp` и `/.well-known/oauth-authorization-server`; ответ `401` эндпоинта содержит `WWW-Authenticate` со ссылкой на них.
 
 ## Подключение через бота
