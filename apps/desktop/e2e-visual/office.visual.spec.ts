@@ -43,8 +43,7 @@ async function openDisk(win: Page): Promise<void> {
   await expect(win.getByTestId('disk-row').first()).toBeVisible();
 }
 
-test('office-entry-points', async ({ open, win, mock, shot, theme }) => {
-  test.skip(theme !== 'dark', 'dark only');
+test('office-entry-points', async ({ open, win, mock, shot }) => {
   await open({ office: true, prefs: { diskView: 'list' } });
   seedOffice(mock);
   await openDisk(win);
@@ -64,6 +63,20 @@ test('office-entry-points', async ({ open, win, mock, shot, theme }) => {
   await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
   await expect(win.getByTestId('task-attachment')).toBeVisible();
   await checkpoint(shot, 'office-entry-attachment');
+  // «Скачать» on the chip (hover) and in its context menu: saves without opening the editor.
+  const chip = win.getByTestId('task-attachment');
+  // Hover reveals it (checked by the CSS); the shot is taken on keyboard focus, which the screenshot keeps (the pointer state does not survive it).
+  await win.getByTestId('task-attachment-download').hover();
+  await expect(win.getByTestId('task-attachment-download')).toHaveCSS('opacity', '1');
+  await win.mouse.move(0, 0);
+  await win.getByTestId('task-attachment-open').focus();
+  await win.keyboard.press('Tab');
+  await expect(win.getByTestId('task-attachment-download')).toBeFocused();
+  await checkpoint(shot, 'office-entry-attachment-download');
+  await chip.click({ button: 'right' });
+  await expect(win.getByTestId('task-attachment-menu-download')).toBeVisible();
+  await checkpoint(shot, 'office-entry-attachment-menu');
+  await win.keyboard.press('Escape');
   await win.getByTestId('task-attachment-open').click();
   await expect(win.getByTestId('office-view')).toHaveAttribute('data-mode', 'view');
   await expect(win.getByTestId('office-view')).toHaveAttribute('data-state', 'saved');
@@ -95,6 +108,8 @@ test('office-file-view', async ({ open, win, mock, shot }) => {
   await expect(view).toHaveAttribute('data-mode', 'edit');
   await expect(win.getByTestId('file-tab')).toHaveCount(1);
   // «Редактирует Вера» on the row being edited elsewhere is in the Disk under the view (checked in office-create).
+  // «Скачать» in the view's own bar.
+  await expect(win.getByTestId('office-download')).toBeVisible();
   await checkpoint(shot, 'office-file-view');
 
   // In a call the island is folded into my avatar on the rail (ADR-0146): no strip under the
