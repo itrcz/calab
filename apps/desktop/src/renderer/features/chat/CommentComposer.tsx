@@ -9,6 +9,7 @@ import { Pencil } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { t } from '../../i18n';
 import { applyMention, exactNames, filterCandidates, fromWire, toWire, type MentionCandidate } from '../../lib/mentions';
+import { htmlTableToMarkdown } from '../../lib/markdown/table';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { ComposerField, ContextBar, MentionList, SendButton, insertAt, useFieldAutosize, useMentionPicker } from './ComposerField';
@@ -214,6 +215,12 @@ export function CommentComposer({
           'aria-controls': mention.open ? mention.listId : undefined,
           'aria-activedescendant': mention.activeId,
           onKeyDown: onKey,
+          onPaste: (e) => {
+            const table = htmlTableToMarkdown(e.clipboardData.getData('text/html'));
+            if (!table) return;
+            e.preventDefault();
+            insert(table);
+          },
         }}
         action={text.trim() ? <SendButton editing={!!editing} onClick={send} testId={sendTestId} /> : null}
       />

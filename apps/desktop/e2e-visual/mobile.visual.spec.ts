@@ -5,7 +5,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
-import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedViaMcp, settle } from './harness';
+import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
 import { seedDay } from './calendarWeb';
 
 /**
@@ -1406,6 +1406,23 @@ test('m-boards-task-history', async ({ page }) => {
   await expect(panel.locator('[data-message-id] [data-via-mcp]')).toHaveCount(3);
   await panel.locator('[data-message-id]').filter({ hasText: 'Взял в работу' }).scrollIntoViewIfNeeded();
   await checkpoint(page, 'm-boards-task-comments-via-mcp');
+});
+
+// Board #148: a picture and pipe tables in the comments; the wide table scrolls inside its bubble.
+test('m-boards-task-comments-rich', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  seedRichComments(mock);
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.locator('table')).toHaveCount(2);
+  const wide = panel.locator('.tableWrapper').last();
+  await wide.scrollIntoViewIfNeeded();
+  expect(await wide.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  await checkpoint(page, 'm-boards-task-comments-rich');
 });
 
 // The kanban on a phone: columns a screen wide, swiped horizontally with snap (ADR-0042 §5).

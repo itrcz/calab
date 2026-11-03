@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { t } from '../../i18n';
 import { mentionTargets, parseMarkdown, previewParts, toPlainText, type PreviewPart } from '../../lib/markdown/parse';
+import { flattenTables } from '../../lib/markdown/table';
 import { useWorkspaces } from '../../stores/workspaces';
 
 type WsState = ReturnType<typeof useWorkspaces.getState>;
@@ -31,12 +32,12 @@ export function useMentionLabel(wsId: string | null, v: string): string {
 
 /** One-line plain text of a message with mentions as names (previews, notifications, snippets). */
 export function previewText(wsId: string | null, content: string): string {
-  return toPlainText(parseMarkdown(content), (v) => mentionLabel(wsId, v));
+  return toPlainText(parseMarkdown(flattenTables(content)), (v) => mentionLabel(wsId, v));
 }
 
 /** previewText() as runs: code (inline or a block squeezed to one line) is drawn monospace (PreviewRuns). */
 export function previewPartsOf(wsId: string | null, content: string, max?: number): PreviewPart[] {
-  return previewParts(parseMarkdown(content), (v) => mentionLabel(wsId, v), max);
+  return previewParts(parseMarkdown(flattenTables(content)), (v) => mentionLabel(wsId, v), max);
 }
 
 /**
@@ -45,7 +46,7 @@ export function previewPartsOf(wsId: string | null, content: string, max?: numbe
  * other members) cost a few lookups and no re-render.
  */
 export function usePreviewParts(wsId: string | null, content: string): PreviewPart[] {
-  const nodes = useMemo(() => parseMarkdown(content), [content]);
+  const nodes = useMemo(() => parseMarkdown(flattenTables(content)), [content]);
   const ids = useMemo(() => mentionTargets(nodes).users, [nodes]);
   const labels = useWorkspaces((st) => ids.map((v) => labelIn(st, wsId, v)).join('\u0000'));
   return useMemo(() => {

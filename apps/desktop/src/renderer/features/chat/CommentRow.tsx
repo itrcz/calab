@@ -13,6 +13,8 @@ import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { fmt, useTimeFormat } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
+import { hasTable } from '../../lib/markdown/table';
+import { RichBody } from './RichBody';
 import { toast } from '../../stores/toasts';
 import { memberName, useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { groupMetas, type GroupItem, type RowMeta } from './grouping';
@@ -88,6 +90,7 @@ export const CommentRow = memo(function CommentRow({ id, authorId, body, atMs, e
   const name = memberName(workspaceId, authorId);
   const at = useMemo(() => new Date(atMs), [atMs]);
   const mention = useCallback((v: string, key: string) => <MentionChip key={key} workspaceId={workspaceId} v={v} own={own} />, [workspaceId, own]);
+  const tabled = useMemo(() => hasTable(body), [body]);
   const bar = useActionBar(true);
   const showName = !own && meta.first;
   const tail = meta.last;
@@ -117,7 +120,7 @@ export const CommentRow = memo(function CommentRow({ id, authorId, body, atMs, e
                 <div className="overflow-hidden" style={radius}>
                   {showName ? <AuthorLine workspaceId={workspaceId} userId={authorId} name={name} bot={bot} /> : null}
                   <div className={cx(BUBBLE_TEXT, 'pt-1.5')}>
-                    <Markdown text={body} mention={mention} />
+                    {tabled ? <RichBody workspaceId={workspaceId} text={body} /> : <Markdown text={body} mention={mention} />}
                     {/* Room for the time on the last line (drawn absolutely, Telegram-style). */}
                     <span className="invisible ml-2 inline-flex select-none" aria-hidden>
                       {metaNode}
