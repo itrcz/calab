@@ -287,7 +287,11 @@ func (s *Service) tokenPair(sess sqlc.Session, secret string) (*v1.AuthTokens, e
 			deadline = limit
 		}
 	}
-	access, exp, err := s.tokens.IssueUntil(sess.UserID, sess.ID, sess.RefreshGen, deadline)
+	scope := ""
+	if sess.Scope != nil {
+		scope = *sess.Scope // an MCP session's tokens stay MCP-only (ADR-0158)
+	}
+	access, exp, err := s.tokens.issue(sess.UserID, sess.ID, sess.RefreshGen, deadline, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -568,7 +572,7 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 // the previous one after the new one was used, or an older one — is reuse: the session is
 // revoked (401 SESSION_REVOKED, reason REUSE).
 func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
-	return s.refreshAuthority(ctx, req, c, identitypolicy.LocalAccount, uuid.Nil)
+	return s.refreshAuthority(ctx, req, c, identitypolicy.LocalAccount, uuid.Nil, "")
 }
 
 // RefreshWorkspace rotates only the presented workspace session; proof is never renewed.
@@ -576,9 +580,12 @@ func (s *Service) RefreshWorkspace(ctx context.Context, ws uuid.UUID, req *v1.Re
 	if ws == uuid.Nil {
 		return nil, errInvalidRefresh
 	}
-	return s.refreshAuthority(ctx, req, c, identitypolicy.WorkspaceSSO, ws)
+	return s.refreshAuthority(ctx, req, c, identitypolicy.WorkspaceSSO, ws, "")
 }
-func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, c Client, authority identitypolicy.Authority, ws uuid.UUID) (*v1.RefreshResponse, error) {
+
+// mcpClient: "" rotates an app session only; a client id rotates only an MCP session of that
+// client (ADR-0158): neither endpoint accepts the other's refresh tokens.
+func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, c Client, authority identitypolicy.Authority, ws uuid.UUID, mcpClient string) (*v1.RefreshResponse, error) {
 	sid, secret, ok := ParseRefreshToken(req.GetRefreshToken())
 	if !ok {
 		return nil, errInvalidRefresh
@@ -632,6 +639,9 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		}
 		p := SessionPrincipal(sess)
 		if p.Authority != authority || p.WorkspaceID != ws {
+			return errInvalidRefresh
+		}
+		if !mcpSessionOf(sess, mcpClient) {
 			return errInvalidRefresh
 		}
 

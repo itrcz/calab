@@ -20,8 +20,14 @@ const issuer = "calaba"
 type Claims struct {
 	SessionID  string `json:"sid"`
 	RefreshGen int64  `json:"rg,omitempty"`
+	// Scope "mcp": the token of an MCP session (ADR-0158), valid only on the MCP endpoint and in
+	// its tools' in-process calls. Absent for the app's own sessions.
+	Scope string `json:"scp,omitempty"`
 	jwt.RegisteredClaims
 }
+
+// ScopeMCP is the scope of an MCP session (sessions.scope, the access token's scp claim).
+const ScopeMCP = "mcp"
 
 // Tokens issues and verifies access JWTs (HS256).
 type Tokens struct {
@@ -43,6 +49,10 @@ func (t *Tokens) Issue(userID, sessionID uuid.UUID, refreshGen int64) (string, t
 
 // IssueUntil caps credentials at the authoritative session deadline.
 func (t *Tokens) IssueUntil(userID, sessionID uuid.UUID, refreshGen int64, deadline time.Time) (string, time.Time, error) {
+	return t.issue(userID, sessionID, refreshGen, deadline, "")
+}
+
+func (t *Tokens) issue(userID, sessionID uuid.UUID, refreshGen int64, deadline time.Time, scope string) (string, time.Time, error) {
 	now := t.now()
 	exp := now.Add(t.ttl)
 	if !deadline.IsZero() && deadline.Before(exp) {
@@ -54,6 +64,7 @@ func (t *Tokens) IssueUntil(userID, sessionID uuid.UUID, refreshGen int64, deadl
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
 		SessionID:  sessionID.String(),
 		RefreshGen: refreshGen,
+		Scope:      scope,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   userID.String(),
@@ -87,6 +98,9 @@ type Identity struct {
 	ForMember bool
 	// RefreshGen: the refresh generation the access token was minted for (0 = unknown / bot).
 	RefreshGen int64
+	// MCP: the person's MCP session (ADR-0158, scope "mcp"): admitted only on the MCP endpoint
+	// and in its tools' in-process calls (Require); AuthenticateToken refuses it.
+	MCP bool
 }
 
 // OnBehalf reports a bot's request on behalf of its owner (ADR-0106) or of a member who
@@ -119,7 +133,12 @@ func (t *Tokens) Parse(token string) (Identity, error) {
 	if err1 != nil || err2 != nil {
 		return Identity{}, ErrInvalidToken
 	}
-	return Identity{UserID: uid, SessionID: sid, RefreshGen: c.RefreshGen}, nil
+	switch c.Scope {
+	case "", ScopeMCP:
+	default:
+		return Identity{}, ErrInvalidToken
+	}
+	return Identity{UserID: uid, SessionID: sid, RefreshGen: c.RefreshGen, MCP: c.Scope == ScopeMCP}, nil
 }
 
 // Refresh tokens are "<session_id>.<secret>", secret = 32 random bytes (base64url).

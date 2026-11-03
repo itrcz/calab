@@ -245,8 +245,11 @@ type Config struct {
 
 	// Bot API limits per bot (ADR-0031): requests per second (burst = one second's worth) and
 	// messages per minute. 0 = the default.
-	BotRatePerSec     int `env:"BOT_RATE_PER_SEC" envDefault:"30"`
-	BotMessagesPerMin int `env:"BOT_MESSAGES_PER_MIN" envDefault:"20"`
+	// MCP_OAUTH_REDIRECT_HOSTS: https hosts an MCP client may redirect to after the consent,
+	// besides loopback (ADR-0158): the web connectors of claude.ai by default.
+	MCPOAuthRedirectHosts []string `env:"MCP_OAUTH_REDIRECT_HOSTS" envSeparator:"," envDefault:"claude.ai,claude.com"`
+	BotRatePerSec         int      `env:"BOT_RATE_PER_SEC" envDefault:"30"`
+	BotMessagesPerMin     int      `env:"BOT_MESSAGES_PER_MIN" envDefault:"20"`
 
 	// Balance billing (ADR-0080 v5): BILLING_* and STRIPE_* (config/billing.go).
 	Billing Billing

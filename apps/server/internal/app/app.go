@@ -47,6 +47,7 @@ import (
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/mailbox"
 	"github.com/calaba/calaba/server/internal/mcp"
+	"github.com/calaba/calaba/server/internal/mcpauth"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/metrika"
 	"github.com/calaba/calaba/server/internal/moderation"
@@ -689,7 +690,11 @@ func New(d Deps) *App {
 	// MCP for bots (CBF-48): its tools call the routes above through the full chain (h) with
 	// the bot's own token, so a tool has exactly the bot's rights.
 	mcpHandler := mcp.New(buildinfo.Version)
-	mux.Handle(mcp.Path, private(mcpHandler))
+	// ADR-0158: a person connects an MCP client through OAuth; a 401 of the endpoint points the
+	// client to the metadata.
+	mcpOAuth := mcpauth.New(mcpauth.Config{DB: d.DB, Auth: authSvc, Origins: d.Config.AllowedOrigins(), RedirectHosts: d.Config.MCPOAuthRedirectHosts})
+	mcpOAuth.Routes(mux)
+	mux.Handle(mcp.Path, mcpOAuth.Challenge(private(mcpHandler)))
 	mux.Handle("/api/", httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.NotFound("route")
 	}))
