@@ -210,7 +210,7 @@ The icon is packaged into a new iOS build and reaches TestFlight through that bu
 Android alike; every browser (Safari on an iPhone too), the PWA and the desktop keep it. Before
 2026-10-30 the rule (App Store until IAP) hid it only in the iOS shell; the Android shell behaved
 like a browser. Detection — `apps/desktop/src/renderer/platform/nativeShell.ts`: the host bridge
-`window.CalabHostActivity` plus its `platform` field (`activityBootstrap(…, Platform.OS)`,
+`window.CalabHostActivity` plus its `platform` field (`activityBootstrap(…, { platform: Platform.OS })`,
 additive), or the UA marker `SHELL_UA_MARKER`. Fail closed on iOS: no field, an iPad desktop UA, or
 a contradiction → iOS; Android is recognized by its user agent, so neither platform needs a new
 binary. Hidden in a native shell: top-up, «Оплатить», plan purchase / change / «Сменить тариф»,

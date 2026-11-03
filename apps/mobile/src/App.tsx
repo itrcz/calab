@@ -16,6 +16,7 @@ import { hostReducer, initialHostState } from './hostState';
 import { decideNavigation, decideNewWindow, isAppSubframe, isAppUrl } from './navigation';
 import { strings } from './strings';
 import { callsOperation, callsReply, subscribeCalls, callAudioEnabled } from './incomingCalls';
+import { roomAudioEnabled, roomAudioOperation, roomAudioReply, subscribeRoomAudio } from './roomAudio';
 import { ActivityProtocol, activityBootstrap, activityReady, linkEvent, mediaSessionEvent } from './activityProtocol';
 import { clearMediaSession, mediaSessionEnabled, setMediaSession, subscribeMediaSession } from './mediaSession';
 import { appUrlForLink } from './links';
@@ -125,6 +126,11 @@ function Host({ origin }: { origin: string }) {
         if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
           web.current?.injectJavaScript(callsReply(state.generation, action.document, action.request, value));
       });
+    } else if (action?.type === 'roomAudio') {
+      void roomAudioOperation(action.document, action.operation).then(value => {
+        if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
+          web.current?.injectJavaScript(roomAudioReply(state.generation, action.document, action.request, value));
+      });
     } else if (action?.type === 'permissions') {
       void permissionsOperation(action.document, action).then(reply => {
         if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(action.document))
@@ -166,6 +172,11 @@ function Host({ origin }: { origin: string }) {
   useEffect(() => subscribeCalls((document, value) => {
     if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
       web.current?.injectJavaScript(callsReply(state.generation, document, 0, {state:value}));
+  }), [state.generation]);
+
+  useEffect(() => subscribeRoomAudio((document, value) => {
+    if (activity.current.belongsTo(state.generation) && activity.current.isCurrent(document))
+      web.current?.injectJavaScript(roomAudioReply(state.generation, document, 0, value));
   }), [state.generation]);
 
   useEffect(() => {
@@ -327,7 +338,10 @@ function Host({ origin }: { origin: string }) {
         onRenderProcessGone={onProcessGone}
         {...(hostChannelEnabled ? {
           onMessage,
-          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, callAudioEnabled, Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null, calendarWidgetEnabled, mediaSessionEnabled),
+          injectedJavaScriptBeforeContentLoaded: activityBootstrap(state.generation, {
+            platform: Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : null,
+            nativeAudio: callAudioEnabled, calendarWidget: calendarWidgetEnabled, mediaSession: mediaSessionEnabled, roomAudio: roomAudioEnabled,
+          }),
           injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true,
         } : {})}
         // Persistent session: the default (non-incognito) website data store keeps the HttpOnly cookie.

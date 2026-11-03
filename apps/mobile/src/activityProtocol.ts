@@ -1,12 +1,14 @@
 import type { HostCallsOperation } from '../../desktop/src/shared/hostCalls';
 import type { CalendarWidgetOperation } from '../../desktop/src/shared/hostCalendarWidget';
 import type { MediaPermissionsOperation } from '../../desktop/src/shared/hostPermissions';
+import type { HostRoomAudioOperation } from '../../desktop/src/shared/hostRoomAudio';
 import { parseHostActivityMessage, type HostMediaSession, type SessionActivitySnapshot } from '../../desktop/src/shared/hostActivity';
 
 export type ActivityAction =
   | ({ type: 'calendarWidget'; document: string; request: number } & CalendarWidgetOperation)
   | ({ type: 'permissions'; document: string; request: number } & MediaPermissionsOperation)
   | ({ type:'calls'; document:string; request:number } & HostCallsOperation)
+  | { type: 'roomAudio'; document: string; request: number; operation: HostRoomAudioOperation }
   | { type: 'ready'; document: string }
   | { type: 'publish'; document: string; snapshot: SessionActivitySnapshot }
   | { type: 'end'; reason?: 'logout' }
@@ -50,6 +52,11 @@ export class ActivityProtocol {
     if (message.type === 'revoke') { this.reset(); return message.reason === 'logout' ? { type: 'end', reason: 'logout' } : { type: 'end' }; }
     if (message.type === 'media') return { type: 'media', document: message.document, session: message.session, language: message.language };
     if (message.type === 'calls') return { ...message, type:'calls' };
+    if (message.type === 'roomAudio') {
+      // Native rejects unknown fields: it gets the operation without the envelope.
+      const { v, type, host, seq, document, request, ...operation } = message;
+      return { type, document, request, operation };
+    }
     if (message.type === 'calendarWidget') return { ...message, type: 'calendarWidget' };
     if (message.type === 'permissions') return { ...message, type: 'permissions' };
     if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}), ...(message.body ? { body: message.body } : {}) };
@@ -67,10 +74,19 @@ export class ActivityProtocol {
  * notifications, links and the media session (board #141) only: it does not advertise media
  * permissions or calls, so the web keeps its browser paths for those instead of waiting for
  * replies (ADR-0070, Android). `mediaSession` is Android-only: the foreground-service module.
+ * `roomAudio` is what the iOS native module reports (ADR-0149): without it rooms stay on the web path.
  */
-export function activityBootstrap(host: number, nativeAudio = false, platform: 'ios' | 'android' | null = null, calendarWidget = false, mediaSession = false): string {
+export interface ActivityBootstrapOptions {
+  platform?: 'ios' | 'android' | null;
+  nativeAudio?: boolean;
+  calendarWidget?: boolean;
+  mediaSession?: boolean;
+  roomAudio?: boolean;
+}
+
+export function activityBootstrap(host: number, { platform = null, nativeAudio = false, calendarWidget = false, mediaSession = false, roomAudio = false }: ActivityBootstrapOptions = {}): string {
   const ios = platform !== 'android';
-  const capabilities = ios ? `mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}`
+  const capabilities = ios ? `mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}${roomAudio ? ' roomAudioVersion: 1,' : ''}`
     : mediaSession ? 'mediaSessionVersion: 1,' : '';
   return `(() => {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
