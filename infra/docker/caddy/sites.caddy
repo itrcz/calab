@@ -162,6 +162,14 @@
 		respond "" {err.status_code}
 	}
 
+	# MCP without a bot (ADR-0158): RFC 9728 / RFC 8414 metadata of the MCP endpoint's OAuth server,
+	# published at the root of the app host. Exact paths only (other /.well-known/* stay as they are).
+	@mcp_oauth_metadata path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/api/mcp /.well-known/oauth-authorization-server
+	handle @mcp_oauth_metadata {
+		header >Referrer-Policy "no-referrer"
+		reverse_proxy {$API_UPSTREAM:127.0.0.1:3000}
+	}
+
 	# Go API (host network): REST, gateway WS, liveness.
 	@api path /api/* /gateway /healthz
 	handle @api {
@@ -199,7 +207,7 @@
 		header @manifest Content-Type "application/manifest+json"
 		import web_security_headers
 		# The same SPA scripts/CSP load on completion and consent, but URLs/HTML are sensitive.
-		@sensitive_spa path /sso/complete /oauth/consent /f/* /w/* /c/*
+		@sensitive_spa path /sso/complete /oauth/consent /mcp/connect /f/* /w/* /c/*
 		handle @sensitive_spa {
 			header X-Robots-Tag "noindex, nofollow"
 			header >Cache-Control "no-store"
