@@ -1016,6 +1016,20 @@ function FileRow({ f }: { f: FileMeta }): ReactNode {
         </div>
         <div className="text-caption text-[color:var(--bubble-meta)]">{fmt.size(f.size)}</div>
       </div>
+      {/* A file that opens in a viewer / the editor on click: «Скачать» saves it without opening (hover on the desktop, always on the phone). */}
+      {pdf ? (
+        <Tip label={t('chat.download')}>
+          <button
+            type="button"
+            onClick={() => downloadFile(f)}
+            aria-label={`${t('chat.download')} ${f.name}`}
+            className="grid size-8 shrink-0 place-items-center rounded-full text-[color:var(--bubble-meta)] hover:text-[color:var(--bubble-chip-fg)] focus-visible:opacity-100 mobile:size-11 opacity-0 group-hover/file:opacity-100 mobile:opacity-100"
+            data-testid="file-download"
+          >
+            <Download className="size-4" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
     </div>
   );
 }
