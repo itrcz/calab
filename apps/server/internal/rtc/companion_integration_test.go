@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/voice"
@@ -336,5 +337,52 @@ func TestCompanionGrantPush(t *testing.T) {
 	}
 	if !f.companionRemoved() {
 		t.Fatal("a companion without CONNECT stayed")
+	}
+}
+
+// Seat removals outside the device's own LiveKit leave take the companion at once, not on the
+// next reconcile pass: a stale seat reconcile removes, and a device that /joins another room
+// (pending in the old one, its connect wait replaced).
+func TestCompanionDroppedWithSeatChange(t *testing.T) {
+	// Reconcile: the seat is old and absent from LiveKit, only its companion is there.
+	f := newLostFixture(t)
+	f.inLiveKit(Participant{Sid: "PC_1", Identity: f.companion()})
+	f.reconcile(t)
+	if st := stateOf(t, f.s, f.wid, f.sid); st != nil {
+		t.Fatalf("stale seat kept: %+v", st)
+	}
+	if !f.companionRemoved() {
+		t.Fatalf("reconcile removed the seat but kept its companion: %v", f.lk.removed)
+	}
+
+	// Pending in room A, then /join room B before connecting.
+	f = newLostFixture(t)
+	ctx := context.Background()
+	if err := f.s.setFlag(ctx, f.wid, f.rid, f.uid, f.sid, func(n *voice.SessionState) { n.Pending = true }); err != nil {
+		t.Fatal(err)
+	}
+	f.inLiveKit(Participant{Sid: "PC_1", Identity: f.companion()})
+	other := wsRoom{Room: sqlc.Room{ID: uuid.New()}, WorkspaceID: f.wid}
+	if _, _, err := recordFixturePending(ctx, t, f.s, other, f.uid, f.sid, admission{}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.companionRemoved() {
+		t.Fatalf("the companion stayed in the room the device left: %v", f.lk.removed)
+	}
+	if f.lk.wasRemoved(voice.RoomName(f.wid, other.ID), f.companion()) {
+		t.Fatal("the companion was removed from the room the device joined")
+	}
+	// A repeated /join of the same room removes nothing.
+	f.lk.mu.Lock()
+	f.lk.removed = nil
+	f.lk.mu.Unlock()
+	if _, _, err := recordFixturePending(ctx, t, f.s, other, f.uid, f.sid, admission{}); err != nil {
+		t.Fatal(err)
+	}
+	f.lk.mu.Lock()
+	n := len(f.lk.removed)
+	f.lk.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("a repeated /join removed %d participants", n)
 	}
 }

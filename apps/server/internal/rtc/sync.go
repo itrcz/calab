@@ -328,13 +328,17 @@ func (s *Service) Reconcile(ctx context.Context) error {
 				continue // too fresh to judge: may have joined after the listing (a pending /join too)
 			}
 			s.stopStreams(ctx, wid, st.RoomID, voice.Identity(st.UserID, st.SessionID), v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
-			joined := st.JoinedAt
+			joined, removed := st.JoinedAt, false
 			_ = s.update(ctx, wid, st.UserID, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 				if cur != nil && cur.RoomID == st.RoomID && cur.JoinedAt == joined {
+					removed = true
 					return nil
 				}
 				return cur // changed since the snapshot: leave it
 			})
+			if removed && !voice.IsDM(wid, st.RoomID) {
+				s.dropCompanion(ctx, wid, st.RoomID, st.UserID, st.SessionID) // its seat is gone (ADR-0149 §3)
+			}
 		}
 		if len(states) == 0 {
 			_ = s.voice.Forget(ctx, wid) // drop idle workspaces from the reconcile set
