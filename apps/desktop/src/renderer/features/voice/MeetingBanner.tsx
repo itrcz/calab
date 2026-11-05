@@ -10,16 +10,18 @@ import { toast } from '../../stores/toasts';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 
-/** People in `roomId`'s voice and how many of them have a camera on, as one primitive. */
+/** People in `roomId`'s voice, how many of them have a camera on and how many share a screen, as one primitive. */
 function countKey(s: ReturnType<typeof useWorkspaces.getState>, workspaceId: string, roomId: string): string {
   let people = 0;
   let cameras = 0;
+  let screens = 0;
   for (const v of Object.values(s.byId[workspaceId]?.voice ?? {})) {
     if (v.roomId !== roomId) continue;
     people++;
     if (v.camera) cameras++;
+    if (v.streaming) screens++;
   }
-  return `${people}:${cameras}`;
+  return `${people}:${cameras}:${screens}`;
 }
 
 /**
@@ -32,10 +34,21 @@ function countKey(s: ReturnType<typeof useWorkspaces.getState>, workspaceId: str
 export function MeetingBanner({ workspaceId, room, perms }: { workspaceId: string; room: Room; perms: PermissionBits }): ReactNode {
   useLocale();
   const preview = useVoice((s) => isVoicePreview(room, s.roomId));
+  // In this room on a native-audio join (iPhone, ADR-0149 §3): the videos it cannot show yet, with the reason.
+  const audioOnly = useVoice((s) => s.audioOnly && s.roomId === room.id);
   const key = useWorkspaces((s) => countKey(s, workspaceId, room.id));
   const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
   const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
-  const [people = 0, cameras = 0] = key.split(':').map(Number);
+  const [people = 0, cameras = 0, screens = 0] = key.split(':').map(Number);
+  if (audioOnly) {
+    if (cameras + screens === 0) return null;
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-1.5 text-body" role="status" data-testid="video-audio-only">
+        <Video className="size-4 shrink-0 text-muted" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-muted">{t('video.audioOnlyRoom')}</span>
+      </div>
+    );
+  }
   if (!preview || cameras === 0) return null;
   const canConnect = can(perms, 'CONNECT');
   const join = (): void => {

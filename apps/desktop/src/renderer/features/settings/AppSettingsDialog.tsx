@@ -533,10 +533,12 @@ function MusicianRow({ outputs }: { outputs: MediaDeviceInfo[] }): ReactNode {
   const outputId = usePrefs((s) => s.outputDeviceId);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const allowed = useMusicianAllowed();
+  // A native-audio join on iPhone (ADR-0149): off, with the reason in place of the hint.
+  const audioOnly = useVoice((s) => s.audioOnly);
   const warning = on ? musicianWarning(outputLabel(outputs, outputId)) : null;
   const row = (
-    <Row label={t('music.mode')} hint={t('music.hint')}>
-      <Toggle label={t('music.mode')} checked={on && allowed} disabled={!allowed} onChange={(v) => setPrefs({ musicianMode: v })} />
+    <Row label={t('music.mode')} hint={audioOnly ? t('music.audioOnly') : t('music.hint')}>
+      <Toggle label={t('music.mode')} checked={on && allowed && !audioOnly} disabled={!allowed || audioOnly} onChange={(v) => setPrefs({ musicianMode: v })} />
     </Row>
   );
   // Free (ADR-0052): the switch stays in place under the plan lock (docs/08 «Функции не по тарифу»).

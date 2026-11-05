@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseHostActivityMessage } from '../../desktop/src/shared/hostActivity';
-import { ROOM_AUDIO_ERRORS, ROOM_AUDIO_MUTE_ORIGINS, ROOM_AUDIO_PHASES, ROOM_AUDIO_ROUTES, parseRoomAudioOperation, parseRoomAudioState, type HostRoomAudioOperation } from '../../desktop/src/shared/hostRoomAudio';
+import { ROOM_AUDIO_CUES, ROOM_AUDIO_ERRORS, ROOM_AUDIO_MUTE_ORIGINS, ROOM_AUDIO_PHASES, ROOM_AUDIO_ROUTES, parseRoomAudioOperation, parseRoomAudioState, type HostRoomAudioOperation } from '../../desktop/src/shared/hostRoomAudio';
 import { ACCEPTED, OVER_MESSAGE_BOUND, REJECTED, connect, connectionId, disconnect } from '../../desktop/src/shared/hostRoomAudio.fixtures';
 
 const envelope = (operation: object) => JSON.stringify({ v: 1, type: 'roomAudio', host: 0, document: '11111111-1111-4111-8111-111111111111', seq: 1, request: 1, ...operation });
@@ -22,7 +22,7 @@ it.skipIf(!swiftAvailable)('TS and Swift accept and reject the same fixtures, an
     ]);
     const fixtures = [...ACCEPTED, ...REJECTED, ...OVER_MESSAGE_BOUND];
     const output = JSON.parse(execFileSync(binary, { encoding: 'utf8', input: JSON.stringify(fixtures) })) as {
-      operations: unknown[]; samples: unknown[]; phases: unknown[]; routes: unknown[]; origins: unknown[]; errors: unknown[];
+      operations: unknown[]; samples: unknown[]; phases: unknown[]; routes: unknown[]; origins: unknown[]; errors: unknown[]; cues: string[];
     };
     expect(output.operations).toHaveLength(fixtures.length);
     const swiftAccepts = (i: number) => i < ACCEPTED.length || i >= ACCEPTED.length + REJECTED.length;
@@ -43,10 +43,17 @@ it.skipIf(!swiftAvailable)('TS and Swift accept and reject the same fixtures, an
     expect(emitted(output.routes, 'route')).toEqual([...ROOM_AUDIO_ROUTES].sort());
     expect(emitted(output.origins, 'muteOrigin')).toEqual([...ROOM_AUDIO_MUTE_ORIGINS].sort());
     expect(emitted(output.errors, 'error')).toEqual([...ROOM_AUDIO_ERRORS].sort());
+    // A cue that exists on one side only would play nothing or be refused natively.
+    expect([...output.cues].sort()).toEqual([...ROOM_AUDIO_CUES].sort());
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }, 180_000); // cold swiftc on CI runners takes ~30 s+
+
+it('bundles a native sound for every cue', async () => {
+  const plugin = await import('../plugins/withCallAudio') as unknown as { ROOM_SOUNDS: Record<string, string> };
+  expect(Object.keys(plugin.ROOM_SOUNDS).sort()).toEqual([...ROOM_AUDIO_CUES].sort());
+});
 
 it('forwards the message type through the iOS WebView allowlist', () => {
   const patch = readFileSync(fileURLToPath(new URL('../../../patches/react-native-webview@13.16.1.patch', import.meta.url)), 'utf8');

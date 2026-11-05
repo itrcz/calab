@@ -13,6 +13,7 @@ export const esMusic: DictShape<typeof enMusic> = {
   'music.badge': 'Músico',
   'music.badgeHint': 'Modo músico: sonido sin procesar',
   'music.rnnoiseOff': 'Desactivado en el modo músico',
+  'music.audioOnly': 'El modo músico aún no está disponible en iPhone',
   'music.aecNote': 'Modo músico: la cancelación de eco, la supresión de ruido y la ganancia automática están desactivadas.',
   'music.stats': 'músico',
 };

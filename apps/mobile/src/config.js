@@ -63,6 +63,22 @@ function parseLinkHosts(raw, origin = null) {
 }
 
 /**
+ * The LiveKit hosts a native room connect may reach (ADR-0149 §2): `CALAB_IOS_RTC_HOSTS`, space-separated
+ * bare lowercase hostnames, as for link hosts. The signaling host differs from the app origin
+ * (`rtc.calab.ru` beside `app.calab.io`), so it cannot be derived. Absent or blank, the list is empty
+ * and native room audio stays off; it never means "any host".
+ * @param {string | undefined} raw
+ * @returns {string[]}
+ */
+function parseRtcHosts(raw) {
+  const names = (raw ?? '').split(/[ \t\n]+/).filter(Boolean);
+  for (const name of names) {
+    if (!HOSTNAME.test(name)) throw new Error(`CALAB_IOS_RTC_HOSTS: ${JSON.stringify(name)} is not a lowercase hostname`);
+  }
+  return [...new Set(names)];
+}
+
+/**
  * Local defaults; store uploads must supply an identity checked against distribution history.
  * `androidVersionCode` (CALAB_ANDROID_VERSION_CODE) defaults to `buildNumber`, so one env number
  * drives both stores unless Android needs to move ahead on its own (Play rejects a re-upload of
@@ -86,4 +102,4 @@ function parseReleaseIdentity(version = '0.1.0', buildNumber = '1', androidVersi
   return { version, buildNumber, versionCode: Number(versionCodeRaw) };
 }
 
-module.exports = { WebOriginError, parseWebOrigin, parseLinkHosts, parseReleaseIdentity };
+module.exports = { WebOriginError, parseWebOrigin, parseLinkHosts, parseRtcHosts, parseReleaseIdentity };

@@ -1,6 +1,7 @@
 import { parseCalendarWidgetAction, type CalendarWidgetAction } from '../../shared/calendarWidgetLink';
 import { parseCalendarWidgetOperation, type CalendarWidgetOperation, type HostCalendarWidgetCapability } from '../../shared/hostCalendarWidget';
 import { parseCallsState, type HostCallsCapability, type HostCallsOperation, type HostCallsState } from '../../shared/hostCalls';
+import { parseRoomAudioOperation, parseRoomAudioStatus, type HostRoomAudioCapability, type HostRoomAudioOperation, type HostRoomAudioState, type HostRoomAudioStatus } from '../../shared/hostRoomAudio';
 import { parseMediaPermissionsState, unavailableMediaPermissions, type HostMediaPermissionsCapability, type MediaPermissionsOperation, type MediaPermissionsReply, type MediaPermissionsState } from '../../shared/hostPermissions';
 import { hostLinkRoute, parseNotificationState, parseNotificationTestResult, type HostMediaSession, type HostMediaSessionCapability, type HostNotificationTestResult, type HostNotificationState, type HostNotificationsCapability, type SessionActivityCapability, type SessionActivitySnapshot } from '../../shared/hostActivity';
 
@@ -8,6 +9,8 @@ export interface HostActivityBridge {
   calendarWidgetVersion?: number;
   mediaPermissionsVersion?: number;
   version: number; host: number; document: string; platform?: string; mediaSessionVersion?: number; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
+  /** iOS shell built with native room audio (ADR-0149): rooms may hand their audio to native. */
+  roomAudioVersion?: number;
   rotateDocument(): void;
   send(data: string): void;
 }
@@ -17,6 +20,11 @@ declare global { interface Window { CalabHostActivity?: HostActivityBridge } }
 // deadline (ADR-0079); the web side must outlive that worst case (25 s) with slack.
 const AUDIO_CONNECT_TIMEOUT_MS = 30_000;
 const CALLS_REQUEST_TIMEOUT_MS = 10_000;
+// Native `connect` settles inside its own 15 s deadline, a first microphone prompt included
+// (CalabRoomAudio.swift): the reply is waited for twice that.
+const ROOM_CONNECT_TIMEOUT_MS = 30_000;
+/** No reply, a revoked document or an invalid operation: native state is unknown (ADR-0149 §2), never «unsupported». */
+const ROOM_UNKNOWN: HostRoomAudioStatus = { supported: true, failed: true };
 
 /** `url` is exactly this page's origin plus a host link route, in canonical form; else null. */
 function hostLinkUrl(url: unknown, origin: string): string | null {
@@ -35,6 +43,7 @@ export function createHostCapabilities(win: Window = window): {
   calendarWidget?: HostCalendarWidgetCapability;
   mediaPermissions?: HostMediaPermissionsCapability;
   sessionActivity?: SessionActivityCapability; notifications?: HostNotificationsCapability; incomingCalls?: HostCallsCapability;
+  roomAudio?: HostRoomAudioCapability;
   mediaSession?: HostMediaSessionCapability;
 } {
   const bridge = win.CalabHostActivity;
@@ -57,6 +66,8 @@ export function createHostCapabilities(win: Window = window): {
   let latest: SessionActivitySnapshot | null = null;
   const callListeners = new Set<(state:HostCallsState)=>void>();
   const callsPending = new Map<number,{operation:HostCallsOperation;resolve:(value:{state:HostCallsState;bound?:boolean})=>void;timer:ReturnType<typeof setTimeout>}>();
+  const roomListeners = new Set<(state: HostRoomAudioState) => void>();
+  const roomPending = new Map<number, { operation: HostRoomAudioOperation; resolve: (state: HostRoomAudioStatus) => void; timer: ReturnType<typeof setTimeout> }>();
   const listeners = new Set<(state: HostNotificationState) => void>();
   const linkListeners = new Set<(url: string) => void>();
   const pending = new Map<number, { operation: 'status' | 'request'; resolve: (state: HostNotificationState) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -64,7 +75,7 @@ export function createHostCapabilities(win: Window = window): {
   const permissions = new Map<number, { operation: MediaPermissionsOperation; resolve: (reply: MediaPermissionsReply) => void; timer: ReturnType<typeof setTimeout> }>();
   const permissionListeners = new Set<(state: MediaPermissionsState) => void>();
   const calendarPending = new Map<number, { operation: CalendarWidgetOperation; resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
-  const send = (type: 'calendarWidget' | 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls' | 'permissions' | 'media', fields: object = {}) => {
+  const send = (type: 'calendarWidget' | 'hello' | 'activity' | 'revoke' | 'notifications' | 'calls' | 'roomAudio' | 'permissions' | 'media', fields: object = {}) => {
     const base = { v: 1, type, host: bridge.host, document: bridge.document };
     bridge.send(JSON.stringify(type === 'hello' ? base : { ...base, seq: ++sequence, ...fields }));
   };
@@ -79,6 +90,8 @@ export function createHostCapabilities(win: Window = window): {
     permissions.clear();
     for (const p of callsPending.values()) { clearTimeout(p.timer); p.resolve({state:{supported:false}}); }
     callsPending.clear();
+    for (const p of roomPending.values()) { clearTimeout(p.timer); p.resolve(ROOM_UNKNOWN); }
+    roomPending.clear();
   };
   const revoke = (reason?: 'logout') => {
     latest = null;
@@ -125,6 +138,7 @@ export function createHostCapabilities(win: Window = window): {
     else { for (const p of permissions.values()) { clearTimeout(p.timer); p.resolve({ state: unavailableMediaPermissions() }); } permissions.clear(); }
     if(a.calls===1)for(const [request,p] of callsPending)send('calls',{request,...p.operation});
     else { for(const p of callsPending.values()){clearTimeout(p.timer);p.resolve({state:{supported:false}});} callsPending.clear(); }
+    for (const [request, p] of roomPending) send('roomAudio', { request, ...p.operation });
   });
   // «Выйти» / «Завершить» on the Android host's ongoing notification (board #141). No authority:
   // the page only leaves its own voice session, as its own hang-up button would.
@@ -215,6 +229,25 @@ export function createHostCapabilities(win: Window = window): {
     if(p){clearTimeout(p.timer);callsPending.delete(Number(e.request));p.resolve({state,...(typeof e.bound==='boolean' ? {bound:e.bound}: {})});}
     if(p || e.request===0)for(const listener of callListeners)listener(state);
   });
+  // ADR-0149 §2: replies carry the request, native events request 0; both feed the room listeners.
+  win.addEventListener('calab-host-room-audio', event => {
+    const raw: unknown = (event as CustomEvent<unknown>).detail;
+    if (!ready || !raw || typeof raw !== 'object') return;
+    const e = raw as Record<string, unknown>;
+    if (Object.keys(e).length !== 5 || e.v !== 1 || e.document !== bridge.document || e.host !== bridge.host ||
+        typeof e.request !== 'number' || !Number.isSafeInteger(e.request) || e.request < 0) return;
+    const state = parseRoomAudioStatus(e.state); if (!state) return;
+    const p = roomPending.get(e.request);
+    if (p) { clearTimeout(p.timer); roomPending.delete(e.request); p.resolve(state); }
+    if ((p || e.request === 0) && state.media) for (const listener of roomListeners) listener(state.media);
+  });
+  const requestRoom = (operation: HostRoomAudioOperation) => new Promise<HostRoomAudioStatus>(resolve => {
+    if (!parseRoomAudioOperation(operation as unknown as Record<string, unknown>)) { resolve(ROOM_UNKNOWN); return; }
+    const request = ++requestId;
+    const timer = setTimeout(() => { roomPending.delete(request); resolve(ROOM_UNKNOWN); }, operation.operation === 'connect' ? ROOM_CONNECT_TIMEOUT_MS : CALLS_REQUEST_TIMEOUT_MS);
+    roomPending.set(request, { operation, resolve, timer });
+    if (ready) send('roomAudio', { request, ...operation }); else send('hello');
+  });
   const requestCall=(operation:HostCallsOperation)=>new Promise<{state:HostCallsState;bound?:boolean}>(resolve=>{
     const request=++requestId;
     const timer=setTimeout(()=>{callsPending.delete(request);resolve({state:{supported:false}});},operation.operation==='audioConnect'?AUDIO_CONNECT_TIMEOUT_MS:CALLS_REQUEST_TIMEOUT_MS);
@@ -252,6 +285,14 @@ export function createHostCapabilities(win: Window = window): {
       ...(bridge.callsMuteVersion===1 ? {syncMuted(eventId:string,muted:boolean){if(ready)send('calls',{request:++requestId,operation:'sync',eventId,phase:muted?'muted':'unmuted'});}} : {}),
       clear:revoke,
     } satisfies HostCallsCapability}: {}),
+    ...(bridge.roomAudioVersion === 1 ? { roomAudio: {
+      connect: input => requestRoom({ operation: 'connect', ...input }),
+      status: () => requestRoom({ operation: 'status' }),
+      control: async (connectionId, controls) => !(await requestRoom({ operation: 'control', connectionId, controls })).failed,
+      cue(connectionId, cue, volume) { if (ready) send('roomAudio', { request: ++requestId, operation: 'cue', connectionId, cue, volume }); },
+      disconnect(connectionId) { if (ready) send('roomAudio', { request: ++requestId, operation: 'disconnect', connectionId }); },
+      subscribe(listener) { roomListeners.add(listener); return () => { roomListeners.delete(listener); }; },
+    } satisfies HostRoomAudioCapability } : {}),
     ...(bridge.calendarWidgetVersion === 1 ? { calendarWidget: {
       onOpen: listener => { calendarOpenListeners.add(listener); if (calendarOpen) { const action = calendarOpen; calendarOpen = null; listener(action); } return () => { calendarOpenListeners.delete(listener); }; },
       bind: (binding: string) => requestCalendar({ operation: 'bind', binding }),

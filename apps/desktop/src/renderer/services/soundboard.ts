@@ -4,6 +4,8 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { builtinSound } from '../lib/builtinSounds';
+import { nativeCue } from '../lib/sounds';
+import { ROOM_AUDIO_CUES, type HostRoomAudioCue } from '../../shared/hostRoomAudio';
 import { log } from '../lib/log';
 import { CHIP_MS, LATE_MS, PRESS_COOLDOWN_MS, clipVolume, createLateness, isBuiltin, toggleFavorite as toggled } from '../lib/soundboard';
 import { prefs, usePrefs } from '../stores/prefs';
@@ -50,6 +52,13 @@ async function clipUrl(soundId: string): Promise<string | null> {
 
 /** Plays a clip locally on the voice output device at the «Громкость звуков». */
 export async function playClip(soundId: string): Promise<void> {
+  // A native-audio room (ADR-0149 §5): built-in clips play natively by name; workspace clips not at all in v1.
+  const native = nativeCue();
+  if (native) {
+    const p = prefs();
+    if ((ROOM_AUDIO_CUES as readonly string[]).includes(soundId)) native(soundId as HostRoomAudioCue, clipVolume(p.soundboardVolume, p.outputVolume));
+    return;
+  }
   const url = await clipUrl(soundId);
   if (!url) return;
   const p = prefs();

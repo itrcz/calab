@@ -10,6 +10,7 @@ export const enMusic = {
   'music.badge': 'Musician',
   'music.badgeHint': 'Musician mode: unprocessed sound',
   'music.rnnoiseOff': 'Off in musician mode',
+  'music.audioOnly': 'Musician mode isn’t available on iPhone yet',
   'music.aecNote': 'Musician mode: echo cancellation, noise suppression and auto gain are off.',
   'music.stats': 'musician',
 } as const;

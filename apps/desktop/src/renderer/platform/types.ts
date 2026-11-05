@@ -1,6 +1,7 @@
 import type { HostCalendarWidgetCapability } from '../../shared/hostCalendarWidget';
 import type { HostCallsCapability } from '../../shared/hostCalls';
 import type { HostMediaPermissionsCapability } from '../../shared/hostPermissions';
+import type { HostRoomAudioCapability } from '../../shared/hostRoomAudio';
 import type { CalabaApi } from '../../preload/api';
 import type { AuthSession, IpcResult } from '../../shared/ipc';
 import type { MailApi } from '../../shared/mail';
@@ -31,6 +32,8 @@ export interface Platform extends Omit<CalabaApi, 'mail'> {
   calendarWidget?: HostCalendarWidgetCapability;
   mediaPermissions?: HostMediaPermissionsCapability;
   incomingCalls?: HostCallsCapability;
+  /** iOS shell with native room audio (ADR-0149): workspace voice rooms hand their audio to it. */
+  roomAudio?: HostRoomAudioCapability;
   /** Android phone host: foreground service while in a voice room or call (board #141). */
   mediaSession?: HostMediaSessionCapability;
   kind: 'electron' | 'web';

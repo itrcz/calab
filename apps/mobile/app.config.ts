@@ -1,5 +1,5 @@
 import type { ExpoConfig } from 'expo/config';
-import { parseWebOrigin, parseLinkHosts, parseReleaseIdentity } from './src/config';
+import { parseWebOrigin, parseLinkHosts, parseReleaseIdentity, parseRtcHosts } from './src/config';
 
 /**
  * Phone host (ADR-0067). Hosts, identifiers and the EAS link come from env only — a local,
@@ -31,6 +31,13 @@ const incomingCalls = env('CALAB_IOS_INCOMING_CALLS') === '1';
 if (incomingCalls && !pushEnvironment) throw new Error('CALAB_IOS_INCOMING_CALLS requires CALAB_IOS_PUSH_ENVIRONMENT');
 const nativeCallAudio = env('CALAB_IOS_NATIVE_CALL_AUDIO') === '1';
 if (nativeCallAudio && !incomingCalls) throw new Error('CALAB_IOS_NATIVE_CALL_AUDIO requires incoming calls');
+// Native room audio (ADR-0149), independent from incoming calls. plugins/withCallAudio links the SDK and writes
+// CalabRoomAudioEnabled with the LiveKit hosts a connect may reach; without hosts rooms would stay on the web path.
+const nativeRoomAudio = env('CALAB_IOS_NATIVE_ROOM_AUDIO') === '1';
+if (nativeRoomAudio && parseRtcHosts(process.env.CALAB_IOS_RTC_HOSTS).length === 0) throw new Error('CALAB_IOS_NATIVE_ROOM_AUDIO requires CALAB_IOS_RTC_HOSTS');
+// The call driver still drives AudioManager.shared itself, outside CalabAudioOwner: one engine, two owners.
+// Until the room and call drivers share the owner (ADR-0149 R8), a build carries one of them.
+if (nativeRoomAudio && nativeCallAudio) throw new Error('CALAB_IOS_NATIVE_ROOM_AUDIO and CALAB_IOS_NATIVE_CALL_AUDIO cannot be combined yet');
 /**
  * Android push (ADR-0070/0071, Android): the Firebase project's google-services.json for this
  * applicationId. Optional — without it the build still succeeds and push reports `unsupported` at

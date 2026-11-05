@@ -11,8 +11,11 @@ Pod::Spec.new do |s|
   s.swift_version = '5.0'
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
-  s.dependency 'CalabLiveKit', '= 2.17.0' if ENV['CALAB_IOS_NATIVE_CALL_AUDIO'] == '1'
+  # Either native audio flag links the one pinned SDK; the room cues come from the withCallAudio plugin.
+  room_audio = ENV['CALAB_IOS_NATIVE_ROOM_AUDIO'] == '1'
+  native_audio = ENV['CALAB_IOS_NATIVE_CALL_AUDIO'] == '1' || room_audio
+  s.dependency 'CalabLiveKit', '= 2.17.0' if native_audio
   s.source_files = '*.swift'
-  s.resources = ['*.lproj/*.strings'] + (ENV['CALAB_IOS_NATIVE_CALL_AUDIO'] == '1' ? ['*.LICENSE'] : [])
+  s.resources = ['*.lproj/*.strings'] + (native_audio ? ['*.LICENSE'] : []) + (room_audio ? ['RoomSounds/*'] : [])
   s.frameworks = 'ActivityKit', 'UserNotifications', 'PushKit', 'CallKit', 'AVFAudio', 'Intents', 'ImageIO', 'WidgetKit', 'Security', 'CryptoKit'
 end
