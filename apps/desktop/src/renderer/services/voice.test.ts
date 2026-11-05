@@ -569,6 +569,8 @@ describe('native room audio (ADR-0149)', () => {
     expect(h.disconnect).toHaveBeenCalledWith(h.inputs[0]?.connectionId);
     expect(useVoice.getState()).toMatchObject({ phase: 'idle', audioOnly: false });
     expect(cues.route).toBeNull();
+    // No web cue after it: a WebKit <audio> would take the session native is releasing.
+    expect(playSound).not.toHaveBeenCalled();
   });
 
   it('keeps calls and rooms without the capability on their own engines', async () => {

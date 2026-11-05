@@ -1987,7 +1987,9 @@ class VoiceEngine {
       stats: null,
     });
     // My own leave / hang-up: the heavier «disconnect» cue (others leaving play «leave»).
-    if (sound && (room || nativeRoom) && !this.cuesQuiet()) playSound('disconnect');
+    // A native-audio join has no web cue after it (ADR-0149 §5): native is releasing the session,
+    // and a WebKit <audio> now would take it; v1 skips the cue there.
+    if (sound && room && !this.cuesQuiet()) playSound('disconnect');
     this.syncTray();
   }
 

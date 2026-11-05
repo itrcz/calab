@@ -374,6 +374,8 @@ let ringing: { name: RingName; el: HTMLAudioElement; timer: number | null; stopA
  * replaces it. Timers only while ringing (docs/14: nothing ticks when idle).
  */
 export function startRing(name: RingName, maxMs = RING_MAX_MS): void {
+  // A native-audio room holds the session (ADR-0149 §1): no WebKit ringtone beside it in v1 (the modal still shows).
+  if (cueRoute) return;
   if (ringing?.name === name) return;
   stopRing();
   const p = prefs();
