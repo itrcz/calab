@@ -59,7 +59,7 @@ import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
 import { hideTip, showTip } from './tipOverlay';
 import { parseTipPayload } from './tipOverlayPolicy';
-import { answerSignInAsk, appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
+import { answerSignInAsk, appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, prepareSnapshot, setAppBounds, snapshotApp } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
 import { APP_ORIGINS, openLink } from './ownLink';
 import { getMainWindow, isOwnPage, isShown, showMainWindow } from './windows';
@@ -468,8 +468,10 @@ export function registerIpc(): void {
   });
   handle(IPC.webAppNavigate, (e, a) => {
     mainOnly(e);
-    if (a !== 'back' && a !== 'forward' && a !== 'reload') throw new Error('invalid action');
-    navigateApp(a);
+    const r = typeof a === 'string' ? { action: a } : obj(a);
+    const action = r['action'];
+    if (action !== 'back' && action !== 'forward' && action !== 'reload') throw new Error('invalid action');
+    navigateApp(action, r['appId'] === undefined ? undefined : parseAppId(r['appId']));
   });
   handle(IPC.webAppOpenExternal, (e) => {
     mainOnly(e);
@@ -489,6 +491,14 @@ export function registerIpc(): void {
   handle(IPC.webAppTipHide, (e) => {
     mainOnly(e);
     hideTip();
+  });
+  handle(IPC.webAppSnapshot, (e) => {
+    mainOnly(e);
+    return snapshotApp();
+  });
+  handle(IPC.webAppSnapshotPrepare, (e) => {
+    mainOnly(e);
+    prepareSnapshot();
   });
   handle(IPC.webAppSignInAnswer, (e, a) => {
     mainOnly(e);

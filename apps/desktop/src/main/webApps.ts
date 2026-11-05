@@ -607,12 +607,17 @@ function applyVisibility(): void {
       e.view.setBounds(bounds);
       e.view.setVisible(true);
     } else if (e.attached) {
+      // Keyboard focus in the site goes with it to Calab's page: otherwise no page has focus, and a
+      // menu opened over the app (Radix highlights the item under the pointer by focusing it)
+      // shows no highlight and takes no arrow keys.
+      const hadFocus = !e.view.webContents.isDestroyed() && e.view.webContents.isFocused();
       e.view.setVisible(false);
       try {
         win?.contentView.removeChildView(e.view);
       } catch {
         // the window is gone
       }
+      if (hadFocus && win && !win.isDestroyed()) win.webContents.focus();
       e.attached = false;
       changed = true;
       if (!e.failed && !e.crashed) checkHidden(e);
@@ -683,6 +688,10 @@ function create(appId: string, url: string, workspaceId: string): Entry | null {
   wc.on('will-navigate', (ev) => {
     if (ev.isMainFrame) interceptSignIn(e, ev.url, () => ev.preventDefault());
   });
+  // A new page: a picture taken ahead is of the old one.
+  wc.on('did-start-loading', () => {
+    if (still?.appId === appId) still = null;
+  });
   wc.on('did-stop-loading', update);
   wc.on('did-navigate', update);
   wc.on('did-navigate-in-page', update);
@@ -708,6 +717,7 @@ function destroy(appId: string): void {
   const e = entries.get(appId);
   if (!e) return;
   entries.delete(appId);
+  if (still?.appId === appId) still = null;
   clearTimeout(e.check);
   lru = dropLru(lru, appId);
   if (e.attached) {
@@ -752,6 +762,43 @@ export function openApp(appId: string, url: string, workspaceId: string, b: View
   sendState(e);
 }
 
+/** A picture older than this is taken again when an overlay opens. */
+const STILL_MAX_AGE_MS = 30_000;
+
+let still: { appId: string; at: number; url: Promise<string> } | null = null;
+
+function capture(e: Entry): Promise<string> {
+  return e.view.webContents.capturePage().then(
+    (img) => (img.isEmpty() ? '' : `data:image/jpeg;base64,${img.toJPEG(85).toString('base64')}`),
+    () => '',
+  );
+}
+
+/**
+ * A capture waits for the site's next frame — about half a second on an idle page, the whole
+ * open animation of a menu. So the picture is taken ahead, when the pointer comes back from the
+ * site to Calab (where the next menu opens), and kept for the shown app.
+ */
+export function prepareSnapshot(): void {
+  const e = shown ? entries.get(shown) : undefined;
+  if (!e || e.view.webContents.isDestroyed() || !e.attached) return;
+  if (still?.appId === e.appId && Date.now() - still.at < 1000) return;
+  still = { appId: e.appId, at: Date.now(), url: capture(e) };
+}
+
+/**
+ * A still picture of the shown app, for the renderer to lay in its place while a menu or dialog of
+ * Calab is open and the view steps aside (ADR-0053 «Поправка 2»): the site looks as it was instead
+ * of an empty area. Pixels only, kept in the renderer's memory while the overlay is open; nothing
+ * of the site's DOM is read. '' when there is nothing to show.
+ */
+export function snapshotApp(): Promise<string> {
+  const e = shown ? entries.get(shown) : undefined;
+  if (!e || e.view.webContents.isDestroyed() || !e.attached) return Promise.resolve('');
+  if (still?.appId !== e.appId || Date.now() - still.at > STILL_MAX_AGE_MS) still = { appId: e.appId, at: Date.now(), url: capture(e) };
+  return still.url;
+}
+
 export function hideApp(): void {
   shown = null;
   applyVisibility();
@@ -762,14 +809,20 @@ export function setAppBounds(b: ViewBounds): void {
   if (shown) applyVisibility();
 }
 
-export function navigateApp(action: WebAppNavAction): void {
-  const e = shown ? entries.get(shown) : undefined;
+/**
+ * ◀ ▶ ⟳ of the shown app, or of `appId` — the rail's «Перезагрузить» comes while its menu is still
+ * open and the view is hidden under it, so «the shown app» would be none.
+ */
+export function navigateApp(action: WebAppNavAction, appId?: string): void {
+  const id = appId ?? shown;
+  const e = id ? entries.get(id) : undefined;
   if (!e) return;
   const wc = e.view.webContents;
   if (action === 'reload' && e.crashed) {
-    const { appId, home } = e;
-    destroy(appId);
-    openApp(appId, home, e.workspaceId, bounds);
+    const { home, workspaceId } = e;
+    destroy(e.appId);
+    // A hidden app comes back fresh on its next open (the renderer opens it when the menu goes).
+    if (shown === e.appId) openApp(e.appId, home, workspaceId, bounds);
     return;
   }
   if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
