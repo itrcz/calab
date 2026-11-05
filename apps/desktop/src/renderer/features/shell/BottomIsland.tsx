@@ -231,8 +231,8 @@ function FoldedIsland({ panelRef, width, content }: { panelRef: RefObject<HTMLDi
         data-testid="bottom-island"
         data-island
         data-open={open || undefined}
-        // While open over a web app's native view, the view steps aside (AppScreen occluders).
-        data-app-occluder={open || undefined}
+        // While open over a web app's native view, the view loses only height, never x/width (band occluder).
+        data-app-occluder={open ? 'band' : undefined}
         className="island-pop mat-toolbar absolute bottom-2 left-2 z-[var(--z-sticky)] flex flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] shadow-[var(--shadow-island)]"
         style={{ width }}
       >

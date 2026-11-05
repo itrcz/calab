@@ -2,7 +2,8 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
+import { create } from '@bufbuild/protobuf';
+import { AiState, FileMetaSchema, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
@@ -1319,6 +1320,11 @@ test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   const cal4 = mock.boards.taskByKey('CAL-4');
   if (cal4) seedDays(mock, cal4.task.roomId); // #87: CAL-4's comments over several days
+  const cal3 = mock.boards.taskByKey('CAL-3');
+  if (cal3) {
+    cal3.task.attachments = [create(FileMetaSchema, { id: IDS.files.sheet, workspaceId: IDS.workspaces.main, name: 'График отпусков 2026.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 19n })];
+    cal3.task.attachmentCount = 1;
+  }
   await signedIn(page);
   // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
   await tab(page, 'boards');
@@ -1337,6 +1343,10 @@ test('m-boards-task', async ({ page }) => {
   const panel = page.getByTestId('task-panel');
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await checkpoint(page, 'm-boards-task');
+  // «Скачать» on a description's attachment: always visible on the phone (no hover).
+  await expect(panel.getByTestId('task-attachment-download')).toBeVisible();
+  await panel.getByTestId('task-attachment').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-boards-task-attachment');
   // Owner 23.10: a tap on the description edits it in place in the wiki's editor («Готово» under it).
   await panel.getByTestId('task-description').tap();
   const prose = panel.getByTestId('task-description-editor').locator('.wiki-prose');

@@ -77,4 +77,9 @@ describe('AttachmentChip', () => {
     expect(html).toMatch(/<button type="button"[^>]*data-testid="task-attachment-open"[^>]*>отчёт\.pdf<\/button>/);
     expect(html).not.toContain('aria-label="Убрать');
   });
+
+  it('has a «Скачать» button next to the name that never opens the file', () => {
+    const html = renderToStaticMarkup(createElement(AttachmentChip, { file: pdf, list: [pdf] }));
+    expect(html).toMatch(/aria-label="Скачать отчёт\.pdf"[^>]*data-testid="task-attachment-download"/);
+  });
 });
