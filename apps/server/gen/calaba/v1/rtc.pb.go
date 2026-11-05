@@ -138,6 +138,75 @@ func (x *JoinVoiceResponse) GetPlanLimits() *PlanLimits {
 	return nil
 }
 
+// POST /api/rooms/{id}/voice/companion (VIEW_ROOM + CONNECT, workspace voice rooms only)
+// → 200 VoiceCompanionResponse: a token for the device's companion connection (ADR-0149 §3),
+// identity "<user_id>:<session_id>:web", TTL 10 min (connect right away; LiveKit refreshes it
+// while connected). Subscribe and data only, no publish sources. Needs this session's seat in
+// the room (pending, connected or held, VoiceState) and never creates or changes one: 409
+// ERROR_CODE_CONFLICT without a seat here, 403 without the rights or for a denied session, 404
+// for a one-to-one call, 422 for a room that is not a voice room.
+// The companion is removed from LiveKit when the device's seat goes; a newer companion of the
+// same session replaces the older one (DUPLICATE_IDENTITY).
+type VoiceCompanionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`     // LiveKit signal URL (LIVEKIT_URL)
+	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"` // LiveKit access JWT
+	Identity      string                 `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VoiceCompanionResponse) Reset() {
+	*x = VoiceCompanionResponse{}
+	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VoiceCompanionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VoiceCompanionResponse) ProtoMessage() {}
+
+func (x *VoiceCompanionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VoiceCompanionResponse.ProtoReflect.Descriptor instead.
+func (*VoiceCompanionResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *VoiceCompanionResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *VoiceCompanionResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *VoiceCompanionResponse) GetIdentity() string {
+	if x != nil {
+		return x.Identity
+	}
+	return ""
+}
+
 // Webcam quality wanted by /camera/request; the answer is capped by the plan (ADR-0024).
 type RequestCameraRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -149,7 +218,7 @@ type RequestCameraRequest struct {
 
 func (x *RequestCameraRequest) Reset() {
 	*x = RequestCameraRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -161,7 +230,7 @@ func (x *RequestCameraRequest) String() string {
 func (*RequestCameraRequest) ProtoMessage() {}
 
 func (x *RequestCameraRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -174,7 +243,7 @@ func (x *RequestCameraRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestCameraRequest.ProtoReflect.Descriptor instead.
 func (*RequestCameraRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RequestCameraRequest) GetPreset() ScreenSharePreset {
@@ -203,7 +272,7 @@ type RequestCameraResponse struct {
 
 func (x *RequestCameraResponse) Reset() {
 	*x = RequestCameraResponse{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -215,7 +284,7 @@ func (x *RequestCameraResponse) String() string {
 func (*RequestCameraResponse) ProtoMessage() {}
 
 func (x *RequestCameraResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -228,7 +297,7 @@ func (x *RequestCameraResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestCameraResponse.ProtoReflect.Descriptor instead.
 func (*RequestCameraResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RequestCameraResponse) GetPreset() ScreenSharePreset {
@@ -257,7 +326,7 @@ type RequestStreamRequest struct {
 
 func (x *RequestStreamRequest) Reset() {
 	*x = RequestStreamRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -269,7 +338,7 @@ func (x *RequestStreamRequest) String() string {
 func (*RequestStreamRequest) ProtoMessage() {}
 
 func (x *RequestStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -282,7 +351,7 @@ func (x *RequestStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestStreamRequest.ProtoReflect.Descriptor instead.
 func (*RequestStreamRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RequestStreamRequest) GetPreset() ScreenSharePreset {
@@ -312,7 +381,7 @@ type RequestStreamResponse struct {
 
 func (x *RequestStreamResponse) Reset() {
 	*x = RequestStreamResponse{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -324,7 +393,7 @@ func (x *RequestStreamResponse) String() string {
 func (*RequestStreamResponse) ProtoMessage() {}
 
 func (x *RequestStreamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -337,7 +406,7 @@ func (x *RequestStreamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestStreamResponse.ProtoReflect.Descriptor instead.
 func (*RequestStreamResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RequestStreamResponse) GetPreset() ScreenSharePreset {
@@ -366,7 +435,7 @@ type MoveMemberRequest struct {
 
 func (x *MoveMemberRequest) Reset() {
 	*x = MoveMemberRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[5]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -378,7 +447,7 @@ func (x *MoveMemberRequest) String() string {
 func (*MoveMemberRequest) ProtoMessage() {}
 
 func (x *MoveMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[5]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -391,7 +460,7 @@ func (x *MoveMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveMemberRequest.ProtoReflect.Descriptor instead.
 func (*MoveMemberRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *MoveMemberRequest) GetTargetRoomId() string {
@@ -418,7 +487,7 @@ type UpdateVoiceSelfRequest struct {
 
 func (x *UpdateVoiceSelfRequest) Reset() {
 	*x = UpdateVoiceSelfRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[6]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -430,7 +499,7 @@ func (x *UpdateVoiceSelfRequest) String() string {
 func (*UpdateVoiceSelfRequest) ProtoMessage() {}
 
 func (x *UpdateVoiceSelfRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[6]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -443,7 +512,7 @@ func (x *UpdateVoiceSelfRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateVoiceSelfRequest.ProtoReflect.Descriptor instead.
 func (*UpdateVoiceSelfRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UpdateVoiceSelfRequest) GetMuted() bool {
@@ -497,7 +566,11 @@ const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\tcan_video\x18\a \x01(\bR\bcanVideo\x12\x18\n" +
 	"\apending\x18\b \x01(\bR\apending\x126\n" +
 	"\vplan_limits\x18\t \x01(\v2\x15.calaba.v1.PlanLimitsR\n" +
-	"planLimits\"^\n" +
+	"planLimits\"\\\n" +
+	"\x16VoiceCompanionResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1a\n" +
+	"\bidentity\x18\x03 \x01(\tR\bidentity\"^\n" +
 	"\x14RequestCameraRequest\x124\n" +
 	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\x12\x10\n" +
 	"\x03fps\x18\x02 \x01(\rR\x03fps\"_\n" +
@@ -538,31 +611,32 @@ func file_calaba_v1_rtc_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_rtc_proto_rawDescData
 }
 
-var file_calaba_v1_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_calaba_v1_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_calaba_v1_rtc_proto_goTypes = []any{
 	(*JoinVoiceResponse)(nil),      // 0: calaba.v1.JoinVoiceResponse
-	(*RequestCameraRequest)(nil),   // 1: calaba.v1.RequestCameraRequest
-	(*RequestCameraResponse)(nil),  // 2: calaba.v1.RequestCameraResponse
-	(*RequestStreamRequest)(nil),   // 3: calaba.v1.RequestStreamRequest
-	(*RequestStreamResponse)(nil),  // 4: calaba.v1.RequestStreamResponse
-	(*MoveMemberRequest)(nil),      // 5: calaba.v1.MoveMemberRequest
-	(*UpdateVoiceSelfRequest)(nil), // 6: calaba.v1.UpdateVoiceSelfRequest
-	(*RoomMediaSettings)(nil),      // 7: calaba.v1.RoomMediaSettings
-	(*PlanLimits)(nil),             // 8: calaba.v1.PlanLimits
-	(ScreenSharePreset)(0),         // 9: calaba.v1.ScreenSharePreset
+	(*VoiceCompanionResponse)(nil), // 1: calaba.v1.VoiceCompanionResponse
+	(*RequestCameraRequest)(nil),   // 2: calaba.v1.RequestCameraRequest
+	(*RequestCameraResponse)(nil),  // 3: calaba.v1.RequestCameraResponse
+	(*RequestStreamRequest)(nil),   // 4: calaba.v1.RequestStreamRequest
+	(*RequestStreamResponse)(nil),  // 5: calaba.v1.RequestStreamResponse
+	(*MoveMemberRequest)(nil),      // 6: calaba.v1.MoveMemberRequest
+	(*UpdateVoiceSelfRequest)(nil), // 7: calaba.v1.UpdateVoiceSelfRequest
+	(*RoomMediaSettings)(nil),      // 8: calaba.v1.RoomMediaSettings
+	(*PlanLimits)(nil),             // 9: calaba.v1.PlanLimits
+	(ScreenSharePreset)(0),         // 10: calaba.v1.ScreenSharePreset
 }
 var file_calaba_v1_rtc_proto_depIdxs = []int32{
-	7, // 0: calaba.v1.JoinVoiceResponse.media:type_name -> calaba.v1.RoomMediaSettings
-	8, // 1: calaba.v1.JoinVoiceResponse.plan_limits:type_name -> calaba.v1.PlanLimits
-	9, // 2: calaba.v1.RequestCameraRequest.preset:type_name -> calaba.v1.ScreenSharePreset
-	9, // 3: calaba.v1.RequestCameraResponse.preset:type_name -> calaba.v1.ScreenSharePreset
-	9, // 4: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
-	9, // 5: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	8,  // 0: calaba.v1.JoinVoiceResponse.media:type_name -> calaba.v1.RoomMediaSettings
+	9,  // 1: calaba.v1.JoinVoiceResponse.plan_limits:type_name -> calaba.v1.PlanLimits
+	10, // 2: calaba.v1.RequestCameraRequest.preset:type_name -> calaba.v1.ScreenSharePreset
+	10, // 3: calaba.v1.RequestCameraResponse.preset:type_name -> calaba.v1.ScreenSharePreset
+	10, // 4: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
+	10, // 5: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
+	6,  // [6:6] is the sub-list for method output_type
+	6,  // [6:6] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_rtc_proto_init() }
@@ -572,14 +646,14 @@ func file_calaba_v1_rtc_proto_init() {
 	}
 	file_calaba_v1_media_proto_init()
 	file_calaba_v1_plan_proto_init()
-	file_calaba_v1_rtc_proto_msgTypes[6].OneofWrappers = []any{}
+	file_calaba_v1_rtc_proto_msgTypes[7].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_rtc_proto_rawDesc), len(file_calaba_v1_rtc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
