@@ -107,6 +107,28 @@ func TestNames(t *testing.T) {
 	}
 }
 
+// The companion connection (ADR-0149 §3) has its own identity: ParseIdentity never takes it for
+// a device (voice state, grace, cues and grants skip it), ParseCompanion gives its device.
+func TestCompanionIdentity(t *testing.T) {
+	u, s := uuid.New(), uuid.New()
+	c := CompanionIdentity(u, s)
+	if c != Identity(u, s)+":web" {
+		t.Fatalf("companion identity %q", c)
+	}
+	if _, _, ok := ParseIdentity(c); ok {
+		t.Fatal("ParseIdentity accepted a companion identity")
+	}
+	gu, gs, ok := ParseCompanion(c)
+	if !ok || gu != u || gs != s {
+		t.Fatal("companion identity round trip")
+	}
+	for _, bad := range []string{Identity(u, s), Identity(u, s) + ":web:web", Identity(u, s) + ":WEB", "x:web", ":web", u.String() + ":web", "sip:" + s.String()} {
+		if _, _, ok := ParseCompanion(bad); ok {
+			t.Errorf("ParseCompanion(%q) accepted", bad)
+		}
+	}
+}
+
 func TestDMRoomName(t *testing.T) {
 	ws, room := uuid.New(), uuid.New()
 	if n := RoomName(room, room); n != "dm:"+room.String() || !IsDMRoomName(n) {
