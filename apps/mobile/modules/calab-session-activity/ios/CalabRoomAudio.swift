@@ -581,6 +581,8 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
       do { try perform(action) }
       catch {
         logger.error("room audio action refused: \(String(describing: action), privacy: .public)")
+        // A teardown never stops halfway: whatever refused, the room fails and the page is told.
+        if actions.contains(.fail) { stop(.failed, .audio, sessionHeld: action == .deactivate); return }
         if event != .activationFailed { send(.activationFailed) }
         break
       }
@@ -621,7 +623,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
   // MARK: Teardown
 
   /** Quiet now, drained later: the terminal phase reaches the page only once nothing holds audio. */
-  private func stop(_ phase: CalabRoomAudioState.Phase, _ error: CalabRoomAudioState.Failure? = nil) {
+  private func stop(_ phase: CalabRoomAudioState.Phase, _ error: CalabRoomAudioState.Failure? = nil, sessionHeld: Bool = false) {
     guard state != nil, lease != nil || room != nil || connectTask != nil || state?.phase != phase else { return }
     ticket.end()
     let rev = ticket.revision
@@ -636,7 +638,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     players = []
     // Synchronous boundary: microphone and engine off, session released, before any SDK await.
     AudioManager.shared.isMicrophoneMuted = true
-    var released = true
+    var released = !sessionHeld
     for action in machine.handle(.leave) {
       do { try perform(action) } catch { if action == .deactivate { released = false } }
     }
