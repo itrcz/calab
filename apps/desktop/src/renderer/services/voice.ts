@@ -129,6 +129,8 @@ const METER_UI_INTERVAL_MS = 50;
 const STATS_INTERVAL_MS = ECHO.statsMs;
 /** Remote SSRC levels are fresh when played out within this window (DTX sends ~every 400 ms). */
 const LEVEL_FRESH_MS = 500;
+/** Back in foreground, a held stream keeps its native audio this long while the companion reconnects. */
+const HELD_RETURN_MS = 10_000;
 /** A /join waits at most this long for a /voice/leave still in flight. */
 const LEAVE_WAIT_MS = 3000;
 /** Seat check (docs/09 #71): a join / leave in progress is waited out this often, this many times. */
@@ -283,11 +285,23 @@ class VoiceEngine {
   private readonly companion = new VoiceCompanion({
     attach: (room) => this.onCompanionAttached(room),
     detach: (_room, why) => this.onCompanionDetached(why),
-    down: (on) => setVoice({ videoDown: on }),
-    superseded: () => undefined,
+    down: (on) => {
+      setVoice({ videoDown: on });
+      if (on) this.releaseHeld();
+    },
+    superseded: () => this.releaseHeld(),
   });
   /** The stream watched when the page went to background: native keeps its audio, the video comes back to it. */
   private heldWatch: { trackSid: string; userId: string } | null = null;
+  /** Back in foreground with a held stream: its audio goes if the companion is not back by then. */
+  private heldTimer: number | null = null;
+  /**
+   * The streams shown when the companion went (null = none to compare): the first refresh after it
+   * is back treats them as known, so a stream the user stopped watching does not come back on its own.
+   */
+  private knownStreams: Set<string> | null = null;
+  /** The stream watched when the companion went: watched again when it is back (none = the user's «nothing»). */
+  private rewatch: string | null = null;
   private nativeCallEvent: string | undefined;
   private roomId: string | null = null;
   private joinSeq = 0;
@@ -925,6 +939,7 @@ class VoiceEngine {
   private onCompanionAttached(room: Room): void {
     if (!this.nativeRoom) return;
     log.info('voice: companion video connected');
+    this.clearHeldTimer();
     annot.attach(room);
     this.wireCompanion(room);
     this.refreshStreams();
@@ -945,6 +960,8 @@ class VoiceEngine {
     const st = useVoice.getState();
     const stream = st.streams.find((s) => s.trackSid === st.watching);
     this.heldWatch = why === 'hidden' && stream ? { trackSid: stream.trackSid, userId: stream.userId } : null;
+    this.knownStreams = new Set([...(this.knownStreams ?? []), ...st.streams.map((s) => s.trackSid)]);
+    if (st.streams.length > 0) this.rewatch = stream?.trackSid ?? null;
     // Back after the page was away (or a lost link): the cameras on then are not «turned on».
     if (why !== 'idle') this.camerasPrimed = false;
     this.wanted.clear();
@@ -1019,6 +1036,31 @@ class VoiceEngine {
     if (!userId) return [];
     const audio = remoteAudio({ ...prefs(), deafened: false, userId, stream: true, streamVolume: st.streamVolume });
     return audio.muted ? [] : [{ id: userId, volume: audio.volume }];
+  }
+
+  /** The held stream's audio goes: the companion gave up, was superseded or is not back in time. */
+  private releaseHeld(): void {
+    this.clearHeldTimer();
+    if (!this.heldWatch) return;
+    this.heldWatch = null;
+    if (this.nativeRoom) this.pushNativeControls();
+  }
+
+  private clearHeldTimer(): void {
+    if (this.heldTimer !== null) window.clearTimeout(this.heldTimer);
+    this.heldTimer = null;
+  }
+
+  /** Foreground with a held stream: the companion has HELD_RETURN_MS to bring its video back, else its audio goes. */
+  private syncHeldTimer(): void {
+    if (!this.heldWatch || document.hidden || this.companion.room) {
+      this.clearHeldTimer();
+      return;
+    }
+    this.heldTimer ??= window.setTimeout(() => {
+      this.heldTimer = null;
+      if (!this.companion.room) this.releaseHeld();
+    }, HELD_RETURN_MS);
   }
 
   /**
@@ -2093,6 +2135,9 @@ class VoiceEngine {
     this.nativeAudio?.stop(); this.nativeAudio = null;
     if (nativeRoom) {
       this.heldWatch = null;
+      this.knownStreams = null;
+      this.rewatch = null;
+      this.clearHeldTimer();
       this.companion.stop();
       this.syncLevelsRefresh();
       routeCues(null);
@@ -2447,9 +2492,15 @@ class VoiceEngine {
     let watching = st.watching;
     if (watching && !streams.some((s) => s.trackSid === watching)) watching = null;
     // A new stream appears: show it in the PiP tile unless the user already watches another one.
-    const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid));
+    // Back after the companion went: the streams known then are not new (a dismissed one stays dismissed).
+    const known = this.knownStreams;
+    const rewatch = this.rewatch;
+    this.knownStreams = null;
+    this.rewatch = null;
+    const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid) && !known?.has(s.trackSid));
     // Back from background (a companion again): the stream that was watched, if it is still on.
-    const held = this.heldWatch && streams.some((s) => s.trackSid === this.heldWatch?.trackSid) ? this.heldWatch.trackSid : null;
+    const back = this.heldWatch?.trackSid ?? rewatch;
+    const held = back && streams.some((s) => s.trackSid === back) ? back : null;
     if (!watching && held) watching = held;
     else if (!watching && fresh) watching = fresh.trackSid;
     this.heldWatch = null;
@@ -2486,6 +2537,7 @@ class VoiceEngine {
 
   watch(trackSid: string | null): void {
     this.heldWatch = null;
+    this.rewatch = null;
     setVoice({ watching: trackSid, ...(trackSid ? {} : { stage: 'pip' }) });
     this.applyWatching();
   }
@@ -4085,7 +4137,10 @@ class VoiceEngine {
     const now = Date.now();
     // Levels only for a visible page (ADR-0149 §5); the companion video only in foreground (§3).
     if (this.nativeRoom && this.meterShown()) this.pushNativeControls();
-    if (this.nativeRoom) this.syncCompanion();
+    if (this.nativeRoom) {
+      this.syncCompanion();
+      this.syncHeldTimer();
+    }
     if (document.hidden) {
       if (this.hiddenAt !== null) return;
       this.hiddenAt = now;

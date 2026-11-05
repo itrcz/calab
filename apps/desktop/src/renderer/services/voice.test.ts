@@ -862,6 +862,67 @@ describe('native room audio (ADR-0149)', () => {
       expect(h.lastControls()?.watched).toEqual({});
     });
 
+    it('a stream the user stopped watching stays unwatched after the page was away', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      expect(useVoice.getState().watching).toBe('TR_screen');
+      voice.watch(null);
+      setHidden(true);
+      FakeRoom.onConnect = () => {
+        companionRoom().remoteParticipants.set(`${PEER}:dev`, participant(`${PEER}:dev`, [vpub('screen_share', 'TR_screen')]));
+        return Promise.resolve();
+      };
+      setHidden(false);
+      await settle();
+      expect(FakeRoom.all).toHaveLength(2);
+      expect(useVoice.getState()).toMatchObject({ watching: null, streams: [{ trackSid: 'TR_screen' }] });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('held stream audio goes when the companion is not back 10 s after foreground, or is superseded', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      companionToken.mockImplementationOnce(() => new Promise(() => undefined));
+      setHidden(false);
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      await vi.advanceTimersByTimeAsync(1_200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('a companion that gives up lets the held stream audio go at once', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      const { ApiError } = await import('../lib/api/client');
+      companionToken.mockImplementationOnce(() => Promise.reject(new ApiError('FORBIDDEN', 'no', 403)));
+      setHidden(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(useVoice.getState().videoDown).toBe(true);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('a superseded companion lets the held stream audio go at once', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      FakeRoom.onConnect = () => {
+        companionRoom().emit('Disconnected', 'DUPLICATE_IDENTITY');
+        return Promise.reject(new Error('superseded'));
+      };
+      setHidden(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
     it('a companion that gave up says why; cameras and screens otherwise need no reason', async () => {
       const { ApiError } = await import('../lib/api/client');
       companionToken.mockImplementationOnce(() => Promise.reject(new ApiError('NOT_FOUND', 'no', 404)));
