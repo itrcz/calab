@@ -59,7 +59,7 @@ import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
 import { hideTip, showTip } from './tipOverlay';
 import { parseTipPayload } from './tipOverlayPolicy';
-import { answerSignInAsk, appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
+import { answerSignInAsk, appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds, snapshotApp } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
 import { APP_ORIGINS, openLink } from './ownLink';
 import { getMainWindow, isOwnPage, isShown, showMainWindow } from './windows';
@@ -489,6 +489,10 @@ export function registerIpc(): void {
   handle(IPC.webAppTipHide, (e) => {
     mainOnly(e);
     hideTip();
+  });
+  handle(IPC.webAppSnapshot, (e) => {
+    mainOnly(e);
+    return snapshotApp();
   });
   handle(IPC.webAppSignInAnswer, (e, a) => {
     mainOnly(e);

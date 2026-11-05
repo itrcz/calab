@@ -229,6 +229,8 @@ export interface CalabaApi {
     /** Draw a tooltip that falls on the shown app above it (a native overlay; ADR-0053 «Поправка 1»). */
     tipShow(tip: WebAppTip): Promise<void>;
     tipHide(): Promise<void>;
+    /** A still picture of the shown app (JPEG data URL, '' if none), shown in its place under a menu or dialog. */
+    snapshot(): Promise<string>;
     /** A consent «Sign in with Calab» to ask in a Calab dialog; null: close it (timed out). ADR-0159. */
     onSignInAsk(cb: (ask: WebAppSignInAsk | null) => void): Unsubscribe;
     signInAnswer(id: string, allow: boolean): Promise<void>;

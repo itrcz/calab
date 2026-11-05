@@ -116,6 +116,7 @@ const api: CalabaApi = {
     onState: (cb) => on(IPC.webAppState, cb),
     tipShow: (tip) => ipcRenderer.invoke(IPC.webAppTipShow, tip),
     tipHide: () => ipcRenderer.invoke(IPC.webAppTipHide),
+    snapshot: () => ipcRenderer.invoke(IPC.webAppSnapshot),
     onSignInAsk: (cb) => on(IPC.webAppSignInAsk, cb),
     signInAnswer: (id, allow) => ipcRenderer.invoke(IPC.webAppSignInAnswer, { id, allow }),
   },

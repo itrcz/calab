@@ -752,6 +752,23 @@ export function openApp(appId: string, url: string, workspaceId: string, b: View
   sendState(e);
 }
 
+/**
+ * A still picture of the shown app, for the renderer to lay in its place while a menu or dialog of
+ * Calab is open and the view steps aside (ADR-0053 «Поправка 2»): the site looks as it was instead
+ * of an empty area. Pixels only, kept in the renderer's memory while the overlay is open; nothing
+ * of the site's DOM is read. '' when there is nothing to show.
+ */
+export async function snapshotApp(): Promise<string> {
+  const e = shown ? entries.get(shown) : undefined;
+  if (!e || e.view.webContents.isDestroyed() || !e.attached) return '';
+  try {
+    const img = await e.view.webContents.capturePage();
+    return img.isEmpty() ? '' : `data:image/jpeg;base64,${img.toJPEG(85).toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
 export function hideApp(): void {
   shown = null;
   applyVisibility();

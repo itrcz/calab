@@ -125,18 +125,39 @@ function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; 
   const crashed = useWebApps((s) => s.nav[appId]?.crashed ?? false);
   const api = platform.webApps;
 
+  // A menu or dialog over the app: a still picture of the site takes the view's place first, the
+  // view steps aside once it is drawn — the site stays in sight instead of an empty area (ADR-0053
+  // «Поправка 2»). No picture (nothing shown yet, a failed capture): the view steps aside at once.
+  const [still, setStill] = useState<string | null>(null);
+  useEffect(() => () => void api?.hide(), [api]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !api) return;
     if (covered) {
       setAppViewRect(null);
-      void api.hide();
-      return;
+      let live = true;
+      api.snapshot().then(
+        (src) => {
+          if (!live) return;
+          if (src) setStill(src);
+          else void api.hide();
+        },
+        () => {
+          if (live) void api.hide();
+        },
+      );
+      return () => {
+        live = false;
+      };
     }
-    void api.open(appId, url, workspaceId, viewRect(el));
+    // The picture goes once the view is back over it: no empty frame in between.
+    const back = (): void => setStill(null);
+    api.open(appId, url, workspaceId, viewRect(el)).then(back, back);
     return () => {
       setAppViewRect(null);
-      void api.hide();
+      // An overlay opening: the view stays until the picture under it is drawn (leaving the
+      // screen hides it through the effect above).
+      if (!overlayOpenNow()) void api.hide();
     };
   }, [api, appId, url, workspaceId, covered]);
 
@@ -171,6 +192,19 @@ function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; 
 
   return (
     <div ref={ref} className="relative min-h-0 flex-1" data-testid="app-view" data-toast-anchor>
+      {still ? (
+        <img
+          src={still}
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="pointer-events-none absolute inset-0 size-full select-none rounded-[12px] object-fill"
+          onLoad={() => {
+            if (overlayOpenNow()) void api?.hide();
+          }}
+          data-testid="app-still"
+        />
+      ) : null}
       {failed || crashed ? (
         <div className="absolute inset-0 grid place-items-center p-6">
           <div className="flex max-w-sm flex-col items-center gap-2 text-center">
