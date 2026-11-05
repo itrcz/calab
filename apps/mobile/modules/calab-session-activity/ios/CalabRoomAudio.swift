@@ -3,13 +3,16 @@ import Foundation
 // ADR-0149 native room driver. Everything above `#if canImport(LiveKit)` is pure and runs in the swiftc
 // harness (tests/RoomAudioInputTests.swift, tests/ReconnectScheduleTests.swift); the SDK part stays thin.
 
-// §7: LiveKit Swift 2.17.0 reconnects a few quick attempts, the last one full (Room+Engine.swift:400-425,
-// AsyncRetry.swift:31-54). Its defaults (10 attempts, 0.3-7 s, 10 s timeouts) run far past VOICE_LOST_GRACE,
-// and a reconnect after it recreates a seat others saw end.
+// §7: LiveKit Swift 2.17.0 reconnects in quick attempts, the last one full (Room+Engine.swift:400-425,
+// AsyncRetry.swift:31-54). A reconnect after VOICE_LOST_GRACE recreates a seat others saw end, so the bound
+// is the driver's own deadline: it disconnects the Room, and Room.disconnect() drops the retry task before
+// any await (Room.swift:536, 551-555; the dropped AnyTaskCancellable cancels it, AsyncSequence+Subscribe.swift:
+// 147-149). The SDK knobs only shape the retries inside it: an outage that fails fast (no route, airplane
+// mode, a lift) is retried for 30 s and more.
 enum CalabRoomReconnectSchedule {
-  static let attempts = 3
+  static let attempts = 10
   static let baseDelay = 1.0
-  static let maxDelay = 6.0
+  static let maxDelay = 5.0
   static let socketTimeout = 3.5
   static let primaryTimeout = 4.0
   static let publisherTimeout = 4.0
@@ -19,8 +22,12 @@ enum CalabRoomReconnectSchedule {
   static let jitter = 0.1
   // ADR-0150 seat grace on the server.
   static let grace = 60.0
-  // The driver gives up here by itself, so an SDK step added later cannot outlive the seat either.
+  // Reconnecting this long, the driver stops the room and reports `lost`.
   static let deadline = 45.0
+  // From the deadline to a cancelled retry loop. The drain reaches disconnect after an in-flight publish at
+  // most (its response wait, TimeInterval.swift:38); unpublish is local (LocalParticipant.swift:72-110), and
+  // disconnect cancels before its leave message.
+  static let teardown = 10.0
 
   struct Knobs {
     let attempts: Int, baseDelay: Double, maxDelay: Double, socket: Double, primary: Double, publisher: Double
@@ -38,8 +45,8 @@ enum CalabRoomReconnectSchedule {
   }
   // Task.retrying sleeps after each failed attempt but the last, with delays 0...attempts-2.
   static func delays(_ knobs: Knobs = ours) -> Double { (0..<max(0, knobs.attempts - 1)).reduce(0) { $0 + delay($1, knobs) } }
-  // A quick attempt waits for the socket, the response, the subscriber and, once published, the publisher;
-  // the full one (always the last) reconnects from scratch and waits for the primary transport only.
+  // The SDK alone, without the driver's deadline: a quick attempt waits for the socket, the response, the
+  // subscriber and, once published, the publisher; the full one (the last) for the primary transport only.
   static func worstCase(_ knobs: Knobs = ours) -> Double {
     let quick = knobs.socket + responseTimeout + knobs.primary + knobs.publisher
     let full = knobs.socket + responseTimeout + knobs.primary

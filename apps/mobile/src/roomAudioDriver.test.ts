@@ -46,8 +46,8 @@ describe.skipIf(!swiftAvailable)('native room driver logic in actual Swift', () 
   it('ends the reconnect schedule inside the seat grace', () => {
     const result = run([...driver, test('ReconnectScheduleTests.swift')]);
     expect(result).toContain('PASS: the delay curve mirrors computeReconnectDelay');
-    expect(result).toContain('PASS: worst-case delays and socket/transport timeouts end inside VOICE_LOST_GRACE');
-    expect(result).toContain('PASS: a short outage is ridden out and the first retry comes fast');
+    expect(result).toContain("PASS: the driver's deadline and teardown end inside VOICE_LOST_GRACE");
+    expect(result).toContain('PASS: a fast-failing outage is retried for 30 s and the first retry comes fast');
   }, 180_000);
 });
 
