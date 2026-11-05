@@ -620,6 +620,24 @@ describe('native room audio (ADR-0149)', () => {
     expect(h.lastControls()?.muted).toBe(true);
   });
 
+  it('keeps meter levels coming past native’s 30 s and shows silence when native sends none', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    await voice.startMicTest();
+    await vi.advanceTimersByTimeAsync(200);
+    h.control.mockClear();
+    await vi.advanceTimersByTimeAsync(25_000 + 200);
+    expect(h.control.mock.calls.map((c) => c[1].levels)).toEqual([false, true]);
+    h.emit({ level: 10, speaking: true });
+    expect(useVoice.getState()).toMatchObject({ levelDb: -40, gateOpen: true });
+    h.emit({ muted: true, muteOrigin: 'web' });
+    expect(useVoice.getState()).toMatchObject({ levelDb: -80, gateOpen: false });
+    voice.stopMicTest();
+    h.control.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.control.mock.calls.every((c) => !c[1].levels)).toBe(true);
+  });
+
   it('falls back to the web path once, before capture, after a drained native end', async () => {
     const h = host();
     h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'connection' }) }));

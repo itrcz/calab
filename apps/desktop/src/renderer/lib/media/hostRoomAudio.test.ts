@@ -165,6 +165,20 @@ describe('native room audio controls', () => {
     await vi.advanceTimersByTimeAsync(ROOM_CONTROL_GAP_MS + ROOM_CONTROL_RETRY_MS);
     expect(x.control.mock.calls.map((c) => c[1])).toEqual([muted, muted]);
   });
+  it('asks for levels again with an off-on edge, only while levels are wanted', async () => {
+    const x = fixture();
+    const run = x.session.start();
+    x.reply({ supported: true, media: state() });
+    await run;
+    x.session.refreshLevels();
+    expect(x.control).not.toHaveBeenCalled();
+    const levels = roomAudioControls({ ...base, levels: true });
+    x.session.control(levels);
+    await vi.advanceTimersByTimeAsync(ROOM_CONTROL_GAP_MS);
+    x.session.refreshLevels();
+    await vi.advanceTimersByTimeAsync(ROOM_CONTROL_GAP_MS);
+    expect(x.control.mock.calls.map((c) => (c[1] as { levels: boolean }).levels)).toEqual([true, false, true]);
+  });
   it('sends what changed while connecting once in the room', async () => {
     const x = fixture();
     const run = x.session.start();

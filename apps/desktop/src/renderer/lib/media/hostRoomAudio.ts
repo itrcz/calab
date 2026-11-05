@@ -22,6 +22,8 @@ export const ROOM_AUDIO_SETTLE_MS = 20_000;
 export const ROOM_CONTROL_GAP_MS = 150;
 /** A refused control (the rate limit) is sent again after this, if nothing newer went meanwhile. */
 export const ROOM_CONTROL_RETRY_MS = 500;
+/** Native turns meter levels off 30 s after they were turned on (CalabRoomAudio.swift): a shown meter asks again before that. */
+export const ROOM_LEVELS_REFRESH_MS = 25_000;
 /** The terminal phases: native reports them only once nothing holds audio any more (drained). */
 const TERMINAL: readonly string[] = ['ended', 'failed', 'lost'];
 /** Native could not, the web path may: only these let a join fall back (before capture, drained). */
@@ -137,7 +139,7 @@ export class HostRoomAudioSession {
       }
       this.started = true;
       this.settle = null;
-      if (JSON.stringify(this.latest) !== this.sent) this.flush();
+      this.schedule();
     } catch (e) {
       this.stop();
       throw e;
@@ -151,6 +153,32 @@ export class HostRoomAudioSession {
   control(controls: HostRoomAudioControls): void {
     if (this.closed) return;
     this.latest = controls;
+    this.schedule();
+  }
+
+  /**
+   * The latest controls again even when unchanged: native acts on receipt (a microphone held muted
+   * after a phone call is released by a control with `muted: true`, CalabRoomAudio.swift), not on a change.
+   */
+  resend(): void {
+    if (this.closed) return;
+    this.sent = '';
+    this.schedule();
+  }
+
+  /**
+   * Native turns levels off by itself 30 s after they were turned on, and only an off→on edge turns
+   * them on again (CalabRoomAudio.swift): levels off now, the latest (levels on) right after.
+   */
+  refreshLevels(): void {
+    if (this.closed || !this.started || !this.latest.levels) return;
+    if (this.flushTimer !== null) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    this.send({ ...this.latest, levels: false });
+    this.schedule();
+  }
+
+  private schedule(): void {
     if (!this.started || this.flushTimer !== null) return;
     const wait = this.lastSend + ROOM_CONTROL_GAP_MS - performance.now();
     if (wait > 0) this.flushTimer = setTimeout(() => this.flush(), wait);
@@ -159,13 +187,15 @@ export class HostRoomAudioSession {
 
   private flush(): void {
     this.flushTimer = null;
-    if (this.closed) return;
-    const body = JSON.stringify(this.latest);
-    if (body === this.sent) return;
-    const sent = this.latest;
+    if (this.closed || JSON.stringify(this.latest) === this.sent) return;
+    this.send(this.latest);
+  }
+
+  private send(controls: HostRoomAudioControls): void {
+    const body = JSON.stringify(controls);
     this.sent = body;
     this.lastSend = performance.now();
-    void this.capability.control(this.connectionId, sent).then((ok) => {
+    void this.capability.control(this.connectionId, controls).then((ok) => {
       if (ok || this.closed) return;
       // Refused: native may still hold an older state, so the next flush must not skip this one.
       if (this.sent === body) this.sent = '';

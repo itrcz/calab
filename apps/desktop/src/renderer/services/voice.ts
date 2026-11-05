@@ -1,6 +1,6 @@
 import { useCall } from '../stores/call';
 import { HostCallAudioSession } from '../lib/media/hostCallAudio';
-import { HostRoomAudioSession, HostRoomAudioUnavailable, roomAudioControls, roomLevelDb } from '../lib/media/hostRoomAudio';
+import { HostRoomAudioSession, HostRoomAudioUnavailable, ROOM_LEVELS_REFRESH_MS, roomAudioControls, roomLevelDb } from '../lib/media/hostRoomAudio';
 import { audioUUID, type HostAudioControls } from '../../shared/hostCallAudio';
 import type { HostRoomAudioCapability, HostRoomAudioControls, HostRoomAudioState } from '../../shared/hostRoomAudio';
 import { SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceDisconnected, type VoiceMoved, VoiceDisconnectReason } from '@calaba/protocol';
@@ -275,6 +275,8 @@ class VoiceEngine {
   private seatDeferred = false;
   /** Others' join / leave cues of a native-audio room, from the server's seats (no LiveKit Room here). */
   private nativeSeatsOff: (() => void) | null = null;
+  /** Re-asks native for meter levels while a meter is shown in a visible page (they stop by themselves after 30 s). */
+  private levelsTimer: number | null = null;
   private nativeCallEvent: string | undefined;
   private roomId: string | null = null;
   private joinSeq = 0;
@@ -1010,9 +1012,11 @@ class VoiceEngine {
       }
     }
     if (s.speaking !== v.transmitting) patch.transmitting = s.speaking;
-    if (s.level !== undefined && this.meterShown()) {
-      patch.levelDb = roomLevelDb(s.level);
-      patch.gateOpen = s.speaking;
+    if (this.meterShown()) {
+      // No level (muted: native measures nothing then) is silence on the meter, not the last reading.
+      const db = roomLevelDb(s.level ?? 0);
+      if (db !== v.levelDb) patch.levelDb = db;
+      if (s.speaking !== v.gateOpen) patch.gateOpen = s.speaking;
     }
     if (Object.keys(patch).length) setVoice(patch);
     if (s.canSpeak !== v.canSpeak) this.onSpeakPermission(s.canSpeak);
@@ -1118,6 +1122,17 @@ class VoiceEngine {
     const native = this.nativeAudio;
     if (native instanceof HostRoomAudioSession) native.control(this.roomControls());
     else native?.control(this.nativeControls());
+    this.syncLevelsRefresh();
+  }
+
+  /** The levels re-ask runs only while a meter shows them in a visible page of a native-audio join (no idle timer). */
+  private syncLevelsRefresh(): void {
+    const want = this.nativeRoom !== null && this.meterShown() && !document.hidden;
+    if (want && this.levelsTimer === null) this.levelsTimer = window.setInterval(() => this.nativeRoom?.refreshLevels(), ROOM_LEVELS_REFRESH_MS);
+    else if (!want && this.levelsTimer !== null) {
+      window.clearInterval(this.levelsTimer);
+      this.levelsTimer = null;
+    }
   }
 
   /**
@@ -1924,6 +1939,7 @@ class VoiceEngine {
     const nativeRoom = this.nativeRoom;
     this.nativeAudio?.stop(); this.nativeAudio = null;
     if (nativeRoom) {
+      this.syncLevelsRefresh();
       routeCues(null);
       this.nativeSeatsOff?.();
       this.nativeSeatsOff = null;
