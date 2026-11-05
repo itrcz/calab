@@ -65,5 +65,9 @@ describe('native room driver boundaries', () => {
     expect(source).toContain('ConnectOptions(autoSubscribe: false');
     expect(source).not.toMatch(/logger\.[a-z]+\([^\n]*(token|url|endpoint)/i);
     expect(source).not.toMatch(/URL\(string:[^\n]*\)!/);
+    // Diagnostics: every public line goes through note(), and none carries a URL, token or identity.
+    expect(source).not.toMatch(/note\([^\n]*(\.url|token|identity|endpoint|absoluteString|portName)/i);
+    expect(source.match(/privacy: \.public/g)).toHaveLength(1);
+    expect(read('CalabRoomAudioModule.swift')).not.toMatch(/calabRoomAudioLog[^\n]*(document|input\)|url|token)/);
   });
 });
