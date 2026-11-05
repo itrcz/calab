@@ -1,0 +1,801 @@
+import Foundation
+
+// ADR-0149 native room driver. Everything above `#if canImport(LiveKit)` is pure and runs in the swiftc
+// harness (tests/RoomAudioInputTests.swift, tests/ReconnectScheduleTests.swift); the SDK part stays thin.
+
+// §7: LiveKit Swift 2.17.0 reconnects a few quick attempts, the last one full (Room+Engine.swift:400-425,
+// AsyncRetry.swift:31-54). Its defaults (10 attempts, 0.3-7 s, 10 s timeouts) run far past VOICE_LOST_GRACE,
+// and a reconnect after it recreates a seat others saw end.
+enum CalabRoomReconnectSchedule {
+  static let attempts = 3
+  static let baseDelay = 1.0
+  static let maxDelay = 6.0
+  static let socketTimeout = 3.5
+  static let primaryTimeout = 4.0
+  static let publisherTimeout = 4.0
+  // Not a ConnectOptions knob: SignalClient.swift:97 waits for the join or reconnect response this long.
+  static let responseTimeout = 7.0
+  // computeReconnectDelay adds up to 10 % (TimeInterval.swift:89-92).
+  static let jitter = 0.1
+  // ADR-0150 seat grace on the server.
+  static let grace = 60.0
+  // The driver gives up here by itself, so an SDK step added later cannot outlive the seat either.
+  static let deadline = 45.0
+
+  struct Knobs {
+    let attempts: Int, baseDelay: Double, maxDelay: Double, socket: Double, primary: Double, publisher: Double
+  }
+  static let ours = Knobs(attempts: attempts, baseDelay: baseDelay, maxDelay: maxDelay, socket: socketTimeout,
+                          primary: primaryTimeout, publisher: publisherTimeout)
+  // ConnectOptions() and TimeInterval.swift:22-33 of 2.17.0.
+  static let sdkDefault = Knobs(attempts: 10, baseDelay: 0.3, maxDelay: 7, socket: 10, primary: 10, publisher: 10)
+
+  // TimeInterval.computeReconnectDelay without its jitter (TimeInterval.swift:64-93).
+  static func delay(_ attempt: Int, _ knobs: Knobs = ours) -> Double {
+    if attempt >= knobs.attempts - 1 { return knobs.maxDelay }
+    let x = Double(attempt) / Double(max(2, knobs.attempts) - 1) - 1
+    return knobs.baseDelay + (1 - x * x).squareRoot() * (max(knobs.maxDelay, knobs.baseDelay) - knobs.baseDelay)
+  }
+  // Task.retrying sleeps after each failed attempt but the last, with delays 0...attempts-2.
+  static func delays(_ knobs: Knobs = ours) -> Double { (0..<max(0, knobs.attempts - 1)).reduce(0) { $0 + delay($1, knobs) } }
+  // A quick attempt waits for the socket, the response, the subscriber and, once published, the publisher;
+  // the full one (always the last) reconnects from scratch and waits for the primary transport only.
+  static func worstCase(_ knobs: Knobs = ours) -> Double {
+    let quick = knobs.socket + responseTimeout + knobs.primary + knobs.publisher
+    let full = knobs.socket + responseTimeout + knobs.primary
+    return Double(max(0, knobs.attempts - 1)) * quick + full + delays(knobs) * (1 + jitter)
+  }
+}
+
+/** §6: after a phone call the microphone stays muted until the page has taken the mute over. */
+struct CalabRoomMuteHold {
+  private(set) var held = false
+  mutating func hold() { held = true }
+  // A late unmuted control from the page cannot reopen it; a muted one hands the mute back to the page.
+  mutating func acknowledge(webMuted: Bool) { if webMuted { held = false } }
+  mutating func reset() { held = false }
+}
+
+/** One room session per document: a later connect, a disconnect or a new document retires it. */
+struct CalabRoomAudioTicket {
+  private(set) var document: String?
+  private(set) var connection: String?
+  private(set) var revision = 0
+  func owns(document: String, connection: String) -> Bool { self.document == document && self.connection == connection }
+  func current(_ revision: Int, document: String?) -> Bool { revision == self.revision && document != nil && document == self.document }
+  @discardableResult mutating func begin(document: String, connection: String) -> Int {
+    revision += 1; self.document = document; self.connection = connection
+    return revision
+  }
+  // The connection id stays for the final snapshot; nothing it started may act any more.
+  mutating func end() { revision += 1 }
+  mutating func forget() { revision += 1; document = nil; connection = nil }
+}
+
+/** A frozen or hostile page cannot spin connect/disconnect or flood the audio thread with controls. */
+struct CalabRoomAudioRate {
+  static let capacity = 20.0
+  static let perSecond = 10.0
+  static let connectCost = 5.0
+  private var tokens = capacity
+  private var last: Double?
+  mutating func allow(now: Double, cost: Double = 1) -> Bool {
+    if let last { tokens = min(Self.capacity, tokens + max(0, now - last) * Self.perSecond) }
+    last = now
+    guard tokens >= cost else { return false }
+    tokens -= cost
+    return true
+  }
+}
+
+/** State reaches the page at most every 100 ms and only as the latest snapshot (ADR-0149 §2). */
+struct CalabRoomAudioPacer {
+  enum Pace: Equatable { case now, after(Double), pending }
+  static let interval = 0.1
+  private var last = -Double.infinity
+  private var scheduled = false
+  mutating func offer(now: Double) -> Pace {
+    if scheduled { return .pending }
+    let wait = last + Self.interval - now
+    if wait <= 0 { last = now; return .now }
+    scheduled = true
+    return .after(wait)
+  }
+  mutating func fired(now: Double) { scheduled = false; last = now }
+}
+
+/** §6: unmuted capture without frames for 3 s restarts the engine once, again only after frames return. */
+struct CalabCaptureWatchdog {
+  static let silence = 3.0
+  private var frames = 0
+  private var since: Double?
+  private var restarted = false
+  mutating func tick(now: Double, frames: Int, expecting: Bool) -> Bool {
+    defer { self.frames = frames }
+    guard expecting else { since = nil; return false }
+    if frames != self.frames { since = now; restarted = false; return false }
+    guard let since else { self.since = now; return false }
+    guard !restarted, now - since >= Self.silence else { return false }
+    restarted = true
+    return true
+  }
+}
+
+enum CalabRoomTrackSource: Equatable { case microphone, screenShareAudio, other }
+
+// `<user>:<session>` (server voice.Identity). The companion `<user>:<session>:web` and anything else is no user.
+func calabRoomUser(_ identity: String) -> String? {
+  let parts = identity.split(separator: ":", omittingEmptySubsequences: false)
+  guard parts.count == 2, calabRoomAudioUUID(String(parts[0])), calabRoomAudioUUID(String(parts[1])) else { return nil }
+  return parts[0].lowercased()
+}
+
+// The web's own video connection (ADR-0149 §3): never a voice, never subscribed here.
+func calabRoomCompanion(_ identity: String) -> Bool { identity.hasSuffix(":web") }
+
+// The volume to subscribe at, or nil to stay unsubscribed. Web sends final per-user and stream volumes.
+func calabRoomTrackVolume(identity: String, source: CalabRoomTrackSource, controls: CalabRoomAudioControls) -> Double? {
+  guard !calabRoomCompanion(identity), !controls.deafened else { return nil }
+  let user = calabRoomUser(identity)
+  switch source {
+  case .microphone: return min(1, max(0, user.flatMap { controls.userVolumes[$0] ?? controls.userVolumes[$0.uppercased()] } ?? controls.volume))
+  case .screenShareAudio: return user.flatMap { id in controls.watched.first { $0.key.lowercased() == id }?.value }.map { min(1, max(0, $0)) }
+  case .other: return nil
+  }
+}
+
+// The system wins (interruption, phone call hold), then the server's grant, then the page's own mute.
+func calabRoomMuteOrigin(webMuted: Bool, deafened: Bool, canSpeak: Bool, system: Bool) -> CalabRoomAudioState.MuteOrigin? {
+  if system { return .system }
+  if !canSpeak { return .server }
+  return webMuted || deafened ? .web : nil
+}
+
+// LiveKit's active speakers as user ids: once each, without my own device, at most 64.
+func calabRoomSpeakers(_ identities: [String], local: String?) -> [String] {
+  var seen = Set<String>(), speakers: [String] = []
+  for identity in identities where identity != local {
+    guard let user = calabRoomUser(identity), seen.insert(user).inserted else { continue }
+    speakers.append(user)
+    if speakers.count == 64 { break }
+  }
+  return speakers
+}
+
+private let calabRoomHostname = try! NSRegularExpression(pattern: "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+(?=[a-z0-9-]*[a-z])[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+// CalabRoomAudioHosts from Info.plist (plugins/withCallAudio.js, CALAB_IOS_RTC_HOSTS). Malformed entries drop out.
+func calabRoomAudioHosts(_ value: Any?) -> Set<String> {
+  guard let names = value as? [Any] else { return [] }
+  return Set(names.compactMap { name in
+    guard let name = name as? String else { return nil }
+    let range = NSRange(name.startIndex..., in: name)
+    return calabRoomHostname.firstMatch(in: name, options: [], range: range)?.range == range ? name : nil
+  })
+}
+
+// The parser already shaped the URL; this pins its host to the build's list. An empty list admits nothing.
+func calabRoomAudioEndpoint(_ url: String, hosts: Set<String>) -> URL? {
+  guard let parts = URLComponents(string: url), parts.scheme == "wss", let host = parts.host?.lowercased(), hosts.contains(host),
+        parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil else { return nil }
+  return parts.url
+}
+
+// Generated by plugins/withCallAudio.js into the pod's resources: `builtin:quack` is calab-room-builtin-quack.
+func calabRoomAudioCueResource(_ name: String) -> String? {
+  calabRoomAudioCues.contains(name) ? "calab-room-" + name.replacingOccurrences(of: ":", with: "-") : nil
+}
+
+#if os(iOS)
+import AVFAudio
+
+extension CalabRoomAudioState.Route {
+  init(_ route: AVAudioSessionRouteDescription) {
+    switch route.outputs.first?.portType {
+    case .builtInSpeaker?: self = .speaker
+    case .builtInReceiver?: self = .receiver
+    case .headphones?, .usbAudio?, .lineOut?: self = .wired
+    case .bluetoothA2DP?, .bluetoothHFP?, .bluetoothLE?: self = .bluetooth
+    default: self = .other
+    }
+  }
+}
+#endif
+
+#if canImport(LiveKitClient)
+import LiveKitClient
+#elseif canImport(LiveKit)
+import LiveKit
+#endif
+#if canImport(LiveKitClient) || canImport(LiveKit)
+import CallKit
+import OSLog
+import UIKit
+import os
+
+/** The gate, own ring, meter and watchdog counter in the capture post-processing delegate (ADR-0149 §5). */
+final class CalabRoomCaptureProcessor: NSObject, AudioCustomProcessingDelegate, @unchecked Sendable {
+  private let lock: UnsafeMutablePointer<os_unfair_lock>
+  private var gate = CalabVoiceGate()
+  private var sampleRate = 48000.0
+  private var frames = 0
+  private var db = CalabVoiceGate.floorDb
+  override init() {
+    lock = .allocate(capacity: 1)
+    lock.initialize(to: os_unfair_lock())
+    super.init()
+  }
+  deinit { lock.deinitialize(count: 1); lock.deallocate() }
+  func configure(_ value: CalabRoomAudioGate) {
+    let mode: CalabVoiceGate.Mode = value.mode == .ptt ? .ptt : value.mode == .open ? .open : .voice
+    os_unfair_lock_lock(lock); gate.configure(mode: mode, thresholdDb: value.thresholdDb, pttOpen: value.pttOpen); os_unfair_lock_unlock(lock)
+  }
+  func reset() { os_unfair_lock_lock(lock); gate.reset(); db = CalabVoiceGate.floorDb; os_unfair_lock_unlock(lock) }
+  func read() -> (frames: Int, speaking: Bool, level: Int) {
+    os_unfair_lock_lock(lock); defer { os_unfair_lock_unlock(lock) }
+    return (frames, gate.speaking, CalabVoiceGate.level(db: db))
+  }
+  func audioProcessingInitialize(sampleRate sampleRateHz: Int, channels: Int) {
+    os_unfair_lock_lock(lock); sampleRate = Double(max(8000, sampleRateHz)); os_unfair_lock_unlock(lock)
+  }
+  // Called only while the published track is unmuted: a muted sender marks the APM output unused, and
+  // the post-processor runs inside `capture_output_used` (WebRTC audio_processing_impl.cc:1395-1429).
+  func audioProcessingProcess(audioBuffer: LKAudioBuffer) {
+    let count = audioBuffer.frames, channels = audioBuffer.channels
+    guard count > 0, channels > 0 else { return }
+    let db = CalabVoiceGate.db(rms: CalabVoiceGate.rms(audioBuffer.rawBuffer(forChannel: 0), count: count))
+    os_unfair_lock_lock(lock)
+    let passes = gate.push(db: db, frameMs: Double(count) * 1000 / sampleRate)
+    frames &+= count; self.db = db
+    os_unfair_lock_unlock(lock)
+    if !passes { for channel in 0..<channels { CalabVoiceGate.silence(audioBuffer.rawBuffer(forChannel: channel), count: count) } }
+  }
+  func audioProcessingRelease() {}
+}
+
+enum CalabRoomAudioRefusal: Error { case rate, host, connection }
+
+extension CalabRoomReconnectSchedule {
+  static func options(relayOnly: Bool) -> ConnectOptions {
+    ConnectOptions(autoSubscribe: false, reconnectAttempts: attempts, reconnectAttemptDelay: baseDelay, reconnectMaxDelay: maxDelay,
+                   socketConnectTimeoutInterval: socketTimeout, primaryTransportConnectTimeout: primaryTimeout,
+                   publisherTransportConnectTimeout: publisherTimeout, iceTransportPolicy: relayOnly ? .relay : .all)
+  }
+}
+
+/** The room's audio transport. The shared web keeps REST, seats, UI and video (ADR-0149 §1). */
+@MainActor
+final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
+  static let shared = CalabRoomAudio()
+  // The flag of this build, a host list and iOS 17 for the ducking controls (ADR-0149 §6).
+  nonisolated static var enabled: Bool {
+    guard #available(iOS 17, *), Bundle.main.object(forInfoDictionaryKey: "CalabRoomAudioEnabled") as? Bool == true else { return false }
+    return !calabRoomAudioHosts(Bundle.main.object(forInfoDictionaryKey: "CalabRoomAudioHosts")).isEmpty
+  }
+  var emit: ((String, CalabRoomAudioState) -> Void)?
+  private let logger = Logger(subsystem: "Calab", category: "room-audio")
+  private let hosts = calabRoomAudioHosts(Bundle.main.object(forInfoDictionaryKey: "CalabRoomAudioHosts"))
+  private let session = AVAudioSession.sharedInstance()
+  private let calls = CXCallObserver()
+  private let processor = CalabRoomCaptureProcessor()
+  private let engine = CalabLiveKitAudioEngine()
+  private lazy var owner = CalabAudioOwner(engine: engine)
+  private weak var view: AnyObject?
+  private var granted: String?
+  private var ticket = CalabRoomAudioTicket()
+  private var machine = CalabAudioSessionMachine()
+  private var rate = CalabRoomAudioRate()
+  private var pacer = CalabRoomAudioPacer()
+  private var watchdog = CalabCaptureWatchdog()
+  private var lease: CalabAudioLease?
+  private var room: Room?
+  private var red = true
+  private var controls: CalabRoomAudioControls?
+  private var state: CalabRoomAudioState?
+  private var sent: CalabRoomAudioState?
+  private var link = CalabRoomAudioState.Phase.connecting
+  private var canSpeak = false
+  private var hold = CalabRoomMuteHold()
+  private var foreground = true
+  private var route = CalabRoomAudioState.Route.other
+  private var phoneCall = false
+  private var levelsUntil: Date?
+  private var mic: LocalAudioTrack?
+  private var publication: LocalTrackPublication?
+  private var publishedBitrate: Int?
+  private var wanted: [Track.Sid: Bool] = [:]
+  private var players: [AVAudioPlayer] = []
+  private var observers: [NSObjectProtocol] = []
+  private var connectTask: Task<Void, Never>?
+  private var publishTask: Task<Void, Error>?
+  private var controlTask: Task<Void, Never>?
+  private var drainTask: Task<Void, Never>?
+  private var deadline: Task<Void, Never>?
+  private var ticker: Task<Void, Never>?
+  private var paced: Task<Void, Never>?
+
+  private override init() {
+    super.init()
+    engine.captureProcessing = processor
+  }
+
+  private var now: Double { ProcessInfo.processInfo.systemUptime }
+  private func current(_ revision: Int, _ expected: Room? = nil) -> Bool {
+    ticket.current(revision, document: granted) && (expected == nil || room === expected)
+  }
+  private var effectiveMute: Bool { calabRoomMuteOrigin(webMuted: controls?.muted ?? true, deafened: controls?.deafened ?? false, canSpeak: canSpeak, system: hold.held || machine.state == .interrupted || machine.state == .call) != nil }
+
+  func install() {
+    guard observers.isEmpty else { return }
+    LiveKitSDK.disableLogging()
+    calls.setDelegate(self, queue: .main)
+    phoneCall = calls.calls.contains { !$0.hasEnded }
+    owner.roomYield = { [weak self] in self?.send(.yieldToCall) }
+    owner.roomResume = { [weak self] in guard let self else { return }; self.send(.resumeFromCall(foreground: self.foreground)) }
+    owner.roomFailed = { [weak self] in self?.send(.audioFailed) }
+    observe(NSNotification.Name("CalabHostDocumentGranted")) { audio, notice in
+      audio.view = notice.object as AnyObject?; audio.granted = notice.userInfo?["document"] as? String
+    }
+    // A reload or logout ends the room with the document that owned it.
+    for name in ["CalabHostDocumentInvalidated", "CalabHostSessionCleared"] {
+      observe(NSNotification.Name(name)) { audio, notice in
+        guard let view = notice.object as AnyObject?, audio.view === view else { return }
+        audio.stop(.ended); audio.ticket.forget(); audio.view = nil; audio.granted = nil; audio.state = nil; audio.sent = nil
+      }
+    }
+    observe(AVAudioSession.interruptionNotification) { audio, notice in
+      if let event = notice.calabInterruption(phoneCall: audio.phoneCall) { audio.send(event) }
+    }
+    observe(AVAudioSession.routeChangeNotification) { audio, notice in
+      audio.send(.routeChanged(notice.calabRouteChange, seen: audio.session.calabSeen))
+    }
+    observe(AVAudioSession.mediaServicesWereResetNotification) { audio, _ in audio.send(.mediaServicesReset) }
+    observe(UIApplication.willEnterForegroundNotification) { audio, _ in
+      audio.foreground = true
+      audio.send(.foreground(seen: audio.session.calabSeen, engineRunning: AudioManager.shared.isEngineRunning, phoneCall: audio.phoneCall))
+      audio.changed()
+    }
+    observe(UIApplication.didEnterBackgroundNotification) { audio, _ in audio.foreground = false }
+  }
+
+  private func observe(_ name: Notification.Name, _ handle: @escaping @MainActor (CalabRoomAudio, Notification) -> Void) {
+    observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notice in
+      MainActor.assumeIsolated { if let self { handle(self, notice) } }
+    })
+  }
+
+  func currentDocument(_ document: String) -> Bool { view != nil && granted == document }
+
+  func snapshot(for document: String) -> CalabRoomAudioState? {
+    guard currentDocument(document), ticket.document == document else { return nil }
+    return state
+  }
+
+  // MARK: Operations
+
+  func operation(_ document: String, _ operation: CalabRoomAudioOperation) async throws {
+    guard currentDocument(document) else { return }
+    if case .status = operation { return }
+    var cost = 1.0
+    if case .connect = operation { cost = CalabRoomAudioRate.connectCost }
+    guard rate.allow(now: now, cost: cost) else { throw CalabRoomAudioRefusal.rate }
+    switch operation {
+    case .status: return
+    case let .connect(request): try await connect(document, request)
+    case let .control(connection, value): control(document, connection, value)
+    case let .cue(connection, name, volume): cue(document, connection, name, volume)
+    case let .disconnect(connection):
+      guard ticket.owns(document: document, connection: connection) else { return }
+      stop(.ended)
+    }
+  }
+
+  private func connect(_ document: String, _ request: CalabRoomAudioConnect) async throws {
+    // Never a force-unwrapped URL: a host outside this build's list fails the operation and holds nothing.
+    guard let endpoint = calabRoomAudioEndpoint(request.url, hosts: hosts) else { throw CalabRoomAudioRefusal.host }
+    if ticket.owns(document: document, connection: request.connectionId), state?.phase != .ended, state?.phase != .failed, state?.phase != .lost { return }
+    stop(.ended)
+    let previous = drainTask
+    let rev = ticket.begin(document: document, connection: request.connectionId)
+    var fresh = CalabRoomAudioState(connectionId: request.connectionId)
+    fresh.canSpeak = request.canSpeak
+    state = fresh; link = .connecting; canSpeak = request.canSpeak; hold.reset(); red = request.red
+    controls = request.controls; wanted = [:]; levelsUntil = request.controls.levels ? Date().addingTimeInterval(30) : nil
+    processor.configure(request.controls.gate); processor.reset()
+    refresh()
+    deadline = Task { @MainActor in
+      do { try await Task.sleep(for: .seconds(15)) } catch { return }
+      if self.current(rev), self.link == .connecting { self.stop(.failed, .connection) }
+    }
+    let token = request.token, relayOnly = request.relayOnly, bitrate = request.controls.bitrate
+    let task = Task { @MainActor in
+      // Never take the engine while the previous room still unwinds.
+      await previous?.value
+      guard self.current(rev), !Task.isCancelled else { return }
+      await self.run(rev, endpoint: endpoint, token: token, relayOnly: relayOnly, bitrate: bitrate)
+    }
+    connectTask = task
+    await task.value
+    if ticket.revision == rev { connectTask = nil }
+  }
+
+  private func run(_ rev: Int, endpoint: URL, token: String, relayOnly: Bool, bitrate: Int) async {
+    // A permission prompt cannot appear on the lock screen; a denial is final (gate G14).
+    if canSpeak && session.recordPermission != .granted {
+      guard session.recordPermission == .undetermined, UIApplication.shared.applicationState == .active else { stop(.failed, .permission); return }
+      let granted = await withCheckedContinuation { continuation in session.requestRecordPermission { continuation.resume(returning: $0) } }
+      guard current(rev) else { return }
+      guard granted else { stop(.failed, .permission); return }
+    }
+    do { lease = try owner.acquire(.room) } catch { stop(.failed, .audio); return }
+    route = CalabRoomAudioState.Route(session.currentRoute)
+    send(.join(canSpeak: canSpeak, callHolds: lease.map { !owner.holds($0) } ?? false))
+    guard current(rev), state?.phase != .failed else { return }
+    let expected = Room(delegate: self, roomOptions: RoomOptions(
+      defaultAudioCaptureOptions: Self.capture, defaultAudioPublishOptions: publishOptions(bitrate),
+      adaptiveStream: false, dynacast: false, stopLocalTrackOnUnpublish: true, suspendLocalVideoTracksInBackground: true))
+    room = expected
+    do {
+      try await expected.connect(url: endpoint.absoluteString, token: token, connectOptions: CalabRoomReconnectSchedule.options(relayOnly: relayOnly))
+      guard current(rev, expected) else { await expected.disconnect(); return }
+      canSpeak = canSpeak && Self.microphoneAllowed(expected.localParticipant.permissions)
+      if !canSpeak { send(.grant(canSpeak: false, foreground: foreground)) }
+      link = .connected
+      deadline?.cancel(); deadline = nil
+      applyOutput()
+      if machine.state == .speaking { try await publishMicrophone(expected, rev) }
+      guard current(rev, expected) else { return }
+      applyControls(); startTicker(rev)
+    } catch {
+      if current(rev, expected) { stop(.failed, .connection) } else { await expected.disconnect() }
+    }
+  }
+
+  private static let capture = AudioCaptureOptions(echoCancellation: true, autoGainControl: true, noiseSuppression: true)
+  private func publishOptions(_ bitrate: Int) -> AudioPublishOptions {
+    AudioPublishOptions(encoding: AudioEncoding(maxBitrate: bitrate), dtx: true, red: red)
+  }
+  private static func microphoneAllowed(_ permissions: ParticipantPermissions) -> Bool {
+    permissions.canPublish && (permissions.canPublishSources.isEmpty || permissions.canPublishSources.contains(Track.Source.microphone.rawValue))
+  }
+
+  private func publishMicrophone(_ expected: Room, _ rev: Int) async throws {
+    if let publishTask { return try await publishTask.value }
+    guard publication == nil, machine.state == .speaking else { return }
+    // A later grant never prompts from the background.
+    guard session.recordPermission == .granted else { stop(.failed, .permission); throw CancellationError() }
+    let bitrate = controls?.bitrate ?? 32000
+    let task = Task { @MainActor in
+      let track = await LocalAudioTrack.createTrack(options: Self.capture)
+      guard self.current(rev, expected) else { try? await track.stop(); return }
+      self.mic = track
+      // Muted before the first packet, not after it.
+      if self.effectiveMute { try await track.mute() }
+      let published = try await expected.localParticipant.publish(audioTrack: track, options: self.publishOptions(bitrate))
+      guard self.current(rev, expected) else { try? await track.stop(); return }
+      self.publication = published; self.publishedBitrate = bitrate
+      self.refresh()
+    }
+    publishTask = task
+    defer { if ticket.revision == rev { publishTask = nil } }
+    try await task.value
+  }
+
+  private func unpublishMicrophone() {
+    guard let room, let publication else { mic = nil; return }
+    let track = mic
+    self.publication = nil; mic = nil; publishedBitrate = nil
+    Task { @MainActor in
+      try? await room.localParticipant.unpublish(publication: publication)
+      try? await track?.stop()
+    }
+    refresh()
+  }
+
+  private func control(_ document: String, _ connection: String, _ value: CalabRoomAudioControls) {
+    guard ticket.owns(document: document, connection: connection), state != nil else { return }
+    // The page saw the system mute and took it over: from now its controls own the microphone again.
+    hold.acknowledge(webMuted: value.muted)
+    // Levels run 30 s per request: a page that froze with its meter open stops them by itself.
+    if !value.levels { levelsUntil = nil } else if controls?.levels != true { levelsUntil = Date().addingTimeInterval(30) }
+    controls = value
+    processor.configure(value.gate)
+    applyControls()
+  }
+
+  private func applyControls() {
+    applyOutput()
+    // The engine mute (inputMixer) is instant and silent; the track mute tells the server (ADR-0149 §4).
+    if lease.map(owner.holds) == true { AudioManager.shared.isMicrophoneMuted = effectiveMute }
+    if let room, let bitrate = controls?.bitrate, publication != nil, publishedBitrate != bitrate, publishTask == nil {
+      // No live bitrate in 2.17.0: a new voice tier republishes the microphone once.
+      let rev = ticket.revision
+      unpublishMicrophone()
+      Task { @MainActor in try? await self.publishMicrophone(room, rev); if self.current(rev, room) { self.applyControls() } }
+    }
+    refresh()
+    guard controlTask == nil, let mic, let expected = room else { return }
+    let rev = ticket.revision
+    controlTask = Task { @MainActor in
+      defer { if self.ticket.revision == rev { self.controlTask = nil } }
+      do {
+        while self.current(rev, expected) && mic.isMuted != self.effectiveMute {
+          if self.effectiveMute { try await mic.mute() } else { try await mic.unmute() }
+        }
+        self.refresh()
+      } catch { if self.current(rev, expected) { self.stop(.failed, .audio) } }
+    }
+  }
+
+  // Subscribes microphones and watched screen-share audio, nothing else, never the web companion.
+  private func applyOutput() {
+    guard let room, let controls else { return }
+    let rev = ticket.revision
+    for participant in room.remoteParticipants.values {
+      guard let identity = participant.identity?.stringValue else { continue }
+      for case let publication as RemoteTrackPublication in participant.trackPublications.values where publication.kind == .audio {
+        let source: CalabRoomTrackSource = publication.source == .microphone ? .microphone : publication.source == .screenShareAudio ? .screenShareAudio : .other
+        let volume = calabRoomTrackVolume(identity: identity, source: source, controls: controls)
+        if let track = publication.track as? RemoteAudioTrack, let volume { track.volume = volume }
+        let subscribe = volume != nil
+        guard wanted[publication.sid] != subscribe else { continue }
+        wanted[publication.sid] = subscribe
+        Task { @MainActor in
+          guard self.current(rev, room) else { return }
+          try? await publication.set(subscribed: subscribe)
+        }
+      }
+    }
+  }
+
+  private func cue(_ document: String, _ connection: String, _ name: String, _ volume: Double) {
+    guard ticket.owns(document: document, connection: connection), lease != nil,
+          machine.state == .speaking || machine.state == .listening,
+          let resource = calabRoomAudioCueResource(name),
+          let url = Bundle.main.url(forResource: resource, withExtension: "mp3") ?? Bundle.main.url(forResource: resource, withExtension: "m4a"),
+          let player = try? AVAudioPlayer(contentsOf: url) else { return }
+    players.removeAll { !$0.isPlaying }
+    if players.count >= 4 { players.removeFirst().stop() }
+    player.volume = Float(min(1, max(0, volume)))
+    if player.play() { players.append(player) }
+  }
+
+  // MARK: Session policy
+
+  private func send(_ event: CalabAudioEvent) {
+    let actions = machine.handle(event)
+    for action in actions {
+      do { try perform(action) }
+      catch {
+        logger.error("room audio action refused: \(String(describing: action), privacy: .public)")
+        if event != .activationFailed { send(.activationFailed) }
+        break
+      }
+    }
+    applyControls()
+  }
+
+  private func perform(_ action: CalabAudioAction) throws {
+    switch action {
+    case let .configure(config): try session.calabApply(config)
+    case .activate: try session.setActive(true)
+    // Headset controls go back to the music app only once the session is gone with a notice.
+    case .deactivate: try session.setActive(false, options: .notifyOthersOnDeactivation)
+    case let .engine(on): if let lease { try owner.setEngine(on, lease: lease) }
+    // Capture starts now, in foreground; the track publishes once the room is connected.
+    case .startCapture: try AudioManager.shared.startLocalRecording()
+    case .stopCapture:
+      unpublishMicrophone()
+      try AudioManager.shared.stopLocalRecording()
+    case .republish:
+      try AudioManager.shared.stopLocalRecording()
+      try AudioManager.shared.startLocalRecording()
+      unpublishMicrophone()
+      if let room, link == .connected { let rev = ticket.revision; Task { @MainActor in try? await self.publishMicrophone(room, rev); self.applyControls() } }
+    case .muteTrack:
+      AudioManager.shared.isMicrophoneMuted = true
+      if let mic { Task { try? await mic.mute() } }
+    case .holdMicrophoneMuted: hold.hold()
+    case .restoreMicrophone:
+      if let room, publication == nil, link == .connected, machine.state == .speaking {
+        let rev = ticket.revision; Task { @MainActor in try? await self.publishMicrophone(room, rev); self.applyControls() }
+      }
+    case .refreshRoute: route = CalabRoomAudioState.Route(session.currentRoute)
+    case .fail: stop(.failed, .audio)
+    }
+  }
+
+  // MARK: Teardown
+
+  /** Quiet now, drained later: the terminal phase reaches the page only once nothing holds audio. */
+  private func stop(_ phase: CalabRoomAudioState.Phase, _ error: CalabRoomAudioState.Failure? = nil) {
+    guard state != nil, lease != nil || room != nil || connectTask != nil || state?.phase != phase else { return }
+    ticket.end()
+    let rev = ticket.revision
+    for task in [deadline, ticker, paced] { task?.cancel() }
+    deadline = nil; ticker = nil
+    let oldControl = controlTask, oldConnect = connectTask, oldPublish = publishTask
+    oldControl?.cancel(); oldConnect?.cancel(); oldPublish?.cancel()
+    controlTask = nil; connectTask = nil; publishTask = nil
+    let previous = drainTask, old = room, oldMic = mic, oldPublication = publication
+    room = nil; mic = nil; publication = nil; publishedBitrate = nil; wanted = [:]; levelsUntil = nil
+    for player in players { player.stop() }
+    players = []
+    // Synchronous boundary: microphone and engine off, session released, before any SDK await.
+    AudioManager.shared.isMicrophoneMuted = true
+    var released = true
+    for action in machine.handle(.leave) {
+      do { try perform(action) } catch { if action == .deactivate { released = false } }
+    }
+    if let lease { owner.release(lease) }
+    lease = nil
+    hold.reset(); processor.reset()
+    drainTask = Task { @MainActor in
+      await previous?.value
+      await oldControl?.value
+      await oldConnect?.value
+      _ = try? await oldPublish?.value
+      if let old, let oldPublication { try? await old.localParticipant.unpublish(publication: oldPublication) }
+      try? await oldMic?.stop()
+      await old?.disconnect()
+      guard self.ticket.revision == rev else { return }
+      if !released { try? self.session.setActive(false, options: .notifyOthersOnDeactivation) }
+      self.state?.phase = phase; self.state?.error = error
+      self.refresh()
+    }
+  }
+
+  // MARK: State
+
+  private func startTicker(_ rev: Int) {
+    ticker?.cancel()
+    ticker = Task { @MainActor in
+      while !Task.isCancelled && self.current(rev) {
+        self.tick()
+        // The watchdog needs only seconds; the ring and meter need 100 ms, and only for a visible page.
+        do { try await Task.sleep(for: .milliseconds(self.foreground ? 100 : 1000)) } catch { return }
+      }
+    }
+  }
+
+  private func tick() {
+    let read = processor.read()
+    let expecting = machine.state == .speaking && publication != nil && !effectiveMute && link == .connected && AudioManager.shared.isEngineRunning
+    if watchdog.tick(now: now, frames: read.frames, expecting: expecting), let lease {
+      logger.error("room capture silent, engine restarted")
+      do { try owner.setEngine(false, lease: lease); try owner.setEngine(true, lease: lease) } catch { send(.audioFailed) }
+    }
+    if let until = levelsUntil, until < Date() { levelsUntil = nil }
+    state?.speaking = expecting && read.speaking
+    state?.level = levelsUntil != nil && foreground && !effectiveMute ? read.level : nil
+    refresh()
+  }
+
+  private func refresh() {
+    guard var next = state else { return }
+    if next.phase != .ended && next.phase != .failed && next.phase != .lost {
+      next.phase = machine.state == .interrupted || machine.state == .call ? .interrupted : link
+    }
+    next.canSpeak = canSpeak
+    next.microphoneReady = publication != nil
+    next.muteOrigin = calabRoomMuteOrigin(webMuted: controls?.muted ?? true, deafened: controls?.deafened ?? false, canSpeak: canSpeak,
+                                          system: hold.held || machine.state == .interrupted || machine.state == .call)
+    if next.muteOrigin != nil { next.speaking = false; next.level = nil }
+    next.route = route
+    next.phoneCall = phoneCall
+    state = next
+    changed()
+  }
+
+  private func changed() {
+    guard let state, let document = ticket.document, currentDocument(document), state != sent else { return }
+    // A frozen page gets nothing it would have to replay: in background only phase and mute changes go out.
+    if !foreground, var quiet = sent { quiet.speaking = state.speaking; quiet.speakers = state.speakers; quiet.level = state.level; if quiet == state { return } }
+    switch pacer.offer(now: now) {
+    case .now: sent = state; emit?(document, state)
+    case let .after(wait):
+      paced = Task { @MainActor in
+        do { try await Task.sleep(for: .milliseconds(Int(wait * 1000) + 1)) } catch { self.pacer.fired(now: self.now); return }
+        self.pacer.fired(now: self.now)
+        self.changed()
+      }
+    case .pending: return
+    }
+  }
+
+  // MARK: Delegates
+
+  nonisolated func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+    MainActor.assumeIsolated {
+      phoneCall = calls.calls.contains { !$0.hasEnded }
+      if !call.hasEnded { send(.phoneCallStarted) } else { refresh() }
+    }
+  }
+
+  // A quick reconnect never leaves `.connected`, so the start and completion callbacks drive the phase.
+  nonisolated func room(_ room: Room, didStartReconnectWithMode reconnectMode: ReconnectMode) {
+    Task { @MainActor in self.reconnecting(room) }
+  }
+
+  nonisolated func room(_ room: Room, didCompleteReconnectWithMode reconnectMode: ReconnectMode) {
+    Task { @MainActor in self.reconnected(room) }
+  }
+
+  nonisolated func room(_ room: Room, didUpdateConnectionState connectionState: ConnectionState, from oldConnectionState: ConnectionState) {
+    Task { @MainActor in
+      if connectionState == .reconnecting { self.reconnecting(room) }
+      if connectionState == .connected && oldConnectionState == .reconnecting { self.reconnected(room) }
+    }
+  }
+
+  private func reconnecting(_ room: Room) {
+    guard self.room === room, link == .connected else { return }
+    link = .reconnecting; refresh()
+    let rev = ticket.revision
+    deadline?.cancel()
+    deadline = Task { @MainActor in
+      do { try await Task.sleep(for: .seconds(CalabRoomReconnectSchedule.deadline)) } catch { return }
+      if self.current(rev, room), self.link == .reconnecting { self.stop(.lost, .network) }
+    }
+  }
+
+  // A full reconnect brings new publications: the subscriptions are planned again.
+  private func reconnected(_ room: Room) {
+    guard self.room === room, link == .reconnecting else { return }
+    deadline?.cancel(); deadline = nil
+    link = .connected; wanted = [:]
+    applyControls()
+  }
+
+  nonisolated func room(_ room: Room, didDisconnectWithError error: LiveKitError?) {
+    Task { @MainActor in
+      guard self.room === room else { return }
+      // Removal, takeover by another device and a deleted room end it here, even with the page frozen.
+      switch error?.type {
+      case .participantRemoved?: self.stop(.ended, .removed)
+      case .duplicateIdentity?: self.stop(.ended, .duplicate)
+      case .roomDeleted?: self.stop(.ended, .closed)
+      case nil where self.link == .connected: self.stop(.ended)
+      default: self.stop(.lost, .network)
+      }
+    }
+  }
+
+  nonisolated func room(_ room: Room, didMoveToRoomNamed roomName: String) {
+    Task { @MainActor in guard self.room === room else { return }; self.wanted = [:]; self.applyOutput(); self.refresh() }
+  }
+
+  nonisolated func room(_ room: Room, participant: RemoteParticipant, didPublishTrack publication: RemoteTrackPublication) {
+    Task { @MainActor in guard self.room === room else { return }; self.applyOutput() }
+  }
+
+  nonisolated func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
+    Task { @MainActor in guard self.room === room else { return }; self.applyOutput() }
+  }
+
+  nonisolated func room(_ room: Room, participant: RemoteParticipant, didUnpublishTrack publication: RemoteTrackPublication) {
+    Task { @MainActor in guard self.room === room else { return }; self.wanted[publication.sid] = nil }
+  }
+
+  nonisolated func room(_ room: Room, participant: Participant, didUpdatePermissions permissions: ParticipantPermissions) {
+    Task { @MainActor in
+      guard self.room === room, participant === room.localParticipant else { return }
+      let allowed = Self.microphoneAllowed(permissions)
+      guard allowed != self.canSpeak else { return }
+      self.canSpeak = allowed
+      // A new grant captures on the next foreground at the latest (ADR-0149 §4).
+      self.send(.grant(canSpeak: allowed, foreground: self.foreground && UIApplication.shared.applicationState == .active))
+    }
+  }
+
+  nonisolated func room(_ room: Room, didUpdateSpeakingParticipants participants: [Participant]) {
+    let identities = participants.compactMap { $0.identity?.stringValue }
+    Task { @MainActor in
+      guard self.room === room else { return }
+      let speakers = calabRoomSpeakers(identities, local: room.localParticipant.identity?.stringValue)
+      guard self.state?.speakers != speakers else { return }
+      self.state?.speakers = speakers; self.refresh()
+    }
+  }
+}
+#endif
