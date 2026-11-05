@@ -371,6 +371,8 @@ canPublishSources   = [ SPEAK ? 'microphone' : null, STREAM ? 'screen_share','sc
 roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/remove через API — но делаем через наш сервер, не даём клиенту)
 ```
 
+Компаньон устройства (ADR-0149 §3, identity `<user_id>:<session_id>:web`, `POST /rooms/:id/voice/companion`): `canSubscribe = canPublishData = VIEW_ROOM & CONNECT`, `canPublish = false`, источников нет, не `hidden`. Resync обновляет его grant вместе с устройством; без `VIEW_ROOM & CONNECT` или без места устройства в комнате он удаляется.
+
 Лимит «3 стрима в комнате» — проверяется сервером перед выдачей права STREAM в токене **и** контролируется через webhook `track_published` (если четвёртый прорвался — `mutePublishedTrack`/`removeParticipant` через server SDK). Токен на вход короткий (10 мин), при изменении прав сервер обновляет grant через `UpdateParticipant` в LiveKit API.
 
 ## Медиа-настройки комнаты
