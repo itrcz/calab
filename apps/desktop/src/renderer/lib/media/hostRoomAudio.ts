@@ -110,9 +110,11 @@ export class HostRoomAudioSession {
     this.settle = (s) => {
       if (ready(s) || terminal(s)) resolve(s);
     };
-    const timer = setTimeout(() => resolve(null), ROOM_AUDIO_SETTLE_MS);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      // The bridge bounds the reply itself; the settle wait starts after it (a microphone prompt can take a while).
       const reply = await this.capability.connect(input).catch((): HostRoomAudioStatus => ({ supported: true, failed: true }));
+      timer = setTimeout(() => resolve(null), ROOM_AUDIO_SETTLE_MS);
       if (this.stopped()) throw new HostRoomAudioUnavailable('superseded', false);
       // No module behind the capability: nothing was started, nothing is held.
       if (!reply.supported) throw new HostRoomAudioUnavailable('connection', true);
