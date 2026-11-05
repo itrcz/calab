@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WebOriginError, parseWebOrigin, parseLinkHosts, parseReleaseIdentity } from './config';
+import { WebOriginError, parseWebOrigin, parseLinkHosts, parseRtcHosts, parseReleaseIdentity } from './config';
 
 describe('parseWebOrigin', () => {
   it('accepts a bare https origin, with or without the trailing slash or a port', () => {
@@ -88,4 +88,16 @@ describe('parseReleaseIdentity', () => {
   it.each(['0', '-1', '01', '1.2', '1e3', '2100000001', '21\n'])('rejects malformed CALAB_ANDROID_VERSION_CODE %j', (versionCode) => {
     expect(() => parseReleaseIdentity('1.2.3', '21', versionCode)).toThrow('CALAB_ANDROID_VERSION_CODE');
   });
+});
+
+describe('parseRtcHosts', () => {
+  it('is empty without a value, never "any host"', () => {
+    expect(parseRtcHosts(undefined)).toEqual([]);
+    expect(parseRtcHosts(' \t ')).toEqual([]);
+  });
+  it('takes space-separated hostnames once each', () => {
+    expect(parseRtcHosts(' rtc.calab.ru rtc2.calab.ru rtc.calab.ru ')).toEqual(['rtc.calab.ru', 'rtc2.calab.ru']);
+  });
+  it.each(['RTC.calab.ru', 'rtc.calab.ru:443', 'wss://rtc.calab.ru', 'rtc.calab.ru/rtc', '*.calab.ru', 'localhost', '10.0.0.1', 'rtc.calab.ru,rtc2.calab.ru'])(
+    'rejects %j', raw => expect(() => parseRtcHosts(raw)).toThrow('CALAB_IOS_RTC_HOSTS'));
 });
