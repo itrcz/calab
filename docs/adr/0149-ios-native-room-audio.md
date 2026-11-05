@@ -94,6 +94,7 @@ activate before enabling the engine, deactivate with `.notifyOthersOnDeactivatio
 - Speaking: `.playAndRecord`, mode `.voiceChat`, options `.mixWithOthers`, `.allowBluetoothHFP`,
   `.allowBluetoothA2DP`, `.defaultToSpeaker`. A headset with both profiles routes HFP (Apple): its
   mic works, other apps play through HFP too. Speaker by default; the system route picker overrides.
+- 2026-11-05, owner: room ducking `.mid`, advanced off (other apps' music a little quieter, constant); confirm on device.
 - Ducking: `duckingLevel = .min`, `isAdvancedDuckingEnabled = false`, set explicitly so an SDK
   default change cannot reintroduce pumping. Both need iOS 17, hence the capability floor.
 - Interruption began: `interrupted`, track muted (others see muted, not frozen), engine off; with a
