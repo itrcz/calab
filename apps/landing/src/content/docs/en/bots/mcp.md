@@ -1,28 +1,56 @@
 ---
 title: MCP server for LLM clients
-description: POST /api/mcp — a Model Context Protocol endpoint on a bot token — nine tools, acting on behalf of a person, the «via MCP» mark, JSON-RPC examples, errors, limits and what is not supported.
+description: POST /api/mcp — a Model Context Protocol endpoint — personal sign-in through OAuth without a bot, or a bot token — nine tools, the «via MCP» mark, JSON-RPC examples, errors, limits and what is not supported.
 order: 21
 ---
 
 ## What it is
 
-`POST /api/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server built into the Calab API. An LLM client (an assistant, an IDE agent) needs only a URL and a bot token to find tasks and rooms, read them, create tasks, comment and write to rooms.
+`POST /api/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server built into the Calab API. An LLM client (Claude Code, Codex, Cursor, Claude Desktop) connects to it **with your own account through OAuth** — no bot, no token in the config — or with a bot token, to find tasks and rooms, read them, create and edit tasks, assign people, comment and write to rooms.
 
-Every tool calls the ordinary REST routes of the server with the **same token**, so a tool gives the bot nothing its token does not already give: roles, route table, limits and moderation apply exactly as to the bot's own REST call. A refusal is final: the tool returns it as an error and does not look for a way around.
+Every tool calls the ordinary REST routes of the server **with the same identity**, so a tool gives nothing beyond what you (or the bot) already have in the app: roles, route table, limits and moderation apply exactly as to the bot's own REST call. A refusal is final: the tool returns it as an error and does not look for a way around.
 
-## Connecting
+## Connecting with your account (OAuth)
+
+This is how a developer's agent connects: the server URL, then a sign-in in the browser.
+
+1. Add the server to the client. Claude Code:
+
+   ```sh
+   claude mcp add --transport http calab https://app.calab.io/api/mcp
+   ```
+
+   Or in `.mcp.json` / `~/.claude.json`:
+
+   ```json
+   { "mcpServers": { "calab": { "type": "http", "url": "https://app.calab.io/api/mcp" } } }
+   ```
+
+2. Start the sign-in in the client (Claude Code: `/mcp` → `calab` → Authenticate). The browser opens “Connect an MCP client”: sign in to Calab if needed, check the app's name and where the code goes back (“a program on this computer”) and press “Allow”.
+3. Done: the client has a token and refreshes it itself. The connection is listed in Settings → Sessions as “MCP · <client name>”, where you disconnect it.
+
+The agent works **as you**: the author of tasks and comments, the assignee, `me` in the tools is you; rights are your roles. Everything done through MCP is marked “(via MCP)” after your name, in comments and in the task history.
+
+- The token of an MCP connection works only on `/api/mcp`: plain REST, the gateway and the app's session refresh refuse it (`403 MCP_TOKEN`).
+- Only a personal account with a password can connect; a workspace with enforced SSO does not admit such a connection.
+- The client registers itself (RFC 7591); the code goes back to `http://localhost` / `127.0.0.1` / `[::1]` (any port) or to the web connectors' callbacks `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback` (the exact list is `MCP_OAUTH_REDIRECT_URIS`).
+- Metadata for clients: `/.well-known/oauth-protected-resource/api/mcp` and `/.well-known/oauth-authorization-server`; the endpoint's `401` carries `WWW-Authenticate` pointing to them.
+
+## Connecting through a bot
+
+For automations without a person (CI, integrations), a bot token:
 
 1. Create a bot and copy its token ([Quickstart](./quickstart), [Token and permissions](./auth)): “Workspace settings → Bots”, the token is shown once.
 2. Give the bot a role in the workspaces it should see ([Permissions](./auth#permissions)).
 3. Point the client at `https://<your Calab host>/api/mcp` and send the header `Authorization: Bearer calab_bot_…`. The token goes only into the header, never into the URL.
 
-### On behalf of a person
+### A bot on behalf of a person
 
-For an agent that works on tasks **as you** (you are the author of its comments, the assignee, the creator of its tasks), create your own bot, turn on “Act on my behalf” ([Token and permissions](./auth#on-behalf-of-the-owner)) and add a second header to the client, `Calab-On-Behalf: owner`. For a member who allowed the bot to act for them, `Calab-On-Behalf: <user id>` ([On behalf of a member](./auth#on-behalf-of-a-member)). Each tool call is checked on behalf exactly like a REST request: what is closed on behalf in REST is closed here too; a switch turned off or a consent revoked gives `403` at once.
+When it has to be a bot but the actions must be yours (you are the author of its comments, the assignee, the creator of its tasks), create your own bot, turn on “Act on my behalf” ([Token and permissions](./auth#on-behalf-of-the-owner)) and add a second header to the client, `Calab-On-Behalf: owner`. For a member who allowed the bot to act for them, `Calab-On-Behalf: <user id>` ([On behalf of a member](./auth#on-behalf-of-a-member)). Each tool call is checked on behalf exactly like a REST request: what is closed on behalf in REST is closed here too; a switch turned off or a consent revoked gives `403` at once.
 
 On behalf of a member only the tasks and boards **of the workspace where they consented** work: pass task or board ids (`board` + `workspace`); a task key lookup, `find` and `list_tasks` with `mine` span all workspaces and are closed on behalf of a member (`403 ON_BEHALF_ROUTE`). A board key such as `DEV` and a task key such as `DEV-12` are unique only within a workspace: if several of your workspaces have one, the tool returns an error listing them — give `workspace` or the id.
 
-Actions through MCP are marked: messages and task journal entries carry `via` = `"mcp"`, and the app shows “(via bot X · MCP)” after the name, or “(via MCP)” for the bot itself. `me` in the tools is you (or the bot itself without the header).
+Actions through MCP are marked: messages and task journal entries carry `via` = `"mcp"`, and the app shows “(via MCP)” after the name for an OAuth connection and for the bot itself, “(via bot X · MCP)” for a person through their bot. `me` in the tools is you (or the bot itself without the header).
 
 ```json
 {
@@ -83,8 +111,8 @@ A tool result is a `content` array whose `text` holds a JSON string. A failed to
 
 | Where | What | Why |
 |---|---|---|
-| HTTP `401` | `UNAUTHENTICATED` | no or wrong token |
-| HTTP `403` | `FORBIDDEN` | the token is a person's or a session; with `Calab-On-Behalf` — the on-behalf reason (`ON_BEHALF_DISABLED`, `ON_BEHALF_NO_CONSENT`…, see [Token and permissions](./auth#on-behalf-of-the-owner)) |
+| HTTP `401` | `UNAUTHENTICATED` + `WWW-Authenticate` | no token, a wrong one, or the connection was ended — the client starts the OAuth sign-in again |
+| HTTP `403` | `FORBIDDEN` | the token of an app session (neither an MCP connection nor a bot); with `Calab-On-Behalf` — the on-behalf reason (`ON_BEHALF_DISABLED`, `ON_BEHALF_NO_CONSENT`…, see [Token and permissions](./auth#on-behalf-of-the-owner)) |
 | HTTP `405` | `Allow: POST` | `GET` / `DELETE` — there is no stream and no sessions |
 | HTTP `400` | JSON-RPC `-32700` / `-32600` | invalid JSON; not a JSON-RPC 2.0 request; a batch (array) |
 | HTTP `413` | JSON-RPC `-32600` | body over 1 MiB |
@@ -94,14 +122,15 @@ A tool result is a `content` array whose `text` holds a JSON string. A failed to
 
 ## Limits
 
-A tool call costs one request of the bot's limit plus its REST calls ([Errors and limits](./errors-limits#limits): 30 requests per second, 20 messages per minute). `find` without `workspace` walks all the bot's workspaces (rooms and boards), so for a bot in many workspaces name the `workspace`. When the limit is hit, the tool returns `429` as an error with `isError`.
+A tool call costs one request of the bot's limit (an OAuth connection has the same limit of its own) plus its REST calls ([Errors and limits](./errors-limits#limits): 30 requests per second, 20 messages per minute). `find` without `workspace` walks all the bot's workspaces (rooms and boards), so for a bot in many workspaces name the `workspace`. When the limit is hit, the tool returns `429` as an error with `isError`.
 
 ## Not supported
 
 - Streaming: no SSE answers, no `GET` stream, no resumption.
 - Sessions (`Mcp-Session-Id`) — every request stands alone.
 - JSON-RPC batches, MCP resources and prompts, `structuredContent`.
-- OAuth authorization of MCP: the bot token is set statically in the client.
+- Choosing workspaces and rights when connecting through OAuth: access is everything you can do, through the MCP tools.
+- Connecting without a browser (device flow).
 
 ## Testing the endpoint
 

@@ -188,6 +188,13 @@ func (s *Service) resync(ctx context.Context, wid uuid.UUID, match func(voice.Se
 		if err := s.pushGrant(ctx, room, identity, wid, st.UserID, acc.Bits, st.Streaming); err != nil && !IsNotFound(err) {
 			slog.WarnContext(ctx, "livekit update permission", "identity", identity, "err", err)
 		}
+		// The device's companion follows its rights (ADR-0149 §3); not found: there is none.
+		if voice.IsDM(wid, st.RoomID) {
+			continue
+		}
+		if err := s.syncCompanionGrant(ctx, room, st.UserID, st.SessionID, acc.Bits); err != nil && !IsNotFound(err) {
+			slog.WarnContext(ctx, "livekit update companion permission", "identity", identity, "err", err)
+		}
 	}
 }
 
@@ -262,6 +269,10 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			}
 			for _, p := range ps {
 				present[p.Identity] = ref.rid
+				if cu, cs, ok := voice.ParseCompanion(p.Identity); ok {
+					s.reconcileCompanion(ctx, wid, ref.rid, cu, cs, states)
+					continue
+				}
 				uid, sid, ok := voice.ParseIdentity(p.Identity)
 				if !ok {
 					continue
@@ -330,6 +341,22 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// reconcileCompanion removes a companion (ADR-0149 §3) whose device has no seat in its room: not
+// in the snapshot and not there now either (a /join after the snapshot keeps it). A Redis error
+// keeps it for the next pass.
+func (s *Service) reconcileCompanion(ctx context.Context, wid, rid, uid, sid uuid.UUID, states []voice.SessionState) {
+	for _, st := range states {
+		if st.SessionID == sid && st.RoomID == rid && st.UserID == uid {
+			return
+		}
+	}
+	if ok, err := s.seatIn(ctx, wid, rid, sid); err != nil || ok {
+		return
+	}
+	slog.InfoContext(ctx, "voice companion removed: its device has no seat in the room", "identity", voice.CompanionIdentity(uid, sid))
+	s.removeIdentities(ctx, voice.RoomName(wid, rid), []string{voice.CompanionIdentity(uid, sid)})
 }
 
 func hasState(states []voice.SessionState, sid, rid uuid.UUID) bool {

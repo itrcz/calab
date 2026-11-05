@@ -684,7 +684,7 @@ func (q *Queries) CreateProductAdminGrant(ctx context.Context, arg CreateProduct
 
 const createScopedIdentitySession = `-- name: CreateScopedIdentitySession :one
 INSERT INTO sessions(user_id,refresh_token_hash,device_name,ip,user_agent,expires_at,authority_kind,authority_workspace_id,authority_connection_id,recovery_authenticated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version, scope, mcp_client_id
 `
 
 type CreateScopedIdentitySessionParams struct {
@@ -737,6 +737,8 @@ func (q *Queries) CreateScopedIdentitySession(ctx context.Context, arg CreateSco
 		&i.LocalAuthenticatedAt,
 		&i.RecoveryAuthenticatedAt,
 		&i.AuthorityVersion,
+		&i.Scope,
+		&i.McpClientID,
 	)
 	return i, err
 }
@@ -1138,7 +1140,7 @@ func (q *Queries) GetIdentityConnectionForUpdate(ctx context.Context, arg GetIde
 }
 
 const getIdentityGateState = `-- name: GetIdentityGateState :one
-SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
+SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, s.scope, s.mcp_client_id, u.is_guest, u.is_bot,
 (u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
 EXISTS(SELECT FROM billing_accounts ba WHERE ba.workspace_id=w.id AND ba.status='suspended')::boolean AS billing_suspended,
@@ -1288,6 +1290,8 @@ func (q *Queries) GetIdentityGateState(ctx context.Context, arg GetIdentityGateS
 		&i.Session.LocalAuthenticatedAt,
 		&i.Session.RecoveryAuthenticatedAt,
 		&i.Session.AuthorityVersion,
+		&i.Session.Scope,
+		&i.Session.McpClientID,
 		&i.IsGuest,
 		&i.IsBot,
 		&i.UserDisabled,
@@ -1351,7 +1355,7 @@ func (q *Queries) GetIdentityGateState(ctx context.Context, arg GetIdentityGateS
 }
 
 const getIdentityGateStates = `-- name: GetIdentityGateStates :many
-SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
+SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, s.scope, s.mcp_client_id, u.is_guest, u.is_bot,
 (u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
 EXISTS(SELECT FROM billing_accounts ba WHERE ba.workspace_id=w.id AND ba.status='suspended')::boolean AS billing_suspended,
@@ -1513,6 +1517,8 @@ func (q *Queries) GetIdentityGateStates(ctx context.Context, arg GetIdentityGate
 			&i.Session.LocalAuthenticatedAt,
 			&i.Session.RecoveryAuthenticatedAt,
 			&i.Session.AuthorityVersion,
+			&i.Session.Scope,
+			&i.Session.McpClientID,
 			&i.IsGuest,
 			&i.IsBot,
 			&i.UserDisabled,
@@ -2421,7 +2427,7 @@ func (q *Queries) MarkIdentityInvalidationDelivered(ctx context.Context, id uuid
 const recordLocalAuthentication = `-- name: RecordLocalAuthentication :one
 UPDATE sessions SET local_authenticated_at = $1
 WHERE id = $2 AND user_id = $3 AND authority_kind = 'local_account'
-AND revoked_at IS NULL AND expires_at > clock_timestamp() RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version
+AND revoked_at IS NULL AND expires_at > clock_timestamp() RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version, scope, mcp_client_id
 `
 
 type RecordLocalAuthenticationParams struct {
@@ -2456,6 +2462,8 @@ func (q *Queries) RecordLocalAuthentication(ctx context.Context, arg RecordLocal
 		&i.LocalAuthenticatedAt,
 		&i.RecoveryAuthenticatedAt,
 		&i.AuthorityVersion,
+		&i.Scope,
+		&i.McpClientID,
 	)
 	return i, err
 }

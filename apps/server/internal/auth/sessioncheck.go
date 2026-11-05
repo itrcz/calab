@@ -29,7 +29,7 @@ const sessionRecheck = 30 * time.Second
 
 // liveSessions remembers sessions the DB confirmed as not revoked, until the recheck time.
 // Session ids are globally unique, so one cache serves every Service of the process.
-var liveSessions = &liveCache{until: map[uuid.UUID]time.Time{}, principals: map[uuid.UUID]identitypolicy.Principal{}}
+var liveSessions = &liveCache{until: map[uuid.UUID]time.Time{}, principals: map[uuid.UUID]identitypolicy.Principal{}, mcp: map[uuid.UUID]bool{}}
 
 // liveCacheMax bounds the cache; past it, expired entries are pruned on insert.
 const liveCacheMax = 50_000
@@ -38,6 +38,8 @@ type liveCache struct {
 	mu         sync.Mutex
 	until      map[uuid.UUID]time.Time
 	principals map[uuid.UUID]identitypolicy.Principal
+	// mcp: the session is an MCP connection (sessions.scope, ADR-0158); its tokens must say so.
+	mcp map[uuid.UUID]bool
 }
 
 func (c *liveCache) fresh(sid uuid.UUID, now time.Time) bool {
@@ -56,11 +58,13 @@ func (c *liveCache) put(sess sqlc.Session, now time.Time) {
 			if !now.Before(u) {
 				delete(c.until, k)
 				delete(c.principals, k)
+				delete(c.mcp, k)
 			}
 		}
 		if len(c.until) >= liveCacheMax {
 			clear(c.until)
 			clear(c.principals)
+			clear(c.mcp)
 		}
 	}
 	until := now.Add(sessionRecheck)
@@ -72,12 +76,21 @@ func (c *liveCache) put(sess sqlc.Session, now time.Time) {
 		c.principals = map[uuid.UUID]identitypolicy.Principal{}
 	}
 	c.principals[sid] = SessionPrincipal(sess)
+	if c.mcp == nil {
+		c.mcp = map[uuid.UUID]bool{}
+	}
+	if sess.Scope != nil {
+		c.mcp[sid] = true
+	} else {
+		delete(c.mcp, sid)
+	}
 }
 
 func (c *liveCache) drop(sid uuid.UUID) {
 	c.mu.Lock()
 	delete(c.until, sid)
 	delete(c.principals, sid)
+	delete(c.mcp, sid)
 	c.mu.Unlock()
 }
 
@@ -94,6 +107,7 @@ func ForgetSessionChecks() {
 	liveSessions.mu.Lock()
 	clear(liveSessions.until)
 	clear(liveSessions.principals)
+	clear(liveSessions.mcp)
 	liveSessions.mu.Unlock()
 }
 

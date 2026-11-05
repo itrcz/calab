@@ -28,8 +28,8 @@ func (s *Service) PrincipalFromRefresh(ctx context.Context, token string) (ident
 	if err != nil {
 		return identitypolicy.Principal{}, err
 	}
-	if subtle.ConstantTimeCompare(row.RefreshTokenHash, HashRefreshSecret(secret)) != 1 {
-		return identitypolicy.Principal{}, ErrInvalidToken
+	if subtle.ConstantTimeCompare(row.RefreshTokenHash, HashRefreshSecret(secret)) != 1 || !mcpSessionOf(row, "") {
+		return identitypolicy.Principal{}, ErrInvalidToken // an MCP connection is not a browser session (ADR-0158)
 	}
 	return s.ResolvePrincipal(ctx, Identity{UserID: row.UserID, SessionID: sid})
 }

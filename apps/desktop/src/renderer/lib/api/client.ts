@@ -176,6 +176,12 @@ export async function call<Res extends DescMessage>(
   return fromJson(resSchema, json, JSON_OPTS);
 }
 
+/** Request with a plain JSON answer (routes outside the protobuf contract, e.g. MCP OAuth, ADR-0158). */
+export async function callJson<T>(method: Method, path: string, body?: JsonValue, signal?: AbortSignal): Promise<T> {
+  const res = await send(method, path, body, signal);
+  return (await res.json()) as T;
+}
+
 /** Request without a response body (204). */
 export async function callEmpty(method: Method, path: string, body?: JsonValue): Promise<void> {
   await send(method, path, body);

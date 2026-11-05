@@ -22,7 +22,7 @@ import (
 )
 
 // Path is the endpoint's route (any method; only POST is served).
-const Path = "/api/mcp"
+const Path = auth.MCPPath
 
 // maxBody caps a JSON-RPC request.
 const maxBody = 1 << 20
@@ -32,11 +32,11 @@ const maxBody = 1 << 20
 var protocolVersions = []string{"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}
 
 // instructions is sent once in initialize: kept short, the tools describe themselves.
-const instructions = "Calab as this bot, or as the person it acts for (Calab-On-Behalf): find ids with find or list_tasks, then read / act; \"me\" is that identity. Rights are its roles; a refusal is final."
+const instructions = "Calab as the signed-in person (OAuth), this bot, or the person it acts for (Calab-On-Behalf): find ids with find or list_tasks, then read / act; \"me\" is that identity. Rights are its roles; a refusal is final."
 
-// ErrNotBot answers a request without a bot token (a person's session included). A bot on behalf
-// of its owner or of a consenting member (Calab-On-Behalf, ADR-0156) is a bot token.
-var ErrNotBot = httpx.Forbidden("the MCP endpoint needs a bot token")
+// ErrNotBot answers a person's app session: the endpoint takes a bot token (itself or on behalf,
+// ADR-0156) or the token of the person's MCP session (OAuth, ADR-0158).
+var ErrNotBot = httpx.Forbidden("the MCP endpoint needs an MCP connection (OAuth) or a bot token")
 
 // Handler serves Path. It must run inside auth.Require (the private route wrapper).
 type Handler struct {
@@ -85,7 +85,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, ok := auth.FromContext(r.Context())
-	if !ok || !id.Machine() {
+	if !ok || (!id.Machine() && !id.MCP) {
 		httpx.WriteError(w, r, ErrNotBot)
 		return
 	}

@@ -589,6 +589,25 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/me/oauth-grants",
 		"DELETE /api/me/oauth-grants/{grant}",
 	}},
+	{access: botPublic, why: "MCP without a bot (ADR-0158): the OAuth server's metadata, client registration, authorize, token and revocation read no user or bot token — a bot is anonymous there", routes: []string{
+		"GET /.well-known/oauth-protected-resource",
+		"GET /.well-known/oauth-protected-resource/api/mcp",
+		"GET /.well-known/oauth-authorization-server",
+		"OPTIONS /.well-known/oauth-protected-resource",
+		"OPTIONS /.well-known/oauth-protected-resource/api/mcp",
+		"OPTIONS /.well-known/oauth-authorization-server",
+		"POST /api/mcp/oauth/register",
+		"OPTIONS /api/mcp/oauth/register",
+		"GET /api/mcp/oauth/authorize",
+		"POST /api/mcp/oauth/token",
+		"OPTIONS /api/mcp/oauth/token",
+		"POST /api/mcp/oauth/revoke",
+		"OPTIONS /api/mcp/oauth/revoke",
+	}},
+	{access: botDeny, why: "MCP without a bot (ADR-0158): the consent is a person's — a bot has its own token and needs none", routes: []string{
+		"POST /api/mcp/oauth/requests/{request}/bind",
+		"POST /api/mcp/oauth/requests/{request}/decision",
+	}},
 	{access: botDeny, why: "money: the workspace's balance, plan, payer and payment methods are the owner's (ADR-0080; roles refuse BILLING to bots); superadmin billing is people only", routes: []string{
 		"GET /api/workspaces/{id}/billing",
 		"POST /api/workspaces/{id}/billing/quote",
@@ -744,6 +763,9 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/rooms/{id}/invites/{inviteId}",
 		"PATCH /api/rooms/{id}/invites/{inviteId}",
 		"DELETE /api/rooms/{id}/admissions/me",
+	}},
+	{access: botDeny, why: "ADR-0149 §3: the companion is the iPhone shell's second, subscribe-only LiveKit connection beside the device's native room audio; a bot's own connection subscribes and publishes data already", routes: []string{
+		"POST /api/rooms/{id}/voice/companion",
 	}},
 	{access: botDeny, why: "client helpers, not the bot API: server-side fetches of arbitrary URLs (link previews) and the HEIC converter would make a token a free proxy / CPU", routes: []string{
 		"GET /api/unfurl",

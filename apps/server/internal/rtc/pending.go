@@ -52,7 +52,7 @@ func (s *Service) confirmConnect(wid, rid, uid, sid uuid.UUID, joinedAt int64) {
 	if err != nil && !IsNotFound(err) {
 		return
 	}
-	connected := err == nil
+	connected, removed := err == nil, false
 	if err := s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 		if cur == nil || cur.RoomID != rid || !cur.Pending || cur.JoinedAt != joinedAt {
 			return cur // connected, left, moved on or joined again since
@@ -62,9 +62,13 @@ func (s *Service) confirmConnect(wid, rid, uid, sid uuid.UUID, joinedAt int64) {
 			n.Pending = false
 			return &n
 		}
+		removed = true
 		return nil
 	}); err != nil {
 		slog.WarnContext(ctx, "settle a pending voice state", "identity", identity, "err", err)
+	}
+	if removed && !voice.IsDM(wid, rid) {
+		s.dropCompanion(ctx, wid, rid, uid, sid) // a companion of a seat that never connected (ADR-0149 §3)
 	}
 }
 
