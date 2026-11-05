@@ -107,7 +107,7 @@ const api: CalabaApi = {
     onShownChange: (cb) => on(IPC.windowShownChanged, cb),
   },
   webApps: {
-    open: (appId, url, bounds) => ipcRenderer.invoke(IPC.webAppOpen, { appId, url, bounds }),
+    open: (appId, url, workspaceId, bounds) => ipcRenderer.invoke(IPC.webAppOpen, { appId, url, workspaceId, bounds }),
     hide: () => ipcRenderer.invoke(IPC.webAppHide),
     setBounds: (bounds) => ipcRenderer.invoke(IPC.webAppSetBounds, bounds),
     navigate: (action) => ipcRenderer.invoke(IPC.webAppNavigate, action),
@@ -116,6 +116,8 @@ const api: CalabaApi = {
     onState: (cb) => on(IPC.webAppState, cb),
     tipShow: (tip) => ipcRenderer.invoke(IPC.webAppTipShow, tip),
     tipHide: () => ipcRenderer.invoke(IPC.webAppTipHide),
+    onSignInAsk: (cb) => on(IPC.webAppSignInAsk, cb),
+    signInAnswer: (id, allow) => ipcRenderer.invoke(IPC.webAppSignInAnswer, { id, allow }),
   },
   office: {
     openFrame: () => ipcRenderer.invoke(IPC.officeFrame, true),

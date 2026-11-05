@@ -114,6 +114,8 @@ func TestPolicyDenials(t *testing.T) {
 			s.Assurance.ValidUntil = testNow.Add(54 * time.Minute)
 		}, ManageOAuth, SSORequired},
 		{"guest OAuth", func(s *State) { s.Policy.Mode = Optional; s.Principal.Guest = true }, OAuthAuthorize, ScopeDenied},
+		{"guest-role member OAuth", func(s *State) { s.Policy.Mode = Optional; s.BuiltinRole = "guest" }, OAuthAuthorize, ScopeDenied},
+		{"guest-role member OAuth refresh", func(s *State) { s.Policy.Mode = Optional; s.BuiltinRole = "guest" }, OAuthRefresh, ScopeDenied},
 		{"guest enforced", func(s *State) { s.BuiltinRole = "guest" }, WorkspaceRead, SSORequired},
 		{"bot human session", func(s *State) { s.Principal.Bot = true }, WorkspaceRead, ScopeDenied},
 		{"directory stale", func(s *State) {

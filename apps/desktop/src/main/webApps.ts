@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,7 @@ import {
   clipboard,
   dialog,
   Menu,
+  net,
   session,
   shell,
   WebContentsView,
@@ -18,8 +20,10 @@ import {
 import log from 'electron-log/main';
 import { hostOf, validateAppUrl } from '../shared/appUrl';
 import { safeFileName } from '../shared/fileName';
-import { IPC, type WebAppNavAction, type WebAppNavState } from '../shared/ipc';
+import { IPC, type WebAppNavAction, type WebAppNavState, type WebAppSignInAsk } from '../shared/ipc';
+import { apiSession } from './apiTransport';
 import { isAppSession, markAppSession } from './appSessions';
+import { currentServerUrl, getAccessToken } from './auth';
 import { markFromInternet } from './downloads';
 import { mainStrings } from './strings';
 import { hideTip } from './tipOverlay';
@@ -28,15 +32,21 @@ import {
   dropLru,
   mayNavigate,
   mayNavigateFrame,
+  consentRequest,
   originOf,
   partitionOf,
   permissionCheck,
   permissionDecision,
   resolveWithRemembered,
+  sameEndpoint,
+  signInAllowed,
+  signInAnswer,
   touchLru,
   windowOpenDecision,
+  workspaceSignIn,
   type AskKind,
   type Remembered,
+  type WorkspaceSignIn,
   type ViewBounds,
 } from './webAppPolicy';
 import { getMainWindow, isShown } from './windows';
@@ -57,6 +67,14 @@ interface Entry {
   view: WebContentsView;
   /** The app's address as last opened (a changed address reloads the view). */
   home: string;
+  /** The workspace the app belongs to: the only one whose sign-in Calab answers (ADR-0159). */
+  workspaceId: string;
+  /** When Calab answered the site's sign-in (ms), for the per-minute limit. */
+  signIns: number[];
+  /** A sign-in is being answered: a second request of the site waits for it, not a second dialog. */
+  signingIn: boolean;
+  /** The user refused the sign-in dialog: until the view goes, the site signs in its own way. */
+  signInRefused: boolean;
   failed: string;
   crashed: boolean;
   /** In the window's view tree (only while shown: a hidden view is not composited). */
@@ -360,6 +378,154 @@ export function installWebAppGuards(): void {
   });
 }
 
+// ---------------------------------------------------------------- sign-in with the Calab session
+
+/**
+ * ADR-0159: the app's site sends the user to «Sign in with Calab» of the app's own workspace.
+ * Instead of the Calab sign-in form inside the site's isolated session, main asks the provider
+ * with the Calab session it holds: a remembered consent gives a code at once, otherwise the user
+ * answers a Calab dialog. The site gets only the provider's redirect to its own redirect_uri;
+ * the Calab token and cookies never enter the site's session. Any other outcome loads the
+ * site's request as before (the provider then shows its own sign-in).
+ */
+function interceptSignIn(e: Entry, url: string, prevent: () => void): void {
+  const server = currentServerUrl();
+  const req = server ? workspaceSignIn(url, server, e.workspaceId, e.home) : null;
+  if (!req || e.signInRefused) return;
+  if (e.signingIn) {
+    prevent();
+    return;
+  }
+  const now = Date.now();
+  if (!signInAllowed(e.signIns, now)) {
+    log.warn('[webapp] calab sign-in repeated too often: left to the site', { appId: e.appId });
+    return;
+  }
+  e.signIns = [...e.signIns.filter((t) => now - t < 60_000), now];
+  e.signingIn = true;
+  prevent();
+  void answerSignIn(e, server, req)
+    .catch((err: unknown) => {
+      log.warn('[webapp] calab sign-in failed', { appId: e.appId, err: err instanceof Error ? err.message : String(err) });
+      return null;
+    })
+    .then((answer) => {
+      e.signingIn = false;
+      if (entries.get(e.appId) !== e || e.view.webContents.isDestroyed()) return;
+      void e.view.webContents.loadURL(answer ?? req.interactive).catch(() => undefined);
+    });
+}
+
+const SIGN_IN_TIMEOUT_MS = 15_000;
+
+async function answerSignIn(e: Entry, server: string, req: WorkspaceSignIn): Promise<string | null> {
+  const token = await getAccessToken();
+  if (!token) return null;
+  const ses = apiSession();
+  // net.fetch rejects a manual redirect («Redirect was cancelled»): the provider answers with a
+  // 303, so its Location is read from net.request's redirect event and the request is dropped.
+  // The session keeps the Set-Cookie of that answer (the consent request's browser binding).
+  // The silent request is the bearer alone: a cookie of another Calab account in the API session
+  // would make the provider refuse it. The consent request needs the jar for its binding.
+  const authorize = (url: string, withCookies: boolean): Promise<string | null> =>
+    new Promise((resolve) => {
+      const r = net.request({ url, session: ses, redirect: 'manual', credentials: withCookies ? 'include' : 'omit', useSessionCookies: withCookies });
+      const done = (v: string | null): void => {
+        clearTimeout(timer);
+        resolve(v);
+      };
+      const timer = setTimeout(() => {
+        r.abort();
+        done(null);
+      }, SIGN_IN_TIMEOUT_MS);
+      r.setHeader('Authorization', `Bearer ${token}`);
+      r.on('redirect', (_status, _method, location) => {
+        done(location);
+        r.abort();
+      });
+      r.on('response', () => {
+        done(null);
+        r.abort();
+      });
+      r.on('error', () => done(null));
+      r.end();
+    });
+  const answer = signInAnswer(await authorize(req.silent, false), server, req.redirectUri);
+  log.info('[webapp] calab sign-in', { appId: e.appId, answer: answer.kind });
+  if (answer.kind === 'code') return answer.url;
+  // A consent is asked only about what the user is looking at.
+  if (answer.kind !== 'consent' || !inForeground(e.view.webContents, e.appId)) return null;
+  // The consent request is bound to the API session's cookie jar (its browser binding).
+  const handle = consentRequest(await authorize(req.interactive, true), server);
+  if (!handle) return null;
+  const post = async (what: 'bind' | 'decision', body: object): Promise<Record<string, unknown> | null> => {
+    const res = await ses.fetch(new URL(`/api/oauth/requests/${encodeURIComponent(handle)}/${what}`, server).toString(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Origin: new URL(server).origin },
+      body: JSON.stringify(body),
+      redirect: 'manual',
+      // Each call its own time: the dialog between bind and decision waits for the person.
+      signal: AbortSignal.timeout(SIGN_IN_TIMEOUT_MS),
+    });
+    const json = res.ok ? ((await res.json()) as unknown) : (await res.arrayBuffer().catch(() => undefined), null);
+    return json && typeof json === 'object' ? (json as Record<string, unknown>) : null;
+  };
+  const shown = await post('bind', { csrfToken: handle });
+  const csrf = shown?.['csrfToken'];
+  if (!shown || typeof csrf !== 'string') return null;
+  const allow = await askSignIn(shown, hostOf(req.redirectUri));
+  if (!allow) e.signInRefused = true;
+  const decided = await post('decision', { csrfToken: csrf, allow, allowRefresh: false });
+  const redirect = decided?.['redirectUrl'];
+  log.info('[webapp] calab sign-in consent', { appId: e.appId, allow });
+  return typeof redirect === 'string' && sameEndpoint(redirect, req.redirectUri) ? redirect : null;
+}
+
+/** How long the Calab dialog waits for an answer: then it closes and counts as «Deny». */
+const ASK_TIMEOUT_MS = 120_000;
+
+let pendingAsk: { id: string; settle: (allow: boolean) => void } | null = null;
+
+/**
+ * The consent in a Calab dialog of the main window (renderer: features/webapps/AppSignIn). The
+ * renderer only shows the server's texts and returns «Allow» / «Deny»; no answer in two minutes,
+ * no main window, or a second ask while one is open — «Deny».
+ */
+function askSignIn(shown: Record<string, unknown>, site: string): Promise<boolean> {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed() || pendingAsk) return Promise.resolve(false);
+  const text = (k: string): string => {
+    const v = shown[k];
+    return typeof v === 'string' ? v.slice(0, 200) : '';
+  };
+  const scopes = Array.isArray(shown['scopes']) ? shown['scopes'].filter((v): v is string => typeof v === 'string').slice(0, 20) : [];
+  const ask: WebAppSignInAsk = {
+    id: randomUUID(),
+    client: text('clientName'),
+    workspace: text('workspaceName'),
+    account: text('displayName'),
+    site,
+    scopes,
+  };
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => settle(false), ASK_TIMEOUT_MS);
+    const settle = (allow: boolean): void => {
+      if (pendingAsk?.id !== ask.id) return;
+      pendingAsk = null;
+      clearTimeout(timer);
+      if (!win.isDestroyed()) win.webContents.send(IPC.webAppSignInAsk, null);
+      resolve(allow);
+    };
+    pendingAsk = { id: ask.id, settle };
+    win.webContents.send(IPC.webAppSignInAsk, ask);
+  });
+}
+
+/** The person's answer from the main window's dialog; an unknown or stale id is ignored. */
+export function answerSignInAsk(id: string, allow: boolean): void {
+  if (pendingAsk?.id === id) pendingAsk.settle(allow);
+}
+
 // ---------------------------------------------------------------- views
 
 function windowShown(): boolean {
@@ -479,7 +645,7 @@ function follow(win: BrowserWindow): void {
   });
 }
 
-function create(appId: string, url: string): Entry | null {
+function create(appId: string, url: string, workspaceId: string): Entry | null {
   const win = getMainWindow();
   if (!win) return null;
   follow(win);
@@ -492,7 +658,7 @@ function create(appId: string, url: string): Entry | null {
   view.setBorderRadius(12);
   view.setVisible(false);
   view.setBackgroundColor('#ffffff');
-  const e: Entry = { appId, view, home: url, failed: '', crashed: false, attached: false, check: undefined };
+  const e: Entry = { appId, view, home: url, workspaceId, signIns: [], signingIn: false, signInRefused: false, failed: '', crashed: false, attached: false, check: undefined };
   entries.set(appId, e);
   const wc = view.webContents;
   const update = (): void => sendState(e);
@@ -509,6 +675,13 @@ function create(appId: string, url: string): Entry | null {
     if (!action) return;
     ev.preventDefault();
     navigateApp(action);
+  });
+  // «Sign in with Calab» of the app's own workspace is answered with the Calab session (ADR-0159).
+  wc.on('will-redirect', (ev) => {
+    if (ev.isMainFrame) interceptSignIn(e, ev.url, () => ev.preventDefault());
+  });
+  wc.on('will-navigate', (ev) => {
+    if (ev.isMainFrame) interceptSignIn(e, ev.url, () => ev.preventDefault());
   });
   wc.on('did-stop-loading', update);
   wc.on('did-navigate', update);
@@ -548,7 +721,7 @@ function destroy(appId: string): void {
 }
 
 /** Show app `appId` at `b` (window DIPs); `url` is its address (loaded on first open or when it changed). */
-export function openApp(appId: string, url: string, b: ViewBounds): void {
+export function openApp(appId: string, url: string, workspaceId: string, b: ViewBounds): void {
   const checked = validateAppUrl(url);
   if (!checked.ok) throw new Error('invalid app url');
   bounds = b;
@@ -558,13 +731,19 @@ export function openApp(appId: string, url: string, b: ViewBounds): void {
     e = undefined;
   }
   if (!e) {
-    e = create(appId, checked.url) ?? undefined;
+    e = create(appId, checked.url, workspaceId) ?? undefined;
     if (!e) return;
   } else if (e.home !== checked.url) {
     e.home = checked.url;
     e.failed = '';
     void e.view.webContents.loadURL(checked.url).catch(() => undefined);
+  } else if (e.failed) {
+    // Coming back to an app whose page did not load tries it again (a site restarting for a minute).
+    const wc = e.view.webContents;
+    const cur = wc.getURL();
+    void wc.loadURL(cur && !cur.startsWith('chrome-error:') ? cur : e.home).catch(() => undefined);
   }
+  e.workspaceId = workspaceId;
   const t = touchLru(lru, appId);
   lru = t.order;
   for (const id of t.evicted) destroy(id);
@@ -590,7 +769,7 @@ export function navigateApp(action: WebAppNavAction): void {
   if (action === 'reload' && e.crashed) {
     const { appId, home } = e;
     destroy(appId);
-    openApp(appId, home, bounds);
+    openApp(appId, home, e.workspaceId, bounds);
     return;
   }
   if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();

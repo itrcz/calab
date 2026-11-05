@@ -8,6 +8,7 @@ import { platform } from '../platform';
 import { useBoardsUi } from '../stores/boardsUi';
 import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
+import { useSignInAsk } from '../stores/webAppSignIn';
 import { useWebApps } from '../stores/webApps';
 
 /**
@@ -105,11 +106,12 @@ export function onMyRoleChanged(workspaceId: string, wasGuest: boolean, isGuest:
 
 let installed = false;
 
-/** Once: the desktop views' navigation state, and the boards mode closing an app. */
+/** Once: the desktop views' navigation state, main's sign-in consents, and the boards mode closing an app. */
 export function installWebApps(): void {
   if (installed) return;
   installed = true;
   platform.webApps?.onState((s) => useWebApps.getState().setNav(s));
+  platform.webApps?.onSignInAsk((ask) => useSignInAsk.setState({ ask }));
   // Boards opened from anywhere (a link, a notification) replace the app, like a room does.
   useBoardsUi.subscribe((s, prev) => {
     if (s.active && !prev.active) closeWebApp();

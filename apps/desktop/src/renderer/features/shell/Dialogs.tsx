@@ -32,6 +32,7 @@ import { useSession } from '../../stores/session';
 import { useTaskTabs } from '../../stores/taskTabs';
 import { EventDialog } from '../calendar/EventDialog';
 import { JoinConfirmHost } from '../calendar/JoinConfirm';
+import { AppSignInHost } from '../webapps/AppSignIn';
 import { SETTINGS_DIALOG_KINDS } from './SettingsScreen';
 import { AppDialog } from '../webapps/AppDialog';
 import { PlansDialog } from '../workspace/billing/PlansDialog';
@@ -230,6 +231,7 @@ export function Dialogs(): ReactNode {
       <AchievementLayers />
       <ConfirmHost />
       <JoinConfirmHost />
+      <AppSignInHost />
     </>
   );
 }

@@ -76,6 +76,9 @@ func TestIdentityProviderAuthorizationPOSTBrowserResolverAndRouteCensus(t *testi
 	path := "/oidc/workspaces/" + f.a.Id + "/authorize"
 	localCookie := &http.Cookie{Name: auth.LocalBrowserCookie, Value: f.local.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	scopedCookie := &http.Cookie{Name: "__Host-calab-workspace-session-" + f.a.Id, Value: f.scoped.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+	// A desktop answers its web app's «Sign in with Calab» with the session bearer alone
+	// (ADR-0159); a member of another workspace only gets no code for this one that way.
+	outsider := register(t, invite(t, owner(t), f.b.Id))
 	for _, method := range []string{"GET", "POST"} {
 		for _, tc := range []struct {
 			name, bearer, want string
@@ -88,6 +91,8 @@ func TestIdentityProviderAuthorizationPOSTBrowserResolverAndRouteCensus(t *testi
 			{"wrong authority cookie", "", "login_required", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: f.scoped.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}},
 			{"provider token cookie", "", "login_required", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: "calab_or_" + strings.Repeat("a", 43), Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}},
 			{"account mismatch", owner(t).token, "login_required", []*http.Cookie{localCookie}},
+			{"desktop bearer", f.local.token, "", nil},
+			{"other workspace bearer", outsider.token, "interaction_required", nil},
 		} {
 			t.Run(method+"/"+tc.name, func(t *testing.T) {
 				p, body, media := path, args.Encode(), "application/x-www-form-urlencoded"

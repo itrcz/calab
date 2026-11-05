@@ -419,6 +419,11 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 	if p.Guest && feature != "" {
 		return deny(ScopeDenied)
 	}
+	// A registered account let in by a room link is a member with the guest role (users.is_guest
+	// stays false): «Sign in with Calab» of the workspace is for its people, not its guests.
+	if feature == OAuthProvider && s.BuiltinRole == "guest" {
+		return deny(ScopeDenied)
+	}
 	// ManageOAuth needs no fresh password (ADR-0102): the bearer session already
 	// authenticates the admin, consent stays explicit per user, secrets are shown once and
 	// every mutation is audited. A local account passes without recency; a workspace_sso
