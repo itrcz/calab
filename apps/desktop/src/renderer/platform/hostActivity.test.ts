@@ -275,3 +275,74 @@ describe('Android media session capability (board #141)', () => {
     leave({ document: 'doc' }); leave(); expect(left).toHaveBeenCalledOnce();
   });
 });
+
+describe('native room audio bridge (ADR-0149 §2)', () => {
+  const connectionId = '22222222-2222-4222-8222-222222222222';
+  const controls = { muted: false, deafened: false, volume: 1, userVolumes: {}, bitrate: 32000, gate: { mode: 'voice' as const, thresholdDb: -50, pttOpen: false }, watched: {}, levels: false };
+  const media = { connectionId, phase: 'connected', microphoneReady: true, muted: false, canSpeak: true, speaking: false, speakers: [], route: 'speaker', phoneCall: false };
+  function setup(roomAudioVersion?: number) {
+    const handlers = new Map<string, (event: CustomEvent<unknown>) => void>();
+    const send = vi.fn();
+    const bridge = { version: 1, callsVersion: 1, roomAudioVersion, host: 0, document: 'document', send, rotateDocument: () => { bridge.document = 'rotated'; } };
+    const cap = createHostCapabilities({ CalabHostActivity: bridge, addEventListener: (name: string, cb: (event: CustomEvent<unknown>) => void) => handlers.set(name, cb) } as unknown as Window);
+    const emit = (name: string, detail: unknown) => handlers.get(name)?.({ detail } as CustomEvent<unknown>);
+    const ready = () => emit('calab-host-activity-ready', { v: 1, host: 0, document: bridge.document, capability: 'notifications', calls: 1 });
+    const last = () => JSON.parse(String(send.mock.lastCall?.[0])) as { type: string; request: number; operation: string };
+    const reply = (state: unknown, extra: object = {}) => emit('calab-host-room-audio', { v: 1, host: 0, document: bridge.document, request: last().request, state, ...extra });
+    return { cap, send, ready, last, reply, emit, bridge };
+  }
+  const input = { connectionId, roomId: '33333333-3333-4333-8333-333333333333', url: 'wss://rtc.example.test', token: 'a.b.c', relayOnly: false, red: true, canSpeak: true, controls };
+
+  it('exists only on a shell that offers it', () => {
+    expect(setup().cap.roomAudio).toBeUndefined();
+    expect(setup(1).cap.roomAudio).toBeDefined();
+  });
+  it('sends connect after the handshake and settles on its own reply', async () => {
+    const h = setup(1);
+    const p = h.cap.roomAudio?.connect(input);
+    expect(h.last().type).toBe('hello');
+    h.ready();
+    expect(h.last()).toMatchObject({ type: 'roomAudio', operation: 'connect' });
+    const seen = vi.fn();
+    h.cap.roomAudio?.subscribe(seen);
+    h.reply({ supported: true, media });
+    await expect(p).resolves.toEqual({ supported: true, media });
+    expect(seen).toHaveBeenCalledWith(media);
+  });
+  it('hands native events (request 0) to listeners and drops other documents and extra fields', () => {
+    const h = setup(1);
+    h.ready();
+    const seen = vi.fn();
+    h.cap.roomAudio?.subscribe(seen);
+    h.emit('calab-host-room-audio', { v: 1, host: 0, document: 'other', request: 0, state: { supported: true, media } });
+    h.emit('calab-host-room-audio', { v: 1, host: 0, document: 'document', request: 0, state: { supported: true, media }, extra: 1 });
+    h.emit('calab-host-room-audio', { v: 1, host: 0, document: 'document', request: 0, state: { supported: true, media: { ...media, phase: 'gone' } } });
+    expect(seen).not.toHaveBeenCalled();
+    h.emit('calab-host-room-audio', { v: 1, host: 0, document: 'document', request: 0, state: { supported: true, media } });
+    expect(seen).toHaveBeenCalledOnce();
+  });
+  it('reads no reply, a revoke or an invalid control as unknown, never as no native audio', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = setup(1);
+      h.ready();
+      const p = h.cap.roomAudio?.connect(input);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(p).resolves.toEqual({ supported: true, failed: true });
+      const s = h.cap.roomAudio?.status();
+      h.cap.sessionActivity?.clear();
+      await expect(s).resolves.toEqual({ supported: true, failed: true });
+      const sent = h.send.mock.calls.length;
+      await expect(h.cap.roomAudio?.control(connectionId, { ...controls, userVolumes: { [connectionId]: 1.5 } })).resolves.toBe(false);
+      expect(h.send.mock.calls.length).toBe(sent);
+    } finally { vi.useRealTimers(); }
+  });
+  it('reports a refused control so the caller sends the latest again', async () => {
+    const h = setup(1);
+    h.ready();
+    const p = h.cap.roomAudio?.control(connectionId, controls);
+    expect(h.last()).toMatchObject({ operation: 'control' });
+    h.reply({ supported: true, failed: true, media });
+    await expect(p).resolves.toBe(false);
+  });
+});

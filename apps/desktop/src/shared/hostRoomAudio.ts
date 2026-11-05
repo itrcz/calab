@@ -80,6 +80,18 @@ export interface HostRoomAudioStatus {
   /** An operation failed or the snapshot is unreadable: native state is unknown, so the page must not fall back yet. */
   failed?: true;
 }
+/** The renderer's side of the bridge (renderer/platform/hostActivity.ts). Not on the wire. */
+export interface HostRoomAudioCapability {
+  /** Native's snapshot once the attempt has settled there; `failed` when refused or unanswered (state unknown). */
+  connect(input: HostRoomAudioConnect): Promise<HostRoomAudioStatus>;
+  status(): Promise<HostRoomAudioStatus>;
+  /** False when the operation was refused (the rate limit) or unanswered: the caller sends the latest again. */
+  control(connectionId: string, controls: HostRoomAudioControls): Promise<boolean>;
+  cue(connectionId: string, cue: HostRoomAudioCue, volume: number): void;
+  disconnect(connectionId: string): void;
+  /** Every room state native reports, replies included. */
+  subscribe(listener: (state: HostRoomAudioState) => void): () => void;
+}
 
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, expected: string) => Object.keys(v).sort().join(',') === expected;
