@@ -8,7 +8,8 @@
       "CalabSessionActivityModule",
       "CalabCalendarWidgetModule",
       "CalabMessageNotificationsModule",
-      "CalabIncomingCallsModule"
+      "CalabIncomingCallsModule",
+      "CalabRoomAudioModule"
     ],
     "appDelegateSubscribers": [
       "CalabMessagePushSubscriber",

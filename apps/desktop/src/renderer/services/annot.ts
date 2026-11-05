@@ -11,6 +11,7 @@ import { isWeb, platform } from '../platform';
 import { setAnnot, useAnnot } from '../stores/annot';
 import { useVoice, type RemoteStream } from '../stores/voice';
 import { memberName } from '../stores/workspaces';
+import { companionDevice } from './voiceCompanion';
 
 /**
  * Screen-share annotations (ADR-0028): laser pointer and pen of the viewers over a stream.
@@ -141,8 +142,21 @@ class AnnotService {
       return;
     }
     if (!this.allowed(m.streamSid)) return;
-    if (!grantAllowsAnnot(from.permissions)) return;
+    if (!grantAllowsAnnot(this.senderGrant(room, from))) return;
     this.apply(m.streamSid, this.toEvent(m, from.identity, from.identity === owner));
+  }
+
+  /**
+   * The grant that decides a sender's SPEAK: its own, or for a web companion `<user>:<session>:web`
+   * (ADR-0149 §3, an iPhone with native room audio; its grant has no source) the grant of its device
+   * `<user>:<session>` in this room. Both identities are stamped by the SFU and issued by our server
+   * for the same session, so the companion cannot borrow anyone else's rights.
+   */
+  private senderGrant(room: Room, from: Participant): Participant['permissions'] {
+    const device = companionDevice(from.identity);
+    if (device === null) return from.permissions;
+    if (device === room.localParticipant.identity) return room.localParticipant.permissions;
+    return room.remoteParticipants.get(device)?.permissions;
   }
 
   /** The presenter's identity of a live stream, or null. */

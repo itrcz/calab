@@ -217,6 +217,9 @@ function useCameraLabel(roomId: string): { label: string; disabled: boolean } {
   const wsId = useVoice((s) => s.workspaceId);
   const on = useWorkspaces((s) => Object.values((wsId ? s.byId[wsId]?.voice : undefined) ?? {}).filter((v) => v.roomId === roomId && v.camera).length);
   const block = cameraBlock({ connected, canVideo, limit, phase });
+  // A native-audio join on iPhone (ADR-0149 §3): no camera until the companion video.
+  const audioOnly = useVoice((s) => s.audioOnly);
+  if (audioOnly && phase === 'off') return { label: t('video.audioOnly'), disabled: true };
   if (phase === 'on') return { label: t('video.off'), disabled: false };
   if (phase === 'starting' || phase === 'stopping') return { label: t('video.starting'), disabled: false };
   if (block === 'not-connected') return { label: t('video.on'), disabled: true };
@@ -623,6 +626,7 @@ export function VoiceBar(): ReactNode {
   const saveTraffic = usePrefs((s) => s.saveTraffic);
   const musician = usePrefs((s) => s.musicianMode);
   const musicianAllowed = useMusicianAllowed();
+  const audioOnly = useVoice((s) => s.audioOnly);
   // camera + more, plus «Показать экран» (not on a phone browser) and «Звуки» (not in a one-to-one call).
   const screenCapture = platform.canShareScreen();
   const cols = 2 + (screenCapture || myStream ? 1 : 0) + (call ? 0 : 1);
@@ -778,7 +782,12 @@ export function VoiceBar(): ReactNode {
               </Dropdown.CheckboxItem>
               {/* Musician mode (ADR-0052): on → the headphones warning as a toast. Free: the item
                   stays, with a lock; a click explains the plan (docs/08 «Функции не по тарифу»). */}
-              {musicianAllowed ? (
+              {audioOnly ? (
+                // A native-audio join on iPhone (ADR-0149): the item stays, a tap says why.
+                <Dropdown.Item className={cx(menuItem, 'relative pl-7 text-muted')} onSelect={() => toast.info(t('music.audioOnly'))} title={t('music.audioOnly')} data-testid="musician-audio-only">
+                  {t('music.mode')}
+                </Dropdown.Item>
+              ) : musicianAllowed ? (
                 <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={musician} onCheckedChange={setMusicianMode}>
                   <Dropdown.ItemIndicator className="absolute left-2">
                     <Check className="size-3.5" />

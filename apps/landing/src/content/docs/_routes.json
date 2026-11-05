@@ -459,6 +459,7 @@
 {"method":"POST","path":"/api/rooms/{id}/voice/{userId}/stop-camera","decision":"allow","group":"rooms"},
 {"method":"POST","path":"/api/rooms/{id}/voice/{userId}/stop-stream","decision":"allow","group":"rooms"},
 {"method":"POST","path":"/api/rooms/{id}/voice/{userId}/unmute","decision":"allow","group":"rooms"},
+{"method":"POST","path":"/api/rooms/{id}/voice/companion","decision":"deny","group":"rooms"},
 {"method":"POST","path":"/api/rooms/{id}/voice/leave","decision":"allow","group":"rooms"},
 {"method":"POST","path":"/api/rtc/webhook","decision":"public","group":"rooms"},
 {"method":"PATCH","path":"/api/voice/self","decision":"allow","group":"rooms"},

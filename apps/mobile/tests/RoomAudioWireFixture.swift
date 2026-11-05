@@ -133,6 +133,7 @@ struct RoomAudioWireFixture {
       "routes": CalabRoomAudioState.Route.allCases.map { value in state { $0.route = value } },
       "origins": CalabRoomAudioState.MuteOrigin.allCases.map { value in state { $0.muteOrigin = value } },
       "errors": CalabRoomAudioState.Failure.allCases.map { value in state { $0.error = value } },
+      "cues": calabRoomAudioCues.sorted(),
     ])
     print(String(decoding: output, as: UTF8.self))
   }

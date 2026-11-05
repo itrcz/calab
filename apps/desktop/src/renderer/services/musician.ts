@@ -3,7 +3,7 @@ import { t } from '../i18n';
 import { outputKind, outputLabel } from '../lib/media/outputKind';
 import { planHas } from '../lib/plan';
 import { prefs, usePrefs } from '../stores/prefs';
-import { useToasts } from '../stores/toasts';
+import { toast, useToasts } from '../stores/toasts';
 import { useVoice } from '../stores/voice';
 import { useWorkspaces } from '../stores/workspaces';
 import { planToast } from './plan';
@@ -55,6 +55,11 @@ export function musicianLockedToast(): void {
 
 /** Quick toggle (voice panel «…»): sets the pref and, when turning on, warns with a toast. Locked by the plan → the plan toast. */
 export function setMusicianMode(on: boolean): void {
+  // A native-audio join on iPhone (ADR-0149): not in v1, the reason instead.
+  if (on && useVoice.getState().audioOnly) {
+    toast.info(t('music.audioOnly'));
+    return;
+  }
   if (on && !musicianAllowed()) {
     musicianLockedToast();
     return;

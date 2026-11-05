@@ -25,6 +25,21 @@ message JoinVoiceResponse {
   PlanLimits plan_limits = 9;
 }
 
+// POST /api/rooms/{id}/voice/companion (VIEW_ROOM + CONNECT, workspace voice rooms only)
+// → 200 VoiceCompanionResponse: a token for the device's companion connection (ADR-0149 §3),
+// identity "<user_id>:<session_id>:web", TTL 10 min (connect right away; LiveKit refreshes it
+// while connected). Subscribe and data only, no publish sources. Needs this session's seat in
+// the room (pending, connected or held, VoiceState) and never creates or changes one: 409
+// ERROR_CODE_CONFLICT without a seat here, 403 without the rights or for a denied session, 404
+// for a one-to-one call, 422 for a room that is not a voice room.
+// The companion is removed from LiveKit when the device's seat goes; a newer companion of the
+// same session replaces the older one (DUPLICATE_IDENTITY).
+message VoiceCompanionResponse {
+  string url = 1;   // LiveKit signal URL (LIVEKIT_URL)
+  string token = 2; // LiveKit access JWT
+  string identity = 3;
+}
+
 // POST /api/rooms/{id}/camera/request (VIDEO + CONNECT, device in the call), body
 // RequestCameraRequest (optional) → 200 RequestCameraResponse: grants the
 // camera source to this device (reservation for 10 min, kept while the camera is on);

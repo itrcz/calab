@@ -30,13 +30,16 @@ struct CalabAudioSessionConfig: Equatable {
   }
 }
 
-enum CalabAudioDuckingLevel: Equatable { case min }
+enum CalabAudioDuckingLevel: Equatable { case min, mid }
 
 struct CalabAudioDucking: Equatable {
   let level: CalabAudioDuckingLevel
   let advanced: Bool
   // Explicit, so a changed SDK default cannot bring the pumping back.
   static let minimal = CalabAudioDucking(level: .min, advanced: false)
+  // Owner, 2026-11-05: other apps' music a little quieter in a room, constant, never pumping (advanced off).
+  // The one constant a device A/B changes. VPIO applies it only while capturing (WebRTC audio_engine_device.mm:2830).
+  static let room = CalabAudioDucking(level: .mid, advanced: false)
 }
 
 enum CalabAudioState: Equatable { case idle, speaking, listening, interrupted, call }
@@ -49,8 +52,8 @@ struct CalabAudioPolicy: Equatable {
   let capture: Bool
   static func of(_ state: CalabAudioState) -> CalabAudioPolicy {
     switch state {
-    case .speaking: return CalabAudioPolicy(session: .speaking, ducking: .minimal, engine: true, capture: true)
-    case .listening: return CalabAudioPolicy(session: .listening, ducking: .minimal, engine: true, capture: false)
+    case .speaking: return CalabAudioPolicy(session: .speaking, ducking: .room, engine: true, capture: true)
+    case .listening: return CalabAudioPolicy(session: .listening, ducking: .room, engine: true, capture: false)
     case .idle, .interrupted, .call: return CalabAudioPolicy(session: nil, ducking: nil, engine: false, capture: false)
     }
   }

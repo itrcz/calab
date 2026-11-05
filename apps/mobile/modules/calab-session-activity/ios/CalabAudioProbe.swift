@@ -25,7 +25,15 @@ private final class CalabAudioProbeMeter: NSObject, AudioCustomProcessingDelegat
   private let lock = NSLock()
   private var frames = 0
   private var energy = 0.0
-  func audioProcessingInitialize(sampleRate sampleRateHz: Int, channels: Int) {}
+  private var initialized = 0
+  private var rate = 0
+  // Per the WebRTC m150 sources the APM runs this delegate without a Room once recording delivers and its
+  // output counts as used (audio_transport_impl.cc:166-182, audio_processing_impl.cc:1395-1429). With
+  // frames=0, init=0 says no capture reached the APM; init>0 says the APM got capture but marks output unused.
+  func audioProcessingInitialize(sampleRate sampleRateHz: Int, channels: Int) {
+    lock.lock(); initialized += 1; rate = sampleRateHz; lock.unlock()
+  }
+  func attachment() -> (initialized: Int, rate: Int) { lock.lock(); defer { lock.unlock() }; return (initialized, rate) }
   func audioProcessingProcess(audioBuffer: LKAudioBuffer) {
     let samples = audioBuffer.rawBuffer(forChannel: 0)
     var sum = 0.0
@@ -173,10 +181,13 @@ final class CalabAudioProbe: NSObject, CXCallObserverDelegate {
     let route = session.currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+")
     let input = session.currentRoute.inputs.map(\.portType.rawValue).joined(separator: "+")
     let capture = meter.drain()
+    let attached = meter.attachment()
     let line = "state=\(machine.state) category=\(seen.category) mode=\(seen.mode) options=\(seen.options.rawValue)"
       + " holds=\(CalabAudioPolicy.of(machine.state).session?.holds(seen) ?? true) reasserted=\(machine.reassertions)"
       + " engine=\(AudioManager.shared.isEngineRunning) muted=\(AudioManager.shared.isMicrophoneMuted)"
-      + " frames=\(capture.frames) rms=\(capture.rms) out=\(route) in=\(input) others=\(session.isOtherAudioPlaying)"
+      + " frames=\(capture.frames) rms=\(capture.rms) init=\(attached.initialized)@\(attached.rate)"
+      + " attached=\(AudioManager.shared.capturePostProcessingDelegate === meter) aec=\(AudioManager.shared.audioProcessingState.echoCancellation)"
+      + " out=\(route) in=\(input) others=\(session.isOtherAudioPlaying)"
     logger.notice("\(line, privacy: .public)")
   }
 }

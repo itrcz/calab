@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ROOM_AUDIO_CUES } from '../../shared/hostRoomAudio';
 import manifest from '../assets/sounds/manifest.json';
 import { FILE_SOUNDS, SAMPLE_RATE, SOUNDS, SOUND_EVENTS, createGate, durationMs, synth } from './sounds';
@@ -75,5 +75,30 @@ describe('stream viewer sounds', () => {
     expect(gate.allow('watchStart', 500)).toBe(false);
     expect(gate.allow('watchStop', 900)).toBe(false);
     expect(gate.allow('watchStart', 1000)).toBe(true);
+  });
+});
+
+describe('a native-audio room holds the session (ADR-0149)', () => {
+  it('rings nothing through the page while native room audio is routed, and rings again after', async () => {
+    const made = vi.fn();
+    vi.stubGlobal('Audio', function FakeAudio(this: Record<string, unknown>, url?: string) {
+      made(url);
+      Object.assign(this, { volume: 1, play: () => Promise.resolve(), pause: () => undefined, removeAttribute: () => undefined, setSinkId: () => Promise.resolve() });
+    });
+    try {
+      const { currentRing, routeCues, startRing, stopRing } = await import('./sounds');
+      const route = vi.fn();
+      routeCues(route);
+      startRing('call-incoming');
+      expect(made).not.toHaveBeenCalled();
+      expect(currentRing()).toBeNull();
+      routeCues(null);
+      startRing('call-incoming');
+      expect(made).toHaveBeenCalledOnce();
+      expect(currentRing()).toBe('call-incoming');
+      stopRing();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

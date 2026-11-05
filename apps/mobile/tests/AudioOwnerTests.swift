@@ -39,12 +39,13 @@ struct AudioOwnerTests {
     precondition(owner.holder == .room && owner.holds(room))
     precondition(engine.take() == ["mute", "off", "room"], "profile changed under a running engine")
     precondition(engine.profile?.muteMode == .inputMixer, "mute would chime or reconfigure the session")
-    precondition(engine.profile?.ducking == .minimal && engine.profile?.captureProcessing == true)
+    precondition(engine.profile?.ducking == CalabAudioDucking(level: .mid, advanced: false) && engine.profile?.captureProcessing == true)
     let started = try owner.setEngine(true, lease: room)
     precondition(started && engine.available)
     owner.release(room)
     precondition(owner.holder == .none && !engine.available, "released room left the engine on")
     precondition(engine.profile == .standard, "room settings leaked to the next driver")
+    precondition(engine.profile?.ducking == .minimal, "the call profile's ducking changed")
     precondition(engine.profile?.muteMode == .voiceProcessing && engine.profile?.captureProcessing == false)
   }
 

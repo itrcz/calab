@@ -14,6 +14,8 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'video.previewRow': '摄像头预览',
   'video.checkShort': '测试',
   'video.noPermission': '你没有权限在此房间使用摄像头',
+  'video.audioOnly': 'iPhone 上暂不支持摄像头',
+  'video.audioOnlyRoom': '暂时无法显示摄像头和屏幕共享',
   'video.roomOff': '此房间已关闭摄像头',
   'video.full': '摄像头——该房间已有{n}/{max}人开启',
   'video.noDevices': '未找到摄像头',

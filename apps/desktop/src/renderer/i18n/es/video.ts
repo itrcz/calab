@@ -17,6 +17,8 @@ export const esVideo: DictShape<typeof enVideo> = {
   'video.previewRow': 'Vista previa de la cámara',
   'video.checkShort': 'Probar',
   'video.noPermission': 'No tienes permiso para usar la cámara en esta sala',
+  'video.audioOnly': 'La cámara aún no está disponible en iPhone',
+  'video.audioOnlyRoom': 'Ahora no se pueden mostrar las cámaras ni las pantallas',
   'video.roomOff': 'Las cámaras están desactivadas en esta sala',
   'video.full': 'Cámara — ya hay {n} de {max} en esta sala',
   'video.noDevices': 'No se encontraron cámaras',

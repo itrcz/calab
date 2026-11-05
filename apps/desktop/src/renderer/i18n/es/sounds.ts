@@ -8,6 +8,7 @@ export const esSounds: DictShape<typeof enSounds> = {
   'snd.search': 'Buscar sonidos',
   'snd.settings': 'Volumen de los sonidos',
   'snd.none': 'No se encontró nada',
+  'snd.audioOnly': 'Los sonidos del espacio aún no suenan en iPhone',
   'snd.favorites': 'Favoritos',
   'snd.frequent': 'Usados con frecuencia',
   'snd.workspace': 'Sonidos del espacio',

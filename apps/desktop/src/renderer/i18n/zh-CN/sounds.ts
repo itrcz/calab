@@ -8,6 +8,7 @@ export const zhSounds: DictShape<typeof enSounds> = {
   'snd.search': '搜索音效',
   'snd.settings': '音效音量',
   'snd.none': '未找到结果',
+  'snd.audioOnly': 'iPhone 上暂不播放空间音效',
   'snd.favorites': '收藏',
   'snd.frequent': '常用',
   'snd.workspace': '空间音效',

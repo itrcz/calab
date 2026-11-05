@@ -14,7 +14,8 @@ private let calabRoomAudioMaxWatched = 4
 private let calabRoomAudioMaxLevel = 20
 private let calabRoomAudioMinThresholdDb = -80.0
 
-private let calabRoomAudioCues: Set<String> = [
+// The fixture binary prints this set so the TS test sees a cue that exists on one side only.
+let calabRoomAudioCues: Set<String> = [
   "join", "leave", "mute", "unmute", "deafen", "undeafen", "pttOn", "pttOff", "mention", "message",
   "streamStart", "streamEnd", "watchStart", "watchStop", "moved", "disconnect", "reconnect", "recStart", "recStop",
   "builtin:air_horn", "builtin:ba_dum_tss", "builtin:cricket", "builtin:golf_clap", "builtin:quack", "builtin:sad_horn",
@@ -65,7 +66,7 @@ enum CalabRoomAudioOperation: Equatable {
 }
 
 /** One latest snapshot for the page. Carries no URL, token, SDP or device name. */
-struct CalabRoomAudioState {
+struct CalabRoomAudioState: Equatable {
   enum Phase: String, CaseIterable { case connecting, connected, reconnecting, lost, interrupted, ended, failed }
   enum MuteOrigin: String, CaseIterable { case web, system, server, native }
   enum Route: String, CaseIterable { case speaker, receiver, wired, bluetooth, other }
