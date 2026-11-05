@@ -13,6 +13,7 @@ export const zhMusic: DictShape<typeof enMusic> = {
   'music.badge': '音乐人',
   'music.badgeHint': '音乐人模式：未经处理的声音',
   'music.rnnoiseOff': '音乐人模式下已关闭',
+  'music.audioOnly': 'iPhone 上暂不支持音乐人模式',
   'music.aecNote': '音乐人模式：回声消除、降噪和自动增益已关闭。',
   'music.stats': '音乐人',
 };

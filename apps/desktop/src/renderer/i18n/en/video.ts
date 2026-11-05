@@ -17,6 +17,8 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'video.previewRow': 'Camera preview',
   'video.checkShort': 'Test',
   'video.noPermission': 'You don’t have permission to use the camera in this room',
+  'video.audioOnly': 'The camera isn’t available on iPhone yet',
+  'video.audioOnlyRoom': 'Cameras and screens aren’t shown on iPhone yet',
   'video.roomOff': 'Cameras are off in this room',
   'video.full': 'Camera — {n} of {max} already on in this room',
   'video.noDevices': 'No cameras found',

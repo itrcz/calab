@@ -13,6 +13,7 @@ export const ruMusic = {
   'music.badge': 'Музыкант',
   'music.badgeHint': 'Режим музыканта: звук без обработки',
   'music.rnnoiseOff': 'Выключено в режиме музыканта',
+  'music.audioOnly': 'На iPhone режим музыканта пока недоступен',
   'music.aecNote': 'Режим музыканта: эхоподавление, шумоподавление и автогромкость выключены.',
   'music.stats': 'музыкант',
 } as const;

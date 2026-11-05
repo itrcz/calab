@@ -8,6 +8,7 @@ export const ruSounds = {
   'snd.search': 'Поиск звуков',
   'snd.settings': 'Громкость звуков',
   'snd.none': 'Ничего не нашлось',
+  'snd.audioOnly': 'Звуки пространства на iPhone пока не играют',
   'snd.favorites': 'Избранное',
   'snd.frequent': 'Часто используемые',
   'snd.workspace': 'Звуки пространства',

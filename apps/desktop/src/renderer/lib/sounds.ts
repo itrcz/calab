@@ -1,3 +1,4 @@
+import type { HostRoomAudioCue } from '../../shared/hostRoomAudio';
 import { prefs } from '../stores/prefs';
 // Every event cue and both call rings are bundled MP3s rendered by tools/gen-event-sounds.py
 // (owner-approved set, 1.3.1). MP3: plays in Electron and in every browser of the web client.
@@ -282,7 +283,17 @@ export interface PlayOptions {
   volume?: number;
 }
 
-/** Plays an event sound if enabled, through a plain <audio> element on the output device. */
+/**
+ * A native-audio room (ADR-0149 §5) plays cues and built-in clips itself, by name, inside its echo
+ * canceller's reference: while it is set, nothing here opens an <audio> (services/voice.ts sets it).
+ */
+let cueRoute: ((cue: HostRoomAudioCue, volume: number) => void) | null = null;
+export function routeCues(route: typeof cueRoute): void {
+  cueRoute = route;
+}
+export const nativeCue = (): typeof cueRoute => cueRoute;
+
+/** Plays an event sound if enabled, through a plain <audio> element on the output device (or the native room). */
 export function playSound(name: SoundName, opts: PlayOptions = {}): void {
   const now = performance.now();
   if (!opts.force) {
@@ -293,9 +304,14 @@ export function playSound(name: SoundName, opts: PlayOptions = {}): void {
     if (!gate.allow(name, now)) return;
   } else gate.mark(name, now);
   const p = prefs();
+  const volume = Math.max(0, Math.min(1, p.soundVolume * (opts.volume ?? 1)));
+  if (cueRoute) {
+    cueRoute(name, volume);
+    return;
+  }
   const file = FILE_SOUNDS[name];
   const el = new Audio(file);
-  el.volume = Math.max(0, Math.min(1, p.soundVolume * (opts.volume ?? 1)));
+  el.volume = volume;
   // A bundled file that cannot be loaded falls back to its synthesised stand-in (once).
   el.onerror = () => {
     el.onerror = null;
