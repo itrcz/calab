@@ -212,6 +212,8 @@ const KEY = new Set([
   'toast-single',
   'join-confirm',
   'join-confirm-switch',
+  // «Войти через Calab» of a workspace app's site (ADR-0159).
+  'app-sign-in',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -2434,6 +2436,24 @@ test('join-confirm-switch', async ({ open, win, mock, shot }) => {
   await askJoin(win, mock);
   await expect(win.getByTestId('join-confirm-warn')).toContainText('Вы сейчас в комнате «Переговорка»');
   await checkpoint(shot, 'join-confirm-switch');
+});
+
+// ADR-0159: the first «Sign in with Calab» of an app's site — main sends what the provider's consent
+// request returned, the Calab dialog shows it; «Запретить» has the focus, Esc denies and closes.
+test('app-sign-in', async ({ open, win, mock, env, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const ask = { id: 'ask-1', client: 'Поддержка', workspace: 'Calab Team', account: 'Анна Смирнова', site: 'support.example.com', scopes: ['openid', 'profile', 'email'] };
+  await env.app.evaluate(({ BrowserWindow }, [url, a]) => {
+    BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === url)?.webContents.send('webapp:sign-in-ask', a);
+  }, [win.url(), ask] as const);
+  const dialog = win.getByTestId('app-sign-in');
+  await expect(dialog).toContainText('support.example.com');
+  await expect(win.getByRole('dialog')).toContainText('«Поддержка» просит войти через Calab');
+  await expect(win.getByTestId('app-sign-in-deny')).toBeFocused();
+  await checkpoint(shot, 'app-sign-in');
+  await win.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------- voice (needs the dev LiveKit)

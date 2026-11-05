@@ -59,7 +59,7 @@ import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
 import { hideTip, showTip } from './tipOverlay';
 import { parseTipPayload } from './tipOverlayPolicy';
-import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
+import { answerSignInAsk, appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
 import { APP_ORIGINS, openLink } from './ownLink';
 import { getMainWindow, isOwnPage, isShown, showMainWindow } from './windows';
@@ -489,6 +489,11 @@ export function registerIpc(): void {
   handle(IPC.webAppTipHide, (e) => {
     mainOnly(e);
     hideTip();
+  });
+  handle(IPC.webAppSignInAnswer, (e, a) => {
+    mainOnly(e);
+    const r = obj(a);
+    answerSignInAsk(str(r['id'], 64), r['allow'] === true);
   });
   // ---- mail (ADR-0088 §7): validated and relayed to the engine utilityProcess ----
   // ---- office editor (ADR-0143 §11): the frame's origin comes from the server, not the renderer ----

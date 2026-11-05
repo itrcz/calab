@@ -28,6 +28,7 @@ import type {
   WebAppBounds,
   WebAppNavAction,
   WebAppNavState,
+  WebAppSignInAsk,
   WebAppTip,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
@@ -228,6 +229,9 @@ export interface CalabaApi {
     /** Draw a tooltip that falls on the shown app above it (a native overlay; ADR-0053 «Поправка 1»). */
     tipShow(tip: WebAppTip): Promise<void>;
     tipHide(): Promise<void>;
+    /** A consent «Sign in with Calab» to ask in a Calab dialog; null: close it (timed out). ADR-0159. */
+    onSignInAsk(cb: (ask: WebAppSignInAsk | null) => void): Unsubscribe;
+    signInAnswer(id: string, allow: boolean): Promise<void>;
   };
   /**
    * The office editor's frame (ADR-0143), Electron only. `openFrame` makes main ask the server it is

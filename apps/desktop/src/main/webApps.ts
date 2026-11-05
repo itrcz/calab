@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { join } from 'node:path';
@@ -19,7 +20,7 @@ import {
 import log from 'electron-log/main';
 import { hostOf, validateAppUrl } from '../shared/appUrl';
 import { safeFileName } from '../shared/fileName';
-import { IPC, type WebAppNavAction, type WebAppNavState } from '../shared/ipc';
+import { IPC, type WebAppNavAction, type WebAppNavState, type WebAppSignInAsk } from '../shared/ipc';
 import { apiSession } from './apiTransport';
 import { isAppSession, markAppSession } from './appSessions';
 import { currentServerUrl, getAccessToken } from './auth';
@@ -480,30 +481,49 @@ async function answerSignIn(e: Entry, server: string, req: WorkspaceSignIn): Pro
   return typeof redirect === 'string' && sameEndpoint(redirect, req.redirectUri) ? redirect : null;
 }
 
-async function askSignIn(shown: Record<string, unknown>, site: string): Promise<boolean> {
-  const s = mainStrings();
+/** How long the Calab dialog waits for an answer: then it closes and counts as «Deny». */
+const ASK_TIMEOUT_MS = 120_000;
+
+let pendingAsk: { id: string; settle: (allow: boolean) => void } | null = null;
+
+/**
+ * The consent in a Calab dialog of the main window (renderer: features/webapps/AppSignIn). The
+ * renderer only shows the server's texts and returns «Allow» / «Deny»; no answer in two minutes,
+ * no main window, or a second ask while one is open — «Deny».
+ */
+function askSignIn(shown: Record<string, unknown>, site: string): Promise<boolean> {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed() || pendingAsk) return Promise.resolve(false);
   const text = (k: string): string => {
     const v = shown[k];
-    return typeof v === 'string' && v ? v : '—';
+    return typeof v === 'string' ? v.slice(0, 200) : '';
   };
-  const scopes = Array.isArray(shown['scopes']) ? (shown['scopes'] as unknown[]) : [];
-  const what = [scopes.includes('profile') ? s.webAppScopeProfile : '', scopes.includes('email') ? s.webAppScopeEmail : ''].filter(Boolean).join(', ');
-  const parent = getMainWindow();
-  const opts: Electron.MessageBoxOptions = {
-    type: 'question',
-    message: s.webAppSignIn.replace('{app}', text('clientName')),
-    detail: s.webAppSignInDetail
-      .replace('{workspace}', text('workspaceName'))
-      .replace('{name}', text('displayName'))
-      .replace('{site}', site || '—')
-      .replace('{what}', what || '—'),
-    buttons: [s.webAppAllow, s.webAppDeny],
-    defaultId: 1,
-    cancelId: 1,
-    noLink: true,
+  const scopes = Array.isArray(shown['scopes']) ? shown['scopes'].filter((v): v is string => typeof v === 'string').slice(0, 20) : [];
+  const ask: WebAppSignInAsk = {
+    id: randomUUID(),
+    client: text('clientName'),
+    workspace: text('workspaceName'),
+    account: text('displayName'),
+    site,
+    scopes,
   };
-  const r = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts);
-  return r.response === 0;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => settle(false), ASK_TIMEOUT_MS);
+    const settle = (allow: boolean): void => {
+      if (pendingAsk?.id !== ask.id) return;
+      pendingAsk = null;
+      clearTimeout(timer);
+      if (!win.isDestroyed()) win.webContents.send(IPC.webAppSignInAsk, null);
+      resolve(allow);
+    };
+    pendingAsk = { id: ask.id, settle };
+    win.webContents.send(IPC.webAppSignInAsk, ask);
+  });
+}
+
+/** The person's answer from the main window's dialog; an unknown or stale id is ignored. */
+export function answerSignInAsk(id: string, allow: boolean): void {
+  if (pendingAsk?.id === id) pendingAsk.settle(allow);
 }
 
 // ---------------------------------------------------------------- views
