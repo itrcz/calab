@@ -638,6 +638,21 @@ describe('native room audio (ADR-0149)', () => {
     expect(h.control.mock.calls.every((c) => !c[1].levels)).toBe(true);
   });
 
+  it('already muted when a phone call ends: the controls go again so native lets its hold go', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(200);
+    const sent = h.control.mock.calls.length;
+    h.emit({ phase: 'interrupted', microphoneReady: false, muted: true, muteOrigin: 'system', phoneCall: true });
+    h.emit({ muted: true, muteOrigin: 'system' });
+    h.emit({ muted: true, muteOrigin: 'system', speakers: ['66666666-6666-4666-8666-666666666666'] });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.control.mock.calls.length).toBe(sent + 1);
+    expect(h.lastControls()).toMatchObject({ muted: true });
+    expect(useVoice.getState().muted).toBe(true);
+  });
+
   it('falls back to the web path once, before capture, after a drained native end', async () => {
     const h = host();
     h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'connection' }) }));

@@ -165,6 +165,19 @@ describe('native room audio controls', () => {
     await vi.advanceTimersByTimeAsync(ROOM_CONTROL_GAP_MS + ROOM_CONTROL_RETRY_MS);
     expect(x.control.mock.calls.map((c) => c[1])).toEqual([muted, muted]);
   });
+  it('sends unchanged controls again on request (native acts on receipt)', async () => {
+    const x = fixture();
+    const run = x.session.start();
+    x.reply({ supported: true, media: state() });
+    await run;
+    const muted = roomAudioControls({ ...base, muted: true });
+    x.session.control(muted);
+    await vi.advanceTimersByTimeAsync(ROOM_CONTROL_GAP_MS);
+    x.session.control(muted);
+    x.session.resend();
+    await vi.advanceTimersByTimeAsync(ROOM_CONTROL_GAP_MS);
+    expect(x.control.mock.calls.map((c) => c[1])).toEqual([muted, muted]);
+  });
   it('asks for levels again with an off-on edge, only while levels are wanted', async () => {
     const x = fixture();
     const run = x.session.start();

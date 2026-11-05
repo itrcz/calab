@@ -1024,9 +1024,14 @@ class VoiceEngine {
     this.setMicTrouble(s.phase === 'interrupted' ? 'recovering' : null);
     // Muted on the device, or kept muted after a phone call (ADR-0149 §6, product decision 1):
     // the page takes it over as my own mute, and that returns the microphone to the page's controls.
-    if (s.phase !== 'interrupted' && s.muted && (s.muteOrigin === 'system' || s.muteOrigin === 'native') && !v.muted && !v.deafened) {
-      setVoice({ muted: true });
-      this.afterSelfChange();
+    // Already muted here: the controls did not change, so they are sent again once — native lets its
+    // hold go only on receiving `muted: true`, else the first unmute after the call would bounce.
+    const held = (x: HostRoomAudioState | null): boolean => x !== null && x.phase !== 'interrupted' && x.muted && (x.muteOrigin === 'system' || x.muteOrigin === 'native');
+    if (held(s)) {
+      if (!v.muted && !v.deafened) {
+        setVoice({ muted: true });
+        this.afterSelfChange();
+      } else if (v.muted && !held(prev)) this.nativeRoom?.resend();
     }
     // On the phone (ADR-0133): the others see it while the system call goes on.
     if (prev ? prev.phoneCall !== s.phoneCall : s.phoneCall) this.pushSelfState({ onPhone: s.phoneCall });
