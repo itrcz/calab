@@ -24,10 +24,9 @@ enum CalabRoomReconnectSchedule {
   static let grace = 60.0
   // Reconnecting this long, the driver stops the room and reports `lost`.
   static let deadline = 45.0
-  // From the deadline to a cancelled retry loop. The drain reaches disconnect after an in-flight publish at
-  // most (its response wait, TimeInterval.swift:38); unpublish is local (LocalParticipant.swift:72-110), and
-  // disconnect cancels before its leave message.
-  static let teardown = 10.0
+  // From the deadline to a cancelled retry loop: the drain disconnects before awaiting anything else, and
+  // disconnect drops the retry task before its leave message. A margin for the main actor, not a wait.
+  static let teardown = 2.0
 
   struct Knobs {
     let attempts: Int, baseDelay: Double, maxDelay: Double, socket: Double, primary: Double, publisher: Double
@@ -482,12 +481,14 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
       let track = await LocalAudioTrack.createTrack(options: Self.capture)
       guard self.current(rev, expected) else { try? await track.stop(); return }
       self.mic = track
-      // Muted before the first packet, not after it.
-      if self.effectiveMute { try await track.mute() }
+      // Published with the track unmuted: 2.17.0 waits up to 5 s for a first frame (LocalParticipant.swift:775-781,
+      // LocalAudioTrack.swift:187-216) on the capture post-processing path, which a muted sender silences. The
+      // engine's input mixer sends zeros meanwhile, and the track mute follows right after publish.
+      if self.effectiveMute, self.lease.map(self.owner.holds) == true { AudioManager.shared.isMicrophoneMuted = true }
       let published = try await expected.localParticipant.publish(audioTrack: track, options: self.publishOptions(bitrate))
       guard self.current(rev, expected) else { try? await track.stop(); return }
       self.publication = published; self.publishedBitrate = bitrate
-      self.refresh()
+      self.applyControls()
     }
     publishTask = task
     defer { if ticket.revision == rev { publishTask = nil } }
@@ -505,6 +506,24 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     refresh()
   }
 
+  // (Re)publishes once the link is up; reconnected() calls it again for a deferred one. A failure is retried
+  // once, then the room fails with `audio` instead of leaving the microphone silently gone.
+  private func ensureMicrophone(after delay: Double = 0) {
+    guard let room, link == .connected, publication == nil, publishTask == nil, machine.state == .speaking else { return }
+    let rev = ticket.revision
+    Task { @MainActor in
+      if delay > 0 { do { try await Task.sleep(for: .seconds(delay)) } catch { return } }
+      for attempt in 0..<2 {
+        guard self.current(rev, room), self.link == .connected, self.publication == nil, self.machine.state == .speaking else { return }
+        do { try await self.publishMicrophone(room, rev); if self.current(rev, room) { self.applyControls() }; return }
+        catch { if attempt == 0 { do { try await Task.sleep(for: .seconds(1)) } catch { return } } }
+      }
+      guard self.current(rev, room), self.link == .connected, self.publication == nil else { return }
+      self.logger.error("room microphone publish failed twice")
+      self.stop(.failed, .audio)
+    }
+  }
+
   private func control(_ document: String, _ connection: String, _ value: CalabRoomAudioControls) {
     guard ticket.owns(document: document, connection: connection), state != nil else { return }
     // The page saw the system mute and took it over: from now its controls own the microphone again.
@@ -520,11 +539,11 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     applyOutput()
     // The engine mute (inputMixer) is instant and silent; the track mute tells the server (ADR-0149 §4).
     if lease.map(owner.holds) == true { AudioManager.shared.isMicrophoneMuted = effectiveMute }
-    if let room, let bitrate = controls?.bitrate, publication != nil, publishedBitrate != bitrate, publishTask == nil {
-      // No live bitrate in 2.17.0: a new voice tier republishes the microphone once.
-      let rev = ticket.revision
+    // No live bitrate in 2.17.0: a new voice tier republishes the microphone once, never mid-reconnect;
+    // reconnected() comes back here.
+    if room != nil, link == .connected, let bitrate = controls?.bitrate, publication != nil, publishedBitrate != bitrate, publishTask == nil {
       unpublishMicrophone()
-      Task { @MainActor in try? await self.publishMicrophone(room, rev); if self.current(rev, room) { self.applyControls() } }
+      ensureMicrophone()
     }
     refresh()
     guard controlTask == nil, let mic, let expected = room else { return }
@@ -606,15 +625,12 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
       try AudioManager.shared.stopLocalRecording()
       try AudioManager.shared.startLocalRecording()
       unpublishMicrophone()
-      if let room, link == .connected { let rev = ticket.revision; Task { @MainActor in try? await self.publishMicrophone(room, rev); self.applyControls() } }
+      ensureMicrophone()
     case .muteTrack:
       AudioManager.shared.isMicrophoneMuted = true
       if let mic { Task { try? await mic.mute() } }
     case .holdMicrophoneMuted: hold.hold()
-    case .restoreMicrophone:
-      if let room, publication == nil, link == .connected, machine.state == .speaking {
-        let rev = ticket.revision; Task { @MainActor in try? await self.publishMicrophone(room, rev); self.applyControls() }
-      }
+    case .restoreMicrophone: ensureMicrophone()
     case .refreshRoute: route = CalabRoomAudioState.Route(session.currentRoute)
     case .fail: stop(.failed, .audio)
     }
@@ -632,7 +648,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     let oldControl = controlTask, oldConnect = connectTask, oldPublish = publishTask
     oldControl?.cancel(); oldConnect?.cancel(); oldPublish?.cancel()
     controlTask = nil; connectTask = nil; publishTask = nil
-    let previous = drainTask, old = room, oldMic = mic, oldPublication = publication
+    let previous = drainTask, old = room, oldMic = mic
     room = nil; mic = nil; publication = nil; publishedBitrate = nil; wanted = [:]; levelsUntil = nil
     for player in players { player.stop() }
     players = []
@@ -646,13 +662,14 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     lease = nil
     hold.reset(); processor.reset()
     drainTask = Task { @MainActor in
+      // Disconnect first: it drops a running SDK reconnect before its first await (Room.swift:536, 551-555), and
+      // unpublishes and stops the local track (Room.swift:691-707, Participant.swift:219-220).
+      await old?.disconnect()
       await previous?.value
       await oldControl?.value
       await oldConnect?.value
       _ = try? await oldPublish?.value
-      if let old, let oldPublication { try? await old.localParticipant.unpublish(publication: oldPublication) }
       try? await oldMic?.stop()
-      await old?.disconnect()
       guard self.ticket.revision == rev else { return }
       if !released { try? self.session.setActive(false, options: .notifyOthersOnDeactivation) }
       self.state?.phase = phase; self.state?.error = error
@@ -760,6 +777,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     deadline?.cancel(); deadline = nil
     link = .connected; wanted = [:]
     applyControls()
+    ensureMicrophone()
   }
 
   nonisolated func room(_ room: Room, didDisconnectWithError error: LiveKitError?) {
@@ -790,6 +808,40 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
 
   nonisolated func room(_ room: Room, participant: RemoteParticipant, didUnpublishTrack publication: RemoteTrackPublication) {
     Task { @MainActor in guard self.room === room else { return }; self.wanted[publication.sid] = nil }
+  }
+
+  nonisolated func room(_ room: Room, participant: LocalParticipant, didUnpublishTrack publication: LocalTrackPublication) {
+    Task { @MainActor in self.localUnpublished(room, publication) }
+  }
+
+  nonisolated func room(_ room: Room, participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
+    Task { @MainActor in self.localPublished(room, publication) }
+  }
+
+  // A full reconnect or an SFU move unpublishes every local track and republishes only unmuted ones
+  // (LocalParticipant.swift:344-376, called from Room+EngineDelegate.swift:68-80). Our own unpublish clears
+  // `publication` first, so only the SDK's arrives here.
+  private func localUnpublished(_ room: Room, _ unpublished: LocalTrackPublication) {
+    guard self.room === room, let publication, unpublished === publication else { return }
+    let muted = mic?.isMuted ?? true
+    self.publication = nil
+    refresh()
+    if muted { mic = nil; ensureMicrophone(after: 0.5); return }
+    // The unmuted one comes back by itself and is adopted below; if it does not, publish a fresh one.
+    let rev = ticket.revision
+    Task { @MainActor in
+      do { try await Task.sleep(for: .seconds(10)) } catch { return }
+      guard self.current(rev, room), self.publication == nil else { return }
+      self.mic = nil
+      self.ensureMicrophone()
+    }
+  }
+
+  private func localPublished(_ room: Room, _ published: LocalTrackPublication) {
+    guard self.room === room, published.source == .microphone, publication == nil, publishTask == nil,
+          let track = published.track as? LocalAudioTrack, track === mic else { return }
+    publication = published
+    applyControls()
   }
 
   nonisolated func room(_ room: Room, participant: Participant, didUpdatePermissions permissions: ParticipantPermissions) {
