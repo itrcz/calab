@@ -26,7 +26,7 @@ struct RoomAudioInputTests {
     pacing()
     print("PASS: operations are rate-limited and state is paced to one latest snapshot")
     watchdog()
-    print("PASS: the capture watchdog restarts once per silence")
+    print("PASS: the capture watchdog restarts once per silence, never on a dead meter path")
     precondition(calabRoomAudioCueResource("builtin:quack") == "calab-room-builtin-quack")
     precondition(calabRoomAudioCueResource("pttOn") == "calab-room-pttOn" && calabRoomAudioCueResource("../x") == nil)
     print("PASS: cues resolve to bundled files by name only")
@@ -154,8 +154,14 @@ struct RoomAudioInputTests {
     precondition((0..<40).contains { dog.tick(now: 20.1 + Double($0) * 0.1, frames: frames, expecting: true) }, "not re-armed after frames returned")
     // Muted, interrupted or unpublished capture expects no frames.
     var quiet = CalabCaptureWatchdog()
-    precondition(!(0..<100).contains { quiet.tick(now: Double($0) * 0.1, frames: 0, expecting: false) })
-    precondition(!quiet.tick(now: 10, frames: 0, expecting: true) && !quiet.tick(now: 12, frames: 0, expecting: true))
-    precondition(quiet.tick(now: 13, frames: 0, expecting: true), "silence after unmute not caught")
+    precondition(!(0..<100).contains { quiet.tick(now: Double($0) * 0.1, frames: 480 * $0, expecting: false) })
+    precondition(!quiet.tick(now: 10, frames: 48000, expecting: true) && !quiet.tick(now: 12, frames: 48000, expecting: true))
+    precondition(quiet.tick(now: 13, frames: 48000, expecting: true), "silence after unmute not caught")
+    // A delegate that never delivered (dead meter path) arms nothing: no restart on any unmuted silence,
+    // also when the processor's counter starts above zero from an earlier connection.
+    for baseline in [0, 96000] {
+      var dead = CalabCaptureWatchdog()
+      precondition(!(0..<600).contains { dead.tick(now: Double($0) * 0.1, frames: baseline, expecting: $0 % 200 > 20) }, "dead meter path restarted the engine")
+    }
   }
 }

@@ -39,7 +39,7 @@ describe.skipIf(!swiftAvailable)('native room driver logic in actual Swift', () 
     expect(result).toContain('PASS: complete controls converge, deafen unsubscribes, the system mute holds');
     expect(result).toContain('PASS: stale documents and connections change nothing');
     expect(result).toContain('PASS: operations are rate-limited and state is paced to one latest snapshot');
-    expect(result).toContain('PASS: the capture watchdog restarts once per silence');
+    expect(result).toContain('PASS: the capture watchdog restarts once per silence, never on a dead meter path');
     expect(result).toContain('PASS: cues resolve to bundled files by name only');
   }, 180_000);
 

@@ -104,16 +104,22 @@ struct CalabRoomAudioPacer {
   mutating func fired(now: Double) { scheduled = false; last = now }
 }
 
-/** §6: unmuted capture without frames for 3 s restarts the engine once, again only after frames return. */
+/**
+ * §6: unmuted capture that delivered frames and then none for 3 s restarts the engine once, again only after
+ * frames return. One per connection. A delegate that never delivered proves nothing about capture (the probe's
+ * open frames=0 finding), so it arms nothing: the gate stays open and the engine is left alone.
+ */
 struct CalabCaptureWatchdog {
   static let silence = 3.0
-  private var frames = 0
+  // The processor's counter runs across connections: the first reading is a baseline, not a delivery.
+  private var frames: Int?
+  private var delivered = false
   private var since: Double?
   private var restarted = false
   mutating func tick(now: Double, frames: Int, expecting: Bool) -> Bool {
     defer { self.frames = frames }
-    guard expecting else { since = nil; return false }
-    if frames != self.frames { since = now; restarted = false; return false }
+    if let last = self.frames, frames != last { delivered = true; since = now; restarted = false; return false }
+    guard expecting, delivered else { since = nil; return false }
     guard let since else { self.since = now; return false }
     guard !restarted, now - since >= Self.silence else { return false }
     restarted = true
@@ -401,7 +407,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     fresh.canSpeak = request.canSpeak
     state = fresh; link = .connecting; canSpeak = request.canSpeak; hold.reset(); red = request.red
     controls = request.controls; wanted = [:]; levelsUntil = request.controls.levels ? Date().addingTimeInterval(30) : nil
-    processor.configure(request.controls.gate); processor.reset()
+    processor.configure(request.controls.gate); processor.reset(); watchdog = CalabCaptureWatchdog()
     refresh()
     deadline = Task { @MainActor in
       do { try await Task.sleep(for: .seconds(15)) } catch { return }
