@@ -214,7 +214,8 @@ export interface CalabaApi {
    */
   webApps?: {
     /** Show the app at `bounds` (CSS px of this window); loads `url` on first open or when it changed. */
-    open(appId: string, url: string, bounds: WebAppBounds): Promise<void>;
+    /** workspaceId: the app's workspace, the only one whose «Sign in with Calab» main answers (ADR-0159). */
+    open(appId: string, url: string, workspaceId: string, bounds: WebAppBounds): Promise<void>;
     /** Hide the shown app (it stays alive, at most two do). */
     hide(): Promise<void>;
     setBounds(bounds: WebAppBounds): Promise<void>;

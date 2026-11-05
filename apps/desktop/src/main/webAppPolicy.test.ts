@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  consentRequest,
   dropLru,
   mayNavigate,
   mayNavigateFrame,
@@ -10,10 +11,14 @@ import {
   permissionCheck,
   permissionDecision,
   resolveWithRemembered,
+  sameEndpoint,
   sameSite,
+  signInAllowed,
+  signInAnswer,
   siteOf,
   touchLru,
   windowOpenDecision,
+  workspaceSignIn,
 } from './webAppPolicy';
 
 describe('permissionDecision (ADR-0050 §4 policy table)', () => {
@@ -169,5 +174,108 @@ describe('IPC arguments', () => {
     expect(parseAppId('0190A5B4-7C1D-7E2F-8A9B-0C1D2E3F4A5B')).toBe('0190a5b4-7c1d-7e2f-8a9b-0c1d2e3f4a5b');
     expect(partitionOf('x')).toBe('persist:app-x');
     for (const bad of ['', '../x', 'a'.repeat(36), 1, null]) expect(() => parseAppId(bad)).toThrow();
+  });
+});
+
+describe('workspaceSignIn (ADR-0159)', () => {
+  const server = 'https://app.calab.io';
+  const ws = '01a0da5f-326c-7369-a76d-57f9527e8d83';
+  const other = '11111111-2222-4333-8444-555555555555';
+  const home = 'https://support.example.com/';
+  const params = (over: Record<string, string | null> = {}): string => {
+    const q = new URLSearchParams({
+      client_id: 'calab_client_x',
+      redirect_uri: 'https://support.example.com/oauth2/callback',
+      response_type: 'code',
+      scope: 'openid profile email',
+      state: 's',
+      nonce: 'n',
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+    });
+    for (const [k, v] of Object.entries(over)) if (v === null) q.delete(k);
+    else q.set(k, v);
+    return q.toString();
+  };
+  const authorize = (over: Record<string, string | null> = {}, wsId = ws, origin = server): string => `${origin}/oidc/workspaces/${wsId}/authorize?${params(over)}`;
+
+  it('answers the app workspace sign-in of our server, silently first', () => {
+    const r = workspaceSignIn(authorize(), server, ws, home);
+    if (!r) throw new Error('no sign-in');
+    expect(new URL(r.silent).searchParams.get('prompt')).toBe('none');
+    expect(new URL(r.interactive).searchParams.has('prompt')).toBe(false);
+    expect(r.redirectUri).toBe('https://support.example.com/oauth2/callback');
+  });
+  it.each([
+    ['another workspace', authorize({}, other)],
+    ['another server', authorize({}, ws, 'https://evil.example.com')],
+    ['http server', authorize({}, ws, 'http://app.calab.io')],
+    ['another path', `${server}/oidc/workspaces/${ws}/token?${params()}`],
+    ['a path suffix', `${server}/oidc/workspaces/${ws}/authorize/x?${params()}`],
+    ['userinfo in the url', `https://u:p@app.calab.io/oidc/workspaces/${ws}/authorize?${params()}`],
+    ['a fragment', `${authorize()}#x`],
+    ['redirect to another site', authorize({ redirect_uri: 'https://evil.example.com/cb' })],
+    ['redirect to a sibling host', authorize({ redirect_uri: 'https://other.example.com/oauth2/callback' })],
+    ['redirect over http', authorize({ redirect_uri: 'http://support.example.com/cb' })],
+    ['redirect with userinfo', authorize({ redirect_uri: 'https://x@support.example.com/cb' })],
+    ['the site asks for prompt', authorize({ prompt: 'login' })],
+    ['the site asks for silence itself', authorize({ prompt: 'none' })],
+    ['max_age', authorize({ max_age: '0' })],
+    ['a login hint', authorize({ login_hint: 'a@b.c' })],
+    ['a request object', authorize({ request: 'x' })],
+    ['no PKCE', authorize({ code_challenge: null })],
+    ['plain PKCE', authorize({ code_challenge_method: 'plain' })],
+    ['no nonce', authorize({ nonce: null })],
+    ['implicit flow', authorize({ response_type: 'token' })],
+    ['a duplicated parameter', `${authorize()}&redirect_uri=https%3A%2F%2Fevil.example.com%2Fcb`],
+  ])('leaves %s to the site', (_name, url) => {
+    expect(workspaceSignIn(url, server, ws, home)).toBeNull();
+  });
+  it('needs a known workspace and a valid app address', () => {
+    expect(workspaceSignIn(authorize(), server, '', home)).toBeNull();
+    expect(workspaceSignIn(authorize(), server, ws, 'not a url')).toBeNull();
+    expect(workspaceSignIn(authorize(), '', ws, home)).toBeNull();
+  });
+  it('allows a private http app to get its answer over http', () => {
+    const r = workspaceSignIn(authorize({ redirect_uri: 'http://intranet.local/cb' }), server, ws, 'http://intranet.local/');
+    expect(r?.redirectUri).toBe('http://intranet.local/cb');
+  });
+});
+
+describe('signInAnswer / consentRequest / sameEndpoint (ADR-0159)', () => {
+  const server = 'https://app.calab.io';
+  const cb = 'https://support.example.com/oauth2/callback';
+  it('a code for the redirect_uri goes to the view', () => {
+    expect(signInAnswer(`${cb}?code=abc&state=s&iss=x`, server, cb)).toEqual({ kind: 'code', url: `${cb}?code=abc&state=s&iss=x` });
+  });
+  it('consent_required asks once; other errors fall back', () => {
+    expect(signInAnswer(`${cb}?error=consent_required&state=s`, server, cb)).toEqual({ kind: 'consent' });
+    for (const err of ['login_required', 'interaction_required', 'access_denied', 'invalid_scope'])
+      expect(signInAnswer(`${cb}?error=${err}`, server, cb)).toEqual({ kind: 'fallback' });
+    expect(signInAnswer(null, server, cb)).toEqual({ kind: 'fallback' });
+    expect(signInAnswer(`${cb}?code=a&error=x`, server, cb)).toEqual({ kind: 'fallback' });
+  });
+  it('a code addressed elsewhere is never loaded', () => {
+    expect(signInAnswer('https://evil.example.com/oauth2/callback?code=a', server, cb)).toEqual({ kind: 'fallback' });
+    expect(signInAnswer('https://support.example.com/other?code=a', server, cb)).toEqual({ kind: 'fallback' });
+  });
+  it('consent handle only from our server consent page', () => {
+    const h = `calab_oh_${'a'.repeat(43)}`;
+    expect(consentRequest(`/oauth/consent?request=${h}`, server)).toBe(h);
+    expect(consentRequest(`https://evil.example.com/oauth/consent?request=${h}`, server)).toBeNull();
+    expect(consentRequest(`/oauth/consent?request=${h}&request=${h}`, server)).toBeNull();
+    expect(consentRequest('/oauth/consent?request=short', server)).toBeNull();
+    expect(consentRequest(`/sign-in?request=${h}`, server)).toBeNull();
+  });
+  it('sameEndpoint compares origin and path', () => {
+    expect(sameEndpoint(`${cb}?code=1`, cb)).toBe(true);
+    expect(sameEndpoint('https://support.example.com:8443/oauth2/callback', cb)).toBe(false);
+    expect(sameEndpoint(`${cb}#x`, cb)).toBe(false);
+  });
+  it('limits sign-ins per app per minute', () => {
+    const now = 1_000_000;
+    expect(signInAllowed([now - 1000, now - 2000], now)).toBe(true);
+    expect(signInAllowed([now - 1000, now - 2000, now - 3000], now)).toBe(false);
+    expect(signInAllowed([now - 61_000, now - 62_000, now - 63_000], now)).toBe(true);
   });
 });

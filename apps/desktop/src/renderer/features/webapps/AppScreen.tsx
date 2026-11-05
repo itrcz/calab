@@ -16,6 +16,7 @@ import { useAdmissions } from '../guests/stores/admissions';
 /** The web app fills the content area down to the window bottom, also during calls. */
 export function AppScreen({ appId }: { appId: string }): ReactNode {
   const url = useWebApps((s) => s.byId[appId]?.url ?? '');
+  const workspaceId = useWebApps((s) => s.byId[appId]?.workspaceId ?? '');
   if (!url) return null;
   return (
     <div
@@ -23,7 +24,7 @@ export function AppScreen({ appId }: { appId: string }): ReactNode {
       data-testid="app-screen"
     >
       <LoadLine appId={appId} />
-      {platform.webApps ? <DesktopView appId={appId} url={url} /> : <WebFrame appId={appId} url={url} />}
+      {platform.webApps ? <DesktopView appId={appId} url={url} workspaceId={workspaceId} /> : <WebFrame appId={appId} url={url} />}
     </div>
   );
 }
@@ -115,7 +116,7 @@ function useOccluderKey(): string {
  * knock cards and the calling strip are never hidden behind the site: the view steps aside
  * (visibleViewRect) while they are shown.
  */
-function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode {
+function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; workspaceId: string }): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
   const covered = useOverlayOpen();
   const occluders = useOccluderKey();
@@ -133,12 +134,12 @@ function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode 
       void api.hide();
       return;
     }
-    void api.open(appId, url, viewRect(el));
+    void api.open(appId, url, workspaceId, viewRect(el));
     return () => {
       setAppViewRect(null);
       void api.hide();
     };
-  }, [api, appId, url, covered]);
+  }, [api, appId, url, workspaceId, covered]);
 
   // Size changes and the overlays that must stay visible (re-measured after they are laid out).
   useLayoutEffect(() => {

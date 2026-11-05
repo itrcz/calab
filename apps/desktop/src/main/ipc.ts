@@ -454,7 +454,7 @@ export function registerIpc(): void {
   handle(IPC.webAppOpen, (e, a) => {
     const win = mainOnly(e);
     const r = obj(a);
-    openApp(parseAppId(r['appId']), str(r['url'], 2048), parseBounds(r['bounds'], win.webContents.getZoomFactor()));
+    openApp(parseAppId(r['appId']), str(r['url'], 2048), parseAppId(r['workspaceId']), parseBounds(r['bounds'], win.webContents.getZoomFactor()));
   });
   handle(IPC.webAppHide, (e) => {
     mainOnly(e);

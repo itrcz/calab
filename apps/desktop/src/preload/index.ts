@@ -107,7 +107,7 @@ const api: CalabaApi = {
     onShownChange: (cb) => on(IPC.windowShownChanged, cb),
   },
   webApps: {
-    open: (appId, url, bounds) => ipcRenderer.invoke(IPC.webAppOpen, { appId, url, bounds }),
+    open: (appId, url, workspaceId, bounds) => ipcRenderer.invoke(IPC.webAppOpen, { appId, url, workspaceId, bounds }),
     hide: () => ipcRenderer.invoke(IPC.webAppHide),
     setBounds: (bounds) => ipcRenderer.invoke(IPC.webAppSetBounds, bounds),
     navigate: (action) => ipcRenderer.invoke(IPC.webAppNavigate, action),

@@ -438,6 +438,10 @@ export interface MainStrings {
   webAppBack: string;
   webAppForward: string;
   webAppReload: string;
+  webAppSignIn: string;
+  webAppSignInDetail: string;
+  webAppScopeProfile: string;
+  webAppScopeEmail: string;
   webAppOpenLink: string;
   webAppCopyLink: string;
   webAppOpenPage: string;
@@ -523,6 +527,10 @@ export const MAIN_STRING_KEYS = [
   'webAppBack',
   'webAppForward',
   'webAppReload',
+  'webAppSignIn',
+  'webAppSignInDetail',
+  'webAppScopeProfile',
+  'webAppScopeEmail',
   'webAppOpenLink',
   'webAppCopyLink',
   'webAppOpenPage',
