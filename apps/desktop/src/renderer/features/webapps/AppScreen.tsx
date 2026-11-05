@@ -130,6 +130,16 @@ function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; 
   // «Поправка 2»). No picture (nothing shown yet, a failed capture): the view steps aside at once.
   const [still, setStill] = useState<string | null>(null);
   useEffect(() => () => void api?.hide(), [api]);
+  // The pointer entering our page from outside it (from the site above it, most of all): the next
+  // menu opens here, so main takes the site's picture now — a capture waits for a frame (~0.5 s).
+  useEffect(() => {
+    if (!api || covered) return;
+    const back = (ev: MouseEvent): void => {
+      if (!ev.relatedTarget) void api.prepareSnapshot();
+    };
+    document.addEventListener('mouseover', back);
+    return () => document.removeEventListener('mouseover', back);
+  }, [api, covered]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !api) return;
@@ -187,7 +197,7 @@ function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; 
   useEffect(() => {
     if (useWebApps.getState().reloadApp !== appId) return;
     useWebApps.setState({ reloadApp: null });
-    void api?.navigate('reload');
+    void api?.navigate('reload', appId);
   }, [api, appId, reloadKey]);
 
   return (

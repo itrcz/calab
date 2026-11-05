@@ -220,7 +220,8 @@ export interface CalabaApi {
     /** Hide the shown app (it stays alive, at most two do). */
     hide(): Promise<void>;
     setBounds(bounds: WebAppBounds): Promise<void>;
-    navigate(action: WebAppNavAction): Promise<void>;
+    /** `appId`: that app even while it is hidden under a menu (the rail's «Перезагрузить»); else the shown one. */
+    navigate(action: WebAppNavAction, appId?: string): Promise<void>;
     /** The shown app's current page in the system browser. */
     openExternal(): Promise<void>;
     /** The app was deleted: its view and this device's site data of it go. */
@@ -231,6 +232,8 @@ export interface CalabaApi {
     tipHide(): Promise<void>;
     /** A still picture of the shown app (JPEG data URL, '' if none), shown in its place under a menu or dialog. */
     snapshot(): Promise<string>;
+    /** The pointer is back on Calab from the shown app: main takes the picture ahead. */
+    prepareSnapshot(): Promise<void>;
     /** A consent «Sign in with Calab» to ask in a Calab dialog; null: close it (timed out). ADR-0159. */
     onSignInAsk(cb: (ask: WebAppSignInAsk | null) => void): Unsubscribe;
     signInAnswer(id: string, allow: boolean): Promise<void>;

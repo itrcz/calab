@@ -165,6 +165,8 @@ export const IPC = {
   webAppTipHide: 'webapp:tip-hide',
   /** A still picture of the shown app (JPEG data URL, '' if none): laid under a menu or dialog while the view steps aside (ADR-0053 «Поправка 2»). */
   webAppSnapshot: 'webapp:snapshot',
+  /** The pointer came back from the shown app to Calab: take its picture ahead (a capture waits for a frame). */
+  webAppSnapshotPrepare: 'webapp:snapshot-prepare',
   /** main → renderer: a WebAppSignInAsk to answer with a Calab dialog, or null to close it (ADR-0159). */
   webAppSignInAsk: 'webapp:sign-in-ask',
   /** renderer → main: { id, allow } — the person's answer to the shown WebAppSignInAsk. */
