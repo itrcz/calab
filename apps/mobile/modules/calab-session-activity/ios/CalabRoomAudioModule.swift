@@ -1,4 +1,7 @@
 import ExpoModulesCore
+import OSLog
+
+private let calabRoomAudioLog = Logger(subsystem: "Calab", category: "room-audio")
 
 // ADR-0149 §2: the `roomAudio` bridge. JS validated the operation; it is parsed again here because
 // native holds the credentials, and it acts only for the document the host granted.
@@ -8,6 +11,12 @@ public class CalabRoomAudioModule: Module {
     Events("onRoomAudioChanged")
     Constants(["roomAudioEnabled": calabRoomAudioEnabled])
     OnCreate {
+      // Why a build offers no native room audio, without the hosts themselves.
+      let flag = Bundle.main.object(forInfoDictionaryKey: "CalabRoomAudioEnabled") as? Bool == true
+      let hosts = calabRoomAudioHosts(Bundle.main.object(forInfoDictionaryKey: "CalabRoomAudioHosts")).count
+      var modern = false
+      if #available(iOS 17, *) { modern = true }
+      calabRoomAudioLog.notice("module enabled=\(calabRoomAudioEnabled, privacy: .public) flag=\(flag, privacy: .public) ios17=\(modern, privacy: .public) hosts=\(hosts, privacy: .public)")
       #if canImport(LiveKitClient) || canImport(LiveKit)
       Task { @MainActor in
         guard calabRoomAudioEnabled else { return }
@@ -20,8 +29,12 @@ public class CalabRoomAudioModule: Module {
       #endif
     }
     AsyncFunction("operation") { (document: String, input: [String: Any]) in
-      guard calabRoomAudioEnabled else { throw CalabRoomAudioUnavailable() }
-      guard let operation = calabRoomAudioOperation(input) else { throw CalabRoomAudioInvalid() }
+      guard calabRoomAudioEnabled else { calabRoomAudioLog.notice("refused operation: disabled"); throw CalabRoomAudioUnavailable() }
+      guard let operation = calabRoomAudioOperation(input) else {
+        let known = (input["operation"] as? String).flatMap { ["status", "connect", "control", "cue", "disconnect"].contains($0) ? $0 : nil } ?? "unknown"
+        calabRoomAudioLog.notice("refused \(known, privacy: .public): parse-failure")
+        throw CalabRoomAudioInvalid()
+      }
       #if canImport(LiveKitClient) || canImport(LiveKit)
       try await CalabRoomAudio.shared.operation(document, operation)
       #endif
