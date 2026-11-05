@@ -7,7 +7,7 @@ vi.mock('../lib/api/endpoints', () => ({ api: { voice: {} } }));
 
 const { ApiError } = await import('../lib/api/client');
 
-const { COMPANION_IDLE_MS, COMPANION_MAX_FAILURES, VoiceCompanion, companionDevice, isCompanionIdentity } = await import('./voiceCompanion');
+const { COMPANION_IDLE_MS, COMPANION_MAX_FAILURES, COMPANION_STABLE_MS, VoiceCompanion, companionDevice, isCompanionIdentity } = await import('./voiceCompanion');
 
 type Handler = (...a: unknown[]) => void;
 
@@ -41,7 +41,7 @@ class FakeRoom {
 const conflict = (): InstanceType<typeof ApiError> => new ApiError('CONFLICT', 'join the voice room first', 409);
 
 let tokens: ReturnType<typeof vi.fn<(roomId: string) => Promise<{ url: string; token: string }>>>;
-let hooks: { attach: ReturnType<typeof vi.fn<(r: Room) => void>>; detach: ReturnType<typeof vi.fn<(r: Room, why: string) => void>>; down: ReturnType<typeof vi.fn<(on: boolean) => void>> };
+let hooks: { attach: ReturnType<typeof vi.fn<(r: Room) => void>>; detach: ReturnType<typeof vi.fn<(r: Room, why: string) => void>>; down: ReturnType<typeof vi.fn<(on: boolean) => void>>; superseded: ReturnType<typeof vi.fn<() => void>> };
 let companion: InstanceType<typeof VoiceCompanion>;
 
 const want = (w: Partial<{ join: string | null; roomId: string | null; needed: boolean; visible: boolean }> = {}) => ({ join: 'j1', roomId: 'A', needed: true, visible: true, ...w });
@@ -60,9 +60,9 @@ beforeEach(() => {
   FakeRoom.onConnect = null;
   let n = 0;
   tokens = vi.fn((_roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t${++n}` }));
-  hooks = { attach: vi.fn<(r: Room) => void>(), detach: vi.fn<(r: Room, why: string) => void>(), down: vi.fn<(on: boolean) => void>() };
+  hooks = { attach: vi.fn<(r: Room) => void>(), detach: vi.fn<(r: Room, why: string) => void>(), down: vi.fn<(on: boolean) => void>(), superseded: vi.fn<() => void>() };
   companion = new VoiceCompanion(
-    { attach: (r) => hooks.attach(r), detach: (r, why) => hooks.detach(r, why), down: (on) => hooks.down(on) },
+    { attach: (r) => hooks.attach(r), detach: (r, why) => hooks.detach(r, why), down: (on) => hooks.down(on), superseded: () => hooks.superseded() },
     { token: (id) => tokens(id), makeRoom: () => new FakeRoom() as unknown as Room },
   );
 });
@@ -143,6 +143,7 @@ describe('VoiceCompanion (ADR-0149 §3)', () => {
     room.emit(RoomEvent.Disconnected, DisconnectReason.DUPLICATE_IDENTITY);
     expect(hooks.detach).toHaveBeenCalledExactlyOnceWith(room, 'gone');
     expect(companion.phase).toBe('superseded');
+    expect(hooks.superseded).toHaveBeenCalledOnce();
     companion.sync(want({ needed: false }));
     companion.sync(want());
     await vi.advanceTimersByTimeAsync(120_000);
@@ -214,5 +215,39 @@ describe('VoiceCompanion (ADR-0149 §3)', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(tokens).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('one token request for a burst of wishes while it is on its way', async () => {
+    let answer!: (v: { url: string; token: string }) => void;
+    tokens.mockImplementationOnce(() => new Promise((r) => (answer = r)));
+    for (let i = 0; i < 5; i++) companion.sync(want());
+    companion.sync(want({ needed: false }));
+    companion.sync(want());
+    expect(companion.phase).toBe('connecting');
+    answer({ url: 'wss://lk', token: 'late' });
+    await settle();
+    companion.sync(want());
+    await settle();
+    expect(tokens).toHaveBeenCalledOnce();
+    expect(FakeRoom.all).toHaveLength(1);
+    expect(companion.phase).toBe('connected');
+  });
+
+  it('a companion removed right after each join gives up instead of looping; a link that stayed up forgives', async () => {
+    companion.sync(want());
+    await settle();
+    // Up for 30 s: the failures so far are forgiven.
+    last().emit(RoomEvent.Disconnected, DisconnectReason.PARTICIPANT_REMOVED);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(COMPANION_STABLE_MS);
+    // Then removed right after every join: the retries back off and end.
+    const down = (): boolean => companion.phase === 'down';
+    for (let i = 0; i < 20 && !down(); i++) {
+      last().emit(RoomEvent.Disconnected, DisconnectReason.PARTICIPANT_REMOVED);
+      for (let ms = 0; ms < 60_000 && !companion.room && !down(); ms += 500) await vi.advanceTimersByTimeAsync(500);
+    }
+    expect(companion.phase).toBe('down');
+    // 1 first join + 1 after the forgiven removal + MAX_FAILURES - 1 retries before giving up.
+    expect(tokens).toHaveBeenCalledTimes(2 + COMPANION_MAX_FAILURES - 1);
   });
 });

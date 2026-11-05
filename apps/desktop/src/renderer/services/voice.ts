@@ -284,6 +284,7 @@ class VoiceEngine {
     attach: (room) => this.onCompanionAttached(room),
     detach: (_room, why) => this.onCompanionDetached(why),
     down: (on) => setVoice({ videoDown: on }),
+    superseded: () => undefined,
   });
   /** The stream watched when the page went to background: native keeps its audio, the video comes back to it. */
   private heldWatch: { trackSid: string; userId: string } | null = null;

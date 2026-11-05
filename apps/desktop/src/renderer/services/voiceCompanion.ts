@@ -24,6 +24,8 @@ export const COMPANION_IDLE_MS = 30_000;
 export const COMPANION_RETRY_MS: readonly number[] = [1_000, 3_000, 10_000, 30_000];
 /** Failures in a row before the companion gives up for this join (video unavailable, said in the UI). */
 export const COMPANION_MAX_FAILURES = 6;
+/** A link that stayed up this long clears the failure count (one removed right after its join does not). */
+export const COMPANION_STABLE_MS = 30_000;
 
 /** A web companion identity `<user>:<session>:web` (server voice.CompanionIdentity): never a person of its own. */
 export function isCompanionIdentity(identity: string): boolean {
@@ -59,6 +61,8 @@ export interface CompanionHooks {
   detach(room: Room, why: CompanionDetach): void;
   /** Video is unavailable for this join (true) or may come again (false). */
   down(on: boolean): void;
+  /** A newer companion of this session took over: nothing comes from this one any more. */
+  superseded(): void;
 }
 
 export interface CompanionDeps {
@@ -90,6 +94,10 @@ export class VoiceCompanion {
   private gen = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The live link has stayed up COMPANION_STABLE_MS when this fires: the failures are forgiven then. */
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A start() is asking for its token (before a Room exists): no second one meanwhile. */
+  private starting = false;
   private failures = 0;
   /** A newer companion of this session took the identity (DUPLICATE_IDENTITY): off until a new join. */
   private superseded = false;
@@ -108,7 +116,7 @@ export class VoiceCompanion {
 
   get phase(): CompanionPhase {
     if (this.live) return 'connected';
-    if (this.pending || this.retryTimer) return 'connecting';
+    if (this.starting || this.pending || this.retryTimer) return 'connecting';
     if (this.superseded) return 'superseded';
     if (this.gaveUp) return 'down';
     return 'off';
@@ -142,7 +150,7 @@ export class VoiceCompanion {
       return;
     }
     this.cancelIdle();
-    if (this.live || this.pending || this.retryTimer || this.superseded || this.gaveUp) return;
+    if (this.live || this.starting || this.pending || this.retryTimer || this.superseded || this.gaveUp) return;
     void this.start();
   }
 
@@ -161,10 +169,12 @@ export class VoiceCompanion {
     const roomId = this.want.roomId;
     if (!roomId) return;
     let grant: { url: string; token: string };
+    this.starting = true;
     try {
       // A fresh token for every connect: it lives 10 min, LiveKit refreshes it once connected.
       grant = await this.deps.token(roomId);
     } catch (e) {
+      if (gen === this.gen) this.starting = false;
       if (gen !== this.gen) return;
       if (final(e)) {
         log.info(`voice companion: refused (${(e as ApiError).status}), no video in this room`);
@@ -177,6 +187,7 @@ export class VoiceCompanion {
       return;
     }
     if (gen !== this.gen) return;
+    this.starting = false;
     const room = this.deps.makeRoom();
     this.pending = room;
     this.guard(room);
@@ -197,7 +208,10 @@ export class VoiceCompanion {
     }
     this.pending = null;
     this.live = room;
-    this.failures = 0;
+    this.stableTimer = setTimeout(() => {
+      this.stableTimer = null;
+      this.failures = 0;
+    }, COMPANION_STABLE_MS);
     this.hooks.attach(room);
     // The wish may have changed meanwhile without a close (no camera any more): the idle wait starts now.
     if (!this.want.needed) this.sync(this.want);
@@ -222,12 +236,14 @@ export class VoiceCompanion {
     this.pending = null;
     this.gen++;
     this.cancelIdle();
+    this.cancelStable();
     if (wasLive) this.hooks.detach(room, 'gone');
     if (reason === DisconnectReason.CLIENT_INITIATED) return;
     if (reason === DisconnectReason.DUPLICATE_IDENTITY) {
       // A newer companion of this session (a reloaded page): it is the one now, not a takeover of the seat.
       log.info('voice companion: superseded by a newer one');
       this.superseded = true;
+      this.hooks.superseded();
       return;
     }
     // Removed (the seat moved or went), the room closed, the link lost: ask again while still wanted —
@@ -247,7 +263,7 @@ export class VoiceCompanion {
     const ms = COMPANION_RETRY_MS[Math.min(this.failures, COMPANION_RETRY_MS.length) - 1] ?? 1_000;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      if (this.wanted() && !this.live && !this.pending) void this.start();
+      if (this.wanted() && !this.live && !this.starting && !this.pending) void this.start();
     }, ms);
   }
 
@@ -260,8 +276,10 @@ export class VoiceCompanion {
 
   private close(why: CompanionDetach): void {
     this.gen++;
+    this.starting = false;
     this.cancelIdle();
     this.cancelRetry();
+    this.cancelStable();
     const live = this.live;
     const pending = this.pending;
     this.live = null;
@@ -276,6 +294,11 @@ export class VoiceCompanion {
   private cancelIdle(): void {
     if (this.idleTimer !== null) clearTimeout(this.idleTimer);
     this.idleTimer = null;
+  }
+
+  private cancelStable(): void {
+    if (this.stableTimer !== null) clearTimeout(this.stableTimer);
+    this.stableTimer = null;
   }
 
   private cancelRetry(): void {
