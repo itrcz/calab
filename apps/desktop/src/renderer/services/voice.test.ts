@@ -233,6 +233,8 @@ const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', t
 const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean; musician?: boolean; ptt?: boolean }) => Promise.resolve());
 const leaveVoice = vi.fn((_roomId: string) => Promise.resolve());
 const requestStream = vi.fn((_roomId: string, preset: number) => Promise.resolve({ preset, fps: 0 }));
+/** POST /rooms/{id}/voice/companion (ADR-0149 §3). */
+const companionToken = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `companion-${roomId}`, identity: 'u:s:web' }));
 vi.mock('../lib/api/endpoints', () => ({
   api: {
     voice: {
@@ -240,6 +242,7 @@ vi.mock('../lib/api/endpoints', () => ({
       leave: (id: string) => leaveVoice(id),
       updateSelf: (b: { muted?: boolean; deafened?: boolean; musician?: boolean; ptt?: boolean }) => updateSelf(b),
       requestStream: (id: string, preset: number) => requestStream(id, preset),
+      companion: (id: string) => companionToken(id),
     },
     me: { update: () => Promise.resolve({}) },
   },
@@ -408,6 +411,7 @@ beforeEach(async () => {
   micStarts.failNext = null;
   gone.clear();
   joinVoice.mockClear();
+  companionToken.mockClear();
   leaveVoice.mockReset();
   leaveVoice.mockImplementation(() => Promise.resolve());
   updateSelf.mockReset();
@@ -745,6 +749,128 @@ describe('native room audio (ADR-0149)', () => {
     usePrefs.getState().setPrefs({ musicianMode: true });
     expect(usePrefs.getState().musicianMode).toBe(false);
     expect(toast.info).toHaveBeenCalled();
+  });
+
+  describe('companion video (ADR-0149 §3)', () => {
+    const ME = '44444444-4444-4444-8444-444444444444';
+    const PEER = '55555555-5555-4555-8555-555555555555';
+    type VPub = { source: string; trackSid: string; kind: string; isMuted: boolean; isSubscribed: boolean; setSubscribed: ReturnType<typeof vi.fn>; setVideoQuality: ReturnType<typeof vi.fn>; setEnabled: () => void };
+    const vpub = (source: string, trackSid: string, kind = 'video'): VPub => ({ source, trackSid, kind, isMuted: false, isSubscribed: false, setSubscribed: vi.fn(), setVideoQuality: vi.fn(), setEnabled: () => undefined });
+    const participant = (identity: string, pubs: VPub[]) => ({
+      identity,
+      trackPublications: new Map(pubs.map((p) => [p.trackSid, p])),
+      getTrackPublication: (source: string) => pubs.find((p) => p.source === source),
+      getTrackPublicationBySid: (sid: string) => pubs.find((p) => p.trackSid === sid),
+    });
+    const publish = (room: FakeRoom, identity: string, pubs: VPub[]): void => {
+      room.remoteParticipants.set(identity, participant(identity, pubs));
+      for (const pub of pubs) room.emit('TrackPublished', pub, room.remoteParticipants.get(identity));
+    };
+    async function seats(states: Record<string, { camera?: boolean; streaming?: boolean }>): Promise<void> {
+      const { useWorkspaces } = await import('../stores/workspaces');
+      const voiceStates = Object.fromEntries(Object.entries(states).map(([id, v]) => [id, { userId: id, roomId: 'A', camera: false, streaming: false, ...v }]));
+      useWorkspaces.setState({ byId: { ws: { ws: {}, voice: voiceStates } } as never });
+      await settle();
+    }
+    async function joined(): Promise<ReturnType<typeof host>> {
+      const h = host();
+      usePrefs.setState({ userVolumes: {}, mutedUsers: {}, deafUsers: {}, outputVolume: 1 });
+      const { useSession } = await import('../stores/session');
+      useSession.setState({ me: { user: { id: ME } } } as never);
+      await seats({ [ME]: {} });
+      await voice.join('A', 'ws');
+      return h;
+    }
+    const companionRoom = (): FakeRoom => {
+      const r = FakeRoom.all.at(-1);
+      if (!r) throw new Error('no companion');
+      return r;
+    };
+
+    it('connects only while someone has a camera or a screen on; cameras show, my native identity is me', async () => {
+      await joined();
+      expect(FakeRoom.all).toHaveLength(0);
+      expect(companionToken).not.toHaveBeenCalled();
+      await seats({ [ME]: {}, [PEER]: { camera: true } });
+      expect(companionToken).toHaveBeenCalledExactlyOnceWith('A');
+      const room = companionRoom();
+      expect(room.connectedWith).toEqual(['wss://lk', 'companion-A']);
+      // My native device is in the companion's room too (and a camera of another device of mine): never a tile.
+      publish(room, `${ME}:native`, [vpub('camera', 'TR_my_cam')]);
+      const cam = vpub('camera', 'TR_peer_cam');
+      publish(room, `${PEER}:dev`, [cam]);
+      room.remoteParticipants.set(`${PEER}:dev:web`, participant(`${PEER}:dev:web`, []));
+      expect(useVoice.getState().cameras.map((c) => c.userId)).toEqual([PEER]);
+      expect(useVoice.getState()).toMatchObject({ audioOnly: true, videoDown: false, canVideo: false });
+      voice.showCamera(PEER, 'high');
+      await settle();
+      expect(cam.setSubscribed).toHaveBeenLastCalledWith(true);
+      // Leaving the room closes it with the join, without a call of its own.
+      await voice.leave();
+      expect(room.disconnects.length).toBeGreaterThan(0);
+      expect(companionToken).toHaveBeenCalledOnce();
+    });
+
+    it('the watched screen share: video through the companion, its audio native with the stream volume, unwatched → gone', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      const room = companionRoom();
+      const screen = vpub('screen_share', 'TR_screen');
+      const screenAudio = vpub('screen_share_audio', 'TR_screen_audio', 'audio');
+      const mic = vpub('microphone', 'TR_mic', 'audio');
+      publish(room, `${PEER}:dev`, [screen, screenAudio, mic]);
+      expect(useVoice.getState().watching).toBe('TR_screen');
+      expect(screen.setSubscribed).toHaveBeenLastCalledWith(true);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      voice.setStreamVolume(PEER, 0.4);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 0.4 });
+      voice.watch(null);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+      expect(screen.setSubscribed).toHaveBeenLastCalledWith(false);
+      // Never an audio kind on the companion: the WebView stays silent.
+      expect(screenAudio.setSubscribed).not.toHaveBeenCalledWith(true);
+      expect(mic.setSubscribed).not.toHaveBeenCalledWith(true);
+    });
+
+    it('background closes it at once, native keeps the watched stream’s audio; foreground brings the video back to it', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      expect(companionRoom().disconnects).toHaveLength(1);
+      expect(useVoice.getState()).toMatchObject({ streams: [], watching: null });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      FakeRoom.onConnect = () => {
+        const r = companionRoom();
+        // Another stream comes first now: the held one is still the one watched.
+        r.remoteParticipants.set('66666666-6666-4666-8666-666666666666:dev', participant('66666666-6666-4666-8666-666666666666:dev', [vpub('screen_share', 'TR_other')]));
+        r.remoteParticipants.set(`${PEER}:dev`, participant(`${PEER}:dev`, [vpub('screen_share', 'TR_screen')]));
+        return Promise.resolve();
+      };
+      setHidden(false);
+      await settle();
+      expect(FakeRoom.all).toHaveLength(2);
+      expect(useVoice.getState().watching).toBe('TR_screen');
+      // The stream ends while the page is away again: native lets its audio go.
+      setHidden(true);
+      await seats({ [ME]: {}, [PEER]: { streaming: false } });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('a companion that gave up says why; cameras and screens otherwise need no reason', async () => {
+      const { ApiError } = await import('../lib/api/client');
+      companionToken.mockImplementationOnce(() => Promise.reject(new ApiError('NOT_FOUND', 'no', 404)));
+      await joined();
+      await seats({ [ME]: {}, [PEER]: { camera: true } });
+      expect(useVoice.getState().videoDown).toBe(true);
+      await voice.leave();
+      expect(useVoice.getState().videoDown).toBe(false);
+    });
   });
 });
 
@@ -3469,5 +3595,31 @@ describe('the page away and back', () => {
     setHidden(false);
     await vi.advanceTimersByTimeAsync(1_500);
     expect(micStarts.n).toBe(starts + 1);
+  });
+});
+
+describe('a web companion is never a second person (ADR-0149 §3)', () => {
+  const p = (identity: string) => ({ identity, trackPublications: new Map(), getTrackPublication: () => undefined, getTrackPublicationBySid: () => undefined });
+
+  it('no «join» for a companion, and its device leaving still plays «leave»', async () => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    await voice.join('A', 'ws');
+    const room = FakeRoom.all.at(-1);
+    if (!room) throw new Error('no room');
+    room.remoteParticipants.set('u2:s', p('u2:s'));
+    room.emit('ParticipantConnected', p('u2:s'));
+    expect(playSound).toHaveBeenLastCalledWith('join');
+    playSound.mockClear();
+    room.remoteParticipants.set('u2:s:web', p('u2:s:web'));
+    room.emit('ParticipantConnected', p('u2:s:web'));
+    expect(playSound).not.toHaveBeenCalled();
+    room.remoteParticipants.delete('u2:s');
+    room.emit('ParticipantDisconnected', p('u2:s'));
+    expect(playSound).toHaveBeenCalledExactlyOnceWith('leave');
+    playSound.mockClear();
+    room.remoteParticipants.delete('u2:s:web');
+    room.emit('ParticipantDisconnected', p('u2:s:web'));
+    expect(playSound).not.toHaveBeenCalled();
   });
 });

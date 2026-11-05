@@ -108,10 +108,12 @@ export interface VoiceStore {
   /** JoinVoiceResponse.can_video: VIDEO and the room allows cameras. */
   canVideo: boolean;
   /**
-   * The join's audio is native (iOS shell, ADR-0149): no cameras, screens, musician mode or
-   * workspace clips here until the companion video (R6) — the UI says why instead.
+   * The join's audio is native (iOS shell, ADR-0149): no own camera, musician mode or workspace
+   * clips in v1 — the UI says why instead. Others' cameras and screens come through the companion.
    */
   audioOnly: boolean;
+  /** A native-audio join's companion video gave up (ADR-0149 §3): others' cameras and screens can't be shown. */
+  videoDown: boolean;
   /** My webcam (lib/media/cameraLogic.ts state machine). */
   camera: CameraPhase;
   /** The camera encoder was CPU-bound: capture dropped to 360p for this session. */
@@ -197,6 +199,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   canStream: false,
   canVideo: false,
   audioOnly: false,
+  videoDown: false,
   camera: 'off',
   cameraCpuLimited: false,
   cameraFacing: null,

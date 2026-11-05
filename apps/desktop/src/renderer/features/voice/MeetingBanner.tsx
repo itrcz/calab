@@ -34,13 +34,13 @@ function countKey(s: ReturnType<typeof useWorkspaces.getState>, workspaceId: str
 export function MeetingBanner({ workspaceId, room, perms }: { workspaceId: string; room: Room; perms: PermissionBits }): ReactNode {
   useLocale();
   const preview = useVoice((s) => isVoicePreview(room, s.roomId));
-  // In this room on a native-audio join (iPhone, ADR-0149 §3): the videos it cannot show yet, with the reason.
-  const audioOnly = useVoice((s) => s.audioOnly && s.roomId === room.id);
+  // In this room on a native-audio join (iPhone, ADR-0149 §3) whose companion video gave up: the reason.
+  const videoDown = useVoice((s) => s.audioOnly && s.videoDown && s.roomId === room.id);
   const key = useWorkspaces((s) => countKey(s, workspaceId, room.id));
   const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
   const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
   const [people = 0, cameras = 0, screens = 0] = key.split(':').map(Number);
-  if (audioOnly) {
+  if (videoDown) {
     if (cameras + screens === 0) return null;
     return (
       <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-1.5 text-body" role="status" data-testid="video-audio-only">

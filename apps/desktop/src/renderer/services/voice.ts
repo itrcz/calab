@@ -97,6 +97,7 @@ import {
 import { SELF_SYNC_LAG_MS, SelfStateSync, type SelfFlags } from '../lib/selfStateSync';
 import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, rejectAfter, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
 import { annot } from './annot';
+import { VoiceCompanion, WATCH_TOPIC, isCompanionIdentity, type CompanionDetach } from './voiceCompanion';
 import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
@@ -128,8 +129,6 @@ const METER_UI_INTERVAL_MS = 50;
 const STATS_INTERVAL_MS = ECHO.statsMs;
 /** Remote SSRC levels are fresh when played out within this window (DTX sends ~every 400 ms). */
 const LEVEL_FRESH_MS = 500;
-/** LiveKit data topic for "who watches my stream" (docs/05: data channels only for in-call ephemera). */
-const WATCH_TOPIC = 'calaba.watch';
 /** A /join waits at most this long for a /voice/leave still in flight. */
 const LEAVE_WAIT_MS = 3000;
 /** Seat check (docs/09 #71): a join / leave in progress is waited out this often, this many times. */
@@ -277,6 +276,17 @@ class VoiceEngine {
   private nativeSeatsOff: (() => void) | null = null;
   /** Re-asks native for meter levels while a meter is shown in a visible page (they stop by themselves after 30 s). */
   private levelsTimer: number | null = null;
+  /**
+   * The web companion of a native-audio join (ADR-0149 §3): a subscribe-only LiveKit connection
+   * for the cameras, the screen shares and the data topics, never an audio kind.
+   */
+  private readonly companion = new VoiceCompanion({
+    attach: (room) => this.onCompanionAttached(room),
+    detach: (_room, why) => this.onCompanionDetached(why),
+    down: (on) => setVoice({ videoDown: on }),
+  });
+  /** The stream watched when the page went to background: native keeps its audio, the video comes back to it. */
+  private heldWatch: { trackSid: string; userId: string } | null = null;
   private nativeCallEvent: string | undefined;
   private roomId: string | null = null;
   private joinSeq = 0;
@@ -885,6 +895,131 @@ class VoiceEngine {
     return this.nativeAudio instanceof HostRoomAudioSession ? this.nativeAudio : null;
   }
 
+  /** The LiveKit Room the cameras and screen shares come from: the web join's, or a native join's companion. */
+  private get videoRoom(): Room | null {
+    return this.room ?? (this.nativeRoom ? this.companion.room : null);
+  }
+
+  /**
+   * The companion follows the native join (ADR-0149 §3): in foreground while someone else in the
+   * room has a camera or a screen share on (the watch and annotation topics only serve a screen
+   * share), closed 30 s after none and at once in background.
+   */
+  private syncCompanion(): void {
+    const native = this.nativeRoom;
+    const roomId = native ? this.roomId : null;
+    this.companion.sync({ join: native?.connectionId ?? null, roomId, needed: roomId !== null && this.companionNeeded(roomId), visible: !document.hidden });
+  }
+
+  private companionNeeded(roomId: string): boolean {
+    const ws = useVoice.getState().workspaceId;
+    const me = this.myId();
+    for (const [id, v] of Object.entries((ws ? useWorkspaces.getState().byId[ws]?.voice : undefined) ?? {})) {
+      if (v.roomId === roomId && id !== me && (v.camera || v.streaming)) return true;
+    }
+    return false;
+  }
+
+  /** The companion Room is up: its video and data events, and what it already has. */
+  private onCompanionAttached(room: Room): void {
+    if (!this.nativeRoom) return;
+    log.info('voice: companion video connected');
+    annot.attach(room);
+    this.wireCompanion(room);
+    this.refreshStreams();
+    this.refreshCameras();
+    this.camerasPrimed = true;
+    if (this.videoOnJoin === this.roomId) {
+      this.videoOnJoin = null;
+      if (this.anyCamera() && !useVoice.getState().watching) setVoice({ stage: 'expanded', videoPip: true });
+    }
+    setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
+  }
+
+  /**
+   * The companion Room went: nothing from it is shown any more. In background the watched stream is
+   * held (native keeps its audio, the video comes back to it); otherwise it is no longer watched.
+   */
+  private onCompanionDetached(why: CompanionDetach): void {
+    const st = useVoice.getState();
+    const stream = st.streams.find((s) => s.trackSid === st.watching);
+    this.heldWatch = why === 'hidden' && stream ? { trackSid: stream.trackSid, userId: stream.userId } : null;
+    // Back after the page was away (or a lost link): the cameras on then are not «turned on».
+    if (why !== 'idle') this.camerasPrimed = false;
+    this.wanted.clear();
+    this.announced = null;
+    annot.detach();
+    annot.syncStreams([]);
+    // Away in background: the layout stays for the page coming back; otherwise back to the chat.
+    const chat = why !== 'hidden' && st.stage === 'expanded' && st.camera !== 'on';
+    setVoice({ streams: [], cameras: [], watching: null, focusedTile: null, ...(chat ? { stage: 'pip' as const } : {}), trackEpoch: st.trackEpoch + 1 });
+    if (this.nativeRoom) this.pushNativeControls();
+  }
+
+  /**
+   * The companion's events: video publications, subscriptions and the data topics only. No cues,
+   * speakers or seats here — those are native's and the server's (watchNativeSeats). My native
+   * identity is in this room too and counts as me (refreshCameras).
+   */
+  private wireCompanion(room: Room): void {
+    const live = (): boolean => this.companion.room === room && this.nativeRoom !== null;
+    const video = (src: Track.Source): boolean => src === Track.Source.Camera || src === Track.Source.ScreenShare;
+    room
+      .on(RoomEvent.TrackPublished, (pub) => {
+        if (!live() || !video(pub.source)) return;
+        if (pub.source === Track.Source.ScreenShare) playSound('streamStart');
+        this.refreshStreams();
+        this.refreshCameras();
+      })
+      .on(RoomEvent.TrackUnpublished, (pub, p) => {
+        if (!live() || !video(pub.source)) return;
+        if (pub.source === Track.Source.ScreenShare && room.remoteParticipants.has(p.identity)) playSound('streamEnd');
+        this.refreshStreams();
+        this.refreshCameras();
+      })
+      .on(RoomEvent.TrackSubscribed, (track, pub) => {
+        if (!live() || track.kind !== Track.Kind.Video) return;
+        if (pub.source === Track.Source.ScreenShare) {
+          this.applyQuality(pub);
+          this.syncAnnounce();
+        }
+        if (pub.source === Track.Source.Camera) this.applyCameras();
+        setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
+      })
+      .on(RoomEvent.TrackUnsubscribed, (track, pub) => {
+        if (!live() || track.kind !== Track.Kind.Video) return;
+        if (pub.source === Track.Source.ScreenShare) this.syncAnnounce();
+        setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
+      })
+      .on(RoomEvent.TrackMuted, (pub, p) => {
+        if (live() && p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
+      })
+      .on(RoomEvent.TrackUnmuted, (pub, p) => {
+        if (live() && p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
+      })
+      .on(RoomEvent.ParticipantDisconnected, (p) => {
+        if (!live()) return;
+        annot.participantLeft(p.identity);
+        this.refreshStreams();
+        this.refreshCameras();
+      })
+      .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
+        if (!participant || !live()) return;
+        if (topic === WATCH_TOPIC) this.onWatchMessage(payload, participant);
+        else if (topic === ANNOT_TOPIC) annot.onData(payload, participant);
+      });
+  }
+
+  /** The watched stream's publisher → its stream volume, for native (ADR-0149 §3; none while deafened to them). */
+  private watchedPublishers(): { id: string; volume: number }[] {
+    const st = useVoice.getState();
+    const stream = st.streams.find((s) => s.trackSid === st.watching && !s.local);
+    const userId = stream?.userId ?? this.heldWatch?.userId;
+    if (!userId) return [];
+    const audio = remoteAudio({ ...prefs(), deafened: false, userId, stream: true, streamVolume: st.streamVolume });
+    return audio.muted ? [] : [{ id: userId, volume: audio.volume }];
+  }
+
   /**
    * The room's audio through native (ADR-0149): no getUserMedia, no <audio>; cues and built-in
    * clips by name. True: done (in the room, or superseded). False: native could not start and this
@@ -942,6 +1077,9 @@ class VoiceEngine {
     const sv = useWorkspaces.getState().byId[useVoice.getState().workspaceId ?? '']?.voice[this.myId()];
     if (!session.state.phoneCall) this.pushSelfState(sv?.roomId === roomId && sv.onPhone ? { onPhone: false } : {});
     this.watchNativeSeats();
+    // Cameras already on at join are not «turned on» (ADR-0066 §3); one that comes later is.
+    this.camerasPrimed = !this.companionNeeded(roomId);
+    this.syncCompanion();
     const cue = quiet || this.resumedJoin ? 'reconnect' : 'join';
     if (cue === 'join' || !this.cuesQuiet()) playSound(cue);
     this.resumedJoin = false;
@@ -1091,6 +1229,14 @@ class VoiceEngine {
       for (const who of next) if (who !== me && !seated.has(who) && joinLeaveCue(next, who, me, max)) playSound('join');
       for (const who of seated) if (who !== me && !next.has(who) && joinLeaveCue(seated, who, me, max)) playSound('leave');
       seated = next;
+      // A stream held through the background ended meanwhile: native lets its audio go.
+      const held = this.heldWatch;
+      if (held && !s.byId[ws]?.voice[held.userId]?.streaming) {
+        this.heldWatch = null;
+        this.pushNativeControls();
+      }
+      // Cameras and screen shares came or went: the companion follows (ADR-0149 §3).
+      this.syncCompanion();
     });
   }
 
@@ -1119,6 +1265,7 @@ class VoiceEngine {
       muted: v.muted || v.serverMuted, deafened: v.deafened, outputVolume: p.outputVolume, users,
       bitrateKbps: this.micTier().kbps, mode: this.micMode(), thresholdDb: p.thresholdDb, pttOpen: v.pttDown,
       levels: this.meterShown() && !document.hidden,
+      watched: this.watchedPublishers(),
     });
   }
 
@@ -1944,6 +2091,8 @@ class VoiceEngine {
     const nativeRoom = this.nativeRoom;
     this.nativeAudio?.stop(); this.nativeAudio = null;
     if (nativeRoom) {
+      this.heldWatch = null;
+      this.companion.stop();
       this.syncLevelsRefresh();
       routeCues(null);
       this.nativeSeatsOff?.();
@@ -2154,12 +2303,13 @@ class VoiceEngine {
         if (pub.source === Track.Source.ScreenShare) this.syncAnnounce();
         if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.Camera) setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
       })
+      // A web companion (ADR-0149 §3) is its device's second connection, never a person coming or going.
       .on(RoomEvent.ParticipantConnected, (p) => {
-        this.peerCue(room, userIdOf(p.identity), true);
+        if (!isCompanionIdentity(p.identity)) this.peerCue(room, userIdOf(p.identity), true);
       })
       .on(RoomEvent.ParticipantDisconnected, (p) => {
         const gone = userIdOf(p.identity);
-        const still = [...room.remoteParticipants.values()].some((o) => userIdOf(o.identity) === gone);
+        const still = isCompanionIdentity(p.identity) || [...room.remoteParticipants.values()].some((o) => !isCompanionIdentity(o.identity) && userIdOf(o.identity) === gone);
         if (!still) this.active.drop(gone);
         if (!still) this.peerCue(room, gone, false);
         for (const set of this.viewers.values()) set.delete(p.identity);
@@ -2267,6 +2417,8 @@ class VoiceEngine {
   }
 
   private subscribe(pub: RemoteTrackPublication, on: boolean): void {
+    // The companion never takes an audio kind (ADR-0149 §3): the WebView stays silent.
+    if (on && pub.kind === Track.Kind.Audio && this.room === null) return;
     const sid = pub.trackSid;
     if (this.wanted.get(sid) === on) return;
     this.wanted.set(sid, on);
@@ -2274,7 +2426,7 @@ class VoiceEngine {
   }
 
   private refreshStreams(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const streams: RemoteStream[] = [];
     for (const p of room.remoteParticipants.values()) {
@@ -2295,11 +2447,15 @@ class VoiceEngine {
     if (watching && !streams.some((s) => s.trackSid === watching)) watching = null;
     // A new stream appears: show it in the PiP tile unless the user already watches another one.
     const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid));
-    if (!watching && fresh) watching = fresh.trackSid;
+    // Back from background (a companion again): the stream that was watched, if it is still on.
+    const held = this.heldWatch && streams.some((s) => s.trackSid === this.heldWatch?.trackSid) ? this.heldWatch.trackSid : null;
+    if (!watching && held) watching = held;
+    else if (!watching && fresh) watching = fresh.trackSid;
+    this.heldWatch = null;
     // Starting to watch (nothing watched before): the room's remembered layout, else expanded when
     // the chat is (nearly) empty — a lone PiP over an empty room looks lost (docs/09 #56). The
     // watched stream ended: back to the chat, unless cameras keep the video stage busy.
-    const stage = !watching ? (st.stage !== 'pip' && this.anyCamera() ? 'expanded' : 'pip') : st.watching ? st.stage : defaultStage(st.roomId);
+    const stage = !watching ? (st.stage !== 'pip' && this.anyCamera() ? 'expanded' : 'pip') : st.watching || held ? st.stage : defaultStage(st.roomId);
     setVoice({ streams, ...(watching !== st.watching ? { watching, stage } : {}) });
     annot.syncStreams(streams);
     this.applyWatching();
@@ -2307,13 +2463,15 @@ class VoiceEngine {
 
   /** Watched stream: video + audio; expanded stage: the others' video for previews; rest off. */
   private applyWatching(): void {
-    const room = this.room;
+    // A native-audio join: the watched stream's own audio is native's (the `watched` control).
+    if (this.nativeRoom) this.pushNativeControls();
+    const room = this.videoRoom;
     if (!room) return;
     const { watching, stage } = useVoice.getState();
     const previews = watching !== null && stage === 'expanded';
     for (const p of room.remoteParticipants.values()) {
       const video = p.getTrackPublication(Track.Source.ScreenShare);
-      const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
+      const audio = room === this.room ? p.getTrackPublication(Track.Source.ScreenShareAudio) : undefined;
       const on = !!video && video.trackSid === watching;
       if (video) this.subscribe(video, on || previews);
       if (audio) this.subscribe(audio, on && !useVoice.getState().deafened);
@@ -2326,6 +2484,7 @@ class VoiceEngine {
   }
 
   watch(trackSid: string | null): void {
+    this.heldWatch = null;
     setVoice({ watching: trackSid, ...(trackSid ? {} : { stage: 'pip' }) });
     this.applyWatching();
   }
@@ -2372,7 +2531,7 @@ class VoiceEngine {
   }
 
   private remotePub(trackSid: string): RemoteTrackPublication | undefined {
-    for (const p of this.room?.remoteParticipants.values() ?? []) {
+    for (const p of this.videoRoom?.remoteParticipants.values() ?? []) {
       const pub = p.getTrackPublicationBySid(trackSid);
       if (pub) return pub;
     }
@@ -2387,7 +2546,7 @@ class VoiceEngine {
   }
 
   remoteVideo(trackSid: string): RemoteVideoTrack | null {
-    for (const p of this.room?.remoteParticipants.values() ?? []) {
+    for (const p of this.videoRoom?.remoteParticipants.values() ?? []) {
       const t = p.getTrackPublicationBySid(trackSid)?.track;
       if (t && t.kind === Track.Kind.Video) return t as RemoteVideoTrack;
     }
@@ -2503,13 +2662,14 @@ class VoiceEngine {
 
   /** Remote webcams of the room (a camera muted by the server counts as off). */
   private refreshCameras(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const cameras: RemoteCamera[] = [];
     for (const p of room.remoteParticipants.values()) {
       const pub = p.getTrackPublication(Track.Source.Camera);
       const userId = userIdOf(p.identity);
-      // My own camera from another device (web + desktop) is not a tile here (review L9).
+      // My own camera from another device (web + desktop) is not a tile here (review L9); on a
+      // companion my native identity is in the room too, and it is me (ADR-0149 §3).
       if (userId === this.myId()) continue;
       if (pub?.trackSid && !pub.isMuted && !cameras.some((c) => c.userId === userId)) cameras.push({ trackSid: pub.trackSid, identity: p.identity, userId });
     }
@@ -2615,7 +2775,7 @@ class VoiceEngine {
 
   private inRoom(userId: string): boolean {
     if (userId === useSession.getState().me?.user?.id) return true;
-    for (const p of this.room?.remoteParticipants.values() ?? []) if (userIdOf(p.identity) === userId) return true;
+    for (const p of this.videoRoom?.remoteParticipants.values() ?? []) if (userIdOf(p.identity) === userId) return true;
     return false;
   }
 
@@ -2642,7 +2802,7 @@ class VoiceEngine {
    * to the tile size and pauses cameras that are not on screen.
    */
   private applyCameras(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const p = prefs();
     const shown = this.shownCams.ids();
@@ -3474,6 +3634,8 @@ class VoiceEngine {
       this.roomId = toRoomId;
       setVoice({ roomId: toRoomId, workspaceId });
       playSound('moved');
+      // The server took the companion out of the old room: a new one for the new room.
+      this.syncCompanion();
       this.syncTray();
       return;
     }
@@ -3826,7 +3988,7 @@ class VoiceEngine {
    * pop-out) once its video is subscribed — preview tiles in the strip don't count as watching.
    */
   private syncAnnounce(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const watching = useVoice.getState().watching;
     let next: { owner: string; sid: string } | null = null;
@@ -3844,7 +4006,7 @@ class VoiceEngine {
   }
 
   private announceWatch(owner: string, trackSid: string, on: boolean): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const data = new TextEncoder().encode(JSON.stringify({ sid: trackSid, on }));
     void room.localParticipant.publishData(data, { reliable: true, topic: WATCH_TOPIC, destinationIdentities: [owner] }).catch(() => undefined);
@@ -3920,8 +4082,9 @@ class VoiceEngine {
 
   private onVisibility(): void {
     const now = Date.now();
-    // Levels only for a visible page (ADR-0149 §5).
+    // Levels only for a visible page (ADR-0149 §5); the companion video only in foreground (§3).
     if (this.nativeRoom && this.meterShown()) this.pushNativeControls();
+    if (this.nativeRoom) this.syncCompanion();
     if (document.hidden) {
       if (this.hiddenAt !== null) return;
       this.hiddenAt = now;
