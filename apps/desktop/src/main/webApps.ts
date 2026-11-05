@@ -717,6 +717,11 @@ export function openApp(appId: string, url: string, workspaceId: string, b: View
     e.home = checked.url;
     e.failed = '';
     void e.view.webContents.loadURL(checked.url).catch(() => undefined);
+  } else if (e.failed) {
+    // Coming back to an app whose page did not load tries it again (a site restarting for a minute).
+    const wc = e.view.webContents;
+    const cur = wc.getURL();
+    void wc.loadURL(cur && !cur.startsWith('chrome-error:') ? cur : e.home).catch(() => undefined);
   }
   e.workspaceId = workspaceId;
   const t = touchLru(lru, appId);

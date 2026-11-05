@@ -16,7 +16,9 @@ interface WebAppsState {
   nav: Record<string, WebAppNavState>;
   /** «Перезагрузить» from the rail menu: the open app's screen reloads when it changes. */
   reloadKey: number;
-  bumpReload: () => void;
+  /** The app the rail asked to reload; its desktop view reloads once it is on screen, also when it opens only now. */
+  reloadApp: string | null;
+  bumpReload: (appId?: string) => void;
   setWorkspace: (workspaceId: string, apps: readonly WorkspaceApp[]) => void;
   upsert: (a: WorkspaceApp) => void;
   remove: (workspaceId: string, appId: string) => void;
@@ -41,7 +43,8 @@ export const useWebApps = create<WebAppsState>()((set) => ({
   open: null,
   nav: {},
   reloadKey: 0,
-  bumpReload: () => set((s) => ({ reloadKey: s.reloadKey + 1 })),
+  reloadApp: null,
+  bumpReload: (appId) => set((s) => ({ reloadKey: s.reloadKey + 1, reloadApp: appId ?? null })),
   setWorkspace: (wsId, apps) =>
     set((s) => {
       const byId = Object.fromEntries(Object.entries(s.byId).filter(([, a]) => a.workspaceId !== wsId));
@@ -76,7 +79,7 @@ export const useWebApps = create<WebAppsState>()((set) => ({
   reorder: (wsId, ids) => set((s) => ({ order: { ...s.order, [wsId]: ids } })),
   setOpen: (appId) => set((s) => (s.open === appId ? s : { open: appId })),
   setNav: (n) => set((s) => ({ nav: { ...s.nav, [n.appId]: n } })),
-  reset: () => set({ byId: {}, order: {}, open: null, nav: {} }),
+  reset: () => set({ byId: {}, order: {}, open: null, nav: {}, reloadApp: null }),
 }));
 
 /** The apps of a snapshot (READY, WORKSPACE_CREATE); a guest's snapshot carries none. */

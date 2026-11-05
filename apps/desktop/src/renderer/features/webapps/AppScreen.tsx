@@ -121,7 +121,6 @@ function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; 
   const covered = useOverlayOpen();
   const occluders = useOccluderKey();
   const reloadKey = useWebApps((s) => s.reloadKey);
-  const firstReload = useRef(reloadKey);
   const failed = useWebApps((s) => s.nav[appId]?.failed ?? '');
   const crashed = useWebApps((s) => s.nav[appId]?.crashed ?? false);
   const api = platform.webApps;
@@ -161,12 +160,14 @@ function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; 
     };
   }, [api, covered, occluders]);
 
-  // «Перезагрузить» from the rail menu (after the open above: IPC keeps the order).
+  // «Перезагрузить» from the rail menu (after the open above: IPC keeps the order). The request is
+  // kept by app id: the menu of an app that is not open yet opens it first, and this view only
+  // mounts then — a counter captured on mount would already include the request and skip it.
   useEffect(() => {
-    if (reloadKey === firstReload.current) return;
-    firstReload.current = reloadKey;
+    if (useWebApps.getState().reloadApp !== appId) return;
+    useWebApps.setState({ reloadApp: null });
     void api?.navigate('reload');
-  }, [api, reloadKey]);
+  }, [api, appId, reloadKey]);
 
   return (
     <div ref={ref} className="relative min-h-0 flex-1" data-testid="app-view" data-toast-anchor>
