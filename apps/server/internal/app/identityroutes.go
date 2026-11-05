@@ -381,6 +381,7 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/rooms/{id}/sounds/play":                                    scopeRoom,
 	"POST /api/rooms/{id}/stream/request":                                 scopeRoom,
 	"POST /api/rooms/{id}/voice/leave":                                    scopeRoom,
+	"POST /api/rooms/{id}/voice/companion":                                scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/allow-camera":                    scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/disconnect":                      scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/move":                            scopeRoom,

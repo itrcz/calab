@@ -262,7 +262,11 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 				people := make([]Participant, 0, len(job.people))
 				keys := make([]IdentityKey, 0, len(job.people))
 				for _, person := range job.people {
-					if uid, sid, ok := voice.ParseIdentity(person.Identity); ok {
+					uid, sid, ok := voice.ParseIdentity(person.Identity)
+					if !ok { // a companion (ADR-0149 §3) is checked as its device
+						uid, sid, ok = voice.ParseCompanion(person.Identity)
+					}
+					if ok {
 						people = append(people, person)
 						keys = append(keys, IdentityKey{User: uid, Session: sid})
 					}
@@ -297,7 +301,8 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 					}
 					state.clearFailure(runKey)
 					// Redis is bookkeeping after authoritative SFU eviction, never its prerequisite.
-					if s.voice.C != nil {
+					// A companion has no voice state of its own.
+					if _, _, device := voice.ParseIdentity(person.Identity); device && s.voice.C != nil {
 						clean, done := context.WithTimeout(ctx, 100*time.Millisecond)
 						_ = s.update(clean, job.ws, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 							if cur != nil && cur.RoomID == job.rid {
