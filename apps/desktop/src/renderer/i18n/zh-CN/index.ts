@@ -830,7 +830,7 @@ export const zhCN: Dict = {
   'main.webAppForward': '前进',
   'main.webAppReload': '重新加载',
   'main.webAppSignIn': '“{app}”请求使用 Calab 登录',
-  'main.webAppSignInDetail': '工作区：{workspace}。账号：{name}。网站 {site} 将获得：{what}。此回答会被记住，可在设置中撤销。',
+  'main.webAppSignInDetail': '工作区：{workspace}。账号：{name}。网站 {site} 将获得：{what}。允许后会被记住，可在设置中撤销。',
   'main.webAppScopeProfile': '姓名',
   'main.webAppScopeEmail': '邮箱',
   'main.webAppOpenLink': '在浏览器中打开链接',

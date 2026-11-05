@@ -454,7 +454,9 @@ export function registerIpc(): void {
   handle(IPC.webAppOpen, (e, a) => {
     const win = mainOnly(e);
     const r = obj(a);
-    openApp(parseAppId(r['appId']), str(r['url'], 2048), parseAppId(r['workspaceId']), parseBounds(r['bounds'], win.webContents.getZoomFactor()));
+    // Without a valid workspace the app still opens; only the Calab sign-in answer is off (ADR-0159).
+    const ws = typeof r['workspaceId'] === 'string' && r['workspaceId'] ? parseAppId(r['workspaceId']) : '';
+    openApp(parseAppId(r['appId']), str(r['url'], 2048), ws, parseBounds(r['bounds'], win.webContents.getZoomFactor()));
   });
   handle(IPC.webAppHide, (e) => {
     mainOnly(e);

@@ -831,7 +831,7 @@ export const en: Dict = {
   'main.webAppForward': 'Forward',
   'main.webAppReload': 'Reload',
   'main.webAppSignIn': '“{app}” wants to sign in with Calab',
-  'main.webAppSignInDetail': 'Workspace: {workspace}. Account: {name}. The site {site} gets: {what}. The answer is remembered; revoke it in settings.',
+  'main.webAppSignInDetail': 'Workspace: {workspace}. Account: {name}. The site {site} gets: {what}. Allowing is remembered; revoke it in settings.',
   'main.webAppScopeProfile': 'name',
   'main.webAppScopeEmail': 'email',
   'main.webAppOpenLink': 'Open link in browser',

@@ -82,7 +82,7 @@ let strings: MainStrings = {
   webAppForward: 'Вперёд',
   webAppReload: 'Перезагрузить',
   webAppSignIn: '«{app}» просит войти через Calab',
-  webAppSignInDetail: 'Пространство: {workspace}. Аккаунт: {name}. Сайт {site} получит: {what}. Ответ запомнится, отозвать можно в настройках.',
+  webAppSignInDetail: 'Пространство: {workspace}. Аккаунт: {name}. Сайт {site} получит: {what}. Разрешение запомнится, отозвать его можно в настройках.',
   webAppScopeProfile: 'имя',
   webAppScopeEmail: 'email',
   webAppOpenLink: 'Открыть ссылку в браузере',

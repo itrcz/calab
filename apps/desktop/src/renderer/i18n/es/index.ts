@@ -831,7 +831,7 @@ export const es: Dict = {
   'main.webAppForward': 'Adelante',
   'main.webAppReload': 'Recargar',
   'main.webAppSignIn': '«{app}» quiere iniciar sesión con Calab',
-  'main.webAppSignInDetail': 'Espacio: {workspace}. Cuenta: {name}. El sitio {site} recibe: {what}. La respuesta se recuerda; puedes revocarla en ajustes.',
+  'main.webAppSignInDetail': 'Espacio: {workspace}. Cuenta: {name}. El sitio {site} recibe: {what}. El permiso se recuerda; puedes revocarlo en ajustes.',
   'main.webAppScopeProfile': 'nombre',
   'main.webAppScopeEmail': 'correo',
   'main.webAppOpenLink': 'Abrir enlace en el navegador',

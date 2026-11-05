@@ -823,7 +823,7 @@ export const ru = {
   'main.webAppForward': 'Вперёд',
   'main.webAppReload': 'Перезагрузить',
   'main.webAppSignIn': '«{app}» просит войти через Calab',
-  'main.webAppSignInDetail': 'Пространство: {workspace}. Аккаунт: {name}. Сайт {site} получит: {what}. Ответ запомнится, отозвать можно в настройках.',
+  'main.webAppSignInDetail': 'Пространство: {workspace}. Аккаунт: {name}. Сайт {site} получит: {what}. Разрешение запомнится, отозвать его можно в настройках.',
   'main.webAppScopeProfile': 'имя',
   'main.webAppScopeEmail': 'email',
   'main.webAppOpenLink': 'Открыть ссылку в браузере',

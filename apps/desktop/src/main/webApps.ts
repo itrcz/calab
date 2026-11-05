@@ -70,6 +70,10 @@ interface Entry {
   workspaceId: string;
   /** When Calab answered the site's sign-in (ms), for the per-minute limit. */
   signIns: number[];
+  /** A sign-in is being answered: a second request of the site waits for it, not a second dialog. */
+  signingIn: boolean;
+  /** The user refused the sign-in dialog: until the view goes, the site signs in its own way. */
+  signInRefused: boolean;
   failed: string;
   crashed: boolean;
   /** In the window's view tree (only while shown: a hidden view is not composited). */
@@ -386,13 +390,18 @@ export function installWebAppGuards(): void {
 function interceptSignIn(e: Entry, url: string, prevent: () => void): void {
   const server = currentServerUrl();
   const req = server ? workspaceSignIn(url, server, e.workspaceId, e.home) : null;
-  if (!req) return;
+  if (!req || e.signInRefused) return;
+  if (e.signingIn) {
+    prevent();
+    return;
+  }
   const now = Date.now();
   if (!signInAllowed(e.signIns, now)) {
     log.warn('[webapp] calab sign-in repeated too often: left to the site', { appId: e.appId });
     return;
   }
   e.signIns = [...e.signIns.filter((t) => now - t < 60_000), now];
+  e.signingIn = true;
   prevent();
   void answerSignIn(e, server, req)
     .catch((err: unknown) => {
@@ -400,6 +409,7 @@ function interceptSignIn(e: Entry, url: string, prevent: () => void): void {
       return null;
     })
     .then((answer) => {
+      e.signingIn = false;
       if (entries.get(e.appId) !== e || e.view.webContents.isDestroyed()) return;
       void e.view.webContents.loadURL(answer ?? req.interactive).catch(() => undefined);
     });
@@ -411,13 +421,14 @@ async function answerSignIn(e: Entry, server: string, req: WorkspaceSignIn): Pro
   const token = await getAccessToken();
   if (!token) return null;
   const ses = apiSession();
-  const signal = AbortSignal.timeout(SIGN_IN_TIMEOUT_MS);
   // net.fetch rejects a manual redirect («Redirect was cancelled»): the provider answers with a
   // 303, so its Location is read from net.request's redirect event and the request is dropped.
   // The session keeps the Set-Cookie of that answer (the consent request's browser binding).
-  const authorize = (url: string): Promise<string | null> =>
+  // The silent request is the bearer alone: a cookie of another Calab account in the API session
+  // would make the provider refuse it. The consent request needs the jar for its binding.
+  const authorize = (url: string, withCookies: boolean): Promise<string | null> =>
     new Promise((resolve) => {
-      const r = net.request({ url, session: ses, redirect: 'manual', credentials: 'include', useSessionCookies: true });
+      const r = net.request({ url, session: ses, redirect: 'manual', credentials: withCookies ? 'include' : 'omit', useSessionCookies: withCookies });
       const done = (v: string | null): void => {
         clearTimeout(timer);
         resolve(v);
@@ -438,13 +449,13 @@ async function answerSignIn(e: Entry, server: string, req: WorkspaceSignIn): Pro
       r.on('error', () => done(null));
       r.end();
     });
-  const answer = signInAnswer(await authorize(req.silent), server, req.redirectUri);
+  const answer = signInAnswer(await authorize(req.silent, false), server, req.redirectUri);
   log.info('[webapp] calab sign-in', { appId: e.appId, answer: answer.kind });
   if (answer.kind === 'code') return answer.url;
   // A consent is asked only about what the user is looking at.
   if (answer.kind !== 'consent' || !inForeground(e.view.webContents, e.appId)) return null;
   // The consent request is bound to the API session's cookie jar (its browser binding).
-  const handle = consentRequest(await authorize(req.interactive), server);
+  const handle = consentRequest(await authorize(req.interactive, true), server);
   if (!handle) return null;
   const post = async (what: 'bind' | 'decision', body: object): Promise<Record<string, unknown> | null> => {
     const res = await ses.fetch(new URL(`/api/oauth/requests/${encodeURIComponent(handle)}/${what}`, server).toString(), {
@@ -452,7 +463,8 @@ async function answerSignIn(e: Entry, server: string, req: WorkspaceSignIn): Pro
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Origin: new URL(server).origin },
       body: JSON.stringify(body),
       redirect: 'manual',
-      signal,
+      // Each call its own time: the dialog between bind and decision waits for the person.
+      signal: AbortSignal.timeout(SIGN_IN_TIMEOUT_MS),
     });
     const json = res.ok ? ((await res.json()) as unknown) : (await res.arrayBuffer().catch(() => undefined), null);
     return json && typeof json === 'object' ? (json as Record<string, unknown>) : null;
@@ -461,6 +473,7 @@ async function answerSignIn(e: Entry, server: string, req: WorkspaceSignIn): Pro
   const csrf = shown?.['csrfToken'];
   if (!shown || typeof csrf !== 'string') return null;
   const allow = await askSignIn(shown, hostOf(req.redirectUri));
+  if (!allow) e.signInRefused = true;
   const decided = await post('decision', { csrfToken: csrf, allow, allowRefresh: false });
   const redirect = decided?.['redirectUrl'];
   log.info('[webapp] calab sign-in consent', { appId: e.appId, allow });
@@ -625,7 +638,7 @@ function create(appId: string, url: string, workspaceId: string): Entry | null {
   view.setBorderRadius(12);
   view.setVisible(false);
   view.setBackgroundColor('#ffffff');
-  const e: Entry = { appId, view, home: url, workspaceId, signIns: [], failed: '', crashed: false, attached: false, check: undefined };
+  const e: Entry = { appId, view, home: url, workspaceId, signIns: [], signingIn: false, signInRefused: false, failed: '', crashed: false, attached: false, check: undefined };
   entries.set(appId, e);
   const wc = view.webContents;
   const update = (): void => sendState(e);
