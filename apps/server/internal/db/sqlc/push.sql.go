@@ -720,7 +720,7 @@ func (q *Queries) ListPushRingCancels(ctx context.Context, arg ListPushRingCance
 }
 
 const lockPushDeliverySession = `-- name: LockPushDeliverySession :one
-SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version FROM sessions s JOIN users u ON u.id=s.user_id
+SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, s.scope, s.mcp_client_id FROM sessions s JOIN users u ON u.id=s.user_id
 WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>now()
 AND u.disabled_at IS NULL AND NOT u.is_guest AND NOT u.is_bot FOR SHARE OF s
 `
@@ -758,6 +758,8 @@ func (q *Queries) LockPushDeliverySession(ctx context.Context, arg LockPushDeliv
 		&i.LocalAuthenticatedAt,
 		&i.RecoveryAuthenticatedAt,
 		&i.AuthorityVersion,
+		&i.Scope,
+		&i.McpClientID,
 	)
 	return i, err
 }
@@ -879,7 +881,7 @@ func (q *Queries) LockPushRegistry(ctx context.Context) error {
 }
 
 const lockPushSession = `-- name: LockPushSession :one
-SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version FROM sessions s JOIN users u ON u.id = s.user_id
+SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, s.scope, s.mcp_client_id FROM sessions s JOIN users u ON u.id = s.user_id
 WHERE s.id = $1 AND s.user_id = $2 AND s.revoked_at IS NULL AND s.expires_at > now()
 AND u.disabled_at IS NULL AND NOT u.is_guest AND NOT u.is_bot
 FOR UPDATE OF s
@@ -917,6 +919,8 @@ func (q *Queries) LockPushSession(ctx context.Context, arg LockPushSessionParams
 		&i.LocalAuthenticatedAt,
 		&i.RecoveryAuthenticatedAt,
 		&i.AuthorityVersion,
+		&i.Scope,
+		&i.McpClientID,
 	)
 	return i, err
 }

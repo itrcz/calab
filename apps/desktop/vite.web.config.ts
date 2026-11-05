@@ -108,6 +108,9 @@ export default defineConfig(({ mode }) => {
     // ws: the wiki sync socket lives under /api (GET /api/wiki/pages/{id}/sync).
     '/api': { target, ws: true, changeOrigin: false },
     '/gateway': { target, ws: true, changeOrigin: false },
+    // ADR-0158: the MCP OAuth metadata lives at the root of the app host.
+    '/.well-known/oauth-protected-resource': { target, changeOrigin: false },
+    '/.well-known/oauth-authorization-server': { target, changeOrigin: false },
   };
   return {
     root: resolve(__dirname, 'src/renderer'),

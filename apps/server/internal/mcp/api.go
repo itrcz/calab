@@ -17,6 +17,38 @@ import (
 	"github.com/calaba/calaba/server/internal/auth"
 )
 
+// innerRoutes are the route patterns the tools call (api.call): an MCP connection's token
+// (ADR-0158) reaches these and the endpoint, nothing else (auth.Service.MCPInnerRoutes). A new
+// tool that calls another route adds it here; the OAuth integration test runs every tool.
+var innerRoutes = []string{
+	"GET /api/boards/{id}",
+	"GET /api/me/tasks",
+	"GET /api/rooms/{id}",
+	"GET /api/rooms/{id}/messages",
+	"GET /api/search",
+	"GET /api/t/{key}",
+	"GET /api/tasks/{id}",
+	"GET /api/workspaces",
+	"GET /api/workspaces/{id}/boards",
+	"GET /api/workspaces/{id}/members",
+	"GET /api/workspaces/{id}/members/{userId}",
+	"GET /api/workspaces/{id}/rooms",
+	"GET /api/workspaces/{id}/tasks/search",
+	"PATCH /api/tasks/{id}",
+	"POST /api/boards/{id}/tasks",
+	"POST /api/rooms/{id}/messages",
+	"PUT /api/tasks/{id}/assignees",
+}
+
+// InnerRoutes returns the set of innerRoutes.
+func InnerRoutes() map[string]bool {
+	m := make(map[string]bool, len(innerRoutes))
+	for _, r := range innerRoutes {
+		m[r] = true
+	}
+	return m
+}
+
 // maxAnswer caps one REST answer read by a tool (a page of history with attachments fits).
 const maxAnswer = 8 << 20
 
