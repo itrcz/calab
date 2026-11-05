@@ -48,6 +48,7 @@ describe.skipIf(!swiftAvailable)('native room driver logic in actual Swift', () 
     expect(result).toContain('PASS: the delay curve mirrors computeReconnectDelay');
     expect(result).toContain("PASS: the driver's deadline and teardown end inside VOICE_LOST_GRACE");
     expect(result).toContain('PASS: a fast-failing outage is retried for 30 s and the first retry comes fast');
+    expect(result).toContain('PASS: the deadline counts from the last healthy moment, also across a suspension');
   }, 180_000);
 });
 

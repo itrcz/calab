@@ -13,6 +13,8 @@ struct ReconnectScheduleTests {
     print("PASS: the driver's deadline and teardown end inside VOICE_LOST_GRACE")
     rides()
     print("PASS: a fast-failing outage is retried for 30 s and the first retry comes fast")
+    budget()
+    print("PASS: the deadline counts from the last healthy moment, also across a suspension")
     print(String(format: "deadline %.0f s + teardown %.0f s, fast-fail retries %.2f-%.2f s, SDK alone %.2f s (default %.2f s)",
                  Schedule.deadline, Schedule.teardown, Schedule.delays(), Schedule.delays() * (1 + Schedule.jitter),
                  Schedule.worstCase(), Schedule.worstCase(Schedule.sdkDefault)))
@@ -44,5 +46,29 @@ struct ReconnectScheduleTests {
     precondition((0..<Schedule.attempts - 1).allSatisfy { Schedule.delay($0) * (1 + Schedule.jitter) <= 5.5 })
     precondition(Schedule.delays() * (1 + Schedule.jitter) < Schedule.deadline, "the deadline cuts planned retries")
     precondition(Schedule.delay(0) * (1 + Schedule.jitter) <= 1.5, "the first retry is slow")
+  }
+
+  static func budget() {
+    // Ticks every second while connected: a drop noticed at once gets the whole deadline.
+    var health = CalabRoomHealth()
+    health.start(now: 100)
+    for second in 101...200 { health.tick(now: Double(second), connected: true) }
+    precondition(health.remaining(now: 200) == Schedule.deadline)
+    // Noticed 12 s late (no ticks: the SDK still said connected but the process ran): 33 s left.
+    precondition(health.remaining(now: 212) == Schedule.deadline - 12)
+    // Suspended 50 s, then ticks resume while the SDK still reports connected: nothing refreshes the budget
+    // during probation, so a drop noticed then is past the deadline and stops at once.
+    health.tick(now: 250, connected: true)
+    health.tick(now: 251, connected: true)
+    precondition(health.lastHealthy == 200, "a resumed tick passed for health")
+    precondition(health.remaining(now: 252) == 0, "a late drop got a fresh budget")
+    // A link that stays up through probation is healthy again.
+    for second in 252...270 { health.tick(now: Double(second), connected: true) }
+    precondition(health.lastHealthy == 270 && health.remaining(now: 271) == Schedule.deadline - 1)
+    // A completed reconnect restarts the clock; reconnecting ticks never refresh it.
+    health.start(now: 300)
+    for second in 301...320 { health.tick(now: Double(second), connected: false) }
+    precondition(health.remaining(now: 320) == Schedule.deadline - 20)
+    precondition(CalabRoomHealth().remaining(now: 5) == Schedule.deadline, "no history must not stop a fresh room")
   }
 }

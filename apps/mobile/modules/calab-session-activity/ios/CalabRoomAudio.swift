@@ -133,6 +133,34 @@ struct CalabCaptureWatchdog {
   }
 }
 
+/**
+ * §7: the reconnect budget counts from the last moment the link was known healthy, not from when the SDK
+ * notices the drop: after a suspension it may notice late and still finish a full reconnect past the
+ * server's grace. Times come from a clock that keeps running while the device sleeps.
+ */
+struct CalabRoomHealth {
+  // Background ticks come every second; a longer gap means the process did not run.
+  static let maxTickGap = 3.0
+  // After such a gap, the link counts as healthy again only once it stayed up this long, longer than the
+  // SDK needs to notice a dead signal connection (ping timeout from the server, not confirmed on device).
+  static let probation = 20.0
+  private(set) var lastHealthy: Double?
+  private var lastTick: Double?
+  private var trustedFrom: Double?
+  mutating func start(now: Double) { lastHealthy = now; lastTick = now; trustedFrom = nil }
+  mutating func tick(now: Double, connected: Bool) {
+    defer { lastTick = now }
+    if let lastTick, now - lastTick > Self.maxTickGap { trustedFrom = now + Self.probation }
+    guard connected else { return }
+    if let trustedFrom, now < trustedFrom { return }
+    trustedFrom = nil; lastHealthy = now
+  }
+  // What is left of the deadline when reconnecting starts now; zero means stop at once.
+  func remaining(now: Double) -> Double {
+    max(0, CalabRoomReconnectSchedule.deadline - (now - (lastHealthy ?? now)))
+  }
+}
+
 enum CalabRoomTrackSource: Equatable { case microphone, screenShareAudio, other }
 
 // `<user>:<session>` (server voice.Identity). The companion `<user>:<session>:web` and anything else is no user.
@@ -299,6 +327,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
   private var rate = CalabRoomAudioRate()
   private var pacer = CalabRoomAudioPacer()
   private var watchdog = CalabCaptureWatchdog()
+  private var health = CalabRoomHealth()
   private var lease: CalabAudioLease?
   private var room: Room?
   private var red = true
@@ -332,6 +361,8 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
   }
 
   private var now: Double { ProcessInfo.processInfo.systemUptime }
+  // systemUptime stops while the device sleeps; the server's grace does not. CLOCK_MONOTONIC keeps counting.
+  private var awake: Double { Double(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1_000_000_000 }
   private func current(_ revision: Int, _ expected: Room? = nil) -> Bool {
     ticket.current(revision, document: granted) && (expected == nil || room === expected)
   }
@@ -452,7 +483,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
       guard current(rev, expected) else { await expected.disconnect(); return }
       canSpeak = canSpeak && Self.microphoneAllowed(expected.localParticipant.permissions)
       if !canSpeak { send(.grant(canSpeak: false, foreground: foreground)) }
-      link = .connected
+      link = .connected; health.start(now: awake)
       deadline?.cancel(); deadline = nil
       applyOutput()
       if machine.state == .speaking { try await publishMicrophone(expected, rev) }
@@ -691,6 +722,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
   }
 
   private func tick() {
+    health.tick(now: awake, connected: link == .connected)
     let read = processor.read()
     let expecting = machine.state == .speaking && publication != nil && !effectiveMute && link == .connected && AudioManager.shared.isEngineRunning
     if watchdog.tick(now: now, frames: read.frames, expecting: expecting), let lease {
@@ -765,8 +797,10 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
     link = .reconnecting; refresh()
     let rev = ticket.revision
     deadline?.cancel()
+    let budget = health.remaining(now: awake)
+    guard budget > 0 else { stop(.lost, .network); return }
     deadline = Task { @MainActor in
-      do { try await Task.sleep(for: .seconds(CalabRoomReconnectSchedule.deadline)) } catch { return }
+      do { try await Task.sleep(for: .seconds(budget)) } catch { return }
       if self.current(rev, room), self.link == .reconnecting { self.stop(.lost, .network) }
     }
   }
@@ -775,7 +809,7 @@ final class CalabRoomAudio: NSObject, RoomDelegate, CXCallObserverDelegate {
   private func reconnected(_ room: Room) {
     guard self.room === room, link == .reconnecting else { return }
     deadline?.cancel(); deadline = nil
-    link = .connected; wanted = [:]
+    link = .connected; wanted = [:]; health.start(now: awake)
     applyControls()
     ensureMicrophone()
   }
