@@ -5,7 +5,7 @@ import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { busyDays } from '../../lib/calendar/events';
 import { usePageVisible } from '../../lib/pageVisible';
-import { addDays, addMonths, dayEnd, dayKey, dayStart, formatLongDay, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
+import { addDays, addMonths, dayEnd, dayKey, dayStart, formatLongDay, formatMonth, monthGrid, monthOf, useWeekStart, weekdayNames } from '../../lib/calendar/time';
 import { ensureMonth } from '../../services/calendar';
 import { ensureBusy } from '../../services/freebusy';
 import { useCalendar } from '../../stores/calendar';
@@ -53,7 +53,7 @@ export const MiniCalendar = memo(function MiniCalendar({ workspaceId }: { worksp
   const selected = useUi((s) => s.calDay);
   const shown = useUi((s) => s.calMonth) ?? monthOf(selected ?? today);
   const setMonth = useUi((s) => s.setCalMonth);
-  const first = weekStart(locale);
+  const first = useWeekStart();
   const grid = useMemo(() => monthGrid(shown, first), [shown, first]);
   const from = dayStart(grid[0] ?? `${shown}-01`);
   const to = dayEnd(grid[41] ?? `${shown}-28`);

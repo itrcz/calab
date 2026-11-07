@@ -1090,6 +1090,9 @@ test('m-calendar-zones', async ({ page }) => {
   await openProfile(page);
   await page.getByTestId('phone-profile-calendar').tap();
   await expect(page.getByTestId('cal-zone-label')).toHaveCount(2);
+  // CBF-165: «Первый день недели» sits first in the section.
+  await expect(page.getByRole('radio', { name: 'Понедельник' })).toBeChecked();
+  await checkpoint(page, 'm-settings-calendar-week');
   await page.getByTestId('cal-zone-label').last().evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await checkpoint(page, 'm-settings-calendar-zones');
 });

@@ -1237,6 +1237,18 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('task-search-row')).toHaveCount(2);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'quick-switcher-tasks');
+  // CBF-157: «×» empties the text only — focus stays, the «Доска» chip and the list stay, the dialog stays.
+  await expect(win.getByTestId('search-clear')).toBeVisible();
+  await checkpoint(shot, 'quick-switcher-tasks-clear', { axe: false });
+  await win.getByTestId('search-clear').click();
+  await expect(win.getByRole('combobox')).toHaveValue('');
+  await expect(win.getByRole('combobox')).toBeFocused();
+  await expect(win.getByTestId('search-clear')).toHaveCount(0);
+  await expect(win.getByTestId('filter-chip')).toHaveCount(1);
+  await expect(win.getByTestId('quick-switcher')).toBeVisible();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'quick-switcher-tasks-cleared');
+  await win.keyboard.type('доск');
   // A typed key comes first as «Открыть CAL-3».
   const field = win.getByRole('combobox');
   await field.press(`${MOD}+a`);
@@ -4388,6 +4400,11 @@ test('settings-calendar', async ({ open, win, mock, shot }) => {
   await openSettingsTab(win, openAppSettings(win), appTab('calendar'));
   await expect(win.getByTestId('caldav-connect')).toBeVisible();
   await checkpoint(shot, 'settings-calendar');
+  // CBF-165: «Первый день недели» — Monday by default, Sunday on choice (the work days follow).
+  await expect(win.getByRole('radio', { name: 'Понедельник' })).toBeChecked();
+  await win.getByRole('radio', { name: 'Воскресенье' }).click();
+  await expect(win.getByTestId('wh-days').getByRole('button').first()).toHaveText(/вс/i);
+  await checkpoint(shot, 'settings-calendar-sunday');
 });
 
 /**

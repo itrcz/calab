@@ -2,7 +2,8 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { CalendarEventSchema } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { addDays, addMonths, dayKey, eventDays, formatRange, formatTime, formatWhen, monthGrid, weekStart } from './time';
+import { addDays, addMonths, dayKey, eventDays, formatRange, formatTime, formatWhen, monthGrid, weekDays, weekStart, weekdayNames } from './time';
+import { usePrefs } from '../../stores/prefs';
 
 /**
  * The viewer's zone (ADR-0038 §1, TESTING.md C.12): the same UTC meeting reads 15:00 in Moscow (+3)
@@ -59,7 +60,15 @@ describe('calendar grid', () => {
     expect(mon[3]).toBe('2026-01-01');
     const sun = monthGrid('2026-01', 0);
     expect(sun[0]).toBe('2025-12-28');
-    expect(weekStart('en')).toBe(0);
-    expect(weekStart('ru')).toBe(1);
+    // CBF-165: Monday by default for every language; the setting switches it.
+    expect(weekStart()).toBe(1);
+    expect(weekdayNames()[0]).not.toBe(weekdayNames(0)[0]);
+    usePrefs.getState().setPrefs({ weekStartsOn: 0 });
+    expect(weekStart()).toBe(0);
+    expect(monthGrid('2026-01')[0]).toBe('2025-12-28');
+    expect(weekDays('2026-01-14')[0]).toBe('2026-01-11');
+    usePrefs.getState().setPrefs({ weekStartsOn: 1 });
+    expect(monthGrid('2026-01')[0]).toBe('2025-12-29');
+    expect(weekDays('2026-01-14')[0]).toBe('2026-01-12');
   });
 });
