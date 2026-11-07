@@ -322,7 +322,17 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 		t.Fatal("disk bits: outside All and the guest bounds, VIEW | WRITE in the member default")
 	}
 	if !ValidDiskOverride(DiskView, DiskWrite) || ValidDiskOverride(DiskManage, 0) || ValidDiskOverride(BillingView, 0) || ValidDiskOverride(0, ViewRoom) || ValidDiskOverride(DiskView, DiskView) {
-		t.Fatal("disk overrides carry DISK_VIEW and DISK_WRITE only")
+		t.Fatal("disk role overrides carry DISK_VIEW and DISK_WRITE only")
+	}
+	// A person's override may also carry DISK_MANAGE («Управление», ADR-0161): allowed only with
+	// VIEW | WRITE, denied freely; never another section's bits.
+	if !ValidDiskPersonalOverride(Disk, 0) || !ValidDiskPersonalOverride(DiskView|DiskWrite, DiskManage) || !ValidDiskPersonalOverride(DiskView, DiskWrite|DiskManage) ||
+		ValidDiskPersonalOverride(DiskManage, 0) || ValidDiskPersonalOverride(DiskView|DiskManage, 0) || ValidDiskPersonalOverride(Disk, DiskManage) ||
+		ValidDiskPersonalOverride(WikiView, 0) || ValidDiskPersonalOverride(0, ViewRoom) {
+		t.Fatal("disk personal overrides: «Управление» = VIEW | WRITE | MANAGE")
+	}
+	if WikiTree.Personal() != WikiOverride || CanvasTree.Personal() != CanvasOverride || DiskTree.Personal() != DiskPersonal {
+		t.Fatal("only the Disk's personal overrides carry MANAGE")
 	}
 	if All&Wiki != 0 || GuestMax&Wiki != 0 || RoleDefaults[RoleMember]&Wiki != WikiView|WikiWrite || Wiki != 7<<38 || (Billing|Disk)&Wiki != 0 {
 		t.Fatal("wiki bits: outside All and the guest bounds, VIEW | WRITE in the member default")

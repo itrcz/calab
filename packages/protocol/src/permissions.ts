@@ -90,16 +90,20 @@ export function billingPermissions(
 
 /**
  * The three bits of one tree section (the Disk, the Wiki, the Canvas): the workspace-level VIEW / WRITE /
- * MANAGE on roles, per-node overrides of VIEW and WRITE (Go: perm.TreeBits).
+ * MANAGE on roles, per-node overrides of VIEW and WRITE (Go: perm.TreeBits). PERSONAL_MANAGE: a
+ * person's override may also carry MANAGE — the Disk's «Управление» (ADR-0161).
  */
 export interface TreeBits {
   readonly VIEW: PermissionBits;
   readonly WRITE: PermissionBits;
   readonly MANAGE: PermissionBits;
+  readonly PERSONAL_MANAGE?: boolean;
 }
 
 const treeAll = (b: TreeBits): PermissionBits => b.VIEW | b.WRITE | b.MANAGE;
 const treeOverride = (b: TreeBits): PermissionBits => b.VIEW | b.WRITE;
+/** Bits a person's override may allow or deny (Go: TreeBits.Personal). */
+const treePersonal = (b: TreeBits): PermissionBits => (b.PERSONAL_MANAGE ? treeAll(b) : treeOverride(b));
 
 /**
  * The workspace-level rule of a tree section (Go: perm.TreeOf): guests nothing; ADMINISTRATOR or
@@ -152,8 +156,10 @@ export interface TreeLevel {
  * guests), then the viewer's own; the owner of the level always has VIEW | WRITE. Overrides touch
  * VIEW | WRITE only. Without VIEW nothing. Inside a restricted subtree a MANAGE holder is an
  * ordinary member: «Правка» gives VIEW | WRITE, never MANAGE. The workspace owner with «Владелец
- * видит приватное» (`ownerSeesPrivate`, Workspace.ownerSeesPrivate) has all three everywhere. The
- * server sends my_bits; this only predicts the UI.
+ * видит приватное» (`ownerSeesPrivate`, Workspace.ownerSeesPrivate) has all three everywhere.
+ * With PERSONAL_MANAGE (the Disk, ADR-0161) the viewer's own override carries MANAGE too
+ * («Управление», never for guests): inherited down, dropped by a restricted node, and kept only
+ * while WRITE is. The server sends my_bits; this only predicts the UI.
  */
 export function treeItemPermissions(
   bits: TreeBits,
@@ -167,6 +173,7 @@ export function treeItemPermissions(
   const restricted = chain.some((l) => l.restricted);
   if (ws & bits.MANAGE && !restricted) return treeAll(bits);
   const ov = treeOverride(bits);
+  const pv = guest ? ov : treePersonal(bits);
   const ordered = [...roles].sort((a, b) => a.position - b.position);
   let p = ws & ov;
   for (const l of chain) {
@@ -181,10 +188,11 @@ export function treeItemPermissions(
       }
     }
     if (l.userOverride) {
-      p &= ~(l.userOverride.deny & ov);
-      p |= l.userOverride.allow & ov;
+      p &= ~(l.userOverride.deny & pv);
+      p |= l.userOverride.allow & pv;
     }
     if (l.owner) p |= ov;
+    if (!(p & bits.WRITE)) p &= ~bits.MANAGE;
   }
   return p & bits.VIEW ? p : 0n;
 }
@@ -221,7 +229,9 @@ export type OverrideEntry = Pick<
  * cannot be proto enum values (listed in the comment of enum Permission) and stay out of
  * ALL_PERMISSIONS (room and board rules never see them), but ADMINISTRATOR includes them
  * (diskPermissions). Guests get nothing from their roles, only from a personal allow on an item;
- * bots are members like people. Per-item overrides carry VIEW and WRITE only (DISK_OVERRIDE_PERMISSIONS).
+ * bots are members like people. A role's per-item override carries VIEW and WRITE only
+ * (DISK_OVERRIDE_PERMISSIONS); a person's may also carry MANAGE — «Управление», allowed only with
+ * VIEW | WRITE, never for a guest (DISK_PERSONAL_PERMISSIONS, ADR-0161).
  */
 export const DISK_BITS = {
   /** See the Disk and every item that is not restricted. Member default. */
@@ -230,13 +240,18 @@ export const DISK_BITS = {
   WRITE: 1n << 36n,
   /** Any item, the trash retention, empty the whole trash, anyone's public link. Implies VIEW + WRITE. */
   MANAGE: 1n << 37n,
+  /** A person's override may carry MANAGE («Управление», ADR-0161; Go: DiskTree.PersonalManage). */
+  PERSONAL_MANAGE: true,
 } as const satisfies TreeBits;
 
 /** The three disk bits (Go: perm.Disk). */
 export const DISK_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_BITS.WRITE | DISK_BITS.MANAGE;
 
-/** Bits a disk item override may allow or deny (Go: perm.DiskOverride): «Просмотр» / «Правка». */
+/** Bits a role's disk item override may allow or deny (Go: perm.DiskOverride): «Просмотр» / «Правка». */
 export const DISK_OVERRIDE_PERMISSIONS: PermissionBits = DISK_BITS.VIEW | DISK_BITS.WRITE;
+
+/** Bits a person's disk item override may allow or deny (Go: perm.DiskPersonal): also «Управление». */
+export const DISK_PERSONAL_PERMISSIONS: PermissionBits = DISK_PERMISSIONS;
 
 /** The workspace-level disk rule (Go: perm.DiskOf): treePermissions over DISK_BITS. */
 export function diskPermissions(

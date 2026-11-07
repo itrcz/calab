@@ -426,7 +426,8 @@ func (x *DiskItem) GetEditorIds() []string {
 }
 
 // One override of an item (disk_permissions): «Просмотр» = DISK_VIEW, «Правка» = DISK_VIEW |
-// DISK_WRITE. A guest can be given access only as a USER target.
+// DISK_WRITE, «Управление» (USER targets only, not guests; ADR-0161) = DISK_VIEW | DISK_WRITE |
+// DISK_MANAGE. A guest can be given access only as a USER target.
 type DiskPermissionEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TargetType    PermissionTargetType   `protobuf:"varint,1,opt,name=target_type,json=targetType,proto3,enum=calaba.v1.PermissionTargetType" json:"target_type,omitempty"`
@@ -1157,7 +1158,8 @@ func (x *DiskPermissionsResponse) GetRestricted() bool {
 }
 
 // PUT /api/disk/items/{id}/permissions — replaces the item's overrides (allow / deny within
-// DISK_VIEW | DISK_WRITE) and optionally the restricted switch.
+// DISK_VIEW | DISK_WRITE, plus DISK_MANAGE for a person) and optionally the restricted switch.
+// The owner or DISK_MANAGE on the item; a manager does not change the owner's own row.
 type UpdateDiskPermissionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*DiskPermissionEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`

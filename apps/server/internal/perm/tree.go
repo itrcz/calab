@@ -6,9 +6,11 @@ import "slices"
 // triple of bits (VIEW / WRITE / MANAGE) on roles, then per-node overrides down a chain of
 // ancestors. The two sections are two TreeBits over one algorithm (TS: treeItemPermissions).
 
-// TreeBits names the three bits of one tree section.
+// TreeBits names the three bits of one tree section. PersonalManage: a node's personal (user)
+// override may also carry Manage — the Disk's «Управление» (ADR-0161); role overrides never do.
 type TreeBits struct {
 	View, Write, Manage Bits
+	PersonalManage      bool
 }
 
 // All are the three bits.
@@ -16,6 +18,15 @@ func (b TreeBits) All() Bits { return b.View | b.Write | b.Manage }
 
 // Override are the bits a per-node override may allow or deny: VIEW and WRITE.
 func (b TreeBits) Override() Bits { return b.View | b.Write }
+
+// Personal are the bits a per-node personal override may allow or deny: Override, and Manage
+// too with PersonalManage (ADR-0161).
+func (b TreeBits) Personal() Bits {
+	if b.PersonalManage {
+		return b.All()
+	}
+	return b.Override()
+}
 
 // TreeLevel is one node on the way from the top to the node being checked, as far as one
 // member is concerned.
@@ -65,6 +76,12 @@ func TreeOf(b TreeBits, raw Bits, guest bool) Bits {
 // holder is an ordinary member (owner, 14.10): let in with «Правка» (WRITE) it gets VIEW | WRITE
 // like anyone with that grant, never MANAGE; with «Просмотр», just VIEW. The workspace owner
 // with OwnerSeesPrivate has all three bits everywhere (Member.SeesPrivate).
+//
+// With PersonalManage (the Disk, ADR-0161) a person's own override carries MANAGE as well
+// («Управление»; never for guests): inherited down like VIEW and WRITE, dropped by a restricted
+// node like them, and kept only while WRITE is — a level that leaves the member without WRITE
+// («Просмотр» below, a role deny) drops it for the rest of the chain. It is the only way to
+// MANAGE inside a restricted subtree: an explicit row of that person.
 func ComputeTree(b TreeBits, in TreeInput) Bits {
 	if in.Owner && in.OwnerSeesPrivate && !in.Guest {
 		return b.All()
@@ -74,6 +91,10 @@ func ComputeTree(b TreeBits, in TreeInput) Bits {
 		return b.All()
 	}
 	ov := b.Override()
+	pv := b.Personal()
+	if in.Guest {
+		pv = ov
+	}
 	p := ws & ov
 	for i := range in.Chain {
 		l := &in.Chain[i]
@@ -87,11 +108,14 @@ func ComputeTree(b TreeBits, in TreeInput) Bits {
 			}
 		}
 		if l.UserOv != nil {
-			p &^= l.UserOv.Deny & ov
-			p |= l.UserOv.Allow & ov
+			p &^= l.UserOv.Deny & pv
+			p |= l.UserOv.Allow & pv
 		}
 		if l.Owner {
 			p |= ov
+		}
+		if p&b.Write == 0 {
+			p &^= b.Manage
 		}
 	}
 	if p&b.View == 0 {
@@ -162,6 +186,16 @@ func ValidTreeOverride(b TreeBits, allow, deny Bits) bool {
 	return (allow|deny)&^b.Override() == 0 && allow&deny == 0
 }
 
+// ValidTreePersonalOverride is ValidTreeOverride for a person's override: with PersonalManage
+// MANAGE may also be denied, and allowed only together with VIEW and WRITE («Управление»,
+// ADR-0161).
+func ValidTreePersonalOverride(b TreeBits, allow, deny Bits) bool {
+	if (allow|deny)&^b.Personal() != 0 || allow&deny != 0 {
+		return false
+	}
+	return allow&b.Manage == 0 || allow&b.Override() == b.Override()
+}
+
 // Detached is what a node keeps when it leaves its chain for the top of its tree (a private
 // subtree detached from a parent its viewer cannot see being trashed, deleted or moved; owner,
 // 14.10): its own owner, and a flag and overrides that give, at the top, the access the chain
@@ -186,7 +220,7 @@ func Detached(b TreeBits, chain []TreeNode, pin []Member) TreeNode {
 			start = i
 		}
 	}
-	ov := b.Override()
+	ov, pv := b.Override(), b.Personal()
 	type key struct{ t, id string }
 	var order []key
 	acc := map[key]Override{}
@@ -195,8 +229,12 @@ func Detached(b TreeBits, chain []TreeNode, pin []Member) TreeNode {
 		if !ok {
 			order = append(order, k)
 		}
-		cur.Allow = (cur.Allow &^ (o.Deny & ov)) | (o.Allow & ov)
-		cur.Deny = (cur.Deny &^ (o.Allow & ov)) | (o.Deny & ov)
+		m := ov
+		if k.t == "user" {
+			m = pv // «Управление» (ADR-0161) folds like VIEW and WRITE
+		}
+		cur.Allow = (cur.Allow &^ (o.Deny & m)) | (o.Allow & m)
+		cur.Deny = (cur.Deny &^ (o.Allow & m)) | (o.Deny & m)
 		acc[k] = cur
 	}
 	for i := start; i < len(chain); i++ {
@@ -219,13 +257,14 @@ func Detached(b TreeBits, chain []TreeNode, pin []Member) TreeNode {
 		}
 	}
 	// Pinned members (the people the chain names, the actor) get exactly what the chain gave
-	// them: a personal override is the last word on a single level.
+	// them: a personal override is the last word on a single level. The node's owner always has
+	// VIEW | WRITE, so for them it can only be MANAGE (ADR-0161) that differs.
 	for _, m := range pin {
 		was, now := ComputeTreeIn(b, m, chain), ComputeTreeIn(b, m, []TreeNode{out})
-		if was == now || m.UserID == last.OwnerID {
+		if was == now {
 			continue
 		}
-		o := Override{Allow: was & ov, Deny: ov &^ was}
+		o := Override{Allow: was & pv, Deny: pv &^ was}
 		i := slices.IndexFunc(out.Overrides, func(x OverrideTarget) bool { return x.TargetType == "user" && x.TargetID == m.UserID })
 		if i < 0 {
 			out.Overrides = append(out.Overrides, OverrideTarget{TargetType: "user", TargetID: m.UserID, Override: o})

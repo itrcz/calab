@@ -16,6 +16,8 @@ func TestDetachedKeepsAccess(t *testing.T) {
 	roles := []string{"r1", "r2"}
 	rnd := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // test data
 	bitsOf := func() Bits { return []Bits{0, b.View, b.Write, ov}[rnd.IntN(4)] }
+	// A person's row may be «Управление» too (ADR-0161), or deny MANAGE.
+	userBitsOf := func() Bits { return []Bits{0, b.View, b.Write, ov, b.All(), b.Manage}[rnd.IntN(6)] }
 	wsOf := func() Bits { return []Bits{0, b.View, ov, Administrator, b.Manage}[rnd.IntN(5)] }
 	for range 20000 {
 		chain := make([]TreeNode, 1+rnd.IntN(4))
@@ -33,8 +35,8 @@ func TestDetachedKeepsAccess(t *testing.T) {
 			}
 			for _, id := range users[:4] {
 				if rnd.IntN(4) == 0 {
-					a := bitsOf()
-					n.Overrides = append(n.Overrides, OverrideTarget{TargetType: "user", TargetID: id, Override: Override{Allow: a, Deny: bitsOf() &^ a}})
+					a := userBitsOf()
+					n.Overrides = append(n.Overrides, OverrideTarget{TargetType: "user", TargetID: id, Override: Override{Allow: a, Deny: userBitsOf() &^ a}})
 				}
 			}
 		}

@@ -20,9 +20,40 @@ import (
 // MaxOverrides bounds the overrides of one item.
 const MaxOverrides = 100
 
-var errNotSharer = httpx.Forbidden("only the owner or DISK_MANAGE may share the item")
+var (
+	errNotSharer = httpx.Forbidden("only the owner or DISK_MANAGE may share the item")
+	errOwnerRow  = httpx.Forbidden("only the owner changes the owner's own row")
+)
 
-// getPermissions: GET /api/disk/items/{id}/permissions (the owner or DISK_MANAGE).
+// shareEntry is one validated override of a PUT /permissions.
+type shareEntry struct {
+	tt, id      string
+	allow, deny perm.Bits
+}
+
+// ownerRowKept reports whether entries leave the override of the item's owner (if any) as it
+// was: a manager (DISK_MANAGE, «Управление» — ADR-0161) neither removes nor changes it.
+func ownerRowKept(it sqlc.DiskItem, old []perm.OverrideTarget, entries []shareEntry) bool {
+	if it.OwnerID == nil {
+		return true
+	}
+	owner := it.OwnerID.String()
+	var was, now perm.Override
+	for _, o := range old {
+		if o.TargetType == "user" && o.TargetID == owner {
+			was = o.Override
+		}
+	}
+	for _, e := range entries {
+		if e.tt == "user" && e.id == owner {
+			now = perm.Override{Allow: e.allow, Deny: e.deny}
+		}
+	}
+	return was == now
+}
+
+// getPermissions: GET /api/disk/items/{id}/permissions (the owner or DISK_MANAGE — a workspace
+// role outside restricted items, or «Управление» on the item or above it, ADR-0161).
 func (s *Service) getPermissions(w http.ResponseWriter, r *http.Request) error {
 	a, err := s.pathItem(r)
 	if err != nil {
@@ -41,8 +72,10 @@ func (s *Service) getPermissions(w http.ResponseWriter, r *http.Request) error {
 }
 
 // setPermissions: PUT /api/disk/items/{id}/permissions — replaces the item's overrides (VIEW /
-// WRITE only; roles of the workspace except the guest role, members as users — guests only
-// this way) and optionally the restricted switch. The owner or DISK_MANAGE.
+// WRITE; roles of the workspace except the guest role, members as users — guests only this way;
+// a person who is not a guest may also be given MANAGE, «Управление», ADR-0161) and optionally
+// the restricted switch. The owner or DISK_MANAGE; a manager who is not the owner keeps the
+// owner's own row as it is.
 func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathUUID(r, "id", "item")
 	if err != nil {
@@ -55,11 +88,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 	if len(req.GetEntries()) > MaxOverrides {
 		return httpx.Validation("entries", "at most 100")
 	}
-	type entry struct {
-		tt, id      string
-		allow, deny perm.Bits
-	}
-	entries := make([]entry, 0, len(req.GetEntries()))
+	entries := make([]shareEntry, 0, len(req.GetEntries()))
 	seen := map[string]bool{}
 	for _, e := range req.GetEntries() {
 		tt, ok := pbconv.TargetTypeToDB(e.GetTargetType())
@@ -71,8 +100,11 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Validation("entries.target_id", "must be an id")
 		}
 		allow, deny := perm.Bits(e.GetAllow()), perm.Bits(e.GetDeny())
-		if !perm.ValidDiskOverride(allow, deny) {
-			return httpx.Validation("entries.allow", "only DISK_VIEW and DISK_WRITE, not both allowed and denied")
+		switch {
+		case tt == "role" && !perm.ValidDiskOverride(allow, deny):
+			return httpx.Validation("entries.allow", "a role: only DISK_VIEW and DISK_WRITE, not both allowed and denied")
+		case tt == "user" && !perm.ValidDiskPersonalOverride(allow, deny):
+			return httpx.Validation("entries.allow", "a person: DISK_VIEW, DISK_WRITE, DISK_MANAGE only with both, not both allowed and denied")
 		}
 		k := tt + ":" + tid.String()
 		if seen[k] {
@@ -82,7 +114,7 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 		if allow == 0 && deny == 0 {
 			continue
 		}
-		entries = append(entries, entry{tt, tid.String(), allow, deny})
+		entries = append(entries, shareEntry{tt, tid.String(), allow, deny})
 	}
 	ctx := r.Context()
 	var it sqlc.DiskItem
@@ -128,22 +160,29 @@ func (s *Service) setPermissions(w http.ResponseWriter, r *http.Request) error {
 					return httpx.Validation("entries.target_id", "guests get access only as people")
 				}
 			case "user":
-				if _, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: ws, UserID: uuid.MustParse(e.id)}); err != nil {
+				m, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: ws, UserID: uuid.MustParse(e.id)})
+				if err != nil {
 					if db.IsNotFound(err) {
 						return httpx.Validation("entries.target_id", "not a member of the workspace")
 					}
 					return err
 				}
+				if e.allow.Has(perm.DiskManage) && m.Role == string(perm.RoleGuest) {
+					return httpx.Validation("entries.allow", "a guest cannot manage an item")
+				}
 			}
 		}
 		before = a.nodes()
 		oldOvs := a.chain.Overrides(id)
+		if !a.c.owns(a.item) && !ownerRowKept(a.item, oldOvs, entries) {
+			return errOwnerRow
+		}
 		if err := q.DeleteDiskPermissions(ctx, id); err != nil {
 			return err
 		}
 		for _, e := range entries {
 			if err := q.InsertDiskPermission(ctx, sqlc.InsertDiskPermissionParams{ItemID: id, TargetType: e.tt, TargetID: e.id,
-				Allow: int64(e.allow), Deny: int64(e.deny)}); err != nil { //nolint:gosec // bit masks ≤ 1 << 36
+				Allow: int64(e.allow), Deny: int64(e.deny)}); err != nil { //nolint:gosec // bit masks ≤ 1 << 37
 				return err
 			}
 		}

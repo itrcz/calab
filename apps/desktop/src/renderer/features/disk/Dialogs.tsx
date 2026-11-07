@@ -54,7 +54,8 @@ function DialogBody({ dialog, workspaceId, onClose }: { dialog: DiskDialog; work
 
 // ---------------------------------------------------------------- «Доступ»
 
-const DISK_TREE = { VIEW: DISK_BITS.VIEW, WRITE: DISK_BITS.WRITE };
+// «Управление» for people (ADR-0161): the Disk is the one tree section with it so far.
+const DISK_TREE = { VIEW: DISK_BITS.VIEW, WRITE: DISK_BITS.WRITE, MANAGE: DISK_BITS.MANAGE };
 
 /**
  * «Доступ» (ADR-0094 §2): the shared tree access editor (features/people/TreeAccess) in a sheet;
@@ -115,6 +116,7 @@ function AccessDialog({ itemId, onClose }: { itemId: string; onClose: () => void
         inherited={t('disk.accessInherited')}
         footer={t('disk.accessFooter')}
         testId="disk-access"
+        manageLevel
       />
     </Modal>
   );

@@ -2854,6 +2854,15 @@ test('m-disk-item-menu', async ({ page }) => {
   await menu.getByTestId('disk-menu-move').tap();
   await expect(page.getByRole('dialog')).toBeVisible();
   await checkpoint(page, 'm-disk-move', { snapshot: false });
+  // CBF-161: «Доступ» of a restricted folder with the third level «Управление».
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByTestId('disk-row').filter({ hasText: 'Договоры' }).getByTestId('disk-item-more').tap();
+  await page.getByTestId('disk-item-menu').getByTestId('disk-menu-access').tap();
+  const boris = page.getByTestId('disk-access-row').filter({ hasText: 'Борис' }).getByTestId('disk-access-level');
+  await boris.selectOption('manage');
+  await expect(boris).toHaveValue('manage');
+  await checkpoint(page, 'm-disk-share-levels', { snapshot: false });
 });
 
 test('m-disk-trash', async ({ page }) => {

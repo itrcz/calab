@@ -1,4 +1,5 @@
 import { PermissionTargetType, WorkspaceRole, type OverrideEntry } from '@calaba/protocol';
+import { levelOf, type Draft, type Level, type TreeBits } from './treeAccessLevels';
 import { Plus, X } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { PickerGroup } from '../../components/picker/pickerModel';
@@ -17,39 +18,11 @@ import { FixedAccessRow, TakeOverButton, useOwnerSeesPrivate, useWorkspaceOwnerI
  * Canvas (ADR-0126 §2; its override entries are OverrideEntry rows too):
  * «Только выбранные» (restricted), the owner, roles and people with «Просмотр / Правка / Нет
  * доступа», «Добавить роль или человека» (guests only by name). The caller holds the draft
- * (useTreeAccess) and saves it with one PUT; the bits are the section's VIEW / WRITE pair.
+ * (useTreeAccess) and saves it with one PUT; the bits are the section's VIEW / WRITE pair, and
+ * MANAGE when the section has «Управление» for people (the Disk, ADR-0161; not roles, not guests;
+ * treeAccessLevels).
  */
-export type Level = 'view' | 'edit' | 'deny';
-export interface Draft {
-  targetType: PermissionTargetType;
-  targetId: string;
-  level: Level;
-}
-export interface TreeBits {
-  VIEW: bigint;
-  WRITE: bigint;
-}
-
-/** An override as one of the levels: «Правка» = VIEW | WRITE, «Просмотр» = VIEW (WRITE denied), «Нет доступа» = both denied. */
-export function levelOf(e: Pick<OverrideEntry, 'allow' | 'deny'>, b: TreeBits): Level {
-  if ((e.allow & b.WRITE) !== 0n) return 'edit';
-  if ((e.allow & b.VIEW) !== 0n) return 'view';
-  if ((e.deny & b.VIEW) !== 0n) return 'deny';
-  return 'view';
-}
-export function entryOf(
-  d: Draft,
-  b: TreeBits,
-): {
-  targetType: PermissionTargetType;
-  targetId: string;
-  allow: bigint;
-  deny: bigint;
-} {
-  const vw = b.VIEW | b.WRITE;
-  const bits = d.level === 'edit' ? { allow: vw, deny: 0n } : d.level === 'view' ? { allow: b.VIEW, deny: b.WRITE } : { allow: 0n, deny: vw };
-  return { targetType: d.targetType, targetId: d.targetId, ...bits };
-}
+export { entryOf, levelOf, type Draft, type Level, type TreeBits } from './treeAccessLevels';
 const keyOf = (d: Pick<Draft, 'targetType' | 'targetId'>): string => `${d.targetType}:${d.targetId}`;
 
 export interface TreeAccess {
@@ -106,7 +79,10 @@ export function TreeAccessEditor({
   inherited,
   footer,
   testId,
+  manageLevel = false,
 }: {
+  /** «Управление» in the select of a person who is not a guest (the Disk, ADR-0161; TreeBits.MANAGE set). */
+  manageLevel?: boolean;
   workspaceId: string;
   ownerId: string;
   access: TreeAccess;
@@ -182,7 +158,9 @@ export function TreeAccessEditor({
               <Spinner />
             </div>
           ) : (
-            drafts.map((d) => <TargetRow key={keyOf(d)} workspaceId={workspaceId} draft={d} onLevel={setLevel} onRemove={remove} testId={testId} />)
+            drafts.map((d) => (
+              <TargetRow key={keyOf(d)} workspaceId={workspaceId} draft={d} manageLevel={manageLevel} onLevel={setLevel} onRemove={remove} testId={testId} />
+            ))
           )}
           {drafts && !drafts.length && !restricted ? <p className="px-3 py-2 text-caption text-muted">{inherited}</p> : null}
         </div>
@@ -237,12 +215,14 @@ function OwnerRow({ workspaceId, userId }: { workspaceId: string; userId: string
 const TargetRow = memo(function TargetRow({
   workspaceId,
   draft,
+  manageLevel,
   onLevel,
   onRemove,
   testId,
 }: {
   workspaceId: string;
   draft: Draft;
+  manageLevel: boolean;
   onLevel: (k: string, l: Level) => void;
   onRemove: (k: string) => void;
   testId: string;
@@ -270,6 +250,7 @@ const TargetRow = memo(function TargetRow({
         <Select value={draft.level} onChange={(e) => onLevel(k, e.target.value as Level)} aria-label={t('disk.level', { name })} data-testid={`${testId}-level`}>
           <option value="view">{t('disk.level.view')}</option>
           <option value="edit">{t('disk.level.edit')}</option>
+          {manageLevel && user && !guest ? <option value="manage">{t('disk.level.manage')}</option> : null}
           <option value="deny">{t('disk.level.deny')}</option>
         </Select>
       </span>
