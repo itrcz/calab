@@ -31,6 +31,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/diskacl"
@@ -114,6 +115,29 @@ func (s *Service) maxFileBytes(ws sqlc.Workspace) int64 {
 		return int64(*ws.MaxFileMb) << 20
 	}
 	return s.maxBytes
+}
+
+// adminMaxFileBytes is the size limit of one file uploaded by an administrator of a workspace:
+// the hard cap (ADR-0164).
+const adminMaxFileBytes = int64(config.MaxFileSizeCapMB) << 20
+
+// maxFileFor is the size limit of one file uid puts into ws (ADR-0164): the hard cap for an
+// administrator of ws — its owner or a holder of a role with ADMINISTRATOR, also when a bot acts
+// on their behalf (Calab-On-Behalf: the identity's UserID is theirs) — and the workspace's limit
+// (maxFileBytes) for everyone else. ctx carries the request's perm resolver.
+func (s *Service) maxFileFor(ctx context.Context, ws sqlc.Workspace, uid uuid.UUID) (int64, error) {
+	limit := s.maxFileBytes(ws)
+	m, err := perm.FromContext(ctx).Member(ctx, ws.ID, uid)
+	if errors.Is(err, perm.ErrNotMember) {
+		return limit, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if m.Role != perm.RoleGuest && (m.Role == perm.RoleOwner || m.Raw()&perm.Administrator != 0) {
+		return max(limit, adminMaxFileBytes), nil
+	}
+	return limit, nil
 }
 
 // takeUpload takes one upload of uid from the rate limiter: the user's bucket shared by every
@@ -530,7 +554,10 @@ func (s *Service) UploadWith(w http.ResponseWriter, r *http.Request, wsID uuid.U
 	if err := s.takeUpload(r.Context(), uid, &ws); err != nil {
 		return sqlc.File{}, err
 	}
-	maxFile := s.maxFileBytes(ws)
+	maxFile, err := s.maxFileFor(r.Context(), ws, uid)
+	if err != nil {
+		return sqlc.File{}, err
+	}
 	if r.ContentLength > maxFile+1<<20 { // the multipart overhead receive allows
 		return sqlc.File{}, tooLarge(maxFile) // early, before reading the body
 	}

@@ -419,7 +419,7 @@ func TestDiskTrashQuotaAndUsage(t *testing.T) {
 	_ = mw.Close()
 	r := httptest.NewRequestWithContext(ctx, "POST", "/x", &buf)
 	r.Header.Set("Content-Type", mw.FormDataContentType())
-	r = r.WithContext(auth.WithIdentity(r.Context(), auth.Identity{UserID: e.alice}))
+	r = r.WithContext(perm.WithResolver(auth.WithIdentity(r.Context(), auth.Identity{UserID: e.alice}), e.d.Q))
 	if err := e.fs.UploadInto(httptest.NewRecorder(), r, e.ws); err != nil {
 		t.Fatal(err)
 	}
