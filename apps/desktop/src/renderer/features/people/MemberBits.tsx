@@ -115,9 +115,16 @@ export type RoleLook = Pick<Role, 'name' | 'color'>;
  */
 export function roleTextStyle(role: WorkspaceRole | undefined, tone: RoleTone = 'role', custom?: RoleLook): CSSProperties | undefined {
   if (tone !== 'role' || hasRoleMark(role) || !custom?.color) return undefined;
+  const hit = tintStyles.get(custom.color);
+  if (hit) return hit;
   // Both theme variants; .role-tint (styles.css) picks one, so no theme subscription per row.
-  return { '--rc-l': readableRoleColor(custom.color, 'light'), '--rc-d': readableRoleColor(custom.color, 'dark') } as CSSProperties;
+  const style = { '--rc-l': readableRoleColor(custom.color, 'light'), '--rc-d': readableRoleColor(custom.color, 'dark') } as CSSProperties;
+  if (tintStyles.size >= 512) tintStyles.clear();
+  tintStyles.set(custom.color, style);
+  return style;
 }
+/** One frozen-in-practice style object per role colour: rows get a stable `style` identity. */
+const tintStyles = new Map<number, CSSProperties>();
 
 /** Owner and admins carry a mark; members and guests don't (the guest badge is separate). */
 export const hasRoleMark = (role: WorkspaceRole | undefined): boolean => role === WorkspaceRole.OWNER || role === WorkspaceRole.ADMIN;

@@ -191,14 +191,15 @@ describe('readableRoleColor (CBF-154)', () => {
     return 0.2126 * l((n >> 16) & 255) + 0.7152 * l((n >> 8) & 255) + 0.0722 * l(n & 255);
   };
   const cr = (css: string, surface: number): number => (Math.max(lum(css), surface) + 0.05) / (Math.min(lum(css), surface) + 0.05);
-  const LIGHT = lum('#f2f2f5');
-  const DARK = lum('#1c1c1e');
-  it.each([0xffffff, 0xffeb99, 0xffcc00, 0x0a84ff, 0x8e8e93])('%s passes 4.5:1 in both themes', (c) => {
+  const LIGHT = lum('#e1e1e4');
+  const DARK = lum('#3e3e43');
+  it.each([0xffffff, 0xffeb99, 0xffcc00, 0x0a84ff, 0x8e8e93, 0x000000, 0x5a1a8a])('%s passes 4.5:1 in both themes', (c) => {
     expect(cr(readableRoleColor(c, 'light'), LIGHT)).toBeGreaterThanOrEqual(4.5);
     expect(cr(readableRoleColor(c, 'dark'), DARK)).toBeGreaterThanOrEqual(4.5);
   });
   it('keeps a passing colour and keeps the hue', () => {
-    expect(readableRoleColor(0x0a84ff, 'dark')).toBe('#0a84ff');
+    expect(readableRoleColor(0xffcc00, 'dark')).toBe('#ffcc00');
+    expect(readableRoleColor(0x0058b0, 'light')).toBe('#0058b0');
     const y = parseInt(readableRoleColor(0xffeb99, 'light').slice(1), 16);
     expect((y >> 16) & 255).toBeGreaterThan(y & 255);
   });

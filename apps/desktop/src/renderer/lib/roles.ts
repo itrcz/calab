@@ -104,9 +104,15 @@ const lin = (c: number): number => {
 const luminance = (r: number, g: number, b: number): number => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 const contrast = (l1: number, l2: number): number => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 
-/** Worst-case surfaces a name sits on (styles.css): light sidebar #f2f2f5, dark content #1c1c1e. */
-const SURFACE_LUM = { light: luminance(0xf2, 0xf2, 0xf5), dark: luminance(0x1c, 0x1c, 0x1e) };
+/**
+ * Worst-case surfaces a name sits on (styles.css): the selected row on the light sidebar (selection
+ * 7 % black over #f2f2f5 = #e1e1e4) and the hover / selected rows and cards in dark (fill over the
+ * sheet or popover, ~#3e3e43 - the --color-label-secondary reference); the plain surfaces are easier.
+ */
+const SURFACE_LUM = { light: luminance(0xe1, 0xe1, 0xe4), dark: luminance(0x3e, 0x3e, 0x43) };
 const readableCache = new Map<string, string>();
+/** Role colours are few (a workspace's roles); the cap only guards against a pathological stream. */
+const READABLE_CACHE_MAX = 512;
 
 /**
  * A role colour made readable as text (WCAG >= 4.5:1) on the theme's surface: mixed toward black
@@ -139,6 +145,7 @@ export function readableRoleColor(color: number, theme: 'light' | 'dark'): strin
   }
   const [r, g, b] = mixed(t);
   const css = roleColorCss((r << 16) | (g << 8) | b);
+  if (readableCache.size >= READABLE_CACHE_MAX) readableCache.clear();
   readableCache.set(key, css);
   return css;
 }
