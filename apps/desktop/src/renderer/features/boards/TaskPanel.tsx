@@ -111,6 +111,15 @@ export function TaskPanel({ taskId }: { taskId: string }): ReactNode {
   useEffect(() => {
     void loadTask(taskId);
   }, [taskId]);
+  // CBF-160 safety net: a «light» task (count > 0, no files) got into the store by some path
+  // (a board list, an event) — fetch the full card once per task; no loop if the server stays empty.
+  const lacksFiles = !!task && task.attachmentCount > 0 && task.attachments.length === 0;
+  const refetched = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lacksFiles || refetched.current === taskId) return;
+    refetched.current = taskId;
+    void loadTask(taskId);
+  }, [lacksFiles, taskId]);
   const close = (): void => useBoardsUi.getState().openTask(null);
   const shell = 'mat-content fixed inset-0 z-[var(--z-modal)] flex min-w-0 flex-col pt-[var(--safe-top)]';
   if (!task) {

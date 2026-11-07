@@ -52,6 +52,15 @@ export function TaskView({ taskId, boardId, workspaceId, boardRef }: { taskId: s
   const task = useBoards((s) => s.tasks[taskId]);
   const root = useRef<HTMLElement>(null);
   const order = useOrder(boardId, workspaceId, taskId);
+  // CBF-160 safety net: a «light» task (count > 0, no files) got into the store by some path
+  // (a board list, an event) — fetch the full card once per task; no loop if the server stays empty.
+  const lacksFiles = !!task && task.attachmentCount > 0 && task.attachments.length === 0;
+  const refetched = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lacksFiles || refetched.current === taskId) return;
+    refetched.current = taskId;
+    void loadTask(taskId);
+  }, [lacksFiles, taskId]);
   useEffect(() => {
     // A task already loaded in this session (switching tabs, ↑/↓ back) is not fetched again: it is
     // live through the gateway, so the card does not blink; an unread one is fetched to mark it read.

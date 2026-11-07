@@ -119,7 +119,7 @@ export function setBoardTasks(d: BoardsData, boardId: string, list: readonly Tas
   let counts = d.checkCounts;
   for (const t of sorted) {
     counts = keepCounts(counts, d.tasks[t.id], t);
-    tasks[t.id] = keepMilestones(d.tasks[t.id], keepViewer(d.tasks[t.id], t));
+    tasks[t.id] = keepMilestones(d.tasks[t.id], keepAttachments(d.tasks[t.id], keepViewer(d.tasks[t.id], t)));
     if (t.roomId) roomTask[t.roomId] = t.id;
     (cols[t.statusId] ??= []).push(t.id);
   }
