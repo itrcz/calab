@@ -764,6 +764,9 @@ var botRouteGroups = []botRouteGroup{
 		"PATCH /api/rooms/{id}/invites/{inviteId}",
 		"DELETE /api/rooms/{id}/admissions/me",
 	}},
+	{access: botDeny, why: "ADR-0149 §3: the companion is the iPhone shell's second, subscribe-only LiveKit connection beside the device's native room audio; a bot's own connection subscribes and publishes data already", routes: []string{
+		"POST /api/rooms/{id}/voice/companion",
+	}},
 	{access: botDeny, why: "client helpers, not the bot API: server-side fetches of arbitrary URLs (link previews) and the HEIC converter would make a token a free proxy / CPU", routes: []string{
 		"GET /api/unfurl",
 		"GET /api/unfurl/image",

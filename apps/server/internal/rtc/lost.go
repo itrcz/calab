@@ -144,6 +144,7 @@ func (s *Service) expireSeat(ctx context.Context, wid uuid.UUID, st voice.Sessio
 	}
 	identity := voice.Identity(st.UserID, st.SessionID)
 	slog.InfoContext(ctx, "voice seat released: the connection did not come back", "identity", identity, "room", st.RoomID)
+	s.dropCompanion(ctx, wid, st.RoomID, st.UserID, st.SessionID) // the seat was all that kept it (ADR-0149 §3)
 	s.stopStreams(ctx, wid, st.RoomID, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 	s.dropCameras(ctx, st.RoomID, st.SessionID, identity, nil, false)
 	if s.SIP != nil && !voice.IsDM(wid, st.RoomID) {

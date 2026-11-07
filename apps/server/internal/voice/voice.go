@@ -83,7 +83,8 @@ type Stream struct {
 // Identity is the LiveKit participant identity of a device session.
 func Identity(userID, sessionID uuid.UUID) string { return userID.String() + ":" + sessionID.String() }
 
-// ParseIdentity splits "<user_id>:<session_id>".
+// ParseIdentity splits "<user_id>:<session_id>". A companion identity (CompanionIdentity) is
+// not a device and is rejected: voice state, grace, cues and grants never see it.
 func ParseIdentity(id string) (userID, sessionID uuid.UUID, ok bool) {
 	u, s, found := strings.Cut(id, ":")
 	if !found {
@@ -92,6 +93,24 @@ func ParseIdentity(id string) (userID, sessionID uuid.UUID, ok bool) {
 	uid, err1 := uuid.Parse(u)
 	sid, err2 := uuid.Parse(s)
 	return uid, sid, err1 == nil && err2 == nil
+}
+
+// companionSuffix ends the identity of a device's companion connection (ADR-0149 §3).
+const companionSuffix = ":web"
+
+// CompanionIdentity is the LiveKit identity of a device's companion connection: the iPhone
+// shell's WebView, subscribe-only, beside the device's native room audio (ADR-0149 §3).
+func CompanionIdentity(userID, sessionID uuid.UUID) string {
+	return Identity(userID, sessionID) + companionSuffix
+}
+
+// ParseCompanion splits "<user_id>:<session_id>:web".
+func ParseCompanion(id string) (userID, sessionID uuid.UUID, ok bool) {
+	dev, found := strings.CutSuffix(id, companionSuffix)
+	if !found {
+		return uuid.Nil, uuid.Nil, false
+	}
+	return ParseIdentity(dev)
 }
 
 // RoomName is the LiveKit room name of a Calaba voice room; for a DM scope (workspaceID ==

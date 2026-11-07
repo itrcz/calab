@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/rtc.proto.
  */
 export const file_calaba_v1_rtc: GenFile = /*@__PURE__*/
-  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEi5QEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCBIRCgljYW5fdmlkZW8YByABKAgSDwoHcGVuZGluZxgIIAEoCBIqCgtwbGFuX2xpbWl0cxgJIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzIlEKFFJlcXVlc3RDYW1lcmFSZXF1ZXN0EiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBILCgNmcHMYAiABKA0iUgoVUmVxdWVzdENhbWVyYVJlc3BvbnNlEiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBILCgNmcHMYAiABKA0iUQoUUmVxdWVzdFN0cmVhbVJlcXVlc3QSLAoGcHJlc2V0GAEgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0EgsKA2ZwcxgCIAEoDSJSChVSZXF1ZXN0U3RyZWFtUmVzcG9uc2USLAoGcHJlc2V0GAEgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0EgsKA2ZwcxgCIAEoDSIrChFNb3ZlTWVtYmVyUmVxdWVzdBIWCg50YXJnZXRfcm9vbV9pZBgBIAEoCSK8AQoWVXBkYXRlVm9pY2VTZWxmUmVxdWVzdBISCgVtdXRlZBgBIAEoCEgAiAEBEhUKCGRlYWZlbmVkGAIgASgISAGIAQESFQoIbXVzaWNpYW4YAyABKAhIAogBARIQCgNwdHQYBCABKAhIA4gBARIVCghvbl9waG9uZRgFIAEoCEgEiAEBQggKBl9tdXRlZEILCglfZGVhZmVuZWRCCwoJX211c2ljaWFuQgYKBF9wdHRCCwoJX29uX3Bob25lQpYBCg1jb20uY2FsYWJhLnYxQghSdGNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_media, file_calaba_v1_plan]);
+  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEi5QEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCBIRCgljYW5fdmlkZW8YByABKAgSDwoHcGVuZGluZxgIIAEoCBIqCgtwbGFuX2xpbWl0cxgJIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzIkYKFlZvaWNlQ29tcGFuaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJEg0KBXRva2VuGAIgASgJEhAKCGlkZW50aXR5GAMgASgJIlEKFFJlcXVlc3RDYW1lcmFSZXF1ZXN0EiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBILCgNmcHMYAiABKA0iUgoVUmVxdWVzdENhbWVyYVJlc3BvbnNlEiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBILCgNmcHMYAiABKA0iUQoUUmVxdWVzdFN0cmVhbVJlcXVlc3QSLAoGcHJlc2V0GAEgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0EgsKA2ZwcxgCIAEoDSJSChVSZXF1ZXN0U3RyZWFtUmVzcG9uc2USLAoGcHJlc2V0GAEgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0EgsKA2ZwcxgCIAEoDSIrChFNb3ZlTWVtYmVyUmVxdWVzdBIWCg50YXJnZXRfcm9vbV9pZBgBIAEoCSK8AQoWVXBkYXRlVm9pY2VTZWxmUmVxdWVzdBISCgVtdXRlZBgBIAEoCEgAiAEBEhUKCGRlYWZlbmVkGAIgASgISAGIAQESFQoIbXVzaWNpYW4YAyABKAhIAogBARIQCgNwdHQYBCABKAhIA4gBARIVCghvbl9waG9uZRgFIAEoCEgEiAEBQggKBl9tdXRlZEILCglfZGVhZmVuZWRCCwoJX211c2ljaWFuQgYKBF9wdHRCCwoJX29uX3Bob25lQpYBCg1jb20uY2FsYWJhLnYxQghSdGNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_media, file_calaba_v1_plan]);
 
 /**
  * POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
@@ -94,6 +94,47 @@ export const JoinVoiceResponseSchema: GenMessage<JoinVoiceResponse> = /*@__PURE_
   messageDesc(file_calaba_v1_rtc, 0);
 
 /**
+ * POST /api/rooms/{id}/voice/companion (VIEW_ROOM + CONNECT, workspace voice rooms only)
+ * → 200 VoiceCompanionResponse: a token for the device's companion connection (ADR-0149 §3),
+ * identity "<user_id>:<session_id>:web", TTL 10 min (connect right away; LiveKit refreshes it
+ * while connected). Subscribe and data only, no publish sources. Needs this session's seat in
+ * the room (pending, connected or held, VoiceState) and never creates or changes one: 409
+ * ERROR_CODE_CONFLICT without a seat here, 403 without the rights or for a denied session, 404
+ * for a one-to-one call, 422 for a room that is not a voice room.
+ * The companion is removed from LiveKit when the device's seat goes; a newer companion of the
+ * same session replaces the older one (DUPLICATE_IDENTITY).
+ *
+ * @generated from message calaba.v1.VoiceCompanionResponse
+ */
+export type VoiceCompanionResponse = Message<"calaba.v1.VoiceCompanionResponse"> & {
+  /**
+   * LiveKit signal URL (LIVEKIT_URL)
+   *
+   * @generated from field: string url = 1;
+   */
+  url: string;
+
+  /**
+   * LiveKit access JWT
+   *
+   * @generated from field: string token = 2;
+   */
+  token: string;
+
+  /**
+   * @generated from field: string identity = 3;
+   */
+  identity: string;
+};
+
+/**
+ * Describes the message calaba.v1.VoiceCompanionResponse.
+ * Use `create(VoiceCompanionResponseSchema)` to create a new message.
+ */
+export const VoiceCompanionResponseSchema: GenMessage<VoiceCompanionResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_rtc, 1);
+
+/**
  * Webcam quality wanted by /camera/request; the answer is capped by the plan (ADR-0024).
  *
  * @generated from message calaba.v1.RequestCameraRequest
@@ -119,7 +160,7 @@ export type RequestCameraRequest = Message<"calaba.v1.RequestCameraRequest"> & {
  * Use `create(RequestCameraRequestSchema)` to create a new message.
  */
 export const RequestCameraRequestSchema: GenMessage<RequestCameraRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 1);
+  messageDesc(file_calaba_v1_rtc, 2);
 
 /**
  * Granted webcam quality: min(wanted, plan camera_max_preset / camera_max_fps).
@@ -144,7 +185,7 @@ export type RequestCameraResponse = Message<"calaba.v1.RequestCameraResponse"> &
  * Use `create(RequestCameraResponseSchema)` to create a new message.
  */
 export const RequestCameraResponseSchema: GenMessage<RequestCameraResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 2);
+  messageDesc(file_calaba_v1_rtc, 3);
 
 /**
  * POST /api/rooms/{id}/stream/request (STREAM). Reserves a stream slot for this device and
@@ -173,7 +214,7 @@ export type RequestStreamRequest = Message<"calaba.v1.RequestStreamRequest"> & {
  * Use `create(RequestStreamRequestSchema)` to create a new message.
  */
 export const RequestStreamRequestSchema: GenMessage<RequestStreamRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 3);
+  messageDesc(file_calaba_v1_rtc, 4);
 
 /**
  * @generated from message calaba.v1.RequestStreamResponse
@@ -200,7 +241,7 @@ export type RequestStreamResponse = Message<"calaba.v1.RequestStreamResponse"> &
  * Use `create(RequestStreamResponseSchema)` to create a new message.
  */
 export const RequestStreamResponseSchema: GenMessage<RequestStreamResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 4);
+  messageDesc(file_calaba_v1_rtc, 5);
 
 /**
  * POST /api/rooms/{id}/voice/{userId}/move (MOVE_MEMBERS in both rooms): moves all of the
@@ -221,7 +262,7 @@ export type MoveMemberRequest = Message<"calaba.v1.MoveMemberRequest"> & {
  * Use `create(MoveMemberRequestSchema)` to create a new message.
  */
 export const MoveMemberRequestSchema: GenMessage<MoveMemberRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 5);
+  messageDesc(file_calaba_v1_rtc, 6);
 
 /**
  * PATCH /api/voice/self — optimistic self mute/deafen of this device; 204.
@@ -266,5 +307,5 @@ export type UpdateVoiceSelfRequest = Message<"calaba.v1.UpdateVoiceSelfRequest">
  * Use `create(UpdateVoiceSelfRequestSchema)` to create a new message.
  */
 export const UpdateVoiceSelfRequestSchema: GenMessage<UpdateVoiceSelfRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 6);
+  messageDesc(file_calaba_v1_rtc, 7);
 
