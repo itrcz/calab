@@ -705,8 +705,8 @@ export function gateText(task: Pick<Task, 'workspaceId' | 'approvers' | 'approva
 /** A status change the approval gate refuses: a toast, nothing is sent (the server would say 409). */
 function gated(task: Task, statusId: string): boolean {
   if (statusId === task.statusId) return false;
-  const statuses = useBoards.getState().boards[task.boardId]?.statuses ?? [];
-  if (!blockedStatusIds(task, statuses).has(statusId)) return false;
+  const board = useBoards.getState().boards[task.boardId];
+  if (!blockedStatusIds(task, board?.statuses ?? [], board?.approvalGate).has(statusId)) return false;
   toast.error(gateText(task));
   return true;
 }
@@ -741,7 +741,7 @@ export async function pickStatus(taskId: string, statusId: string, manage: boole
   const task = s.tasks[taskId];
   if (!task) return;
   const statuses = s.boards[task.boardId]?.statuses ?? [];
-  const how = statusPick(task, statuses, statusId, manage);
+  const how = statusPick(task, statuses, statusId, manage, s.boards[task.boardId]?.approvalGate);
   if (how === 'same') return;
   if (how !== 'override') return updateTask(taskId, { statusId });
   const to = statuses.find((x) => x.id === statusId)?.name ?? '';
@@ -1032,7 +1032,7 @@ export async function bulkUpdate(ids: readonly string[], patch: TaskPatch): Prom
   const s = useBoards.getState();
   const held = patch.statusId === undefined ? [] : ids.filter((id) => {
     const x = s.tasks[id];
-    return !!x && x.statusId !== patch.statusId && blockedStatusIds(x, s.boards[x.boardId]?.statuses ?? []).has(patch.statusId ?? '');
+    return !!x && x.statusId !== patch.statusId && blockedStatusIds(x, s.boards[x.boardId]?.statuses ?? [], s.boards[x.boardId]?.approvalGate).has(patch.statusId ?? '');
   });
   if (held.length) toast.error(t('boards.gate.bulk', { keys: held.map((id) => s.tasks[id]?.key ?? '').join(', ') }));
   await Promise.all(ids.filter((id) => !held.includes(id)).map((id) => updateTask(id, patch)));

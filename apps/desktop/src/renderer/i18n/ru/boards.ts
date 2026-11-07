@@ -512,6 +512,8 @@ export const ruBoards = {
   'boards.approvalNotify.now': 'Сразу',
   'boards.approvalNotify.min': 'Через {n} мин',
   'boards.approvalNotify.hour': 'Через 1 час',
+  'boards.approvalGate.label': 'Согласование держит переходы',
+  'boards.approvalGate.hint': 'Пока согласование не завершено, задачу нельзя перевести дальше. Выключите — статус меняет любой, кто правит задачу, голоса остаются.',
   'boards.notice.approved': 'Задача согласована',
   'boards.notice.rejected': '{name} отклоняет задачу',
   'boards.notice.rejectedWhy': '{name} отклоняет задачу: {comment}',

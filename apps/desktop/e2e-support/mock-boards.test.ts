@@ -262,6 +262,12 @@ describe('boards mock (ADR-0042)', () => {
     expect(refused.status).toBe(409);
     expect(await refused.json()).toMatchObject({ reason: 'TASK_APPROVAL_REQUIRED' });
     expect((await api(anna, `/api/tasks/${cal6.id}`, { method: 'PATCH', body: { statusId: st('Todo') } })).status).toBe(200);
+    // ADR-0160: with the board's gate off the same move goes through, the votes stay.
+    expect((await api(anna, `/api/boards/${cal.id}`, { method: 'PATCH', body: { approvalGate: 'APPROVAL_GATE_OFF' } })).status).toBe(200);
+    const moved = await json<{ task: ApprovalJ }>(api(anna, `/api/tasks/${cal6.id}`, { method: 'PATCH', body: { statusId: st('Готово') } }));
+    expect(moved.task.approvers?.map((a) => a.state)).toEqual(['APPROVER_STATE_APPROVED', 'APPROVER_STATE_PENDING']);
+    expect((await api(anna, `/api/tasks/${cal6.id}`, { method: 'PATCH', body: { statusId: st('Todo') } })).status).toBe(200);
+    expect((await api(anna, `/api/boards/${cal.id}`, { method: 'PATCH', body: { approvalGate: 'APPROVAL_GATE_HOLD' } })).status).toBe(200);
     // Борис approves: the quorum («все») is reached, the move goes through.
     const ok = await json<{ task: ApprovalJ }>(api(boris, `/api/tasks/${cal6.id}/approval`, { method: 'POST', body: { decision: 'TASK_APPROVAL_DECISION_APPROVE' } }));
     expect(ok.task.approvalState).toBe('TASK_APPROVAL_STATE_APPROVED');

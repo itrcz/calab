@@ -5211,6 +5211,23 @@ test('boards-features', async ({ open, win, mock, shot }) => {
   await win.getByRole('tab', { name: 'Фичи' }).click();
   await expect(win.getByTestId('board-features').getByRole('switch')).toHaveCount(16);
   await checkpoint(shot, 'boards-features');
+  // CBF-156 (ADR-0160): «Согласование держит переходы» in the approvals card, on by default; off,
+  // a task waiting for approval moves to any status — no disabled rows in its status menu.
+  const gate = win.getByRole('switch', { name: 'Согласование держит переходы' });
+  await gate.scrollIntoViewIfNeeded();
+  await expect(gate).toBeChecked();
+  await checkpoint(shot, 'boards-features-approval-gate');
+  await gate.click();
+  await expect(gate).not.toBeChecked();
+  await checkpoint(shot, 'boards-features-approval-gate-off');
+  await win.keyboard.press('Escape');
+  await win.getByTestId('task-card').filter({ hasText: 'Ревью: права досок' }).getByTestId('card-status').click();
+  const statusMenu = win.getByTestId('status-menu');
+  await expect(statusMenu.getByTestId('picker-option').first()).toBeVisible();
+  await expect(statusMenu).not.toContainText('нужно согласование');
+  await expect(statusMenu.locator('[data-testid="picker-option"][aria-disabled="true"]')).toHaveCount(0);
+  await checkpoint(shot, 'boards-status-menu-gate-off', { axe: false });
+  await win.keyboard.press('Escape');
 });
 
 /** Create-task dialog (owner 07.10): the start date next to the due date. */

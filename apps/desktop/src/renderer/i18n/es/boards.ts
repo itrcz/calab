@@ -504,6 +504,8 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.approvalNotify.now': 'De inmediato',
   'boards.approvalNotify.min': 'A los {n} min',
   'boards.approvalNotify.hour': 'A la hora',
+  'boards.approvalGate.label': 'La aprobación bloquea los cambios de estado',
+  'boards.approvalGate.hint': 'Hasta completar la aprobación, la tarea no puede avanzar. Desactivado: quien edita la tarea cambia su estado y los votos se mantienen.',
   'boards.notice.approved': 'La tarea está aprobada',
   'boards.notice.rejected': '{name} rechaza la tarea',
   'boards.notice.rejectedWhy': '{name} rechaza la tarea: {comment}',

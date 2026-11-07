@@ -1,6 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
+  ApprovalGate,
   BoardStatusType,
   BoardTemplate,
   BoardWebhookPauseReason,
@@ -28,6 +29,7 @@ import { SettingsWindow, type SettingsSection } from '../../components/SettingsW
 import { useUi } from '../../stores/ui';
 import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Spinner, TextArea, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { gateHolds } from '../../lib/boards/approvals';
 import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
 import { fmt } from '../../lib/format';
 import { accessLevelOf, accessSteps, compactDrafts, isPrivateObject, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
@@ -267,7 +269,7 @@ function FeaturesTab({ board }: { board: Board }): ReactNode {
           ))}
         </div>
       </Card>
-      {featureOn(disabled, BoardFeature.APPROVALS) && <ApprovalNotifyCard boardId={board.id} delay={board.approvalNotifyDelaySeconds} />}
+      {featureOn(disabled, BoardFeature.APPROVALS) && <ApprovalNotifyCard boardId={board.id} delay={board.approvalNotifyDelaySeconds} holds={gateHolds(board.approvalGate)} />}
       <Card title={t('boards.scale.card')} footer={t('boards.scale.footer')}>
         <Row label={t('boards.scale.label')}>
           <Select value={String(scale)} onChange={(e) => void setEstimateScale(board.id, Number(e.target.value))} aria-label={t('boards.scale.label')} data-testid="estimate-scale">
@@ -289,10 +291,16 @@ const APPROVAL_NOTIFY_DELAYS = [0, 60, 300, 900, 1800, 3600] as const;
 const delayLabel = (secs: number): string =>
   secs === 0 ? t('boards.approvalNotify.now') : secs === 3600 ? t('boards.approvalNotify.hour') : t('boards.approvalNotify.min', { n: secs / 60 });
 
-/** «Уведомлять согласующих» (ADR-0082): shown while APPROVALS is on; one PATCH per change. */
-const ApprovalNotifyCard = memo(function ApprovalNotifyCard({ boardId, delay }: { boardId: string; delay: number }): ReactNode {
+/**
+ * «Согласование» while APPROVALS is on: «Согласование держит переходы» (ADR-0160, on = HOLD) and
+ * «Уведомлять согласующих» (ADR-0082); one PATCH per change.
+ */
+const ApprovalNotifyCard = memo(function ApprovalNotifyCard({ boardId, delay, holds }: { boardId: string; delay: number; holds: boolean }): ReactNode {
   return (
     <Card title={t('boards.approvalNotify.card')} footer={t('boards.approvalNotify.hint')}>
+      <Row label={t('boards.approvalGate.label')} hint={t('boards.approvalGate.hint')}>
+        <Toggle label={t('boards.approvalGate.label')} checked={holds} onChange={(v) => void patch(boardId, { approvalGate: v ? ApprovalGate.HOLD : ApprovalGate.OFF })} />
+      </Row>
       <Row label={t('boards.approvalNotify.label')}>
         <Select
           value={String(delay)}

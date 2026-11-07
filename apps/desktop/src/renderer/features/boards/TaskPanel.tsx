@@ -680,7 +680,8 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
-  const blocked = useMemo(() => blockedStatusIds(task, statuses ?? []), [task, statuses]);
+  const gate = useBoards((s) => s.boards[task.boardId]?.approvalGate);
+  const blocked = useMemo(() => blockedStatusIds(task, statuses ?? [], gate), [task, statuses, gate]);
   // Why they are disabled: «1/3» or «rejected» instead of the bare «approval needed».
   const reason = gateReason(task);
   const gateKey = !reason ? '' : reason.kind === 'rejected' ? 'r' : `${reason.n}/${reason.m}`;

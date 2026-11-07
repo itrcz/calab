@@ -504,6 +504,8 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.approvalNotify.now': 'Immediately',
   'boards.approvalNotify.min': 'After {n} min',
   'boards.approvalNotify.hour': 'After 1 hour',
+  'boards.approvalGate.label': 'Approval holds status changes',
+  'boards.approvalGate.hint': 'Until the approval is complete, the task cannot move further. Off — anyone who edits the task changes its status, the votes stay.',
   'boards.notice.approved': 'The task is approved',
   'boards.notice.rejected': '{name} rejected the task',
   'boards.notice.rejectedWhy': '{name} rejected the task: {comment}',
