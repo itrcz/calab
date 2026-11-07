@@ -1615,6 +1615,15 @@ test('m-menu', async ({ page }) => {
   await expect(report).toBeVisible();
   await report.getByTestId(`report-reason-${ReportReason.SPAM}`).tap();
   await checkpoint(page, 'm-report-dialog');
+  // ADR-0162: «Изменить» on a message of my own bot («Погода»).
+  await page.keyboard.press('Escape');
+  await expect(report).toHaveCount(0);
+  mock.seedBots();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.weather, content: 'Завтра +3, без осадков.' });
+  await feedToBottom(page);
+  await page.getByText('Завтра +3, без осадков.').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
+  await expect(page.getByTestId('message-edit')).toBeVisible();
+  await checkpoint(page, 'm-message-menu-bot');
 });
 
 // Owner 07.10: a sub-level («+» → «Создать задачу ▸») opens by a tap only — never on hover — as a

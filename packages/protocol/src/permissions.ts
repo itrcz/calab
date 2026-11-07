@@ -1,6 +1,7 @@
 import { Permission, WorkspaceRole } from './gen/calaba/v1/permissions_pb.js';
 import { PermissionTargetType, type RoomPermissionOverride } from './gen/calaba/v1/room_pb.js';
 import type { Board, Task } from './gen/calaba/v1/boards_pb.js';
+import type { Message } from './gen/calaba/v1/message_pb.js';
 import type { DiskPermissionEntry } from './gen/calaba/v1/disk_pb.js';
 import type { WikiPermissionEntry } from './gen/calaba/v1/wiki_pb.js';
 import type { CanvasPermissionEntry } from './gen/calaba/v1/canvas_pb.js';
@@ -777,6 +778,16 @@ const NO_BOTS: ReadonlySet<string> = new Set();
  */
 export function isTaskAuthor(task: Pick<Task, 'createdBy'>, me: string, myBots: ReadonlySet<string> = NO_BOTS): boolean {
   return me !== '' && task.createdBy !== '' && (task.createdBy === me || myBots.has(task.createdBy));
+}
+
+/**
+ * Whether the viewer counts as the message's author for editing it (Go: perm.MessageAuthor,
+ * ADR-0162): they wrote it, or one of their own bots did (`myBots`: READY.my_bot_ids). The same
+ * rule as isTaskAuthor; the server also limits a bot's owner to the bot's home workspace, which
+ * the client does not know — there the item may show and the server answers 403.
+ */
+export function isMessageAuthor(m: Pick<Message, 'authorId'>, me: string, myBots: ReadonlySet<string> = NO_BOTS): boolean {
+  return isTaskAuthor({ createdBy: m.authorId }, me, myBots);
 }
 
 /**

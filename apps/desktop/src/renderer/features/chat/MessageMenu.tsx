@@ -20,9 +20,12 @@ import { CREATE_TASKS, hasBit } from '../boards/model';
 import type { ChatMessage } from '../../stores/messages';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
+import { myBotIds } from '../../stores/bots';
+import { useSession } from '../../stores/session';
 import { useChatView } from './chatView';
 import { QUICK_REACTIONS } from './emoji';
 import { canToggleReaction } from './reactionLimit';
+import { mayEditMessage } from './editable';
 import { openReport } from '../people/ReportDialog';
 
 /** macOS menu look (opaque popover, 28 px rows, accent highlight). */
@@ -141,11 +144,7 @@ export function MessageMenu({ c, own, roomId, workspaceId, perms, image }: { c: 
             <Link2 className="size-4" aria-hidden /> {t('chat.embedShow')}
           </ContextMenu.Item>
         ) : null}
-        {own && !m.sticker && !m.forward ? (
-          <ContextMenu.Item className={menuItem} onSelect={() => useUi.getState().setEditing(c.key)}>
-            <Pencil className="size-4" aria-hidden /> {t('chat.edit')}
-          </ContextMenu.Item>
-        ) : null}
+        <EditItem c={c} own={own} />
         {!own && m.authorId && !m.system && c.status === 'sent' ? (
           <ContextMenu.Item className={menuItem} onSelect={() => openReport(m.authorId, useRooms.getState().byId[roomId]?.workspaceId ?? '', m.id)} data-testid="message-report">
             <Flag className="size-4" aria-hidden /> {t('report.action')}
@@ -168,6 +167,20 @@ export function MessageMenu({ c, own, roomId, workspaceId, perms, image }: { c: 
  * «Прочитали» (ADR-0140) on top of my message's menu (right click; long press on the phone) in a
  * chat of several people once someone saw it: the row opens the list in place (the menu stays).
  */
+/**
+ * «Изменить»: my message or my own bot's (ADR-0162). Mounted only while the menu is open, so the
+ * owned bots are read once from the store — no subscription in every feed row.
+ */
+function EditItem({ c, own }: { c: ChatMessage; own: boolean }): ReactNode {
+  const me = useSession.getState().me?.user?.id ?? '';
+  if (!mayEditMessage(c.msg, own, me, myBotIds())) return null;
+  return (
+    <ContextMenu.Item className={menuItem} onSelect={() => useUi.getState().setEditing(c.key)} data-testid="message-edit">
+      <Pencil className="size-4" aria-hidden /> {t('chat.edit')}
+    </ContextMenu.Item>
+  );
+}
+
 function ReadByItem({ roomId, messageId, workspaceId }: { roomId: string; messageId: string; workspaceId: string }): ReactNode {
   const read = useReadReceipt(roomId, messageId) === TICKS_READ;
   const group = useRooms((s) => {

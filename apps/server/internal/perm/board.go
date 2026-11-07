@@ -165,6 +165,14 @@ func TaskAuthor(createdBy, botOwner *uuid.UUID, user uuid.UUID) bool {
 	return (createdBy != nil && *createdBy == user) || (botOwner != nil && *botOwner == user)
 }
 
+// MessageAuthor is TaskAuthor for a message (ADR-0162): editing one's own message is open to its
+// author and to the current owner of the bot that wrote it (botOwner: GetMessageBotOwner — in
+// the bot's home workspace only; nil otherwise). The author stays the bot. Mirror of
+// isMessageAuthor in packages/protocol.
+func MessageAuthor(authorID uuid.UUID, botOwner *uuid.UUID, user uuid.UUID) bool {
+	return TaskAuthor(&authorID, botOwner, user)
+}
+
 // TaskRoom maps board bits to the bits in a task's comment room (ADR-0042 §1): VIEW_BOARD →
 // VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES, EDIT_TASKS adds MANAGE_MESSAGES. The room of an
 // archived task is read-only, and so is every task room of a board with the feature COMMENTS

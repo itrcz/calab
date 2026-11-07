@@ -26,7 +26,7 @@ order: 4
 | `GET` | `/api/rooms/{id}/messages/{messageId}/readers` | Кто из людей увидел **ваше** сообщение и когда → `{readers: [{userId, readAt}]}`; чужое — `403` |
 | `POST` | `/api/rooms/{id}/messages` | Отправить сообщение → `201 {message}` (`SEND_MESSAGES`) |
 | `POST` | `/api/rooms/{id}/messages/{mid}/forward` | Переслать в другую комнату `{toRoomId}` → `201 {message}` с полем `forward` |
-| `PATCH` | `/api/messages/{id}` | Править своё сообщение: текст и/или inline-клавиатуру → `{message}` |
+| `PATCH` | `/api/messages/{id}` | Править своё сообщение: текст и/или inline-клавиатуру → `{message}`. Текст сообщения бота может править и его текущий владелец из приложения (автор остаётся ботом, клавиатура сохраняется) |
 | `DELETE` | `/api/messages/{id}` | Удалить своё или чужое (`MANAGE_MESSAGES`) → `204` |
 | `GET` | `/api/messages/{id}/reactions/{emoji}` | Кто поставил реакцию: `?after=&limit=` (1..100, по умолчанию 25) → `{users, hasMore}` |
 | `PUT` | `/api/messages/{id}/reactions/{emoji}` | Поставить реакцию (emoji в URL-кодировке) → `204` |

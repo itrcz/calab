@@ -2114,6 +2114,8 @@ class MockImpl {
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
+          // ADR-0151 / ADR-0162: the recipient's own bots.
+          myBotIds: [...this.state.bots.values()].filter((b) => b.ownerUserId === u.user.id).map((b) => b.userId).sort(),
           // Notes shelves (ADR-0039): people only.
           notes: u.user.isGuest || u.user.isBot ? [] : this.notesOf(u.user.id),
           // ADR-0034: the user's ringing / active call.

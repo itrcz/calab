@@ -1306,6 +1306,21 @@ test('chat-context-menu', async ({ open, win, mock, shot }) => {
   await win.getByTestId('message-read-by').click();
   await expect(win.getByRole('menu').getByTestId('read-by-row')).toHaveCount(2);
   await checkpoint(shot, 'chat-read-by-menu');
+  // ADR-0162: «Изменить» on a message of my own bot («Погода»), not on someone else's («Деплой»).
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('menu')).toHaveCount(0);
+  mock.seedBots();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.deploy, content: 'Выкатил ветку на стенд.' });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.weather, content: 'Завтра +3, без осадков.' });
+  await win.getByTestId('message-bubble').filter({ hasText: 'Выкатил ветку' }).getByText('Выкатил ветку').click({ button: 'right' });
+  await expect(win.getByRole('menu')).toBeVisible();
+  await expect(win.getByTestId('message-edit')).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await win.getByTestId('message-bubble').filter({ hasText: 'Завтра +3' }).getByText('Завтра +3').click({ button: 'right' });
+  await expect(win.getByTestId('message-edit')).toBeVisible();
+  await checkpoint(shot, 'chat-context-menu-bot');
+  await win.getByTestId('message-edit').click();
+  await expect(win.getByTestId('composer')).toContainText('Завтра +3');
 });
 
 test('chat-emoji-picker', async ({ open, win, mock, shot }) => {

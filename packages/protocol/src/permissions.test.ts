@@ -17,6 +17,7 @@ import {
   ROLES_V2_PERMISSIONS,
   WORKSPACE_ONLY_PERMISSIONS,
   taskPermissions,
+  isMessageAuthor,
   isTaskAuthor,
   taskRoomPermissions,
   computeMemberBoardPermissions,
@@ -427,6 +428,11 @@ describe('roles (ADR-0026)', () => {
     expect(isTaskAuthor({ createdBy: 'bot1' }, me, new Set(['bot1']))).toBe(true);
     expect(isTaskAuthor({ createdBy: 'bot1' }, me)).toBe(false);
     expect(isTaskAuthor({ createdBy: '' }, '', new Set(['']))).toBe(false);
+    // ADR-0162: a message of my own bot is mine to edit; someone else's bot's is not.
+    expect(isMessageAuthor({ authorId: me }, me)).toBe(true);
+    expect(isMessageAuthor({ authorId: 'bot1' }, me, new Set(['bot1']))).toBe(true);
+    expect(isMessageAuthor({ authorId: 'bot2' }, me, new Set(['bot1']))).toBe(false);
+    expect(isMessageAuthor({ authorId: '' }, '', new Set(['']))).toBe(false);
     // ADR-0115: a create-only author of an archived task no longer sees it.
     expect(taskPermissions({ permissions: PERMISSION_BITS.CREATE_TASKS, taskScoped: true }, task(false, false, false, true, true), me)).toBe(0n);
     // An archived task: the invitation no longer counts (the server passes live flags only).
