@@ -97,6 +97,7 @@ const KEY = new Set([
   'voice-soundboard',
   'main-members-toggled',
   'main-members-birthday',
+  'main-members-roles',
   'members-menu',
   'members-profile-switch',
   'profile-dialog',
@@ -1001,6 +1002,18 @@ test('main-members-toggled', async ({ open, win, mock, shot }) => {
   await expect(sidebar.getByRole('listitem', { name: /Борис Петров/ }).locator('[data-voice-icon="muted"]')).toHaveCount(1);
   await expect(win.getByRole('complementary', { name: 'Участники' }).locator('[data-voice-icon="connection-lost"]')).toHaveCount(1);
   await checkpoint(shot, 'main-members-voice-lost');
+  // CBF-154: custom roles with light colours (white, pale yellow, mid blue) stay readable in both themes.
+  const json = { 'content-type': 'application/json' };
+  const login = await fetch(`${mock.url}/api/auth/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'owner@calaba.test', password: PASSWORD }) });
+  const auth = { ...json, authorization: `Bearer ${((await login.json()) as { tokens: { accessToken: string } }).tokens.accessToken}` };
+  const roleIds: string[] = [];
+  for (const [name, color] of [['Белая', 0xffffff], ['Бледно-жёлтая', 0xffeb99], ['Синяя', 0x3a86ff]] as const) {
+    const created = await fetch(`${mock.url}/api/workspaces/${IDS.workspaces.main}/roles`, { method: 'POST', headers: auth, body: JSON.stringify({ name, color, permissions: '0' }) });
+    expect(created.status, `create role ${name}`).toBe(201);
+    roleIds.push(((await created.json()) as { role: { id: string } }).role.id);
+  }
+  [IDS.users.vera, IDS.users.grigory, IDS.users.dina].forEach((uid, i) => mock.setMemberRoles(IDS.workspaces.main, uid, roleIds.slice(i, i + 1)));
+  await checkpoint(shot, 'main-members-roles');
 });
 
 test('members-profile', async ({ open, win, mock, shot }) => {

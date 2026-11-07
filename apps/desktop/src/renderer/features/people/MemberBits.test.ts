@@ -48,8 +48,8 @@ describe('RoleMark (docs/09 #26)', () => {
     expect(html).toContain('title="Дизайн"');
     expect(html).toContain('background:#0a84ff');
     expect(mark(WorkspaceRole.ADMIN, { custom })).toContain('data-role-mark="admin"');
-    expect(roleTextClass(WorkspaceRole.MEMBER, 'role', custom)).toBe('');
-    expect(roleTextStyle(WorkspaceRole.MEMBER, 'role', custom)).toEqual({ color: '#0a84ff' });
+    expect(roleTextClass(WorkspaceRole.MEMBER, 'role', custom)).toBe('role-tint');
+    expect(roleTextStyle(WorkspaceRole.MEMBER, 'role', custom)).toMatchObject({ '--rc-d': '#0a84ff' });
     expect(roleTextStyle(WorkspaceRole.MEMBER, 'inherit', custom)).toBeUndefined();
     expect(roleTextStyle(WorkspaceRole.OWNER, 'role', custom)).toBeUndefined();
     expect(roleTextStyle(WorkspaceRole.MEMBER, 'role')).toBeUndefined();

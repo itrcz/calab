@@ -97,6 +97,52 @@ export function roleColorCss(color: number): string {
   return `#${(color & 0xffffff).toString(16).padStart(6, '0')}`;
 }
 
+const lin = (c: number): number => {
+  const v = c / 255;
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+const luminance = (r: number, g: number, b: number): number => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+const contrast = (l1: number, l2: number): number => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+
+/** Worst-case surfaces a name sits on (styles.css): light sidebar #f2f2f5, dark content #1c1c1e. */
+const SURFACE_LUM = { light: luminance(0xf2, 0xf2, 0xf5), dark: luminance(0x1c, 0x1c, 0x1e) };
+const readableCache = new Map<string, string>();
+
+/**
+ * A role colour made readable as text (WCAG >= 4.5:1) on the theme's surface: mixed toward black
+ * (light) or white (dark) just enough, so the hue stays recognisable. Memoized per colour+theme;
+ * a colour that already passes is returned as is.
+ */
+export function readableRoleColor(color: number, theme: 'light' | 'dark'): string {
+  const key = `${theme}${color & 0xffffff}`;
+  const hit = readableCache.get(key);
+  if (hit) return hit;
+  const rgb = [(color >> 16) & 255, (color >> 8) & 255, color & 255] as const;
+  const target = theme === 'light' ? 0 : 255;
+  const surface = SURFACE_LUM[theme];
+  const mixed = (t: number): [number, number, number] => [
+    Math.round(rgb[0] + (target - rgb[0]) * t),
+    Math.round(rgb[1] + (target - rgb[1]) * t),
+    Math.round(rgb[2] + (target - rgb[2]) * t),
+  ];
+  const ok = (t: number): boolean => contrast(luminance(...mixed(t)), surface) >= 4.5;
+  let t = 0;
+  if (!ok(0)) {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 8; i++) {
+      const mid = (lo + hi) / 2;
+      if (ok(mid)) hi = mid;
+      else lo = mid;
+    }
+    t = hi;
+  }
+  const [r, g, b] = mixed(t);
+  const css = roleColorCss((r << 16) | (g << 8) | b);
+  readableCache.set(key, css);
+  return css;
+}
+
 /** «#rrggbb» (or «rrggbb», «#rgb») → 0xRRGGBB; null when it is no colour. */
 export function parseRoleColor(s: string): number | null {
   let h = s.trim().replace(/^#/, '');
