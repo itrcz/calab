@@ -280,6 +280,7 @@ function SearchBar({ workspaceId, boardId, query, onQuery, variant, busy }: { wo
               type="search"
               value={query.q}
               onChange={(e) => onQuery({ ...query, q: e.target.value })}
+              onClear={() => onQuery({ ...query, q: '' })}
               maxLength={200}
               autoFocus
               placeholder={t('ts.placeholder')}
@@ -649,6 +650,7 @@ export function BoardSearchField({ boardId, phone = false }: { boardId: string; 
           value={value}
           maxLength={200}
           onChange={(e) => useTaskSearch.getState().setBoardText(boardId, e.target.value)}
+          onClear={() => useTaskSearch.getState().setBoardText(boardId, '')}
           onBlur={() => setOpened(false)}
           onKeyDown={(e) => {
             e.stopPropagation(); // board hotkeys (C, F, 1–3…) stay out of the field

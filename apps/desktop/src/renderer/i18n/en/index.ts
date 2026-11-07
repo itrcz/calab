@@ -125,6 +125,7 @@ export const en: Dict = {
   'common.delete': 'Delete',
   'common.save': 'Save',
   'common.saved': 'Saved',
+  'common.clear': 'Clear',
   'common.reset': 'Reset',
   'common.retry': 'Retry',
   'common.search': 'Search',

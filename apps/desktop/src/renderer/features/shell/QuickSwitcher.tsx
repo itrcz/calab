@@ -4,7 +4,7 @@ import { ArrowRight, MessageCircle, MessageSquare, NotebookText, Phone, Search, 
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { RoomIcon } from '../../components/RoomIcon';
-import { Button, MOD, Segmented, Spinner, Tip, cx } from '../../components/ui';
+import { Button, ClearButton, MOD, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
@@ -47,7 +47,7 @@ import { TaskSearch, type TaskSearchHandle } from '../boards/TaskSearch';
 import { queryOf, useTaskSearch } from '../../stores/taskSearch';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { openSearchPage } from '../../services/taskSearch';
-import type { TaskQuery } from '../../lib/boards/taskSearch';
+import { clearQueryText, type TaskQuery } from '../../lib/boards/taskSearch';
 
 type Item =
   | { kind: 'notes'; id: string; roomId: string; name: string; emoji: string }
@@ -102,6 +102,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     if (activeWs) useTaskSearch.getState().setQuery(activeWs, v);
   }, [activeWs]);
   const tasksRef = useRef<TaskSearchHandle>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   // Opened from the header field with text in «Задачи»: that text is the task query.
   useEffect(() => {
     if (initialQuery && activeWs && mode === 'tasks') {
@@ -336,6 +337,13 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     return it.kind === 'notes' ? t('search.notes') : it.kind === 'dm' ? t('search.dms') : it.kind === 'room' ? t('search.rooms') : it.kind === 'member' ? t('search.members') : t('search.messages');
   };
 
+  // «×» in the field (CBF-157): the text only — state, filters and sort of the task search stay («Сбросить» is for them).
+  const clearText = (): void => {
+    if (tasksMode) setTaskQuery(clearQueryText(taskQuery));
+    else setQ('');
+    setSel(0);
+  };
+
   const changeScope = (v: ScopeMode): void => {
     setScopeMode(v);
     writeScope(v);
@@ -370,6 +378,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               </span>
             ) : null}
             <input
+              ref={inputRef}
               autoFocus
               // Pre-filled from the header field: the caret goes after the typed text.
               onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
@@ -388,6 +397,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               aria-label={tasksMode ? t('ts.placeholder') : t('search.placeholder')}
               className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint"
             />
+            {(tasksMode ? taskQuery.q : q) ? <ClearButton onClick={clearText} onDone={() => inputRef.current?.focus()} /> : null}
             {busy && !tasksMode ? <Spinner className="size-4" /> : null}
             {/* «Это пространство | Везде» (ADR-0062 §4); «Личные» always searches everywhere. */}
             {activeWs && !author && !tasksMode ? (

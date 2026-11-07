@@ -1,7 +1,8 @@
 import { TaskField, TaskOp } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
+import { useTaskSearch } from '../../stores/taskSearch';
 import { fieldDef, fieldInScope } from './filterFields';
-import { EMPTY_QUERY, fromSavedQuery, hasConditions, isModified, nextSort, queryKey, searchParams, soleBoard, sortOf, toSavedQuery, type TaskQuery } from './taskSearch';
+import { EMPTY_QUERY, clearQueryText, fromSavedQuery, hasConditions, isModified, nextSort, queryKey, searchParams, soleBoard, sortOf, toSavedQuery, type TaskQuery } from './taskSearch';
 
 const q = (p: Partial<TaskQuery>): TaskQuery => ({ ...EMPTY_QUERY, ...p });
 const board = (ids: string[], op = TaskOp.IS) => ({ conds: [{ field: TaskField.BOARD, op, values: ids }], any: false });
@@ -62,5 +63,22 @@ describe('task search query (ADR-0139)', () => {
     expect(fieldInScope(def(TaskField.STATUS), 'search', false)).toBe(false);
     expect(fieldInScope(def(TaskField.STATUS), 'search', true)).toBe(true);
     expect(fieldInScope(def(TaskField.STATUS_TYPE), 'search', false)).toBe(true);
+  });
+});
+
+describe('«×» in the search field (CBF-157)', () => {
+  it('clears the text only, state / filter / sort stay', () => {
+    const cur = q({ q: 'регистрац', state: 'open', sort: '-key', filter: board(['b1']) });
+    const next = clearQueryText(cur);
+    expect(next).toEqual({ ...cur, q: '' });
+    expect(next.filter).toBe(cur.filter);
+    expect(clearQueryText(next)).toBe(next);
+  });
+
+  it('empties the remembered query of the workspace', () => {
+    const ts = useTaskSearch.getState();
+    ts.setQuery('ws1', q({ q: 'abc', state: 'done' }));
+    ts.setQuery('ws1', clearQueryText(useTaskSearch.getState().byWs['ws1'] ?? EMPTY_QUERY));
+    expect(useTaskSearch.getState().byWs['ws1']).toMatchObject({ q: '', state: 'done' });
   });
 });

@@ -125,6 +125,7 @@ export const es: Dict = {
   'common.delete': 'Eliminar',
   'common.save': 'Guardar',
   'common.saved': 'Guardado',
+  'common.clear': 'Borrar',
   'common.reset': 'Restablecer',
   'common.retry': 'Reintentar',
   'common.search': 'Buscar',
