@@ -12,7 +12,7 @@ struct CalabAudioEngineProfile: Equatable {
   let ducking: CalabAudioDucking
   let captureProcessing: Bool
   // Mute without a chime or a session change, instant unmute (ADR-0149 §4). The gate runs in capture.
-  static let room = CalabAudioEngineProfile(muteMode: .inputMixer, ducking: .minimal, captureProcessing: true)
+  static let room = CalabAudioEngineProfile(muteMode: .inputMixer, ducking: .room, captureProcessing: true)
   // What the call driver has always run on, so a released room leaves nothing behind for it.
   static let standard = CalabAudioEngineProfile(muteMode: .voiceProcessing, ducking: .minimal, captureProcessing: false)
   static func of(_ holder: CalabAudioHolder) -> CalabAudioEngineProfile { holder == .room ? .room : .standard }
@@ -123,6 +123,7 @@ final class CalabLiveKitAudioEngine: CalabAudioEngine {
     if #available(iOS 17, *) {
       switch profile.ducking.level {
       case .min: audio.duckingLevel = .min
+      case .mid: audio.duckingLevel = .mid
       }
     }
     audio.capturePostProcessingDelegate = profile.captureProcessing ? captureProcessing : nil

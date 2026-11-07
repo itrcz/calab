@@ -33,7 +33,7 @@ struct AudioSessionPolicyTests {
     let speaking = CalabAudioPolicy.of(.speaking)
     precondition(speaking.session?.category == .playAndRecord && speaking.session?.mode == .voiceChat)
     precondition(speaking.session?.options == [.mixWithOthers, .allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
-    precondition(speaking.ducking == CalabAudioDucking(level: .min, advanced: false), "pumping can return")
+    precondition(speaking.ducking == CalabAudioDucking(level: .mid, advanced: false), "pumping can return or music is not quieter")
     precondition(speaking.engine && speaking.capture)
     let listening = CalabAudioPolicy.of(.listening)
     precondition(listening.session?.category == .playback && listening.session?.options == [.mixWithOthers], "listener must stay on A2DP")
