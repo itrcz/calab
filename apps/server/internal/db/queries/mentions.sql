@@ -20,10 +20,14 @@ DELETE FROM message_mentions WHERE message_id = $1;
 DELETE FROM message_everyone_mentions WHERE message_id = $1;
 
 -- name: DismissMentions :exec
--- The ✕ on inbox cards (CBF-155, ADR-0163): only existing messages (an unknown id is skipped,
--- never a foreign-key error that would tell it exists).
+-- The ✕ on inbox cards (CBF-155, ADR-0163): only messages that mention the caller now (directly
+-- or @everyone) — an unknown or foreign id is skipped, never a foreign-key error that would tell
+-- it exists, and no row is written about a message the caller was never shown.
 INSERT INTO mention_dismissals (user_id, message_id)
-SELECT sqlc.arg('user_id')::uuid, m.id FROM messages m WHERE m.id = ANY(sqlc.arg('message_ids')::uuid[])
+SELECT sqlc.arg('user_id')::uuid, m.id FROM messages m
+WHERE m.id = ANY(sqlc.arg('message_ids')::uuid[])
+  AND (EXISTS (SELECT 1 FROM message_mentions mm WHERE mm.message_id = m.id AND mm.user_id = sqlc.arg('user_id')::uuid)
+       OR EXISTS (SELECT 1 FROM message_everyone_mentions e WHERE e.message_id = m.id))
 ON CONFLICT DO NOTHING;
 
 -- name: DeleteMentionDismissals :exec

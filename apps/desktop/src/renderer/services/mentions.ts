@@ -25,9 +25,11 @@ const PAGE = 30;
 export async function loadMentions(older = false): Promise<void> {
   const inbox = useInbox.getState();
   if (inbox.loading) return;
+  // The oldest listed mention is the cursor; a list emptied by the ✕ (CBF-155) pages from the
+  // top again — the server skips the dismissed ones.
   const before = older ? inbox.items.at(-1)?.id : undefined;
   const noticesBefore = older ? inbox.noticesCursor : undefined;
-  const mentions = !older || (inbox.hasMore && !!before);
+  const mentions = !older || inbox.hasMore;
   const notices = !older || (inbox.noticesHasMore && !!noticesBefore);
   if (!mentions && !notices) return;
   inbox.setLoading(true);

@@ -70,7 +70,10 @@ func (q *Queries) DeleteWorkspaceNotificationSettings(ctx context.Context, arg D
 
 const dismissMentions = `-- name: DismissMentions :exec
 INSERT INTO mention_dismissals (user_id, message_id)
-SELECT $1::uuid, m.id FROM messages m WHERE m.id = ANY($2::uuid[])
+SELECT $1::uuid, m.id FROM messages m
+WHERE m.id = ANY($2::uuid[])
+  AND (EXISTS (SELECT 1 FROM message_mentions mm WHERE mm.message_id = m.id AND mm.user_id = $1::uuid)
+       OR EXISTS (SELECT 1 FROM message_everyone_mentions e WHERE e.message_id = m.id))
 ON CONFLICT DO NOTHING
 `
 
@@ -79,8 +82,9 @@ type DismissMentionsParams struct {
 	MessageIds []uuid.UUID
 }
 
-// The ✕ on inbox cards (CBF-155, ADR-0163): only existing messages (an unknown id is skipped,
-// never a foreign-key error that would tell it exists).
+// The ✕ on inbox cards (CBF-155, ADR-0163): only messages that mention the caller now (directly
+// or @everyone) — an unknown or foreign id is skipped, never a foreign-key error that would tell
+// it exists, and no row is written about a message the caller was never shown.
 func (q *Queries) DismissMentions(ctx context.Context, arg DismissMentionsParams) error {
 	_, err := q.db.Exec(ctx, dismissMentions, arg.UserID, arg.MessageIds)
 	return err

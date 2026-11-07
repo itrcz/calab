@@ -80,6 +80,17 @@ describe('loadMentions (ADR-0141)', () => {
     expect(useInbox.getState().noticesHasMore).toBe(false);
   });
 
+  it('a mention list emptied by the ✕ (CBF-155) still pages: from the top, the server skips the dismissed', async () => {
+    api.mentions.mockResolvedValue({ messages: [m('04'), m('03')], hasMore: true });
+    await loadMentions();
+    useInbox.getState().dismiss(['04', '03']);
+    api.mentions.mockResolvedValue({ messages: [m('02')], hasMore: false });
+    await loadMentions(true);
+    expect(api.mentions).toHaveBeenLastCalledWith({ limit: 30 });
+    expect(useInbox.getState().items.map((x) => x.id)).toEqual(['02']);
+    expect(useInbox.getState().hasMore).toBe(false);
+  });
+
   it('one failing list does not empty the other', async () => {
     api.mentions.mockRejectedValue(new Error('down'));
     api.taskNotices.mockResolvedValue({ entries: [n('05')], hasMore: false });
