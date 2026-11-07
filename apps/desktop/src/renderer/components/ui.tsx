@@ -367,7 +367,7 @@ export const Input = forwardRef<
   );
 });
 
-/** The «×» that empties a text field (CBF-157): out of the tab order's way of typing (focus returns to the field), a 44 px target on the phone. */
+/** The «×» that empties a text field (CBF-157): a press keeps focus in the field (a keyboard press returns it there), a 44 px target on the phone. */
 export function ClearButton({ label, onClick, onDone, className }: { label?: string | undefined; onClick: () => void; onDone?: () => void; className?: string }): ReactNode {
   return (
     <button
@@ -379,7 +379,11 @@ export function ClearButton({ label, onClick, onDone, className }: { label?: str
         onClick();
         onDone?.();
       }}
-      className={cx('grid size-5 shrink-0 place-items-center rounded-full text-muted hover:text-fg mobile:size-8 [&>svg]:pointer-events-none', className)}
+      // Phone: a 32 px disc, the 44 px target is the disc + 6 px on every side (docs/08, like `bar-hit`).
+      className={cx(
+        "relative grid size-5 shrink-0 place-items-center rounded-full text-muted hover:text-fg mobile:size-8 mobile:before:absolute mobile:before:-inset-1.5 mobile:before:content-[''] [&>svg]:pointer-events-none",
+        className,
+      )}
       data-testid="search-clear"
     >
       <X className="size-3.5" aria-hidden />
