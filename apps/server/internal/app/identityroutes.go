@@ -724,6 +724,9 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/reports":                                    scopeGlobal,
 	"GET /api/workspaces/{id}/reports":                     scopeWorkspace,
 	"POST /api/workspaces/{id}/reports/{reportId}/resolve": scopeWorkspace,
+	// The inbox ✕ (CBF-155, ADR-0163): writes only the caller's own dismissal rows and reads
+	// nothing back, so no workspace is opened by it.
+	"POST /api/me/inbox/dismiss": scopeGlobal,
 }
 
 // identityGate classifies and checks every private route. planActive refuses the routes of

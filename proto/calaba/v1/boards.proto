@@ -1386,6 +1386,16 @@ message ListTaskNoticesResponse {
   string next_before = 3;
 }
 
+// The «Упоминания» inbox items the caller dismissed (CBF-155, ADR-0163). Body of
+// POST /api/me/inbox/dismiss → 204 (up to 100 ids of each kind; unknown or foreign ids are
+// ignored) and the INBOX_DISMISS event to the caller's own sessions. A dismissed chat mention
+// stays out of GET /api/me/mentions for good (an edit that mentions again does not bring it
+// back); a dismissed task notice leaves the caller's notice history.
+message InboxDismiss {
+  repeated string message_ids = 1; // chat mentions: the message ids
+  repeated string notice_ids = 2;  // task notices: TaskNoticeEntry.id
+}
+
 enum TaskNoticeKind {
   TASK_NOTICE_KIND_UNSPECIFIED = 0;
   TASK_NOTICE_KIND_ASSIGNED = 1;  // added to the assignees or made the lead

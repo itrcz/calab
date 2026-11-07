@@ -23,6 +23,11 @@ WHERE user_id = sqlc.arg('user_id')
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 
+-- name: DismissTaskNotices :exec
+-- The ✕ on inbox cards (CBF-155, ADR-0163): the caller's own history rows only.
+DELETE FROM task_notice_log
+WHERE user_id = sqlc.arg('user_id')::uuid AND id = ANY(sqlc.arg('ids')::uuid[]);
+
 -- name: PruneTaskNoticeLog :execrows
 -- Rows older than the cutoff, a bounded batch per call.
 DELETE FROM task_notice_log

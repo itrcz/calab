@@ -497,6 +497,8 @@ export interface MockState {
   /** ADR-0154: people a user blocked; reports by workspace (newest first). */
   blockedUsers: Map<string, Set<string>>;
   reports: Map<string, UserReport[]>;
+  /** CBF-155: chat mentions a user dismissed from «Упоминания» (message ids). */
+  dismissedMentions: Map<string, Set<string>>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -881,6 +883,7 @@ export function buildState(scenario: Scenario): MockState {
     blockedBots: new Map(),
     blockedUsers: new Map(),
     reports: new Map(),
+    dismissedMentions: new Map(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100, sound: 0x100, event: 0x100 },
     clock: 0,
   };

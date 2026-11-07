@@ -573,6 +573,14 @@ export class BoardsMock {
     return id;
   }
 
+  /** POST /me/inbox/dismiss (CBF-155): the caller's own history rows leave. */
+  dismissNotices(userId: string, ids: readonly string[]): void {
+    for (let i = this.noticeLog.length - 1; i >= 0; i--) {
+      const l = this.noticeLog[i];
+      if (l && l.user === userId && ids.includes(l.id)) this.noticeLog.splice(i, 1);
+    }
+  }
+
   /** GET /me/task-notices (ADR-0141): mine, newest first, of tasks I see now, with the current key and title. */
   notices(userId: string, before: string, limit: number): MessageInitShape<typeof ListTaskNoticesResponseSchema> {
     const all = this.noticeLog

@@ -1525,6 +1525,14 @@ test('inbox-popover', async ({ open, win, mock, shot }) => {
   await expect(pop.getByText(/разработка · /).first()).toBeVisible();
   await settle(win);
   await checkpoint(shot, 'inbox-popover');
+  // CBF-155: the ✕ in a card's corner removes it; the popover stays open, the rest stay.
+  const card = pop.getByRole('listitem').filter({ hasText: 'CAL-3 · Эхо в звонке при включённых колонках' }).first();
+  const rows = await pop.getByRole('listitem').count();
+  await card.getByRole('button', { name: 'Убрать из списка' }).click();
+  await expect(pop.getByRole('listitem')).toHaveCount(rows - 1);
+  await expect(pop).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'inbox-popover-dismissed');
 });
 
 // Bug #146: a room with an unread @mention looks different from plain unread (the count badge), and the

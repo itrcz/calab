@@ -404,6 +404,7 @@
 {"method":"POST","path":"/api/me/calendar-widget","decision":"deny","group":"profile"},
 {"method":"POST","path":"/api/me/delete","decision":"deny","group":"profile"},
 {"method":"PATCH","path":"/api/me/email","decision":"deny","group":"profile"},
+{"method":"POST","path":"/api/me/inbox/dismiss","decision":"allow","group":"profile"},
 {"method":"PATCH","path":"/api/me/password","decision":"deny","group":"profile"},
 {"method":"GET","path":"/api/me/push-capabilities","decision":"deny","group":"profile"},
 {"method":"POST","path":"/api/me/push-devices","decision":"deny","group":"profile"},

@@ -499,6 +499,15 @@ export async function loadTask(taskId: string): Promise<Task | null> {
   }
 }
 
+/** Clears a task's unread mark by id (the inbox ✕, CBF-155): a no-op for a read task. */
+export function markTaskReadById(taskId: string): void {
+  const s = useBoards.getState();
+  if (s.unread[taskId] === undefined) return;
+  const task = s.tasks[taskId];
+  if (task) void markTaskRead(task);
+  else void boardsApi.tasks.markRead(taskId).catch((e: unknown) => log.warn('task read failed', e));
+}
+
 async function markTaskRead(task: Task): Promise<void> {
   useBoards.getState().upsertTask({ ...task, unread: false, viewerState: true });
   try {

@@ -23,6 +23,8 @@ export const enShell: DictShape<typeof ruShell> = {
   'shell.inboxTasks': 'Tasks',
   'shell.inboxCount': { one: '{n} mention', other: '{n} mentions' },
   'shell.inboxMarkRead': 'Mark as read',
+  'shell.inboxDismiss': 'Remove from the list',
+  'shell.inboxDismissFailed': 'Couldn’t remove the notification',
   'shell.help': 'Keyboard shortcuts',
   'shell.kbd.search': 'Quick switcher and search',
   'shell.kbd.back': 'Back',

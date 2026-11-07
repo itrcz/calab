@@ -10,13 +10,17 @@ vi.stubGlobal('localStorage', {
 });
 vi.stubGlobal('document', { hasFocus: () => true });
 
-const api = vi.hoisted(() => ({ mentions: vi.fn(), taskNotices: vi.fn() }));
-vi.mock('../lib/api/endpoints', () => ({ api: { me: api } }));
-vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
+const api = vi.hoisted(() => ({ mentions: vi.fn(), taskNotices: vi.fn(), dismissInbox: vi.fn() }));
+const messagesApi = vi.hoisted(() => ({ markRead: vi.fn() }));
+const boards = vi.hoisted(() => ({ markTaskReadById: vi.fn() }));
+const toasts = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn(), fail: vi.fn() }));
+vi.mock('../lib/api/endpoints', () => ({ api: { me: api, messages: messagesApi } }));
+vi.mock('./boards', () => boards);
+vi.mock('../stores/toasts', () => ({ toast: toasts }));
 vi.mock('../lib/log', () => ({ log: { warn: () => undefined } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 
-const { loadMentions } = await import('./mentions');
+const { dismissInboxItem, loadMentions } = await import('./mentions');
 const { useRooms } = await import('../stores/rooms');
 const { useInbox } = await import('../stores/inbox');
 
@@ -84,5 +88,50 @@ describe('loadMentions (ADR-0141)', () => {
     expect(s.loaded).toBe(true);
     expect(s.loading).toBe(false);
     expect(s.notices).toHaveLength(1);
+  });
+});
+
+describe('dismissInboxItem (CBF-155)', () => {
+  beforeEach(() => {
+    api.dismissInbox.mockReset();
+    messagesApi.markRead.mockReset().mockResolvedValue(undefined);
+    boards.markTaskReadById.mockReset();
+    toasts.fail.mockReset();
+  });
+
+  it('removes an unread mention at once, reads it up to the mention and sends its id', async () => {
+    const x = mention('r1', 7);
+    useInbox.getState().addPage([x, mention('r1', 3)], false, false);
+    api.dismissInbox.mockResolvedValue(undefined);
+    const done = dismissInboxItem({ m: x });
+    expect(useInbox.getState().items.map((i) => i.id)).toEqual([id(3)]); // optimistic
+    await done;
+    expect(api.dismissInbox).toHaveBeenCalledWith({ messageIds: [id(7)] });
+    expect(useRooms.getState().readState['r1']).toBe(id(7));
+    expect(messagesApi.markRead).toHaveBeenCalledWith('r1', id(7));
+  });
+
+  it('a read mention does not move the marker; a refusal brings the card back with a toast', async () => {
+    const x = mention('r1', 5);
+    useRooms.getState().setRead('r1', id(9));
+    useInbox.getState().addPage([x], false, false);
+    api.dismissInbox.mockRejectedValue(new Error('down'));
+    await dismissInboxItem({ m: x });
+    expect(messagesApi.markRead).not.toHaveBeenCalled();
+    expect(useInbox.getState().items.map((i) => i.id)).toEqual([id(5)]);
+    expect(toasts.fail).toHaveBeenCalledTimes(1);
+  });
+
+  it('a task notice: sends its id; only the dot-carrying (latest) one reads the task', async () => {
+    api.dismissInbox.mockResolvedValue(undefined);
+    const older = n('01');
+    const latest = n('02');
+    useInbox.getState().addNotices([latest, older], false, false);
+    await dismissInboxItem({ e: older, latest: false });
+    expect(boards.markTaskReadById).not.toHaveBeenCalled();
+    await dismissInboxItem({ e: latest, latest: true });
+    expect(boards.markTaskReadById).toHaveBeenCalledWith('t');
+    expect(api.dismissInbox).toHaveBeenLastCalledWith({ noticeIds: ['02'] });
+    expect(useInbox.getState().notices).toEqual([]);
   });
 });

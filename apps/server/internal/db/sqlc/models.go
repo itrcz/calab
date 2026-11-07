@@ -1168,6 +1168,12 @@ type MemberRole struct {
 	RoleID      uuid.UUID
 }
 
+type MentionDismissal struct {
+	UserID    uuid.UUID
+	MessageID uuid.UUID
+	CreatedAt time.Time
+}
+
 type Message struct {
 	ID               uuid.UUID
 	RoomID           uuid.UUID

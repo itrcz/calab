@@ -90,6 +90,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("DELETE /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, false) })))
 	mux.Handle("GET /api/rooms/{id}/pins", wrap(httpx.HandlerFunc(h.listPins)))
 	mux.Handle("GET /api/me/mentions", wrap(httpx.HandlerFunc(h.listMentions)))
+	mux.Handle("POST /api/me/inbox/dismiss", wrap(httpx.HandlerFunc(h.dismissInbox)))
 	mux.Handle("PUT /api/messages/{id}/embeds-hidden", wrap(httpx.HandlerFunc(h.setEmbedsHidden)))
 }
 
@@ -769,6 +770,9 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		if err := clearMentions(r.Context(), q, m.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteMentionDismissals(r.Context(), m.ID); err != nil {
 			return err
 		}
 		// Detached files become orphans and are removed by the cleanup job.

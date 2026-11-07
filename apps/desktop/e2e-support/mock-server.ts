@@ -347,6 +347,7 @@ import {
   InviteBotDelegationRequestSchema,
   ListBlockedBotsResponseSchema,
   ListBlockedUsersResponseSchema,
+  InboxDismissSchema,
   CreateReportRequestSchema,
   CreateReportResponseSchema,
   ListReportsResponseSchema,
@@ -4825,11 +4826,12 @@ class MockImpl {
       const limit = Math.min(100, Math.max(1, Number(q.get('limit') ?? '50') || 50));
       const before = q.get('before') ?? '';
       const only = q.get('workspace_id') ?? '';
+      const dismissed = s().dismissedMentions.get(me);
       const hits = [...this.state.rooms.values()]
         .filter((r) => (!only || r.workspaceId === only) && this.member(r.workspaceId, me) && this.canView(r, me))
         .flatMap((r) =>
           (s().messages.get(r.id) ?? []).filter((m) => {
-            if (m.authorId === me || (before && m.id >= before)) return false;
+            if (m.authorId === me || (before && m.id >= before) || dismissed?.has(m.id)) return false;
             const { users, everyone } = parseMentions(m.content);
             return users.includes(me) || (everyone && this.mayMentionAll(r, m.authorId));
           }),
@@ -4839,6 +4841,20 @@ class MockImpl {
         messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)),
         hasMore: hits.length > limit,
       });
+    });
+
+    // CBF-155: the ✕ on «Упоминания» cards — own rows only, INBOX_DISMISS to my sessions.
+    this.route('POST', '/api/me/inbox/dismiss', (c) => {
+      const me = this.uid(c);
+      const b = parseBody(c, InboxDismissSchema);
+      if (!b.messageIds.length && !b.noticeIds.length) throw invalid('messageIds', 'nothing to dismiss');
+      if (b.messageIds.length > 100 || b.noticeIds.length > 100) throw invalid('messageIds', 'too many ids');
+      const set = s().dismissedMentions.get(me) ?? new Set<string>();
+      for (const id of b.messageIds) set.add(id);
+      s().dismissedMentions.set(me, set);
+      this.boards.dismissNotices(me, b.noticeIds);
+      this.toUser(me, { event: { case: 'inboxDismiss', value: { messageIds: b.messageIds, noticeIds: b.noticeIds } } });
+      noContent(c.res);
     });
 
     this.route('PUT', '/api/rooms/:id/notifications', (c) => {

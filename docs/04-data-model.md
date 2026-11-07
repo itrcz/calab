@@ -83,6 +83,7 @@ files               id, workspace_id? (NULL — файл пользовател�
 read_states         user_id, room_id, last_read_message_id      PK (user_id, room_id)
 message_mentions    user_id, message_id, room_id                PK (user_id, message_id) — прямые @<user_id>
 message_everyone_mentions  message_id PK, room_id                — @everyone / @here
+mention_dismissals  user_id, message_id, created_at             PK (user_id, message_id) — ✕ в «Упоминаниях» (ADR-0163)
 room_notification_settings user_id, room_id, level (inherit|all|mentions|none), muted_until?   PK (user_id, room_id)
 workspace_notification_settings user_id, workspace_id, level (all|mentions|none), muted_until?   PK (user_id, workspace_id)
 room_categories     id, workspace_id, name, position            (rooms.category_id → ON DELETE SET NULL)

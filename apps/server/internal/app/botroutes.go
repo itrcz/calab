@@ -124,6 +124,9 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/me/avatar",
 		"GET /api/me/mentions",
 	}},
+	{access: botAllow, why: "the inbox ✕ (CBF-155, ADR-0163): a bot that polls GET /api/me/mentions may clear its own list; only its own rows change", routes: []string{
+		"POST /api/me/inbox/dismiss",
+	}},
 	{access: botAllow, why: "mailbox password recovery (ADR-0101): only the MAILHOST_RESET_BOTS allowlist passes the handlers", routes: []string{
 		"POST /api/mailbox/hosting-check",
 		"POST /api/mailbox/password-reset",
