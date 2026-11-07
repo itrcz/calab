@@ -71,7 +71,8 @@ func TreeOf(b TreeBits, raw Bits, guest bool) Bits {
 // member's VIEW | WRITE (none for guests) and at every level, top down: a restricted node drops
 // what the roles and the ancestors gave; then each role's override (lowest position first: deny,
 // then allow; ignored for guests — they get access only as a person), then the user's own; the
-// owner of the level always has VIEW | WRITE. A child inherits its parent's result. Overrides
+// owner of the level always has VIEW | WRITE (all three with PersonalManage, below). A child
+// inherits its parent's result. Overrides
 // touch b.Override() only. Without VIEW nothing (404). Inside a restricted subtree a MANAGE
 // holder is an ordinary member (owner, 14.10): let in with «Правка» (WRITE) it gets VIEW | WRITE
 // like anyone with that grant, never MANAGE; with «Просмотр», just VIEW. The workspace owner
@@ -80,8 +81,10 @@ func TreeOf(b TreeBits, raw Bits, guest bool) Bits {
 // With PersonalManage (the Disk, ADR-0161) a person's own override carries MANAGE as well
 // («Управление»; never for guests): inherited down like VIEW and WRITE, dropped by a restricted
 // node like them, and kept only while WRITE is — a level that leaves the member without WRITE
-// («Просмотр» below, a role deny) drops it for the rest of the chain. It is the only way to
-// MANAGE inside a restricted subtree: an explicit row of that person.
+// («Просмотр» below, a role deny) drops it for the rest of the chain. The owner of a node has
+// all three on it the same way (a folder's owner is at least its manager; a guest owner still
+// VIEW | WRITE). Those are the only ways to MANAGE inside a restricted subtree: an explicit row
+// of that person, or owning the node.
 func ComputeTree(b TreeBits, in TreeInput) Bits {
 	if in.Owner && in.OwnerSeesPrivate && !in.Guest {
 		return b.All()
@@ -112,7 +115,7 @@ func ComputeTree(b TreeBits, in TreeInput) Bits {
 			p |= l.UserOv.Allow & pv
 		}
 		if l.Owner {
-			p |= ov
+			p |= pv
 		}
 		if p&b.Write == 0 {
 			p &^= b.Manage
@@ -202,8 +205,8 @@ func ValidTreePersonalOverride(b TreeBits, allow, deny Bits) bool {
 // gave. A restricted node keeps its own (nothing above it counted). Otherwise the effective part
 // of the chain — from the deepest restricted ancestor down, or all of it — is folded into the
 // node per target, top down (each level: roles, then people, deny then allow, as ComputeTree
-// applies it), the owners of the ancestors in that part as personal allows of b.Override() after
-// their level; the node is restricted when that part is. The fold is exact for personal
+// applies it), the owners of the ancestors in that part as personal allows of b.Personal() after
+// their level (what owning gives, ADR-0161); the node is restricted when that part is. The fold is exact for personal
 // overrides and ownership; for a member with several roles whose overrides disagree at different
 // levels it may differ from the chain (docs/12).
 func Detached(b TreeBits, chain []TreeNode, pin []Member) TreeNode {
@@ -247,18 +250,26 @@ func Detached(b TreeBits, chain []TreeNode, pin []Member) TreeNode {
 			}
 		}
 		if i < len(chain)-1 && n.OwnerID != "" {
-			apply(key{"user", n.OwnerID}, Override{Allow: ov})
+			apply(key{"user", n.OwnerID}, Override{Allow: pv})
 		}
 	}
 	out := TreeNode{Restricted: chain[start].Restricted, OwnerID: last.OwnerID}
 	for _, k := range order {
-		if o := acc[k]; o.Allow|o.Deny != 0 {
+		o := acc[k]
+		if o.Allow&b.Manage != 0 && o.Allow&ov != ov {
+			// A stored row allows MANAGE only with VIEW | WRITE (ValidTreePersonalOverride, the
+			// CHECK): a lower deny took one of them, and MANAGE goes with WRITE anyway — deny it.
+			o.Allow &^= b.Manage
+			o.Deny |= b.Manage
+		}
+		if o.Allow|o.Deny != 0 {
 			out.Overrides = append(out.Overrides, OverrideTarget{TargetType: k.t, TargetID: k.id, Override: o})
 		}
 	}
 	// Pinned members (the people the chain names, the actor) get exactly what the chain gave
 	// them: a personal override is the last word on a single level. The node's owner always has
-	// VIEW | WRITE, so for them it can only be MANAGE (ADR-0161) that differs.
+	// b.Personal() on it (ADR-0161), so for them a guest owner's MANAGE mask is all that could
+	// differ; pinned all the same.
 	for _, m := range pin {
 		was, now := ComputeTreeIn(b, m, chain), ComputeTreeIn(b, m, []TreeNode{out})
 		if was == now {

@@ -159,7 +159,8 @@ export interface TreeLevel {
  * видит приватное» (`ownerSeesPrivate`, Workspace.ownerSeesPrivate) has all three everywhere.
  * With PERSONAL_MANAGE (the Disk, ADR-0161) the viewer's own override carries MANAGE too
  * («Управление», never for guests): inherited down, dropped by a restricted node, and kept only
- * while WRITE is. The server sends my_bits; this only predicts the UI.
+ * while WRITE is; the owner of a node has all three on it the same way (a guest owner still
+ * VIEW | WRITE). The server sends my_bits; this only predicts the UI.
  */
 export function treeItemPermissions(
   bits: TreeBits,
@@ -191,7 +192,7 @@ export function treeItemPermissions(
       p &= ~(l.userOverride.deny & pv);
       p |= l.userOverride.allow & pv;
     }
-    if (l.owner) p |= ov;
+    if (l.owner) p |= pv;
     if (!(p & bits.WRITE)) p &= ~bits.MANAGE;
   }
   return p & bits.VIEW ? p : 0n;

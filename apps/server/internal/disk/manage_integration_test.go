@@ -55,6 +55,22 @@ func TestDiskManageLevel(t *testing.T) {
 			t.Fatalf("bob's bits on %s: %b", got.GetItem().GetName(), got.GetItem().GetMyBits())
 		}
 	}
+	// The folder's owner is at least its manager (ADR-0161): someone else's file inside and its
+	// access are hers too — all but the file owner's own row; the file's owner keeps all three
+	// on it.
+	e.must(200, e.alice, "PATCH", item(theirs.GetId()), &v1.UpdateDiskItemRequest{Name: proto.String("carol v2.txt")}, nil)
+	e.must(200, e.alice, "GET", item(theirs.GetId())+"/permissions", nil, nil)
+	put(403, e.alice, theirs.GetId(), nil, usr(carol, 0, vwm))
+	put(200, e.alice, theirs.GetId(), nil, usr(e.bob, uint64(perm.DiskView), uint64(perm.DiskWrite|perm.DiskManage)))
+	e.must(200, e.bob, "GET", item(theirs.GetId()), nil, &got)
+	if perm.Bits(got.GetItem().GetMyBits()) != perm.DiskView {
+		t.Fatalf("bob's bits on carol's file after «Просмотр»: %b", got.GetItem().GetMyBits())
+	}
+	put(200, e.alice, theirs.GetId(), nil)
+	e.must(200, carol, "GET", item(theirs.GetId()), nil, &got)
+	if perm.Bits(got.GetItem().GetMyBits()) != perm.Disk {
+		t.Fatalf("carol's bits on her own file: %b", got.GetItem().GetMyBits())
+	}
 	// «Правка» neither opens «Доступ…» nor touches someone else's file.
 	e.must(403, carol, "GET", item(legal.GetId())+"/permissions", nil, nil)
 	put(403, carol, legal.GetId(), nil, usr(carol, vwm, 0))

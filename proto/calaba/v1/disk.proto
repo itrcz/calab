@@ -12,8 +12,8 @@ import "calaba/v1/room.proto";
 // Access: workspace bits DISK_VIEW (1 << 35), DISK_WRITE (1 << 36), DISK_MANAGE (1 << 37), then
 // the overrides of every ancestor and the item itself (disk_permissions, VIEW / WRITE; a person's
 // may also carry MANAGE, «Управление», ADR-0161); a restricted item drops what the roles and
-// the ancestors gave; the item's owner always has
-// VIEW | WRITE on it; DISK_MANAGE and ADMINISTRATOR see everything. Go perm.ComputeDiskItem,
+// the ancestors gave; the item's owner always has all three on it (a guest owner VIEW | WRITE)
+// and so manages everything inside; DISK_MANAGE and ADMINISTRATOR see everything. Go perm.ComputeDiskItem,
 // TS diskItemPermissions. No DISK_VIEW on an item → 404.
 
 enum DiskItemKind {
