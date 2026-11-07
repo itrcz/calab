@@ -23,7 +23,7 @@ Search within one room is `GET /api/rooms/{id}/messages?q=`, see [Messages](./re
 | Parameter | Description |
 |---|---|
 | `q` | 1..200 characters. Words match by stem (Russian) and as written; the last word of 2+ characters also matches as a prefix (“rel” finds “release”); `"exact phrase"`, `-excluded` and `OR` work. Short fields (task and meeting titles, file names) also match with typos. A task key `ABC-12` finds that task first |
-| `scope` | A workspace id (the bot must be a member, else `404`) or `all` — every workspace of the bot and its DMs. Required |
+| `scope` | A workspace id (the bot must be a member, else `404`) `all` — every workspace of the bot and its DMs, or `dms` — its DMs only. Required |
 | `types` | Comma-separated: `messages`, `task_comments`, `tasks`, `events`, `files`, `transcripts` (default: all). An unknown name is `400` |
 | `type` | One section as a feed with a cursor (“All results”); overrides `types` |
 | `limit` | Summary — 1..20 per section (default 4); feed — 1..20 (default 20) |

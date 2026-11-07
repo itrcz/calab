@@ -1781,6 +1781,14 @@ test('m-dm-list', async ({ page }) => {
   await expect(list.getByRole('button')).toHaveCount(2);
   await expect(nav.getByTestId('dm-archive').getByRole('button', { name: 'Архив — 1' })).toHaveAttribute('aria-expanded', 'false');
   await checkpoint(page, 'm-dm-list');
+
+  // CBF-159: the field at the top of the tab searches the messages of my DMs.
+  await nav.getByTestId('dm-search').fill('ре');
+  await expect(nav.getByTestId('dm-search-hits').getByTestId('dm-hit').first()).toBeVisible();
+  await checkpoint(page, 'm-dm-search');
+  await nav.getByTestId('dm-search').fill('qzxw');
+  await expect(nav.getByTestId('dm-search-empty')).toBeVisible();
+  await checkpoint(page, 'm-dm-search-empty');
 });
 
 // Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; tab bar and DM rows.

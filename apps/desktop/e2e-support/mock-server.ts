@@ -9375,6 +9375,28 @@ class MockImpl {
         });
         return;
       }
+      if (type === 'messages' && q(c, 'scope') === 'dms') {
+        // The «Личные» column's search (CBF-159): the messages of my DMs, newest first, the cursor is an offset.
+        const words = q(c, 'q').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length === 0) throw invalid('q', 'search query has no words');
+        const start = Number(q(c, 'cursor')) || 0;
+        const found = this.dmsOf(me)
+          .flatMap((d) => this.visibleMessages(me, d.room?.id ?? ''))
+          .filter((m) => words.every((x) => m.content.toLowerCase().includes(x)))
+          .sort((a, b) => (a.id < b.id ? 1 : -1));
+        const page = found.slice(start, start + limit);
+        sendMsg(c.res, 200, SearchResponseSchema, {
+          sections: [
+            {
+              type: SearchType.MESSAGES,
+              totalEstimate: found.length,
+              nextCursor: start + limit < found.length ? String(start + limit) : '',
+              items: page.map((m) => ({ snippet: markHit(m.content, words[0] ?? ''), authorId: m.authorId, ...(m.createdAt ? { at: m.createdAt } : {}), ref: { case: 'message' as const, value: { messageId: m.id, roomId: m.roomId } } })),
+            },
+          ],
+        });
+        return;
+      }
       const hits = type === 'wiki' ? w().search(q(c, 'scope'), me, q(c, 'q'), limit) : [];
       sendMsg(c.res, 200, SearchResponseSchema, {
         sections: type === 'wiki' ? [{ type: SearchType.WIKI, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: h.title, title: h.title, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'wiki' as const, value: { pageId: h.id, icon: h.icon } } })) }] : [],

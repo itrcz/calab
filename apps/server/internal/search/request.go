@@ -56,7 +56,8 @@ func parseType(s string) (v1.SearchType, bool) {
 type request struct {
 	raw   string // q, trimmed
 	q     searchq.Query
-	all   bool      // scope=all
+	all   bool      // scope=all or scope=dms
+	dms   bool      // scope=dms: only the caller's DMs (no workspaces, no notes)
 	ws    uuid.UUID // scope=<workspace>
 	types []v1.SearchType
 	feed  bool // type=…: one section with a cursor
@@ -104,12 +105,14 @@ func parseRequest(r *http.Request, now time.Time) (*request, error) {
 	switch s := v.Get("scope"); s {
 	case "all":
 		req.all = true
+	case "dms":
+		req.all, req.dms = true, true
 	case "":
-		return nil, httpx.BadRequest("scope must be a workspace id or all")
+		return nil, httpx.BadRequest("scope must be a workspace id, all or dms")
 	default:
 		id, err := uuid.Parse(s)
 		if err != nil {
-			return nil, httpx.BadRequest("scope must be a workspace id or all")
+			return nil, httpx.BadRequest("scope must be a workspace id, all or dms")
 		}
 		req.ws = id
 	}
@@ -175,7 +178,7 @@ func parseRequest(r *http.Request, now time.Time) (*request, error) {
 // when asked for explicitly, never for bots (ADR-0062 §2). Otherwise the section stays in the
 // response, empty, so that the client's layout does not depend on it.
 func (r *request) notesAllowed(bot bool) bool {
-	return !bot && (r.all || r.explicitNotes)
+	return !bot && !r.dms && (r.all || r.explicitNotes)
 }
 
 // ---- cursors ----
@@ -197,7 +200,9 @@ const cursorMaxAge = 7 * 24 * time.Hour
 
 func (r *request) hash() uint64 {
 	scope := "all"
-	if !r.all {
+	if r.dms {
+		scope = "dms"
+	} else if !r.all {
 		scope = r.ws.String()
 	}
 	sum := sha256.Sum256([]byte(r.raw + "\x00" + scope))

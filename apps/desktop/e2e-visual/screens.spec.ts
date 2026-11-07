@@ -737,6 +737,30 @@ test('dm-list', async ({ open, win, shot }) => {
   await expect(win.getByTestId('dm-pick')).toBeVisible();
   await settle(win);
   await checkpoint(shot, 'dm-list');
+
+  // CBF-159: the message search above the list. «ер» — Вера by name («Чаты») and the messages with it in «Сообщения»; a click opens the chat on the message, the results stay.
+  const field = win.getByTestId('dm-search');
+  await field.fill('ер');
+  const hits = win.getByTestId('dm-search-hits');
+  await expect(win.getByTestId('dm-search-chats').getByRole('button', { name: /Вера/ })).toBeVisible();
+  await expect(hits.getByTestId('dm-hit').first()).toBeVisible();
+  await expect(win.getByTestId('dm-list')).toBeHidden();
+  await settle(win);
+  await checkpoint(shot, 'dm-search');
+  await hits.getByRole('button', { name: /Супер/ }).click();
+  await expect(win.getByTestId('dm-search-results')).toBeVisible();
+  await expect(win.getByText('Макеты рейла готовы')).toBeVisible();
+  await field.fill('ре');
+  await expect(hits.getByTestId('dm-hit').first()).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'dm-search-hits');
+  await field.fill('qzxw');
+  await expect(win.getByTestId('dm-search-empty')).toBeVisible();
+  await checkpoint(shot, 'dm-search-empty');
+  // Esc clears the query: the list is back.
+  await field.press('Escape');
+  await expect(field).toHaveValue('');
+  await expect(win.getByTestId('dm-list')).toBeVisible();
 });
 
 // Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; the rail tile and the DM rows.

@@ -155,6 +155,10 @@ func TestSearchMessagesAndFiles(t *testing.T) {
 	carol.must(200, "PATCH", "/api/dms/"+dm+"/state", &v1.UpdateDmStateRequest{Cleared: true}, nil)
 	wantHits(t, "cleared dm", hits(t, carol, q(w)+"&scope=all", stMessages), m1.GetId())
 	wantHits(t, "cleared only for carol", hits(t, bob, q(w)+"&scope=all", stMessages), m1.GetId(), mDM.GetId())
+	// scope=dms: only DMs — no workspace rooms, no notes.
+	wantHits(t, "scope=dms bob", hits(t, bob, q(w)+"&scope=dms", stMessages), mDM.GetId())
+	wantHits(t, "scope=dms cleared carol", hits(t, carol, q(w)+"&scope=dms", stMessages))
+	wantHits(t, "scope=dms owner", hits(t, o, q(w)+"&scope=dms", stMessages))
 
 	// Files: by name (typo, substring), through a visible live message only.
 	fname := "Квартальный_отчёт_" + w + ".txt"

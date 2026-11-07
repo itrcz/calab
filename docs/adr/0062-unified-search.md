@@ -18,6 +18,7 @@
 ### 1. Один эндпоинт, разделы
 `GET /api/search?q=&scope=<workspace_id>|all&types=<csv>&limit=1..20&type=<one>&cursor=` → `SearchResponse { sections:
 [SearchSection { type, items: [SearchHit], total_estimate, next_cursor }] }`.
+- `scope=dms` (CBF-159) — только личные чаты вызывающего (без пространств и заметок), для строки поиска колонки «Личные»; курсор привязан к `dms`.
 - Без `type` — «сводка» для ⌘K: каждый запрошенный раздел, `limit` по умолчанию 4; с `type` — одна лента раздела с
   курсором (панель «Все результаты»), `limit` по умолчанию 20.
 - `types`: `messages` (комнаты и DM), `task_comments`, `tasks`, `events`, `files`, `notes`, `transcripts`; по
