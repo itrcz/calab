@@ -20,7 +20,7 @@ import { Checklists } from './Checklists';
 import { GitSection } from './GitLinks';
 import { MemberAvatar } from './menus';
 import { hasBit, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
-import { Activity, ArchivedBanner, CommentBox, DescriptionEditor, Prop, Properties, Relations, Subtasks, TaskMoreMenu, TitleEditor, useMoveTargets, valueBtn } from './TaskPanel';
+import { Activity, ArchivedBanner, CommentBox, DescriptionEditor, Prop, Properties, Relations, Subtasks, TaskMoreMenu, TitleEditor, lacksFiles, useMoveTargets, useRefetchLostFiles, valueBtn } from './TaskPanel';
 import { TaskDates } from './TaskDates';
 import { TaskMilestones } from './TaskMilestones';
 import { boardOrder, keepOrder, positionOf, stepTask, taskNav } from './taskOrder';
@@ -52,19 +52,13 @@ export function TaskView({ taskId, boardId, workspaceId, boardRef }: { taskId: s
   const task = useBoards((s) => s.tasks[taskId]);
   const root = useRef<HTMLElement>(null);
   const order = useOrder(boardId, workspaceId, taskId);
-  // CBF-160 safety net: a «light» task (count > 0, no files) got into the store by some path
-  // (a board list, an event) — fetch the full card once per task; no loop if the server stays empty.
-  const lacksFiles = !!task && task.attachmentCount > 0 && task.attachments.length === 0;
-  const refetched = useRef<string | null>(null);
-  useEffect(() => {
-    if (!lacksFiles || refetched.current === taskId) return;
-    refetched.current = taskId;
-    void loadTask(taskId);
-  }, [lacksFiles, taskId]);
+  useRefetchLostFiles(taskId, lacksFiles(task));
   useEffect(() => {
     // A task already loaded in this session (switching tabs, ↑/↓ back) is not fetched again: it is
-    // live through the gateway, so the card does not blink; an unread one is fetched to mark it read.
-    if (!loaded.has(taskId) || useBoards.getState().tasks[taskId]?.unread) {
+    // live through the gateway, so the card does not blink; an unread one is fetched to mark it read,
+    // a light one (its files dropped by a board list since, CBF-160) to show them.
+    const cur = useBoards.getState().tasks[taskId];
+    if (!loaded.has(taskId) || cur?.unread || lacksFiles(cur)) {
       loaded.add(taskId);
       void loadTask(taskId);
     }
