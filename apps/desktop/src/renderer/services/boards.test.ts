@@ -17,7 +17,7 @@ const update = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 const search = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a), search: (...a: unknown[]) => search(...a) } } }));
 
-const { openTaskAnywhere, duplicateStatusId, applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards, noticeText, searchAllTasks, ALL_TASKS_LIMIT } = await import('./boards');
+const { openTaskAnywhere, duplicateStatusId, applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards, noticeText, duplicateAfterId, searchAllTasks, ALL_TASKS_LIMIT } = await import('./boards');
 const { t } = await import('../i18n');
 const { memberName } = await import('../stores/workspaces');
 const { useBoards, workspaceBoards } = await import('../stores/boards');
@@ -286,6 +286,10 @@ describe('«Дублировать» status (CBF #103)', () => {
   });
   it('an unknown status (board not loaded) is kept as is', () => {
     expect(duplicateStatusId(src('zzz'), [])).toBe('zzz');
+  });
+  it('CBF-158: the copy is placed after the source only in the same status', () => {
+    expect(duplicateAfterId({ id: 't1', statusId: 'todo' }, 'todo')).toBe('t1');
+    expect(duplicateAfterId({ id: 't1', statusId: 'done' }, undefined)).toBeUndefined();
   });
 });
 
