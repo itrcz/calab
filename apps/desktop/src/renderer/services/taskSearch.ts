@@ -8,7 +8,8 @@ import { MY_TASKS, useBoardsUi } from '../stores/boardsUi';
 import { useTaskSearch } from '../stores/taskSearch';
 import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
-import { openBoard, openTaskAnywhere } from './boards';
+import { openBoard } from './boards';
+import { openTaskOrTab, type TabClickEvent } from './taskTab';
 import { boardsApi } from './boardsApi';
 
 /**
@@ -38,10 +39,12 @@ export const PAGE = 30;
  * one is not in the boards store (it drops archived tasks): it goes in as is, like the board
  * archive's rows, and the card shows «Задача в архиве» with «Восстановить».
  */
-export function openFoundTask(task: Task, from = ''): void {
+export function openFoundTask(task: Task, from = '', e?: TabClickEvent): boolean {
   if (task.archivedAt) useBoards.setState((d) => (d.tasks[task.id] ? {} : { tasks: { ...d.tasks, [task.id]: task } }));
-  openTaskAnywhere(task);
+  // Ctrl/⌘: a background tab, the search stays as it is.
+  if (openTaskOrTab(task, e)) return true;
   if (from) useBoardsUi.getState().openTask(task.id, from);
+  return false;
 }
 
 /** The results page: «Мои задачи» on its search tab, the workspace's last query (or `q`). */

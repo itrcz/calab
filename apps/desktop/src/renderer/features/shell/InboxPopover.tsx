@@ -8,7 +8,8 @@ import { CountBadge, Empty, IconButton, Spinner, Tip, cx } from '../../component
 import { t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { systemPreview } from '../../lib/recording';
-import { noticeText, openTaskAnywhere } from '../../services/boards';
+import { noticeText } from '../../services/boards';
+import { openTaskOrTab } from '../../services/taskTab';
 import { dismissInboxItem, loadMentions, markReadUpTo } from '../../services/mentions';
 import { useBoards } from '../../stores/boards';
 import { useInbox } from '../../stores/inbox';
@@ -250,7 +251,10 @@ const NoticeItem = memo(function NoticeItem({ e, latest }: { e: TaskNoticeEntry;
       <Popover.Close asChild>
         <button
           type="button"
-          onClick={() => openTaskAnywhere({ id: e.taskId, workspaceId: e.workspaceId, boardId: e.boardId })}
+          onClick={(ev) => {
+            // Ctrl/⌘-click: a background tab; the preventDefault keeps the popover open (Popover.Close honours it).
+            if (openTaskOrTab({ id: e.taskId, workspaceId: e.workspaceId, boardId: e.boardId }, ev)) ev.preventDefault();
+          }}
           className={ROW_BTN}
         >
           {actorId ? (

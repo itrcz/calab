@@ -37,7 +37,8 @@ import type { SectionName } from '../../lib/search/sections';
 import { summaryRows, type SummaryRow } from '../../lib/search/summary';
 import { useSearchSummary } from '../search/useSearch';
 import { HitIcon, HitTitle, hitPlace, sectionTitle, totalText } from '../search/hitParts';
-import { openHit } from '../../services/searchNav';
+import { openHit, openHitInTab } from '../../services/searchNav';
+import type { TabClickEvent } from '../../services/taskTab';
 import { useSearchPanel } from '../../stores/searchPanel';
 import { telephonyVisibleNow } from '../telephony/access';
 import { openSection } from './sectionNav';
@@ -240,7 +241,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     setSel(0);
   };
 
-  const go = (i: number, action?: SwitcherAction): void => {
+  const go = (i: number, action?: SwitcherAction, ev?: TabClickEvent): void => {
     const it = items[i];
     if (!it) return;
     if (it.kind === 'more' || it.kind === 'timeout') {
@@ -248,6 +249,8 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
       return;
     }
     if (it.kind === 'hit') {
+      // Ctrl/⌘-click on a task hit: a background tab, ⌘K stays open with its query.
+      if (ev && openHitInTab(it.hit, ev)) return;
       onClose();
       openHit(it.hit);
       return;
@@ -297,7 +300,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   useEffect(() => {
     goRef.current = go;
   });
-  const pick = useCallback((i: number, action?: SwitcherAction) => goRef.current(i, action), []);
+  const pick = useCallback((i: number, action?: SwitcherAction, ev?: TabClickEvent) => goRef.current(i, action, ev), []);
   const hover = useCallback((i: number) => setSel(i), []);
 
   const onKey = (e: KeyboardEvent): void => {
@@ -601,7 +604,7 @@ const SwitcherActions = memo(function SwitcherActions({
   index: number;
   row: number;
   selected: boolean;
-  onPick: (i: number, action?: SwitcherAction) => void;
+  onPick: (i: number, action?: SwitcherAction, ev?: TabClickEvent) => void;
   onHover: (i: number) => void;
 }): ReactNode {
   const canConnect = useCanConnect(it.kind === 'room' && it.room.type === RoomType.VOICE ? it.room : null);
@@ -628,7 +631,7 @@ const SwitcherActions = memo(function SwitcherActions({
             size="sm"
             variant={a === 'join' ? 'primary' : 'secondary'}
             aria-label={t('search.actionOn', { action: label, name })}
-            onClick={() => onPick(index, a)}
+            onClick={(e) => onPick(index, a, e)}
             className={Icon ? 'mobile:size-11 mobile:rounded-full mobile:px-0' : 'mobile:h-11 mobile:px-4'}
           >
             {Icon ? <Icon className="size-3.5 mobile:size-5" aria-hidden /> : null}

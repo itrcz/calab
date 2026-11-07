@@ -1261,6 +1261,15 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('task-search-row')).toHaveCount(2);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'quick-switcher-tasks');
+  // CBF-149: ⌘-click on a result is a background tab in the title bar; ⌘K stays open with its text.
+  await win.getByTestId('task-search-row').first().click({ modifiers: [MOD] });
+  await expect(win.getByTestId('task-tab')).toHaveCount(1);
+  await expect(win.getByTestId('quick-switcher')).toBeVisible();
+  await expect(win.getByRole('combobox')).toHaveValue('доск');
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'quick-switcher-tasks-tab', { axe: false });
+  await win.getByTestId('task-tab-close').dispatchEvent('click');
+  await expect(win.getByTestId('task-tab')).toHaveCount(0);
   // CBF-157: «×» empties the text only — focus stays, the «Доска» chip and the list stay, the dialog stays.
   await expect(win.getByTestId('search-clear')).toBeVisible();
   await checkpoint(shot, 'quick-switcher-tasks-clear', { axe: false });

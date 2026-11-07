@@ -4,7 +4,8 @@ import { memo, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { linkCard } from '../../lib/boards/card';
-import { openBoardLink, openTaskAnywhere } from '../../services/boards';
+import { openBoardLink } from '../../services/boards';
+import { openTaskOrTab } from '../../services/taskTab';
 import { useBoards } from '../../stores/boards';
 import { MemberAvatar, useToday } from './menus';
 import { StatusIcon, colorCss, formatDue, isOverdue } from './visuals';
@@ -25,7 +26,7 @@ export const TaskLinkCard = memo(function TaskLinkCard({ res, href }: { res: Unf
   if (!card) return null;
   const open = (e: MouseEvent): void => {
     e.preventDefault();
-    if (card.kind === 'task') openTaskAnywhere({ id: card.id, workspaceId: card.workspaceId, boardId: card.boardId });
+    if (card.kind === 'task') openTaskOrTab({ id: card.id, workspaceId: card.workspaceId, boardId: card.boardId }, e);
     else openBoardLink('board', card.id);
   };
   const box =
