@@ -398,6 +398,7 @@ type Board struct {
 	ApprovalNotifyDelaySeconds int32
 	AiInstruction              string
 	AiFindDuplicates           bool
+	ApprovalGateOff            bool
 }
 
 type BoardCategory struct {

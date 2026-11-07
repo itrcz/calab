@@ -482,7 +482,7 @@ func (s *Service) submitForm(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return onField(err, fieldOf(d, toApprovers))
 		}
-		if err := checkCreateGate(len(approvers), 0, st); err != nil {
+		if err := checkCreateGate(len(approvers), 0, st, tb.ApprovalGateOff); err != nil {
 			return err
 		}
 		resolver := perm.NewResolver(q)

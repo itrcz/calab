@@ -167,7 +167,8 @@ UPDATE boards SET
     restricted        = coalesce(sqlc.narg('restricted'), restricted),
     approval_notify_delay_seconds = coalesce(sqlc.narg('approval_notify_delay_seconds'), approval_notify_delay_seconds),
     ai_instruction    = coalesce(sqlc.narg('ai_instruction'), ai_instruction),
-    ai_find_duplicates = coalesce(sqlc.narg('ai_find_duplicates'), ai_find_duplicates)
+    ai_find_duplicates = coalesce(sqlc.narg('ai_find_duplicates'), ai_find_duplicates),
+    approval_gate_off = coalesce(sqlc.narg('approval_gate_off'), approval_gate_off)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 
@@ -689,6 +690,10 @@ RETURNING user_id;
 
 -- name: BoardApprovalNotifyDelay :one
 SELECT approval_notify_delay_seconds FROM boards WHERE id = $1;
+
+-- name: BoardApprovalGateOff :one
+-- ADR-0160: the board's approval does not hold status changes.
+SELECT approval_gate_off FROM boards WHERE id = $1;
 
 -- name: ScheduleApprovalNotices :exec
 -- The approval notice of these approvers goes out in delay seconds (ADR-0082, DB time).

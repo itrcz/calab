@@ -271,6 +271,18 @@ message Board {
   // compared by the model with the board's tasks of the last 14 days the person sees; the model
   // may refuse it as a duplicate (CreateSmartTaskResponse.refusal). Off by default.
   bool ai_find_duplicates = 32;
+  // CBF-156, ADR-0160: whether the approval holds status changes on this board. HOLD (the
+  // default) = ADR-0049 §2: a task PENDING / REJECTED does not go forward (409
+  // TASK_APPROVAL_REQUIRED, override_approval for MANAGE_BOARD). OFF = any status change by
+  // whoever may edit the task. In both modes a status change keeps every vote.
+  ApprovalGate approval_gate = 33;
+}
+
+// Whether the approval holds the status changes of a board's tasks (ADR-0160).
+enum ApprovalGate {
+  APPROVAL_GATE_UNSPECIFIED = 0;
+  APPROVAL_GATE_HOLD = 1; // the default: no forward move while PENDING / REJECTED
+  APPROVAL_GATE_OFF = 2;  // the approval never holds a status change
 }
 
 message TaskAssignee {
@@ -610,6 +622,8 @@ message UpdateBoardRequest {
   optional string ai_instruction = 14;
   // CBF-75: «Искать дубли за 2 недели» (MANAGE_BOARD).
   optional bool ai_find_duplicates = 15;
+  // CBF-156, ADR-0160 (MANAGE_BOARD): HOLD or OFF; UNSPECIFIED / unknown is 422 approvalGate.
+  optional ApprovalGate approval_gate = 16;
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
