@@ -429,6 +429,64 @@ test('wiki-public', async ({ page }) => {
   }
 });
 
+/** A public link of a root Disk item of the fixture (seedDisk), made by its owner Анна: the code. */
+function diskLinkCode(m: MockServer, name: string): string {
+  const it = [...m.disk.items.values()].find((x) => x.name === name && !x.parentId);
+  if (!it) throw new Error(`no disk item ${name}`);
+  return m.disk.createLink(it.id, IDS.users.anna).link.code;
+}
+
+/**
+ * The public Disk link /d/{code} (ADR-0165, a new interface): a folder link read-only — the linked
+ * «Проекты», then «Q4» with crumbs and files (`disk-public`, dark and light 960); a text file in the
+ * viewer, the file link's card (`disk-public-file`, dark) and a dead code are behaviour + one shot.
+ */
+test('disk-public', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    const code = diskLinkCode(mock, 'Проекты');
+    const viewport = { width: 960, height: 600 };
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(NOW);
+    for (const theme of ['dark', 'light'] as const) {
+      await page.goto(`${mock.url}/?visual-test`);
+      await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
+      await page.goto(`${mock.url}/d/${code}?visual-test`);
+      await expect(page.getByTestId('disk-public-name')).toHaveText('Проекты');
+      await expect(page.getByTestId('disk-public-row')).toHaveCount(1);
+      await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex,nofollow');
+      await page.getByTestId('disk-public-row-open').filter({ hasText: 'Q4' }).click();
+      await expect(page.getByTestId('disk-public-name')).toHaveText('Q4');
+      await expect(page.getByTestId('disk-public-crumbs')).toContainText('Проекты');
+      await expect(page.getByTestId('disk-public-row')).toHaveCount(4);
+      expect(page.url()).toContain('?folder=');
+      await checkpoint({ page, theme, viewport }, 'disk-public');
+    }
+    // A Markdown file in the app's text viewer.
+    await page.getByTestId('disk-public-row-open').filter({ hasText: 'План релиза.md' }).click();
+    await expect(page.getByTestId('disk-public-viewer')).toHaveAttribute('data-kind', 'text');
+    await expect(page.getByTestId('disk-view-markdown')).toContainText('Итоги');
+    await checkpoint({ page, theme: 'light', viewport }, 'disk-public-viewer');
+    await page.keyboard.press('Escape');
+    // Back to the linked folder: the crumbs, never above it.
+    await page.getByTestId('disk-public-back').click();
+    await expect(page.getByTestId('disk-public-name')).toHaveText('Проекты');
+    await expect(page.getByTestId('disk-public-back')).toHaveCount(0);
+    // A file link: its card.
+    await page.evaluate(() => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 })));
+    await page.goto(`${mock.url}/d/${'mockLinkDemo'.padEnd(43, 'x')}?visual-test`);
+    await expect(page.getByTestId('disk-public-file')).toBeVisible();
+    await expect(page.getByTestId('disk-public-open')).toBeVisible();
+    await checkpoint({ page, theme: 'dark', viewport }, 'disk-public-file');
+    await page.goto(`${mock.url}/d/${'x'.repeat(43)}?visual-test`);
+    await expect(page.getByTestId('disk-public-gone')).toBeVisible();
+  } finally {
+    await mock?.close();
+  }
+});
+
 /**
  * The public canvas /c/{code} (ADR-0127 wave 5, docs/08 «Холст»): the 48 px header with «Только просмотр», the
  * canvas in view mode with only the zoom bar — no tools, panels, comments or people. Dark 960 and light 960

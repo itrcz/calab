@@ -5,7 +5,7 @@
  * are wired in mock-server.ts (`diskRoutes`); file bytes live in the mock's `files` map.
  *
  * Simplifications against the server: no TrashSweep, no orphan cleanup (deleted files keep their
- * bytes), the public link page is not served, the journal has no 5-minute merging, listings are
+ * bytes), the journal has no 5-minute merging, listings are
  * paged like the server (`limit`, opaque `next_cursor`; the journal is one page), the quota is not reserved (an upload over it answers 413 like files.go).
  */
 import { create } from '@bufbuild/protobuf';
@@ -386,7 +386,6 @@ export class DiskMock {
 
   createLink(id: string, uid: string, expiresAt?: Timestamp): { link: DiskLink; url: string } {
     const it = this.sharer(id, uid);
-    if (it.kind !== DiskItemKind.FILE) throw invalid('item', 'links are for files only');
     let link = this.links.get(id);
     if (!link) {
       const code = `mockLink${String(++this.linkSeq).padStart(4, '0')}`.padEnd(43, 'x');
@@ -396,6 +395,58 @@ export class DiskMock {
       this.emit(it);
     }
     return { link, url: `https://calab.test/d/${link.code}` };
+  }
+
+  // ---------------------------------------------------------------- public links (ADR-0094 §3, ADR-0165)
+
+  /** The live link of `code` with its item; a folder in the trash answers nothing. */
+  publicLink(code: string): { link: DiskLink; item: DiskItem } {
+    for (const link of this.links.values()) {
+      if (link.code !== code) continue;
+      const item = this.items.get(link.itemId);
+      if (!item || (item.kind === DiskItemKind.FOLDER && item.trashedAt)) break;
+      if (link.expiresAt && timestampMs(link.expiresAt) <= Date.now()) break;
+      return { link, item };
+    }
+    throw notFound();
+  }
+
+  /** Hidden from a folder link with its subtree: trashed, «Только выбранные», denied DISK_VIEW by an override. */
+  private hiddenFromLink(it: DiskItem): boolean {
+    return !!it.trashedAt || it.restricted || (this.perms.get(it.id) ?? []).some((p) => (p.deny & V) !== 0n);
+  }
+
+  /** The chain from the linked folder `root` down to item `id` (404 outside it or through a hidden item). */
+  publicChain(root: DiskItem, id: string): DiskItem[] {
+    const it = id ? this.items.get(id) : root;
+    if (!it) throw notFound();
+    const chain = this.chainOf(it);
+    const at = chain.findIndex((x) => x.id === root.id);
+    if (at < 0) throw notFound();
+    const below = chain.slice(at + 1);
+    if (below.some((x) => this.hiddenFromLink(x))) throw notFound();
+    return chain.slice(at);
+  }
+
+  /** GET /api/public/disk/{code}/items?parent= */
+  publicFolder(code: string, parent: string): { id: string; name: string; path: { id: string; name: string }[]; items: DiskItem[] } {
+    const { item: root } = this.publicLink(code);
+    if (root.kind !== DiskItemKind.FOLDER) throw notFound();
+    const chain = this.publicChain(root, parent);
+    const folder = chain[chain.length - 1] as DiskItem;
+    if (folder.kind !== DiskItemKind.FOLDER) throw notFound();
+    const items = [...this.items.values()]
+      .filter((x) => x.parentId === folder.id && !this.hiddenFromLink(x))
+      .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, 'ru') : a.kind === DiskItemKind.FOLDER ? -1 : 1));
+    return { id: folder.id, name: folder.name, path: chain.map((x) => ({ id: x.id, name: x.name })), items };
+  }
+
+  /** The file item a public request reads: the linked file (`id` '') or a file inside the linked folder. */
+  publicFileItem(code: string, id: string): DiskItem {
+    const { item: root } = this.publicLink(code);
+    const it = root.kind === DiskItemKind.FILE ? (id ? undefined : root) : id ? this.publicChain(root, id).at(-1) : undefined;
+    if (!it?.file) throw notFound();
+    return it;
   }
 
   deleteLink(id: string, uid: string): void {

@@ -151,6 +151,8 @@ import {
   EmptyWikiTrashResponseSchema,
   ListWikiPagesResponseSchema,
   PublicWikiPageSchema,
+  PublicDiskFileSchema,
+  PublicDiskFolderSchema,
   UpdateWikiPageRequestSchema,
   UpdateWikiPermissionsRequestSchema,
   WIKI_BITS,
@@ -9189,6 +9191,64 @@ class MockImpl {
         mode: edit ? OfficeMode.EDIT : OfficeMode.VIEW, key, format, itemId: it?.id ?? '', fileId: it?.file?.id ?? fileId,
       });
     });
+    // Public Disk links (ADR-0094 §3, ADR-0165): anonymous, the server's contract (internal/disk/public*.go).
+    const pubDisk = (h: (c: Ctx) => void): ((c: Ctx) => void) => (c) => {
+      try {
+        h(c);
+      } catch (e) {
+        if (e instanceof DiskError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    };
+    const pubFile = (it: DiskItem) => {
+      const f = it.file;
+      return { id: it.id, name: it.name, kind: it.kind, size: f?.size ?? 0n, mime: f?.mime ?? '', width: f?.width ?? 0, height: f?.height ?? 0, hasThumbnail: !!f?.thumbnailUrl, updatedAt: it.updatedAt, office: this.officeEnabled && !!officeOf(it.name) };
+    };
+    const pubBytes = (c: Ctx, it: DiskItem, thumb: boolean): void => {
+      const f = this.state.files.get(it.file?.id ?? '');
+      const bytes = thumb ? f?.thumbnail?.bytes : f?.bytes;
+      if (!f || !bytes) throw notFound();
+      send(c.res, 200, bytes, thumb ? (f.thumbnail?.mime ?? 'image/png') : f.meta.mime, { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
+    };
+    this.route('GET', '/api/public/disk/:code', pubDisk((c) => {
+      const { link, item } = d().publicLink(p0(c));
+      const base = { name: item.name, id: item.id, kind: item.kind, ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) };
+      const f = pubFile(item);
+      sendMsg(c.res, 200, PublicDiskFileSchema, item.kind === DiskItemKind.FOLDER ? base : { ...base, size: f.size, mime: f.mime, width: f.width, height: f.height, hasThumbnail: f.hasThumbnail, office: f.office });
+    }));
+    this.route('GET', '/api/public/disk/:code/content', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), ''), false)));
+    this.route('GET', '/api/public/disk/:code/thumbnail', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), ''), true)));
+    this.route('GET', '/api/public/disk/:code/items', pubDisk((c) => {
+      const f = d().publicFolder(p0(c), q(c, 'parent'));
+      const { link } = d().publicLink(p0(c));
+      sendMsg(c.res, 200, PublicDiskFolderSchema, { id: f.id, name: f.name, path: f.path, items: f.items.map(pubFile), ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) });
+    }));
+    this.route('GET', '/api/public/disk/:code/items/:id/content', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), c.params[1] ?? ''), false)));
+    this.route('GET', '/api/public/disk/:code/items/:id/thumbnail', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), c.params[1] ?? ''), true)));
+    this.route('GET', '/api/public/disk/:code/archive', pubDisk((c) => {
+      d().publicFolder(p0(c), q(c, 'parent'));
+      if (q(c, 'check') === '1') {
+        c.res.writeHead(204);
+        c.res.end();
+        return;
+      }
+      send(c.res, 200, Buffer.from('PK\x05\x06'.padEnd(22, '\0')), 'application/zip', { 'Content-Disposition': 'attachment; filename="archive.zip"' });
+    }));
+    this.route('GET', '/api/public/disk/:code/office', pubDisk((c) => {
+      officeOn();
+      const it = d().publicFileItem(p0(c), q(c, 'item'));
+      const format = officeOf(it.name);
+      if (!format) throw new HttpError(415, ErrorCode.VALIDATION, 'this file type does not open in the editor');
+      const key = `calab-mock-a-${it.file?.id ?? ''}`;
+      const config = {
+        type: q(c, 'phone') === '1' ? 'mobile' : 'desktop',
+        documentType: format.documentType,
+        document: { fileType: format.extension, key, title: it.name, url: `${origin(c)}/__office/file`, permissions: { edit: false } },
+        editorConfig: { mode: 'view', lang: q(c, 'lang') || 'ru', user: { id: 'anon', name: 'Гость' }, customization: { uiTheme: q(c, 'theme') === 'light' ? 'default-light' : 'default-dark', compactHeader: true }, calabStub: { fault: this.officeFault } },
+        token: 'mock',
+      };
+      sendMsg(c.res, 200, OfficeConfigResponseSchema, { docsUrl: origin(c), hostUrl: `${origin(c)}/web-apps/apps/calab/calab-editor.html`, configJson: JSON.stringify(config), mode: OfficeMode.VIEW, key, format, fileId: it.file?.id ?? '' });
+    }));
     // A copy of `meta` under a new name, stored and filed by `me` in folder `parentId` of `ws` (rights, quota, free name, journal).
     const fileCopy = (ws: string, me: string, parentId: string, meta: FileMeta, name: string, mime = meta.mime): DiskItem => {
       const bytes = this.state.files.get(meta.id)?.bytes ?? Buffer.from('PK mock office file');

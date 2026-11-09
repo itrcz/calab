@@ -189,6 +189,17 @@ test('disk-share', async ({ open, win, shot }) => {
   await expect(card.getByTestId('disk-folder-card-name')).toHaveText('Проекты');
   await expect(card.getByTestId('disk-folder-card-summary')).toContainText('папка');
   await checkpoint(shot, 'disk-folder-card');
+  // CBF-166 (ADR-0165): a folder's public link — «Ссылка…» in its menu, the same panel as a file's, the folder hint.
+  await win.getByTestId('section-disk').click();
+  await win.getByTestId('disk-tile').filter({ hasText: 'Проекты' }).click({ button: 'right' });
+  await win.getByTestId('disk-menu-link').click();
+  const link = win.getByTestId('disk-link');
+  await expect(link).toContainText('Папки «Только выбранные» внутри по ссылке не видны');
+  await link.getByRole('switch').click();
+  await expect(link.getByTestId('disk-link-url')).toHaveValue(/\/d\//);
+  await checkpoint(shot, 'disk-folder-link');
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('disk-tile').filter({ hasText: 'Проекты' }).getByTestId('disk-badges')).toBeVisible();
 });
 
 /**

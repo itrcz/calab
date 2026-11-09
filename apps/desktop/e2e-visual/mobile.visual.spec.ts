@@ -3257,6 +3257,18 @@ test('m-wiki-public', async ({ page }) => {
   await expect(page.getByTestId('wiki-public-title')).toHaveText('Процессы');
 });
 
+// /d/{code} at 390 px (ADR-0165): a folder link — rows with size · date under the name, «Скачать всё» under the title.
+test('m-disk-public', async ({ page }) => {
+  const it = [...mock.disk.items.values()].find((x) => x.name === 'Проекты' && !x.parentId);
+  const code = mock.disk.createLink(it?.id ?? '', IDS.users.anna).link.code;
+  await open(page, `/d/${code}`);
+  await expect(page.getByTestId('disk-public-name')).toHaveText('Проекты');
+  await page.getByTestId('disk-public-row-open').filter({ hasText: 'Q4' }).tap();
+  await expect(page.getByTestId('disk-public-row')).toHaveCount(4);
+  await expect(page.getByTestId('disk-public-download-all')).toBeVisible();
+  await checkpoint(page, 'm-disk-public');
+});
+
 // Toasts on the phone stay under the top bar (safe area), over the feed, never over the tab bar (owner, 29.10).
 test('m-toasts', async ({ page }) => {
   await signedInRoom(page);
