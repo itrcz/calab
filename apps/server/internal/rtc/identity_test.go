@@ -655,3 +655,27 @@ func TestIdentitySweepRoomBatchTransientWaitsForGrace(t *testing.T) {
 		t.Fatalf("after grace: err=%v removed=%d, want 4", err, len(f.removed))
 	}
 }
+
+// The configured grace (RTC_IDENTITY_TRANSIENT_GRACE) replaces the default: a stall of the
+// shared database that lasts minutes keeps everyone in the call until it runs out.
+func TestIdentitySweepTransientGraceFromConfig(t *testing.T) {
+	if identityTransientGrace < 5*time.Minute {
+		t.Fatalf("default grace %v is shorter than a cluster-to-database stall", identityTransientGrace)
+	}
+	f, key := identityOneParticipant(t)
+	grace := 2 * time.Minute
+	svc := &Service{cfg: Config{IdentityTransientGrace: grace}, lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+		return httpx.Unavailable(errors.New("database timeout"))
+	}}
+	t0 := time.Now()
+	for at := time.Duration(0); at < grace; at += 5 * time.Second {
+		identitySweepAt(t, svc, t0.Add(at))
+	}
+	if f.removed[key] != 0 {
+		t.Fatal("transient failure evicted before the configured grace")
+	}
+	identitySweepAt(t, svc, t0.Add(grace))
+	if f.removed[key] != 1 {
+		t.Fatalf("unbroken failure past the configured grace: removal=%d want 1", f.removed[key])
+	}
+}

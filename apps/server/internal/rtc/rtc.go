@@ -45,6 +45,10 @@ type Config struct {
 	// LostGrace: how long a seat outlives an involuntary LiveKit drop (VOICE_LOST_GRACE,
 	// ADR-0150); 0 = the seat goes with the drop.
 	LostGrace time.Duration
+	// IdentityTransientGrace: how long the identity sweep keeps a participant whose check
+	// keeps failing transiently (database timeout, 5xx) before it evicts anyway
+	// (RTC_IDENTITY_TRANSIENT_GRACE); 0 = the default identityTransientGrace.
+	IdentityTransientGrace time.Duration
 }
 
 // Service implements the rtc endpoints and background sync.
