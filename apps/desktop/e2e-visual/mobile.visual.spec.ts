@@ -151,11 +151,15 @@ async function nativeRoomHost(page: Page): Promise<void> {
 }
 
 /**
- * The native room audio join on the phone host (ADR-0149 §3, R4): the strip, the camera and screen
- * banner, the camera with its reason, the soundboard with the workspace-clips note; then
- * the same join at the 960 px layout of an iPad (the island: the camera tile, the musician item).
- * No LiveKit: the page hands the room to the mocked host. Leaves with the call hung up and the
- * mock reset, so the screen's own steps run on a clean state.
+ * The native room audio join on the phone host (ADR-0149 §3, R4 and R6): two states of the camera and
+ * screen video, then the strip, the camera with its reason, the soundboard with the workspace-clips
+ * note; then the same join at the 960 px layout of an iPad (the island: the camera tile, the musician item).
+ * No LiveKit on the machine (the dev server is not part of this suite): the page hands the room's audio
+ * to the mocked host, and the video-only companion connection (services/voiceCompanion.ts) asks the
+ * mock for its token, then reaches for an address that never answers. So «companion working» is the
+ * state while it connects and has no video yet (no banner, no tile); «companion gave up» is the mock
+ * refusing the token (403): the banner. Leaves with the call hung up and the mock reset, so the screen's
+ * own steps run on a clean state.
  */
 async function nativeRoomAudioSteps(phone: Page): Promise<void> {
   mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
@@ -165,15 +169,32 @@ async function nativeRoomAudioSteps(phone: Page): Promise<void> {
     await nativeRoomHost(phone);
     await signedIn(phone);
     await openRoom(phone, /^Созвон/);
-    await phone.getByTestId('room-header-join').tap();
     const strip = phone.getByTestId('mobile-voice-strip');
-    await expect(strip.getByTestId('mobile-voice-status')).toHaveText('Голос подключён');
-    const since = NOW.getTime() - 25 * 60_000;
+    const banner = phone.getByTestId('video-audio-only');
+    const join = async (): Promise<void> => {
+      // With someone already in the voice the header's icon gives way to the banner's «Присоединиться».
+      await phone.getByTestId('room-header-join').or(phone.getByTestId('room-voice-join')).tap();
+      await expect(strip.getByTestId('mobile-voice-status')).toHaveText('Голос подключён');
+    };
     // Вера has a picture, not an initial: the header's people stack (aria-label «В голосе: …») has no
     // visible text for axe's label-content-name rule to compare, which two initials would trip.
-    mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.call, muted: true, camera: true, streaming: true, joinedAtMs: since });
-    const banner = phone.getByTestId('video-audio-only');
-    await expect(banner).toHaveText('Камеры и экраны на iPhone пока не показываются');
+    const vera = (): void =>
+      mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.call, muted: true, camera: true, streaming: true, joinedAtMs: NOW.getTime() - 25 * 60_000 });
+    // R6, the companion working: with a camera and a screen on in the room it asks for its token and
+    // connects. Nothing to show yet (no LiveKit here), and no banner: the page does not say «can't».
+    await join();
+    const asked = phone.waitForResponse((r) => r.url().includes('/voice/companion'));
+    vera();
+    expect((await asked).status()).toBe(200);
+    await expect(banner).toHaveCount(0);
+    await checkpoint(phone, 'm-voice-native-companion', { main: true });
+    await strip.getByRole('button', { name: 'Отключиться' }).tap();
+    await expect(strip).toHaveCount(0);
+    // R6, the companion gave up: the server refuses its token (403, no retry), the banner says why.
+    mock.setCompanion('refused');
+    await join();
+    vera();
+    await expect(banner).toHaveText('Камеры и экраны сейчас не удаётся показать');
     await checkpoint(phone, 'm-voice-native', { main: true });
     // The strip keeps the camera, disabled, with the reason as its label.
     await expect(strip.getByRole('button', { name: 'На iPhone камера пока недоступна' })).toBeDisabled();

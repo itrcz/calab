@@ -399,6 +399,7 @@ import {
   UpdateRoomInviteResponseSchema,
   RoomAdmissionStatus,
   JoinVoiceResponseSchema,
+  VoiceCompanionResponseSchema,
   SipInboundAcceptResponseSchema,
   TransferSipCallRequestSchema,
   JoinWorkspaceResponseSchema,
@@ -793,6 +794,8 @@ export interface MockServer {
   playSound(roomId: string, userId: string, soundId: string): void;
   /** The LiveKit URL the join responses carry (ADR-0149 mock host: native room audio accepts only `wss://`). */
   setLivekitUrl(url: string): void;
+  /** `POST /api/rooms/:id/voice/companion` (ADR-0149 §3): `token` = the video-only token (default), `refused` = 403 (the companion gives up). */
+  setCompanion(mode: 'token' | 'refused'): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -1058,6 +1061,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     addSound: (w, name, emoji) => impl.addSound(w, name, emoji),
     playSound: (roomId, u, soundId) => impl.playSound(roomId, u, soundId),
     setLivekitUrl: (url) => impl.setLivekitUrl(url),
+    setCompanion: (mode) => impl.setCompanion(mode),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -1617,6 +1621,7 @@ class MockImpl {
     this.canvas = this.newCanvas();
     this.seedCanvas();
     this.voiceSessions.clear();
+    this.companionMode = 'token';
     this.calls.clear();
     this.userCall.clear();
     this.callSeq = 0;
@@ -2603,6 +2608,12 @@ class MockImpl {
 
   setLivekitUrl(url: string): void {
     this.lk.url = url;
+  }
+
+  private companionMode: 'token' | 'refused' = 'token';
+
+  setCompanion(mode: 'token' | 'refused'): void {
+    this.companionMode = mode;
   }
 
   playSound(roomId: string, userId: string, soundId: string): void {
@@ -5705,6 +5716,18 @@ class MockImpl {
         canVideo: has(perms, VIDEO) && (room.media ?? DEFAULT_MEDIA).cameraLimit > 0,
         pending,
       });
+    });
+
+    // The web companion of a native-audio join (ADR-0149 §3): a subscribe-only token for `<user>:<session>:web`, only with this device's seat (409 without).
+    this.route('POST', '/api/rooms/:id/voice/companion', async (c) => {
+      const { user, sessionId } = this.auth(c);
+      const me = user.user.id;
+      const room = this.roomFor(c.params[0] ?? '', me);
+      if (this.companionMode === 'refused') throw forbidden('companion refused');
+      if (s().voiceStates.get(me)?.roomId !== room.id || this.voiceSessions.get(me) !== sessionId) throw conflict('no seat in this room');
+      const at = new AccessToken(this.lk.key, this.lk.secret, { identity: `${me}:${sessionId}:web`, name: user.user.displayName, ttl: '10m' });
+      at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${room.id}`, canPublish: false, canSubscribe: true, canPublishData: true });
+      sendMsg(c.res, 200, VoiceCompanionResponseSchema, { url: this.lk.url, token: await at.toJwt() });
     });
 
     // Leave (docs/05): this device's state in the room goes at once, pending or connected.
