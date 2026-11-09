@@ -85,6 +85,8 @@ type Service struct {
 	DeviceLimit, ResolveLimit *redisx.RateLimiter
 	badgeMu                   sync.Mutex
 	badgePending              map[uuid.UUID]bool
+	badgeWorkers              chan struct{}
+	badgeSent                 map[uuid.UUID]sentBadge
 	db                        *db.DB
 	providers                 map[v1.PushProvider]Provider
 }
@@ -97,7 +99,7 @@ func New(d *db.DB, providers map[v1.PushProvider]Provider) *Service {
 			copyProviders[kind] = provider
 		}
 	}
-	return &Service{db: d, providers: copyProviders}
+	return &Service{db: d, providers: copyProviders, badgeWorkers: make(chan struct{}, 4), badgeSent: make(map[uuid.UUID]sentBadge)}
 }
 
 type routeMux interface{ Handle(string, http.Handler) }

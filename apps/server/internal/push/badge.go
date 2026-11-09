@@ -3,6 +3,7 @@ package push
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -74,7 +75,8 @@ func (s *Service) badgeCount(ctx context.Context, q *sqlc.Queries, user sqlc.Use
 	return min(count, 99999), nil
 }
 
-// Coalesce read bursts to one worker per user, with at most one pending refresh.
+// Coalesce read bursts before doing any DB work, at most once per second per user.
+// Waiting users hold no connections; only four workers may enter the DB/provider path.
 // If capacity is exhausted, the next alert or foreground READY reconciles the badge.
 func (s *Service) scheduleBadge(ctx context.Context, userID uuid.UUID) {
 	if _, ok := s.providers[v1.PushProvider_PUSH_PROVIDER_APNS]; !ok {
@@ -88,6 +90,7 @@ func (s *Service) scheduleBadge(ctx context.Context, userID uuid.UUID) {
 	}
 	if len(s.badgePending) >= 128 {
 		s.badgeMu.Unlock()
+		slog.DebugContext(ctx, "push badge refresh skipped: pending user limit")
 		return
 	}
 	if s.badgePending == nil {
@@ -100,7 +103,13 @@ func (s *Service) scheduleBadge(ctx context.Context, userID uuid.UUID) {
 	ctx = db.WithoutAdmission(context.WithoutCancel(ctx))
 	go func() {
 		for {
+			time.Sleep(time.Second)
+			s.badgeWorkers <- struct{}{}
+			s.badgeMu.Lock()
+			s.badgePending[userID] = false // all events while waiting join this pass
+			s.badgeMu.Unlock()
 			s.syncBadge(ctx, userID)
+			<-s.badgeWorkers
 			s.badgeMu.Lock()
 			again := s.badgePending[userID]
 			if again {
@@ -118,7 +127,7 @@ func (s *Service) scheduleBadge(ctx context.Context, userID uuid.UUID) {
 
 // syncBadge is a bounded best-effort projection after reading on any device. It uses
 // the same endpoint lock as ordinary delivery, and computes AFTER acquiring that lock.
-// A missed APNs update is reconciled by the next alert or foreground READY, never a timer.
+// A missed APNs update is reconciled by the next alert or foreground READY, never polling.
 func (s *Service) syncBadge(parent context.Context, userID uuid.UUID) {
 	provider, ok := s.providers[v1.PushProvider_PUSH_PROVIDER_APNS]
 	if !ok {
@@ -131,15 +140,19 @@ func (s *Service) syncBadge(parent context.Context, userID uuid.UUID) {
 		return
 	}
 	for _, candidate := range devices {
+		if ctx.Err() != nil {
+			return
+		}
 		if candidate.Provider != int16(v1.PushProvider_PUSH_PROVIDER_APNS) {
 			continue
 		}
-		_ = s.db.Tx(ctx, func(q *sqlc.Queries) error {
-			session, err := s.lockDeliverySession(ctx, q, userID, candidate.SessionID, sqlc.PushDelivery{})
+		deviceCtx, stop := context.WithTimeout(ctx, 750*time.Millisecond)
+		_ = s.db.Tx(deviceCtx, func(q *sqlc.Queries) error {
+			session, err := s.lockDeliverySession(deviceCtx, q, userID, candidate.SessionID, sqlc.PushDelivery{})
 			if err != nil {
 				return err
 			}
-			device, err := q.LockPushDevice(ctx, candidate.ID)
+			device, err := q.LockPushDevice(deviceCtx, candidate.ID)
 			if err != nil {
 				return err
 			}
@@ -148,20 +161,51 @@ func (s *Service) syncBadge(parent context.Context, userID uuid.UUID) {
 				!device.NotificationsEnabled || !device.ExpiresAt.After(time.Now()) {
 				return nil
 			}
-			user, err := q.GetUser(ctx, userID)
+			user, err := q.GetUser(deviceCtx, userID)
 			if err != nil {
 				return err
 			}
-			count, err := s.badgeCount(ctx, q, user, session)
+			count, err := s.badgeCount(deviceCtx, q, user, session)
 			if err != nil {
 				return err
 			}
-			result := provider.Sender.Send(ctx, Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: device.Token, AppID: device.AppID, Environment: device.Environment},
+			if s.badgeUnchanged(device.ID, device.Version, count) {
+				return nil
+			}
+			result := provider.Sender.Send(deviceCtx, Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: device.Token, AppID: device.AppID, Environment: device.Environment},
 				Payload{Version: 1, Kind: "badge", Binding: device.ID.String(), EventID: uuid.NewString(), ReferenceID: userID.String(), ExpiresAt: time.Now().Add(time.Minute).UnixMilli(), Badge: &count})
+			if result.Accepted && !result.Retry && !result.Invalid {
+				s.rememberBadge(device.ID, device.Version, count)
+			}
 			if result.Invalid {
-				_, err = q.DeleteInvalidPushDevice(ctx, sqlc.DeleteInvalidPushDeviceParams{ID: device.ID, Version: device.Version, TokenHash: device.TokenHash, InvalidBefore: result.InvalidBefore})
+				_, err = q.DeleteInvalidPushDevice(deviceCtx, sqlc.DeleteInvalidPushDeviceParams{ID: device.ID, Version: device.Version, TokenHash: device.TokenHash, InvalidBefore: result.InvalidBefore})
 			}
 			return err
 		})
+		stop()
 	}
+}
+
+type sentBadge struct {
+	version int64
+	count   int
+	sentAt  time.Time
+}
+
+// Call under the endpoint lock, after fresh authorization and count calculation.
+// This bounded process-local cache is only a best-effort send optimization.
+func (s *Service) badgeUnchanged(deviceID uuid.UUID, version int64, count int) bool {
+	s.badgeMu.Lock()
+	defer s.badgeMu.Unlock()
+	previous, ok := s.badgeSent[deviceID]
+	return ok && previous.version == version && previous.count == count && time.Since(previous.sentAt) < 5*time.Minute
+}
+
+func (s *Service) rememberBadge(deviceID uuid.UUID, version int64, count int) {
+	s.badgeMu.Lock()
+	defer s.badgeMu.Unlock()
+	if _, exists := s.badgeSent[deviceID]; !exists && len(s.badgeSent) >= 4096 {
+		clear(s.badgeSent) // eviction only permits an extra refresh, never loses unread state
+	}
+	s.badgeSent[deviceID] = sentBadge{version: version, count: count, sentAt: time.Now()}
 }

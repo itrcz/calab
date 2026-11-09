@@ -269,6 +269,9 @@ func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 		// Endpoint/version, session and freshly resolved access/settings stay bound in
 		// this transaction immediately before dispatch. No detached raw-event fanout.
 		result := provider.Sender.Send(ctx, Endpoint{Provider: v1.PushProvider(device.Provider), Token: device.Token, AppID: device.AppID, Environment: device.Environment}, payload)
+		if payload.Badge != nil && result.Accepted && !result.Retry && !result.Invalid {
+			s.rememberBadge(device.ID, device.Version, *payload.Badge)
+		}
 		if result.Invalid {
 			_, err = q.DeleteInvalidPushDevice(ctx, sqlc.DeleteInvalidPushDeviceParams{ID: device.ID, Version: device.Version, TokenHash: device.TokenHash, InvalidBefore: result.InvalidBefore})
 			if err != nil {
