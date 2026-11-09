@@ -580,6 +580,29 @@ describe('native room audio (ADR-0149)', () => {
     expect(h.inputs).toHaveLength(0);
   });
 
+  it('phone lines stay on the web path while the host reports roomAudioVersion 1 (ADR-0149 §1)', async () => {
+    const { setPhoneJoin } = await import('../lib/sipInbound');
+    const h = host();
+    // A workspace id and no call flag: only the phone room itself keeps native out. Then as the app joins them (a call).
+    for (const [roomId, call] of [['sipin:c1', false], ['sipout:c2', false], ['sipin:c3', true], ['sipout:c4', true]] as const) {
+      setPhoneJoin(roomId, { url: 'wss://lk', token: 'tok', identity: 'me', canSpeak: true } as never);
+      await voice.join(roomId, 'ws', call ? { call: true } : {});
+      expect(FakeRoom.all.at(-1)?.connectedWith, roomId).not.toBeNull();
+      expect(useVoice.getState(), roomId).toMatchObject({ roomId, audioOnly: false });
+      await voice.leave();
+    }
+    expect(FakeRoom.all).toHaveLength(4);
+    expect(h.inputs).toHaveLength(0);
+    // A one-to-one call with a workspace id too: callMode alone keeps native out.
+    await voice.join('dm', 'ws', { call: true });
+    expect(FakeRoom.all).toHaveLength(5);
+    expect(h.inputs).toHaveLength(0);
+    await voice.leave();
+    // The same host still takes an ordinary workspace room.
+    await voice.join('A', 'ws');
+    expect(h.inputs).toHaveLength(1);
+  });
+
   it('controls follow the store: mute, deafen, PTT, volumes clamped to 1', async () => {
     const h = host();
     const peer = '55555555-5555-4555-8555-555555555555';
