@@ -1258,6 +1258,65 @@ func (q *Queries) ListDiskSubtree(ctx context.Context, id uuid.UUID) ([]ListDisk
 	return items, nil
 }
 
+const listDiskSubtreeCapped = `-- name: ListDiskSubtreeCapped :many
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM disk_items c WHERE c.parent_id = $2::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM disk_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, down.depth::int AS depth
+FROM down JOIN disk_items di ON di.id = down.id
+LIMIT $1
+`
+
+type ListDiskSubtreeCappedParams struct {
+	Lim int32
+	ID  uuid.UUID
+}
+
+type ListDiskSubtreeCappedRow struct {
+	DiskItem DiskItem
+	Depth    int32
+}
+
+// ListDiskSubtree for an anonymous visitor («Скачать всё» of a folder link, ADR-0165): at most lim
+// rows and in no promised order (the caller sorts by depth), so a subtree far above the archive
+// ceiling stops the walk early instead of being read whole on every call.
+func (q *Queries) ListDiskSubtreeCapped(ctx context.Context, arg ListDiskSubtreeCappedParams) ([]ListDiskSubtreeCappedRow, error) {
+	rows, err := q.db.Query(ctx, listDiskSubtreeCapped, arg.Lim, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDiskSubtreeCappedRow{}
+	for rows.Next() {
+		var i ListDiskSubtreeCappedRow
+		if err := rows.Scan(
+			&i.DiskItem.ID,
+			&i.DiskItem.WorkspaceID,
+			&i.DiskItem.ParentID,
+			&i.DiskItem.Kind,
+			&i.DiskItem.Name,
+			&i.DiskItem.FileID,
+			&i.DiskItem.OwnerID,
+			&i.DiskItem.Restricted,
+			&i.DiskItem.CreatedAt,
+			&i.DiskItem.UpdatedAt,
+			&i.DiskItem.TrashedAt,
+			&i.DiskItem.TrashedBy,
+			&i.DiskItem.TrashedRoot,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDiskSweepWorkspaces = `-- name: ListDiskSweepWorkspaces :many
 SELECT w.id, w.disk_trash_days::int AS days FROM workspaces w
 WHERE w.disk_trash_days IS NOT NULL AND EXISTS (

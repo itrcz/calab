@@ -409,6 +409,19 @@ SELECT sqlc.embed(di), down.depth::int AS depth
 FROM down JOIN disk_items di ON di.id = down.id
 ORDER BY down.depth, di.id;
 
+-- name: ListDiskSubtreeCapped :many
+-- ListDiskSubtree for an anonymous visitor («Скачать всё» of a folder link, ADR-0165): at most lim
+-- rows and in no promised order (the caller sorts by depth), so a subtree far above the archive
+-- ceiling stops the walk early instead of being read whole on every call.
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM disk_items c WHERE c.parent_id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM disk_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT sqlc.embed(di), down.depth::int AS depth
+FROM down JOIN disk_items di ON di.id = down.id
+LIMIT sqlc.arg('lim');
+
 -- name: DetachDiskItem :one
 -- Detaches an item (with its subtree) to the root of the Disk under a free name, with the flag
 -- that keeps its access (perm.Detached); in the trash it becomes a trash root of its own.

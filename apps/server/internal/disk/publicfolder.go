@@ -2,11 +2,14 @@ package disk
 
 import (
 	"archive/zip"
+	"bytes"
+	"cmp"
 	"context"
 	"io"
 	"log/slog"
 	"mime"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -272,13 +275,23 @@ var errArchiveTooLarge = httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorC
 func (s *Service) archiveEntries(ctx context.Context, folder sqlc.DiskItem) ([]archiveEntry, int64, error) {
 	maxBytes, maxItems := s.archiveMax()
 	q := s.db.Q
-	rows, err := q.ListDiskSubtree(ctx, folder.ID)
+	// One row over the ceiling is enough to refuse; the walk stops there instead of reading a
+	// huge subtree whole on every anonymous call.
+	lim := int32(min(maxItems, 1<<20)) + 1 //nolint:gosec // bounded by min
+	rows, err := q.ListDiskSubtreeCapped(ctx, sqlc.ListDiskSubtreeCappedParams{ID: folder.ID, Lim: lim})
 	if err != nil {
 		return nil, 0, err
 	}
 	if len(rows) > maxItems {
 		return nil, 0, errArchiveTooLarge
 	}
+	// Parents before children (the capped query promises no order); then by id, stable names.
+	slices.SortFunc(rows, func(a, b sqlc.ListDiskSubtreeCappedRow) int {
+		if a.Depth != b.Depth {
+			return cmp.Compare(a.Depth, b.Depth)
+		}
+		return bytes.Compare(a.DiskItem.ID[:], b.DiskItem.ID[:])
+	})
 	items := make([]sqlc.DiskItem, len(rows))
 	for i, x := range rows {
 		items[i] = x.DiskItem
