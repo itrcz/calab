@@ -155,6 +155,14 @@ const REMOVED_GRACE_MS = 500;
 const REJOIN_MIN_ATTEMPTS = 5;
 const REJOIN_MAX_BACKOFF_MS = 15_000;
 export const REJOIN_GIVE_UP_MS = 15 * 60_000;
+/**
+ * The wait before rejoin attempt `attempt`, ±25 % jitter: everyone a server outage dropped at the
+ * same second (an identity sweep evicting a whole room, ADR-0166) must not hit /join in lockstep
+ * every 15 s while the database recovers.
+ */
+export function rejoinDelay(attempt: number, random = Math.random()): number {
+  return Math.round(Math.min(1000 * 2 ** attempt, REJOIN_MAX_BACKOFF_MS) * (0.75 + random * 0.5));
+}
 /** `devicechange` comes in bursts while the OS switches the output: re-bind the elements once it settles (#255). */
 const REBIND_SETTLE_MS = 400;
 /**
@@ -1154,6 +1162,10 @@ class VoiceEngine {
       this.removed = { roomId, timer: window.setTimeout(() => {
         this.removed = null;
         if (this.nativeAudio !== session) return;
+        if (this.removalUndecided()) {
+          void this.rejoin();
+          return;
+        }
         toast.info(text);
         void this.leave();
       }, REMOVED_GRACE_MS) };
@@ -1397,7 +1409,7 @@ class VoiceEngine {
         // The backoff ends early when the gateway is back (the network is): checkSeat wakes it.
         await new Promise<void>((r) => {
           // `now`: the page is back after a long hide — the first attempt without the 1 s wait.
-          const timer = setTimeout(r, now && attempt === 0 ? 0 : Math.min(1000 * 2 ** attempt, REJOIN_MAX_BACKOFF_MS));
+          const timer = setTimeout(r, now && attempt === 0 ? 0 : rejoinDelay(attempt));
           this.rejoinWake = () => {
             clearTimeout(timer);
             r();
@@ -2264,6 +2276,10 @@ class VoiceEngine {
             timer: window.setTimeout(() => {
               this.removed = null;
               if (this.room !== room) return; // a newer join / leave took over meanwhile
+              if (this.removalUndecided()) {
+                void this.rejoin();
+                return;
+              }
               toast.info(text);
               void this.leave();
             }, REMOVED_GRACE_MS),
@@ -3582,6 +3598,21 @@ class VoiceEngine {
   }
 
   /**
+   * LiveKit removed this device and no VOICE_DISCONNECTED explained it within the grace. While the
+   * server is out of reach — the gateway is reconnecting (its session was closed past the
+   * identity grace, ADR-0166) or the API answers with outages — the removal is the identity
+   * sweep failing closed without a verdict, not a moderator: the device rejoins by itself and
+   * /join decides. With the server reachable it is a kick, as before.
+   */
+  private removalUndecided(): boolean {
+    const s = useSession.getState();
+    const gatewayDown = s.gateway === 'reconnecting' || s.gateway === 'connecting' || s.gateway === 'resuming';
+    if (!gatewayDown && !s.serverDegraded) return false;
+    log.info(`voice: removed by LiveKit while the server is out of reach (gateway ${s.gateway}, api ${s.serverDegraded ? 'down' : 'up'}): no verdict, rejoining`);
+    return true;
+  }
+
+  /**
    * Gateway VOICE_DISCONNECTED (docs/05 «Несколько устройств»): the server took this device out
    * of voice — the user joined from another device. Out of voice at once, without a reconnect
    * attempt (a rejoin would take the other device out in turn), the island back to idle, a toast
@@ -3603,6 +3634,14 @@ class VoiceEngine {
     const here = removedHere || this.roomId === ev.roomId || v.roomId === ev.roomId || v.joining?.roomId === ev.roomId || this.rejoinRoomId === ev.roomId;
     if (!here) return false; // already elsewhere by my own newer intent
     this.clearRemoved();
+    if (ev.reason === VoiceDisconnectReason.ACCESS_UNDECIDED) {
+      // The server could not verify access for its whole grace (a database stall, ADR-0166) and
+      // took the device out without a verdict: back into the same room by itself, muted as it
+      // was; /join decides once the server answers (a refusal ends the cycle).
+      log.info('voice: taken out by the server without a verdict (its database stalled), rejoining');
+      if (this.rejoinRoomId !== ev.roomId) void this.rejoin(ev.roomId);
+      return true;
+    }
     log.info('voice: taken out by the server, the user joined from another device');
     this.takenOverRoom = ev.roomId;
     if (ev.reason === VoiceDisconnectReason.OTHER_DEVICE) toast.info(t('mediaErr.voice.otherDevice'));

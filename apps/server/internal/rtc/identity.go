@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -303,6 +304,18 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 							continue
 						}
 						slog.WarnContext(ctx, "RTC identity check undecided past grace, evicting", "room", job.room, "grace", s.identityGrace(), "err", err)
+						// Without a verdict (ADR-0166): the device is told first, so it takes the removal
+						// for an outage and rejoins by itself, not for a moderator's kick (a companion
+						// has no voice of its own). Best effort: the gateway may already be resyncing;
+						// the client falls back on its own view of the server (gateway down / API 503).
+						if _, _, device := voice.ParseIdentity(person.Identity); device && s.events != nil {
+							s.events.User(ctx, uid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceDisconnected{VoiceDisconnected: &v1.VoiceDisconnected{
+								WorkspaceId: scopeWS(job.ws, job.rid),
+								RoomId:      job.rid.String(),
+								SessionId:   sid.String(),
+								Reason:      v1.VoiceDisconnectReason_VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED,
+							}}})
+						}
 					}
 					remove, done := context.WithTimeout(ctx, 2*time.Second)
 					err = s.lk.RemoveParticipant(remove, job.room, person.Identity)

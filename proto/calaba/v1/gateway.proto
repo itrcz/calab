@@ -669,12 +669,16 @@ enum VoiceDisconnectReason {
   VOICE_DISCONNECT_REASON_UNSPECIFIED = 0;
   // The user joined voice (a room or a call) from another device: one device in voice at a time.
   VOICE_DISCONNECT_REASON_OTHER_DEVICE = 1;
+  // The server could not verify the device's access for the whole transient grace (a database
+  // stall, ADR-0166) and took it out without a verdict. Not a denial: the device rejoins the same
+  // room on its own once the server answers (bounded); a refusal of /join ends that.
+  VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED = 2;
 }
 
 // To the user's devices: the server disconnected the device whose auth session is session_id
 // from voice (its LiveKit participant is removed, its voice state cleared; VOICE_STATE_UPDATE
-// follows). That device leaves voice without a reconnect attempt; other devices ignore it.
-// A one-to-one call is not ended by it.
+// follows). That device leaves voice without a reconnect attempt (ACCESS_UNDECIDED: it rejoins
+// on its own instead); other devices ignore it. A one-to-one call is not ended by it.
 message VoiceDisconnected {
   string workspace_id = 1; // empty for a one-to-one call (DM room)
   string room_id = 2;

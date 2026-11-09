@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/voice"
@@ -501,19 +503,50 @@ func identitySweepAt(t *testing.T, svc *Service, at time.Time) {
 // outlasts the grace still evicts.
 func TestIdentitySweepTransientFailureWaitsForGrace(t *testing.T) {
 	f, key := identityOneParticipant(t)
-	svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	told := &disconnectProbe{}
+	svc := &Service{lk: f, events: told, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
 		return httpx.Unavailable(errors.New("pool timeout"))
 	}}
 	t0 := time.Now()
 	identitySweepAt(t, svc, t0)
 	identitySweepAt(t, svc, t0.Add(identityTransientGrace-time.Second))
-	if f.removed[key] != 0 {
+	if f.removed[key] != 0 || len(told.events()) != 0 {
 		t.Fatal("transient failure evicted before the grace")
 	}
 	identitySweepAt(t, svc, t0.Add(identityTransientGrace))
 	if f.removed[key] != 1 {
 		t.Fatalf("unbroken failure past the grace: removal=%d want 1", f.removed[key])
 	}
+	// ADR-0166: the device is told the removal is no verdict (it rejoins by itself), before LiveKit drops it.
+	evs := told.events()
+	if len(evs) != 1 || evs[0].GetReason() != v1.VoiceDisconnectReason_VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED {
+		t.Fatalf("VOICE_DISCONNECTED for an undecided eviction: %v", evs)
+	}
+	_, sid, _ := voice.ParseIdentity(key[len(f.rooms[0].Name):])
+	if evs[0].GetSessionId() != sid.String() || evs[0].GetWorkspaceId() == "" || evs[0].GetRoomId() == "" {
+		t.Fatalf("VOICE_DISCONNECTED addresses the wrong device: %v (session %s)", evs[0], sid)
+	}
+}
+
+// disconnectProbe records the VOICE_DISCONNECTED events published to users.
+type disconnectProbe struct {
+	events.Nop
+	mu  sync.Mutex
+	out []*v1.VoiceDisconnected
+}
+
+func (p *disconnectProbe) User(_ context.Context, _ uuid.UUID, ev *v1.DispatchEvent) {
+	if d := ev.GetVoiceDisconnected(); d != nil {
+		p.mu.Lock()
+		p.out = append(p.out, d)
+		p.mu.Unlock()
+	}
+}
+
+func (p *disconnectProbe) events() []*v1.VoiceDisconnected {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]*v1.VoiceDisconnected(nil), p.out...)
 }
 
 func TestIdentitySweepDenialEvictsAtOnce(t *testing.T) {
@@ -528,10 +561,14 @@ func TestIdentitySweepDenialEvictsAtOnce(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, key := identityOneParticipant(t)
-			svc := &Service{lk: f, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return deny }}
+			told := &disconnectProbe{}
+			svc := &Service{lk: f, events: told, IdentityAccess: func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error { return deny }}
 			identitySweepAt(t, svc, time.Now())
 			if f.removed[key] != 1 {
 				t.Fatalf("denial: removal=%d want 1", f.removed[key])
+			}
+			if len(told.events()) != 0 {
+				t.Fatal("a denial told the device its removal was undecided")
 			}
 		})
 	}

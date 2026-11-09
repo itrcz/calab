@@ -244,6 +244,10 @@ const (
 	VoiceDisconnectReason_VOICE_DISCONNECT_REASON_UNSPECIFIED VoiceDisconnectReason = 0
 	// The user joined voice (a room or a call) from another device: one device in voice at a time.
 	VoiceDisconnectReason_VOICE_DISCONNECT_REASON_OTHER_DEVICE VoiceDisconnectReason = 1
+	// The server could not verify the device's access for the whole transient grace (a database
+	// stall, ADR-0166) and took it out without a verdict. Not a denial: the device rejoins the same
+	// room on its own once the server answers (bounded); a refusal of /join ends that.
+	VoiceDisconnectReason_VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED VoiceDisconnectReason = 2
 )
 
 // Enum value maps for VoiceDisconnectReason.
@@ -251,10 +255,12 @@ var (
 	VoiceDisconnectReason_name = map[int32]string{
 		0: "VOICE_DISCONNECT_REASON_UNSPECIFIED",
 		1: "VOICE_DISCONNECT_REASON_OTHER_DEVICE",
+		2: "VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED",
 	}
 	VoiceDisconnectReason_value = map[string]int32{
-		"VOICE_DISCONNECT_REASON_UNSPECIFIED":  0,
-		"VOICE_DISCONNECT_REASON_OTHER_DEVICE": 1,
+		"VOICE_DISCONNECT_REASON_UNSPECIFIED":      0,
+		"VOICE_DISCONNECT_REASON_OTHER_DEVICE":     1,
+		"VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED": 2,
 	}
 )
 
@@ -4835,8 +4841,8 @@ func (x *VoiceMoved) GetIdentity() string {
 
 // To the user's devices: the server disconnected the device whose auth session is session_id
 // from voice (its LiveKit participant is removed, its voice state cleared; VOICE_STATE_UPDATE
-// follows). That device leaves voice without a reconnect attempt; other devices ignore it.
-// A one-to-one call is not ended by it.
+// follows). That device leaves voice without a reconnect attempt (ACCESS_UNDECIDED: it rejoins
+// on its own instead); other devices ignore it. A one-to-one call is not ended by it.
 type VoiceDisconnected struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"` // empty for a one-to-one call (DM room)
@@ -8106,10 +8112,11 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x14PRESENCE_STATUS_IDLE\x10\x02\x12\x17\n" +
 	"\x13PRESENCE_STATUS_DND\x10\x03\x12\x1d\n" +
 	"\x19PRESENCE_STATUS_INVISIBLE\x10\x04\x12\x1b\n" +
-	"\x17PRESENCE_STATUS_OFFLINE\x10\x05*j\n" +
+	"\x17PRESENCE_STATUS_OFFLINE\x10\x05*\x98\x01\n" +
 	"\x15VoiceDisconnectReason\x12'\n" +
 	"#VOICE_DISCONNECT_REASON_UNSPECIFIED\x10\x00\x12(\n" +
-	"$VOICE_DISCONNECT_REASON_OTHER_DEVICE\x10\x01*\xe3\x01\n" +
+	"$VOICE_DISCONNECT_REASON_OTHER_DEVICE\x10\x01\x12,\n" +
+	"(VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED\x10\x02*\xe3\x01\n" +
 	"\x15VoiceStreamStopReason\x12(\n" +
 	"$VOICE_STREAM_STOP_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eVOICE_STREAM_STOP_REASON_ENDED\x10\x01\x12*\n" +

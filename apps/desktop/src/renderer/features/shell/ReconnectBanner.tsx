@@ -16,11 +16,12 @@ export function ReconnectBanner(): ReactNode {
   if (!shown) return null;
   return (
     <div className="pointer-events-none relative z-[calc(var(--z-sticky)+1)] h-0" data-testid="reconnect-banner">
-      <div
-        role="status"
-        className="absolute left-1/2 top-1 max-w-[calc(100%-24px)] -translate-x-1/2 truncate rounded-full bg-warn px-3 py-1 text-center text-caption font-medium text-black shadow-sm"
-      >
-        {t('gateway.reconnecting')}
+      {/* A centering row, not left-1/2 + translate: an absolutely positioned pill at left 50 % may
+          only grow to half the width (shrink-to-fit), which cut the text on a phone. */}
+      <div className="absolute inset-x-3 top-1 flex justify-center">
+        <div role="status" className="max-w-full truncate rounded-full bg-warn px-3 py-1 text-center text-caption font-medium text-black shadow-sm">
+          {t('gateway.reconnecting')}
+        </div>
       </div>
     </div>
   );

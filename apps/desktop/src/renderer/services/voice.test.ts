@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { VoiceDisconnectReason } from '@calaba/protocol';
 import type { HostCallAudioCapability, HostAudioConnect, HostAudioState } from '../../shared/hostCallAudio';
 import type { HostRoomAudioCapability, HostRoomAudioConnect, HostRoomAudioCue, HostRoomAudioState, HostRoomAudioStatus } from '../../shared/hostRoomAudio';
@@ -390,9 +390,12 @@ let voice: Engine;
 let useVoice: (typeof import('../stores/voice'))['useVoice'];
 let usePrefs: (typeof import('../stores/prefs'))['usePrefs'];
 
+/** The rejoin backoff carries ±25 % jitter (rejoinDelay); the timings asserted below are its middle. */
+let randomSpy: MockInstance<() => number> | null = null;
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.resetModules();
+  randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
   FakeRoom.all = [];
   FakeChannel.all = [];
   FakeLocalAudioTrack.lockMs = 0;
@@ -434,6 +437,8 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  randomSpy?.mockRestore();
+  randomSpy = null;
 });
 
 const settle = async (): Promise<void> => {
@@ -1423,6 +1428,13 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(8_000);
     expect(useVoice.getState().phase).toBe('connected');
     expect(useVoice.getState().link.attempts).toBe(0);
+  });
+
+  it('the rejoin backoff is jittered ±25 % (a whole room dropped at once must not retry in lockstep, ADR-0166)', async () => {
+    const { rejoinDelay } = await import('./voice');
+    expect([0, 1, 2, 3, 4, 9].map((a) => rejoinDelay(a, 0.5))).toEqual([1000, 2000, 4000, 8000, 15_000, 15_000]);
+    expect(rejoinDelay(9, 0)).toBe(11_250);
+    expect(rejoinDelay(9, 1)).toBe(18_750);
   });
 
   it('a connect that keeps failing backs off 1/2/4/8 s, then 15 s, for 15 min, ends with the «lost» toast and frees the seat (#255, ADR-0166)', async () => {
@@ -2819,6 +2831,45 @@ describe('VOICE_DISCONNECTED (docs/05 «Несколько устройств»)
     expect(useVoice.getState().phase).toBe('idle');
     expect(await toasts()).toEqual(['Вы подключились с другого устройства']);
     expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('LiveKit removal while the server is out of reach: no verdict — no toast, back into the room by itself (ADR-0166)', async () => {
+    const { useSession } = await import('../stores/session');
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await settle();
+    // The gateway session was closed past the identity grace and IDENTIFY fails while the database stalls.
+    useSession.setState({ gateway: 'reconnecting' });
+    FakeRoom.all[0]?.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await toasts()).toEqual([]);
+    expect(useVoice.getState()).toMatchObject({ phase: 'reconnecting', roomId: 'A', muted: true });
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A', muted: true });
+    expect(voice.takenOverRoom).toBeNull();
+    // The API answering with outages is the same signal with the gateway up.
+    useSession.setState({ gateway: 'ready', serverDegraded: true });
+    FakeRoom.all.at(-1)?.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    await vi.advanceTimersByTimeAsync(1_600);
+    expect(await toasts()).toEqual([]);
+    expect(joinVoice).toHaveBeenCalledTimes(3);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
+  });
+
+  it('VOICE_DISCONNECTED with ACCESS_UNDECIDED (the sweep failed closed): rejoin, no toast, not a takeover', async () => {
+    await voice.join('A', 'ws');
+    expect(voice.onServerDisconnect(ev({ reason: VoiceDisconnectReason.ACCESS_UNDECIDED }))).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
+    expect(voice.takenOverRoom).toBeNull();
+    expect(await toasts()).toEqual([]);
+    // Told twice (the event, then LiveKit's removal of the old room): one cycle.
+    expect(voice.onServerDisconnect(ev({ reason: VoiceDisconnectReason.ACCESS_UNDECIDED }))).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(3);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
   });
 
   it('LiveKit removal without the event: a moderator — the toast and the leave after the grace', async () => {

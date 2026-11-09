@@ -7,12 +7,16 @@
  *
  * - degraded after the first failure that no success follows within DEGRADED_DELAY_MS;
  * - while degraded: one probe request (GET /api/me) at a capped backoff with jitter, 5 s → 30 s;
- * - any answer below 500 (the probe or any other request) ends it: onChange(false), onRecovered().
+ * - any answer below 500 (the probe or any other request) ends it: onChange(false), onRecovered();
+ * - degraded again within RELAPSE_MS of a recovery (a partial stall: the probe answers, the
+ *   reloads it triggers time out), the backoff goes on where it was instead of starting at 5 s —
+ *   each recovery re-issues every failed load, and a flapping server must not get them every 8 s.
  */
 
 export const DEGRADED_DELAY_MS = 3000;
 export const PROBE_BASE_MS = 5000;
 export const PROBE_MAX_MS = 30_000;
+export const RELAPSE_MS = 60_000;
 
 export interface HealthTimers {
   setTimeout(fn: () => void, ms: number): unknown;
@@ -43,6 +47,7 @@ export class ServerHealth {
   private failing = false;
   private delayTimer: unknown = null;
   private probeTimer: unknown = null;
+  private relapseTimer: unknown = null;
   private probes = 0;
   private readonly timers: HealthTimers;
   private readonly rnd: () => number;
@@ -68,7 +73,8 @@ export class ServerHealth {
       this.delayTimer = null;
       if (!this.failing) return;
       this.degraded = true;
-      this.probes = 0;
+      // probes: 0 unless this is a relapse within RELAPSE_MS (the backoff then goes on).
+      this.clearRelapse();
       this.deps.onChange(true);
       this.scheduleProbe();
     }, DEGRADED_DELAY_MS);
@@ -82,6 +88,11 @@ export class ServerHealth {
     if (!this.degraded) return;
     this.degraded = false;
     this.clearProbe();
+    this.clearRelapse();
+    this.relapseTimer = this.timers.setTimeout(() => {
+      this.relapseTimer = null;
+      this.probes = 0; // healthy for RELAPSE_MS: the next outage starts the backoff afresh
+    }, RELAPSE_MS);
     this.deps.onChange(false);
     this.deps.onRecovered();
   }
@@ -103,7 +114,14 @@ export class ServerHealth {
     if (this.delayTimer !== null) this.timers.clearTimeout(this.delayTimer);
     this.delayTimer = null;
     this.clearProbe();
+    this.clearRelapse();
+    this.probes = 0;
     if (was) this.deps.onChange(false);
+  }
+
+  private clearRelapse(): void {
+    if (this.relapseTimer !== null) this.timers.clearTimeout(this.relapseTimer);
+    this.relapseTimer = null;
   }
 
   private clearProbe(): void {
