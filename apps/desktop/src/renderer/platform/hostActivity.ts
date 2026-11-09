@@ -8,7 +8,7 @@ import { hostLinkRoute, parseNotificationState, parseNotificationTestResult, typ
 export interface HostActivityBridge {
   calendarWidgetVersion?: number;
   mediaPermissionsVersion?: number;
-  version: number; host: number; document: string; platform?: string; mediaSessionVersion?: number; notificationsVersion?: number; notificationsTestVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
+  version: number; host: number; document: string; platform?: string; mediaSessionVersion?: number; notificationsVersion?: number; notificationsTestVersion?: number; notificationsBadgeVersion?: number; callsVersion?: number; callsMuteVersion?: number; callsAnswerVersion?: number; callsAudioVersion?: number;
   /** iOS shell built with native room audio (ADR-0149): rooms may hand their audio to native. */
   roomAudioVersion?: number;
   rotateDocument(): void;
@@ -64,6 +64,7 @@ export function createHostCapabilities(win: Window = window): {
   let sequence = 0;
   let requestId = 0;
   let latest: SessionActivitySnapshot | null = null;
+  let badge: number | null = null;
   const callListeners = new Set<(state:HostCallsState)=>void>();
   const callsPending = new Map<number,{operation:HostCallsOperation;resolve:(value:{state:HostCallsState;bound?:boolean})=>void;timer:ReturnType<typeof setTimeout>}>();
   const roomListeners = new Set<(state: HostRoomAudioState) => void>();
@@ -95,6 +96,7 @@ export function createHostCapabilities(win: Window = window): {
   };
   const revoke = (reason?: 'logout') => {
     latest = null;
+    badge = null;
     // A cold anonymous page must acquire the native document grant before clearing the
     // persisted endpoint binding. Never lose that logout behind a second capability clear.
     if (!ready && (reason === 'logout' || pendingLogout)) {
@@ -130,6 +132,7 @@ export function createHostCapabilities(win: Window = window): {
     else { for (const p of calendarPending.values()) { clearTimeout(p.timer); p.resolve(false); } calendarPending.clear(); }
     if (latest && activityEnabled) send('activity', { snapshot: latest });
     if (media && media.session !== 'none' && mediaEnabled) send('media', media);
+    if (a.notifications === 1 && badge !== null) send('notifications', { request: ++requestId, operation: 'badge', count: badge });
     if (a.notifications === 1) for (const [request, p] of pending) send('notifications', { request, operation: p.operation });
     else { for (const p of pending.values()) { clearTimeout(p.timer); p.resolve({ permission: 'unsupported' }); } pending.clear(); }
     if (a.notifications === 1) for (const [request, p] of tests) send('notifications', { request, operation: 'test', body: p.body });
@@ -317,6 +320,12 @@ export function createHostCapabilities(win: Window = window): {
       clear: revoke,
     },
     ...(bridge.notificationsVersion === 1 ? { notifications: {
+      ...(bridge.notificationsBadgeVersion === 1 ? { setBadge: (count: number) => {
+        if (!Number.isSafeInteger(count) || count < 0 || count > 99999) return;
+        badge = count;
+        if (ready) send('notifications', { request: ++requestId, operation: 'badge', count });
+        else send('hello');
+      } } : {}),
       ...(bridge.notificationsTestVersion === 1 ? { test: (body: string) => new Promise<HostNotificationTestResult>(resolve => {
         if (!body.trim() || body.length > 512) { resolve('failed'); return; }
         const request = ++requestId;

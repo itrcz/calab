@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { parseNotificationState, parseNotificationTestResult, type HostNotificationTestResult, type HostNotificationState } from '../../desktop/src/shared/hostActivity';
 
 interface NativePush {
+  setBadge(document: string, count: number): Promise<void>;
   testNotification(document: string, body: string): Promise<unknown>;
   pushState(document: string, requestPermission: boolean): Promise<unknown>;
   acknowledgePush(document: string, eventId: string): Promise<void>;
@@ -54,3 +55,8 @@ export function notificationTestReply(host: number, document: string, request: n
 }
 
 export function acknowledgeNotification(document: string, eventId: string): void { void native?.acknowledgePush(document, eventId).catch(() => undefined); }
+
+/** The native module rechecks the trusted document; no permission prompt here. */
+export function setNotificationBadge(document: string, count: number): void {
+  if (Platform.OS === 'ios') void native?.setBadge(document, count).catch(() => undefined);
+}

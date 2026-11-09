@@ -141,7 +141,7 @@ describe('native room audio bridge (ADR-0149)', () => {
     expect(activityBootstrap(3)).not.toContain('roomAudioVersion');
   });
   it('leaves the bootstrap of a build without room audio byte-identical', () => {
-    const line = (calls: string) => `value: Object.freeze({version: 1,  notificationsVersion: 1, notificationsTestVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${calls} platform: 'ios', host: 3, get document() { return documentId; },`;
+    const line = (calls: string) => `value: Object.freeze({version: 1,  notificationsVersion: 1, notificationsTestVersion: 1, notificationsBadgeVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${calls} platform: 'ios', host: 3, get document() { return documentId; },`;
     expect(activityBootstrap(3, { platform: 'ios' })).toContain(line(''));
     expect(activityBootstrap(3, { platform: 'ios', nativeAudio: true })).toContain(line('callsAudioVersion: 1,'));
     expect(activityBootstrap(3, { platform: 'ios', nativeAudio: true, roomAudio: false })).toBe(activityBootstrap(3, { platform: 'ios', nativeAudio: true }));
@@ -231,4 +231,15 @@ describe('Android media session (board #141)', () => {
     expect(event.type).toBe('calab-host-media');
     expect(event.init.detail).toEqual({ v: 1, host: 3, document, action: 'leave' });
   });
+});
+
+it('forwards badge zero only for the granted document and current sequence', () => {
+  const p = new ActivityProtocol(0);
+  const message = { v: 1, type: 'notifications', host: 0, document, seq: 1, request: 1, operation: 'badge', count: 0 };
+  expect(p.accept(JSON.stringify(message))).toBeNull();
+  p.accept(hello());
+  expect(p.accept(JSON.stringify(message))).toMatchObject({ type: 'notifications', operation: 'badge', count: 0 });
+  expect(p.accept(JSON.stringify(message))).toBeNull();
+  expect(p.accept(JSON.stringify({ ...message, seq: 2, document: other }))).toBeNull();
+  expect(activityBootstrap(0, { platform: 'android' })).not.toContain('notificationsBadgeVersion');
 });

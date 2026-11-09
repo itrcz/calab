@@ -18,6 +18,10 @@ func (s *Service) Observe(ctx context.Context, userID uuid.UUID, event *v1.Dispa
 	if len(s.providers) == 0 || event == nil {
 		return
 	}
+	if userID != uuid.Nil && (event.GetReadStateUpdate() != nil || event.GetDmStateUpdate() != nil) {
+		s.scheduleBadge(ctx, userID)
+		return
+	}
 	if state := event.GetCallState().GetCall(); state != nil && state.State != v1.CallState_CALL_STATE_RINGING && userID != uuid.Nil {
 		if _, ok := s.providers[v1.PushProvider_PUSH_PROVIDER_FCM]; ok {
 			if call, err := uuid.Parse(state.Id); err == nil {
@@ -254,6 +258,13 @@ func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 		}
 		if err := s.presentation(ctx, q, user, job, &payload); err != nil {
 			return err
+		}
+		if device.Provider == int16(v1.PushProvider_PUSH_PROVIDER_APNS) {
+			count, err := s.badgeCount(ctx, q, user, session)
+			if err != nil {
+				return err
+			}
+			payload.Badge = &count
 		}
 		// Endpoint/version, session and freshly resolved access/settings stay bound in
 		// this transaction immediately before dispatch. No detached raw-event fanout.

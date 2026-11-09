@@ -1,4 +1,5 @@
 import { platform } from '../platform';
+import { useSession } from '../stores/session';
 import { badgeCount, useRooms } from '../stores/rooms';
 
 let started = false;
@@ -12,13 +13,19 @@ let shown = -1;
 export function startAppBadge(): void {
   if (started) return;
   started = true;
-  const apply = (): void => {
+  const apply = (force = false): void => {
+    // Do not overwrite an APNs count with an empty store while READY is loading.
+    if (platform.notifications?.setBadge && !useSession.getState().ready) return;
     const n = badgeCount(useRooms.getState());
-    if (n === shown) return;
+    if (n === shown && !force) return;
     shown = n;
     platform.app.setBadge(n);
     document.title = n > 0 ? `(${n > 99 ? '99+' : n}) Calab` : 'Calab';
   };
   apply();
-  useRooms.subscribe(apply);
+  useRooms.subscribe(() => apply());
+  useSession.subscribe((s, previous) => { if (s.ready && !previous.ready) apply(true); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') apply(true);
+  });
 }

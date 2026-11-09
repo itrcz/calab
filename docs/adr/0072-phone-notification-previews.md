@@ -198,3 +198,25 @@ Implementation contract, following real-device failures; no UI or auth/media dup
   missed-call policy/provider and cold avatar tests; required lint/types, targeted PG17 race
   integration, independent security/protocol reviews and native compile. Actual locked/cold
   two-way audio, avatar rendering and delivery require the matching installed/server versions.
+
+## Amendment: iOS app-icon unread badge (2026-11-09)
+
+This amends the original exclusion of badge counters. The icon matches desktop:
+unread personal DM messages plus mentions (including broadcasts) in visible
+workspace rooms. Muting delivery does not change unread state. Counts use existing
+read queries and the endpoint's exact current session policy, clamped to 99,999.
+APNs alerts carry an absolute `aps.badge`; reads on another client enqueue a
+coalesced, best-effort badge-only APNs update, including zero, without sound/banner.
+No new unread ledger, migration, public API, timer or background fetch is added.
+
+The iOS host advertises optional `notificationsBadgeVersion: 1`. The existing
+origin/main-frame/document/sequence gate accepts only integer counts 0–99,999.
+The shared web client publishes after READY and on foreground return; native
+writes are serialized, and explicit logout clears the icon. Reload preserves it.
+Old hosts and Android retain existing behavior; VoIP payloads do not change.
+
+Rollout requires a new iOS binary plus the shared web/API release. APNs delivery
+is best effort: dropped/reordered notifications or permission changes are
+reconciled on foreground READY or the next alert. Message deletion/permission
+changes without a read event use that same reconciliation, not proactive pushes.
+Simulator and fixture checks do not establish locked physical-device delivery.

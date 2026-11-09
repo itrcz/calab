@@ -689,6 +689,7 @@ export function createWebPlatform(): Platform {
       showWindow: () => window.focus(),
       // Installed PWA: the app icon badge (Badging API, where supported).
       setBadge: (n) => {
+        if (hostCapabilities.notifications?.setBadge) { hostCapabilities.notifications.setBadge(Math.min(n, 99999)); return; }
         if (!('setAppBadge' in navigator)) return;
         void (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => undefined);
       },

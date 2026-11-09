@@ -483,7 +483,7 @@ App Links.
   extension/profile, затем реальные previews/grouping, звонок и locked/cold audio.
 - Ограниченная ревизия: routing/expiry, отключённые уведомления/Focus, foreground без второго
   звука, logout, accept/end/mute и старые payloads покрыты существующими и целевыми checks.
-  Badge unread counter, быстрый ответ из push и callback из системной истории ещё не реализованы;
+  На момент R11 badge unread counter, быстрый ответ из push и callback из системной истории ещё не реализованы;
   отдельный API/состояние не добавлялись ради видимости готовности. Native Android incoming/push
   и SSO остаются прежними отдельными gates полного продукта.
 
@@ -782,3 +782,12 @@ cd apps/mobile && cp .env.example .env     # заполнить origin и иде
 npx expo prebuild --platform ios --no-clean --no-install   # SDK 57 без --no-clean пересоздаёт ios/
 npx expo run:ios --configuration Release --device
 ```
+
+## iOS icon badge (2026-11-09)
+
+Implemented under the ADR-0072 amendment: native foreground/READY badge bridge,
+logout clear, absolute APNs badge and coalesced read-marker updates across devices.
+Count semantics match desktop (unread DMs + visible-room mentions). The native
+binary and shared web/API changes must both ship. Delivery while locked and
+Focus/settings behavior remain physical-device acceptance; synthetic push and
+Swift tests are not evidence of real APNs delivery.

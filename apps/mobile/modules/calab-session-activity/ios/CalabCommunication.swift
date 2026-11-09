@@ -51,7 +51,7 @@ enum CalabCommunication {
       // Intents may decorate presentation, but must not replace our opaque tap/sound contract.
       result.userInfo = content.userInfo; result.categoryIdentifier = content.categoryIdentifier
       result.threadIdentifier = conversation; result.sound = content.sound
-      result.subtitle = content.subtitle; result.body = content.body
+      result.subtitle = content.subtitle; result.body = content.body; result.badge = content.badge
       logger.info("communication presentation applied")
       completion(result)
     }

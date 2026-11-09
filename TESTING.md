@@ -2479,3 +2479,12 @@ Expected: the task / board / room / wiki / Disk / meeting opens in the app (anot
 - `pnpm -F @calaba/mobile test` and `typecheck`; focused desktop bridge/deep-link/sync tests and typecheck.
 - Prior isolated physical-device evidence and remaining production/device gates: `docs/mobile/calendar-widgets-acceptance.md`.
 - Deploy the DATE migration and feed first, then shared web and a newly signed binary; no autonomous merge or release.
+
+### iOS app-icon badge (ADR-0072 amendment)
+
+1. `hostBadge.test.ts`, `services/badge.test.ts`: bounded count, document handshake, old hosts, READY, foreground and logout.
+2. Mobile suite includes the actual Swift serial writer; zero clears after an in-flight write.
+3. PG17 `TestPushBadge*`: DM + visible mentions, private room exclusion, cross-device reads/zero, endpoint revocation and exact-session step-up/revocation. `TestAPNSAbsoluteBadgeAndSilentClear`: real JSON/headers, no VoIP badge.
+4. iOS Release archive and exported IPA: production APNs, matching version in app/extensions, existing widget/app groups retained.
+5. Device acceptance: allow badges; background app receives two DMs and one mention → 3; read one on desktop → 2, read all → no badge; logout → no badge. Repeat with app killed and with badge permission disabled.
+6. Simulator push only verifies OS payload behavior; APNs acceptance, Focus and locked-device delivery require a physical device. Both native binary and shared web/API rollout are required.

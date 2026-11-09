@@ -1,0 +1,27 @@
+# iOS app icon unread badge
+
+Base: 14a0f48821c1f54a207fc9300a7475c718bda48a. Owner requested implementation,
+verification, a new App Store Connect build and a pull request on 2026-11-09.
+
+- Match the existing desktop badge: unread DMs plus mentions in visible workspace
+  rooms, including @everyone. Reuse the existing read queries and permission resolver;
+  no second unread ledger. Clamp the native representation to 99,999.
+- APNs message alerts carry an absolute, freshly computed `aps.badge`. A read marker
+  update on any client sends a badge-only APNs update (including zero), with no banner
+  or sound. Delivery is best effort; foreground READY always reconciles the count.
+- Count only workspaces allowed by the exact endpoint session's current identity policy.
+  Reuse session/device locks and reject revoked, disabled, expired or foreign bindings.
+  No credentials, message content or new product identifiers cross the badge bridge.
+- Add an optional versioned iOS notification badge capability to the existing origin,
+  main-frame, document and sequence checked bridge. Old hosts and Android remain compatible.
+  Publish after READY, on changes and foreground return; zero clears. Explicit logout
+  clears the native badge. Reload does not clear a still-valid background count.
+- Serialize native OS updates so an old count cannot overtake logout or a newer value.
+  Preserve notification extension badge content and foreground badge presentation.
+- Tests: real serialized APNs payload (zero/nonzero/VoIP unchanged); PG17 permission,
+  unread/read and exact-session cases; host handshake/replay/invalid count/logout tests;
+  Swift state tests, native build and simulator icon checks. Report real APNs/physical
+  device observations separately from synthetic tests.
+- No schema/proto change, media behavior change, new user setting or store submission
+  for public release. PR and App Store Connect upload are authorized; production web/API
+  rollout follows the normal maintainer merge/release workflow.

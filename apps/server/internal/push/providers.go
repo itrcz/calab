@@ -43,7 +43,7 @@ func routingValid(p Payload) bool {
 		return false
 	}
 	switch p.Kind {
-	case "message", "call", "task", "calendar", callCancelKind:
+	case "message", "call", "task", "calendar", "badge", callCancelKind:
 	default:
 		return false
 	}
@@ -114,7 +114,15 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	if voip {
 		topic += ".voip"
 		pushType = "voip"
+	} else if p.Kind == "badge" {
+		if p.Badge == nil || *p.Badge < 0 || *p.Badge > 99999 {
+			return Result{}
+		}
+		aps["badge"] = *p.Badge
 	} else {
+		if p.Badge != nil {
+			aps["badge"] = *p.Badge
+		}
 		aps["alert"] = map[string]string{"title-loc-key": "CALAB_APP_NAME", "loc-key": "CALAB_NEW_NOTIFICATION"}
 		if alert, ok := alertText(p); ok {
 			aps["alert"] = alert
@@ -145,6 +153,10 @@ func (s *apnsSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
 	request.Header.Set("apns-topic", topic)
 	request.Header.Set("apns-push-type", pushType)
 	request.Header.Set("apns-priority", "10")
+	if p.Kind == "badge" {
+		request.Header.Set("apns-priority", "5")
+		request.Header.Set("apns-collapse-id", "calab-badge")
+	}
 	request.Header.Set("apns-id", p.EventID)
 	request.Header.Set("apns-expiration", strconv.FormatInt(deliveryExpiry(p)/1000, 10))
 	response, err := s.client.Do(request)
@@ -268,7 +280,7 @@ func (s *fcmSender) credential(ctx context.Context) (access string, failure Resu
 	return result.Access, Result{}
 }
 func (s *fcmSender) Send(ctx context.Context, e Endpoint, p Payload) Result {
-	if e.Provider != v1.PushProvider_PUSH_PROVIDER_FCM || e.AppID != s.app || e.Environment != "production" || !routingValid(p) {
+	if p.Kind == "badge" || e.Provider != v1.PushProvider_PUSH_PROVIDER_FCM || e.AppID != s.app || e.Environment != "production" || !routingValid(p) {
 		return Result{}
 	}
 	access, result := s.credential(ctx)
