@@ -3667,6 +3667,13 @@ test('voice-reconnecting', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (window as unknown as { __calabaVoicePhase?: (p: string) => void }).__calabaVoicePhase?.('reconnecting'));
   await expect(win.getByTestId('voice-reconnecting')).toBeVisible();
   await checkpoint(shot, 'voice-reconnecting');
+  // A database stall (ADR-0166): the API answers 503, the screen stays, the quiet banner on top.
+  await win.evaluate(() => (window as unknown as { __calabaServerDegraded?: (on: boolean) => void }).__calabaServerDegraded?.(true));
+  await expect(win.getByTestId('reconnect-banner')).toHaveText('Нет связи с сервером — восстанавливаем…');
+  await expect(win.getByTestId('voice-reconnecting')).toContainText('Переподключаемся к комнате');
+  await checkpoint(shot, 'voice-reconnecting-server');
+  await win.evaluate(() => (window as unknown as { __calabaServerDegraded?: (on: boolean) => void }).__calabaServerDegraded?.(false));
+  await expect(win.getByTestId('reconnect-banner')).toHaveCount(0);
   // Back from the background: the mic is being restored (the panel header) and the remote audio
   // waits for a tap («Вы не слышите собеседников»).
   await win.evaluate(() => {

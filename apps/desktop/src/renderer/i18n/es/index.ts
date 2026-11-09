@@ -406,7 +406,7 @@ export const es: Dict = {
 
   // voice
   'voice.connecting': 'Conectando…',
-  'voice.reconnecting': 'Reconectando a la sala…',
+  'voice.reconnecting': 'Reconectando…',
   'voice.audioBlocked': 'No oyes a los demás',
   'voice.audioBlockedAction': 'Activar sonido',
   'voice.micRecovering': 'Esperando micro',

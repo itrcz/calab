@@ -954,6 +954,13 @@ test('m-home', async ({ page }) => {
   await expect(strip.getByTestId('mobile-voice-status')).toHaveText('Вас не слышно');
   await expect(page.getByTestId('toast')).toHaveCount(1); // no mic toast
   await checkpoint(page, 'm-voice-recovery-unheard');
+  // A database stall (ADR-0166): back into the room on its own, the quiet server banner on top.
+  await seat('reconnecting');
+  await page.evaluate(() => (window as unknown as { __calabaServerDegraded?: (on: boolean) => void }).__calabaServerDegraded?.(true));
+  await expect(page.getByTestId('reconnect-banner')).toHaveText('Нет связи с сервером — восстанавливаем…');
+  await expect(strip).toContainText('Переподключение…');
+  await checkpoint(page, 'm-voice-server-stall');
+  await page.evaluate(() => (window as unknown as { __calabaServerDegraded?: (on: boolean) => void }).__calabaServerDegraded?.(false));
 });
 
 // Bug #146: a room with an unread @mention carries the count badge, a plainly unread one only the bold name.

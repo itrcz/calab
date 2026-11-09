@@ -405,7 +405,7 @@ export const ru = {
   // voice
   'voice.connecting': 'Подключение…',
   'voice.pendingMember': 'Подключается…',
-  'voice.reconnecting': 'Переподключаемся к комнате…',
+  'voice.reconnecting': 'Переподключение…',
   'voice.audioBlocked': 'Вы не слышите собеседников',
   'voice.audioBlockedAction': 'Включить звук',
   'voice.micRecovering': 'Ждём микрофон',

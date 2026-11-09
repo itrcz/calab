@@ -406,7 +406,7 @@ export const zhCN: Dict = {
 
   // voice
   'voice.connecting': '连接中…',
-  'voice.reconnecting': '正在重新连接房间…',
+  'voice.reconnecting': '重新连接中…',
   'voice.audioBlocked': '你听不到其他人',
   'voice.audioBlockedAction': '开启声音',
   'voice.micRecovering': '等待麦克风',

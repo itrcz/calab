@@ -186,7 +186,7 @@ export const esShell: DictShape<typeof enShell> = {
   'voiceUi.serverUnmuted': 'Un moderador te permitió hablar — activa tu micrófono',
   'voiceUi.micSyncing': 'Aún no se aplica para los demás — reintentando',
   'voiceUi.seatElsewhere': 'La voz está conectada en otro dispositivo — cámbialo allí',
-  'voiceUi.reconnectHint': 'La voz se reconectará sola en cuanto vuelva la conexión',
+  'voiceUi.reconnectHint': 'Reconectando a la sala: la voz volverá sola en cuanto vuelva la conexión',
   'voiceUi.blocked': 'La conexión a {host} está bloqueada por la política de la app — actualiza la app',
   'voiceUi.cantReach': 'No se puede conectar a {host}',
   'voiceUi.retry': 'Reintentar',
