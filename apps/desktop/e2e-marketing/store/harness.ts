@@ -133,14 +133,14 @@ export async function withStore<T>(short: Short, platform: Platform, body: (ctx:
     const page = await context.newPage();
     // WebKit has no fake microphone: a silent stream, so joining a call is not a «microphone denied» toast.
     await page.addInitScript(() => {
-      const md = navigator.mediaDevices;
+      const md = (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
       if (!md) return;
-      md.getUserMedia = async (c?: MediaStreamConstraints): Promise<MediaStream> => {
-        if (c?.video) throw new DOMException('no camera', 'NotFoundError');
+      md.getUserMedia = (c?: MediaStreamConstraints): Promise<MediaStream> => {
+        if (c?.video) return Promise.reject(new DOMException('no camera', 'NotFoundError'));
         const ac = new AudioContext();
         const dest = ac.createMediaStreamDestination();
         ac.createOscillator().connect(dest);
-        return dest.stream;
+        return Promise.resolve(dest.stream);
       };
     });
     page.setDefaultTimeout(20_000);

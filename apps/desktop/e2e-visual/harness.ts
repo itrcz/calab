@@ -496,7 +496,7 @@ export async function expectToolbarHeights(bar: Locator, name: string): Promise<
       if (el.getAttribute('role') !== 'radiogroup' && Math.abs(inner - el.getBoundingClientRect().height - 4) < 0.6 && el.parentElement?.matches('div, span')) return; // a segment inside its 2 px padded track
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') return;
-      out.push({ what: el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 20) ?? el.tagName, h: r.height, mid: r.top + r.height / 2 - (rb.top + rb.height / 2) });
+      out.push({ what: el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent.trim().slice(0, 20), h: r.height, mid: r.top + r.height / 2 - (rb.top + rb.height / 2) });
     });
     return out;
   });
