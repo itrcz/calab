@@ -480,8 +480,9 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 	cancel()
 	if err != nil {
 		// A failed membership read says nothing about access (incident 2026-10-05: a slow
-		// DB removed every workspace from every client). Keep the leases; they expire on
-		// their own (ReadLeaseTTL), and the next pass retries.
+		// DB removed every workspace from every client). The leases ride the outage out
+		// within the transient grace (ADR-0166), and the next pass retries.
+		s.rideOutWorkspaces()
 		return
 	}
 	s.mu.Lock()
@@ -534,15 +535,23 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	due, probes := s.dueWorkspaceChecks(ids, old)
 	allowed := map[uuid.UUID]identitypolicy.Decision{}
+	resync := false
 	check := func(ws uuid.UUID) {
 		gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		decision, err := s.refreshWorkspaceLease(gate, ws)
 		cancel()
 		if err == nil && decision.Allowed && s.workspaceLeaseAllows(ws) {
 			allowed[ws] = decision
-		} else if old[ws] && (!identityTransient(decision, err) || !s.workspaceLeaseAllows(ws)) {
-			// A transient failure keeps a still-valid lease (incident 2026-10-05).
+		} else if old[ws] && !decision.Allowed && !identityTransient(decision, err) {
+			// A decision: the workspace is closed for this session at once.
 			h.identityRemoveWorkspace(s, ws, decision, err)
+		} else if old[ws] && !s.workspaceLeaseAllows(ws) {
+			// No verdict, and the lease is gone: undecided past the transient grace, or an
+			// allowed result that could not be leased (raced, a stale replica). Not a reason to
+			// tell the client the workspace is gone (WORKSPACE_DELETE drops it and its call,
+			// ADR-0166): its events are held back (allowsEvent), and the session resyncs, so a
+			// fresh READY settles it (lists it as pending while the check still fails).
+			resync = true
 		} else if stubs[ws] && !identityTransient(decision, err) && !billingDenied(decision, err) && !decision.Allowed {
 			// A billing stub that is now denied for another reason (left, banned, SSO): gone.
 			h.identityRemoveWorkspace(s, ws, decision, err)
@@ -568,6 +577,10 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		s.leases.mu.Lock()
 		s.leases.cursor = probes[i]
 		s.leases.mu.Unlock()
+	}
+	if resync {
+		s.requireResync("identity dependency unavailable")
+		return
 	}
 	for ws, decision := range allowed {
 		if old[ws] {
@@ -668,9 +681,10 @@ func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]b
 
 // identityTransient reports a failed evaluation that says nothing about access (dependency
 // failure, timeout, connection error) as opposed to a decision (4xx, a policy denial, a
-// revoked session, a missing row). The stored lease is kept and expires on its own
-// (ReadLeaseTTL), so an outage longer than the lease still fails closed; a definitive denial
-// acts at once. Incident 2026-10-05: the RTC sweep had the same shape (fixed in 2.3.4).
+// revoked session, a missing row). The stored lease rides it out for at most the transient
+// grace after its last positive decision (rideOutLocked, ADR-0166), so a longer outage still
+// fails closed — by holding events back and a resync, never by WORKSPACE_DELETE; a
+// definitive denial acts at once. Incident 2026-10-05: the RTC sweep had the same shape.
 func identityTransient(d identitypolicy.Decision, err error) bool {
 	if err != nil {
 		return !httpx.IsDenial(err) && !errors.Is(err, identitypolicy.ErrDenied) && !errors.Is(err, auth.ErrSessionRevoked) && !db.IsNotFound(err)

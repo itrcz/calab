@@ -108,10 +108,13 @@ type Session struct {
 	detachT *time.Timer
 
 	wq     chan entry
-	qmu    sync.RWMutex       // guards sends on wq against closeQueue (no send on a closed channel)
-	qdone  bool               // wq closed (qmu)
-	broken atomic.Bool        // buffer overflow / Redis error: no longer resumable
-	skip   map[uuid.UUID]bool // event ids already replayed from the buffer (takeover), until pending drains
+	qmu    sync.RWMutex // guards sends on wq against closeQueue (no send on a closed channel)
+	qdone  bool         // wq closed (qmu)
+	broken atomic.Bool  // buffer overflow / Redis error: no longer resumable
+	// authConfirmed: UnixNano of the last time the auth session was confirmed (the token
+	// check that created this Session, a heartbeat recheck); see Hub.sessionRevoked.
+	authConfirmed atomic.Int64
+	skip          map[uuid.UUID]bool // event ids already replayed from the buffer (takeover), until pending drains
 }
 
 func newSession(h *Hub, id, user, asess uuid.UUID, bot bool) *Session {
@@ -121,6 +124,7 @@ func newSession(h *Hub, id, user, asess uuid.UUID, bot bool) *Session {
 		status: v1.PresenceStatus_PRESENCE_STATUS_ONLINE,
 		wq:     make(chan entry, bufferQueue),
 	}
+	s.authConfirmed.Store(time.Now().UnixNano())
 	go s.bufferWriter()
 	return s
 }

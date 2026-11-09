@@ -44,6 +44,10 @@ type Config struct {
 	Plans              *plans.Service // Workspace.plan in snapshots (ADR-0024); nil = unset
 	PlanContact        string         // Ready.plan_contact
 	BillingSelfServe   bool           // Ready.billing_self_serve (BILLING_ENABLED && BILLING_SELF_SERVE)
+	// IdentityTransientGrace: how long a session keeps the access it last had while its identity
+	// checks stay undecided (a database stall), ADR-0166; 0 = identityTransientGrace. The same
+	// knob as the RTC sweep's (RTC_IDENTITY_TRANSIENT_GRACE).
+	IdentityTransientGrace time.Duration
 }
 
 // Hub owns this instance's gateway sessions.
@@ -73,6 +77,7 @@ type Hub struct {
 	checkWorkspace       func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error)
 	identityWorkspaces   func(context.Context, uuid.UUID) ([]uuid.UUID, error)
 	checkPrincipal       func(context.Context, auth.Identity) (identitypolicy.Principal, time.Time, error)
+	checkSession         func(context.Context, uuid.UUID) error // tests: auth.Service.CheckSession
 	checkAdmissionPolicy func(context.Context, uuid.UUID) (int64, error)
 	readyMember          func(context.Context, uuid.UUID, uuid.UUID) (perm.Member, error) // tests: READY's member read
 	closing              atomic.Bool

@@ -32,6 +32,7 @@ func leasedSession(h *Hub, ws uuid.UUID) *Session {
 	s.asess = uuid.New()
 	s.ready = true
 	s.principal = identitypolicy.Principal{SessionID: s.asess, UserID: s.user, Authority: identitypolicy.LocalAccount, Version: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	s.authConfirmed.Store(time.Now().UnixNano()) // as newSession: authenticated just now
 	s.refreshSessionLease(context.Background())
 	_, _ = s.refreshWorkspaceLease(context.Background(), ws)
 	h.mu.Lock()

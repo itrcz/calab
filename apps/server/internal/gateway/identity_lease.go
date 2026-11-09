@@ -20,6 +20,11 @@ type identityLease struct {
 	versions                 identitypolicy.Versions
 	until                    time.Time
 	revision                 uint64
+	// confirmed: when the positive decision behind this lease was taken; hard: the decision's
+	// own deadline (identity proof, directory, session expiry). An undecided re-check rides the
+	// lease out until min(confirmed + grace, hard) (rideOutLocked, ADR-0166). A tombstone
+	// (until zero) never rides.
+	confirmed, hard time.Time
 }
 type identityLeases struct {
 	refresh    sync.Mutex
@@ -48,11 +53,62 @@ func (s *Session) lease(d identitypolicy.Decision, ws uuid.UUID, started, evalua
 		evaluated = now
 	}
 	elapsed := time.Since(started)
-	duration := min(identitypolicy.ReadLeaseTTL, d.ValidUntil.Sub(evaluated), s.principal.ExpiresAt.Sub(evaluated)) - elapsed
+	hard := min(d.ValidUntil.Sub(evaluated), s.principal.ExpiresAt.Sub(evaluated)) - elapsed
+	duration := min(identitypolicy.ReadLeaseTTL-elapsed, hard)
 	if duration <= 0 {
 		return identityLease{}
 	}
-	return identityLease{session: s.asess, user: s.user, workspace: ws, versions: d.Versions, until: now.Add(duration), revision: revision}
+	return identityLease{session: s.asess, user: s.user, workspace: ws, versions: d.Versions, until: now.Add(duration), revision: revision, confirmed: now, hard: now.Add(hard)}
+}
+
+// identityTransientGrace is the default of Config.IdentityTransientGrace: network stalls
+// between the cluster and the shared database last 2–5 minutes, several times a day.
+const identityTransientGrace = 10 * time.Minute
+
+func (h *Hub) identityGrace() time.Duration {
+	if h.cfg.IdentityTransientGrace > 0 {
+		return h.cfg.IdentityTransientGrace
+	}
+	return identityTransientGrace
+}
+
+// rideOutLocked extends l through an undecided check (a timeout or a dependency error says
+// nothing about access, ADR-0166): a lease that was positive keeps access for at most the
+// transient grace after the decision that confirmed it, never past that decision's own
+// deadline, never after a durable invalidation (tombstone: until zero) and never for another
+// session or principal version. s.leases.mu must be held. ok: l is valid now.
+func (s *Session) rideOutLocked(l identityLease, ws uuid.UUID) (identityLease, bool) {
+	if l.session != s.asess || l.user != s.user || l.workspace != ws || l.versions.Session != s.principal.Version || l.until.IsZero() || l.confirmed.IsZero() {
+		return l, false
+	}
+	now := time.Now()
+	limit := l.confirmed.Add(s.hub.identityGrace())
+	if l.hard.Before(limit) {
+		limit = l.hard
+	}
+	if !now.Before(limit) {
+		return l, false
+	}
+	next := now.Add(identitypolicy.ReadLeaseTTL)
+	if limit.Before(next) {
+		next = limit
+	}
+	if next.After(l.until) {
+		l.until = next
+	}
+	return l, true
+}
+
+// rideOutWorkspaces rides out every workspace lease of the session: its membership read
+// failed, so none of them could be re-evaluated (a full database stall).
+func (s *Session) rideOutWorkspaces() {
+	s.leases.mu.Lock()
+	defer s.leases.mu.Unlock()
+	for ws, l := range s.leases.workspaces {
+		if next, ok := s.rideOutLocked(l, ws); ok {
+			s.leases.workspaces[ws] = next
+		}
+	}
 }
 func (s *Session) validLease(l identityLease, ws uuid.UUID) bool {
 	return l.session == s.asess && l.user == s.user && l.workspace == ws && l.versions.Session == s.principal.Version && time.Now().Before(l.until)
@@ -129,7 +185,15 @@ func (s *Session) refreshWorkspaceLeaseOnce(ctx context.Context, ws uuid.UUID) (
 		err = ctx.Err()
 	}
 	if identityTransient(d, err) {
-		// Keep the stored lease (it expires on its own): a slow DB is not a revocation.
+		// A slow DB is not a revocation: the stored lease rides it out within the grace
+		// (ADR-0166); an invalidation that raced this check wins (its tombstone never rides).
+		s.leases.mu.Lock()
+		if s.leases.revision == revision {
+			if l, ok := s.rideOutLocked(s.leases.workspaces[ws], ws); ok {
+				s.leases.workspaces[ws] = l
+			}
+		}
+		s.leases.mu.Unlock()
 		return d, false, err
 	}
 	if err == nil {
@@ -204,7 +268,15 @@ func (s *Session) refreshSessionLease(ctx context.Context) {
 		}
 	}
 	if identityTransient(identitypolicy.Decision{}, err) {
-		return // keep the session lease; it expires on its own (ReadLeaseTTL)
+		// Keep the session lease through the outage, within the grace (ADR-0166).
+		s.leases.mu.Lock()
+		if s.leases.revision == revision {
+			if l, ok := s.rideOutLocked(s.leases.session, uuid.Nil); ok {
+				s.leases.session = l
+			}
+		}
+		s.leases.mu.Unlock()
+		return
 	}
 	l := identityLease{}
 	if err == nil && p.Authority == s.principal.Authority && p.WorkspaceID == s.principal.WorkspaceID && p.ConnectionID == s.principal.ConnectionID && p.SessionID == s.asess && p.UserID == s.user {

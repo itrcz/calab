@@ -79,38 +79,125 @@ func leaseUntil(s *Session, ws uuid.UUID) time.Time {
 	return s.leases.workspaces[ws].until
 }
 
-func TestIdentitySweepTransientKeepsLeaseUntilExpiry(t *testing.T) {
+func setLeaseConfirmed(s *Session, ws uuid.UUID, confirmed time.Time) {
+	s.leases.mu.Lock()
+	l := s.leases.workspaces[ws]
+	l.confirmed = confirmed
+	s.leases.workspaces[ws] = l
+	s.leases.mu.Unlock()
+}
+
+// ADR-0166: an undecided check (a database stall of a few minutes, full or partial) keeps the
+// workspace and its events for the transient grace after the last positive decision; past it
+// the session fails closed by holding events back and a resync — never by WORKSPACE_DELETE.
+func TestIdentitySweepTransientRidesOutWithinGrace(t *testing.T) {
 	h := leaseTestHub()
 	ws := uuid.New()
 	s := leasedSession(h, ws)
 	drain(s)
 	slow := errors.New("timeout: context deadline exceeded")
 
-	// Membership read fails: nothing is removed, the lease stays.
+	// Full stall: the membership read fails. The lease has already lapsed (a skipped pass):
+	// ridden out, nothing removed.
 	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return nil, slow }
+	setLeaseUntil(s, ws, time.Now().Add(-time.Millisecond))
 	h.enforceIdentitySession(context.Background(), s)
-	if workspaceDeletes(t, s, ws) != 0 || !s.workspaceLeaseAllows(ws) || !subscribedTo(s, ws) {
-		t.Fatal("failed membership read removed the workspace")
+	if workspaceDeletes(t, s, ws) != 0 || !s.workspaceLeaseAllows(ws) || !subscribedTo(s, ws) || s.broken.Load() {
+		t.Fatal("full stall: the workspace was not kept")
 	}
 
-	// The check fails transiently with a lease inside the refresh horizon: kept, and its
-	// deadline is not moved.
+	// Partial stall: membership reads, the lease check fails. Ridden out too.
 	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return []uuid.UUID{ws}, nil }
 	h.checkWorkspace = func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error) {
 		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, time.Now(), slow
 	}
-	until := time.Now().Add(identityRefreshAhead / 2)
-	setLeaseUntil(s, ws, until)
-	h.enforceIdentitySession(context.Background(), s)
-	if !leaseUntil(s, ws).Equal(until) || workspaceDeletes(t, s, ws) != 0 || !s.workspaceLeaseAllows(ws) {
-		t.Fatal("transient check dropped or extended a valid lease")
-	}
-
-	// The lease runs out during the outage: removal (fail closed).
 	setLeaseUntil(s, ws, time.Now().Add(-time.Millisecond))
 	h.enforceIdentitySession(context.Background(), s)
-	if workspaceDeletes(t, s, ws) != 1 || s.workspaceLeaseAllows(ws) || subscribedTo(s, ws) {
-		t.Fatal("expired lease kept access through a transient failure")
+	if workspaceDeletes(t, s, ws) != 0 || !s.workspaceLeaseAllows(ws) || !subscribedTo(s, ws) || s.broken.Load() {
+		t.Fatal("partial stall: the workspace was not kept")
+	}
+	if !s.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("partial stall: events held back within the grace")
+	}
+	if left := time.Until(leaseUntil(s, ws)); left <= identityRefreshAhead || left > identitypolicy.ReadLeaseTTL {
+		t.Fatalf("a ridden-out lease lasts %v, want one ReadLeaseTTL at most", left)
+	}
+
+	// Never past the decision's own deadline (an identity proof, a directory scan).
+	s.leases.mu.Lock()
+	l := s.leases.workspaces[ws]
+	l.hard = time.Now().Add(-time.Millisecond)
+	l.until = l.hard
+	s.leases.workspaces[ws] = l
+	s.leases.mu.Unlock()
+	_, _ = s.refreshWorkspaceLease(context.Background(), ws)
+	if s.workspaceLeaseAllows(ws) {
+		t.Fatal("a lease rode past its hard deadline")
+	}
+
+	// Past the grace: still no verdict, the lease is gone. Fail closed without a verdict —
+	// no WORKSPACE_DELETE; the session resyncs (a fresh READY lists it as pending).
+	s.leases.mu.Lock()
+	l = s.leases.workspaces[ws]
+	l.hard = time.Now().Add(time.Hour)
+	l.until = time.Now().Add(-time.Millisecond)
+	s.leases.workspaces[ws] = l
+	s.leases.mu.Unlock()
+	setLeaseConfirmed(s, ws, time.Now().Add(-h.identityGrace()-time.Second))
+	h.enforceIdentitySession(context.Background(), s)
+	if workspaceDeletes(t, s, ws) != 0 {
+		t.Fatal("an undecided check sent WORKSPACE_DELETE")
+	}
+	if s.workspaceLeaseAllows(ws) || s.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("access outlived the transient grace")
+	}
+	if !s.broken.Load() {
+		t.Fatal("past the grace the session was not made to resync")
+	}
+}
+
+// The event path: an event of a workspace whose lease lapsed during a stall is delivered
+// after its refresh rides the lease out, not turned into a resync of the session.
+func TestIdentityTransientEventRidesOut(t *testing.T) {
+	h := leaseTestHub()
+	ws := uuid.New()
+	s := leasedSession(h, ws)
+	drain(s)
+	h.checkWorkspace = func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		return identitypolicy.Decision{}, time.Now(), context.DeadlineExceeded
+	}
+	h.checkPrincipal = func(context.Context, auth.Identity) (identitypolicy.Principal, time.Time, error) {
+		return identitypolicy.Principal{}, time.Now(), context.DeadlineExceeded
+	}
+	setLeaseUntil(s, ws, time.Now().Add(-time.Millisecond))
+	s.leases.mu.Lock()
+	s.leases.session.until = time.Now().Add(-time.Millisecond)
+	s.leases.mu.Unlock()
+	s.dispatchEnc(uuid.New(), leaseEvent(ws))
+	select {
+	case job := <-h.preparations:
+		job()
+	case <-time.After(time.Second):
+		t.Fatal("the event was not prepared")
+	}
+	if out := drain(s); len(out) != 1 || s.broken.Load() {
+		t.Fatalf("event during a stall: delivered %d, broken %v", len(out), s.broken.Load())
+	}
+}
+
+// The heartbeat recheck of the auth session: undecided keeps the socket within the grace
+// (the closing paths: identity_stall_integration_test.go).
+func TestSessionRecheckTransientKeepsSocket(t *testing.T) {
+	h := leaseTestHub()
+	s := leasedSession(h, uuid.New())
+	h.checkSession = func(context.Context, uuid.UUID) error { return context.DeadlineExceeded }
+	if h.sessionRevoked(s) {
+		t.Fatal("a timeout of the session recheck closed the socket")
+	}
+	before := s.authConfirmed.Load()
+	h.checkSession = func(context.Context, uuid.UUID) error { return nil }
+	if h.sessionRevoked(s) || s.authConfirmed.Load() < before {
+		t.Fatal("a confirmed session was closed or not stamped")
 	}
 }
 
@@ -198,12 +285,22 @@ func TestIdentitySessionLeaseTransientVersusRevoked(t *testing.T) {
 	if !s.sessionLeaseAllows() {
 		t.Fatal("transient principal read dropped the session lease")
 	}
+	// Lapsed during the stall, confirmed within the grace: ridden out (ADR-0166).
 	s.leases.mu.Lock()
 	s.leases.session.until = time.Now().Add(-time.Millisecond)
 	s.leases.mu.Unlock()
 	s.refreshSessionLease(context.Background())
+	if !s.sessionLeaseAllows() {
+		t.Fatal("transient principal read did not ride out a lapsed session lease")
+	}
+	// Past the grace: no more.
+	s.leases.mu.Lock()
+	s.leases.session.until = time.Now().Add(-time.Millisecond)
+	s.leases.session.confirmed = time.Now().Add(-h.identityGrace() - time.Second)
+	s.leases.mu.Unlock()
+	s.refreshSessionLease(context.Background())
 	if s.sessionLeaseAllows() {
-		t.Fatal("transient principal read extended an expired session lease")
+		t.Fatal("transient principal read extended a session lease past the grace")
 	}
 	h.checkPrincipal = func(_ context.Context, id auth.Identity) (identitypolicy.Principal, time.Time, error) {
 		return id.Principal, time.Now(), nil

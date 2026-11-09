@@ -129,9 +129,9 @@ type Config struct {
 	// it as «no connection» and a /join of the device within this time takes it back without a
 	// leave/join. 0 = off (the seat goes with the drop). At most 10m.
 	VoiceLostGrace time.Duration `env:"VOICE_LOST_GRACE" envDefault:"60s"`
-	// How long a participant stays in a call while the server cannot check their access
-	// (database timeout, 5xx) before the identity sweep evicts them anyway. A denial evicts at
-	// once regardless. Between 30s and 1h; 0 = the default.
+	// How long a participant stays in a call, and a gateway session keeps the workspaces it had,
+	// while the server cannot check their access (database timeout, 5xx) before failing closed
+	// anyway (ADR-0166). A denial acts at once regardless. Between 30s and 1h; 0 = the default.
 	IdentityTransientGrace time.Duration `env:"RTC_IDENTITY_TRANSIENT_GRACE" envDefault:"10m"`
 	// IVR worker (cmd/ivr, ADR-0117 §2): the shared token of its WebSocket to the API (both sides'
 	// env). Empty = no worker: inbound calls cannot be switched on. With it, inbound calls work in

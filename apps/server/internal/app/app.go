@@ -403,6 +403,8 @@ func New(d Deps) *App {
 		Plans:              planSvc,
 		PlanContact:        d.Config.PlanContact(),
 		BillingSelfServe:   d.Config.Billing.Enabled && d.Config.Billing.SelfServe,
+		// One grace for every undecided identity check: calls (rtc) and gateway leases (ADR-0166).
+		IdentityTransientGrace: d.Config.IdentityTransientGrace,
 	}, d.DB, d.Redis, authSvc, pub)
 
 	authSvc.OnBotRequest = hub.TouchBot

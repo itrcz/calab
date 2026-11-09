@@ -281,6 +281,11 @@ func (s *Service) Reconcile(ctx context.Context) error {
 					// Re-adding voice state needs a fresh identity check; evicting denied
 					// participants with state is the identity sweep's job (identity.go).
 					if err := s.checkIdentity(ctx, wid, ref.rid, uid, sid); err != nil {
+						if transientIdentityError(err) {
+							// Undecided (a database stall): neither re-added nor evicted. The
+							// next pass retries; the identity sweep evicts past its grace (ADR-0166).
+							continue
+						}
 						s.removeIdentities(ctx, voice.RoomName(wid, ref.rid), []string{p.Identity})
 						continue
 					}

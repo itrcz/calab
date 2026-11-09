@@ -169,7 +169,8 @@ func (s *Session) deferIdentityEvent(id uuid.UUID, enc *encEvent) {
 					s.resumeMany(mark, nil)
 					return
 				}
-				if err != nil {
+				if err != nil && !s.workspaceLeaseAllows(ws) {
+					// Undecided and no lease to ride out (past the grace, ADR-0166): resync.
 					s.preparationFailed(mark)
 					return
 				}

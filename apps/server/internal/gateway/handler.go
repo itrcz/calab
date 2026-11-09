@@ -244,22 +244,35 @@ func (h *Hub) authenticate(c *conn, token string) (auth.Identity, bool) {
 // a cached marker read plus at most one DB read per minute per session and instance. A
 // dependency error keeps the socket (already authenticated; a Postgres blip must not drop
 // every socket at once). Bot tokens have no session row: their revocation is the marker +
-// event (BotTokenChanged).
+// event (BotTokenChanged). An undecided check keeps the socket for the transient grace
+// after the last confirmation (ADR-0166): a database stall of a few minutes used to close
+// every socket on its next heartbeat and send every client through a fresh READY at once.
 func (h *Hub) sessionRevoked(s *Session) bool {
 	if s.bot {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	err := h.auth.CheckSession(ctx, s.asess)
+	var err error
+	if h.checkSession != nil {
+		err = h.checkSession(ctx, s.asess)
+	} else {
+		err = h.auth.CheckSession(ctx, s.asess)
+	}
 	switch {
 	case err == nil:
+		s.authConfirmed.Store(time.Now().UnixNano())
 		return false
 	case errors.Is(err, auth.ErrSessionRevoked):
 		h.destroy(s, 4010, revokedCloseReason(auth.RevokedReason(err)))
 		return true
 	default:
-		slog.Warn("gateway: session recheck failed", "session_id", s.asess, "err", err)
+		since := time.Since(time.Unix(0, s.authConfirmed.Load()))
+		if since < h.identityGrace() {
+			slog.Warn("gateway: session recheck undecided, keeping the socket", "session_id", s.asess, "unconfirmed_for", since.Round(time.Second), "err", err)
+			return false
+		}
+		slog.Warn("gateway: session recheck undecided past the grace", "session_id", s.asess, "err", err)
 		h.destroy(s, 4000, "identity dependency unavailable")
 		return true
 	}

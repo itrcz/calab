@@ -611,7 +611,10 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		// Take that same boundary before rotating a scoped refresh token.
 		if authority == identitypolicy.WorkspaceSSO {
 			if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
-				return errInvalidRefresh
+				if db.IsNotFound(err) {
+					return errInvalidRefresh
+				}
+				return err // a database stall is not a logout (ADR-0166): 5xx, the client retries
 			}
 		}
 		before, err := q.GetSession(ctx, sid)
