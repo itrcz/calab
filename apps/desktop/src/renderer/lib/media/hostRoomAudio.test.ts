@@ -146,6 +146,14 @@ describe('native room audio controls', () => {
     expect(parseRoomAudioControls(c)).not.toBeNull();
     expect(roomAudioControls({ ...base, bitrateKbps: 4 }).bitrate).toBe(8000);
   });
+  it('watched stream publishers: user ids, clamped volumes, at most 4 (ADR-0149 §3)', () => {
+    expect(roomAudioControls(base).watched).toEqual({});
+    const watched = [{ id: user.toUpperCase(), volume: 1.7 }, { id: 'not-a-user', volume: 0.5 }, { id: user, volume: 0.2 }, ...Array.from({ length: 6 }, (_, i) => ({ id: `66666666-6666-4666-8666-${String(i).padStart(12, '0')}`, volume: 0.5 }))];
+    const c = roomAudioControls({ ...base, watched });
+    expect(Object.keys(c.watched)).toHaveLength(4);
+    expect(c.watched[user]).toBe(1);
+    expect(parseRoomAudioControls(c)).not.toBeNull();
+  });
   it('maps the native meter back to dBFS', () => {
     expect([roomLevelDb(0), roomLevelDb(10), roomLevelDb(20), roomLevelDb(99)]).toEqual([-80, -40, 0, 0]);
   });

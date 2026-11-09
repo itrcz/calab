@@ -2,6 +2,7 @@ import { audioUUID } from '../../../shared/hostCallAudio';
 import {
   ROOM_AUDIO_MAX_LEVEL,
   ROOM_AUDIO_MAX_USERS,
+  ROOM_AUDIO_MAX_WATCHED,
   ROOM_AUDIO_MIN_THRESHOLD_DB,
   type HostRoomAudioCapability,
   type HostRoomAudioConnect,
@@ -232,13 +233,15 @@ export interface RoomControlsInput {
   thresholdDb: number;
   pttOpen: boolean;
   levels: boolean;
+  /** The watched streams' publishers (user ids) with the final volume of their screen-share audio (ADR-0149 §3). */
+  watched?: readonly { id: string; volume: number }[];
 }
 
 /**
  * Controls the bridge accepts (shared/hostRoomAudio.ts): every volume clamped to 0–1 as
  * nativeControls() does for calls — one value above 1 would drop the whole control — at most 64
- * users, bitrate 8–64 kbps, the gate threshold inside the meter range. No watched publishers
- * before the companion video (ADR-0149 §3, R6): nothing to watch on a native-audio join.
+ * users, bitrate 8–64 kbps, the gate threshold inside the meter range, at most 4 watched
+ * publishers (native subscribes their screen-share audio, ADR-0149 §3).
  */
 export function roomAudioControls(i: RoomControlsInput): HostRoomAudioControls {
   const volume = unit(i.outputVolume);
@@ -253,6 +256,12 @@ export function roomAudioControls(i: RoomControlsInput): HostRoomAudioControls {
     userVolumes[id] = v;
     n++;
   }
+  const watched: Record<string, number> = {};
+  for (const w of i.watched ?? []) {
+    if (Object.keys(watched).length >= ROOM_AUDIO_MAX_WATCHED) break;
+    const id = w.id.toLowerCase();
+    if (audioUUID(id) && !(id in watched)) watched[id] = unit(w.volume);
+  }
   const kbps = Number.isFinite(i.bitrateKbps) ? Math.round(Math.max(8, Math.min(64, i.bitrateKbps))) : 32;
   const thresholdDb = Number.isFinite(i.thresholdDb) ? Math.max(ROOM_AUDIO_MIN_THRESHOLD_DB, Math.min(0, i.thresholdDb)) : -50;
   return {
@@ -262,7 +271,7 @@ export function roomAudioControls(i: RoomControlsInput): HostRoomAudioControls {
     userVolumes,
     bitrate: kbps * 1000,
     gate: { mode: i.mode, thresholdDb, pttOpen: i.pttOpen },
-    watched: {},
+    watched,
     levels: i.levels,
   };
 }

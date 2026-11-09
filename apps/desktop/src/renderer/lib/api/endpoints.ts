@@ -128,6 +128,7 @@ import {
   GetMeResponseSchema,
   GetRoomResponseSchema,
   JoinVoiceResponseSchema,
+  VoiceCompanionResponseSchema,
   JoinWorkspaceResponseSchema,
   ListInvitesResponseSchema,
   ListBirthdaysResponseSchema,
@@ -933,6 +934,11 @@ export const api = {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),
     /** Takes this device out of the room at once, pending or connected (idempotent, 204). */
     leave: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/leave`),
+    /**
+     * The web companion's token (ADR-0149 §3, iPhone with native room audio): subscribe + data only,
+     * TTL 10 min, needs this device's seat in the room (409 without one); never creates or changes a seat.
+     */
+    companion: (roomId: string) => call('POST', `/api/rooms/${roomId}/voice/companion`, VoiceCompanionResponseSchema),
     /** → the granted preset and fps: ≤ the room's and the plan's limits (ADR-0024). */
     requestStream: (roomId: string, preset: ScreenSharePreset) =>
       call('POST', `/api/rooms/${roomId}/stream/request`, RequestStreamResponseSchema, body(RequestStreamRequestSchema, { preset })),

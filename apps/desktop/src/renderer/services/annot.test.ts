@@ -85,3 +85,39 @@ describe('presenter fallback (issue #102)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe('annotations from an iPhone companion (ADR-0149 §3)', () => {
+  const companion = { identity: 'anna:s3:web', permissions: { canPublish: false, canPublishSources: [] } } as unknown as Participant;
+  const remote = (room as unknown as { remoteParticipants: Map<string, Participant> }).remoteParticipants;
+  function from(p: Participant): void {
+    const bytes = encodeAnnot({ streamSid: SID, kind: 'pointer', color: 0xff0000, points: [0.5, 0.5], seq: ++seq, strokeId: 0, strokeEnd: false, allow: false });
+    if (!bytes) throw new Error('encode');
+    annot.onData(bytes, p);
+  }
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    setAnnot({ allowMine: true, mineActivity: null, mineView: 'preview' });
+    annot.attach(room);
+    annot.presenting(SID, null);
+  });
+  afterEach(() => {
+    annot.detach();
+    remote.clear();
+    vi.useRealTimers();
+  });
+
+  it('takes SPEAK from the companion’s own device, never from its source-less grant', () => {
+    from(companion);
+    expect(useAnnot.getState().mineActivity).toBeNull();
+    remote.set('anna:s3', { identity: 'anna:s3', permissions: { canPublish: true, canPublishSources: [2] } } as unknown as Participant);
+    from(companion);
+    expect(useAnnot.getState().mineActivity?.kind).toBe('pointer');
+  });
+
+  it('a device without SPEAK, or another session of the user, gives its companion nothing', () => {
+    remote.set('anna:s3', { identity: 'anna:s3', permissions: { canPublish: true, canPublishSources: [3] } } as unknown as Participant);
+    remote.set('anna:s4', { identity: 'anna:s4', permissions: { canPublish: true, canPublishSources: [2] } } as unknown as Participant);
+    from(companion);
+    expect(useAnnot.getState().mineActivity).toBeNull();
+  });
+});
