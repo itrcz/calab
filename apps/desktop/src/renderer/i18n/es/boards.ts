@@ -434,6 +434,7 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.approvalDoneN': 'Aprobada {n} de {m}',
   'boards.approvalBand': 'Aprobada · {n} de {m}',
   'boards.approvalPending': '{n} de {m} aprobaron',
+  'boards.approvalPendingMine': '{n} de {m} aprobaron · la aprobaste',
   'boards.rejectedBy': 'Rechazada · {name}',
   'boards.unreadTab': 'Sin leer',
   'boards.unreadTabN': 'Sin leer · {n}',

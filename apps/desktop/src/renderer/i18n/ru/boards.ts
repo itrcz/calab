@@ -441,6 +441,7 @@ export const ruBoards = {
   'boards.approvalDoneN': 'Согласовано {n} из {m}',
   'boards.approvalBand': 'Согласовано · {n} из {m}',
   'boards.approvalPending': '{n} из {m} согласовали',
+  'boards.approvalPendingMine': '{n} из {m} согласовали · вы согласовали',
   'boards.rejectedBy': 'Отклонено · {name}',
   'boards.unreadTab': 'Непрочитанное',
   'boards.unreadTabN': 'Непрочитанное · {n}',

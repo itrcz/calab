@@ -434,6 +434,7 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.approvalDoneN': '已批准 {n}/{m}',
   'boards.approvalBand': '已批准 · {n}/{m}',
   'boards.approvalPending': '{n}/{m} 已批准',
+  'boards.approvalPendingMine': '{n}/{m} 已批准 · 你已批准',
   'boards.rejectedBy': '已驳回 · {name}',
   'boards.unreadTab': '未读',
   'boards.unreadTabN': '未读 · {n}',
