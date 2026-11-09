@@ -7,7 +7,7 @@ vi.mock('../lib/api/endpoints', () => ({ api: { voice: {} } }));
 
 const { ApiError } = await import('../lib/api/client');
 
-const { COMPANION_IDLE_MS, COMPANION_MAX_FAILURES, COMPANION_STABLE_MS, VoiceCompanion, companionDevice, isCompanionIdentity } = await import('./voiceCompanion');
+const { COMPANION_IDLE_MS, COMPANION_MAX_FAILURES, COMPANION_STABLE_MS, VoiceCompanion, companionDevice, isCompanionIdentity, isSoleConnection } = await import('./voiceCompanion');
 
 type Handler = (...a: unknown[]) => void;
 
@@ -77,6 +77,17 @@ describe('companion identities', () => {
     expect(isCompanionIdentity('u:s')).toBe(false);
     expect(companionDevice('u:s:web')).toBe('u:s');
     expect(companionDevice('u:s')).toBeNull();
+  });
+
+  it('cues a person once: not for a companion, not for a second device of someone already there', () => {
+    expect(isSoleConnection('u:s', ['u:s'])).toBe(true);
+    expect(isSoleConnection('u:s', ['u:s', 'v:t'])).toBe(true);
+    expect(isSoleConnection('u:s:web', ['u:s', 'u:s:web'])).toBe(false);
+    expect(isSoleConnection('u:s', ['u:s', 'u:s:web'])).toBe(true);
+    expect(isSoleConnection('u:s2', ['u:s', 'u:s2'])).toBe(false);
+    // On leave the gone device is already out of the room.
+    expect(isSoleConnection('u:s2', ['u:s'])).toBe(false);
+    expect(isSoleConnection('u:s', ['u:s:web'])).toBe(true);
   });
 });
 

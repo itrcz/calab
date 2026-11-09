@@ -32,6 +32,20 @@ export function isCompanionIdentity(identity: string): boolean {
   return identity.endsWith(':web');
 }
 
+/**
+ * Whether `identity` is its person's only connection among `present` (identities in the room):
+ * false for a companion and for a second device of a user who is already there, so «join» and
+ * «leave» follow the person, not each connection.
+ */
+export function isSoleConnection(identity: string, present: Iterable<string>): boolean {
+  if (isCompanionIdentity(identity)) return false;
+  const user = identity.split(':')[0];
+  for (const other of present) {
+    if (other !== identity && !isCompanionIdentity(other) && other.split(':')[0] === user) return false;
+  }
+  return true;
+}
+
 /** The device identity `<user>:<session>` a companion belongs to, or null for any other identity. */
 export function companionDevice(identity: string): string | null {
   return isCompanionIdentity(identity) ? identity.slice(0, -':web'.length) : null;

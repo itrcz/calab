@@ -97,7 +97,7 @@ import {
 import { SELF_SYNC_LAG_MS, SelfStateSync, type SelfFlags } from '../lib/selfStateSync';
 import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, rejectAfter, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
 import { annot } from './annot';
-import { VoiceCompanion, WATCH_TOPIC, isCompanionIdentity, type CompanionDetach } from './voiceCompanion';
+import { VoiceCompanion, WATCH_TOPIC, isSoleConnection, type CompanionDetach } from './voiceCompanion';
 import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
@@ -2349,13 +2349,13 @@ class VoiceEngine {
         if (pub.source === Track.Source.ScreenShare) this.syncAnnounce();
         if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.Camera) setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
       })
-      // A web companion (ADR-0149 §3) is its device's second connection, never a person coming or going.
+      // A web companion (ADR-0149 §3) or a second device is never a person coming or going.
       .on(RoomEvent.ParticipantConnected, (p) => {
-        if (!isCompanionIdentity(p.identity)) this.peerCue(room, userIdOf(p.identity), true);
+        if (isSoleConnection(p.identity, room.remoteParticipants.keys())) this.peerCue(room, userIdOf(p.identity), true);
       })
       .on(RoomEvent.ParticipantDisconnected, (p) => {
         const gone = userIdOf(p.identity);
-        const still = isCompanionIdentity(p.identity) || [...room.remoteParticipants.values()].some((o) => !isCompanionIdentity(o.identity) && userIdOf(o.identity) === gone);
+        const still = !isSoleConnection(p.identity, room.remoteParticipants.keys());
         if (!still) this.active.drop(gone);
         if (!still) this.peerCue(room, gone, false);
         for (const set of this.viewers.values()) set.delete(p.identity);
